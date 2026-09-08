@@ -11,9 +11,9 @@
 //!
 //! This crate ships:
 //!
-//! 1. [`SPEC_VERSION`] — the contract version string baked at compile
-//!    time.
-//! 2. [`SPEC_YAML`] — the canonical YAML payload embedded via
+//! 1. [`SPEC_VERSION`] — the API major contract version (`v1`).
+//! 2. [`PACKAGE_VERSION`] — the semver package version baked at compile time.
+//! 3. [`SPEC_YAML`] — the canonical YAML payload embedded via
 //!    `include_str!` so runtime consumers (admin UI, docs site SSR,
 //!    SDK generators) can resolve the contract without a filesystem
 //!    lookup.
@@ -47,9 +47,19 @@ pub const SPEC_YAML: &str = include_str!("../../../openapi/corelink-v1.yaml");
 /// [`SPEC_YAML`] by `scripts/openapi_sync.py`).
 pub const SPEC_JSON: &str = include_str!("../../../openapi/corelink-v1.json");
 
-/// Contract major-version string. Matches the `info.version` field of
-/// the canonical spec.
+/// API contract major version used in the canonical route namespace.
+///
+/// This is intentionally distinct from [`PACKAGE_VERSION`]: the public API
+/// remains `v1` while the crate follows normal semver package releases.
 pub const SPEC_VERSION: &str = "v1";
+
+/// Semver authority for this crate and the canonical OpenAPI `info.version`.
+///
+/// Keep this tied to Cargo's package metadata rather than duplicating a second
+/// literal in Rust. The embedded OpenAPI document is checked against this
+/// value below, while [`SPEC_VERSION`] continues to represent only the API
+/// major.
+pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Canonical route constants. Keep in sync with `openapi/corelink-v1.yaml`
 /// (the spec_roundtrip test asserts that every value below appears as a
@@ -250,13 +260,20 @@ mod tests {
     }
 
     #[test]
-    fn spec_version_matches_info_version() {
+    fn package_version_matches_info_version() {
         let v = parse_json().expect("embedded JSON must parse");
         let info_version = v
             .get("info")
             .and_then(|i| i.get("version"))
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
-        assert_eq!(info_version, SPEC_VERSION);
+        assert_eq!(info_version, PACKAGE_VERSION);
+    }
+
+    #[test]
+    fn api_major_version_is_distinct_from_package_semver() {
+        assert_eq!(SPEC_VERSION, "v1");
+        assert_ne!(SPEC_VERSION, PACKAGE_VERSION);
+        assert_eq!(PACKAGE_VERSION.split('.').count(), 3);
     }
 }

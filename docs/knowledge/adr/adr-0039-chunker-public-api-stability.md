@@ -4,12 +4,14 @@ title: "ADR-0039 — corelink-chunker public API stability + mask seed versionin
 description: "Freezes the chunker's algorithm constants and public API for the life of crate v1.x, because any drift remaps chunk boundaries and invalidates every customer's manifest cache."
 source_files:
   - "specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s05", "chunker", "api-stability", "semver"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md@41512aa79af0d7345695131b960a9486590ba87a"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0039 — corelink-chunker public API stability + mask seed versioning
 
 `corelink-chunker` is the crypto-load-bearing library that decides where blobs split, and its output
@@ -48,5 +50,5 @@ tests + a fuzz harness and the canonical-vector pins on the Gear table).
 
 1. `specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md:28-40` — Context: chunker consumers + why any API/constant drift invalidates the global cache.
 2. `specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md:45-60` — Decision: the frozen algorithm constants table + drift = breaking change requiring a coordinated migration.
-3. `specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md:71-71` — `ChunkerStep` is frozen (NOT `#[non_exhaustive]`) so a forgotten arm cannot stall the pipeline.
+3. `specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md:71` — `ChunkerStep` is frozen (NOT `#[non_exhaustive]`) so a forgotten arm cannot stall the pipeline.
 4. `specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md:96-112` — Consequences: byte-for-byte reproducibility + lock-step constants vs the coordinated-migration cost.

@@ -4,12 +4,14 @@ title: "ADR-0013 — Promote REMOTE-CACHE-PRODUCT-PROFILE to a Level-3 canonical
 description: "Formally promotes the remote-cache product profile, the invariant registry, and the key-management doc to Level-3 canonical sources so inheritance is de jure, not just de facto."
 source_files:
   - "specs/03_architecture/adrs/ADR-0013-promote-remote-cache-canonical.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "canonical-source", "inheritance", "framework", "governance"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0013-promote-remote-cache-canonical.md@0c9fa2917a8588491471325cf25d946e7c8db22d"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0013 — Promote REMOTE-CACHE-PRODUCT-PROFILE to a Level-3 canonical source
 
 CoreLink's spec framework lets work items inherit from canonical sources, but a doc that is referenced by `inherits_from` without being *registered* as canonical leaves every inheriting WI ambiguous (was it promoted? still DRAFT?). This ADR resolves that by formally promoting three architecture docs to Level-3 canonical status, making their inheritance legitimate and giving the spec validator a real anchor. It matters because it is the governance act that lets `validate_specs.py` trust the CAS/AC/GC/BYOK inheritance chain.

@@ -23,8 +23,8 @@ use corelink_byok::{BYOKError, KmsProvider};
 /// Construct the production AWS KMS provider for the configured region.
 ///
 /// FIPS endpoint is enforced unconditionally — see `AwsKmsRealProvider::new`
-/// docs. AWS credentials resolve via the standard AWS SDK chain (env vars,
-/// shared config, IRSA, IMDS, SSO).
+/// docs. AWS credentials are explicit BYOK-KMS env vars (with standard AWS
+/// env-var fallback); missing credentials fail closed.
 ///
 /// # Errors
 ///
@@ -82,7 +82,7 @@ pub fn make_vault_kms_provider(region: &str) -> Result<Arc<dyn KmsProvider>, BYO
 ///
 /// Delegates to [`crate::byok_orchestrator::make_provider`], whose compile-time
 /// cfg dispatch selects the concrete provider from the single enabled
-/// `byok-*-real` flag (or the `InMemoryFake` when none is set). Prefer this over
+/// `byok-*-real` flag (or fails closed when none is set). Prefer this over
 /// the per-provider constructors when the caller does not care which provider
 /// the binary was built for (e.g. the server boot path that threads a single
 /// `Arc<dyn KmsProvider>` through the BYOK-aware code paths).

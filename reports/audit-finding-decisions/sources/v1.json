@@ -1,0 +1,249 @@
+{
+  "version": 1,
+  "audit_roots": [
+    {
+      "path": "docs/security"
+    },
+    {
+      "path": "reports/audits"
+    }
+  ],
+  "excluded_audits": [
+    {
+      "path": "docs/security/2026-06-13-CAA-360-audit-report.md",
+      "reason": "Explicit B-101 scope decision: this historical CAA audit is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
+      "sha256": "8a1b12e5c657b7c31eb48068f1b84aaa15850c0409c7c1bbc66cb4b8b732effb"
+    },
+    {
+      "path": "docs/security/2026-06-13-CAA-360-followups.md",
+      "reason": "Explicit B-101 non-source classification: this follow-up artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "f4b79076654e1a2835d16579958affab2869605f94e62e201c87a448488ff0c2"
+    },
+    {
+      "path": "docs/security/2026-06-13-CAA-360-wave2-design.md",
+      "reason": "Explicit B-101 non-source classification: this design artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "44725266f692a4eb10f17562fea5de58804a8b37347c35ceb14d30d0eda6dcfa"
+    },
+    {
+      "path": "docs/security/2026-06-13-CAA-360-wave2-plan.md",
+      "reason": "Explicit B-101 non-source classification: this planning artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "8e00dea2e6d07e6ab0af4d1d52cd390a70c22d3eae54d1ce3a08a6554ae3649a"
+    },
+    {
+      "path": "docs/security/2026-06-15-caa360-remediation.md",
+      "reason": "Explicit B-101 non-source classification: this remediation artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "ae610556eec2a0134266c3a723b823a5623a7539556fe48a800cabe7edb8eb0c"
+    },
+    {
+      "path": "docs/security/2026-06-16-engineering-dd-brutal.md",
+      "reason": "Explicit B-101 non-source classification: this engineering working paper is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "7f21b1c4809b1112fd2f6b4d92eb0e4fc0f3fbb8b65091bdce21d72e4b303a57"
+    },
+    {
+      "path": "docs/security/2026-06-16-engineering-panel.md",
+      "reason": "Explicit B-101 non-source classification: this engineering panel artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "842c4c77bf2f9fa28777cce99ae6466463a3794cc88a4cc37728137089faff4a"
+    },
+    {
+      "path": "docs/security/2026-06-16-painel-musk-thiel-house.html",
+      "reason": "Explicit B-101 non-source classification: this archived HTML panel records 30 findings but is not an approved measured input; its digest forces reclassification and complete decisions if it changes.",
+      "sha256": "6bc3c6d07540ad91e4120370b9233c2d754337286a54695502fc86cde837d786"
+    },
+    {
+      "path": "docs/security/2026-06-16-redteam-brutal.md",
+      "reason": "Explicit B-101 non-source classification: this red-team working paper is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "503fcbe823b518da51dcf6b52ec56c05ee68aeb892a6806986fea7f98791f895"
+    },
+    {
+      "path": "docs/security/2026-06-16-redteam-nuclear-cycle2.md",
+      "reason": "Explicit B-101 non-source classification: this red-team cycle artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "f9ccfd393726b7672e6ab0e88f35d1f149eb6f29ac172491fa02965f709c98f5"
+    },
+    {
+      "path": "docs/security/2026-06-17-redteam-nuclear-cycle2-recovery.md",
+      "reason": "Explicit B-101 non-source classification: this recovery artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "ebfbca7ef92b4d2540566b3122fefae7db1b5da7b93c4c6c652527105955a060"
+    },
+    {
+      "path": "docs/security/2026-06-17-redteam-r34-recovery.md",
+      "reason": "Explicit B-101 non-source classification: this recovery artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "1b41eec7d25af4b4fbe1d8a27ea0b71a9ecb03aa0d9dfc68c6d9bce6eef93ecc"
+    },
+    {
+      "path": "docs/security/2026-06-17-rt-nuclear-23-erase-key-fixed.md",
+      "reason": "Explicit B-101 non-source classification: this remediation verification artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "921166dce5436365f405d9132e5425cae9498423c8aa314ea31059bed0a9b8ea"
+    },
+    {
+      "path": "docs/security/2026-06-17-rt-nuclear-verify-throttled-candidates.md",
+      "reason": "Explicit B-101 non-source classification: this candidate verification artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "97f07fb38375cae8cf00725a481ec01749ecfefaf4be49c1c92d6b178f686bb5"
+    },
+    {
+      "path": "docs/security/2026-06-18-gitleaks-baseline-triage.md",
+      "reason": "Explicit B-101 non-source classification: this triage artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "180cdb9733851cc05c24bba14f620eae4e3890d0f1450762a46b21c61f64eca5"
+    },
+    {
+      "path": "docs/security/2026-06-18-nuclear-cycle2-triage.md",
+      "reason": "Explicit B-101 non-source classification: this triage artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "1d5c46223b5c26c60c2f9ffa96d76119d72980a80759f4b9c596d8d48f6240f9"
+    },
+    {
+      "path": "docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md",
+      "reason": "Explicit B-101 non-source classification: this credential incident artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "3fc5176773a140bbbad9150ea22f9005550ec02537f3dba416123194181af5fa"
+    },
+    {
+      "path": "docs/security/2026-06-22-overnight-pentest-findings.md",
+      "reason": "Explicit B-101 scope decision: this pentest findings report is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
+      "sha256": "09cbde7cd7eedcc4f6c1c96c9449b887b9c26e8de9788e13e5edb73c9bd89b48"
+    },
+    {
+      "path": "docs/security/2026-06-23-brutal-controlplane.md",
+      "reason": "Explicit B-101 non-source classification: this control-plane working paper is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "583aeb228a733fc66fc7740a60e90c1fe27505aaa7c377d5b85a326e2aa81421"
+    },
+    {
+      "path": "docs/security/2026-06-23-brutal-dataplane.md",
+      "reason": "Explicit B-101 non-source classification: this data-plane working paper is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "21dd1ce51259b7388f8c20bf888dec474eba0ecae44619ab303d0a0142461d77"
+    },
+    {
+      "path": "docs/security/2026-06-23-review-auth-worker.md",
+      "reason": "Explicit B-101 non-source classification: this focused review is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "3493fa36bc44c784a22d3ea1be2d253a716c1949d7956a5e32452b38d4da4ba5"
+    },
+    {
+      "path": "docs/security/2026-06-23-review-money-path.md",
+      "reason": "Explicit B-101 non-source classification: this focused review records six findings but is not an approved measured input; its digest forces reclassification and complete decisions if it changes.",
+      "sha256": "d94b52d858c0f0dfc0bfceac8542f4b66e22a26852d0054f6681e80b623b0160"
+    },
+    {
+      "path": "docs/security/2026-06-23-secreview-credentials.md",
+      "reason": "Explicit B-101 non-source classification: this credential review is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "f01ec86e692bbf93bf862b3776e372491e97370d58346781fe833aed4ae6beb3"
+    },
+    {
+      "path": "docs/security/2026-06-23-secreview-gdpr-residency.md",
+      "reason": "Explicit B-101 non-source classification: this residency review is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "aa5a3523a8f8665ee069c4a64b13c86d4987e9ca75fe2091d6e98066ff06f470"
+    },
+    {
+      "path": "docs/security/2026-06-26-okf-brutal-audit-code-findings.md",
+      "reason": "Explicit B-101 scope decision: this OKF audit findings report is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
+      "sha256": "a5bed049e41cf83715e51f9fbcce08046b032e74c22b78732c3284a4aa2a7632"
+    },
+    {
+      "path": "docs/security/report-security.md",
+      "reason": "Explicit B-101 scope decision: this named security report is not an enumerated input; admission requires a parser, count, digest, and one decision per finding.",
+      "sha256": "e1e4d9309a161f97ab9ccb324b3927db95c306a14e9c0c91becf63c136d6c70e"
+    },
+    {
+      "path": "reports/audits/2026-07-03-caa360-pre-hn-launch.md",
+      "reason": "Explicit B-101 non-source classification: this pre-HN launch report records 35 confirmed findings but is not an approved measured input; its digest forces reclassification and complete decisions if it changes.",
+      "sha256": "38b5f67a6b1f915c9333363d5f8349c9999b219713ff4748905daa1c61e22e59"
+    },
+    {
+      "path": "reports/audits/2026-08-07-external-hard-audit.md",
+      "reason": "Explicit B-101 scope decision: this external report is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
+      "sha256": "05e48c9d21e005b522abd80cc504c087d080cbacb862dc0c3824f1e94bd14220"
+    },
+    {
+      "path": "reports/audits/2026-08-25-comprehensive-audit-and-verification.md",
+      "reason": "Explicit B-101 scope decision: this audit-and-verification report is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
+      "sha256": "f7387930aaaf19526c8c99e4c5c118c96c575843a73cacc8f2950f974b784d73"
+    },
+    {
+      "path": "reports/audits/2026-08-25-definitive-master-report.md",
+      "reason": "Explicit B-101 scope decision: this master report is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
+      "sha256": "a381c32583180aea7c2f3633c3e6bd601f2738249288ac5fc141d8f3c3cfb86b"
+    },
+    {
+      "path": "reports/audits/2026-08-25-fix-briefing-ox-alpha-addendum-v2.md",
+      "reason": "Explicit B-101 non-source classification: this fix briefing addendum is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "c5156350d722aa95611d56981867bc15bae56ee58e2baf36fb97ff6e817e4f5e"
+    },
+    {
+      "path": "reports/audits/2026-08-25-fix-briefing-ox-alpha.md",
+      "reason": "Explicit B-101 non-source classification: this fix briefing is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "78dd3dfc209129d5e219a7cb54e7b277beedf84026adaac6e53b1f733351d86b"
+    },
+    {
+      "path": "reports/audits/2026-08-26-tail-verification.md",
+      "reason": "Explicit B-101 scope decision: this verification report is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
+      "sha256": "8aa47d89b6d9d789146fba34baaa91352dd5bc7968d4f67738e1eb8aea8d17c2"
+    },
+    {
+      "path": "reports/audits/s6/block-1.md",
+      "reason": "Explicit B-101 non-source classification: this S6 workstream artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "reports/audits/s6/block-2.md",
+      "reason": "Explicit B-101 non-source classification: this S6 workstream artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "reports/audits/s6/block-3.md",
+      "reason": "Explicit B-101 non-source classification: this S6 workstream artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "b356d73b0bc8a6dc2f2f7c8d309802874dcb0faf46cd3457b44e3b9e26d212b3"
+    },
+    {
+      "path": "reports/audits/s6/block-4.md",
+      "reason": "Explicit B-101 non-source classification: this S6 workstream artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "0628e15fa9c715bea362d63af7d8328e37b4ff7b3e56bc3fea5822350b4bcdc2"
+    },
+    {
+      "path": "reports/audits/s6/block-5.md",
+      "reason": "Explicit B-101 non-source classification: this S6 workstream artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "30a71b2e3a8eb4bf2a9b81ed793bbb1aacb1ea5e9ae22a06ec4e0106e6e936af"
+    },
+    {
+      "path": "reports/audits/s6/block-6.md",
+      "reason": "Explicit B-101 non-source classification: this S6 workstream artifact is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "156a642894eb73c7b64f173a2853fdc6e296c00bd97ea1c57a740765b9844ee7"
+    },
+    {
+      "path": "reports/audits/s6/wp-a-ox.md",
+      "reason": "Explicit B-101 non-source classification: this S6 work package is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "617dd30c67f29d3b1ab6dd82af98e4544e860cb4ae72b1ec44803aeb84845afe"
+    },
+    {
+      "path": "reports/audits/s6/wp-n1-ox.md",
+      "reason": "Explicit B-101 non-source classification: this S6 work package is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "e7b2ef34cb5a4d5140ac5ecc2d3faf58793f6ccf21b5263e513c0135c455eaf7"
+    },
+    {
+      "path": "reports/audits/s6/wp-s7-ox.md",
+      "reason": "Explicit B-101 non-source classification: this S6 work package is not one of the three measured historical report inputs; its digest pins that decision until reclassification.",
+      "sha256": "c61f2570394e32d7a31b73bc31b6bf5437316cc3907a34c6f0e28f605425935c"
+    }
+  ],
+  "sources": [
+    {
+      "source_id": "due_diligence_2026_06_15",
+      "path": "docs/security/2026-06-15-launch-due-diligence-audit.md",
+      "expected_count": 87,
+      "parser": "due_diligence"
+    },
+    {
+      "source_id": "go_live_2026_08_26",
+      "path": "reports/audits/2026-08-26-go-live-readiness.md",
+      "expected_count": 20,
+      "parser": "go_live"
+    },
+    {
+      "source_id": "pilot_identity_2026_07_02",
+      "path": "docs/security/2026-07-02-pilot-identity-brutal-audit.md",
+      "expected_count": 3,
+      "parser": "pilot_identity"
+    },
+    {
+      "source_id": "b028_dependabot_2026_09_06",
+      "path": "docs/security/b028-dependabot-census-2026-09-06.json",
+      "expected_count": 9,
+      "parser": "b028_dependabot"
+    }
+  ]
+}

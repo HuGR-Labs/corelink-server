@@ -83,12 +83,12 @@ the stale concept so every claim is true again, and advance its checkpoint.
    confirm `0 stale`. If a `source_files` set changed, also run
    `python3 scripts/okf_status.py` so the manifest `status:` stays in sync.
 
-4. **Open a reconciliation PR.** One concern: the drifted concepts and their
-   checkpoint advances (plus any `source_files`/citation corrections). Title e.g.
-   `docs(okf): reconcile <N> concept(s) drifted by <change>`. The okf_wiki.yml gate
-   must pass. End the commit with the
-   `Co-Authored-By: Codex <noreply@openai.com>` trailer and the PR body with the
-   Generated-with footer.
+4. **Stop after validation.** Leave only the reconciled documentation in the
+   worktree. Read-only git commands and deterministic helpers are permitted.
+   Do **not** commit, push, mutate refs/remotes/worktrees, invoke `gh`, or open a
+   PR: the local wrapper or the workflow owns those operations and performs the final
+   safety checks. A human reviews the diff and opens the PR using the repository's
+   normal DCO/Generated-with policy.
 
 ## Guardrails
 

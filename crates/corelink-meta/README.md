@@ -42,7 +42,7 @@ Indexes:
 - `idx_blob_meta_gc_candidates ON blob_meta(deleted_at) WHERE deleted_at IS NOT NULL` — GC sweep index (S-06).
 - `idx_audit_outbox_pending ON audit_outbox(enqueued_at) WHERE emitted_at IS NULL` — drain-worker queue index (S-09).
 
-Every `tenant_id` is stored in canonical UUIDv7 hyphenated lowercase text form. Every `digest` is stored in canonical `'algo:hex'` form (`'blake3:a1b2c3...'`).
+Every `tenant_id` is stored in canonical UUIDv7 hyphenated lowercase text form. Every CAS `digest` is stored as plain 64-character lowercase hexadecimal. The external surface selects the algorithm; metadata never embeds an algorithm prefix.
 
 ## Why a trait abstraction over D1
 

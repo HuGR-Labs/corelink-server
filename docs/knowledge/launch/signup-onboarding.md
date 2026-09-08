@@ -3,10 +3,14 @@ type: "LaunchControl"
 title: "Signup -> tenant onboarding flow"
 description: "How a new customer becomes a provisioned tenant: the Clerk signup -> Svix webhook -> tenant + PAT chain plus the container's HMAC-gated pilot-signup reservation route."
 source_files:
-  - crates/corelink-container/src/routes/signup.rs
-  - crates/corelink-container/src/signup_d1_http.rs
-  - docs/operator/e2e-signup-sealed-2026-05-30.md
-checkpoint_sha: "2d179926f3f3f3952cc189e1987ce6bf8fa89a4d"
+  - "crates/corelink-container/src/routes/signup.rs"
+  - "crates/corelink-container/src/signup_d1_http.rs"
+  - "docs/operator/e2e-signup-sealed-2026-05-30.md"
+source_blobs:
+  - "crates/corelink-container/src/routes/signup.rs@d970c522b6d73a782f6bceb33f478a7fc723d7b9"
+  - "crates/corelink-container/src/signup_d1_http.rs@7059f89157f88fc37b50026293fb0611c004fa10"
+  - "docs/operator/e2e-signup-sealed-2026-05-30.md@16b5c767766b85e7ec06d3161cc6d65ae68d0f8b"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags:
   - launch
@@ -16,8 +20,8 @@ tags:
   - tenant-provisioning
   - pat
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 Onboarding is where a stranger becomes a billable, cache-using tenant, so it is the gate that the whole self-serve launch funnel depends on. Two surfaces carry the load: the live Clerk signup chain (Clerk `user.created` -> Svix-verified webhook -> tenant row + minted PAT -> Clerk metadata), validated end-to-end in the sealed e2e walkthrough, and the container's pilot-signup route, which redeems a signed pilot token into a `RESERVED` tenant reservation. This concept transcribes both as frozen. Siblings: launch/money-path (the Stripe/tier checkout that runs after a tenant exists) and launch/go-live-readiness (the broader cutover gate).
 
 # Role
@@ -36,19 +40,19 @@ The signup surfaces turn an authenticated identity (Clerk) or a signed operator-
 - `parse_and_verify_pilot_token` splits body/signature on a single `.`, requires exactly 4 underscore fields via `splitn(4)`, checks the `pilot` literal, the env allowlist, a `u64` timestamp, and a 16-char hex random (`crates/corelink-container/src/routes/signup.rs:257-280`).
 - Signature verify computes `HMAC-SHA256(SIGNUP_TOKEN_KEY, body)` and compares constant-time via `subtle::ConstantTimeEq`, bailing on length mismatch first (`crates/corelink-container/src/routes/signup.rs:282-292`).
 - TTL is enforced last: a token is `Expired` once `now_ms >= minted_at_ms + PILOT_TOKEN_TTL_MS` (14 days); future-minted tokens are accepted as a clock-skew tolerance (`crates/corelink-container/src/routes/signup.rs:150`, `crates/corelink-container/src/routes/signup.rs:296-303`).
-- The handler runs the per-IP rate-limit gate BEFORE token verify so an adversary cannot probe the HMAC space at high QPS (`crates/corelink-container/src/routes/signup.rs:869-876`).
-- On success the handler mints a UUID v7 `tenant_id`, reserves a `PilotSignupRecord` with state `"RESERVED"` via `insert_or_existing` (idempotent on email/token_id), emits the `pilot_reserved.v1` audit row, then returns `201` with `tenant_id`, `activation_url`, and `state` (`crates/corelink-container/src/routes/signup.rs:947-994`).
+- The handler runs the per-IP rate-limit gate BEFORE token verify so an adversary cannot probe the HMAC space at high QPS (`crates/corelink-container/src/routes/signup.rs:845-852`).
+- On success the handler mints a UUID v7 `tenant_id`, reserves a `PilotSignupRecord` with state `"RESERVED"` via `insert_or_existing` (idempotent on email/token_id), emits the `pilot_reserved.v1` audit row, then returns `201` with `tenant_id`, `activation_url`, and `state` (`crates/corelink-container/src/routes/signup.rs:923-970`).
 - Production route state is built fail-CLOSED from `SIGNUP_TOKEN_KEY` (hex, >= 32 decoded bytes); a missing or short key returns `None` and the route is simply not mounted rather than running with the forgeable dev key (`crates/corelink-container/src/routes/signup.rs:757-771`).
 
 # Invariants
 
-- Body validation requires all four fields non-empty and <= `MAX_FIELD_LEN` (256) chars, and `email` must contain `@`; a violation emits a `bad_request` audit row and returns `400` (`crates/corelink-container/src/routes/signup.rs:358-377`, `crates/corelink-container/src/routes/signup.rs:931-944`).
-- Audit emit happens BEFORE the response on every arm and fails CLOSED to `503` (`audit pipeline closed`) per `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` (`crates/corelink-container/src/routes/signup.rs:515-522`, `crates/corelink-container/src/routes/signup.rs:967-985`).
-- Rate limit is burst 5, refill 1/s, with a 720s `Retry-After` floor (`RateLimitConfig::with_overrides(1, 5, 720, …)`); an over-limit request surfaces `429` with `Retry-After: 720`, and a `#[non_exhaustive]` future decision variant falls back to deny (`crates/corelink-container/src/routes/signup.rs:633-637`, `crates/corelink-container/src/routes/signup.rs:879-904`).
+- Body validation requires all four fields non-empty and <= `MAX_FIELD_LEN` (256) chars, and `email` must contain `@`; a violation emits a `bad_request` audit row and returns `400` (`crates/corelink-container/src/routes/signup.rs:358-377`, `crates/corelink-container/src/routes/signup.rs:907-920`).
+- Audit emit happens BEFORE the response on every arm and fails CLOSED to `503` (`audit pipeline closed`) per `INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER` (`crates/corelink-container/src/routes/signup.rs:515-522`, `crates/corelink-container/src/routes/signup.rs:943-961`).
+- Rate limit is burst 5, refill 1/s, with a 720s `Retry-After` floor (`RateLimitConfig::with_overrides(1, 5, 720, …)`); an over-limit request surfaces `429` with `Retry-After: 720`, and a `#[non_exhaustive]` future decision variant falls back to deny (`crates/corelink-container/src/routes/signup.rs:633-637`, `crates/corelink-container/src/routes/signup.rs:855-880`).
 - The rate-limit key is anchored on the server-trusted `x-corelink-client-ip` header only; a client-forged `x-forwarded-for` is ignored and a missing/empty trusted header collapses to the shared `"_no_ip"` bucket (fail-CLOSED) (`crates/corelink-container/src/routes/signup.rs:841-848`).
-- Pre-auth requests anchor the rate-limit bucket on the nil UUID tenant so `BucketKey::per_ip` collapses to per-IP only (`crates/corelink-container/src/routes/signup.rs:856`, `crates/corelink-container/src/routes/signup.rs:872`).
-- The audit emit never logs the full token signature — only the first 32 chars via `token_prefix` (HMAC values are operator-internal forensic data) (`crates/corelink-container/src/routes/signup.rs:885`, `crates/corelink-container/src/routes/signup.rs:997-1002`).
-- Store insertion is idempotent on `email` OR `token_id`: a duplicate returns the original record, and the route reports `exit_status` `"duplicate"` instead of `"reserved"` (`crates/corelink-container/src/routes/signup.rs:602-608`, `crates/corelink-container/src/routes/signup.rs:969-974`).
+- Pre-auth requests anchor the rate-limit bucket on the nil UUID tenant so `BucketKey::per_ip` collapses to per-IP only (`crates/corelink-container/src/routes/signup.rs:856`, `crates/corelink-container/src/routes/signup.rs:848-848`).
+- The audit emit never logs the full token signature — only the first 32 chars via `token_prefix` (HMAC values are operator-internal forensic data) (`crates/corelink-container/src/routes/signup.rs:861-861`, `crates/corelink-container/src/routes/signup.rs:975`).
+- Store insertion is idempotent on `email` OR `token_id`: a duplicate returns the original record, and the route reports `exit_status` `"duplicate"` instead of `"reserved"` (`crates/corelink-container/src/routes/signup.rs:602-608`, `crates/corelink-container/src/routes/signup.rs:945-950`).
 - The sealed e2e run leaves zero orphan rows: the D1 tenant + pat rows and the Clerk user are all deleted in cleanup (`docs/operator/e2e-signup-sealed-2026-05-30.md:73-79`).
 
 - Production persistence is `D1HttpSignupStore`, bound ONLY by `build_state_from_env`: it writes the reservation to D1 over the HTTP client against the `migrations/d1/0053_pilot_signups.sql` schema (`crates/corelink-container/src/signup_d1_http.rs:146`, `crates/corelink-container/src/routes/signup.rs:784`), and the audit row goes to the durable `audit_outbox` seam (`crates/corelink-container/src/routes/signup.rs:794`).
@@ -67,7 +71,7 @@ The signup surfaces turn an authenticated identity (Clerk) or a signed operator-
 - `crates/corelink-container/src/routes/signup.rs:132` — pilot route path constant.
 - `crates/corelink-container/src/routes/signup.rs:252-309` — `parse_and_verify_pilot_token` (structure + HMAC + TTL).
 - `crates/corelink-container/src/routes/signup.rs:757-771` — fail-CLOSED `build_state_from_env`.
-- `crates/corelink-container/src/routes/signup.rs:860-995` — `handle_pilot_signup` (rate-limit -> verify -> validate -> reserve -> audit -> 201).
+- `crates/corelink-container/src/routes/signup.rs:836-971` — `handle_pilot_signup` (rate-limit -> verify -> validate -> reserve -> audit -> 201).
 - `crates/corelink-container/src/signup_d1_http.rs:146-276` — durable D1-backed `SignupStore` (`D1HttpSignupStore` + idempotent `insert_or_existing`).
 - `docs/operator/e2e-signup-sealed-2026-05-30.md:55-69` — the confirmed Clerk -> Svix -> tenant + PAT -> metadata chain.
 - `docs/operator/e2e-signup-sealed-2026-05-30.md:25-51` — the two webhook-secret / script bugs found during validation.

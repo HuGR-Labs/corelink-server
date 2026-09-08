@@ -278,6 +278,28 @@ describe("runAuditDrainSweep", () => {
     expect(svc.calls()).toBe(1);
   });
 
+  it("treats lease skips and drift as backpressure, not retry progress", async () => {
+    const svc = svcSeq([
+      {
+        status: 200,
+        body: drainResponse({
+          partitions_leased: 1,
+          partitions_drifted: 1,
+          incomplete: true,
+        }),
+      },
+    ]);
+    const r = await runAuditDrainSweep(env({ CORELINK_API_SVC: svc }), 0);
+    expect(r).toMatchObject({
+      calls: 1,
+      ok: false,
+      incomplete: true,
+      sealed: 0,
+      partitions: 0,
+    });
+    expect(svc.calls()).toBe(1);
+  });
+
   it("preserves completed work before a transport failure and marks it non-complete", async () => {
     let n = 0;
     const fetchImpl = (async () => {

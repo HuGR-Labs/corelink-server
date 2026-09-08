@@ -4,12 +4,14 @@ title: "ADR-0037 — Merkle action protocol + result_hash semantics"
 description: "Resolves the result_hash ambiguity: it is BLAKE3-256 of the canonical ActionResult proto bytes, used as a D1 index column, NOT the cryptographic output binding (that is merkle_root)."
 source_files:
   - "specs/03_architecture/adrs/ADR-0037-merkle-action-protocol-result-hash.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s04", "ac", "merkle", "result_hash", "crypto"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0037-merkle-action-protocol-result-hash.md@0ff1ae9a1d492a2033ecdcf32a50eb0a955239ab"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0037 — Merkle action protocol + result_hash semantics
 
 The Action Cache stores a signed `ActionResult` envelope, and an early ambiguity left two
@@ -47,7 +49,7 @@ document why the 121 bytes stay.
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-0037-merkle-action-protocol-result-hash.md:26-27` — Context: proto serialization is non-deterministic + the unresolved result_hash ambiguity.
-2. `specs/03_architecture/adrs/ADR-0037-merkle-action-protocol-result-hash.md:33-33` — Decision: `result_hash` = BLAKE3-256 of canonical proto bytes, D1 INDEX column only, not a crypto binding.
+2. `specs/03_architecture/adrs/ADR-0037-merkle-action-protocol-result-hash.md:33` — Decision: `result_hash` = BLAKE3-256 of canonical proto bytes, D1 INDEX column only, not a crypto binding.
 3. `specs/03_architecture/adrs/ADR-0037-merkle-action-protocol-result-hash.md:43-50` — the v1.1.0 amendment rationale (hash full proto bytes, not `BLAKE3(merkle_root)`).
 4. `specs/03_architecture/adrs/ADR-0037-merkle-action-protocol-result-hash.md:84-89` — `merkle_root` remains the crypto authority; result_hash is index + audit + future-proof.
 5. `specs/03_architecture/adrs/ADR-0037-merkle-action-protocol-result-hash.md:114-124` — Consequences: ambiguity resolved + 121-byte layout retained vs the redundant-binding cost.

@@ -28,28 +28,129 @@ class B155VerifierTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
 
-    def test_census_is_complete_and_population_is_closed(self) -> None:
+    def test_census_is_complete_and_population_is_exact(self) -> None:
         result = verifier.census(self.backlog)
-        self.assertEqual(result.records, 170)
-        self.assertEqual(result.command_records, 139)
-        self.assertEqual(result.manual_records, 31)
+        self.assertEqual(result.records, 336)
+        self.assertEqual(result.command_records, 315)
+        self.assertEqual(result.manual_records, 21)
         self.assertEqual(result.command_records + result.manual_records, result.records)
-        self.assertEqual(result.grep_invocations, 295)
-        self.assertEqual(len(result.assertions), 278)
+        self.assertEqual(result.grep_invocations, 194)
+        self.assertEqual(len(result.assertions), 191)
         self.assertEqual(len(result.unsafe), 0)
         self.assertEqual(len(result.indeterminate), 0)
 
+    def test_source_kind_uses_grep_operands_not_pattern_text(self) -> None:
+        bait = 'grep -q "^[^/*]*foo.rs" BACKLOG.md'
+        self.assertEqual(verifier._source_kind(bait, bait, bait.find("grep"))[0], "markdown")
+        real = 'grep -q "foo.rs" crates/corelink-container/src/lib.rs'
+        self.assertEqual(verifier._source_kind(real, real, real.find("grep"))[0], "rust")
+        quoted = 'grep -q "file.rs" docs/README.md'
+        self.assertEqual(verifier._source_kind(quoted, quoted, quoted.find("grep"))[0], "markdown")
+        for verify in ('cat file.rs | grep -q "foo.rs"', 'grep -q "foo.rs"'):
+            checks, invocations, indeterminate = verifier._grep_checks(
+                {"id": "B-155", "verify": verify}
+            )
+            self.assertEqual(invocations, 1)
+            self.assertEqual(len(checks), 1)
+            self.assertEqual(checks[0].source_kind, "unknown")
+            self.assertEqual(len(indeterminate), 1)
+
+    def test_grep_operand_roles_are_closed_and_syntax_is_conservative(self) -> None:
+        # Redirection targets, process substitutions, and here-doc words are
+        # shell I/O, never grep file operands. A stream-only assertion remains
+        # indeterminate even when its data spells a known extension.
+        for verify in (
+            'grep -q "^[^/*]*foo" < file.rs',
+            'grep -q "^[^/*]*foo" > file.rs',
+            'grep -q "^[^/*]*foo" >>file.rs',
+            'grep -q "^[^/*]*foo" 2> file.rs',
+            'grep -q "^[^/*]*foo" 2>>file.rs',
+            'grep -q "^[^/*]*foo" <<< foo.rs',
+            'grep -q "^[^/*]*foo" << EOF',
+            'grep -q "foo" <(cat file.rs)',
+        ):
+            with self.subTest(verify=verify):
+                checks, invocations, indeterminate = verifier._grep_checks(
+                    {"id": "B-155", "verify": verify}
+                )
+                self.assertEqual(invocations, 1)
+                self.assertEqual(checks[0].source_kind, "unknown")
+                self.assertEqual(len(indeterminate), 1)
+
+        # Only positional operands classify the source. Options and patterns
+        # may contain extensions without controlling the dialect.
+        controls = (
+            ('grep -q -- "foo.rs" docs/README.md', "markdown"),
+            ('grep -q -e "foo.rs" docs/README.md', "markdown"),
+            ('grep -q -f patterns.rs docs/README.md', "markdown"),
+            ('grep -q -efoo.rs "docs/read me.md"', "markdown"),
+            ('grep -q -fpatterns.rs "docs/read me.md"', "markdown"),
+            ('grep -q "foo" src/*.rs', "rust"),
+            ('grep -q "foo" fixtures.md/generated/file.rs', "rust"),
+        )
+        for verify, expected_kind in controls:
+            with self.subTest(verify=verify):
+                checks, invocations, indeterminate = verifier._grep_checks(
+                    {"id": "B-155", "verify": verify}
+                )
+                self.assertEqual(invocations, 1)
+                self.assertEqual(checks[0].source_kind, expected_kind)
+                self.assertEqual(indeterminate, [])
+
+        # A glob without a syntax suffix and multiple differing source
+        # syntaxes cannot choose the first extension. Mixed known syntaxes
+        # union their comment prefixes so Markdown comments remain visible.
+        for verify in (
+            'grep -q "foo" src/*',
+            'grep -q "foo" src/*.{rs,md}',
+            'grep -q "^[^/*]*foo" file.rs README.md',
+        ):
+            with self.subTest(verify=verify):
+                checks, invocations, indeterminate = verifier._grep_checks(
+                    {"id": "B-155", "verify": verify}
+                )
+                self.assertEqual(invocations, 1)
+                self.assertEqual(len(checks), 1)
+                if "README" in verify:
+                    self.assertEqual(checks[0].source_kind, "mixed")
+                    self.assertIn("#", checks[0].comment_prefixes)
+                    self.assertTrue(verifier._matches_comment(checks[0]))
+                    self.assertEqual(indeterminate, [])
+                else:
+                    self.assertEqual(checks[0].source_kind, "unknown")
+                    self.assertEqual(len(indeterminate), 1)
+
+    def test_b125_grep_operands_have_no_ambiguous_continuation_token(self) -> None:
+        record = next(item for item in verifier._records(self.backlog) if item["id"] == "B-125")
+        verify = record["verify"]
+        self.assertIsInstance(verify, str)
+        assert isinstance(verify, str)
+        for line in verify.splitlines():
+            if "grep" in line:
+                self.assertFalse(line.rstrip().endswith("\\"), line)
+
     def test_real_unanchored_member_mutation_changes_semantic_verdict(self) -> None:
         baseline = verifier.census(self.backlog)
-        marker = 'grep -q "^[^#]*byok"'
+        marker = 'grep -q "^[^#]*clippy --workspace --all-targets"'
         self.assertEqual(self.backlog.count(marker), 1)
-        mutated = self.backlog.replace(marker, 'grep -q "byok"', 1)
+        mutated = self.backlog.replace(marker, 'grep -q "clippy --workspace --all-targets"', 1)
         changed = verifier.census(mutated)
         self.assertGreater(len(changed.unsafe), len(baseline.unsafe))
 
     def test_parser_rejects_empty_population_instead_of_returning_done(self) -> None:
         with self.assertRaises(verifier.InstrumentError):
             verifier.census("no fenced backlog records")
+
+    def test_missing_pyyaml_fails_closed(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-S", str(SCRIPT), "--expect", "open"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PyYAML is required", result.stderr)
 
     def test_exact_multiword_reproductions_are_comment_sensitive(self) -> None:
         # B087/B088/B125 were all missed when the detector tested only one
@@ -99,21 +200,21 @@ class B155VerifierTests(unittest.TestCase):
             verifier.census(mutated)
 
     def test_unquoted_grep_in_if_is_parsed_and_reopens_gate(self) -> None:
-        marker = 'grep -q "^[^#]*byok"'
+        marker = 'grep -q "^[^#]*clippy --workspace --all-targets"'
         self.assertEqual(self.backlog.count(marker), 1)
         mutated = self.backlog.replace(marker, "if grep unsafe BACKLOG.md", 1)
         result = verifier.census(mutated)
         self.assertTrue(any(check.pattern == "unsafe" for check in result.unsafe))
 
     def test_nested_bash_c_grep_is_counted_and_guard_mutation_changes_verdict(self) -> None:
-        record = next(item for item in verifier._records(self.backlog) if item["id"] == "B-112")
+        record = next(item for item in verifier._records(self.backlog) if item["id"] == "B-055")
         checks, invocations, _ = verifier._grep_checks(record)
-        self.assertEqual(invocations, 4)
-        self.assertIn("^[^#]*cargo zigbuild", [check.pattern for check in checks])
+        self.assertEqual(invocations, 3)
+        self.assertIn("^[^/*]*Sli::AvailCasGet", [check.pattern for check in checks])
 
-        marker = 'grep -q "^[^#]*cargo zigbuild"'
+        marker = 'grep -q "^[^/*]*Sli::AvailCasGet"'
         self.assertEqual(self.backlog.count(marker), 1)
-        mutated = self.backlog.replace(marker, 'grep -q "cargo zigbuild"', 1)
+        mutated = self.backlog.replace(marker, 'grep -q "Sli::AvailCasGet"', 1)
         changed = verifier.census(mutated)
         baseline = verifier.census(self.backlog)
         self.assertGreater(len(changed.unsafe), len(baseline.unsafe))
@@ -156,7 +257,7 @@ class B155VerifierTests(unittest.TestCase):
                 checks, invocations, indeterminate = verifier._grep_checks(
                     {
                         "id": "B-155",
-                        "verify": f"{shell} -c 'echo hi $SCRIPT; grep -q foo file'",
+                        "verify": f"{shell} -c 'echo hi $SCRIPT; grep -q foo file.rs'",
                     }
                 )
                 self.assertEqual(invocations, 1)
@@ -261,14 +362,60 @@ class B155VerifierTests(unittest.TestCase):
                 "verify: sudo grep -q needle\nverify-means: wrapped\n```\n"
             )
 
-    def test_repair_is_idempotent_and_never_uses_global_prefix(self) -> None:
-        rewritten, changed = repair.repair(self.backlog)
-        self.assertEqual(changed, 0)
-        self.assertEqual(rewritten, self.backlog)
-        self.assertNotIn("^[^#/<*-]*", self.backlog)
+    def test_owned_batch_guards_reject_bounded_comment_bait(self) -> None:
+        # Each repaired block must remain load-bearing: removing one complete
+        # syntax guard reopens that record in the census. Mutate one assertion
+        # per owner, never the global population or status fields.
+        mutations = {
+            "B-125": (
+                'grep -q "^[^#]*AUDIT_DRAIN_BATCH_LIMIT" wrangler.toml',
+                'grep -q "AUDIT_DRAIN_BATCH_LIMIT" wrangler.toml',
+            ),
+            "B-136": (
+                'grep -qE "^[[:space:]]*[^#/*<>-][^#/*<>]*github.event_name"',
+                'grep -qE "github.event_name"',
+            ),
+            "B-141": (
+                'grep -q "^[^#]*persist-credentials: false"',
+                'grep -q "persist-credentials: false"',
+            ),
+            "B-159": (
+                'grep -q "^[^#<>*/-].*Cache errors" apps/docs/docs/integrations/sccache-cargo.md',
+                'grep -q "Cache errors" apps/docs/docs/integrations/sccache-cargo.md',
+            ),
+            "B-164": (
+                'grep -q "^[^#/*-]*CliError::HttpStatus { status: 401 }" tools/cli/src/doctor.rs',
+                'grep -q "CliError::HttpStatus { status: 401 }" tools/cli/src/doctor.rs',
+            ),
+            "B-252": (
+                "grep -q '^[^#]*scripts/tests/gitleaks-shape-regression.sh'",
+                "grep -q 'scripts/tests/gitleaks-shape-regression.sh'",
+            ),
+        }
+        baseline = verifier.census(self.backlog)
+        for record_id, (guarded, bait) in mutations.items():
+            with self.subTest(record_id=record_id):
+                fence = next(
+                    match
+                    for match in verifier.FENCE.finditer(self.backlog)
+                    if f"id: {record_id}\n" in match.group(1)
+                )
+                self.assertIn(guarded, fence.group(1))
+                mutated_block = fence.group(1).replace(guarded, bait, 1)
+                mutated = self.backlog[: fence.start(1)] + mutated_block + self.backlog[fence.end(1) :]
+                changed = verifier.census(mutated)
+                self.assertGreater(
+                    len(changed.unsafe), len(baseline.unsafe),
+                    f"{record_id} guard mutation did not reopen B-155 risk",
+                )
 
-    def test_b061_extracted_shell_payload_is_syntactically_valid(self) -> None:
-        record = next(item for item in verifier._records(self.backlog) if item["id"] == "B-061")
+    def test_repair_is_a_noop_after_population_is_closed(self) -> None:
+        rewritten, changed = repair.repair(self.backlog)
+        self.assertEqual(rewritten, self.backlog)
+        self.assertEqual(changed, 0)
+
+    def test_b055_extracted_shell_payload_is_syntactically_valid(self) -> None:
+        record = next(item for item in verifier._records(self.backlog) if item["id"] == "B-055")
         verify = record["verify"]
         self.assertIsInstance(verify, str)
         match = verifier.NESTED_SHELL.search(verify)

@@ -4,12 +4,14 @@ title: "ADR-S11-002 — Split-tier audit fail-CLOSED discipline (S-11 privacy)"
 description: "Why S-11 privacy audit emit failures must abort the operation (fail-CLOSED), distinct from the S-10 billing fail-OPEN tier."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-002-split-tier-audit-fail-closed.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s11", "audit", "fail-closed", "split-tier", "privacy"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S11-002-split-tier-audit-fail-closed.md@0292fae0e635148a27bfe9c189ef1ebe73d0bfa6"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S11-002 — Split-tier audit fail-CLOSED discipline (S-11 privacy)
 
 CoreLink runs a canonical split-tier audit discipline: billing audit (S-10 usage events) is

@@ -30,7 +30,7 @@ tower = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
 # Upstream clients (brew / npm / pip).
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["stream"] }
 url = "2"
 # Concurrency primitive used by absorbed oci adapter port internals.
 parking_lot = { workspace = true }

@@ -60,7 +60,8 @@
 --
 -- Canonical sources kept in lock-step with this idiom:
 --   - migrations/d1/0064_tenant_tier_max.sql  (the FK-parent rebuild it guards)
---   - migrations/d1/0062_expand_tier_selections_6tier.sql (sibling rebuild)
+--   - migrations/d1/0062_expand_tier_selections_6tier.sql (sibling in-place
+--     catalog edit)
 --   - scripts/migrate_d1.sh                   (per-file execute --file replay)
 --   - scripts/restore-from-snapshot.sh        (snapshot-dump restore)
 --   - specs/_runbooks/RB-COLD-RESTORE-FROM-ZERO.md §3.3

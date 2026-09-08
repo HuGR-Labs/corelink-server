@@ -45,8 +45,8 @@ use corelink_privacy_erasure_worker::backends::{
 use corelink_privacy_erasure_worker::error::ErasureBackendError;
 use corelink_privacy_erasure_worker::event::{BackendErasureOutcome, BackendKind};
 
-use super::d1util::{d1_query_blocking, scalar_count};
-use crate::storage::d1_http::D1HttpClient;
+use super::d1util::{col_str, d1_query_blocking, scalar_count};
+use crate::storage::d1_http::{D1HttpClient, D1Row};
 
 /// Erase-set tables keyed directly by a `tenant_id` column (incl.
 /// tenant-leftmost composite PKs, where `WHERE tenant_id = ?` is exact).
@@ -72,6 +72,11 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // tail: 4 tenants with an un-completed checkout session were the only rows
     // left un-erased for weeks. Keep every erase-set CHILD ahead of its PARENT;
     // the `stripe_checkout_sessions_precedes_tier_selections` test guards this edge.
+    // Recoverable Stripe Checkout ownership state (migr. 0111). This row has
+    // a foreign key to `tier_selections`, so it MUST be deleted before that
+    // parent (the checkout-session child immediately below is ordered for the
+    // same reason).
+    "stripe_checkout_ownership_ledger",
     // Stripe Checkout *session* state, `tenant_id`-keyed (migr. 0039/0062).
     // Transient pre-purchase intent — NOT the fiscal record (the retained
     // invoice/customer/subscription rows are the 5y fiscal artifact). ERASE.
@@ -108,6 +113,9 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // CAA-360 #11: per-tenant spend ledger (`tenant_id` PK, migration 0066).
     // Operational quota state, not a fiscal invoice record → erased on a DSR.
     "tenant_quota",
+    // githugr issuer → isolated tenant identity map (migr. 0112). This is
+    // operational identity state, not a retained audit/fiscal record.
+    "githugr_tenant_org_map",
     // ── CF-1 (2026-06-28): tenant-keyed tables added AFTER the 2026-06-11
     // ADR-S11-013 ratification that were never back-added to the erase-set.
     // Each is operational tenant state / tenant PII with no legal-retention
@@ -187,6 +195,11 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // opposite. Shipping the table without this line trades a loud 500 for
     // silent UNDER-erasure, which is the worse half of that pair.
     "devenv_monthly_vcpu",
+    // B-071 GC/CAS intent fences (migr. 0115). These are transient recovery
+    // state and must not survive tenant erasure.
+    "gc_purge_intent",
+    "cas_write_intent",
+    "cas_reconciliation_intent",
 ];
 
 /// Erase-set tables keyed by a `namespace` column. The bound value is the
@@ -237,6 +250,12 @@ pub(super) const RETAIN_SET: &[&str] = &[
     "stripe_submission_state",      // billing submission state (migr. 0019)
     "customer_audit_events",        // per-tenant audit evidence (migr. 0077)
     "audit_chain_head",             // audit-chain seal head — integrity (migr. 0078)
+    // B-054 epoch-contract evidence (migr. 0109). These are append-only
+    // audit-chain authority/projection/manifest rows and therefore remain as
+    // legal audit evidence after tenant erasure.
+    "audit_chain_epoch_ledger",
+    "audit_chain_epoch",
+    "audit_chain_archive_manifest",
     // Durable money-path audit-before-mutation record (migr. 0092): the
     // tier-select orchestration's `tier_select_attempted` / `dpa_first_violation`
     // / `stripe_checkout_session_created` / `tier_activated_free` events. Holds
@@ -303,9 +322,15 @@ const CAS_PLANE_OWNED: &[&str] = &[
 
 /// Erase-set tables handled by bespoke logic (not the simple
 /// `WHERE <col> = ?1` loop): `signup_attempts` joins through
-/// `signup_orchestration.idempotency_key`; `tenant` is deleted LAST.
-pub(super) const SPECIAL_ERASE_TABLES: &[&str] =
-    &["signup_orchestration", "signup_attempts", "tenant"];
+/// `signup_orchestration.idempotency_key`; `clerk_provisioning_lock` is keyed
+/// by `tenant.clerk_user_id` and is deleted before the root; `tenant` is
+/// deleted LAST.
+pub(super) const SPECIAL_ERASE_TABLES: &[&str] = &[
+    "signup_orchestration",
+    "signup_attempts",
+    "clerk_provisioning_lock",
+    "tenant",
+];
 
 /// **Every** live, tenant-scoped D1 table (keyed by `tenant_id`, `namespace`,
 /// or an opaque principal id), derived from `migrations/d1/*.sql`. Transient
@@ -314,12 +339,13 @@ pub(super) const SPECIAL_ERASE_TABLES: &[&str] =
 ///
 /// **CF-1 invariant:** every entry here MUST be classified into EXACTLY ONE of
 /// {erase-set, namespace-set, retain-set, CAS-plane-owned, special} — enforced
-/// fail-closed by [`unclassified_tenant_keyed_tables`] (runtime assert + test)
+/// fail-closed by [`ensure_tenant_keyed_tables_classified`] before any D1 work.
 /// AND cross-checked against the migrations on disk by the
 /// `every_migrated_tenant_keyed_table_is_classified` test. A FUTURE tenant-keyed
 /// migration therefore cannot silently escape erasure classification.
 const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     // erase-set (tenant_id)
+    "stripe_checkout_ownership_ledger",
     "tier_selections",
     "tenant_billing",
     "pilot_signups",
@@ -342,6 +368,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "adapter_oci_kv",
     "survey_responses",
     "tenant_quota",
+    "githugr_tenant_org_map",
     "team_member",
     "cas_tombstone",
     "pilot_tenants",
@@ -361,6 +388,9 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "usage_daily",
     "runner_usage_counter",
     "devenv_monthly_vcpu",
+    "gc_purge_intent",
+    "cas_write_intent",
+    "cas_reconciliation_intent",
     // erase-set (namespace)
     "adapter_cache_map",
     "adapter_npm_meta",
@@ -383,6 +413,9 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "stripe_submission_state",
     "customer_audit_events",
     "audit_chain_head",
+    "audit_chain_epoch_ledger",
+    "audit_chain_epoch",
+    "audit_chain_archive_manifest",
     "tier_select_audit_events",
     "stripe_billing_audit_events",
     "tenant_legal_hold",
@@ -396,6 +429,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "manifest_chunks",
     "multipart_sessions",
     // special
+    "clerk_provisioning_lock",
     "signup_orchestration",
     "signup_attempts",
     "tenant",
@@ -419,17 +453,45 @@ fn classification_count(table: &str) -> usize {
         .count()
 }
 
-/// Fail-closed completeness gate (the load-bearing CF-1 fix): every
-/// tenant-keyed table must be classified into EXACTLY ONE bucket. Returns
-/// `(table, count)` for every table that is unclassified (`0`) or ambiguously
-/// multi-classified (`>1`). Empty ⇒ the classification is total and disjoint.
-fn unclassified_tenant_keyed_tables() -> Vec<(&'static str, usize)> {
-    ALL_TENANT_KEYED_TABLES
+/// Return every table whose registry classification is not exactly one
+/// bucket. Kept parameterized so the fail-closed contract can be exercised
+/// with an injected unknown table in a unit test; production passes the
+/// compile-time registry below.
+fn classification_gaps<'a>(tables: &[&'a str]) -> Vec<(&'a str, usize)> {
+    tables
         .iter()
         .map(|t| (*t, classification_count(t)))
-        // `t: &&str`; `classification_count` takes `&str` via deref of `*t`.
-        .filter(|(_, n)| *n != 1)
+        .filter(|(_, count)| *count != 1)
         .collect()
+}
+
+/// Fail-closed completeness gate (the load-bearing CF-1 fix): every
+/// tenant-keyed table must be classified into EXACTLY ONE bucket. Returns an
+/// error for every unclassified (`0`) or ambiguously multi-classified (`>1`)
+/// table. This is intentionally always-on: a release build must not erase or
+/// verify against a partial registry and then attest success.
+fn ensure_classification(tables: &[&str]) -> Result<(), String> {
+    let gaps = classification_gaps(tables);
+    if gaps.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "CF-1: DSR erase-set classification is incomplete/ambiguous; refusing to act: {gaps:?}"
+        ))
+    }
+}
+
+/// Validate the production registry before erasure, access, or verification.
+pub(super) fn ensure_tenant_keyed_tables_classified() -> Result<(), String> {
+    ensure_classification(ALL_TENANT_KEYED_TABLES)
+}
+
+/// Returns `(table, count)` for every gap in the production registry. Empty
+/// means the classification is total and disjoint. The runtime gate above is
+/// the source of truth; this helper remains available to focused unit tests.
+#[cfg(test)]
+fn unclassified_tenant_keyed_tables() -> Vec<(&'static str, usize)> {
+    classification_gaps(ALL_TENANT_KEYED_TABLES)
 }
 
 /// Real D1 effective erase adapter.
@@ -478,6 +540,67 @@ impl D1EraseAdapter {
         Ok(n)
     }
 
+    /// Read the tenant's residency pin before any child or root deletion.
+    ///
+    /// Erasure evidence is region-scoped, so a missing/invalid pin cannot be
+    /// treated as the default region. This query deliberately runs before the
+    /// first DELETE: once the root row is gone, the residency fact needed to
+    /// route/attest the operation is no longer recoverable. The value is not
+    /// currently needed by the D1 SQL itself, but retaining it in this scope
+    /// makes the ordering an explicit fail-closed invariant and prevents a
+    /// future caller from accidentally deleting first.
+    fn primary_region_before_delete(&self, tid: &str) -> Result<String, ErasureBackendError> {
+        let rows = d1_query_blocking(
+            &self.d1,
+            "SELECT primary_region FROM tenant WHERE tenant_id = ?1 LIMIT 1",
+            vec![json!(tid)],
+        )
+        .map_err(ErasureBackendError::Transport)?;
+        let Some(region) = rows.first().and_then(|row| col_str(row, "primary_region")) else {
+            return Err(ErasureBackendError::Transport(
+                "tenant.primary_region missing; refusing DSR deletion".to_owned(),
+            ));
+        };
+        if !matches!(
+            region.as_str(),
+            "wnam" | "enam" | "weur" | "sam" | "apac" | "afr"
+        ) {
+            return Err(ErasureBackendError::Transport(format!(
+                "tenant.primary_region invalid ({region}); refusing DSR deletion"
+            )));
+        }
+        Ok(region)
+    }
+
+    /// Decode the Clerk principal needed to clean up the special lock. A
+    /// missing, non-string, or blank value is not safe to treat as "no lock":
+    /// the erasure would otherwise delete the tenant root while leaving an
+    /// unaddressable identity lease behind.
+    fn clerk_user_id_from_rows(rows: &[D1Row]) -> Result<String, String> {
+        let Some(clerk_user_id) = rows.first().and_then(|row| col_str(row, "clerk_user_id")) else {
+            return Err("tenant.clerk_user_id missing; refusing DSR deletion".to_owned());
+        };
+        if clerk_user_id.trim().is_empty() {
+            return Err("tenant.clerk_user_id blank; refusing DSR deletion".to_owned());
+        }
+        Ok(clerk_user_id)
+    }
+
+    /// Read the Clerk principal that owns the tenant before any row is
+    /// deleted. `clerk_provisioning_lock` is keyed by this value rather than
+    /// `tenant_id`, so a missing/blank value is a fail-closed error: deleting
+    /// the tenant without it would make the lock impossible to target and
+    /// could leave identity state behind.
+    fn clerk_user_id_before_delete(&self, tid: &str) -> Result<String, ErasureBackendError> {
+        let rows = d1_query_blocking(
+            &self.d1,
+            "SELECT clerk_user_id FROM tenant WHERE tenant_id = ?1 LIMIT 1",
+            vec![json!(tid)],
+        )
+        .map_err(ErasureBackendError::Transport)?;
+        Self::clerk_user_id_from_rows(&rows).map_err(ErasureBackendError::Transport)
+    }
+
     /// `signup_attempts` has no `tenant_id`; its rows join to the tenant via
     /// `idempotency_key` → `signup_orchestration`. MUST run before the
     /// `signup_orchestration` delete (else the subquery finds nothing).
@@ -500,6 +623,24 @@ impl D1EraseAdapter {
         Ok(n)
     }
 
+    /// `clerk_provisioning_lock` is keyed by `tenant.clerk_user_id`, not by
+    /// `tenant_id`; the caller must obtain the principal before deleting the
+    /// tenant root. The lock is transient provisioning state and is erased
+    /// before the root deletion.
+    fn count_clerk_provisioning_lock(
+        &self,
+        clerk_user_id: &str,
+    ) -> Result<u64, ErasureBackendError> {
+        self.count("clerk_provisioning_lock", "clerk_user_id", clerk_user_id)
+    }
+
+    fn delete_clerk_provisioning_lock(
+        &self,
+        clerk_user_id: &str,
+    ) -> Result<u64, ErasureBackendError> {
+        self.count_then_delete("clerk_provisioning_lock", "clerk_user_id", clerk_user_id)
+    }
+
     /// Count all remaining erase-set rows for a tenant (verification sweep).
     fn remaining_rows(&self, tid: &str) -> Result<u64, ErasureBackendError> {
         let mut remaining = 0u64;
@@ -512,6 +653,24 @@ impl D1EraseAdapter {
         remaining = remaining.saturating_add(self.count_signup_attempts(tid)?);
         remaining =
             remaining.saturating_add(self.count("signup_orchestration", "tenant_id", tid)?);
+        // The lock is keyed by tenant.clerk_user_id. If the root is still
+        // present (for example after a partial failure), count it through the
+        // same tenant binding; after a successful root deletion there can be
+        // no lock that this tenant-scoped adapter can legitimately identify.
+        let clerk_rows = d1_query_blocking(
+            &self.d1,
+            "SELECT clerk_user_id FROM tenant WHERE tenant_id = ?1 LIMIT 1",
+            vec![json!(tid)],
+        )
+        .map_err(ErasureBackendError::Transport)?;
+        if let Some(clerk_user_id) = clerk_rows
+            .first()
+            .and_then(|row| col_str(row, "clerk_user_id"))
+            .filter(|id| !id.trim().is_empty())
+        {
+            remaining =
+                remaining.saturating_add(self.count_clerk_provisioning_lock(&clerk_user_id)?);
+        }
         remaining = remaining.saturating_add(self.count("tenant", "tenant_id", tid)?);
         Ok(remaining)
     }
@@ -533,19 +692,19 @@ impl BackendErasureAdapter for D1EraseAdapter {
         if legal_hold {
             return Ok(BackendErasureOutcome::NotApplicable);
         }
-        // CF-1 runtime drift assertion: never run an erasure (and then
-        // attest VerifiedComplete) while a known tenant-keyed table is
-        // unclassified. Cheap const-slice scan; fires in every debug/test
-        // build so an unaccounted-for new table is caught before it can leave
-        // PII behind under a green attestation. (The hard, always-on gate is
-        // the `#[test]`s below, which also cross-check the migrations on disk.)
-        debug_assert!(
-            unclassified_tenant_keyed_tables().is_empty(),
-            "CF-1: DSR erase-set classification is incomplete/ambiguous — \
-             refusing to over-attest: {:?}",
-            unclassified_tenant_keyed_tables()
-        );
+        // CF-1 runtime drift gate: never run an erasure (and then attest
+        // VerifiedComplete) while a known tenant-keyed table is unclassified.
+        // This is an always-on Result path, not a debug assertion: release
+        // builds must fail closed before the first mutation as well.
+        ensure_tenant_keyed_tables_classified().map_err(ErasureBackendError::Transport)?;
         let tid = tenant_id.to_string();
+        // MUST precede every mutation, including child cleanup. A missing or
+        // malformed residency pin fails closed and leaves the tenant intact.
+        let _primary_region = self.primary_region_before_delete(&tid)?;
+        // This lookup is deliberately before the first DELETE. The special
+        // lock cleanup below is keyed by this value and therefore cannot be
+        // safely deferred until after the tenant root is gone.
+        let clerk_user_id = self.clerk_user_id_before_delete(&tid)?;
         let mut total = 0u64;
 
         // Group A — tenant_id-keyed child tables.
@@ -563,7 +722,10 @@ impl BackendErasureAdapter for D1EraseAdapter {
             "tenant_id",
             &tid,
         )?);
-        // Group D — the root identity row LAST (covers the ALTER columns
+        // Group D — the Clerk provisioning lease is keyed by the tenant's
+        // Clerk principal. It MUST be removed before the tenant root.
+        total = total.saturating_add(self.delete_clerk_provisioning_lock(&clerk_user_id)?);
+        // Group E — the root identity row LAST (covers the ALTER columns
         // primary_region / byok_status / clerk_user_id / email_hash /
         // stripe_customer_id on `tenant`).
         total = total.saturating_add(self.count_then_delete("tenant", "tenant_id", &tid)?);
@@ -574,6 +736,9 @@ impl BackendErasureAdapter for D1EraseAdapter {
     }
 
     fn verification_hash(&self, ctx: VerificationContext) -> Result<[u8; 32], ErasureBackendError> {
+        // Keep verification fail-closed too. A partial registry must never
+        // produce the canonical empty hash and over-attest a tenant.
+        ensure_tenant_keyed_tables_classified().map_err(ErasureBackendError::Transport)?;
         let remaining = self.remaining_rows(&ctx.tenant_id.to_string())?;
         if remaining == 0 {
             // Canonical "no rows for tenant" sentinel (effective backend).
@@ -594,391 +759,5 @@ impl BackendErasureAdapter for D1EraseAdapter {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    reason = "tests"
-)]
-mod tests {
-    use super::*;
-
-    /// FK-ORDER guard. D1 enforces `PRAGMA foreign_keys = ON`, and
-    /// `stripe_checkout_sessions` has `FOREIGN KEY (tenant_id) REFERENCES
-    /// tier_selections(tenant_id)`. The erase loop deletes `TENANT_ID_TABLES` in
-    /// order via separate D1-REST statements, so the CHILD
-    /// (`stripe_checkout_sessions`) MUST be deleted BEFORE the PARENT
-    /// (`tier_selections`) — otherwise deleting the parent while an orphan child
-    /// is still pending fails the FK constraint, the D1 backend Errs, and the
-    /// tenant's Art.17 erasure 500s and stays stuck (the 2026-08-18 drain-tail
-    /// root cause). If a future edit reorders these, this test fails LOUD.
-    #[test]
-    fn stripe_checkout_sessions_precedes_tier_selections() {
-        // (`.unwrap()` — the test module allow-lists `clippy::unwrap_used`; both
-        // tables are compile-time constants in the slice, so these never panic.)
-        let child = TENANT_ID_TABLES
-            .iter()
-            .position(|&t| t == "stripe_checkout_sessions")
-            .unwrap();
-        let parent = TENANT_ID_TABLES
-            .iter()
-            .position(|&t| t == "tier_selections")
-            .unwrap();
-        assert!(
-            child < parent,
-            "FK-ORDER VIOLATION: stripe_checkout_sessions (idx {child}) must be \
-             deleted BEFORE tier_selections (idx {parent}) — it holds \
-             FOREIGN KEY (tenant_id) REFERENCES tier_selections(tenant_id) and D1 \
-             enforces FKs, so parent-first deletion 500s the whole erasure."
-        );
-    }
-
-    #[test]
-    fn erase_set_has_no_overlap_and_no_dupes() {
-        // Duplicate guard (kept from the original) across the full erase-set:
-        // tenant_id + namespace + the bespoke specials.
-        let all: Vec<&str> = TENANT_ID_TABLES
-            .iter()
-            .chain(NAMESPACE_TABLES.iter())
-            .chain(SPECIAL_ERASE_TABLES.iter())
-            .copied()
-            .collect();
-        let mut sorted = all.clone();
-        sorted.sort_unstable();
-        sorted.dedup();
-        assert_eq!(sorted.len(), all.len(), "erase-set has a duplicate table");
-    }
-
-    #[test]
-    fn erase_set_never_touches_a_retain_table() {
-        for t in TENANT_ID_TABLES
-            .iter()
-            .chain(NAMESPACE_TABLES.iter())
-            .chain(SPECIAL_ERASE_TABLES.iter())
-        {
-            assert!(
-                !RETAIN_SET.contains(t),
-                "RETAIN-set table {t} must NEVER be in the D1 erase-set (ADR-S11-013)"
-            );
-        }
-    }
-
-    #[test]
-    fn tenant_linked_pii_tables_are_in_the_erase_set() {
-        // Regression: these tenant_id-keyed tables carry tenant PII / seat PII /
-        // spend state and MUST be erased on a DSR (GDPR Art.17). A removal would
-        // silently leave tenant data behind after an erasure request.
-        // `team_member` is the CF-1 worst-case (seat roster: raw Clerk user_id +
-        // email_hash) that previously survived a "VerifiedComplete" attestation.
-        for t in ["survey_responses", "tenant_quota", "team_member"] {
-            assert!(
-                TENANT_ID_TABLES.contains(&t),
-                "{t} must be in the D1 erase-set (tenant PII)"
-            );
-            assert!(!RETAIN_SET.contains(&t), "{t} is not a retain-set table");
-        }
-    }
-
-    /// CF-1 in-code completeness gate: every table in the hand-maintained
-    /// registry is classified into EXACTLY ONE bucket (no unclassified, no
-    /// ambiguous double-classification). This is the runtime-checkable half of
-    /// the fix (mirrors the `debug_assert!` in `erase()`).
-    #[test]
-    fn every_registered_tenant_keyed_table_is_classified_exactly_once() {
-        let gaps = unclassified_tenant_keyed_tables();
-        assert!(
-            gaps.is_empty(),
-            "CF-1: these tenant-keyed tables are unclassified (0) or \
-             ambiguously multi-classified (>1) — they would be silently \
-             skipped on erase yet attested VerifiedComplete: {gaps:?}"
-        );
-        // Registry itself must be dupe-free.
-        let mut sorted: Vec<&str> = ALL_TENANT_KEYED_TABLES.to_vec();
-        sorted.sort_unstable();
-        sorted.dedup();
-        assert_eq!(
-            sorted.len(),
-            ALL_TENANT_KEYED_TABLES.len(),
-            "ALL_TENANT_KEYED_TABLES has a duplicate"
-        );
-    }
-
-    /// CF-1 LOAD-BEARING drift gate: parse `migrations/d1/*.sql` on disk and
-    /// assert EVERY live tenant-scoped table (keyed by tenant_id / namespace /
-    /// an opaque principal id / a subject hash) is present in the registry —
-    /// and therefore classified erase-or-retain by the test above. This is what
-    /// makes a FUTURE tenant-keyed migration impossible to land without a
-    /// conscious erase-vs-retain decision: add the table to a migration and
-    /// forget the adapter, and THIS test goes red.
-    #[test]
-    fn every_migrated_tenant_keyed_table_is_classified() {
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations/d1");
-        let mut found: Vec<String> = Vec::new();
-        let entries = std::fs::read_dir(dir)
-            .unwrap_or_else(|e| panic!("CF-1 drift gate cannot read {dir}: {e}"));
-        for entry in entries {
-            let path = entry.unwrap().path();
-            if path.extension().and_then(|e| e.to_str()) != Some("sql") {
-                continue;
-            }
-            let sql = std::fs::read_to_string(&path).unwrap();
-            found.extend(extract_tenant_keyed_tables(&sql));
-        }
-        found.sort();
-        found.dedup();
-        assert!(
-            !found.is_empty(),
-            "CF-1 drift gate parsed ZERO tables — parser or path is broken"
-        );
-
-        let missing: Vec<&String> = found
-            .iter()
-            .filter(|t| !ALL_TENANT_KEYED_TABLES.contains(&t.as_str()))
-            .collect();
-        assert!(
-            missing.is_empty(),
-            "CF-1: tenant-keyed table(s) exist in migrations/d1 but are NOT in \
-             the DSR classification registry (a future table escaped erasure \
-             classification — add to ALL_TENANT_KEYED_TABLES + classify \
-             erase-vs-retain per ADR-S11-013): {missing:?}"
-        );
-    }
-
-    /// The MIRROR of `every_migrated_tenant_keyed_table_is_classified`, and
-    /// the direction that gate never checked.
-    ///
-    /// CF-1 walked migrations → registry: a table that exists on disk but is
-    /// unclassified fails. Nothing walked registry → migrations, so a name in
-    /// the registry that no migration ever creates was structurally invisible.
-    ///
-    /// That is not hypothetical. `devenv_monthly_vcpu` was added to both
-    /// `TENANT_ID_TABLES` and `ALL_TENANT_KEYED_TABLES` in #1405 citing
-    /// "migr. 0094", but 0094 is `0094_runner_usage_counter.sql` and no
-    /// migration creates that table on `main` — it ships with the unmerged
-    /// #1397. Because `erase()` runs `count_then_delete` in a bare `for` loop
-    /// with `?` and NO transaction, the phantom sat at the boundary and turned
-    /// an Art.17 erasure into: delete the 16 operational tables before it,
-    /// error on the phantom, and never reach `byok_envelope`,
-    /// `tenant_byok_config`, `tenant_byok_secret`, the namespace tables,
-    /// `signup_*`, or the root `tenant` row. Operational data destroyed,
-    /// identity PII left intact, 500 returned, no attestation, no SEV-1.
-    ///
-    /// Compared against EVERY `CREATE TABLE` in the migrations, not just the
-    /// tenant-keyed ones, so a registry entry whose key column the CF-1
-    /// heuristic does not recognise is not failed for the wrong reason.
-    #[test]
-    fn every_registry_table_is_actually_created_by_a_migration() {
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations/d1");
-        let mut created: Vec<String> = Vec::new();
-        let entries = std::fs::read_dir(dir)
-            .unwrap_or_else(|e| panic!("CF-1 mirror gate cannot read {dir}: {e}"));
-        for entry in entries {
-            let path = entry.unwrap().path();
-            if path.extension().and_then(|e| e.to_str()) != Some("sql") {
-                continue;
-            }
-            let sql = std::fs::read_to_string(&path).unwrap();
-            created.extend(extract_all_created_tables(&sql));
-        }
-        created.sort();
-        created.dedup();
-        assert!(
-            !created.is_empty(),
-            "CF-1 mirror gate parsed ZERO CREATE TABLEs — parser or path is broken"
-        );
-
-        // EVERY registry, not just `ALL_TENANT_KEYED_TABLES`. `erase()` walks
-        // `TENANT_ID_TABLES` and `NAMESPACE_TABLES` directly, so a phantom in
-        // one of THOSE is what actually splits a sweep in half — checking only
-        // the completeness registry would leave the load-bearing lists
-        // unguarded. Caught by mutating the fix: re-adding the phantom to
-        // `TENANT_ID_TABLES` alone left an ALL_TENANT_KEYED_TABLES-only
-        // version of this test GREEN.
-        let mut registry: Vec<&str> = ALL_TENANT_KEYED_TABLES.to_vec();
-        for (_, set) in CLASSIFICATION_SETS {
-            registry.extend_from_slice(set);
-        }
-        registry.sort_unstable();
-        registry.dedup();
-
-        let phantom: Vec<&&str> = registry
-            .iter()
-            .filter(|t| !created.iter().any(|c| c == *t))
-            .collect();
-        assert!(
-            phantom.is_empty(),
-            "CF-1 MIRROR: table(s) are classified in the DSR registry but no \
-             migration in migrations/d1 creates them. A DSR erase runs its \
-             deletes in a bare loop with no transaction, so a name that does \
-             not exist aborts the sweep PART-WAY — destroying the tables \
-             before it and leaving every table after it, including the \
-             identity rows, intact. Remove the entry or land its migration: \
-             {phantom:?}"
-        );
-    }
-
-    #[test]
-    fn kind_is_d1() {
-        // Construction needs a client; assert the const instead (kind() is
-        // a pure const map). The orchestrator pins the canonical position.
-        assert_eq!(BackendKind::D1.as_str(), "d1");
-    }
-
-    /// Strip SQL line (`--`) and block (`/* */`) comments so `CREATE TABLE`
-    /// inside doc-comments is not mistaken for a real DDL statement.
-    ///
-    /// ⚠️ **Line comments are stripped FIRST, and the order is load-bearing.**
-    /// This helper used to run the block pass first, which made an unpaired
-    /// `/*` inside a LINE comment swallow the rest of the file: the scan for
-    /// the closing `*/` ran to EOF and everything after it disappeared. Two
-    /// migrations contain exactly that — `0090_dsr_tickets.sql:3` documents
-    /// the `/v1/privacy/dsr/*` route and `0061_adapter_oci_kv.sql` has the
-    /// same shape — so `dsr_tickets` and `adapter_oci_kv` were INVISIBLE to
-    /// the CF-1 drift gate that exists to notice unclassified tables. Both
-    /// happen to be classified already, so nothing was mis-erased; the hole
-    /// was in the gate, and any future table declared in either file (or any
-    /// file whose prose mentions a `/*` glob) would have escaped it silently.
-    fn strip_sql_comments(sql: &str) -> String {
-        // Line comments FIRST: a `--` comment can contain an unpaired `/*`
-        // (a route glob, a path), and stripping blocks first would treat it
-        // as the start of a block that never ends.
-        let mut no_line = String::with_capacity(sql.len());
-        for line in sql.lines() {
-            let l = match line.find("--") {
-                Some(k) => &line[..k],
-                None => line,
-            };
-            no_line.push_str(l);
-            no_line.push('\n');
-        }
-        // then block comments (migrations are ASCII; byte scan is safe)
-        let mut out = String::with_capacity(no_line.len());
-        let bytes = no_line.as_bytes();
-        let mut i = 0usize;
-        while i < bytes.len() {
-            if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'*' {
-                // skip to closing */
-                let mut j = i + 2;
-                while j + 1 < bytes.len() && !(bytes[j] == b'*' && bytes[j + 1] == b'/') {
-                    j += 1;
-                }
-                i = (j + 2).min(bytes.len());
-                out.push(' ');
-                continue;
-            }
-            out.push(bytes[i] as char);
-            i += 1;
-        }
-        out
-    }
-
-    /// Every `CREATE TABLE` name in a migration, regardless of its columns.
-    ///
-    /// The tenant-keyed extractor below answers "which tables need
-    /// classification"; this one answers "which tables exist at all", which is
-    /// what the mirror gate needs — a registry entry must correspond to a real
-    /// table even when the CF-1 key-column heuristic would not have flagged it.
-    fn extract_all_created_tables(sql: &str) -> Vec<String> {
-        let clean = strip_sql_comments(sql);
-        let mut out = Vec::new();
-        let mut rest = clean.as_str();
-        while let Some(pos) = rest.find("CREATE TABLE") {
-            let after = rest[pos + "CREATE TABLE".len()..].trim_start();
-            let after = {
-                let lower = after.to_ascii_lowercase();
-                if lower.starts_with("if not exists") {
-                    after["if not exists".len()..].trim_start()
-                } else {
-                    after
-                }
-            };
-            let name: String = after
-                .chars()
-                .take_while(|c| c.is_alphanumeric() || *c == '_')
-                .collect();
-            // `*_new` are transient table-rebuild artifacts, DROP+RENAMEd to
-            // their canonical name inside the same migration.
-            if !name.is_empty() && !name.ends_with("_new") {
-                out.push(name);
-            }
-            rest = after;
-        }
-        out
-    }
-
-    /// Extract the names of `CREATE TABLE`s that have a tenant-scoping key
-    /// column. Transient table-rebuild artifacts (`*_new`) are excluded — they
-    /// are `DROP`+`RENAME`'d to their canonical name in the same migration.
-    fn extract_tenant_keyed_tables(sql: &str) -> Vec<String> {
-        const KEY_COLS: &[&str] = &[
-            "tenant_id",
-            "namespace",
-            "clerk_sub",
-            "clerk_user_id",
-            "email_hash",
-            "recipient_hash",
-        ];
-        let clean = strip_sql_comments(sql);
-        let mut out = Vec::new();
-        let mut rest = clean.as_str();
-        while let Some(pos) = rest.find("CREATE TABLE") {
-            let after = rest[pos + "CREATE TABLE".len()..].trim_start();
-            // optional IF NOT EXISTS (case-insensitive)
-            let after = {
-                let lower = after.to_ascii_lowercase();
-                if lower.starts_with("if not exists") {
-                    after["if not exists".len()..].trim_start()
-                } else {
-                    after
-                }
-            };
-            // table name = up to first whitespace or '('
-            let name_end = after
-                .find(|c: char| c.is_whitespace() || c == '(')
-                .unwrap_or(after.len());
-            let name = after[..name_end].trim().to_string();
-            // body = from first '(' to the first "); " statement terminator.
-            // tenant_id/namespace are early columns, so truncating at the first
-            // ");" is sufficient for key-column detection.
-            let body = match after.find('(') {
-                Some(open) => {
-                    let from_open = &after[open..];
-                    match from_open.find(");") {
-                        Some(close) => &from_open[..close],
-                        None => from_open,
-                    }
-                }
-                None => "",
-            };
-            if !name.is_empty()
-                && !name.ends_with("_new")
-                && KEY_COLS.iter().any(|k| contains_word(body, k))
-            {
-                out.push(name);
-            }
-            rest = &after[name_end..];
-        }
-        out
-    }
-
-    /// `body.contains(key)` but only as a whole identifier token, so e.g.
-    /// `actor_email_hash` does NOT match `email_hash` and `kv_namespace_id`
-    /// does NOT match `namespace` (word char = ASCII alnum or `_`).
-    fn contains_word(body: &str, key: &str) -> bool {
-        let is_word = |c: char| c.is_ascii_alphanumeric() || c == '_';
-        let kb = key.as_bytes();
-        let bb = body.as_bytes();
-        let mut i = 0usize;
-        while let Some(rel) = body[i..].find(key) {
-            let start = i + rel;
-            let end = start + kb.len();
-            let before_ok = start == 0 || !is_word(bb[start - 1] as char);
-            let after_ok = end >= bb.len() || !is_word(bb[end] as char);
-            if before_ok && after_ok {
-                return true;
-            }
-            i = start + 1;
-        }
-        false
-    }
-}
+#[path = "adapter_d1_tests.rs"]
+mod tests;

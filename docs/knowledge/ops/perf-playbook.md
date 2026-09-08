@@ -6,12 +6,16 @@ source_files:
   - "docs/internal/PERFORMANCE-PLAYBOOK.md"
   - "docs/perf/2026-06-19-cas-hot-path-latency.md"
   - ".github/workflows/perf-regression.yml"
-checkpoint_sha: "34ac6fe1f2f853cc18ac57126b624c56563378ee"
+source_blobs:
+  - "docs/internal/PERFORMANCE-PLAYBOOK.md@af51279d8cd1e7c97637ccf03b743513e09804cb"
+  - "docs/perf/2026-06-19-cas-hot-path-latency.md@f08db60bee482f5cd47e4d3b27d3fb7dab1b2ba5"
+  - ".github/workflows/perf-regression.yml@b79ddeeed014cfb54a6f442e2ce870852463eaf4"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "performance", "latency", "hot-path", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Performance playbook
 
 Any code on a per-request path (CAS/AC read+write, audit emit, BYOK, tenant-prefix derivation, auth
@@ -107,3 +111,8 @@ synchronous D1-over-HTTP control-plane round-trips. This runbook is the engineer
 13. `docs/perf/2026-06-19-cas-hot-path-latency.md:55-94` — the 4 remediation work-packages + invariants.
 14. `docs/perf/2026-06-19-cas-hot-path-latency.md:68-80` — WP-2 fail-closed quota + no-false-negative tombstone.
 15. `docs/perf/2026-06-19-cas-hot-path-latency.md:82-87` — WP-3 keep-warm scoped to active tenants (margin).
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

@@ -57,3 +57,11 @@ pub use digest::{Digest, DIGEST_LEN};
 pub use error::{HashMismatch, ParseError, COR_CAS_DIGEST_MISMATCH};
 pub use store::BlobStoreWrite;
 pub use verified_body::VerifiedBody;
+
+/// Canonical maximum size for one HTTP cache entry (64 MiB).
+///
+/// Shared by the native CAS, Bazel REST bridge, and Turborepo routes. It is
+/// above the largest observed production CAS object (52,341,477 bytes) while
+/// remaining bounded by the route concurrency budgets. Protocol-specific
+/// legacy limits, such as the sealed 5 MiB gRPC contract, remain separate.
+pub const CACHE_ENTRY_MAX_BYTES: usize = 64 * 1024 * 1024;

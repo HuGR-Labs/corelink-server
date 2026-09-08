@@ -52,6 +52,7 @@ const LIVE_RECLAIM_DIGEST: &str =
 struct Run {
     success: bool,
     stdout: String,
+    stderr: String,
 }
 
 /// Run the compiled `gc_sweep` bin. `env` is the `GC_LIVE_DELETE` value to
@@ -60,7 +61,9 @@ fn run(env: Option<&str>) -> Run {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_gc_sweep"));
     cmd.current_dir(env!("CARGO_TARGET_TMPDIR"))
         .stdin(Stdio::null())
-        .env_remove("GC_LIVE_DELETE");
+        .env_remove("GC_LIVE_DELETE")
+        .env_remove("CLOUDFLARE_API_TOKEN")
+        .env_remove("CLOUDFLARE_ACCOUNT_ID");
     if let Some(v) = env {
         cmd.env("GC_LIVE_DELETE", v);
     }
@@ -68,6 +71,7 @@ fn run(env: Option<&str>) -> Run {
     Run {
         success: out.status.success(),
         stdout: String::from_utf8(out.stdout).expect("utf8 stdout"),
+        stderr: String::from_utf8(out.stderr).expect("utf8 stderr"),
     }
 }
 
@@ -81,7 +85,11 @@ fn assert_dry_run(env: Option<&str>) {
     // dropping the `!`) would return Err here → exit non-zero. (kills
     // :146, :149, and both :140 `!=`→`==` mutants)
     // Also: :46 digest `-`→`+`/`/` panics on a bad length → non-zero exit.
-    assert!(r.success, "dry-run must exit 0; stdout:\n{}", r.stdout);
+    assert!(
+        r.success,
+        "dry-run must exit 0; stdout:\n{}\nstderr:\n{}",
+        r.stdout, r.stderr
+    );
 
     // Banner + report are present at all → kills :55 (main→default ExitCode,
     // no output) and :85 (run_one_sweep→Ok(()), no report printed).
@@ -153,8 +161,15 @@ fn assert_dry_run(env: Option<&str>) {
 }
 
 #[test]
-fn dry_run_when_env_unset() {
-    // GC_LIVE_DELETE unset → fail-closed dry-run.
+fn dry_run_when_delete_flag_is_absent() {
+    // GC_LIVE_DELETE absent → fail-closed dry-run.
+    assert_dry_run(None);
+}
+
+#[test]
+fn dry_run_runs_without_cloudflare_credentials() {
+    // `run` removes both credential variables before spawning. The shipped
+    // fixture must produce its measurable report without cloud credentials.
     assert_dry_run(None);
 }
 
@@ -176,7 +191,11 @@ fn dry_run_when_env_garbage() {
 fn assert_live(env: &str) {
     let r = run(Some(env));
 
-    assert!(r.success, "live must exit 0; stdout:\n{}", r.stdout);
+    assert!(
+        r.success,
+        "live must exit 0; stdout:\n{}\nstderr:\n{}",
+        r.stdout, r.stderr
+    );
     assert!(
         r.stdout.contains("mode               = live_delete"),
         "expected live_delete mode for {env:?}; stdout:\n{}",

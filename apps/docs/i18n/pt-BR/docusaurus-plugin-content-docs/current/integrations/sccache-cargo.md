@@ -96,7 +96,7 @@ não apenas interna. Um PAT normal pode remover qualquer chave de cache do seu t
 
 Durante a sonda de saúde de escrita na inicialização, o sccache envia `PUT`, `GET` e
 depois `DELETE` para `.sccache_check`. Essa chave é reservada para essa sonda e sua
-limpeza: é **exclusiva da sonda**, não uma chave de artefato de build. `DELETE`
+limpeza: é exclusiva da sonda, não uma chave de artefato de build. `DELETE`
 também está disponível para chaves de cache comuns. Um proxy que filtra métodos
 precisa permitir os seis, incluindo essa requisição de controle.
 

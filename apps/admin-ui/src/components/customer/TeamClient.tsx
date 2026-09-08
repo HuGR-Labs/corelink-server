@@ -82,6 +82,7 @@ function TeamInner(): React.ReactElement {
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState<unknown | null>(null);
   const [lastInvited, setLastInvited] = React.useState<string | null>(null);
+  const [lastInvitationToken, setLastInvitationToken] = React.useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = React.useState<CustomerTeamMember | null>(null);
 
   const reload = React.useCallback(async () => {
@@ -108,9 +109,10 @@ function TeamInner(): React.ReactElement {
     setInviting(true);
     try {
       const m = await client.inviteTeam({ email, role });
-      setLastInvited(m.email);
+      setLastInvited(m.member.email);
+      setLastInvitationToken(m.invitation_token);
       setEmail("");
-      toast({ title: `Seat reserved for ${m.email}`, tone: "success" });
+      toast({ title: `Seat reserved for ${m.member.email}`, tone: "success" });
       await reload();
     } catch (ex) {
       setErr(ex);
@@ -152,17 +154,13 @@ function TeamInner(): React.ReactElement {
   const seatsLabel = `${activeMembers.length} ${activeMembers.length === 1 ? "member" : "members"}`;
   const pendingLabel = `${pendingInvites.length} ${pendingInvites.length === 1 ? "invitation" : "invitations"}`;
 
-  // COPY-TRUTH (OB-1 open): inviting writes a `team_member` row with status
-  // `invited` keyed by a hash of the normalised email — it sends NO email
-  // (`customer_d1.rs::invite`). The seat binds only when the invitee signs up
-  // independently with the SAME address and the signup-worker
-  // `acceptTeamInvitation` matches that hash. Every string below must keep
-  // saying so until OB-1 actually ships the mail round-trip.
+  // COPY-TRUTH (B-073): the token is shown once and must be delivered by the
+  // owner through a secure channel. Acceptance requires a verified Clerk email.
   return (
     <div data-testid="team-shell">
       <Card
         title="Invite a teammate"
-        meta="Reserves a seat right away. CoreLink doesn't email them — ask your teammate to sign up with this exact address."
+        meta="Reserves a seat right away. CoreLink doesn't email them — share the one-time token securely."
       >
         <form data-testid="team-invite" onSubmit={onInvite}>
           <Field label="Email" htmlFor="team-invite-email-input">
@@ -203,10 +201,11 @@ function TeamInner(): React.ReactElement {
           <Callout tone="info">
             <span data-testid="team-invite-success">
               Seat reserved for {lastInvited} — it shows under &quot;Pending
-              invitations&quot;. We don&apos;t email them, so tell them to sign up for
-              CoreLink with that exact address; the seat then activates on its own.
-              Note the address down now — we store only a hash of it, so this is the
-              one time we can show it back to you.
+              invitations&quot;. Share this one-time token securely with the invitee:
+              <code>{lastInvitationToken}</code>. They must sign in with the same
+              address, verify it in Clerk, then redeem the token at
+              <code>POST /v1/customer/team/accept</code>. The token is not shown
+              again.
             </span>
           </Callout>
         ) : null}

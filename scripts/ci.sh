@@ -19,35 +19,20 @@
 #
 # Logs: per-gate stdout/stderr captured under `target/ci-logs/<gate>.log`
 # (preserved across runs; overwritten each invocation).
+# Cargo target: each invocation uses a fresh private directory (under
+# `$RUNNER_TEMP` when usable, otherwise the system temp parent) and removes it
+# after all selected pipelines have been awaited normally.  Cancellation keeps
+# it for runner-temp garbage collection because descendants may still be
+# unwinding.  An ambient caller-provided `CARGO_TARGET_DIR` is intentionally
+# shadowed and never removed; this is the safest behavior for shared runners.
 #
 # Charter alignment: per `docs/internal/TECHLEAD-CHECKLIST.md` §L1 + §L6.
 # Memory feedback: parallel-by-default per user mandate 2026-05-26.
 
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT" || exit 2
-
-LOG_DIR="target/ci-logs"
-mkdir -p "$LOG_DIR"
-
-# Compile cache. sccache only helps when incremental is OFF (it can't cache
-# `-C incremental`), so we enable it HERE — in the CI regime — by exporting
-# RUSTC_WRAPPER + CARGO_INCREMENTAL=0. This dedupes the redundant recompiles
-# across the build/clippy/test gates and caches across CI runs. The dev loop
-# (plain `cargo build`/`nextest`) stays incremental and does NOT use sccache.
-# Hard-capped at 4G (this box is disk-tight) so the cache can never overflow.
-# Bypass with CORELINK_NO_SCCACHE=1 (e.g. when chasing a cache-masked miscompile).
-if [ "${CORELINK_NO_SCCACHE:-0}" != 1 ] && command -v sccache >/dev/null 2>&1; then
-    export RUSTC_WRAPPER=sccache
-    export CARGO_INCREMENTAL=0
-    export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-4G}"
-    sccache --start-server >/dev/null 2>&1 || true
-    sccache --zero-stats >/dev/null 2>&1 || true
-    echo "[sccache active — cap ${SCCACHE_CACHE_SIZE}, incremental off]" >&2
-fi
-
-# --- arg parse ----------------------------------------------------------------
+# Parse arguments before changing directory, creating logs, starting sccache,
+# or allocating a Cargo target.  `--help` is intentionally side-effect-free.
 RUN_RUST=1
 RUN_VALIDATORS=1
 RUN_TEST_COMPILE=1
@@ -75,6 +60,179 @@ for arg in "$@"; do
     esac
 done
 
+# The target directory is deliberately private to this invocation.  In
+# particular, do not reuse a caller-provided CARGO_TARGET_DIR: doing so would
+# re-introduce cross-run races, and cleaning it on exit could destroy data that
+# the caller owns.  The caller's value is left untouched on disk and is only
+# shadowed in this process for the duration of the CI run.
+CI_TARGET_DIR=""
+CI_TARGET_DIR_MARKER=""
+CI_TARGET_DIR_CREATED=0
+CI_CALLER_TARGET_SET=0
+CI_CALLER_TARGET_DIR=""
+CI_CLEANUP_RUNNING=0
+CI_PRESERVE_TARGET=0
+CI_PIPELINES_AWAITED=0
+RUST_PID=""
+VAL_PID=""
+
+if [ "${CARGO_TARGET_DIR+x}" = x ]; then
+    CI_CALLER_TARGET_SET=1
+    CI_CALLER_TARGET_DIR="$CARGO_TARGET_DIR"
+fi
+
+# shellcheck disable=SC2329  # invoked indirectly by the EXIT trap below.
+cleanup_ci() {
+    local status=$?
+
+    # A trap can be entered more than once while a child is being reaped.  Do
+    # not run any destructive cleanup twice.
+    if [ "$CI_CLEANUP_RUNNING" -eq 1 ]; then
+        exit "$status"
+    fi
+    CI_CLEANUP_RUNNING=1
+    trap - EXIT HUP INT TERM
+
+    # Remove only after every selected pipeline was awaited normally and both
+    # direct-PID slots were cleared.  On cancellation or an incomplete/error
+    # path, leave the target for RUNNER_TEMP/TMPDIR garbage collection: a
+    # descendant may still be unwinding and could otherwise race this rm.
+    if [ "$CI_TARGET_DIR_CREATED" -eq 1 ] \
+        && [ -n "$CI_TARGET_DIR" ] \
+        && [ -n "$CI_TARGET_DIR_MARKER" ] \
+        && [ "$CI_TARGET_DIR_MARKER" = "$CI_TARGET_DIR/.corelink-ci-owned" ] \
+        && [[ "$CI_TARGET_DIR" == */corelink-ci-target.* ]]; then
+        if [ "$CI_PRESERVE_TARGET" -eq 0 ] \
+            && [ "$CI_PIPELINES_AWAITED" -eq 1 ] \
+            && [ -z "${RUST_PID:-}" ] \
+            && [ -z "${VAL_PID:-}" ]; then
+            rm -rf -- "$CI_TARGET_DIR"
+        else
+            printf '[ci] preserving Cargo target after interrupted/incomplete run: %s\n' "$CI_TARGET_DIR" >&2
+        fi
+    fi
+
+    if [ -n "${RESULTS_FILE:-}" ]; then
+        rm -f -- "$RESULTS_FILE"
+    fi
+    if [ -n "${INFRA_FILE:-}" ]; then
+        rm -f -- "$INFRA_FILE"
+    fi
+
+    # This script is normally a child process, but restore the environment if
+    # it is ever embedded by a caller that uses `source`.
+    if [ "$CI_CALLER_TARGET_SET" -eq 1 ]; then
+        export CARGO_TARGET_DIR="$CI_CALLER_TARGET_DIR"
+    else
+        unset CARGO_TARGET_DIR
+    fi
+    exit "$status"
+}
+
+# shellcheck disable=SC2329  # invoked indirectly by the signal trap below.
+terminate_ci_children() {
+    local pid
+    for pid in "${RUST_PID:-}" "${VAL_PID:-}"; do
+        # The PID belongs to a direct child while its slot is populated.  Do
+        # not wait/reap here: target preservation is the safe cancellation
+        # behavior when descendants may still be running.
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill -TERM "$pid" 2>/dev/null || true
+        fi
+    done
+}
+
+# shellcheck disable=SC2329  # invoked indirectly by the HUP/INT/TERM traps.
+on_ci_signal() {
+    local signal="$1"
+    local status=143
+    case "$signal" in
+        HUP) status=129 ;;
+        INT) status=130 ;;
+        TERM) status=143 ;;
+    esac
+    trap - HUP INT TERM
+    CI_PRESERVE_TARGET=1
+    printf '[ci] received %s; stopping child gates\n' "$signal" >&2
+    terminate_ci_children
+    exit "$status"
+}
+
+trap cleanup_ci EXIT
+trap 'on_ci_signal HUP' HUP
+trap 'on_ci_signal INT' INT
+trap 'on_ci_signal TERM' TERM
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT" || exit 2
+
+LOG_DIR="target/ci-logs"
+mkdir -p "$LOG_DIR" || {
+    echo "ci.sh: unable to create $LOG_DIR" >&2
+    exit 2
+}
+
+create_ci_target_dir() {
+    local runner_temp="${RUNNER_TEMP:-}"
+    local target_parent=""
+
+    # RUNNER_TEMP is already isolated on GitHub-hosted runners.  Require it
+    # to be an existing, writable, non-root directory so a malformed caller
+    # value cannot turn cleanup into a broad-directory operation.
+    if [ -n "$runner_temp" ]; then
+        target_parent="${runner_temp%/}"
+        if [ -n "$target_parent" ] \
+            && [ "$target_parent" != "/" ] \
+            && [ -d "$target_parent" ] \
+            && [ -w "$target_parent" ]; then
+            CI_TARGET_DIR="$(mktemp -d "$target_parent/corelink-ci-target.XXXXXX" 2>/dev/null)" || CI_TARGET_DIR=""
+        fi
+    fi
+
+    # Local runs (and runners with an unusable RUNNER_TEMP) get a fresh
+    # directory from mktemp's private template.  It is never shared with a
+    # previous invocation, even when an old run left evidence behind.
+    if [ -z "$CI_TARGET_DIR" ]; then
+        CI_TARGET_DIR="$(mktemp -d "${TMPDIR:-/tmp}/corelink-ci-target.XXXXXX")" || {
+            echo "ci.sh: unable to create a private Cargo target directory" >&2
+            return 1
+        }
+    fi
+
+    CI_TARGET_DIR_MARKER="$CI_TARGET_DIR/.corelink-ci-owned"
+    # Mark ownership before any operation that can fail, so EXIT cleanup also
+    # removes a freshly-created directory if marker creation itself fails.
+    CI_TARGET_DIR_CREATED=1
+    if ! : >"$CI_TARGET_DIR_MARKER"; then
+        echo "ci.sh: unable to mark private Cargo target directory" >&2
+        return 1
+    fi
+    export CARGO_TARGET_DIR="$CI_TARGET_DIR"
+
+    if [ "$CI_CALLER_TARGET_SET" -eq 1 ]; then
+        echo "[ci] ignoring caller-provided CARGO_TARGET_DIR; using a fresh private target" >&2
+    fi
+    echo "[ci] Cargo target: $CARGO_TARGET_DIR (removed on exit)" >&2
+}
+
+create_ci_target_dir || exit 2
+
+# Compile cache. sccache only helps when incremental is OFF (it can't cache
+# `-C incremental`), so we enable it HERE — in the CI regime — by exporting
+# RUSTC_WRAPPER + CARGO_INCREMENTAL=0. This dedupes the redundant recompiles
+# across the build/clippy/test gates and caches across CI runs. The dev loop
+# (plain `cargo build`/`nextest`) stays incremental and does NOT use sccache.
+# Hard-capped at 4G (this box is disk-tight) so the cache can never overflow.
+# Bypass with CORELINK_NO_SCCACHE=1 (e.g. when chasing a cache-masked miscompile).
+if [ "${CORELINK_NO_SCCACHE:-0}" != 1 ] && command -v sccache >/dev/null 2>&1; then
+    export RUSTC_WRAPPER=sccache
+    export CARGO_INCREMENTAL=0
+    export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-4G}"
+    sccache --start-server >/dev/null 2>&1 || true
+    sccache --zero-stats >/dev/null 2>&1 || true
+    echo "[sccache active — cap ${SCCACHE_CACHE_SIZE}, incremental off]" >&2
+fi
+
 # --- gate registry ------------------------------------------------------------
 # Format: "name|command"
 # `name` becomes the log filename + status line label.
@@ -91,7 +249,9 @@ if [ "$RUN_TEST_COMPILE" = 1 ]; then
     if command -v cargo-nextest >/dev/null 2>&1; then
         RUST_GATES+=("cargo-nextest|cargo nextest run --workspace --profile ci")
     else
-        RUST_GATES+=("cargo-test|cargo test --workspace")
+        # Drain every test binary in one bundle run so independent failures are
+        # reported together instead of forcing serial full-workspace reruns.
+        RUST_GATES+=("cargo-test|cargo test --workspace --no-fail-fast")
     fi
 fi
 if [ "$RUN_WASM32" = 1 ]; then
@@ -120,9 +280,8 @@ VALIDATOR_GATES=(
 #   - check_ac_infra.sh <env>                  → pre-deploy gate; needs CF_API_TOKEN.
 
 # --- helpers ------------------------------------------------------------------
-RESULTS_FILE="$(mktemp)"
-INFRA_FILE="$(mktemp)"
-trap 'rm -f "$RESULTS_FILE" "$INFRA_FILE"' EXIT
+RESULTS_FILE="$(mktemp)" || exit 2
+INFRA_FILE="$(mktemp)" || exit 2
 
 run_gate() {
     # Args: name, command, group
@@ -203,8 +362,15 @@ if [ "$RUN_VALIDATORS" = 1 ]; then
     VAL_PID=$!
 fi
 
-[ "$RUN_RUST" = 1 ] && wait "$RUST_PID"
-[ "$RUN_VALIDATORS" = 1 ] && wait "$VAL_PID"
+if [ "$RUN_RUST" = 1 ]; then
+    wait "$RUST_PID" || true
+    RUST_PID=""
+fi
+if [ "$RUN_VALIDATORS" = 1 ]; then
+    wait "$VAL_PID" || true
+    VAL_PID=""
+fi
+CI_PIPELINES_AWAITED=1
 
 END_NS=$(python3 -c 'import time; print(int(time.time_ns()))')
 TOTAL_MS=$(( (END_NS - START_NS) / 1000000 ))

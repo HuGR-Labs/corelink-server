@@ -4,12 +4,14 @@ title: "ADR-0032 — WebAuthn Level 3 admin step-up + AAGUID + OTP recovery"
 description: "Why admin operations are gated by phishing-resistant WebAuthn L3 via webauthn-rs, with a closed-default AAGUID allowlist, a bound step-up token, and 6-digit OTP (not magic-link) recovery."
 source_files:
   - "specs/03_architecture/adrs/ADR-0032-webauthn-level3.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "webauthn", "passkey", "mfa", "step-up", "auth", "s03"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0032-webauthn-level3.md@40396a2b6b81c2f86f3fdcfae53c51c78c5accca"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0032 — WebAuthn Level 3 admin step-up + AAGUID + OTP recovery
 
 Every destructive admin operation — mass revoke, billing change, tenant delete, admin user management — must be gated by phishing-resistant MFA. This ADR records the WebAuthn Level 3 strategy: lean on the audited `webauthn-rs` crate rather than hand-rolling CBOR/COSE, enforce a closed-default authenticator policy, reuse a short-lived step-up token across an admin session, and make magic-link recovery type-level unrepresentable.

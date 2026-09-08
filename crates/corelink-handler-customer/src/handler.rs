@@ -19,6 +19,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use uuid::Uuid;
+
 use crate::audit::{AuditEvent, AuditEventKind, AuditSink};
 use crate::error::CustomerHandlerError;
 use crate::observer::{Sli, SliObservation, SliObserver};
@@ -119,7 +121,9 @@ pub trait CustomerKeysHandler: Send + Sync + core::fmt::Debug {
     /// contract.
     fn create(&self, req: KeyCreateRequest) -> Result<KeyCreateResponse, CustomerHandlerError>;
 
-    /// Revoke a PAT by id (idempotent).
+    /// Revoke a PAT by id (idempotent). The HTTP route admits only the
+    /// Worker's owner/admin roles; the D1 implementation additionally keeps
+    /// admins from revoking owner/legacy PAT rows.
     ///
     /// # Errors
     ///
@@ -378,6 +382,32 @@ impl InMemoryCustomerHandler {
             .map_err(CustomerHandlerError::AuditFailed)
     }
 
+    /// Reject a request whose route tenant is not the authenticated tenant.
+    /// The denial audit is emitted before the typed denial is returned; a sink
+    /// failure therefore yields `AuditFailed` and never an unaudited denial.
+    fn reject_cross_tenant(
+        &self,
+        requested_tenant: Option<&str>,
+        caller_tenant: &str,
+        kind: AuditEventKind,
+        principal: &str,
+        resource: &str,
+        at_unix_ms: u64,
+    ) -> Result<(), CustomerHandlerError> {
+        let requested = requested_tenant.unwrap_or(caller_tenant);
+        if requested == caller_tenant {
+            return Ok(());
+        }
+
+        self.emit_audit(kind, requested, principal, resource, at_unix_ms)
+            .inspect_err(|_| self.emit_sli(true))?;
+        self.emit_sli(true);
+        Err(CustomerHandlerError::CrossTenantDenied {
+            caller: caller_tenant.to_owned(),
+            requested_tenant: requested.to_owned(),
+        })
+    }
+
     /// Lock a mutex, emitting an error SLI observation on poison.
     fn lock_or_err<'a, T>(
         &self,
@@ -395,6 +425,14 @@ impl InMemoryCustomerHandler {
 
 impl CustomerOverviewHandler for InMemoryCustomerHandler {
     fn overview(&self, req: OverviewRequest) -> Result<OverviewResponse, CustomerHandlerError> {
+        self.reject_cross_tenant(
+            req.requested_tenant.as_deref(),
+            &req.caller_tenant,
+            AuditEventKind::OverviewDenied,
+            &req.principal,
+            "",
+            req.at_unix_ms,
+        )?;
         // Emit Attempted audit BEFORE lookup (fail-CLOSED: abort on error).
         self.emit_audit(
             AuditEventKind::OverviewAttempted,
@@ -431,6 +469,14 @@ impl CustomerOverviewHandler for InMemoryCustomerHandler {
 
 impl CustomerUsageHandler for InMemoryCustomerHandler {
     fn usage(&self, req: UsageRequest) -> Result<UsageResponse, CustomerHandlerError> {
+        self.reject_cross_tenant(
+            req.requested_tenant.as_deref(),
+            &req.caller_tenant,
+            AuditEventKind::UsageDenied,
+            &req.principal,
+            "",
+            req.at_unix_ms,
+        )?;
         self.emit_audit(
             AuditEventKind::UsageAttempted,
             &req.caller_tenant,
@@ -473,6 +519,14 @@ impl CustomerUsageHandler for InMemoryCustomerHandler {
 
 impl CustomerBillingHandler for InMemoryCustomerHandler {
     fn billing(&self, req: BillingRequest) -> Result<BillingResponse, CustomerHandlerError> {
+        self.reject_cross_tenant(
+            req.requested_tenant.as_deref(),
+            &req.caller_tenant,
+            AuditEventKind::BillingDenied,
+            &req.principal,
+            "",
+            req.at_unix_ms,
+        )?;
         self.emit_audit(
             AuditEventKind::BillingAttempted,
             &req.caller_tenant,
@@ -506,6 +560,14 @@ impl CustomerBillingHandler for InMemoryCustomerHandler {
     }
 
     fn portal_url(&self, req: PortalRequest) -> Result<PortalResponse, CustomerHandlerError> {
+        self.reject_cross_tenant(
+            req.requested_tenant.as_deref(),
+            &req.caller_tenant,
+            AuditEventKind::BillingDenied,
+            &req.principal,
+            "portal",
+            req.at_unix_ms,
+        )?;
         // Portal URL generation is a billing sub-action; treated as
         // BillingAttempted / BillingServed for audit symmetry.
         self.emit_audit(
@@ -539,6 +601,14 @@ impl CustomerBillingHandler for InMemoryCustomerHandler {
 
 impl CustomerKeysHandler for InMemoryCustomerHandler {
     fn list(&self, req: KeysListRequest) -> Result<KeysListResponse, CustomerHandlerError> {
+        self.reject_cross_tenant(
+            req.requested_tenant.as_deref(),
+            &req.caller_tenant,
+            AuditEventKind::KeysDenied,
+            &req.principal,
+            "",
+            req.at_unix_ms,
+        )?;
         // PAT list is read-only and always scoped to caller's own tenant;
         // no cross-tenant check required here (same pattern as overview).
         let g = self.lock_or_err(&self.pats, "pats lock poisoned")?;
@@ -558,6 +628,14 @@ impl CustomerKeysHandler for InMemoryCustomerHandler {
     }
 
     fn create(&self, req: KeyCreateRequest) -> Result<KeyCreateResponse, CustomerHandlerError> {
+        self.reject_cross_tenant(
+            req.requested_tenant.as_deref(),
+            &req.caller_tenant,
+            AuditEventKind::KeysDenied,
+            &req.principal,
+            &req.name,
+            req.at_unix_ms,
+        )?;
         // Emit KeyCreateAttempted BEFORE mutation (fail-CLOSED ordering).
         self.emit_audit(
             AuditEventKind::KeyCreateAttempted,
@@ -604,6 +682,14 @@ impl CustomerKeysHandler for InMemoryCustomerHandler {
     }
 
     fn revoke(&self, req: KeyRevokeRequest) -> Result<KeyRevokeResponse, CustomerHandlerError> {
+        self.reject_cross_tenant(
+            req.requested_tenant.as_deref(),
+            &req.caller_tenant,
+            AuditEventKind::KeysDenied,
+            &req.principal,
+            &req.pat_id,
+            req.at_unix_ms,
+        )?;
         // Emit KeyRevokeAttempted BEFORE mutation (fail-CLOSED ordering).
         self.emit_audit(
             AuditEventKind::KeyRevokeAttempted,
@@ -658,6 +744,14 @@ impl CustomerKeysHandler for InMemoryCustomerHandler {
 
 impl CustomerTeamHandler for InMemoryCustomerHandler {
     fn list(&self, req: TeamListRequest) -> Result<TeamListResponse, CustomerHandlerError> {
+        self.reject_cross_tenant(
+            req.requested_tenant.as_deref(),
+            &req.caller_tenant,
+            AuditEventKind::TeamDenied,
+            &req.principal,
+            "",
+            req.at_unix_ms,
+        )?;
         let g = self.lock_or_err(&self.team, "team lock poisoned")?;
 
         let members: Vec<TeamMemberRow> = g
@@ -672,6 +766,14 @@ impl CustomerTeamHandler for InMemoryCustomerHandler {
     }
 
     fn invite(&self, req: TeamInviteRequest) -> Result<TeamInviteResponse, CustomerHandlerError> {
+        self.reject_cross_tenant(
+            req.requested_tenant.as_deref(),
+            &req.caller_tenant,
+            AuditEventKind::TeamDenied,
+            &req.principal,
+            &req.email,
+            req.at_unix_ms,
+        )?;
         let Some(role) = canonical_invite_role(&req.role) else {
             self.emit_sli(true);
             return Err(CustomerHandlerError::InvalidRequest(
@@ -712,11 +814,32 @@ impl CustomerTeamHandler for InMemoryCustomerHandler {
         )
         .inspect_err(|_| self.emit_sli(true))?;
 
+        // The in-memory implementation is also used as a contract fixture:
+        // callers must receive the same one-time 32-byte capability shape as
+        // the D1 implementation, never a nullable compatibility value.
+        let invitation_token = format!(
+            "{}{}",
+            Uuid::new_v4().as_simple(),
+            Uuid::new_v4().as_simple()
+        );
+        debug_assert_eq!(invitation_token.len(), 64);
+        debug_assert!(invitation_token
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit()));
+
         self.emit_sli(false);
-        Ok(TeamInviteResponse::new(member))
+        Ok(TeamInviteResponse::with_token(member, invitation_token))
     }
 
     fn remove(&self, req: TeamRemoveRequest) -> Result<TeamRemoveResponse, CustomerHandlerError> {
+        self.reject_cross_tenant(
+            req.requested_tenant.as_deref(),
+            &req.caller_tenant,
+            AuditEventKind::TeamDenied,
+            &req.principal,
+            &req.target_user_id,
+            req.at_unix_ms,
+        )?;
         // Emit TeamRemoveAttempted BEFORE mutation (fail-CLOSED ordering).
         self.emit_audit(
             AuditEventKind::TeamRemoveAttempted,
@@ -771,6 +894,14 @@ impl CustomerTeamHandler for InMemoryCustomerHandler {
 
 impl CustomerAuditHandler for InMemoryCustomerHandler {
     fn query(&self, req: AuditQueryRequest) -> Result<AuditQueryResponse, CustomerHandlerError> {
+        self.reject_cross_tenant(
+            req.requested_tenant.as_deref(),
+            &req.caller_tenant,
+            AuditEventKind::AuditQueryDenied,
+            &req.principal,
+            "",
+            req.at_unix_ms,
+        )?;
         // Emit AuditQueryAttempted BEFORE lookup.
         self.emit_audit(
             AuditEventKind::AuditQueryAttempted,

@@ -39,13 +39,14 @@
 //! - `azure` → adds `corelink-byok-azure` (Azure Key Vault).
 //! - `vault` → adds `corelink-byok-vault` (HashiCorp Vault Transit).
 //!
-//! At most ONE may be set. Default = no provider (trait + InMemoryFake
-//! only; matches pre-wave-33 default build for test/CI scenarios).
+//! At most ONE may be set. Default = no provider. Consumers must inject a
+//! test double explicitly; production code never receives an in-memory
+//! crypto fallback.
 //!
 //! ## `corelink-byok-revocation`
 //!
 //! Always-on. The revocation detector composes with whichever provider
-//! is enabled (or with InMemoryFake providers in test wiring) and is
+//! is enabled (or with explicit test providers in test wiring) and is
 //! re-exported at the [`revocation`] submodule for callers that need
 //! the explicit namespace.
 //!

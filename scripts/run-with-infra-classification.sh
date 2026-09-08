@@ -23,10 +23,15 @@ else
   classification="PASS"
   class_rc=0
 fi
+if [ "$rc" -eq 124 ] && grep -q '^GATE_TIMEOUT ' "$log"; then
+  classification="TIMEOUT"
+fi
 printf 'classification: %s\n' "$classification"
 if [ "$rc" -eq 124 ] && grep -q '^GATE_TIMEOUT ' "$log"; then
   echo "::error title=Gate timeout::the wrapped gate exceeded ${timeout_seconds}s" >&2
 elif [ "$rc" -ne 0 ] && [ "$class_rc" -eq 42 ]; then
   echo "::warning title=Infrastructure failure::runner disk/linker exhaustion; original gate status preserved" >&2
+elif [ "$rc" -ne 0 ] && [ "$class_rc" -eq 43 ]; then
+  echo "::warning title=Runner termination::runner cancellation/termination observed; original gate status preserved" >&2
 fi
 exit "$rc"

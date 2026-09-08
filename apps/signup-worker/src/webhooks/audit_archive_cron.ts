@@ -30,21 +30,21 @@
  * and are logged separately, because a row that is unarchivable forever must
  * never be a silent one.
  *
- * Auth: the `/_internal/audit/*` surface reuses the erase/DSR consumer key
- * (erase-first, shared-fallback — see `resolveEraseAuthKey`); no new secret.
+ * Auth: the archive route accepts only the dedicated erase/DSR consumer key
+ * (see `resolveDedicatedEraseAuthKey`); the shared key is never a substitute.
  * Inert (no-op-with-log) until that key is bound, exactly like the drain sweep,
  * so a cron run on an unprovisioned env is a clean skip rather than a 401 storm.
  */
 
-import { resolveEraseAuthKey } from "../lib/erase-auth-key.js";
+import { resolveDedicatedEraseAuthKey } from "../lib/erase-auth-key.js";
 
 /** Minimal env surface the sweep needs. */
 export interface AuditArchiveCronEnv {
   /** Base URL of the CoreLink API (container host). */
   CORELINK_API_BASE: string;
-  /** Dedicated erase/DSR consumer secret; preferred over the shared key. */
+  /** Dedicated erase/DSR consumer secret required by the archive route. */
   CORELINK_ERASE_AUTH_KEY?: string;
-  /** Shared secret for the `x-corelink-internal-auth` header. */
+  /** Present for other Worker duties; archive deliberately ignores it. */
   CORELINK_INTERNAL_AUTH_KEY?: string;
   /** Service binding to the main CoreLink Worker (bypasses CF edge error 1014). */
   CORELINK_API_SVC?: { fetch: typeof fetch };
@@ -63,8 +63,55 @@ export interface AuditArchiveSweepResult {
   partitionsQuarantined: number;
   /** The batch budget truncated the backlog; the next tick continues. */
   incomplete: boolean;
-  /** Neither the dedicated nor the shared internal-auth key is bound. */
+  /** The dedicated internal-auth key is not safely bound. */
   skipped: boolean;
+}
+
+interface AuditArchiveResponse {
+  rows_archived: number;
+  chunks_created: number;
+  chunks_already_present: number;
+  partitions_archived: number;
+  partitions_failed: number;
+  rows_quarantined: number;
+  partitions_quarantined: number;
+  incomplete: boolean;
+}
+
+const ARCHIVE_COUNTER_FIELDS = [
+  "rows_archived",
+  "chunks_created",
+  "chunks_already_present",
+  "partitions_archived",
+  "partitions_failed",
+  "rows_quarantined",
+  "partitions_quarantined",
+] as const;
+
+/** Decode the Rust handler's complete JSON contract; unknown is never success. */
+function parseAuditArchiveResponse(value: unknown):
+  | { value: AuditArchiveResponse }
+  | { error: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { error: "body is not an object" };
+  }
+
+  const body = value as Record<string, unknown>;
+  if (typeof body.incomplete !== "boolean") {
+    return { error: "missing or non-boolean incomplete" };
+  }
+  for (const field of ARCHIVE_COUNTER_FIELDS) {
+    const counter = body[field];
+    if (
+      typeof counter !== "number" ||
+      !Number.isSafeInteger(counter) ||
+      counter < 0
+    ) {
+      return { error: `missing or invalid ${field}` };
+    }
+  }
+
+  return { value: body as unknown as AuditArchiveResponse };
 }
 
 /**
@@ -76,7 +123,7 @@ export async function runAuditArchiveSweep(
   env: AuditArchiveCronEnv,
   _nowMs: number,
 ): Promise<AuditArchiveSweepResult> {
-  const eraseAuthKey = resolveEraseAuthKey(env);
+  const eraseAuthKey = resolveDedicatedEraseAuthKey(env);
   if (!eraseAuthKey) {
     return {
       ok: false,
@@ -109,29 +156,38 @@ export async function runAuditArchiveSweep(
     let partitionsFailed = 0;
     let rowsQuarantined = 0;
     let partitionsQuarantined = 0;
-    let incomplete = false;
+    let incomplete = true;
+    let ok = resp.ok;
     try {
-      const j = (await resp.json()) as {
-        rows_archived?: number;
-        chunks_created?: number;
-        partitions_failed?: number;
-        rows_quarantined?: number;
-        partitions_quarantined?: number;
-        incomplete?: boolean;
-      };
-      rowsArchived = Number(j.rows_archived ?? 0);
-      chunksCreated = Number(j.chunks_created ?? 0);
-      partitionsFailed = Number(j.partitions_failed ?? 0);
-      rowsQuarantined = Number(j.rows_quarantined ?? 0);
-      partitionsQuarantined = Number(j.partitions_quarantined ?? 0);
-      incomplete = Boolean(j.incomplete ?? false);
+      const parsed = parseAuditArchiveResponse(await resp.json());
+      if ("error" in parsed) {
+        ok = false;
+        console.error(
+          `[audit-archive-cron] archive call returned invalid JSON contract: ${parsed.error}`,
+        );
+      } else {
+        const j = parsed.value;
+        rowsArchived = j.rows_archived;
+        chunksCreated = j.chunks_created;
+        partitionsFailed = j.partitions_failed;
+        rowsQuarantined = j.rows_quarantined;
+        partitionsQuarantined = j.partitions_quarantined;
+        incomplete = j.incomplete;
+      }
     } catch {
-      // Non-JSON body — keep the transport status, report unknown counts. The
-      // body is parsed even on a non-2xx because the handler reports
-      // `partitions_failed` there, and that count is the useful diagnostic.
+      ok = false;
+      console.error(
+        "[audit-archive-cron] archive call returned malformed JSON; completion is unknown",
+      );
+    }
+    if (!resp.ok) {
+      // A non-2xx is terminal for this tick even when the handler includes a
+      // diagnostic body; the archive completion state is not trustworthy.
+      ok = false;
+      incomplete = true;
     }
     return {
-      ok: resp.ok,
+      ok,
       status: resp.status,
       rowsArchived,
       chunksCreated,

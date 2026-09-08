@@ -477,3 +477,5 @@ async fn keys_revoke_returns_revoked_pat() {
     // revoked_at is now set.
     assert!(v["pat"]["revoked_at"].is_string());
 }
+
+include!("fragment-tests-keys-01.rs");

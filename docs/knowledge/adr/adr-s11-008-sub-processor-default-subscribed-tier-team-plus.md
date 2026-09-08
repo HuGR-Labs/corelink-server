@@ -4,12 +4,14 @@ title: "ADR-S11-008 — Mandatory Sub-Processor Notifications for ALL 5 Canonica
 description: "Why CoreLink reversed its tier-gated sub-processor notice design and now sends mandatory 30-day advance notices to all 5 plans under a legal_obligation basis that cannot be opted out of."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-008-sub-processor-default-subscribed-tier-team-plus.md"
-checkpoint_sha: "d24ff6f3093497a7f2a63aa232ef181733423c19"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s11", "sub-processor", "gdpr", "lgpd", "legal-obligation"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S11-008-sub-processor-default-subscribed-tier-team-plus.md@88e323b94cd00e8e8eaafe9fad72b571af6332fc"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S11-008 — Mandatory Sub-Processor Notifications for ALL 5 Canonical Plans
 
 Sub-processor transparency under GDPR Art. 28.2 and LGPD Art. 39 is a regulatory right, not an email marketing campaign — so it cannot be tier-gated. This ADR (v2.0.0) **reverses** the original v1.0 design that auto-subscribed only `team`+ plans, and establishes that all five canonical plans receive mandatory 30-day advance notice on sub-processor changes, carried under a `legal_obligation` basis that consent-revoke cannot touch.

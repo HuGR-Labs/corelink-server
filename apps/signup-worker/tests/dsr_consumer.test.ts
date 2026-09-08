@@ -6,9 +6,11 @@ import { describe, it, expect, vi } from "vitest";
 import {
   processErasureMessage,
   handleErasureQueueBatch,
+  handleErasureDlqBatch,
   type DsrConsumerEnv,
   type QueueMessageBatch,
   type QueueMessage,
+  type DsrDlqBody,
 } from "../src/webhooks/dsr_consumer.js";
 import type { DsrQueuedV1 } from "../src/webhooks/clerk.js";
 
@@ -109,8 +111,13 @@ describe("processErasureMessage", () => {
 });
 
 describe("handleErasureQueueBatch", () => {
-  function fakeMsg(body: DsrQueuedV1): QueueMessage<DsrQueuedV1> & { ack: ReturnType<typeof vi.fn>; retry: ReturnType<typeof vi.fn> } {
-    return { body, ack: vi.fn(), retry: vi.fn() };
+  type MockQueueMessage<T> = QueueMessage<T> & {
+    ack: ReturnType<typeof vi.fn<() => void>>;
+    retry: ReturnType<typeof vi.fn<() => void>>;
+  };
+
+  function fakeMsg(body: DsrQueuedV1): MockQueueMessage<DsrQueuedV1> {
+    return { body, ack: vi.fn<() => void>(), retry: vi.fn<() => void>() };
   }
 
   it("acks on 2xx, retries on failure, and isolates per-message", async () => {
@@ -133,5 +140,69 @@ describe("handleErasureQueueBatch", () => {
     expect(m1.retry).not.toHaveBeenCalled();
     expect(m2.retry).toHaveBeenCalledOnce();
     expect(m2.ack).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
+  type MockQueueMessage<T> = QueueMessage<T> & {
+    ack: ReturnType<typeof vi.fn<() => void>>;
+    retry: ReturnType<typeof vi.fn<() => void>>;
+  };
+
+  function fakeDlq(body: DsrDlqBody): MockQueueMessage<DsrDlqBody> {
+    return { body, ack: vi.fn<() => void>(), retry: vi.fn<() => void>() };
+  }
+
+  it("emits a critical alert and requeues exactly once", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const m = fakeDlq(msg("dlq-1"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let errorCalls: unknown[][] = [];
+    try {
+      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send } });
+    } finally {
+      errorCalls = error.mock.calls;
+      error.mockRestore();
+    }
+    expect(send).toHaveBeenCalledOnce();
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ dsr_id: "dlq-1", _dlq_requeue: 1 });
+    expect(m.ack).toHaveBeenCalledOnce();
+    expect(m.retry).not.toHaveBeenCalled();
+    expect(errorCalls).toHaveLength(1);
+    expect(String(errorCalls[0]?.[0])).toContain('"event":"dsr.erasure.dead_letter"');
+    expect(String(errorCalls[0]?.[0])).toContain('"action":"requeue_once"');
+  });
+
+  it("leaves an already requeued message dead and alerts without looping", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const m = fakeDlq({ ...msg("dlq-2"), _dlq_requeue: 1 });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let errorCalls: unknown[][] = [];
+    try {
+      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send } });
+    } finally {
+      errorCalls = error.mock.calls;
+      error.mockRestore();
+    }
+    expect(send).not.toHaveBeenCalled();
+    expect(m.ack).toHaveBeenCalledOnce();
+    expect(m.retry).not.toHaveBeenCalled();
+    expect(errorCalls).toHaveLength(1);
+    expect(String(errorCalls[0]?.[0])).toContain('"event":"dsr.erasure.dead_letter"');
+    expect(String(errorCalls[0]?.[0])).toContain('"severity":"critical"');
+  });
+
+  it("retains the DLQ copy when the bounded requeue fails", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => { throw new Error("queue down"); });
+    const m = fakeDlq(msg("dlq-3"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send } });
+    } finally {
+      error.mockRestore();
+    }
+    expect(send).toHaveBeenCalledOnce();
+    expect(m.retry).toHaveBeenCalledOnce();
+    expect(m.ack).not.toHaveBeenCalled();
   });
 });

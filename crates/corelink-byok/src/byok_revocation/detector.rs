@@ -15,6 +15,42 @@ use super::error::RevocationError;
 use super::event::{RevocationAuditEvent, EVENT_TYPE_CMK_RESTORED, EVENT_TYPE_CMK_REVOKED};
 use super::store::{TenantByokStatus, TenantStatusStore};
 
+/// Durable source of the CMKs currently configured for revocation checks.
+///
+/// Production implementations query the authoritative tenant BYOK
+/// configuration table.  Keeping this population behind an explicit port is
+/// important: an empty fallback would make a scheduled detector look alive
+/// while checking no customer keys at all.
+#[async_trait::async_trait]
+pub trait ActiveByokKeySource: Send + Sync + std::fmt::Debug {
+    /// List all active keys for one provider.
+    ///
+    /// A transport or decode failure is returned to the detector; it is never
+    /// converted into an empty population.
+    async fn list_active_byok_keys(
+        &self,
+        provider: KmsProviderKind,
+    ) -> Result<Vec<KmsKeyId>, RevocationError>;
+}
+
+/// Empty source retained for the constructor's hermetic/unit-test default.
+///
+/// The production scheduler refuses to start a detector that uses this
+/// default; it exists only so existing pure-logic callers can construct a
+/// detector without a database.
+#[derive(Debug, Default)]
+struct EmptyActiveByokKeySource;
+
+#[async_trait::async_trait]
+impl ActiveByokKeySource for EmptyActiveByokKeySource {
+    async fn list_active_byok_keys(
+        &self,
+        _provider: KmsProviderKind,
+    ) -> Result<Vec<KmsKeyId>, RevocationError> {
+        Ok(Vec::new())
+    }
+}
+
 /// Per-key transient failure counter for network-partition handling.
 #[derive(Debug, Default)]
 struct FailureCounter {
@@ -98,6 +134,9 @@ pub struct RevocationDetector {
     store: Arc<dyn TenantStatusStore>,
     alerter: Arc<dyn CustomerAlerter>,
     config: RevocationConfig,
+    key_source: Arc<dyn ActiveByokKeySource>,
+    /// Whether the source was explicitly supplied by production wiring.
+    source_configured: bool,
 }
 
 impl std::fmt::Debug for RevocationDetector {
@@ -105,6 +144,7 @@ impl std::fmt::Debug for RevocationDetector {
         f.debug_struct("RevocationDetector")
             .field("providers_count", &self.providers.len())
             .field("config", &self.config)
+            .field("source_configured", &self.source_configured)
             .finish_non_exhaustive()
     }
 }
@@ -132,7 +172,23 @@ impl RevocationDetector {
             store,
             alerter,
             config,
+            key_source: Arc::new(EmptyActiveByokKeySource),
+            source_configured: false,
         }
+    }
+
+    /// Attach the authoritative active-key source used by the scheduler.
+    #[must_use]
+    pub fn with_key_source(mut self, key_source: Arc<dyn ActiveByokKeySource>) -> Self {
+        self.key_source = key_source;
+        self.source_configured = true;
+        self
+    }
+
+    /// Return whether a non-test population source was explicitly attached.
+    #[must_use]
+    pub const fn has_key_source(&self) -> bool {
+        self.source_configured
     }
 
     /// Run the background check loop indefinitely.
@@ -145,6 +201,13 @@ impl RevocationDetector {
     ///
     /// [`run_one_cycle`]: RevocationDetector::run_one_cycle
     pub async fn run_loop(self) {
+        if !self.source_configured {
+            error!(
+                event = "byok_revocation_source_unconfigured",
+                "refusing to start BYOK revocation loop without an authoritative active-key source"
+            );
+            return;
+        }
         let interval = self.config.check_interval();
         let mut failure_counter = FailureCounter::default();
         loop {
@@ -169,14 +232,14 @@ impl RevocationDetector {
         failure_counter: &mut FailureCounter,
     ) -> Result<(), RevocationError> {
         for provider in &self.providers {
-            let active_keys = self.list_active_byok_keys(provider).await;
+            let active_keys = self.list_active_byok_keys(provider).await?;
             for key_id in active_keys {
                 let result = provider.check_access(&key_id).await;
                 match result {
                     Ok(KmsAccessStatus::Ok) => {
                         // Reset failure counter; restore tenant if previously degraded.
                         failure_counter.reset(key_id.as_str());
-                        self.handle_ok_status(provider, &key_id).await;
+                        self.handle_ok_status(provider, &key_id).await?;
                         if self.config.emit_trace_spans {
                             info!(
                                 provider = provider.provider_kind().as_str(),
@@ -188,14 +251,7 @@ impl RevocationDetector {
                     Ok(KmsAccessStatus::Revoked) | Ok(KmsAccessStatus::NotFound) => {
                         // Kill switch: unconditional, immediate.
                         failure_counter.reset(key_id.as_str());
-                        if let Err(e) = self.handle_revocation(provider, &key_id).await {
-                            error!(
-                                error = %e,
-                                provider = provider.provider_kind().as_str(),
-                                kms_key_id = key_id.as_str(),
-                                "kill switch execution error (CRITICAL)"
-                            );
-                        }
+                        self.handle_revocation(provider, &key_id).await?;
                     }
                     Ok(KmsAccessStatus::Throttled) => {
                         let count = failure_counter.increment(key_id.as_str());
@@ -212,7 +268,7 @@ impl RevocationDetector {
                                 kms_key_id = key_id.as_str(),
                                 "sustained throttling: conservatively degrading tenant"
                             );
-                            self.conservative_degrade(provider, &key_id).await;
+                            self.conservative_degrade(provider, &key_id).await?;
                         }
                     }
                     Ok(KmsAccessStatus::ApiError(ref detail)) => {
@@ -230,7 +286,7 @@ impl RevocationDetector {
                                 kms_key_id = key_id.as_str(),
                                 "sustained API errors: conservatively degrading tenant"
                             );
-                            self.conservative_degrade(provider, &key_id).await;
+                            self.conservative_degrade(provider, &key_id).await?;
                         }
                     }
                     Err(e) => {
@@ -297,7 +353,7 @@ impl RevocationDetector {
         );
 
         // Step 2: Mark tenant degraded read-only.
-        let _updated = self
+        let updated = self
             .store
             .mark_degraded(key_id, provider.provider_kind().as_str(), detected_at_ms)
             .await
@@ -308,6 +364,12 @@ impl RevocationDetector {
                 );
                 e
             })?;
+        if updated == 0 {
+            return Err(RevocationError::TenantDegradeFailed {
+                kms_key_id: key_id.to_string(),
+                detail: "zero tenants updated during revocation".to_owned(),
+            });
+        }
 
         // Step 3: Emit audit event (atomically with tenant update in D1;
         // here we record the event — the D1 batch wrapper is production wiring).
@@ -362,12 +424,20 @@ impl RevocationDetector {
     }
 
     /// Handle `KmsAccessStatus::Ok` — restore tenant if previously degraded.
-    async fn handle_ok_status(&self, provider: &Arc<dyn KmsProvider>, key_id: &KmsKeyId) {
-        let current = self.store.current_status(key_id).await;
-        match current {
-            Ok(Some(TenantByokStatus::DegradedReadOnly)) => {
+    async fn handle_ok_status(
+        &self,
+        provider: &Arc<dyn KmsProvider>,
+        key_id: &KmsKeyId,
+    ) -> Result<(), RevocationError> {
+        match self.store.current_status(key_id).await? {
+            Some(TenantByokStatus::DegradedReadOnly) => {
                 let restored_at_ms = now_ms();
-                let _ = self.store.restore_active(key_id, restored_at_ms).await;
+                let updated = self.store.restore_active(key_id, restored_at_ms).await?;
+                if updated == 0 {
+                    return Err(RevocationError::Internal(
+                        "recovery reported zero updated tenants".to_owned(),
+                    ));
+                }
 
                 // Emit recovery audit event.
                 let audit_event = RevocationAuditEvent {
@@ -381,17 +451,16 @@ impl RevocationDetector {
                     kill_switch_duration_ms: 0,
                     evicted_dek_count: 0,
                 };
-                info!(event = ?audit_event, "audit event: corelink.byok.cmk_restored");
-
-                let _ = self
-                    .alerter
+                self.alerter
                     .alert_recovery(
                         provider.provider_kind(),
                         key_id,
                         "hashed_by_store",
                         restored_at_ms,
                     )
-                    .await;
+                    .await?;
+
+                info!(event = ?audit_event, "audit event: corelink.byok.cmk_restored");
 
                 info!(
                     provider = provider.provider_kind().as_str(),
@@ -403,34 +472,54 @@ impl RevocationDetector {
                 // Already active or no entry; nothing to do.
             }
         }
+        Ok(())
     }
 
     /// Conservative degrade on sustained network partition (no kill switch;
     /// false-positive safe — customer can verify and unblock).
-    async fn conservative_degrade(&self, provider: &Arc<dyn KmsProvider>, key_id: &KmsKeyId) {
+    async fn conservative_degrade(
+        &self,
+        provider: &Arc<dyn KmsProvider>,
+        key_id: &KmsKeyId,
+    ) -> Result<(), RevocationError> {
         let degraded_at_ms = now_ms();
-        let _ = self
+        let updated = self
             .store
             .mark_degraded(key_id, provider.provider_kind().as_str(), degraded_at_ms)
             .await;
+        let updated = updated?;
+        if updated == 0 {
+            return Err(RevocationError::TenantDegradeFailed {
+                kms_key_id: key_id.to_string(),
+                detail: "zero tenants updated during conservative degrade".to_owned(),
+            });
+        }
 
         warn!(
             provider = provider.provider_kind().as_str(),
             kms_key_id = key_id.as_str(),
             "tenant conservatively degraded due to sustained KMS unreachability"
         );
+        Ok(())
     }
 
-    /// List active BYOK keys for a provider.
+    /// List active BYOK keys through the explicitly wired population source.
     ///
-    /// In production: query D1 `byok_envelope` table for
-    /// `SELECT DISTINCT kms_provider, kms_key_id WHERE byok_status != 'revoked'`.
-    /// Here we return an empty list (production wiring is deployment-specific).
-    // WI-S14-009 follow-up: D1 query adapter injection
-    #[allow(unused)]
-    async fn list_active_byok_keys(&self, _provider: &Arc<dyn KmsProvider>) -> Vec<KmsKeyId> {
-        // Production: D1 query. Stub returns empty; tests inject via override.
-        vec![]
+    /// The source owns the authoritative D1 query; this layer binds every
+    /// returned key to the provider being checked and rejects mismatches.
+    async fn list_active_byok_keys(
+        &self,
+        provider: &Arc<dyn KmsProvider>,
+    ) -> Result<Vec<KmsKeyId>, RevocationError> {
+        let provider_kind = provider.provider_kind();
+        let keys = self.key_source.list_active_byok_keys(provider_kind).await?;
+        if keys.iter().any(|key| key.provider != provider_kind) {
+            return Err(RevocationError::Internal(format!(
+                "active BYOK key source returned a key for the wrong provider ({})",
+                provider_kind.as_str()
+            )));
+        }
+        Ok(keys)
     }
 }
 

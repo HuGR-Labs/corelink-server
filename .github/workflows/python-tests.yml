@@ -23,6 +23,8 @@ on:
     paths:
       - 'tests/*.py'
       - 'scripts/**'
+      - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
+      - 'docs/campaigns/remediation/work-packages/**'
       - 'requirements-ci.txt'
       - 'Cargo.lock'
       # cargo metadata reads every workspace member manifest. Keep the root
@@ -43,6 +45,8 @@ on:
     paths:
       - 'tests/*.py'
       - 'scripts/**'
+      - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
+      - 'docs/campaigns/remediation/work-packages/**'
       - 'requirements-ci.txt'
       - 'Cargo.lock'
       - 'Cargo.toml'
@@ -73,7 +77,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          fetch-depth: 1
+          # The ledger verifier checks its immutable D03 base is reachable and
+          # an ancestor of the checked head; shallow checkout would make that
+          # provenance check fail closed even when the tree is correct.
+          fetch-depth: 0
 
       # No actions/setup-python — the self-hosted fleets can't provision it
       # (RUNNER_TOOL_CACHE unset → it dies on an unwritable path). Same venv
@@ -110,6 +117,12 @@ jobs:
           set -euo pipefail
           .venv/bin/python3 tests/verify_rust_sbom.py --check
 
+      - name: Verify backlog work-package ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python3 scripts/verify_backlog_wp_ledger.py
+
       - name: Collect and run
         shell: bash
         run: |
@@ -140,7 +153,10 @@ jobs:
           # collector in scripts/, rather than pretending it is a generic
           # tests/ fixture.  Keep it explicit and assert its presence: a glob
           # change must never make this CI gate green over a missing suite.
-          REQUIRED_SUITES=(scripts/test_b152_actions_diagnostic.py)
+          REQUIRED_SUITES=(
+            scripts/test_b152_actions_diagnostic.py
+            scripts/test_b250_deleted_workflow_startup_failure.py
+          )
           for suite in "${REQUIRED_SUITES[@]}"; do
             if [ ! -f "$suite" ]; then
               echo "::error::required Python regression suite is missing: $suite"

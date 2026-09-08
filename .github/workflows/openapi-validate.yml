@@ -40,7 +40,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: openapi-validate-${{ github.ref }}
+  group: openapi-validate-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

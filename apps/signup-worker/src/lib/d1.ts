@@ -299,13 +299,12 @@ interface InvitedMemberRow {
 export const TEAM_INVITATION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 /**
- * Accept an outstanding team invitation (C-ACCEPT, ADR-S33-001 WP-4).
+ * Legacy compatibility seam for team invitation acceptance.
  *
- * When a Clerk `user.created` event fires for an email that was previously
- * invited to a team (a `team_member` row with `status='invited'`, keyed by the
- * SHA-256 `email_hash` per CTRL-PRIV-001 — never the raw email), flip that seat
- * to `active`: stamp `joined_at_ms` and bind the real Clerk `user_id` (the
- * invited row carried the Clerk invitation id as a placeholder, migration 0074).
+ * Hash-only webhook acceptance is intentionally disabled by B-073. The
+ * canonical redemption endpoint lives in the main Worker, where Clerk primary
+ * email verification and an atomic audit/update batch are available. This seam
+ * remains only for consumers that migrate to the explicit token argument.
  *
  * Returns `true` iff a row was flipped. A signup whose email matches no
  * outstanding invitation (the common self-serve case) returns `false` and is a
@@ -316,15 +315,14 @@ export const TEAM_INVITATION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
  *
  * EXPIRY (B-073 defense 3): an invite older than {@link TEAM_INVITATION_TTL_MS}
  * or issued in the future is refused. The predicate lives in the SQL
- * (`invited_at_ms > ?3 AND invited_at_ms <= ?4`), NOT in JS
+ * (`invited_at_ms > ?4 AND invited_at_ms <= ?5`), NOT in JS
  * after the fact: with `LIMIT 1` a JS-side filter would let the database pick a
  * stale row and then report "no invitation" while a still-valid row sat further
  * down the table. The clock is passed in (`nowMs`) rather than read inside the
  * query so callers and tests control it.
  *
- * What this does NOT decide: within the window the invite is still an
- * unauthenticated bearer — no invitation token, no `tenant_id` scope on the
- * lookup, and no read of Clerk's email-verification field. See B-073.
+ * Calls without `invitationToken` return false (fail closed), even when the
+ * email hash matches. The token digest is part of both lookup and update.
  *
  * DUAL-READ (safe EMAIL_HASH_SALT activation): `emailHashCandidates` is the
  * deduped set `{salted, legacy}` — one value when the salt is unset (identical
@@ -338,7 +336,14 @@ export async function acceptTeamInvitation(
   clerkUserId: string,
   emailHashCandidates: string[],
   nowMs: number = Date.now(),
+  invitationToken?: string,
 ): Promise<boolean> {
+  if (!invitationToken || !/^[0-9a-f]{64}$/.test(invitationToken)) return false;
+  const tokenDigest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(invitationToken),
+  );
+  const tokenHash = Array.from(new Uint8Array(tokenDigest), (b) => b.toString(16).padStart(2, "0")).join("");
   // Deduped 1-or-2 candidates → a fixed 2-slot IN list. Padding the single-salt
   // case with a repeat of the same value keeps ONE prepared statement shape and
   // is a semantic no-op (`x IN (a, a)` ≡ `x = a`).
@@ -349,22 +354,22 @@ export async function acceptTeamInvitation(
   const invited = await db
     .prepare(
       "SELECT tenant_id, user_id FROM team_member " +
-        "WHERE email_hash IN (?1, ?2) AND status = 'invited' " +
+        "WHERE invitation_token_hash = ?1 AND email_hash IN (?2, ?3) AND status = 'invited' " +
         // Half-open window: an age of EXACTLY the TTL is already expired; a
         // future-dated row is not eligible until a real invitation instant exists.
-        "AND invited_at_ms > ?3 AND invited_at_ms <= ?4 LIMIT 1",
+        "AND invited_at_ms > ?4 AND invited_at_ms <= ?5 LIMIT 1",
     )
-    .bind(c0, c1, nowMs - TEAM_INVITATION_TTL_MS, nowMs)
+    .bind(tokenHash, c0, c1, nowMs - TEAM_INVITATION_TTL_MS, nowMs)
     .first<InvitedMemberRow>();
   if (invited === null) return false;
 
   const result = await db
     .prepare(
       "UPDATE team_member " +
-        "SET status = 'active', joined_at_ms = ?1, user_id = ?2 " +
-        "WHERE tenant_id = ?3 AND user_id = ?4 AND status = 'invited'",
+      "SET status = 'active', joined_at_ms = ?1, user_id = ?2 " +
+        "WHERE tenant_id = ?3 AND user_id = ?4 AND invitation_token_hash = ?5 AND status = 'invited'",
     )
-    .bind(nowMs, clerkUserId, invited.tenant_id, invited.user_id)
+    .bind(nowMs, clerkUserId, invited.tenant_id, invited.user_id, tokenHash)
     .run();
   return result.meta?.changes === 1;
 }

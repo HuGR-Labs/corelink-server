@@ -4,12 +4,14 @@ title: "ADR-S11-012 — TLA+ Scope Discipline: S-11 dsr_erasure_atomicity.tla"
 description: "What S-11's single TLA+ spec formally proves (erasure atomicity, consent symmetry, partial residency, audit append-only) and what it explicitly defers to S-14, with the honest partial-coverage flag."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-012-tla-scope-discipline-s11-erasure-only.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s11", "tla-plus", "formal-verification", "scope-discipline"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S11-012-tla-scope-discipline-s11-erasure-only.md@0c93371434cc3095ab602a1407821a9df5abd31a"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S11-012 — TLA+ Scope Discipline: S-11 dsr_erasure_atomicity.tla
 
 S-11 has three competing CRITICAL invariants demanding TLA+ coverage but a single tractable spec budget. This ADR draws the scope boundary: `dsr_erasure_atomicity.tla` formally proves erasure atomicity, consent symmetry, and the *pinning + monotonic* sub-properties of residency, while the full cross-region routing proof is explicitly deferred to S-14 — and it carries the honest flag that S-11 residency coverage is PARTIAL, never overclaiming full formal coverage.

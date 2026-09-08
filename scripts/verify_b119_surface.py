@@ -33,7 +33,10 @@ ROOTS = (
     REPO / "tools",
 )
 SKIP_DIRS = {".git", "node_modules", "target", ".next", "dist", "build", "changelog.d", "specs"}
-SKIP_NAMES = {"CHANGELOG.md"}
+# This module is an E2E-only response fixture, not a published SDK/mock
+# surface. Its synthetic admin-operation paths are retained only as historical
+# B-069 fixture scenarios and must not be mistaken for a customer claim.
+SKIP_NAMES = {"CHANGELOG.md", "e2e-mock-fixtures.ts"}
 TEXT_SUFFIXES = {
     ".go",
     ".html",
@@ -48,11 +51,12 @@ TEXT_SUFFIXES = {
     ".yml",
 }
 
-# Matches both the API spelling and UI links such as /en/admin/ops/id.  The
-# boundary excludes harmless names like /admin/ops-monitor while retaining
-# query, fragment, quote, and punctuation boundaries in source text.
+# Matches API spellings (`/v1/admin/ops` and `/api/v1/admin/ops`) and UI links
+# such as `/en/admin/ops/id`. The boundary excludes harmless names like
+# `/admin/ops-monitor` while retaining query, fragment, quote, and punctuation
+# boundaries in source text.
 PHANTOM = re.compile(
-    r"(?<![A-Za-z0-9_-])/(?:v1/)?admin/ops"
+    r"(?<![A-Za-z0-9_-])/(?:[A-Za-z]{2}(?:-[A-Za-z0-9]+)?/)?(?:api/)?(?:v1/)?admin/ops"
     r"(?=$|[/\\?`'\"#),;\s])"
 )
 
@@ -90,7 +94,10 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory(prefix="b119-census-") as raw:
         root = Path(raw)
         clean = root / "clean.ts"
-        clean.write_text("const route = '/admin/ops-monitor';\n", encoding="utf-8")
+        clean.write_text(
+            "const routes = ['/admin/ops-monitor', '/en/admin/ops-monitor', '/api/v1/admin/ops-monitor'];\n",
+            encoding="utf-8",
+        )
         if census((root,)):
             print("self-test failed: clean tree was rejected", file=sys.stderr)
             return 1
@@ -101,9 +108,13 @@ def self_test() -> int:
             root / "docs" / "readme.md",
             root / "crate" / "lib.rs",
         )
-        for probe in probes:
+        for probe in probes[:3]:
             probe.parent.mkdir(parents=True, exist_ok=True)
             probe.write_text("fetch('/v1/admin/ops');\n", encoding="utf-8")
+        probes[3].parent.mkdir(parents=True, exist_ok=True)
+        probes[3].write_text('page.goto("/en/admin/ops/op_1");\n', encoding="utf-8")
+        probes[4].parent.mkdir(parents=True, exist_ok=True)
+        probes[4].write_text('fetch("/api/v1/admin/ops/op_1/approve");\n', encoding="utf-8")
         legacy = root / "changelog.d" / "historical.md"
         legacy.parent.mkdir(parents=True, exist_ok=True)
         legacy.write_text("historical: /v1/admin/ops\n", encoding="utf-8")

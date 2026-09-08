@@ -4,12 +4,14 @@ title: "Launch-day production deploy sequence (Phases D→H)"
 description: "The operator runbook for cutting CoreLink to production: live secrets, D1 migrations, container build/canary, Pages/DNS, and the Worker cutover with auto-rollback."
 source_files:
   - "docs/operator/launch-day-sequence-2026-06-09.md"
-checkpoint_sha: "e5d8696d07beca20c0a3ff19cf0b7675044be375"
+source_blobs:
+  - "docs/operator/launch-day-sequence-2026-06-09.md@018b6bb20fa5a59cd8ab2060eabb6e0876e24ed1"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "deploy", "launch", "cutover", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Launch-day production deploy sequence (Phases D→H)
 
 This is the consolidated, verified-as-of-pre-flight runbook for taking CoreLink live: load the LIVE
@@ -56,3 +58,8 @@ operator can execute Phases D→H deterministically and roll back at any point.
 9. `docs/operator/launch-day-sequence-2026-06-09.md:49-53` — auto-rollback on cutover smoke fail.
 10. `docs/operator/launch-day-sequence-2026-06-09.md:57-60` — Clerk CSP owner flag.
 11. `docs/operator/launch-day-sequence-2026-06-09.md:73-75` — billing portal stub.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

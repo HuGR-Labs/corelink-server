@@ -4,12 +4,14 @@ title: "ADR-0016 — FFI wrappers over a single Rust truth vs native HTTP per la
 description: "Decides the Python/Go/JS SDK wrappers link against the one canonical corelink-client-verify Rust crate via FFI, eliminating per-language drift in the client-verify integrity check."
 source_files:
   - "specs/03_architecture/adrs/ADR-0016-ffi-wrappers-vs-native-http.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s15", "ffi", "sdk", "client-verify", "security"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0016-ffi-wrappers-vs-native-http.md@1fa7c1b15c82707675f4070396624d7227ef99be"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0016 — FFI wrappers over a single Rust truth vs native HTTP per language
 
 CoreLink's client-verify invariant requires every CAS `get()` to BLAKE3-verify downloaded bytes against the claimed digest before returning them — and that check must behave identically in every SDK. This ADR decides the Python, Go, and JS wrappers all FFI into the single canonical `corelink-client-verify` Rust crate rather than each re-implementing HTTP + BLAKE3 natively. It matters because per-language re-implementation of a cryptographic check is a structural source of inadvertent verify-bypass, and FFI makes that class of bug impossible by construction. The native CAS surface it protects is [native-cas](/surfaces/native-cas.md).

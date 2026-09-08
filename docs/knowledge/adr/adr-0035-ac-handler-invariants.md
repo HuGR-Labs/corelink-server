@@ -4,12 +4,14 @@ title: "ADR-0035 — Action Cache handler invariants (REAPI v2)"
 description: "The eight canonical invariants every REAPI v2 GetActionResult/UpdateActionResult handler must preserve regardless of caching, batching, or async optimization."
 source_files:
   - "specs/03_architecture/adrs/ADR-0035-ac-handler-invariants.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "action-cache", "reapi", "handlers", "invariants", "s04"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0035-ac-handler-invariants.md@566a4dd2b8d15908759509fc638b4bb57bf79946"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0035 — Action Cache handler invariants (REAPI v2)
 
 The Action Cache read/write handlers (`GetActionResult` / `UpdateActionResult`) are a security and correctness surface that future optimization passes — caching, batching, driver swaps — must never erode. This ADR locks down the eight invariants that define correct handler behaviour so each one maps to a property test and a chaos scenario, and a refactor that preserves them preserves behaviour.

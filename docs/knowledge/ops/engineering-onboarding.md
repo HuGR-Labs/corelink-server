@@ -7,12 +7,13 @@ source_files:
   - "docs/internal/onboarding/BUDDY-PROTOCOL.md"
 source_blobs:
   - "docs/internal/ENGINEERING-ONBOARDING.md@fa1f2689fc136fbdbedda3018873ad91c6cd36ca"
-checkpoint_sha: "d53bcc2dc642c656a37708e0f92c25bdf73e285e"
+  - "docs/internal/onboarding/BUDDY-PROTOCOL.md@4c115f87481c8649132d578c6377c648551b08bf"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "onboarding", "buddy", "process", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Engineering onboarding & the buddy protocol
 
 A 262-doc spec corpus and ~96 crates make CoreLink intimidating on Day 1, so onboarding is an explicit
@@ -30,7 +31,7 @@ ad hoc.
 
 # How it works
 
-- The goal is explicit: first PR merged ≤ 5 days, independent productivity ≤ 30 days `docs/internal/ENGINEERING-ONBOARDING.md:6-6`.
+- The goal is explicit: first PR merged ≤ 5 days, independent productivity ≤ 30 days `docs/internal/ENGINEERING-ONBOARDING.md:6`.
 - Day 0 (manager-owned) provisions laptop, access requests (GitHub org `HuGR-Labs`), and ≤ 3 pre-reads `docs/internal/ENGINEERING-ONBOARDING.md:51-98`.
 - Day 1 runs the first workspace build + spec-validator smoke `docs/internal/ENGINEERING-ONBOARDING.md:114-141`.
 - Day 2 walks the four canonical architecture docs in a fixed order `docs/internal/ENGINEERING-ONBOARDING.md:145-185`.
@@ -53,7 +54,7 @@ ad hoc.
 
 # Citations
 
-1. `docs/internal/ENGINEERING-ONBOARDING.md:6-6` — the ≤5d / ≤30d ramp goal.
+1. `docs/internal/ENGINEERING-ONBOARDING.md:6` — the ≤5d / ≤30d ramp goal.
 2. `docs/internal/ENGINEERING-ONBOARDING.md:51-98` — Day 0 access + pre-reads.
 3. `docs/internal/ENGINEERING-ONBOARDING.md:90-98` — the don't-over-prepare rule.
 4. `docs/internal/ENGINEERING-ONBOARDING.md:114-141` — Day 1 first build + validator smoke.
@@ -67,3 +68,8 @@ ad hoc.
 12. `docs/internal/onboarding/BUDDY-PROTOCOL.md:72-89` — buddy translation duties.
 13. `docs/internal/onboarding/BUDDY-PROTOCOL.md:92-99` — what the buddy is NOT.
 14. `docs/internal/onboarding/BUDDY-PROTOCOL.md:122-125` — Day-30 note is manager-prep only.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

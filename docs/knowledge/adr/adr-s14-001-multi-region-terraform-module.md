@@ -6,12 +6,16 @@ source_files:
   - "specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md"
   - "apps/migrate-single-to-multi-region/src/main.rs"
   - "crates/corelink-container/src/storage/region_map.rs"
-checkpoint_sha: "03c2ae27deb7094fea4009927b90959533dae21e"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s14", "region", "terraform", "residency"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md@3d1dc878902a2d7f35c0bb9982d5e83b6c6daff1"
+  - "apps/migrate-single-to-multi-region/src/main.rs@4128e1f04c4e5ed4bec91a22afe7fd2056a4a199"
+  - "crates/corelink-container/src/storage/region_map.rs@b21dc64ca160921f1417498a615ab9bed967c14a"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S14-001 — Multi-region Terraform module + per-region KV namespace + DO EU jurisdiction
 
 S-14 stands up CoreLink's four production regions (WNAM/ENAM/WEUR/SAM) as the foundation for everything residency-related. This ADR (DRAFT) bundles four infrastructure decisions whose forcing factors are HIGH_RISK: cross-region tenant isolation (FF-HR-002) and EU PII residency as a regulatory absolute (FF-HR-003). The throughline is preventing infrastructure-level data leaks that would constitute a Schrems II violation.
@@ -36,7 +40,7 @@ Runtime enforcement of this region pinning is the subject of [ADR-S14-002 — Re
 
 # Status vs shipped code
 
-The **artifacts** this ADR mandates exist in the repo — the reusable Terraform module and the Rust migration binary (`apps/migrate-single-to-multi-region/src/main.rs:96-106`) are both present — but the **deployed reality is US-only**. All R2 buckets are ENAM (R2 has no SA region), so the Consequences as written — "four production regions stood up (WNAM/ENAM/WEUR/SAM)" and "4 KV namespaces provisioned" — are **not live**; the region topology is a built-and-tested module applied to a single live region, not four standing regions. The container's `region_map` carries `PROVISIONED_MACROS = {wnam, enam, weur}` (3, NOT 4 — `sam` is EXCLUDED: it stays routable but is NOT provisionable until PROD_SAM has a real SAM-jurisdiction bucket, else its data mis-lands in US R2) as the Phase-1 set (`crates/corelink-container/src/storage/region_map.rs:47`), but that is the macro-mapping table, not evidence of four provisioned regions. Treat the multi-region infra as designed-and-coded, US-only-deployed.
+The **artifacts** this ADR mandates exist in the repo — the reusable Terraform module and the Rust migration binary (`apps/migrate-single-to-multi-region/src/main.rs:96-106`) are both present — and the current provisioned contract is `{wnam, enam, weur, apac}` with `apac → nrt`; `sam` and `afr` are not provisioned and are not promised. APAC is the Tokyo/NRT deployment path, while R2 remains ENAM for regions without a dedicated bucket. The topology is therefore a built-and-tested four-region contract, not the earlier US-only/SAM claim. The container's `region_map` carries `PROVISIONED_MACROS = {wnam, enam, weur, apac}` (`crates/corelink-container/src/storage/region_map.rs:47`), while SAM and AFR remain routable only where explicitly rejected by residency policy.
 
 # Citations
 

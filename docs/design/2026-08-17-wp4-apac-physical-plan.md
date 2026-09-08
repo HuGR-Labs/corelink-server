@@ -1,9 +1,14 @@
 # WP4 plan — physical APAC R2 + wire nrt + provision the `apac` macro
 
-Status: PLAN (self-reviewed; ready to execute under standing prod authorization)
+Status: EXECUTED (2026-08-17; current state reconciled 2026-09-05)
 Date: 2026-08-17
 Campaign: multi-region closure (`[[multi-region-reality-and-closure-campaign]]`). Follows WP-A/WP-C/WP-B (all
 LIVE) + WP3 (edge-serve + async-meter live on all 5 regions).
+
+The work packages below are retained as the historical execution plan. The
+current provisioned contract is `{wnam, enam, weur, apac}` with `apac → nrt`;
+`sam` and `afr` remain valid macro codes but are unprovisioned and rejected at
+signup. The APAC bucket is provisioned and bound before that macro is accepted.
 
 ## Goal
 
@@ -17,15 +22,14 @@ SAM stays the documented platform limit (no CF South-America region — ADR `202
 
 ## Verified facts (CF API + code, 2026-08-17 — NOT assumed)
 
-- `worker/src/region-map.ts`: `MACRO_TO_COLO` has `apac → nrt`; `coloForMacro`/`isMacroRegion` already recognise
-  `apac` (routable). `PROVISIONED_MACROS = {wnam, enam, weur}` — `apac` is routable-but-NOT-provisioned (signup
-  rejects it). Rust mirror `crates/corelink-container/src/storage/region_map.rs:47` = `["wnam","enam","weur"]`
-  with a **mirror-assert test at `:125`** (`assert_eq!(PROVISIONED_MACROS, [...])`) — any change touches TS +
-  Rust + that test.
-- R2 buckets `corelink-cas-nrt` and `corelink-cas-syd` **exist, are `location=ENAM`, EMPTY (0 objects), and are
-  NOT bound** (the nrt/syd workers bind `corelink-cas-prod`, also ENAM). `corelink-cas-prod` under the `nrt/` and
-  `syd/` key prefixes is **also empty** → there is **NO data to migrate**; the APAC cache starts cold and self-
-  fills on demand (a `_public` cache is regenerable by construction).
+- `worker/src/region-map.ts` maps `apac → nrt` and its executable
+  `PROVISIONED_MACROS` set is `{wnam, enam, weur, apac}`. The Rust mirror and
+  mirror-assert test carry the same four values. `sam` and `afr` remain
+  unprovisioned and signup rejects them.
+- `corelink-cas-apac` is APAC-located and bound by the `prod-nrt` worker;
+  APAC objects are written under the `nrt/` prefix. The bucket was empty before
+  enablement, so there was **NO data to migrate**; the APAC cache starts cold
+  and self-fills on demand (a `_public` cache is regenerable by construction).
 - `corelink-cas-eu` is physically EU (jurisdiction=eu), bound by lhr — EU is already local (done pre-campaign).
 - R2 location hints available: `wnam enam weur eeur apac oc` — **Tokyo → `apac`**, Sydney → `oc` (distinct).
 - D1 `read_replication = auto` replicates APAC; **reads** get the nearest replica via the Sessions API. **Writes**
@@ -35,7 +39,8 @@ SAM stays the documented platform limit (no CF South-America region — ADR `202
 
 ## Scope
 
-- **In:** nrt (Tokyo / `apac`) physical CAS bucket + bind + provision the `apac` macro + prove.
+- **Completed:** nrt (Tokyo / `apac`) physical CAS bucket + bind + provisioned
+  the `apac` macro + proof gate. Sydney remains deferred.
 - **Deferred (documented follow-up, not blocking):** syd (Sydney) needs a NEW `oc` macro (not in the
   `MacroRegion` type today) + an OC-located bucket — a clean parallel repeat of this plan once there is APAC
   demand. The AC (action-cache) buckets `corelink-ac-{nrt,syd}` are also ENAM; AC is NOT on the edge-serve
@@ -44,31 +49,28 @@ SAM stays the documented platform limit (no CF South-America region — ADR `202
 
 ## Work packages (disjoint)
 
-### WP4.1 — Infra: APAC-located CAS bucket (no code)
-Delete the empty, unbound, ENAM `corelink-cas-nrt` and recreate it **APAC-located** (same name, keeps the naming
-convention; empty ⇒ zero data loss). CF API: `DELETE /accounts/<a>/r2/buckets/corelink-cas-nrt` then
-`POST /accounts/<a>/r2/buckets` `{"name":"corelink-cas-nrt","locationHint":"apac"}`. Verify
-`GET .../buckets/corelink-cas-nrt` returns `location=APAC` before proceeding. (Risk: name-reuse settle delay
-after delete — if create 409s, retry with backoff, or fall back to a new name `corelink-cas-apac` and bind that.)
+### WP4.1 — Infra: APAC-located CAS bucket (completed)
+Historical execution deleted the empty, unbound ENAM bucket and created
+`corelink-cas-apac` with `locationHint=apac` (zero data loss). The retained
+deployment evidence records `corelink-cas-apac` as APAC-located; this is the
+bucket used by the current `prod-nrt` binding.
 
-### WP4.2 — Bind + deploy (worker config, nrt env only)
-`wrangler.toml [env.prod-nrt]`: point `CAS_BUCKET` from `corelink-cas-prod` → `corelink-cas-nrt`. Keep
+### WP4.2 — Bind + deploy (completed; worker config, nrt env only)
+`wrangler.toml [env.prod-nrt]` points `CAS_BUCKET` from `corelink-cas-prod` → `corelink-cas-apac`. It keeps
 `R2_CAS_REGION="nrt"` (the key prefix is unchanged; the bucket is what moves). Redeploy `corelink-prod-nrt`
 (worker-only, no container). This is disjoint from every other region's config. `R2_TDK_HEX` etc. already present
 (verified in WP3). Rollback = point `CAS_BUCKET` back to `corelink-cas-prod` + redeploy.
 
-### WP4.3 — Provision the `apac` macro (code PR, gated)
-Add `apac` to `PROVISIONED_MACROS` in `worker/src/region-map.ts:67` AND
-`crates/corelink-container/src/storage/region_map.rs:47`, and update the mirror-assert test at `region_map.rs:125`
-(and any TS test asserting the set). This lets signup pin a tenant to `apac` (→ nrt). One concern, one PR; CI +
-adversarial self-review; merge only when green. **Ordering: land 4.1 + 4.2 FIRST** — a provisioned `apac` macro
-with an ENAM-bound nrt worker would serve APAC tenants from US storage (silent non-locality), so the physical
-bucket must be live before the macro opens.
+### WP4.3 — Provision the `apac` macro (completed; code PR and gate)
+`apac` is present in `PROVISIONED_MACROS` in both region-map implementations,
+the mirror-assert tests agree on `{wnam, enam, weur, apac}`, and signup pins
+APAC tenants to `apac` (→ nrt). WP4.1 and WP4.2 landed before this macro was
+opened, so the physical bucket was local before provisioning accepted APAC.
 
 ### WP4.4 — Prove by USE (the gate; nothing is "done" until this passes)
-- Confirm `GET corelink-cas-nrt` = APAC (WP4.1) and the nrt worker binds it (deployed config).
-- Pin a test tenant to `apac` (post-4.3), fill a `_public` bottle so an `nrt/<prefix>/<hash>` object lands in the
-  **APAC** bucket (verify via S3 list that the object is physically in `corelink-cas-nrt`), then drive a warm
+- Confirm `GET corelink-cas-apac` = APAC (WP4.1) and the nrt worker binds it (deployed config).
+- Pin a test tenant to `apac`, fill a `_public` bottle so an `nrt/<prefix>/<hash>` object lands in the
+  **APAC** bucket (verify via S3 list that the object is physically in `corelink-cas-apac`), then drive a warm
   cache HIT and confirm: `X-Cache: HIT`, served from nrt, and (from an APAC vantage — a runner box in an APAC
   colo, or Server-Timing) the `origin`/R2 phase is in-region, not cross-Pacific. Reuse the proven harness:
   mint via `scripts/admin/mint-dogfood-pat.sh`, drive `/v1/cas/<tenant>/<digest>` and the `/brew` `_public`
@@ -101,5 +103,6 @@ empty).
 - **Prove-by-use is the gate**, not a formality — physical placement in the APAC bucket + a functional HIT are
   mandatory; the same-region latency number is honestly gated on an APAC vantage.
 - **Reversible + safe:** every step rolls back instantly; nothing irreversible; no data at risk.
-- **Verdict: APPROVED to execute.** Escalate to owner ONLY the go/no-go on *opening the `apac` macro to signup*
-  (WP4.3) — that is a product-surface change (new sellable region), the one genuinely product-level decision here.
+- **Verdict: EXECUTED.** The APAC macro is open only because the APAC bucket and
+  nrt binding were in place first. Any future region still requires the same
+  physical-placement proof and an explicit owner decision.

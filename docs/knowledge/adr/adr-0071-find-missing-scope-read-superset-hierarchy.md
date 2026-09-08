@@ -4,12 +4,14 @@ title: "ADR-0071 — Cache find-missing is a read-superset capability (read ⊇ 
 description: "Why cache find-missing is a distinct, independently-grantable least-privilege scope that is a STRICT SUBSET of read — a find-only PAT probes existence and nothing else, while every read PAT satisfies find-missing unchanged; the strict non-implying corelink-reapi plane is dormant and NOT the canonical model."
 source_files:
   - "specs/03_architecture/adrs/ADR-0071-find-missing-scope-read-superset-hierarchy.md"
-checkpoint_sha: "51cbc85b2da2ba57eec2d485163f61e86ddaa027"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "auth", "scope", "pat", "find-missing", "bazel", "reapi", "cache"]
 timestamp: "2026-07-20T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0071-find-missing-scope-read-superset-hierarchy.md@bdb7ca9980db6c99015f5c920d48afc6316283f1"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0071 — Cache find-missing is a read-superset capability (read ⊇ find-missing)
 
 `FindMissingBlobs` (the Bazel/sccache REAPI existence probe — "which of these do you already have?") is a

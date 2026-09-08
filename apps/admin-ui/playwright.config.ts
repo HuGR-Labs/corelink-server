@@ -51,10 +51,18 @@ const allProjects = [
 
 export default defineConfig({
   testDir: "./playwright/e2e",
-  fullyParallel: true,
+  // Use the same bounded route-tree warm-up as the critical-flow suite. Next
+  // dev discovers App Router entries lazily; without this setup, parallel
+  // legacy specs can all observe the transient 404 tree instead of the page
+  // under test.
+  globalSetup: "./tests/e2e/warm-routes.ts",
+  // The legacy suite shares one Next dev server. Serializing it keeps route
+  // compilation and the test-only session fixture deterministic on constrained
+  // runners; browser fan-out remains in the critical-flow config.
+  fullyParallel: false,
   forbidOnly: !!process.env["CI"],
   retries: process.env["CI"] ? 2 : 0,
-  workers: process.env["CI"] ? 2 : undefined,
+  workers: 1,
   reporter: process.env["CI"]
     ? [["github"], ["html", { open: "never" }], ["list"]]
     : [["list"]],
@@ -82,6 +90,9 @@ export default defineConfig({
           NEXT_TELEMETRY_DISABLED: "1",
           // Force test-mode auth fixtures (see playwright/fixtures/clerk.ts).
           NEXT_PUBLIC_E2E_TEST_MODE: "1",
+          // Keep browser-side typed clients on the app's same-origin fixture
+          // route. A bare /api would resolve outside the /corelink mount.
+          NEXT_PUBLIC_CORELINK_API_URL: `${APP_BASE_PATH}/api`,
         },
       },
 });

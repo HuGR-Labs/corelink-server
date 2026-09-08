@@ -23,8 +23,11 @@ PNPM_VERSION = "10.32.1"
 TEST_FILE = ROOT / "worker/tests/pat_issue_rate_limit.test.ts"
 RATE_FILE = ROOT / "worker/src/pat_issue_rate_limit.ts"
 DO_FILE = ROOT / "worker/src/durable_object.ts"
-EDGE_FILE = ROOT / "worker/src/index.ts"
-ROUTE_FILE = ROOT / "crates/corelink-container/src/routes/customer.rs"
+EDGE_FILE = ROOT / "worker/src/index_auth.ts"
+ROUTE_FILES = (
+    ROOT / "crates/corelink-container/src/routes/customer/part-00.rs",
+    ROOT / "crates/corelink-container/src/routes/customer/part-01.rs",
+)
 MAX_TEST_SECONDS = 90
 
 REQUIRED_TEST_MARKERS = (
@@ -87,7 +90,7 @@ def validate_source(files: dict[str, str]) -> None:
 
 def source_files() -> dict[str, str]:
     return {
-        "route": read(ROUTE_FILE),
+        "route": "\n".join(read(path) for path in ROUTE_FILES),
         "rate": read(RATE_FILE),
         "do": read(DO_FILE),
         "edge": read(EDGE_FILE),

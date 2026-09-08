@@ -24,10 +24,10 @@ export default async function AuditEventPage({
   params,
 }: AuditEventPageProps): Promise<React.ReactElement> {
   const { event_id } = await params;
-  const event = await loadEvent(event_id);
+  async function GuardedAuditEventContent(): Promise<React.ReactElement> {
+    const event = await loadEvent(event_id);
 
-  return (
-    <RbacGuard>
+    return (
       <div className="cx-shell lin">
         <div className="cx-main">
           <main aria-labelledby="event-heading">
@@ -69,6 +69,12 @@ export default async function AuditEventPage({
           </main>
         </div>
       </div>
+    );
+  }
+
+  return (
+    <RbacGuard>
+      <GuardedAuditEventContent />
     </RbacGuard>
   );
 }

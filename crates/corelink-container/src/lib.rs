@@ -21,8 +21,9 @@
 //!   new code should prefer the orchestrator directly.
 //! - [`byok_orchestrator`] — singleton trait-object dispatch over the
 //!   four production BYOK providers (AWS / GCP / Azure / Vault),
-//!   feature-flag-selected at compile time. Default (no flag) returns
-//!   an `InMemoryFake`. Multiple `byok-*-real` flags is a HARD
+//!   feature-flag-selected at compile time. Default (no flag) fails
+//!   closed with no provider; there is no in-memory crypto fallback.
+//!   Multiple `byok-*-real` flags is a HARD
 //!   compile error. See
 //!   `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md §7`.
 //! - [`wall_clock`] — cross-route wall-clock trait (`WallClock` +
@@ -97,11 +98,18 @@ pub mod auth_tenant;
 /// in-memory mirror. See module docs.
 pub mod billing_d1_http;
 pub mod byok_orchestrator;
+/// Native D1 collaborators and complete production wiring for the BYOK
+/// revocation detector scheduler.
+pub mod byok_revocation_runtime;
 /// Per-tenant **storage byte accounting** (red-team finding #1): the
 /// [`byte_accounting::ByteAccountant`] that atomically check-and-accrues
 /// `tenant_storage_state.bytes_used` after a store write (closing the
 /// structurally-inert storage cap) and saturating-releases it on delete.
 pub mod byte_accounting;
+/// Deployed container capacity and the shared process-wide memory envelope.
+/// All cache-plane concurrency budgets derive from this module's basic
+/// (1 GiB / 0.25 vCPU) truth.
+pub mod container_capacity;
 /// Production D1-backed customer-dashboard handler (dashboard revival
 /// WP-3): [`customer_d1::D1CustomerHandler`] implements all 6
 /// `corelink-handler-customer` traits over the CF D1 REST API
@@ -121,6 +129,9 @@ pub mod d1_coread;
 /// rectification stay byte-identical (HMAC-SHA256 under `EMAIL_HASH_SALT`, with
 /// a no-regression unsalted SHA-256 fallback).
 pub mod email_hash;
+/// Native production GC sweep entrypoint adapters over the shared D1/R2
+/// clients. The pure `corelink-gc` crate remains network-free.
+pub mod gc_sweep;
 /// Native data-plane **PAT possession gate** (red-team finding #4): the
 /// [`native_pat_gate::NativePatGate`] that re-runs the full Argon2id Option-B
 /// verification (via [`adapter_pat::PatVerifier`]) at the container, so a leaked

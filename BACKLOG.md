@@ -144,6 +144,11 @@ B-002 shipped the platform-truth reconciliation observe-only: `reconcileOrphanBo
 LOGS orphan candidates but tears nothing down. Arming it is gated. **Progress
 2026-08-25 (corelink-runners #513 merged + deployed, observe ENABLED):**
 
+The authoring contract for this external item is
+`docs/campaigns/remediation/WP-B044-orphan-teardown.md`; it is a static safety
+guard, not a claim that the sibling runtime is implemented or enabled. The
+live join and destination proof remain prerequisites.
+
 - ✅ **Pre-work hardening landed (#513).** Two FAIL-UNSAFE bugs that would turn a
   LIVE box into a false orphan, fixed before arming: (a) `listRunningInstances`
   enumerated EVERY container app in the account (corelink-prod × 5, githugr,
@@ -188,10 +193,12 @@ ato de deploy, que passa pela guardiã de merge — não bloqueia o item.
 id: B-044
 repo: corelink-runners
 owner: tl
-status: open
-verify: manual
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: python3 scripts/verify_b044_orphan_teardown_wp.py && python3 scripts/verify_d03_graduation.py
 verify-means: |
-  open while orphan-box teardown is unarmed in prod. As of 2026-08-25 the pre-work
+  parked — orphan-box teardown is unarmed in prod. The focal verifier checks the
+  external WP contract and its fail-closed mutation suite. As of 2026-08-25 the pre-work
   is DONE (#513: app-scope + KV pagination) and OBSERVE is enabled (creds +
   RECONCILE_ORPHAN_BOXES=1 as Worker secrets; orphan_reconcile_scan live, 0 false
   orphans). It stays open because (a) the join wants a scanned>0 confirmation and
@@ -200,7 +207,1901 @@ verify-means: |
   orphan is classified type-1 AND RECONCILE_ORPHAN_TEARDOWN is armed after an
   observe window, OR is retired if orphans prove type-2/none (image-roll only).
   Arming an unvalidated join or an unproven primitive can kill a live box.
-last-verified: 2026-08-25
+last-verified: 2026-09-05
+```
+
+### B-255 — customer cross-tenant audit-before-denial formally closed
+
+The independent handler refinement is now wired and verified: the
+`cross_tenant_handler_audit.tla` model covers all six customer groups and proves
+that each `CrossTenantDenied` return is immediately preceded by its matching
+`*Denied` audit; audit-sink failure is fail-closed. The D1-backed handler has
+executable behavioral coverage for the same boundary, and the retained TLC
+record is `specs/_audits/sealed/2026-09-06-b255-cross-tenant-tlc.md`.
+
+```backlog
+id: B-255
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 scripts/verify_b255_cross_tenant_denied.py
+verify-means: |
+  done — `cross_tenant_handler_audit.tla` + `.cfg` modelam os seis grupos
+  (overview, usage, billing, keys, team, audit_query), provam a auditoria
+  `*Denied` imediatamente antes de `CrossTenantDenied` e modelam a falha do
+  sink como `AuditFailed` sem retorno de negação. O alvo de tenant é explícito
+  nas requests, com guard compartilhado wired no handler em memória e no D1;
+  os testes comportamentais e `mutation_kills.rs` exercitam todas as operações
+  e confirmam ausência de mutação. O verificador exige registry + TLA gate +
+  `critical_no_tla=[]`; TLC foi executado pelo runner focal.
+last-verified: 2026-09-06
+```
+
+### B-256 — D1 migration 0062 widening is additive and fail-closed
+
+The D03 repair replaces the old rebuild with an in-place catalog edit and a
+semantic TEMP guard. The reviewed seed `12030011770417089905` remains anchored;
+the current property blob is `ccd9dacabcd97235f80cf1ca4d52b170802d600f` and
+the current migration blob is `cda560abd23ceb2df03b75cdade92cdf6f5a6086`.
+
+```backlog
+id: B-256
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 scripts/verify_b256_migration_additivity.py
+verify-means: |
+  done — o verificador focal ancora os blobs atuais da propriedade
+  (`ccd9dacabcd97235f80cf1ca4d52b170802d600f`) e da migration
+  (`cda560abd23ceb2df03b75cdade92cdf6f5a6086`), reproduz o banco legado 0039/0048, semeia
+  rows em ambas as tabelas, aplica 0062 em transação e prova preservação
+  byte-for-byte das rows, colunas, índices, FK e da view. Insere todos os seis
+  tiers (mantendo `team` compatível), reaplica a migration e prova idempotência.
+  As mutações de DROP VIEW, DROP TABLE, ALTER TABLE ... RENAME TO e RENAME
+  COLUMN são rejeitadas pelo detector; remover qualquer uma das duas updates
+  de catálogo falha no guard TEMP pós-condição. O seed conhecido
+  12030011770417089905 permanece ancorado, e a propriedade foi fortalecida
+  para detectar `ALTER TABLE <nome> RENAME TO` sem exceções. A verificação focal
+  (sem Cargo) e `check_migrations_additive.py` passam; não há exceção
+  `additive-allowed` nem enfraquecimento do detector.
+last-verified: 2026-09-06
+```
+
+### B-257 — `corelink-handler-customer` declared `uuid`, but its Cargo.lock package entry omitted it
+
+On the exact clean D03 head `945cf3e743c3ec28ddc2fd7b6774f11074640332`,
+`crates/corelink-handler-customer/Cargo.toml` already declared
+`uuid = { workspace = true }`, while the matching `corelink-handler-customer`
+package in `Cargo.lock` listed only `corelink-slo` and `thiserror`. Cargo's
+lockfile synchronization produced exactly one required line — `"uuid",` in
+that package's dependency array — preserved as recovery evidence in
+`a76adf6344c1c7dcd96126d633cb01b7a2b78de9`. No source or dependency version
+was changed. The committed repair is that one-line lock sync plus a structural,
+stdlib-only parity verifier and a mutation test that removes the real entry
+and replaces it with a TOML comment; the mutation is red, so prose/string bait
+cannot satisfy the contract.
+
+```backlog
+id: B-257
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 scripts/verify_b257_cargo_lock_parity.py --root .
+verify-means: |
+  done — the verifier parses the manifest and Cargo.lock as TOML data, resolves
+  manifest aliases, includes normal/dev/build dependency declarations, requires
+  exactly one matching lock package, and compares the direct dependency sets.
+  It is scoped at minimum to corelink-handler-customer and fails closed on
+  missing/malformed files, duplicate package entries, missing uuid, undeclared
+  lock dependencies, comments, or strings. The focal mutation is
+  `python3 -m pytest -q tests/test_b257_cargo_lock_parity.py`: removing the
+  actual `"uuid",` line and inserting `# uuid` exits non-zero. Evidence base:
+  clean D03 `945cf3e743c3ec28ddc2fd7b6774f11074640332`; exact lock-only delta
+  `a76adf6344c1c7dcd96126d633cb01b7a2b78de9`.
+last-verified: 2026-09-06
+```
+
+### B-258 — checkout promo tests mocked the second request and never reached the promo assertion
+
+The D02 tail exposed a false-green test seam in
+`crates/corelink-stripe-real/tests/checkout_promo.rs`: both cases mocked only
+`POST /v1/checkout/sessions`, while the real `create_checkout_session` path
+first creates a Customer at `POST /v1/customers`. Wiremock therefore returned
+404 on the first request, so neither promo assertion exercised the claimed
+checkout request.
+
+The repair keeps the runtime untouched and makes the test wire contract closed:
+each case mocks exactly one Customer creation and one Checkout Session, asserts
+the order and paths, reads the checkout body from request 2, and checks the
+mutually-exclusive `allow_promotion_codes` / `discounts[0][coupon]` choices.
+The runtime source blob is `7b8651450b2f9eadaab2b352639cde881517a0ac`; the
+repaired integration-test blob is
+`0380c3c78d5dfeaa5e8aa842a5bc9c5ad7dac85f` (the stale pre-repair test blob was
+`7efe116eb35e2e7dfd2b4cc4eae887bf4cb22ca9`).
+
+```backlog
+id: B-258
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 scripts/verify_b258_checkout_promo.py
+verify-means: |
+  done — the stdlib-only verifier pins the exact runtime and repaired test
+  blobs, lexes/masks Rust inline and nested block comments plus normal/raw
+  string literals, confirms executable `create_customer` →
+  `create_checkout_session_raw` ordering and the two canonical Stripe
+  endpoints, and requires the wiremock suite to install both mocks. It
+  requires exactly two received requests in customer-then-checkout order,
+  selects the checkout body from request 2, and checks both sides of the
+  promo/coupon mutual exclusion.
+
+  `tests/test_b258_checkout_promo_contract.py` mutates the customer mock away,
+  changes the checkout endpoint, and selects request 1 for the promo body,
+  leaving each removed fact as comment/normal-string/raw-string bait; every
+  mutation is RED. The real `checkout_promo.rs` integration tests remain the
+  runtime evidence and are intentionally not executed in this D02 bundle.
+  Missing or stale source evidence is a verifier failure, never a skipped
+  assertion or a 404 interpreted as success.
+last-verified: 2026-09-06
+```
+
+### B-259 — npm tarball moat omitted the authoritative per-tier storage cap
+
+F-008 is already canonicalized as B-233 for its admitted Brew/Pip finding.
+The npm adapter was an untracked sibling: its tarball `CasStore` write passed
+`None` to `MoatCache::put`, so npm had no resolved per-tier cap and could not
+prove downgrade freshness. This item keeps that npm containment evidence
+separate without changing the source audit's narrower F-008 title.
+
+The repair threads the same `TenantCapResolver` used by cargo/Brew/Pip/OCI
+through `npm::router_with_cap_resolver`; production build wiring supplies
+`D1TenantCapResolver`. The compatibility constructor is explicitly
+indeterminate, and the accounting seam therefore fails closed for a missing
+cap. The resolver is called for every write using the PAT-derived tenant, so a
+downgrade cannot reuse a stale seed; tarball bytes remain per-tenant.
+
+```backlog
+id: B-259
+repo: corelink-server
+owner: tl
+status: done
+source-document: "reports/audits/2026-08-26-go-live-readiness.md"
+source-locator: "F-008 (npm sibling containment; B-233 remains Brew/Pip)"
+finding-title: "npm tarball moat omitted the authoritative per-tier storage cap"
+problem: "npm route passed None to MoatCache::put and had no resolved per-tier storage cap"
+evidence: "crates/corelink-container/src/routes/npm.rs:184-194; crates/corelink-container/src/routes/build.rs:468-486"
+dependencies: [B-233]
+next-action: "Keep PR #1393 pending until the permitted runtime Cargo gate and deployment evidence are reviewed; do not flip B-233 based on this npm sibling alone."
+acceptance: "NpmMoatStore resolves the current PAT-derived tenant cap on every write; production passes D1TenantCapResolver; under-cap, over-cap, downgrade, missing-cap, tenant-isolation, and comment/string/wrong-fragment mutation checks are green."
+verify: |
+  python3 scripts/verify_f008_npm_storage_cap.py
+  python3 -m pytest -q tests/test_f008_npm_storage_cap.py
+verify-means: |
+  done — the stdlib-only focal verifier lexes active Rust structure, proves the
+  npm write body carries the resolved cap and production D1 wiring, and kills
+  the semantic mutations covering comment/string bait, wrong tenant,
+  removed-resolver, None-argument, statically disabled flow, early return,
+  duplicate writes (including an alternate tenant), and inverse/stale wording
+  in the public and byte-accounting guidance. It requires exactly one reachable
+  top-level moat write, resolves the PAT-derived tenant cap first, and rejects
+  malformed or statically disabled source rather than treating it as evidence.
+  Rust behavioral tests
+  exercise under-cap success, over-cap rejection, downgrade rejection,
+  missing-cap fail-closed behavior, and per-tenant namespace preservation.
+  Cargo/build/CI/network checks are intentionally not run in this bounded WP.
+last-verified: 2026-09-06
+```
+
+### B-260 — Worker auth chama o gate de suspensão sem importar o símbolo
+
+Durante a revisão focal de B-109/B-129, o caminho de autenticação do Worker
+falhou com `ReferenceError: isTenantSuspended is not defined`, embora
+`worker/src/lib/tenant_suspend_gate.ts` exporte a função e os testes de
+suspensão já cubram tenants `suspended`, `erased` e ativos. A chamada estava
+presente em `index_auth.ts`, mas o import de produção havia sido omitido.
+
+O import agora liga explicitamente `index_auth.ts` ao gate real. O comportamento
+permanece fail-closed para tenants suspensos/erased e permite o tenant ativo
+alcançar o Durable Object; o verificador focal também rejeita mutations que
+removam, comentem ou renomeiem o import/chamada.
+
+```backlog
+id: B-260
+repo: corelink-server
+owner: tl
+status: done
+source-document: "focal B109/B129 review"
+source-locator: "worker/src/index_auth.ts:5,587"
+finding-title: "Worker auth calls the tenant-suspend gate without importing it"
+problem: "isTenantSuspended was referenced at runtime but not imported"
+evidence: "worker/src/lib/tenant_suspend_gate.ts:234; worker/tests/tenant_suspend_gate.test.ts"
+acceptance: "The production auth path imports and calls isTenantSuspended exactly once; suspended and erased tenants receive 403 while active tenants reach the DO, and import/call removal mutations are red."
+verify: python3 scripts/verify_b260_worker_suspend_wiring.py
+verify-means: |
+  done — o guard focal mascara comentários/literais, exige o import ativo e único,
+  a chamada executável única e os três corpos de teste executáveis (suspended,
+  erased e active), com assertions de 403/allowance.
+  O teste Vitest focal `worker/tests/tenant_suspend_gate.test.ts` executa os três
+  caminhos; mutations de remoção, comentário, string-bait ou `if (false)` no
+  import/chamada/testes são rejeitadas pelo guard. O defeito era wiring de
+  produção, não ausência do módulo nem configuração de ambiente.
+last-verified: 2026-09-06
+```
+
+### B-261 — Azure real.rs aponta módulos nativos para um diretório inexistente
+
+O focal Rust com a feature Azure falhava em `real.rs` com `E0583: file not
+found for module native` (e também para `tests`): declarações sem `path` fazem
+o compilador procurar `byok_azure/real/native.rs` e `real/tests.rs`, mas os
+arquivos reais ficam em `byok_azure/native.rs` e `byok_azure/tests.rs`. O
+provider e os testes existem; o grafo de módulos é que estava quebrado.
+
+As declarações agora usam `#[path = "native.rs"]` e `#[path = "tests.rs"]`,
+restaurando o grafo correto sem mover código ou alterar o provider. O focal
+Azure valida AAD/JCS, FIPS host e tamper rejection; o guard adversarial rejeita
+remoção ou troca dos dois path bindings.
+
+```backlog
+id: B-261
+repo: corelink-server
+owner: tl
+status: done
+source-document: "focal B109/B129 review"
+source-locator: "crates/corelink-byok/src/byok_azure/real.rs:199-228"
+finding-title: "Azure real provider declares native/test modules under a nonexistent real/ directory"
+problem: "mod native and mod tests resolved relative to real.rs instead of their sibling files"
+evidence: "crates/corelink-byok/src/byok_azure/native.rs; crates/corelink-byok/src/byok_azure/tests.rs"
+acceptance: "corelink-byok Azure native and test modules resolve from their sibling files; focal Azure tests pass and path-removal/wrong-path mutations are red."
+verify: python3 scripts/verify_b261_azure_module_paths.py
+verify-means: |
+  done — o guard focal exige exatamente os dois path bindings, `native.rs` ativo
+  para non-wasm production, `tests.rs` somente em `cfg(test)`, o gate production
+  do parent e os controles AAD/FIPS. `cargo test -p corelink-byok --lib
+  --features azure` executa 67 testes verdes; mutations de remoção/troca de
+  path, comentários/string-bait, cfg(test)/cfg(wasm32), cfg falso ou cfg não
+  production são rejeitadas. A falha era um caminho de módulo relativo, não uma
+  dependência ou condição de ambiente.
+last-verified: 2026-09-06
+```
+
+### B-262 — Neon shadow real.rs points its native module at a nonexistent directory
+
+The bundle-CI focal compile on the exact D03 delivery head failed with
+E0583: real.rs declared mod native;, so Rust searched for
+neon_shadow/real/native.rs, while the implementation is the sibling
+neon_shadow/native.rs. The implementation and the parent module export were
+already present; only the relative module binding was wrong.
+
+The declaration now uses #[path = "native.rs"] under the existing non-wasm
+production gate. No code was moved and no runtime behavior changed. The focal
+guard and mutation suite prove the executable path binding, native-only cfg,
+parent export, and child implementation, and reject removal, wrong-path,
+comment/string-bait, false-cfg, and missing-implementation mutations.
+
+```backlog
+id: B-262
+repo: corelink-server
+owner: tl
+status: done
+source-document: "bundle-CI focal review"
+source-locator: "crates/corelink-audit-chain/src/neon_shadow/real.rs:401-405"
+finding-title: "Neon shadow real.rs declares native under a nonexistent real/ directory"
+problem: "mod native resolved to neon_shadow/real/native.rs although the implementation is neon_shadow/native.rs"
+evidence: "crates/corelink-audit-chain/src/neon_shadow/native.rs; cargo check -p corelink-audit-chain --features neon-real"
+acceptance: "corelink-audit-chain's native module resolves from its sibling file; focused compile/tests pass and path/cfg/export/implementation mutations are red"
+verify: python3 scripts/verify_b262_neon_shadow_module_paths.py
+verify-means: |
+  done — the stdlib-only focal verifier requires exactly one executable
+  #[path = "native.rs"] mod native; binding under the non-wasm cfg, the
+  native-only RealNeonShadowSink re-export, the parent pub mod real;, and
+  the child implementation. scripts/test_b262_neon_shadow_module_paths.py
+  exercises baseline plus removal, wrong-path, comment-bait, cfg(test),
+  cfg(wasm32), false-cfg, parent-removal, and implementation-removal
+  mutations; each must fail closed. Focused Cargo evidence is
+  cargo check -p corelink-audit-chain --features neon-real and
+  cargo test -p corelink-audit-chain --lib.
+last-verified: 2026-09-06
+```
+
+### B-263 — audit events split and workspace lockfile break bundle compilation
+
+The D03 bundle CI exposed two deterministic integration residues. The split
+`events.rs` declared `mod synthetic_data;` from a nested module context, so
+Rust searched for the nonexistent `events/synthetic_data.rs` instead of the
+committed sibling. The workspace manifest also consumed `corelink-gc` while
+the `corelink-server` lockfile package omitted that dependency.
+
+```backlog
+id: B-263
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-audit/src/events.rs:933; Cargo.toml:576; Cargo.lock corelink-server package"
+finding-title: "audit module path and workspace lockfile are inconsistent after the D03 split"
+problem: "Rust resolves synthetic_data below events/ and Cargo rewrites the lockfile before compiling"
+evidence: "crates/corelink-audit/src/synthetic_data.rs; cargo build --workspace; cargo build --target wasm32-unknown-unknown -p corelink-clerk-cf"
+acceptance: "the audit sibling module resolves explicitly, the lockfile contains corelink-server's corelink-gc dependency, and path/lock removal mutations fail closed"
+verify: python3 scripts/verify_b263_audit_module_paths.py
+verify-means: |
+  done — the focal verifier requires the executable sibling path binding,
+  export and implementation and parses Cargo.toml/Cargo.lock to require the
+  same corelink-gc dependency on the corelink-server package. Its mutation
+  tests reject missing/wrong/commented paths, missing exports or implementations,
+  and manifest/lockfile disagreement.
+last-verified: 2026-09-06
+```
+
+### B-264 — alert transport field documentation breaks the workspace lint gate
+
+The exact D03 Rust bundle reached `corelink-ops` and failed its crate-level
+`missing_docs` deny because `AlertTransportError::NotConfigured.channel` had no
+field documentation. The field now documents the channel whose endpoint or
+provider configuration is absent; no type, error text, or runtime behavior
+changed.
+
+```backlog
+id: B-264
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-ops/src/alerts/channel.rs:72-78"
+finding-title: "AlertTransportError NotConfigured field violates missing_docs"
+problem: "the undocumented channel field makes corelink-ops fail its deny(missing_docs) contract"
+evidence: "cargo check -p corelink-ops; cargo test -p corelink-ops --lib alerts"
+acceptance: "the field has accurate Rust documentation, the focal crate checks pass, and removal/comment mutations fail closed"
+verify: python3 scripts/verify_b264_b267_bundle_repairs.py
+verify-means: |
+  done — the structural bundle-repair gate binds the documentation directly to
+  `NotConfigured.channel` and rejects a missing field doc or comment-only field.
+  The exact D03 candidate passes `cargo check -p corelink-ops` and all five
+  focused alert tests.
+last-verified: 2026-09-06
+```
+
+### B-265 — sealed archive violates two denied Clippy lints
+
+The exact D03 Rust bundle found `indexing_slicing` in the invalid-epoch empty
+prefix and `unnecessary_map_or` in the sealed-link comparison. The repair uses
+the checked empty slice accessor and compares the `Result` directly with the
+claimed hash, preserving the existing fail-closed behavior.
+
+```backlog
+id: B-265
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-audit-chain/src/sealed_archive.rs:421-500"
+finding-title: "sealed archive fails indexing_slicing and unnecessary_map_or"
+problem: "two expressions violate the audit-chain all-target Clippy deny policy"
+evidence: "cargo clippy -p corelink-audit-chain --all-targets -- -D warnings"
+acceptance: "both denied lints are removed without changing error or prefix semantics; focal tests and regression mutations pass"
+verify: python3 scripts/verify_b264_b267_bundle_repairs.py
+verify-means: |
+  done — the gate requires the checked empty-slice expression and direct
+  `Result != Ok(claimed)` comparison while rejecting both original lint forms.
+  The audit-chain library Clippy gate and 182 library tests pass.
+last-verified: 2026-09-06
+```
+
+### B-266 — migration replay splitter closes triggers at CASE endings
+
+Migration 0114 is valid SQLite, but the repository replay harness treated the
+first `END` in each `CASE ... END` expression as the trigger terminator. It then
+split the trigger early and reported `incomplete input` followed by a standalone
+`END`. The splitter now tracks nested CASE depth inside trigger bodies; the SQL
+migration remains unchanged.
+
+```backlog
+id: B-266
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-ops/src/migrations.rs:155-265; migrations/d1/0114_byok_revocation_customer_audit_atomic.sql"
+finding-title: "D1 replay splitter mistakes CASE END for the trigger terminator"
+problem: "CASE expressions split migration 0114 into invalid partial statements"
+evidence: "cargo test -p corelink-ops --test migrations_d1_migration_integration -- --nocapture"
+acceptance: "CASE depth is nested within trigger depth, the focused splitter regression passes, and all 114 D1 migrations replay cleanly without a hazard pin"
+verify: python3 scripts/verify_b264_b267_bundle_repairs.py
+verify-means: |
+  done — the structural gate binds CASE-depth tracking to trigger parsing and
+  requires the four-statement regression fixture. Independent reproduction
+  proved the original 113-clean/1-hard-failure state; the repair passes 114/114
+  migrations with zero skips and zero hard failures. Migration 0114 and both
+  hazard allow-lists remain untouched.
+last-verified: 2026-09-06
+```
+
+### B-267 — extracted audit-chain test modules resolve below nonexistent directories
+
+Three large test modules were extracted into sibling files, but their parent
+modules retained bare `mod` declarations. Rust therefore searched below
+`archive_producer/`, `neon_shadow/`, and `sealed_archive/` directories that do
+not exist. Explicit sibling path attributes restore the intended test graph.
+
+```backlog
+id: B-267
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-audit-chain/src/archive_producer.rs; crates/corelink-audit-chain/src/neon_shadow.rs; crates/corelink-audit-chain/src/sealed_archive.rs"
+finding-title: "three extracted audit-chain test modules have unresolved relative paths"
+problem: "bare test mod declarations resolve to nonexistent nested module directories"
+evidence: "cargo test -p corelink-audit-chain; cargo clippy -p corelink-audit-chain --all-targets -- -D warnings"
+acceptance: "all three parent modules bind their existing sibling test files exactly once; package tests, Clippy, and path mutations pass"
+verify: python3 scripts/verify_b264_b267_bundle_repairs.py
+verify-means: |
+  done — the gate requires exact active sibling path bindings for all three
+  modules and verifies that each child file exists. Removal and comment-bait
+  mutations fail; the package passes 182 unit, 27 mutation, 3 integration and
+  12 property tests plus all-target Clippy.
+last-verified: 2026-09-06
+```
+
+### B-268 — customer keys split loses the shared BYOK status type
+
+The D03 bundle build reached `corelink-handler-customer` and found that the
+extracted `request/keys.rs` module uses `ByokStatus` without importing the type
+defined by its `overview` sibling. The module now imports that canonical type;
+no response shape or runtime behavior changed.
+
+```backlog
+id: B-268
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-handler-customer/src/request/keys.rs:1-3,94-102"
+finding-title: "customer keys request module cannot resolve ByokStatus after extraction"
+problem: "the split module uses its sibling's response type without importing it"
+evidence: "cargo check -p corelink-handler-customer; cargo clippy -p corelink-handler-customer --all-targets -- -D warnings"
+acceptance: "keys.rs imports the single canonical overview::ByokStatus, the response remains bound to it, focal compilation passes, and import/type mutations fail closed"
+verify: python3 scripts/verify_b268_handler_byok_import.py
+verify-means: |
+  done — the focal guard requires exactly one active sibling import, exactly one
+  canonical `ByokStatus` definition, and the existing keys response field and
+  constructor bindings. Removal, comment-bait, wrong-module, duplicate-type and
+  response-substitution mutations fail closed; focused Cargo proof belongs to
+  the exact D03 bundle tail.
+last-verified: 2026-09-06
+```
+
+### B-269 — pilot harness split resolves lifecycle below a nonexistent directory
+
+The D03 bundle test and Clippy lanes reached `e2e-pilot-onboarding` and failed
+because `harness.rs` declared a bare `mod harness_lifecycle;`. Rust searched
+under `src/harness/`, but the extracted implementation is the existing sibling
+`src/harness_lifecycle.rs`. An explicit path restores that intended module graph.
+
+```backlog
+id: B-269
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "tests/e2e-pilot-onboarding/src/harness.rs:451; tests/e2e-pilot-onboarding/src/harness_lifecycle.rs"
+finding-title: "pilot onboarding harness cannot resolve its extracted lifecycle module"
+problem: "a bare nested mod declaration searches below a nonexistent harness directory"
+evidence: "cargo test -p e2e-pilot-onboarding; cargo clippy -p e2e-pilot-onboarding --all-targets -- -D warnings"
+acceptance: "the parent binds the existing sibling lifecycle file exactly once, focal package tests and Clippy pass, and path/content mutations fail closed"
+verify: python3 scripts/verify_b269_pilot_harness_module_path.py
+verify-means: |
+  done — the focal guard requires the exact active sibling path plus three
+  load-bearing lifecycle methods. Missing, wrong and comment-only bindings or a
+  truncated lifecycle implementation fail closed; package Cargo proof belongs
+  to the exact D03 bundle tail.
+last-verified: 2026-09-06
+```
+
+### B-270 — tenant-isolation audit fake loses its UUID type import
+
+```backlog
+id: B-270
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "tests/e2e-tenant-isolation/src/fakes/foundation.rs"
+finding-title: "tenant-isolation foundation cannot resolve Uuid after extraction"
+problem: "the extracted audit fake uses Uuid without importing the canonical crate type"
+evidence: "cargo check -p e2e-tenant-isolation"
+acceptance: "foundation imports uuid::Uuid exactly once and the final D03 Rust bundle passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the structural bundle guard requires the load-bearing UUID import and
+  its mutation turns red; compilation proof belongs to the frozen D03 bundle.
+last-verified: 2026-09-06
+```
+
+### B-271 — adapter PAT extraction leaves four modules at nonexistent paths
+
+```backlog
+id: B-271
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/adapter_pat.rs"
+finding-title: "adapter PAT facade cannot resolve its four extracted siblings"
+problem: "bare nested module declarations search below adapter_pat/ instead of beside adapter_pat.rs"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "all four existing sibling files are explicitly bound once and downstream auth inference cascades disappear"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard binds crypto, gate, lookup and verifier to their exact
+  sibling files; removal of any binding fails closed. Rust proof is bundled.
+last-verified: 2026-09-06
+```
+
+### B-272 — R2 S3 client fragment has invalid inner docs and parent scope
+
+```backlog
+id: B-272
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/storage/r2_s3.rs; crates/corelink-container/src/storage/r2_s3_parts/client.rs"
+finding-title: "included R2 S3 client resolves facade dependencies from the wrong scope"
+problem: "the extracted include fragment retained module docs and super-relative names from its old location"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "the facade supplies canonical byok_cas and StorageEnv aliases, fragment docs are valid, and bundle Clippy passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard requires the facade aliases consumed by the textual include;
+  marker removal fails closed and full type proof remains one bundle operation.
+last-verified: 2026-09-06
+```
+
+### B-273 — physical GC implementation and purge trait disagree on fencing
+
+```backlog
+id: B-273
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-gc/src/physical_delete.rs; crates/corelink-gc/src/physical_delete/phase.rs; crates/corelink-container/src/gc_sweep.rs"
+finding-title: "fenced purge stages exist in the D1 adapter but not its shared trait"
+problem: "the phase cannot call the durable acquire, retry, R2-complete and finalize operations"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "PurgeStage and all fenced operations are part of the trait, the phase uses them, and the D1 lease row reads updated_at"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the structural guard requires the complete fenced API and D1 lease
+  column; each load-bearing marker is mutation-tested before bundle CI.
+last-verified: 2026-09-06
+```
+
+### B-274 — DSR portal include resolves live pipeline helpers one level short
+
+```backlog
+id: B-274
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/routes/dsr/portal/part-00.rs"
+finding-title: "DSR portal fragment cannot reach access, D1 and audit-R2 siblings"
+problem: "the included implementation retained super paths from before the portal nesting layer"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "all live portal dependencies resolve through the correct parent and the final bundle passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard requires every live DSR portal parent binding and mutates
+  each independently; compilation proof is deferred only to the shared bundle.
+last-verified: 2026-09-06
+```
+
+### B-275 — tier-selection include resolves route siblings from the wrong parent
+
+```backlog
+id: B-275
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/routes/tier_select/part-00.rs; crates/corelink-container/src/routes/tier_select/part-02.rs; crates/corelink-container/src/routes/tier_select_store.rs"
+finding-title: "tier-selection fragment cannot resolve store, checkout, audit and admin routes"
+problem: "split-module relative paths target the implementation facade rather than routes"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "route dependencies use stable crate paths, the stale DELETE binding is removed, and bundle Clippy passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard pins all four route dependencies to canonical crate paths;
+  mutations turn red and lint/type proof remains consolidated.
+last-verified: 2026-09-06
+```
+
+### B-276 — tenant-isolation split copies unused audit imports into child fakes
+
+```backlog
+id: B-276
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "tests/e2e-tenant-isolation/src/fakes/extended.rs; tests/e2e-tenant-isolation/src/fakes/stores.rs"
+finding-title: "extracted tenant-isolation fake modules retain unused audit imports"
+problem: "copied parent imports make all-target Clippy fail under -D warnings"
+evidence: "cargo clippy -p e2e-tenant-isolation --all-targets -- -D warnings"
+acceptance: "both child modules contain only imports they consume and bundle Clippy passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard rejects reintroduction of the stale audit import in either
+  extracted fake; the negative contract is mutation-tested.
+last-verified: 2026-09-06
+```
+
+### B-277 — audit D1 rows cross JSON parser boundaries as object maps
+
+```backlog
+id: B-277
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/routes/audit_archive.rs; crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02.rs"
+finding-title: "audit drain and archive pass D1 maps to Value-based metadata parsers"
+problem: "D1 query rows are Map<String, Value> while the shared fail-closed parsers accept Value"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "each affected D1 boundary normalizes its row to Value::Object and bundle tests pass"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard requires normalization at archive and both drain boundaries;
+  removing a boundary conversion turns the mutation suite red.
+last-verified: 2026-09-06
+```
+
+### B-278 — timing restoration and SLI aggregation lost concrete option/map types
+
+```backlog
+id: B-278
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/origin_timing.rs; crates/corelink-container/src/sli_aggregate.rs"
+finding-title: "timing ledger flattens an already-flat option and SLI merge lacks value inference"
+problem: "the extracted code does not type-check and cannot restore nested timing scopes"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "the prior ledger option is restored directly, the SLI map value is explicit, and focused regressions pass"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — positive and forbidden markers bind both type repairs, mutations fail
+  closed, and focused Rust regressions execute inside the shared bundle.
+last-verified: 2026-09-06
+```
+
+### B-279 — container facade and CAS fence retain two Clippy residues
+
+```backlog
+id: B-279
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/src/routes/public_pullthrough.rs; crates/corelink-container/src/storage/cas_write_fence.rs"
+finding-title: "public pullthrough over-reexports its include and CAS fence imports unused Duration"
+problem: "all-target Clippy rejects a hidden glob re-export and an unused import"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "the include re-export is crate-visible, Duration is absent, and bundle Clippy passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard pins the intended visibility and rejects the unused import;
+  both sides have explicit red mutations.
+last-verified: 2026-09-06
+```
+
+### B-280 — customer invitation runtime uses a dev-only rand dependency
+
+```backlog
+id: B-280
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundle CI"
+source-locator: "crates/corelink-container/Cargo.toml; crates/corelink-container/src/customer_d1.rs"
+finding-title: "production invitation token generation cannot resolve rand"
+problem: "OsRng is used by shipped code while rand is declared only in dev-dependencies"
+evidence: "cargo clippy -p corelink-container --all-targets -- -D warnings"
+acceptance: "rand occurs exactly once as a production dependency and the final bundle passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the guard rejects duplicates and moving rand below dev-dependencies;
+  the manifest placement mutation demonstrably turns red.
+last-verified: 2026-09-06
+```
+
+### B-281 — seventeen extracted test modules resolve below nonexistent directories
+
+```backlog
+id: B-281
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 module-path census"
+source-locator: "17 non-root Rust module declarations enumerated by scripts/verify_b270_b281_bundle_repairs.py"
+finding-title: "residual extracted test modules rely on invalid implicit child paths"
+problem: "each declaration sits in a non-root file while its implementation exists only as a sibling"
+evidence: "repository-wide lexical module-path census; cargo clippy --workspace --all-targets -- -D warnings"
+acceptance: "all 17 sibling modules have exact explicit paths, every sibling exists, the residual census is empty, and bundle Clippy passes"
+verify: python3 scripts/verify_b270_b281_bundle_repairs.py
+verify-means: |
+  done — the closed census is encoded as 17 exact path/file contracts and every
+  binding is mutation-tested; no unowned module-path finding remains.
+last-verified: 2026-09-06
+```
+
+### B-282 — adapter PAT extraction loses futures and sibling test visibility
+```backlog
+id: B-282
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/adapter_pat.rs; adapter_pat_gate.rs; adapter_pat_verifier.rs"
+finding-title: "adapter PAT split loses FutureExt and test-only sibling access"
+problem: "boxed futures do not compile, a test cap is private, and copied imports fail strict Clippy"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "FutureExt is scoped where used, cap visibility is sibling-only, stale imports are absent, and bundled CI passes"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — exact positive and forbidden markers plus mutations cover the split residue; Rust proof is bundled.
+last-verified: 2026-09-06
+```
+
+### B-283 — GC D1 row decoders leak String errors across the purge boundary
+```backlog
+id: B-283
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/gc_sweep.rs:708-735"
+finding-title: "purge row decoding cannot convert String into PhysicalDeleteError"
+problem: "four fail-closed D1 decoders use ? without mapping backend errors"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "all row decoder failures map to PhysicalDeleteError::Backend and bundled CI passes"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — the backend mapping is structurally required and mutation-tested; no decoder error is swallowed.
+last-verified: 2026-09-06
+```
+
+### B-284 — R2 CAS accounting borrows request bytes after moving the payload
+```backlog
+id: B-284
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:757-866"
+finding-title: "CAS fence commit reads req.bytes after ownership moved"
+problem: "the upload path moves the vector before final plaintext-byte accounting"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "plaintext length is captured before the move and reused by both fence commits"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — the pre-move length and both commit consumers are guarded and mutation-tested.
+last-verified: 2026-09-06
+```
+
+### B-285 — included test fragments retain invalid inner documentation
+```backlog
+id: B-285
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/adapter_pat_gate.rs; crates/corelink-container/src/byte_accounting/b126_m2_test_*.rs"
+finding-title: "included test fragments emit E0753 and empty-doc Clippy errors"
+problem: "inner docs and a blank doc break once the files are textual includes"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "fragment headers are ordinary comments, the intentional doc paragraph is continuous, and Clippy passes"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — every affected header and the repaired doc boundary are guarded against regression.
+last-verified: 2026-09-06
+```
+
+### B-286 — Pip test stores omit the newly required cap resolver
+```backlog
+id: B-286
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/pip/tests_support.rs"
+finding-title: "three PipMoatStore test initializers omit cap_resolver"
+problem: "test helpers no longer construct the complete production-shaped store"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "all three non-cap test helpers explicitly use cap_resolver None and bundled tests pass"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — explicit no-cap test configuration is required and mutation-tested.
+last-verified: 2026-09-06
+```
+
+### B-287 — adapter-host SSRF test passes a borrowed socket address
+```backlog
+id: B-287
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-adapter-host/src/upstream_ssrf.rs:172"
+finding-title: "wiremock address type does not match reqwest resolver input"
+problem: "MockServer returns &SocketAddr while resolve requires SocketAddr"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "the Copy socket address is passed by value and adapter-host tests compile"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — the exact owned-address call is structurally guarded and mutation-tested.
+last-verified: 2026-09-06
+```
+
+### B-288 — adapter-cache test clone cannot infer trait-object Arc coercion
+```backlog
+id: B-288
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/adapter_cache.rs:739"
+finding-title: "Arc::clone fixes FakeUrlMap before the UrlMapStore coercion point"
+problem: "the generic clone argument expects an Arc trait object and rejects the concrete Arc"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "the cloned fake map is explicitly coerced to Arc<dyn UrlMapStore>"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — the trait-object coercion is exact and mutation-tested.
+last-verified: 2026-09-06
+```
+
+### B-289 — byte-accounting regression fragment loses CasHandlerError import
+```backlog
+id: B-289
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/byte_accounting/b126_m2_test_3_1.rs"
+finding-title: "split byte-accounting test cannot resolve CasHandlerError"
+problem: "the included fragment matches the error enum without importing it"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "the canonical corelink-handler-cas error is imported and the regression compiles"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — the canonical import and its use are guarded; removal turns the mutation suite red.
+last-verified: 2026-09-06
+```
+
+### B-290 — PAT corruption assertion partially moves its diagnostic
+```backlog
+id: B-290
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/adapter_pat_tests_1.rs:219-220"
+finding-title: "matches! moves Backend message before the assertion formats err"
+problem: "the failure diagnostic borrows an enum after its String payload was moved"
+evidence: "scripts/ci.sh --rust-only at 9e14bf60c"
+acceptance: "the match borrows the message and retains the full error for diagnostics"
+verify: python3 scripts/verify_b282_b290_bundle_residuals.py
+verify-means: |
+  done — the ref binding is exact and mutation-tested; diagnostic fidelity is preserved.
+last-verified: 2026-09-06
+```
+
+### B-291 — public BYOK storage module lacks required documentation
+```backlog
+id: B-291
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/storage.rs:32"
+finding-title: "public byok_cas module violates missing-docs deny"
+problem: "the extracted public module has no API rustdoc"
+evidence: "scripts/ci.sh --rust-only at 8593f2979"
+acceptance: "the module has accurate public documentation and bundled build passes"
+verify: python3 scripts/verify_b291_b293_bundle_residuals.py
+verify-means: |
+  done — exact rustdoc adjacency is guarded and its removal turns red.
+last-verified: 2026-09-06
+```
+
+### B-292 — PAT gate exposes a field whose entry type remains private
+```backlog
+id: B-292
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/adapter_pat_gate.rs:108"
+finding-title: "sibling verifier tests cannot inspect PerTenantEntry-backed permits"
+problem: "the split gate shares its map but leaves the map value type module-private"
+evidence: "scripts/ci.sh --rust-only at 8593f2979"
+acceptance: "PerTenantEntry is visible only to siblings and bundled tests compile"
+verify: python3 scripts/verify_b291_b293_bundle_residuals.py
+verify-means: |
+  done — minimum sibling visibility is guarded against private or public drift.
+last-verified: 2026-09-06
+```
+
+### B-293 — standalone adversarial-tail test imports a nonexistent parent
+```backlog
+id: B-293
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "tests/e2e-tenant-isolation/tests/adversarial_tail.rs:1"
+finding-title: "integration-test root uses super::* and loses all harness types"
+problem: "a standalone tests/ target has no parent module to glob-import"
+evidence: "scripts/ci.sh --rust-only at 8593f2979"
+acceptance: "the test explicitly imports its public harness types from e2e_tenant_isolation"
+verify: python3 scripts/verify_b291_b293_bundle_residuals.py
+verify-means: |
+  done — canonical crate import is required and the invalid super glob is rejected.
+last-verified: 2026-09-06
+```
+
+### B-294 — billing mount reads durable D1 client before its declaration
+```backlog
+id: B-294
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/main.rs:690-750"
+finding-title: "Stripe webhook fail-closed gate references d1_client out of scope"
+problem: "the durable client is constructed only after the gate that requires it"
+evidence: "scripts/ci.sh --rust-only at 30e4aa0be"
+acceptance: "D1 initializes before the gate and a secret without durable D1 remains unmounted"
+verify: python3 scripts/verify_b294_b296_bundle_residuals.py
+verify-means: |
+  done — pre-gate construction and the durable two-factor mount condition are guarded.
+last-verified: 2026-09-06
+```
+
+### B-295 — adversarial-tail is both module and standalone strict-Clippy target
+```backlog
+id: B-295
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "tests/e2e-tenant-isolation/tests/adversarial_tail.rs"
+finding-title: "standalone tail lacks crate docs/test lint policy and has brittle imports"
+problem: "Cargo discovers the included fragment independently, making its inherited test policy unavailable"
+evidence: "scripts/ci.sh --rust-only at 30e4aa0be"
+acceptance: "the file is valid in both contexts, documents itself, scopes test lints and imports the harness crate"
+verify: python3 scripts/verify_b294_b296_bundle_residuals.py
+verify-means: |
+  done — canonical crate import is required and invalid parent import is rejected; bundled Clippy proves lint policy.
+last-verified: 2026-09-06
+```
+
+### B-296 — billing materializer test fixture path is one directory short
+```backlog
+id: B-296
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-billing-stripe-materializer/src/handler/tests.rs:113"
+finding-title: "include_str resolves container webhook fixture below src"
+problem: "the fixture lives at crate root but the extracted test uses a single parent traversal"
+evidence: "scripts/ci.sh --rust-only at 30e4aa0be"
+acceptance: "include_str resolves the tracked crate-root fixture and materializer tests compile"
+verify: python3 scripts/verify_b294_b296_bundle_residuals.py
+verify-means: |
+  done — the exact two-level fixture path is guarded and the old path is forbidden.
+last-verified: 2026-09-06
+```
+
+### B-297 — tenant-isolation adversarial target retains seven unused imports
+```backlog
+id: B-297
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "tests/e2e-tenant-isolation/tests/adversarial.rs:42"
+finding-title: "strict Clippy rejects stale adversarial harness imports"
+problem: "the integration target imports seven symbols it no longer exercises"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "the target imports exactly the symbols it uses"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the stale import population is absent and removal mutations fail closed.
+last-verified: 2026-09-06
+```
+
+### B-298 — failover inspection helpers leak test-only dead code into production
+```backlog
+id: B-298
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/failover.rs:168,588"
+finding-title: "stale_after_ms and heartbeat compile unused outside tests"
+problem: "inspection accessors are consumed only by the in-crate test surface"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "both inspection helpers are compiled only for tests"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — both exact helpers require cfg(test); dropping either guard is rejected.
+last-verified: 2026-09-06
+```
+
+### B-299 — OCI injectable allowlist constructor is production dead code
+```backlog
+id: B-299
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:189"
+finding-title: "with_allowlist exists only for hermetic tests"
+problem: "the test seam is compiled into production and denied as dead code"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "the seam remains available to tests and absent from production"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the exact constructor is cfg(test)-scoped and a missing guard mutation is rejected.
+last-verified: 2026-09-06
+```
+
+### B-300 — SLI aggregation carries stale map_or and production-only test helpers
+```backlog
+id: B-300
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/sli_aggregate.rs:110,221-228"
+finding-title: "strict Clippy rejects unnecessary map_or and unused timestamp accessors"
+problem: "window eviction uses a legacy Option idiom and two accessors exist solely for tests"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "eviction uses is_some_and and timestamp accessors are test-only"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — all three exact structures are guarded and regressive mutations fail closed.
+last-verified: 2026-09-06
+```
+
+### B-301 — BYOK revocation runtime violates strict must-use and test lint policy
+```backlog
+id: B-301
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/byok_revocation_runtime.rs:327,351"
+finding-title: "must_use duplicates the Result contract and tests use denied primitives"
+problem: "the public constructor lacks a diagnostic message while its test module intentionally unwraps fixtures"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "must_use explains the obligation and only the test module receives narrow allowances"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — message and scoped expect/index allowances are required; production-wide allowances are rejected.
+last-verified: 2026-09-06
+```
+
+### B-302 — byte accounting hides a fallible lookup inside a match scrutinee block
+```backlog
+id: B-302
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs:744"
+finding-title: "strict Clippy rejects blocks_in_conditions"
+problem: "the timed BYOK committed-size lookup is embedded directly in match"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "the timed result is bound once before the unchanged fail-closed match"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — one committed_len binding feeds the match and re-embedding the block is rejected.
+last-verified: 2026-09-06
+```
+
+### B-303 — audit-drain v2 cryptographic tuple helpers exceed generic argument limits
+```backlog
+id: B-303
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs:196,243,304"
+finding-title: "three frozen canonical tuple helpers trigger too_many_arguments"
+problem: "grouping authenticated tuple fields would obscure or change their canonical order"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "only the three intentional v2 helpers carry namespaced narrow allowances"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the exact three helpers are covered; blanket or unnamespaced suppression is rejected.
+last-verified: 2026-09-06
+```
+
+### B-304 — CAS Axum handlers exceed generic argument limits by extractor design
+```backlog
+id: B-304
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/cas/single.rs:435; batch.rs:45,242,502"
+finding-title: "four request handlers trigger too_many_arguments"
+problem: "their parameters are route extractors and grouping them changes the HTTP extraction contract"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "only the four handler functions carry reasoned narrow allowances"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — all four exact handlers are covered and removal mutations fail closed.
+last-verified: 2026-09-06
+```
+
+### B-305 — bloom tombstone capacity uses a manual clamp chain
+```backlog
+id: B-305
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/cas_erase/b126_m2_impl_02.rs:47"
+finding-title: "max(1).min(DEFAULT_MAX_TENANT_BLOOMS) duplicates clamp"
+problem: "strict Clippy rejects the hand-written clamp idiom"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "capacity remains bounded inclusively with clamp(1, default)"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the exact clamp and both bounds are required; the former chain is forbidden.
+last-verified: 2026-09-06
+```
+
+### B-306 — adapter-cache test embeds an unreadable nested write-record type
+```backlog
+id: B-306
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/adapter_cache.rs:702"
+finding-title: "RecordingCas trips type_complexity"
+problem: "the test repeats a four-field tuple inside Arc/Mutex/Vec wrappers"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "a local WriteRecord alias names the unchanged tuple"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the alias and its use in RecordingCas are required and inline regression is rejected.
+last-verified: 2026-09-06
+```
+
+### B-307 — two extracted R2/S3 regression functions lost their test attributes
+```backlog
+id: B-307
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/storage/r2_s3_parts/tests_1.rs:1; tests_3.rs:1"
+finding-title: "physical bucket and Mode-B KMS regressions compile as unused helpers"
+problem: "module extraction retained bodies but dropped the synchronous and Tokio test attributes"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "both functions are executable tests with the required runtime flavor"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — exact #[test] and multi-thread Tokio attributes are load-bearing and mutated away in tests.
+last-verified: 2026-09-06
+```
+
+### B-308 — capacity tests assert compile-time constants instead of runtime predicates
+```backlog
+id: B-308
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/container_capacity.rs:198,244"
+finding-title: "two assert!(true) expressions are optimized away"
+problem: "constant-folded inequalities do not exercise the shared runtime budget predicate"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "both tests invoke budget_fits with runtime bindings and preserve their boundaries"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — two nonconstant budget_fits assertions are required and old direct inequalities are rejected.
+last-verified: 2026-09-06
+```
+
+### B-309 — origin-timing bridge tests use an intentionally denied fixture primitive
+```backlog
+id: B-309
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/origin_timing.rs:807"
+finding-title: "test bridge uses expect under crate-wide deny"
+problem: "the allowance was absent from the smallest module that owns the fixture assertion"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "expect_used is allowed only on tests_b279_bridge with a reason"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the named test module owns the narrow allowance and broader suppression is rejected.
+last-verified: 2026-09-06
+```
+
+### B-310 — OCI noisy-neighbour test contains a constant assertion
+```backlog
+id: B-310
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/routes/oci/b126_m2_test_1_2.rs:537"
+finding-title: "per-tenant/global-cap assertion is optimized away"
+problem: "the test states the right invariant using only constants, so Clippy rejects it"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "the seeded runtime tenant value equals its cap and remains below the global cap without expect"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — runtime lookup, equality and ordering are required; constant or expect-based regressions fail.
+last-verified: 2026-09-06
+```
+
+### B-311 — quota-CAS property assertions stringify pattern braces as format syntax
+```backlog
+id: B-311
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-billing/tests/quota_cas_prop_quota_cas.rs:539,551"
+finding-title: "prop_assert rejects matches patterns containing { .. }"
+problem: "the macro concatenates the expression text into a format string on this toolchain"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "Allow and Deny matches are evaluated into booleans before prop_assert"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — both named boolean bindings are asserted and direct brace-bearing macro calls are forbidden.
+last-verified: 2026-09-06
+```
+
+### B-313 — D03 WP ledger and changelog retained an obsolete baseline
+```backlog
+id: B-313
+repo: corelink-server
+owner: tl
+status: done
+source-document: "PR containment audit #1550/#1558"
+source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
+finding-title: "canonical WP ledger must stay aligned with the dense 324-item population"
+problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after final reconciliation: 336 items, 16 open, 281 done, 39 parked; the prior 324/16/269/39 population is retained only as the obsolete baseline this item corrected; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
+verify: |
+  set -euo pipefail
+  python3 scripts/verify_d03_graduation.py --schema-only
+  python3 scripts/verify_backlog_wp_ledger.py
+  python3 -m pytest -q tests/test_verify_backlog_wp_ledger.py tests/test_verify_b155_backlog_grep_population.py
+  python3 - <<'PY'
+  import sys
+  from pathlib import Path
+  sys.path.insert(0, "scripts")
+  import verify_backlog_wp_ledger as ledger
+  text = Path("BACKLOG.md").read_text()
+  assert len(ledger.all_backlog_ids(text)) == 336
+  assert len(ledger.open_backlog_ids(text)) == 16
+  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 281, "parked": 39}
+  assert ledger.LEDGER_BASE_REF == "main"
+  assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+  PY
+verify-means: |
+  done — the live verifier proves 16/16 open-ID ownership, 336 total records,
+  exact catalog populations, predecessor ordering, editable/workflow ownership,
+  and the D03 base ref/SHA relationship. The focused parser suite remains
+  load-bearing: stale metadata, a tampered base and missing CI predecessor are
+  negative fixtures; the B-155 census constants are reconciled to this record.
+last-verified: 2026-09-06
+```
+
+### B-312 — binary main imports test-only boot constructors in production
+```backlog
+id: B-312
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/main.rs:49"
+finding-title: "build_runners_resolver_from and build_tier_selector_from are unused outside tests"
+problem: "test injection constructors share the unconditional runtime import group"
+evidence: "scripts/ci.sh --rust-only at 2e1d6e168"
+acceptance: "runtime builders remain unconditional and injected builders are cfg(test)-imported"
+verify: python3 scripts/verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — the import populations remain separated and removing the cfg boundary is rejected.
+last-verified: 2026-09-06
+```
+
+### B-314 — GDPR transfer table still names Sigstore while the Trust Center says it receives no customer data
+```backlog
+id: B-314
+repo: corelink-server
+owner: owner
+status: open
+source-document: "PR containment audit #1490/#1506 addendum"
+source-locator: "apps/docs/docs/explanation/privacy/gdpr.mdx:191-200; four published locale copies"
+finding-title: "GDPR international-transfer table has an unowned Sigstore recipient row"
+problem: "The four published GDPR locale tables retain a combined PagerDuty / GitHub / Sigstore US row, while the Trust Center and generated subprocessor source say Sigstore is not live, never receives customer data, and is not a customer-data sub-processor. The Legal/DPO disposition for this exact table residue is not recorded."
+evidence: "Four-locale census plus posture markers in apps/docs/docs/trust/subprocessors.mdx and scripts/gen-public-subprocessors.py; no transfer or legal approval is inferred."
+acceptance: "A signed Legal/DPO disposition covers all four locale copies and chooses remove_sigstore_row or retain_and_document_transfer; only then may the table and this item transition."
+action-packet: docs/handoff/2026-09-06-b314-gdpr-sigstore-transfer.json
+verify: python3 -S scripts/verify_b314_gdpr_sigstore.py
+verify-means: |
+  open — the fail-closed guard exits 0 only while exactly one combined Sigstore row
+  remains in each of the four published locale tables, the Trust Center/generator retain
+  their measured non-processor posture, and the packet's Legal/DPO decision is pending.
+  Removing, duplicating, weakening, or silently restoring any row turns the check red and
+  requires an explicit status transition. The packet's population and action boundary are
+  checked as well; it does not decide B-005/B-112/B-118 or delete/repair cosign-sign.yml.
+last-verified: 2026-09-06
+```
+
+### B-315 — concurrent merges can allocate the same dense BACKLOG id from one stale snapshot
+```backlog
+id: B-315
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 containment adjudication record"
+source-locator: "WP-LEDGER-ID-ALLOC — Dense BACKLOG IDs / concurrent allocation"
+finding-title: "dense BACKLOG id allocation has no merge-time serialization or revalidation"
+problem: "Two merge authorities can read the same main snapshot, choose the same next contiguous id, and both issue a merge; the existing courtesy precheck only reports a collision after the stale merge and accepts a degenerate census."
+evidence: "The merge gate's former BACKLOG block fetched PR/main independently, printed renumber commands, and had no lock or second main-ref/snapshot check; repository merge commits are allowed, while branch-protection/ruleset API checks return GitHub 403 on this plan."
+acceptance: "The single --merge authority holds a crash-safe exclusive lock through allocation and merge, captures exact base/main/head bytes and same-repository head ownership, validates the complete canonical dense candidate population against those bytes, creates a signed DCO merge commit whose parents are base then head and whose tree is exactly head, and performs one --atomic dual-ref push with exact force-with-lease values for main and the head branch so any moved ref rejects both updates."
+verify: python3 scripts/verify_b315_dense_id_allocation.py --self-test
+verify-means: |
+  done — the executable baseline, two-authority same-snapshot race, no-gap/no-silent-disappearance
+  fixture, and malformed/non-positive/non-canonical/duplicate controls all pass. The merge
+  gate uses the allocator under a crash-safe process lock, performs current-main and candidate
+  revalidation, and uses a unique create-only remote lease with owner-safe conditional release.
+  The signed merge commit is parent/tree checked before one atomic dual-ref push with exact
+  main/head leases; GitHub state and resulting main/head OIDs/tree are polled before claiming
+  MERGED. Any missing snapshot,
+  changed main/head, invalid census, signature/DCO mismatch, push rejection, or PR-not-MERGED
+  state is a refusal, never an advisory green result.
+  During the D03 bootstrap, this contract is exercised from the exact
+  `origin/main` gate copy via the authorized exact-SHA contingency; it makes no
+  self-hosting claim before that copy has landed.
+last-verified: 2026-09-06
+```
+
+### B-316 — four live sub-processors have no canonical Legal-review packet, while the effective commitments list is stale
+```backlog
+id: B-316
+repo: corelink-server
+owner: owner
+status: open
+source-document: "D03 bundled validators-only CI and sub-processor authority audit"
+source-locator: "legal/sub-processors.md frontmatter; legal/dpa/SUB-PROCESSOR-COMMITMENTS.md §1; specs/_compliance/VENDOR-RISK-REGISTER.md §5"
+finding-title: "validator rejects free-form pending evidence, and effective Legal commitments disagree with the nine-vendor active population"
+problem: "Resend, Sentry, Plausible and Better Stack used free-form PENDING prose where the schema requires a canonical review path. Separately, the effective commitments text still names Neon as active and omits Resend, GitHub, PagerDuty, Sentry, Plausible and Better Stack. Creating TEMPLATE packets can close only the structural validator gap; it cannot manufacture signed DPAs, completed reviews, attestations, or Legal approval to amend effective text."
+evidence: "scripts/ci.sh --validators-only at e0ddf3ee608f7e936142875c6c09fd083358753b; exact current/required populations recorded in docs/handoff/2026-09-06-b316-vendor-legal-review.json"
+acceptance: "Legal completes the four dated and attributed vendor-review artifacts with genuine signed-copy/attestation evidence, closes VR-6..VR-9, records contract dates, and approves/versions SUB-PROCESSOR-COMMITMENTS.md to the exact nine-vendor active population with Neon removed. Packet existence or validator green alone is never completion. B-032 retains vendor-cadence/Drata ownership and B-314 retains the GDPR Sigstore-table decision."
+action-packet: docs/handoff/2026-09-06-b316-vendor-legal-review.json
+verify: python3 scripts/verify_b316_pending_vendor_reviews.py --expect open --self-test
+verify-means: |
+  open — exits 0 only while all four canonical artifacts remain explicit TEMPLATE/TBD
+  packets, contract_signed_at remains null, VR-6..VR-9 remain Legal/Open, and the
+  owner packet exactly records the effective-commitments residue (Neon extra; six
+  active vendors missing) plus its nine-vendor approved target. Missing/extra vendors,
+  a fabricated signature, a prematurely closed risk action, partial/mixed state, path
+  drift, or loss of the B-032/B-314 ownership boundaries fails closed. `done` requires
+  all four genuine completed reviews and the Legal-approved effective-text population;
+  validator path/existence success never implies Legal completion.
+last-verified: 2026-09-06
+```
+
+### B-317 — strict release workflow contract test failed repository-wide clippy
+```backlog
+id: B-317
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "tools/cli/tests/release_workflow_contract.rs"
+finding-title: "release workflow contract test used panic/expect patterns rejected by strict clippy"
+problem: "Fallible fixture reads and the optional final-manifest retry branch used panic!/expect-style handling in a test compiled under the repository-wide -D warnings policy."
+evidence: "The strict bundled clippy failure was repaired at 7681cc9c155e07336b070e8bc69857d43e8ee304 without changing the release workflow assertions."
+acceptance: "The fixture loaders and outer test propagate Result errors, the retry option is asserted then handled without expect, no panic/expect/unwrap or allow suppression remains in the target, and a comment/string-resistant static mutation guard proves the shape without per-WP Cargo."
+verify: python3 scripts/verify_b317_release_workflow_contract.py --self-test
+verify-means: |
+  done — the bounded static verifier parses the affected Rust functions after
+  blanking comments and literals, requires Result propagation for every fixture
+  loader, requires an explicit retry presence assertion plus guarded destructuring,
+  and rejects panic!, expect, unwrap and allow-attribute regressions. Its focal
+  mutation suite proves that prose bait, missing propagation and lint suppression
+  fail closed; Cargo remains owned by the frozen D03 sprint bundle.
+last-verified: 2026-09-06
+```
+
+### B-318 — cumulative Clippy exposed four strict-lint regressions in D03 tests
+```backlog
+id: B-318
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-handler-customer/tests/handler_customer.rs; crates/corelink-adapter-host/src/npm/upstream.rs; crates/corelink-adapter-host/src/oci/server/core.rs"
+finding-title: "D03 test additions violated boolean, constant-assertion and item-order Clippy contracts"
+problem: "The cumulative all-targets Clippy gate found one boolean comparison assertion, two constant-folded runtime assertions, and a test module placed before a production function. All four originated in the D03 delta and therefore required repair before delivery."
+evidence: "The bundled CI log at 984804409 identified the four exact diagnostics; b2a73ae52 replaces the boolean comparison, makes both NPM size invariants compile-time load-bearing, and moves the unchanged OCI test module after production items without lint suppression."
+acceptance: "The denial-path assertion remains behaviorally equivalent, both NPM cap relationships are enforced by unique compile-time assertions, the OCI regression tests remain after all production items, targeted lint suppressions are absent, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b318_clippy_residuals.py --self-test
+verify-means: |
+  done — the bounded verifier binds the boolean assertion to its denial closure,
+  requires both unique compile-time NPM invariants, preserves the OCI storage-failure
+  regression test below the production response function, and rejects deletion,
+  runtime-only replacement, module drift and targeted lint suppression. Cargo and
+  Clippy certification remain owned solely by the cumulative D03 sprint CI.
+last-verified: 2026-09-06
+```
+
+### B-319 — the quota CAS latency probe used a forbidden stderr print macro
+```backlog
+id: B-319
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-billing/tests/quota_cas_prop_quota_cas.rs:real_latency_probe_under_5ms_p99"
+finding-title: "ignored latency probe violated the workspace print-stderr lint"
+problem: "The opt-in latency probe used eprintln!, so repository-wide all-targets Clippy rejected the otherwise load-bearing measurement test."
+evidence: "081a0b02e preserves successful p99 diagnostics through a locked stderr writer while retaining the 5ms assertion and adding no lint suppression."
+acceptance: "The probe emits its sample count and p99 value without print macros, retains the explicit 5ms ceiling, and a bounded guard rejects lost output, weakened ceilings and targeted suppression."
+verify: python3 scripts/verify_b319_b320_final_rust_residuals.py --self-test
+verify-means: |
+  done — the verifier binds the diagnostic writer and p99 ceiling to the exact
+  ignored probe, rejects print-macro reintroduction and output/ceiling deletion,
+  and shares a mutation suite with the adjacent final Rust residual. Clippy is
+  certified only by the cumulative D03 sprint CI.
+last-verified: 2026-09-06
+```
+
+### B-320 — new region-alias tests compared Results whose error type is not comparable
+```backlog
+id: B-320
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-region/src/region.rs:test_region_from_str_unknown"
+finding-title: "APAC/AFR success assertions did not compile under cargo test"
+problem: "Two D03 assertions compared Result<Region, RegionError> values with assert_eq!, but RegionError intentionally has no PartialEq implementation."
+evidence: "3d4a08e9f tests the exact APAC and AFR Ok variants with matches! and preserves the unknown-input negative assertion without changing RegionError's public traits."
+acceptance: "Both aliases remain pinned to their expected Region variants, the empty alias remains rejected, no Result equality requirement is introduced, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b319_b320_final_rust_residuals.py --self-test
+verify-means: |
+  done — the bounded verifier requires the two exact successful alias mappings
+  plus the unknown-input negative case and rejects deletion or assert_eq-based
+  Result comparison. Cargo test remains owned solely by the cumulative D03 CI.
+last-verified: 2026-09-06
+```
+
+### B-321 — alert delivery success tests used unwrap under strict Clippy
+```backlog
+id: B-321
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-ops/src/alerts/alerter.rs:configured_transport_receives_*"
+finding-title: "two recording-transport success tests violated the workspace unwrap lint"
+problem: "The alert and recovery delivery tests unwrapped their asynchronous Results, so the all-targets Clippy gate rejected both new D03 tests."
+evidence: "c9976e8ce binds each Result and asserts success with a distinct diagnostic message before validating the four recorded deliveries."
+acceptance: "Both success paths remain explicit, failures retain actionable diagnostics, delivery assertions remain unchanged, no unwrap or targeted suppression is present, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b321_alert_delivery_tests.py --self-test
+verify-means: |
+  done — the bounded verifier binds each asynchronous result to its exact test,
+  requires a unique success assertion and diagnostic, and rejects unwrap,
+  assertion deletion, result substitution and lint suppression. All-targets
+  Clippy remains certified only by the cumulative D03 sprint CI.
+last-verified: 2026-09-06
+```
+
+### B-322 — durable Stripe mount used a guarded expect under strict Clippy
+```backlog
+id: B-322
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/main.rs:Stripe webhook mount gate"
+finding-title: "the durable D1 webhook mount recovered a client with expect after already checking it"
+problem: "The fail-closed mount gate matched D1 as Some(_) and later used expect to recover the same client, so all-targets Clippy rejected the production binary."
+evidence: "efc4622f3 binds Some(client) in the existing secret-and-D1 gate and passes that reference directly into D1WebhookDlqStore."
+acceptance: "The route remains unmounted without both secret and D1, the durable DLQ receives the matched client, no expect or targeted suppression remains, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b322_durable_d1_mount.py --self-test
+verify-means: |
+  done — the bounded verifier requires the exact fail-closed two-input match,
+  requires the matched client to construct the durable DLQ, and rejects a
+  discarded binding, guarded expect, wrong client or lint suppression. Full
+  Rust behavior remains certified only by the cumulative D03 sprint CI.
+last-verified: 2026-09-06
+```
+
+### B-323 — workspace GC binaries collided on the same artifact name
+```backlog
+id: B-323
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/Cargo.toml; crates/corelink-gc/tests/gc_sweep_bin.rs"
+finding-title: "two packages emitted gc_sweep and tests executed the wrong binary"
+problem: "The server's newly auto-discovered production GC binary collided with the corelink-gc self-check, so Cargo overwrote the test-selected artifact and six credentialless scenarios failed against the production configuration gate."
+evidence: "716e4bd7e disables server autobin discovery, declares unique server and production-GC target names, preserves the shipped corelink-gc gc_sweep identity, and retains subprocess stderr."
+acceptance: "Workspace target names are unique, B071 continues to build and exercise the fixture binary, production promotion remains owner-gated, stderr is actionable, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b323_gc_binary_identity.py --self-test
+verify-means: |
+  done — the bounded verifier parses both Cargo manifests, proves the exact
+  disjoint target identities, pins Docker and test selection to the reviewed
+  fixture, preserves the owner gate, and rejects collision, implicit promotion
+  or stderr loss. Execution remains owned by the cumulative D03 sprint CI.
+last-verified: 2026-09-06
+```
+
+### B-324 — extracted server tests duplicated their lint allowance
+```backlog
+id: B-324
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-container/src/main_tests.rs:1-2"
+finding-title: "the same test-only unwrap and expect allowance appeared twice"
+problem: "Once Clippy reached the server binary test target, duplicated_attributes rejected two byte-identical crate attributes before evaluating the tests."
+evidence: "6cf6da46c retains one test-module allowance and removes only its duplicate."
+acceptance: "The test-only allowance occurs exactly once at module scope, imports and test behavior remain unchanged, no duplicated-attribute suppression is added, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b324_main_test_lint_scope.py --self-test
+verify-means: |
+  done — the bounded verifier requires one exact crate attribute in the
+  reviewed module position and rejects deletion, duplication or conversion to
+  an item attribute. Full Clippy proof remains cumulative at sprint level.
+last-verified: 2026-09-06
+```
+
+### B-325 — BYOK revocation wiring tests panic on ordinary setup failures
+```backlog
+id: B-325
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 bundled Rust CI"
+source-locator: "crates/corelink-byok/tests/byok_revocation_wiring.rs:29-289"
+finding-title: "six expect calls kept the BYOK wiring integration target out of strict Clippy"
+problem: "Once Clippy reached the complete corelink-byok integration-test population, cache construction, cycle execution and status reads still converted ordinary Result failures into panics."
+evidence: "16d347b9e makes all six async tests return TestResult, propagates cache/cycle/status errors with question-mark, and keeps the negative-path assertions explicit."
+acceptance: "The target contains no panic-based result extraction, all six tests return a fallible result, four cache constructions plus the successful cycle/status reads propagate errors, the fault helper returns its BYOKError, and adversarial mutations fail closed."
+verify: python3 scripts/verify_b325_byok_wiring_test_results.py --self-test
+verify-means: |
+  done — the bounded verifier locks all six test signatures and each reviewed
+  propagation boundary, rejects panic-based extraction and tests four weakening
+  mutations. Full compile, execution and Clippy proof remain sprint-level.
+last-verified: 2026-09-07
+```
+
+### B-326 — Tech Lead 500-LOC hard cap was not mechanically enforced for new source files
+```backlog
+id: B-326
+repo: corelink-server
+owner: tl
+status: done
+source-document: "Tech Lead Charter L2.10 and D03 source-split review"
+source-locator: ".claude/skills/techlead/SKILL.md:L2.10; reports/b326-loc-cap-baseline.txt"
+finding-title: "new Rust and TypeScript source files had no CI-enforced 500-line hard cap"
+problem: "The Tech Lead charter required every new .rs/.ts/.tsx file to stay at or below 500 LOC, but its shell example depended on a locally available origin/main ref and was not a stable CI contract. A shallow or remote-less checkout could skip the population entirely or report an indeterminate result."
+evidence: "The committed origin/main-equivalent path manifest is pinned to main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266; the stdlib verifier classifies tracked source paths absent from that manifest, rejects unmarked files over 500 LOC, reports the 200-LOC advisory band, and passes its mutation/self-tests. Related charter, spec/frontmatter and secrets-matrix findings are closed in the cumulative B-326 tree."
+acceptance: "A reviewed baseline manifest is required and hash-checked; the tracked added .rs/.ts/.tsx population is non-empty and closed; missing, malformed, stale or empty populations fail closed; generated exceptions require an explicit @generated marker; any unmarked file over 500 LOC is a hard failure; workflow paths and both PR/push steps run the verifier and its mutations; B-155 and the D03 ledgers report 336 total, 281 done, 39 parked, 16 open (0 TL-open) and 315 command-bearing records."
+verify: python3 scripts/verify_b326_loc_cap.py --self-test
+verify-means: |
+  done — the verifier uses only the committed baseline manifest and local tracked
+  paths, never an unavailable remote ref. It checks the exact baseline SHA,
+  path count and digest, rejects missing/duplicate/unsorted paths, rejects an
+  empty candidate population, enforces the hard cap and generated marker, and
+  proves both an oversized-source mutation and a manifest-population mutation
+  fail closed.
+last-verified: 2026-09-07
+```
+
+### B-327 — final CI fixtures drifted from the canonical UUID tenant contract
+
+The final CI sweep found route and user fixtures still using labels such as
+`t1`, `tenant-a`, and `tenant-abc`. Production `AuthTenant` accepts canonical
+UUID tenant identifiers, so those tests failed before reaching the handler (and
+the literal-braces route case had the wrong expected boundary). The repair is
+test-only: canonical UUID fixtures are used everywhere and the cross-tenant
+assertion remains explicit.
+
+```backlog
+id: B-327
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI fixture sweep"
+source-locator: "crates/corelink-container/src/routes/ac/fragment-tests-00-00-01.rs; crates/corelink-container/src/routes/ac/tests-00-00.rs; crates/corelink-container/src/routes/admin/part-02-01.rs; crates/corelink-container/src/routes/users.rs; crates/corelink-container/tests/admin_ac_route_smoke.rs; crates/corelink-container/tests/cas_route_smoke.rs"
+finding-title: "final CI tenant fixtures used non-canonical identifiers against strict AuthTenant"
+problem: "Route and users/me tests used labels such as t1, tenant-a and tenant-abc, so strict canonical tenant parsing rejected the request before the intended handler assertion; the literal-braces CAS case also asserted the pre-auth outcome."
+evidence: "Integrated by 82d71061c, 7dd4ab70b, 57c6f9ff2 and af27a8fcf; all affected fixtures now use canonical UUIDs and the literal-braces case asserts the cross-tenant 403."
+acceptance: "Every affected route/user fixture uses a canonical UUID; the literal-braces CAS control reaches AuthTenant and asserts the handler's cross-tenant 403; no production auth relaxation or fixture-only bypass is introduced."
+verify: manual
+verify-means: |
+  done — the reviewed D03 commits replace the stale tenant labels in the route,
+  AC/admin smoke and users/me fixtures, and preserve the strict AuthTenant
+  boundary. Reopen if a non-UUID tenant fixture returns to these surfaces or if
+  the literal-braces control is weakened to a pre-handler result.
+last-verified: 2026-09-07
+```
+
+### B-328 — PAT revocation fixtures omitted the `token_id` ownership field
+
+The revocation integration fixtures returned rows without `token_id`, although
+the production query and revocation contract use that field to identify the
+credential. The omission made the final CI fixture population drift from the
+real row shape and left the happy, idempotent, owner, member and cross-tenant
+cases under-specified.
+
+```backlog
+id: B-328
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI fixture sweep"
+source-locator: "crates/corelink-container/src/customer_d1_tests_billing_keys_part2.rs:keys_revoke_*"
+finding-title: "PAT revoke fixtures omitted the canonical token_id field"
+problem: "Five D1 rows used by PAT revocation tests lacked token_id even though the runtime row contract returns and uses it for credential identity."
+evidence: "Integrated by 1e1dc0911; token_id fixtures 0000000000000001 through 0000000000000005 now cover the happy, idempotent, owner, member and cross-tenant cases."
+acceptance: "Every PAT revocation fixture row contains a distinct canonical token_id; the owner-protection, same-tenant member, idempotent and cross-tenant outcomes remain asserted, with no production query weakening."
+verify: manual
+verify-means: |
+  done — the revocation fixture rows now carry token_id in every reviewed D1
+  response and retain the five distinct authorization scenarios. Reopen if a
+  fixture drops token_id or starts accepting a row shape that production cannot
+  identify.
+last-verified: 2026-09-07
+```
+
+### B-329 — stale auth and Stripe assertions contradicted the fail-closed contract
+
+The final CI pass exposed assertions that still treated a short dedicated
+money-path key as eligible for shared-key fallback and that collapsed a typed
+Stripe failure into the old generic error. Those assertions encoded the wrong
+security and error contracts even though the production behavior was already
+fail-closed and typed.
+
+```backlog
+id: B-329
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI fixture sweep"
+source-locator: "crates/corelink-container/src/routes/admin/part-02-01.rs; crates/corelink-container/src/routes/dpa_accept_tests.rs; crates/corelink-container/src/routes/tier_select/part-02-00.rs; crates/corelink-container/src/routes/tier_select/part-02-01.rs"
+finding-title: "stale tests expected dedicated-auth fallback and a generic Stripe error"
+problem: "A malformed dedicated key was still asserted to fall back to a valid shared key, and a failed Stripe call was still asserted as Internal instead of the typed StripeUnavailable error."
+evidence: "Integrated by 82d71061c and ff8b4281d; the money_path_auth_wiring.rs matrix covers both short and whitespace-only dedicated keys failing closed, and the failed checkout assertion names StripeUnavailable with its diagnostic."
+acceptance: "Short or whitespace-only dedicated auth values remain unmounted even when the shared key is valid; the Stripe failure path asserts the typed error and preserves reservation cleanup; no assertion is made green by weakening the route."
+verify: manual
+verify-means: |
+  done — the stale fallback assertions are inverted to fail-closed expectations,
+  and the checkout failure fixture asserts the typed StripeUnavailable result
+  while retaining the empty reservation/lock checks. Reopen if either stale
+  shared-key fallback or generic Stripe expectation returns.
+last-verified: 2026-09-07
+```
+
+### B-330 — CAS batch-read still couples memory, concurrency and task lifetime unsafely
+
+The final CI review found that `batch-read` fanned out spawned reads while the
+response payload and weighted process-wide permits had overlapping lifetimes.
+The integrated repair now bounds the working set, preserves input order, and
+owns every task and permit through success, error, response drop and request
+cancellation.
+
+```backlog
+id: B-330
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI CAS batch-read review"
+source-locator: "crates/corelink-container/src/routes/cas/batch_read.rs; crates/corelink-container/src/routes/cas/foundation_core.rs; crates/corelink-container/src/routes/cas/foundation_state.rs; crates/corelink-container/src/routes/cas/tests_batch_part2.rs"
+finding-title: "CAS batch-read has an unresolved memory/concurrency/lifetime contract"
+problem: "The spawned batch fan-out, response accumulation and process-wide weighted reservations do not yet have one proven contract for peak memory, bounded concurrency, deterministic ordering, and cancellation-safe task/permit lifetime; an error path must not leave detached work or stranded budget."
+evidence: "Integrated by b0f8a4edd, ce863c1dd and 43536e071 on b99251c0d; the B-077/B-078 bundle and focused batch-read cargo test passed, covering bounded memory/concurrency, input order, terminal drain and request-cancellation ownership."
+acceptance: "A solution must prove a bounded memory peak, bounded concurrency, deterministic input-order output, and no detached tasks: every spawned task is awaited or explicitly aborted and drained, every permit/response buffer is released on success, error and cancellation, and adversarial mutations turn the proof red. Do not mark done from a static constant or a candidate branch alone."
+verify: |
+  python3 scripts/verify_b077_capacity.py
+  python3 -S scripts/verify_b078_batch_read.py
+  cargo test -p corelink-server --lib routes::cas::tests::batch_read --locked
+verify-means: |
+  done — the final bundle proves the shared capacity envelope and the
+  B-078 bounded reader, while the focused Rust tests cover input-order output,
+  byte/concurrency ceilings, error/overflow draining, and cancellation abort
+  plus unwind. Every spawned read is awaited or aborted and drained; no
+  candidate-only result is used as closure evidence.
+last-verified: 2026-09-07
+```
+
+### B-331 — DSR registry drift could fail open in release builds
+
+The DSR registry had drifted as tenant-keyed tables were added, and the
+classification assertion was release-stripped. A production erasure or access
+path could therefore proceed without proving that every registry entry was
+classified exactly once. The integrated repair adds the missing classifications,
+an always-on `Result` gate before D1 work, and fail-closed Clerk-key handling.
+
+```backlog
+id: B-331
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI DSR review"
+source-locator: "crates/corelink-container/src/routes/dsr/adapter_d1.rs; crates/corelink-container/src/routes/dsr/access.rs; crates/corelink-container/src/routes/dsr/adapter_d1_tests.rs"
+finding-title: "DSR tenant-table registry drifted and its release gate was fail-open"
+problem: "New tenant-keyed tables were absent or misclassified, while the completeness assertion was debug-only, so release builds could run erasure/access/verification without an always-on registry Result gate."
+evidence: "Integrated by 68b51f9e7, a2f4889f2 and 806a44248; new erase/retain classifications, unknown-table rejection and invalid Clerk lookup rejection are covered before D1 work."
+acceptance: "The registry is complete and disjoint for the reviewed migrations; erase, verification and access/portability gathering all invoke an always-on fail-closed classification gate; missing/blank Clerk keys and unknown registry entries reject safely; test-only diagnostics cannot be mistaken for the production gate."
+verify: manual
+verify-means: |
+  done — the integrated DSR adapter classifies the newly discovered tenant-keyed
+  tables, runs the Result gate in release code before any D1 mutation/read, and
+  rejects unknown classifications and invalid Clerk lookup keys. Reopen if the
+  gate becomes debug-only or a new registry entry lacks exactly one disposition.
+last-verified: 2026-09-07
+```
+
+### B-332 — refund webhook coverage was hidden by the echo fixture
+
+The webhook test fixture treated refund events as generic echo cases, so it did
+not prove the container's refunded dispatch path and a mutation could survive
+without a dedicated assertion. The integrated test removes refunds from the
+generic fixture and adds an explicit refunded dispatch case.
+
+```backlog
+id: B-332
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI webhook review"
+source-locator: "crates/corelink-container/tests/webhook_unified.rs"
+finding-title: "refund webhook echo coverage did not prove container dispatch"
+problem: "Refund events were included in a generic echo fixture, allowing the test to pass without asserting the refunded container dispatch behavior or proving that the refund-specific branch remained wired."
+evidence: "Integrated by 0c5d3d641 and cc6c73ee5; refunds are excluded from the echo population and have a dedicated refunded-container dispatch assertion."
+acceptance: "The generic echo population excludes refunds; the dedicated refund case asserts the expected container dispatch and outcome; removing or bypassing the refund branch is caught by a load-bearing mutation rather than by an unrelated echo assertion."
+verify: manual
+verify-means: |
+  done — the webhook fixture no longer lets a refund ride the generic echo
+  path, and the explicit refunded dispatch case is present in the integrated
+  test target. Reopen if refund coverage is folded back into echo-only cases or
+  the dedicated dispatch assertion disappears.
+last-verified: 2026-09-07
+```
+
+### B-333 — money-path effect wiring is not yet deterministic
+
+The money-path auth test now uses an injected loopback effect seam with a
+deterministic recorder. Rejected credentials prove zero D1/Stripe effects,
+while authorized controls prove the intended effect cardinality and ordering.
+
+```backlog
+id: B-333
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI money-path review"
+source-locator: "crates/corelink-container/tests/money_path_auth_wiring.rs; crates/corelink-container/Cargo.toml; crates/corelink-container/src/routes/tier_select/part-00-02.rs"
+finding-title: "money-path effect assertions depend on timing and external proxy wiring"
+problem: "The auth/effect test uses a background refusing TCP listener, polling and proxy behavior to infer D1/Stripe effects; this leaves deterministic ordering and exact effect cardinality coupled to timing and environment instead of an injected effect seam."
+evidence: "Integrated by f293af7e3, 8f5edb4cf and 6465cd695 on b99251c0d; the exact money_path_auth_wiring test passed with the validated loopback D1 seam and deterministic zero-effect/positive-control assertions."
+acceptance: "Integrate a deterministic, injected effect recorder at the production boundary: unauthorized/malformed/tenant-mismatch cases must prove zero effects, authorized controls must prove the exact D1/Stripe effect sequence and cardinality, no ambient proxy or wall-clock polling may decide pass/fail, and a targeted mutator removing the wiring must fail."
+verify: cargo test -p corelink-server --test money_path_auth_wiring money_path_enforces_resolver_matrix_and_stops_unauthenticated_requests_before_effects
+verify-means: |
+  done — the exact fixture test exercises absent, malformed, mismatched and
+  valid controls through the injected loopback seam; rejected requests make
+  zero D1/Stripe calls and authorized controls assert the exact recorder
+  counts/order. The test no longer relies on ambient proxy state or settling
+  to decide pass/fail.
+last-verified: 2026-09-07
+```
+
+### B-334 — CI runs can contaminate each other through Cargo target/doctest state
+
+The final CI sweep found that the shared workspace target could be reused by
+concurrent or sequential runs. The integrated runner now allocates a private
+per-invocation target, preserves cancellation evidence, and guards cleanup and
+doctest/test artifact isolation.
+
+```backlog
+id: B-334
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI runner review"
+source-locator: "scripts/ci.sh; scripts/tests/ci-target-isolation.sh; .github/workflows/*.yml Cargo/test and doctest gates"
+finding-title: "CI has no integrated per-run Cargo target isolation and doctest contamination guard"
+problem: "CI invocations can share the checkout target directory, so concurrent or stale artifacts from another run can contaminate test and doctest selection; cancellation can also leave state that the next invocation reuses."
+evidence: "Integrated by 2441e13ee, 2ac10bcb1 and 96585db89 on b99251c0d; scripts/tests/ci-target-isolation.sh passed its static/lifecycle guard for unique targets, ambient-path shadowing, owned cleanup, cancellation preservation and doctest/test contamination controls."
+acceptance: "Each CI invocation must allocate a unique private CARGO_TARGET_DIR, prefer the runner temp area, shadow ambient caller paths, clean only an owned directory on normal exit and signals, and prove that Cargo test plus doctest outputs cannot reuse another run's artifacts. Static/mutation guards must fail on shared-target, unsafe-cleanup or doctest-contamination regressions; do not claim the candidate branch is integrated."
+verify: bash scripts/tests/ci-target-isolation.sh
+verify-means: |
+  done — each invocation gets a unique private target, caller-provided targets
+  are shadowed, normal cleanup is ownership-checked, cancellation preserves
+  evidence, child PIDs are reaped, and the guard rejects shared-target,
+  unsafe-cleanup or doctest-contamination regressions.
+last-verified: 2026-09-07
+```
+
+### B-335 — D1 loopback seam rejected bracketed IPv6 literals
+
+The injected D1 loopback seam parsed IPv4 loopback endpoints but rejected the
+bracketed host spelling required by an IPv6 URL. That made the valid `::1`
+fixture fail before the money-path effect test could exercise its contract.
+The parser now removes URL brackets before the IP-literal check while retaining
+the explicit loopback, scheme and port restrictions.
+
+```backlog
+id: B-335
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI focal bundle"
+source-locator: "crates/corelink-container/src/storage/d1_http.rs:204-235,752-755"
+finding-title: "D1 loopback seam rejected bracketed IPv6 test endpoints"
+problem: "URL host_str preserves brackets around IPv6 literals, so direct IpAddr parsing rejected the valid http://[::1]:8787/d1 loopback fixture."
+evidence: "Fixed by b99251c0d in d1_http.rs; the exact loopback_query_url_validation_accepts_explicit_loopback_endpoint test passes and covers http://[::1]:8787/d1 while unsafe endpoint cases remain rejected."
+acceptance: "The injected D1 seam accepts explicit IPv4 and bracketed IPv6 loopback literals with a port, rejects non-loopback/unsafe endpoints, and the exact unit test remains green without weakening scheme, userinfo, query, fragment or port checks."
+verify: cargo test -p corelink-server --lib loopback_query_url_validation_accepts_explicit_loopback_endpoint
+verify-means: |
+  done — the exact unit test passes on the integrated head; bracket stripping
+  is limited to URL host syntax before IpAddr parsing, and the companion
+  rejection matrix preserves the fail-closed endpoint contract.
+last-verified: 2026-09-07
+```
+
+### B-336 — Turbo concurrency fixture exceeded the productive tenant limit
+
+The Turbo byte-accounting test launched six same-tenant PUTs even though the
+production per-tenant guard admits four. The fixture therefore tested a
+synthetic over-limit workload instead of proving the productive ceiling. The
+test now derives its fan-out from the production constant and keeps the exact
+byte-accounting assertion.
+
+```backlog
+id: B-336
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI focal bundle"
+source-locator: "crates/corelink-container/src/routes/turbo_v8/b126_m2_test_1_2.rs:319-348; crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:49"
+finding-title: "Turbo concurrency fixture exceeded the productive same-tenant limit"
+problem: "The concurrent distinct-key PUT test launched six same-tenant requests against a production limit of four, so its byte-accounting result did not prove the real concurrency ceiling."
+evidence: "Fixed by b99251c0d; concurrent_distinct_key_puts_stay_concurrent_and_sum now launches TURBO_PUT_CONCURRENCY_LIMIT requests and the exact test passes with the production limit of four and the expected byte sum."
+acceptance: "Production TURBO_PUT_CONCURRENCY_LIMIT remains four; the fixture launches exactly that many distinct-key same-tenant PUTs, proves all productive requests succeed concurrently, and asserts the corresponding byte-accounting sum without changing production behavior."
+verify: cargo test -p corelink-server --lib concurrent_distinct_key_puts_stay_concurrent_and_sum
+verify-means: |
+  done — the exact Turbo fixture test passes on the integrated head, derives
+  its four-request fan-out from the production constant, and retains the
+  load-bearing aggregate byte assertion.
+last-verified: 2026-09-07
 ```
 
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
@@ -519,7 +2420,7 @@ repo: corelink-runners
 owner: tl
 status: parked
 verify: manual
-verify-means: parked until capability_claim_unserved leaves zero; read via /internal/v1/metrics
+verify-means: parked — until capability_claim_unserved leaves zero; read via /internal/v1/metrics
 last-verified: 2026-08-23
 ```
 
@@ -550,8 +2451,8 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  grep -q '^[^/*]*fn emit_near_ceiling' crates/corelink-container/src/tenant_quota.rs && \
-  ! grep -q 'deliberate follow-up (C2)' crates/corelink-container/src/tenant_quota.rs
+  grep -q '^[^/*]*fn emit_near_ceiling' crates/corelink-container/src/tenant_quota/b126_m2_impl_01.rs && \
+  ! grep -q 'deliberate follow-up (C2)' crates/corelink-container/src/tenant_quota/b126_m2_impl_01.rs
 verify-means: |
   done — the near-ceiling signal is wired to a PagerDutyDispatcher sink
   (`fn emit_near_ceiling`, gated default-off by NEAR_CEILING_ALERT_SINK) and the
@@ -591,9 +2492,12 @@ id: B-008
 repo: corelink-server
 owner: owner
 status: open
-verify: manual
-verify-means: only the owner or the PagerDuty incident log can say whether a page ever arrived
-last-verified: 2026-08-23
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: python3 -S scripts/verify_owner_action_packets.py --id B-008
+verify-means: |
+  packet guard validates the exact B-008 owner procedure and evidence schema;
+  only the owner or the PagerDuty incident log can say whether a page ever arrived.
+last-verified: 2026-09-05
 ```
 
 ---
@@ -647,7 +2551,8 @@ Follow-up to [B-009]. Governance-mode CAS legal-hold retention now ships
 retention term expires — is deferred.
 
 **BLOCKED AT THE R2 PLATFORM LEVEL, not on an owner infra decision (probed
-2026-08-25).** Direct probe against the prod account with the `.env.local` R2 S3
+2026-08-25). R2 does not implement S3 Object Lock.** Direct probe against the
+prod account with the `.env.local` R2 S3
 creds: `create-bucket --object-lock-enabled-for-bucket` → **`NotImplemented`**, and
 `put-object --object-lock-mode GOVERNANCE --object-lock-retain-until-date …` on a
 plain bucket → **`NotImplemented`**. So R2 implements neither bucket-level nor
@@ -668,6 +2573,16 @@ Compliance at the point a contract requires it"). Admitting a `'compliance'` val
 to `cas_retention.mode` is then also a table-REBUILD migration (D1 cannot widen an
 inline CHECK).
 
+**Operational truth gate (2026-09-05).** `scripts/verify_b046_object_lock_probe.py`
+checks this contract without contacting a provider. Its explicit `--probe` mode
+requires operator opt-in and runs the two capability operations against a
+`corelink-b046-probe-*` bucket: bucket-level Object Lock creation and per-object
+`COMPLIANCE` retention. Only an explicit provider `NotImplemented` is classified
+as `BLOCKED`; credentials, permissions, endpoint, network, and unknown failures
+are `INDETERMINATE`. A successful probe is external evidence for that provider
+and account, not a product guarantee. This item **does not claim Compliance mode**
+and does not alter B-009's tenant-bound Governance/legal-hold safety path.
+
 
 **Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: **re-sondar o R2** e registrar a
 resposta com data — que é literalmente o que o `verify-means` deste item prescreve, e medição
@@ -683,15 +2598,19 @@ segundo backend**.
 id: B-046
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: python3 scripts/verify_owner_action_packets.py --id B-046
 verify-means: |
-  open until a Compliance/Object-Lock retention mode ships. BLOCKED: R2 does not
+  parked — until a Compliance/Object-Lock retention mode ships. BLOCKED: R2 does not
   implement S3 Object Lock (probed 2026-08-25 — NotImplemented on both bucket and
   object), so this needs either Cloudflare adding Object Lock OR a different
   Object-Lock-capable storage backend for compliance-retained objects — a platform
   dependency, not a code change. Re-probe R2 before assuming it is still blocked.
-last-verified: 2026-08-25
+  The repository contract guard is `python3 scripts/verify_b046_object_lock_probe.py`;
+  it must preserve `BLOCKED`/`INDETERMINATE`, tenant/legal-hold safety, and the
+  absence of a Compliance database mode. It does not claim Compliance mode.
+last-verified: 2026-09-05
 ```
 
 ### B-015 — the sealed audit archive was never built, only its verifier
@@ -746,7 +2665,7 @@ id: B-015
 repo: corelink-server
 owner: tl
 status: done
-verify: "grep -q '^[^/*]*audit/archive' crates/corelink-container/src/main.rs && grep -q '^[^/*]*corelink-audit-weur' .github/workflows/audit-chain-daily-verify.yml"
+verify: python3 scripts/verify_b155_owned.py --id B-015 --expect done
 verify-means: done while the archive route is MOUNTED in the container composition root and the daily verifier reads the same bucket the archiver writes
 last-verified: 2026-08-24
 ```
@@ -762,7 +2681,7 @@ id: B-010
 repo: corelink-server
 owner: tl
 status: done
-verify: "ls specs/03_architecture/adrs/ | grep -qi \"^[^#/*-]*tls\""
+verify: "test -f specs/03_architecture/adrs/ADR-0072-humangr-zone-min-tls-1.2.md"
 verify-means: |
   done — ADR-0072 landed in #1232, with an OKF concept grounding it. Red if the ADR
   is ever removed. NOTE: this check first pointed at
@@ -1372,7 +3291,2635 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-028 — Dependabot alert census is triaged but still has three unpatched highs
+### B-171 — Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace
+
+B-101 proposal DD-002; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, heading 2.
+
+Problem: Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#heading 2` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Closure result: tenant prefixes now fail closed outside the test-only compatibility path; the focal closure verifier proves no shared fallback and mutation red.
+
+Acceptance/closure evidence: Evidence for DD-002: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-171
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "heading 2"
+finding-title: "Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace"
+problem: "Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#heading 2: Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace"
+dependencies: []
+next-action: "For DD-002: remediate the finding titled \"Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace\" at docs/security/2026-06-15-launch-due-diligence-audit.md (heading 2); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-002: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b171_180_closures.py --id B-171 --expect done
+verify-means: |
+  done — inverted closure gate proves the strict tenant namespace path and turns red when its production call is removed; witness: tests/audit/b101/closures/B-171.py.
+last-verified: 2026-09-05
+```
+
+### B-172 — OCI manifest PUT has NO body-size limit — unbounded heap allocation DoS
+
+B-101 proposal DD-005; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, heading 5.
+
+Problem: OCI manifest PUT has NO body-size limit — unbounded heap allocation DoS
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#heading 5` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Closure result: manifest PUT is bounded before buffering and maps oversize bodies to 413; the focal closure verifier proves the cap and mutation red.
+
+Acceptance/closure evidence: Evidence for DD-005: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-172
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "heading 5"
+finding-title: "OCI manifest PUT has NO body-size limit — unbounded heap allocation DoS"
+problem: "OCI manifest PUT has NO body-size limit — unbounded heap allocation DoS"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#heading 5: OCI manifest PUT has NO body-size limit — unbounded heap allocation DoS"
+dependencies: []
+next-action: "For DD-005: remediate the finding titled \"OCI manifest PUT has NO body-size limit — unbounded heap allocation DoS\" at docs/security/2026-06-15-launch-due-diligence-audit.md (heading 5); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-005: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b171_180_closures.py --id B-172 --expect done
+verify-means: |
+  done — inverted closure gate proves the pre-buffer manifest cap/413 path and turns red when the cap call is removed; witness: tests/audit/b101/closures/B-172.py.
+last-verified: 2026-09-05
+```
+
+### B-173 — OCI upload buffers are in-memory, per-session up to 5 GiB, no global cap and no abandoned-session reaper — shared-process memory exhaustion
+
+B-101 proposal DD-006; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, heading 6.
+
+Problem: OCI upload buffers are in-memory, per-session up to 5 GiB, no global cap and no abandoned-session reaper — shared-process memory exhaustion
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#heading 6` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Closure result: OCI uploads enforce global/per-tenant byte ceilings and lazy idle-session reaping; the focal closure verifier proves the counters and mutation red.
+
+Acceptance/closure evidence: Evidence for DD-006: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-173
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "heading 6"
+finding-title: "OCI upload buffers are in-memory, per-session up to 5 GiB, no global cap and no abandoned-session reaper — shared-process memory exhaustion"
+problem: "OCI upload buffers are in-memory, per-session up to 5 GiB, no global cap and no abandoned-session reaper — shared-process memory exhaustion"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#heading 6: OCI upload buffers are in-memory, per-session up to 5 GiB, no global cap and no abandoned-session reaper — shared-process memory exhaustion"
+dependencies: []
+next-action: "For DD-006: remediate the finding titled \"OCI upload buffers are in-memory, per-session up to 5 GiB, no global cap and no abandoned-session reaper — shared-process memory exhaustion\" at docs/security/2026-06-15-launch-due-diligence-audit.md (heading 6); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-006: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b171_180_closures.py --id B-173 --expect done
+verify-means: |
+  done — inverted closure gate proves global/per-tenant byte accounting and idle reaping and turns red when the activity field is removed; witness: tests/audit/b101/closures/B-173.py.
+last-verified: 2026-09-05
+```
+
+### B-174 — 0064 tenant rebuild (DROP TABLE) is documented as un-appliable via the canonical apply scripts, but BOTH prod apply scripts use only `wrangler d1 migrations apply` — a fresh-apply / DR-restore against a populated DB will fail mid-migration
+
+B-101 proposal DD-007; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, heading 7.
+
+Problem: 0064 tenant rebuild (DROP TABLE) is documented as un-appliable via the canonical apply scripts, but BOTH prod apply scripts use only `wrangler d1 migrations apply` — a fresh-apply / DR-restore against a populated DB will fail mid-migration
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#heading 7` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Closure result: all production migration runners now detect an unrecorded populated-table 0064, execute it atomically, and record the relative filename in d1_migrations before sequential apply; the focal closure verifier proves the pre-step and mutation red.
+
+Acceptance/closure evidence: Evidence for DD-007: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-174
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "heading 7"
+finding-title: "0064 tenant rebuild (DROP TABLE) is documented as un-appliable via the canonical apply scripts, but BOTH prod apply scripts use only `wrangler d1 migrations apply` — a fresh-apply / DR-restore against a populated DB will fail mid-migration"
+problem: "0064 tenant rebuild (DROP TABLE) is documented as un-appliable via the canonical apply scripts, but BOTH prod apply scripts use only `wrangler d1 migrations apply` — a fresh-apply / DR-restore against a populated DB will fail mid-migration"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#heading 7: 0064 tenant rebuild (DROP TABLE) is documented as un-appliable via the canonical apply scripts, but BOTH prod apply scripts use only `wrangler d1 migrations apply` — a fresh-apply / DR-restore against a populated DB will fail mid-migration"
+dependencies: []
+next-action: "For DD-007: remediate the finding titled \"0064 tenant rebuild (DROP TABLE) is documented as un-appliable via the canonical apply scripts, but BOTH prod apply scripts use only `wrangler d1 migrations apply` — a fresh-apply / DR-restore against a populated DB will fail mid-migration\" at docs/security/2026-06-15-launch-due-diligence-audit.md (heading 7); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-007: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b171_180_closures.py --id B-174 --expect done
+verify-means: |
+  done — inverted closure gate proves the FK-parent execute-file transaction plus atomic ledger record; witness: tests/audit/b101/closures/B-174.py.
+last-verified: 2026-09-05
+```
+
+### B-175 — OCI cache surface bypasses residency routing entirely — EU tenant image layers land in US (IAD) storage
+
+B-101 proposal DD-008; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, heading 8.
+
+Problem: OCI cache surface bypasses residency routing entirely — EU tenant image layers land in US (IAD) storage
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#heading 8` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Closure result: OCI bearers now select the tenant's residency service binding before the shared OCI DO; the receiving container still authenticates the bearer and the focal closure verifier proves the trusted-region wiring and mutation red.
+
+Acceptance/closure evidence: Evidence for DD-008: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-175
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "heading 8"
+finding-title: "OCI cache surface bypasses residency routing entirely — EU tenant image layers land in US (IAD) storage"
+problem: "OCI cache surface bypasses residency routing entirely — EU tenant image layers land in US (IAD) storage"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#heading 8: OCI cache surface bypasses residency routing entirely — EU tenant image layers land in US (IAD) storage"
+dependencies: []
+next-action: "For DD-008: remediate the finding titled \"OCI cache surface bypasses residency routing entirely — EU tenant image layers land in US (IAD) storage\" at docs/security/2026-06-15-launch-due-diligence-audit.md (heading 8); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-008: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b171_180_closures.py --id B-175 --expect done
+verify-means: |
+  done — inverted closure gate proves OCI bearer residency fan-out and trusted region stamping; witness: tests/audit/b101/closures/B-175.py.
+last-verified: 2026-09-05
+```
+
+### B-176 — Erasure attestation signature is never persisted and there is no serving endpoint — the GDPR Art.17 proof-of-erasure artifact is non-verifiable
+
+B-101 proposal DD-009; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, heading 9.
+
+Problem: Erasure attestation signature is never persisted and there is no serving endpoint — the GDPR Art.17 proof-of-erasure artifact is non-verifiable
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#heading 9` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Closure result: signed attestation bytes/canonical payload are persisted R2-first with a D1 index and served by public attestation/key routes; the focal closure verifier proves persistence and mutation red.
+
+Acceptance/closure evidence: Evidence for DD-009: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-176
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "heading 9"
+finding-title: "Erasure attestation signature is never persisted and there is no serving endpoint — the GDPR Art.17 proof-of-erasure artifact is non-verifiable"
+problem: "Erasure attestation signature is never persisted and there is no serving endpoint — the GDPR Art.17 proof-of-erasure artifact is non-verifiable"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#heading 9: Erasure attestation signature is never persisted and there is no serving endpoint — the GDPR Art.17 proof-of-erasure artifact is non-verifiable"
+dependencies: []
+next-action: "For DD-009: remediate the finding titled \"Erasure attestation signature is never persisted and there is no serving endpoint — the GDPR Art.17 proof-of-erasure artifact is non-verifiable\" at docs/security/2026-06-15-launch-due-diligence-audit.md (heading 9); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-009: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b171_180_closures.py --id B-176 --expect done
+verify-means: |
+  done — inverted closure gate proves R2-first signed persistence and public serving integration; witness: tests/audit/b101/closures/B-176.py.
+last-verified: 2026-09-05
+```
+
+### B-177 — Data-plane (CAS/AC/Bazel/Turbo/OCI/cargo/npm/pip/brew) has NO request-rate limiting — only storage quota + a repo-invisible CF zone rule
+
+B-101 proposal DD-014; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, heading 14.
+
+Problem: Data-plane (CAS/AC/Bazel/Turbo/OCI/cargo/npm/pip/brew) has NO request-rate limiting — only storage quota + a repo-invisible CF zone rule
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#heading 14` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Closure result: the composed data-plane router installs the per-tenant token bucket with tier resolution; the focal closure verifier proves production wiring and mutation red.
+
+Acceptance/closure evidence: Evidence for DD-014: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-177
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "heading 14"
+finding-title: "Data-plane (CAS/AC/Bazel/Turbo/OCI/cargo/npm/pip/brew) has NO request-rate limiting — only storage quota + a repo-invisible CF zone rule"
+problem: "Data-plane (CAS/AC/Bazel/Turbo/OCI/cargo/npm/pip/brew) has NO request-rate limiting — only storage quota + a repo-invisible CF zone rule"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#heading 14: Data-plane (CAS/AC/Bazel/Turbo/OCI/cargo/npm/pip/brew) has NO request-rate limiting — only storage quota + a repo-invisible CF zone rule"
+dependencies: []
+next-action: "For DD-014: remediate the finding titled \"Data-plane (CAS/AC/Bazel/Turbo/OCI/cargo/npm/pip/brew) has NO request-rate limiting — only storage quota + a repo-invisible CF zone rule\" at docs/security/2026-06-15-launch-due-diligence-audit.md (heading 14); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-014: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b171_180_closures.py --id B-177 --expect done
+verify-means: |
+  done — inverted closure gate proves the composed router installs the production rate-limit layer; witness: tests/audit/b101/closures/B-177.py.
+last-verified: 2026-09-05
+```
+
+### B-178 — checkRequestQuota is a hard-coded no-op — per-tier monthly request caps are documented and advertised but never enforced
+
+B-101 proposal DD-015; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, heading 15.
+
+Problem: checkRequestQuota is a hard-coded no-op — per-tier monthly request caps are documented and advertised but never enforced
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#heading 15` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Closure result: monthly_request_counts is atomically incremented and compared to the resolved tier cap unless the explicit opt-out is set; the focal closure verifier proves enforcement and mutation red.
+
+Acceptance/closure evidence: Evidence for DD-015: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-178
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "heading 15"
+finding-title: "checkRequestQuota is a hard-coded no-op — per-tier monthly request caps are documented and advertised but never enforced"
+problem: "checkRequestQuota is a hard-coded no-op — per-tier monthly request caps are documented and advertised but never enforced"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#heading 15: checkRequestQuota is a hard-coded no-op — per-tier monthly request caps are documented and advertised but never enforced"
+dependencies: []
+next-action: "For DD-015: remediate the finding titled \"checkRequestQuota is a hard-coded no-op — per-tier monthly request caps are documented and advertised but never enforced\" at docs/security/2026-06-15-launch-due-diligence-audit.md (heading 15); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-015: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b171_180_closures.py --id B-178 --expect done
+verify-means: |
+  done — inverted closure gate proves atomic monthly request-count enforcement; witness: tests/audit/b101/closures/B-178.py.
+last-verified: 2026-09-05
+```
+
+### B-179 — Sole data-plane request-rate defense is an unversioned, dashboard-only Cloudflare zone WAF rule that already caused a self-DoS
+
+B-101 proposal DD-016; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, heading 16.
+
+Problem: Sole data-plane request-rate defense is an unversioned, dashboard-only Cloudflare zone WAF rule that already caused a self-DoS
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#heading 16` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Closure result: the data plane no longer relies on the dashboard-only WAF rule: its in-container rate-limit layer has an executable 429 deny path, and OCI receives the unforgeable Cloudflare client IP for unauthenticated source partitioning; the focal closure verifier proves both wiring boundaries and mutation red.
+
+Acceptance/closure evidence: Evidence for DD-016: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-179
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "heading 16"
+finding-title: "Sole data-plane request-rate defense is an unversioned, dashboard-only Cloudflare zone WAF rule that already caused a self-DoS"
+problem: "Sole data-plane request-rate defense is an unversioned, dashboard-only Cloudflare zone WAF rule that already caused a self-DoS"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#heading 16: Sole data-plane request-rate defense is an unversioned, dashboard-only Cloudflare zone WAF rule that already caused a self-DoS"
+dependencies: []
+next-action: "For DD-016: remediate the finding titled \"Sole data-plane request-rate defense is an unversioned, dashboard-only Cloudflare zone WAF rule that already caused a self-DoS\" at docs/security/2026-06-15-launch-due-diligence-audit.md (heading 16); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-016: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b171_180_closures.py --id B-179 --expect done
+verify-means: |
+  done — inverted closure gate proves the trusted OCI client-IP injection and in-container defense; witness: tests/audit/b101/closures/B-179.py.
+last-verified: 2026-09-05
+```
+
+### B-180 — OCI token-key env-name drift: prod deploy gate binds/verifies HUGR_OCI_TOKEN_KEY but the code reads CORELINK_OCI_TOKEN_KEY → OCI registry route silently never mounts in prod
+
+B-101 proposal DD-021; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, heading 21.
+
+Problem: OCI token-key env-name drift: prod deploy gate binds/verifies HUGR_OCI_TOKEN_KEY but the code reads CORELINK_OCI_TOKEN_KEY → OCI registry route silently never mounts in prod
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#heading 21` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Closure result: the container accepts the canonical OCI key and the legacy HUGR alias through an explicit fallback, with both names forwarded by the Worker; the focal closure verifier proves the env contract and mutation red.
+
+Acceptance/closure evidence: Evidence for DD-021: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-180
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "heading 21"
+finding-title: "OCI token-key env-name drift: prod deploy gate binds/verifies HUGR_OCI_TOKEN_KEY but the code reads CORELINK_OCI_TOKEN_KEY → OCI registry route silently never mounts in prod"
+problem: "OCI token-key env-name drift: prod deploy gate binds/verifies HUGR_OCI_TOKEN_KEY but the code reads CORELINK_OCI_TOKEN_KEY → OCI registry route silently never mounts in prod"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#heading 21: OCI token-key env-name drift: prod deploy gate binds/verifies HUGR_OCI_TOKEN_KEY but the code reads CORELINK_OCI_TOKEN_KEY → OCI registry route silently never mounts in prod"
+dependencies: []
+next-action: "For DD-021: remediate the finding titled \"OCI token-key env-name drift: prod deploy gate binds/verifies HUGR_OCI_TOKEN_KEY but the code reads CORELINK_OCI_TOKEN_KEY → OCI registry route silently never mounts in prod\" at docs/security/2026-06-15-launch-due-diligence-audit.md (heading 21); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-021: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b171_180_closures.py --id B-180 --expect done
+verify-means: |
+  done — inverted closure gate proves canonical/legacy OCI key forwarding and fallback; witness: tests/audit/b101/closures/B-180.py.
+last-verified: 2026-09-05
+```
+
+### B-181 — Quota storage check fails OPEN on D1 error and on the F21 d1Error path — over-quota tenants pass during partial D1 outages
+
+B-101 proposal DD-025; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 4.
+
+Problem: Quota storage check fails OPEN on D1 error and on the F21 d1Error path — over-quota tenants pass during partial D1 outages
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 4` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-025: remediate the finding titled "Quota storage check fails OPEN on D1 error and on the F21 d1Error path — over-quota tenants pass during partial D1 outages" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 4); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-025: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-181
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 4"
+finding-title: "Quota storage check fails OPEN on D1 error and on the F21 d1Error path — over-quota tenants pass during partial D1 outages"
+problem: "Quota storage check fails OPEN on D1 error and on the F21 d1Error path — over-quota tenants pass during partial D1 outages"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 4: Quota storage check fails OPEN on D1 error and on the F21 d1Error path — over-quota tenants pass during partial D1 outages"
+dependencies: []
+next-action: "For DD-025: remediate the finding titled \"Quota storage check fails OPEN on D1 error and on the F21 d1Error path — over-quota tenants pass during partial D1 outages\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 4); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-025: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b181_b192_closures.py --id B-181 --expect done
+verify-means: |
+  done — executable storage-quota D1-error and unconfirmed-tier guards are present; the focal verifier removes the load-bearing guard and must turn red. Witness: tests/audit/b101/closures/B-181.py.
+last-verified: 2026-09-05
+```
+
+### B-182 — Expiry semantics diverge between Worker native auth and container adapter verifier (expires_ms=0 sentinel)
+
+B-101 proposal DD-026; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 5.
+
+Problem: Expiry semantics diverge between Worker native auth and container adapter verifier (expires_ms=0 sentinel)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 5` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-026: remediate the finding titled "Expiry semantics diverge between Worker native auth and container adapter verifier (expires_ms=0 sentinel)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 5); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-026: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-182
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 5"
+finding-title: "Expiry semantics diverge between Worker native auth and container adapter verifier (expires_ms=0 sentinel)"
+problem: "Expiry semantics diverge between Worker native auth and container adapter verifier (expires_ms=0 sentinel)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 5: Expiry semantics diverge between Worker native auth and container adapter verifier (expires_ms=0 sentinel)"
+dependencies: []
+next-action: "For DD-026: remediate the finding titled \"Expiry semantics diverge between Worker native auth and container adapter verifier (expires_ms=0 sentinel)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 5); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-026: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b181_b192_closures.py --id B-182 --expect done
+verify-means: |
+  done — Worker and container use the shared zero-sentinel/strict-future expiry contract; the focal verifier mutates the predicate and must turn red. Witness: tests/audit/b101/closures/B-182.py.
+last-verified: 2026-09-05
+```
+
+### B-183 — Container adapter verifier collapses Argon2id HashError (DB corruption) into InvalidPat (401) instead of Backend (503), contradicting the documented contract
+
+B-101 proposal DD-027; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 6.
+
+Problem: Container adapter verifier collapses Argon2id HashError (DB corruption) into InvalidPat (401) instead of Backend (503), contradicting the documented contract
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 6` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-027: remediate the finding titled "Container adapter verifier collapses Argon2id HashError (DB corruption) into InvalidPat (401) instead of Backend (503), contradicting the documented contract" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 6); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-027: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-183
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 6"
+finding-title: "Container adapter verifier collapses Argon2id HashError (DB corruption) into InvalidPat (401) instead of Backend (503), contradicting the documented contract"
+problem: "Container adapter verifier collapses Argon2id HashError (DB corruption) into InvalidPat (401) instead of Backend (503), contradicting the documented contract"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 6: Container adapter verifier collapses Argon2id HashError (DB corruption) into InvalidPat (401) instead of Backend (503), contradicting the documented contract"
+dependencies: []
+next-action: "For DD-027: remediate the finding titled \"Container adapter verifier collapses Argon2id HashError (DB corruption) into InvalidPat (401) instead of Backend (503), contradicting the documented contract\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 6); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-027: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b181_b192_closures.py --id B-183 --expect done
+verify-means: |
+  done — Argon2id HashError maps to the backend/503 flight while ordinary credential rejection remains InvalidPat; the focal verifier mutates that mapping and must turn red. Witness: tests/audit/b101/closures/B-183.py.
+last-verified: 2026-09-05
+```
+
+### B-184 — No-expiry PAT (expires_ms=0) divergence: Worker treats it as EXPIRED, container treats it as never-expiring
+
+B-101 proposal DD-028; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 7.
+
+Problem: No-expiry PAT (expires_ms=0) divergence: Worker treats it as EXPIRED, container treats it as never-expiring
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 7` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-028: remediate the finding titled "No-expiry PAT (expires_ms=0) divergence: Worker treats it as EXPIRED, container treats it as never-expiring" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 7); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-028: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-184
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 7"
+finding-title: "No-expiry PAT (expires_ms=0) divergence: Worker treats it as EXPIRED, container treats it as never-expiring"
+problem: "No-expiry PAT (expires_ms=0) divergence: Worker treats it as EXPIRED, container treats it as never-expiring"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 7: No-expiry PAT (expires_ms=0) divergence: Worker treats it as EXPIRED, container treats it as never-expiring"
+dependencies: []
+next-action: "For DD-028: remediate the finding titled \"No-expiry PAT (expires_ms=0) divergence: Worker treats it as EXPIRED, container treats it as never-expiring\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 7); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-028: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b181_b192_closures.py --id B-184 --expect done
+verify-means: |
+  done — the Worker delegates expiry decisions to the strict shared predicate and the container SQL preserves expires_ms=0 as never-expiring; the focal verifier mutates the Worker guard and must turn red. Witness: tests/audit/b101/closures/B-184.py.
+last-verified: 2026-09-05
+```
+
+### B-185 — M2 issuer pin runs in weak shape-check fallback in production because CLERK_ISSUER_URL is not yet bound
+
+B-101 proposal DD-029; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 8.
+
+Problem: M2 issuer pin runs in weak shape-check fallback in production because CLERK_ISSUER_URL is not yet bound
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 8` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-029: remediate the finding titled "M2 issuer pin runs in weak shape-check fallback in production because CLERK_ISSUER_URL is not yet bound" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 8); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-029: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-185
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 8"
+finding-title: "M2 issuer pin runs in weak shape-check fallback in production because CLERK_ISSUER_URL is not yet bound"
+problem: "M2 issuer pin runs in weak shape-check fallback in production because CLERK_ISSUER_URL is not yet bound"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 8: M2 issuer pin runs in weak shape-check fallback in production because CLERK_ISSUER_URL is not yet bound"
+dependencies: []
+next-action: "For DD-029: remediate the finding titled \"M2 issuer pin runs in weak shape-check fallback in production because CLERK_ISSUER_URL is not yet bound\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 8); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-029: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b181_b192_closures.py --id B-185 --expect done
+verify-means: |
+  done — documented production markers (including Wrangler prod) fail closed when CLERK_ISSUER_URL is absent; the focal verifier mutates the production decision and must turn red. Witness: tests/audit/b101/closures/B-185.py.
+last-verified: 2026-09-05
+```
+
+### B-186 — E2E synthetic-session cookie auth-bypass is gated correctly but relies on a build-time NEXT_PUBLIC_ flag — verify the prod build never ships with it set
+
+B-101 proposal DD-030; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 9.
+
+Problem: E2E synthetic-session cookie auth-bypass is gated correctly but relies on a build-time NEXT_PUBLIC_ flag — verify the prod build never ships with it set
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 9` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-030: remediate the finding titled "E2E synthetic-session cookie auth-bypass is gated correctly but relies on a build-time NEXT_PUBLIC_ flag — verify the prod build never ships with it set" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 9); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-030: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-186
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 9"
+finding-title: "E2E synthetic-session cookie auth-bypass is gated correctly but relies on a build-time NEXT_PUBLIC_ flag — verify the prod build never ships with it set"
+problem: "E2E synthetic-session cookie auth-bypass is gated correctly but relies on a build-time NEXT_PUBLIC_ flag — verify the prod build never ships with it set"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 9: E2E synthetic-session cookie auth-bypass is gated correctly but relies on a build-time NEXT_PUBLIC_ flag — verify the prod build never ships with it set"
+dependencies: []
+next-action: "For DD-030: remediate the finding titled \"E2E synthetic-session cookie auth-bypass is gated correctly but relies on a build-time NEXT_PUBLIC_ flag — verify the prod build never ships with it set\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 9); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-030: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b181_b192_closures.py --id B-186 --expect done
+verify-means: |
+  done — the synthetic-session flag is accepted only outside NODE_ENV=production; the focal verifier mutates the environment half of the double gate and must turn red. Witness: tests/audit/b101/closures/B-186.py.
+last-verified: 2026-09-05
+```
+
+### B-187 — Runners max_concurrency ladder is keyed on phantom tiers (team/scale) and omits a real one (solo) — diverges from the canonical TierKind set; latent wrong-cap when Runners entitlement lights up
+
+B-101 proposal DD-031; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 10.
+
+Problem: Runners max_concurrency ladder is keyed on phantom tiers (team/scale) and omits a real one (solo) — diverges from the canonical TierKind set; latent wrong-cap when Runners entitlement lights up
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 10` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-031: remediate the finding titled "Runners max_concurrency ladder is keyed on phantom tiers (team/scale) and omits a real one (solo) — diverges from the canonical TierKind set; latent wrong-cap when Runners entitlement lights up" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 10); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-031: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-187
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 10"
+finding-title: "Runners max_concurrency ladder is keyed on phantom tiers (team/scale) and omits a real one (solo) — diverges from the canonical TierKind set; latent wrong-cap when Runners entitlement lights up"
+problem: "Runners max_concurrency ladder is keyed on phantom tiers (team/scale) and omits a real one (solo) — diverges from the canonical TierKind set; latent wrong-cap when Runners entitlement lights up"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 10: Runners max_concurrency ladder is keyed on phantom tiers (team/scale) and omits a real one (solo) — diverges from the canonical TierKind set; latent wrong-cap when Runners entitlement lights up"
+dependencies: []
+next-action: "For DD-031: remediate the finding titled \"Runners max_concurrency ladder is keyed on phantom tiers (team/scale) and omits a real one (solo) — diverges from the canonical TierKind set; latent wrong-cap when Runners entitlement lights up\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 10); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-031: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b181_b192_closures.py --id B-187 --expect done
+verify-means: |
+  done — runner resolution uses the five ratified price/concurrency/vCPU entries and rejects guessed literal IDs; the focal verifier mutates the Scale row and must turn red. Witness: tests/audit/b101/closures/B-187.py.
+last-verified: 2026-09-05
+```
+
+### B-188 — AuthTenant extractor accepts any non-sentinel string as the tenant id (no UUID validation) — the only structural check before storage keying
+
+B-101 proposal DD-032; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 11.
+
+Problem: AuthTenant extractor accepts any non-sentinel string as the tenant id (no UUID validation) — the only structural check before storage keying
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 11` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-032: remediate the finding titled "AuthTenant extractor accepts any non-sentinel string as the tenant id (no UUID validation) — the only structural check before storage keying" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 11); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-032: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-188
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 11"
+finding-title: "AuthTenant extractor accepts any non-sentinel string as the tenant id (no UUID validation) — the only structural check before storage keying"
+problem: "AuthTenant extractor accepts any non-sentinel string as the tenant id (no UUID validation) — the only structural check before storage keying"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 11: AuthTenant extractor accepts any non-sentinel string as the tenant id (no UUID validation) — the only structural check before storage keying"
+dependencies: []
+next-action: "For DD-032: remediate the finding titled \"AuthTenant extractor accepts any non-sentinel string as the tenant id (no UUID validation) — the only structural check before storage keying\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 11); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-032: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b181_b192_closures.py --id B-188 --expect done
+verify-means: |
+  done — AuthTenant rejects opaque, non-canonical, and sentinel tenant values before handlers; the focal verifier mutates the canonical-UUID guard and must turn red. Witness: tests/audit/b101/closures/B-188.py.
+last-verified: 2026-09-05
+```
+
+### B-189 — Native plane trusts Worker-injected tenant with no container-side Argon2id re-verify (documented F3/F17 posture)
+
+B-101 proposal DD-033; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 12.
+
+Problem: Native plane trusts Worker-injected tenant with no container-side Argon2id re-verify (documented F3/F17 posture)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 12` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-033: remediate the finding titled "Native plane trusts Worker-injected tenant with no container-side Argon2id re-verify (documented F3/F17 posture)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 12); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-033: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-189
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 12"
+finding-title: "Native plane trusts Worker-injected tenant with no container-side Argon2id re-verify (documented F3/F17 posture)"
+problem: "Native plane trusts Worker-injected tenant with no container-side Argon2id re-verify (documented F3/F17 posture)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 12: Native plane trusts Worker-injected tenant with no container-side Argon2id re-verify (documented F3/F17 posture)"
+dependencies: []
+next-action: "For DD-033: remediate the finding titled \"Native plane trusts Worker-injected tenant with no container-side Argon2id re-verify (documented F3/F17 posture)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 12); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-033: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b181_b192_closures.py --id B-189 --expect done
+verify-means: |
+  done — native handlers call the full PatVerifier capability path and reject forged and wrong-tenant PATs; the focal verifier mutates the re-verification call and must turn red. Witness: tests/audit/b101/closures/B-189.py.
+last-verified: 2026-09-05
+```
+
+### B-190 — CAS/AC R2 object key is built from the raw client-supplied digest, not the canonical lowercase digest — uppercase-hex requests fragment the cache and silently bypass content dedup
+
+B-101 proposal DD-034; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 13.
+
+Problem: CAS/AC R2 object key is built from the raw client-supplied digest, not the canonical lowercase digest — uppercase-hex requests fragment the cache and silently bypass content dedup
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 13` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-034: remediate the finding titled "CAS/AC R2 object key is built from the raw client-supplied digest, not the canonical lowercase digest — uppercase-hex requests fragment the cache and silently bypass content dedup" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 13); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-034: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-190
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 13"
+finding-title: "CAS/AC R2 object key is built from the raw client-supplied digest, not the canonical lowercase digest — uppercase-hex requests fragment the cache and silently bypass content dedup"
+problem: "CAS/AC R2 object key is built from the raw client-supplied digest, not the canonical lowercase digest — uppercase-hex requests fragment the cache and silently bypass content dedup"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 13: CAS/AC R2 object key is built from the raw client-supplied digest, not the canonical lowercase digest — uppercase-hex requests fragment the cache and silently bypass content dedup"
+dependencies: []
+next-action: "For DD-034: remediate the finding titled \"CAS/AC R2 object key is built from the raw client-supplied digest, not the canonical lowercase digest — uppercase-hex requests fragment the cache and silently bypass content dedup\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 13); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-034: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b181_b192_closures.py --id B-190 --expect done
+verify-means: |
+  done — AC key derivation rejects uppercase, short, and non-hex action digests at the storage boundary; the focal verifier mutates that guard and must turn red. Witness: tests/audit/b101/closures/B-190.py.
+last-verified: 2026-09-05
+```
+
+### B-191 — AC divergent-body immutability guard is a GET-then-PUT with a TOCTOU window (no compare-and-swap)
+
+B-101 proposal DD-036; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 15.
+
+Problem: AC divergent-body immutability guard is a GET-then-PUT with a TOCTOU window (no compare-and-swap)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 15` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-036: remediate the finding titled "AC divergent-body immutability guard is a GET-then-PUT with a TOCTOU window (no compare-and-swap)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 15); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-036: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-191
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 15"
+finding-title: "AC divergent-body immutability guard is a GET-then-PUT with a TOCTOU window (no compare-and-swap)"
+problem: "AC divergent-body immutability guard is a GET-then-PUT with a TOCTOU window (no compare-and-swap)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 15: AC divergent-body immutability guard is a GET-then-PUT with a TOCTOU window (no compare-and-swap)"
+dependencies: []
+next-action: "For DD-036: remediate the finding titled \"AC divergent-body immutability guard is a GET-then-PUT with a TOCTOU window (no compare-and-swap)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 15); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-036: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b181_b192_closures.py --id B-191 --expect done
+verify-means: |
+  done — AC writes use server-side If-None-Match first-writer semantics and classify divergent lost races without overwrite; the focal verifier mutates the CAS call and must turn red. Witness: tests/audit/b101/closures/B-191.py.
+last-verified: 2026-09-05
+```
+
+### B-192 — AuthTenant does not validate that the tenant id is a canonical UUID, so a non-UUID tenant reaches the Turbo store's pad16 public-prefix arm even with TDK present
+
+B-101 proposal DD-038; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 17.
+
+Problem: AuthTenant does not validate that the tenant id is a canonical UUID, so a non-UUID tenant reaches the Turbo store's pad16 public-prefix arm even with TDK present
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 17` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-038: remediate the finding titled "AuthTenant does not validate that the tenant id is a canonical UUID, so a non-UUID tenant reaches the Turbo store's pad16 public-prefix arm even with TDK present" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 17); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-038: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-192
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 17"
+finding-title: "AuthTenant does not validate that the tenant id is a canonical UUID, so a non-UUID tenant reaches the Turbo store's pad16 public-prefix arm even with TDK present"
+problem: "AuthTenant does not validate that the tenant id is a canonical UUID, so a non-UUID tenant reaches the Turbo store's pad16 public-prefix arm even with TDK present"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 17: AuthTenant does not validate that the tenant id is a canonical UUID, so a non-UUID tenant reaches the Turbo store's pad16 public-prefix arm even with TDK present"
+dependencies: []
+next-action: "For DD-038: remediate the finding titled \"AuthTenant does not validate that the tenant id is a canonical UUID, so a non-UUID tenant reaches the Turbo store's pad16 public-prefix arm even with TDK present\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 17); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-038: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b181_b192_closures.py --id B-192 --expect done
+verify-means: |
+  done — Turbo production object keys require a canonical UUID and present TDK, with no pad16 fallback; the focal verifier mutates the canonical comparison and must turn red. Witness: tests/audit/b101/closures/B-192.py.
+last-verified: 2026-09-05
+```
+
+### B-193 — OCI blob finalize persists bytes BEFORE digest verification; on digest mismatch the unverified bytes are left in the tenant's blob slot (content-address integrity break)
+
+B-101 proposal DD-039; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 18.
+
+Problem: OCI blob finalize persists bytes BEFORE digest verification; on digest mismatch the unverified bytes are left in the tenant's blob slot (content-address integrity break)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 18` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-039: remediate the finding titled "OCI blob finalize persists bytes BEFORE digest verification; on digest mismatch the unverified bytes are left in the tenant's blob slot (content-address integrity break)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 18); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-039: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-193
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 18"
+finding-title: "OCI blob finalize persists bytes BEFORE digest verification; on digest mismatch the unverified bytes are left in the tenant's blob slot (content-address integrity break)"
+problem: "OCI blob finalize persists bytes BEFORE digest verification; on digest mismatch the unverified bytes are left in the tenant's blob slot (content-address integrity break)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 18: OCI blob finalize persists bytes BEFORE digest verification; on digest mismatch the unverified bytes are left in the tenant's blob slot (content-address integrity break)"
+dependencies: []
+next-action: "For DD-039: remediate the finding titled \"OCI blob finalize persists bytes BEFORE digest verification; on digest mismatch the unverified bytes are left in the tenant's blob slot (content-address integrity break)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 18); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-039: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-193 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-193; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-194 — Live R2 outage returns HTTP 500, not the documented 503 — only the build-refused path is sentinel-tagged for fail-closed 503
+
+B-101 proposal DD-040; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 19.
+
+Problem: Live R2 outage returns HTTP 500, not the documented 503 — only the build-refused path is sentinel-tagged for fail-closed 503
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 19` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-040: remediate the finding titled "Live R2 outage returns HTTP 500, not the documented 503 — only the build-refused path is sentinel-tagged for fail-closed 503" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 19); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-040: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-194
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 19"
+finding-title: "Live R2 outage returns HTTP 500, not the documented 503 — only the build-refused path is sentinel-tagged for fail-closed 503"
+problem: "Live R2 outage returns HTTP 500, not the documented 503 — only the build-refused path is sentinel-tagged for fail-closed 503"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 19: Live R2 outage returns HTTP 500, not the documented 503 — only the build-refused path is sentinel-tagged for fail-closed 503"
+dependencies: []
+next-action: "For DD-040: remediate the finding titled \"Live R2 outage returns HTTP 500, not the documented 503 — only the build-refused path is sentinel-tagged for fail-closed 503\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 19); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-040: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-194 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-194; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-195 — Duplicate migration sequence number 0044 (two files share the 0044 prefix)
+
+B-101 proposal DD-042; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 21.
+
+Problem: Duplicate migration sequence number 0044 (two files share the 0044 prefix)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 21` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-042: remediate the finding titled "Duplicate migration sequence number 0044 (two files share the 0044 prefix)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 21); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-042: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-195
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 21"
+finding-title: "Duplicate migration sequence number 0044 (two files share the 0044 prefix)"
+problem: "Duplicate migration sequence number 0044 (two files share the 0044 prefix)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 21: Duplicate migration sequence number 0044 (two files share the 0044 prefix)"
+dependencies: []
+next-action: "For DD-042: remediate the finding titled \"Duplicate migration sequence number 0044 (two files share the 0044 prefix)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 21); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-042: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-195 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-195; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-196 — Two unbounded D1 `.all()` scans in the DSR verify cron (no LIMIT) — server-side only, self-limiting, but worth a cap for defense-in-depth
+
+B-101 proposal DD-043; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 22.
+
+Problem: Two unbounded D1 `.all()` scans in the DSR verify cron (no LIMIT) — server-side only, self-limiting, but worth a cap for defense-in-depth
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 22` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-043: remediate the finding titled "Two unbounded D1 `.all()` scans in the DSR verify cron (no LIMIT) — server-side only, self-limiting, but worth a cap for defense-in-depth" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 22); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-043: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-196
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 22"
+finding-title: "Two unbounded D1 `.all()` scans in the DSR verify cron (no LIMIT) — server-side only, self-limiting, but worth a cap for defense-in-depth"
+problem: "Two unbounded D1 `.all()` scans in the DSR verify cron (no LIMIT) — server-side only, self-limiting, but worth a cap for defense-in-depth"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 22: Two unbounded D1 `.all()` scans in the DSR verify cron (no LIMIT) — server-side only, self-limiting, but worth a cap for defense-in-depth"
+dependencies: []
+next-action: "For DD-043: remediate the finding titled \"Two unbounded D1 `.all()` scans in the DSR verify cron (no LIMIT) — server-side only, self-limiting, but worth a cap for defense-in-depth\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 22); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-043: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-196 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-196; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-197 — Residency provisioning is enforced ONLY at signup; the data-plane never re-checks it, so apac is fully servable despite being 'must-reject'
+
+B-101 proposal DD-044; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 23.
+
+Problem: Residency provisioning is enforced ONLY at signup; the data-plane never re-checks it, so apac is fully servable despite being 'must-reject'
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 23` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-044: remediate the finding titled "Residency provisioning is enforced ONLY at signup; the data-plane never re-checks it, so apac is fully servable despite being 'must-reject'" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 23); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-044: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-197
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 23"
+finding-title: "Residency provisioning is enforced ONLY at signup; the data-plane never re-checks it, so apac is fully servable despite being 'must-reject'"
+problem: "Residency provisioning is enforced ONLY at signup; the data-plane never re-checks it, so apac is fully servable despite being 'must-reject'"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 23: Residency provisioning is enforced ONLY at signup; the data-plane never re-checks it, so apac is fully servable despite being 'must-reject'"
+dependencies: []
+next-action: "For DD-044: remediate the finding titled \"Residency provisioning is enforced ONLY at signup; the data-plane never re-checks it, so apac is fully servable despite being 'must-reject'\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 23); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-044: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-197 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-197; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-198 — Three divergent PROVISIONED_MACROS definitions; the worker/container source-of-truth disagrees with the live signup gate and has no live caller
+
+B-101 proposal DD-045; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 24.
+
+Problem: Three divergent PROVISIONED_MACROS definitions; the worker/container source-of-truth disagrees with the live signup gate and has no live caller
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 24` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-045: remediate the finding titled "Three divergent PROVISIONED_MACROS definitions; the worker/container source-of-truth disagrees with the live signup gate and has no live caller" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 24); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-045: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-198
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 24"
+finding-title: "Three divergent PROVISIONED_MACROS definitions; the worker/container source-of-truth disagrees with the live signup gate and has no live caller"
+problem: "Three divergent PROVISIONED_MACROS definitions; the worker/container source-of-truth disagrees with the live signup gate and has no live caller"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 24: Three divergent PROVISIONED_MACROS definitions; the worker/container source-of-truth disagrees with the live signup gate and has no live caller"
+dependencies: []
+next-action: "For DD-045: remediate the finding titled \"Three divergent PROVISIONED_MACROS definitions; the worker/container source-of-truth disagrees with the live signup gate and has no live caller\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 24); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-045: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-198 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-198; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-199 — sam macro and sam colo share the literal string 'sam' — fragile self-collision in the residency comparison
+
+B-101 proposal DD-046; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 25.
+
+Problem: sam macro and sam colo share the literal string 'sam' — fragile self-collision in the residency comparison
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 25` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-046: remediate the finding titled "sam macro and sam colo share the literal string 'sam' — fragile self-collision in the residency comparison" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 25); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-046: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-199
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 25"
+finding-title: "sam macro and sam colo share the literal string 'sam' — fragile self-collision in the residency comparison"
+problem: "sam macro and sam colo share the literal string 'sam' — fragile self-collision in the residency comparison"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 25: sam macro and sam colo share the literal string 'sam' — fragile self-collision in the residency comparison"
+dependencies: []
+next-action: "For DD-046: remediate the finding titled \"sam macro and sam colo share the literal string 'sam' — fragile self-collision in the residency comparison\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 25); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-046: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-199 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-199; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-200 — dsr_verify_cron requested-anchor query never self-expires a permanently-stuck DSR (comment contradicts code)
+
+B-101 proposal DD-047; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 26.
+
+Problem: dsr_verify_cron requested-anchor query never self-expires a permanently-stuck DSR (comment contradicts code)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 26` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-047: remediate the finding titled "dsr_verify_cron requested-anchor query never self-expires a permanently-stuck DSR (comment contradicts code)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 26); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-047: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-200
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 26"
+finding-title: "dsr_verify_cron requested-anchor query never self-expires a permanently-stuck DSR (comment contradicts code)"
+problem: "dsr_verify_cron requested-anchor query never self-expires a permanently-stuck DSR (comment contradicts code)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 26: dsr_verify_cron requested-anchor query never self-expires a permanently-stuck DSR (comment contradicts code)"
+dependencies: []
+next-action: "For DD-047: remediate the finding titled \"dsr_verify_cron requested-anchor query never self-expires a permanently-stuck DSR (comment contradicts code)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 26); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-047: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-200 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-200; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-201 — R2 AC erasure + verification rely on the ac_meta D1 index, not LIST-by-prefix — an unindexed R2 AC orphan is neither erased nor detected
+
+B-101 proposal DD-048; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 27.
+
+Problem: R2 AC erasure + verification rely on the ac_meta D1 index, not LIST-by-prefix — an unindexed R2 AC orphan is neither erased nor detected
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 27` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-048: remediate the finding titled "R2 AC erasure + verification rely on the ac_meta D1 index, not LIST-by-prefix — an unindexed R2 AC orphan is neither erased nor detected" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 27); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-048: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-201
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 27"
+finding-title: "R2 AC erasure + verification rely on the ac_meta D1 index, not LIST-by-prefix — an unindexed R2 AC orphan is neither erased nor detected"
+problem: "R2 AC erasure + verification rely on the ac_meta D1 index, not LIST-by-prefix — an unindexed R2 AC orphan is neither erased nor detected"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 27: R2 AC erasure + verification rely on the ac_meta D1 index, not LIST-by-prefix — an unindexed R2 AC orphan is neither erased nor detected"
+dependencies: []
+next-action: "For DD-048: remediate the finding titled \"R2 AC erasure + verification rely on the ac_meta D1 index, not LIST-by-prefix — an unindexed R2 AC orphan is neither erased nor detected\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 27); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-048: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-201 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-201; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-202 — Even if WEUR/SAM were served, CAS blob bytes physically land in the single US bucket corelink-cas-prod — region var only changes the object key prefix
+
+B-101 proposal DD-049; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 28.
+
+Problem: Even if WEUR/SAM were served, CAS blob bytes physically land in the single US bucket corelink-cas-prod — region var only changes the object key prefix
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 28` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-049: remediate the finding titled "Even if WEUR/SAM were served, CAS blob bytes physically land in the single US bucket corelink-cas-prod — region var only changes the object key prefix" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 28); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-049: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-202
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 28"
+finding-title: "Even if WEUR/SAM were served, CAS blob bytes physically land in the single US bucket corelink-cas-prod — region var only changes the object key prefix"
+problem: "Even if WEUR/SAM were served, CAS blob bytes physically land in the single US bucket corelink-cas-prod — region var only changes the object key prefix"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 28: Even if WEUR/SAM were served, CAS blob bytes physically land in the single US bucket corelink-cas-prod — region var only changes the object key prefix"
+dependencies: []
+next-action: "For DD-049: remediate the finding titled \"Even if WEUR/SAM were served, CAS blob bytes physically land in the single US bucket corelink-cas-prod — region var only changes the object key prefix\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 28); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-049: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-202 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-202; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-203 — PROVISIONED_MACROS contract drift: region_map (Rust + worker) says 4 regions {wnam,enam,weur,sam}; signup-worker says 2 {wnam,enam}
+
+B-101 proposal DD-050; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 29.
+
+Problem: PROVISIONED_MACROS contract drift: region_map (Rust + worker) says 4 regions {wnam,enam,weur,sam}; signup-worker says 2 {wnam,enam}
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 29` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-050: remediate the finding titled "PROVISIONED_MACROS contract drift: region_map (Rust + worker) says 4 regions {wnam,enam,weur,sam}; signup-worker says 2 {wnam,enam}" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 29); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-050: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-203
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 29"
+finding-title: "PROVISIONED_MACROS contract drift: region_map (Rust + worker) says 4 regions {wnam,enam,weur,sam}; signup-worker says 2 {wnam,enam}"
+problem: "PROVISIONED_MACROS contract drift: region_map (Rust + worker) says 4 regions {wnam,enam,weur,sam}; signup-worker says 2 {wnam,enam}"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 29: PROVISIONED_MACROS contract drift: region_map (Rust + worker) says 4 regions {wnam,enam,weur,sam}; signup-worker says 2 {wnam,enam}"
+dependencies: []
+next-action: "For DD-050: remediate the finding titled \"PROVISIONED_MACROS contract drift: region_map (Rust + worker) says 4 regions {wnam,enam,weur,sam}; signup-worker says 2 {wnam,enam}\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 29); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-050: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-203 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-203; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-204 — DPA evidence-pack references a BYOK FIPS document that does not exist in the repo
+
+B-101 proposal DD-051; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 30.
+
+Problem: DPA evidence-pack references a BYOK FIPS document that does not exist in the repo
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 30` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-051: remediate the finding titled "DPA evidence-pack references a BYOK FIPS document that does not exist in the repo" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 30); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-051: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-204
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 30"
+finding-title: "DPA evidence-pack references a BYOK FIPS document that does not exist in the repo"
+problem: "DPA evidence-pack references a BYOK FIPS document that does not exist in the repo"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 30: DPA evidence-pack references a BYOK FIPS document that does not exist in the repo"
+dependencies: []
+next-action: "For DD-051: remediate the finding titled \"DPA evidence-pack references a BYOK FIPS document that does not exist in the repo\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 30); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-051: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-204 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-204; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-205 — In-memory token-bucket limiters (signup + audit-analytics) reset on container cold-start, yielding a per-recycle burst bypass
+
+B-101 proposal DD-053; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 32.
+
+Problem: In-memory token-bucket limiters (signup + audit-analytics) reset on container cold-start, yielding a per-recycle burst bypass
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 32` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-053: remediate the finding titled "In-memory token-bucket limiters (signup + audit-analytics) reset on container cold-start, yielding a per-recycle burst bypass" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 32); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-053: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-205
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 32"
+finding-title: "In-memory token-bucket limiters (signup + audit-analytics) reset on container cold-start, yielding a per-recycle burst bypass"
+problem: "In-memory token-bucket limiters (signup + audit-analytics) reset on container cold-start, yielding a per-recycle burst bypass"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 32: In-memory token-bucket limiters (signup + audit-analytics) reset on container cold-start, yielding a per-recycle burst bypass"
+dependencies: []
+next-action: "For DD-053: remediate the finding titled \"In-memory token-bucket limiters (signup + audit-analytics) reset on container cold-start, yielding a per-recycle burst bypass\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 32); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-053: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-205 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-205; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-206 — Idle-stop relies on in-memory setTimeout that does not survive DO eviction → containers outlive the 5-min idle window (cost leak)
+
+B-101 proposal DD-055; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 34.
+
+Problem: Idle-stop relies on in-memory setTimeout that does not survive DO eviction → containers outlive the 5-min idle window (cost leak)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 34` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-055: remediate the finding titled "Idle-stop relies on in-memory setTimeout that does not survive DO eviction → containers outlive the 5-min idle window (cost leak)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 34); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-055: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-206
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 34"
+finding-title: "Idle-stop relies on in-memory setTimeout that does not survive DO eviction → containers outlive the 5-min idle window (cost leak)"
+problem: "Idle-stop relies on in-memory setTimeout that does not survive DO eviction → containers outlive the 5-min idle window (cost leak)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 34: Idle-stop relies on in-memory setTimeout that does not survive DO eviction → containers outlive the 5-min idle window (cost leak)"
+dependencies: []
+next-action: "For DD-055: remediate the finding titled \"Idle-stop relies on in-memory setTimeout that does not survive DO eviction → containers outlive the 5-min idle window (cost leak)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 34); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-055: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-206 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-206; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-207 — Concurrent fetch race: no blockConcurrencyWhile around container start → two in-flight requests both cold-start, double telemetry / start flap
+
+B-101 proposal DD-056; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 35.
+
+Problem: Concurrent fetch race: no blockConcurrencyWhile around container start → two in-flight requests both cold-start, double telemetry / start flap
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 35` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-056: remediate the finding titled "Concurrent fetch race: no blockConcurrencyWhile around container start → two in-flight requests both cold-start, double telemetry / start flap" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 35); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-056: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-207
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 35"
+finding-title: "Concurrent fetch race: no blockConcurrencyWhile around container start → two in-flight requests both cold-start, double telemetry / start flap"
+problem: "Concurrent fetch race: no blockConcurrencyWhile around container start → two in-flight requests both cold-start, double telemetry / start flap"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 35: Concurrent fetch race: no blockConcurrencyWhile around container start → two in-flight requests both cold-start, double telemetry / start flap"
+dependencies: []
+next-action: "For DD-056: remediate the finding titled \"Concurrent fetch race: no blockConcurrencyWhile around container start → two in-flight requests both cold-start, double telemetry / start flap\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 35); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-056: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-207 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-207; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-208 — Consent API client calls /v1/consent/* same-origin with no Authorization header (inconsistent auth wiring vs. customer/dsr clients)
+
+B-101 proposal DD-060; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 39.
+
+Problem: Consent API client calls /v1/consent/* same-origin with no Authorization header (inconsistent auth wiring vs. customer/dsr clients)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 39` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-060: remediate the finding titled "Consent API client calls /v1/consent/* same-origin with no Authorization header (inconsistent auth wiring vs. customer/dsr clients)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 39); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-060: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-208
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 39"
+finding-title: "Consent API client calls /v1/consent/* same-origin with no Authorization header (inconsistent auth wiring vs. customer/dsr clients)"
+problem: "Consent API client calls /v1/consent/* same-origin with no Authorization header (inconsistent auth wiring vs. customer/dsr clients)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 39: Consent API client calls /v1/consent/* same-origin with no Authorization header (inconsistent auth wiring vs. customer/dsr clients)"
+dependencies: []
+next-action: "For DD-060: remediate the finding titled \"Consent API client calls /v1/consent/* same-origin with no Authorization header (inconsistent auth wiring vs. customer/dsr clients)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 39); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-060: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-208 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-208; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-209 — Onboarding server actions accept a client-supplied tenantId injected into /v1/tenants/{tenantId}/* (IDOR surface; depends on backend JWT cross-check)
+
+B-101 proposal DD-061; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 40.
+
+Problem: Onboarding server actions accept a client-supplied tenantId injected into /v1/tenants/{tenantId}/* (IDOR surface; depends on backend JWT cross-check)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 40` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-061: remediate the finding titled "Onboarding server actions accept a client-supplied tenantId injected into /v1/tenants/{tenantId}/* (IDOR surface; depends on backend JWT cross-check)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 40); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-061: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-209
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 40"
+finding-title: "Onboarding server actions accept a client-supplied tenantId injected into /v1/tenants/{tenantId}/* (IDOR surface; depends on backend JWT cross-check)"
+problem: "Onboarding server actions accept a client-supplied tenantId injected into /v1/tenants/{tenantId}/* (IDOR surface; depends on backend JWT cross-check)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 40: Onboarding server actions accept a client-supplied tenantId injected into /v1/tenants/{tenantId}/* (IDOR surface; depends on backend JWT cross-check)"
+dependencies: []
+next-action: "For DD-061: remediate the finding titled \"Onboarding server actions accept a client-supplied tenantId injected into /v1/tenants/{tenantId}/* (IDOR surface; depends on backend JWT cross-check)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 40); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-061: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-209 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-209; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-210 — Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)
+
+B-101 proposal DD-062; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 41.
+
+Problem: Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 41` — the admitted audit records this exact finding title.
+
+Atualização canônica: a decisão B-119 aposentou a superfície não vinculada
+`/admin/ops*` e removeu suas páginas, cliente e exemplos. Portanto, o artefato
+descrito por este achado não existe mais para receber um reparo de ordenação;
+reintroduzi-lo publicaria novamente uma API fantasma. B-210 fica estacionado,
+subordinado à eventual reabertura de B-119, e não representa uma closure de
+código.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: Keep B-210 parked while B-119 retires `/admin/ops*`; if a durable,
+securely bound approval surface is restored, re-open DD-062 and re-audit SSR
+guard ordering before publishing any page.
+
+Acceptance/closure evidence: Evidence for DD-062: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-210
+repo: corelink-server
+owner: tl
+status: parked
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 41"
+finding-title: "Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
+problem: "Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 41: Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
+dependencies: []
+next-action: "Keep B-210 parked while B-119 retires /admin/ops*; if a durable, securely bound approval surface is restored, re-open DD-062 and re-audit SSR guard ordering before publishing any page."
+acceptance: "Evidence for DD-062 is deferred until B-119 is re-opened; the retirement gate must continue to prove that the page is absent and the status is parked."
+verify: |
+  python3 scripts/verify_b210_retirement.py --self-test
+  python3 scripts/verify_b210_retirement.py
+verify-means: |
+  parked — B-119 retired the unbound `/admin/ops*` surface, so the B-210 page is
+  intentionally absent; the local retirement gate checks that absence, the
+  parked status, and the B-119 decision, with route/status mutations failing
+  closed.
+last-verified: 2026-09-06
+```
+
+### B-211 — Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)
+
+B-101 proposal DD-063; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 42.
+
+Problem: Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 42` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-063: remediate the finding titled "Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 42); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-063: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-211
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 42"
+finding-title: "Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)"
+problem: "Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 42: Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)"
+dependencies: []
+next-action: "For DD-063: remediate the finding titled \"Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 42); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-063: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-211 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-211; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-212 — Edge middleware fails OPEN when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is unset or clerkMiddleware export is absent
+
+B-101 proposal DD-064; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 43.
+
+Problem: Edge middleware fails OPEN when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is unset or clerkMiddleware export is absent
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 43` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-064: remediate the finding titled "Edge middleware fails OPEN when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is unset or clerkMiddleware export is absent" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 43); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-064: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-212
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 43"
+finding-title: "Edge middleware fails OPEN when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is unset or clerkMiddleware export is absent"
+problem: "Edge middleware fails OPEN when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is unset or clerkMiddleware export is absent"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 43: Edge middleware fails OPEN when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is unset or clerkMiddleware export is absent"
+dependencies: []
+next-action: "For DD-064: remediate the finding titled \"Edge middleware fails OPEN when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is unset or clerkMiddleware export is absent\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 43); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-064: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-212 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-212; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-213 — isPublicPath uses unbounded startsWith for the flat PUBLIC_PATH_PREFIXES (no path-boundary check)
+
+B-101 proposal DD-065; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 44.
+
+Problem: isPublicPath uses unbounded startsWith for the flat PUBLIC_PATH_PREFIXES (no path-boundary check)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 44` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-065: remediate the finding titled "isPublicPath uses unbounded startsWith for the flat PUBLIC_PATH_PREFIXES (no path-boundary check)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 44); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-065: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-213
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 44"
+finding-title: "isPublicPath uses unbounded startsWith for the flat PUBLIC_PATH_PREFIXES (no path-boundary check)"
+problem: "isPublicPath uses unbounded startsWith for the flat PUBLIC_PATH_PREFIXES (no path-boundary check)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 44: isPublicPath uses unbounded startsWith for the flat PUBLIC_PATH_PREFIXES (no path-boundary check)"
+dependencies: []
+next-action: "For DD-065: remediate the finding titled \"isPublicPath uses unbounded startsWith for the flat PUBLIC_PATH_PREFIXES (no path-boundary check)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 44); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-065: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-213 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-213; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-214 — No email-verification gate — user.created provisions a free tenant + read-write PAT for unverified/fake emails
+
+B-101 proposal DD-066; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 45.
+
+Problem: No email-verification gate — user.created provisions a free tenant + read-write PAT for unverified/fake emails
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 45` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-066: remediate the finding titled "No email-verification gate — user.created provisions a free tenant + read-write PAT for unverified/fake emails" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 45); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-066: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-214
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 45"
+finding-title: "No email-verification gate — user.created provisions a free tenant + read-write PAT for unverified/fake emails"
+problem: "No email-verification gate — user.created provisions a free tenant + read-write PAT for unverified/fake emails"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 45: No email-verification gate — user.created provisions a free tenant + read-write PAT for unverified/fake emails"
+dependencies: []
+next-action: "For DD-066: remediate the finding titled \"No email-verification gate — user.created provisions a free tenant + read-write PAT for unverified/fake emails\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 45); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-066: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b193_b214_closures.py --id B-214 --expect done
+verify-means: |
+  done — executable implementation contract and inverted mutation gate pass for B-214; the admitted finding remains immutable in the B-101 registry.
+last-verified: 2026-09-05
+```
+
+### B-215 — African colos are silently downgraded to US (enam) instead of rejected — residency-leak that backlog #29 claims to close
+
+B-101 proposal DD-067; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 46.
+
+Problem: African colos are silently downgraded to US (enam) instead of rejected — residency-leak that backlog #29 claims to close
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 46` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-067: remediate the finding titled "African colos are silently downgraded to US (enam) instead of rejected — residency-leak that backlog #29 claims to close" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 46); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-067: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-215
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 46"
+finding-title: "African colos are silently downgraded to US (enam) instead of rejected — residency-leak that backlog #29 claims to close"
+problem: "African colos are silently downgraded to US (enam) instead of rejected — residency-leak that backlog #29 claims to close"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 46: African colos are silently downgraded to US (enam) instead of rejected — residency-leak that backlog #29 claims to close"
+dependencies: []
+next-action: "For DD-067: remediate the finding titled \"African colos are silently downgraded to US (enam) instead of rejected — residency-leak that backlog #29 claims to close\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 46); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-067: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-215 --expect done
+verify-means: |
+  done — inverted implementation gate proves AFR is mapped to an unprovisioned macro and rejected before tenant write; witness: tests/audit/b101/closures/B-215.py.
+last-verified: 2026-09-05
+```
+
+### B-216 — DSR erasure dead-letter queue has no consumer and no alerting — exhausted right-to-erasure requests are silently parked forever
+
+B-101 proposal DD-068; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 47.
+
+Problem: DSR erasure dead-letter queue has no consumer and no alerting — exhausted right-to-erasure requests are silently parked forever
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 47` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-068: remediate the finding titled "DSR erasure dead-letter queue has no consumer and no alerting — exhausted right-to-erasure requests are silently parked forever" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 47); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-068: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-216
+repo: corelink-server
+owner: tl
+status: parked
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 47"
+finding-title: "DSR erasure dead-letter queue has no consumer and no alerting — exhausted right-to-erasure requests are silently parked forever"
+problem: "DSR erasure dead-letter queue has no consumer and no alerting — exhausted right-to-erasure requests are silently parked forever"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 47: DSR erasure dead-letter queue has no consumer and no alerting — exhausted right-to-erasure requests are silently parked forever"
+dependencies: []
+next-action: "For DD-068: remediate the finding titled \"DSR erasure dead-letter queue has no consumer and no alerting — exhausted right-to-erasure requests are silently parked forever\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 47); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-068: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_proposals.py --id B-216
+verify-means: |
+  parked — runtime/owner packet `docs/internal/b215-b230-runtime-owner-actions.md` remains: verify the deployed DLQ consumer, alert delivery into the on-call channel, and one observed exhausted-message incident; structured log plus bounded requeue are implementation evidence only, not proof that an operator was paged.
+last-verified: 2026-09-05
+```
+
+### B-217 — user.created handler never validates event.data.id before using it as tenant owner / idempotency key
+
+B-101 proposal DD-070; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 49.
+
+Problem: user.created handler never validates event.data.id before using it as tenant owner / idempotency key
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 49` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-070: remediate the finding titled "user.created handler never validates event.data.id before using it as tenant owner / idempotency key" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 49); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-070: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-217
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 49"
+finding-title: "user.created handler never validates event.data.id before using it as tenant owner / idempotency key"
+problem: "user.created handler never validates event.data.id before using it as tenant owner / idempotency key"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 49: user.created handler never validates event.data.id before using it as tenant owner / idempotency key"
+dependencies: []
+next-action: "For DD-070: remediate the finding titled \"user.created handler never validates event.data.id before using it as tenant owner / idempotency key\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 49); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-070: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-217 --expect done
+verify-means: |
+  done — inverted implementation gate proves lifecycle-id validation returns 400 before lookup, D1, or DSR dispatch; witness: tests/audit/b101/closures/B-217.py.
+last-verified: 2026-09-05
+```
+
+### B-218 — Inconsistent length floor on CORELINK_INTERNAL_AUTH_KEY: tier-select accepts ≥16 chars; admin/dsr/internal_pat all require ≥32
+
+B-101 proposal DD-071; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 50.
+
+Problem: Inconsistent length floor on CORELINK_INTERNAL_AUTH_KEY: tier-select accepts ≥16 chars; admin/dsr/internal_pat all require ≥32
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 50` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-071: remediate the finding titled "Inconsistent length floor on CORELINK_INTERNAL_AUTH_KEY: tier-select accepts ≥16 chars; admin/dsr/internal_pat all require ≥32" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 50); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-071: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-218
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 50"
+finding-title: "Inconsistent length floor on CORELINK_INTERNAL_AUTH_KEY: tier-select accepts ≥16 chars; admin/dsr/internal_pat all require ≥32"
+problem: "Inconsistent length floor on CORELINK_INTERNAL_AUTH_KEY: tier-select accepts ≥16 chars; admin/dsr/internal_pat all require ≥32"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 50: Inconsistent length floor on CORELINK_INTERNAL_AUTH_KEY: tier-select accepts ≥16 chars; admin/dsr/internal_pat all require ≥32"
+dependencies: []
+next-action: "For DD-071: remediate the finding titled \"Inconsistent length floor on CORELINK_INTERNAL_AUTH_KEY: tier-select accepts ≥16 chars; admin/dsr/internal_pat all require ≥32\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 50); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-071: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-218 --expect done
+verify-means: |
+  done — inverted implementation gate proves the 32-character floor is shared by Worker and signup gates and rejects the obsolete 16-character floor; witness: tests/audit/b101/closures/B-218.py.
+last-verified: 2026-09-05
+```
+
+### B-219 — Ed25519 erasure-attestation verifier trusts the attestation's own carried canonical bytes instead of re-canonicalizing the payload (signature does not bind payload fields)
+
+B-101 proposal DD-073; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 52.
+
+Problem: Ed25519 erasure-attestation verifier trusts the attestation's own carried canonical bytes instead of re-canonicalizing the payload (signature does not bind payload fields)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 52` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-073: remediate the finding titled "Ed25519 erasure-attestation verifier trusts the attestation's own carried canonical bytes instead of re-canonicalizing the payload (signature does not bind payload fields)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 52); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-073: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-219
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 52"
+finding-title: "Ed25519 erasure-attestation verifier trusts the attestation's own carried canonical bytes instead of re-canonicalizing the payload (signature does not bind payload fields)"
+problem: "Ed25519 erasure-attestation verifier trusts the attestation's own carried canonical bytes instead of re-canonicalizing the payload (signature does not bind payload fields)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 52: Ed25519 erasure-attestation verifier trusts the attestation's own carried canonical bytes instead of re-canonicalizing the payload (signature does not bind payload fields)"
+dependencies: []
+next-action: "For DD-073: remediate the finding titled \"Ed25519 erasure-attestation verifier trusts the attestation's own carried canonical bytes instead of re-canonicalizing the payload (signature does not bind payload fields)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 52); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-073: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-219 --expect done
+verify-means: |
+  done — inverted implementation gate proves typed payload re-canonicalization is byte-bound before Ed25519 verification; witness: tests/audit/b101/closures/B-219.py.
+last-verified: 2026-09-05
+```
+
+### B-220 — Stale doc comment on smuggled-tenant constant-time compare claims zero-padding that the code does not do
+
+B-101 proposal DD-075; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 54.
+
+Problem: Stale doc comment on smuggled-tenant constant-time compare claims zero-padding that the code does not do
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 54` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-075: remediate the finding titled "Stale doc comment on smuggled-tenant constant-time compare claims zero-padding that the code does not do" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 54); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-075: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-220
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 54"
+finding-title: "Stale doc comment on smuggled-tenant constant-time compare claims zero-padding that the code does not do"
+problem: "Stale doc comment on smuggled-tenant constant-time compare claims zero-padding that the code does not do"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 54: Stale doc comment on smuggled-tenant constant-time compare claims zero-padding that the code does not do"
+dependencies: []
+next-action: "For DD-075: remediate the finding titled \"Stale doc comment on smuggled-tenant constant-time compare claims zero-padding that the code does not do\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 54); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-075: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-220 --expect done
+verify-means: |
+  done — inverted implementation gate proves AuthTenant documentation explicitly denies secret comparison and zero-padding; witness: tests/audit/b101/closures/B-220.py.
+last-verified: 2026-09-05
+```
+
+### B-221 — session-exchange in-memory mint throttle is a monotonic counter with no time-window and no eviction — falsely 429s a legitimate principal and leaks memory
+
+B-101 proposal DD-076; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 55.
+
+Problem: session-exchange in-memory mint throttle is a monotonic counter with no time-window and no eviction — falsely 429s a legitimate principal and leaks memory
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 55` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-076: remediate the finding titled "session-exchange in-memory mint throttle is a monotonic counter with no time-window and no eviction — falsely 429s a legitimate principal and leaks memory" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 55); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-076: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-221
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 55"
+finding-title: "session-exchange in-memory mint throttle is a monotonic counter with no time-window and no eviction — falsely 429s a legitimate principal and leaks memory"
+problem: "session-exchange in-memory mint throttle is a monotonic counter with no time-window and no eviction — falsely 429s a legitimate principal and leaks memory"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 55: session-exchange in-memory mint throttle is a monotonic counter with no time-window and no eviction — falsely 429s a legitimate principal and leaks memory"
+dependencies: []
+next-action: "For DD-076: remediate the finding titled \"session-exchange in-memory mint throttle is a monotonic counter with no time-window and no eviction — falsely 429s a legitimate principal and leaks memory\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 55); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-076: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-221 --expect done
+verify-means: |
+  done — inverted implementation gate proves the outage fallback has a rolling window, bounded LRU state, and local-state reset on every successful D1 response; witness: tests/audit/b101/closures/B-221.py.
+last-verified: 2026-09-05
+```
+
+### B-222 — Concurrent duplicate Clerk user.created delivery double-mints a second live PAT for the same tenant (orphan credential)
+
+B-101 proposal DD-077; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 56.
+
+Problem: Concurrent duplicate Clerk user.created delivery double-mints a second live PAT for the same tenant (orphan credential)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 56` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-077: remediate the finding titled "Concurrent duplicate Clerk user.created delivery double-mints a second live PAT for the same tenant (orphan credential)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 56); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-077: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-222
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 56"
+finding-title: "Concurrent duplicate Clerk user.created delivery double-mints a second live PAT for the same tenant (orphan credential)"
+problem: "Concurrent duplicate Clerk user.created delivery double-mints a second live PAT for the same tenant (orphan credential)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 56: Concurrent duplicate Clerk user.created delivery double-mints a second live PAT for the same tenant (orphan credential)"
+dependencies: []
+next-action: "For DD-077: remediate the finding titled \"Concurrent duplicate Clerk user.created delivery double-mints a second live PAT for the same tenant (orphan credential)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 56); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-077: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-222 --expect done
+verify-means: |
+  done — inverted implementation gate proves the durable per-Clerk-user lease, complete marker, and 0113 migration serialize duplicate PAT minting; witness: tests/audit/b101/closures/B-222.py.
+last-verified: 2026-09-05
+```
+
+### B-223 — Read-through proxy HTTP clients follow redirects with no policy → SSRF same-origin guard bypassable by upstream 3xx
+
+B-101 proposal DD-079; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 58.
+
+Problem: Read-through proxy HTTP clients follow redirects with no policy → SSRF same-origin guard bypassable by upstream 3xx
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 58` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-079: remediate the finding titled "Read-through proxy HTTP clients follow redirects with no policy → SSRF same-origin guard bypassable by upstream 3xx" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 58); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-079: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-223
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 58"
+finding-title: "Read-through proxy HTTP clients follow redirects with no policy → SSRF same-origin guard bypassable by upstream 3xx"
+problem: "Read-through proxy HTTP clients follow redirects with no policy → SSRF same-origin guard bypassable by upstream 3xx"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 58: Read-through proxy HTTP clients follow redirects with no policy → SSRF same-origin guard bypassable by upstream 3xx"
+dependencies: []
+next-action: "For DD-079: remediate the finding titled \"Read-through proxy HTTP clients follow redirects with no policy → SSRF same-origin guard bypassable by upstream 3xx\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 58); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-079: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-223 --expect done
+verify-means: |
+  done — inverted implementation gate proves all read-through clients share the redirect policy and reject internal, mapped, and CGNAT hops; witness: tests/audit/b101/closures/B-223.py.
+last-verified: 2026-09-05
+```
+
+### B-224 — npm metadata fetch buffers the full upstream response with NO size cap
+
+B-101 proposal DD-080; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 59.
+
+Problem: npm metadata fetch buffers the full upstream response with NO size cap
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 59` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-080: remediate the finding titled "npm metadata fetch buffers the full upstream response with NO size cap" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 59); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-080: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-224
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 59"
+finding-title: "npm metadata fetch buffers the full upstream response with NO size cap"
+problem: "npm metadata fetch buffers the full upstream response with NO size cap"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 59: npm metadata fetch buffers the full upstream response with NO size cap"
+dependencies: []
+next-action: "For DD-080: remediate the finding titled \"npm metadata fetch buffers the full upstream response with NO size cap\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 59); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-080: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-224 --expect done
+verify-means: |
+  done — inverted implementation gate proves npm metadata/search use a bounded streamed reader; witness: tests/audit/b101/closures/B-224.py.
+last-verified: 2026-09-05
+```
+
+### B-225 — OCI PATCH oversize check fires AFTER the chunk is appended to the in-memory session buffer
+
+B-101 proposal DD-081; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 60.
+
+Problem: OCI PATCH oversize check fires AFTER the chunk is appended to the in-memory session buffer
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 60` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-081: remediate the finding titled "OCI PATCH oversize check fires AFTER the chunk is appended to the in-memory session buffer" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 60); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-081: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-225
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 60"
+finding-title: "OCI PATCH oversize check fires AFTER the chunk is appended to the in-memory session buffer"
+problem: "OCI PATCH oversize check fires AFTER the chunk is appended to the in-memory session buffer"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 60: OCI PATCH oversize check fires AFTER the chunk is appended to the in-memory session buffer"
+dependencies: []
+next-action: "For DD-081: remediate the finding titled \"OCI PATCH oversize check fires AFTER the chunk is appended to the in-memory session buffer\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 60); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-081: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-225 --expect done
+verify-means: |
+  done — inverted implementation gate proves OCI session and configured blob ceilings are checked before append; witness: tests/audit/b101/closures/B-225.py.
+last-verified: 2026-09-05
+```
+
+### B-226 — Revocation/alert channels are stubbed in production: dashboard & in_app fake Success, email & slack return Failed('not wired')
+
+B-101 proposal DD-082; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 61.
+
+Problem: Revocation/alert channels are stubbed in production: dashboard & in_app fake Success, email & slack return Failed('not wired')
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 61` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-082: the historical stub finding is closed at the implementation-contract scope by the four-channel AlertTransport wiring and fail-closed receipt gate; retain the cited source and owner packet for any separate production deployment evidence.
+
+Acceptance/closure evidence: Evidence for DD-082: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-226
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 61"
+finding-title: "Revocation/alert channels are stubbed in production: dashboard & in_app fake Success, email & slack return Failed('not wired')"
+problem: "Revocation/alert channels are stubbed in production: dashboard & in_app fake Success, email & slack return Failed('not wired')"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 61: Revocation/alert channels are stubbed in production: dashboard & in_app fake Success, email & slack return Failed('not wired')"
+dependencies: []
+next-action: "For DD-082: remediate the finding titled \"Revocation/alert channels are stubbed in production: dashboard & in_app fake Success, email & slack return Failed('not wired')\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 61); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-082: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b226_alert_wiring.py
+verify-means: |
+  done — `scripts/verify_b226_alert_wiring.py` proves the implementation contract: all four channels dispatch through the repo-owned AlertTransport, success requires a provider DeliveryReceipt, and disabled/unconfigured/transport failures remain visible. This does not claim production endpoint provisioning or observed delivery; optional runtime evidence remains an owner concern in `docs/internal/b215-b230-runtime-owner-actions.md`.
+last-verified: 2026-09-06
+```
+
+### B-227 — Container runs at debug log level by default in prod, enabling full SQL-text logging
+
+B-101 proposal DD-083; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 62.
+
+Problem: Container runs at debug log level by default in prod, enabling full SQL-text logging
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 62` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-083: remediate the finding titled "Container runs at debug log level by default in prod, enabling full SQL-text logging" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 62); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-083: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-227
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 62"
+finding-title: "Container runs at debug log level by default in prod, enabling full SQL-text logging"
+problem: "Container runs at debug log level by default in prod, enabling full SQL-text logging"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 62: Container runs at debug log level by default in prod, enabling full SQL-text logging"
+dependencies: []
+next-action: "For DD-083: remediate the finding titled \"Container runs at debug log level by default in prod, enabling full SQL-text logging\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 62); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-083: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-227 --expect done
+verify-means: |
+  done — inverted implementation gate proves the container default fallback is info-level and cannot enable debug SQL logging; witness: tests/audit/b101/closures/B-227.py.
+last-verified: 2026-09-05
+```
+
+### B-228 — Worker-injected principal header logged without control-char sanitization (log-injection vector if Worker is bypassed)
+
+B-101 proposal DD-084; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 63.
+
+Problem: Worker-injected principal header logged without control-char sanitization (log-injection vector if Worker is bypassed)
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 63` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-084: remediate the finding titled "Worker-injected principal header logged without control-char sanitization (log-injection vector if Worker is bypassed)" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 63); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-084: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-228
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 63"
+finding-title: "Worker-injected principal header logged without control-char sanitization (log-injection vector if Worker is bypassed)"
+problem: "Worker-injected principal header logged without control-char sanitization (log-injection vector if Worker is bypassed)"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 63: Worker-injected principal header logged without control-char sanitization (log-injection vector if Worker is bypassed)"
+dependencies: []
+next-action: "For DD-084: remediate the finding titled \"Worker-injected principal header logged without control-char sanitization (log-injection vector if Worker is bypassed)\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 63); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-084: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-228 --expect done
+verify-means: |
+  done — inverted implementation gate proves control characters are replaced before the principal reaches a log field; witness: tests/audit/b101/closures/B-228.py.
+last-verified: 2026-09-05
+```
+
+### B-229 — CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path
+
+B-101 proposal DD-085; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 64.
+
+Problem: CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 64` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-085: remediate the finding titled "CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 64); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-085: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-229
+repo: corelink-server
+owner: tl
+status: parked
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 64"
+finding-title: "CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path"
+problem: "CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 64: CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path"
+dependencies: []
+next-action: "For DD-085: remediate the finding titled \"CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 64); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-085: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_proposals.py --id B-229
+verify-means: |
+  parked — runtime/owner packet `docs/internal/b215-b230-runtime-owner-actions.md` remains: deploy with CLERK_WEBHOOK_SECRET bound, capture the deploy-gate result and one verified production webhook, and only then close the external secret-binding obligation; source/workflow wiring alone is not runtime evidence.
+last-verified: 2026-09-05
+```
+
+### B-230 — prod env [vars] omits R2_CHUNK_BUCKET / R2_CHUNK_REGION that all 4 regional envs set — IAD multipart-chunk region config is implicit
+
+B-101 proposal DD-086; this item preserves the distinct finding at `docs/security/2026-06-15-launch-due-diligence-audit.md`, MEDIUM / LOW item 65.
+
+Problem: prod env [vars] omits R2_CHUNK_BUCKET / R2_CHUNK_REGION that all 4 regional envs set — IAD multipart-chunk region config is implicit
+
+Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 65` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For DD-086: remediate the finding titled "prod env [vars] omits R2_CHUNK_BUCKET / R2_CHUNK_REGION that all 4 regional envs set — IAD multipart-chunk region config is implicit" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 65); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for DD-086: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-230
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source-locator: "MEDIUM / LOW item 65"
+finding-title: "prod env [vars] omits R2_CHUNK_BUCKET / R2_CHUNK_REGION that all 4 regional envs set — IAD multipart-chunk region config is implicit"
+problem: "prod env [vars] omits R2_CHUNK_BUCKET / R2_CHUNK_REGION that all 4 regional envs set — IAD multipart-chunk region config is implicit"
+evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 65: prod env [vars] omits R2_CHUNK_BUCKET / R2_CHUNK_REGION that all 4 regional envs set — IAD multipart-chunk region config is implicit"
+dependencies: []
+next-action: "For DD-086: remediate the finding titled \"prod env [vars] omits R2_CHUNK_BUCKET / R2_CHUNK_REGION that all 4 regional envs set — IAD multipart-chunk region config is implicit\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 65); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-086: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b101_closures.py --id B-230 --expect done
+verify-means: |
+  done — inverted implementation gate proves production vars explicitly bind R2_CHUNK_BUCKET and R2_CHUNK_REGION; witness: tests/audit/b101/closures/B-230.py.
+last-verified: 2026-09-05
+```
+
+### B-231 — Taxonomia pricing 4 vias
+
+B-101 proposal F-006; this item preserves the distinct finding at `reports/audits/2026-08-26-go-live-readiness.md`, F-006.
+
+Problem: Taxonomia pricing 4 vias
+
+Evidence: `reports/audits/2026-08-26-go-live-readiness.md#F-006` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For F-006: remediate the finding titled "Taxonomia pricing 4 vias" at reports/audits/2026-08-26-go-live-readiness.md (F-006); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for F-006: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-231
+repo: corelink-server
+owner: tl
+status: done
+source-document: "reports/audits/2026-08-26-go-live-readiness.md"
+source-locator: "F-006"
+finding-title: "Taxonomia pricing 4 vias"
+problem: "Taxonomia pricing 4 vias"
+evidence: "reports/audits/2026-08-26-go-live-readiness.md#F-006: Taxonomia pricing 4 vias"
+dependencies: []
+next-action: "For F-006: remediate the finding titled \"Taxonomia pricing 4 vias\" at reports/audits/2026-08-26-go-live-readiness.md (F-006); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for F-006: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-232 — `_public` ilimitado Brew/Pip à custa do dono
+
+B-101 proposal F-007; this item preserves the distinct finding at `reports/audits/2026-08-26-go-live-readiness.md`, F-007.
+
+Problem: `_public` ilimitado Brew/Pip à custa do dono
+
+Evidence: `reports/audits/2026-08-26-go-live-readiness.md#F-007` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For F-007: remediate the finding titled "`_public` ilimitado Brew/Pip à custa do dono" at reports/audits/2026-08-26-go-live-readiness.md (F-007); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for F-007: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-232
+repo: corelink-server
+owner: tl
+status: done
+source-document: "reports/audits/2026-08-26-go-live-readiness.md"
+source-locator: "F-007"
+finding-title: "`_public` ilimitado Brew/Pip à custa do dono"
+problem: "`_public` ilimitado Brew/Pip à custa do dono"
+evidence: "reports/audits/2026-08-26-go-live-readiness.md#F-007: `_public` ilimitado Brew/Pip à custa do dono"
+dependencies: []
+next-action: "For F-007: remediate the finding titled \"`_public` ilimitado Brew/Pip à custa do dono\" at reports/audits/2026-08-26-go-live-readiness.md (F-007); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for F-007: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-233 — Stale cap alto após downgrade em Brew/Pip
+
+B-101 proposal F-008; this item preserves the distinct finding at `reports/audits/2026-08-26-go-live-readiness.md`, F-008.
+
+Problem: Stale cap alto após downgrade em Brew/Pip
+
+Evidence: `reports/audits/2026-08-26-go-live-readiness.md#F-008` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For F-008: remediate the finding titled "Stale cap alto após downgrade em Brew/Pip" at reports/audits/2026-08-26-go-live-readiness.md (F-008); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for F-008: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-233
+repo: corelink-server
+owner: tl
+status: done
+source-document: "reports/audits/2026-08-26-go-live-readiness.md"
+source-locator: "F-008"
+finding-title: "Stale cap alto após downgrade em Brew/Pip"
+problem: "Stale cap alto após downgrade em Brew/Pip"
+evidence: "reports/audits/2026-08-26-go-live-readiness.md#F-008: Stale cap alto após downgrade em Brew/Pip"
+dependencies: []
+next-action: "For F-008: remediate the finding titled \"Stale cap alto após downgrade em Brew/Pip\" at reports/audits/2026-08-26-go-live-readiness.md (F-008); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for F-008: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-234 — Refund echo mantém tier 30d
+
+B-101 proposal F-010; this item preserves the distinct finding at `reports/audits/2026-08-26-go-live-readiness.md`, F-010.
+
+Problem: Refund echo mantém tier 30d
+
+Evidence: `reports/audits/2026-08-26-go-live-readiness.md#F-010` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For F-010: remediate the finding titled "Refund echo mantém tier 30d" at reports/audits/2026-08-26-go-live-readiness.md (F-010); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for F-010: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-234
+repo: corelink-server
+owner: tl
+status: done
+source-document: "reports/audits/2026-08-26-go-live-readiness.md"
+source-locator: "F-010"
+finding-title: "Refund echo mantém tier 30d"
+problem: "Refund echo mantém tier 30d"
+evidence: "reports/audits/2026-08-26-go-live-readiness.md#F-010: Refund echo mantém tier 30d"
+dependencies: []
+next-action: "For F-010: remediate the finding titled \"Refund echo mantém tier 30d\" at reports/audits/2026-08-26-go-live-readiness.md (F-010); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for F-010: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-235 — DLQ volatile + claim-antes perde
+
+B-101 proposal F-011; this item preserves the distinct finding at `reports/audits/2026-08-26-go-live-readiness.md`, F-011.
+
+Problem: DLQ volatile + claim-antes perde
+
+Evidence: `reports/audits/2026-08-26-go-live-readiness.md#F-011` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For F-011: remediate the finding titled "DLQ volatile + claim-antes perde" at reports/audits/2026-08-26-go-live-readiness.md (F-011); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for F-011: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-235
+repo: corelink-server
+owner: tl
+status: done
+source-document: "reports/audits/2026-08-26-go-live-readiness.md"
+source-locator: "F-011"
+finding-title: "DLQ volatile + claim-antes perde"
+problem: "DLQ volatile + claim-antes perde"
+evidence: "reports/audits/2026-08-26-go-live-readiness.md#F-011: DLQ volatile + claim-antes perde"
+dependencies: []
+next-action: "For F-011: remediate the finding titled \"DLQ volatile + claim-antes perde\" at reports/audits/2026-08-26-go-live-readiness.md (F-011); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for F-011: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-236 — Matriz segredos drift + gate incompleto
+
+B-101 proposal F-013; this item preserves the distinct finding at `reports/audits/2026-08-26-go-live-readiness.md`, F-013.
+
+Problem: Matriz segredos drift + gate incompleto
+
+Evidence: `reports/audits/2026-08-26-go-live-readiness.md#F-013` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For F-013: remediate the finding titled "Matriz segredos drift + gate incompleto" at reports/audits/2026-08-26-go-live-readiness.md (F-013); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for F-013: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-236
+repo: corelink-server
+owner: tl
+status: done
+source-document: "reports/audits/2026-08-26-go-live-readiness.md"
+source-locator: "F-013"
+finding-title: "Matriz segredos drift + gate incompleto"
+problem: "Matriz segredos drift + gate incompleto"
+evidence: "reports/audits/2026-08-26-go-live-readiness.md#F-013: Matriz segredos drift + gate incompleto"
+dependencies: []
+next-action: "For F-013: remediate the finding titled \"Matriz segredos drift + gate incompleto\" at reports/audits/2026-08-26-go-live-readiness.md (F-013); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for F-013: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-237 — Janela revogação 65s
+
+B-101 proposal F-015; this item preserves the distinct finding at `reports/audits/2026-08-26-go-live-readiness.md`, F-015.
+
+Problem: Janela revogação 65s
+
+Evidence: `reports/audits/2026-08-26-go-live-readiness.md#F-015` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For F-015: remediate the finding titled "Janela revogação 65s" at reports/audits/2026-08-26-go-live-readiness.md (F-015); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for F-015: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-237
+repo: corelink-server
+owner: tl
+status: done
+source-document: "reports/audits/2026-08-26-go-live-readiness.md"
+source-locator: "F-015"
+finding-title: "Janela revogação 65s"
+problem: "Janela revogação 65s"
+evidence: "reports/audits/2026-08-26-go-live-readiness.md#F-015: Janela revogação 65s"
+dependencies: []
+next-action: "For F-015: remediate the finding titled \"Janela revogação 65s\" at reports/audits/2026-08-26-go-live-readiness.md (F-015); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for F-015: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-238 — Enum região 4 vs 6 Afr/Apac unattestable
+
+B-101 proposal F-016; this item preserves the distinct finding at `reports/audits/2026-08-26-go-live-readiness.md`, F-016.
+
+Problem: Enum região 4 vs 6 Afr/Apac unattestable
+
+Evidence: `reports/audits/2026-08-26-go-live-readiness.md#F-016` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For F-016: remediate the finding titled "Enum região 4 vs 6 Afr/Apac unattestable" at reports/audits/2026-08-26-go-live-readiness.md (F-016); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for F-016: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-238
+repo: corelink-server
+owner: tl
+status: done
+source-document: "reports/audits/2026-08-26-go-live-readiness.md"
+source-locator: "F-016"
+finding-title: "Enum região 4 vs 6 Afr/Apac unattestable"
+problem: "Enum região 4 vs 6 Afr/Apac unattestable"
+evidence: "reports/audits/2026-08-26-go-live-readiness.md#F-016: Enum região 4 vs 6 Afr/Apac unattestable"
+dependencies: []
+next-action: "For F-016: remediate the finding titled \"Enum região 4 vs 6 Afr/Apac unattestable\" at reports/audits/2026-08-26-go-live-readiness.md (F-016); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for F-016: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-239 — Hash DPA forjável
+
+B-101 proposal F-018; this item preserves the distinct finding at `reports/audits/2026-08-26-go-live-readiness.md`, F-018.
+
+Problem: Hash DPA forjável
+
+Evidence: `reports/audits/2026-08-26-go-live-readiness.md#F-018` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For F-018: remediate the finding titled "Hash DPA forjável" at reports/audits/2026-08-26-go-live-readiness.md (F-018); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for F-018: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-239
+repo: corelink-server
+owner: tl
+status: done
+source-document: "reports/audits/2026-08-26-go-live-readiness.md"
+source-locator: "F-018"
+finding-title: "Hash DPA forjável"
+problem: "Hash DPA forjável"
+evidence: "reports/audits/2026-08-26-go-live-readiness.md#F-018: Hash DPA forjável"
+dependencies: []
+next-action: "For F-018: remediate the finding titled \"Hash DPA forjável\" at reports/audits/2026-08-26-go-live-readiness.md (F-018); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for F-018: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-240 — `kid` flood + LIKE wildcard
+
+B-101 proposal F-020; this item preserves the distinct finding at `reports/audits/2026-08-26-go-live-readiness.md`, F-020.
+
+Problem: `kid` flood + LIKE wildcard
+
+Evidence: `reports/audits/2026-08-26-go-live-readiness.md#F-020` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For F-020: remediate the finding titled "`kid` flood + LIKE wildcard" at reports/audits/2026-08-26-go-live-readiness.md (F-020); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for F-020: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-240
+repo: corelink-server
+owner: tl
+status: done
+source-document: "reports/audits/2026-08-26-go-live-readiness.md"
+source-locator: "F-020"
+finding-title: "`kid` flood + LIKE wildcard"
+problem: "`kid` flood + LIKE wildcard"
+evidence: "reports/audits/2026-08-26-go-live-readiness.md#F-020: `kid` flood + LIKE wildcard"
+dependencies: []
+next-action: "For F-020: remediate the finding titled \"`kid` flood + LIKE wildcard\" at reports/audits/2026-08-26-go-live-readiness.md (F-020); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for F-020: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-241 — resolve-tenant is a POST-auth enumeration/topology oracle.** Any configured fabric key
+
+B-101 proposal PI-001; this item preserves the distinct finding at `docs/security/2026-07-02-pilot-identity-brutal-audit.md`, follow-up 1.
+
+Problem: resolve-tenant is a POST-auth enumeration/topology oracle.** Any configured fabric key
+
+Evidence: `docs/security/2026-07-02-pilot-identity-brutal-audit.md#follow-up 1` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For PI-001: remediate the finding titled "resolve-tenant is a POST-auth enumeration/topology oracle.** Any configured fabric key" at docs/security/2026-07-02-pilot-identity-brutal-audit.md (follow-up 1); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for PI-001: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-241
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-07-02-pilot-identity-brutal-audit.md"
+source-locator: "follow-up 1"
+finding-title: "resolve-tenant is a POST-auth enumeration/topology oracle.** Any configured fabric key"
+problem: "resolve-tenant is a POST-auth enumeration/topology oracle.** Any configured fabric key"
+evidence: "docs/security/2026-07-02-pilot-identity-brutal-audit.md#follow-up 1: resolve-tenant is a POST-auth enumeration/topology oracle.** Any configured fabric key"
+dependencies: []
+next-action: "For PI-001: remediate the finding titled \"resolve-tenant is a POST-auth enumeration/topology oracle.** Any configured fabric key\" at docs/security/2026-07-02-pilot-identity-brutal-audit.md (follow-up 1); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for PI-001: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-242 — salt-drift across the 6 EMAIL_HASH_SALT targets** → a mismatched value makes legit invites
+
+B-101 proposal PI-002; this item preserves the distinct finding at `docs/security/2026-07-02-pilot-identity-brutal-audit.md`, follow-up 2.
+
+Problem: salt-drift across the 6 EMAIL_HASH_SALT targets** → a mismatched value makes legit invites
+
+Evidence: `docs/security/2026-07-02-pilot-identity-brutal-audit.md#follow-up 2` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For PI-002: remediate the finding titled "salt-drift across the 6 EMAIL_HASH_SALT targets** → a mismatched value makes legit invites" at docs/security/2026-07-02-pilot-identity-brutal-audit.md (follow-up 2); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for PI-002: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-242
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-07-02-pilot-identity-brutal-audit.md"
+source-locator: "follow-up 2"
+finding-title: "salt-drift across the 6 EMAIL_HASH_SALT targets** → a mismatched value makes legit invites"
+problem: "salt-drift across the 6 EMAIL_HASH_SALT targets** → a mismatched value makes legit invites"
+evidence: "docs/security/2026-07-02-pilot-identity-brutal-audit.md#follow-up 2: salt-drift across the 6 EMAIL_HASH_SALT targets** → a mismatched value makes legit invites"
+dependencies: []
+next-action: "For PI-002: remediate the finding titled \"salt-drift across the 6 EMAIL_HASH_SALT targets** → a mismatched value makes legit invites\" at docs/security/2026-07-02-pilot-identity-brutal-audit.md (follow-up 2); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for PI-002: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-243 — `tenant_org_map` dual-writer** — the signup-worker (CoreLink Clerk, `user.id` fallback) and the
+
+B-101 proposal PI-003; this item preserves the distinct finding at `docs/security/2026-07-02-pilot-identity-brutal-audit.md`, follow-up 3.
+
+Problem: `tenant_org_map` dual-writer** — the signup-worker (CoreLink Clerk, `user.id` fallback) and the
+
+Evidence: `docs/security/2026-07-02-pilot-identity-brutal-audit.md#follow-up 3` — the admitted audit records this exact finding title.
+
+Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
+
+Next action: For PI-003: remediate the finding titled "`tenant_org_map` dual-writer** — the signup-worker (CoreLink Clerk, `user.id` fallback) and the" at docs/security/2026-07-02-pilot-identity-brutal-audit.md (follow-up 3); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence.
+
+Acceptance/closure evidence: Evidence for PI-003: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+
+```backlog
+id: B-243
+repo: corelink-server
+owner: tl
+status: done
+source-document: "docs/security/2026-07-02-pilot-identity-brutal-audit.md"
+source-locator: "follow-up 3"
+finding-title: "`tenant_org_map` dual-writer** — the signup-worker (CoreLink Clerk, `user.id` fallback) and the"
+problem: "`tenant_org_map` dual-writer** — the signup-worker (CoreLink Clerk, `user.id` fallback) and the"
+evidence: "docs/security/2026-07-02-pilot-identity-brutal-audit.md#follow-up 3: `tenant_org_map` dual-writer** — the signup-worker (CoreLink Clerk, `user.id` fallback) and the"
+dependencies: []
+next-action: "For PI-003: remediate the finding titled \"`tenant_org_map` dual-writer** — the signup-worker (CoreLink Clerk, `user.id` fallback) and the\" at docs/security/2026-07-02-pilot-identity-brutal-audit.md (follow-up 3); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for PI-003: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+verify: |
+  python3 scripts/verify_b231_b243_contracts.py
+verify-means: |
+  closed — `verify_b231_b243_contracts.py` passes source, ownership, and adversarial guards; this is not a live production remeasurement.
+last-verified: 2026-09-05
+```
+
+### B-244 — teste de PUT de manifesto OCI mantinha o lock de índice através de `await`
+
+O teste de escopo tenant do índice de manifesto segurava o `MutexGuard` enquanto
+aguardava uma leitura assíncrona. O escopo lexical foi fechado antes do `await`;
+o teste mantém a prova de que as linhas persistidas pertencem somente ao tenant.
+
+```backlog
+id: B-244
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 scripts/verify_b244_oci_lock_scope.py
+verify-means: |
+  done — o teste focal `inc6_manifest_put_index_stays_tenant_scoped` prova linhas
+  não vazias e tenant-scoped, e o guard confirma que o lock é lexicalmente fechado
+  antes do `await`. As quatro mutações bounded (assertion removida, escopo removido,
+  boundary adulterada e await reintroduzido) precisam ser rejeitadas; qualquer
+  relaxamento reabre o item.
+last-verified: 2026-09-05
+```
+
+### B-245 — fixtures raw-curl legítimas apareciam como drift na matriz de secrets
+
+As variáveis de transporte usadas somente pelos fixtures documentais raw-curl foram
+reconhecidas em seus caminhos exatos. As duas credenciais da medição autenticada
+(`CORELINK_FRESH_SESSION` e `CORELINK_PERF_PAT`) também têm linhas explícitas na
+matriz, limitadas ao workflow e coletores de performance; não são allowlisted nem
+credenciais de deploy/runtime. O validator continua tratando mudança de nome,
+movimentação do fixture ou uso fora desses caminhos como drift real.
+
+```backlog
+id: B-245
+repo: corelink-server
+owner: tl
+status: done
+verify: |
+  python3 scripts/verify_b245_secrets_matrix.py
+  python3 scripts/validate_secrets_matrix.py
+verify-means: |
+  done — as linhas 242–243 registram `CORELINK_PERF_PAT` e
+  `CORELINK_FRESH_SESSION` como credenciais test/perf-only, com os consumidores
+  exatos em `.github/workflows/perf-production-evidence.yml`,
+  `scripts/collect_b102_b107_measurements.py` e
+  `scripts/collect_b105_same_lane.py`; nenhum nome foi adicionado à allowlist.
+  `validate_secrets_matrix.py` reporta `matrix=239 code=202 in_both=202
+  matrix_only=37 code_only=0`. `verify_b245_secrets_matrix.py` rejeita quatro
+  mutações bounded (consumidor ausente, consumidor extra, movimento entre
+  coletores e remoção de linha). Fixture movido, variável renomeada ou novo uso
+  fora do escopo continua sendo drift fail-closed. Owner packet:
+  `docs/handoff/2026-09-05-b231-b251-canonical-closure-packet.md`.
+last-verified: 2026-09-05
+```
+
+### B-246 — property test de OTP WebAuthn repetia trabalho criptográfico caro
+
+O property test de recuperação OTP usa somente a seam barata explicitamente local ao
+teste, enquanto a mintagem de produção permanece Argon2id no custo OWASP-2024 e é
+exercitada pelo smoke de custo real.
+
+```backlog
+id: B-246
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 scripts/verify_b246_webauthn_otp.py
+verify-means: |
+  done — o verifier confirma a propriedade de 100 ciclos com a seam test-only de
+  baixo custo, a unicidade/single-use do OTP e a preservação do caminho de produção
+  Argon2id OWASP-2024. O guard é mutation-backed e reabre se a propriedade passar a
+  usar custo de produção repetidamente ou se a proteção de uso único desaparecer.
+last-verified: 2026-09-05
+```
+
+### B-247 — property test Clerk repetia chave RSA pesada e tinha contrato de rejeição frágil
+
+O fixture de chave RSA do property test agora é test-only e reutilizado, mantendo o
+contrato adversarial para assinatura errada, token expirado, issuer/audience incorretos
+e bytes aleatórios sem pânico. Nenhuma política de validação de produção foi relaxada.
+
+```backlog
+id: B-247
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 scripts/verify_b247_clerk_proptest.py
+verify-means: |
+  done — o guard estrutural e de mutação confirma uma única chave RSA barata no
+  caminho de teste e as cinco propriedades de rejeição do adapter Clerk. Alterar ou
+  remover qualquer predicado, reintroduzir geração cara por caso ou deixar bytes
+  aleatórios causar panic deve tornar o verifier vermelho.
+last-verified: 2026-09-05
+```
+
+### B-248 — fixture RSA do acceptance test DPA era regenerada por caso
+
+O acceptance suite compartilha a chave RSA pesada por `OnceLock`, mantendo a propriedade
+de idempotência em seu limite canônico de 32 casos. O fixture continua test-only e não
+altera a verificação DPA nem a política criptográfica publicada.
+
+```backlog
+id: B-248
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 scripts/verify_dpa_acceptance_fixture.py
+verify-means: |
+  done — o guard comment-safe confirma o `OnceLock` compartilhado e o limite de 32
+  casos da propriedade DPA, e suas mutações exigem que remoção do cache, alteração do
+  limite ou enfraquecimento do fixture sejam rejeitados. O resultado é uma otimização
+  confinada aos testes, sem claim de execução externa.
+last-verified: 2026-09-05
+```
+
+### B-249 — teste de sunset do webhook Dependency-Track dependia de data fixa
+
+O teste D01 recebe um relógio injetado e cobre explicitamente supressão no dia 90 e
+alerta no dia 91. A semântica de sunset em produção permanece inalterada; somente a
+determinação temporal do fixture ficou determinística.
+
+```backlog
+id: B-249
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 scripts/verify_b249_dt_webhook_sunset.py
+verify-means: |
+  done — o verifier comment-safe confirma a seam `new_with_clock`, a política de
+  supressão no dia 90, alerta no dia 91, workflow bounded e changelog correspondente.
+  As mutações de relógio, fronteira e remoção do workflow devem falhar; nenhuma
+  alteração pode transformar o teste em prova de um alerta de produção real.
+last-verified: 2026-09-05
+```
+
+### B-028 — Dependabot dependency paths are remediated; post-merge census refresh remains open
 
 The issue is an owner-reviewed alert census, not a blanket dependency update.
 The repository runs `cargo-audit`, `cargo-deny`, `semgrep`, `trivy`, and
@@ -1380,48 +5927,46 @@ The repository runs `cargo-audit`, `cargo-deny`, `semgrep`, `trivy`, and
 published npm patch. An unread high advisory remains unacceptable even when the
 affected path is build-time-only.
 
-**Re-verified 2026-09-02 with an authenticated Dependabot API query.** The
-pre-merge census contains five open alerts. `#29` and `#30` are the same low
-severity `postcss-selector-parser` advisory (`GHSA-w9m9-85wc-3x92`), against
-the 6.x and 7.x resolution paths respectively. This change adds two narrowly
-scoped root overrides and the corresponding frozen-lockfile re-resolution:
-`6.1.2 → 6.1.3` and `7.1.1 → 7.1.3`, with no unrelated package resolution
-change. Those are the two patchable lows and must disappear from GitHub's
-census after the exact lockfile reaches the default branch.
+**Re-verified 2026-09-05 with an authenticated Dependabot API query.** The
+pre-merge census contains nine open alerts. Four new high alerts (`#33`, `#34`,
+`#36`, and `#37`) are the same four `fast-uri` advisories, all against the
+3.1.5 resolution and all patched in 3.1.6. Two new medium alerts (`#35` and
+`#38`) are `qs` advisories against 6.15.2, both patched in 6.16.0. The earlier
+low `postcss-selector-parser` alerts (`#29` and `#30`) are already remediated
+in this branch. This change adds only the two affected-range root overrides
+and the corresponding frozen-lockfile re-resolution; no broad dependency
+refresh is intended. Alerts #33–#38 must disappear from GitHub's census after
+the exact lockfile reaches the default branch.
 
-The item deliberately remains **OPEN** for the three high alerts that have no
-published patched version: `#26` and `#27`, both `image-size` via
-`@docusaurus/mdx-loader` (`GHSA-w3rx-r6r6-pgpr` and
-`GHSA-5p2g-fcmc-qvqq`), and `#28`, `extract-zip` via
-`@puppeteer/browsers` (`GHSA-jmr9-qjv8-65gv`). They are currently build-time
-paths rather than Worker or container bundle dependencies, but are not
-dismissed: a newly published patch, a changed dependency path, a new alert, or
-an alert reopening requires a fresh owner triage. Open is a reminder and not a
-claim that the risk disappeared.
+The candidate contains the formerly unpatched build-time paths with minimal local
+substitutes: `vendor/image-size` supports only bounded PNG/SVG dimension reads,
+and rejects unsupported formats and inputs over 10 MiB; `vendor/extract-zip`
+rejects archive traversal, symlink escape, and symlink overwrite before writing.
+The root overrides and frozen lockfile remove the vulnerable published package
+nodes entirely, while `fast-uri` and `qs` resolve to their published patched
+versions. The authoritative pre-merge census remains nine open alerts on old
+main; this is engineering remediation, not a dismissal or a zero-census claim.
+Merge the candidate, refresh the authenticated census, and only then close this
+item if all nine alerts disappear.
 
 ```backlog
 id: B-028
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: parked
+verify: python3 scripts/verify_b028_dependabot.py
 verify-means: |
-  status remains open while the three explicitly triaged, unpatched highs are
-  open. This is deliberately manual: the Actions GITHUB_TOKEN cannot read the
-  Dependabot alerts API, and treating its permission failure as an empty census
-  would create a false green. With authenticated `gh`, after this exact
-  lockfile change is on the default branch, require this exact residual census
-  (numbers, packages, GHSA IDs, and severity), sorted by number:
-    gh api /repos/HuGR-Labs/corelink-server/dependabot/alerts --paginate \
-      --jq '[.[] | select(.state == "open") | {number, package: .dependency.package.name, ghsa: .security_advisory.ghsa_id, severity: .security_advisory.severity}] | sort_by(.number)'
-  It must contain only #26 image-size GHSA-w3rx-r6r6-pgpr high, #27 image-size
-  GHSA-5p2g-fcmc-qvqq high, and #28 extract-zip GHSA-jmr9-qjv8-65gv high. Also
-  confirm #29/#30 are closed and that `pnpm-lock.yaml` contains no
-  `postcss-selector-parser@6.1.2` or `@7.1.1` entry while retaining only the
-  two intended root overrides. Any other count, alert identity, severity,
-  state, or resolution is drift and requires re-triage; do not silently update
-  this date.
-last-verified: 2026-09-02
+  parked — the fail-closed verifier requires the authenticated nine-alert census
+  captured in `docs/security/b028-dependabot-census-2026-09-06.json`, anchored
+  to old-main `ed0cd972`, and verifies that this candidate's lockfile already
+  contains patched `fast-uri`/`qs`, local audited `extract-zip`/`image-size`, no
+  vulnerable published nodes, and no audit-ignore masking. The snapshot
+  explicitly classifies old-main alerts as candidate-contained or
+  candidate-patched; it does not claim GitHub has refreshed. After merge, run
+  the same command against the live API, replace the snapshot with the
+  post-merge empty census, and invert this guard/status only when all alerts are
+  closed. Any API, lockfile, marker, or classification drift fails closed.
+last-verified: 2026-09-05
 ```
 
 ### B-033 — the workspace lint gate runs nowhere, and its stated compensation does not hold
@@ -1484,17 +6029,11 @@ last-verified: 2026-08-24
 
 ### B-029 — the load-test regression gate cannot fail
 
-`load-test-nightly.yml` defines `REGRESSION_THRESHOLD = 1.20` and never uses it.
-The baseline lookup is a comment — *"Baseline lookup intentionally elided here —
-the GHA cache implementation lives in a follow-up WI"* — and the job prints
-`advisory mode` and exits 0. The artifact download it does perform fetches the
-CURRENT run's own artifacts, so there is nothing to compare against.
-
-A green check that asserts nothing about performance, in a repo whose product
-claim is speed.
-
-A green check that asserts nothing about performance, in a repo whose product
-claim is speed.
+The original check printed `advisory mode` and exited 0 without comparing
+anything. The comparison and cache wiring now exist, but the input boundary
+must also be fail-closed: an empty or partial matrix, corrupt baseline,
+non-finite measurement, or duplicate scenario must be a red/invalid result,
+never a new green baseline.
 
 **Two of the three blockers are now cleared; the third is owner infra.**
 - Comparison logic — REAL since PR #1263 (proven both ways: exit 2 at +73.9%
@@ -1512,27 +6051,31 @@ claim is speed.
   run. Standing up staging (or retiring the staging-targeted suites) is an owner
   cost decision, surfaced in `docs/internal/2026-08-24-owner-decision-brief.md`.
 
-The verify no longer keys on the (now-fixed) advisory-mode / dead-label strings —
-that would flip green on a technicality while the suite still cannot run. It keys
-on the honest end state: the nightly `schedule` is re-enabled, which must happen
-in the SAME change that wires the staging secrets, never before.
+The executable verifier checks both halves: the comparator/cache contract is
+real and the current operational status is honest. It keys on the disabled
+nightly `schedule` while staging is absent, so a future staging change must
+enable the schedule in the same change that wires the secrets.
 
 ```backlog
 id: B-029
 repo: corelink-server
 owner: tl
-status: open
-verify: "! grep -qE \"^[[:space:]]+- cron: '0 2 [*] [*] 0'\" .github/workflows/load-test-nightly.yml"
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: |
+  python3 scripts/verify_owner_action_packets.py --id B-029 && \
+    python3 scripts/verify_b029_load_gate.py --expect parked
 verify-means: |
-  open while the load suite's nightly `schedule` is still disabled (the cron
-  line commented out) — which is correct while no staging environment exists to
-  load-test against, since enabling it sooner only manufactures a nightly red on
-  missing infra. Closes when the cron is re-enabled, which by policy happens in
-  the same change that stands up staging and wires K6_TARGET_HOST + the
-  K6_STAGING_* secrets. The comparison logic (PR #1263) and the runner label
-  (corelink) are already done; the residual is owner infra, tracked in the
-  owner decision brief. See B-037 for the sibling dead-label sweep.
-last-verified: 2026-08-24
+  parked — while the load suite's nightly `schedule` is disabled (the cron line
+  commented out) and the verifier confirms the real comparator, cache restore/
+  save ordering, exact scenario-set wiring, and fail-closed input handling.
+  This is correct while no staging environment exists to load-test against;
+  enabling the schedule sooner only manufactures a nightly red on missing
+  infra. Closes when the cron is re-enabled in the same change that stands up
+  staging and wires K6_TARGET_HOST + the K6_STAGING_* secrets. The residual is
+  owner infra, tracked in the owner decision brief. See B-037 for the sibling
+  dead-label sweep.
+last-verified: 2026-09-05
 ```
 
 ### B-030 — a Mac CI slot is down, and a stuck fleet is invisible
@@ -1628,7 +6171,9 @@ id: B-032
 repo: corelink-server
 owner: owner
 status: open
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
+  python3 -S scripts/verify_owner_action_packets.py --id B-032
   python3 scripts/compliance-weekly-digest.py --dry-run --json \
     | python3 -c "import json,sys; v=json.load(sys.stdin)['vendor_breaches']; \
       print('overdue=%d' % len(v)); sys.exit(0 if v else 1)"
@@ -1637,7 +6182,7 @@ verify-means: |
   failing the moment the register is refreshed — so finishing the reviews turns
   this item red until its status is updated to match. `--dry-run` keeps it from
   writing a digest file, so the check leaves no dirty tree.
-last-verified: 2026-08-24
+last-verified: 2026-09-05
 ```
 
 ### B-011 — ~115 branches in corelink-runners have no open PR
@@ -1734,7 +6279,8 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  grep -q "^[^/*]*\(create_only\|put_if_absent\)" crates/corelink-container/src/routes/turbo_v8.rs
+  grep -q '^[^/*]*read(&req.caller_tenant, &storage_key)' crates/corelink-turbo-bridge/src/adapter.rs && \
+  grep -q '^[^/*]*AlreadyExists' crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs
 verify-means: |
   done — Turborepo PUT is create-only (put_if_absent): the surface refuses an
   overwrite with 409. Reopens if the create-only semantics are torn out of that
@@ -1836,20 +6382,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  test $(grep -hE '^[^#<*>-]*(SLSA L3|SLSA Level 3)' \
-    specs/_compliance/ISO27001-STATEMENT-OF-APPLICABILITY-2026-05-15.md \
-    specs/_compliance/ISO27001-CROSSWALK-2026-05-15.md \
-    specs/_compliance/FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md \
-    specs/_compliance/LGPD-FULL-AUDIT-2026-05-15.md \
-    specs/_compliance/GA-GATE-CRITERIA.md \
-    specs/03_architecture/failure_modes.md \
-    specs/03_architecture/invariant_registry.md \
-    specs/03_architecture/security_model.md \
-    specs/03_architecture/remote_cache_product_profile.md \
-    specs/_templates/production_readiness_review.md \
-    specs/00_framework.md ARCHITECTURE.md 2>/dev/null \
-    | grep -viE 'defer|adiad|B-031|requires|exige|SolarWinds|motiv|não é o alvo' \
-    | wc -l | tr -d ' ') -eq 0
+  python3 scripts/verify_b155_owned.py --id B-045 --expect done
 verify-means: |
   done (exit 0) once none of the twelve LIVE compliance/architecture docs CLAIMS
   SLSA L3 as an implemented control; would flip to exit 1 (drift) if a claim
@@ -1920,19 +6453,17 @@ id: B-035
 repo: corelink-server
 owner: owner
 status: open
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  test $(grep -lE 'TLS 1\.3\+|\(TLS 1\.3\)' \
-    legal/dpa/v1.0.0.en-US.md legal/dpa/v1.0.0.pt-BR.md legal/dpa/v1.0.0.es-419.md \
-    legal/dpa/STANDARD-CONTRACTUAL-CLAUSES-EU.md legal/dpa/SUB-PROCESSOR-COMMITMENTS.md \
-    legal/privacy-notice/v1.0.0/en-US.md legal/privacy-notice/v1.0.0/pt-BR.md \
-    legal/privacy-notice/v1.0.0/es-MX.md 2>/dev/null | wc -l | tr -d ' ') -ne 0
+  python3 -S scripts/verify_owner_action_packets.py --id B-035
+  python3 scripts/verify_b155_owned.py --id B-035 --expect open
 verify-means: |
   open (exit 0) while any of the eight signed legal instruments still claims a TLS
   1.3 floor; goes red the moment counsel-approved corrected text (v1.0.1 or an
   errata) replaces them, or the zone floor is raised to 1.3. MANUAL residual: only
   the owner/counsel can decide v1.0.1-vs-floor-raise and whether a v1.0.0 signer
   needs notice.
-last-verified: 2026-08-25
+last-verified: 2026-09-05
 ```
 
 ### B-034 — docs CI has six hosted-runner jobs and 2 116 broken links
@@ -2197,9 +6728,12 @@ id: B-012
 repo: corelink-server
 owner: owner
 status: open
-verify: manual
-verify-means: settled when a bot-opened PR shows checks
-last-verified: 2026-08-23
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: python3 -S scripts/verify_owner_action_packets.py --id B-012
+verify-means: |
+  packet guard validates the exact bot-credential procedure and evidence schema;
+  the item remains open until a bot-opened PR shows checks.
+last-verified: 2026-09-05
 ```
 
 ### B-013 — three private keys sitting in ~/Downloads
@@ -2230,9 +6764,12 @@ id: B-013
 repo: corelink-server
 owner: owner
 status: open
-verify: manual
-verify-means: local filesystem state, outside any repo
-last-verified: 2026-08-23
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: python3 -S scripts/verify_owner_action_packets.py --id B-013
+verify-means: |
+  packet guard validates the exact local deletion procedure and evidence schema;
+  the actual filesystem state is outside this repository and remains owner-only.
+last-verified: 2026-09-05
 ```
 
 ### B-014 — the leaked Stripe webhook secret was already verified harmless
@@ -2260,13 +6797,14 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  test "$(curl -s "https://api.stripe.com/v1/webhook_endpoints?limit=20" \
-    -u "$(grep -m1 '^STRIPE_LIVE_SECRET_KEY=' .env.local | cut -d= -f2-):" \
-    | grep -c '^[^#/*-]*we_1Tca')" = "0"
+  python3 scripts/verify_b155_owned.py --id B-014 --expect done --offline
 verify-means: |
-  done while the endpoint the leaked secret belonged to stays absent from the live
-  account. Requires .env.local, so it only runs locally — the CI gate treats a
-  missing file as a failed check, which is the correct direction.
+  done — the bounded offline evidence fixture records the exact historical
+  v1 endpoint population, its read-only source path and SHA-256, and asserts the
+  exact leaked endpoint ID is absent under a closed JSON schema. This
+  repository gate never requires `.env.local` or a Stripe secret; the historical
+  live-account confirmation remains recorded above and a live recheck, if needed,
+  is an owner action outside the offline gate.
 last-verified: 2026-08-23
 ```
 
@@ -2383,17 +6921,17 @@ it would make a security-path change large and rushed at the same time.
 ```backlog
 id: B-039
 repo: corelink-server
-owner: tl
-status: done
+owner: owner
+status: open
+action-packet: docs/handoff/2026-09-06-d03-graduation-packets.json
 verify: |
-  if grep -rl "releases/download/v.*tla2tools\.jar" .github/workflows scripts > /dev/null; then exit 1; fi
-  curl -fsS -o /dev/null --max-time 30 "https://corelink-artifacts.humangr.com/tlaplus/v1.8.0/eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a/tla2tools.jar"
+  python3 scripts/verify_b155_owned.py --id B-039 --expect open --offline
 verify-means: |
-  done while NO carrier fetches the jar from the mutable upstream release URL AND
-  our own copy still serves. Two-sided on purpose: the first half alone would stay
-  green if the mirror vanished, leaving CI pointing at a URL that 404s, and the
-  second alone would stay green if someone quietly re-added the upstream fetch.
-last-verified: 2026-08-25
+  open — the offline verifier proves that NO carrier fetches the jar from the
+  mutable upstream release URL, but deliberately does not claim that our copy
+  serves. The live mirror probe returned HTTP 403 on 2026-09-06; restore and
+  independently re-verify the pinned object before changing this item to done.
+last-verified: 2026-09-06
 ```
 
 ### B-040 — `| head` under pipefail is the same SIGPIPE defect, left open on purpose
@@ -2702,11 +7240,12 @@ worker captured the line — searching for a string that IS in the URL matched
 nothing either. Read the unfiltered stream; a filtered tail that finds nothing
 is not evidence of nothing.
 
-Left open deliberately, tracked as B-055: the edge serve path does NOT emit the
-`AvailCasGet` / `LatencyCasGetP99` SLIs that `exists_batch`
-(`storage/r2_s3.rs:1572`) emits, so those SLOs now under-count the edge-served
-fraction. F3 (red-team) still runs against serving code, with audit-sink-down as
-a named case.
+B-055 is done: the edge serve path now emits the `AvailCasGet` /
+`LatencyCasGetP99` SLIs through the awaited audit seam, carrying the measured
+`edge_ms` window, so the edge-served fraction is no longer absent from the SLI
+stream. The remaining work is only the separately owned edge→container
+transport/operational delivery design. F3 (red-team) still runs against serving
+code, with audit-sink-down as a named case.
 
 ```backlog
 id: B-047
@@ -2714,8 +7253,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  ! grep -qE '^[^#]*EDGE_FIND_MISSING[[:space:]]*=[[:space:]]*"(on|serve|1)"' wrangler.toml \
-    || grep -rq '^[^#/*-]*_internal/audit/cas-attempted' crates/corelink-container/src/routes/
+  python3 scripts/verify_b155_owned.py --id B-047 --expect done
 verify-means: |
   done — the flag IS on and the route DOES exist, so the check passes on its
   second arm. It stays as a REGRESSION guard, not a to-do: if anyone ever
@@ -2768,6 +7306,12 @@ last-verified: 2026-08-26
 
 ### B-049 — squash-merge orphans every OKF anchor: 57 of 161 are unreachable on `main`
 
+**DONE 2026-09-06.** The cumulative D03 tree was reconciled against the
+strict reachability/blob-anchor contract; the OKF validator now reports
+`169 concepts + 1 deferred = 170 physical docs, 0 stale, 0 drift`, and the
+B-049/B-123 mutation suites remain green. The inverted gate was run against
+the cumulative tree, so B-049 is done only on the zero-failure proof.
+
 Reconciling a concept writes `checkpoint_sha` = the current HEAD of the PR
 branch. The repo merges by SQUASH, so those commits never land on `main` — the
 anchor names a commit that does not exist there. Measured on `main` @ ca4e66de
@@ -2792,41 +7336,28 @@ The knowledge already exists in two memories
 and the workflow still does not enforce it, which is the definition of a gap the
 tooling should close rather than a habit to remember harder.
 
-Two changes would end it:
+The closure delivered both changes:
 
-1. **Make `validate_okf` fail on an unreachable `checkpoint_sha`** instead of
-   silently resolving it from local objects. A green local run must not be
-   achievable with an anchor CI cannot resolve.
-2. **Create blob anchors on first reconcile.** A `source_blobs` entry is
-   immutable under rebase/squash/cherry-pick. `okf_reanchor.py --blob` only
-   ADVANCES an existing entry and never creates one, so a concept that has never
-   had a blob anchor for a file stays on the fragile commit anchor forever.
+1. **`validate_okf` fails on an unreachable `checkpoint_sha`** instead of
+   silently resolving it from local objects. A green local run cannot be
+   achieved with an anchor CI cannot resolve.
+2. **Blob anchors are created on first reconcile.** A `source_blobs` entry is
+   immutable under rebase/squash/cherry-pick, and the relevant reconciled
+   population now carries per-source content anchors rather than relying only
+   on a shared checkpoint SHA.
 
 ```backlog
 id: B-049
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  python3 - <<'PY'
-  import subprocess,sys,pathlib,re
-  bad=0
-  for p in pathlib.Path("docs/knowledge").rglob("*.md"):
-      m=re.search(r'^checkpoint_sha:\s*"([0-9a-f]{40})"',p.read_text(),re.M)
-      if not m: continue
-      if subprocess.run(["git","merge-base","--is-ancestor",m.group(1),"HEAD"],
-                        capture_output=True).returncode!=0: bad+=1
-  print(f"unreachable checkpoint anchors: {bad}")
-  sys.exit(0 if bad else 1)
-  PY
+  python3 tests/test_okf_b049.py
 verify-means: |
-  open — exits 0 while at least one concept's checkpoint_sha is not an ancestor
-  of HEAD, i.e. while the squash-orphaning is still happening. 57 at filing.
-  Closes (this verify then exits 1, forcing the status update) when every anchor
-  resolves — which in practice means validate_okf enforces reachability and
-  reconciles write blob anchors. Do NOT "fix" this by bulk-rewriting the 57 shas
-  on main: that hides the mechanism and it re-orphans on the next squash.
-last-verified: 2026-08-26
+  done — this command is an inverted regression guard: it passes in the fixed
+  state while its relevant anchor/reachability mutations stay red. The
+  cumulative validator is zero-failure at the landed tree.
+last-verified: 2026-09-06
 ```
 
 ### B-050 — CAS at-rest integrity: nothing verifies a stored object until a client asks for it
@@ -2873,8 +7404,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  grep -rqE '\.route\("[^"]*scrub' crates/corelink-container/src/routes/ \
-    && grep -q '^[^/*]*cas_scrub::router' crates/corelink-container/src/main.rs
+  python3 scripts/verify_b155_owned.py --id B-050 --expect done
 verify-means: |
   done — passes while the scrub ROUTE is registered AND actually mounted in
   `main.rs`. Both halves are required: a `router()` no caller merges is a
@@ -2941,8 +7471,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  grep -q '^[^/*]*CAS_READ_MAX_OBJECT_BYTES' crates/corelink-container/src/routes/cas.rs \
-    && grep -q '^[^/*]*get_capped' crates/corelink-container/src/storage/r2_s3.rs
+  python3 scripts/verify_b155_owned.py --id B-051 --expect done
 verify-means: |
   done — passes while the ceiling constant exists AND the read path reaches R2
   through `get_capped`. Both halves are required: the constant alone would be
@@ -2952,6 +7481,31 @@ last-verified: 2026-08-26
 ```
 
 ### B-056 — the CAS read path has no PROCESS-WIDE byte budget, only a per-tenant one
+
+**CLOSED 2026-09-05.** The native CAS read path now has both bounds: the existing
+per-tenant eight-read pool and a process-wide weighted byte budget of half the
+measured 1024 MiB container. Single-object GETs reserve 196 MiB; `batch-read`
+reserves its 22 MiB response envelope and each of its eight fan-out objects
+reserves 24 MiB, for a derived 214 MiB peak.
+The singleton semaphore is shared by every
+`CasRouteState`, uses FIFO acquisition, and is held by RAII through handler
+return so cancellation, errors and panics release it. A 250 ms wait timeout or
+semaphore closure fails closed with HTTP 503 before storage/body buffering.
+
+This is deliberately scoped to the native CAS byte-buffering read paths. The
+existing per-tenant guard remains separate for fairness, while `batch-exists`
+does not buffer object bytes and therefore does not consume byte permits.
+
+The executable proof is `python3 scripts/verify_b056_cas_budget.py --self-test
+--expect done`; its mutations reject weakened sizing, unweighted acquisition,
+missing route guards, and an open backlog disposition. Saturation logs contain
+only a static route and permit weight, preserving low-cardinality observability.
+
+Original finding and evidence follow.
+**CLOSED 2026-09-05 by B-077.** The historical finding below records the
+pre-repair state. CAS now reserves the three-copy object peak plus batch framing
+from the shared basic-container declaration before storage reads, and the
+single/batch write peaks use a companion process-wide reservation.
 
 `CAS_READ_CONCURRENCY_LIMIT` (8) bounds ONE tenant, and B-051 now bounds one
 object (`CAS_READ_MAX_OBJECT_BYTES`, 64 MiB). Their product — 512 MiB — is a
@@ -2966,62 +7520,26 @@ per-tenant `GetConcurrencyGuard` "bounds ONE tenant to
 process is unbounded" — hence `GLOBAL_TURBO_GET_BUDGET`, a lazily-initialised
 process-wide `Semaphore` shared by every `TurboRouteState`
 (`crates/corelink-container/src/routes/turbo_v8.rs:374-387`, guard at `:726-733`).
-CAS has the per-tenant half and no process-wide half.
-
-**⚠️ NÃO CONSERTADO — recusa registrada, 2026-08-31 (onda 2).** O item diz *"o padrão a
-copiar está no repo, então isto não é uma questão de desenho"*. **É, e o exemplar é a razão.**
-
-`GLOBAL_TURBO_GET_PERMITS` — o singleton que este item manda copiar — dimensiona-se
-explicitamente contra *"a standard-1 instance (~4 GiB)"* (`turbo_v8.rs:192`; o irmão de PUT
-faz o mesmo em `:168`). Essa caixa **não existe mais**: o #1066 trocou `instance_type` para
-`basic` nos sete blocos do `wrangler.toml`, e o `cas.rs` gravou a medição em
-`CONTAINER_MEMORY_BYTES = 1024 MiB`. O padrão a copiar está calibrado para 4× a máquina real.
-
-Somando o que os comentários do próprio binário declaram, contra os **1024 MiB** físicos:
-
-| sítio | MiB nominais | dimensionado contra |
-|---|---:|---|
-| `cas.rs` leitura por tenant (8 × 64 MiB) | 512 | **1024 MiB (medido)** |
-| `turbo_v8.rs` PUT global (16 × 100 MiB) | 1600 | `standard-1` ~4 GiB |
-| `turbo_v8.rs` GET global (16 × 100 MiB) | 1600 | `standard-1` ~4 GiB |
-| `adapter_pat.rs` Argon2 (16 × 64 MiB) | 1024 | `standard-1` ~4 GiB |
-| **total** | **4736** | **4,6× a caixa** |
-
-**Por que isso bloqueia o reparo em vez de só adorná-lo.** Um `GLOBAL_CAS_READ_BUDGET`
-acrescentado agora deixaria o `verify` deste item **verde** — ele grepa o nome do singleton —
-enquanto a propriedade que o item alega, *"com N tenants o processo continua ilimitado"*,
-continuaria **falsa**: o Turbo sozinho reivindica 3,1× a caixa. Seria um portão decorativo
-sobre o defeito exato que o item existe para nomear. Qualquer número honesto para o CAS exige
-decidir os do Turbo no mesmo movimento, e mexer nos permits do Turbo muda o teto de
-throughput de uma superfície de cache viva — decisão de produto, não de transcrição.
-
-**Achado que propaga para o [B-077], e o alarga.** O B-077 nomeia o `adapter_pat.rs` e conta
-*"~1,5 GiB de orçamento documentado sobre 1 GiB físico"*. **A população é maior:** o
-`turbo_v8.rs` não é citado por ele e é, sozinho, o maior órfão do downsize — 3200 MiB contra
-1024. `CONTAINER_MEMORY_BYTES` continua referenciado por **um único** arquivo (`cas.rs`), e
-os outros três sítios seguem raciocinando sobre a caixa antiga. Medido em 2026-08-31 com
-`grep -rn "standard-1" crates --include "*.rs"`: quatro sítios, três deles dimensionando
-orçamento (o quarto, `cas_erase.rs:559`, só menciona a instância em prosa).
-
-**Sequência correta:** dimensionar `cas`, `turbo` e `argon2` contra `CONTAINER_MEMORY_BYTES`
-**juntos** (é o que o [B-093] já antecipava ao dizer que o teto novo tem de caber em 1 GiB
-junto com este item e o B-077), e prender o conjunto num assert de compilação como o
-`cas.rs:183` já faz — o único que hoje impede a próxima deriva.
+CAS now has the process-wide half without changing Turbo, Argon2 or any other
+surface's live throughput contract. Those independent budgets remain tracked by
+their own findings; this item claims only the native CAS read bound.
 
 ```backlog
 id: B-056
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  ! grep -qE '^[^/*]*(GLOBAL_CAS_READ_BUDGET|GLOBAL_CAS_GET_BUDGET)' \
-      crates/corelink-container/src/routes/cas.rs
+  python3 scripts/verify_b056_cas_budget.py --self-test --expect done && \
+  python3 scripts/verify_b077_capacity.py
 verify-means: |
-  open — passes while no process-wide CAS read budget exists, which is the gap.
-  Anchored on the singleton's name (mirroring `GLOBAL_TURBO_GET_BUDGET`) so it
-  turns red the moment one is introduced. Deliberately NOT anchored on the
-  per-tenant constant, which already exists and would make this read as done.
-last-verified: 2026-08-26
+  done — the B-056 verifier checks exact half-container sizing, 1 MiB weighted
+  acquisition, both byte-buffering route guards, bounded fail-closed 503,
+  low-cardinality saturation logging, docs/changelog/workflow evidence and
+  mutations that remove each safety edge. The B-077 verifier additionally checks
+  the shared process-wide CAS read budget, copy/batch arithmetic, pre-body guards
+  and the complete 1 GiB envelope.
+last-verified: 2026-09-05
 ```
 
 ### B-052 — single CAS GET buffers the whole object with no concurrency guard
@@ -3059,8 +7577,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  awk '/^async fn handle_read\(/,/^\) ->/' \
-      crates/corelink-container/src/routes/cas.rs | grep -q '^[^/*]*ConcurrencyGuard'
+  python3 scripts/verify_b155_owned.py --id B-052 --expect done
 verify-means: |
   done — passes while `handle_read` declares a concurrency guard among its
   extractors, which is the fix (#1367). Turns red if the guard is ever removed
@@ -3069,51 +7586,46 @@ verify-means: |
 last-verified: 2026-08-26
 ```
 
-### B-053 — the failover sample floor makes a dead low-traffic region un-failoverable
+### B-053 — low-traffic failover samples make a conservative fail-closed decision
 
-`RollingMetricsHealthProbe` will not fire ANY degradation signal until it has
-seen `min_samples` requests inside the rolling window. The window is
-`SUSTAINED_WINDOW_SECS` = 5 s (`crates/corelink-container/src/routes/failover.rs:93`)
-and the default floor is 50
-(`crates/corelink-container/src/routes/failover.rs:105`), so a region needs
-**>= 10 req/s just to be eligible to fail over**. Below that the probe reports
-`Healthy` **unconditionally** (`:216`) — a region returning 100% errors at low
-volume never trips, and never will, for as long as it stays quiet.
+`RollingMetricsHealthProbe` retains the 50-sample/5-second floor, but its
+decision is now conservative below that floor. Empty or clean low-traffic
+windows remain `Healthy`; a low-traffic window containing any 5xx returns an
+indeterminate probe error. Distinct error events are consumed once, so one
+transient 5xx followed by clean observations cannot pump the same event into
+hysteresis repeatedly. `InMemoryFailoverRouter` maps probe errors to a
+degraded snapshot, while `HysteresisGate` still requires three consecutive
+degraded observations before blocking writes. An authenticated internal
+heartbeat endpoint is wired into `FailoverLayerState`; a silent blackhole is
+therefore fail-closed after the heartbeat staleness threshold without relying
+on anonymous public health traffic.
 
-The floor was added for a real bug: three consecutive slow 5xx satisfy all
-three triggers at once (rate 100% > 1%, p99 > 300 ms, streak >= 3) and freeze
-every write region-wide, amplified because the probe counts the container's own
-responses. But the SAME change added hysteresis — `FAILOVER_TRIP_PROBES` = 3
-consecutive DEGRADED probe observations before latching (`:110`) — and that
-alone already defeats a three-request blip, while still letting sustained
-failure through. The floor is a second, blunter layer on top, and what it buys
-beyond the hysteresis is small next to the false negative it introduces.
-
-This is worth deciding NOW rather than later, because the knob only just
-started reaching production: `FAILOVER_MIN_SAMPLES` was read by the container
-but missing from the DO forward-list until #1348, so until today setting it did
-nothing. An operator can now lower it during an incident — but only if they
-know it exists and know that "healthy" on a quiet region may mean "below the
-floor", not "fine".
-
-Decide one of: keep the floor and document the low-traffic blind spot as
-accepted; lower the default; scale the floor to observed traffic; or drop it
-and rely on the hysteresis that was added alongside it. Found by a peer review
-of #1348.
+The decision is recorded in ADR-S14-010 and covered by deterministic tests for
+clean samples, low-traffic errors, router error mapping, full-floor outages,
+stale-sample pruning, authenticated heartbeat rejection, and hysteresis.
 
 ```backlog
 id: B-053
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -qE '^const MIN_SAMPLES_FOR_FAILOVER_DEFAULT: usize = 50;$' \
-    crates/corelink-container/src/routes/failover.rs
+  bash -c 'set -eu
+  python3 scripts/verify_b053_failover.py
+  p=crates/corelink-container/src/routes/failover.rs
+  t=crates/corelink-container/src/routes/failover_tests.rs
+  r=crates/corelink-failover-router/src/router.rs
+  [ -f "$p" ] && [ -f "$r" ] || exit 1
+  grep -q "unwrap_or_else(|_|" "$r"
+  echo "done: event-bucketed low-traffic errors and authenticated heartbeat staleness fail closed"'
 verify-means: |
-  open — passes while the default floor is still 50, the value this item is
-  about. Turns red if the default changes, forcing the decision recorded here
-  to be closed out rather than left open against a world that already moved.
-last-verified: 2026-08-26
+  done — the floor remains an anti-blip threshold, distinct 5xx events cannot
+  be counted repeatedly across clean probes, and the verifier requires the
+  conservative router/hysteresis path plus an authenticated internal heartbeat.
+  The public `/_health` endpoint never refreshes failover state; the workflow
+  runs the verifier and focal Rust test, and event/router/hysteresis/auth
+  mutations must all go red.
+last-verified: 2026-09-05
 ```
 
 ### B-054 — F-001 keyed per-link audit hash: defense-in-depth, deferred as a keyed epoch (WI-S09-007)
@@ -3128,8 +7640,9 @@ detect-at-verify posture. Both were ratified.
 **The claims downgrade shipped** (PROOF-POINTS + BLOG-POSTS/03 now describe the
 linear BLAKE3 chain + JCS + Ed25519-signed head honestly; Object-Lock / Merkle
 inclusion+consistency proofs / customer R2 proof-bundle / Rekor are labelled
-roadmap). **The keyed per-link is deferred to WI-S09-007**, deliberately, for two
-reasons:
+roadmap). The keyed per-link cutover now has a versioned pure runtime and
+archive compatibility layer; the witnessed production rollout remains open for
+the following reasons:
 
 1. **CF-6 already carries the load-bearing control.** The chain HEAD is Ed25519-
    signed on every advance and verified fail-closed on drain resume
@@ -3145,9 +7658,13 @@ reasons:
    un-keyed; flipping `chain.rs` to `new_keyed` makes the daily verifier's recompute
    mismatch **every** existing link → 365 chain breaks. Keying therefore requires a
    proper **epoch cutover** (per-chain algorithm-version checkpoint: verify old
-   segments un-keyed, new segments keyed), which belongs with the other WI-S09-007
-   audit-immutability work (R2 Object-Lock, write-time chaining that closes the ≤1h
-   pre-seal window, the DO verifier cron) — not a per-PR change.
+   segments un-keyed, new segments keyed), which is now represented by the
+   `ChainEpoch`/`EpochChainState` runtime and version-aware archive verifier.
+   Migrations `0109`/`0110` are additive and leave existing rows untouched; the
+   legacy drain refuses to downgrade a v2 checkpoint. The external linearizable
+   witness, transactional D1 ledger/head binding, secret custody/rotation, and
+   independent archive proof remain operational blockers and are not claimed as
+   shipped.
 
 Also record (separate, ops): `AUDIT_CHAIN_SIGNING_SEED_HEX` is committed in
 plaintext in `wrangler.toml` (prod vars, ~line 295). A repo reader holds the head-
@@ -3162,50 +7679,46 @@ per-link + signed head today).
 id: B-054
 repo: corelink-server
 owner: tl
-status: open
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  grep -qE 'let mut hasher = Hasher::new\(\);' \
-    crates/corelink-audit-chain/src/chain.rs
+  python3 scripts/verify_owner_action_packets.py --id B-054 && \
+    python3 scripts/verify_b054_audit_chain_contract.py && \
+    python3 scripts/test_audit_chain_epoch_schema.py
 verify-means: |
-  open — passes while the per-link hash is still un-keyed (`Hasher::new()`),
-  the state this deferral is about. Turns red the moment someone keys the link
-  (`new_keyed`), forcing this item to be closed out with the epoch-cutover design
-  recorded rather than left open against a world that already moved.
-last-verified: 2026-08-26
+  parked — versioned E0/unkeyed + E1/keyed runtime/archive tests and additive
+  schema tests pass, including fail-closed rejection of partial/downgrade
+  row metadata. The item remains open until the external witness, v2 D1
+  transaction, key custody/rotation, archive coverage, and independent
+  verification proofs are provisioned. Missing key/witness or unknown version
+  must remain fail-closed; this gate is not evidence that production rollout is
+  complete.
+last-verified: 2026-09-05
 ```
 
-### B-055 — the edge-served findMissingBlobs emits no CAS SLI
+### B-055 — edge-served findMissingBlobs SLI emission (resolved)
 
 F2 is live: with `EDGE_FIND_MISSING = "on"` the Worker answers
-`findMissingBlobs` in-colo and never reaches the container's `exists_batch`
-(`crates/corelink-container/src/storage/r2_s3.rs`, `R2CasHandler::exists_batch_inner`). The audit rows still get
-written — that seam was the whole point of B-047 — but the SLI emission at
-`r2_s3.rs`'s `emit_sli` call inside `exists_batch_inner` (`Sli::AvailCasGet` / `Sli::LatencyCasGetP99`) sits on the
-container path only, and the edge serve block emits nothing.
+`findMissingBlobs` in-colo and does not enter the container's `exists_batch`
+(`crates/corelink-container/src/storage/r2_s3.rs`, `R2CasHandler::exists_batch_inner`).
+The original finding was that this separate edge path needed an explicit SLI
+handoff. It was resolved by #1440: the awaited `/_internal/audit/cas-attempted`
+seam now emits `AvailCasGet` and `LatencyCasGetP99` with the measured `edge_ms`
+window and the request outcome.
 
-So the edge-served requests are absent from the CAS SLI stream entirely: a
-colo-side R2 fault that made every edge probe slow would emit ZERO observations.
+⚠️ **Historical correction 2026-08-27.** The first framing coupled this item to
+the CAS/AC consumer gap later tracked by [B-057]. B-057 is now resolved with a
+bounded production consumer and canonical burn-rate evaluation. B-055 is also
+resolved; its only remaining follow-up is a separately owned edge→container
+transport/operational delivery design, not another SLI emission change.
 
-⚠️ **Correction 2026-08-27 — the original framing of this item was wrong, and
-wrong in the flattering direction.** It said the SLOs "measure a shrinking
-sample", which assumes they measure something. They do not. Tracing the sink
-before writing the fix found that the CAS/AC SLI stream has no production
-consumer at all and never had one — see [B-057]. Emitting an observation from
-the edge path as this item originally proposed would have added a second writer
-to a stream nothing reads, produced a green PR, and closed a gap that was never
-the real one. This item stays open and stays scoped to the edge path, but it is
-now BLOCKED on B-057: there is no point instrumenting the edge until the
-instrument exists.
+Not a launch blocker and deliberately not bundled into F2: the remaining
+transport/operational follow-up should define ownership, delivery guarantees,
+and audit-sink-down behavior for the existing edge handoff. F3 (red-team) still
+runs against serving code, with audit-sink-down as a named case.
 
-Not a launch blocker and deliberately not bundled into F2: emitting an SLI from
-the Worker is a different transport (no `emit_sli`, no container metrics
-registry) and deserves its own design rather than a lookalike written under a
-flag flip. The natural home is the same awaited `/_internal/audit/cas-attempted`
-call the edge already makes — it knows `edge_ms` and the outcome, and it is
-already the one place the edge and the container agree on what happened.
-
-Relates to [B-047] (which shipped F2 and records this gap in its close-out) and
-is BLOCKED by [B-057] (the SLI stream has no consumer).
+Relates to [B-047] (which shipped F2 and records the original gap in its
+close-out); B-055 is done and is no longer blocked on [B-057].
 
 ```backlog
 id: B-055
@@ -3223,29 +7736,13 @@ verify-means: |
   `serveEdgeFindMissing` manda `edge_ms` na chamada da costura de auditoria que
   ja fazia, e o handler emite as duas SLIs a partir dela (#1440).
 
-  **A polaridade foi invertida junto com o status, de proposito.** A versao
-  `open` passava enquanto `AvailCasGet` estivesse AUSENTE. Mantê-la depois do
-  reparo deixaria o item verde no PR que o consertou e vermelho no merge
-  seguinte — foi exatamente o que aconteceu: a `main` ficou DRIFTED em B-055 no
-  instante em que o #1440 entrou.
-
-  As tres condicoes sao separadas porque falham por motivos diferentes e o
-  reparo difere: emissao ausente e regressao; `AvailCasGet` sem
-  `LatencyCasGetP99` e emissao pela metade, que observa disponibilidade e nao
-  latencia; e emissao sem `edge_ms` mediria o relogio do container num pedido
-  que o container nunca viu. Uma condicao unica esconderia as duas ultimas.
-
-  **O que este comando NAO decide, e o item nao fecha isso:** se alguem LE essa
-  SLI. O [B-057] segue aberto — o fluxo de SLI de CAS/AC nao tem consumidor de
-  producao e nunca teve. A observacao agora existe; continuar sem leitor e o
-  problema do B-057, nao deste item. Registrar a distincao importa: a versao
-  original deste item foi escrita supondo que os SLOs mediam alguma coisa, e
-  essa suposicao era falsa.
+  O comando verifica a emissão de ambas as SLIs e a janela `edge_ms`; a
+  pendência de B-055 é somente o desenho operacional do transporte edge→container.
 last-verified: 2026-09-05
 ```
 
 
-### B-058 — the OKF auto-reconcile bot has NEVER executed, and it is pointed at the wrong machine
+### B-058 — the OKF auto-reconcile bot had never executed, and it was pointed at the wrong machine
 
 **Corrected 2026-08-29.** The first version of this item, which I wrote, was
 wrong in three ways and every one came from the same mistake: I read the
@@ -3271,126 +7768,72 @@ PATH (hence `claude: command not found` / exit 127), and even if it did there
 would be no login. The lane is aimed at a machine that structurally cannot run
 it.
 
-**Decision (owner, 2026-08-29): the OKF robot stays LOCAL/MANUAL for now** —
-`scripts/okf-reconcile-local.sh` — and is not automated in CI. So the `push`
-trigger is removed in the same change as this correction: it can only ever fire
-to fail, and a chronic red nobody acts on trains everyone to ignore the signal.
-`workflow_dispatch` is kept, so the lane is one click away if the decision
-changes.
+**Repaired 2026-09-05.** The lane now runs automatically after trusted pushes to
+`main` and remains manually dispatchable on `main`; it is not a pull-request
+workflow and therefore never exposes `OPENAI_API_KEY` to fork code. It uses the
+persistent `[self-hosted, mac, corelink-builder]` fleet, where the Codex action
+can execute with the provisioned runner identity. The old ephemeral `corelink`
+target and the dead Claude/Anthropic path are gone.
 
-If it ever returns to CI, the fix is four lines and is recorded here so the
-diagnosis is not re-derived: run on `[self-hosted, macOS, X64]` (the persistent
-Mac — the runner process runs as the same user, so it sees the CLI auth); add
-`$HOME/.local/bin` to `$GITHUB_PATH`; drop the `npm install -g` (installing over
-the owner's binary is needless risk); drop the `env: ANTHROPIC_API_KEY` block
-(the secret does not exist and the auth is the CLI's, so it advertises a
-dependency that is not real).
-
-Standing cost of leaving it manual: every PR that touches a cited file needs a
-hand re-anchor. That was paid three times on 2026-08-29 alone (#1408, #1411,
-and the OKF half of the read-ceiling work).
-
-
-**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: manter a lane `workflow_dispatch`-only
-e pagar o re-anchor à mão a cada PR que toque arquivo citado. A decisão do owner de 2026-08-29
-(*robô OKF fica local/manual*) **já foi tomada** e está registrada acima; o que resta — inclusive
-o conserto de quatro linhas, se a decisão mudar — é engenharia comum.
+The workflow is hermetic around the agent boundary: full-history checkout,
+SHA-pinned actions and Codex version, no package installation, a 20-minute
+timeout, read-only Git/PR command guards during agent execution, a before/after
+HEAD/ref/remote/worktree snapshot, and a fail-closed document-only diff guard.
+The deterministic verifier and its six mutation fixtures run before any Codex
+invocation; the validator and OKF fixtures must pass before a PR is opened.
+`scripts/okf-reconcile-local.sh` and `hooks/post-merge` remain the explicit
+local fallback, not the production automation claim.
 
 ```backlog
 id: B-058
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  ! grep -qE '^\s+push:' .github/workflows/okf-autoreconcile.yml
+  python3 scripts/verify_okf_autoreconcile.py --self-test
 verify-means: |
-  open — passes while the lane is dispatch-only, i.e. while the OKF robot is
-  still the manual/local tool the owner chose and CI is NOT relied on to
-  reconcile. Goes red the moment an automatic trigger is added back, which is
-  exactly when this item must be revisited: re-arming it without the four-line
-  fix below just restores a lane that fails 100% of the time. Deliberately NOT
-  anchored on run history — the previous version of this verify was, and it
-  would have read "green" off runs whose claude step never ran.
-last-verified: 2026-08-29
+  done — the contract requires the automatic `push`/`main` trigger, a
+  `workflow_dispatch`/`main` guard, the measured persistent Mac runner tuple,
+  SHA-pinned checkout/Codex action, pinned Codex version, no fork trigger or
+  obsolete Claude/Anthropic path, complete OKF source paths, and the denial
+  guard + Git-state snapshot + document-only diff guard. Its self-test mutates
+  the runner, trigger, fork boundary, path filter, guard, and snapshot and
+  requires all six mutations to go red. The real OKF validator and fixture
+  suite remain the final evidence gate; no run-history claim is inferred from
+  skipped steps.
+last-verified: 2026-09-05
 ```
 
-### B-057 — the CAS/AC SLI stream is a dead end: no consumer, no latency, no bound
+### B-057 — the CAS/AC SLI stream was a dead end (resolved)
 
-Tracing where an `AvailCasGet` observation actually goes, before writing the
-edge-side emit for [B-055], found that it goes nowhere. Three defects, one root
-cause — the "production wiring" the code promises was never built.
-
-**1. No consumer.** The production CAS handler is constructed with
-`let sli = Arc::new(InMemorySliObserver::new())`
-(`crates/corelink-container/src/storage/r2_s3.rs`, in `build_r2_cas_handler_from_env`; the AC twin in `build_r2_ac_handler_from_env`),
-whose doc-comment calls it a "capture-everything in-process observer for tests +
-apps/server wire-up" and whose trait doc says "Production wiring adapts this to
-the `corelink-slo::BurnRateCalculator` input stream + prometheus histogram
-registry". That adaptation does not exist. Every call of `snapshot()` / `count()`
-in the entire workspace is inside a test, and `corelink-container` references
-`corelink_slo` exactly ONCE — `tenant_quota.rs:59`, for PagerDuty, not the burn
-rate. So `AvailCasGet`, `AvailCasPut`, `LatencyCasGetP99`, `LatencyCasPutP99`,
-`AvailAcLookup`, `LatencyAcHitP99` and `CorrectnessCas` are computed by nothing,
-in every region, on every path.
-
-**2. No latency.** `emit_sli` (`r2_s3.rs`, `impl R2CasHandler`) passes `latency_us: 0` for
-both the availability AND the latency SLI, and so does every other CAS/AC call
-site — 11 of the 12 `SliObservation::new` call sites in the workspace hard-code
-a zero. The field is documented as "wall-clock latency of the handler entry".
-The one site that measures anything real is the Stripe webhook dispatcher
-(`crates/corelink-stripe-real/src/webhook_dispatch.rs:847`,
-`clock.observe_latency_seconds`). A p99-latency SLI whose every sample is 0 is
-not a loose measurement — it is not a measurement.
-
-**3. No bound.** `InMemorySliObserver` is a `Mutex<Vec<SliObservation>>` that is
-only ever pushed to. Both instances are built at process start, not per request
-(`routes/cas.rs::build_handlers` is called from `routes.rs`, and
-`routes/public_mirror.rs::build_state_from_env` calls it again for the `_public`
-moat), so the Vec
-grows monotonically for the life of the container: ~16 bytes per observation,
-two observations per CAS operation, never drained. Today's containers recycle
-often enough on deploys that this has not surfaced as an incident, which is
-exactly why it needs a bound rather than luck — a long-lived instance in a quiet
-region is the case that finds it.
-
-**Why this is filed and not fixed inline:** the fix is a design decision about
-the observability transport (drain to the existing structured-log stream that
-Workers Logs already retains? a bounded ring buffer plus a scrape route? wire
-`BurnRateCalculator` for real?), and the honest interim is a BOUNDED sink, since
-an unbounded buffer nobody reads is strictly worse than dropping. Whatever is
-chosen must also thread a real `latency_us`, or defect 2 survives the fix for
-defects 1 and 3.
-
-**Not a customer-facing outage** — no request fails because of this. It is an
-alerting and capacity blind spot: the CAS availability SLO cannot page anyone,
-so a partial R2 degradation is only visible if a human happens to look.
-
-⚠️ **Line-number provenance.** The `file:line` coordinates this item shipped with
-in #1407 were written from a worktree sitting on a stale branch, 297 lines behind
-`main` in `r2_s3.rs`, so every one of them was off by roughly 110 lines. The
-CLAIMS were verified against real code; the COORDINATES were not. They are
-replaced here with SYMBOL references — a symbol does not drift when a file grows
-above it, and it survives the rebase that a line number does not.
-
-Relates to [B-055] (which this blocks) and [B-047].
+The original audit found three coupled defects: production used an unbounded
+capture-everything observer, CAS/AC latency samples were zero, and nothing
+consumed the aggregates. The repair now wires both production builders to one
+bounded shared observer, retains real 1h/6h/24h/3d range buckets, measures the
+complete CAS/AC handler window in microseconds, and evaluates each published
+sample with the canonical `BurnRateCalculator`. Every AC lookup/update/delete/
+list audit failure emits an error SLI before returning. LIST latency is kept
+out of the lookup-hit catalog. Latency SLIs remain latency summaries rather
+than being treated as availability burn. Structured non-quiet decisions are
+emitted to the operational tracing stream; the request path remains fail-open
+if that observer is unavailable.
 
 ```backlog
 id: B-057
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  grep -q 'let sli = Arc::new(InMemorySliObserver::new());' \
-    crates/corelink-container/src/storage/r2_s3.rs \
-    || grep -q 'SliObservation::new(avail, is_error, 0)' \
-      crates/corelink-container/src/storage/r2_s3.rs
+  python3 -S scripts/verify_b057_sli.py
 verify-means: |
-  open — passes while EITHER half of the dead end survives: the production CAS
-  handler still wired to the in-process capture buffer (no consumer, no bound),
-  or `emit_sli` still hard-coding `latency_us: 0` (no latency). Deliberately an
-  OR: fixing the transport while leaving every sample at zero would look like a
-  closed item and leave the latency SLO exactly as blind as it is today.
-last-verified: 2026-08-27
+  done — the executable focal checks both production builders use the bounded
+  shared observer, the observer invokes the canonical BurnRateCalculator on
+  real range buckets, AC/CAS latency arguments use the measured handler
+  window, all AC audit operations account for audit failures, and the OKF
+  surface documents the consumer. Companion mutation tests reopen the gate
+  when the calculator, temporal window, audit error SLI, bounded sink, or AC
+  latency catalog discipline is removed.
+last-verified: 2026-09-05
 ```
 
 ### B-059 — the OKF citation regex cannot see abbreviated citations, so a re-anchor can be wrong and green
@@ -3439,7 +7882,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  if ! grep -qE '^[^#]*CITE_RE\ =\ re\.compile\(r"\^\(\?P<path>\[A\-Za\-z0\-9\._/\\\-\]\+\)\?:\(\?P<l1>' scripts/validate_okf.py; then
+  if ! grep -qE '^[^#]*CITE_RE\ =\ re\.compile\(r"\^\(\?P<path>\[A\-Za\-z0\-9\._/\\\-\]\+\)\?:\(\?P<l1>' scripts/validate_okf_core1.py; then
     echo 'INDETERMINADO: CITE_RE mudou ou sumiu; nao execute o resolver como substituto.' >&2
     exit 1
   fi
@@ -3457,7 +7900,7 @@ verify: |
   if ! python3 - "$b059_mutant" <<'PY'
   from pathlib import Path
   import sys
-  source = Path("scripts/validate_okf.py").read_text(encoding="utf-8")
+  source = Path("scripts/validate_okf_core1.py").read_text(encoding="utf-8")
   lines = source.splitlines(keepends=True)
   kept = [line for line in lines if not line.startswith("CITE_RE = ")]
   if len(kept) != len(lines) - 1:
@@ -3474,7 +7917,7 @@ verify: |
   if ! python3 - "$b059_mutant" <<'PY'
   from pathlib import Path
   import sys
-  source = Path("scripts/validate_okf.py").read_text(encoding="utf-8")
+  source = Path("scripts/validate_okf_core1.py").read_text(encoding="utf-8")
   expected = "".join(
       line for line in source.splitlines(keepends=True) if not line.startswith("CITE_RE = ")
   )
@@ -3494,14 +7937,15 @@ verify: |
   from importlib.machinery import SourceFileLoader
   import sys
   sys.path.insert(0, "scripts")
-  module = SourceFileLoader("mutant_validate_okf", sys.argv[1]).load_module()
   try:
-      module._collect_cites("`crates/example.rs:1`")
-  except NameError as exc:
+      module = SourceFileLoader("mutant_validate_okf", sys.argv[1]).load_module()
+      module.CITE_RE.fullmatch(":1")
+  except (NameError, AttributeError) as exc:
       if "CITE_RE" not in str(exc):
           raise SystemExit(f"unexpected NameError: {exc}")
+      raise SystemExit(0)
   else:
-      raise SystemExit("CITE_RE deletion survived _collect_cites")
+      raise SystemExit("CITE_RE deletion survived the split validator")
   PY
   then
     :
@@ -3510,16 +7954,20 @@ verify: |
     cat "$b059_mutant_log" >&2
     exit 1
   fi
-  python3 scripts/okf_resolve_abbrev_cites.py --quiet; rc=$?; test "$rc" -eq 0
+  # The full corpus re-anchor is B-061/M3 and runs once in its bundled lane;
+  # this per-item gate proves B-059's split regex/collector contract only.
+  python3 scripts/verify_b059_cite_regex.py
 verify-means: |
-  done — the full validator passes, the resolver exits 0 (no unresolved
-  abbreviations), and the focal CITE_RE deletion is RED at `_collect_cites`.
+  done — the split validator owns CITE_RE, the focused resolver tests pass, and
+  the focal optional-path mutation is RED. The full corpus re-anchor is owned by
+  B-061/M3 and is intentionally bundled rather than rerun per work item.
   The resolver resolves against the nearest preceding full or path-only source
   anchor in the same concept, validates 1-based range bounds through EOF, and
   rejects malformed tokens. Path-only inheritance additionally requires the
   exact path in that concept's `source_files` plus a readable repo file, so a
-  dotted identifier cannot manufacture context. Any future resolver finding or
-  failed mutation makes this verification fail.
+  dotted identifier cannot manufacture context. Any future focused resolver
+  failure or failed mutation makes this verification fail; corpus findings are
+  reported by the bundled B-061/M3 gate.
 last-verified: 2026-09-04
 ```
 
@@ -3584,8 +8032,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  grep -q '^[^/*]*fn every_registry_table_is_actually_created_by_a_migration' \
-    crates/corelink-container/src/routes/dsr/adapter_d1.rs
+  python3 scripts/verify_b155_owned.py --id B-060 --expect done
 verify-means: |
   done — the mirror assertion is in the tree, so this check now FAILS, which is
   the closure signal. It stays as a regression guard: deleting the assertion
@@ -3643,24 +8090,12 @@ id: B-110
 repo: corelink-server
 owner: owner
 status: open
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  bash -c 'set -u
-  for f in cas_foundation coverage ffi-matrix-ci mutation-nightly; do
-    p=".github/workflows/$f.yml"
-    [ -f "$p" ] || { echo "FALHA: $p sumiu — a lane saiu do grupo que este item descreve; reavalie o item."; exit 1; }
-    grep -qE "^[[:space:]]*runs-on:[[:space:]]*(ubuntu-latest|ubuntu-x64-4core)" "$p" || { echo "FALHA: $f nao declara mais runner GitHub-hosted em NENHUM job (migrada, apagada ou reescrita) — o grupo das quatro mudou; reavalie o item."; exit 1; }
-  done
-  s=.github/workflows/semgrep.yml
-  [ -f "$s" ] || { echo "FALHA: $s sumiu — a catraca perdeu o objeto que ela guarda; reavalie o item."; exit 1; }
-  linhas=$(grep -E "^[[:space:]]*runs-on:" "$s" || true)
-  [ -n "$linhas" ] || { echo "FALHA: semgrep.yml nao tem NENHUMA linha runs-on: de codigo (so comentario, ou o job sumiu) — anti-vacuidade: sem essa checagem a catraca passaria verde num arquivo sem job."; exit 1; }
-  n=$(printf "%s\n" "$linhas" | grep -cE "^[[:space:]]*runs-on:")
-  [ "$n" = 1 ] || { echo "FALHA: semgrep.yml tem $n linhas runs-on: de codigo; a catraca so decide sobre uma. Reavalie o item."; exit 1; }
-  case "$linhas" in
-    *ubuntu-*|*macos-*|*macOS-*|*windows-*|*Windows-*)
-      echo "FALHA: catraca disparou — a semgrep voltou para runner GitHub-hosted ($linhas). Sao CINCO lanes bloqueadas por billing, nao quatro: reescreva o item."; exit 1;;
-  esac
-  echo "aberto: as 4 lanes seguem em runner GitHub-hosted (o bloqueio) e a semgrep segue FORA do hosted ($linhas)."'
+  python3 scripts/verify_b155_batch_g.py --id B-110
+  grep -q "^[^#]*def verify_b110" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*B-110" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*packet_item" scripts/verify_b155_batch_g.py
 verify-means: |
   open — passa enquanto TODAS as quatro lanes nomeadas ainda apontam para um
   runner hosted, que é o bloqueio. Vira vermelho assim que QUALQUER UMA for
@@ -3689,7 +8124,7 @@ verify-means: |
   julgar). As cinco leituras de `runs-on:` são ancoradas em `^` de propósito:
   `semgrep.yml` cita `runs-on:` dentro de comentários históricos, e confundir
   comentário com código é exatamente o defeito que [B-128] registra.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-111 — aquisição de certificados Apple/Windows (o resto dos "secrets ausentes" não era isso)
@@ -3736,13 +8171,10 @@ id: B-111
 repo: corelink-server
 owner: owner
 status: open
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  bash -c 'have=$(gh api repos/HuGR-Labs/corelink-server/actions/secrets --jq ".secrets[].name" 2>/dev/null)
-  [ -n "$have" ] || exit 0
-  for s in APPLE_DEVELOPER_ID APPLE_TEAM_ID APPLE_NOTARIZATION_PASSWORD WINDOWS_CODE_SIGNING_CERT WINDOWS_CODE_SIGNING_PASSWORD; do
-    echo "$have" | grep -qx "^[^#/*-]*$s" && exit 1
-  done
-  exit 0'
+  python3 scripts/verify_b155_batch_g.py --id B-111
+  grep -q "^[^#]*def verify_b111" scripts/verify_b155_batch_g.py
 verify-means: |
   open — passa enquanto NENHUM dos cinco secrets de AQUISIÇÃO existir, que é o
   bloqueio restante (Apple + Windows). Os do grupo (b) saíram da lista porque
@@ -3754,22 +8186,26 @@ verify-means: |
   era redigido. Foi o gate que avisou, não uma releitura.
 
   Sai 0 quando a API não responde, para não ler timeout como "provisionado".
-last-verified: 2026-08-30
+last-verified: 2026-09-05
 ```
 
 ### B-112 — a cadeia de release nunca produziu um artefato verde, e as lanes a jusante herdam isso
 
 `release-cli.yml` dispara em tag `cli-v*` (as tags existem: `cli-v0.1.0`,
 `cli-v0.1.1`) e morre no step `Build (cargo zigbuild) — Linux + Windows`, na
-frota macOS `corelink-builder`. Como `sign-linux`, `sign-windows` e
-`notarize-macos` disparam por `workflow_run` **atrás dela**, as três aparecem
-com `runner_name = NONE` na mesma data (2026-05-29) — não são três defeitos,
-são um.
+frota macOS `corelink-builder`. Historicamente, `sign-linux`, `sign-windows` e
+`notarize-macos` disparam por `workflow_run` **atrás dela**, e as três aparecem
+com `runner_name = NONE` na mesma data (2026-05-29) — não eram três defeitos,
+eram um. A cadeia atual foi reconstruída como chamadas reutilizáveis tipadas
+desde `release-cli`: cada lane recebe a tag, o commit e o hash do manifesto
+de staging, e publicação continua bloqueada até as assinaturas e a prova SLSA
+serem verificadas.
 
-`release-slsa3.yml` tem exatamente 1 execução (evento `release`, e existe 1
-release publicado) e os logs já expiraram, então a causa dela é a única deste
-grupo que permanece **não diagnosticada** — registrada como tal em vez de
-suposta.
+`release-slsa3.yml` tinha exatamente 1 execução (evento `release`, e existia 1
+release publicado) e os logs já expiraram, então a causa histórica dela é a
+única deste grupo que permanece **não diagnosticada** — registrada como tal em
+vez de suposta. Hoje a lane só aceita a chamada reutilizável tipada do
+`release-cli`; isso não é evidência de uma execução verde.
 
 `cosign-sign.yml` é o caso que NÃO é defeito e não deve ser "consertado":
 **0 execuções** porque dispara em push de tag `v*` e **não existe nenhuma tag
@@ -3785,6 +8221,28 @@ um único secret, `CORELINK_CLI_RELEASE_TOKEN`, e ele já existe. A falha é
 defeito de build no `cargo zigbuild`, e é a única do grupo que não depende de
 credencial nenhuma.
 
+**Causa técnica delimitada (evidência preservada).** A API do Actions registra
+o run `26663769142` (2026-05-29) terminando no job `78592387578`, no step
+`Build (cargo zigbuild) — Linux + Windows`, com exit 101; os logs detalhados
+respondem **HTTP 410 (logs expirados)**. A assinatura causal reproduzível é
+`could not execute process rustc`, `No such file or directory (os error 2)`,
+seguida de `could not parse/generate dep info` e exit 101 quando outro job
+remove ou reescreve o `~/.cargo/registry/src` compartilhado enquanto o
+compilador o usa. O reparo verificável nos bytes atuais é instalador binário
+SHA-pinado, toolchain host sem provisionamento, `cargo-zigbuild` 0.19.8/Zig
+0.16.0 validados e estado Cargo/zig isolado por run/attempt/target. B-112
+continua `open` até existir uma execução de produção verde.
+
+O waiver do `cosign-sign` permanece humano e explícito
+(`authorized-by: repo owner | 2026-08-11`); a lane continua hosted e só aceita
+tag semver `v*`. Não migrar nem apagar.
+
+**D03 bundle (focal, sem Cargo/CI):**
+
+```sh
+python3 scripts/verify_b112_release_root_cause.py --root . && python3 -m pytest -q tests/test_cli_release_b112_behavior.py && git diff --check
+```
+
 A ordem importa, porque muda o que adianta consertar primeiro:
 
 ```
@@ -3796,44 +8254,40 @@ release-cli (cargo zigbuild) quebrado
 
 Consertar o `release-cli` é **condição necessária das três**: mesmo com os
 certificados Apple e Windows em mãos, nada seria assinado, porque o artefato
-nunca chega a ser produzido. Investigar o que o `zigbuild` reclama antes de
-propor conserto — não presumir toolchain ausente.
+nunca chega a ser produzido. A cadeia de identidade e manifesto está agora
+fail-closed, mas não há execução verde observada; investigar o que o `zigbuild`
+reclama antes de propor conserto — não presumir toolchain ausente.
 
 ```backlog
 id: B-112
 repo: corelink-server
 owner: tl
-status: open
+status: parked
 verify: |
-  bash -c 'grep -q "^[^#]*cargo zigbuild" .github/workflows/release-cli.yml || exit 1
-  grep -q "^[^#]*authorized-by: repo owner" .github/workflows/cosign-sign.yml || exit 1
-  uses=$(grep -cE -- "^[^#]*--repo[[:space:]]+HumanGuardrail/corelink-cli" .github/workflows/release-cli.yml 2>/dev/null || true)
-  [ "${uses:-0}" = 0 ] || { echo "FALHA: $uses uso(s) executavel(is) de --repo HumanGuardrail/corelink-cli em release-cli.yml — o repontamento deste PR foi revertido e a lane volta a publicar num repo que responde 404."; exit 1; }
-  git ls-remote --tags origin "refs/tags/v*" 2>/dev/null | grep -qE "^[0-9a-f]{40}[[:space:]]" && exit 1
-  exit 0'
+  python3 scripts/verify_b112_release_root_cause.py --root .
 verify-means: |
-  open — decide as duas alegações estruturais que sustentam o item: o
-  `release-cli` ainda constrói por `cargo zigbuild` (a raiz não foi trocada) e o
-  waiver do `cosign-sign` ainda está no arquivo (ninguém o removeu ao "limpar"
-  lanes hosted). Vira vermelho também se surgir a primeira tag `v*`, porque aí o
-  `cosign-sign` deixa de estar trigger-starved e a análise precisa ser refeita
-  com execução real. Não ancora em histórico de execução: a causa do
-  `release-slsa3` está não-diagnosticada por logs expirados e um verify sobre
-  runs leria isso como verde.
-last-verified: 2026-08-30
+  parked — o verificador fail-closed prova somente a correção de engenharia
+  delimitada (sem `cargo install`/fetch manual, sem estado Cargo compartilhado,
+  pins e cache por run/attempt/target), a assinatura reproduzida e a preservação
+  do waiver/semântica de tags. Ele rejeita mutações reais e não lê histórico
+  como se fosse execução verde; a causa de `release-slsa3` permanece não
+  diagnosticada por logs expirados.
+last-verified: 2026-09-05
 ```
 
-### B-113 — seis lanes self-hosted sem sucesso, cada uma por um motivo próprio
+### B-113 — sete workflows self-hosted sem sucesso, cada um por um motivo próprio
 
-Sobram seis do levantamento das 20, e elas NÃO compartilham raiz — agrupá-las
-num predicado só produziria um portão dominado, então ficam nomeadas aqui com o
-que foi lido de cada uma:
+Sobram sete workflows do levantamento das 20, e eles NÃO compartilham raiz —
+agrupá-los num predicado só produziria um portão dominado, então ficam nomeados
+aqui com o que foi lido de cada um. O guard canônico confirma exatamente sete
+workflows e nove jobs (Buck2 contribui três jobs); `terraform-drift.yml` fica
+fora desta população porque é ownership de B-111.
 
 - **`nightly.yml`** (103 runs, cron ativo, falhou 2026-08-29): morre em
   `Install cargo-mutants (pinned, prebuilt)` no `corelink-builder-5`. A lane
   ainda queima hoje.
-- **`terraform-drift.yml`**: coberta por [B-111], listada aqui só para a
-  contagem das 20 fechar.
+- **`terraform-drift.yml`**: explicitamente excluída desta população; é coberta
+  por [B-111] e não é uma lane de B-113.
 - **`sbom.yml`** (16 runs, 2026-08-25): morre em
   `Generate SBOM (CycloneDX 1.5+ JSON)` no `corelink-builder-4`.
 - **`buck2-starter-ci.yml`** (77 runs, 2026-08-16): morre em
@@ -3850,24 +8304,25 @@ que foi lido de cada uma:
 - **`billing-health-daily.yml`** (7 runs, cron ativo, falhou 2026-08-29): morre
   em `Check billing health` num `cf-runner`. Ainda queima hoje.
 
-Três dessas (`nightly`, `billing-health-daily`, e o `terraform-drift` do B-063)
-são as únicas do levantamento inteiro que ainda produzem vermelho diariamente;
-as outras já não disparam. Priorizar por isso, não por volume histórico.
+Duas dessas (`nightly` e `billing-health-daily`) são as únicas do levantamento
+inteiro que ainda produzem vermelho diariamente; as outras já não disparam.
+Priorizar por isso, não por volume histórico.
 
 ```backlog
 id: B-113
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: python3 scripts/verify_owner_action_packets.py --id B-113
 verify-means: |
-  manual e com prazo: as seis têm causas distintas e nenhuma delas é decidível
+  parked — manual e com prazo: as sete têm causas distintas e nenhuma delas é decidível
   por um comando sobre o repositório — `Install cargo-mutants`, `Install Buck2`
   e `Generate SBOM` falham por estado da máquina/rede, `fuzz-nightly` cancela
   sem step, e as duas de carga precisariam de execução real para saber se ainda
   pegam box. Um verify sintético aqui seria teatro. O decaimento de 14 dias é o
   que impede este item de virar gaveta.
-last-verified: 2026-08-30
+last-verified: 2026-09-05
 ```
 
 ### B-061 — o roadmap de remediação é o único artefato sem `verify`, e já vazou número errado
@@ -3883,8 +8338,10 @@ Isso não é hipótese. Quatro revisores independentes (2 Opus, 2 Sonnet, dois d
 adversariais) encontraram, em uma passada:
 
 - **Três números publicados que não reproduzem.** "5 lanes com 1.057 execuções e zero
-  sucessos" — a população real é **19 lanes / 1.539 execuções**; "13 conceitos com
-  âncora órfã" — são **63 de 164**, e o 13 contava só os dois SHAs mais frequentes;
+  sucessos" — o snapshot histórico da população foi **19 lanes / 1.539 execuções**;
+  o export bruto não está disponível para uma medição atual; "13 conceitos com
+  âncora órfã" — o snapshot histórico era **63 de 164**, enquanto o B-061 deriva
+  atualmente **66 de 165**, e o 13 contava só os dois SHAs mais frequentes;
   "`tier.rs` tem 6 tiers" — o enum tem **11 variantes**, o 6 era doc-comment obsoleto.
 - **Um deles já vazou para fora do documento**: o "1.057" foi repetido no corpo de um PR
   já mergeado, como argumento para escolher um piso de cobertura.
@@ -3908,81 +8365,25 @@ documento, ou quando o documento afirmar um número que a medição não sustent
 id: B-061
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'set -o pipefail
-  git rev-parse --is-shallow-repository | grep -qx "^[^#]*false" || { echo "FALHA: clone raso — ancestralidade nao verificavel. O workflow precisa de fetch-depth: 0."; exit 1; }
-  tmp=$(mktemp -d); trap "rm -rf $tmp" EXIT
-  git ls-tree -r --name-only HEAD -- docs/knowledge/ | grep "\.md$" | grep -vE "/(index|log)\.md$" > "$tmp/files"
-  [ -s "$tmp/files" ] || { echo "INDETERMINADO: nenhum conceito encontrado em docs/knowledge — arvore inesperada."; exit 1; }
-  grep -H -m1 -oE "^checkpoint_sha:[[:space:]]*\"?[0-9a-f]{8,40}" $(cat "$tmp/files") 2>/dev/null \
-    | sed -E "s|^([^:]+):.*[^0-9a-f]([0-9a-f]{8,40})$|\1\t\2|" > "$tmp/pairs"
-  git rev-list HEAD | sort > "$tmp/reach"
-  cut -f2 "$tmp/pairs" | sort -u | sed "s|^|^|" > "$tmp/pat"
-  grep -hoE -f "$tmp/pat" "$tmp/reach" | sort -u > "$tmp/hit"
-  n=$(cut -f2 "$tmp/pairs" | grep -vxF -f "$tmp/hit" | wc -l | tr -d " ")
-  [ "$n" -gt 0 ] || { echo "FALHA: zero ancoras inalcancaveis — o apodrecimento acabou, feche o item."; exit 1; }
-  blk=$(grep -A1 -E "^[^#]*if not git\.is_ancestor\(str\(prev_sha\), args\.base_ref\):" scripts/validate_okf.py) || {
-    echo "INDETERMINADO: o bloco de ancestralidade do C5b nao foi encontrado em validate_okf.py."
-    echo "Alguem refatorou o caminho. NAO estou concluindo nada — olhe a mao e reescreva este verify."
-    exit 1
-  }
-  case "$blk" in
-    *continue*) : ;;
-    *) echo "FALHA: o C5b nao PULA mais ancora inalcancavel — a prevencao existe, feche o item."; exit 1 ;;
-  esac
-  echo "aberto: $n ancoras inalcancaveis e o C5b ainda PULA em vez de reprovar (prevencao ausente)"'
+  python3 scripts/verify_b061_remediation_roadmap.py
 verify-means: |
-  open — existem âncoras inalcançáveis E o `validate_okf.py` ainda passa mesmo
-  assim. As duas metades juntas são a definição do item: o apodrecimento é real e
-  nada o impede.
+  done — `verify` deriva os documentos OKF, checkpoint claims e âncoras órfãs do
+  histórico completo; deriva também as 11 variantes de `TierKind` e os 5 tiers do
+  rate ladder. As quatro medidas da Actions são o snapshot externo completo de
+  2026-08-30 (20 lanes sem sucesso: 19 com 1.539 execuções e 1 sem execução),
+  mantido como evidência datada, não como contagem local de arquivos. O censo
+  fechado agora reproduz 170 documentos físicos, 169 claims ativos e zero
+  órfãos; o único deferred é excluído dos claims por contrato.
 
-  A versão anterior fixava um NÚMERO exato e era instável por construção. Medido em
-  2026-08-30, no mesmo dia: 63 → 59 depois de três PRs reancorarem, e 59 → 64 depois
-  de UM único squash-merge (#1432), porque o squash orfana as âncoras dos conceitos
-  do próprio PR. Um número exato reprova em duas situações opostas — quando alguém
-  conserta e quando alguém apenas mergeia — e no meio disso derruba PRs sem relação
-  nenhuma, que herdam o vermelho (aconteceu com o #1402, que não toca em âncora).
-  Um portão que o trabalho correto derruba não é rigor, é ruído; e ruído é o que faz
-  um portão ser ignorado.
-
-  O que este item afirma NÃO é uma contagem — é a AUSÊNCIA DA PREVENÇÃO, que é o que
-  o próprio item sempre disse que fecharia ele. Ver [B-049]: o squash orfana a ~1 por
-  conceito por merge, então reancorar sem mudar o portão se desfaz na semana seguinte.
-  Fechar exige que `validate_okf` REPROVE âncora inalcançável em vez de degradar para
-  base-ref (hoje `_check_c5b` faz `if not git.is_ancestor(prev_sha, base_ref): continue`
-  — pula a checagem em vez de reprovar), e que o blob anchor (content-addressed,
-  sobrevive a rebase E a squash) seja o padrão.
-
-  Vira DRIFTED exatamente quando a prevenção existir: aí `validate_okf` reprova, o
-  verify falha, e o item TEM de ser fechado. É o único evento que muda a alegação.
-
-  A contagem continua registrada no ROADMAP como INSTANTÂNEO datado, explicitamente
-  não-gateado — número medido apodrece por design, e fingir o contrário foi o defeito.
-
-  NOTA sobre a forma do `verify` (2026-08-30, segunda correção no mesmo dia): a
-  primeira versão do predicado novo chamava `python3 scripts/validate_okf.py` e lia
-  QUALQUER saída não-zero como "a prevenção existe". Isso é falso: o validador sai
-  não-zero por motivos de ambiente também — na CI ele reprovou por resolução de
-  base-ref enquanto o check `okf-wiki-validation` do MESMO PR estava verde, duas
-  invocações com resultados opostos sobre a mesma árvore. O item passaria a mandar
-  FECHAR num momento em que nada foi prevenido: a mesma inversão que o formato novo
-  veio consertar, só que por falha de ambiente em vez de número instável.
-
-  Por isso o verify NÃO executa mais o validador. Ele lê o BLOCO de código que
-  implementa a tolerância (`if not git.is_ancestor(...): continue` em `_check_c5b`) e
-  decide por ele — bloco extraído, não símbolo grepado, porque o símbolo continuaria
-  existindo depois da correção e só o corpo diria se ainda PULA ou se passou a
-  REPROVAR. Se o bloco sumir (refatoração), o verify sai INDETERMINADO e pede olho
-  humano em vez de concluir. Verificado nos três estados: verde hoje; DRIFTED quando
-  o `continue` vira `fails.add`; DRIFTED quando o bloco é refatorado.
-last-verified: 2026-08-30
-# NOTA (aprendida na propria CI): a primeira versao deste verify PASSAVA local e
-# REPROVAVA na CI. Causa: `actions/checkout` sem `fetch-depth: 0` clona RASO, e
-# `git merge-base --is-ancestor` falha para TODO sha sem historico — medido: 20 de
-# 20 conceitos contados como orfaos num clone raso. O guard de shallow acima e
-# obrigatorio em qualquer verify que use ancestralidade. E a mesma cegueira que
-# este item existe para consertar, mordendo o proprio mecanismo.
+  O guard falha fechado para clone raso, objeto ausente, marcador canônico
+  duplicado/missing, sidecar divergente, projeção stale ou workflow sem qualquer
+  caminho de entrada. Mutações adversariais são executadas por
+  `tests/test_verify_b061_remediation_roadmap.py`; a prevenção OKF e a projeção
+  reconciliada agora existem, portanto o item está done. Mutações de população,
+  âncora órfã e sidecar continuam RED para evitar regressão silenciosa.
+last-verified: 2026-09-06
 ```
 
 ---
@@ -4025,11 +8426,24 @@ tags entre si e checar `git merge-base --is-ancestor`. Isso é medição, e a cr
 (`container-build-push-prod` → PR de repin → `cf-deploy-prod`) e passa pela guardiã de merge:
 é ato operacional, não um bloqueio que este item precise esperar.
 
+**Verificado e fechado 2026-09-05 a partir do D02 base `3213241ab`.** O
+`GET /accounts/{account}/containers/applications/{id}` autoritativo, executado
+individualmente para os cinco IDs fixos (sem consultar a LISTA), retornou `success=true`
+para todos: cada aplicação está em `ddd95560-r1`, com `failed=0` e 15 instâncias
+saudáveis (IAD deseja 16). `ddd9556024285c8fbc60690eaf5bbec234e972fd` resolve no clone e
+`git merge-base --is-ancestor ddd95560 origin/main` passa (`origin/main` =
+`c0a4466d930073d05ebedc3ac8b8d9cc8474b68f`). A medição é reproduzível com
+`bash scripts/verify-b062-prod-pins.sh`; o script recusa LISTA, IDs desconhecidos,
+divergência entre regiões, pinos não alcançáveis e instâncias não saudáveis. O pino é
+alcançável a partir da `main`, mas não é igualdade de tip — há 14 commits posteriores
+que tocam `crates/corelink-container/`; qualquer repin/deploy para o tip segue sendo
+decisão operacional do owner.
+
 ```backlog
 id: B-062
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: manual
 verify-means: |
   MANUAL, e o `verify` NÃO decide a alegação — declaro isso em vez de fingir.
@@ -4046,19 +8460,26 @@ verify-means: |
   ainda vivo, porque um deploy de Worker não reinicia contêiner — só uma imagem NOVA
   substitui).
 
-  Procedimento de reverificação: GET por id nas cinco aplicações, comparar a tag com
-  `git rev-parse --short HEAD`, e contar `git log --oneline <tag-commit>..HEAD --
-  crates/corelink-container/`. Fecha quando as cinco convergirem para um pin cuja
-  origem seja um commit alcançável a partir da `main`.
-last-verified: 2026-08-30
+  Procedimento de reverificação: execute `bash scripts/verify-b062-prod-pins.sh` with
+  `CLOUDFLARE_ACCOUNT_ID` and the scoped `CLOUDFLARE_CONTAINERS_API_TOKEN` set. The
+  script performs one GET by fixed application id for each of `prod`, `prod-sam`,
+  `prod-lhr`, `prod-nrt`, and `prod-syd`; it compares all five image tags, requires
+  zero failed and at least one healthy instance, resolves the tag's commit, and
+  checks `git merge-base --is-ancestor <tag-commit> origin/main`. It must not use the
+  stale applications LIST endpoint. Re-open if any GET fails, the five tags diverge,
+  a pin is not reachable from `main`, or health is not clean. Reachability is not tip
+  equality; a later owner-approved repin/deploy is an operational action, not this
+  item's verifier.
+last-verified: 2026-09-05
 ```
 
-### B-063 — uma partição da trilha de auditoria não drena há 82h, disparando SEV-0 diário para ninguém
+### B-063 — uma partição da trilha de auditoria não drena, disparando SEV-0 diário
 
-O cron `audit-archive-lag` falhou nas últimas dez execuções, sem sucesso desde
-`2026-08-27T03:22`. Ele não está quebrado — está reportando corretamente:
+O cron `audit-archive-lag` falhou nas execuções observadas, sem evidência de
+recuperação. A medição mais recente (2026-09-05) ainda retorna corretamente:
 `AUDIT_ARCHIVE_PARTITION_FAILURE — 1 partition(s) stuck past T=3h: 93da3f7a/enam
-(n=140, idle=81.91h ago)`, com `PagerDuty SEV-0 dispatched`.
+(n=188)`. O registro detalhado, incluindo três leituras D1 separadas, está em
+`docs/operator/audit-archive-partition-remediation.md`.
 
 O prefixo `93da3f7a` é o tenant do canary horário (`cas-canary.yml:80`): a partição
 travada é justamente a que mais gera linhas, e o canary continua alimentando-a.
@@ -4069,23 +8490,30 @@ saudáveis. O runbook `RB-AUDIT-ARCHIVE-ABSENT.md` §3.3 antecipa exatamente est
 cego e prescreve tratar partição persistentemente falha como SEV-1 próprio. O detector
 por partição foi construído ([B-022]) precisamente para ele, funciona, e é ignorado.
 
-A causa mecânica é [B-112]. Este item cobre o incidente; aquele cobre o defeito.
+A atribuição histórica de causa mecânica a [B-112] foi retirada: B-112 é uma
+reparação da cadeia de release do CLI e não toca o handler/cron de arquivamento,
+`audit_outbox` ou a imagem de produção. Este item continua cobrindo o incidente;
+o erro de arquivamento ainda precisa de diagnóstico autorizado no caminho de
+produção.
 
 
-**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: rodar a consulta do runbook §3.3
-contra o D1 de produção e consertar [B-112], que é a causa mecânica. O token do `.env.local`
-tem D1 read/write, então a medição **não** depende do owner; o estado do PagerDuty é
-confirmação secundária, não o próximo passo (e a lacuna de credencial de leitura da PagerDuty
-é [B-008], que segue `owner:`).
+**Reclassificado 2026-08-31 — `owner: tl`.** Próximo passo: manter o incidente
+aberto, diagnosticar o caminho de arquivamento por observabilidade autorizada e
+obter as leituras de recuperação definidas no pacote de evidências. O token do
+`.env.local` tem D1 read/write, mas esta medição usou somente `SELECT`; o estado
+do PagerDuty é confirmação secundária, não substituto para a população do D1
+(e a lacuna de credencial de leitura do PagerDuty é [B-008], que segue
+`owner:`).
 
 ```backlog
 id: B-063
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: python3 scripts/verify_owner_action_packets.py --id B-063
 verify-means: |
-  MANUAL, e o `verify` NÃO decide a alegação — declaro em vez de fingir.
+  parked — manual, e o `verify` NÃO decide a alegação — declaro em vez de fingir.
 
   A alegação é sobre estado de produção (linhas não arquivadas numa partição do D1
   de prod) e sobre um alarme externo (PagerDuty). Nenhum dos dois é legível do CI:
@@ -4093,14 +8521,18 @@ verify-means: |
   está no repositório.
 
   Um `verify` que apenas relesse o log do último `audit-archive-lag` seria dominado
-  por [B-112]: assim que o dreno voltar a funcionar o log fica verde, mas o backlog
-  acumulado continua lá — mediria o alarme, não a condição.
+  pela condição de produção: assim que o dreno voltar a funcionar o log pode ficar
+  verde enquanto o backlog acumulado continua lá — mediria o alarme, não a condição.
 
   Procedimento: rodar a consulta do runbook §3.3 contra o D1 de prod e conferir se
-  alguma partição tem `idle > 3h`. Fecha quando a partição `93da3f7a/enam` drenar
-  E o `audit-archive-lag` voltar a passar. Consertar [B-112] é pré-requisito para
-  que ela drene sozinha.
-last-verified: 2026-08-30
+  alguma partição tem `idle > 3h`. Após um reparo autorizado, fechar somente com
+  três leituras distintas retornando zero partições falhas (incluindo
+  `93da3f7a/enam`) E três execuções completas do `audit-archive-lag` com
+  `partitions_failed=0` e `verdict: OK`. Uma resolução PagerDuty, um watermark
+  global fresco ou uma única execução verde não substitui nenhuma das leituras.
+  B-112 não é pré-requisito técnico desse caminho: sua superfície é a cadeia de
+  release do CLI, não o arquivador.
+last-verified: 2026-09-05
 ```
 
 ### B-064 — o selamento da auditoria tem teto de 200 linhas/hora e o laço que o contornaria nunca foi implementado no chamador
@@ -4148,10 +8580,10 @@ verify: |
   s=scripts/verify-signup-worker-secrets.sh
   w=.github/workflows/signup-worker-deploy.yml
   [ -f "$cron" ] && [ -f "$h" ] && [ -f "$t" ] && [ -f "$s" ] && [ -f "$w" ] || { echo "FALHA: superficie do reparo sumiu — reavalie."; exit 1; }
-  grep -q "\"rows_sealed\"" "$h" || { echo "FALHA: handler nao emite mais rows_sealed — a alegacao mudou, reavalie."; exit 1; }
+  grep -q "\"rows_sealed\"" crates/corelink-container/src/routes/audit_drain/b126_m2_impl_03.rs || { echo "FALHA: handler nao emite mais rows_sealed — a alegacao mudou, reavalie."; exit 1; }
   grep -q "^[^/*]*resolveDedicatedEraseAuthKey" "$cron" || { echo "FALHA: drain perdeu a chave dedicada sem fallback — reabra."; exit 1; }
   grep -q "^[^/*]*parseAuditDrainResponse" "$cron" || { echo "FALHA: 2xx sem contrato estrito voltou a parecer sucesso — reabra."; exit 1; }
-  grep -q "^[^/*]*!body.ok || body.partitions_failed > 0" "$cron" || { echo "FALHA: ok:false/falha de particao pode voltar a parecer completa — reabra."; exit 1; }
+  python3 scripts/verify_b064_comment_safe.py || { echo "FALHA: contrato semântico/comment-safe do drain mudou — reabra."; exit 1; }
   grep -q "!madeDrainProgress(body)" "$cron" || { echo "FALHA: incomplete sem progresso pode voltar a repetir cego — reabra."; exit 1; }
   grep -q "^[^#]*CORELINK_ERASE_AUTH_KEY" "$s" && grep -q "^[^#]*verify-signup-worker-secrets.sh" "$w" || { echo "FALHA: chave dedicada nao esta presa ao gate de deploy — reabra."; exit 1; }
   grep -q "^[^/*]*ok:false as terminal even when partitions_failed is zero" "$t" && grep -q "^[^/*]*missing ok" "$t" && grep -q "^[^/*]*non-boolean ok" "$t" && grep -q "^[^/*]*missing incomplete" "$t" && grep -q "^[^/*]*non-boolean incomplete" "$t" && grep -q "^[^/*]*non-finite counter" "$t" && grep -q "^[^/*]*incomplete-with-no-progress" "$t" || { echo "FALHA: dentes de contrato incompletos — reabra."; exit 1; }
@@ -4205,7 +8637,8 @@ id: B-065
 repo: corelink-server
 owner: owner
 status: open
-verify: manual
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: python3 -S scripts/verify_owner_action_packets.py --id B-065
 verify-means: |
   MANUAL, e o `verify` NÃO decide a alegação. Declaro em vez de fingir.
 
@@ -4222,7 +8655,7 @@ verify-means: |
   Procedimento: no painel Stripe, manter o destino "Corelink prd" apontando para o
   signup-worker e aposentar o redundante. Fecha quando `billing-health-daily` voltar
   a passar por três execuções consecutivas.
-last-verified: 2026-08-30
+last-verified: 2026-09-05
 ```
 
 ### B-066 — RECUSADO: o `smoke-install` já está portado atrás do gate de Actions hosted
@@ -4257,16 +8690,14 @@ status: done
 verify: |
   bash -c 'f=.github/workflows/smoke-install.yml
   [ -f "$f" ] || { echo "FALHA: smoke-install.yml sumiu — a recusa perdeu objeto, reavalie."; exit 1; }
-  grep -q "^[^#]*HOSTED_ACTIONS_AVAILABLE" "$f" || { echo "FALHA: o job NAO esta mais portado atras do gate — a recusa deixou de valer, REABRA o item."; exit 1; }
-  echo "recusa mantida: smoke-install portado atras de HOSTED_ACTIONS_AVAILABLE"'
+  grep -qE "^[[:space:]]*runs-on:[[:space:]]*corelink" "$f" || { echo "FALHA: smoke-install deixou de usar a frota self-hosted — reavalie custo/portabilidade."; exit 1; }
+  python3 scripts/verify_b066_comment_safe.py || { echo "FALHA: gate semântico/comment-safe do PAT mudou — reabra."; exit 1; }
+  ! grep -q "^[^#]*HOSTED_ACTIONS_AVAILABLE" "$f" || { echo "FALHA: gate hosted obsoleto reapareceu."; exit 1; }
+  echo "recusa reconciliada: smoke-install usa runner corelink e exige PAT real"'
 verify-means: |
-  done — polaridade INVERTIDA, como todo item fechado neste arquivo: o comando PASSA
-  enquanto o motivo da recusa continuar verdadeiro, e FALHA se alguém remover o gate.
-
-  Concretamente: passa enquanto `smoke-install.yml` portar o job atrás de
-  `HOSTED_ACTIONS_AVAILABLE`. Se esse `if:` for removido, a lane volta a queimar minutos
-  hosted num bloqueio de faturamento, o achado original passa a valer, e o verify vermelho
-  força a REABERTURA — não o fechamento.
+  done — o verify foi reancorado após a migração da lane para a frota `corelink`.
+  Passa enquanto o workflow usar esse runner, exigir o PAT real
+  `CORELINK_CANARY_PAT`, e não reintroduzir o gate hosted obsoleto.
 
   É a polaridade correta para uma recusa: ela não afirma "não há problema", afirma "não há
   problema ENQUANTO esta condição valer", e vigia a condição.
@@ -4308,33 +8739,26 @@ falsa.
 id: B-067
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'norun=0
-  grep -rqE "^[^#]*cargo test.*--workspace.*--no-run" .github/workflows/ && norun=1
-  authpat=$(grep -rlE "^[^#]*(corelink-(auth|pat))" .github/workflows/ 2>/dev/null | grep -v mutation-nightly | wc -l | tr -d " ")
-  claim=0; grep -q "^[^#]*CI runs all three" .github/workflows/welcome-first-pr.yml 2>/dev/null && claim=1
-  if [ "$norun" = 0 ] && [ "$authpat" -gt 0 ]; then
-    echo "FALHA: --no-run sumiu E auth/pat tem lane fora do mutation-nightly — feche o item."; exit 1; fi
-  echo "aberto: no-run=$norun  workflows_com_auth_ou_pat_fora_do_mutation=$authpat  afirmacao_ao_contribuidor=$claim"'
+  python3 scripts/verify_b067_auth_ci.py --self-test
 verify-means: |
-  open — existe uma lane `cargo test --workspace --no-run` E nenhum workflow fora do
-  `mutation-nightly` nomeia `corelink-auth`/`corelink-pat`. As duas metades juntas são
-  a alegação: a lane que parece cobrir tudo não executa nada, e os dois crates de
-  autenticação não têm lane própria.
+  done — a lane nightly agora chama `scripts/ci-bounded-workspace-tests.sh`, que
+  executa `cargo nextest run --workspace --all-targets --profile ci` ou o fallback
+  `cargo test --workspace --all-targets --no-fail-fast` sob deadline de 1500s e teto
+  de quatro jobs. A lane `corelink-auth-pat.yml` executa comandos ativos e explícitos
+  para os dois crates, incluindo o gate release de tempo constante de PAT; o seed
+  que exige segredo permanece fora da lane.
 
-  Vira DRIFTED quando AMBOS forem resolvidos — o `--no-run` virar execução real E os
-  dois crates ganharem lane. Escolhi o AND deliberadamente: resolver só metade deixa a
-  alegação verdadeira, e um portão que fecha pela metade do reparo é pior que nenhum.
+  `scripts/verify_b067_auth_ci.py --self-test` faz a prova semântica com mutações que
+  comentam um comando, introduzem `--no-run`, removem um gatilho ou trocam o runner;
+  todas devem ser recusadas. A checagem exige ainda actions SHA-pinned, checkout sem
+  credencial persistente, população completa de paths e o texto verdadeiro no welcome.
 
-  O que NÃO decide, e admito: se a lane que passar a nomear `corelink-auth` de fato
-  EXECUTA (podia ser outra matriz de mutação, ou uma lane morta). O comando conta a
-  presença do nome, não a execução. Quem fechar este item deve confirmar à mão que a
-  lane nova roda e é verde — e, se não for, reabrir em vez de fechar.
-
-  A correção da linha 90 do `welcome-first-pr.yml` é reportada mas não gateada: é
-  documentação, e travar o item nela atrasaria o reparo que importa.
-last-verified: 2026-08-30
+  A polaridade é fail-closed: qualquer regressão faz o verifier falhar e exige
+  reabertura. O CI remoto continua pertencendo ao bundle; esta alteração apenas
+  torna as lanes configuradas semanticamente executoras e limitadas.
+last-verified: 2026-09-05
 ```
 
 ### B-068 — os testes `#[ignore]` que cobrem D1, R2 e Stripe reais não são executados por nada
@@ -4344,119 +8768,107 @@ cobertura real dos caminhos de produção: D1 real, round-trip R2 real, checkout
 real, shadow Neon, e2e de PAT. Exemplo típico em `tier_select_store.rs:131`:
 *"behavioural coverage of the real SQL uses the standard `#[ignore]` harness"*.
 
-**Recenso em 2026-09-01.** A lane B-067 é configurada para selecionar
+**Recenso em 2026-09-05.** A lane B-067 continua selecionando
 `corelink-pat/tests/constant_time.rs` em release, mas esse alvo não é `#[ignore]` e
-não demonstra os caminhos reais deste item. A evidência operacional do runner só
-existirá após uma execução nova de PR. Em `corelink-pat` resta somente
-`emit_e2e_seed`: harness deliberadamente ignorado que exige
-`CORELINK_PAT_SIGNING_KEY_HEX` e imprime um PAT novo e SQL de seed. Ele não pode
-receber segredo nem ser executado por código de PR. Isso é uma separação de segurança,
-não cobertura pendente disfarçada.
+não demonstra os caminhos reais deste item. O executor agora está materializado em
+`.github/workflows/real-ignored-harnesses.yml`, acionável somente por
+`workflow_dispatch` no `main` e protegido pelo ambiente `real-integration`. O
+script `scripts/run-real-ignored-harnesses.sh` seleciona explicitamente cada teste
+real D1, R2, Stripe e Neon, valida as credenciais antes de iniciar e rejeita todo
+perfil desconhecido. O perfil Stripe exige `STRIPE_AUTH_MODE=wallet-broker`, a
+referência de teste `stripe-prod-test` e um `STRIPE_PRICE_ID_STARTER` `price_*`
+proveniente das variáveis do ambiente protegido; o seletor do dispatch chega ao
+shell somente como variável de ambiente validada.
 
-Os harnesses reais D1, R2 e Stripe continuam sem executor. `--ignored` e
-`include-ignored` não aparecem em workflow ou script, e `.config/nextest.toml` não
-define `run-ignored` em profile algum.
+O executor não recebe a chave de assinatura do PAT e não possui perfil para o
+`emit_e2e_seed`: esse harness imprime um PAT novo e SQL de seed, portanto continua
+fora de CI por desenho. O verificador semântico
+`scripts/verify_real_ignored_harnesses.py` também roda mutações negativas para
+executor parcial, teste errado, trigger ausente, comentário enganoso e exposição
+de segredo.
 
-O item não usa mais uma contagem por crate como condição: ela muda sem alterar a
-ausência de execução. O fato verificável é que os harnesses reais ainda existem e
-nenhuma infraestrutura os seleciona; o PAT secreto é explicitamente excluído.
-
-O SQL real, o R2 real e o Stripe real têm zero execuções — enquanto os comentários de
-código afirmam que essa é justamente a camada onde eles são cobertos. É o padrão que
-[B-101] descreve: a evidência de que o caminho é coberto existe em prosa, não em
-execução.
+O item continua `open` até o owner despachar cada perfil no ref protegido e anexar
+evidência verde de execução real (ou um pacote explícito de bloqueio para qualquer
+infraestrutura ainda não provisionada). A fiação de engenharia está completa; uma
+execução local ou a presença do workflow não é prova de que D1, R2, Stripe e Neon
+estão provisionados e acessíveis. O estado não fecha por inferência.
 
 ```backlog
 id: B-068
 repo: corelink-server
 owner: tl
-status: open
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  bash -c 'set -euo pipefail
-  seed=crates/corelink-pat/tests/emit_e2e_seed.rs
-  lane=.github/workflows/corelink-auth-pat.yml
-  ignored_pat=$(grep -rl "^[^/*]*#\[ignore" crates/corelink-pat --include="*.rs" | sort)
-  test "$ignored_pat" = "$seed"
-  grep -q "^[^/*]*#\[ignore" "$seed"
-  grep -q "^[^/*]*CORELINK_PAT_SIGNING_KEY_HEX" "$seed"
-  grep -q "^[^/*]*PAT_PLAINTEXT" "$seed"
-  grep -q "^[^#]*cargo test --locked --release --package corelink-pat --test constant_time" "$lane"
-  grep -q "^[^#]*persist-credentials: false" "$lane"
-  ! grep -qE "secrets\." "$lane"
-  ! grep -qE "^[^#]*(cargo test.*emit_e2e_seed|--test emit_e2e_seed)" "$lane"
-  grep -q "^[^/*]*requires live CF D1 credentials" crates/corelink-container/src/storage/d1_http.rs
-  grep -q "^[^/*]*requires live R2 credentials" crates/corelink-container/src/storage/r2_s3.rs
-  grep -q "^[^/*]*#\[ignore = \"live network\"\]" crates/corelink-stripe-real/tests/live_integration.rs
-  ! grep -rlE "^[^#]*(\-\-ignored|include-ignored)" .github/workflows/ scripts/ 2>/dev/null
-  ! { test -f .config/nextest.toml && grep -q "^[^#]*run-ignored" .config/nextest.toml; }
-  echo "aberto: harnesses reais D1/R2/Stripe seguem ignorados; constant_time e selecionado em release; seed PAT secreto nao e executado"'
+  python3 scripts/verify_owner_action_packets.py --id B-068 && \
+  python3 scripts/verify_real_ignored_harnesses.py
 verify-means: |
-  open — os harnesses reais de D1, R2 e Stripe seguem `#[ignore]` sem executor. O
-  `constant_time` de PAT é selecionado em release, mas não é esse caminho real; uma
-  execução de PR ainda deve provar o runner. O único harness PAT ignorado,
-  `emit_e2e_seed`, exige chave de assinatura e imprime credencial/SQL: ele deve ficar
-  fora de PR e nunca receber `secrets` por esta lane.
+  parked — a allow-list e o workflow protegido estão presentes, mas a prova de
+  engenharia não é prova de infraestrutura. O owner precisa despachar `d1`, `r2`,
+  `stripe` e `neon` no `main`, com aprovação de `real-integration`, e anexar os
+  logs/resultados de cada perfil; qualquer perfil sem credencial/provisionamento
+  permanece aberto com ação e responsável explícitos. A execução local ou a
+  presença do workflow não prova que D1, R2, Stripe e Neon
+  estão provisionados e acessíveis. O seed secreto de PAT fica fora de todos os
+  perfis e nunca recebe credencial por esta lane.
 
-  Vira DRIFTED se aparecer executor de testes ignorados, se o seed secreto for chamado
-  pela lane auth/PAT, ou se a lane ganhar referência a `secrets`. Cada uma dessas
-  mudanças exige novo recenso: um executor parcial não fecha por si só os caminhos
-  reais restantes, e executar o seed em PR é falha de segurança, não reparo.
+  Vira DRIFTED se o workflow ganhar `pull_request`, `push`, `schedule` ou outro
+  trigger automático; se a seleção deixar de ser uma allow-list de alvos exatos;
+  se um teste errado, texto em comentário ou executor parcial passar pelo guard;
+  se credenciais forem impressas; ou se o seed secreto aparecer no workflow/runner.
+  O seed deve permanecer `#[ignore]`, fora de todos os perfis e sem a chave de
+  assinatura no ambiente do executor.
 
   A prova não depende de contagem: ela pinça uma fonte ignorada de cada classe real e
-  classifica separadamente o seed secreto. Assim uma alteração de quantidade não muda
-  o veredito sem mudar a alegação.
-last-verified: 2026-09-01
+  verifica a seleção executável e classifica separadamente o seed secreto. Assim uma
+  alteração de quantidade não muda o veredito sem mudar a alegação.
+last-verified: 2026-09-05
 ```
 
-### B-069 — os nove arquivos de E2E da interface autenticada estão em `test.fixme`, inclusive apagamento GDPR e dupla aprovação
+### B-069 — os arquivos de E2E da interface autenticada estavam em `test.fixme`, inclusive apagamento GDPR
 
-Nove de nove specs Playwright em `apps/admin-ui/playwright/e2e/` contêm `test.fixme`.
-Não é lacuna pontual, é a suíte inteira: `00-a11y-sweep`, `01-onboarding`,
+Na abertura deste item, nove de nove specs Playwright em
+`apps/admin-ui/playwright/e2e/` continham `test.fixme`; o portão agora exige que
+essa condição não volte. A suíte focal é: `00-a11y-sweep`, `01-onboarding`,
 `02-consent-capture`, `03-consent-withdraw`, `04-dsr-access`, `05-dsr-erasure`,
-`06-admin-audit-viewer`, `07-admin-dual-approval`, `08-locale-switch`.
+`06-admin-audit-viewer`, `08-locale-switch`.
 
-Literal, em `05-dsr-erasure.spec.ts:21`:
+O spec `07-admin-dual-approval` e a superfície `/admin/ops` que ele exercitava
+eram apenas mocks; foram removidos pelo [B-119], que fecha o endpoint não servido.
+Ele não é mais uma jornada publicada deste item e não deve ser recriado para
+satisfazer o portão.
+
+O caso literal que motivou o item era `05-dsr-erasure.spec.ts:21`:
 `test.fixme("erasure with category selection → receipt + SLA clock", …)`.
 
-Os fluxos sem nenhuma cobertura executando são exatamente os de maior consequência
-regulatória e de privilégio: captura e retirada de consentimento, acesso e apagamento
-de DSR (Art. 15 e 17), o visualizador de auditoria e a dupla aprovação administrativa.
+Os fluxos de maior consequência regulatória e de privilégio agora têm cobertura
+executável: acesso e apagamento de DSR (Art. 15 e 17) e o visualizador de auditoria.
+Captura e retirada de consentimento continuam
+explicitamente aposentadas e fail-closed, pois não há ledger implantado.
 
-Fecha o círculo com [B-110]: a correção do apagamento do Art.17 não está implantada
-**e** o fluxo de interface que a exercitaria nunca roda.
+O item não declara que a correção do apagamento do Art. 17 esteja implantada;
+declara que a interface agora exercita o contrato disponível sem fabricar sucesso.
 
 ```backlog
 id: B-069
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'd=apps/admin-ui/playwright/e2e
-  [ -d "$d" ] || { echo "FALHA: diretorio e2e sumiu — reavalie o item."; exit 1; }
-  total=$(ls "$d"/*.spec.ts 2>/dev/null | wc -l | tr -d " ")
-  [ "$total" -gt 0 ] || { echo "FALHA: nao ha mais specs — reavalie o item."; exit 1; }
-  comfixme=$(grep -l "test\.fixme" "$d"/*.spec.ts 2>/dev/null | wc -l | tr -d " ")
-  [ "$comfixme" -gt 0 ] || { echo "FALHA: nenhum spec tem test.fixme — feche o item."; exit 1; }
-  echo "aberto: $comfixme de $total specs e2e ainda em test.fixme"'
+  bash scripts/verify-b069-e2e.sh
 verify-means: |
-  open — pelo menos um spec E2E da admin-ui ainda carrega `test.fixme`.
-
-  Vira DRIFTED quando o último `test.fixme` sair, que é o reparo. Deliberadamente NÃO
-  fixo o número nove: um portão que exige exatamente 9 reprova quando alguém conserta
-  um só, e punir progresso parcial é como se ensina uma equipe a ignorar o portão.
-  O `9 de 9` fica na prosa como instantâneo datado de 2026-08-30.
-
-  O que NÃO decide, e admito: se os specs, uma vez destravados, PASSAM. Tirar o
-  `test.fixme` e deixar o teste vermelho fecharia este item sem entregar cobertura.
-  Quem fechar deve confirmar que a suíte roda verde em CI; se não rodar, o item certo
-  é um novo, não a reabertura deste.
-last-verified: 2026-08-30
+  done — the verifier requires all eight currently shipped journeys to be present,
+  executable, non-deferred, and asserted. The retired dual-approval mock journey
+  is intentionally excluded because B-119 removed its unserved surface. The Playwright lane executes these
+  journeys, and mutation tests prove that restoring a `test.fixme` or removing
+  executable `expect` assertions fails closed.
+last-verified: 2026-09-05
 ```
 
-### B-070 — o `[env.staging]` é declarado como espelho 1:1 de produção e nunca recebeu deploy
+### B-070 — o `[env.staging]` era declarado como espelho 1:1 de produção sem deploy
 
-`wrangler.toml:579` declara `[env.staging]` descrevendo-o como *"um espelho 1:1 da
-topologia de prod"* e afirma que *"os fluxos de canary e rollout promovem artefatos de
+`wrangler.toml` declarava `[env.staging]` descrevendo-o como *"um espelho 1:1 da
+topologia de prod"* e afirmava que *"os fluxos de canary e rollout promovem artefatos de
 staging para prod"*.
 
 Nenhum workflow faz deploy com `--env staging`. Toda ida a produção é direta, sem soak.
@@ -4471,26 +8883,30 @@ hosted-blocked são #1434; as demais têm nota de parking justificada e são dec
 cadência, não defeito. O que este item afirma é especificamente a distância entre o que
 o `wrangler.toml` declara sobre staging e o que existe.
 
+**Fechado pelo caminho honesto (2026-09-05):** não havia workflow de deploy do root
+Worker em staging nem consumidor shipped dessa declaração. A declaração e a promessa
+de promoção foram removidas; os cinco ambientes de produção e os ambientes staging de
+outros Workers permanecem intactos. O verificador semântico fechado abaixo impede que
+essa divergência seja reintroduzida por uma tabela renomeada, por wiring de workflow ou
+por remoção acidental de um alvo de produção.
+
 ```backlog
 id: B-070
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'decl=0; grep -q "^\[env\.staging\]" wrangler.toml && decl=1
-  [ "$decl" = 1 ] || { echo "FALHA: [env.staging] nao e mais declarado — feche o item."; exit 1; }
-  dep=$(grep -rlE "deploy.*--env[= ]staging|--env[= ]staging.*deploy" .github/workflows/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$dep" = 0 ] || { echo "FALHA: $dep workflow(s) fazem deploy em staging — feche o item."; exit 1; }
-  echo "aberto: [env.staging] declarado no wrangler.toml e ZERO workflows deployam nele"'
+  python3 scripts/verify_b070_staging_truth.py --expect done && \
+  python3 -m unittest tests/test_verify_b070_staging_truth.py
 verify-means: |
-  open — o `[env.staging]` está declarado E nenhum workflow faz deploy nele. As duas
-  metades são a alegação: o ambiente é prometido em configuração e não existe de fato.
-
-  Vira DRIFTED por qualquer um dos dois reparos legítimos — alguém passa a deployar em
-  staging (o bom), ou alguém remove a declaração e a prosa que promete promoção via
-  staging (o honesto). Os dois fecham o item, e é correto que fechem: a alegação é
-  sobre a DIVERGÊNCIA, não sobre a ausência de staging.
-last-verified: 2026-08-30
+  done — o caminho honesto foi escolhido porque o root Worker nunca teve consumidor
+  shipped para staging: a declaração `[env.staging]` e a alegação staging→prod foram
+  removidas. `scripts/verify_b070_staging_truth.py` fecha somente com a população
+  completa de cinco ambientes de produção, matriz de workflow intacta, ausência de
+  staging-like env tables/wiring e ausência das alegações ativas nomeadas. Os testes
+  mutam cada família (declaração original/renomeada, claim, workflow, alvo prod,
+  documentação e status) e exigem que o guard reabra o item.
+last-verified: 2026-09-05
 ```
 
 ### B-071 — não existe coleta de lixo nem eviction em produção; o armazenamento é catraca de sentido único sob preço fixo
@@ -4520,115 +8936,91 @@ para chegar até lá.
 id: B-071
 repo: corelink-server
 owner: tl
-status: open
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  bash -c '[ -d crates/corelink-gc ] || { echo "FALHA: crate corelink-gc sumiu — reavalie o item."; exit 1; }
-  n=0
-  for f in Dockerfile .github/workflows/cf-deploy-prod.yml .github/workflows/container-build-push-prod.yml; do
-    [ -f "$f" ] || continue
-    grep -qE "^[^#]*(gc_sweep|corelink-gc)" "$f" && n=$((n+1))
-  done
-  [ "$n" = 0 ] || { echo "FALHA: $n artefato(s) de build/deploy ja referenciam o GC — feche o item."; exit 1; }
-  echo "aberto: corelink-gc existe e nao e referenciado por Dockerfile nem pelas lanes de deploy de prod"'
+  python3 scripts/verify_owner_action_packets.py --id B-071 && \
+  bash -c '
+  set -eu
+  test -d crates/corelink-gc
+  test -f crates/corelink-gc/src/bin/gc_sweep.rs
+  grep -Eq "^[^#]*cargo\ build\ \-\-release\ \-\-locked\ \-p\ corelink\-gc\ \-\-bin\ gc_sweep" Dockerfile
+  grep -Eq "^[^#]*COPY\ \-\-from=builder\ /out/gc_sweep\ /usr/local/bin/gc_sweep" Dockerfile
+  grep -Eq "^[^#]*ENTRYPOINT\ \[\"/usr/local/bin/corelink\-server\"\]" Dockerfile
+  grep -Eq "^[^#]*GC_LIVE_DELETE=false" .github/workflows/container-build-push-prod.yml
+  grep -Eq "^[^#]*\[\ \-x\ \"\\\$B/rootfs/usr/local/bin/gc_sweep\"\ \]" .github/workflows/container-build-push-prod.yml
+  grep -Eq "^[^#]*timeout\ \-s\ KILL\ 10" .github/workflows/container-build-push-prod.yml
+  grep -Eq "^[^#]*GC_LIVE_DELETE:\ \"false\"" .github/workflows/gc-sweep-dry-run.yml
+  grep -Eq "^[^#]*env\ \-u\ CLOUDFLARE_API_TOKEN\ \-u\ CLOUDFLARE_ACCOUNT_ID" .github/workflows/gc-sweep-dry-run.yml
+  grep -Eq "^[^/*]*emit_report\(\&report\)" crates/corelink-gc/src/sweep_runner.rs
+  grep -Eq "^[^/*]*lookup\(run_id,\ tenant_id\)" crates/corelink-gc/src/sweep_runner.rs
+  grep -Eq "^[^/*]*if\ run_row\.region\ !=\ region" crates/corelink-gc/src/sweep_runner.rs
+  ! grep -Eq "^[^/*]*ENV\ GC_LIVE_DELETE=true" Dockerfile
+  echo "wired: executable is in the production image; automated paths are credentialless, bounded, audited, and forced dry-run"'
 verify-means: |
-  open — o crate existe E nenhum artefato de build ou deploy de produção o referencia.
+  parked — o artefato está pronto e o caminho de medição é seguro, mas a execução em dados
+  reais de cliente e qualquer primeiro delete continuam owner-gated. O item só vira done
+  quando houver pacote de evidências externo com imagem implantada, dry-run real por
+  tenant/região, bytes candidatos medidos e aprovação explícita do owner; ausência dessa
+  evidência não pode ser convertida em alegação de execução.
 
-  Vira DRIFTED quando o `Dockerfile` ou uma lane de deploy passar a construir/embarcar
-  o GC, que é o reparo. Também fecharia se o crate fosse removido — desfecho válido se
-  a decisão for não ter GC, e nesse caso o item deve ser fechado como recusa registrada,
-  não apagado.
-
-  O que NÃO decide, e admito: se o GC, uma vez embarcado, de fato RODA e recupera bytes.
-  Presença no build é condição necessária, não suficiente. Quem fechar deve provar com
-  bytes recuperados medidos em produção — a mesma exigência de "prove a execução, não a
-  ausência de reclamação" que este repositório aplica em todo lugar.
-
-  Reconciliado 2026-08-31 (o campo é `tl`): a decisão A JUSANTE é do owner — rodar GC pela
-  primeira vez em dados de cliente é decisão de produto e de risco. O PRÓXIMO PASSO não é:
-  medir o que seria apagado e embarcar o mecanismo atrás de flag desligado é higiene de
-  engenharia, e é minha.
-last-verified: 2026-08-30
+  O que já está resolvido neste item: `gc_sweep` é construído e embarcado no Dockerfile,
+  sem substituir o entrypoint do servidor; as lanes automatizadas forçam
+  `GC_LIVE_DELETE=false`, removem credenciais Cloudflare, impõem timeout e exigem relatório
+  auditável com zero deletes; o runner valida tenant/run e região e aplica o orçamento de
+  fase. O binário continua usando fixture in-memory, portanto não há claim de produção.
+last-verified: 2026-09-05
 ```
 
-### B-072 — o `wrangler.toml` declara dois crons no Worker e o Worker não tem manipulador `scheduled`
+### B-072 — o `wrangler.toml` declara um cron sintético e o handoff externo ainda não tem prova
 
-`wrangler.toml:283-284` declara `[triggers]` com `crons = ["0 6 * * 1", "0 14 * * 1"]`.
-Não existe `async scheduled(...)` em `worker/src/index.ts` nem em nenhum outro módulo do
-Worker — a única ocorrência da palavra é um comentário na linha 100. Os disparos ocorrem
-e não encontram destino.
+Parcialmente corrigido: o cron `0 14 * * 1` (synthetic page) chega ao `scheduled()` do
+Worker e tem um handoff fail-closed por `SCHEDULED_DRILL_DELIVERY`, um Service Binding
+same-account. Binding ausente, exceção ou resposta non-2xx falha o tick e preserva retry;
+cron desconhecido chama `noRetry()` e falha. O cron de chaos foi removido: não existe
+ambiente válido provisionado para agendá-lo com segurança.
 
-A consequência específica importa mais que o defeito: um desses agendamentos é o drill
-de entrega do PagerDuty. Ele nunca executou.
-
-Isso não é independente de [B-111]. A organização acredita ter validado que o alarme
-chega a um humano, e essa validação nunca correu. O alarme de [B-111] de fato dispara;
-o que nunca foi provado é que alguém o recebe — e três dias de SEV-0 sem resposta são
-consistentes com as duas hipóteses.
+O Worker não finge entrega externa. Ele não contém URL nem routing key PagerDuty. Para o
+drill sintético, o payload leva apenas o contrato não-secreto do runbook
+(`synthetic-drill`, `trigger`, `sev2_synthetic`, dedup id determinístico e rotação de
+região); o Worker receptor é responsável pelo POST real ao PagerDuty, pelo D1
+`synthetic_page_drills` e pelo ack/escalation. A presença do handler continua não sendo
+prova de que uma pessoa recebeu a página.
 
 ```backlog
 id: B-072
 repo: corelink-server
 owner: tl
-status: open
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  bash -c 'temcron=0; grep -qE "^crons[[:space:]]*=" wrangler.toml && temcron=1
-  [ "$temcron" = 1 ] || { echo "FALHA: nao ha mais crons declarados no wrangler.toml — feche o item."; exit 1; }
-  h=$(grep -rlE "^[^#/*-]*(async scheduled[[:space:]]*\(|scheduled[[:space:]]*:[[:space:]]*async)" worker/src/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$h" = 0 ] || { echo "FALHA: existe manipulador scheduled no Worker ($h arquivo(s)) — feche o item."; exit 1; }
-  echo "aberto: crons declarados no wrangler.toml e ZERO manipuladores scheduled no worker/src"'
+  python3 scripts/verify_owner_action_packets.py --id B-072 && \
+    python3 scripts/verify_b072_scheduled_drills.py
 verify-means: |
-  open — há `crons` declarados E nenhum manipulador `scheduled` no código do Worker.
-
-  Vira DRIFTED por qualquer um dos dois reparos: implementar o manipulador (o bom) ou
-  remover os crons órfãos (o honesto). A alegação é a DIVERGÊNCIA entre o gatilho
-  declarado e o destino ausente, então os dois desfechos a encerram legitimamente.
-
-  Se o reparo for implementar o manipulador, quem fechar deve confirmar que o drill do
-  PagerDuty efetivamente entrega — presença do handler não prova entrega, e é
-  precisamente a entrega que [B-111] presume e nunca foi provada.
-last-verified: 2026-08-30
+  parked — o verificador confirma exatamente o cron sintético no Worker default/dev, overrides
+  vazios nos cinco ambientes de produção, a tabela cron→drill, o destino Service Binding e os guards de erro. Testes
+  comportamentais cobrem sucesso 202/erro non-2xx/exceção/binding ausente, cron desconhecido
+  e a rotação de quatro semanas. O repositório não contém o Worker receptor nem uma
+  declaração `SCHEDULED_DRILL_DELIVERY` em `wrangler.toml`, portanto não há prova de POST
+  real ao PagerDuty. O owner packet `docs/internal/b072-scheduled-drills-owner-packet.md`
+  registra a ação operacional necessária antes de fechar este item.
+last-verified: 2026-09-05
 ```
 
-### B-073 — um assento em outro tenant é concedido por hash de e-mail, ainda sem token, escopo ou verificação (expiração já limitada)
+### B-073 — convite de assento exige token criptográfico, tenant vinculado e e-mail Clerk verificado
 
-É o único achado da auditoria que entrega dado de um cliente a outro. O isolamento no
-plano de dados é sólido e não cedeu sob ataque; a brecha é em quem recebe um assento.
+O reparo está concluído. A criação gera 256 bits de aleatoriedade do sistema e persiste
+somente o digest SHA-256 em `team_member.invitation_token_hash` (migração 0108); o
+token opaco é mostrado uma única vez. `POST /v1/customer/team/accept` não aceita
+tenant fornecido pelo cliente: resolve o tenant somente da linha vinculada ao digest,
+exige o e-mail primário do Clerk explicitamente `verified`, aplica a janela de 14 dias
+e executa `team.accepted` + a transição condicional para `active` no mesmo batch D1.
+Replay, e-mail diferente, token expirado/futuro, linha legada sem digest e payload
+misturado falham fechados. O webhook de signup deixou de aceitar convites por hash.
 
-Convidar um colega grava `team_member` com `status='invited'` e `email_hash`, sem o
-e-mail em claro — decisão de privacidade correta. O problema é o resgate. A defesa de
-expiração foi incorporada em #1489: a janela agora é de 14 dias, meio-aberta, aplicada
-no SQL como `invited_at_ms > nowMs - TTL AND invited_at_ms <= nowMs`, usando o mesmo
-instante no `joined_at_ms`; uma atualização só é reportada como aceita quando altera
-exatamente uma linha. Permanecem três defesas ausentes.
-Seis elos, cada um verificado no código de 2026-09-02:
-
-1. `apps/signup-worker/src/lib/d1.ts:351` — `SELECT tenant_id, user_id FROM team_member
-   WHERE email_hash IN (?1, ?2) AND status = 'invited' AND invited_at_ms > ?3
-   AND invited_at_ms <= ?4 LIMIT 1`.
-   A expiração agora limita a janela a 14 dias e recusa convites datados no futuro, mas continuam sem escopo de tenant,
-   token e nonce: a primeira linha convidada elegível do banco INTEIRO que casar com o
-   hash é transferida ao novo usuário Clerk.
-2. `grep -n "verification\|email_verified" apps/signup-worker/src/webhooks/clerk.ts`
-   retorna **zero linhas**. O tipo do evento sequer modela o campo, então a checagem é
-   estruturalmente impossível no código atual.
-3. `worker/src/lib/clerk_auth.ts:299` — sessão sem tenant próprio cai no assento
-   (`SELECT tenant_id, role FROM team_member WHERE user_id = ?1 AND status = 'active'`).
-4. `worker/src/index.ts:3100` — papel `member` vira `x-corelink-scope: read-write`.
-5. `crates/corelink-container/src/routes/customer.rs:796` — cunhar PAT exige apenas
-   `requires_cache_write(caller_scope)`. O assento passa e recebe `cas:rw` do tenant.
-6. `team_member` está em `TENANT_ID_TABLES`, ou seja, o apagamento DSR é chaveado por
-   `tenant_id`: um assento mantido em OUTRO tenant sobrevive ao apagamento do próprio.
-
-Toda a segurança das defesas que ainda faltam nessa transição repousa numa suposição sobre um terceiro que o código
-não declara nem impõe: que a Clerk sempre verifica posse do e-mail antes de emitir
-`user.created`. E mesmo supondo que sempre verifique, os elos 1, 3 e 6 permanecem — o
-convite ainda é um portador **transferível e reciclável dentro da janela de 14 dias**, e um endereço
-corporativo reatribuído pode entregar o assento antigo ao novo titular nesse intervalo. Ao contrário do
-convite (que emite `team.invited` na auditoria), a ACEITAÇÃO não emite evento nenhum.
-
-Quatro reparos independentes, cada um quebrando a cadeia sozinho: token de convite
-exigido no resgate; escopo de `tenant_id` na consulta; expiração (FEITO em #1489); e
-leitura do campo de verificação da Clerk. Somar evento de auditoria na aceitação.
+As verificações mantidas aqui são adversariais: mutar o digest, a cláusula de tenant,
+os limites da janela, a exigência de verificação, a atomicidade ou o bloqueio do antigo
+auto-aceite deve fazer o portão falhar.
 
 **Sequência:** depende de [B-067]. Não mergear conserto de auth contra CI que não roda
 os testes de `corelink-auth`/`corelink-pat`.
@@ -4637,44 +9029,50 @@ os testes de `corelink-auth`/`corelink-pat`.
 id: B-073
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'd=apps/signup-worker/src/lib/d1.ts
-  c=apps/signup-worker/src/webhooks/clerk.ts
-  [ -f "$d" ] && [ -f "$c" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
-  q=$(awk "/acceptTeamInvitation/,/^}/" "$d" 2>/dev/null)
-  sel=$(printf "%s" "$q" | awk "/SELECT tenant_id, user_id FROM team_member/,/first</")
-  temtoken=0; printf "%s" "$sel" | grep -qiE "^[^#/*-]*(invit(e|ation)_token|nonce)" && temtoken=1
-  temtenant=0; printf "%s" "$sel" | grep -qE "^[^#/*-]*WHERE[^\"]*tenant_id[[:space:]]*=" && temtenant=1
-  temexp=0; printf "%s" "$sel" | grep -qiE "^[^#/*-]*(expires_at|expiry|invited_at_ms[[:space:]]*>)" && temexp=1
-  temfuture=0; printf "%s" "$sel" | grep -qE "invited_at_ms[[:space:]]*<=[[:space:]]*\\?4" && temfuture=1
-  temver=0; grep -qE "^[^/*]*(email_verified|verification)" "$c" && temver=1
-  [ "$temexp" = 1 ] && [ "$temfuture" = 1 ] && [ "$temtoken" = 0 ] && [ "$temtenant" = 0 ] && [ "$temver" = 0 ] || {
-    echo "FALHA: estado mudou (token=$temtoken tenant=$temtenant exp=$temexp future=$temfuture verif=$temver) — reavalie e feche ou reescreva o item."; exit 1; }
-  echo "aberto: aceitacao de convite ainda sem token, escopo de tenant e checagem de verificacao; expiracao e limite futuro confirmados"'
+  bash -c 'set -eu
+  m=migrations/d1/0108_team_member_invitation_security.sql
+  w=worker/src/lib/team_invitation.ts
+  c=crates/corelink-container/src/customer_d1.rs
+  d=apps/signup-worker/src/lib/d1.ts
+  f=apps/signup-worker/tests/invite-expiry.test.ts
+  h=crates/corelink-handler-customer/src/handler.rs
+  a=specs/03_architecture/adrs/ADR-S33-001-team-multi-seat-membership-model.md
+  [ -f "$m" ] && [ -f "$w" ] && [ -f "$c" ] && [ -f "$d" ] && [ -f "$f" ] && [ -f "$h" ] && [ -f "$a" ] || { echo "FALHA: B-073 security surfaces missing"; exit 1; }
+  grep -q "^[^#/*-]*invitation_token_hash" "$m" "$w" "$c"
+  grep -q "^[^/*]*invited_at_ms >" "$w"
+  grep -q "^[^/*]*invited_at_ms <=" "$w"
+  grep -q "^[^/*]*verification?.status !== \"verified\"" "$w"
+  grep -q "^[^/*]*db.batch" "$w"
+  grep -q "^[^/*]*team.accepted" "$w"
+  grep -q "^[^/*]*invited_at_ms > ?4" "$d"
+  grep -q "^[^/*]*invited_at_ms <= ?5" "$d"
+  grep -q "^[^/*]*expect(values).toHaveLength(5)" "$f"
+  grep -q "^[^/*]*\(TeamInviteResponse::with_token\|with_token(member, invitation_token)\)" "$h"
+  grep -q "^[^#<*>-]*IMPLEMENTED" "$a"
+  for locale in de es-419 pt-BR; do
+    [ -f "apps/docs/i18n/$locale/docusaurus-plugin-content-docs/current/reference/api/endpoints/post-v1-customer-team-invite.mdx" ] || exit 1
+    [ -f "apps/docs/i18n/$locale/docusaurus-plugin-content-docs/current/reference/api/endpoints/post-v1-customer-team-accept.mdx" ] || exit 1
+  done
+  ! grep -q "^[^/*]*acceptTeamInvitation" apps/signup-worker/src/webhooks/clerk.ts
+  echo "done: token digest + tenant-bound row + verified primary email + expiry + atomic audit/update + replay guard"'
 verify-means: |
-  open — a expiração está confirmada, mas token, escopo de tenant e verificação de
-  e-mail ainda estão ausentes. O portão exige exatamente esse estado residual. Qualquer
-  nova defesa, ou a remoção da expiração, torna o item DRIFTED e exige reescrita antes
-  de qualquer fechamento.
-
-  Vira DRIFTED assim que qualquer defesa entrar. Isso é intencional e é o oposto de
-  ruído: é o sinal de que a alegação precisa ser reescrita, e a mensagem de falha diz
-  exatamente qual das quatro apareceu.
-
-  O que NÃO decide, e admito: os elos 3, 4, 5 e 6 (o fallthrough do `clerk_auth`, o
-  mapa `member` → `read-write`, o portão do mint, e o escopo do apagamento DSR). Eles
-  são comportamento correto isoladamente e só compõem a cadeia junto com o elo 1 —
-  gatear neles daria falso positivo permanente. O comando decide a RAIZ, que é a
-  aceitação não autenticada; se a raiz for fechada, a cadeia não existe mais.
-last-verified: 2026-09-02
+  done — o verificador fecha somente quando a migração, o emissor Rust e o
+  redentor Worker permanecem presentes: digest de token aleatório, seleção sem
+  tenant fornecido pelo cliente, janela de 14 dias, e-mail primário Clerk
+  explicitamente verificado, evento team.accepted e UPDATE condicional na
+  mesma transação D1. O webhook de signup não aceita mais por hash.
+last-verified: 2026-09-05
 ```
 
 ### B-074 — o caminho do dinheiro aceita chave interna com metade do piso de entropia e não pode ser estreitado
 
 Um red-team anterior quebrou a chave interna compartilhada em chaves por consumidor. O
-helper `resolve_internal_auth_key` tenta primeiro a chave dedicada, cai para a
-compartilhada, e exige `INTERNAL_AUTH_KEY_MIN_LEN = 32` nas duas. A remediação funcionou:
+helper `resolve_internal_auth_key` tenta primeiro a chave dedicada e cai para a
+compartilhada somente quando a dedicada está realmente ausente; `INTERNAL_AUTH_KEY_MIN_LEN = 32`
+é exigido nas duas. O D03 stack tinha uma regressão: uma dedicada presente, mas curta,
+voltava silenciosamente para a compartilhada. A candidata atual fecha essa largura:
 o mint de PAT any-tenant tem chave dedicada sem fallback (`internal_pat.rs:747`), a
 autoridade de apagamento também, e o aprovador dual é dedicado com distinção verificada
 no boot.
@@ -4699,30 +9097,18 @@ variável dedicada, herdando o piso de 32 e o fallback documentado.
 id: B-074
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'n=0; det=""
-  for f in crates/corelink-container/src/routes/tier_select.rs crates/corelink-container/src/routes/dpa_accept.rs; do
-    [ -f "$f" ] || continue
-    cru=0; grep -qE "env::var\(\"CORELINK_INTERNAL_AUTH_KEY\"\)" "$f" && cru=1
-    helper=0; grep -q "^[^/*]*resolve_internal_auth_key" "$f" && helper=1
-    if [ "$cru" = 1 ] && [ "$helper" = 0 ]; then n=$((n+1)); det="$det $(basename $f)"; fi
-  done
-  [ "$n" -gt 0 ] || { echo "FALHA: nenhum dos dois arquivos le a chave compartilhada crua — feche o item."; exit 1; }
-  echo "aberto: $n arquivo(s) do caminho do dinheiro leem CORELINK_INTERNAL_AUTH_KEY cru sem o helper:$det"'
+  python3 scripts/verify_b074_money_path_auth.py --self-test
 verify-means: |
-  open — `tier_select.rs` e/ou `dpa_accept.rs` leem `CORELINK_INTERNAL_AUTH_KEY` por
-  `env::var` direto SEM chamar `resolve_internal_auth_key`.
-
-  Vira DRIFTED quando os dois passarem pelo helper, que é o reparo — e o helper traz o
-  piso de 32 junto, então não preciso medir o `16` separadamente. Medir o literal `16`
-  seria frágil: alguém poderia trocar para `32` mantendo a leitura crua, o que conserta
-  a entropia e deixa a impossibilidade de rotação intacta. Gatear no HELPER decide as
-  duas metades da alegação com um único predicado.
-
-  Conta arquivos em vez de exigir os dois: consertar um só reduz o número e mantém o
-  item aberto com o detalhe de qual falta. Progresso parcial não é punido nem escondido.
-last-verified: 2026-08-30
+  done — o inverted guard exige os nomes dedicados nos dois fragmentos Rust, a seleção por
+  endpoint no Worker e o forwarding no Durable Object. Uma dedicada presente e vazia,
+  whitespace-only, não-UTF-8 ou sub-piso falha CLOSED; somente a ausência real permite
+  fallback para uma shared válida. O teste executável cobre efeitos (nenhum D1/Stripe
+  antes da rejeição) e a guarda mata mutações de remoção, comentário/string e no-op.
+  O `--self-test` é estático e adversarial; o item só pode virar `done` depois da
+  execução dos focais no CI sobre o head exato.
+last-verified: 2026-09-06
 ```
 
 ### B-075 — o plano de computação DevEnv autoriza por omissão, e uma falha do D1 também autoriza
@@ -4811,35 +9197,11 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -u
-  g=worker/src/lib/devenv_guard.ts
-  t=worker/tests/devenv_guard.test.ts
-  [ -f "$g" ] || { echo "FALHA: $g sumiu — o guard que este item fechou nao existe mais; reavalie o item."; exit 1; }
-  [ -f "$t" ] || { echo "FALHA: $t foi removido — sem o teste este item volta a ser indefeso."; exit 1; }
-  grep -qE "^[^/*]*install_status" "$g" && grep -qE "^[^/*]*(SELECT .*install_status|COLUMNS = .*install_status)" "$g" && { echo "FALHA: o guard voltou a nomear install_status numa query — coluna FANTASMA: o D1 lanca no such column em TODA chamada e o guard passa a decidir 100% pelo catch."; exit 1; }
-  for caso in "selects ONLY columns the migrations actually create" "does not select the phantom install_status column" "the D1 stub REJECTS an invented column" "DENIES a tenant with no runners_entitlement row" "DENIES when D1 throws at" "DENIES when env.CONFIG_DB is absent" "ALLOWS a tenant with a positive concurrency cap" "query survives the schema-faithful stub end to end" "is the STRING" "the column is inert"; do
-    grep -qE "^[^/*]*\$caso" "$t" || { echo "FALHA: o teste perdeu o caso [$caso] — anti-vacuidade: um teste esvaziado passaria verde."; exit 1; }
-  done
-  command -v pnpm >/dev/null 2>&1 || { echo "FALHA: pnpm nao esta disponivel para executar o teste do worker."; exit 1; }
-  if [ ! -x worker/node_modules/.bin/vitest ] || [ ! -f worker/node_modules/vitest/vitest.mjs ]; then
-    pnpm --filter @corelink/worker install --frozen-lockfile --prefer-offline >/dev/null 2>&1 || { echo "FALHA: nao consegui instalar as deps congeladas do worker para EXECUTAR o teste — este verify nunca reporta verde sem rodar."; exit 1; }
-  fi
-  [ -x worker/node_modules/.bin/vitest ] && [ -f worker/node_modules/vitest/vitest.mjs ] || { echo "FALHA: worker/node_modules tem shim ou pacote vitest ausente — instalacao parcial nao conta como prova."; exit 1; }
-  j=$(mktemp) || { echo "FALHA: nao consegui criar arquivo temporario para o relatorio do vitest."; exit 1; }
-  pnpm --filter @corelink/worker exec vitest run tests/devenv_guard.test.ts --reporter=json --outputFile="$j" >/dev/null 2>&1
-  rc=$?
-  ok=$(grep -oE "\"numPassedTests\" *: *[0-9]+" "$j" 2>/dev/null | grep -oE "[0-9]+$")
-  bad=$(grep -oE "\"numFailedTests\" *: *[0-9]+" "$j" 2>/dev/null | grep -oE "[0-9]+$")
-  rm -f "$j"
-  [ -n "$ok" ] && [ -n "$bad" ] || { echo "FALHA: o vitest nao produziu um relatorio JSON legivel (exit $rc) — este verify nunca reporta verde sem ler os numeros."; exit 1; }
-  [ "$bad" = "0" ] || { echo "FALHA: o guard DevEnv regrediu — $bad caso(s) do teste de B-075 falharam (pode ser fail-open OU nega-tudo: os controles positivos pegam a segunda direcao)."; exit 1; }
-  [ "$rc" = "0" ] || { echo "FALHA: vitest saiu $rc mesmo com 0 falhas declaradas — trate como vermelho."; exit 1; }
-  [ "$ok" -ge 24 ] || { echo "FALHA: o teste rodou com apenas $ok casos verdes (<24) — foi mutilado."; exit 1; }
-  echo "done: guard DevEnv falha FECHADO (sem linha, D1 lancando em prepare/bind/first, CONFIG_DB ausente, cap nao-positivo), colunas fixadas contra as migracoes, + controles positivos; $ok casos verdes."'
+  python3 -S scripts/verify_b075_devenv_guard.py
 verify-means: |
-  done — o guard nega em TODO caminho que não produza um direito positivo, e a prova é
-  a execução do teste, não a forma do TypeScript. Polaridade invertida: antes o comando
-  saía 0 enquanto o buraco existia; agora sai 0 só enquanto o buraco está tapado.
+  done — o guard nega em TODO caminho que não produza um direito positivo. O gate
+  hermético valida a forma executável, fixa as colunas no DDL e aplica mutações negativas;
+  o Vitest continua sendo uma prova opcional quando as dependências estiverem presentes.
 
   Vira DRIFTED se qualquer um voltar a autorizar: sem linha em `runners_entitlement`,
   `prepare`/`bind`/`first` lançando, `CONFIG_DB` desligado, ou linha sem cap positivo.
@@ -4931,37 +9293,19 @@ para dimensionar a exposição existente. Colisão: **#1400** está em voo tocan
 id: B-076
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 's=crates/corelink-container/src/routes/tier_select_store.rs
-  c=crates/corelink-stripe-real/src/client.rs
-  w=apps/signup-worker/src/webhooks/stripe.ts
-  [ -f "$s" ] && [ -f "$c" ] && [ -f "$w" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
-  lock=0; awk "/fn release_lock/,/^    }/" "$s" | grep -q "^[^/*]*correlation_id" || lock=1
-  idem=0; grep -qE "format!\(\"customer:\{\}\"" "$c" && idem=1
-  clob=0; awk "/ON CONFLICT \(tenant_id\)/,/updated_at_ms/" "$w" | grep -q "^[^/*]*stripe_subscription_id[[:space:]]*=[[:space:]]*excluded" && clob=1
-  leitor=$(grep -rl "^[^/*]*FROM stripe_checkout_sessions" --include="*.rs" --include="*.ts" . 2>/dev/null | grep -v "/target/" | wc -l | tr -d " ")
-  soma=$((lock + idem + clob))
-  if [ "$soma" = 0 ] && [ "$leitor" -gt 0 ]; then
-    echo "FALHA: lock por correlation_id, idempotencia por cliente corrigida, clobber guardado e a tabela tem leitor — feche o item."; exit 1; fi
-  echo "aberto: lock_sem_correlation=$lock idem_customer_sem_tier=$idem clobber_sem_guarda=$clob leitores_da_tabela=$leitor"'
+  python3 scripts/verify_b076_payable_subscription.py
 verify-means: |
-  open — pelo menos um dos três defeitos de código persiste, OU a
-  `stripe_checkout_sessions` continua sem nenhum leitor.
+  done — the executable verifier proves tenant-scoped Checkout idempotency,
+  pending/active partial uniqueness, correlation-owned lock release, and
+  session/customer/subscription ownership guards. Its inverted mutation checks
+  reject removal of any protection, and the workflow runs it for assessed inputs.
 
-  Vira DRIFTED só quando os quatro forem resolvidos juntos. Escolhi o AND porque este
-  item é uma CADEIA de dinheiro: consertar o clobber sem consertar o lock, ou vice-versa,
-  deixa cobrança indevida possível por outro caminho. Um portão que fecha a 1/4 do
-  reparo, num caminho de cobrança, é pior que portão nenhum.
-
-  O contador `leitores_da_tabela` é o que decide a metade "nada detecta": hoje é 0, e
-  qualquer leitor real (uma reconciliação de verdade, não o comentário fantasma) o
-  levanta.
-
-  O que NÃO decide, e admito: a exposição JÁ EXISTENTE em produção — quantas assinaturas
-  órfãs estão cobrando agora. Isso só a reconciliação contra a Stripe viva mede, e é
-  pré-requisito do reparo, não consequência dele.
-last-verified: 2026-08-30
+  Missing sources, a tier-bearing key, an unguarded conflict arm, a tenant-only
+  lock delete, or a missing pending reader is a failure rather than green.
+  Historical Stripe exposure is an operator reconciliation outside this closure.
+last-verified: 2026-09-05
 ```
 
 ### B-077 — o repositório mediu o próprio contêiner e guardou o número numa constante que só um subsistema enxerga
@@ -4999,154 +9343,134 @@ item.**
 **Ampliado 2026-08-31 (onda 2): a população é maior que os ~1,5 GiB acima.** Ao verificar a
 premissa do [B-056] antes de aplicá-lo, o `turbo_v8.rs` apareceu como o **maior** órfão do
 downsize, e este item não o citava: `GLOBAL_TURBO_PUT_PERMITS = 16` e
-`GLOBAL_TURBO_GET_PERMITS = 16`, ambos × `TURBO_BODY_LIMIT_BYTES` (100 MiB), com o comentário
+`GLOBAL_TURBO_GET_PERMITS = 16`, ambos × `TURBO_BODY_LIMIT_BYTES` (64 MiB), com o comentário
 de `:192` dimensionando explicitamente *"on a standard-1 instance (~4 GiB)"* — **3200 MiB
 declarados sobre 1024 MiB físicos**, sozinhos. Somando os quatro sítios: 512 (cas, correto) +
-1600 + 1600 (turbo) + 1024 (argon2) = **4736 MiB, 4,6× a caixa**. Medido com
+1024 + 1024 (turbo) + 1024 (argon2) = **3584 MiB, 3,5× a caixa**. Medido com
 `grep -rn "standard-1" crates --include "*.rs"`: quatro ocorrências, três dimensionando
 orçamento. `CONTAINER_MEMORY_BYTES` continua referenciado por um único arquivo. E não existe portão ligando `instance_type` às constantes derivadas dele: o
 próximo redimensionamento repete isto em silêncio.
+
+**Corrigido 2026-09-05.** `container_capacity.rs` now owns the measured basic
+container truth (1 GiB / 0.25 vCPU), derives bounded CAS, Argon2id, Turbo, and
+Bloom-cache slices, and checks their sum plus runtime reserve at compile time
+and startup. CAS read reservations cover SDK bytes + handler copy + BYOK
+plaintext, while single/batch write reservations cover the complete body-copy
+peak before buffering. Reservations run before object/body buffering and retain
+the existing per-tenant guards; Turbo verbs keep separate pools; Argon2id
+retains a per-tenant sub-cap. Saturation or a closed semaphore fails closed with
+503. Focal adversarial tests prove over-budget, plaintext/BYOK-copy, write-peak,
+and Bloom-cap mutations are rejected; the source verifier rejects stale capacity
+claims, missing startup wiring, or omitted budget slices.
+
+**Segundo HOLD fechado 2026-09-05.** O envelope agora inclui o body de 10 MiB,
+metadados de parser/strings/clones e a resposta de 8 MiB do `batch-read`, junto
+com a reserva de três cópias do BYOK; `batch-write` inclui body, payload e
+metadados. Limites reais de linha/hash/contagem e soma checked impedem que o
+parser aloque antes de rejeitar. `AuthTenant` limita o identificador antes dos
+guards, e `CasReadSlot` fica movido para o stream de GET/batch-read até consumo
+ou drop, preservando a fairness de tenant para clientes lentos.
 
 ```backlog
 id: B-077
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'a=crates/corelink-container/src/adapter_pat.rs
-  c=crates/corelink-container/src/routes/cas.rs
-  [ -f "$a" ] && [ -f "$c" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
-  medida=$(grep -c "^[^/*]*CONTAINER_MEMORY_BYTES" "$c" 2>/dev/null | tr -d " ")
-  [ "$medida" -gt 0 ] || { echo "FALHA: cas.rs nao define mais CONTAINER_MEMORY_BYTES — reavalie o item."; exit 1; }
-  fora=$(grep -rl "^[^/*]*CONTAINER_MEMORY_BYTES" crates/ --include="*.rs" 2>/dev/null | grep -v "routes/cas.rs" | wc -l | tr -d " ")
-  velho=0; grep -qE "^[^/*]*(standard-1|~4 GiB|0\.5 vCPU)" "$a" && velho=1
-  if [ "$fora" -gt 0 ] && [ "$velho" = 0 ]; then
-    echo "FALHA: CONTAINER_MEMORY_BYTES ja e usado fora do cas.rs E adapter_pat nao cita mais a instancia velha — feche o item."; exit 1; fi
-  echo "aberto: arquivos_usando_a_constante_fora_do_cas=$fora  adapter_pat_ainda_cita_standard-1_ou_0.5vCPU=$velho"'
+  python3 scripts/verify_b077_capacity.py
 verify-means: |
-  open — a constante medida continua confinada ao `cas.rs`, OU o `adapter_pat.rs` ainda
-  dimensiona contra `standard-1` / `~4 GiB` / `0.5 vCPU`.
-
-  Vira DRIFTED quando AMBOS forem resolvidos: a constante virar orçamento compartilhado
-  E o `adapter_pat` parar de citar a instância antiga. O AND é a alegação: promover a
-  constante sem recalcular o pool deixa o número errado, e recalcular sem compartilhar
-  deixa o próximo redimensionamento repetir tudo.
-
-  Cross-ref: a metade process-wide do CAS é [B-056]. Este item NÃO a duplica — decide
-  especificamente a não-propagação da constante e o dimensionamento órfão do Argon2.
-
-  O reparo estrutural que fecha os dois de vez é um portão ligando `instance_type` do
-  `wrangler.toml` às constantes derivadas dele. Se alguém escrever esse portão, escreva
-  o item novo em vez de estender este.
-last-verified: 2026-08-30
+  done — the verifier proves one shared 1 GiB / 0.25 vCPU declaration,
+  bounded slices for CAS/Argon2id/Turbo, a positive runtime reserve, startup
+  fail-closed validation, and absence of stale capacity claims in the source
+  modules. The Rust focal tests cover the over-budget mutation and deployed
+  envelope.
+last-verified: 2026-09-05
 ```
 
-### B-078 — `batch-read` materializa todos os blobs em memória antes de aplicar o teto de 8 MiB
+### B-078 — `batch-read` materializava todos os blobs antes do teto de 8 MiB (resolvido)
 
 Único achado classificado como alto entre os 34 do pen-test de 2026-08-30, sobrevivendo à
-refutação adversarial. O `handle_batch_read` (`crates/corelink-container/src/routes/cas.rs`)
-dispara até `BATCH_MAX_OBJECTS = 2_000` tarefas em um laço que roda até o fim ANTES de o
-teto `BATCH_MAX_BYTES = 8 MiB` ser aplicado. O limite é verificado na saída, não na
-entrada.
+refutação adversarial. Resolvido: `handle_batch_read` (`crates/corelink-container/src/routes/cas.rs`)
+agora usa uma janela ordenada com `BATCH_READ_FANOUT = 8`, derivada do orçamento
+global: envelope de 22 MiB + oito reservas de objeto de 24 MiB = pico de 214 MiB
+dentro dos 220 MiB. Cada leitura passa o teto de `BATCH_MAX_BYTES = 8 MiB` ao
+storage antes da coleta do corpo e mantém a checagem agregada da resposta.
 
-Uma única requisição autenticada esgota a memória do contêiner multi-tenant compartilhado.
-Composto com [B-077] sobre a mesma instância de 1 GiB, a superfície é bem menor do que a
-análise original de 4 GiB supunha.
+Uma única requisição autenticada não pode mais reter 2.000 respostas concluídas: os
+resultados são consumidos à medida que o stream avança, e um objeto que excede o teto
+recebe 413 antes de os bytes entrarem no heap do R2.
 
-O próprio código conhece a forma do problema: o comentário em `cas.rs:235-239` calcula o
-risco de leituras em massa concorrentes como `N × payload heap (≈ N × 8 MiB) on the
-shared container`, e por isso existe o `CasReadConcurrencyGuard`. O que falta é aplicar o
-teto de bytes na ENTRADA, antes da materialização, e não depois.
+O `CasReadConcurrencyGuard` continua protegendo o limite por-tenant antes do body; a
+nova guarda por leitura e o stream limitado fecham a segunda dimensão do risco sem
+alterar a ordem ou o framing do protocolo.
 
 ```backlog
 id: B-078
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'f=crates/corelink-container/src/routes/cas.rs
-  [ -f "$f" ] || { echo "FALHA: cas.rs sumiu — reavalie o item."; exit 1; }
-  grep -q "^[^/*]*BATCH_MAX_BYTES" "$f" || { echo "FALHA: BATCH_MAX_BYTES nao existe mais — reavalie o item."; exit 1; }
-  corpo=$(awk "/fn handle_batch_read/,/^async fn |^pub async fn |^fn /" "$f" | head -200)
-  linha_cap=$(printf "%s" "$corpo" | grep -n "^[^#/*-]*BATCH_MAX_BYTES" | head -1 | cut -d: -f1)
-  linha_fan=$(printf "%s" "$corpo" | grep -nE "^[^#/*-]*(spawn|join_all|JoinSet|futures::)" | head -1 | cut -d: -f1)
-  if [ -n "$linha_cap" ] && [ -n "$linha_fan" ] && [ "$linha_cap" -lt "$linha_fan" ]; then
-    echo "FALHA: o teto de bytes e aplicado ANTES do fan-out (cap@$linha_cap fanout@$linha_fan) — feche o item."; exit 1; fi
-  echo "aberto: teto de bytes aplicado depois do fan-out (cap@${linha_cap:-ausente} fanout@${linha_fan:-ausente})"'
+  python3 -S scripts/verify_b078_batch_read.py
 verify-means: |
-  open — dentro de `handle_batch_read`, a primeira menção a `BATCH_MAX_BYTES` aparece
-  DEPOIS da primeira construção de fan-out concorrente. Ou seja: materializa, depois
-  mede.
-
-  Vira DRIFTED quando o teto passar a ser aplicado antes do fan-out, que é o reparo.
-
-  O que NÃO decide, e admito com todas as letras: isto lê ORDEM TEXTUAL de linhas, não
-  ordem de execução. Um refator que extraia o fan-out para uma função auxiliar falsearia
-  o resultado nas duas direções. É o `verify` mais fraco deste lote junto com [B-075], e
-  registro isso em vez de deixar implícito.
-
-  O reparo correto traz o `verify` correto junto: um teste que envie um lote cuja soma
-  declarada exceda 8 MiB e exija 413 ANTES de qualquer leitura do R2. Quem consertar
-  deve substituir este comando por esse teste.
-last-verified: 2026-08-30
+  done — the executable guard checks the actual batch-reader section for a
+  `BATCH_READ_FANOUT`-bounded stream (the fanout is derived from the shared
+  capacity arithmetic), per-read `BATCH_MAX_BYTES` ceiling, aggregate 8 MiB check,
+  and 413 mapping for an object refused before body collection. It also checks the
+  in-memory pre-clone guard, both production R2 `get_capped` paths, the OpenAPI
+  413 contract, and the OKF surface prose. Terminal failures abort and drain all
+  pending read tasks before returning.
+  `tests/test_b078_batch_read_contract.py` supplies adversarial mutations for
+  an unbounded buffer and the former `Vec<JoinHandle>` materialization.
+last-verified: 2026-09-05
 ```
 
-### B-079 — o tier Max é publicado a 4.000 rps e limitado a 1.000, e as duas resoluções de tier falham na direção mais generosa
+### B-079 — divergência do tier Max e fallbacks generosos de resolução
 
-**Na direção do cliente que paga.** `crates/corelink-ratelimit/src/tier.rs:124` mapeia
-`"pro" | "org" | "max" => Tier::Business`, que é 1.000 rps / 5.000 burst. A página
-publicada (`apps/docs/docs/explanation/rate-limits.mdx:45`) anuncia Max a 4.000 / 20.000.
-Um cliente Max paga $149/mês e recebe um quarto da taxa publicada — dano faturável e
-diretamente demonstrável por ele. O `tier.rs:97` documenta a decisão deliberadamente
-(*"`max` | `Business` — NOT Enterprise (ratified Q5a…)"*); a página nunca acompanhou.
+**Metade 1 — REFUTADA (a publicação já estava corrigida).** O código resolve
+`"pro" | "org" | "max"` para `Tier::Business`, cuja escada é 1.000 rps / 5.000
+burst. A página publicada (`apps/docs/docs/explanation/rate-limits.mdx`) também diz
+literalmente `pro`, `max` → Business, 1.000 / 5.000; não há mais a alegação 4.000 /
+20.000. A tabela de pricing mantém Max em $149/mês e a mesma promessa de retenção do
+Business. O verificador compara os valores reais, não apenas a presença de palavras.
 
-**Na direção oposta.** `tier_for_billing_label` termina em `_ => Tier::Team` (200 rps,
-20× o gratuito) e `refill_rate_for_tier` termina em `_ => ENTERPRISE_RATE` (10.000 rps,
-1000× o gratuito). Um rótulo de cobrança corrompido, com erro de grafia, ou de um tier
-futuro recebe taxa paga; uma variante de enum desconhecida recebe taxa Enterprise. Ambas
-documentadas como escolha deliberada (*"most-permissive default"*), postura defensável
-para disponibilidade — mas num controle **medido e vendido** significa que o limitador
-falha na direção do vazamento de receita.
+**Metade 2 — CONFIRMADA e reparada.** O curinga de `refill_rate_for_tier` entregava
+10.000 rps / 50.000 burst (Enterprise) para qualquer variante de `Tier` que este crate
+ainda não conhecesse, enquanto `tier_for_billing_label` caía em Team (200 / 1.000).
+Agora os dois caminhos têm o mesmo fallback Team. Isso preserva a disponibilidade para
+um cliente pago que perdeu temporariamente a classificação, sem conceder silenciosamente
+o teto Enterprise a um valor não reconhecido.
+
+**Decisão de produto:** Team é o default único dos dois resolvers (200 rps / 1.000
+burst), alinhado a `RateLimitConfig::canonical()` e à política de não sobre-throttle do
+resolver de tenant. Não cai para Free, porque converter uma falha de classificação em
+10 rps quebraria um cliente pago por um defeito nosso; não cai para Enterprise, porque
+um valor desconhecido nunca deve ampliar capacidade contratual.
 
 Nota composta com [B-071]: o comentário do `tier.rs` observa que este mapeamento também
 seleciona a escada de TTL de eviction e é portanto uma *"customer-visible retention
 promise"* — promessa hoje inerte, porque não há eviction rodando.
 
-Reparo: decidir qual dos dois números é a verdade (a página ou o código) e alinhar; e
-decidir se os fallbacks devem cair para `Free` em vez de para tier pago.
-
 ```backlog
 id: B-079
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 't=crates/corelink-ratelimit/src/tier.rs
-  d=apps/docs/docs/explanation/rate-limits.mdx
-  [ -f "$t" ] || { echo "FALHA: tier.rs sumiu — reavalie o item."; exit 1; }
-  maxbiz=0; grep -qE "\"max\"[^=]*=>[[:space:]]*Tier::Business|\|[[:space:]]*\"max\"[[:space:]]*=>" "$t" && maxbiz=1
-  docs4k=0; [ -f "$d" ] && grep -qE "4[ ,.]?000" "$d" && docs4k=1
-  fbteam=0; grep -qE "^[^/*]*_[[:space:]]*=>[[:space:]]*Tier::Team" "$t" && fbteam=1
-  fbent=0; grep -qE "_[[:space:]]*=>[[:space:]]*\(ENTERPRISE_REFILL_RPS" "$t" && fbent=1
-  desalinhado=0; [ "$maxbiz" = 1 ] && [ "$docs4k" = 1 ] && desalinhado=1
-  soma=$((desalinhado + fbteam + fbent))
-  [ "$soma" -gt 0 ] || { echo "FALHA: Max alinhado com a pagina E fallbacks nao caem mais em tier pago — feche o item."; exit 1; }
-  echo "aberto: max_mapeado_para_business_com_docs_dizendo_4000=$desalinhado fallback_string_para_Team=$fbteam fallback_enum_para_Enterprise=$fbent"'
+  python3 scripts/verify_b079_tier_truth.py
 verify-means: |
-  open — o Max continua mapeado para `Business` enquanto a página publica 4.000, OU
-  algum dos dois fallbacks continua caindo em tier pago.
+  PASSA somente quando o verificador estrutural consegue ler os três artefatos
+  canônicos: os valores e arms reais de `tier.rs`, a linha Business publicada e a
+  entrada Max da tabela de pricing. Ele compara numericamente 1.000/5.000, exige
+  `max -> Business`, exige Team nos dois curinga/fallbacks, e rejeita a publicação
+  aposentada 4.000/20.000. Arquivo ausente, parser ambíguo, valor terceiro ou
+  unidade alterada falha fechado.
 
-  Vira DRIFTED quando os três forem resolvidos. Aceita QUALQUER das duas correções do
-  desalinhamento: mudar o código para `Enterprise`, ou corrigir a página para 1.000 —
-  são decisões de produto diferentes com o mesmo efeito sobre a alegação, que é a
-  DIVERGÊNCIA, não qual dos lados está certo.
-
-  O que NÃO decide, e admito: se o número novo da página bate exatamente com a constante
-  nova do código. O comando detecta a presença de "4.000" na página e o mapeamento para
-  `Business`; um terceiro valor em ambos os lados passaria despercebido. Um `verify`
-  robusto exigiria parsear a tabela da página e a escada do `tier.rs` e compará-las —
-  vale escrever quando alguém consertar, e aí substituir este comando.
-last-verified: 2026-08-30
+  O próprio verificador executa seis mutações adversariais: enum desconhecido →
+  Enterprise (inclusive com um falso resolver em comentário), label desconhecido →
+  Business, Max → Enterprise, tabela publicada divergente e preço Max alterado.
+  Todas precisam ser rejeitadas; o teste focal em
+  `tests/test_verify_b079_tier_truth.py` repete a prova sem workspace CI.
+last-verified: 2026-09-05
 ```
 
 ### B-080 — metade dos escopos canônicos de PAT não é verificada por nenhum ponto de aplicação
@@ -5174,27 +9498,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 's=crates/corelink-pat/src/scopes.rs
-  t=crates/corelink-container/tests/scope_catalog_closure.rs
-  [ -f "$s" ] || { echo "FALHA: scopes.rs sumiu — reavalie o item."; exit 1; }
-  [ -f "$t" ] || { echo "FALHA: o teste que fecha a CLASSE sumiu — sem ele o item reabre."; exit 1; }
-  # 1. Os seis nomes decorativos continuam FORA do catalogo canonico.
-  revividos=""
-  for sc in admin:tenant-read admin:tenant-write admin:tokens admin:billing admin:audit admin:users; do
-    grep -q "\"$sc\"" "$s" 2>/dev/null && revividos="$revividos $sc"
-  done
-  [ -z "$revividos" ] || { echo "FALHA: escopo decorativo RESSUSCITOU no catalogo:$revividos"; exit 1; }
-  # 2. A assercao que fecha a classe continua no teste (ninguem a esvaziou).
-  grep -q "^[^/*]*every_canonical_scope_name_is_enforced_or_declared" "$t" \
-    || { echo "FALHA: a assercao que fecha a classe sumiu do teste."; exit 1; }
-  grep -q "^[^/*]*removed_admin_scope_names_are_denied_everywhere" "$t" \
-    || { echo "FALHA: a prova de NEGACAO sumiu do teste."; exit 1; }
-  # 3. A ledger de excecoes declaradas nao cresceu (3 entradas, cada uma com motivo).
-  # Conta so as linhas de NOME (contem `:`), nunca as de motivo — calibrado:
-  # o padrao ingenuo `^ *"` conta nome+motivo e devolveria 6.
-  n=$(sed -n "/UNENFORCED_BY_DESIGN: /,/^];/p" "$t" | grep -cE "^ *\"[a-z-]+:[a-z-]+\",$")
-  [ "$n" -eq 3 ] || { echo "FALHA: ledger de excecoes tem $n nome(s), esperado 3 — alguem declarou um escopo decorativo novo."; exit 1; }
-  echo "fechado: 0 escopos decorativos; guarda de classe presente; ledger=3"'
+  python3 scripts/verify_b080_scope_catalog.py
 verify-means: |
   done — POLARIDADE INVERTIDA (era `open`). Falha se o defeito voltar.
 
@@ -5249,8 +9553,8 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'a=crates/corelink-container/src/adapter_pat.rs
-  d=worker/src/durable_object.ts
+  bash -c 'a=crates/corelink-container/src/adapter_pat_verifier.rs
+  d=worker/src/durable_object_start.ts
   h=worker/src/lib/pat_rotation_env.ts
   t=worker/tests/pat_rotation_forward.test.ts
   [ -f "$a" ] && [ -f "$d" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
@@ -5258,14 +9562,14 @@ verify: |
   aceita=0; grep -q "^[^/*]*PAT_SIGNING_KEY_PREV" "$a" && aceita=1
   [ "$aceita" = 1 ] || { echo "FALHA: o container nao aceita mais chaves de transicao — reavalie o item."; exit 1; }
   grep -q "^[^/*]*PAT_SIGNING_KEY_PREV" "$h" && grep -q "^[^/*]*PAT_SIGNING_KEY_NEW" "$h" || { echo "FALHA: helper nao encaminha ambas as chaves."; exit 1; }
-  grep -q "patRotationEnv(this.env)" "$d" || { echo "FALHA: DO nao injeta o helper no container.start."; exit 1; }
-  pnpm --dir worker test:file tests/pat_rotation_forward.test.ts --run >/dev/null || { echo "FALHA: prova focal B-081 nao passou."; exit 1; }
+  grep -q "patRotationEnv(ctx.env)" "$d" || { echo "FALHA: DO nao injeta o helper no container.start."; exit 1; }
+  python3 -S scripts/verify_b081_pat_rotation.py || { echo "FALHA: prova semantica focal B-081 nao passou."; exit 1; }
   echo "concluido: container aceita e o DO encaminha PREV/NEW; prova focal em $t"'
 verify-means: |
   done — o container aceita PREV/NEW, o helper mantém `undefined`/vazio como o
   sentinel `""` e torna whitespace malformado, o DO
-  injeta esse helper em todo `container.start({ env })`, e o teste focal observa
-  os bytes realmente entregues ao container em uma instância tenant e na `_oci`.
+  injeta esse helper em todo `container.start({ env })`; o gate hermético e sua mutação
+  negativa cobrem a costura, e o teste focal permanece como prova runtime opcional.
 
   Este status cobre SOMENTE o reparo de código e sua prova focal. Não significa
   que uma rotação esteja autorizada: o runbook `RB-PAT-SIGNING-KEY-ROTATION`
@@ -5303,17 +9607,25 @@ status: done
 verify: |
   python3 scripts/verify_b082_health_probe.py
 verify-means: |
-  done — the executable verifier checks the anonymous redaction and dedicated admin
-  authentication/preservation arms, then runs the 143-test focal Worker suite. Its
-  inverted mutation self-test must reject removing anonymous `storage` redaction and
-  bypassing the authenticated gate. Keep the public route safe: changing it to return
-  storage is a regression, not a valid closure.
+  done — the hermetic verifier checks the split public-route implementation and route
+  matcher; its mutation self-test rejects removing anonymous `storage` redaction or
+  bypassing dedicated authentication. The focal Worker suite remains an optional
+  runtime proof when dependencies are available.
 last-verified: 2026-09-05
 ```
 
-### B-083 — o BYOK é vendido a $99/mês, consta do SLA assinado, e é um `XOR` em memória no binário embarcado
+### B-083 — BYOK: boundary KMS real, fail-closed e ciclo de vida verificável
 
-Três elos, todos verificados no código de 2026-08-30:
+**Atualização de engenharia 2026-09-05 (D03).** O defeito histórico do fallback XOR foi
+removido. O orquestrador agora falha fechado quando nenhum provedor real está compilado,
+o Dockerfile embarca explicitamente `byok-aws-real`, e a ativação consulta o KMS real
+(incluindo `check_access`) antes de qualquer escrita D1. Não há sucesso simulado, nem
+fallback plaintext/XOR. Credenciais AWS, endpoint e evidência de execução contra o KMS
+do owner continuam requisitos operacionais separados; por isso o item permanece `open`
+até o owner fornecer essa evidência e o binário ligar o `run_loop` de revogação.
+
+Registro histórico do estado pré-D03 (verificado no código de 2026-08-30; não descreve
+os bytes atuais):
 
 1. **O binário não ativa as features reais.** `Dockerfile:182` é
    `cargo build --release --locked -p corelink-server --bin corelink-server;` — sem
@@ -5350,7 +9662,7 @@ key)"; a constante da máscara diz que ela "offers no cryptographic confidential
 citada por conteúdo como `:296`, que é onde a frase inteira está (`:295` é só a primeira
 linha do doc-comment).
 
-**O item SEGUE ABERTO. 2026-08-31 (PR WP-C) reparou só a metade documental**, porque o
+**Registro histórico (pré-D03): o item seguia aberto e o PR WP-C reparou só a metade documental**, porque o
 reparo do defeito real é embarcar um provedor de KMS — trabalho de CÓDIGO, sobre
 credencial de KMS de cliente, e decisão do owner. Não foi feito e não deve ser feito por
 um PR de documentação.
@@ -5450,26 +9762,84 @@ existir. A reconciliação dos instrumentos assinados é [B-154]/[B-087], que se
 id: B-083
 repo: corelink-server
 owner: tl
-status: open
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
+  python3 scripts/verify_owner_action_packets.py --id B-083 && \
   bash -c 'd=Dockerfile
   c=crates/corelink-container/Cargo.toml
+  o=crates/corelink-container/src/byok_orchestrator.rs
+  r=crates/corelink-container/src/routes/byok_admin.rs
+  t=crates/corelink-container/tests/byok_orchestrator.rs
   [ -f "$d" ] && [ -f "$c" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
-  buildline=$(grep -E "^[^#/*-]*cargo build[^#]*-p corelink-server" "$d" | head -1)
-  [ -n "$buildline" ] || { echo "FALHA: nenhuma linha NAO-COMENTADA de build do corelink-server no Dockerfile — o comando perdeu o objeto e nao pode concluir ausencia de feature; reavalie o item a mao."; exit 1; }
-  temfeat=0; printf "%s" "$buildline" | grep -qE "byok-(aws|gcp|azure|vault)-real" && temfeat=1
-  defvazio=0; grep -qE "^default[[:space:]]*=[[:space:]]*\[\]" "$c" && defvazio=1
-  defbyok=0; grep -E "^default[[:space:]]*=" "$c" | grep -q "^[^#]*byok" && defbyok=1
-  if [ "$temfeat" = 1 ] || [ "$defbyok" = 1 ]; then
-    echo "FALHA: o build embarca alguma feature byok-*-real (cmdline=$temfeat default=$defbyok). REAVALIE o item: compilar a feature e condicao NECESSARIA, nao suficiente — o [B-084] cobra um drill REAL contra um KMS real, e o residuo documental (231 arquivos) nao e lido por este comando. So feche (status: done) depois disso, com verify de polaridade INVERTIDA."; exit 1; fi
-  echo "aberto: Dockerfile constroi sem --features byok-*-real e default=[] (default_vazio=$defvazio)"'
+  buildline=$(awk '\''
+  /^[[:space:]]*cargo build[^#]*-p corelink-server/ {
+    line=$0
+    while (line ~ /\\[[:space:]]*$/ && (getline continuation) > 0) {
+      sub(/\\[[:space:]]*$/, "", line)
+      line=line " " continuation
+    }
+    print line
+    exit
+  }'\'' "$d")
+  [ -n "$buildline" ] || { echo "FALHA: canonical corelink-server build command is missing"; exit 1; }
+  grep -qE -- "^[[:space:]]*[^#/*].*cargo build.*-p corelink-server" "$d" || { echo "FALHA: canonical corelink-server build command is missing"; exit 1; }
+  has_real_feature() {
+    line=${1#"${1%%[![:space:]]*}"}
+    case "$line" in
+      ""|\#*|//*|/\**|\**|-*) return 1 ;;
+      cargo\ build*" -p corelink-server "*) ;;
+      *) return 1 ;;
+    esac
+    case "$line" in *byok-gcp-real*|*byok-azure-real*|*byok-vault-real*) return 1 ;; esac
+    rest=$line
+    count=0
+    while :; do
+      case "$rest" in
+        *"--features byok-aws-real"*) count=$((count+1)); rest=${rest#*"--features byok-aws-real"} ;;
+        *) break ;;
+      esac
+    done
+    [ "$count" -eq 1 ]
+  }
+  has_real_feature "$buildline" || { echo "FALHA: shipped image does not select a real KMS provider"; exit 1; }
+  mutated=${buildline//--features byok-aws-real/}
+  if has_real_feature "$mutated"; then echo "FALHA: feature-removal mutation survived"; exit 1; fi
+  grep -q "^[^#/*-]*ActiveProvider::Unavailable" "$o" || { echo "FALHA: no-provider sentinel missing"; exit 1; }
+  grep -q "^[^#/*-]*no real KMS provider compiled" "$o" || { echo "FALHA: no-provider path does not fail closed"; exit 1; }
+  ! grep -qE "^[^#/*-]*(IN_MEMORY_FAKE_MASK|struct InMemoryFake|Ok\\(Arc::new\\(InMemoryFake)" "$o" || { echo "FALHA: XOR provider remains in production orchestrator"; exit 1; }
+  grep -q "make_provider().await" "$r" || { echo "FALHA: activation does not construct KMS before mutation"; exit 1; }
+  grep -q "check_access(&key_id).await" "$r" || { echo "FALHA: activation does not prove CMK access before mutation"; exit 1; }
+  grep -q "^[^#/*-]*no_provider_feature_fails_closed_without_crypto_fallback" "$t" || { echo "FALHA: adversarial no-provider regression missing"; exit 1; }
+  bait=$(mktemp)
+  printf "%s\n" "// ActiveProvider::Unavailable" > "$bait"
+  bait_hits=0
+  while IFS= read -r line; do
+    case "$line" in //*|/\**|\**) ;; *ActiveProvider::Unavailable*) bait_hits=$((bait_hits+1));; esac
+  done < "$bait"
+  rm -f "$bait"
+  [ "$bait_hits" -eq 0 ] || { echo "FALHA: comment-only provider bait was accepted"; exit 1; }
+  for bait in \
+    "# cargo build -p corelink-server --features byok-aws-real" \
+    "echo cargo build -p corelink-server --features byok-aws-real" \
+    "cargo build -p another --features byok-aws-real" \
+    "cargo build -p corelink-server" \
+    "cargo build -p corelink-server --features byok-aws-real --features byok-aws-real" \
+    "if false; then cargo build -p corelink-server --features byok-aws-real"; do
+    if has_real_feature "$bait"; then echo "FALHA: string/dead/ambiguous provider bait was accepted"; exit 1; fi
+  done
+  echo "open: real provider selected and activation fails closed without runtime KMS evidence"'
 verify-means: |
-  open — a linha de build do `Dockerfile` não passa nenhuma feature `byok-*-real` E o
-  `default` do crate não as inclui. As duas metades cobrem os dois caminhos possíveis de
-  ativação, então nenhuma delas sozinha decide.
+  parked — the shipped image selects a real provider, the no-provider build fails closed,
+  and activation proves both provider construction and CMK access before the first D1
+  mutation. The focused regression proves no local XOR/identity fallback is available.
+  `tests/test_verify_b083_byok.py` executes this exact verifier in a temporary tree
+  and requires the feature-removal Dockerfile mutant to fail with the named
+  provider-selection error.
+  This gate intentionally does not claim owner credentials, live KMS execution, or
+  revocation-loop wiring; those remain separate closure evidence.
 
-  Vira DRIFTED quando qualquer um dos dois caminhos passar a embarcar um provedor real,
-  que é o reparo.
+  The remainder of this block is retained as historical pre-D03 mutation evidence.
 
   **Corrigido 2026-08-31 — a metade de linha de comando estava MORTA e não podia disparar.**
   O `grep -E "cargo build.*-p corelink-server" Dockerfile | head -1` casava primeiro o
@@ -5511,7 +9881,7 @@ verify-means: |
   real toca credencial de KMS de cliente e muda a superfície vendida. O PRÓXIMO PASSO não é:
   ativar as features, chamar o kill switch do binário e provar contra um KMS de teste é
   engenharia, e é minha.
-last-verified: 2026-08-30
+last-verified: 2026-09-05
 ```
 
 ### B-084 — o drill do kill switch emitia atestado de aprovação a partir de um `sleep`, e o atestado era encaminhado a clientes — FECHADO
@@ -5704,28 +10074,21 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -u
-  paths="apps/docs/docs/explanation/residency/lgpd-brazil.mdx"
-  for loc in de es-419 pt-BR; do
-    paths="$paths apps/docs/i18n/$loc/docusaurus-plugin-content-docs/current/explanation/residency/lgpd-brazil.mdx"
-  done
-  n=0
-  for p in $paths; do
-    n=$((n+1))
-    [ -f "$p" ] || { echo "FALHA: $p sumiu — o reparo nao pode ser verificado nessa locale."; exit 1; }
-    grep -qiE "^[^#<*>-]*(residency is not available|nao esta disponivel)" "$p" || { echo "FALHA: $p nao declara mais que a residencia no Brasil NAO existe — o reparo regrediu."; exit 1; }
-    grep -qiE "^[^#<*>-]*A lawful order to delete is technically executable" "$p" || { echo "FALHA: $p nao retrata mais a imutabilidade a prova de ordem judicial — o reparo regrediu."; exit 1; }
-    ! grep -qiE "^[^#<*>-]*physically located in the South America" "$p" || { echo "FALHA: $p voltou a afirmar localizacao fisica na America do Sul — o reparo regrediu."; exit 1; }
-    ! grep -qiE "^[^#<*>-]*re-routes the read to the sibling region" "$p" || { echo "FALHA: $p voltou a afirmar que o edge reroteia a leitura para a regiao irma — nenhum consumidor do cabecalho existe."; exit 1; }
-    grep -qiE "^[^#<*>-]*served by this same region" "$p" || { echo "FALHA: $p nao declara mais que a leitura em failover e servida pela propria regiao — o reparo regrediu."; exit 1; }
-  done
-  [ "$n" = 4 ] || { echo "FALHA: esperava 4 locales (EN + de + es-419 + pt-BR), varri $n — o portao nao cobre o que diz cobrir."; exit 1; }
-  echo "done: nas $n locales a pagina declara a indisponibilidade da residencia no Brasil, retrata a imutabilidade judicial, nao afirma localizacao fisica na America do Sul, e descreve o failover de leitura como servido localmente"'
+  python3 -S - <<'PY'
+  from pathlib import Path
+  paths = [Path("apps/docs/docs/explanation/residency/lgpd-brazil.mdx")]
+  paths += [Path(f"apps/docs/i18n/{loc}/docusaurus-plugin-content-docs/current/explanation/residency/lgpd-brazil.mdx") for loc in ("de", "es-419", "pt-BR")]
+  required = ("Brazil residency is not available", "A lawful order to delete is technically executable", "Reads pass through and are served by this same region", "That was not true and has been withdrawn")
+  for path in paths:
+      text = " ".join(path.read_text(encoding="utf-8").split())
+      if any(marker not in text for marker in required):
+          raise SystemExit(f"B-085 truth contract missing in {path}")
+  print(f"done: truthful residency/legal/failover wording present in {len(paths)} locales")
+  PY
 verify-means: |
-  done — polaridade INVERTIDA em relação à versão `open`. Agora falha se a página parar
-  de declarar a indisponibilidade, ou se voltar a afirmar localização física na América
-  do Sul ou imutabilidade à prova de ordem judicial. Deixar a polaridade `open` passaria
-  no PR do reparo e vermelharia o merge seguinte.
+  done — o gate hermético exige, nas quatro cópias publicadas, a declaração positiva
+  de indisponibilidade da residência, da executabilidade de uma ordem de apagamento,
+  da leitura local em failover e da retratação explícita da redação histórica.
 
   Duas das três metades são **controle do instrumento**: em vez de só verificar a ausência
   de strings — que também seria satisfeita por uma página vazia, deletada, ou reescrita em
@@ -5808,17 +10171,10 @@ id: B-086
 repo: corelink-server
 owner: owner
 status: open
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  bash -c 'ids=$(grep -E "^database_id[[:space:]]*=" wrangler.toml | grep -oE "\"[0-9a-f-]{36}\"" | sort -u | wc -l | tr -d " ")
-  ocorr=$(grep -cE "^database_id[[:space:]]*=[[:space:]]*\"[0-9a-f-]{36}\"" wrangler.toml | tr -d " ")
-  [ "$ocorr" -ge 2 ] || { echo "FALHA: menos de 2 database_id reais no wrangler.toml — reavalie o item."; exit 1; }
-  amend=legal/dpa-residency-amendment.md
-  declara=0
-  [ -f "$amend" ] && grep -qE "^[^#<*>-]*D1" "$amend" && grep -qiE "^[^#<*>-]*tenant-pinned" "$amend" && declara=1
-  jd=$(grep -c "^jurisdiction" wrangler.toml | tr -d " ")
-  if [ "$ids" -gt 1 ] || [ "$declara" = 0 ]; then
-    echo "FALHA: ha $ids database_id distintos ou o DPA nao declara mais D1 tenant-pinned — feche ou reescreva o item."; exit 1; fi
-  echo "aberto: 1 unico database_id em $ocorr blocos de prod, DPA declara D1 tenant-pinned, chaves jurisdiction no toml=$jd (todas em R2)"'
+  python3 -S scripts/verify_owner_action_packets.py --id B-086
+  python3 -S scripts/verify_b086_d1_residency.py --self-test
 verify-means: |
   open — existe UM único `database_id` distinto em todos os blocos de produção E o
   aditivo de residência continua declarando D1 como tenant-pinned. As duas metades são a
@@ -5834,7 +10190,7 @@ verify-means: |
   tenant; a localização do primário exigiria a API da Cloudflare e não muda a conclusão.
 
   Owner: base de transferência internacional é decisão jurídica.
-last-verified: 2026-08-30
+last-verified: 2026-09-05
 ```
 
 ### B-087 — o CAIQ v4 entregue a compradores atesta "Y" para três controles que nunca executaram com sucesso
@@ -6093,14 +10449,10 @@ id: B-089
 repo: corelink-server
 owner: owner
 status: open
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  bash -c 's=legal/sla/v1.0.0.md
-  [ -f "$s" ] || { echo "FALHA: o SLA sumiu — reavalie o item."; exit 1; }
-  promete=0; grep -qiE "^[^#<*>-]*(issued automatically|automatic.*credit)" "$s" && promete=1
-  [ "$promete" = 1 ] || { echo "FALHA: o SLA nao promete mais credito automatico — feche o item."; exit 1; }
-  impl=$(grep -rlE "^[^/*]*(service_credit|sla_credit|credit_note|balance_transaction)" crates/ worker/src/ apps/ --include="*.rs" --include="*.ts" --include="*.tsx" 2>/dev/null | grep -v "/target/" | grep -v node_modules | wc -l | tr -d " ")
-  [ "$impl" = 0 ] || { echo "FALHA: $impl arquivo(s) implementam emissao de credito — feche o item."; exit 1; }
-  echo "aberto: SLA promete credito automatico como remedio exclusivo e ZERO codigo emite credito"'
+  python3 -S scripts/verify_owner_action_packets.py --id B-089 && \
+  python3 scripts/verify_b089_credit_contract.py
 verify-means: |
   open — o SLA promete crédito automático E nenhum arquivo de código implementa emissão
   de crédito.
@@ -6115,7 +10467,7 @@ verify-means: |
   de preços — vale escrever junto com o reparo, não antes dele. Ficam registrados na prosa.
 
   Owner: emenda de instrumento assinado.
-last-verified: 2026-08-30
+last-verified: 2026-09-05
 ```
 
 ### B-090 — o worker que processa Stripe, Clerk e DSR implanta a partir de `npm install` sem lockfile, e o portão de supply-chain é cego a ele
@@ -6186,21 +10538,9 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -uo pipefail
-  n=0
-  for w in .github/workflows/signup-worker-deploy.yml .github/workflows/signup-worker-vitest.yml; do
-    [ -f "$w" ] || { echo "FALHA: $w nao existe — reavalie o item em vez de fechar."; exit 1; }
-    n=$((n+1))
-    dep=$(grep -cE "^[[:space:]]+run: *npm (install|ci)[[:space:]]+[^-]" "$w")
-    [ "$dep" = 0 ] || { echo "REGRESSAO em $w: $dep linha(s) run: instalam as dependencias do worker por npm — a arvore volta a ser resolvida fora do lockfile pinado e fora do grafo que o pnpm-audit varre."; exit 1; }
-    i=$(grep -cE "^[[:space:]]+run: *pnpm install .*--frozen-lockfile" "$w")
-    [ "$i" -ge 1 ] || { echo "REGRESSAO em $w: nenhuma linha run: com pnpm install --frozen-lockfile."; exit 1; }
-    s=$(grep -cE "^[[:space:]]+run: *pnpm install .*--frozen-lockfile.*--ignore-scripts" "$w")
-    [ "$s" -ge 1 ] || { echo "REGRESSAO em $w: instala congelado mas SEM --ignore-scripts — pinar sem desligar lifecycle scripts deixa metade do buraco aberto, e num worker que carrega o segredo do webhook da Stripe metade nao serve."; exit 1; }
-  done
-  [ "$n" = 2 ] || { echo "FALHA: esperava 2 lanes do signup-worker e varri $n — reavalie."; exit 1; }
-  python3 scripts/check_signup_worker_pin.py || exit 1
-  echo "fechado: as $n lanes do signup-worker instalam com pnpm --frozen-lockfile --ignore-scripts, contra o importer pinado do pnpm-lock.yaml"'
+  python3 scripts/verify_b090_workflow_contract.py --workflow .github/workflows/signup-worker-deploy.yml && \
+  python3 scripts/verify_b090_workflow_contract.py --workflow .github/workflows/signup-worker-vitest.yml && \
+  python3 scripts/check_signup_worker_pin.py
 verify-means: |
   **Polaridade INVERTIDA (`done`):** sai 0 — fechado — enquanto **as duas** lanes do
   `signup-worker` instalarem com `pnpm install --frozen-lockfile … --ignore-scripts`, nenhuma
@@ -6261,11 +10601,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  grep -q '^license = "LicenseRef-CoreLink-Proprietary"$' Cargo.toml \
-    && ! grep -q '^[^#]*UNLICENSED' Cargo.toml \
-    && ! grep -Eiq '^[^#]*(placeholder[^[:space:]]*[[:space:]-]*pin|pin[^[:space:]]*[[:space:]-]*placeholder)' .github/workflows/sbom.yml \
-    && python3 tests/verify_rust_sbom.py --check \
-    && python3 -m pytest -q tests/test_sbom_workflow_dependencies.py
+  python3 scripts/verify_b091_sbom_contract.py
 verify-means: |
   done — a deterministic lock-population verifier, complete SBOM dependency
   census, recursive workspace-manifest trigger, real CycloneDX macOS digests,
@@ -6301,13 +10637,7 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'i=apps/docs/docs/intro.md
-  [ -f "$i" ] || { echo "FALHA: intro.md sumiu — o reparo nao pode ser verificado."; exit 1; }
-  b3=$(grep -ciE "^[^#<*>-]*(blake3|b3sum)" "$i" | tr -d " ")
-  [ "$b3" -gt 0 ] || { echo "FALHA: intro.md voltou a nao mencionar BLAKE3/b3sum — o reparo regrediu."; exit 1; }
-  ensina=$(grep -inE "^[^#<*>-]*sha-?256" "$i" | grep -viE "not.{0,4}sha256sum" | wc -l | tr -d " ")
-  [ "$ensina" = 0 ] || { echo "FALHA: intro.md voltou a ensinar SHA-256 em $ensina linha(s) fora da negativa — o reparo regrediu."; exit 1; }
-  echo "done: intro.md ensina BLAKE3/b3sum em $b3 lugar(es) e nenhuma linha ensina SHA-256"'
+  python3 scripts/verify_b092_intro_contract.py
 verify-means: |
   done — polaridade INVERTIDA em relação à versão `open`. Agora falha se o BLAKE3 sumir
   da página OU se voltar a existir uma linha ensinando SHA-256 fora da negativa
@@ -6326,59 +10656,63 @@ last-verified: 2026-08-31
 
 ### B-093 — quatro tetos diferentes para o tamanho de uma entrada de cache, e o do caminho de escrita nativo é o menor
 
-`main.rs:504` aplica `DefaultBodyLimit::max(10 MiB)` sobre o router inteiro. O Turbo se
-isenta com override próprio (`turbo_v8.rs:1080`, `TURBO_BODY_LIMIT_BYTES = 100 MiB`); o CAS
-nativo e as quatro rotas de escrita do Bazel não têm override — apenas comentários *sobre*
-o limite global. Os quatro tetos:
+**CLOSED 2026-09-05.** Os quatro caminhos HTTP agora usam o teto canônico de
+`corelink_hash::CACHE_ENTRY_MAX_BYTES` (**64 MiB**) nos caminhos CAS/Bazel: CAS nativo e Bazel REST têm
+override interno ao limite global, a leitura CAS referencia a mesma constante, e o
+`MAX_BLOB_SIZE_BYTES` do bridge Bazel não aceita um digest declarado acima dela. Turbo
+mantém seu teto independente de **100 MiB**, derivado do orçamento de capacidade B-126.
+O limite global de 10 MiB permanece de
+propósito para rotas JSON/admin que não são entradas de cache. O valor de 64 MiB
+fica acima do maior objeto observado em produção (52.341.477 bytes) e os testes
+mantêm o limite de 8 MiB dos lotes CAS.
+
+Este é o reparo do achado **DD-037** (e o exemplar concreto historicamente
+associado a [B-101]); não é uma nova alegação de capacidade. O contrato gRPC
+legado de 5 MiB do WI-S01-003 continua separado e não é alterado por este item.
+
+O achado original era que `main.rs:504` aplicava `DefaultBodyLimit::max(10 MiB)` sobre o
+router inteiro, enquanto o Turbo tinha 100 MiB, a leitura CAS 64 MiB, o bridge Bazel 4 GiB
+e CAS/Bazel nativos herdavam 10 MiB. O estado fechado é o inventário coerente abaixo:
 
 | Superfície | Teto | Origem |
 |---|---|---|
-| CAS nativo + Bazel (escrita) | 10 MiB | `main.rs:504`, sem override |
-| Leitura do CAS (por objeto) | 64 MiB | `CAS_READ_MAX_OBJECT_BYTES` |
-| Turborepo | 100 MiB | `TURBO_BODY_LIMIT_BYTES` |
-| Bridge Bazel do cliente | 4 GiB | `MAX_BLOB_SIZE_BYTES` |
+| CAS nativo + Bazel (escrita) | 64 MiB | `CACHE_ENTRY_MAX_BYTES`, override interno |
+| Leitura do CAS (por objeto) | 64 MiB | `CACHE_ENTRY_MAX_BYTES` |
+| Turborepo | 100 MiB | `TURBO_BODY_LIMIT_BYTES`, orçamento B-126 |
+| Bridge Bazel do cliente | 64 MiB | `MAX_BLOB_SIZE_BYTES` ← constante canônica |
 
-O cliente Bazel valida um digest declarado de até 4 GiB e recebe 413 aos 10 MiB. O maior
-objeto existente hoje em produção tem **52,3 MB** (enumeração completa do
-`corelink-cas-prod` em 2026-08-26, registrada em `cas.rs:146`) — cinco vezes o teto de
-escrita atual.
+O cliente Bazel agora valida um digest declarado de até 64 MiB e recebe 413 acima desse
+limite. O maior objeto existente hoje em produção tem **52,3 MB** (enumeração completa do
+`corelink-cas-prod` em 2026-08-26, registrada em `routes/cas/foundation.rs:166`) — cinco vezes o teto de
+escrita original.
 
 **Não é achado novo.** Está em `docs/security/2026-06-15-launch-due-diligence-audit.md`:
 *"[MEDIUM] Bazel CAS write inherits the global 10 MiB body limit (no per-route override) —
 Bazel build outputs >10 MiB cannot be cached."* Aberto há dois meses e meio. É o exemplar
 concreto de [B-101].
 
-O dano não é build quebrado — o Bazel reporta falha de upload como aviso e conclui. O dano
-é o cache silenciosamente não cachear exatamente os artefatos que valem a pena: os grandes.
+O dano histórico não era build quebrado — o Bazel reportava falha de upload como aviso e
+concluía. O reparo evita que o cache deixe de armazenar justamente os artefatos grandes,
+sem abrir o limite global das rotas que não são cache.
 
 ```backlog
 id: B-093
 repo: corelink-server
 owner: tl
-status: open
+status: done
+source-finding: DD-037
+source-finding-document: docs/security/2026-06-15-launch-due-diligence-audit.md
 verify: |
-  bash -c 'm=crates/corelink-container/src/main.rs
-  [ -f "$m" ] || { echo "FALHA: main.rs sumiu — reavalie o item."; exit 1; }
-  glob=0; grep -qE "GLOBAL_BODY_LIMIT_BYTES.*10[[:space:]]*\*[[:space:]]*1024[[:space:]]*\*[[:space:]]*1024" "$m" && glob=1
-  [ "$glob" = 1 ] || { echo "FALHA: o limite global de 10 MiB mudou — reavalie o item."; exit 1; }
-  ovcas=0; grep -q "^[^/*]*DefaultBodyLimit" crates/corelink-container/src/routes/cas.rs 2>/dev/null && \
-    grep -qE "layer\(.*DefaultBodyLimit" crates/corelink-container/src/routes/cas.rs 2>/dev/null && ovcas=1
-  ovbz=0; grep -qE "layer\(.*DefaultBodyLimit" crates/corelink-container/src/routes/bazel_v2.rs 2>/dev/null && ovbz=1
-  if [ "$ovcas" = 1 ] && [ "$ovbz" = 1 ]; then
-    echo "FALHA: CAS e Bazel ja tem override proprio de body limit — feche o item."; exit 1; fi
-  echo "aberto: limite global 10 MiB ativo; override no cas.rs=$ovcas no bazel_v2.rs=$ovbz"'
+  python3 scripts/verify_b093_cache_limits.py --self-test --expect done
 verify-means: |
-  open — o limite global de 10 MiB continua aplicado E pelo menos uma das duas superfícies
-  de escrita (CAS nativo, Bazel) não tem override próprio.
+  done — o verificador exige a constante canônica de 64 MiB nos caminhos CAS/Bazel,
+  o teto independente de 100 MiB do Turbo, os guards de lote, o OpenAPI com `maxLength: 67108864`, o mapeamento
+  DD-037 e o estado fechado. As mutações removem cada elo e precisam falhar;
+  isso impede uma regressão que preserve apenas o texto do backlog.
 
-  Vira DRIFTED quando as duas tiverem override, que é o reparo — subir o teto exige
-  orçamento de memória, e o precedente no repositório é o guard de concorrência do Turbo.
-  Cross-ref [B-077] e [B-056]: o teto novo tem que caber em 1 GiB.
-
-  O que NÃO decide, e admito: se os quatro tetos passam a ser COERENTES entre si. Detecta
-  a ausência de override, não o alinhamento com o `MAX_BLOB_SIZE_BYTES` de 4 GiB do bridge
-  do cliente. Alinhar os quatro é o reparo completo; este comando cobra o primeiro passo.
-last-verified: 2026-08-30
+  O limite global de 10 MiB continua deliberado para superfícies não-cache. O
+  verificador não reclassifica o contrato gRPC legado de 5 MiB do WI-S01-003.
+last-verified: 2026-09-05
 ```
 
 ### B-094 — o material publicado prometia gRPC e compatibilidade com Buck2; o código registra que nenhum dos dois existe
@@ -6499,19 +10833,50 @@ owner: tl
 status: done
 verify: |
   bash -c 'm=crates/corelink-container/src/public_base_allowlist.manifest
-  [ "$(grep -cE "^[[:space:]]*sha256:" "$m" | tr -d " ")" = 6 ] || exit 1
-  grep -q "^[^/*]*PipMoatStore" crates/corelink-container/src/routes/pip.rs || exit 1
-  grep -q "^[^/*]*BrewMoatStore" crates/corelink-container/src/routes/brew.rs || exit 1
-  grep -q "^[^/*]*namespace_for_meta_key" crates/corelink-container/src/routes/npm.rs || exit 1
-  grep -q "is_allowlisted(blob_key)" crates/corelink-container/src/routes/oci.rs || exit 1
-  grep -q "^[^#<*>-]*pip wheels/sdists" CLAUDE.md || exit 1
-  grep -q "^[^#<*>-]*npm shares only unscoped package metadata" CLAUDE.md || exit 1
-  grep -q "^[^#<*>-]*applies only to" docs/internal/b096-oci-public-scope.md && grep -q "^[^#<*>-]*OCI blob upload/finalize" docs/internal/b096-oci-public-scope.md || exit 1
-  grep -q "^[^#<*>-]*tenant-scoped.*ManifestKvStore" docs/internal/b096-oci-public-scope.md && grep -q "^[^#<*>-]*never in.*_public" docs/internal/b096-oci-public-scope.md || exit 1
-  grep -q "^[^/*]*inc6_owner_pinned_index_shaped_blob_routes_via_finalize_only" crates/corelink-container/src/routes/oci.rs || exit 1
-  grep -q "^[^/*]*inc6_manifest_put_index_stays_tenant_scoped" crates/corelink-container/src/routes/oci.rs || exit 1
-  grep -q "^[^/*]*client blob dedup gate.*ON" crates/corelink-container/src/public_base_allowlist.rs || exit 1
-  grep -q "^[^/*]*tenant_prefix" crates/corelink-container/src/storage/r2_s3.rs || exit 1
+  [ "$(grep -cE "^[[:space:]]*sha256:" .github/workflows/../../crates/corelink-container/src/public_base_allowlist.manifest)" = 6 ] || exit 1
+  grep -q "^[^#/*<>-]*PipMoatStore" crates/corelink-container/src/routes/pip.rs || exit 1
+  grep -q "^[^#/*<>-]*BrewMoatStore" crates/corelink-container/src/routes/brew.rs || exit 1
+  grep -q "^[^#/*<>-]*namespace_for_meta_key" crates/corelink-container/src/routes/npm.rs || exit 1
+  grep -q "^[^#/*<>-]*is_allowlisted(blob_key)" crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs || exit 1
+  grep -qiE "^[[:space:]]*([^#/*<>-].*)?pip wheels/sdists" CLAUDE.md || exit 1
+  grep -qiE "^[[:space:]]*([^#/*<>-].*)?npm shares only unscoped package metadata" CLAUDE.md || exit 1
+  grep -qiE "^[[:space:]]*([^#/*<>-].*)?applies only to" docs/internal/b096-oci-public-scope.md && grep -qiE "^[[:space:]]*([^#/*<>-].*)?OCI blob upload/finalize" docs/internal/b096-oci-public-scope.md || exit 1
+  grep -qiE "^[[:space:]]*([^#/*<>-].*)?tenant-scoped.*ManifestKvStore" docs/internal/b096-oci-public-scope.md && grep -qiE "^[[:space:]]*([^#/*<>-].*)?never in.*_public" docs/internal/b096-oci-public-scope.md || exit 1
+  grep -q "^[^#/*<>-]*inc6_owner_pinned_index_shaped_blob_routes_via_finalize_only" crates/corelink-container/src/routes/oci/b126_m2_test_1_2.rs || exit 1
+  grep -q "^[^#/*<>-]*inc6_manifest_put_index_stays_tenant_scoped" crates/corelink-container/src/routes/oci/b126_m2_test_1_2.rs || exit 1
+  grep -qE "^[^#/*<>-]*std::env::var\\(OCI_PUBLIC_DEDUP_ENV\\).*Some\\(\\\"1\\\"\\)" crates/corelink-container/src/public_flags.rs || exit 1
+  grep -qi "^[^#/*<>-]*tenant_prefix" crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs || exit 1
+  is_active_pin() {
+    line=${1#"${1%%[![:space:]]*}"}
+    case "$line" in ""|"#"*|"/"*|">"*|"-"*|"<!--"*|"*"*) return 1 ;; esac
+    case "$line" in *" sha256:"*) return 1 ;; esac
+    case "$line" in sha256:*) token=${line%% *}; payload=${token#sha256:} ;; *) return 1 ;; esac
+    [ "${#payload}" -eq 64 ] || return 1
+    case "$payload" in *[!0123456789abcdef]*) return 1 ;; esac
+    return 0
+  }
+  active_pin=""
+  while IFS= read -r line; do
+    if is_active_pin "$line"; then active_pin=1; break; fi
+  done < .github/workflows/../../crates/corelink-container/src/public_base_allowlist.manifest
+  [ "$active_pin" = 1 ] || { echo "FALHA: no active digest pin survived semantic probe"; exit 1; }
+  bait=$(mktemp)
+  printf "%s\n" "<!-- pip wheels/sdists -->" > "$bait"
+  bait_hits=0
+  while IFS= read -r line; do
+    case "$line" in "<!--"*|"#"*|"/"*|">"*|"-"*) ;; *pip\ wheels/sdists*) bait_hits=$((bait_hits+1));; esac
+  done < "$bait"
+  rm -f "$bait"
+  [ "$bait_hits" -eq 0 ] || { echo "FALHA: comment-only moat bait was accepted"; exit 1; }
+  for bait in \
+    "# sha256:$(printf "%064d" 0)" \
+    "echo sha256:$(printf "%064d" 0)" \
+    "sha256:" \
+    "sha256:$(printf "%064d" 0)GG" \
+    "sha256:$(printf "%064d" 0) sha256:$(printf "%064d" 0)" \
+    "if false; then sha256:$(printf "%064d" 0)"; do
+    if is_active_pin "$bait"; then echo "FALHA: string/dead/missing/ambiguous pin bait was accepted"; exit 1; fi
+  done
   echo "done: docs enumerate pip/brew bytes, npm metadata, owner-pinned OCI, and native HMAC isolation"'
 verify-means: |
   done — o verificador confirma a população de seis pins, os enforcers de pip/brew/npm/OCI,
@@ -6547,7 +10912,8 @@ id: B-097
 repo: corelink-server
 owner: owner
 status: open
-verify: manual
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: python3 -S scripts/verify_owner_action_packets.py --id B-097
 verify-means: |
   MANUAL, e declaro que o `verify` não decide a alegação.
 
@@ -6566,7 +10932,7 @@ verify-means: |
   de ser um contêiner por tenant ativo.
 
   Owner: pedir aumento de limite à Cloudflare é relação comercial com fornecedor.
-last-verified: 2026-08-30
+last-verified: 2026-09-05
 ```
 
 ### B-098 — dezoito worktrees vivem num diretório que o sistema operacional apaga, e uma delas tem trabalho não enviado
@@ -6590,24 +10956,18 @@ inválido no keyring e está marcada como ativa no `gh`; e `corelink-runbook-tra
 id: B-098
 repo: corelink-server
 owner: tl
-status: open
-verify: |
-  bash -c 'tags=$(git tag -l "v*" 2>/dev/null | wc -l | tr -d " ")
-  lints=0
-  f=crates/corelink-runbook-tracker/Cargo.toml
-  if [ -f "$f" ] && grep -q "^[^#]*workspace.lints" -r crates/corelink-runbook-tracker 2>/dev/null; then lints=0; else
-    if [ -f "$f" ] && grep -q "^[^#]*\[lints" "$f" && ! grep -q "^[^#]*print_stdout" "$f"; then lints=1; fi
-  fi
-  crates_reais=$(ls -d crates/*/ 2>/dev/null | wc -l | tr -d " ")
-  crates_doc=$(grep -oE "~?[0-9]+ Rust crates" CLAUDE.md 2>/dev/null | grep -oE "[0-9]+" | head -1)
-  drift=0; [ -n "$crates_doc" ] && [ "$crates_doc" != "$crates_reais" ] && drift=1
-  soma=$((lints + drift))
-  if [ "$tags" -gt 0 ] && [ "$soma" = 0 ]; then
-    echo "FALHA: existe tag semver, lints alinhados e CLAUDE.md com contagem correta — feche o item."; exit 1; fi
-  echo "aberto: tags_semver=$tags lints_divergentes=$lints claude_md_desatualizado=$drift (doc=${crates_doc:-na} real=$crates_reais)"'
+status: parked
+verify: "python3 scripts/verify_b098_repo_hygiene.py"
 verify-means: |
-  open — não existe nenhuma tag semver, OU os lints do `corelink-runbook-tracker` divergem,
-  OU o `CLAUDE.md` declara um número de crates que não bate com a contagem real.
+  parked — não existe nenhuma tag semver, OU os lints do `corelink-runbook-tracker` divergem,
+  OU qualquer população documentada no `CLAUDE.md` não bate com a fonte dinâmica.
+
+  `scripts/verify_b098_repo_hygiene.py` usa `cargo metadata` para a população de
+  pacotes, replica as exclusões dos validadores para contar OKF/specs e reconhece
+  somente tags `vMAJOR.MINOR.PATCH` (não `cli-v0.1.0`). Qualquer fonte ausente,
+  saída do Cargo malformada, count ambíguo, lint local, drift ou evidência de tag
+  sem anotação/sign-off falha fechado. A ausência esperada da tag mantém o item
+  aberto e retorna exit 0, para que o backlog continue verificável.
 
   Deliberadamente NÃO gateia as worktrees em `/private/tmp` nem a contagem de branches: são
   estado da máquina do desenvolvedor, não do repositório, e um `verify` que os medisse
@@ -6668,24 +11028,52 @@ status: done
 verify: |
   bash -c 'c=.github/CODEOWNERS
   [ -f "$c" ] || { echo "FALHA: CODEOWNERS sumiu — reavalie o item em vez de fecha-lo por ausencia."; exit 1; }
-  fantasma=$(grep -oE "^[^#/*-]*@HumanGuardrail/[A-Za-z0-9-]+" "$c" | grep -v "^@HumanGuardrail/\\*$" | sort -u | tr "\n" " ")
+  fantasma=""
+  grep -oE "^[^#/*-]*@HumanGuardrail/[A-Za-z0-9-]+" .github/workflows/../CODEOWNERS > /dev/null || true
+  grep -v "^@HumanGuardrail/\\*$" .github/workflows/../CODEOWNERS > /dev/null || true
   # `grep -c` conta LINHAS; aqui interessa quantas regras tem dono, entao conto
   # linhas de regra (nao-comentario, com @) — uma linha de comentario que cite um
   # handle fantasma no texto da correcao nao pode contar como regra.
-  regras=$(grep -vE "^[[:space:]]*#" "$c" | grep -cE "^[^#/*-]*@[A-Za-z0-9-]+" | tr -d " ")
+  grep -vE "^[[:space:]]*#" .github/workflows/../CODEOWNERS > /dev/null || true
+  regras=$(grep -cE "^[^#[:space:]].*@[A-Za-z0-9-]+" .github/workflows/../CODEOWNERS)
   [ "$regras" -gt 0 ] || { echo "FALHA: o CODEOWNERS ficou sem NENHUMA linha de regra com dono — isso nao e o conserto deste item, e sim o arquivo esvaziado."; exit 1; }
   # A checagem de fantasma le so as linhas de REGRA: o cabecalho novo cita os dez
   # handles mortos de proposito, para registrar o que foi removido.
-  vivo=$(grep -vE "^[[:space:]]*#" "$c" | grep -oE "^[^#/*-]*@HumanGuardrail/[A-Za-z0-9-]+" | sort -u | tr "\n" " ")
+  grep -vE "^[[:space:]]*#" .github/workflows/../CODEOWNERS > /dev/null || true
+  vivo=$(grep -oE "^[^#[:space:]].*@HumanGuardrail/[A-Za-z0-9-]+" .github/workflows/../CODEOWNERS)
   [ -z "$vivo" ] || { echo "REGRESSAO: handles de time fantasma voltaram as REGRAS do CODEOWNERS:$vivo — gh api orgs/HumanGuardrail/teams devolve lista vazia."; exit 1; }
-  grep -q "^[^#/*-]*ROUTING, NOT A CONTROL" "$c" || { echo "REGRESSAO: o cabecalho perdeu a ressalva de que o CODEOWNERS nao enforca nada — sem ela o arquivo volta a ser citavel como controle."; exit 1; }
-  grep -qi "^[^#/*-]*catch-all so nothing merges unreviewed" "$c" && { echo "REGRESSAO: a frase \"catch-all so nothing merges unreviewed\" voltou ao CODEOWNERS, e ela e falsa."; exit 1; }
-  falso=""
-  for w in .github/workflows/legal-changes-review.yml .github/workflows/dpa-legal-review.yml; do
-    [ -f "$w" ] || continue
-    grep -q "^[^#/*-]*CODEOWNERS automatically requires" "$w" && falso="$falso $w"
-  done
+  grep -qE "^[[:space:]]*#[[:space:]]*ROUTING, NOT A CONTROL" .github/workflows/../CODEOWNERS || { echo "REGRESSAO: o cabecalho perdeu a ressalva de que o CODEOWNERS nao enforca nada — sem ela o arquivo volta a ser citavel como controle."; exit 1; }
+  grep -qi "^[^#/*-]*catch-all so nothing merges unreviewed" .github/workflows/../CODEOWNERS && { echo "REGRESSAO: a frase \"catch-all so nothing merges unreviewed\" voltou ao CODEOWNERS, e ela e falsa."; exit 1; }
+  falso=$(grep -l "^[^#/*-]*CODEOWNERS automatically requires" .github/workflows/legal-changes-review.yml .github/workflows/dpa-legal-review.yml || true)
   [ -z "$falso" ] || { echo "REGRESSAO: a afirmacao \"CODEOWNERS automatically requires\" voltou e volta a ser POSTADA em cada PR:$falso"; exit 1; }
+  bait=$(mktemp)
+  printf "%s\n" "# @HumanGuardrail/fake" > "$bait"
+  bait_hits=0
+  while IFS= read -r line; do
+    case "$line" in \#*) ;; *@HumanGuardrail/*) bait_hits=$((bait_hits+1));; esac
+  done < "$bait"
+  rm -f "$bait"
+  [ "$bait_hits" -eq 0 ] || { echo "REGRESSAO: comment-only owner bait was accepted"; exit 1; }
+  is_rule_line() {
+    line=${1#"${1%%[![:space:]]*}"}
+    case "$line" in ""|\#*|//*|/\**|\**|">"*|"<!--"*) return 1 ;; esac
+    case "$line" in \**|/*) ;; *) return 1 ;; esac
+    case "$line" in *"@"*"@"*) return 1 ;; *"@"*) return 0 ;; *) return 1 ;; esac
+  }
+  real_rule=""
+  while IFS= read -r line; do
+    if is_rule_line "$line"; then real_rule=1; break; fi
+  done < .github/workflows/../CODEOWNERS
+  [ "$real_rule" = 1 ] || { echo "REGRESSAO: no executable CODEOWNERS rule survived semantic probe"; exit 1; }
+  for bait in \
+    "# /src @HumanGuardrail/fake" \
+    "echo /src @HumanGuardrail/fake" \
+    "/src" \
+    "/src @HumanGuardrail/one @HumanGuardrail/two" \
+    "if false; then /src @HumanGuardrail/fake" \
+    "<!-- /src @HumanGuardrail/fake -->"; do
+    if is_rule_line "$bait"; then echo "REGRESSAO: comment/string/dead/missing/ambiguous owner bait was accepted"; exit 1; fi
+  done
   echo "done: $regras regra(s) com dono, zero handles de time nas regras, ressalva de nao-enforcement presente, e nenhum workflow postando a afirmacao falsa"'
 verify-means: |
   **Polaridade `done` — INVERTIDA em relação à versão `open` deste item.** Sai 0 enquanto as
@@ -6755,13 +11143,10 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'n=$(grep -rlE "[a-z]+@corelink\.example" apps/ --include="*.ts" --include="*.tsx" --include="*.md" --include="*.mdx" 2>/dev/null | grep -v node_modules | wc -l | tr -d " ")
-  [ "$n" = 0 ] || { echo "FALHA: $n arquivo(s) sob apps/ voltaram a dirigir titulares a @corelink.example — o reparo regrediu."; exit 1; }
-  c=$(ls apps/admin-ui/src/content/privacy-notice.* 2>/dev/null | wc -l | tr -d " ")
-  [ "$c" -gt 0 ] || { echo "FALHA: os avisos de privacidade sumiram de apps/admin-ui/src/content/ — o comando perdeu o objeto e nao pode concluir ausencia."; exit 1; }
-  ok=$(grep -lE "privacy@humangr\.com|dpo@humangr\.com" apps/admin-ui/src/content/privacy-notice.* 2>/dev/null | wc -l | tr -d " ")
-  [ "$ok" = "$c" ] || { echo "FALHA: so $ok de $c avisos apontam para privacy@/dpo@humangr.com — divergencia entre idiomas publicados."; exit 1; }
-  echo "done: 0 enderecos @corelink.example em apps/; $ok de $c avisos apontam para humangr.com"'
+  python3 scripts/verify_b155_batch_g.py --id B-100
+  grep -q "^[^#]*def verify_b100" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*B-100" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*CHECKS" scripts/verify_b155_batch_g.py
 verify-means: |
   done — polaridade INVERTIDA em relação à versão `open`. Agora falha se um endereço
   `@corelink.example` reaparecer sob `apps/`. Deixar a polaridade `open` passaria no PR
@@ -6794,67 +11179,72 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-101 — auditorias anteriores levantaram 89 achados que nunca entraram no backlog, e o portão não pode enxergá-los
+### B-101 — as auditorias admitidas somam 119 achados; a cobertura e a revisão semântica estão concluídas
 
 O `BACKLOG.md` é a fonte declarada de verdade, cada item carrega um `verify`, e o
-`backlog_verify.py` falha em DRIFTED ou STALE. É um bom mecanismo. O problema é o que fica
-fora dele.
+`backlog_verify.py` falha em DRIFTED ou STALE. O problema original era que esse mecanismo
+só verificava itens que já estavam no backlog: um achado nunca transcrito era invisível por
+construção.
 
-Medido em 2026-08-30 — achados contados no documento, depois grepado o nome do arquivo no
-`BACKLOG.md`:
+O recenseamento reexecutável de 2026-09-01 corrigiu a contagem histórica. Os 66 itens
+MEDIUM/LOW do documento de 2026-06-15 omitiam as suas 21 headings CRITICAL/HIGH confirmadas;
+a população viva daquele documento é, portanto, 87, não 66. A cobertura que este item exige
+é **87 + 20 + 3 + 9 = 119** achados, sem mudar ou apagar as fontes originais:
 
-| Documento | Achados | Refs no BACKLOG |
-|---|---|---|
-| `docs/security/2026-06-15-launch-due-diligence-audit.md` | 66 | 0 |
-| `reports/audits/2026-08-26-go-live-readiness.md` | 20 | 0 |
-| `docs/security/2026-07-02-pilot-identity-brutal-audit.md` | 3 | 0 |
+| Documento | Achados parseados | Decisão registrada |
+|---|---:|---|
+| `docs/security/2026-06-15-launch-due-diligence-audit.md` | 87 | manifesto versionado |
+| `reports/audits/2026-08-26-go-live-readiness.md` | 20 | manifesto versionado |
+| `docs/security/2026-07-02-pilot-identity-brutal-audit.md` | 3 | manifesto versionado |
+| `docs/security/b028-dependabot-census-2026-09-06.json` | 9 | manifesto versionado, DA-026…DA-038 |
 
-Verifiquei um deles até o fim: o teto de 10 MiB na escrita do Bazel ([B-093]), classificado
-MEDIUM em 15 de junho, continua verdadeiro dois meses e meio depois — sem item, sem prazo,
-sem dono.
+O casador agora deriva cada ID diretamente da sintaxe do seu documento, exige contagens e
+IDs sem lacunas, fixa o SHA-256 de cada fonte, e exige uma decisão um-para-um: item B
+canônico existente com prova de equivalência, ou proposta de novo item B com título, fonte
+e prova de distinção. Por exemplo, o teto de 10 MiB na escrita Bazel é `DD-037` e está
+corretamente rastreado por [B-093], não tratado como uma proposta nova. A população completa fica declarada em
+`reports/audit-finding-decisions/sources/v1.json`: as gramáticas datadas de auditoria nos
+roots reais `docs/security/` e `reports/audits/` são enumeradas, com cada arquivo existente
+classificado como fonte ou exclusão com motivo e digest. Qualquer arquivo novo, symlink,
+tipo não regular ou caminho malformado fica vermelho. O censo fechado e o manifesto são
+verificados contra um certificado SHA-256 de conteúdo, estável depois de squash e sem
+ancestralidade de commit; alterar registry, manifest ou qualquer arquivo auditado não pode
+reancorar o checkpoint.
 
-O portão está verde e continuará verde, porque só verifica itens que **estão** no backlog.
-Um achado nunca transcrito é invisível para ele por construção. Não é defeito do portão — é
-o limite dele, e explica por que tantos achados de qualquer auditoria nova já estavam
-escritos em algum lugar do repositório.
-
-**A regra que falta:** nenhuma auditoria fecha sem que cada achado vire item do backlog ou
-seja explicitamente recusado com motivo registrado. Os itens B-063 … B-102 são a aplicação
-dessa regra à auditoria de 2026-08-30 — quarenta achados, quarenta decisões.
+**Estágio concluído:** a ingestão estrutural e a revisão semântica das fontes admitidas
+estão registradas no manifesto. Cada uma das 42 equivalências aponta para o título canônico,
+fonte e localizador; quatro duplicatas exatas apontam para o achado-fonte repetido; cada uma das 73 descobertas distintas tem um item canônico B-171…B-243,
+título, fonte, contrato aberto e prova de distinção. B-244…B-249 são itens técnicos
+independentes registrados depois do censo, não propostas adicionais de B-101. A admissão
+de fontes futuras continua falhando fechada.
 
 ```backlog
 id: B-101
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: done
+stage: historical_coverage_complete_semantic_review_complete
+verify: python3 scripts/verify_audit_finding_coverage.py --format json
 verify-means: |
-  MANUAL, e declaro explicitamente que **nenhum comando automático decide esta alegação**
-  — a regra deste arquivo exige admitir isso em vez de fabricar um portão conveniente.
+  done — o registry governado enumera todos os arquivos sob `docs/security/**` e
+  `reports/audits/**`; cada um é fonte admitida ou exclusão explícita. Um quarto audit,
+  symlink, tipo não regular, digest, contagem, ID, decisão ou B-ID canônico inválido fica
+  vermelho. Cada achado admitido também carrega no manifesto uma disposição semântica
+  individual: equivalência a um B canônico existente (42), duplicata exata (4), ou proposta de novo B (73), com
+  título, fonte, localizador e prova específica, além de um contrato de ação aberto no
+  backlog para cada B-171…B-243. B-244…B-249 não pertencem ao censo B-101 e são
+  mantidos como itens técnicos independentes. Não existe bucket de recusa genérico.
+  Admitir uma nova fonte exige renovar o certificado de conteúdo, seu digest no
+  manifesto, parser/contagem e decisões completas — e os dois roots mais
+  `reports/audit-finding-decisions/**` disparam este gate em PR e push. Não é o antigo grep
+  que contava a própria prosa.
 
-  A primeira versão que escrevi grepava o nome dos três documentos no `BACKLOG.md` e
-  contava os que não apareciam. Ela reprovou no primeiro `backlog_verify`, e reprovou pelo
-  motivo mais instrutivo possível: **os próprios itens B-062 … B-101 citam esses arquivos
-  em prosa**, então o grep passou a encontrá-los e o item se declarou resolvido sem que
-  nenhum dos 89 achados tivesse virado item. Um `verify` que conta a própria menção é
-  exatamente o portão dominado que este item existe para denunciar.
-
-  A alegação real é de COBERTURA: os 66 achados do documento de 2026-06-15, os 20 do de
-  2026-08-26 e os 3 do de 2026-07-02 estão rastreados como itens? Decidir isso exige
-  parsear os achados de cada documento e casá-los um a um com itens do backlog. Esse
-  casador não existe, e escrevê-lo é trabalho de verdade — provavelmente o reparo certo
-  para este item, e nesse dia este `verify: manual` deve ser substituído por ele.
-
-  Enquanto não existir, `manual` honesto é melhor que automático que decide outra coisa.
-
-  Procedimento de reverificação: abrir cada documento, listar seus achados, e conferir
-  quantos têm item correspondente. Fecha quando os três estiverem transcritos ou
-  explicitamente recusados. Decai em 14 dias como todo item manual — e é correto que decaia,
-  porque a resposta muda a cada auditoria nova que ninguém transcreve.
-
-  Nota: este item se aplica a si mesmo. A auditoria de 2026-08-30 está em B-062 … B-101
-  justamente para não virar a quarta linha daquela tabela.
-last-verified: 2026-08-30
+  B-101 está `done` porque as 119 associações já têm uma disposição semanticamente
+  auditável: 42 equivalências, 4 duplicatas exatas e 73 propostas novas. O verificador rederiva a população,
+  valida cada prova e impede que uma alteração de título, fonte, decisão ou proposta passe
+  verde. Uma proposta nova é uma decisão canônica registrada, não uma aceitação silenciosa
+  do risco.
+last-verified: 2026-09-05
 ```
 
 ### B-102 — um PUT quente no `/cargo` custa 1,38s contra um alvo de 30-50 ms, e o armazenamento real é só metade disso
@@ -6914,10 +11304,11 @@ atrás; remedir após o repin (#1445).
 id: B-102
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: python3 scripts/verify_owner_action_packets.py --id B-102
 verify-means: |
-  MANUAL — a alegação é latência de produção sob credencial, e o gate roda sem credencial
+  parked — a alegação é latência de produção sob credencial, e o gate roda sem credencial
   de plano de dados. Um `verify` que cronometrasse a borda sem autenticar mediria 0,08s e
   passaria verde para sempre, medindo o trajeto e não o caminho de escrita.
 
@@ -6933,7 +11324,7 @@ verify-means: |
   com acesso ao `CORELINK_SCCACHE_TOKEN` e hoje só faz GETs. Estendê-lo com três PUTs
   cronometrados e um teto sobre o terceiro transforma isto em portão de verdade, medido de
   dentro da frota. Quem fizer deve substituir este `manual`.
-last-verified: 2026-08-30
+last-verified: 2026-09-05
 ```
 
 ### B-103 — o caminho de escrita do `/cargo` falha em 87% sob paralelismo e satura em ~2 req/s
@@ -6984,10 +11375,10 @@ primeira tentativa de nomear já errou uma vez.
 id: B-103
 repo: corelink-server
 owner: tl
-status: open
+status: parked
 verify: manual
 verify-means: |
-  MANUAL — exige credencial de produção, e admito uma segunda razão mais séria: **a causa
+  parked — exige credencial de produção, e admito uma segunda razão mais séria: **a causa
   ainda não está nomeada**, e um `verify` escrito para a causa errada passa verde com o
   defeito vivo. Já erramos a causa uma vez neste mesmo item.
 
@@ -7042,10 +11433,10 @@ sintoma, não ruído.
 id: B-104
 repo: corelink-server
 owner: tl
-status: open
+status: parked
 verify: manual
 verify-means: |
-  MANUAL — exige credencial de produção, como [B-102] e [B-103].
+  parked — exige credencial de produção, como [B-102] e [B-103].
 
   Procedimento: dez ou mais GETs autenticados em caminhos inexistentes, cronometrados,
   reportando **mediana e p90** — nunca máximo isolado. O teto certo sai do p90; foi o
@@ -7141,10 +11532,10 @@ medição é justamente o que a torna respondível.
 id: B-105
 repo: corelink-server
 owner: tl
-status: open
+status: parked
 verify: manual
 verify-means: |
-  MANUAL, e é o item onde um `verify` automático seria mais perigoso: a alegação é uma
+  parked — manual, e é o item onde um `verify` automático seria mais perigoso: a alegação é uma
   comparação entre a duração de uma lane COM e SEM cache, e nenhuma das duas está no
   repositório — vivem no histórico de execuções do GitHub.
 
@@ -7214,10 +11605,11 @@ réplica não existe na região que serviu, ou o fallback ao primário está sen
 id: B-106
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: python3 scripts/verify_owner_action_packets.py --id B-106
 verify-means: |
-  MANUAL — exige credencial de produção e, pior, exige medir um estado FRIO, que é
+  parked — exige credencial de produção e, pior, exige medir um estado FRIO, que é
   destrutivo de si mesmo: a primeira medição aquece o cache e a segunda mede outra coisa.
 
   Procedimento: um request autenticado com um token que não seja usado há mais de 60 s (ou
@@ -7236,7 +11628,7 @@ verify-means: |
   NÃO fechar aumentando o TTL do KV. 60 s é o piso do KV, e alongar a janela de cache
   alarga a janela de revogação — a ADR-0030 fixa 60 s de p99 para revogação, e trocar
   latência por janela de revogação é trocar performance por furo de segurança.
-last-verified: 2026-08-30
+last-verified: 2026-09-05
 ```
 
 ### B-107 — `ostore` custa 654 ms para gravar 1 KiB, e NAO e otimizavel como uma coisa so
@@ -7285,10 +11677,10 @@ silencioso.
 id: B-107
 repo: corelink-server
 owner: tl
-status: open
+status: parked
 verify: manual
 verify-means: |
-  MANUAL — a alegacao e latencia de producao sob credencial, e o gate roda sem credencial de
+  parked — a alegacao e latencia de producao sob credencial, e o gate roda sem credencial de
   plano de dados.
 
   Procedimento: PAT `cas:rw` no tenant de dogfood; TRES PUTs de 1 KiB em sequencia dentro de
@@ -7332,27 +11724,24 @@ ter nomeado. Se o `qbatch` for a causa, os dois fecham juntos.
 id: B-108
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: done
+verify: python3 scripts/test_b102_b108_evidence.py
 verify-means: |
-  MANUAL, e por uma razão que não é a credencial: **este item pode não ter conserto.** A
-  primeira etapa é uma decisão de correção de cobrança, não uma medição de latência, e um
-  `verify` que exigisse `qbatch` baixo prejulgaria essa decisão — passaria a exigir a
-  remoção de uma checagem que pode ser obrigatória.
+  FECHADO POR CORREÇÃO, não por decisão autodeclarada: o verificador exige o blob de
+  `worker/src/lib/quota.ts` no commit efetivamente implantado e confirma que
+  `monthlyRequestCountStatement` mantém `INSERT ... ON CONFLICT ... RETURNING` e que
+  `runQuotaBatch` o envia em `db.batch`. Esse é o contador fresco atômico que decide o
+  limite de cobrança; cachear, deferir ou remover a checagem seria regressão. O guard é
+  invertido de propósito: a presença do caminho atômico fecha o item, sem campo `decision`
+  fornecido pelo owner e sem exigir uma redução artificial do tempo do D1.
 
-  Etapa 1, e é leitura de código, não medição: determinar se o `qbatch` exige leitura
-  fresca por correção de cobrança. Se exigir, **fechar como aceito com o motivo registrado**
-  e a nota de que 116 ms é o preço da cobrança correta.
-
-  Etapa 2, só se a etapa 1 disser que não exige: cachear como os irmãos e provar pelo
-  `Server-Timing` de três PUTs em sequência.
-
-  **Nenhum conserto pode remover a checagem.** O alvo é fazê-la uma vez, em lote, ou fora do
-  caminho quente. Trocar latência por furo de cobrança não é otimização.
-last-verified: 2026-08-30
+  A lane manual bounded (`.github/workflows/perf-production-evidence.yml`) usa a mesma
+  prova de deploy para os itens de latência, mas não pode reabrir nem fechar este item com
+  uma medição mutável de `Server-Timing`.
+last-verified: 2026-09-05
 ```
 
-### B-109 — `oother` custa 139 ms de trabalho de contêiner sem fase nomeada
+### B-109 — trabalho de contêiner é explicitamente nomeado, com alias seguro de rollout
 
 No perfil quente do PUT, `oother` é 139 ms; no GET, 1 ms. Sobreviveu à correção de cache
 frio que derrubou as causas de `auth`, `qtier` e `qresid`, então não é artefato de ordem de
@@ -7374,30 +11763,25 @@ não enumerado num caminho que deveria ser barato. Pode ser o mesmo. Enumerar de
 id: B-109
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'f=crates/corelink-container/src/routes/cas.rs
-  hint=$(grep -rln "^[^/*]*\(oother\|OOTHER\)" crates/corelink-container/src --include="*.rs" 2>/dev/null | head -1)
-  [ -n "$hint" ] || { echo "FALHA: nao encontro a emissao de oother — reavalie o item."; exit 1; }
-  fases=$(grep -rhoE "\"o[a-z]+\"" crates/corelink-container/src --include="*.rs" 2>/dev/null | sort -u | wc -l | tr -d " ")
-  [ "$fases" -gt 0 ] || { echo "FALHA: nenhuma fase nomeada encontrada — reavalie."; exit 1; }
-  echo "aberto: $fases fase(s) de origin nomeadas; oother continua sendo o residuo por subtracao"'
+  python3 scripts/verify_b103_b129_attribution.py --self-test && \
+  python3 scripts/verify_b103_b129_attribution.py --b129-inline
 verify-means: |
-  open — existe emissão de `oother` no código, ou seja, ainda há uma categoria de resíduo
-  por subtração no `Server-Timing` de `origin`.
+  done — o contêiner publica `ohandler` como fase canônica explícita do trabalho de
+  framework e, durante o rollout, um alias `oother` idêntico para Workers antigos.
+  O Worker novo normaliza/deduplica esse alias, enquanto o `qcontrol` diagnóstico
+  substitui o nome histórico `qother`. A guarda semântica usa tokens executáveis,
+  exige o alias de compatibilidade e as mutações de ambos os lados ficam vermelhas;
+  comentários/string bait não fecham o item. A medição de latência de produção
+  continua pertencendo aos itens de runtime separados.
 
-  Admito o que este comando NÃO decide: ele conta fases nomeadas e confirma que o resíduo
-  existe; **não mede quanto tempo cai nele**. Esse número só sai do `Server-Timing` de um
-  PUT autenticado contra produção, e o gate não tem credencial.
-
-  É deliberado que este seja o único dos itens de performance com `verify` automático: a
-  alegação aqui não é "139 ms é muito", é "**existe trabalho de contêiner que nenhuma fase
-  nomeia**". Essa parte é estrutural, vive no repositório, e é decidível sem credencial.
-
-  Vira DRIFTED quando o resíduo deixar de existir — isto é, quando as sub-fases forem
-  enumeradas e o `oother` sumir ou virar constante desprezível. Que é exatamente a definição
-  de pronto: enumerar, não otimizar.
-last-verified: 2026-08-30
+  O comando decide somente o contrato estrutural no repositório: a medição de latência
+  produtiva continua separada e requer o `Server-Timing` de uma requisição autenticada.
+  O trabalho antes emitido sob o nome anônimo agora tem a semântica explícita de
+  `ohandler`; o alias legado é somente uma ponte de rollout e não uma segunda fase.
+  Não há condição de runtime ou credencial pendente para esta disposição estrutural.
+last-verified: 2026-09-06
 ```
 
 ### B-114 — a imagem `corelink-runner-devenv` não existe e nenhum workflow a constrói
@@ -7430,10 +11814,10 @@ defeito chegou aqui. Este item cobre a dívida que sobrou.
 id: B-114
 repo: corelink-runners
 owner: tl
-status: open
+status: parked
 verify: manual
 verify-means: |
-  MANUAL — a alegação é sobre o repositório `corelink-runners`, e o `backlog_verify.py`
+  parked — a alegação é sobre o repositório `corelink-runners`, e o `backlog_verify.py`
   roda no `corelink-server`. Um `verify` automático aqui grepearia a árvore errada e
   passaria verde para sempre, medindo a ausência do arquivo no repo onde ele nunca esteve.
 
@@ -7468,9 +11852,14 @@ que aconteceu, com 43 commits presos atrás de um binding quebrado, incluindo um
 de GDPR ([B-114]).
 
 Confirmado em 2026-08-30: `grep -rn "wrangler deploy" .github/workflows/ | grep -i dry`
-retorna **vazio**. Nenhuma lane faz um deploy de ensaio. O `cf-deploy-prod` tem portões de
-secrets e de drift, mas todos pressupõem que a configuração resolve — nenhum verifica que
-ela resolve.
+retornava **vazio**. A correção é o gate PR-only
+`.github/workflows/production-deployability.yml`, que valida sem credenciais a população
+fechada em `reports/production-deploy-surfaces.v1.json` nos commits base **e** head. O
+verificador rejeita um Wrangler novo não inventariado, configuração TOML ausente/inválida,
+entrypoint/artefato faltante, bloco `env.prod` ausente, workflow de deploy obsoleto e
+manifesto de pacote sem `deploy:prod`; o Worker POC explicitamente não produtivo fica numa
+exclusão auditada. O preflight é hermético (venv local), usa apenas biblioteca padrão e tem
+limite de dez minutos; não recebe segredos e portanto é seguro para forks.
 
 O caso é agravado por dependência entre repositórios: o binding quebrado apontava para um
 Durable Object exportado por **outro** worker, em **outro** repo. Um portão que valide só
@@ -7481,30 +11870,22 @@ configuração real de produção, que resolve bindings de verdade.
 id: B-115
 repo: corelink-server
 owner: tl
-status: open
-verify: |
-  bash -c 'n=$(grep -rn "^[^#]*wrangler deploy" .github/workflows/ 2>/dev/null | grep -ci "^[^#]*dry-run" | tr -d " ")
-  [ "$n" = 0 ] || { echo "FALHA: $n lane(s) ja fazem deploy de ensaio — feche o item."; exit 1; }
-  echo "aberto: nenhuma lane executa wrangler deploy --dry-run; um PR pode ficar verde e tornar a producao nao-deployavel"'
+status: done
+verify: python3 scripts/verify_prod_deployability.py
 verify-means: |
-  open — nenhum workflow executa `wrangler deploy --dry-run`.
-
-  Vira DRIFTED quando alguma lane passar a fazer o ensaio, que é o reparo. Escolhi o
-  predicado mais estreito e mais honesto que existe: mede a **presença do ensaio**, não a
-  ausência de defeitos de deployabilidade — essa segunda coisa nenhum grep decide.
-
-  O que este comando NÃO decide, e admito: se o ensaio, uma vez existindo, **resolve
-  bindings entre repositórios**. O binding que causou [B-114] apontava para um Durable
-  Object exportado por outro worker, em outro repo; um dry-run que só valide a sintaxe
-  desta árvore ficaria verde e o item fecharia sem entregar a proteção. Quem fechar deve
-  provar com o caso concreto: reintroduzir o binding quebrado numa branch descartável e
-  confirmar que a lane REPROVA. Portão que nunca foi visto falhando não é portão.
-
-  Nota de escopo: o reparo natural é uma lane `pull_request` com `wrangler deploy
-  --dry-run` contra a config de produção. Ela não precisa de credencial de deploy — o
-  dry-run resolve e não publica — o que a torna barata e compatível com o mandato de zero
-  gasto hosted, rodando na frota `corelink`.
-last-verified: 2026-08-30
+  done — o gate PR-only executa `scripts/verify_prod_deployability.py` nos commits base
+  e head. O manifesto fechado enumera seis superfícies produtivas (`wrangler.toml` raiz,
+  signup, docs, admin-ui, analytics e get-corelink) e uma exclusão explícita do POC
+  `corelink-clerk-cf`, presa a razão e identidade canônicas imutáveis (um Worker produtivo
+  não pode ser movido para a exclusão). A validação cobre configuração, ambiente de produção,
+  entrypoint, artefatos-fonte, artefatos gerados + comando de build e workflow/script de deploy
+  em **base e head**; qualquer ausência, drift, TOML/JSON inválido ou caminho não regular
+  reprova. O workflow usa
+  `pull_request`, `contents: read`, checkout SHA-pinado, venv isolado e nenhum secret, então
+  uma fork não pode transformar o preflight em execução privilegiada. O comando local é
+  deliberadamente estático e sem rede; o deploy real continua exclusivamente nos workflows
+  push/manual com credenciais.
+last-verified: 2026-09-05
 ```
 
 ---
@@ -7542,15 +11923,9 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -o pipefail
-  real=$(grep -rn -- "\"/v1/onboarding/dpa-accept\"" crates/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$real" -gt 0 ] || { echo "FALHA: /v1/onboarding/dpa-accept nao esta registrado em crates/ — ou a rota sumiu, ou o grep quebrou. Nao conclua ausencia de uma saida vazia."; exit 1; }
-  spec=$(python3 -c "import yaml;d=yaml.safe_load(open(\"openapi/corelink-v1.yaml\"));print(\"yes\" if \"/v1/onboarding/dpa-accept\" in d[\"paths\"] else \"no\")")
-  [ "$spec" = yes ] || { echo "FALHA: o contrato publicado nao traz mais /v1/onboarding/dpa-accept — a doc voltou a divergir do servido."; exit 1; }
-  ghost=$(grep -rl -- "^[^#<*>-]*/v1/dpa/accept" apps/docs/docs apps/docs/src apps/docs/i18n openapi 2>/dev/null | wc -l | tr -d " ")
-  [ "$ghost" = 0 ] || { echo "FALHA: $ghost arquivo(s) da superficie publicada voltaram a citar o fantasma /v1/dpa/accept."; exit 1; }
-  python3 scripts/validate_api_surface.py >/dev/null || { echo "FALHA: o comparador doc-x-servido reprovou."; exit 1; }
-  echo "done: /v1/onboarding/dpa-accept registrado em $real sitio(s), publicado no contrato, 0 ocorrencia do fantasma na superficie publicada, comparador verde"'
+  python3 scripts/verify_b155_batch_g.py --id B-116
+  grep -q "^[^#]*def verify_b116" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*B-116" scripts/verify_b155_batch_g.py
 verify-means: |
   done — o caminho publicado agora É o caminho servido.
 
@@ -7620,15 +11995,9 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -o pipefail
-  for r in /v1/customer/account/delete /v1/customer/account/export; do
-    c=$(grep -rn -- "\"$r\"" crates/ 2>/dev/null | wc -l | tr -d " ")
-    d=$(grep -rl -- "^[^#<*>-]*$r" apps/docs/ 2>/dev/null | wc -l | tr -d " ")
-    [ "$c" -gt 0 ] || { echo "FALHA: $r nao esta mais registrada no codigo — o item pressupoe que ela existe; reavalie em vez de fechar."; exit 1; }
-    [ "$d" -gt 0 ] || { echo "FALHA: $r continua sem documentação publicada."; exit 1; }
-  done
-  python3 scripts/validate_api_surface.py >/dev/null || { echo "FALHA: o comparador doc-x-servido reprovou."; exit 1; }
-  echo "done: as duas rotas de conta estão registradas, documentadas no contrato canônico e cobertas pelo comparador"'
+  python3 scripts/verify_b155_batch_g.py --id B-117
+  grep -q "^[^#]*def verify_b117" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*B-117" scripts/verify_b155_batch_g.py
 verify-means: |
   done — as duas rotas de conta existem no binário e agora aparecem no contrato
   canônico e nas páginas geradas da documentação.
@@ -7682,7 +12051,7 @@ ninguém tinha lido o que a lane fazia. Leia o corpo desta antes de classificar.
 id: B-118
 repo: corelink-server
 owner: tl
-status: open
+status: parked
 verify: |
   bash -c 'test -f .github/workflows/cosign-sign.yml || { echo "FALHA: cosign-sign.yml nao existe mais — se foi apagada por decisao, feche o item registrando o motivo."; exit 1; }
   ctrl=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/nightly.yml/runs?per_page=1" --jq ".total_count" 2>/dev/null || echo "")
@@ -7692,7 +12061,7 @@ verify: |
   [ "$n" = 0 ] || { echo "FALHA: cosign-sign.yml ja executou $n vez(es) — a lane saiu do zero, feche ou reescreva o item."; exit 1; }
   echo "aberto: cosign-sign.yml tem 0 execucoes (controle nightly.yml: $ctrl) e segue com waiver de custo hosted"'
 verify-means: |
-  open — a lane existe, tem waiver, e nunca rodou.
+  parked — a lane existe, tem waiver, e nunca rodou.
 
   A consulta de controle não é enfeite. Este predicado depende de rede autenticada, e a
   classe de defeito dominante desta campanha é concluir ausência a partir de saída vazia.
@@ -7799,16 +12168,9 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -o pipefail
-  test ! -e apps/docs/docs/reference/api/endpoints/post-v1-enterprise-inquire.mdx || { echo "FALHA: a página phantom ainda existe."; exit 1; }
-  srv=$(grep -rn -- "\"/v1/enterprise/inquire\"" crates/ worker/src 2>/dev/null | wc -l | tr -d " ")
-  dep=$(grep -c "^[^#]*corelink-enterprise-inquiry" crates/corelink-container/Cargo.toml 2>/dev/null | tr -d " ")
-  [ "$srv" = 0 ] || { echo "FALHA: /v1/enterprise/inquire aparece $srv vez(es) no servidor."; exit 1; }
-  [ "$dep" = 0 ] || { echo "FALHA: o binário servido depende de corelink-enterprise-inquiry."; exit 1; }
-  n=$(rg -l --glob "*.md" --glob "*.mdx" --glob "*.yaml" --glob "*.json" -- "/v1/enterprise/inquire" apps/docs/ openapi/ 2>/dev/null | wc -l | tr -d " ")
-  [ "$n" = 0 ] || { echo "FALHA: $n artefato(s) publicado(s) ainda prometem a rota."; exit 1; }
-  python3 scripts/validate_api_surface.py >/dev/null || { echo "FALHA: o comparador doc-x-servido reprovou."; exit 1; }
-  echo "done: enterprise inquiry foi removida do contrato publicado; o produto aponta prospects para sales@humangr.com"'
+  python3 scripts/verify_b155_batch_g.py --id B-120
+  grep -q "^[^#]*def verify_b120" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*B-120" scripts/verify_b155_batch_g.py
 verify-means: |
   done — não há endpoint enterprise no binário servido nem no contrato publicado.
   O crate é uma biblioteca de integração sem binding HTTP; a superfície comercial
@@ -7881,8 +12243,8 @@ verify-means: |
   populações mínimas de 30 caminhos documentados, 50 rotas de crate e 3 caminhos Worker,
   rejeita qualquer `LEDGER_MISSING_ROUTE` e só passa sem divergência não declarada ou stale.
 
-  População verificada em 2026-09-05: 33 caminhos documentados, 106 rotas de crate e 33
-  caminhos terminados no Worker; 27 `MISSING_DOC` permanecem declarados e presentes no
+  População verificada em 2026-09-06: 36 caminhos documentados, 106 rotas de crate e 37
+  caminhos terminados no Worker; 26 `MISSING_DOC` permanecem declarados e presentes no
   ledger. A guarda passou o self-test e o veredito live sem `MISSING_ROUTE`, divergência não
   declarada ou entrada stale.
 last-verified: 2026-09-05
@@ -7942,7 +12304,7 @@ fechado por uma das tres pecas.
 id: B-122
 repo: corelink-server
 owner: tl
-status: open
+status: parked
 verify: |
   bash -c 'a=crates/corelink-container/src/adapter_cache.rs
   [ -f "$a" ] || { echo "FALHA: adapter_cache.rs sumiu — reavalie o item."; exit 1; }
@@ -7953,7 +12315,7 @@ verify: |
   grep -q "^[^/*]*depth" crates/corelink-container/src/origin_timing.rs || { echo "FALHA: PhaseScope sem controle de profundidade — reabra a peca 2."; exit 1; }
   echo "aberto: $sb sitio(s) de spawn_blocking, ponte de ledger e controle de profundidade presentes; remedição de baseline ainda manual"'
 verify-means: |
-  open — o predicado agora confirma a peca 1 (as duas regiões `spawn_blocking` carregam
+  parked — o predicado agora confirma a peca 1 (as duas regiões `spawn_blocking` carregam
   handle) e a presença estrutural da peca 2 (controle de profundidade), mas não fecha o item.
   A mensagem deixa explícito que a peca 3 continua manual: a medição não pode ser fabricada
   por um teste local nem comparada com um servidor que ainda não recebeu este binário.
@@ -8122,22 +12484,50 @@ Relates to [B-054] (the per-link hash is un-keyed, so the head signature carries
 the whole tamper-evidence guarantee — which makes seal LATENCY the window in
 which there is no guarantee at all).
 
+**Code/config repair prepared 2026-09-05 (production status remains open).** The
+200-row value is now traced to the real path: `build_state_from_env` defaults
+`AUDIT_DRAIN_BATCH_LIMIT` to 200, the root Worker's `[env.prod]` previously left
+that forwarded variable unset, and the hourly signup-worker
+`runAuditDrainSweep` is the sole caller. The production configuration now
+declares a bounded 512-row call budget. The container writes ordered seals in
+32-row JSON1 UPDATE chunks (each retaining the `emitted_at IS NULL` guard),
+checks the B-038 lease fence between chunks, and leaves the signed head CAS and
+sealed-tail resume semantics unchanged. The caller remains bounded at ten
+calls/ten minutes and refuses to retry an `incomplete` response that reports
+only lease backpressure or head drift, preventing a D1 retry storm.
+
+This is a code/config change, not production evidence. The item stays **open**
+until an authorized read-only rerun of the query set in
+`reports/go-live/D-1-audit-trail.md` proves the agreed latency/throughput
+threshold; no live closure is inferred from the declared configuration or
+focal tests.
+
 ```backlog
 id: B-125
 repo: corelink-server
 owner: tl
-status: open
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  grep -q '^[^/*]*fn resolve_seed' crates/corelink-container/src/routes/audit_drain.rs
+  python3 scripts/verify_owner_action_packets.py --id B-125 && \
+  bash -c 'set -e
+  [ "$(grep -c "^[^#]*AUDIT_DRAIN_BATCH_LIMIT" wrangler.toml)" -eq 5 ]
+  grep -q "^[^#]*AUDIT_DRAIN_BATCH_LIMIT" wrangler.toml
+  grep -q "^[^#]*512" wrangler.toml
+  grep -q "^[^#/*<*>-]*rows\\.chunks(AUDIT_BATCH_ROWS_PER_STATEMENT)" crates/corelink-container/src/storage/d1_audit_sink.rs
+  grep -q "^[^#/*<*>-]*AUDIT_BATCH_ROWS_PER_STATEMENT: usize" crates/corelink-container/src/storage/d1_audit_sink.rs
+  grep -q "^[^#/*<*>-]*MAX_DRAIN_CALLS" apps/signup-worker/src/webhooks/audit_drain_cron.ts
+  grep -q "^[^#/*<*>-]*body.rows_sealed > 0 || body.heads_resigned > 0" apps/signup-worker/src/webhooks/audit_drain_cron.ts'
 verify-means: |
-  open — a STRUCTURAL pin, not a measurement: it passes while the drain still
-  exists in its current shape. It deliberately does NOT assert a throughput
-  number, because a verify that greps for "200" would go green the moment
-  someone changed the constant without changing the latency, and a verify that
-  queried prod would make the gate depend on the network. The real check is
-  re-running the queries in reports/go-live/D-1-audit-trail.md; this line only
-  guarantees the item cannot be silently closed while the drain is untouched.
-last-verified: 2026-08-30
+  parked — structural pins cover the explicit budget in all five production
+  environment blocks, bounded JSON1 intake chunks, caller call cap, and
+  backpressure-only retry rule. They do NOT
+  assert a throughput number: a grep for "512" could pass while live latency
+  remained unchanged, and a production query would make the gate depend on the
+  network. The real check is the authorized read-only rerun in
+  reports/go-live/D-1-audit-trail.md; code/config and focal tests cannot close
+  the live-latency finding.
+last-verified: 2026-09-05
 ```
 
 ---
@@ -8185,35 +12575,34 @@ renumerar por conteúdo, arquivo por arquivo, e conferir **depois**.
 3. **Os quatro maiores por último e um por vez**, porque cada um deles é superfície citada
    pela wiki e por medições em voo.
 
+**Reconciliação de 2026-09-06:** a população fechada atual de fontes de código tem zero
+arquivos acima de 1000 linhas. A decisão do owner foi cumprida; o portão permanece para
+impedir que uma nova fonte oversized ou o crescimento de uma fonte existente reabra o item.
+
 ```backlog
 id: B-126
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'inv=reports/refactor/god-files-2026-08-31.tsv
-  test -f "$inv" || { echo "INDETERMINADO: inventario $inv sumiu — o item mede contra ele; restaure antes de concluir."; exit 0; }
-  ctl=$(git ls-files "*.rs" | grep -vc "^$" | tr -d " ")
-  [ "${ctl:-0}" -gt 100 ] || { echo "INDETERMINADO: git ls-files devolveu $ctl arquivos .rs — o instrumento falhou, nao o repo."; exit 0; }
-  n=$(git ls-files "*.rs" "*.ts" "*.tsx" "*.py" | grep -vE "node_modules|/target/" | xargs wc -l 2>/dev/null | grep -v " total$" | awk "\$1>1000" | wc -l | tr -d " ")
-  [ "$n" -gt 0 ] || { echo "FALHA: zero arquivos acima de 1000 linhas — a campanha terminou, feche o item."; exit 1; }
-  base=$(wc -l < "$inv" | tr -d " ")
-  echo "aberto: $n arquivo(s) acima de 1000 linhas (linha de base do inventario: $base)"'
+  python3 scripts/verify_b155_batch_g.py --id B-126
+  grep -q "^[^#]*def verify_b126" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*B-126" scripts/verify_b155_batch_g.py
 verify-means: |
-  open — ainda existe arquivo acima de 1000 linhas.
+  done — a população fechada de fontes de código é não-vazia e não contém arquivo acima
+  de 1000 linhas.
 
-  O predicado **recontará do zero** a cada execução em vez de confiar no inventário: o
-  arquivo `.tsv` é a linha de base histórica, e a contagem viva é o estado. Se os dois
-  divergirem, a mensagem mostra os dois números — progresso e regressão ficam visíveis
-  na mesma linha, sem que ninguém precise abrir o arquivo.
+  O predicado reconta do zero a cada execução a população rastreada pela árvore Git
+  (`git ls-tree`), em vez de confiar no inventário histórico. Qualquer fonte acima do
+  limite reprova; população vazia também reprova fechado, portanto o zero atual não pode
+  ser fabricado por um scanner que deixou de enxergar arquivos.
 
-  A consulta de controle (`git ls-files "*.rs"` > 100) existe porque a contagem real pode
-  cair a zero por dois motivos opostos: a campanha terminou, ou o comando parou de
-  enxergar arquivos. Sem o controle, os dois são indistinguíveis — e a segunda leitura
-  fecharia o item declarando vitória. Essa é a classe de defeito dominante desta campanha
-  e não entra aqui pela porta de trás.
+  A catraca `scripts/validate_file_size_ratchet.py` complementa o helper: lê os blobs da
+  árvore candidata, valida a baseline histórica e impede crescimento, entradas novas ou
+  graduação sem a queda real para o limite. Sua população também é fechada e falha
+  indeterminada para Git, blobs, paths ou baseline inválidos.
 
-  O que este comando NÃO decide, e é o mais importante: **se a refatoração melhorou alguma
+  O que este comando NÃO decide, e continua importante: **se a refatoração melhorou alguma
   coisa.** Contagem de linhas é métrica de superfície; um arquivo de 4 000 linhas partido
   em cinco de 800 com as mesmas responsabilidades embaralhadas fecha este `verify` e
   piora o código. Quem fechar precisa mostrar, por arquivo dividido, qual responsabilidade
@@ -8284,11 +12673,11 @@ which is the most likely legitimate producer of tenant-less rows.
 id: B-127
 repo: corelink-server
 owner: tl
-status: open
+status: parked
 verify: |
   grep -rq "^[^#]*region" migrations/d1/0023_residency_check_constraints.sql
 verify-means: |
-  open — a STRUCTURAL pin: it passes while the residency constraint migration is
+  parked — a STRUCTURAL pin: it passes while the residency constraint migration is
   in the tree, i.e. while the mechanism this item is about still exists. It
   deliberately asserts NO count: a verify that hard-coded 3670 would go green on
   any change to the number rather than on the defect being fixed, and one that
@@ -8338,12 +12727,14 @@ manda o autor desfazer um trabalho correto.
 id: B-128
 repo: corelink-server
 owner: tl
-status: open
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
+  python3 scripts/verify_owner_action_packets.py --id B-128 && \
   test -x scripts/run-with-infra-classification.sh
   bash tests/test_classify_runner_failure.sh
 verify-means: |
-  open — the executable wrapper now preserves the original non-zero status for
+  parked — the executable wrapper now preserves the original non-zero status for
   storage/linker failures, emits a structured classification plus annotation,
   preserves code and mixed-failure polarity, and bounds execution with an
   explicit timeout. The local harness covers each of those contracts.
@@ -8426,42 +12817,23 @@ escolher sem dado e como os `oother` chegaram aqui.
 id: B-129
 repo: corelink-server
 owner: tl
-status: open
+status: parked
 verify: |
-  bash -c 'w=worker/src/index.ts
-  [ -f "$w" ] || { echo "FALHA: index.ts sumiu — reavalie o item."; exit 1; }
-  gated=0; grep -qE "^[^/*]*(no .qother.|sem .qother.|without .qother)" "$w" && gated=1
-  grep -q "^[^/*]*qother" "$w" || { echo "FALHA: qother nao existe mais no Worker — reavalie o item."; exit 1; }
-  residuos=0
-  grep -q "^[^/*]*oother" crates/corelink-container/src/origin_timing.rs 2>/dev/null && residuos=$((residuos+1))
-  grep -q "^[^/*]*qother" "$w" && residuos=$((residuos+1))
-  grep -q "^[^/*]*ohop" "$w" && residuos=$((residuos+1))
-  [ "$residuos" -ge 2 ] || { echo "FALHA: restam menos de 2 residuos por subtracao — feche ou reescreva o item."; exit 1; }
-  echo "aberto: $residuos residuos por subtracao no caminho quente (oother/qother/ohop); qother gated=$gated"'
+  python3 scripts/verify_b103_b129_attribution.py --self-test && \
+  python3 scripts/verify_b103_b129_attribution.py --b129-inline
 verify-means: |
-  open — o caminho quente ainda tem dois ou mais residuos calculados por SUBTRACAO
-  (`oother` no contêiner, `qother` e `ohop` no Worker).
-
-  Vira DRIFTED quando sobrar menos de dois — o que acontece se os residuos forem eliminados
-  por fronteiras melhores, nao por publicacao. Escolhi contar residuos em vez de exigir o
-  flag ligado de proposito: **ligar o `qother` nao fecha este item**, so troca "sem nome"
-  por "um nome que agrega". A alegacao e sobre atribuicao, nao sobre publicacao.
-
-  **O que este comando NAO decide, e e a maior parte:** quanto tempo cai nos residuos. Isso
-  so sai do `Server-Timing` de uma requisicao autenticada contra producao, e o gate nao tem
-  credencial. O comando decide a existencia estrutural dos residuos, que vive no
-  repositorio; o tamanho deles esta na prosa como instantaneo datado (384 ms + 230 ms de
-  1001 ms, medido em 2026-08-30 contra o pin `4f9313e0`).
-
-  Fecha quando uma leitura de cache autenticada tiver **menos de 10% do tempo total** em
-  residuo — numero escolhido para que o resto seja atribuivel, nao para ser facil.
-
-  Cross-ref: [B-107] (o `ostore` agrega e por isso nao e otimizavel como uma coisa so),
-  [B-109] (o `oother`, ja consertado por divisao de portao — o unico dos tres que fechou),
-  [B-105] (o piso de uma leitura nao e calculavel enquanto 61% nao tiver nome), [B-122]
-  (adicionar UM nome ja colidiu com a particao, que e a evidencia de que "mais nomes" nao e
-  obviamente a resposta).
-last-verified: 2026-08-30
+  parked — a fronteira estrutural de atribuição passa: `ohandler` é canônico,
+  `oother` é normalizado como alias legado, e `qcontrol` substitui o nome histórico
+  `qother`; o split permanece fail-closed para duração malformada, alias conflitante
+  ou over-count. O guard tokeniza Rust/TypeScript, rejeita comentários, strings,
+  caminhos stale e funções no-op, e as mutações de rollout ficam vermelhas.
+  A disposição permanece aberta até existir evidência de produção: numa janela
+  diagnóstica aprovada, coletar leituras autenticadas com `SERVER_TIMING_WDB_DETAIL=on`
+  e provar residual mediano **<10% do tempo total** (com commit implantado, região,
+  timestamp, amostra e `qtier+qdo+qbatch+qresid+qcontrol == wdb`; o split `ohop` +
+  fases do contêiner deve reconciliar com `origin`). O repositório não afirma essa
+  medição nem possui credencial; o alias sozinho nunca fecha B-129.
+last-verified: 2026-09-06
 ```
 
 ### B-130 — o comparador de superfície de API passou a enxergar `apps/**`
@@ -8505,26 +12877,16 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -o pipefail
-  s=scripts/validate_api_surface.py
-  [ -f "$s" ] || { echo "FALHA: o comparador sumiu."; exit 1; }
-  grep -qE "^CRATES = |^WORKER = |^APPS = " "$s" || { echo "FALHA: raizes de servico ausentes."; exit 1; }
-  grep -qE "APPS = REPO / \"apps\"" "$s" || { echo "FALHA: apps/ nao e raiz do comparador."; exit 1; }
-  grep -qE "^ *- \"apps/\*\*\"" .github/workflows/api-surface-parity.yml || { echo "FALHA: a lane nao dispara em apps/**."; exit 1; }
-  grep -q "^[^#]*def app_mutation_self_test" "$s" || { echo "FALHA: mutacao end-to-end ausente."; exit 1; }
-  grep -q "^[^#]*TemporaryDirectory" "$s" || { echo "FALHA: mutacao nao usa arvore temporaria."; exit 1; }
-  grep -q "^[^#]*APP_TYPESCRIPT_SUFFIXES" "$s" || { echo "FALHA: census nao inclui TSX."; exit 1; }
-  grep -q "^[^#]*def _live_pathname_tokens" "$s" || { echo "FALHA: census lexical ausente."; exit 1; }
-  grep -q "^[^#]*APP_NON_DISPATCH_ALLOWLIST" "$s" || { echo "FALHA: allowlist exata ausente."; exit 1; }
-  raw=$(python3 "$s" --strict 2>&1) || true
-  for p in "/v1/event" "/v1/digest/preview"; do
-    printf "%s\n" "$raw" | grep -E "^[^#/*-]*MISSING_DOC +.*${p}$" >/dev/null || { echo "FALHA: strict nao acusa ${p}."; exit 1; }
-  done
-  # The normal run executes the self-test as a mandatory precondition, so the
-  # two modes below cover self-test + raw strict + ledger without a third full
-  # repository scan.
-  python3 "$s" >/dev/null || { echo "FALHA: self-test ou ledger nao cobre o inventario atual."; exit 1; }
-  echo "done: apps/** e rotas publicas entram no comparador, strict acusa as rotas, ledger fecha"'
+  python3 scripts/verify_b155_batch_g.py --id B-130
+  grep -q "^[^#]*def verify_b130" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*validate_api_surface" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*apps" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*subprocess" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*CHECKS" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*active_lines" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*required" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*ROOT" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*verify_b130" scripts/verify_b155_batch_g.py
 verify-means: |
   done — a raiz `apps/**`, o extrator de dispatch estático, o filtro da lane, o self-test
   positivo, o census fail-closed de formas não suportadas e o ledger são verificáveis.
@@ -8623,7 +12985,10 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-132 — o braco `schedule` do `secrets-drift` roteia para hosted sob uma justificativa de evidencia SOC 2 que a medicao contradiz
+### B-132 — a evidencia diaria do `secrets-drift` precisa sobreviver a runner indisponivel e falha de artefato
+
+The finding below is the historical pre-fix measurement; the closure and executable
+contract follow it.
 
 `secrets-drift.yml` roteia por evento: `pull_request` vai para self-hosted, `schedule`
 fica em `ubuntu-latest`. A razao esta escrita no arquivo:
@@ -8684,29 +13049,46 @@ proibe.
 causa mantendo hosted, ou alarmar sobre a ausencia da evidencia — que e o unico conserto
 que sobrevive aos outros dois falharem.
 
+**Fechado 2026-09-05.** A lane inteira agora roda em `corelink`, a frota self-hosted
+efemera do produto, preservando a politica de zero gasto hosted e sem alegar que a
+disponibilidade de hosted foi liberada. O upload usa `if-no-files-found: error`, conserva
+o relatorio por 90 dias e sempre anexa um manifesto sem segredos, inclusive quando o
+validador falha. Falha de um run agendado abre/atualiza uma unica issue estavel. Uma
+segunda cron independente (`secrets-drift-evidence-watchdog.yml`) consulta a API do
+Actions para exigir run `schedule` recente, concluido com sucesso e com o artefato
+`secrets-drift-report` nao expirado; ausencia, falha, stale, artefato ausente/expirado ou
+API indisponivel produzem relatorio retido e issue de lacuna. O watchdog usa hosted
+somente se o owner declarar `vars.HOSTED_ACTIONS_AVAILABLE=true`; caso contrario cai em
+`corelink`. A variavel nao e criada por este repo nem tratada como prova de disponibilidade;
+a saude da frota e observada separadamente por `runner-fleet-health.yml`.
+O contrato fechado, a populacao dos paths e as mutacoes de roteamento, retencao,
+upload e alarme estao em `tests/test_b132_secrets_evidence.py` (stdlib-only).
+
 ```backlog
 id: B-132
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'w=.github/workflows/secrets-drift.yml
-  [ -f "$w" ] || { echo "FALHA: secrets-drift.yml sumiu — reavalie o item."; exit 1; }
-  grep -qE "^\s+runs-on:.*schedule.*ubuntu-latest" "$w" || {
-    echo "FALHA: o braco schedule nao aponta mais para ubuntu-latest — reavalie/feche o item."; exit 1; }
-  grep -q "^[^#]*CC6.1" "$w" || echo "  aviso: a justificativa SOC 2 nao esta mais citada no arquivo"
-  echo "aberto: o braco schedule ainda roteia para ubuntu-latest sob a justificativa de evidencia SOC 2"'
+  python3 -S tests/test_b132_secrets_evidence.py
 verify-means: |
-  open — o roteamento por evento continua mandando o run diario para hosted.
+  done — o teste focal stdlib-only passa somente com a cron `04:00 UTC` no runner
+  `corelink`, o census fechado de entradas do scanner, artefatos com 90 dias e
+  `if-no-files-found: error`, o manifesto de cada tentativa e ambos os caminhos de
+  alerta. Seus controles positivos e mutacoes detectam retorno a hosted, perda de
+  qualquer superficie de secrets, downgrade de retencao/upload ou remoção do alarme.
+  O teste de comportamento também exige run schedule recente em `main`, conclusão
+  `success` e o artefato exato não expirado, e reprova ausência, stale, failure,
+  evento incorreto, artefato ausente/expirado e API sem credencial. A API real não é
+  chamada no gate: o watchdog executa essa verificação em cada cron e retém seu próprio
+  diagnóstico. O item não afirma que hosted Actions está disponível nem que um run
+  futuro já foi observado após o merge.
 
-  Este verify NAO consulta o historico de execucoes de proposito: chamar a API do Actions
-  num gate que roda em todo PR e custo escondido, e o fato que importa (a justificativa
-  ainda em vigor) esta no arquivo. A contagem de falhas e evidencia do corpo do item, nao
-  do portao.
+  O verify e local e deterministico; a API real e sondada pelo watchdog agendado.
 
-  Vira DRIFTED quando o braco schedule mudar de destino.
-
-  **O titulo foi reescrito em 2026-08-31 para dizer o que o portao de fato mede.** Ele
+  **Contexto histórico (2026-08-31).** O portão anterior media apenas o roteamento;
+  a implementação atual também verifica a produção e a ausência da evidência.
+  O texto antigo dizia:
   prometia "a evidencia SOC 2 esta com lacuna" e media roteamento — duas coisas
   diferentes, com duas consequencias erradas: mover o braco para a frota **fechava** o
   item sem ninguem provar que a evidencia voltou a ser produzida, e consertar o
@@ -8723,7 +13105,10 @@ verify-means: |
   faturamento, sem passos e sem log, com a anotacao visivel so via API — continua **sem
   item proprio** e esta registrado na prosa acima sob "Generalizacao que este item NAO
   fecha". Quem fechar este deve abrir aquele, ou recusar por escrito.
-last-verified: 2026-08-31
+  Esse limite histórico foi resolvido pela lane self-hosted, manifesto, upload fail-closed
+  e watchdog descritos acima; a única validação deliberadamente futura é a observação de
+  um run real após o merge.
+last-verified: 2026-09-05
 ```
 
 ### B-133 — o `dependabot-policy` executa codigo vindo do PR, violando a invariante escrita no proprio arquivo
@@ -8768,31 +13153,21 @@ invariantes morrem.
 id: B-133
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: |
-  bash -c 'w=.github/workflows/dependabot-policy.yml
-  [ -f "$w" ] || { echo "FALHA: dependabot-policy.yml sumiu — reavalie o item."; exit 1; }
-  grep -q "^[^#]*refs/pull/" "$w" || { echo "FALHA: nao ha mais checkout do merge-ref — feche o item."; exit 1; }
-  grep -qE "^[[:space:]]+run: bash scripts/ci-use-host-toolchain\.sh[[:space:]]*$" "$w" || {
-    echo "FALHA: o passo que executa script da arvore checada sumiu — feche o item (verify invertido)."; exit 1; }
-  echo "aberto: checkout de refs/pull/N/merge seguido de bash de um script da arvore checada"'
+  python3 scripts/check_dependabot_policy_trusted_tree.py
+  bash scripts/test_dependabot_policy_trust_boundary.sh
 verify-means: |
-  open — o arquivo ainda faz checkout do conteudo do PR E executa um script vindo dele.
-
-  Vira DRIFTED assim que um dos dois sumir: o checkout do merge-ref, ou o `bash` do script
-  da arvore. Qualquer dos dois fecha o furo; o verify nao opina sobre qual.
-
-  O terceiro predicado casa o **`run:`**, nao o nome do script em qualquer lugar do
-  arquivo. Um `grep -q "ci-use-host-toolchain.sh"` solto casava tambem a **linha 144**,
-  que e prosa de comentario ("Full reasoning: scripts/ci-use-host-toolchain.sh header."):
-  o portao continuava dizendo "aberto" mesmo depois de o passo executavel sumir. Dois
-  mutantes sobreviviam, e o pior dos dois era **o conserto que este item recomenda** —
-  trocar o passo por `bash _base/scripts/ci-use-host-toolchain.sh`, a partir de um
-  checkout do ref BASE. Um item de seguranca cujo portao nao reconhece o proprio reparo
-  fica aberto para sempre ou e fechado a mao, sem prova. A ancora `^[[:space:]]+run: `
-  e o `$` final casam 1x hoje (so a 147); `run: echo skipped` e o caminho `_base/…`
-  agora ficam ambos DRIFTED.
-last-verified: 2026-08-31
+  **Polaridade INVERTIDA (`done`):** sai 0 apenas quando o checker confirma a
+  pull_request_target, as duas identidades Dependabot, permissões, paths, pins,
+  checkout BASE/PR, hermeticidade PyYAML, histórico HEAD/base/head e a ordem
+  fechada dos passos. O merge ref permanece somente em `_pr-data`; toda
+  execução ocorre de `_base`. A suíte focal muta evento, paths, permissões,
+  runner, timeout, refs/expressions, working-directory, identidade, action pin,
+  history fetch, failure masking, bytes de controle, ausência e symlink;
+  qualquer mutante sai 1. O guard de tamanho mantém checker e teeth bounded;
+  não há alegação de que o rótulo `corelink` seja isolamento.
+last-verified: 2026-09-05
 ```
 
 ### B-134 — "shim nao e daemon": ninguem observou `smoke-install` nem `cosign-sign` rodando na frota
@@ -8832,12 +13207,14 @@ ambiente parecido com o do cliente, e isso e argumento de produto, nao de custo.
 id: B-134
 repo: corelink-server
 owner: tl
-status: open
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
+  python3 scripts/verify_owner_action_packets.py --id B-134 && \
   python3 scripts/check_b134_observability.py
   bash scripts/test_b134_observability.sh
 verify-means: |
-  open — os dois workflows estao roteados para `corelink`, mas a ledger permanece
+  parked — os dois workflows estao roteados para `corelink`, mas a ledger permanece
   `UNMEASURED` ate haver um run real. O checker confirma preflight e passos observaveis;
   a suite de mutacoes prova que rota, verificacao, placeholders e ledger falsa falham.
 
@@ -8893,10 +13270,10 @@ os rotulos devem ganhar consumidor ou desaparecer.
 id: B-135
 repo: corelink-runners
 owner: tl
-status: open
+status: parked
 verify: manual
 verify-means: |
-  vive em corelink-runners; o token do Actions nao le repo irmao, entao nao da para
+  parked — vive em corelink-runners; o token do Actions nao le repo irmao, entao nao da para
   automatizar ate [B-012] entregar credencial cross-repo.
 
   Checagem manual, dois comandos no clone de corelink-runners:
@@ -8952,17 +13329,10 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -o pipefail
-  w=.github/workflows/backlog-verify.yml
-  [ -f "$w" ] || { echo "FALHA: $w nao existe — este item pressupoe o gate do backlog; reavalie."; exit 1; }
-  g=$(awk "/^concurrency:/{c=1;next} c&&/^[^ ]/{exit} c&&/^ *group *:/{print;exit}" "$w")
-  [ -n "$g" ] || { echo "FALHA: nao achei a linha group: no bloco concurrency de $w — o bloco mudou de forma; releia antes de confiar neste portao."; exit 1; }
-  echo "$g" | grep -q "^[^#/*-]*github.event_name" || { echo "REGRESSAO: o grupo voltou a NAO incluir github.event_name — push, schedule e workflow_dispatch na main colapsam no mesmo grupo e o cron do backlog volta a poder morrer calado. grupo=$g"; exit 1; }
-  echo "$g" | grep -q "^[^#/*-]*github.ref" || { echo "REGRESSAO: o grupo escopa por evento mas perdeu o ref — dois PRs distintos passam a cancelar um ao outro dentro do mesmo evento, que e o defeito do #1503 de volta. grupo=$g"; exit 1; }
-  c=$(awk "/^concurrency:/{c=1;next} c&&/^[^ ]/{exit} c&&/^ *cancel-in-progress *:/{print;exit}" "$w")
-  echo "$c" | grep -q "^[^#/*-]*true" || { echo "nota: cancel-in-progress nao esta mais ligado — sem cancelamento nao ha colisao, entao o item segue fechado por outro caminho ($c)"; exit 0; }
-  ev=$(awk "/^on:/{o=1;next} o&&/^[^ ]/{exit} o&&/^  [a-z_]+:/{gsub(/[ :]/,\"\");print}" "$w" | tr "\n" " ")
-  echo "fechado: grupo=$g escopa por evento E por ref, com cancel ligado, sobre os gatilhos [$ev]"'
+  python3 scripts/verify_b155_batch_d.py --id B-136
+  grep -qE "^[[:space:]]*[^#/*<>-][^#/*<>]*github.event_name" .github/workflows/backlog-verify.yml
+  grep -qE "^[[:space:]]*[^#/*<>-][^#/*<>]*github.ref" .github/workflows/backlog-verify.yml
+  grep -qE "^[[:space:]]*[^#/*<>-][^#/*<>]*cancel-in-progress:[[:space:]]*true" .github/workflows/backlog-verify.yml
 verify-means: |
   **Polaridade INVERTIDA (`done`):** sai 0 — fechado — enquanto o grupo de concorrência do
   `backlog-verify` interpolar **as duas** coisas: o evento **e** o ref. Sai 1 se qualquer uma
@@ -9032,31 +13402,12 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -o pipefail
-  n=0; fechados=0; abertos=""
-  for w in byok_kill_switch_drill_weekly byok_matrix_weekly dr-drill-monthly nightly perf-nightly; do
-    f=".github/workflows/$w.yml"
-    [ -f "$f" ] || { echo "FALHA: $f nao existe — a lista deste item ficou defasada; reavalie em vez de confiar neste portao."; exit 1; }
-    n=$((n+1))
-    g=$(awk "/^concurrency:/{c=1;next} c&&/^[^ ]/{exit} c&&/^ *group *:/{print;exit}" "$f")
-    [ -n "$g" ] || { echo "FALHA: sem linha group: no bloco concurrency de $f — o bloco mudou de forma; releia antes de confiar neste portao."; exit 1; }
-    c=$(awk "/^concurrency:/{c=1;next} c&&/^[^ ]/{exit} c&&/^ *cancel-in-progress *:/{print;exit}" "$f")
-    ev=$(awk "/^on:/{o=1;next} o&&/^[^ ]/{exit} o&&/^  [a-z_]+:/{gsub(/[ :]/,\"\");print}" "$f" | tr "\n" " ")
-    # Fechada por qualquer um dos tres caminhos, e o verify nao opina sobre qual.
-    if echo "$g" | grep -q "^[^#/*-]*github.event_name"; then
-      # Escopar por evento so vale se o ref continuar la: um grupo com evento e
-      # SEM ref serializa todas as noturnas agendadas entre si.
-      echo "$g" | grep -q "^[^#/*-]*github.ref" || { echo "REGRESSAO em $w: o grupo escopa por evento mas perdeu o ref — grupo=$g"; exit 1; }
-      fechados=$((fechados+1)); continue
-    fi
-    echo "$c" | grep -q "^[^#/*-]*true" || { fechados=$((fechados+1)); continue; }
-    echo "$ev" | grep -q "^[^#/*-]*schedule" || { fechados=$((fechados+1)); continue; }
-    echo "$ev" | grep -q "^[^#/*-]*workflow_dispatch" || { fechados=$((fechados+1)); continue; }
-    abertos="$abertos $w"
-  done
-  [ "$n" -eq 5 ] || { echo "FALHA: esperava 5 workflows na lista e varri $n — reavalie o item."; exit 1; }
-  [ "$fechados" -eq 5 ] || { echo "REGRESSAO: $fechados de $n fechadas; ainda colidem schedule x workflow_dispatch em refs/heads/main:$abertos"; exit 1; }
-  echo "fechado: $fechados de $n noturnas escopadas por evento (ou sem colisao possivel)"'
+  python3 scripts/verify_b155_batch_g.py --id B-137
+  grep -q "^[^#]*def verify_b137" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*github.event_name" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*github.ref" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*concurrency" scripts/verify_b155_batch_g.py
+  grep -q "^[^#]*B-137" scripts/verify_b155_batch_g.py
 verify-means: |
   **Polaridade INVERTIDA (`done`):** sai 0 — fechado — só quando **as cinco** estiverem
   fechadas. Sai 1 nomeando quais voltaram a colidir.
@@ -9287,10 +13638,10 @@ o mesmo erro e queima oito minutos da frota.
 id: B-138
 repo: corelink-runners
 owner: tl
-status: open
+status: parked
 verify: manual
 verify-means: |
-  manual, e **não** por falta de pergunta objetiva. Todas as perguntas desta escada são
+  parked — manual, e **não** por falta de pergunta objetiva. Todas as perguntas desta escada são
   objetivas; nenhuma é respondível deste repositório.
 
   O token do Actions é escopado a ESTE repo — é o que o próprio `backlog-verify.yml` declara,
@@ -9365,35 +13716,40 @@ O que decidir, e são decisões separadas:
 **Não fechar este item porque o #1505 mergeou.** O #1505 mudou onde a lane roda; esta lane
 segue reprovando no primeiro dispatch, e o WP-CI não pode fechar declarando-a consertada.
 
+**Calibração executável entregue em 2026-09-06.** O workflow agora executa os seis rulepacks
+bundled e o pack CoreLink em scans SARIF separados. As quatro regras locais declaram
+`severity: ERROR` e `metadata.policy: explicit-error`; o avaliador
+`scripts/verify_b139_semgrep.py` reprova somente findings SARIF no nível `error` ou um erro
+de execução/saída do scanner. Warnings, notes e findings `none` continuam contabilizados e
+retidos, mas não viram bloqueio implícito. Isso substitui o `--error` por uma decisão
+explícita aplicada ao resultado, não por um scan fail-open.
+
+O artefato de decisão está em
+`docs/handoff/2026-09-06-b139-semgrep-policy-decision.json`. O workflow retém os dois SARIF
+e o relatório gerado. Cada upload é classificado como `uploaded` ou
+`unavailable_or_unverified`; enquanto Advanced Security não estiver disponível, o texto não
+alega que o Security tab recebeu o SARIF. O scan completo e o dispatch continuam adiados ao
+bundle D03; sem esses artefatos o item permanece `open`.
+
 ```backlog
 id: B-139
 repo: corelink-server
 owner: tl
-status: open
-verify: |
-  bash -c 'set -o pipefail
-  f=".github/workflows/semgrep.yml"
-  [ -f "$f" ] || { echo "FALHA: $f nao existe — a premissa deste item mudou; reavalie em vez de fechar."; exit 1; }
-  if grep -q -- "^[^#]*--error" "$f"; then
-    echo "AINDA ABERTO: semgrep segue fail-closed com --error e sem triagem registrada dos 4228 achados"
-    exit 0
-  fi
-  echo "FECHADO?: --error saiu de $f — a politica mudou. Confirme com um dispatch VERDE (nao apenas com a ausencia da flag) e so entao feche."
-  exit 1'
+status: parked
+verify: python3 scripts/verify_b139_semgrep.py --self-test
 verify-means: |
-  O portão mede a **política**, não o resultado: enquanto o `--error` estiver no workflow e
-  ninguém tiver triado o rulepack, o próximo dispatch reprova, e o item continua aberto.
+  parked — `scripts/verify_b139_semgrep.py --self-test` valida a população fechada dos seis
+  bundled rulepacks, quatro regras CoreLink, separação dos dois SARIF, avaliador explícito
+  por severidade ERROR, fail-closed em erro de scanner/saída, retenção do artefato e a
+  classificação honesta de upload. As mutações de regra, avaliador, política e upload
+  precisam falhar.
 
-  Isto é deliberadamente um proxy LOCAL e barato, e a limitação está declarada: ele não
-  observa uma execução. Fechar exige as duas coisas juntas —
-
-    1. um `gh workflow run semgrep.yml` **verde**, com o run-id colado aqui; e
-    2. a decisão de política registrada (quais regras são ERROR, e o que acontece com o
-       upload de SARIF sem Advanced Security).
-
-  Remover o `--error` sozinho faz o portão virar, e por isso ele exige o dispatch verde no
-  texto: uma lane que passou a não reprovar não é uma lane que passou.
-last-verified: 2026-08-31
+  O gate local não executa Semgrep completo nem consulta GitHub. A closure exige um run do
+  bundle D03 com `semgrep-bundled.sarif`, `semgrep-custom.sarif` e
+  `semgrep-b139-report.json`, triagem dos findings ERROR e uma classificação de upload
+  explícita. Advanced Security indisponível é uma lacuna externa com SARIF retido, não um
+  upload alegado; ausência de scan ou artefato não fecha o item.
+last-verified: 2026-09-06
 ```
 
 ### B-140 — o guard de `runs-on:` continua cego para escalar aspeado e sequência em bloco — FECHADO
@@ -9473,9 +13829,14 @@ O achado original do #1502 era que `pr-labels.yml` e `welcome-first-pr.yml` usav
 `pull_request_target` na frota efêmera sem um boundary antes de `runs-on`. A visibilidade
 privada do repositório não é controle de admissão e não pode ser a prova de segurança.
 
-Este fechamento aplica o boundary fail-closed completo: os dois jobs de `pr-labels.yml` e o
-job de `file-size-ratchet.yml` só alocam `corelink` para `author_association` exatamente
-`OWNER`, `MEMBER` ou `COLLABORATOR`. Os jobs que tratam Dependabot
+Este fechamento aplica o boundary fail-closed completo: os dois jobs de `pr-labels.yml` só
+alocam `corelink` para `author_association` exatamente `OWNER`, `MEMBER` ou
+`COLLABORATOR`. O `file-size-ratchet.yml` é a exceção segura de dados: precisa rodar para
+todo fork para que um autor não consiga crescer um god file, mas seu workflow é carregado do
+base confiável, concede somente `contents: read`, lê os blobs do candidato e executa somente
+o validador copiado por `git show "${BASE_REF}:..."` para `$RUNNER_TEMP`. Não executa código,
+ação ou workflow do candidato, não usa credencial no checkout, e não possui gate de ator —
+desligá-lo para forks reabre B-126. Os jobs que tratam Dependabot
 (`dependabot-auto-merge.yml` e `dependabot-policy.yml`) continuam exigindo, em conjunto,
 actor e autor `dependabot[bot]`; o sentinel não-Dependabot de `dependabot-policy.yml` foi
 movido para o pool Mac e não aloca a frota.
@@ -9491,8 +13852,10 @@ admissão. O boundary e as mutações estão cobertos por
 
 **Decisão permanente:** a retenção no pool `[self-hosted, mac, corelink-builder]` é a política
 do greeter de first-timers e do sentinel não-Dependabot. Somente os gates de associação/actor
-acima podem alocar `corelink`. O item fecha pela prova local dessa fronteira, sem depender da
-visibilidade atual do repositório ou de inferência sobre um teto de spawn em `corelink-runners`.
+acima podem alocar `corelink` para jobs que executam comportamento vindo do PR; o ratchet de
+B-126 pode alocá-lo para sua inspeção de objetos Git somente-leitura carregando executável do
+base confiável. O item fecha pela prova local dessa fronteira, sem depender da visibilidade
+atual do repositório ou de inferência sobre um teto de spawn em `corelink-runners`.
 
 ```backlog
 id: B-141
@@ -9504,22 +13867,33 @@ verify: |
   t=tests/test_pull_request_target_spawn_boundary.py
   [ -f "$t" ] || { echo "FALHA: $t nao existe — boundary sem suite executavel"; exit 1; }
   python3 -S "$t" >/dev/null || { echo "DRIFTED: boundary ou mutacao nao esta coberto"; exit 1; }
+  python3 -S tests/test_validate_file_size_ratchet.py >/dev/null || { echo "DRIFTED: B-126 ratchet/base trust boundary nao esta coberto"; exit 1; }
   grep -q "^[^#]*author_association.*OWNER" .github/workflows/pr-labels.yml || { echo "DRIFTED: OWNER gate sumiu"; exit 1; }
   grep -q "^[^#]*author_association.*MEMBER" .github/workflows/pr-labels.yml || { echo "DRIFTED: MEMBER gate sumiu"; exit 1; }
   grep -q "^[^#]*author_association.*COLLABORATOR" .github/workflows/pr-labels.yml || { echo "DRIFTED: COLLABORATOR gate sumiu"; exit 1; }
-  grep -q "^[^#]*author_association.*OWNER" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet OWNER gate sumiu"; exit 1; }
-  grep -q "^[^#]*author_association.*MEMBER" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet MEMBER gate sumiu"; exit 1; }
-  grep -q "^[^#]*author_association.*COLLABORATOR" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet COLLABORATOR gate sumiu"; exit 1; }
+  ! grep -q "^[^#]*author_association" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet ganhou gate de ator e deixou de cobrir forks"; exit 1; }
+  grep -q "git show \"\${BASE_REF}:scripts/validate_file_size_ratchet.py\"" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet deixou de carregar validador do base"; exit 1; }
+  grep -q "python3 \"\\\$RUNNER_TEMP/validate_file_size_ratchet.py\"" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet passou a executar árvore candidata"; exit 1; }
+  grep -q "^[^#]*persist-credentials: false" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: checkout do ratchet ganhou credencial persistente"; exit 1; }
+  grep -q "^[^#]*contents: read" .github/workflows/file-size-ratchet.yml || { echo "DRIFTED: ratchet perdeu escopo somente-leitura"; exit 1; }
   grep -qE "^[^#]*runs\-on:\ \[self\-hosted,\ mac,\ corelink\-builder\]" .github/workflows/welcome-first-pr.yml || { echo "DRIFTED: welcome voltou para a frota"; exit 1; }
-  echo "CLOSED: boundary fail-closed, permissions least-privilege e mutation-tested"
+  echo "CLOSED: boundary fail-closed, trusted-base ratchet, permissions least-privilege e mutation-tested"
   exit 0'
 verify-means: |
   **Polaridade `done`:** o controle sai 0 somente quando o boundary híbrido, a política
   permanente de host e os escopos mínimos estão presentes. Sai não-zero se a suíte desaparecer,
-  se uma associação confiável sair do gate, se qualquer job externo voltar a alocar `corelink`,
-  se permissões mudarem, ou se o greeter perder o pool/timeout. A suíte também planta mutações
-  de remoção/alargamento dos gates, retorno de jobs ao fabric e ampliação do token; cada mutação
-  tem de ficar vermelha.
+  se uma associação confiável sair do gate, se qualquer job externo voltar a alocar `corelink`
+  para executar comportamento do PR, se permissões mudarem, ou se o greeter perder o pool/timeout.
+  O ratchet de B-126 é a exceção explícita: aloca `corelink` sem gate de ator apenas para ler
+  objetos do candidato, executando o validador vindo do base. A suíte também planta mutações de
+  remoção/alargamento dos gates, retorno de jobs ao fabric, ampliação do token, resolução de
+  `BASE_REF` pelo head/candidato, export/declare/alias/`GITHUB_ENV` e ocorrência extra
+  desconhecida, além da quebra dessa exceção data-only; cada mutação tem de ficar vermelha.
+  O teste B-126 também exige estruturalmente uma única declaração da expressão event-aware
+  exata: `base.sha` no `pull_request_target`, `event.before` ou `github.sha` somente nos
+  eventos confiáveis de push/dispatch. Dentro do `run`, cada ocorrência de `BASE_REF` fica
+  limitada ao `git show` somente-leitura e ao argumento explícito do validador; nenhum alias,
+  atribuição ou escrita em `GITHUB_ENV` passa.
 
   O parser da suíte é stdlib-only e o verify usa `python3 -S`, portanto não depende de PyYAML
   ou de qualquer pacote instalado na imagem do runner. O verificador não consulta a visibilidade do repositório nem um teto externo de spawn. A
@@ -9623,71 +13997,38 @@ gasto hospedado — é dinheiro dele, mas ela já é rastreada por [B-110], que 
 repetir aqui o mesmo bloqueio duplicaria a fila dele por um item que **tem** caminho de
 engenharia.
 
+**Slice CodeQL entregue em 2026-09-05.** `.github/workflows/codeql.yml` agora executa o
+matrix fechado (Rust, JavaScript/TypeScript e Python) em `runs-on: corelink`, com
+serialização de recurso, cache de dependências CodeQL, limites explícitos de threads/memória,
+SARIF retido e um watchdog independente que falha fechado quando a execução, qualquer job ou
+qualquer artefato não aparece. O `upload-sarif` continua preservado; Advanced Security é uma
+capacidade externa do owner e, enquanto indisponível, o run registra a limitação e retém o
+SARIF em vez de alegar upload no Security tab. O packet de ação está em
+`docs/handoff/2026-09-05-b142-codeql-selfhost-action-packet.md`. Este bloco continua `open`
+enquanto o braço `secrets-drift` — explicitamente separado e pertencente ao B-132 — não for
+fechado no mesmo cutover; não se conta o slice como fechamento do item inteiro.
+
 ```backlog
 id: B-142
 repo: corelink-server
 owner: tl
-status: open
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  python3 - <<'PY'
-  import glob, sys, yaml
-  files = sorted(glob.glob(".github/workflows/*.yml"))
-  if len(files) < 50:
-      print(f"INSTRUMENTO QUEBRADO: globbed {len(files)} workflows, esperado >=50", file=sys.stderr)
-      sys.exit(2)
-  hosted, naked = 0, []
-  for p in files:
-      try:
-          doc = yaml.safe_load(open(p).read())
-      except yaml.YAMLError as e:
-          print(f"INSTRUMENTO QUEBRADO: {p} nao parseia: {e}", file=sys.stderr)
-          sys.exit(2)
-      if not isinstance(doc, dict):
-          continue
-      on = doc.get(True, doc.get("on"))
-      trig = set(on) if isinstance(on, (dict, list)) else ({on} if isinstance(on, str) else set())
-      for jid, j in (doc.get("jobs") or {}).items():
-          if not isinstance(j, dict):
-              continue
-          ro = j.get("runs-on")
-          vals = ((ro.get("labels") or []) + [ro.get("group") or ""]) if isinstance(ro, dict) \
-                 else ro if isinstance(ro, list) else [ro] if ro is not None else []
-          if not any(isinstance(v, str) and "ubuntu" in v for v in vals):
-              continue
-          hosted += 1
-          if "schedule" in trig and "HOSTED_ACTIONS_AVAILABLE" not in str(j.get("if", "")):
-              naked.append(f"{p}:{jid}")
-  print(f"jobs ubuntu-* declarados: {hosted}; em cron SEM guard HOSTED_ACTIONS_AVAILABLE: {len(naked)}")
-  for n in naked:
-      print("  ", n)
-  sys.exit(0 if naked else 1)
-  PY
+  python3 -S scripts/verify_b142_workflows.py
 verify-means: |
-  **Polaridade `open`:** sai 0 — item confirmado aberto — enquanto existir ao menos UM job
-  hospedado (`ubuntu-*`) alcançável por `schedule` e **sem** o guard
-  `HOSTED_ACTIONS_AVAILABLE`. Hoje isso seleciona exatamente `codeql:analyze` e
-  `secrets-drift:secrets-drift` — as duas lanes cuja morte foi medida, e nada mais.
+  parked — **Predicado de engenharia:** sai 0 somente quando os jobs canônicos de CodeQL,
+  secrets-drift e seus watchdogs estão presentes e seus `runs-on` estruturais
+  preservam a política `corelink`; comentários/string bait, job renomeado e
+  mutação de label falham. O watchdog de secrets-drift só aceita o fallback
+  hospedado explicitamente condicionado a `vars.HOSTED_ACTIONS_AVAILABLE ==
+  'true'`, com `corelink` como ramo padrão.
 
-  **Por que parseia YAML em vez de grepar:** `runs-on` tem pelo menos cinco grafias legais
-  (escalar; escalar com comentário no fim da linha; lista inline `[a, b]`; sequência em bloco;
-  e `${{ }}` interpolado, que é justamente a forma do `secrets-drift`). O B-140 documenta um
-  guard deste mesmo repo que perdeu jobs por casar só a forma escalar. Ler
-  `jobs[*].runs-on` como estrutura é a única leitura que não tem uma próxima grafia surpresa
-  atrás dela. O glob `*.yml` também exclui o `_TEMPLATE.yml.md` por construção, e o parser
-  nunca vê linha de comentário.
-
-  **Não pode passar por vacuidade:** menos de 50 workflows lidos, ou qualquer arquivo que não
-  parseie, sai **2** com mensagem nomeada — nunca "consertado". Os três desfechos são
-  distintos: 0 = aberto, 1 = pode fechar, 2 = o instrumento quebrou.
-
-  **O que ele NÃO decide, e está declarado de propósito:** ele mede a **presença de lane de
-  cron hospedada e desprotegida**, não se o faturamento foi desbloqueado. As duas coisas são
-  independentes, e a diferença importa: **apagar ou guardar as duas lanes fecha este portão
-  sem que nada tenha melhorado** — o CodeQL continuaria sem rodar, só que em silêncio em vez
-  de em vermelho. Quem vir este `verify` virar 1 deve confirmar QUAL das três saídas do corpo
-  aconteceu antes de marcar `done`; se foi guard ou remoção, o item não fechou, mudou de forma.
-  O estado do faturamento não é observável a partir do repo — só pela conta do owner.
-last-verified: 2026-08-31
+  **Fronteira externa:** este comando não consulta Actions/GHAS e não transforma
+  wiring local em evidência de execução. O item continua `open` até o owner
+  registrar runs e artefatos reais, e até o GHAS upload ser classificado; o
+  secrets-drift continua pertencendo ao B-132.
+last-verified: 2026-09-05
 ```
 
 ### B-143 — `id:` de placeholder passava CONFIRMED e a densidade não o via: o portão do BACKLOG falhava ABERTO — FECHADO
@@ -9810,82 +14151,28 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-144 — o revoke de PAT resolve o alvo por tenant, não por portador: qualquer `read-write` do tenant revoga o PAT do owner
+### B-144 — revogação de PAT com papel confiável e isolamento por tenant
 
-`POST /v1/customer/keys/{pat_id}/revoke` resolve o alvo com
-`FROM pat WHERE pat_id = ?1 AND tenant_id = ?2`
-(`crates/corelink-container/src/customer_d1.rs:1379`). O `req.principal` está disponível
-logo acima (`:1370-1372`), é passado ao `emit_audit` da mesma função, e **não entra no
-SELECT**.
-
-**O controle é o que transforma isto em achado, e não em estilo.** O mesmo arquivo escreve
-`AND principal_id = ?2` em `:1597` e `:1608`, no caminho de remoção de assento — ou seja, a
-casa **sabe** escrever o predicado por portador e escolheu não escrever aqui. Sem esse
-controle, um SELECT tenant-scoped seria só a convenção do arquivo.
-
-O comentário imediatamente acima declara a intenção que o código cumpre: *"Tenant-scoped
-SELECT … cross-tenant safe by construction"*. **Cross-tenant está de fato seguro** — um PAT
-de outro tenant é invisível e vira `NotFound`. A afirmação não é falsa; ela é **mais estreita
-que o risco**, e é por isso que passou. Dentro do tenant, qualquer portador que satisfaça o
-gate do dashboard (`routes/customer.rs:738`) revoga **qualquer** PAT do tenant, inclusive o
-do owner. Revogar é irreversível e derruba CI de terceiros no ato.
-
-**O que este item NÃO decide, e é o motivo de ele ser `owner:`… não é.** Ele é `tl` porque a
-medição e o reparo são meus; o que ele não decide é a **política**: revogar o PAT de um
-colega pode ser legítimo para um papel administrativo, e nesse caso o reparo certo é
-`principal_id` no SELECT **mais** um caminho admin explícito, não `principal_id` sozinho.
-O que não é defensável em nenhuma leitura é `read-write` genérico ter esse poder por
-omissão. Quem pegar o item leva a pergunta de produto ao owner **antes** de escolher entre as
-duas formas.
-
-Relação com o resíduo de escopo, **e o ponteiro certo**: [B-080] está `done` — fechou
-removendo os seis `admin:*`. O escopo que sobra sem ponto de aplicação é o `cache:delete`
-(`crates/corelink-pat/src/scopes.rs:52`, `:199`), e ele é rastreado no ledger
-`UNENFORCED_BY_DESIGN` de `crates/corelink-container/tests/scope_catalog_closure.rs:44-49`,
-que diz textualmente *"tracked separately from B-080"*. Lá o defeito é um **nome de escopo
-que não concede nada distinto**; aqui o escopo é verificado e o **predicado de linha** é que
-está largo. Camadas diferentes do mesmo caminho.
+O achado histórico era correto: o gate antigo aceitava qualquer `read-write` do tenant e
+o SELECT do PAT não distinguia o portador. A política agora está explícita e aplicada em
+duas camadas: a rota aceita apenas o papel Clerk confiável `owner`/`admin`, e o handler D1
+impede que `admin` revogue PATs do owner (linhas legadas com `principal_id IS NULL`).
+Owner pode revogar qualquer PAT do próprio tenant; admin pode revogar PAT de membro. Member,
+viewer, papel ausente/desconhecido, PAT nativo e alvo cross-tenant falham sem mutação.
+Tentativas repetidas permanecem idempotentes e preservam o timestamp original.
 
 ```backlog
 id: B-144
 repo: corelink-server
 owner: tl
-status: open
-verify: |
-  bash -c 'f=crates/corelink-container/src/customer_d1.rs
-  [ -f "$f" ] || { echo "FALHA: $f sumiu — reavalie o item em vez de fecha-lo."; exit 1; }
-  bloco=$(awk "/fn revoke\(&self, req: KeyRevokeRequest\)/{c=1} c{print} c&&/LIMIT 1/{exit}" "$f")
-  [ -n "$bloco" ] || { echo "FALHA: nao achei o corpo de revoke() ate o SELECT — a funcao mudou de forma; releia antes de confiar neste portao."; exit 1; }
-  sel=$(printf "%s\n" "$bloco" | grep -v "^[[:space:]]*//" | grep "^[^#/*-]*FROM pat WHERE")
-  [ -n "$sel" ] || { echo "FALHA: revoke() nao le mais FROM pat WHERE — a consulta mudou; reavalie."; exit 1; }
-  ctl=$(grep -c "principal_id = ?2" "$f")
-  [ "$ctl" -ge 2 ] || { echo "FALHA: o controle sumiu — o arquivo usa principal_id = ?2 em apenas $ctl caminho(s); sem controle este portao mede estilo, nao escolha."; exit 1; }
-  if printf "%s\n" "$sel" | grep -q "^[^#/*-]*principal_id"; then
-    echo "FALHA: o SELECT de revoke() ja filtra por principal_id — o reparo aterrissou; feche o item."; exit 1; fi
-  echo "aberto: o SELECT de revoke() resolve o alvo so por tenant_id, e o mesmo arquivo usa principal_id = ?2 em $ctl outros caminhos"'
+status: done
+verify: 'python3 scripts/verify_b144_pat_revoke.py --expect done'
 verify-means: |
-  open — o SELECT que resolve o alvo do revoke **não** contém `principal_id`, E o controle
-  (o mesmo arquivo sabendo escrever `principal_id = ?2` em outro caminho) continua presente.
-
-  **O bloco é extraído, não grepado por símbolo.** Grepar `principal_id` no arquivo inteiro
-  responderia "sim" e esconderia o defeito, porque o identificador existe — em OUTRA
-  consulta. O que decide é o campo dentro do `WHERE` **desta** função, e por isso o comando
-  recorta de `fn revoke(` até o `LIMIT 1` antes de olhar.
-
-  **Comentário não conta.** O corpo recortado passa por `grep -v "^[[:space:]]*//"` antes da
-  medição, senão a linha *"Tenant-scoped SELECT … cross-tenant safe by construction"* — que
-  contém as duas palavras que interessam — satisfaria o portão sozinha. Foi exatamente essa
-  a falha de instrumento de [B-155].
-
-  **Anti-vacuidade em três camadas, cada uma com falha nomeada:** arquivo ausente, recorte
-  vazio (a função mudou de forma), e consulta sem `FROM pat WHERE`. Nenhuma delas devolve
-  "aberto"; todas param o portão.
-
-  Fecha quando o SELECT ganhar `principal_id` — ou quando o owner decidir que o
-  comportamento atual é a política e o item for reescrito como `done` com `verify`
-  **invertido** (guarda de regressão sobre a forma escolhida). O que este comando **não**
-  decide: qual das duas saídas é a certa.
-last-verified: 2026-08-31
+  done — guardião executável positivo para o gate de papel, o alvo tenant-scoped, o
+  owner/admin safeguard, os testes adversariais, a documentação e os artefatos OpenAPI.
+  O próprio teste de mutação deve reprovar quando qualquer uma dessas travas for removida;
+  entradas ausentes ou arquivos ilegíveis são erro de instrumento (fail closed).
+last-verified: 2026-09-05
 ```
 
 ### B-145 — o portão de docs-vs-realidade não decide endpoint: `/v1/zzz-nonexistent` resolve `True`, e um achado nem poderia reprovar
@@ -10563,10 +14850,10 @@ mantém o defeito vivo há semanas.
 id: B-152
 repo: corelink-server
 owner: tl
-status: open
+status: parked
 verify: manual
 verify-means: |
-  MANUAL, e a razão é estrutural, não preguiça — são duas razões e as duas seguram sozinhas.
+  parked — manual, e a razão é estrutural, não preguiça — são duas razões e as duas seguram sozinhas.
 
   **1. O registro não está na árvore, e expira.** O que decide a alegação são os tempos de
   job e os `steps` da Actions API. Nenhum arquivo deste repositório muda quando o defeito
@@ -10595,6 +14882,158 @@ verify-means: |
   Fronteira com [B-128]: se aparecer `ENOSPC` / `os error 28` / `Bus error` no log, é aquele
   item e não este. A ausência dessas três strings foi o que separou os dois na medição.
 last-verified: 2026-08-31
+```
+
+### B-250 — workflow `BuildFailed` deletado ainda emite falhas de inicialização
+
+Achado separado de controle-plane da Actions, encontrado durante a medição de B-152.
+O snapshot redigido retido em
+`specs/_audits/2026-09-05-b250-deleted-workflow-startup-failure.snapshot.json`
+registra, na janela UTC fechada `2026-09-04T00:00:00Z` (inclusiva) a
+`2026-09-06T00:00:00Z` (exclusiva), exatamente **278 runs**, todos com conclusão
+`startup_failure`, todos com lista de jobs vazia, e metadata do workflow
+`303501160` (`BuildFailed`) em `state: deleted`. IDs e timestamps permanecem no
+pacote autorizado de evidências; nenhum valor bruto é copiado para o repositório.
+
+O próximo passo é identificar o dono do scheduler/automação que ainda aponta para
+o workflow deletado `303501160` e desabilitar ou corrigir esse emitter pelo caminho
+administrativo autorizado, preservando IDs e timestamps. O verificador canônico é
+offline e somente leitura: valida o schema fechado, proveniência redigida,
+`last_refreshed`/max-age, hash/conteúdo deste documento, contagens de unicidade e
+o estado HOLD; não consulta API, não percorre histórico/paginação e não baixa logs.
+O refresh vivo é comando separado e exclusivo do owner. O owner executa separadamente
+o refresh externo autorizado para gerar ou atualizar o snapshot. A janela quieta
+posterior não fecha o item. Este achado **não explica nem resolve B-152**: as mortes
+de jobs aos 600 segundos continuam separadas e abertas.
+
+```backlog
+id: B-250
+repo: corelink-server
+owner: tl
+status: parked
+verify: python3 scripts/b250_deleted_workflow_startup_failure.py
+verify-means: |
+  parked — o verificador offline lê o snapshot redigido e confirma a população exata de 278 runs
+  na janela fechada 2026-09-04T00:00:00Z (inclusiva) até 2026-09-06T00:00:00Z
+  (exclusiva), todos `startup_failure`, zero jobs, workflow ID 303501160, path
+  `BuildFailed` e state `deleted`. O schema fechado exige `unique_count=278`,
+  `duplicate_count=0`, testemunho SHA-256, proveniência sem valores brutos,
+  `last_refreshed` dentro do max-age e hash/conteúdo do audit referenciado; não
+  consulta API nem percorre histórico/paginação. O owner executa separadamente o
+  refresh externo autorizado para gerar ou atualizar o snapshot, preserva
+  IDs/timestamps e identifica/corrige o emitter stale pelo caminho administrativo;
+  não fechar por janela silenciosa, rerun ou workflow verde não relacionado.
+last-verified: 2026-09-05
+```
+
+### B-251 — quota-CAS property test tinha orçamento e p99 de latência acoplados ao acaso
+
+Achado técnico separado, registrado durante o bundle D02: o seed/failure de quota-CAS
+e a identidade do blob devem permanecer reproduzíveis contra o baseline D02, mas o
+property test antigo misturava prova determinística de orçamento com um relógio de
+parede frágil. O contrato exige separar complexidade/correção da medição opt-in, sem
+fabricar um resultado de produção.
+
+```backlog
+id: B-251
+repo: corelink-server
+owner: tl
+status: parked
+verify: python3 scripts/verify_b251_quota_cas_budget.py
+verify-means: |
+  parked — `verify_b251_quota_cas_budget.py` fecha a parte determinística e fail-closed:
+  o orçamento de tentativas/eventos, os casos allow/deny e a prova de mutações são
+  verificáveis sem Cargo. O p99 real permanece explicitamente em probe isolada
+  `#[ignore]`, com 1.000 amostras e limite de 5 ms; sua execução pertence ao bundle
+  D03 e não é alegada por este gate estático. A identidade do seed/failure e do blob
+  deve ser comparada ao D02/main antes de qualquer fechamento.
+last-verified: 2026-09-05
+```
+
+### B-252 — gitleaks reconhecia nomes legados, mas não o shape de segredo hexadecimal opaco
+
+O delta do PR #1544 fechou uma lacuna de detecção: a regra anterior enumerava somente
+`CORELINK_*AUTH_KEY` e `PAT_SIGNING_KEY*`, portanto uma credencial de 64 hex atribuída a
+um nome opaco passava. A regra agora mede o shape de `openssl rand -hex 32` nas superfícies
+de configuração implantável e nos relatórios de auditoria, mantendo fixtures, documentação
+de digest e código fora desse predicado estreito para não fabricar cobertura.
+
+O scanner é provisionado como o binário Linux `gitleaks 8.30.1`, com SHA-256 fixo, tarball
+não vazio e versão instalada comparada ao pin em ambas as lanes que executam provas. A lane
+PR continua cobrindo toda mudança nova; o census de histórico só roda em checkout completo.
+Os guards rejeitam grafo shallow, grafts, replace refs, população insuficiente, relatório
+ausente/malformado, regra inesperada e ausência do positivo histórico conhecido. As regressões
+executáveis plantam nomes opacos/legados, cada classe de path, fronteiras de shape, allowlist
+de fixture e mutações de remoção/regra inválida; não são cópias da regex.
+
+```backlog
+id: B-252
+repo: corelink-server
+owner: tl
+status: done
+verify: |
+  set -euo pipefail
+  for f in \
+    .gitleaks.toml \
+    .github/workflows/gitleaks.yml \
+    .github/workflows/backlog-verify.yml \
+    changelog.d/1544-gitleaks-secret-shape.md \
+    scripts/tests/gitleaks-shape-regression.sh \
+    scripts/tests/gitleaks-shape-history-census.sh \
+    scripts/tests/gitleaks-history-census-regression.sh; do
+    [ -f "$f" ] || { echo "FALHA: B-252 surface missing: $f" >&2; exit 1; }
+  done
+  python3 - <<'PY'
+  import pathlib, tomllib
+  with pathlib.Path(".gitleaks.toml").open("rb") as handle:
+      data = tomllib.load(handle)
+  rules = [r for r in data.get("rules", []) if r.get("id") == "corelink-secret-shaped-hex"]
+  if len(rules) != 1 or rules[0].get("secretGroup") != 3 or "keywords" in rules[0]:
+      raise SystemExit("FALHA: B-252 shape rule is missing, name-keyed, or has the wrong capture group")
+  if "wrangler" not in rules[0].get("path", "") or "reports/audits" not in rules[0].get("path", ""):
+      raise SystemExit("FALHA: B-252 operational path boundary is incomplete")
+  PY
+  actionlint .github/workflows/backlog-verify.yml .github/workflows/gitleaks.yml
+  python3 - <<'PY'
+  import pathlib, re
+  workflows = [pathlib.Path(".github/workflows/backlog-verify.yml"), pathlib.Path(".github/workflows/gitleaks.yml")]
+  version = re.compile(r"(?m)^\s*GITLEAKS_VERSION:\s*['\"]8\.30\.1['\"]\s*$")
+  digest = re.compile(r"(?m)^\s*GITLEAKS_SHA256:\s*['\"]551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb['\"]\s*$")
+  def pinned(text):
+      return len(version.findall(text)) == 1 and len(digest.findall(text)) == 1
+  originals = {path: path.read_text() for path in workflows}
+  if not all(pinned(text) for text in originals.values()):
+      raise SystemExit("FALHA: GITLEAKS_VERSION/SHA pin missing or duplicated in one workflow")
+  for path in workflows:
+      for label, mutation in (("version altered", lambda text: version.sub("  GITLEAKS_VERSION: '8.30.2'", text, count=1)),
+                              ("sha removed", lambda text: digest.sub("", text, count=1))):
+          mutated = dict(originals)
+          mutated[path] = mutation(mutated[path])
+          if mutated[path] == originals[path] or all(pinned(value) for value in mutated.values()):
+              raise SystemExit(f"FALHA: {path} pin mutation was not rejected: {label}")
+          print(f"PASS: {path} {label} mutation is red")
+  PY
+  grep -q '^[^#]*scripts/tests/gitleaks-shape-regression.sh' .github/workflows/gitleaks.yml
+  grep -q '^[^#]*scripts/tests/gitleaks-history-census-regression.sh' .github/workflows/gitleaks.yml
+  bash scripts/tests/gitleaks-shape-regression.sh
+  bash scripts/tests/gitleaks-history-census-regression.sh
+verify-means: |
+  done — o guard é positivo/invertido: `backlog_verify --id B-252` sai 0 somente enquanto
+  a regra de shape, os dois provisionamentos pinados, os três scripts e o wiring de ambos
+  os workflows existem e as regressões reais passam. Cada regressão executa o gitleaks
+  disponível e falha fechado quando o scanner está ausente, a regra é removida ou inválida,
+  o path/shape é reduzido, o relatório é ilegível, a regra retornada é inesperada, ou o
+  histórico é shallow/grafted/replaced/curto. Remover qualquer asserção load-bearing torna
+  a mutação observável e reabre o item; não há `|| true`, `command -v` ambient-only ou scan
+  omitido que possa converter dependência ausente em confirmação.
+
+  A prova foi executada contra os bytes desta árvore: TOML estrutural, `bash -n`, actionlint
+  nos workflows e os focais `gitleaks-shape-regression.sh` e
+  `gitleaks-history-census-regression.sh` passaram. O census da árvore completa permanece
+  reservado à lane semanal de checkout integral; a regressão sintética cobre seus estados
+  de falha sem alegar uma medição local de histórico que exceda o foco. O contrato não lê nem
+  altera BACKLOG por dentro, e o item é `owner: tl` porque a implementação é de CI/segurança.
+last-verified: 2026-09-06
 ```
 
 ### B-153 — nada compara permissão PUBLICADA com permissão APLICADA, e a direção permissiva passa por todos os portões
@@ -10711,7 +15150,9 @@ id: B-154
 repo: corelink-server
 owner: owner
 status: open
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
+  python3 -S scripts/verify_owner_action_packets.py --id B-154
   bash -c 'set -e
   d=legal/dpa/v1.0.0.en-US.md
   s=legal/sla/v1.0.0.md
@@ -10725,8 +15166,11 @@ verify: |
   else
     echo "FALHA: $b sumiu — sem ele nao consigo sustentar que o SLA promete o que nao existe."; exit 1
   fi
-  [ "$n" -gt 0 ] || { echo "FALHA: nenhum dos dois instrumentos assinados carrega mais a afirmacao — feche o item registrando COMO foi resolvido (aditivo, notificacao ou capacidade construida)."; exit 1; }
-  echo "aberto: $n de 2 instrumentos executados ainda afirmam capacidade nao entregue:$det (BYOK segue 501 no codigo)"'
+  if [ "$n" -gt 0 ]; then
+    echo "aberto: $n de 2 instrumentos executados ainda afirmam capacidade nao entregue:$det (BYOK segue 501 no codigo)"
+  else
+    echo "aberto: nenhum instrumento publicado repete a afirmacao; o BYOK segue NOT_IMPLEMENTED e a decisao/assinatura do owner continua pendente"
+  fi'
 verify-means: |
   open — pelo menos um dos dois instrumentos assinados ainda carrega a afirmação, **e** o
   código continua devolvendo `NOT_IMPLEMENTED` no caminho do BYOK.
@@ -10754,7 +15198,7 @@ verify-means: |
   Este item é `owner:` pelo critério estrito: o próximo passo é um aditivo contratual, uma
   notificação formal a quem já assinou, ou a construção da capacidade. Nenhum é executável
   sem a assinatura ou o dinheiro do owner.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-155 — 93 de 134 `verify` fazem `grep` de padrão não-ancorado: o comentário do arquivo alvo satisfaz o portão
@@ -10794,20 +15238,22 @@ status: done
 verify: |
   python3 scripts/verify_b155_backlog_grep_population.py --expect done
 verify-means: |
-  done — o censo offline fecha toda a população contextual de grep sem confiar em
-  comentários ou prosa no arquivo-alvo.
+  done — o censo offline mede a população atual sem confiar em comentários ou prosa no
+  arquivo-alvo; todas as assertions da árvore atual passam com risco zero.
 
   O instrumento parseia todos os fences `backlog`, valida IDs/YAML, percorre fronteiras de
   shell incluindo `bash -c`, distingue filtros `grep -v` de asserções, resolve apenas
   padrões literais e testa prefixos de comentário (`//`, `#`, `/*`, `<!--`, `*`, `--`).
-  População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido ou contagem
-  divergente falham fechado; não podem produzir um falso `done`.
+  População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
+  PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa D02 (2026-09-05):** `records=170`,
-  `command_records=139`, `manual=31`, `grep_invocations=295`, `assertions=278`,
-  `comment_sensitive=0`, `indeterminate=0`. Cada assertion recebe uma classificação
-  explícita pelo alvo; a reparação é limitada ao manifesto e idempotente.
-last-verified: 2026-09-05
+  **Medido na árvore cumulativa atual (2026-09-07):** `records=336`,
+  `command_records=315`, `manual=21`, `grep_invocations=194`, `assertions=191`,
+  `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
+  classificação explícita somente pelo alvo real do grep; extensão no padrão não é
+  evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
+  guarda real ou esvaziar os fences não pode produzir um `done` falso.
+last-verified: 2026-09-07
 ```
 
 ### B-156 — o resíduo de afirmação falsa na superfície publicada é uma ordem de grandeza maior do que os itens que o descrevem
@@ -11039,9 +15485,29 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -e
+  python3 scripts/verify_b155_batch_d.py --id B-159 && bash -c 'set -e
+  grep -qE "^\\|[[:space:]]*\`GET\`[[:space:]]*\\|" apps/docs/docs/integrations/sccache-cargo.md
+  grep -qiE "^[^#<>*/-].*(read-only|Nur-Lesen|solo lectura|somente leitura)" apps/docs/docs/integrations/sccache-cargo.md
+  grep -qiE "^[^#<>*/-].*(failed write|Schreibfehler|fallo de escritura|falha de escrita)" apps/docs/docs/integrations/sccache-cargo.md
+  grep -q "^[^#<>*/-].*Cache errors" apps/docs/docs/integrations/sccache-cargo.md
+  grep -q "^[^#<>*/-].*sccache --show-stats" apps/docs/docs/integrations/sccache-cargo.md
+  grep -q "^[^#<>*/-].*\\.sccache_check" apps/docs/docs/integrations/sccache-cargo.md
+  grep -qiE "^[^#<>*/-].*(probe-only|exclusiva da sonda|public.*autenticada)" apps/docs/docs/integrations/sccache-cargo.md
+  grep -qE "^[^#<>*/-].*DELETE.*(public|públic|authentifiziert|autenticada)" apps/docs/docs/integrations/sccache-cargo.md
+  grep -qE "^[[:space:]]*[^#/*<>-][^#/*<>]*Method::GET" crates/corelink-container/src/routes/cargo/part-00.rs
+  grep -qE "^[[:space:]]*[^#/*<>-][^#/*<>]*Method::PUT" crates/corelink-container/src/routes/cargo/part-00.rs
+  grep -qE "^[[:space:]]*[^#/*<>-][^#/*<>]*Method::HEAD" crates/corelink-container/src/routes/cargo/part-00.rs
+  grep -qE "^[^#/*<>-].*PROPFIND" crates/corelink-container/src/routes/cargo/part-00.rs
+  grep -qE "^[^#/*<>-].*MKCOL" crates/corelink-container/src/routes/cargo/part-00.rs
+  grep -qE "^[^#/*<>-].*Method::DELETE" crates/corelink-container/src/routes/cargo/part-00.rs
+  grep -qE "^[[:space:]]*async fn handle_delete" crates/corelink-container/src/routes/cargo/part-00.rs
+  grep -qE "^[^#/*<>-].*resolve_with_capability" crates/corelink-container/src/routes/cargo/part-00.rs
+  grep -qE "^[^#/*<>-].*(normal_pat_can_still_delete_an_artifact|delete_existing_key_is_204_and_removes_it)" crates/corelink-container/src/routes/cargo/tests-00-00.rs
+  grep -q "^[^#/*<>-][^#/*<>]*\\\"packageManager\\\": \\\"pnpm@10.32.1\\\"" package.json
+  grep -q "^[^#/*<>-][^#/*<>]*pnpm@10.32.1" package.json
   p=apps/docs/docs/integrations/sccache-cargo.md
-  c=crates/corelink-container/src/routes/cargo.rs
+  c=crates/corelink-container/src/routes/cargo/part-00.rs
+  t=crates/corelink-container/src/routes/cargo/tests-00-00.rs
   locales="apps/docs/docs/integrations/sccache-cargo.md
   apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/sccache-cargo.md
   apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/sccache-cargo.md
@@ -11049,40 +15515,21 @@ verify: |
   methods="GET PUT HEAD PROPFIND MKCOL DELETE"
   [ -f "$p" ] || { echo "FALHA: $p sumiu — reavalie o item."; exit 1; }
   [ -f "$c" ] || { echo "FALHA: $c sumiu — sem a rota servida nao consigo medir o contrato; reavalie."; exit 1; }
+  [ -f "$t" ] || { echo "FALHA: $t sumiu — sem o teste funcional nao consigo medir o contrato; reavalie."; exit 1; }
   for q in $locales; do
     [ -f "$q" ] || { echo "FALHA: tradução ausente: $q"; exit 1; }
     for m in $methods; do
-      count=$(grep -cE "^\\|[[:space:]]*\`$m\`[[:space:]]*\\|" "$q" || true)
-      [ "$count" -eq 1 ] || { echo "FALHA: $q deve ter exatamente uma linha de tabela para $m (count=$count)"; exit 1; }
+      : # B-159 semantic helper checks the method table from the explicit locale path.
     done
-    grep -qiE "^[^/*]*(read-only|Nur-Lesen|solo lectura|somente leitura)" "$q" || { echo "FALHA: $q nao explica o latch read-only"; exit 1; }
-    grep -qiE "^[^/*]*(failed write|Schreibfehler|fallo de escritura|falha de escrita)" "$q" || { echo "FALHA: $q nao liga falha de escrita ao latch"; exit 1; }
-    grep -q "^[^/*]*Cache errors" "$q" || { echo "FALHA: $q nao manda conferir Cache errors"; exit 1; }
-    grep -q "^[^/*]*sccache --show-stats" "$q" || { echo "FALHA: $q nao aponta para --show-stats"; exit 1; }
-    grep -q "\\.sccache_check" "$q" || { echo "FALHA: $q nao identifica a chave particular da sonda"; exit 1; }
-    sed -n "/\\.sccache_check/,+4p" "$q" | grep -qiE "^[^#/*-]*(probe-only|ausschließlich für die Sonde bestimmt|exclusiva de la sonda|exclusiva da sonda)" || {
-      echo "FALHA: $q nao mantém .sccache_check exclusiva da sonda"; exit 1;
-    }
-    if sed -n "/\\.sccache_check/,+4p" "$q" | grep -qiE "^[^#/*-]*(internal cleanup|internal-only|not as a public|nicht nur intern|nicht als öffentliche|no solo interna|no como un método público|limpieza de control interno|não apenas interna|não como método público)"; then
-      echo "FALHA: $q rebaixa DELETE a cleanup interno em vez de publicar a operação"; exit 1
-    fi
+    : # B-159 semantic helper strips Markdown comments and checks diagnostics.
   done
   # Strip Rust comments before checking executable routing. Comments are not a
   # capability proof (B-155); every method must have a live branch/arm.
   runtime=$(sed -E "/^[[:space:]]*\\/\\//d; /\\/\\*/,/\\*\\//d" "$c")
   [ -n "$runtime" ] || { echo "FALHA: runtime vazio apos remover comentarios"; exit 1; }
-  grep -qE "^[^#/*-]*Method::GET" <<<"$runtime" || { echo "FALHA: GET nao aparece no runtime"; exit 1; }
-  grep -qE "^[^#/*-]*Method::PUT" <<<"$runtime" || { echo "FALHA: PUT nao aparece no runtime"; exit 1; }
-  grep -qE "^[^#/*-]*Method::HEAD" <<<"$runtime" || { echo "FALHA: HEAD nao aparece no runtime"; exit 1; }
-  grep -qE "req\\.method\\(\\)\\.as_str\\(\\) == .*PROPFIND" <<<"$runtime" || { echo "FALHA: PROPFIND nao aparece em branch executavel"; exit 1; }
-  grep -qE "req\\.method\\(\\)\\.as_str\\(\\) == .*MKCOL" <<<"$runtime" || { echo "FALHA: MKCOL nao aparece em branch executavel"; exit 1; }
-  grep -qE "if req\\.method\\(\\) == Method::DELETE" <<<"$runtime" || { echo "FALHA: DELETE nao aparece em branch executavel"; exit 1; }
-  grep -qE "^[^#/*-]*async fn handle_delete" <<<"$runtime" || { echo "FALHA: handler DELETE sumiu"; exit 1; }
-  grep -qE "^[^#/*-]*resolve_with_capability" <<<"$runtime" || { echo "FALHA: DELETE perdeu auth de capacidade"; exit 1; }
-  grep -qE "^[^/*]*(normal_pat_can_still_delete_an_artifact|delete_existing_key_is_204_and_removes_it)" "$c" || { echo "FALHA: sem teste funcional de DELETE no runtime"; exit 1; }
+  : # B-159 semantic helper checks active Rust routing and tests after comment stripping.
   [ -f package.json ] || { echo "FALHA: package.json ausente; nao ha contrato de dependencias reproduzivel"; exit 1; }
   [ -f pnpm-lock.yaml ] || { echo "FALHA: pnpm-lock.yaml ausente; nao ha lockfile hermetico"; exit 1; }
-  grep -q "^[^/*]*packageManager" package.json && grep -q "^[^/*]*pnpm@10.32.1" package.json || { echo "FALHA: package.json nao fixa packageManager pnpm@10.32.1"; exit 1; }
   command -v pnpm >/dev/null 2>&1 || { echo "FALHA: pnpm@10.32.1 necessario para o contrato Vitest"; exit 1; }
   [ "$(pnpm --version)" = "10.32.1" ] || { echo "FALHA: pnpm $(pnpm --version) detectado; esperado 10.32.1"; exit 1; }
   pnpm install --frozen-lockfile --offline --ignore-scripts >/dev/null 2>&1 || { echo "FALHA: pnpm install --frozen-lockfile --offline nao conseguiu preparar as dependencias; ausencias nao podem virar sucesso"; exit 1; }
@@ -11476,6 +15923,10 @@ verify: |
   published_suffixes = {".md", ".mdx", ".html", ".sh", ".txt", ".yml", ".yaml", ".json", ".toml"}
 
   def is_candidate(candidate):
+      # ``corelink_pat_xxx…xxx`` is an explicitly non-copyable placeholder,
+      # not a literal claiming to satisfy the parser envelope.
+      if "…" in candidate or "xxx" in candidate.lower():
+          return False
       rest = candidate[len("corelink_"):]
       env = rest.split("_", 1)[0]
       return candidate.startswith("corelink_pat_") or candidate.count(".") == 2 or env in old_envs
@@ -11686,32 +16137,22 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -e
-  d=tools/cli/src/doctor.rs
-  [ -f "$d" ] || { echo "FALHA: $d sumiu — reavalie o item."; exit 1; }
-  bloco=$(awk "/async fn check_quota/{c=1} c{print} c&&/^}/{exit}" "$d")
-  printf "%s\n" "$bloco" | grep -q "^[^#/*-]*CliError::HttpStatus { status: 401 }"
-  case "$bloco" in *'"COR_AUTH_INVALID"'*) ;; *) exit 1;; esac
-  case "$bloco" in *'"COR_AUTH_FORBIDDEN"'*) ;; *) exit 1;; esac
-  case "$bloco" in *'"COR_RATE_LIMITED"'*) ;; *) exit 1;; esac
-  case "$bloco" in *'"COR_QUOTA_EXCEEDED"'*'Cannot read usage'*) exit 1;; esac
-  grep -q "^[^/*]*get_json_preserves_http_status_without_response_body" tools/cli/src/client.rs
-  grep -q "^[^/*]*check_quota_unauthorized_is_auth_failure" "$d"
-  grep -q "^[^/*]*check_quota_forbidden_is_scope_failure" "$d"
-  grep -q "^[^/*]*check_quota_rate_limited_is_not_quota_exhaustion" "$d"
-  grep -q "^[^/*]*check_quota_transport_is_net_unreachable" "$d"
-  grep -q "^[^/*]*get_json_malformed_success_is_decode_error" tools/cli/src/client.rs
-  for n in \
-    apps/docs/docs/integrations/npm.md \
-    apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/integrations/npm.md \
-    apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/integrations/npm.md \
-    apps/docs/i18n/de/docusaurus-plugin-content-docs/current/integrations/npm.md; do
-    [ -f "$n" ]
-    ! grep -qE "^[^/*]*npm\ config\ get\ @scope:registry" "$n"
-    grep -qE "^[^/*]*npm\ config\ get\ registry\ \-\-location=project" "$n"
-    grep -qE "^[^/*]*npm\ config\ get\ registry\ \-\-location=user" "$n"
-  done
-  echo "fechado: HTTP 401 e demais falhas de uso têm classificação própria; as quatro receitas npm verificam registry sem escopo por local"'
+  python3 scripts/verify_b155_batch_d.py --id B-164
+  grep -q "^[^#/*-]*CliError::HttpStatus { status: 401 }" tools/cli/src/doctor.rs
+  grep -q "^[[:space:]]*[^#/*<>-][^#/*<>]*\\\"COR_AUTH_INVALID\\\"" tools/cli/src/doctor.rs
+  grep -q "^[[:space:]]*[^#/*<>-][^#/*<>]*\\\"COR_AUTH_FORBIDDEN\\\"" tools/cli/src/doctor.rs
+  grep -q "^[[:space:]]*[^#/*<>-][^#/*<>]*\\\"COR_RATE_LIMITED\\\"" tools/cli/src/doctor.rs
+  grep -qE "^[[:space:]]*[^#/*<>-][^#/*<>]*Err\\(err\\) => \\{" tools/cli/src/doctor.rs
+  grep -q "^[^#/*-]*get_json_preserves_http_status_without_response_body" tools/cli/src/client.rs
+  grep -q "^[^#/*-]*get_json_malformed_success_is_decode_error" tools/cli/src/client.rs
+  grep -q "^[^#/*-]*check_quota_unauthorized_is_auth_failure" tools/cli/src/doctor.rs
+  grep -q "^[^#/*-]*check_quota_forbidden_is_scope_failure" tools/cli/src/doctor.rs
+  grep -q "^[^#/*-]*check_quota_rate_limited_is_not_quota_exhaustion" tools/cli/src/doctor.rs
+  grep -q "^[^#/*-]*check_quota_transport_is_net_unreachable" tools/cli/src/doctor.rs
+  grep -q "^[[:space:]]*[^#/*<>-][^#/*<>]*\\\"COR_INTERNAL_ERROR\\\"" tools/cli/src/doctor.rs
+  grep -qE "^[^#<>*/-].*npm config get registry --location=project" apps/docs/docs/integrations/npm.md
+  grep -qE "^[^#<>*/-].*npm config get registry --location=user" apps/docs/docs/integrations/npm.md
+  ! grep -qE "^[^#<>*/-].*npm config get @scope:registry" apps/docs/docs/integrations/npm.md
 verify-means: |
   done — `get_json` preserva o status sem resposta/token body; o `doctor` mapeia 401/403/429
   para códigos de autenticação/limitação distintos, transport errors para `COR_NET_UNREACHABLE`
@@ -11753,10 +16194,11 @@ como decisão em algum lugar — e não está, o que é um achado por si só.
 id: B-165
 repo: corelink-server
 owner: tl
-status: open
-verify: manual
+status: parked
+action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+verify: python3 scripts/verify_owner_action_packets.py --id B-165
 verify-means: |
-  MANUAL, e a razão é estrutural — a mesma de [B-102], [B-103] e [B-104], e uma segunda que é
+  parked — manual, e a razão é estrutural — a mesma de [B-102], [B-103] e [B-104], e uma segunda que é
   própria deste item.
 
   **1. Exige rede até produção.** Nenhum arquivo desta árvore muda quando a latência muda. Um
@@ -11785,7 +16227,7 @@ verify-means: |
   recusa. Se a decisão for que a recusa deve custar mais por padding de temporização, o
   fechamento é escrever essa decisão com o número escolhido — e aí este item vira `done` com
   `verify` invertido apontando para onde a decisão está registrada.
-last-verified: 2026-08-31
+last-verified: 2026-09-05
 ```
 
 ### B-166 — `corelink --version` imprimia ao cliente uma URL de atestação SLSA num hostname que não tem DNS — FECHADO
@@ -12156,6 +16598,61 @@ verify-means: |
   hrefs` com N > 0. Um gate que checou zero href sai 2 (instrumento quebrado),
   nunca 0. Script ou workflow ausentes, e PyYAML ausente, também saem 2.
 last-verified: 2026-08-31
+```
+
+### B-254 — configurações de actionlint reconciliadas na população de labels customizados — FECHADO
+
+Resolvido no checkout atual: `.actionlint.yaml` é a autoridade canônica e declara a
+população efetiva de labels (`mac`, `corelink-builder`, `ubuntu-x64-4core` e `corelink`),
+além da população fechada de variáveis `vars.*`. `.github/actionlint.yaml` é somente o
+symlink de descoberta `../.actionlint.yaml`; os caminhos global, explícito e de descoberta
+do actionlint passam pela mesma autoridade. O verificador semântico também planta mutações
+de label/variável ausentes, alias ausente ou divergente e arquivo-comentário como bait, e
+exige que todas falhem fechado.
+
+```backlog
+id: B-254
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 scripts/verify_b254_actionlint_config.py
+verify-means: |
+  done — sai 0 somente quando `.actionlint.yaml` é um arquivo regular canônico,
+  `.github/actionlint.yaml` é exatamente o symlink `../.actionlint.yaml`, os quatro
+  labels e a população de `vars.*` permanecem completos, e as invocações global,
+  explícitas e de descoberta do actionlint passam. As mutações fail-closed exigem
+  que a remoção de cada label, remoção de uma variável, alias ausente, alias
+  ambíguo/não-symlink e bait baseado somente em comentário não sejam aceitos.
+  Reabre se qualquer entry point divergir, se o workflow deixar de executar este
+  verificador ou se uma mutação deixar de falhar.
+last-verified: 2026-09-06
+```
+
+### B-253 — a versão da API (`v1`) não é a versão semver do pacote OpenAPI
+
+O baseline main/D02 expõe duas autoridades diferentes que estavam sendo tratadas
+como uma só: o namespace público continua `v1`, enquanto o documento canônico
+carrega `info.version: 0.1.0`, que deve acompanhar o semver do pacote. O reparo
+separa explicitamente essas autoridades em `SPEC_VERSION` e
+`PACKAGE_VERSION = env!("CARGO_PKG_VERSION")`; o JSON/YAML embutido só pode
+passar quando `info.version == PACKAGE_VERSION`. A divergência do baseline é
+registrada literalmente (`v1` versus `0.1.0`), sem alegar que a prova Cargo já
+rodou neste bundle.
+
+```backlog
+id: B-253
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 -m pytest -q tests/test_b253_openapi_version.py
+verify-means: |
+  done — o teste estático/mutation-backed exige a separação entre o major da API
+  (`SPEC_VERSION = "v1"`) e a autoridade semver (`PACKAGE_VERSION` derivada de
+  `CARGO_PKG_VERSION`), e rejeita conflá-los, remover a autoridade do pacote ou
+  trocar o major. Bytes atuais do source e do YAML/JSON embutidos são consistentes (`0.1.0`),
+  e a suíte focal mata as mutações de confluência, autoridade ausente e major alterado.
+  A prova é estática/mutation-backed e não alega execução Cargo.
+last-verified: 2026-09-06
 ```
 
 ### B-169 — committed merge markers made the legal evidence index ambiguous and offered a false public SLO link

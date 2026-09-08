@@ -9,7 +9,6 @@
 import { test, expect } from "../fixtures/test";
 import AxeBuilder from "@axe-core/playwright";
 import { signInAs, FIXTURE_USERS } from "../fixtures/clerk";
-import { installApiMocks } from "../fixtures/api-mocks";
 
 const PAGES = [
   { path: "/", auth: "none" as const, name: "landing" },
@@ -24,19 +23,11 @@ const PAGES = [
 ];
 
 for (const p of PAGES) {
-  // FIXME(WI-S16-007): pages requiring authenticated sessions cannot run a
-  // full axe sweep without real Clerk credentials in this agent env.
-  // Public pages (landing, sign-in, privacy) DO run; auth-gated pages
-  // (onboarding/dsr/admin) are queued for first CI execution with
-  // Clerk test-mode keys (PRR-S16 deferred item).
-  const isAuthGated = p.auth !== "none";
-  const runner = isAuthGated ? test.fixme : test;
-  runner(`a11y: ${p.name} (${p.path}) — zero serious/critical violations`, async ({
+  test(`a11y: ${p.name} (${p.path}) — zero serious/critical violations`, async ({
     page,
     context,
     baseURL,
   }) => {
-    await installApiMocks(page);
     if (p.auth !== "none") {
       await signInAs(context, FIXTURE_USERS[p.auth], baseURL!);
     }

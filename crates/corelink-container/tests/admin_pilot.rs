@@ -58,12 +58,12 @@ fn fixture(
     let store = Arc::new(InMemoryPilotStore::new());
     let audit = Arc::new(InMemoryPilotAuditSink::new());
     let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(now_ms));
-    let state = PilotAdminRouteState {
-        store: store.clone() as Arc<dyn PilotStore>,
-        audit_sink: audit.clone() as Arc<dyn PilotAuditSink>,
-        wall_clock: clock.clone() as Arc<dyn corelink_server::wall_clock::WallClock>,
-        internal_auth_key: Some(Arc::from(TEST_INTERNAL_AUTH_KEY)),
-    };
+    let state = PilotAdminRouteState::new(
+        store.clone() as Arc<dyn PilotStore>,
+        audit.clone() as Arc<dyn PilotAuditSink>,
+        clock.clone() as Arc<dyn corelink_server::wall_clock::WallClock>,
+        Some(Arc::from(TEST_INTERNAL_AUTH_KEY)),
+    );
     (state, store, audit, clock)
 }
 
@@ -75,26 +75,13 @@ fn seed_tenant(
     granted_at_ms: Option<u64>,
 ) -> Uuid {
     let id = Uuid::now_v7();
-    store
-        .seed(PilotTenant {
-            tenant_id: id,
-            slug: slug.to_string(),
-            tier: if granted_at_ms.is_some() {
-                "pilot".into()
-            } else {
-                "free".into()
-            },
-            cap_bytes: if granted_at_ms.is_some() {
-                100_000_000_000
-            } else {
-                0
-            },
-            pilot_state: state,
-            signup_at_ms,
-            tier_granted_at_ms: granted_at_ms,
-            first_blob_at_ms: None,
-        })
-        .expect("seed");
+    let mut tenant = PilotTenant::new(id, slug, state, signup_at_ms);
+    if granted_at_ms.is_some() {
+        tenant.tier = "pilot".into();
+        tenant.cap_bytes = 100_000_000_000;
+        tenant.tier_granted_at_ms = granted_at_ms;
+    }
+    store.seed(tenant).expect("seed");
     id
 }
 

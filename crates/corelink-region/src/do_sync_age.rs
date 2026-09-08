@@ -23,8 +23,8 @@
 //!
 //! # Cardinality discipline (INV-OBS-CARDINALITY-BUDGET S-09)
 //!
-//! Labels: `{do_class, region}` — no `tenant_id`. With 3 classes × 4 regions
-//! = 12 séries maximum. Budget-safe.
+//! Labels: `{do_class, region}` — no `tenant_id`. With 3 classes × 6 regions
+//! = 18 series maximum. Budget-safe.
 //!
 //! # Audit ordering
 //!

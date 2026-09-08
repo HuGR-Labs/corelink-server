@@ -4,12 +4,14 @@ title: "ADR-0033 — Audit events: CloudEvents 1.0 + JCS hash chain + PII newtyp
 description: "Why auth audit events use a CloudEvents 1.0 envelope, an atomic outbox, type-system hash newtypes for PII, an RFC-8785 JCS content hash chain, SEV-1 dual fan-out, and per-tenant retention hints."
 source_files:
   - "specs/03_architecture/adrs/ADR-0033-audit-events-cloudevents.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "audit", "cloudevents", "jcs", "hash-chain", "pii", "s03", "s09"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0033-audit-events-cloudevents.md@bb173a11b6ad7938b5c7e70050c64f39c05678c1"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0033 — Audit events: CloudEvents 1.0 + JCS hash chain + PII newtypes
 
 Every authentication operation must emit an audit event that the S-09 chain processor seals into a tamper-evident hash chain — with zero raw PII, byte-deterministic hashing, and no possibility of a handler succeeding without an audit row. This ADR records the six decisions (envelope, ordering, PII surface, hash compute, SEV-1 fan-out, retention) that make those guarantees structural rather than best-effort.

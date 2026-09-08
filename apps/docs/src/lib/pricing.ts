@@ -25,7 +25,8 @@
 
 /**
  * Launch tier taxonomy — the six canonical customer-facing tiers
- * (FROZEN). Wire strings are snake_case. The internal billing model in
+ * (FROZEN). Wire strings are snake_case. Runner SKUs are a separate
+ * entitlement axis and are intentionally excluded. The internal billing model in
  * `crates/corelink-tier-selection/src/tier.rs` is the matching
  * authority; this is the public surface.
  */

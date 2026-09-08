@@ -17,7 +17,7 @@ tags: ["adr", "s30", "byok", "feature-flags", "compile-error", "ap-11", "techlea
 references:
   - "specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md"
   - "specs/_audits/sealed/2026-05-16-byok-ap11-adr-formalization.md"
-  - "apps/server/src/byok_orchestrator.rs"
+  - "crates/corelink-container/src/byok_orchestrator.rs"
   - ".claude/skills/techlead/SKILL.md"
 inv: ["INV-BYOK-CRYPTO-SOVEREIGNTY", "INV-KEY-OVERLAP"]
 ---
@@ -51,7 +51,7 @@ CoreLink GA ships envelope-encryption support across four KMS providers
 | Azure Key Vault (Premium / Managed HSM) | `corelink-byok-azure` | `byok-azure-real` |
 | HashiCorp Vault | `corelink-byok-vault` | `byok-vault-real` |
 
-The server's BYOK orchestrator (`apps/server/src/byok_orchestrator.rs`)
+The server's BYOK orchestrator (`crates/corelink-container/src/byok_orchestrator.rs`)
 exposes exactly one `Arc<dyn KmsProvider>` to the rest of the binary —
 threaded into envelope encrypt / decrypt, the kill-switch poller, and
 erasure attestation. The choice of concrete provider is **resolved at
@@ -109,7 +109,7 @@ they grep for "byok mutually exclusive".
 
 ## Decision
 
-The CoreLink BYOK orchestrator (`apps/server/src/byok_orchestrator.rs`)
+The CoreLink BYOK orchestrator (`crates/corelink-container/src/byok_orchestrator.rs`)
 **enforces mutually-exclusive cargo feature flags via
 `compile_error!`** for the four real-provider features. The
 authoritative rules are:
@@ -123,9 +123,9 @@ features may be active:
 byok-aws-real | byok-gcp-real | byok-azure-real | byok-vault-real
 ```
 
-Enabling zero of them yields the default `InMemoryFake` provider
-(non-production; dev / unit-test / CI smoke path only —
-`ActiveProvider::InMemoryFake`). Enabling **two or more** is a HARD
+Enabling zero of them yields `ActiveProvider::Unavailable`; provider
+construction fails closed and no plaintext/XOR fallback exists. Enabling
+**two or more** is a HARD
 **compile error**.
 
 ### D2. Pairwise `compile_error!` for diagnostic precision
@@ -159,7 +159,7 @@ The CI lane that exercises real-provider wiring runs five build
 configurations against `corelink-server`:
 
 ```
-cargo build -p corelink-server                                     # InMemoryFake default
+  cargo build -p corelink-server                                     # no provider; fails closed
 cargo build -p corelink-server --features byok-aws-real            # AWS KMS singleton
 cargo build -p corelink-server --features byok-gcp-real            # GCP Cloud KMS singleton
 cargo build -p corelink-server --features byok-azure-real          # Azure Key Vault singleton
@@ -167,7 +167,7 @@ cargo build -p corelink-server --features byok-vault-real          # HashiCorp V
 ```
 
 Plus the orchestrator integration test
-(`apps/server/tests/byok_orchestrator.rs`) under each of the five
+(`crates/corelink-container/tests/byok_orchestrator.rs`) under each of the five
 configurations. This is the canonical replacement for the
 `--all-features` macro pattern; it gives strictly more signal because
 each row exercises a distinct provider's credential / SDK / FIPS
@@ -305,7 +305,7 @@ Cargo does not natively support "exactly one of" on the
 The decision is already implemented (since wave-15 commit `818c055`,
 documented at `specs/_audits/sealed/2026-05-15-byok-real-provider-pattern.md
 §7.2`). The implementation lives in
-`apps/server/src/byok_orchestrator.rs`:
+`crates/corelink-container/src/byok_orchestrator.rs`:
 
 - Lines 76–117: six pairwise `compile_error!` macros (4 choose 2 = 6
   pairs).
@@ -358,7 +358,7 @@ adds:
   (per-provider FIPS posture).
 - `.claude/skills/techlead/SKILL.md` v2.1.1 §AP-11 (this ADR is the
   `audit ref` for the L1.3a `✗ (design)` exception).
-- `apps/server/src/byok_orchestrator.rs` (implementation).
+- `crates/corelink-container/src/byok_orchestrator.rs` (implementation).
 
 ## Change log
 

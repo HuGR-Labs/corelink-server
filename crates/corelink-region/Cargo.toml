@@ -1,6 +1,6 @@
 [package]
 name = "corelink-region"
-description = "CoreLink multi-region types, metrics, provisioning events, and migration primitives (WI-S14-001). Ships: Region enum (wnam/enam/weur/sam) + DoJurisdiction + ProvisioningEvent CloudEvent types + RegionMetrics (5 canonical metrics per WI-S14-001 §6.1.6) + MigrationReport + MigrationDecision #[non_exhaustive] taxonomy + RegionHealthStatus gauge + per-instance Arc<Mutex<>> F-001 closure. wasm32-clean (no tokio in src/). Foundation crate consumed by WI-S14-002..009."
+description = "CoreLink multi-region types, metrics, provisioning events, and migration primitives (WI-S14-001). Ships: Region enum (wnam/enam/weur/sam/apac/afr) + DoJurisdiction + ProvisioningEvent CloudEvent types + RegionMetrics (5 canonical metrics per WI-S14-001 §6.1.6) + MigrationReport + MigrationDecision #[non_exhaustive] taxonomy + RegionHealthStatus gauge + per-instance Arc<Mutex<>> F-001 closure. wasm32-clean (no tokio in src/). Foundation crate consumed by WI-S14-002..009."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

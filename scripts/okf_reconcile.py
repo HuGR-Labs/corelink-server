@@ -30,7 +30,8 @@ Usage:
     python3 scripts/okf_reconcile.py --bundle <dir>
 
 Exit contract:
-    0 ALWAYS — this is a reporter, not a gate. Prints "0 stale" cleanly.
+    0 ALWAYS — this is a reporter, not a gate. Invalid checkpoint anchors are
+    included in the actionable worklist instead of being silently skipped.
 """
 
 from __future__ import annotations
@@ -93,18 +94,25 @@ def collect_stale(git: "okf.Git", bundle_root: Path):
         c = okf.Concept(md, bundle_root)
         if c.is_deferred or not c.has_frontmatter:
             continue
-        # A concept is reportable when it has a usable ANCHOR. That is either a
-        # resolvable `checkpoint_sha` (legacy commit anchor) or, per file, a
-        # `source_blobs` blob anchor (§2.2) — the blob anchor survives rebase /
-        # squash / cherry-pick, so a concept whose checkpoint commit was rewritten
-        # is still fully reportable on its blob-addressed files.
+        # The validator requires the checkpoint commit to be both resolvable and
+        # reachable from HEAD. Keep this reporter on the same resolution truth:
+        # an orphaned/missing checkpoint is itself actionable, even when no cited
+        # source range can be compared until the author repairs it. Blob anchors
+        # remain independently reportable for files already migrated.
         ckpt_usable = (
             isinstance(c.checkpoint_sha, str)
             and bool(okf.HEX40_RE.match(c.checkpoint_sha))
             and git.sha_exists(c.checkpoint_sha)
+            and git.is_ancestor(c.checkpoint_sha, "HEAD")
         )
-        if not ckpt_usable and not c.source_blobs:
-            continue
+        anchor_error = None
+        if not ckpt_usable:
+            if not isinstance(c.checkpoint_sha, str) or not okf.HEX40_RE.match(str(c.checkpoint_sha)):
+                anchor_error = "checkpoint_sha is missing or not 40-hex"
+            elif not git.sha_exists(c.checkpoint_sha):
+                anchor_error = f"checkpoint_sha {c.checkpoint_sha[:12]} is not resolvable in this clone"
+            else:
+                anchor_error = f"checkpoint_sha {c.checkpoint_sha[:12]} is not reachable from HEAD"
 
         # cited line ranges per file (HEAD coordinates) — same as validate_okf C5.
         ranges_by_file: dict[str, list[tuple[int, int]]] = {}
@@ -125,7 +133,7 @@ def collect_stale(git: "okf.Git", bundle_root: Path):
             # Per-file anchor selection, IDENTICAL to validate_okf C5.
             blob_anchor = c.source_blobs.get(sf)
             if not blob_anchor and not ckpt_usable:
-                continue  # no anchor for this file — validate_okf reports why
+                continue  # C4 reports the invalid commit anchor; no baseline exists
 
             hit: list[tuple[int, int]] = []
             for (l1, l2) in cranges:
@@ -153,7 +161,7 @@ def collect_stale(git: "okf.Git", bundle_root: Path):
                 }
             )
 
-        if stale_sources:
+        if stale_sources or anchor_error:
             loc = (
                 c.path.relative_to(git.repo_root).as_posix()
                 if okf._under(c.path, git.repo_root)
@@ -166,6 +174,7 @@ def collect_stale(git: "okf.Git", bundle_root: Path):
                     "checkpoint_sha": c.checkpoint_sha,
                     "is_adr": c.is_adr,
                     "stale_sources": stale_sources,
+                    "anchor_error": anchor_error,
                 }
             )
     return worklist
@@ -177,12 +186,15 @@ def print_human(worklist: list[dict]) -> None:
         return
     n_src = sum(len(w["stale_sources"]) for w in worklist)
     print(
-        f"OKF reconciliation worklist: {len(worklist)} stale concept(s), "
+        f"OKF reconciliation worklist: {len(worklist)} stale/invalid concept(s), "
         f"{n_src} drifted source-file(s)\n"
     )
     for w in worklist:
         print(f"━━ {w['concept_id']}  ({w['path']})")
-        print(f"   checkpoint_sha: {w['checkpoint_sha'][:12]}")
+        checkpoint = w.get("checkpoint_sha")
+        print(f"   checkpoint_sha: {str(checkpoint)[:12] if checkpoint else '<missing>'}")
+        if w.get("anchor_error"):
+            print(f"   ⚠ checkpoint anchor: {w['anchor_error']}")
         for s in w["stale_sources"]:
             ranges = ", ".join(f"{a}-{b}" for a, b in s["changed_cited_ranges"])
             anchor = s.get("anchor", "")

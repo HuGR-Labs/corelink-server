@@ -4,21 +4,20 @@ title: "ADR-0098 — erasure region-CHECK widening via additive table rebuild (m
 description: "Records the D1 mechanism for admitting the apac attestation region: a SQLite 12-step rebuild that widens the erasure_attestations/erasure_public_keys region CHECKs to all 6 macro-regions — destructive in mechanism, purely additive in effect."
 source_files:
   - "specs/03_architecture/adrs/ADR-0098-erasure-region-check-widen-rebuild.md"
-deferred: true
+  - "migrations/d1/0098_widen_erasure_region_check_apac.sql"
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0098-erasure-region-check-widen-rebuild.md@793d720840540f3480105ec5051c1f9475cb71f0"
+  - "migrations/d1/0098_widen_erasure_region_check_apac.sql@6205411ab0b0cdbe1395c1691973e9fa16707359"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["adr", "d1", "migration", "erasure-attestation", "additive", "sqlite", "s14", "apac"]
 timestamp: "2026-08-18T00:00:00Z"
 ---
-
 # ADR-0098 — erasure region-CHECK widening via additive table rebuild (migration 0098)
 
-> **Deferred concept (anti-drift anchor pending commit).** The full grounded
-> concept (with `checkpoint_sha` + line-cited `# Citations`) is authored at
-> commit time, because OKF's C5 freshness check validates cited content against
-> a **committed** baseline and this ADR + migration are net-new in the working
-> tree. Post-commit, the standard OKF reconcile upgrades this from `deferred`
-> to a fully-anchored concept pinned at the landing commit. The narrative below
-> is the authored body; the source ADR is the authoritative record.
+This is a fully anchored concept. The source ADR and the landed migration are
+both cited below; the migration is the executable schema change and the ADR is
+its additive-governance record.
 
 The GDPR erasure attestation subsystem gained an `apac` region, but the persisted region domain lives
 in an inline `CHECK (region IN (...))` that SQLite cannot relax in place — so admitting `apac` requires
@@ -54,3 +53,10 @@ The migration is one-shot (a rebuild is not self-idempotent), guarded by the run
 numbering so it records exactly once, and applied to prod only via the owner-gated
 `apply-d1-migrations-prod.sh`; no dependent view references either table, so no 12-step view
 drop/recreate step is needed (unlike 0062).
+
+# Citations
+
+- `specs/03_architecture/adrs/ADR-0098-erasure-region-check-widen-rebuild.md:24-38` — context and SQLite 12-step rebuild decision.
+- `specs/03_architecture/adrs/ADR-0098-erasure-region-check-widen-rebuild.md:56-85` — widened CHECK values, additive copy semantics, and rollout consequences.
+- `migrations/d1/0098_widen_erasure_region_check_apac.sql:1-36` — executable migration contract and ADR annotation requirement.
+- `migrations/d1/0098_widen_erasure_region_check_apac.sql:72-128` — explicit 1:1 copies, widened CHECKs, and indexed table swaps.

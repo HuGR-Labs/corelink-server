@@ -17,5 +17,12 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist"
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "exclude": [
+    // This contract test intentionally imports the standalone CAS middleware
+    // from its sibling worker package. Keep it in Vitest discovery, but leave
+    // it out of this worker's root-scoped TypeScript project; CAS owns its
+    // source types and has no signup-worker build dependency.
+    "tests/analytics.test.ts"
+  ]
 }

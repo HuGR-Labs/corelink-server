@@ -93,9 +93,12 @@ impl core::fmt::Display for TierKind {
     }
 }
 
-/// Canonical 11-element list for surface-stability regression tests.
+/// Canonical customer-facing six-tier taxonomy.
+///
+/// Runner SKUs are a separate entitlement axis and are intentionally exposed
+/// by [`canonical_runner_tiers`], not mixed into the checkout/pricing ladder.
 #[must_use]
-pub const fn canonical_tiers() -> &'static [TierKind; 11] {
+pub const fn canonical_tiers() -> &'static [TierKind; 6] {
     &[
         TierKind::Free,
         TierKind::Solo,
@@ -103,6 +106,13 @@ pub const fn canonical_tiers() -> &'static [TierKind; 11] {
         TierKind::Pro,
         TierKind::Max,
         TierKind::Enterprise,
+    ]
+}
+
+/// Runner entitlement SKUs, kept separate from the customer pricing ladder.
+#[must_use]
+pub const fn canonical_runner_tiers() -> &'static [TierKind; 5] {
+    &[
         TierKind::RunnerStarter,
         TierKind::RunnerPro,
         TierKind::RunnerTeam,
@@ -156,13 +166,19 @@ mod tests {
         let strs: Vec<_> = canonical_tiers().iter().map(|t| t.as_str()).collect();
         assert_eq!(
             strs,
+            ["free", "solo", "starter", "pro", "max", "enterprise",]
+        );
+    }
+
+    #[test]
+    fn runner_strings_are_a_separate_axis() {
+        let strs: Vec<_> = canonical_runner_tiers()
+            .iter()
+            .map(|t| t.as_str())
+            .collect();
+        assert_eq!(
+            strs,
             [
-                "free",
-                "solo",
-                "starter",
-                "pro",
-                "max",
-                "enterprise",
                 "runner_starter",
                 "runner_pro",
                 "runner_team",

@@ -4,12 +4,14 @@ title: "ADR-S11-013 — Erasure Backend Topology Reconciliation (canonical → s
 description: "How the 12-backend erasure model is reconciled to the shipped D1-primary reality — preserving the canonical contract while remapping each adapter's real transport and ratifying the D1 erase-vs-retain classification."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-013-erasure-topology-reconciliation-d1-primary.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s11", "erasure", "dsr", "topology", "gdpr"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S11-013-erasure-topology-reconciliation-d1-primary.md@f437650373100fd53147bacb926410ebb59e9fcc"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S11-013 — Erasure Backend Topology Reconciliation (canonical → shipped D1-primary)
 
 The canonical erasure model assumes a Neon-Postgres-primary topology where D1 holds only `blob_meta` + `ac_meta`; the shipped system consolidated the control-plane and billing into **D1 + Clerk**, so D1 actually holds nearly all subject PII. Implementing the spec literally would erase 2 of ~25 PII-bearing tables — a GDPR Art. 17 / LGPD Art. 18 VI violation. This ADR reconciles the model to reality: the canonical 12-backend contract is preserved unchanged, but each adapter's real transport is remapped, and the owner-ratified D1 erase-vs-retain classification becomes the load-bearing change.

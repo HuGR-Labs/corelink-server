@@ -11,11 +11,12 @@ profile_version: '0.1'
 
 This is the reserved machine-generated listing of every concept in `docs/knowledge/` (profile §1 / §2.3). Concepts are grounded code/docs knowledge; author new ones with `scripts/okf_scaffold.py` and re-run this generator. The frozen contract lives outside the bundle at `docs/internal/okf-wiki/01-okf-corelink-profile.contract.md`; the change history is in `/log.md`.
 
-**Concepts: 166**
+**Concepts: 170**
 
 ## planes
 
 - [Rust container compute plane](/planes/container.md)
+- [Deployed container capacity and cache-plane memory envelope](/planes/container-capacity.md)
 - [Durable Object lifecycle (CoreLinkServer)](/planes/durable-object.md)
 - [Multi-region replication + failover plane](/planes/replication-failover.md)
 - [Worker → DO → Container request flow](/planes/request-flow.md)
@@ -43,7 +44,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 
 ## storage
 
-- [BYOK envelope encryption at rest (CAS+AC wired, both modes + §4 hardening; gated-inert)](/storage/byok-envelope-encryption.md)
+- [BYOK envelope encryption at rest (CAS+AC wired, real KMS boundary; owner-runtime gated)](/storage/byok-envelope-encryption.md)
 - [CAS hot-path D1-over-HTTP latency](/storage/cas-hot-path-latency.md)
 - [Chunk / manifest multipart buckets](/storage/chunk-manifest-buckets.md)
 - [D1 CONFIG_DB](/storage/d1-config-db.md)
@@ -114,7 +115,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [ADR-0044 (digest) — Digest type: BLAKE3 sealed newtype, future SHA-256 path](/adr/adr-0044-digest-pluggability.md)
 - [ADR-0044 (sbom) — SBOM CycloneDX toolchain: cargo-cyclonedx + sbomqs + cosign keyless](/adr/adr-0044-sbom-cyclonedx-toolchain.md)
 - [ADR-0045 — SLSA L3 + Rekor mandatory build provenance](/adr/adr-0045-slsa-l3-rekor-mandatory.md)
-- [ADR-0062 — tier-CHECK widening via additive table rebuild (migration 0062)](/adr/adr-0062-tier-check-widen-rebuild.md)
+- [ADR-0062 — tier-CHECK widening via additive catalog edit (migration 0062)](/adr/adr-0062-tier-check-widen-rebuild.md)
 - [ADR-0064 — tenant.tier CHECK widening via additive table rebuild (migration 0064)](/adr/adr-0064-tenant-tier-max-check-rebuild.md)
 - [ADR-0065 — Event-Log DO: a thin, generic, append-only primitive](/adr/adr-0065-event-log-do-thin-append-only-primitive.md)
 - [ADR-0066 — Transparency log: integrate public Rekor/sigstore, do not rebuild](/adr/adr-0066-transparency-log-integrate-rekor.md)
@@ -125,6 +126,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [ADR-0071 — Cache find-missing is a read-superset capability (read ⊇ find-missing)](/adr/adr-0071-find-missing-scope-read-superset-hierarchy.md)
 - [ADR-0072 — humangr.com zone min_tls_version lowered 1.3 → 1.2 for sccache](/adr/adr-0072-humangr-zone-min-tls-1-2.md)
 - [ADR-0098 — erasure region-CHECK widening via additive table rebuild (migration 0098)](/adr/adr-0098-erasure-region-check-widen-rebuild.md)
+- [ADR-0100 — Object-Lock capability gate for Compliance retention](/adr/adr-0100-r2-object-lock-capability-gate.md)
 - [ADR-MULTI-REGION-V1 — Multi-region container deployments v1 (per-region worker envs)](/adr/adr-multi-region-v1.md)
 - [ADR-S11-001 — MFA step-up required only on destructive DSR arms](/adr/adr-s11-001-mfa-step-up-destructive-arms-only.md)
 - [ADR-S11-002 — Split-tier audit fail-CLOSED discipline (S-11 privacy)](/adr/adr-s11-002-split-tier-audit-fail-closed.md)
@@ -178,9 +180,11 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [GC / eviction operations](/ops/gc-eviction.md)
 - [Observability plane (telemetry / tracing / SLO)](/ops/observability-plane.md)
 - [Performance playbook](/ops/perf-playbook.md)
+- [R2 Object-Lock capability probe](/ops/r2-object-lock-probe.md)
 - [Release / GA tag process](/ops/release-process.md)
 - [Reproducible-build process](/ops/reproducible-build.md)
 - [Runners fabric (introspect-gated compute)](/ops/runners-fabric.md)
+- [Scheduled drills](/ops/scheduled-drills.md)
 - [SDK reference (python/go/javascript)](/ops/sdk-reference.md)
 - [Secrets lifecycle & PAT-scope runbook](/ops/secrets-lifecycle.md)
 - [SRE operations hub (corelink-ops + satellites)](/ops/sre-operations-hub.md)

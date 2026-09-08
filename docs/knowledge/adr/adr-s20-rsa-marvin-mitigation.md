@@ -4,12 +4,14 @@ title: "ADR-S20 — rsa 0.9.x Marvin timing-sidechannel decision (waiver + mitig
 description: "Records the RUSTSEC-2023-0071 Marvin decision: waiver + operational mitigations, because CoreLink's rsa usage is signing-only with no chosen-ciphertext oracle, with auto-promotion triggers to a full crate replacement."
 source_files:
   - "specs/03_architecture/adrs/ADR-S20-RSA-MARVIN-MITIGATION.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "security", "supply-chain", "rsa", "marvin-attack", "rustsec-2023-0071", "s20"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S20-RSA-MARVIN-MITIGATION.md@8634c2887ae92a9d1eb2e578703fec7d3254fb48"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S20 — rsa 0.9.x Marvin timing-sidechannel decision (waiver + mitigations)
 
 RUSTSEC-2023-0071 (the Marvin timing attack) flags the `rsa` crate for potential key recovery via decryption-latency sidechannels, with no upstream fix available. This DRAFT ADR reasons from the threat model — CoreLink uses `rsa` only on the signing side (receipt + audit-chain anchoring), never for attacker-chosen-ciphertext decryption — to recommend a waiver plus operational mitigations over a costly crate replacement, while binding that recommendation to explicit auto-promotion triggers. It exists so the `cargo audit` finding is a documented, conditional, monitored accepted-risk rather than an unexplained suppression. Related: [BYOK envelope encryption](/storage/byok-envelope-encryption.md) uses AES-GCM, not RSA.

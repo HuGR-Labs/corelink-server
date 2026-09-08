@@ -4,12 +4,13 @@ title: "ADR-0068 — Per-tenant monthly $-ceiling: a fail-closed spend cap (G1)"
 description: "Why CoreLink enforces a cumulative per-tenant monthly dollar ceiling, fail-closed, on top of the existing velocity rate limit."
 source_files:
   - "specs/03_architecture/adrs/ADR-0068-per-tenant-monthly-dollar-ceiling.md"
-checkpoint_sha: "15b5eb35b68b5f682508be6df263b7ab7b1d4628"
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0068-per-tenant-monthly-dollar-ceiling.md@7e96bfe1f570e7ee6ea48df00b7878fff8dee772"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["adr", "quota", "cost-ceiling", "fail-closed", "abuse", "hugit-p2"]
 timestamp: "2026-06-26T00:00:00Z"
 ---
-
 # ADR-0068 — Per-tenant monthly $-ceiling: a fail-closed spend cap (G1)
 
 CoreLink's existing per-tenant `ratelimit_buckets` cap *velocity* (req/s) but not *cumulative dollars*
@@ -62,3 +63,8 @@ retained as an owner-tunable **backstop**, set per contract for the unbounded te
 5. `specs/03_architecture/adrs/ADR-0068-per-tenant-monthly-dollar-ceiling.md:67-99` — the 2026-07-09
    reconciliation: the `$5` default was redundant/miscalibrated; default is now effectively-unlimited,
    the ceiling a per-tenant operator backstop for the unbounded team/enterprise tiers.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

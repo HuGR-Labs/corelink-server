@@ -40,11 +40,11 @@ name: load-test-nightly (R3-prep)
 # the median holds to <4%, so a 20% band on p99 is noise. p99 is still
 # recorded and printed for trend review.
 #
-# The ONLY non-failing path when the suite produced results is: within
-# threshold, or no stored baseline yet (first run seeds it and says so
-# explicitly). A run that produced no k6 summary at all is a FAILURE, not a
-# pass — the matrix legs are `continue-on-error`, so an empty result set would
-# otherwise be a silent green.
+# The ONLY non-failing path is a complete current population compared against
+# a complete stored baseline and within threshold. Missing, malformed, or
+# partial data is a hard UNKNOWN failure — the matrix legs are
+# `continue-on-error` only to isolate scenarios, never to manufacture green
+# from absent measurements.
 #
 # Comparison logic: scripts/load-test-baseline-check.py (a file, so it is
 # runnable and provable outside CI).
@@ -84,6 +84,7 @@ env:
   # deliberately discard every stored baseline (e.g. after a staging resize
   # makes the old numbers meaningless).
   BASELINE_CACHE_PREFIX: load-test-k6-baseline-v1
+  K6_EXPECTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
 
 jobs:
   k6-staging:
@@ -103,11 +104,15 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: filter scenarios
         id: filter
+        env:
+          REQUESTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
         run: |
-          REQUESTED="${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}"
+          REQUESTED="${REQUESTED_SCENARIOS}"
           if [[ ",$REQUESTED," == *",${{ matrix.scenario.id }},"* ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
@@ -158,6 +163,7 @@ jobs:
 
       - name: run k6 scenario
         if: steps.filter.outputs.enabled == 'true'
+        id: run_k6
         env:
           K6_TARGET_HOST:        ${{ secrets.K6_TARGET_HOST }}
           K6_AUTH_BEARER:        ${{ secrets.K6_STAGING_PAT }}
@@ -176,14 +182,25 @@ jobs:
             --summary-export tests/load/results/${{ matrix.scenario.id }}/summary.json \
             ${{ matrix.scenario.script }}
 
+      - name: record scenario outcome
+        if: steps.filter.outputs.enabled == 'true' && always()
+        env:
+          SCENARIO: ${{ matrix.scenario.id }}
+          OUTCOME: ${{ steps.run_k6.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p "tests/load/results/${SCENARIO}"
+          printf '{"scenario":"%s","outcome":"%s"}\n' "${SCENARIO}" "${OUTCOME}" \
+            > "tests/load/results/${SCENARIO}/status.json"
+
       - name: upload results
         if: steps.filter.outputs.enabled == 'true' && always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: k6-${{ matrix.scenario.id }}-${{ github.run_id }}
-          path: tests/load/results/${{ matrix.scenario.id }}/
+          path: tests/load/results/
           retention-days: 30
-          if-no-files-found: warn
+          if-no-files-found: error
 
   baseline-regression:
     name: baseline regression check (median ≤ +20% vs stored baseline)
@@ -196,6 +213,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: download current run artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -225,17 +244,21 @@ jobs:
             echo "restored baseline from cache key: ${{ steps.baseline-restore.outputs.cache-matched-key }}"
             cat tests/load/baseline/k6-baseline.json
           else
-            echo "no stored baseline found — this run will SEED one and cannot regress"
+            echo "::error::no stored baseline found; comparison is UNKNOWN and must fail closed"
+            exit 1
           fi
 
       - name: compare median vs stored baseline
         id: compare
+        env:
+          EXPECTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
         run: |
           set -euo pipefail
           python3 scripts/load-test-baseline-check.py \
             --results-dir tests/load/results/current \
             --baseline tests/load/baseline/k6-baseline.json \
-            --threshold "${REGRESSION_THRESHOLD}"
+            --threshold "${REGRESSION_THRESHOLD}" \
+            --expected-scenarios "${EXPECTED_SCENARIOS}"
 
       # Only reached when the comparison passed (the step above is NOT
       # continue-on-error), so a regressing run never publishes a new
@@ -253,4 +276,4 @@ jobs:
           name: k6-baseline-${{ github.run_id }}
           path: tests/load/baseline
           retention-days: 90
-          if-no-files-found: warn
+          if-no-files-found: error

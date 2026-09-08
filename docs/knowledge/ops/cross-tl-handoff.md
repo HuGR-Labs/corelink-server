@@ -4,12 +4,14 @@ title: "Cross-team tech-lead handoff: the hugit P2 wave-plan response"
 description: "The worked example of how CoreLink answers another team's integration ask — a cold-verified gap inventory plus a disjoint, contract-frozen, non-interfering wave plan."
 source_files:
   - "docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+source_blobs:
+  - "docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md@971e78e83dbf6b15c36a649deb3e3a8e4890ed15"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "handoff", "tech-lead", "wave-plan", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Cross-team tech-lead handoff: the hugit P2 wave-plan response
 
 When another HuGR team (here, hugit) asks CoreLink to close a set of integration seams, the response
@@ -43,14 +45,14 @@ endangering the launch path.
 
 # Gotchas
 
-- The seam machinery can exist while the public API does not — e.g. CAS per-hash erase exists internally (DSR) but is absent as a public API `docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md:19-19`.
+- The seam machinery can exist while the public API does not — e.g. CAS per-hash erase exists internally (DSR) but is absent as a public API `docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md:19`.
 - Some asks are confirmed OUT of CoreLink scope (GitHub infra, runner fabric exec, cold trajectory bytes) and must be returned, not built `docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md:43-46`.
 
 # Citations
 
 1. `docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md:1-12` — response framing + owner directive.
 2. `docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md:14-23` — the seam A–F tense-discipline assessment.
-3. `docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md:19-19` — machinery-exists-but-no-public-API example.
+3. `docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md:19` — machinery-exists-but-no-public-API example.
 4. `docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md:25-46` — gaps below the ask (G0/G1) + out-of-scope.
 5. `docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md:43-46` — confirmed out-of-scope items.
 6. `docs/handoff/2026-06-11-corelink-response-hugit-p2-waveplan.md:52-65` — disjoint owner-files wave-plan table.

@@ -47,6 +47,11 @@ export interface E2EUser {
   mfaAt?: number;
 }
 
+/** The bearer value used by the browser AdminClient in E2E mode. */
+export function e2eToken(user: E2EUser): string {
+  return `e2e:${encodeURIComponent(JSON.stringify(user))}`;
+}
+
 export const FIXTURE_USERS = {
   newDev: {
     sub: "user_e2e_newdev",
@@ -76,6 +81,20 @@ export const FIXTURE_USERS = {
     tenant_id: "tenant_acme",
     mfaAt: Math.floor(Date.now() / 1000),
   } satisfies E2EUser,
+  staleApprover: {
+    sub: "user_e2e_stale_approver",
+    email: "stale-approver@acme.example",
+    role: "approver",
+    tenant_id: "tenant_acme",
+    mfaAt: Math.floor(Date.now() / 1000) - 31 * 60,
+  } satisfies E2EUser,
+  otherTenantApprover: {
+    sub: "user_e2e_other_approver",
+    email: "approver@other.example",
+    role: "approver",
+    tenant_id: "tenant_other",
+    mfaAt: Math.floor(Date.now() / 1000),
+  } satisfies E2EUser,
 } as const;
 
 /**
@@ -100,6 +119,15 @@ export async function signInAs(
       secure: url.protocol === "https:",
       sameSite: "Lax",
     },
+    {
+      name: "__corelink_e2e_token",
+      value: encodeURIComponent(e2eToken(user)),
+      domain: url.hostname,
+      path: "/",
+      httpOnly: false,
+      secure: url.protocol === "https:",
+      sameSite: "Lax",
+    },
   ]);
 }
 
@@ -108,4 +136,6 @@ export async function signInAs(
  */
 export async function signOut(context: BrowserContext): Promise<void> {
   await context.clearCookies({ name: "__corelink_e2e_session" });
+  await context.clearCookies({ name: "__corelink_e2e_token" });
+  await context.clearCookies({ name: "__corelink_e2e_mfa" });
 }

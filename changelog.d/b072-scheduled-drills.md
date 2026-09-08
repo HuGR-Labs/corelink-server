@@ -1,0 +1,4 @@
+### Fixed
+
+- **The synthetic weekly drill has one non-production cron and a fail-closed handoff (B-072).** The default Worker cron reaches `scheduled()` through the internal service binding with a deterministic delivery id. Unknown crons call `noRetry()`; a missing binding, thrown delivery call, or non-2xx response remains an explicit retryable failure. No PagerDuty URL, routing key, or other secret is introduced, and all five production environments explicitly override inherited crons with empty lists.
+- Synthetic week-3 `boundary_handoff` carries `delivery_mode=deferred` and an effective `emit_at_ms` at the following Sunday 23:59 UTC, so a receiver must not page at the Monday cron. This remains a local handoff only: the change does not prove external PagerDuty delivery and B-072 stays open pending the owner packet's end-to-end evidence.

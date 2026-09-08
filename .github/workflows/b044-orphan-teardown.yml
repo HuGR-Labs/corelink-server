@@ -1,0 +1,39 @@
+name: B-044 orphan teardown contract
+
+# No Cargo/Node/full CI: this is a focal, server-side contract/mutation gate.
+# It never sets or enables the external RECONCILE_ORPHAN_TEARDOWN secret.
+on:
+  pull_request:
+    paths:
+      - 'BACKLOG.md'
+      - 'docs/campaigns/remediation/WP-B044-orphan-teardown.md'
+      - 'scripts/verify_b044_orphan_teardown_wp.py'
+      - 'tests/test_verify_b044_orphan_teardown_wp.py'
+      - 'changelog.d/PENDING-b044-orphan-teardown-wp.md'
+      - '.github/workflows/b044-orphan-teardown.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'BACKLOG.md'
+      - 'docs/campaigns/remediation/WP-B044-orphan-teardown.md'
+      - 'scripts/verify_b044_orphan_teardown_wp.py'
+      - 'tests/test_verify_b044_orphan_teardown_wp.py'
+      - 'changelog.d/PENDING-b044-orphan-teardown-wp.md'
+      - '.github/workflows/b044-orphan-teardown.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  b044-contract:
+    runs-on: corelink
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          fetch-depth: 1
+      - name: Verify contract and mutations
+        run: python3 scripts/verify_b044_orphan_teardown_wp.py --self-test
+      - name: Run focal Python tests
+        run: python3 -m unittest -v tests/test_verify_b044_orphan_teardown_wp.py

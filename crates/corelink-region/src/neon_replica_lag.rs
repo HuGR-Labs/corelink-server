@@ -24,8 +24,8 @@
 //! # Cardinality discipline (INV-OBS-CARDINALITY-BUDGET S-09)
 //!
 //! Labels: `{primary_region, replica_region}` — no `tenant_id` / `query_id`.
-//! With 1 primary (`enam`) × 3 EU/SAM replicas = 3 séries (or 4 region × 4
-//! region = 16 worst case if Neon expands). Budget-safe.
+//! With 1 primary (`enam`) × 3 configured replicas = 3 series (or 6 × 6 = 36
+//! worst-case pairs if Neon expands). Budget-safe.
 //!
 //! # SLO classification — SOFT / informational
 //!

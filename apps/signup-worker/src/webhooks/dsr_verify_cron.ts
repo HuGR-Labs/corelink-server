@@ -66,15 +66,13 @@ export interface DsrVerifyCronEnv {
 const DEADLINE_MS = 24 * 60 * 60 * 1000;
 /** Look-back window — bound the sweep so it stays cheap + idempotent. */
 const WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+/** Maximum rows returned by either source in one cron invocation. */
+const SWEEP_BATCH_LIMIT = 100;
 
 /**
  * Above this many past-deadline `dsr_requested` rows in a single sweep, log
- * LOUD. The 'requested' set is bounded by COMPLETION, not by age (see the
- * query comment), so it is designed to grow without limit while DSRs are
- * stuck — which is the correct alerting behaviour and also the exact shape
- * that grows silently. Prod holds 166 `dsr_requested` rows today, all already
- * flipped to 'verified', so the past-deadline set a healthy sweep enumerates
- * is 0 and any sustained double-digit reading is a real backlog, not noise.
+ * LOUD. The query is age-bounded and capped; a sustained cap hit is still a
+ * real backlog signal, not permission to allocate an unbounded result set.
  */
 const REQUESTED_BACKLOG_WARN_AT = 25;
 
@@ -173,32 +171,21 @@ export async function runDsrVerifySweep(
   // that failed before ANY tombstone (no dsr_erasure_log row). requested_at is
   // epoch-ms (INTEGER), so compare in ms directly.
   //
-  // NO lower (WINDOW_MS) bound here, deliberately. Read that as a decision
-  // NOT to add one, not as a description of a bound that exists: this query
-  // has exactly ONE exit, `status` leaving 'requested', which happens only
-  // where the sweep flips it to 'verified' on a `verified_complete` decision
-  // (see below; migration 0069 CHECKs the column to those two values). Age
-  // alone never drops a row.
-  //
-  // Adding the 7-day bound would silence the alert for exactly the case the
-  // anchor exists to surface: a DSR stuck at 'requested' IS the breach, and a
-  // week-old stuck DSR is a worse breach than a day-old one, not a resolved
-  // one. So the set is bounded by COMPLETION, not by time — which is cheap in
-  // the healthy case (a completed DSR drops out) and deliberately unbounded in
-  // the unhealthy one. `requestedOverThreshold` below makes that growth
-  // visible rather than letting an ever-larger sweep look like a quiet one.
-  //
-  // The WINDOW_MS lower bound stays on the dsr_erasure_log source below: that
-  // is a cost cap on the large tombstone table, where a row's ABSENCE is not
-  // itself a breach signal.
+  // The lower bound is intentional: requested anchors have a finite
+  // verification-retention window. An anchor older than that window is
+  // expired from this operational sweep and must be handled by the durable
+  // DSR/audit retention process; it must not make every cron invocation scan
+  // an ever-growing stuck population. Both sources are also hard-capped.
   let requested: Array<Record<string, unknown>> = [];
   try {
     const reqRes = await env.CONFIG_DB.prepare(
       `SELECT dsr_id, tenant_id, requested_at
          FROM dsr_requested
-        WHERE status = 'requested' AND requested_at <= ?1`,
+        WHERE status = 'requested' AND requested_at <= ?1 AND requested_at >= ?2
+        ORDER BY requested_at ASC
+        LIMIT ?3`,
     )
-      .bind(deadlineMs)
+      .bind(deadlineMs, windowMs, SWEEP_BATCH_LIMIT)
       .all();
     requested = reqRes.results ?? [];
   } catch (err) {
@@ -226,9 +213,10 @@ export async function runDsrVerifySweep(
     `SELECT dsr_id, tenant_id, MIN(started_at) AS queued_at
        FROM dsr_erasure_log
       WHERE started_at <= ?1 AND started_at >= ?2
-      GROUP BY dsr_id, tenant_id`,
+      GROUP BY dsr_id, tenant_id
+      LIMIT ?3`,
   )
-    .bind(olderThan, newerThan)
+    .bind(olderThan, newerThan, SWEEP_BATCH_LIMIT)
     .all();
 
   // Merge + dedupe by dsr_id (requested anchor wins — its queued_at is the true
@@ -244,10 +232,18 @@ export async function runDsrVerifySweep(
     const dsr_id = String(r.dsr_id ?? "");
     const tenant_id = String(r.tenant_id ?? "");
     if (!dsr_id || !tenant_id) continue;
+    const requestedAt = Number(r.requested_at);
+    if (!Number.isFinite(requestedAt) || requestedAt < windowMs || requestedAt > deadlineMs) {
+      console.warn(
+        `[dsr-verify-cron] skipping invalid/expired requested anchor dsr_id=${dsr_id} ` +
+          `requested_at=${JSON.stringify(r.requested_at ?? null)}`,
+      );
+      continue;
+    }
     byId.set(dsr_id, {
       dsr_id,
       tenant_id,
-      queued_at_ms: Number(r.requested_at ?? 0),
+      queued_at_ms: requestedAt,
       fromRequested: true,
     });
   }

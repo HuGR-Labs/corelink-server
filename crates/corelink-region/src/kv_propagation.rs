@@ -5,7 +5,7 @@
 //!
 //! Per the corelink autonomous execution charter (`trait-abstraction-defer`),
 //! the production probe writes `kv_probe:<region>:<ts_ms>` from each region
-//! every 30 s and reads from all four regions, computing
+//! every 30 s and reads from all six canonical regions, computing
 //! `lag = read_observed_ts − written_ts` per (write_region, read_region) pair.
 //! That wiring lives in the CF Worker probe glue.
 //!
@@ -22,8 +22,8 @@
 //!
 //! # Cardinality discipline (INV-OBS-CARDINALITY-BUDGET S-09)
 //!
-//! Labels: `{write_region, read_region}` — no `tenant_id` / `key`. With 4 × 4 = 16
-//! pairs max (12 inter-region pairs after excluding self), budget-safe.
+//! Labels: `{write_region, read_region}` — no `tenant_id` / `key`. With 6 × 6 = 36
+//! pairs max (30 inter-region pairs after excluding self), budget-safe.
 //!
 //! # Audit ordering
 //!

@@ -61,7 +61,10 @@ pub const fn status_for(err: &OciAdapterError) -> StatusCode {
         OciAdapterError::Auth(_)
         | OciAdapterError::InvalidToken
         | OciAdapterError::CatalogDisabled => StatusCode::UNAUTHORIZED,
-        OciAdapterError::Cas(_) | OciAdapterError::Kv(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        // R2/KV are live dependency failures, not client faults. Returning
+        // 503 lets OCI clients retry and keeps an outage distinct from a
+        // malformed manifest/repository (400) or a process bind failure (500).
+        OciAdapterError::Cas(_) | OciAdapterError::Kv(_) => StatusCode::SERVICE_UNAVAILABLE,
         OciAdapterError::DigestMismatch { .. }
         | OciAdapterError::ManifestInvalid(_)
         | OciAdapterError::InvalidRepoName(_) => StatusCode::BAD_REQUEST,
@@ -136,4 +139,35 @@ pub fn err_response(
         }
     }
     (status, headers, Body::from(body)).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::status_for;
+    use crate::oci::error::OciAdapterError;
+    use axum::http::StatusCode;
+
+    #[test]
+    fn live_storage_failures_are_retryable_503s() {
+        assert_eq!(
+            status_for(&OciAdapterError::Cas("r2 unavailable".to_owned())),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            status_for(&OciAdapterError::Kv("r2 kv unavailable".to_owned())),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[test]
+    fn process_and_client_failures_keep_distinct_statuses() {
+        assert_eq!(
+            status_for(&OciAdapterError::Bind(std::io::Error::other("bind"))),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            status_for(&OciAdapterError::ManifestInvalid("bad json".to_owned())),
+            StatusCode::BAD_REQUEST
+        );
+    }
 }

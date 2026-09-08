@@ -5,14 +5,23 @@ description: "How CoreLink stores, separates, and protects its secrets and PATs 
 source_files:
   - "docs/security/2026-06-23-secreview-credentials.md"
   - "docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md"
+  - "crates/corelink-container/src/routes/admin/part-00.rs"
+  - "crates/corelink-container/src/auth_tenant.rs"
   - "worker/src/durable_object.ts"
-  - "crates/corelink-container/src/routes/admin.rs"
-checkpoint_sha: "b881e31e2d3fa9b7837546ef083ceb6d271f3361"
+  - "worker/src/durable_object_start.ts"
+source_blobs:
+  - "docs/security/2026-06-23-secreview-credentials.md@fe23270a87aaee27747e5be9978ac7b3306594b1"
+  - "docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md@a7ba9c28a31ad56b8706786ff40dcf07179a3631"
+  - "crates/corelink-container/src/routes/admin/part-00.rs@d7a50818b395cb9a858a5c8bae4380789bebfd3a"
+  - "crates/corelink-container/src/auth_tenant.rs@89894fd631b6436ff1c940837b312de30ce3eef7"
+  - "worker/src/durable_object.ts@f8de8014554cc5a7acd7a9c4906c34a4353d1158"
+  - "worker/src/durable_object_start.ts@aa6612c2e3db86269a3b93f126e6dfdbd53af0c6"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["security", "credentials", "pat", "secrets", "clerk"]
-timestamp: "2026-06-26T00:00:00Z"
----
+timestamp: "2026-09-06T00:00:00Z"
 
+---
 # Credential handling & PAT secrecy
 
 Every CoreLink cache request is authenticated by a Personal Access Token, and the worker↔container
@@ -42,9 +51,13 @@ channel for a freshly-minted PAT must NOT be (client-readable Clerk metadata / t
 - PAT plane separation holds: the native plane verifies via constant-time HMAC, the adapter plane via
   Argon2id, mint is a pure function that returns the plaintext once and never logs it, and rotate/
   revoke is tenant-scoped and never opens a zero-valid-PAT window (`docs/security/2026-06-23-secreview-credentials.md:134-157`).
-- Internal-auth compares are constant-time on both the TS and Rust gates: the provided value is
-  padded to the expected length, one timing-safe compare runs, then a length-equality bit is AND-ed
-  in — no length oracle (`docs/security/2026-06-23-secreview-credentials.md:153-157`).
+- Internal-auth secret compares are constant-time on both the TS and Rust gates: the provided value
+  is padded to the expected length, one timing-safe compare runs, then a length-equality bit is
+  AND-ed in — no length oracle (`docs/security/2026-06-23-secreview-credentials.md:153-157`).
+  This does not describe `AuthTenant`: that extractor is not a secret compare and performs no
+  zero-padding. It trims the Worker-resolved tenant header and rejects the reserved sentinel set;
+  the PAT-to-tenant authentication and constant-time secret gate have already happened upstream
+  (`crates/corelink-container/src/auth_tenant.rs:14-17`, `crates/corelink-container/src/auth_tenant.rs:60-70`).
 - The earlier HIGH finding: the signup flow wrote the freshly-minted PAT plaintext into Clerk
   `public_metadata`, which is client-readable and embedded in the session JWT — so the PAT was
   broadcast in every session token to every service that validates it (`docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:8-21`).
@@ -78,7 +91,7 @@ channel for a freshly-minted PAT must NOT be (client-readable Clerk metadata / t
   prod and genuinely isolated; **`admin` (`CORELINK_ADMIN_AUTH_KEY`) is NOT bound on any of the 5 prod
   Workers**, so the admin-mutate consumer alone still resolves to the shared
   `CORELINK_INTERNAL_AUTH_KEY` today (`docs/security/2026-06-23-secreview-credentials.md:34-64`,
-  `worker/src/durable_object.ts:795-826`).
+  `worker/src/durable_object_start.ts:116-122`).
 - The remediation leaves a documented, accepted residual: the plaintext still lives transiently in
   Clerk `private_metadata` (a sub-processor backend store) until the clear/cron — the future
   hardening is a single-use reveal in our own D1 (`docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:48-51`).
@@ -89,11 +102,12 @@ channel for a freshly-minted PAT must NOT be (client-readable Clerk metadata / t
 2. `docs/security/2026-06-23-secreview-credentials.md:34-64` — LOW-1: consumer keys fall back to the shared internal-auth key.
 3. `docs/security/2026-06-23-secreview-credentials.md:90-100` — INFO-1: dedicated introspect/billing keys truly separated (no fallback).
 4. `docs/security/2026-06-23-secreview-credentials.md:134-157` — INFO-4: PAT lifecycle, plane separation, constant-time, rotation.
-5. `worker/src/durable_object.ts:795-826` — CP-1 fix: the DO forwards all six dedicated per-consumer keys.
-6. `crates/corelink-container/src/routes/admin.rs:567-605` — `resolve_internal_auth_key` prefers the dedicated key, shared key only as fallback.
+5. `worker/src/durable_object_start.ts:116-122` — CP-1 fix: the DO forwards all six dedicated per-consumer keys.
+6. `crates/corelink-container/src/routes/admin/part-00.rs:567-604` — `resolve_internal_auth_key` prefers the dedicated key, shared key only as fallback.
 7. CF Workers secrets-list API, checked on this checkpoint's date — `CORELINK_ADMIN_AUTH_KEY` unset on all 5 prod Workers; the other five dedicated keys are bound.
 5. `docs/security/2026-06-23-secreview-credentials.md:173-186` — repo secret sweep: no committed live secrets.
 6. `docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:8-21` — the finding: PAT plaintext in `public_metadata` is JWT-broadcast.
 7. `docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:18-26` — client-driven cleanup → PAT persists forever.
 8. `docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:32-46` — the SOTA fix: move to `private_metadata` + server reveal + scrub cron.
 9. `docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:48-51` — the accepted transient-residual at the sub-processor.
+9. `worker/src/durable_object.ts:1` — declared source anchor.

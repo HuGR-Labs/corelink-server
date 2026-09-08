@@ -4,12 +4,14 @@ title: "Real-user black-box suites & remaining journeys"
 description: "The state of CoreLink's real-user e2e coverage vs prod (real-client moat + black-box journey suite) and the three gated journeys that need an owner resource to finish."
 source_files:
   - "docs/testing/2026-06-22-remaining-e2e-journeys-handoff.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+source_blobs:
+  - "docs/testing/2026-06-22-remaining-e2e-journeys-handoff.md@eda01772443815e6e22d362a30a6907aaa9cd6aa"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["testing", "e2e", "real-user", "black-box", "go-live"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Real-user black-box suites & remaining journeys
 
 CoreLink's go-live certificate is two black-box suites that sign up as a real user against prod and

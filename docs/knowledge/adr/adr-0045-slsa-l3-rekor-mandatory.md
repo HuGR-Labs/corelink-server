@@ -4,12 +4,14 @@ title: "ADR-0045 — SLSA L3 + Rekor mandatory build provenance"
 description: "Adopts SLSA Level 3 provenance for all releases via the SLSA generator + Fulcio keyless OIDC + mandatory Rekor inclusion (INV-SUPPLY-PROVENANCE-IN-REKOR) + in-toto v1.0 + a customer-side verify CLI."
 source_files:
   - "specs/03_architecture/adrs/ADR-0045-slsa-l3-rekor-mandatory.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s12", "supply-chain", "slsa", "sigstore", "rekor"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0045-slsa-l3-rekor-mandatory.md@e3d1308d283a7474f20ba281eaf47556bc5d6f50"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0045 — SLSA L3 + Rekor mandatory build provenance
 
 CoreLink is a multi-tenant cache wired into 100+ customers' CI/CD pipelines, which makes it a

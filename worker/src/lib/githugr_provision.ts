@@ -20,8 +20,9 @@
  *     and the identity map). NOTE the fixture ALSO seeds `runners_entitlement`
  *     and provisioning deliberately does NOT: the fixture is a test-persona
  *     ladder, not the free-signup contract (2026-08-02).
- *   - `apps/signup-worker/src/lib/d1.ts` (`insertTenantOrgMap` — `tenant_org_map`
- *     keyed on the Clerk principal id).
+ *   - `apps/signup-worker/src/lib/d1.ts` owns CoreLink-Clerk's
+ *     `tenant_org_map`; this module uses the separate
+ *     `githugr_tenant_org_map` table for the githugr issuer.
  *
  * FK ORDER: the `tenant` row is written FIRST (tier_selections / the others
  * reference `tenant.tenant_id`), then the child rows, then the identity map.
@@ -145,7 +146,7 @@ export async function provisionOrLookupGithugrTenant(
   // with ZERO writes (removes the 4-write amplification on every session). A D1
   // fault here PROPAGATES (fail-CLOSED — never a silent shared-tenant fallback).
   const existing = await db
-    .prepare("SELECT tenant_id FROM tenant_org_map WHERE clerk_org_id = ?1 LIMIT 1")
+    .prepare("SELECT tenant_id FROM githugr_tenant_org_map WHERE githugr_subject = ?1 LIMIT 1")
     .bind(sub)
     .first<{ tenant_id: string }>();
   if (existing && existing.tenant_id) {
@@ -185,27 +186,27 @@ export async function provisionOrLookupGithugrTenant(
       )
       .bind(tenantId, FREE_MONTHLY_BUDGET_USD_MICROS),
 
-    // (4) tenant_org_map — the identity row keyed on the Clerk principal (`sub`);
-    // clerk_org_id PRIMARY KEY ⇒ first writer wins (mirrors insertTenantOrgMap).
+    // (4) githugr_tenant_org_map — separate identity authority/table; this
+    // cannot collide with CoreLink Clerk's tenant_org_map writer.
     db
       .prepare(
-        "INSERT OR IGNORE INTO tenant_org_map " +
-          "(clerk_org_id, tenant_id, created_at_ms) VALUES (?1, ?2, ?3)",
+        "INSERT OR IGNORE INTO githugr_tenant_org_map " +
+          "(githugr_subject, tenant_id, created_at_ms) VALUES (?1, ?2, ?3)",
       )
       .bind(sub, tenantId, nowMs),
   ]);
 
-  // Read back the AUTHORITATIVE mapping. This covers a row written by a CONCURRENT
+  // Read back the AUTHORITATIVE githugr mapping. This covers a row written by a CONCURRENT
   // first login of the same sub (deterministic derivation ⇒ same tenant_id, but we
   // still trust D1's row over our local derivation). A missing row here is
   // impossible after the batch above unless the write silently failed, so we treat
   // an absent read-back as an error (fail-CLOSED at the caller).
   const row = await db
-    .prepare("SELECT tenant_id FROM tenant_org_map WHERE clerk_org_id = ?1 LIMIT 1")
+    .prepare("SELECT tenant_id FROM githugr_tenant_org_map WHERE githugr_subject = ?1 LIMIT 1")
     .bind(sub)
     .first<{ tenant_id: string }>();
   if (!row || !row.tenant_id) {
-    throw new Error("githugr tenant_org_map read-back returned no row after provision");
+    throw new Error("githugr tenant map read-back returned no row after provision");
   }
   return row.tenant_id;
 }

@@ -1,11 +1,31 @@
 # CoreLink — GC Production Rollout Plan (S-06)
 
 > **Sprint:** S-06 · **Lane:** HIGH_RISK · **WI:** WI-S06-007 §6.1.11 + §11
-> **Date:** 2026-05-02 · **Status:** SCAFFOLD — execution post-S-20 GA gate
+> **Date:** 2026-05-02 · **Status:** DEFAULT-OFF ARTIFACT WIRED — destructive execution remains owner-gated
 
 This document is the production rollout plan for CoreLink's S-06
 Garbage Collection surface. Per Lote 10.4bis lesson, gradual rollout
 10% → 50% → 100% is mandatory; direct 100% is anti-scope.
+
+## B-071 artifact boundary (2026-09-02)
+
+The production container image includes `/usr/local/bin/gc_sweep`, but its
+`ENTRYPOINT` remains `/usr/local/bin/corelink-server`: shipping the executable
+does not schedule or enable collection. The binary fails closed to dry-run when
+`GC_LIVE_DELETE` is absent, false, or malformed.
+
+The scheduled `gc-sweep-dry-run` lane fixes `GC_LIVE_DELETE=false`, removes
+Cloudflare credential variables before invocation, and records the fixture's
+`reclaimable_count`, `reclaimable_bytes`, `deleted_count`, and `deleted_bytes`.
+Its accepted report has one reclaimable 4,096-byte candidate and zero deleted
+objects/bytes. This is artifact and dry-run evidence only: the executable still
+uses the crate's in-memory fixture because real R2/D1 adapters are not present
+in the container plane.
+
+No production data may be deleted under this change. The owner must separately
+approve real binding implementation, review a real production-data dry-run, and
+authorize the first destructive execution before any `GC_LIVE_DELETE=true`
+deployment or schedule exists.
 
 ## 0. Pre-rollout gates
 

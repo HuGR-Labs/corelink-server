@@ -26,6 +26,10 @@ pub struct CasReadRequest {
     /// [`Self::with_algo`]), which routes the blob into the surface-tagged
     /// `bazel/sha256/` keyspace and re-verifies it as SHA-256 on read.
     pub algo: DigestAlgo,
+    /// Optional per-call byte ceiling. Storage-backed handlers MUST reject an
+    /// object from metadata before collecting its body when this is set.
+    /// `None` preserves the ordinary single-read ceiling.
+    pub max_bytes: Option<u64>,
 }
 
 impl CasReadRequest {
@@ -50,6 +54,7 @@ impl CasReadRequest {
             caller_tenant: caller_tenant.into(),
             at_unix_ms,
             algo: DigestAlgo::Blake3,
+            max_bytes: None,
         }
     }
 
@@ -59,6 +64,13 @@ impl CasReadRequest {
     #[must_use]
     pub fn with_algo(mut self, algo: DigestAlgo) -> Self {
         self.algo = algo;
+        self
+    }
+
+    /// Bound the bytes a storage-backed handler may materialise for this read.
+    #[must_use]
+    pub fn with_max_bytes(mut self, max_bytes: u64) -> Self {
+        self.max_bytes = Some(max_bytes);
         self
     }
 }
@@ -92,7 +104,11 @@ impl CasReadResponse {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct CasWriteRequest {
-    /// Tenant from URL path.
+    /// Physical storage namespace from the URL/keyspace.
+    ///
+    /// This is deliberately separate from [`Self::accounting_tenant`].  The
+    /// public moat writes to `_public` for cross-tenant deduplication while
+    /// quota accounting remains attached to the authenticated tenant.
     pub tenant: String,
     /// Lower-case hex content hash the caller claims for `bytes`.
     pub claimed_hash: String,
@@ -100,8 +116,15 @@ pub struct CasWriteRequest {
     pub bytes: Vec<u8>,
     /// Caller principal (already-authenticated upstream).
     pub principal: String,
-    /// Caller's authenticated tenant (must equal `tenant`).
+    /// Caller's authenticated tenant.
     pub caller_tenant: String,
+    /// Authenticated tenant charged for this write's storage reservation.
+    ///
+    /// For ordinary writes this is the same value as `tenant`.  Public moat
+    /// writes use `tenant == "_public"` but retain the real caller here; this
+    /// field prevents the accounting decorator from accidentally charging the
+    /// physical shared namespace (or silently dropping the caller's quota).
+    pub accounting_tenant: String,
     /// Wall-clock timestamp in unix-millis.
     pub at_unix_ms: u64,
     /// The tenant's **resolved per-tier storage cap in bytes**, as established
@@ -149,16 +172,57 @@ impl CasWriteRequest {
         caller_tenant: impl Into<String>,
         at_unix_ms: u64,
     ) -> Self {
+        let tenant = tenant.into();
+        let accounting_tenant = tenant.clone();
         Self {
-            tenant: tenant.into(),
+            tenant,
             claimed_hash: claimed_hash.into(),
             bytes: bytes.into(),
             principal: principal.into(),
             caller_tenant: caller_tenant.into(),
+            accounting_tenant,
             at_unix_ms,
             storage_quota_bytes: None,
             algo: DigestAlgo::Blake3,
         }
+    }
+
+    /// Construct a write for the shared public physical namespace while
+    /// charging the authenticated tenant supplied by the route.
+    ///
+    /// The physical namespace is fixed here rather than accepted as an
+    /// argument, so callers cannot use the public accounting path to select a
+    /// victim tenant's private storage namespace.  Handlers additionally
+    /// validate that the accounting tenant is the authenticated caller before
+    /// mutating storage.
+    #[must_use]
+    pub fn for_public_namespace(
+        accounting_tenant: impl Into<String>,
+        claimed_hash: impl Into<String>,
+        bytes: impl Into<Vec<u8>>,
+        principal: impl Into<String>,
+        at_unix_ms: u64,
+    ) -> Self {
+        let accounting_tenant = accounting_tenant.into();
+        Self {
+            tenant: "_public".to_owned(),
+            claimed_hash: claimed_hash.into(),
+            bytes: bytes.into(),
+            principal: principal.into(),
+            caller_tenant: accounting_tenant.clone(),
+            accounting_tenant,
+            at_unix_ms,
+            storage_quota_bytes: None,
+            algo: DigestAlgo::Blake3,
+        }
+    }
+
+    /// Return whether this request's physical and accounting namespaces are
+    /// authorized for the authenticated caller.
+    #[must_use]
+    pub fn is_authorized_for_caller(&self) -> bool {
+        self.accounting_tenant == self.caller_tenant
+            && (self.tenant == self.caller_tenant || self.tenant == "_public")
     }
 
     /// Attach the resolved per-tier storage cap (bytes) used to seed a fresh

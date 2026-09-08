@@ -1,0 +1,62 @@
+# PR-only production deployability preflight.
+#
+# This job has no deployment credentials and never contacts Cloudflare.  It
+# validates the closed Wrangler/configuration/artifact inventory at both PR
+# base and head, which is the fork-safe part of a deploy dry-run.  The actual
+# deploy workflows remain push/manual only and retain their secret boundary.
+name: production-deployability
+
+on:
+  pull_request:
+    paths:
+      - "wrangler.toml"
+      - "Dockerfile"
+      - "worker/**"
+      - "apps/admin-ui/**"
+      - "apps/analytics-worker/**"
+      - "apps/docs/**"
+      - "apps/get-corelink-worker/**"
+      - "apps/signup-worker/**"
+      - ".github/workflows/cf-deploy-prod.yml"
+      - ".github/workflows/admin-ui-deploy.yml"
+      - ".github/workflows/docs-deploy.yml"
+      - ".github/workflows/signup-worker-deploy.yml"
+      - "reports/production-deploy-surfaces.v1.json"
+      - "scripts/verify_prod_deployability.py"
+      - "tests/test_verify_prod_deployability.py"
+      - ".github/workflows/production-deployability.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployability-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: production deployability (base + head)
+    runs-on: corelink
+    timeout-minutes: 10
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout PR head and fetch base
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Provision isolated Python interpreter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/corelink-b115-python"
+          test -x "$RUNNER_TEMP/corelink-b115-python/bin/python"
+
+      - name: Verify closed production deploy surface at base and head
+        run: >-
+          "$RUNNER_TEMP/corelink-b115-python/bin/python" -I
+          scripts/verify_prod_deployability.py
+          --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"

@@ -14,7 +14,20 @@
 //! consolidation adopts brew's (strongest) classification for all three, closing
 //! that gap, and gives the increment-4 mirror one reviewed guard to build on.
 
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
+
+fn ipv4_is_internal(v4: Ipv4Addr) -> bool {
+    // Destructure (no indexing — `indexing_slicing` is denied).
+    let [a, b, _, _] = v4.octets();
+    v4.is_private()
+        || v4.is_loopback()
+        || v4.is_link_local()
+        || v4.is_unspecified()
+        || v4.is_broadcast()
+        || v4.is_documentation()
+        // Carrier-grade NAT 100.64.0.0/10 — internal-ish, deny.
+        || (a == 100 && (b & 0xc0) == 0x40)
+}
 
 /// True when `host` is a literal IP address in a range that must never be
 /// reachable from an outbound upstream fetch. DNS host names are NOT classified
@@ -30,18 +43,7 @@ pub fn host_is_internal_ip(host: &str) -> bool {
         return false;
     };
     match ip {
-        IpAddr::V4(v4) => {
-            // Destructure (no indexing — `indexing_slicing` is denied).
-            let [a, b, _, _] = v4.octets();
-            v4.is_private()
-                || v4.is_loopback()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.is_broadcast()
-                || v4.is_documentation()
-                // Carrier-grade NAT 100.64.0.0/10 — internal-ish, deny.
-                || (a == 100 && (b & 0xc0) == 0x40)
-        }
+        IpAddr::V4(v4) => ipv4_is_internal(v4),
         IpAddr::V6(v6) => {
             let [s0, ..] = v6.segments();
             v6.is_loopback()
@@ -51,9 +53,7 @@ pub fn host_is_internal_ip(host: &str) -> bool {
                 // Link-local fe80::/10.
                 || (s0 & 0xffc0) == 0xfe80
                 // IPv4-mapped / -compatible: re-classify the embedded v4.
-                || v6.to_ipv4().is_some_and(|m| {
-                    m.is_private() || m.is_loopback() || m.is_link_local() || m.is_unspecified()
-                })
+                || v6.to_ipv4().is_some_and(ipv4_is_internal)
         }
     }
 }
@@ -86,6 +86,8 @@ pub fn ssrf_safe_redirect_policy(max: usize) -> reqwest::redirect::Policy {
 )]
 mod tests {
     use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
     fn classic_internal_ranges_are_flagged() {
@@ -103,6 +105,10 @@ mod tests {
             "[fe80::1]",            // v6 link-local
             "[::ffff:192.168.0.1]", // v4-mapped private
             "[::ffff:10.0.0.1]",    // v4-mapped private
+            "[::ffff:127.0.0.1]",   // v4-mapped loopback
+            "[::ffff:169.254.1.1]", // v4-mapped link-local
+            "[::ffff:100.64.0.1]",  // v4-mapped CGNAT
+            "[::ffff:192.0.2.1]",   // v4-mapped documentation
         ] {
             assert!(host_is_internal_ip(h), "{h} must be flagged internal");
         }
@@ -137,5 +143,45 @@ mod tests {
         ] {
             assert!(!host_is_internal_ip(h), "{h} must NOT be flagged internal");
         }
+    }
+
+    #[tokio::test]
+    async fn guarded_client_follows_public_3xx_then_blocks_mapped_internal_hop() {
+        let server = MockServer::start().await;
+        let port = server.address().port();
+        Mock::given(method("GET"))
+            .and(path("/start"))
+            .respond_with(
+                ResponseTemplate::new(307)
+                    .insert_header("location", format!("http://cdn.example.test:{port}/hop2")),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/hop2"))
+            .respond_with(
+                ResponseTemplate::new(307)
+                    .insert_header("location", "http://[::ffff:100.64.0.1]/blocked"),
+            )
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::builder()
+            // Resolve the public-CDN fixture to the local mock without making
+            // the redirect host itself an internal IP literal.
+            .resolve("cdn.example.test", *server.address())
+            .redirect(ssrf_safe_redirect_policy(3))
+            .build()
+            .expect("guarded test client builds");
+        let response = client
+            .get(format!("{}/start", server.uri()))
+            .send()
+            .await
+            .expect("redirect policy returns the stopped response");
+
+        // The first public-DNS redirect was followed; the second hop was
+        // stopped before any request could reach the mapped CGNAT address.
+        assert_eq!(response.status(), reqwest::StatusCode::TEMPORARY_REDIRECT);
+        assert!(response.url().path().ends_with("/hop2"));
     }
 }

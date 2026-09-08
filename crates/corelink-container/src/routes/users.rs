@@ -112,6 +112,15 @@ async fn handle_me(
     let token_prefix = header_or(&headers, "x-corelink-token-prefix", "_unknown");
     let route_kind = header_or(&headers, "x-corelink-route-kind", "reapi_v1");
 
+    // The edge normally constructs this correlation value, but direct or
+    // misrouted traffic must not be able to forge log records. Keep the raw
+    // value for the JSON-escaped response and sanitize the log copy.
+    tracing::debug!(
+        principal = %sanitize_log_value(&token_prefix),
+        route_kind = %sanitize_log_value(&route_kind),
+        "users identity request"
+    );
+
     // Native PAT possession backstop (cluster A): re-verify the bearer PAT
     // (Argon2id, full Option-B) resolves to the claimed tenant BEFORE reflecting
     // the identity, so a forged-HMAC PAT cannot confirm a victim tenant. Skipped
@@ -174,6 +183,17 @@ fn json_escape(s: &str) -> String {
     out
 }
 
+/// Remove log control characters from Worker-injected correlation values.
+/// Replacing rather than dropping preserves enough shape for diagnosis while
+/// preventing CR/LF log injection and terminal escape sequences.
+fn sanitize_log_value(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| if c.is_control() { '�' } else { c })
+        .take(128)
+        .collect()
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -200,7 +220,10 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/users/me")
             .method("GET")
-            .header("x-corelink-tenant-id", "tenant-abc")
+            .header(
+                "x-corelink-tenant-id",
+                "00000000-0000-0000-0000-000000000001",
+            )
             .header("x-corelink-token-prefix", "clpat_abcd")
             .header("x-corelink-route-kind", "reapi_v1")
             .body(Body::empty())
@@ -209,7 +232,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
         let body = String::from_utf8(bytes.to_vec()).expect("utf8");
-        assert!(body.contains("\"tenant_id\":\"tenant-abc\""));
+        assert!(body.contains("\"tenant_id\":\"00000000-0000-0000-0000-000000000001\""));
         assert!(body.contains("\"token_prefix\":\"clpat_abcd\""));
         assert!(body.contains("\"route_kind\":\"reapi_v1\""));
     }
@@ -257,14 +280,17 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/users/me")
             .method("GET")
-            .header("x-corelink-tenant-id", "tenant-abc")
+            .header(
+                "x-corelink-tenant-id",
+                "00000000-0000-0000-0000-000000000001",
+            )
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::OK);
         let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
         let body = String::from_utf8(bytes.to_vec()).expect("utf8");
-        assert!(body.contains("\"tenant_id\":\"tenant-abc\""));
+        assert!(body.contains("\"tenant_id\":\"00000000-0000-0000-0000-000000000001\""));
         assert!(body.contains("\"token_prefix\":\"_unknown\""));
         assert!(body.contains("\"route_kind\":\"reapi_v1\""));
     }
@@ -274,6 +300,16 @@ mod tests {
         assert_eq!(json_escape(r#"abc"def"#), r#"abc\"def"#);
         assert_eq!(json_escape(r"a\b"), r"a\\b");
         assert_eq!(json_escape("ab\nc"), r"ab\nc");
+    }
+
+    #[test]
+    fn log_sanitizer_replaces_control_characters_and_bounds_length() {
+        let sanitized = sanitize_log_value("principal\r\n\u{1b}[31m");
+        assert!(!sanitized.contains('\r'));
+        assert!(!sanitized.contains('\n'));
+        assert!(!sanitized.contains('\u{1b}'));
+        assert_eq!(sanitized, "principal���[31m");
+        assert_eq!(sanitize_log_value(&"x".repeat(200)).len(), 128);
     }
 
     // ── Native PAT possession backstop (cluster A) ────────────────────────────
@@ -377,7 +413,10 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/users/me")
             .method("GET")
-            .header("x-corelink-tenant-id", "dashboard-tenant")
+            .header(
+                "x-corelink-tenant-id",
+                "00000000-0000-0000-0000-000000000002",
+            )
             .header("x-corelink-token-prefix", "clerk")
             .body(Body::empty())
             .unwrap();
@@ -392,7 +431,10 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/users/me")
             .method("GET")
-            .header("x-corelink-tenant-id", "dev-tenant")
+            .header(
+                "x-corelink-tenant-id",
+                "00000000-0000-0000-0000-000000000003",
+            )
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");

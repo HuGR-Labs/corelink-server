@@ -109,6 +109,7 @@ const TEAM_INVITE_WIRE = {
     joined_at: "2026-08-01T00:00:00Z",
     status: "invited",
   },
+  invitation_token: "a".repeat(64),
 };
 
 describe("KeysClient against the real POST /v1/customer/keys wire", { timeout: WIRE_UI_TIMEOUT_MS }, () => {

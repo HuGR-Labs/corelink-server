@@ -1,0 +1,9 @@
+{
+  "name": "extract-zip",
+  "version": "2.0.2-hugr.0",
+  "description": "Bounded ZIP extraction for the CoreLink build toolchain",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "engines": { "node": ">=20" },
+  "dependencies": { "yauzl": "^2.10.0" }
+}

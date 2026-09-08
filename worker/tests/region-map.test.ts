@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import {
   coloForMacro,
+  coloMatchesMacro,
   isMacroRegion,
   isProvisionedMacro,
   isLocalIadMacro,
@@ -11,7 +12,7 @@ import {
   type MacroRegion,
 } from "../src/region-map.js";
 
-/** The CANONICAL provisionable macro set — the one truth all three copies obey. */
+/** The CANONICAL four-macro provisionable set — the one truth all three copies obey. */
 const CANONICAL_PROVISIONED = ["apac", "enam", "weur", "wnam"]; // sorted (apac added by WP4)
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -19,7 +20,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 /**
  * Extract the string literals from a `PROVISIONED_MACROS` definition in a source
  * file (TS `new Set([...])` or Rust `[&str; N] = [...]`), sorted. Used to diff
- * the THREE physical copies of the set against each other and the canonical.
+ * the three physical copies of the set against each other and the canonical.
  */
 function parseProvisioned(absPath: string): string[] {
   const src = readFileSync(absPath, "utf8");
@@ -92,14 +93,20 @@ describe("region-map (FROZEN macro→colo contract)", () => {
     expect(isLocalIadMacro("sam")).toBe(false);
     expect(isLocalIadMacro("afr")).toBe(false);
   });
+
+  it("compares macro and colo vocabularies through the canonical boundary", () => {
+    expect(coloMatchesMacro("sam", "sam")).toBe(true);
+    expect(coloMatchesMacro("sam", "iad")).toBe(false);
+    expect(coloMatchesMacro("iad", "iad")).toBe(false); // colo is not a macro
+  });
 });
 
-// backlog #29 / H1 — the 3-WAY drift gate. The provisionable macro set is
-// physically duplicated in THREE consumers; parse each copy from source and
-// assert they are byte-identical to the canonical {wnam, enam, weur}. This makes
+// backlog #29 / H1 — the three-consumer drift gate. The four-macro provisionable
+// set is physically duplicated in three consumers; parse each copy from source
+// and assert they are byte-identical to the canonical {wnam, enam, weur, apac}. This makes
 // the clerk drift (the 2-set that masked an LGPD trap) impossible to reintroduce
 // silently — any divergence in ANY of the three files fails CI here.
-describe("region-map (3-way PROVISIONED_MACROS drift gate)", () => {
+describe("region-map (three-consumer PROVISIONED_MACROS drift gate)", () => {
   const workerSrc = resolve(__dirname, "../src/region-map.ts");
   const containerSrc = resolve(
     __dirname,
@@ -114,7 +121,7 @@ describe("region-map (3-way PROVISIONED_MACROS drift gate)", () => {
     expect([...PROVISIONED_MACROS].sort()).toEqual(CANONICAL_PROVISIONED);
   });
 
-  it("all three source copies (worker + container + clerk) match the canonical set", () => {
+  it("all three source copies (worker + container + clerk) match the four-macro canonical set", () => {
     const worker = parseProvisioned(workerSrc);
     const container = parseProvisioned(containerSrc);
     const clerk = parseProvisioned(clerkSrc);

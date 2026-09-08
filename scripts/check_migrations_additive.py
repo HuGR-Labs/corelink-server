@@ -83,12 +83,9 @@ BANNED_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 
 # An `additive-allowed: ADR-NNNN` annotation on the same line suppresses
 # the violation. The reason text is mandatory so reviewers can see why.
-ALLOW_PATTERN = re.compile(r"--\s*additive-allowed\s*:\s*ADR-\d{4}\b", re.IGNORECASE)
-
-# Strip line comments before scanning so `-- DROP TABLE old_thing` in a
-# rationale block does not trigger.
-COMMENT_PATTERN = re.compile(r"--[^\n]*$", re.MULTILINE)
-
+ALLOW_PATTERN = re.compile(
+    r"^--\s*additive-allowed\s*:\s*ADR-\d{4}\b\s+\S", re.IGNORECASE
+)
 
 def iter_migration_files() -> list[Path]:
     files: list[Path] = []
@@ -99,21 +96,103 @@ def iter_migration_files() -> list[Path]:
     return files
 
 
-def scan_file(path: Path) -> list[tuple[int, str, str]]:
-    """Return list of (line_number, banned_pattern_label, raw_line) for
-    every banned pattern that fires without an allow annotation."""
-    violations: list[tuple[int, str, str]] = []
-    raw = path.read_text(encoding="utf-8")
-    for line_no, raw_line in enumerate(raw.splitlines(), start=1):
-        # If the line already carries an additive-allowed annotation, skip.
-        if ALLOW_PATTERN.search(raw_line):
+def lex_sql_line(
+    line: str, in_block_comment: bool, quote: str | None
+) -> tuple[str, int | None, bool, str | None]:
+    """Return executable SQL plus a real line-comment offset and lexer state."""
+    code: list[str] = []
+    index = 0
+    while index < len(line):
+        if in_block_comment:
+            if line[index : index + 2] == "*/":
+                in_block_comment = False
+                index += 2
+            else:
+                index += 1
+            code.append(" ")
             continue
-        # Strip the `-- …` portion so prose comments cannot trip the scan.
-        scan_line = COMMENT_PATTERN.sub("", raw_line)
+        if quote is not None:
+            if line[index] == quote:
+                if index + 1 < len(line) and line[index + 1] == quote:
+                    code.extend((" ", " "))
+                    index += 2
+                    continue
+                quote = None
+            code.append(" ")
+            index += 1
+            continue
+        if line[index : index + 2] == "/*":
+            in_block_comment = True
+            code.extend((" ", " "))
+            index += 2
+        elif line[index : index + 2] == "--":
+            return "".join(code), index, in_block_comment, quote
+        elif line[index] in {"'", '"'}:
+            quote = line[index]
+            code.append(" ")
+            index += 1
+        else:
+            code.append(line[index])
+            index += 1
+    return "".join(code), None, in_block_comment, quote
+
+
+def valid_line_waiver(raw_line: str, sql_code: str, comment_start: int) -> bool:
+    """Accept one terminated SQL statement plus an audited, reasoned waiver."""
+    comment = raw_line[comment_start:]
+    return (
+        sql_code.count(";") == 1
+        and sql_code.rstrip().endswith(";")
+        and ALLOW_PATTERN.search(comment) is not None
+    )
+
+
+def scan_sql(raw: str) -> list[tuple[int, str, str]]:
+    """Return destructive SQL tokens not covered by a valid audited waiver."""
+    violations: list[tuple[int, str, str]] = []
+    in_block_comment = False
+    quote: str | None = None
+    for line_no, raw_line in enumerate(raw.splitlines(), start=1):
+        scan_line, comment_start, in_block_comment, quote = lex_sql_line(
+            raw_line, in_block_comment, quote
+        )
+        # Waivers are accepted only in a real SQL line comment, after exactly
+        # one terminated statement. Strings, block comments, adjacent SQL, and
+        # missing reasons cannot suppress the gate.
+        if comment_start is not None and valid_line_waiver(
+            raw_line, scan_line, comment_start
+        ):
+            continue
         for label, pattern in BANNED_PATTERNS:
             if pattern.search(scan_line):
                 violations.append((line_no, label, raw_line.rstrip()))
     return violations
+
+
+def scan_file(path: Path) -> list[tuple[int, str, str]]:
+    """Scan a migration file for non-additive statements."""
+    return scan_sql(path.read_text(encoding="utf-8"))
+
+
+def self_test() -> int:
+    """Exercise waiver parsing against quoted, block, and adjacent-SQL bypasses."""
+    valid = "DROP TABLE tenant; -- additive-allowed: ADR-0064 widening rebuild"
+    attacks = (
+        "SELECT '-- additive-allowed: ADR-0064 approved'; DROP TABLE tenant;",
+        "/* -- additive-allowed: ADR-0064 approved */ DROP TABLE tenant;",
+        "SELECT 1; DROP TABLE tenant; -- additive-allowed: ADR-0064 approved",
+        "DROP TABLE tenant; -- additive-allowed: ADR-0064",
+        "DROP TABLE tenant;\n-- additive-allowed: ADR-0064 wrong line",
+    )
+    if scan_sql(valid):
+        print("FAIL: valid audited waiver was rejected")
+        return 1
+    for attack in attacks:
+        if not scan_sql(attack):
+            print(f"FAIL: waiver bypass was accepted: {attack}")
+            return 1
+    print("OK: migration waiver lexer self-test passed")
+    return 0
 
 
 # A migration filename must start with a zero-padded ordinal that is UNIQUE
@@ -213,4 +292,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(self_test() if sys.argv[1:] == ["--self-test"] else main())

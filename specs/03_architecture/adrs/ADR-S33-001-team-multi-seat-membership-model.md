@@ -5,7 +5,7 @@ doc_status: "ACTIVE"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-06-25"
-updated: "2026-06-25"
+updated: "2026-09-05"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -24,16 +24,22 @@ references:
 - **Deciders:** CoreLink tech lead (architecture delegated by the owner/stakeholder)
 - **Context tags:** identity, authz, billing-seats, launch-scope
 
+## Status
+
+IMPLEMENTED — B-073 shipped the token-bound redemption path, verified Clerk
+primary-email gate, expiry/replay checks, and atomic audit/update. The old
+501/synthesized-owner wording below is historical context only; the served
+invite route returns 201 and the acceptance route is live.
+
 ## Context
 
 CoreLink **sells a paid `team` tier** (`solo | starter | team | pro | max` —
-`crates/corelink-ratelimit/src/tier.rs`, `apps/signup-worker/src/webhooks/stripe.ts`)
-but the team **feature** does not exist: the prod `D1CustomerHandler`
-(`crates/corelink-container/src/customer_d1.rs`) serves `team list` as a single
-**synthesized Owner row** (no membership table) and `team invite` as a `501
-NotImplemented` ("coming soon"). The black-box user-journey suite correctly
-**gates** the three multi-seat journeys (invite → second-seat scoped access →
-seat-removal revokes access) because the capability is an honest v1 stub.
+`crates/corelink-ratelimit/src/tier.rs`, `apps/signup-worker/src/webhooks/stripe.ts`).
+The additive membership model is now live: `D1CustomerHandler` persists
+`team_member` rows, returns a one-time invitation token, and the Worker redeems
+that token only for the token-bound tenant and a verified Clerk primary email.
+The earlier synthesized-owner/501 description is retained below only as the
+historical pre-B-073 gap, not as the current served behavior.
 
 The product is architecturally **solo-tenant**: a tenant binds to a single
 Clerk **user** (`tenant.clerk_user_id`), and the Clerk **session JWT carries the
@@ -51,19 +57,20 @@ Build multi-seat as an **additive custom membership layer**, NOT a migration of
 existing tenants to Clerk Organizations.
 
 1. **Durable membership.** New D1 table `team_member`:
-   `(tenant_id, user_id, email_hash, role, status, invited_at_ms, joined_at_ms,
+   `(tenant_id, user_id, email_hash, invitation_token_hash, role, status, invited_at_ms, joined_at_ms,
    invited_by)`, PK `(tenant_id, user_id)`. `role ∈ {owner, admin, member,
    viewer}`; `status ∈ {invited, active, removed}`. `email_hash` only (never raw
    email — CTRL-PRIV-001). The tenant's `clerk_user_id` remains the canonical
    **owner**; the synthesized Owner row is replaced by a real `owner` member row
    on first migration/backfill.
 
-2. **Invitation via Clerk Backend API.** `invite` creates an `invited` row +
-   sends a Clerk invitation (Backend API `POST /invitations`) bound to the
-   tenant. Acceptance (the invitee completes Clerk signup) flips the row to
-   `active`. For the black-box test path, the **operator/provisioner** may create
-   an `active` membership directly via the Backend API (admin-created membership)
-   so the second-seat journey is drivable without an email click.
+2. **Cryptographic invitation redemption (B-073).** `invite` creates an
+   `invited` row and returns a 256-bit opaque token once; only its SHA-256
+   digest is stored (migration 0108). The authenticated invitee redeems it at
+   `POST /v1/customer/team/accept`. The Worker binds the target tenant from
+   the token row, requires the Clerk primary email to be explicitly verified,
+   enforces the 14-day window, and atomically audits plus flips the row to
+   `active`. Legacy rows without a token digest are not redeemable.
 
 3. **Session → tenant resolution consults membership.** The crux. Today a
    session resolves to the tenant baked in its JWT. For an invited member, the
@@ -107,30 +114,24 @@ existing tenants to Clerk Organizations.
   unaffected (the owner row is additive); the data-plane authz is unchanged
   (member PATs are ordinary tenant PATs); seat-removal is a true security
   boundary; the three gated journeys become honestly closeable.
-- **Negative / risk:** the session→tenant resolver change is in the
-  safety-critical authz path — it MUST be covered by tests asserting (a) a member
-  resolves to the team tenant, (b) a removed member resolves to NOTHING (denied),
-  (c) cross-team isolation (a member of team A cannot touch team B). Billing must
-  count active seats against the `team` tier's seat allowance (separate follow-up;
-  out of scope here).
-- **Scope:** this is a multi-WP feature (migration → handler trait + D1 impl →
-  Clerk Backend-API invite/remove → worker resolver change → per-seat PAT scope
-  gate → 3 journeys), built in isolated PRs with the auth-path change verified
-  end-to-end before merge. Not a single patch.
+- **Negative / risk:** the session→tenant resolver change remains in the
+  safety-critical authz path and is covered by the worker and handler focal
+  tests. Billing must count active seats against the `team` tier's seat allowance
+  (separate follow-up; out of scope here).
+- **Scope:** the migration, handler trait/D1 implementation, token redemption,
+  Clerk verification, tenant resolver, per-seat PAT scope and isolation tests
+  are shipped; future Clerk-Organizations migration remains out of scope.
 
-## Implementation WPs (sequenced)
+## Implementation WPs (shipped sequence)
 
-1. D1 migration `00NN_team_member` + backfill the owner row.
+1. D1 migration `0108_team_member_invitation_security.sql` + membership rows.
 2. `corelink-handler-customer`: extend the team trait (`invite`/`list`/**`remove`**)
    + request/response types + InMemory impl + unit tests.
 3. `customer_d1.rs`: real D1-backed `invite`/`list`/`remove` (+ PAT revocation on
    remove) replacing the 501/synthesized stubs.
-4. Clerk Backend-API integration (invitation create + membership remove).
-5. Worker session→tenant resolver: resolve via active `team_member` (with the
-   safety tests above). **The highest-risk WP — gated on its own review.**
+4. Clerk Backend-API integration for verified-primary-email redemption.
+5. Worker session→tenant resolver via the active `team_member` row, with
+   cross-tenant and removed-seat safety tests.
 6. Per-seat PAT scope gate (role ≤ scope) on `keys/create`.
-7. Un-gate the three e2e journeys + provisioner support (operator-created active
-   membership for the second-seat journey).
-
-Until WP-1..7 land, the team feature remains the **honest 501/single-owner v1**;
-the three journeys stay gated with this ADR as the tracking reference.
+7. Invite/accept and seat-isolation focal coverage; the old 501 branch is not a
+   served path and is retained only for compatibility cleanup.

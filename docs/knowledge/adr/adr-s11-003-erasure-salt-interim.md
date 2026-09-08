@@ -4,12 +4,14 @@ title: "ADR-S11-003 — Erasure salt management interim (D1-encrypted vault, BYO
 description: "Why the per-DSR erasure salt is stored interim in an AES-256-GCM-encrypted D1 vault for S-11→S-13, with customer-held BYOK KMS as the final S-14 solution."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-003-erasure-salt-interim.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s11", "privacy", "erasure", "byok", "kms", "interim"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S11-003-erasure-salt-interim.md@cd3d4029728eeca17706945647d5b78c438a29d2"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S11-003 — Erasure salt management interim (D1-encrypted vault, BYOK KMS deferred to S-14)
 
 The DSR erasure pipeline pseudonymizes WORM-retained PII via `sha256(subject_id || erasure_salt)`, with

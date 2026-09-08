@@ -138,7 +138,6 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
   // ergonomics, and self-gated paths own their signed-out redirect.
   if (
     (!publishableKey || !secretKey) &&
-    !isE2E &&
     process.env["NODE_ENV"] === "production" &&
     !isSelfGatedPath(pathname)
   ) {
@@ -232,6 +231,15 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
         const augmented = new NextResponse(result.body, result);
         applySecurityHeaders(augmented, nonce);
         return augmented;
+      }
+      // A configured production deployment with no usable Clerk middleware
+      // export is an auth outage, not a reason to serve the protected page.
+      // Keep this branch fail-closed even when package/version skew makes the
+      // dynamic import resolve without `clerkMiddleware`.
+      if (process.env["NODE_ENV"] === "production" && !isSelfGatedPath(pathname)) {
+        const redirectRes = NextResponse.redirect(new URL(signInPathFor(pathname), req.url));
+        applySecurityHeaders(redirectRes, nonce);
+        return redirectRes;
       }
     } catch (err) {
       // Observability: a Clerk outage / version skew presents here as "everyone

@@ -1,6 +1,9 @@
 # R3-prep — K6 Load Test Suite (Operator Playbook)
 
-> Status: green for staging. **DO NOT** run any of these scripts against the
+> Status: **dispatch-only until staging is provisioned**. The workflow's
+> regression comparator is live and fail-closed, but the nightly schedule stays
+> disabled while `staging.corelink.humangr.com` and its GitHub Environment
+> secrets do not exist. **DO NOT** run any of these scripts against the
 > production environment from CI or any unattended automation. The
 > kill-switch stampede + signup burst scenarios both mutate D1 state and
 > can burn out free-tier D1 quotas if cleanup is skipped.
@@ -58,9 +61,11 @@ environment.
 - **Pre-GA**: run all five scenarios manually on the staging deploy
   candidate before promoting to production. Required artifact in the GA
   evidence pack: `tests/load/results/{date}/*.json`.
-- **Weekly post-GA**: automated via `.github/workflows/load-test-nightly.yml`
-  on Sundays 02:00 UTC. Non-blocking — reports trend only. CI **does fail**
-  on a p99 regression > 20% versus the prior week's baseline.
+- **Weekly post-GA**: intended to run via `.github/workflows/load-test-nightly.yml`
+  on Sundays 02:00 UTC, once staging is provisioned and the cron is re-enabled
+  in the same change. Until then it is dispatch-only. When it runs, the
+  median-vs-baseline comparator fails on a regression and on missing/partial
+  evidence; it is a run-level gate, not a pull-request merge check.
 - **On-demand**: any time a change merges into `apps/server/**`,
   `crates/corelink-{signup,dsr,cas,tier-selection}/**`, or
   `migrations/d1/**`, an operator should re-run scenarios 1-4 manually.

@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -64,6 +65,13 @@ PAYMENT_FAILED_ALERT_THRESHOLD = 3
 # cycle, narrow enough that a long-resolved incident stops paging.
 LOOKBACK_DAYS = 30
 
+# A check that cannot reach D1 must become UNKNOWN within a bounded interval.
+# The workflow job timeout is a last-resort containment boundary, not the
+# check's verdict: keeping this deadline here makes local/dispatch invocations
+# fail closed too and leaves room for the runner to print the diagnosis.
+CHECK_DEADLINE_SECONDS = 120
+D1_QUERY_TIMEOUT_SECONDS = 30
+
 # `stripe_webhook_events_processed.event_id` is written under TWO different id
 # schemes, because two separately-registered Stripe endpoints both deliver into
 # this one table: the signup-worker stores Stripe's own `evt_…` id, while the
@@ -81,6 +89,9 @@ class NotConfigured(Exception):
     """Credentials or database id absent — the check cannot see billing state."""
 
 
+_deadline: float | None = None
+
+
 def d1_query(account_id: str, database_id: str, token: str, sql: str) -> list[dict]:
     """Run one read-only SQL statement against D1 and return its result rows."""
     req = urllib.request.Request(
@@ -92,7 +103,10 @@ def d1_query(account_id: str, database_id: str, token: str, sql: str) -> list[di
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    remaining = D1_QUERY_TIMEOUT_SECONDS
+    if _deadline is not None:
+        remaining = min(remaining, max(0.1, _deadline - time.monotonic()))
+    with urllib.request.urlopen(req, timeout=remaining) as resp:
         payload = json.load(resp)
     if not payload.get("success"):
         raise RuntimeError(f"D1 query failed: {payload.get('errors')}")
@@ -228,6 +242,8 @@ CHECKS = (
 
 
 def main() -> int:
+    global _deadline
+    _deadline = time.monotonic() + CHECK_DEADLINE_SECONDS
     account_id = os.environ.get("CF_ACCOUNT_ID", "").strip()
     database_id = os.environ.get("D1_DATABASE_ID", "").strip()
     token = os.environ.get("CF_API_TOKEN", "").strip()
@@ -248,12 +264,22 @@ def main() -> int:
         return 2
 
     findings: list[str] = []
-    for table, check in CHECKS:
-        if not table_exists(account_id, database_id, token, table):
-            print(f"NOT CONFIGURED — required table '{table}' is absent from D1.")
-            print("  Schema drift: this check cannot verify its own premise.")
-            return 2
-        findings.extend(check(account_id, database_id, token))
+    try:
+        for table, check in CHECKS:
+            if time.monotonic() >= _deadline:
+                raise TimeoutError(
+                    f"billing health check exceeded {CHECK_DEADLINE_SECONDS}s deadline"
+                )
+            if not table_exists(account_id, database_id, token, table):
+                print(f"NOT CONFIGURED — required table '{table}' is absent from D1.")
+                print("  Schema drift: this check cannot verify its own premise.")
+                return 2
+            findings.extend(check(account_id, database_id, token))
+    except Exception as error:  # network/schema failures are UNKNOWN, never healthy
+        print("NOT CONFIGURED — billing health is UNKNOWN, not healthy.")
+        print(f"  Unable to read D1 within the bounded check: {error}")
+        print("  Refusing to report success while unable to see billing state.")
+        return 2
 
     if findings:
         print(f"BILLING HEALTH: {len(findings)} anomaly(ies) found\n")

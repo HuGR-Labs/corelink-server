@@ -95,7 +95,7 @@ describe("App JWT (RS256)", () => {
     const ok = await crypto.subtle.verify(
       "RSASSA-PKCS1-v1_5",
       kp.publicKey,
-      b64urlToBytes(sigB64),
+      b64urlToBytes(sigB64) as unknown as BufferSource,
       signingInput,
     );
     expect(ok).toBe(true);

@@ -11,6 +11,42 @@ Do **not** force any of these green with `#[allow]` / `[patch]` / pin-around /
 blanket `eslint-disable` / `@ts-ignore` / skipped tests — a break is a hold, not a
 bypass. Revisit each when its named upstream ships.
 
+## corelink-runners image family (B-114/B-135/B-138) — HELD
+
+This is a cross-repository hold, not a missing CoreLink Server implementation.
+The image, its `RunnerDevEnvDO` Dockerfile, the image-build workflow, OCI labels,
+and the runner-container disk are owned by the sibling `corelink-runners`
+repository. The `corelink-server` Actions token cannot inspect the sibling
+repository from this CI token, so a local green check cannot prove an image
+exists, that its build trigger is real, that an OCI label has a consumer, or
+that the build no longer hits `ENOSPC` during containerd import.
+
+Machine boundary: cannot inspect the sibling repository from this CI token;
+must not be closed by a corelink-server-only green check; do not re-run the failed image build from this repository.
+
+The dependency chain is intentionally recorded as one hold:
+
+- B-114 remains open while the DevEnv image/Dockerfile and a reproducible digest
+  workflow are unresolved. Removing a server-side reference is not proof that
+  the sibling feature was removed.
+- B-135 remains open while the sibling image workflow is dispatch-only and its
+  pre-existing `corelink.*` OCI labels have no verified consumer. The server
+  must not invent a consumer or treat those labels as GitHub runner labels;
+  `runs-on: corelink` is the only local routing contract.
+- B-138 remains open while the sibling build's disk peak is unresolved. Do not
+  re-run that failed image build from this repository; choose a measured
+  sibling-side remedy (capacity, smaller materialization, or direct registry
+  output) before spending another build.
+
+`scripts/verify_runner_image_boundary.py --self-test` is the cheap local
+boundary check. It keeps all three backlog entries `open`/`manual`, rejects
+invented DevEnv image or OCI-label wiring, requires the local container-build
+preflight to fail before the first `buildctl ... build` invocation, and runs
+bounded in-memory mutations of each control. The guard parses active shell
+commands, ignoring YAML/shell comments and echo/string bait, and requires the
+executable `for`/`if`/`exit 1` sequence. It does not claim to close any
+sibling-repository item.
+
 Rust toolchain of record for these attempts: **rustc/cargo 1.91.1**
 (`1.91.1-x86_64-apple-darwin`).
 

@@ -77,6 +77,8 @@ Nos bastidores:
   `invited` — é isso que a lista **Pending invitations** mostra.
 - Só é armazenado um hash pseudonimizado do e-mail (sem espaços nas
   pontas e em minúsculas); o endereço em texto puro nunca é persistido.
+- A resposta contém um `invitation_token` aleatório de 256 bits. Compartilhe-o
+  por canal seguro; ele aparece uma única vez e só seu digest é armazenado.
 - Uma linha de auditoria visível ao cliente, com tipo de evento
   `team.invited`, é gravada *antes* da linha do assento — assim um convite
   nunca é efetivado sem o registro de auditoria correspondente. O detalhe
@@ -104,10 +106,12 @@ Convidar (e remover) um membro é **exclusivo de owner/admin** — um token
 
 1. Ela entra no CoreLink — ou se cadastra e configura o MFA, se for a
    primeira vez — usando **o mesmo endereço de e-mail que você convidou**.
-2. O Clerk redireciona de volta para o CoreLink.
-3. O CoreLink localiza o assento pendente pelo hash do e-mail, vincula-o
-   ao `user_id` real dela e muda o status de `invited` para `active`. O
-   papel escolhido no convite é preservado.
+2. O Clerk deve marcar o e-mail primário como `verified`.
+3. Com a sessão autenticada, chame `POST /v1/customer/team/accept` com
+   `{"invitation_token":"..."}`. O CoreLink valida digest, tenant, expiração
+   de 14 dias e e-mail verificado atomicamente; replay, token expirado ou de
+   outro tenant é rejeitado.
+4. O papel escolhido é preservado e o assento passa a `active`.
 
 A partir daí ela aparece em **Members**, e não mais em
 **Pending invitations**.
@@ -131,12 +135,9 @@ A resposta traz um array `members`; cada item tem o `user_id`, o `role`, o
 `active`). Existe também um campo `email`, mas ele volta como um
 marcador — veja a nota abaixo.
 
-> **O CoreLink nunca armazena o e-mail em texto puro.** O convite persiste
-> apenas um hash pseudonimizado do endereço (sem espaços nas pontas e em
-> minúsculas, `CTRL-PRIV-001`), e é esse hash que serve de chave para
-> localizar o convite quando a pessoa entra. As linhas de auditoria seguem
-> a mesma regra (`INV-AUDIT-NO-RAW-PII`): o registro `team.invited` guarda
-> o papel, não o endereço.
+> **O CoreLink nunca armazena o e-mail nem o token em texto puro.** Persiste
+> apenas digests pseudonimizados (`CTRL-PRIV-001`); a aceitação exige e-mail
+> primário verificado no Clerk e registra `team.accepted`.
 
 ## Etapa 5 — Emitir o primeiro PAT (Member ou acima)
 

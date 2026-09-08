@@ -1,0 +1,468 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts/load-test-baseline-check.py"
+VERIFIER = ROOT / "scripts/verify_b029_load_gate.py"
+
+
+def load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+comparator = load_module(SCRIPT, "b029_load_test_baseline_check")
+verifier = load_module(VERIFIER, "b029_load_gate_verifier")
+
+
+class B029LoadGateTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.results = self.root / "results"
+        self.baseline = self.root / "baseline.json"
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def write_summary(
+        self,
+        scenario: str,
+        median: object,
+        p99: object = 20,
+        *,
+        status: str | None = "success",
+    ) -> None:
+        path = self.results / scenario / "summary.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {"metrics": {"http_req_duration": {"med": median, "p(99)": p99}}}
+            )
+        )
+        if status is not None:
+            (path.parent / "status.json").write_text(
+                json.dumps({"scenario": scenario, "outcome": status})
+            )
+
+    def write_baseline(self, median: object = 100) -> None:
+        self.baseline.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "captured_at": "2026-09-06T00:00:00Z",
+                    "commit": "base-commit",
+                    "metric": "http_req_duration.med (ms)",
+                    "scenarios": {
+                        "cas": {"median_ms": median, "p99_ms": 20}
+                    },
+                }
+            )
+        )
+
+    def run_gate(self, *extra: str) -> int:
+        return comparator.main(
+            [
+                "--results-dir",
+                str(self.results),
+                "--baseline",
+                str(self.baseline),
+                "--expected-scenarios",
+                "cas",
+                *extra,
+            ]
+        )
+
+    def _assess_workflow(self, workflow: str) -> list[str]:
+        contract = self.root / "workflow-contract"
+        (contract / ".github/workflows").mkdir(parents=True, exist_ok=True)
+        (contract / "scripts").mkdir()
+        (contract / "tests/load").mkdir(parents=True)
+        (contract / ".github/workflows/load-test-nightly.yml").write_text(workflow)
+        shutil.copy(ROOT / "scripts/load-test-baseline-check.py", contract / "scripts")
+        shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
+        return verifier.assess(contract, expect="open")
+
+    def _workflow_and_invocation(self) -> tuple[str, str]:
+        workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
+        start = workflow.index("          python3 scripts/load-test-baseline-check.py")
+        end = workflow.index("\n\n", start)
+        invocation = workflow[start:end]
+        self.assertEqual(len(invocation.splitlines()), 5)
+        return workflow, invocation
+
+    def test_missing_baseline_is_unknown_and_never_seeds(self) -> None:
+        self.write_summary("cas", 100)
+        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.assertFalse(self.baseline.exists())
+
+    def test_within_threshold_updates_baseline(self) -> None:
+        self.write_baseline(100)
+        self.write_summary("cas", 119)
+        self.assertEqual(self.run_gate(), 0)
+        self.assertEqual(comparator.load_baseline(self.baseline)["cas"]["median_ms"], 119)
+
+    def test_regression_fails_and_does_not_ratchet(self) -> None:
+        self.write_baseline(100)
+        self.write_summary("cas", 121)
+        before = self.baseline.read_bytes()
+        self.assertEqual(self.run_gate(), comparator.EXIT_REGRESSION)
+        self.assertEqual(self.baseline.read_bytes(), before)
+
+    def test_empty_or_partial_artifacts_fail_closed(self) -> None:
+        self.write_baseline(100)
+        before = self.baseline.read_bytes()
+        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.write_summary("other", 100, status=None)
+        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.assertEqual(self.baseline.read_bytes(), before)
+
+    def test_missing_or_failed_status_is_unknown(self) -> None:
+        self.write_baseline(100)
+        self.write_summary("cas", 100, status=None)
+        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.write_summary("cas", 100, status="failure")
+        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+
+    def test_status_population_must_match_summaries_exactly(self) -> None:
+        self.write_baseline(100)
+        self.write_summary("cas", 100)
+        (self.results / "extra" / "status.json").parent.mkdir(parents=True)
+        (self.results / "extra" / "status.json").write_text(
+            json.dumps({"scenario": "extra", "outcome": "success"})
+        )
+        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+
+    def test_corrupt_baseline_is_not_treated_as_first_run(self) -> None:
+        self.write_summary("cas", 100)
+        self.baseline.write_text("{not-json")
+        before = self.baseline.read_bytes()
+        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.assertEqual(self.baseline.read_bytes(), before)
+
+    def test_baseline_metadata_is_required(self) -> None:
+        self.write_summary("cas", 100)
+        for missing in ("captured_at", "commit"):
+            data = {
+                "schema": 1,
+                "captured_at": "2026-09-06T00:00:00Z",
+                "commit": "base-commit",
+                "metric": "http_req_duration.med (ms)",
+                "scenarios": {"cas": {"median_ms": 100, "p99_ms": 20}},
+            }
+            del data[missing]
+            self.baseline.write_text(json.dumps(data))
+            before = self.baseline.read_bytes()
+            self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+            self.assertEqual(self.baseline.read_bytes(), before)
+
+    def test_non_finite_measurement_is_rejected(self) -> None:
+        self.write_baseline(100)
+        self.write_summary("cas", "NaN")
+        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+
+    def test_duplicate_summaries_are_ambiguous(self) -> None:
+        self.write_summary("cas", 100)
+        duplicate = self.results / "second" / "cas" / "summary.json"
+        duplicate.parent.mkdir(parents=True)
+        duplicate.write_text(
+            json.dumps({"metrics": {"http_req_duration": {"med": 100, "p(99)": 20}}})
+        )
+        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+
+    def test_active_workflow_invocation_is_exact(self) -> None:
+        workflow, invocation = self._workflow_and_invocation()
+        steps = verifier._yaml_steps(workflow)
+        compare = next(step for step in steps if step.name == verifier.COMPARE_STEP)
+        self.assertEqual(
+            verifier._active_shell_commands(compare.runs[0])[-1],
+            verifier.EXPECTED_COMPARATOR,
+        )
+        self.assertEqual(self._assess_workflow(workflow), [])
+
+    def test_five_lines_commented_reproducer_is_red(self) -> None:
+        workflow, invocation = self._workflow_and_invocation()
+        commented = "\n".join("#" + line for line in invocation.splitlines())
+        gaps = self._assess_workflow(workflow.replace(invocation, commented, 1))
+        self.assertIn(
+            "comparison run block must contain exactly one active comparator invocation",
+            gaps,
+        )
+
+    def test_all_echo_comparator_variant_is_red(self) -> None:
+        workflow, invocation = self._workflow_and_invocation()
+        echo = '          echo "python3 scripts/load-test-baseline-check.py --results-dir tests/load/results/current"'
+        gaps = self._assess_workflow(workflow.replace(invocation, echo, 1))
+        self.assertIn(
+            "comparison run block must contain exactly one active comparator invocation",
+            gaps,
+        )
+
+    def test_string_only_comparator_variant_is_red(self) -> None:
+        workflow, invocation = self._workflow_and_invocation()
+        string = (
+            "          COMMAND='python3 scripts/load-test-baseline-check.py --results-dir "
+            "tests/load/results/current'\n"
+            "          printf '%s\\n' \"$COMMAND\""
+        )
+        gaps = self._assess_workflow(workflow.replace(invocation, string, 1))
+        self.assertIn(
+            "comparison run block must contain exactly one active comparator invocation",
+            gaps,
+        )
+
+    def test_heredoc_comparator_variant_is_red(self) -> None:
+        workflow, invocation = self._workflow_and_invocation()
+        heredoc = (
+            "          cat <<'EOF'\n"
+            "          python3 scripts/load-test-baseline-check.py\n"
+            "          EOF"
+        )
+        gaps = self._assess_workflow(workflow.replace(invocation, heredoc, 1))
+        self.assertIn(
+            "comparison run block must contain exactly one active comparator invocation",
+            gaps,
+        )
+
+    def test_noop_branch_comparator_variant_is_red(self) -> None:
+        workflow, invocation = self._workflow_and_invocation()
+        noop = (
+            "          if false; then\n"
+            "            python3 scripts/load-test-baseline-check.py\n"
+            "          fi"
+        )
+        gaps = self._assess_workflow(workflow.replace(invocation, noop, 1))
+        self.assertIn(
+            "comparison run block must contain exactly one active comparator invocation",
+            gaps,
+        )
+
+    def test_missing_comparator_command_is_red(self) -> None:
+        workflow, invocation = self._workflow_and_invocation()
+        gaps = self._assess_workflow(workflow.replace(invocation, "          true", 1))
+        self.assertIn(
+            "comparison run block must contain exactly one active comparator invocation",
+            gaps,
+        )
+
+    def test_reordered_comparator_arguments_are_red(self) -> None:
+        workflow, invocation = self._workflow_and_invocation()
+        reordered = invocation.replace(
+            "            --results-dir tests/load/results/current \\\n"
+            "            --baseline tests/load/baseline/k6-baseline.json \\\n",
+            "            --baseline tests/load/baseline/k6-baseline.json \\\n"
+            "            --results-dir tests/load/results/current \\\n",
+            1,
+        )
+        gaps = self._assess_workflow(workflow.replace(invocation, reordered, 1))
+        self.assertIn("comparator invocation flags or values are not exact", gaps)
+
+    def test_duplicate_comparator_commands_are_red(self) -> None:
+        workflow, invocation = self._workflow_and_invocation()
+        duplicate = invocation + "\n" + invocation
+        gaps = self._assess_workflow(workflow.replace(invocation, duplicate, 1))
+        self.assertIn(
+            "comparison run block must contain exactly one active comparator invocation",
+            gaps,
+        )
+
+    def test_wrong_comparator_value_is_red(self) -> None:
+        workflow, invocation = self._workflow_and_invocation()
+        wrong = invocation.replace(
+            "tests/load/baseline/k6-baseline.json",
+            "tests/load/baseline/other.json",
+            1,
+        )
+        gaps = self._assess_workflow(workflow.replace(invocation, wrong, 1))
+        self.assertIn("comparator invocation flags or values are not exact", gaps)
+
+    def test_static_workflow_contract_and_open_polarity(self) -> None:
+        self.assertEqual(verifier.assess(ROOT, expect="open"), [])
+        result = subprocess.run(
+            [sys.executable, str(VERIFIER), "--expect", "open"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_mutation_disabling_comparison_is_killed(self) -> None:
+        self.write_baseline(100)
+        self.write_summary("cas", 121)
+        before = self.baseline.read_bytes()
+        mutated = self.root / "mutated.py"
+        source = SCRIPT.read_text()
+        mutated.write_text(source.replace("if cur_med > limit:", "if False:", 1))
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(mutated),
+                "--results-dir",
+                str(self.results),
+                "--baseline",
+                str(self.baseline),
+                "--expected-scenarios",
+                "cas",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, comparator.EXIT_OK)
+        self.assertNotEqual(self.baseline.read_bytes(), before)
+
+    def test_mutation_removing_status_gate_is_killed(self) -> None:
+        self.write_baseline(100)
+        self.write_summary("cas", 100, status=None)
+        mutated = self.root / "mutated-status.py"
+        source = SCRIPT.read_text()
+        needle = "        collect_statuses(results_dir, expected_set)\n"
+        self.assertIn(needle, source)
+        mutated.write_text(source.replace(needle, "        # status gate removed\n", 1))
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(mutated),
+                "--results-dir",
+                str(self.results),
+                "--baseline",
+                str(self.baseline),
+                "--expected-scenarios",
+                "cas",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(
+            result.returncode,
+            comparator.EXIT_OK,
+            "the status-less mutant must go green so this test proves the gate matters",
+        )
+
+    def test_verifier_rejects_two_cold_comparator_mutants(self) -> None:
+        contract = self.root / "contract"
+        (contract / ".github/workflows").mkdir(parents=True)
+        (contract / "tests/load").mkdir(parents=True)
+        shutil.copy(
+            ROOT / ".github/workflows/load-test-nightly.yml",
+            contract / ".github/workflows/load-test-nightly.yml",
+        )
+        shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
+        (contract / "scripts").mkdir()
+
+        source = SCRIPT.read_text()
+        current_start = source.index("def collect_current(")
+        current_end = source.index("\ndef load_baseline", current_start)
+        current_mutant = (
+            source[:current_start]
+            + '''def collect_current(results_dir, expected=None):
+    """summary.json http_req_duration p(99) expected set(out)"""
+    return {}
+'''
+            + source[current_end + 1 :]
+        )
+        (contract / "scripts/load-test-baseline-check.py").write_text(current_mutant)
+        current_gaps = verifier.assess(contract, expect="open")
+        self.assertIn("collect_current does not enumerate k6 summary artifacts", current_gaps)
+        self.assertIn("collect_current does not enforce the exact scenario population", current_gaps)
+        self.assertIn("collect_current does not validate the k6 duration metrics", current_gaps)
+
+        statuses_start = source.index("def collect_statuses(")
+        statuses_end = source.index("\ndef parse_expected_scenarios", statuses_start)
+        statuses_mutant = (
+            source[:statuses_start]
+            + '''def collect_statuses(results_dir, expected):
+    """status.json success set(statuses) expected"""
+    return None
+'''
+            + source[statuses_end + 1 :]
+        )
+        (contract / "scripts/load-test-baseline-check.py").write_text(statuses_mutant)
+        status_gaps = verifier.assess(contract, expect="open")
+        self.assertIn("collect_statuses does not enumerate matrix status artifacts", status_gaps)
+        self.assertIn(
+            "collect_statuses does not require an exact successful population",
+            status_gaps,
+        )
+
+    def test_verifier_rejects_unreachable_required_nodes(self) -> None:
+        contract = self.root / "reachable-contract"
+        (contract / ".github/workflows").mkdir(parents=True)
+        (contract / "tests/load").mkdir(parents=True)
+        shutil.copy(
+            ROOT / ".github/workflows/load-test-nightly.yml",
+            contract / ".github/workflows/load-test-nightly.yml",
+        )
+        shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
+        (contract / "scripts").mkdir()
+        source = SCRIPT.read_text()
+
+        current_start = source.index("def collect_current(")
+        current_end = source.index("\ndef load_baseline", current_start)
+        current_dead = (
+            source[:current_start]
+            + '''def collect_current(results_dir, expected=None):
+    if 0:
+        for summary in results_dir.rglob("summary.json"):
+            out = {summary.parent.name: {}}
+        if set(out) != expected:
+            raise InputError("http_req_duration p(99)")
+    return {}
+'''
+            + source[current_end + 1 :]
+        )
+        (contract / "scripts/load-test-baseline-check.py").write_text(current_dead)
+        current_gaps = verifier.assess(contract, expect="open")
+        self.assertIn("collect_current does not enumerate k6 summary artifacts", current_gaps)
+        self.assertIn("collect_current does not enforce the exact scenario population", current_gaps)
+        self.assertIn("collect_current does not validate the k6 duration metrics", current_gaps)
+
+        statuses_start = source.index("def collect_statuses(")
+        statuses_end = source.index("\ndef parse_expected_scenarios", statuses_start)
+        statuses_dead = (
+            source[:statuses_start]
+            + '''def collect_statuses(results_dir, expected):
+    if 1 == 2:
+        for status_file in results_dir.rglob("status.json"):
+            statuses = {status_file.parent.name: "success"}
+        if set(statuses) != expected:
+            raise InputError("success")
+    return None
+'''
+            + source[statuses_end + 1 :]
+        )
+        (contract / "scripts/load-test-baseline-check.py").write_text(statuses_dead)
+        status_gaps = verifier.assess(contract, expect="open")
+        self.assertIn("collect_statuses does not enumerate matrix status artifacts", status_gaps)
+        self.assertIn(
+            "collect_statuses does not require an exact successful population",
+            status_gaps,
+        )
+
+        early_return = source.replace(
+            "        current = collect_current(results_dir, expected_set)\n",
+            "        return EXIT_OK  # all required collection code below is unreachable\n"
+            "        current = collect_current(results_dir, expected_set)\n",
+            1,
+        )
+        (contract / "scripts/load-test-baseline-check.py").write_text(early_return)
+        early_gaps = verifier.assess(contract, expect="open")
+        self.assertIn("main does not execute collect_current", early_gaps)
+
+
+if __name__ == "__main__":
+    unittest.main()

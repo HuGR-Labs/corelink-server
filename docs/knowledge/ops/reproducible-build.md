@@ -8,12 +8,14 @@ source_files:
   - "rust-toolchain.toml"
 source_blobs:
   - "docs/build/reproducible.md@735e3ec802a1eee1048cd4731d19251592ed2856"
-checkpoint_sha: "c0fd1177ba2a9fe0c88a87596863f8dba953b76f"
+  - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md@4a43a0adc95fba146c5db516d8fe946564777da9"
+  - "rust-toolchain.toml@5e394abc4407eccd95c0ee6e7763861758e651a9"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "reproducible-build", "supply-chain", "tamper-detection", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Reproducible-build process
 
 Reproducible builds are CoreLink's supply-chain tamper-detection defense-in-depth: if the same source
@@ -104,3 +106,8 @@ GA tag's signed freeze in the [release process](/ops/release-process.md); the de
 13. `specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md:118-128` — why the 5% threshold.
 14. `specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md:222-227` — hermetic `--frozen --offline` STRIDE.
 15. `specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md:242-247` — amendment sign-off requirements.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

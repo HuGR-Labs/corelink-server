@@ -1,0 +1,309 @@
+use super::*;
+
+#[test]
+fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_mutations(
+) -> Result<(), String> {
+    let workflow = release_workflow()?;
+    assert_release_contract(&workflow);
+    assert_publication_inventory_contract(&workflow);
+    assert_retry_manifest_contract(&workflow);
+
+    let stale_home = workflow.replace("HuGR-Labs/corelink-cli", "HumanGuardrail/corelink-cli");
+    assert!(
+        std::panic::catch_unwind(|| assert_release_contract(&stale_home)).is_err(),
+        "the stale 404 release home must fail the structural control"
+    );
+    let no_readback = workflow.replace(
+        "Read back published artifacts and verify release-root digests",
+        "readback removed",
+    );
+    let public_before_signing = workflow.replace(
+        "--notes-file /tmp/release-notes.md --draft",
+        "--notes-file /tmp/release-notes.md",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_release_contract(&public_before_signing)).is_err(),
+        "a release must remain draft until the chained signing/SLSA gates succeed"
+    );
+    let no_final_slsa = workflow.replace("release-slsa3:", "slsa removed:");
+    assert!(
+        std::panic::catch_unwind(|| assert_release_contract(&no_final_slsa)).is_err(),
+        "SLSA must remain a terminal chained stage before publication"
+    );
+    let missing_caller_oidc = workflow.replace(
+        "      id-token: write\n    uses: ./.github/workflows/release-slsa3.yml",
+        "      OIDC permission removed\n    uses: ./.github/workflows/release-slsa3.yml",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_release_contract(&missing_caller_oidc)).is_err(),
+        "the reusable SLSA caller must explicitly grant its OIDC permission"
+    );
+    let orphan_staging_asset = workflow.replace(
+        "gh api --method DELETE \"repos/HuGR-Labs/corelink-cli/releases/assets/${STAGING_ASSET_ID}\"",
+        "staging asset cleanup removed",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_release_contract(&orphan_staging_asset)).is_err(),
+        "a staging manifest left on the public release must fail the structural control"
+    );
+    let late_reintroduced = workflow.replace(
+        "Verify complete authenticated inventory before publication",
+        "publication inventory check removed",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_release_contract(&late_reintroduced)).is_err(),
+        "late staging reintroduction and unmatched assets must be rejected immediately before publication"
+    );
+    let api_failure_ignored = workflow.replace(
+        "gh api \"repos/HuGR-Labs/corelink-cli/releases/tags/${TAG}\" > \"${API_JSON}\"",
+        "gh api release inventory || true",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_publication_inventory_contract(&api_failure_ignored))
+            .is_err(),
+        "an authenticated release API failure must not be ignored"
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_release_contract(&no_readback)).is_err(),
+        "removing published-artifact digest verification must fail the control"
+    );
+    let retry_without_reverification = workflow.replacen(
+        "cli_release_manifest.py verify --directory final-assets",
+        "retry inventory verification removed",
+        1,
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_retry_manifest_contract(&retry_without_reverification))
+            .is_err(),
+        "the existing-manifest retry must re-verify the downloaded inventory"
+    );
+
+    for name in ["sign-linux.yml", "sign-windows.yml", "notarize-macos.yml"] {
+        let signer = load_workflow(name)?;
+        assert_downstream_signer_contract(name, &signer);
+        assert_checksum_refresh_contract(name, &signer);
+    }
+
+    let windows = load_workflow("sign-windows.yml")?;
+    assert!(
+        workflow.contains("sign-windows:\n    needs: [sign-linux, release]"),
+        "Windows signing must wait for Linux through a release-root needs edge"
+    );
+    assert!(
+        !windows.contains("workflow_dispatch:"),
+        "privileged signer dispatch must remain disabled"
+    );
+    assert!(
+        workflow.contains("notarize-macos:\n    needs: [sign-windows, release]"),
+        "macOS notarization must wait for Windows through a release-root needs edge"
+    );
+
+    let slsa = load_workflow("release-slsa3.yml")?;
+    for required in [
+        "CORELINK_CLI_RELEASE_TOKEN",
+        "RELEASE_REPOSITORY: HuGR-Labs/corelink-cli",
+        "--repo \"${RELEASE_REPOSITORY}\"",
+    ] {
+        assert!(
+            slsa.contains(required),
+            "release-slsa3 missing release-root invariant: {required}"
+        );
+    }
+    assert_slsa_contract(&slsa);
+    for forbidden in [
+        "printf '%s\\n' \"${{ needs.build-artifacts.outputs.subject-list }}\"",
+        "\"release\":\"${{ github.event.release.tag_name || inputs.release_tag }}\"",
+    ] {
+        assert!(
+            !slsa.contains(forbidden),
+            "release-slsa3 must not shell-expand dynamic release data: {forbidden}"
+        );
+    }
+
+    let stale_signer_home = load_workflow("sign-windows.yml")?.replace(
+        "RELEASE_REPOSITORY: HuGR-Labs/corelink-cli",
+        "RELEASE_REPOSITORY: HumanGuardrail/corelink-cli",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_downstream_signer_contract(
+            "sign-windows.yml",
+            &stale_signer_home
+        ))
+        .is_err(),
+        "a signer targeting the stale release home must fail the structural control"
+    );
+    let unrefreshed_checksum = load_workflow("notarize-macos.yml")?.replace(
+        "LC_ALL=C sort corelink-*.sha256 > checksums.txt",
+        "checksum refresh removed",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_checksum_refresh_contract(
+            "notarize-macos.yml",
+            &unrefreshed_checksum
+        ))
+        .is_err(),
+        "a signed archive without aggregate checksum refresh must fail the structural control"
+    );
+    let nested_windows_archive = workflow.replace(
+        "zip -q -X \"$ARCHIVE_PATH\" corelink.exe",
+        "ditto -c -k --sequesterRsrc --keepParent corelink.exe archive.zip",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_release_contract(&nested_windows_archive)).is_err(),
+        "a nested ditto Windows archive must fail the structural control"
+    );
+    let workflow_run_signer = load_workflow("notarize-macos.yml")?.replace(
+        "workflow_call:",
+        "workflow_run:\n    workflows: [\"sign-windows\"]",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_downstream_signer_contract(
+            "notarize-macos.yml",
+            &workflow_run_signer
+        ))
+        .is_err(),
+        "a downstream signer must not regress from a reusable workflow to workflow_run"
+    );
+
+    let public_unsigned_windows = load_workflow("sign-windows.yml")?.replace(
+        "cp \"./assets/extracted/corelink.exe\" \"./assets/corelink-windows-x86_64.exe\"",
+        "raw Windows asset copy removed",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_downstream_signer_contract(
+            "sign-windows.yml",
+            &public_unsigned_windows
+        ))
+        .is_err(),
+        "a public raw Windows executable must be replaced by signed bytes"
+    );
+    let bypassed_gatekeeper = load_workflow("notarize-macos.yml")?.replace(
+        "spctl --assess --type execute --verbose=4 \"${BINARY}\"",
+        "spctl --assess --type execute --verbose=4 \"${BINARY}\" || true",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_downstream_signer_contract(
+            "notarize-macos.yml",
+            &bypassed_gatekeeper
+        ))
+        .is_err(),
+        "Gatekeeper assessment must not be bypassed"
+    );
+    let unsigned_linux_raw = load_workflow("sign-linux.yml")?.replace(
+        "for target in \"${ASSET}\" \"${RAW_ASSET}\"; do",
+        "for target in \"${ASSET}\"; do",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_downstream_signer_contract(
+            "sign-linux.yml",
+            &unsigned_linux_raw
+        ))
+        .is_err(),
+        "a public raw Linux executable must retain its detached-signature gate"
+    );
+    let argv_notary_password = load_workflow("notarize-macos.yml")?.replace(
+        "xcrun notarytool submit ./submission.zip \\",
+        "xcrun notarytool submit ./submission.zip --password \"${APPLE_NOTARIZATION_PASSWORD}\" \\",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_downstream_signer_contract(
+            "notarize-macos.yml",
+            &argv_notary_password
+        ))
+        .is_err(),
+        "notary credentials must never regress onto argv"
+    );
+    let unbound_slsa_oidc = slsa.replace(
+        "test \"${GITHUB_REF}\" = \"refs/tags/${TAG}\"",
+        "tag-bound OIDC check removed",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_slsa_contract(&unbound_slsa_oidc)).is_err(),
+        "SLSA OIDC must remain bound to the exact tag"
+    );
+    let caller_identity_unbound = slsa.replace(
+        "CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}",
+        "caller identity check removed",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_slsa_contract(&caller_identity_unbound)).is_err(),
+        "the reusable workflow must bind OIDC to the tagged caller workflow"
+    );
+    let called_identity_unbound = slsa.replace(
+        "caller/called workflow identity is not bound",
+        "called workflow identity check removed",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_slsa_contract(&called_identity_unbound)).is_err(),
+        "the provenance builder must remain bound to the called workflow"
+    );
+    let unchecked_inventory = slsa.replace(
+        "--pattern checksums.txt",
+        "inventory checksum fetch removed",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_slsa_contract(&unchecked_inventory)).is_err(),
+        "SLSA must attest the exact manifest inventory, including checksums"
+    );
+    let writable_slsa_source = slsa.replace(
+        "contents: read # No source-repository write permission is needed for provenance.",
+        "contents: write # privilege regression",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_slsa_contract(&writable_slsa_source)).is_err(),
+        "SLSA provenance must not regain source-repository contents write"
+    );
+    let unpinned_slsa_uploader = slsa.replace(
+        "test \"$(gh --version | awk 'NR == 1 {print $3}')\" = \"2.79.0\"",
+        "gh version guard removed",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_slsa_contract(&unpinned_slsa_uploader)).is_err(),
+        "the provenance-uploading job must verify the exact gh version"
+    );
+
+    let disabled_rekor = slsa.replace("--tlog-upload=true", "COSIGN_TLOG_UPLOAD_DISABLED=1");
+    assert!(
+        std::panic::catch_unwind(|| assert_slsa_contract(&disabled_rekor)).is_err(),
+        "a tlog-disable mutation must fail the production SLSA contract"
+    );
+    let inventory_helper = load_script("verify_cli_release_inventory.py")?;
+    assert_inventory_helper_contract(&inventory_helper);
+    let unmatched_asset = inventory_helper.replace("if set(api_names) != expected:", "if False:");
+    assert!(
+        std::panic::catch_unwind(|| assert_inventory_helper_contract(&unmatched_asset)).is_err(),
+        "an unmatched public release asset must fail the closed-world helper contract"
+    );
+    let orphaned_staging =
+        inventory_helper.replace("if \"staging-manifest.json\" in api_names:", "if False:");
+    assert!(
+        std::panic::catch_unwind(|| assert_inventory_helper_contract(&orphaned_staging)).is_err(),
+        "a late staging-manifest reintroduction must fail the helper contract"
+    );
+    let checksum_bypass = inventory_helper.replace(
+        "verify_checksums(directory, artifact_digests)",
+        "checksum verification removed",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_inventory_helper_contract(&checksum_bypass)).is_err(),
+        "the closed-world checksum contents check must remain wired into publication"
+    );
+    let rekor_helper = load_script("verify_cli_rekor_bundle.py")?;
+    assert_rekor_helper_contract(&rekor_helper);
+    let missing_inclusion = rekor_helper.replace("if not entries:", "if False:");
+    assert!(
+        std::panic::catch_unwind(|| assert_rekor_helper_contract(&missing_inclusion)).is_err(),
+        "missing inclusion mutation must fail the production verifier contract"
+    );
+    let digest_unbound =
+        rekor_helper.replace("digest.lower() == expected", "digest.lower() == True");
+    assert_ne!(
+        digest_unbound, rekor_helper,
+        "the digest-binding mutation must change the production verifier"
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_rekor_helper_contract(&digest_unbound)).is_err(),
+        "unbound Rekor entry mutation must fail the production verifier contract"
+    );
+    Ok(())
+}

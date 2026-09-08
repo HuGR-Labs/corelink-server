@@ -305,6 +305,17 @@ fi
 WRANGLER_VER="$("${WRANGLER_CMD}" --version 2>/dev/null || printf 'unknown')"
 log "wrangler version: ${WRANGLER_VER}"
 
+# 0064 rebuilds the FK parent `tenant`. Detect an unrecorded copy and apply it
+# in one `execute --file` transaction (including its d1_migrations ledger row)
+# before the ordinary sequential command; otherwise a populated DR database
+# would fail midway through `migrations apply`.
+log "checking FK-parent migration 0064 via d1-apply-fk-parent.sh"
+if ! WRANGLER_CMD="$WRANGLER_CMD" "${REPO_ROOT}/scripts/d1-apply-fk-parent.sh" \
+    --binding "${DB_BINDING}" --env "${DB_ENV}" --remote; then
+    err "FK-parent migration 0064 pre-step FAILED; refusing plain migrations apply"
+    exit 1
+fi
+
 log "invoking: ${WRANGLER_CMD} d1 migrations apply ${DB_BINDING} --remote --env ${DB_ENV}"
 if ! "${WRANGLER_CMD}" d1 migrations apply "${DB_BINDING}" --remote --env "${DB_ENV}"; then
     err "wrangler d1 migrations apply FAILED."

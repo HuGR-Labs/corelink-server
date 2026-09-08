@@ -3,15 +3,19 @@ type: "ADR"
 title: "ADR-S14-007 — Erasure attestation: Ed25519 + RFC 8785 JCS + 30d key overlap"
 description: "Why crypto-erasure proofs are Ed25519 (FIPS 186-5) signatures over RFC 8785 JCS-canonicalized payloads with a 30d signing-key overlap, retained 7 years."
 source_files:
-  - "specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md"
   - "crates/corelink-erasure-attestation/src/attestation.rs"
   - "crates/corelink-container/src/routes/dsr/attestation.rs"
-checkpoint_sha: "cc51893253fa3a86ae5b02bff56c8022cbeb72b5"
-provenance: "AUTHORED"
+  - "specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md"
+\1provenance: "AUTHORED"
 tags: ["adr", "s14", "erasure-attestation", "ed25519", "jcs", "gdpr"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "crates/corelink-erasure-attestation/src/attestation.rs@7682fdf19c0eeb4a05fe0094e32722eac99e18e5"
+  - "crates/corelink-container/src/routes/dsr/attestation.rs@b85b862aaa002b7d9124441eb55d453918e57e58"
+  - "specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md@6d0d1e22fa3e3bd2e379db70ffbcc2eb662916f9"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S14-007 — Erasure attestation: Ed25519 + RFC 8785 JCS + 30d key overlap
 
 When a BYOK tenant files a DSR erasure request, CoreLink must produce a cryptographic proof of erasure that the customer and external auditors can verify offline, that complies with NIST SP 800-88 Rev.1 §2.4 crypto-erase, and that survives a 7-year audit retention. This ADR (ACCEPTED) records three simultaneous choices — signature scheme, JSON canonicalization, and signing-key overlap window — and why each well-audited standard was selected over its alternatives.
@@ -40,5 +44,5 @@ The attestation must be independently offline-verifiable by customer + auditors,
 3. `specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md:52-64` — RFC 8785 JCS over a custom canonicalizer.
 4. `specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md:65-80` — the 30d key-overlap decision.
 5. `specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md:83-96` — positive and mitigated-negative consequences.
-6. `crates/corelink-erasure-attestation/src/attestation.rs:94` — `ErasureAttestationSigner::sign`: the real, tested JCS+Ed25519 signing primitive (64-byte sig; test at `:164`).
+6. `crates/corelink-erasure-attestation/src/attestation.rs:170-170` — `ErasureAttestationSigner::sign`: the real, tested JCS+Ed25519 signing primitive (64-byte sig; test at `:164`).
 7. `crates/corelink-container/src/routes/dsr/attestation.rs:131-167` — `sign_and_persist`: the DEFERRED (brutal-review H1) produce/persist/serve stub that writes NO attestation (signature discarded, no R2 write, no signed columns in migration 0032).

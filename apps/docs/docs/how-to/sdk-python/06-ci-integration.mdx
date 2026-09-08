@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+      CORELINK_TENANT: ${{ vars.CORELINK_TENANT }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -60,6 +61,7 @@ build:
   image: python:3.11
   variables:
     CORELINK_PAT: $CORELINK_PAT  # masked CI variable
+    CORELINK_TENANT: $CORELINK_TENANT  # project variable
   script:
     - pip install --extra-index-url https://humangr.com/corelink/docs/pypi/simple/ --pre corelink-py
     - python ./ci/warm_cache.py
@@ -75,6 +77,7 @@ jobs:
       - image: cimg/python:3.11
     environment:
       CORELINK_PAT: $CORELINK_PAT
+      CORELINK_TENANT: $CORELINK_TENANT
     steps:
       - checkout
       - run: pip install --extra-index-url https://humangr.com/corelink/docs/pypi/simple/ --pre corelink-py
@@ -83,10 +86,19 @@ jobs:
 
 ## Job-scoped PATs (recommended)
 
-There is no self-service API to mint a short-lived PAT per pipeline today
-(see [Security model](../../security.md)) — email
-[support@humangr.com](mailto:support@humangr.com) to request a dedicated CI
-PAT, then inject it via your CI provider's secret store as shown above.
+Mint a dedicated CI token instead of reusing a personal one: `POST
+/v1/customer/keys` with `{"name": "ci-<repo>", "scopes": ["cas:rw"]}`, or the
+**Keys** page in the dashboard. The token comes back once — inject it via your
+CI provider's secret store as shown above. Set `CORELINK_TENANT` to the
+repository/project variable containing the tenant ID; the Python SDK requires
+it for tenant-addressed CAS operations.
+
+The mint API takes a name and scopes, but has no caller-selected expiry.
+Customer-issued PATs expire after 90 days, so there is no self-expiring
+per-pipeline token. For a shorter job lifetime, mint then revoke with `POST
+/v1/customer/keys/{pat_id}/revoke`; write-capable minting needs cache-write and
+revocation needs a server-trusted owner/admin team role. See [Security
+model](../../security.md).
 
 ## Next steps
 

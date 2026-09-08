@@ -4,12 +4,13 @@ title: "ADR-0042 — GC worker scheduler design + gc-pause degrade-mode contract
 description: "Per-region sticky DO GC workers on a jittered 02:00 UTC cron, partial-UNIQUE single-flight, checkpoint-idempotent resume, and a config-singleton gc-pause emergency stop."
 source_files:
   - "specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md"
-checkpoint_sha: "c81f6d91d04b2f21f552b25f0e3175684d1467fe"
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md@4e851c873ef2f1fcfb35f5e65685551d0ce8cf1c"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["adr", "gc", "worker", "scheduler", "degrade-mode", "s06"]
 timestamp: "2026-06-26T00:00:00Z"
 ---
-
 # ADR-0042 — GC worker scheduler design + gc-pause degrade-mode contract
 
 The GC worker is the single point of failure for the cache's most dangerous invariant — reachable
@@ -50,8 +51,13 @@ the manual admin trigger is a forward-S-13 staging stub that returns 501 in prod
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:24-34` — Context: GC worker is the single point of failure for INV-GC-001 + the seven design concerns.
-2. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:37-37` — Decision: per-region sticky DO + jittered 02:00 cron + config-singleton gc-pause + S-13 manual trigger.
+2. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:37` — Decision: per-region sticky DO + jittered 02:00 cron + config-singleton gc-pause + S-13 manual trigger.
 3. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:41-59` — the architectural-choices table (partial UNIQUE single-flight, checkpoint resume, monotonic phases, ≤100ms degrade-mode) and the rejected alternatives (single global cron, no-jitter, hash-based concurrency, monolithic worker, synchronous degrade-mode).
 4. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:63-72` — Consequences: horizontal scale + idempotent resume vs sequential per-region GC and the 501 admin stub.
 5. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:415-431` — §A3 addendum: the TLA+ formal-verification scope (mark-sweep proven; grace window covered architecturally). The range moved again when §A1 recorded the 2026-08-25 move to our own artifact mirror (B-039); the cited block is byte-identical (md5 42a68ccd…), a pure position shift, and the scope claim itself is unchanged.
 6. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:87-95` — §A1 addendum: pins the TLA+ `tla2tools.jar` v1.8.0 + SHA-256 in CI, and makes that pin enforceable by a CI check rather than prose.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

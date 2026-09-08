@@ -196,6 +196,32 @@ jobs:
             exit 1
           fi
 
+      - name: Gate 4 — embedded GC binary is forced dry-run (daemonless)
+        run: |
+          set -euo pipefail
+          B="$RUNNER_TEMP/smoke"
+          [ -x "$B/rootfs/usr/local/bin/gc_sweep" ] || { echo "::error::gc_sweep is absent or not executable in the runtime image"; exit 1; }
+          runc spec -b "$B"
+          jq \
+            '.process.args=["/usr/local/bin/gc_sweep"]
+             | .process.terminal=false
+             | .process.env=["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "GC_LIVE_DELETE=false"]
+             | .root.readonly=false' \
+            "$B/config.json" > "$B/gc-config.json"
+          mv "$B/gc-config.json" "$B/config.json"
+          cid="corelink-gc-dry-run-${{ steps.meta.outputs.short_sha }}"
+          out="$RUNNER_TEMP/gc-dry-run.out"
+          ec=0
+          timeout -s KILL 10 sudo runc run --bundle "$B" "$cid" >"$out" 2>&1 || ec=$?
+          sudo runc delete -f "$cid" >/dev/null 2>&1 || true
+          cat "$out"
+          [ "$ec" = "0" ] || { echo "::error::embedded gc_sweep dry-run failed (ec=$ec)"; exit 1; }
+          grep -F 'mode               = dry_run' "$out"
+          grep -F 'reclaimable_count         = 1' "$out"
+          grep -F 'reclaimable_bytes         = 4096' "$out"
+          grep -F 'deleted_count             = 0' "$out"
+          grep -F 'deleted_bytes             = 0' "$out"
+
       - name: ADR-0015 reproducibility attestation (reminder)
         run: |
           echo "ADR-0015: to verify reproducibility, rebuild on the same HEAD and compare the OCI manifest digest."

@@ -1,0 +1,60 @@
+# B-133: this workflow is evaluated from the base revision by pull_request_target.
+# It executes only the base checkout. The merge ref is transport for opaque data;
+# no command, action, or working-directory may resolve from _pr-data.
+name: dependabot-policy trust-boundary teeth
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/dependabot-policy-trust-boundary.yml"
+      - ".github/workflows/dependabot-policy.yml"
+      - "scripts/check_dependabot_policy_trusted_tree.py"
+      - "scripts/test_dependabot_policy_trust_boundary.sh"
+      - "scripts/test_ci_use_host_toolchain.sh"
+      - "scripts/prepare_b133_python.sh"
+      - "scripts/ci-use-host-toolchain.sh"
+      - "rust-toolchain.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  trust-boundary-teeth:
+    name: Dependabot trust-boundary teeth (BASE-only execution)
+    runs-on: corelink
+    timeout-minutes: 10
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Checkout BASE control tree (SHA-pinned)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: _base
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Checkout PR merge data for static inspection (SHA-pinned)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          path: _pr-data
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Prepare hermetic checker interpreter (BASE tree)
+        working-directory: _base
+        env:
+          B133_PYTHON: ${{ github.workspace }}/.b133-python
+        run: bash scripts/prepare_b133_python.sh "$B133_PYTHON"
+      - name: Statically reject B-133 control mutations (BASE checker)
+        working-directory: _base
+        env:
+          B133_UNTRUSTED_TREE: ${{ github.workspace }}/_pr-data
+          B133_PYTHON: ${{ github.workspace }}/.b133-python
+        run: |
+          "$B133_PYTHON/python" -S scripts/check_dependabot_policy_trusted_tree.py --untrusted-tree "$B133_UNTRUSTED_TREE"
+      - name: Prove host-toolchain channel guard (BASE tree)
+        working-directory: _base
+        run: bash scripts/test_ci_use_host_toolchain.sh
+      - name: Prove Dependabot trust-boundary teeth (BASE tree)
+        working-directory: _base
+        run: bash scripts/test_dependabot_policy_trust_boundary.sh

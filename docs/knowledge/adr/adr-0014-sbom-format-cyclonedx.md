@@ -4,12 +4,14 @@ title: "ADR-0014 — SBOM in CycloneDX 1.5+ (preferred), SPDX 2.3+ accepted"
 description: "Resolves a spec contradiction by standardizing SBOM output on CycloneDX 1.5+ JSON for the Rust toolchain while still accepting SPDX 2.3+ for external stakeholders."
 source_files:
   - "specs/03_architecture/adrs/ADR-0014-sbom-format-cyclonedx.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "supply-chain", "sbom", "cyclonedx", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0014-sbom-format-cyclonedx.md@c10e8aa6339081ba2cb8da52cb06c10ea216f5fc"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0014 — SBOM in CycloneDX 1.5+ (preferred), SPDX 2.3+ accepted
 
 A Software Bill of Materials is CoreLink's supply-chain evidence artifact, but the specs disagreed on its format — the framework said SPDX while the security model said CycloneDX — which would block any automated SBOM pipeline from being authoritative. This ADR settles it on CycloneDX 1.5+ JSON as the preferred format (mature Rust tooling) while keeping SPDX 2.3+ accepted for stakeholders that demand it. It matters as the format anchor for SOC 2 / NTIA SBOM compliance and Dependency-Track ingestion.

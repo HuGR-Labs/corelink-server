@@ -206,7 +206,11 @@ pub use audit::{
     QuotaCasAuditRecord, QuotaCasAuditSink, QuotaCasAuditSinkError, QuotaCasEventType,
 };
 pub use cas::{AtomicQuotaChecker, InMemoryAtomicQuotaChecker, QuotaCasDecision, QuotaCasOutcome};
-pub use config::{QuotaCasConfig, DEFAULT_HARD_BLOCK_PCT, DEFAULT_MAX_CAS_ATTEMPTS};
+pub use config::{
+    QuotaCasConfig, DEFAULT_HARD_BLOCK_PCT, DEFAULT_MAX_CAS_ATTEMPTS,
+    MAX_CAS_AUDIT_EVENTS_PER_ATTEMPT, MAX_CAS_AUDIT_EVENTS_PER_DECISION,
+    MAX_CONFIGURED_CAS_ATTEMPTS,
+};
 pub use error::QuotaCasError;
 pub use metrics::{
     canonical_metric_names, FailingQuotaCasMetrics, InMemoryQuotaCasMetrics, QuotaCasMetricKind,

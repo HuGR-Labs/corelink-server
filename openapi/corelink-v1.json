@@ -280,7 +280,7 @@
         "x-status": "implemented",
         "x-implementing-crate": "corelink-tier-selection",
         "x-served-at": "crates/corelink-container/src/routes/tier_select.rs:588",
-        "description": "Enforces `INV-ONBOARD-DPA-FIRST` via a D1 lock \u2014 tier selection is\nrejected until a DPA acceptance row exists for the tenant.\nReturns a Stripe Checkout session URL; final activation happens\nwhen the corresponding `checkout.session.completed` event lands\non `/v1/billing/stripe-webhook`.\n",
+        "description": "Enforces `INV-ONBOARD-DPA-FIRST` via a D1 lock \u2014 tier selection is\nrejected until a DPA acceptance row exists for the tenant.\nReturns a Stripe Checkout session URL; final activation happens\nwhen the corresponding `checkout.session.completed` event lands\non `/v1/billing/stripe-webhook`.\nA tenant may have only one payable checkout in flight. Repeating the\nrequest is idempotent for that tenant; a second paid subscription is\nrejected rather than replacing the existing billing owner.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -413,7 +413,7 @@
         ],
         "summary": "Revoke a Personal Access Token by id.",
         "operationId": "customerKeyRevoke",
-        "description": "Revocation is destructive and tenant-wide, so it requires a cache-write\ncapability; a read-only (`cas:r`) principal is rejected with `403`.\nSubsequent uses of the revoked token MUST fail closed\n(`INV-PAT-REVOKE-PROPAGATION`).\n",
+        "description": "Revocation is a destructive tenant-admin operation. It requires the\nserver-trusted `owner` or `admin` team role from a Clerk dashboard\nsession; cache-write scope alone is not sufficient. An owner may\nrevoke any PAT in the tenant. An admin may revoke member PATs but is\nrejected with `403` for the owner's PAT. Members, viewers, native PAT\ncallers, and cross-tenant targets are rejected (the latter as `404`).\nSubsequent uses of the revoked token MUST fail closed\n(`INV-PAT-REVOKE-PROPAGATION`).\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/PatId"
@@ -438,6 +438,107 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/customer/team/invite": {
+      "x-status": "implemented",
+      "x-implementing-handler": "crates/corelink-container/src/routes/customer.rs (handle_team_invite)",
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Create a one-time cryptographic team invitation.",
+        "operationId": "customerTeamInvite",
+        "security": [
+          {
+            "ClerkSessionCookie": []
+          },
+          {
+            "BearerPAT": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamInviteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Invitation created. The token is shown exactly once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamInviteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/v1/customer/team/accept": {
+      "x-status": "implemented",
+      "x-implementing-handler": "worker/src/lib/team_invitation.ts",
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Redeem a team invitation for the verified Clerk user.",
+        "operationId": "customerTeamAccept",
+        "security": [
+          {
+            "ClerkSessionCookie": []
+          }
+        ],
+        "description": "Requires the authenticated user's Clerk primary email to be explicitly\nmarked `verified`. The opaque token is tenant-bound by its stored\ndigest; no tenant id is accepted from the caller. The expiry check,\naudit event and one-row status transition are atomic, so replay fails.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamInviteAcceptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Invitation accepted exactly once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamInviteAcceptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
@@ -1498,6 +1599,97 @@
         }
       }
     },
+    "/v1/cas/{tenant}/batch-read": {
+      "x-status": "implemented",
+      "x-implementing-handler": "crates/corelink-container/src/routes/cas.rs (handle_batch_read)",
+      "post": {
+        "tags": [
+          "reapi-http"
+        ],
+        "summary": "Read multiple CAS blobs with bounded, ordered framing.",
+        "operationId": "casBatchRead",
+        "security": [
+          {
+            "BearerPAT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-ndjson": {
+              "schema": {
+                "type": "string",
+                "description": "NDJSON hash objects, at most 2,000 lines."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ordered manifest lines, a blank-line terminator, then concatenated blob bytes.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Cross-tenant attempt."
+          },
+          "413": {
+            "description": "Object or aggregate payload exceeds the 8 MiB batch-read ceiling; no over-cap body is collected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "error",
+                    "limit_objects",
+                    "limit_bytes"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "batch_too_large"
+                    },
+                    "limit_objects": {
+                      "type": "integer",
+                      "format": "int64",
+                      "example": 2000
+                    },
+                    "limit_bytes": {
+                      "type": "integer",
+                      "format": "int64",
+                      "example": 8388608
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/cas/{tenant}/{hash}": {
       "x-status": "implemented",
       "x-implementing-handler": "crates/corelink-container/src/routes/cas.rs (handle_read, handle_write)",
@@ -1539,7 +1731,8 @@
               "application/octet-stream": {
                 "schema": {
                   "type": "string",
-                  "format": "binary"
+                  "format": "binary",
+                  "maxLength": 67108864
                 }
               }
             }
@@ -1591,11 +1784,12 @@
             "application/octet-stream": {
               "schema": {
                 "type": "string",
-                "format": "binary"
+                "format": "binary",
+                "maxLength": 67108864
               }
             }
           },
-          "description": "Raw blob bytes. The handler verifies the hash against the path parameter before committing."
+          "description": "Raw blob bytes, capped at 64 MiB by the shared cache-entry limit. The handler verifies the hash against the path parameter before committing."
         },
         "responses": {
           "201": {
@@ -1663,7 +1857,8 @@
               "application/octet-stream": {
                 "schema": {
                   "type": "string",
-                  "format": "binary"
+                  "format": "binary",
+                  "maxLength": 67108864
                 }
               }
             }
@@ -1769,7 +1964,8 @@
             "application/octet-stream": {
               "schema": {
                 "type": "string",
-                "format": "binary"
+                "format": "binary",
+                "maxLength": 67108864
               }
             }
           },
@@ -1965,7 +2161,8 @@
               "application/octet-stream": {
                 "schema": {
                   "type": "string",
-                  "format": "binary"
+                  "format": "binary",
+                  "maxLength": 67108864
                 }
               }
             }
@@ -2027,7 +2224,8 @@
             "application/octet-stream": {
               "schema": {
                 "type": "string",
-                "format": "binary"
+                "format": "binary",
+                "maxLength": 67108864
               }
             }
           }
@@ -2118,7 +2316,8 @@
               "application/octet-stream": {
                 "schema": {
                   "type": "string",
-                  "format": "binary"
+                  "format": "binary",
+                  "maxLength": 67108864
                 }
               }
             }
@@ -2192,7 +2391,8 @@
             "application/octet-stream": {
               "schema": {
                 "type": "string",
-                "format": "binary"
+                "format": "binary",
+                "maxLength": 67108864
               }
             }
           }
@@ -2261,7 +2461,8 @@
               "application/octet-stream": {
                 "schema": {
                   "type": "string",
-                  "format": "binary"
+                  "format": "binary",
+                  "maxLength": 67108864
                 }
               }
             }
@@ -2321,7 +2522,8 @@
             "application/octet-stream": {
               "schema": {
                 "type": "string",
-                "format": "binary"
+                "format": "binary",
+                "maxLength": 67108864
               }
             }
           }
@@ -2713,6 +2915,109 @@
         "properties": {
           "pat": {
             "$ref": "#/components/schemas/CustomerPat"
+          }
+        }
+      },
+      "TeamInviteRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "email",
+          "role"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member",
+              "viewer"
+            ]
+          }
+        }
+      },
+      "TeamInviteResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "member",
+          "invitation_token"
+        ],
+        "properties": {
+          "member": {
+            "type": "object",
+            "required": [
+              "user_id",
+              "email",
+              "role",
+              "joined_at",
+              "status"
+            ],
+            "properties": {
+              "user_id": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "joined_at": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "const": "invited"
+              }
+            }
+          },
+          "invitation_token": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "One-time opaque capability; never returned by list."
+          }
+        }
+      },
+      "TeamInviteAcceptRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "invitation_token"
+        ],
+        "properties": {
+          "invitation_token": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "TeamInviteAcceptResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "tenant_id",
+          "role"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
           }
         }
       },

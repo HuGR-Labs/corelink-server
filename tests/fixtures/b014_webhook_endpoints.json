@@ -1,0 +1,15 @@
+{
+  "schema": "b014.offline.webhook-endpoints.v2",
+  "source": {
+    "path": "docs/handoff/2026-07-03-REPLY-from-clw-coordinator-webhook-reconcile-DONE-and-no-stray-endpoint-exists.md",
+    "sha256": "8bd1f966922874cd06c3a2445867983fccde30ed19af3476769d17b12cbe3548",
+    "scope": "stripe.v1.webhook_endpoints"
+  },
+  "observed_at": "2026-07-03",
+  "asserted_absent": "we_1TcaMDLh0hhAZjwol9KDCJTp",
+  "data": [
+    {"id": "we_1ToligLh0hhAZjwoI8PERw8x", "url": "https://corelink-signup.humangr.com/webhooks/stripe", "event_count": 7, "payload_style": "snapshot"},
+    {"id": "we_1Tfh8PLh0hhAZjwoCnqvruqC", "url": "https://corelink-api.humangr.com/v1/billing/stripe-webhook", "event_count": 236, "payload_style": "snapshot"},
+    {"id": "we_1TJ1YZLh0hhAZjwoTXnh9mTD", "url": "https://api.humangr.com/_wallet/stripe/webhook", "event_count": 4, "payload_style": "snapshot"}
+  ]
+}

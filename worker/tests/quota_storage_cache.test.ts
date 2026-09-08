@@ -133,10 +133,14 @@ describe("resolveStorageBytesCached", () => {
 });
 
 describe("checkStorageQuotaCachedRead — verdict parity", () => {
-  it("unconfirmed tier → ok:true, no fetch (read-side fail-open)", async () => {
+  it("unconfirmed tier → fail closed, no fetch", async () => {
     const f = makeFetch({ totalBytes: 1e12, d1Error: false });
     const r = await checkStorageQuotaCachedRead(DB, T, "free", true, true, { fetch: f.fetch });
-    expect(r.ok).toBe(true);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.retryAfterSec).toBe(2);
+      expect(r.reason).toContain("unverifiable");
+    }
     expect(f.calls()).toBe(0);
   });
 
@@ -166,9 +170,13 @@ describe("checkStorageQuotaCachedRead — verdict parity", () => {
     expect(r.ok).toBe(false);
   });
 
-  it("SUM fault → read-side fail-open (ok:true), not cached", async () => {
+  it("SUM fault → fail closed, not cached", async () => {
     const f = makeFetch({ totalBytes: 0, d1Error: true });
     const r = await checkStorageQuotaCachedRead(DB, T, "free", false, true, { fetch: f.fetch });
-    expect(r.ok).toBe(true);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.retryAfterSec).toBe(2);
+      expect(r.reason).toContain("unverifiable");
+    }
   });
 });

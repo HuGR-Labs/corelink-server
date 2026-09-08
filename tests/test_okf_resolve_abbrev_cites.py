@@ -14,6 +14,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "okf_resolve_abbrev_cites.py"
 VALIDATOR = REPO_ROOT / "scripts" / "validate_okf.py"
+VALIDATOR_CORE1 = REPO_ROOT / "scripts" / "validate_okf_core1.py"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "okf_wiki.yml"
 sys.path.insert(0, str(VALIDATOR.parent))
 SPEC = importlib.util.spec_from_file_location("okf_resolve_abbrev_cites", SCRIPT)
@@ -22,6 +23,7 @@ RESOLVER = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = RESOLVER
 SPEC.loader.exec_module(RESOLVER)
 import validate_okf as VALIDATOR_MODULE
+import validate_okf_core2 as VALIDATOR_CORE2
 
 
 def _scan(tmp_path: Path, concept_body: str, source_files: dict[str, str]):
@@ -58,6 +60,26 @@ class AbbreviatedCitationResolverTest(unittest.TestCase):
 
         self.assertEqual(seen, 1)
         self.assertEqual(findings, [])
+
+    def test_rejects_comment_delimiter_and_blank_mutations(self) -> None:
+        """Every non-code first line must make an abbreviated cite fail closed."""
+        seen, findings = self.scan(
+            "# Citations\n"
+            "1. `src/comment.rs:1` then `:1`\n"
+            "2. `src/delimiter.rs:1` then `:1`\n"
+            "3. `src/blank.rs:2` then `:1`\n",
+            {
+                "src/comment.rs": "// mutation bait\nfn live() {}\n",
+                "src/delimiter.rs": "}\nfn live() {}\n",
+                "src/blank.rs": "\nfn live() {}\n",
+            },
+        )
+
+        self.assertEqual(seen, 3)
+        self.assertEqual(len(findings), 3)
+        self.assertTrue(any("[comment]" in finding for finding in findings))
+        self.assertTrue(any("[delimiter]" in finding for finding in findings))
+        self.assertTrue(any("[blank]" in finding for finding in findings))
 
     def test_repo_relative_path_cannot_escape_source_root(self) -> None:
         seen, findings = self.scan(
@@ -212,18 +234,30 @@ class AbbreviatedCitationResolverTest(unittest.TestCase):
         )
 
     def test_production_mutations_make_bare_and_unresolved_cites_red(self) -> None:
-        validator = VALIDATOR.read_text(encoding="utf-8")
+        # CITE_RE is owned by the split core1 module; validate_okf re-exports
+        # the collector API but is no longer the source file for this regex.
+        validator = VALIDATOR_CORE1.read_text(encoding="utf-8")
         optional = r"(?P<path>[A-Za-z0-9._/\-]+)?:(?P<l1>"
         strict = r"(?P<path>[A-Za-z0-9._/\-]+):(?P<l1>"
         self.assertIn(optional, validator)
-        mutant_validator = validator.replace(optional, strict, 1)
-        mutant = types.ModuleType("validate_okf_without_bare_cites")
-        mutant.__file__ = str(VALIDATOR)
-        exec(compile(mutant_validator, str(VALIDATOR), "exec"), mutant.__dict__)
-        self.assertNotEqual(
-            mutant._collect_cites("`src/live.rs:1` then `:2`", ["src/live.rs"]),
-            [("src/live.rs", 1, 1), ("src/live.rs", 2, 2)],
+        mutant_core1 = types.ModuleType("validate_okf_core1_without_bare_cites")
+        mutant_core1.__file__ = str(VALIDATOR_CORE1)
+        exec(
+            compile(validator.replace(optional, strict, 1), str(VALIDATOR_CORE1), "exec"),
+            mutant_core1.__dict__,
         )
+        # The collector lives in core2 and resolves CITE_RE in its own module
+        # globals. Inject only the mutated exported primitive, then restore it
+        # so the remainder of the suite sees the production regex.
+        original_cite_re = VALIDATOR_CORE2.CITE_RE
+        VALIDATOR_CORE2.CITE_RE = mutant_core1.CITE_RE
+        try:
+            self.assertNotEqual(
+                VALIDATOR_MODULE._collect_cites("`src/live.rs:1` then `:2`", ["src/live.rs"]),
+                [("src/live.rs", 1, 1), ("src/live.rs", 2, 2)],
+            )
+        finally:
+            VALIDATOR_CORE2.CITE_RE = original_cite_re
 
         resolver = SCRIPT.read_text(encoding="utf-8")
         original = '    if end > len(lines):\n        return "past-eof", f"{path} has {len(lines)} lines"\n'
@@ -277,7 +311,7 @@ class AbbreviatedCitationResolverTest(unittest.TestCase):
         self.assertIn("run: python3 scripts/okf_resolve_abbrev_cites.py", workflow)
         self.assertNotIn('if [ "$rc" -eq 1 ]', workflow)
 
-        validator = VALIDATOR.read_text(encoding="utf-8")
+        validator = VALIDATOR_CORE1.read_text(encoding="utf-8")
         signature = 'CITE_RE = re.compile(r"^(?P<path>[A-Za-z0-9._/\\-]+)?:(?P<l1>'
         self.assertIn(signature, validator)
 
@@ -287,6 +321,23 @@ class AbbreviatedCitationResolverTest(unittest.TestCase):
             line for line in validator.splitlines() if not line.startswith("CITE_RE = ")
         )
         self.assertNotIn(signature, mutant)
+
+    def test_live_repository_corpus_is_nonempty_and_all_79_resolve(self) -> None:
+        """The focal gate must exercise the shipped corpus, not only fixtures."""
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT)],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "[okf-abbrev] OK: 79 abbreviated citations, all resolve to real code lines.",
+            result.stdout,
+        )
+        self.assertNotIn("ZERO abbreviated citations", result.stdout + result.stderr)
 
     def test_c5c_regression_is_wired_and_trigger_path_mutations_are_red(self) -> None:
         """C5c's implementation and regression cannot silently bypass the gate."""

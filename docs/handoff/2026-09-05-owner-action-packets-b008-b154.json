@@ -1,0 +1,707 @@
+{
+  "schema_version": 1,
+  "packet_id": "owner-actions-b008-b154-2026-09-05",
+  "repository": "HuGR-Labs/corelink-server",
+  "base_sha": "908d3bdc86f17a8b41a280baaea9352d7ed450ab",
+  "status": "engineering-packet-only",
+  "non_claim": "No credential was minted, external account changed, legal instrument signed, file deleted, deployment made, or production result asserted by this packet.",
+  "population": ["B-008", "B-012", "B-013", "B-032", "B-035", "B-065", "B-086", "B-089", "B-097", "B-110", "B-111", "B-154", "B-029", "B-044", "B-046", "B-054", "B-063", "B-068", "B-071", "B-072", "B-083", "B-102", "B-106", "B-113", "B-125", "B-128", "B-134", "B-142", "B-165"],
+  "items": [
+    {
+      "id": "B-008",
+      "owner": "owner",
+      "status": "open",
+      "action_type": "external_read_credential_and_delivery_review",
+      "procedure": [
+        "UI: In the PagerDuty account, create a read-only API key named corelink-incident-review-UTC; do not reuse or rotate PAGERDUTY_ROUTING_KEY.",
+        "RUN: With the key supplied through a password manager or stdin (never argv/logs), query the PagerDuty incident/escalation history for the CoreLink service and export the response to the canonical evidence path.",
+        "UI: Compare the exported incidents with the escalation policy and record whether a human acknowledgement/escalation occurred; do not infer delivery from HTTP 202 alone."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["PagerDuty account/service identifier", "review interval beginning 2026-07-17", "read-only API key"],
+        "credentials": "Owner creates and holds the read-only PagerDuty key; PAGERDUTY_ROUTING_KEY remains write-only and must not be used for reads. Never commit or paste the key into evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-008/pagerduty-incident-review.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "account", "service_id", "interval", "incidents", "human_delivery_verdict", "reviewer"],
+        "item_schema": "incidents[] entries contain incident_id, created_at, trigger_status, escalation_policy_id, acknowledgement_at (nullable), escalation_at (nullable), and source_url; human_delivery_verdict is delivered, not_delivered, or inconclusive."
+      },
+      "expected_postcondition": "The evidence records a human-delivery verdict grounded in PagerDuty incident/escalation records; B-008 remains open until the owner updates its status.",
+      "retry_and_rollback": "Retry by re-running the read-only export with the same interval and key; deduplicate by incident_id. Revoke the newly created read-only key after review. Do not revoke PAGERDUTY_ROUTING_KEY and do not delete evidence.",
+      "references": ["BACKLOG.md#B-008", "docs/internal/2026-08-24-owner-decision-brief.md"]
+    },
+    {
+      "id": "B-012",
+      "owner": "owner",
+      "status": "open",
+      "action_type": "github_app_or_fine_grained_pat",
+      "procedure": [
+        "UI: In GitHub account settings, create a dedicated GitHub App or fine-grained PAT for bot-created PRs, restricted to HuGR-Labs/corelink-server and only contents:write plus pull_requests:write.",
+        "RUN: Store the credential as the dedicated repository secret BOT_PR_TOKEN using gh secret set BOT_PR_TOKEN --repo HuGR-Labs/corelink-server --body-stdin; provide the value through stdin, never a command argument.",
+        "UI: Have the bot open one harmless test PR, then record the PR check-run URLs and conclusions in the canonical evidence file."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["GitHub owner authentication", "HuGR-Labs/corelink-server repository", "dedicated bot identity", "least-privilege permissions"],
+        "credentials": "The owner mints the PAT/App credential and GitHub stores it as a write-only Actions secret; no release token or credential value belongs in git, logs, or evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-012/bot-pr-checks.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "repository", "bot_identity", "credential_kind", "pr_number", "workflow_runs", "all_required_checks_observed", "reviewer"],
+        "item_schema": "workflow_runs[] entries contain run_id, workflow, url, conclusion, started_at, completed_at; credential_kind is app or fine_grained_pat and never contains a secret."
+      },
+      "expected_postcondition": "A bot-created PR receives the repository’s expected checks and the evidence names the observed runs; B-012 remains open until the owner records closure.",
+      "retry_and_rollback": "Before minting, inspect existing dedicated credentials to avoid duplicates. Retry secret storage with the same credential if the API call fails. Roll back by deleting only the newly created credential and BOT_PR_TOKEN after disabling bot use; preserve release credentials and the test PR evidence.",
+      "references": ["BACKLOG.md#B-012", ".github/workflows/backlog-verify.yml"]
+    },
+    {
+      "id": "B-013",
+      "owner": "owner",
+      "status": "open",
+      "action_type": "secure_local_private_key_deletion",
+      "procedure": [
+        "RUN: On the owner’s Mac, inspect only ~/Downloads/corelink-app.pk8.pem, ~/Downloads/corelink-runners-fleet.2026-06-15.private-key.pem, and ~/Downloads/corelink-runners.2026-07-13.private-key.pem; stop if any path is not a regular file or has changed unexpectedly.",
+        "RUN: After confirming the three exact basenames and preserving githugr-clerk-pubkey.pem, execute rm -P -- ~/Downloads/corelink-app.pk8.pem ~/Downloads/corelink-runners-fleet.2026-06-15.private-key.pem ~/Downloads/corelink-runners.2026-07-13.private-key.pem.",
+        "RUN: Verify the three private-key paths do not exist and record only basenames, sizes observed before deletion, timestamps, and the post-delete existence result."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["owner Mac local filesystem", "three exact private-key basenames", "macOS rm -P"],
+        "credentials": "No credential is read or copied. This is an owner-only filesystem operation outside the repository; the public githugr-clerk-pubkey.pem must not be deleted."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-013/downloads-private-key-deletion.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "machine", "targets", "public_key_preserved", "all_targets_absent_after", "operator"],
+        "item_schema": "targets[] entries contain basename, size_before_bytes, mtime_before, deletion_command, and exists_after; no key bytes or hashes are stored."
+      },
+      "expected_postcondition": "Exactly the three named private-key files are absent from ~/Downloads while the public key is preserved; B-013 remains open until the owner updates its status.",
+      "retry_and_rollback": "If preflight is ambiguous, stop without deleting. After successful deletion, retry only the absence check. Secure deletion has no rollback; recoverable copies must be handled by the owner outside this repository before proceeding.",
+      "references": ["BACKLOG.md#B-013"]
+    },
+    {
+      "id": "B-032",
+      "owner": "owner",
+      "status": "open",
+      "action_type": "drata_vendor_review_credential",
+      "procedure": [
+        "UI: In the Drata account, create or authorize the least-privilege API credential required to read the seven Critical vendor review records; do not place it in git or a commit.",
+        "RUN: Supply DRATA_API_BASE_URL and DRATA_API_KEY only through the owner’s protected environment/password manager and retrieve the current Cloudflare, Stripe, Clerk, AWS, Google Cloud, Azure, and Drata review evidence; never echo the key.",
+        "RUN: Have counsel/compliance review the records and write the canonical vendor-review artifact, then run python3 scripts/compliance-weekly-digest.py --dry-run --json to confirm the overdue population is reconciled."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["Drata account", "seven Critical vendor identities", "quarterly 90-day cadence", "current SOC 2/ISO or equivalent evidence"],
+        "credentials": "Owner creates/authorizes DRATA_API_KEY; the key is write-only to the repository and must be supplied ephemerally. No vendor evidence may include bearer tokens."
+      },
+      "evidence": {
+        "path": "docs/compliance/vendor-reviews/drata-critical-review-2026-09-05.md",
+        "format": "markdown",
+        "required_fields": ["Vendor", "Sub-processor id", "Review date", "Reviewer", "DPA reference", "DPA status", "SCC / transfer mechanism", "Schrems II TIA", "Data categories processed", "Data residency / region", "Certifications verified", "Review outcome", "Conditions / follow-ups", "Next review due"],
+        "item_schema": "Use docs/compliance/vendor-reviews/_TEMPLATE.md with every field completed from current vendor evidence; do not replace an unverified placeholder with an assertion lacking a source."
+      },
+      "expected_postcondition": "All seven Critical vendor reviews have current, counsel/compliance-owned evidence and the digest no longer reports them overdue; B-032 remains open until that external review is complete.",
+      "retry_and_rollback": "Retry read-only retrieval with the same credential and preserve source exports. If the credential is revoked or a source is unavailable, retain the last verified record as stale and leave the item open; revoke the temporary key after review rather than rolling back evidence.",
+      "references": ["BACKLOG.md#B-032", "scripts/compliance-weekly-digest.py", "docs/compliance/vendor-reviews/_TEMPLATE.md"]
+    },
+    {
+      "id": "B-035",
+      "owner": "owner",
+      "status": "open",
+      "action_type": "counsel_approved_legal_version",
+      "procedure": [
+        "UI: Engage counsel to choose the legal remedy: publish DPA/legal notice v1.0.1 with TLS 1.2 minimum wording, or raise the production edge floor to TLS 1.3 after compatibility review; do not edit executed v1.0.0 in place.",
+        "RUN: Have counsel provide the final versioned bytes and signed approval, then verify every one of the eight named v1.0.0 instruments is either preserved historically or superseded through the approved v1.0.1/errata process.",
+        "UI: If v1.0.0 was signed by customers, execute the counsel-approved notice/addendum process and record recipient scope; do not claim notice from a draft."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["eight versioned legal instruments", "ADR-0072 TLS 1.2 edge reality", "counsel decision on v1.0.1 versus edge-floor raise", "customer notice scope if applicable"],
+        "credentials": "Owner/counsel authentication and signature are external. No legal approval, customer notice, or edge-floor change is authorized by this repository packet."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-035/tls-legal-remediation.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "decision", "counsel", "approved_version", "superseded_files", "customer_notice", "signed_document_sha256", "reviewer"],
+        "item_schema": "decision is v1.0.1, edge_floor_1.3, or dual; superseded_files[] names all eight instruments; customer_notice records required, completed, or not_applicable with rationale."
+      },
+      "expected_postcondition": "The executed legal text and deployed TLS floor no longer contradict, with historical v1.0.0 preserved and any required customer notice evidenced; B-035 remains open until owner/counsel completion.",
+      "retry_and_rollback": "Retry only with the same counsel-approved version and signature workflow. Do not overwrite v1.0.0. Roll back an unpublished draft by abandoning it; a signed version requires a new counsel-approved superseding instrument, not git revert.",
+      "references": ["BACKLOG.md#B-035", "legal/dpa/v1.0.0.en-US.md", "legal/dpa/v1.0.0.pt-BR.md", "legal/dpa/v1.0.0.es-419.md", "legal/dpa/STANDARD-CONTRACTUAL-CLAUSES-EU.md", "legal/dpa/SUB-PROCESSOR-COMMITMENTS.md", "legal/privacy-notice/v1.0.0/en-US.md", "legal/privacy-notice/v1.0.0/pt-BR.md", "legal/privacy-notice/v1.0.0/es-MX.md"]
+    },
+    {
+      "id": "B-065",
+      "owner": "owner",
+      "status": "open",
+      "action_type": "stripe_webhook_endpoint_retirement",
+      "procedure": [
+        "UI: In Stripe Developers → Webhooks, identify the redundant endpoint using the duplicate event evidence; confirm the retained Corelink production endpoint remains the signup-worker destination.",
+        "UI: Disable/retire only the redundant endpoint after checking its endpoint ID and event coverage; do not rotate or expose webhook signing secrets.",
+        "RUN: Preserve the endpoint IDs and timestamps, then observe billing-health-daily for three consecutive successful executions."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["Stripe account", "endpoint list including v1/v2 destinations", "duplicate event types from billing-health-daily", "retained signup-worker URL"],
+        "credentials": "Owner’s authenticated Stripe dashboard is required. Webhook signing secrets are never exported, logged, or placed in evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-065/stripe-endpoint-retirement.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "account", "retired_endpoint_id", "retained_endpoint_id", "retired_at", "billing_health_runs", "duplicate_events_resolved", "operator"],
+        "item_schema": "billing_health_runs[] contains run_id, completed_at, anomaly_count, and conclusion; endpoint URLs are redacted to host/path and secrets are forbidden."
+      },
+      "expected_postcondition": "The redundant endpoint is disabled, the retained endpoint is unchanged, and billing-health-daily passes three consecutive times; B-065 remains open until the owner records closure.",
+      "retry_and_rollback": "Before retrying, reload the endpoint list and stop if the target is already disabled or IDs changed. Do not re-enable an endpoint after duplicate processing without a new owner decision; if an accidental enable occurs, disable it again and record the incident.",
+      "references": ["BACKLOG.md#B-065", "scripts/check_billing_health.py", ".github/workflows/billing-health-daily.yml"]
+    },
+    {
+      "id": "B-086",
+      "owner": "owner",
+      "status": "open",
+      "action_type": "residency_amendment_signature",
+      "procedure": [
+        "UI: Have counsel choose whether to provision jurisdictional D1 or amend the executed residency instrument to disclose the single global D1; the packet does not choose the commercial/legal path.",
+        "RUN: Reconcile the chosen path against all five production wrangler environments and the DPA residency amendment, without changing production bindings in this action packet.",
+        "UI: Execute the amendment or Cloudflare account change through the owner’s authenticated legal/provider workflow and record the effective date and counterparty/reference."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["five production D1 bindings", "database_id inventory", "legal/dpa-residency-amendment.md", "Cloudflare account/provider facts", "counsel transfer-impact decision"],
+        "credentials": "Owner/counsel signature or Cloudflare account authority is required; no D1 binding, legal file, or provider account is mutated by this packet."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-086/d1-residency-resolution.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "decision", "production_bindings", "distinct_database_ids", "dpa_status", "effective_at", "signed_document_sha256_or_provider_case", "reviewer"],
+        "item_schema": "decision is jurisdictional_d1, legal_amendment, or unresolved; production_bindings[] contains env, binding, database_id, and residency_claim; unresolved requires an explicit owner reason."
+      },
+      "expected_postcondition": "The D1 deployment and executed residency claim agree, with an owner/counsel or provider artifact proving the chosen path; B-086 remains open until that decision is executed.",
+      "retry_and_rollback": "Retry read-only inventory with the same account context. Do not rotate D1 IDs or amend signed text twice. Roll back an unexecuted draft by discarding it; a signed amendment requires a superseding legal instrument, and a provider change requires the provider’s documented reversal path.",
+      "references": ["BACKLOG.md#B-086", "wrangler.toml", "legal/dpa-residency-amendment.md"]
+    },
+    {
+      "id": "B-089",
+      "owner": "owner",
+      "status": "open",
+      "action_type": "sla_credit_legal_and_billing_authorization",
+      "procedure": [
+        "UI: Have counsel and Finance choose one coherent path: execute an SLA/Terms amendment removing or correcting automatic-credit promises, or authorize implementation of a real Stripe credit path covering all sold tiers.",
+        "RUN: Reconcile the chosen path against legal/sla/v1.0.0.md, apps/docs/src/pages/terms.tsx, apps/docs/src/lib/pricing.ts, and the billing implementation; do not claim code authorization from a signed draft.",
+        "UI: If automatic credits are authorized, record the owner’s spend limit, affected tiers, approval date, and release gate before enabling any billing mutation."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["executed SLA v1.0.0", "Terms and pricing tier table", "Stripe account/billing authority", "counsel decision", "Finance credit budget"],
+        "credentials": "Owner/counsel/Finance approval and Stripe authority are external. This packet never issues credits, changes Terms, or enables a billing job."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-089/sla-credit-resolution.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "decision", "legal_version", "tier_matrix", "stripe_authorization", "budget_limit_micros", "effective_at", "signed_document_sha256", "reviewer"],
+        "item_schema": "decision is amend_contract or build_and_authorize; tier_matrix[] contains every sold tier and credit behavior; unsigned or undecided branches must remain explicitly unresolved."
+      },
+      "expected_postcondition": "The executed remedy, published tier matrix, and live billing capability agree, with explicit owner financial/legal authority; B-089 remains open until completion.",
+      "retry_and_rollback": "Retry legal review idempotently against the same document version. Never issue a duplicate credit or re-enable an unapproved billing path. Roll back an unlaunched change by disabling it; a signed contract or issued credit requires formal supersession/refund handling by counsel/Finance.",
+      "references": ["BACKLOG.md#B-089", "legal/sla/v1.0.0.md", "apps/docs/src/pages/terms.tsx", "apps/docs/src/lib/pricing.ts"]
+    },
+    {
+      "id": "B-097",
+      "owner": "owner",
+      "status": "open",
+      "action_type": "cloudflare_account_quota_request",
+      "procedure": [
+        "RUN: Capture the current Cloudflare account total_vcpu limit, cache/runners reservations, and concurrent active-tenant measurement without changing configuration.",
+        "UI: Open a Cloudflare support/quota case requesting the needed total_vcpu increase; include the five-region 0.25-vCPU cache allocation, four-vCPU runner allocation, current 1250/1500 reservation, and desired headroom.",
+        "RUN: After Cloudflare responds, record the case ID, approved limit, effective time, and a fresh active-tenant measurement; do not treat a submitted case as an approved limit."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["Cloudflare account", "current total_vcpu limit", "wrangler.toml reservations", "production concurrent active tenants", "desired growth target"],
+        "credentials": "Owner’s Cloudflare support/account session and billing relationship are required; no API token is copied into the repository or evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-097/cloudflare-vcpu-quota-case.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "account_id_redacted", "case_id", "requested_total_vcpu", "current_total_vcpu", "declared_reservation_vcpu", "active_tenants_concurrent", "provider_decision", "effective_at", "operator"],
+        "item_schema": "provider_decision is submitted, approved, denied, or pending; account identifiers are redacted and the artifact contains no API token."
+      },
+      "expected_postcondition": "A provider-approved quota or an owner-approved architecture change removes the measured growth dependency; B-097 remains open while the case is pending or denied.",
+      "retry_and_rollback": "Retry by updating the same provider case with new measurements rather than opening duplicate cases. A rejected request has no configuration rollback; preserve the current safe limit and do not increase max_instances locally as a workaround.",
+      "references": ["BACKLOG.md#B-097", "wrangler.toml", "docs/operator/container-region-cost-policy.md"]
+    },
+    {
+      "id": "B-110",
+      "owner": "owner",
+      "status": "open",
+      "action_type": "ci_capacity_decision",
+      "procedure": [
+        "UI: Choose one authorized capacity path for cas_foundation, coverage, ffi-matrix-ci, and mutation-nightly: restore hosted billing, provision an adequate Linux self-hosted box, or authorize deletion/parking of the named lanes.",
+        "RUN: For a self-hosted path, register a dedicated runner label with documented CPU/RAM/disk limits and verify the four workflows’ `runs-on` and toolchain assumptions before enabling it.",
+        "UI: For hosted billing, confirm the GitHub account spending limit and payment state; for deletion/parking, obtain explicit owner approval describing the coverage loss. Record the selected option before any workflow mutation."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["four blocked workflow files", "required 4-core Linux capacity", "GitHub billing/account state", "coverage trade-off decision"],
+        "credentials": "Owner controls GitHub billing, runner registration, and destructive workflow authorization; no payment, runner registration, workflow dispatch, or deletion is performed here."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-110/ci-capacity-decision.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "selected_option", "workflows", "capacity_or_billing_reference", "coverage_impact", "runner_labels", "rollback_owner", "operator"],
+        "item_schema": "workflows[] contains workflow, current_runner, selected_runner, and action; selected_option is hosted_billing, linux_self_hosted, or owner_authorized_park."
+      },
+      "expected_postcondition": "The owner-approved capacity decision is recorded and the four lanes either have viable capacity or are explicitly parked/deleted with coverage impact; B-110 remains open until the external action is complete.",
+      "retry_and_rollback": "Retry capacity checks before registering duplicate runners or changing billing. Roll back a new runner by disabling/unregistering only that runner; billing can be stopped by the owner. Do not restore deleted coverage without a new owner decision and workflow review.",
+      "references": ["BACKLOG.md#B-110", ".github/workflows/cas_foundation.yml", ".github/workflows/coverage.yml", ".github/workflows/ffi-matrix-ci.yml", ".github/workflows/mutation-nightly.yml"]
+    },
+    {
+      "id": "B-111",
+      "owner": "owner",
+      "status": "open",
+      "action_type": "platform_certificate_acquisition",
+      "procedure": [
+        "UI: Purchase/maintain the Apple Developer account and obtain the notarization identity plus APPLE_DEVELOPER_ID, APPLE_DEVELOPER_ID_PASSWORD, APPLE_TEAM_ID, APPLE_NOTARIZATION_API_KEY, APPLE_NOTARIZATION_KEY_ID, APPLE_NOTARIZATION_ISSUER, and APPLE_DEVELOPER_ID_FINGERPRINT; separately obtain the CA-issued Authenticode certificate represented by WINDOWS_CODE_SIGNING_CERT, WINDOWS_CODE_SIGNING_PASSWORD, WINDOWS_CODE_SIGNING_FINGERPRINT, and WINDOWS_CODE_SIGNING_SUBJECT.",
+        "RUN: Add each approved acquisition value to the repository Actions secrets through stdin, for example gh secret set APPLE_TEAM_ID --repo HuGR-Labs/corelink-server --body-stdin; never pass secret values in argv, logs, or evidence. These are owner inputs only; acquisition is not asserted by this packet.",
+        "RUN: B-112's release-cli build is the upstream prerequisite; after it succeeds, wait for its ordered sign-linux, then sign-windows, then notarize-macos reusable-workflow chain, then record issuer, key type, expiry, public fingerprints, and each run outcome. Do not treat certificate acquisition or a queued upstream run as a successful signing lane."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["Apple Developer account", "APPLE_DEVELOPER_ID, APPLE_DEVELOPER_ID_PASSWORD, APPLE_TEAM_ID, APPLE_NOTARIZATION_API_KEY, APPLE_NOTARIZATION_KEY_ID, APPLE_NOTARIZATION_ISSUER, APPLE_DEVELOPER_ID_FINGERPRINT", "WINDOWS_CODE_SIGNING_CERT, WINDOWS_CODE_SIGNING_PASSWORD, WINDOWS_CODE_SIGNING_FINGERPRINT, WINDOWS_CODE_SIGNING_SUBJECT", "B-112 release-cli prerequisite and repository secret names"],
+        "credentials": "Owner acquires certificates and writes secrets through GitHub’s write-only secret store. Private keys/passwords/certificate bytes never enter git or the evidence artifact."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-111/platform-certificate-acquisition.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "apple", "windows", "secret_names", "release_prerequisite", "workflow_runs", "all_required_lanes_green", "operator"],
+        "item_schema": "secret_names.apple is exactly APPLE_DEVELOPER_ID, APPLE_DEVELOPER_ID_PASSWORD, APPLE_TEAM_ID, APPLE_NOTARIZATION_API_KEY, APPLE_NOTARIZATION_KEY_ID, APPLE_NOTARIZATION_ISSUER, and APPLE_DEVELOPER_ID_FINGERPRINT; secret_names.windows is exactly WINDOWS_CODE_SIGNING_CERT, WINDOWS_CODE_SIGNING_PASSWORD, WINDOWS_CODE_SIGNING_FINGERPRINT, and WINDOWS_CODE_SIGNING_SUBJECT; apple and windows contain issuer, subject_or_team, public_fingerprint, expires_at, and acquisition_reference; release_prerequisite identifies the successful B-112 release-cli build; workflow_runs[] contains run_id, lane, conclusion, and completed_at for sign-linux, sign-windows, and notarize-macos; no private material."
+      },
+      "expected_postcondition": "Apple and Windows signing prerequisites exist in the intended write-only secrets and both lanes have owner-authorized successful runs; B-111 remains open until that evidence exists.",
+      "retry_and_rollback": "Check existing secret names and certificate expiry before re-acquisition. Retry upload through stdin with the same certificate. Revoke/replace only the affected certificate and secret on compromise; retain the previous signing path until the replacement is verified unless the owner orders immediate revocation.",
+      "references": ["BACKLOG.md#B-111", ".github/workflows/notarize-macos.yml", ".github/workflows/sign-windows.yml"]
+    },
+    {
+      "id": "B-154",
+      "owner": "owner",
+      "status": "open",
+      "action_type": "executed_instrument_remediation",
+      "procedure": [
+        "UI: For the DPA Object Lock statement, the SLA BYOK kill-switch statement, and the attributed case-study claim, have counsel/owner choose amendment, formal notice, or construction of the promised capability for each surface.",
+        "RUN: Reconcile the chosen decision against legal/dpa/v1.0.0.en-US.md, legal/sla/v1.0.0.md, crates/corelink-container/src/routes/byok_admin.rs, and marketing/launch/CASE-STUDIES/enterprise-byok.md; preserve executed bytes and do not silently edit them in place.",
+        "UI: Execute any required addendum/notice or authorize the engineering and billing spend; record counterparties, signatures, and effective dates before claiming the instrument is truthful."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["executed DPA", "executed SLA", "BYOK runtime capability", "case-study attribution state", "counsel/owner remedy decision"],
+        "credentials": "Owner/counsel signature, customer notice authority, or construction budget is external. This packet does not amend legal instruments, notify customers, or enable BYOK."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-154/executed-instrument-resolution.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "surfaces", "decisions", "signed_documents", "notices", "capability_evidence", "operator"],
+        "item_schema": "surfaces[] contains surface, original_claim, decision (amend, notify, build, or unresolved), effective_at, and evidence_reference; signed_documents[] contains version and sha256; unresolved decisions remain explicit."
+      },
+      "expected_postcondition": "Every unsupported executed/public claim has an evidenced legal remedy, notice, or delivered capability, while historical signed bytes remain auditable; B-154 remains open until owner completion.",
+      "retry_and_rollback": "Retry only against the same document/version and counterpart record. Abandon unexecuted drafts safely; signed amendments/notices and deployed capabilities require formal supersession or the documented product rollback, never an unreviewed git revert.",
+      "references": ["BACKLOG.md#B-154", "legal/dpa/v1.0.0.en-US.md", "legal/sla/v1.0.0.md", "crates/corelink-container/src/routes/byok_admin.rs", "marketing/launch/CASE-STUDIES/enterprise-byok.md"]
+    },
+    {
+      "id": "B-029",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "staging_load_environment_provisioning",
+      "procedure": [
+        "RUN: Capture DNS and GitHub environment state for staging.corelink.humangr.com and the staging environment; do not enable the load schedule while either target or secret is absent.",
+        "UI: Provision or explicitly retire the staging target, then wire K6_TARGET_HOST, K6_STAGING_PAT, and the other documented K6 staging inputs in the protected environment without placing values in git or logs.",
+        "RUN: Run python3 scripts/verify_b029_load_gate.py --expect open before the owner-authorized load run, then retain the comparator output, scenario matrix, and run URL in the evidence artifact."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["staging DNS and endpoint decision", "GitHub staging environment", "K6 scenario matrix", "load-gate baseline"],
+        "credentials": "Owner provisions the staging PAT and K6 secrets in the protected environment; no secret is passed in argv, committed, or copied to evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-029/staging-load-gate.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "target_host", "dns_result", "secret_names", "scenario_set", "baseline_reference", "run_id", "comparison", "schedule_decision", "operator"],
+        "item_schema": "comparison records every scenario, baseline and measured value, finite numeric status, threshold result, and whether a new baseline was published; secrets are names only."
+      },
+      "expected_postcondition": "A reachable staging target and protected K6 inputs exist and an owner-authorized run proves the closed comparator, or the suites are explicitly retired with coverage impact; B-029 remains open until that decision is evidenced.",
+      "retry_and_rollback": "Retry DNS and environment reads before changing schedules. Re-run against the same baseline after a transient failure; disable the schedule and remove only newly added staging values if provisioning is abandoned. Never publish a baseline from an invalid or partial matrix.",
+      "references": ["BACKLOG.md#B-029", ".github/workflows/load-test-nightly.yml", "scripts/verify_b029_load_gate.py", "docs/internal/2026-08-24-owner-decision-brief.md"]
+    },
+    {
+      "id": "B-044",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "orphan_box_observe_and_teardown_decision",
+      "procedure": [
+        "RUN: Read the live orphan_reconcile_scan observe logs for one complete idle window and record scanned, sboxKnown, orphan count, box name, and timestamp; do not arm teardown during observation.",
+        "RUN: Join any observed orphan name against the historical sbox.h set and classify it as type-1 or type-2/unknown; retain the log query and redacted result in the evidence artifact.",
+        "UI: For a confirmed type-1 only, approve the inert teardown build and later secret-gated flag change; for type-2 or no orphan, record the platform teardown limitation and keep observe plus alerting."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["corelink-runners observe logs", "historical sbox.h handle set", "runner application identifier", "WP-B044 safety contract"],
+        "credentials": "Owner supplies read-only log access and any later deployment authority; RECONCILE_ORPHAN_TEARDOWN remains off and no token is copied into evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-044/orphan-teardown-observation.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "observe_window", "scans", "orphan_classifications", "join_method", "teardown_decision", "flag_state", "operator"],
+        "item_schema": "scans[] records timestamp, app_scope, scanned, sbox_known, orphan_count, and source_url; classifications[] records redacted box name, type, handle_match, and decision."
+      },
+      "expected_postcondition": "The live join and orphan type are evidenced before any teardown action, with either an inert type-1 implementation path or an explicit type-2/none platform block; B-044 remains open.",
+      "retry_and_rollback": "Repeat observe windows idempotently and deduplicate scans by timestamp. If teardown is ever enabled, disable only RECONCILE_ORPHAN_TEARDOWN on an unsafe signal and preserve observe logs; do not delete live boxes manually.",
+      "references": ["BACKLOG.md#B-044", "docs/campaigns/remediation/WP-B044-orphan-teardown.md"]
+    },
+    {
+      "id": "B-046",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "object_lock_provider_probe",
+      "procedure": [
+        "RUN: With temporary R2 S3 credentials supplied through the protected environment, run python3 scripts/verify_b046_object_lock_probe.py --probe; the probe creates only a named temporary bucket and test object.",
+        "RUN: Record the provider response for bucket Object Lock creation and per-object COMPLIANCE retention, classifying only explicit NotImplemented as BLOCKED and all credential, network, permission, or unknown errors as INDETERMINATE.",
+        "UI: If the provider remains blocked, record the platform result and customer-contract decision for any alternate Object-Lock backend; do not add a Compliance database mode from this packet."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["R2 S3 endpoint", "temporary probe bucket name", "provider account", "probe script"],
+        "credentials": "Owner supplies temporary R2 access key and secret through a protected environment; values are never printed, committed, or written to evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-046/object-lock-probe.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "provider", "bucket_operation", "object_operation", "classification", "bucket_cleanup", "operator"],
+        "item_schema": "bucket_operation and object_operation record outcome, provider_code, and redacted request reference; classification is BLOCKED, INDETERMINATE, or SUPPORTED and cleanup records the temporary resources."
+      },
+      "expected_postcondition": "Current provider capability is recorded without confusing a probe with a product guarantee; B-046 remains open unless a supported backend is separately approved and implemented.",
+      "retry_and_rollback": "Use a fresh temporary bucket for a retry after checking credentials and account. Delete only the probe bucket and object after capture; never alter the production retention bucket or legal-hold rows.",
+      "references": ["BACKLOG.md#B-046", "scripts/verify_b046_object_lock_probe.py", "docs/knowledge/ops/r2-object-lock-probe.md"]
+    },
+    {
+      "id": "B-054",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "audit_chain_epoch_production_rollout",
+      "procedure": [
+        "UI: Obtain the owner-approved witness, D1 migration, signing-key custody, and rotation plan for the E0 to E1 keyed epoch; preserve existing unkeyed rows and do not change the production epoch by hand.",
+        "RUN: In the protected release environment, apply the additive 0109/0110 schema and run the documented version-aware archive verification against a read-only export before any production cutover.",
+        "UI: Execute the witnessed rollout only after an independent archive proof is attached, then record old/new epoch counts, witness receipt, key-rotation receipt, and rollback decision."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["audit_chain_head and audit_outbox inventory", "migrations 0109 and 0110", "witness endpoint and receipt contract", "key custody and rotation plan"],
+        "credentials": "Owner controls production D1, witness, and write-only signing-secret operations; no signing seed or provider token is read into this repository packet."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-054/keyed-audit-epoch-rollout.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "legacy_epoch", "keyed_epoch", "migration_receipts", "witness_receipt", "archive_verification", "rotation_receipt", "rollback_plan", "operator"],
+        "item_schema": "legacy_epoch and keyed_epoch contain algorithm version, row count, and verification verdict; receipts are opaque references or public hashes and never secret material."
+      },
+      "expected_postcondition": "Legacy segments verify as E0, new segments verify as E1, the witness and D1 binding are independently evidenced, and key custody is rotated; B-054 remains open until the rollout is real.",
+      "retry_and_rollback": "Retry verification from the same immutable export before reapplying an additive migration. If rollout fails, stop new E1 writes and follow the approved epoch rollback or forward-fix plan; never rewrite legacy rows or downgrade a v2 checkpoint.",
+      "references": ["BACKLOG.md#B-054", "migrations/d1/0109_audit_chain_epoch_contract.sql", "migrations/d1/0110_audit_chain_epoch_row_metadata.sql", "crates/corelink-audit-chain/src/chain.rs"]
+    },
+    {
+      "id": "B-063",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "production_audit_partition_recovery_readback",
+      "procedure": [
+        "RUN: Using read-only production D1 credentials, execute the query in docs/operator/audit-archive-partition-remediation.md section 3.3 and capture every partition, idle age, and failure classification.",
+        "RUN: After any authorized repair, repeat three distinct zero-failure partition reads including 93da3f7a/enam and run audit-archive-lag three times with partitions_failed=0 and verdict OK.",
+        "UI: Attach the redacted D1 and workflow run references, then leave the item open if any required reading, partition, or PagerDuty confirmation is absent."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["production D1 database binding", "runbook section 3.3 query", "audit-archive-lag workflow", "PagerDuty incident reference"],
+        "credentials": "Owner supplies ephemeral read-only production D1 access and separate PagerDuty read access; credentials and tenant data are excluded from the artifact."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-063/audit-archive-partition-recovery.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "partition_reads", "target_partition", "lag_runs", "pagerduty_reference", "verdict", "operator"],
+        "item_schema": "partition_reads[] contains query_hash, captured_at, failed_partitions, target_idle_seconds, and redacted source reference; lag_runs[] contains run_id, partitions_failed, verdict, and completed_at."
+      },
+      "expected_postcondition": "Three independent D1 readings and three complete lag runs prove zero stuck partitions, including the named canary partition; B-063 remains open until that evidence exists.",
+      "retry_and_rollback": "Retry only read-only queries after a transient failure and keep each capture distinct. Do not mutate audit rows from this packet; if a repair is separately authorized, preserve pre-repair evidence and use its documented rollback.",
+      "references": ["BACKLOG.md#B-063", "docs/operator/audit-archive-partition-remediation.md", ".github/workflows/audit-archive-lag.yml"]
+    },
+    {
+      "id": "B-068",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "protected_real_harness_dispatch",
+      "procedure": [
+        "UI: Approve workflow_dispatch of real-ignored-harnesses.yml from main through the real-integration environment; use one allow-listed profile at a time: d1, r2, stripe, or neon.",
+        "RUN: For each profile, run gh workflow run real-ignored-harnesses.yml --ref main -f profile=PROFILE with PROFILE replaced by the approved allow-list value, then inspect gh run view RUN_ID --log without printing credentials.",
+        "RUN: Record test names, provider access preflight, run conclusion, artifact URL, and any explicit infrastructure block; do not dispatch emit_e2e_seed or provide a PAT signing seed."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["protected main ref", "real-integration approval", "d1/r2/stripe/neon profile", "provider test resources"],
+        "credentials": "Owner supplies protected D1, R2, Stripe, and Neon credentials to the environment; the executor must not receive PAT signing seed material and evidence contains names and URLs only."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-068/real-ignored-harness-runs.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "profiles", "runs", "artifacts", "blocked_profiles", "seed_excluded", "operator"],
+        "item_schema": "profiles is exactly d1, r2, stripe, neon; runs[] contains profile, run_id, workflow, ref, conclusion, preflight, and log_url; blocked_profiles[] records missing infrastructure without claiming success."
+      },
+      "expected_postcondition": "Each real profile has green evidence or an explicit blocked package, while the secret PAT seed remains excluded; B-068 remains open until the owner records closure.",
+      "retry_and_rollback": "Retry a failed profile only after preserving its first run and checking provider state. Cancel no run and delete no provider data from this packet; disable the workflow environment if an unsafe credential exposure is detected.",
+      "references": ["BACKLOG.md#B-068", ".github/workflows/real-ignored-harnesses.yml", "scripts/run-real-ignored-harnesses.sh", "scripts/verify_real_ignored_harnesses.py"]
+    },
+    {
+      "id": "B-071",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "gc_production_dry_run_authorization",
+      "procedure": [
+        "RUN: Verify the deployed image contains an executable gc_sweep and confirm GC_LIVE_DELETE=false, credential removal, timeout, tenant/run binding, and region guard before touching customer data.",
+        "RUN: In the owner-approved production observation window, invoke the existing gc_sweep dry-run path for each selected tenant and region and capture candidate count, bytes, phase budget, and zero-delete result.",
+        "UI: Review the per-tenant evidence and explicitly approve or reject any future first live delete; do not enable GC_LIVE_DELETE from this packet."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["deployed image digest", "tenant and region allow-list", "gc_sweep run identifier", "dry-run budget"],
+        "credentials": "Owner supplies read-only production observability and approved runtime access; dry-run automation must run without Cloudflare API credentials and no delete authority is granted here."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-071/gc-production-dry-run.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "image_digest", "runs", "tenant_region_population", "candidate_bytes", "delete_count", "live_delete_flag", "approval", "operator"],
+        "item_schema": "runs[] contains run_id, tenant_id, region, started_at, completed_at, candidate_count, candidate_bytes, phase_budget, and verdict; delete_count must be zero for dry-run evidence."
+      },
+      "expected_postcondition": "The shipped binary produces bounded, tenant/region-scoped dry-run evidence with zero deletes before any owner decision to arm live GC; B-071 remains open.",
+      "retry_and_rollback": "Retry a read-only dry-run with a new run identifier after a transient failure. If any guard is missing or a delete is observed, stop and disable the feature through the deployment control; preserve all reports and do not re-run against a broader population.",
+      "references": ["BACKLOG.md#B-071", "crates/corelink-gc/src/bin/gc_sweep.rs", ".github/workflows/gc-sweep-dry-run.yml", "Dockerfile"]
+    },
+    {
+      "id": "B-072",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "scheduled_drill_receiver_and_pagerduty_proof",
+      "procedure": [
+        "UI: Deploy the receiver Worker with the SCHEDULED_DRILL_DELIVERY service binding and configure a dedicated synthetic-drill PagerDuty integration outside the source tree.",
+        "RUN: Authorize one protected cron or equivalent drill and follow the correlation id through Worker delivery, PagerDuty incident, D1 synthetic_page_drills row, acknowledgement, and escalation; record all timestamps.",
+        "RUN: Re-run the focused scheduled-drill tests and static guard after the receiver wiring, then retain the real run and PagerDuty references in the evidence artifact."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["receiver Worker deployment", "SCHEDULED_DRILL_DELIVERY binding", "synthetic-drill PagerDuty integration", "D1 synthetic_page_drills binding"],
+        "credentials": "Owner controls deployment and the PagerDuty integration key; the key is write-only outside the Worker and never enters logs, git, or evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-072/scheduled-drill-e2e.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "cron", "correlation_id", "receiver_run", "pagerduty_incident", "d1_row", "acknowledged_at", "escalated_at", "operator"],
+        "item_schema": "receiver_run, pagerduty_incident, and d1_row are redacted references; timestamps are UTC and the artifact records non-2xx or retry outcomes when present without secrets."
+      },
+      "expected_postcondition": "One real synthetic drill proves cron-to-receiver-to-PagerDuty-to-D1 and acknowledgement/escalation, rather than inferring delivery from a 202 response; B-072 remains open until owner review.",
+      "retry_and_rollback": "Use a new correlation id for a retry and deduplicate D1 rows by that id. Disable the receiver binding or schedule if delivery is unsafe; revoke only the newly created integration key and preserve incident evidence.",
+      "references": ["BACKLOG.md#B-072", "docs/internal/b072-scheduled-drills-owner-packet.md", "scripts/verify_b072_scheduled_drills.py"]
+    },
+    {
+      "id": "B-083",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "real_kms_byok_activation_and_revocation_proof",
+      "procedure": [
+        "UI: Provision one test tenant CMK and the least-privilege AWS KMS role, endpoint, and region required by the byok-aws-real image; keep plaintext key material outside the repository.",
+        "RUN: In the protected runtime, call the existing POST /v1/admin/byok/activate path with the operator internal credential and CMK-wrapped Tcs, then verify check_access, encrypted CAS/AC round-trip, and fail-closed behavior without logging secrets.",
+        "RUN: Invoke the existing POST /v1/admin/byok/deactivate path and capture the revocation run_loop transition, audit receipt, and bounded timing; retain the run references and leave production tenants unchanged."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["test tenant identifier", "AWS KMS CMK identity", "byok-aws-real image digest", "wrapped Tcs and operator routes"],
+        "credentials": "Owner provisions AWS role credentials, KMS endpoint, CMK access, and the internal operator credential in protected runtime storage; plaintext Tcs, key material, and tokens never enter evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "tenant_redacted", "image_digest", "kms_provider", "check_access", "activation", "cas_ac_round_trip", "revocation", "run_loop", "operator"],
+        "item_schema": "activation, cas_ac_round_trip, and revocation contain status, audit_event_reference, and completed_at; check_access is pass or fail; no key, token, plaintext Tcs, or ciphertext is stored."
+      },
+      "expected_postcondition": "A test tenant proves real KMS access, encrypted CAS/AC behavior, and bounded revocation through the shipped image; B-083 remains open until owner evidence exists and no production claim is inferred.",
+      "retry_and_rollback": "Retry only after checking CMK grants and preserving the first run. Deactivate the test tenant through the same route on cleanup; if activation is ambiguous, fail closed, do not retry with plaintext, and retain the audit record for investigation.",
+      "references": ["BACKLOG.md#B-083", "Dockerfile", "crates/corelink-container/src/routes/byok_admin.rs", "crates/corelink-container/src/byok_orchestrator.rs", "crates/corelink-byok/src/byok_aws/real.rs"]
+    },
+    {
+      "id": "B-102",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "authenticated_hot_put_latency_measurement",
+      "procedure": [
+        "RUN: From an owner-approved production probe, send three authenticated 1 KiB PUT requests to /cargo with the same cas:rw PAT in sequence and within 60 seconds; do not put the PAT in shell history or logs.",
+        "RUN: Capture the Server-Timing header and wall time for all three requests, using the third request as the hot sample; calculate median and p90 only from the declared sample set.",
+        "UI: Review the decomposition against B-106, B-107, B-108, and B-109, then record whether the 30-50 ms target is met or which bounded engineering follow-up remains."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["dogfood tenant", "cas:rw PAT", "production cargo endpoint", "1 KiB payload", "60 second warm window"],
+        "credentials": "Owner supplies the PAT through stdin or a protected secret manager; it is never an argv value, header log, commit, or evidence field."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-102/hot-cargo-put-latency.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "endpoint_redacted", "sample_count", "requests", "server_timing", "median_ms", "p90_ms", "third_request_hot", "operator"],
+        "item_schema": "requests[] contains ordinal, status, bytes, wall_ms, and redacted Server-Timing phases; sample_count is three and third_request_hot is true only when the interval rule is met."
+      },
+      "expected_postcondition": "The owner has a reproducible in-fleet hot PUT measurement that separates cold authentication from the steady path; B-102 remains open until the target or an explicit decision is evidenced.",
+      "retry_and_rollback": "Retry with a fresh payload only after preserving the original three samples and confirming the same release. Revoke the probe PAT after measurement; the probe creates no durable product state beyond the test object and must not change production configuration.",
+      "references": ["BACKLOG.md#B-102", ".github/workflows/cargo-cache-latency-probe.yml", "worker/src/index.ts", "worker/src/lib/pat_verify_cache.ts"]
+    },
+    {
+      "id": "B-106",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "cold_pat_verify_latency_measurement",
+      "procedure": [
+        "RUN: Select a production PAT that has not been used for more than 60 seconds, or mint a dedicated test PAT through the approved owner process; send one authenticated request and capture Server-Timing without exposing the token.",
+        "RUN: Repeat the same cold measurement only after intervals longer than 60 seconds, recording auth desc, wall time, colo, and whether the source was d1, kv, or l1; never use consecutive requests as cold samples.",
+        "UI: Classify the result among replica inactive, no replica in serving region, or primary fallback always taken, and record the remediation decision without increasing the revocation window."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["production endpoint", "dedicated PAT", "cold interval over 60 seconds", "serving colo", "Server-Timing header"],
+        "credentials": "Owner mints or supplies the PAT through a protected channel; the token, signing key, and response body are excluded from logs and evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-106/cold-pat-verify-latency.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "sample_count", "cold_interval_seconds", "samples", "source_distribution", "hypothesis", "median_ms", "p90_ms", "operator"],
+        "item_schema": "samples[] contains captured_at, colo, auth_source, auth_ms, wall_ms, and status; cold_interval_seconds is over 60 for every pair and hypothesis is replica_inactive, no_replica, primary_fallback, or unresolved."
+      },
+      "expected_postcondition": "Cold verification cost and serving path are measured without weakening the 60-second revocation contract; B-106 remains open until the latency target or a documented safe remedy is evidenced.",
+      "retry_and_rollback": "Retry after the declared cold interval and preserve each sample. Revoke the dedicated PAT after capture; do not increase KV TTL or alter auth cache policy as a probe workaround.",
+      "references": ["BACKLOG.md#B-106", "worker/src/lib/pat_verify_cache.ts", "worker/src/index.ts", "specs/03_architecture/adrs/ADR-0030-pat-revocation-window.md"]
+    },
+    {
+      "id": "B-113",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "self_hosted_lane_failure_reproduction",
+      "procedure": [
+        "RUN: On the corelink fleet, inspect the latest logs for the seven B-113 workflows (nine named job boundaries): nightly.yml, sbom.yml, buck2-starter-ci.yml, fuzz-nightly.yml, endurance-2h-nightly.yml, load-test-nightly.yml, and billing-health-daily.yml, recording runner, step, conclusion, and timestamp without dispatching from this packet.",
+        "UI: For each of the seven B-113-owned workflows requiring a live test, approve one protected workflow_dispatch or equivalent run and distinguish tool installation, cancellation, runner availability, load target, and billing failures; terraform-drift.yml is excluded because it is B-111-owned.",
+        "RUN: Attach per-lane logs or an explicit infrastructure-block record, then classify each lane independently as repaired, reproduced, blocked, or not-applicable."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["seven named workflow lanes / nine named job boundaries", "corelink runner inventory", "workflow logs", "lane-specific tool and target requirements"],
+        "credentials": "Owner supplies GitHub and protected environment access; no signing, billing, cloud, or customer credential is copied into the packet or logs."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-113/self-hosted-lane-review.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "lanes", "population_check", "runs", "blocked_lanes", "b111_overlap", "operator"],
+        "item_schema": "lanes[] contains workflow, root_cause, runner, step, disposition, and evidence_reference; runs[] contains run_id, ref, conclusion, and log_url; no lane is omitted silently."
+      },
+      "expected_postcondition": "Every named lane has independently reproduced or explained evidence and no green is inferred from an absent run; B-113 remains open until owner review and required repairs are complete.",
+      "retry_and_rollback": "Retry one lane at a time after preserving its original logs and checking runner capacity. Cancel only an unsafe run through the owner control; revert a lane-specific workflow change through its reviewed prior version and keep the failure packet.",
+      "references": ["BACKLOG.md#B-113", ".github/workflows/nightly.yml", ".github/workflows/sbom.yml", ".github/workflows/buck2-starter-ci.yml", ".github/workflows/fuzz-nightly.yml", ".github/workflows/endurance-2h-nightly.yml", ".github/workflows/load-test-nightly.yml", ".github/workflows/billing-health-daily.yml"]
+    },
+    {
+      "id": "B-125",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "audit_throughput_production_readback",
+      "procedure": [
+        "RUN: Using authorized read-only production D1 access, rerun every control query in reports/go-live/D-1-audit-trail.md for the declared time window and capture arrivals, sealed rows, oldest unsealed age, and seal latency.",
+        "RUN: Verify that the observed population is the intended audit_outbox partition set, that controls are non-empty, and that the result is not a global watermark masking a stuck partition.",
+        "UI: Review the throughput and latency against the owner threshold, preserving the current 512-row configuration and bounded caller evidence; leave B-125 open when live numbers do not meet the decision."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["production D1 read-only binding", "D-1 audit trail query set", "audit_outbox time window", "owner latency and throughput threshold"],
+        "credentials": "Owner supplies ephemeral production D1 read access; raw tenant rows, tokens, and database credentials are excluded from the artifact."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-125/audit-throughput-readback.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "query_set", "controls", "arrivals", "sealed_rows", "oldest_unsealed_age_seconds", "seal_latency", "thresholds", "verdict", "operator"],
+        "item_schema": "query_set[] contains query_hash, interval, row_count, and source reference; controls record non-empty validity; seal_latency contains count, median, and p90; verdict is pass, fail, or invalid."
+      },
+      "expected_postcondition": "A current production readback proves or disproves the latency and throughput claim with controls, without treating code configuration as production evidence; B-125 remains open until threshold evidence exists.",
+      "retry_and_rollback": "Retry read-only queries with the same interval after transient errors and mark invalid captures. Do not change batch limits or delete audit rows from this packet; retain all prior evidence for comparison.",
+      "references": ["BACKLOG.md#B-125", "reports/go-live/D-1-audit-trail.md", "apps/signup-worker/src/webhooks/audit_drain_cron.ts", "crates/corelink-container/src/routes/audit_drain.rs"]
+    },
+    {
+      "id": "B-128",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "runner_enospc_linker_failure_proof",
+      "procedure": [
+        "UI: Approve a disposable corelink runner test job with an isolated workspace and an explicit disk-pressure fixture; never use a customer workspace or production deployment for the induced failure.",
+        "RUN: Execute the existing scripts/run-with-infra-classification.sh wrapper once with induced ENOSPC and once with induced linker failure, then inspect the run log for nonzero status and the infrastructure annotation before code diagnosis.",
+        "RUN: Record runner name, free-space threshold, step conclusion, annotation text, wrapper exit code, and cleanup result in the canonical artifact."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["disposable corelink runner", "isolated workspace", "ENOSPC fixture", "linker failure fixture", "wrapper script"],
+        "credentials": "Owner supplies runner administration and disposable test access; no repository write token or production secret is required or recorded."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-128/runner-infra-classification.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "runs", "enospc", "linker_failure", "annotations", "original_statuses", "cleanup", "operator"],
+        "item_schema": "runs[] contains run_id, runner, induced_condition, step_status, wrapper_exit, annotation, and log_url; enospc and linker_failure each record explicit nonzero and infra classification."
+      },
+      "expected_postcondition": "A real runner job proves both storage and linker failures are reported as infrastructure before code investigation, while original nonzero status is preserved; B-128 remains open until evidence is reviewed.",
+      "retry_and_rollback": "Use a fresh isolated workspace per condition and clean only fixture files afterward. If cleanup or classification is unsafe, stop the job and restore the runner through its documented maintenance path; never induce pressure on shared production disks.",
+      "references": ["BACKLOG.md#B-128", "scripts/run-with-infra-classification.sh", "tests/test_classify_runner_failure.sh"]
+    },
+    {
+      "id": "B-134",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "runner_docker_shim_observability_runs",
+      "procedure": [
+        "UI: Approve one protected workflow_dispatch of smoke-install.yml and one owner-authorized release-path run of cosign-sign.yml on the corelink label; confirm the experiment is not treated as proof before logs arrive.",
+        "RUN: Inspect docker info, image build, smoke install/version/doctor, keyless cosign sign, Rekor verify, and webhook/deploy preflight logs; retain backend and artifact references without signing material.",
+        "RUN: Record each workflow run conclusion and the signed image digest in the observability ledger, classifying missing runs as UNMEASURED rather than PASS."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["corelink runner", "smoke-install workflow", "cosign-sign workflow", "release image reference", "Rekor and webhook destinations"],
+        "credentials": "Owner supplies protected registry, OIDC signing, and webhook authority; private signing material and tokens never enter logs or evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-134/docker-shim-experiment.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "workflows", "runs", "docker_info", "image_digest", "cosign_sign", "rekor_verify", "webhook", "ledger_verdict", "operator"],
+        "item_schema": "workflows[] contains workflow, runner_label, run_id, conclusion, and log_url; each proof field is pass, fail, or unmeasured with a redacted reference; ledger_verdict cannot be pass when a run is absent."
+      },
+      "expected_postcondition": "Real corelink-fleet runs prove or disprove both shim-dependent workflows, including signature and webhook observations; B-134 remains open while either lane is unmeasured.",
+      "retry_and_rollback": "Retry only one workflow after preserving its run and checking runner state. Revoke newly created test registry or webhook credentials if exposed; disable the experiment without deleting release artifacts and keep the ledger honest.",
+      "references": ["BACKLOG.md#B-134", "docs/campaigns/remediation/B-134-docker-shim-experiment.md", "scripts/check_b134_observability.py", "scripts/test_b134_observability.sh", ".github/workflows/smoke-install.yml", ".github/workflows/cosign-sign.yml"]
+    },
+    {
+      "id": "B-142",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "codeql_and_secrets_drift_self_hosted_and_ghas_owner_activation",
+      "procedure": [
+        "UI: Confirm the corelink runner fleet is online and authorize the CodeQL workflow_dispatch or scheduled run on main; the secrets-drift implementation remains separately owned by B-132 and is inspected, not reclosed here.",
+        "RUN: Inspect the closed Rust, JavaScript/TypeScript, and Python CodeQL jobs, the corelink secrets-drift job, both watchdog results, cache/resource limits, retained SARIF/report artifacts, upload-sarif step, and run URLs; record every expected job and artifact rather than accepting a partial run.",
+        "UI: Enable or verify GitHub Advanced Security for the repository and record whether CodeQL SARIF reached the Security tab; if billing or GHAS is unavailable, retain the CodeQL SARIF and secrets-drift report and classify the external gap without claiming an upload or successful scheduled run."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["main ref", "corelink runner fleet", "CodeQL workflow matrix", "secrets-drift workflow and watchdog", "GHAS entitlement", "retained SARIF/report artifacts"],
+        "credentials": "Owner controls GitHub billing, Advanced Security, and workflow approval; no repository secret, CodeQL token, or SARIF content containing credentials is copied into evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-142/codeql-self-hosted-ghas.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "workflow", "run_id", "ref", "runner_labels", "matrix_jobs", "watchdog", "sarif_artifacts", "upload_sarif", "ghas_status", "secrets_drift_scope", "operator"],
+        "item_schema": "matrix_jobs[] contains language, job_id, conclusion, runner, started_at, completed_at, and artifact_reference; watchdog is pass only when the closed CodeQL population is complete; secrets_drift_scope records B-132 ownership and its scheduled report/watchdog result without claiming B-132 closure; ghas_status is uploaded, unavailable, or unverified."
+      },
+      "expected_postcondition": "All CodeQL language jobs and the secrets-drift scanner/watchdogs are structurally wired to the corelink runner policy with retained-evidence gates, and GHAS/run availability is truthfully classified; B-142 remains open for external GHAS and run evidence, and B-132 closure is not claimed.",
+      "retry_and_rollback": "Retry only the affected CodeQL or secrets-drift run after preserving its SARIF/report and watchdog output; do not silently omit a language job or primary report. Disable only the changed workflow dispatch or GHAS setting through its owner control if unsafe, and keep retained artifacts for review.",
+      "references": ["BACKLOG.md#B-142", ".github/workflows/codeql.yml", ".github/workflows/secrets-drift.yml", ".github/workflows/codeql-evidence-watchdog.yml", ".github/workflows/secrets-drift-evidence-watchdog.yml", "scripts/verify_b142_workflows.py", "docs/handoff/2026-09-05-b142-codeql-selfhost-action-packet.md", "tests/test_b142_codeql_selfhost.py", "tests/test_b142_workflow_predicate.py", "BACKLOG.md#B-132"]
+    },
+    {
+      "id": "B-165",
+      "owner": "tl",
+      "status": "open",
+      "action_type": "served_and_rejected_path_latency_measurement",
+      "procedure": [
+        "RUN: From the owner-approved probe origin, send ten unauthenticated requests each to /v1/cas/x/y, /npm/x, /pip/simple/x, and /v2/x/manifests/latest; discard the first sample and calculate median and p90 by route.",
+        "RUN: With a dedicated cas:read PAT supplied through a protected channel, repeat the served-path requests against known test objects and record status, Server-Timing, median, and p90 separately from rejection samples.",
+        "UI: Decide whether the low-tens-ms target is required or intentional timing padding is retained, and record the decision with the served-path evidence rather than closing on rejection latency alone."
+      ],
+      "inputs_and_credentials_boundary": {
+        "inputs": ["production API hostname", "four rejection routes", "known served test objects", "dedicated cas:read PAT", "ten samples per route"],
+        "credentials": "Owner supplies the served-path PAT through stdin or a secret manager; no token, response body, or authorization header is retained in evidence."
+      },
+      "evidence": {
+        "path": "evidence/owner-actions/B-165/rejection-served-latency.json",
+        "format": "json",
+        "required_fields": ["schema_version", "captured_at", "rejection_samples", "served_samples", "route_statistics", "padding_decision", "pat_reference", "verdict", "operator"],
+        "item_schema": "route_statistics[] contains route, population, sample_count, discarded_first, median_ms, p90_ms, and status classes; rejection and served populations are disjoint and served samples require a redacted PAT reference."
+      },
+      "expected_postcondition": "Both unauthenticated rejection and authenticated served paths have honest route-level statistics, with any timing-padding decision documented; B-165 remains open until both halves are reviewed.",
+      "retry_and_rollback": "Retry with a fresh test object and preserve prior samples; revoke the dedicated PAT after the served probe. Do not alter padding or auth behavior based on a single outlier, and do not delete the evidence artifact.",
+      "references": ["BACKLOG.md#B-165", "BACKLOG.md#B-160", "worker/src/index.ts"]
+    }
+  ]
+}

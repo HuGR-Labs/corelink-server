@@ -96,7 +96,9 @@ export async function mintAppJwt(
 ): Promise<string> {
   const key = await crypto.subtle.importKey(
     "pkcs8",
-    pkcs8DerFromPem(privateKeyPem),
+    // Workers accepts the ArrayBufferLike view returned by this decoder;
+    // TS 6's lib.dom declaration is narrower than the runtime contract.
+    pkcs8DerFromPem(privateKeyPem) as unknown as BufferSource,
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
     ["sign"],

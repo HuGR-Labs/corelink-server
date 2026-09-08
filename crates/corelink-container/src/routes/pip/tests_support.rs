@@ -203,7 +203,10 @@ pub(super) fn router_with(
         map,
         PIP_SERVICE_PRINCIPAL,
     ));
-    let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore { moat });
+    let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore {
+        moat,
+        cap_resolver: None,
+    });
     // The SAME resolver backs the adapter (tenant resolution) AND the gate's
     // two-layer write check — one PAT verification, not two.
     let resolver: TenantResolverHandle = Arc::new(PipPatResolver(verifier));
@@ -253,7 +256,10 @@ pub(super) fn router_with_put_probe(
         map,
         PIP_SERVICE_PRINCIPAL,
     ));
-    let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore { moat });
+    let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore {
+        moat,
+        cap_resolver: None,
+    });
     let resolver: TenantResolverHandle = Arc::new(PipPatResolver(verifier));
     let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
     let upstream_pypi = Url::parse(PIP_UPSTREAM_DEFAULT).unwrap();
@@ -330,7 +336,10 @@ pub(super) fn router_with_quota_observable(
         map,
         PIP_SERVICE_PRINCIPAL,
     ));
-    let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore { moat });
+    let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore {
+        moat,
+        cap_resolver: None,
+    });
     let resolver: TenantResolverHandle = Arc::new(PipPatResolver(verifier));
     let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
     let upstream_pypi = Url::parse(PIP_UPSTREAM_DEFAULT).unwrap();

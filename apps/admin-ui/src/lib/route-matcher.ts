@@ -192,7 +192,12 @@ export function isPublicPath(pathname: string): boolean {
   // The root landing page is the public top-of-funnel (signup CTA target).
   if (normalized === "/") return true;
   for (const prefix of PUBLIC_PATH_PREFIXES) {
-    if (normalized === prefix || normalized.startsWith(prefix)) return true;
+    // A public prefix is a path segment, not an arbitrary string prefix:
+    // `/sign-in-evil` and `/api/healthcheck` must remain protected.
+    // Normalize a trailing slash first so both `/locales/en` and a configured
+    // `/locales/` prefix use the same boundary rule.
+    const barePrefix = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
+    if (normalized === barePrefix || normalized.startsWith(`${barePrefix}/`)) return true;
   }
   return matchesPagePrefix(normalized, PUBLIC_LOCALE_PAGE_PREFIXES);
 }

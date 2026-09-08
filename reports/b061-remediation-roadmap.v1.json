@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "canonical_metrics": {
+    "okf_documents": 170,
+    "okf_checkpoint_claims": 169,
+    "okf_orphan_anchors": 0,
+    "tier_kind_variants": 11,
+    "rate_ladder_variants": 5,
+    "actions_zero_success_lanes": 20,
+    "actions_ran_never_success_lanes": 19,
+    "actions_never_run_lanes": 1,
+    "actions_runs_without_success": "unavailable"
+  },
+  "actions_evidence": {
+    "as_of": "2026-08-30",
+    "status": "unavailable",
+    "export": "reports/b061-actions-census.v1.json",
+    "sha256": "e240f9a3add9def95b6e31aabfdd7b4aa5396b8c6d66ab40bf503be22835d44d",
+    "source_query": "GET /repos/HuGR-Labs/corelink-server/actions/workflows/{workflow_id}/runs?per_page=1; compare total_count with conclusion=success for every registered workflow"
+  }
+}

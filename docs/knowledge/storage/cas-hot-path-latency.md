@@ -5,12 +5,15 @@ description: "The measured root cause of slow /v1/cas: two synchronous D1-over-H
 source_files:
   - "crates/corelink-container/src/billing_d1_http.rs"
   - "docs/perf/2026-06-19-cas-hot-path-latency.md"
-checkpoint_sha: "11ce6289a30e7a76dc8a9d40e6991069239d0e5d"
+source_blobs:
+  - "crates/corelink-container/src/billing_d1_http.rs@aa0999b8fbb283cbad24dfe47dfe8c3e92351390"
+  - "docs/perf/2026-06-19-cas-hot-path-latency.md@f08db60bee482f5cd47e4d3b27d3fb7dab1b2ba5"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["storage", "perf", "d1", "cas", "latency", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # CAS hot-path D1-over-HTTP latency
 
 `GET/PUT /v1/cas/{tenant}/{key}` measured 3-7s in production, and both the original handoff and a first
@@ -75,3 +78,8 @@ view of the [native CAS surface](/surfaces/native-cas.md) running on the [contai
 7. `crates/corelink-container/src/billing_d1_http.rs:1-28` — the sync↔async D1-over-HTTP bridge rationale.
 8. `crates/corelink-container/src/billing_d1_http.rs:114` — fail-CLOSED transport-error → `Transient` → 500 (the executing `.map_err`).
 9. `crates/corelink-container/src/billing_d1_http.rs:98-115` — `run`: `block_in_place` + `block_on` per D1 round-trip.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

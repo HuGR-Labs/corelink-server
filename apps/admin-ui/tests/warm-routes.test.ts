@@ -27,6 +27,8 @@ import {
   resolveAppPage,
 } from "./e2e/app-route-index";
 import warmRoutes, {
+  isResolvedForRoute,
+  RETIRED_ROUTE_MARKERS,
   ROUTES,
   runWarmPasses,
   type ProbeResult,
@@ -35,6 +37,17 @@ import warmRoutes, {
 
 const ok: ProbeResult = { status: 200, detail: "200" };
 const notFound: ProbeResult = { status: 404, detail: "404" };
+
+const retired = (route: keyof typeof RETIRED_ROUTE_MARKERS): ProbeResult => {
+  const marker = RETIRED_ROUTE_MARKERS[route];
+  return {
+    status: 404,
+    detail: "404",
+    body:
+      `<main data-testid="${marker.testId}" ` +
+      `data-retired-route="${marker.routeId}"></main>`,
+  };
+};
 
 function deps(overrides: Partial<WarmDeps>): WarmDeps {
   return {
@@ -91,6 +104,45 @@ describe("app-route-index — filesystem truth for App Router URLs", () => {
 });
 
 describe("runWarmPasses — 404 classification", () => {
+  it("accepts only a matching route-local marker for an intentional retired 404", () => {
+    expect(isResolvedForRoute("/en/consent/new", retired("/en/consent/new"))).toBe(true);
+    expect(isResolvedForRoute("/en/consent/history", retired("/en/consent/history"))).toBe(true);
+    expect(
+      isResolvedForRoute("/en/consent/new", {
+        status: 404,
+        detail: "404",
+        body: '<script>...data-testid\\":\\"consent-capture-retired\\",\\"data-retired-route\\":\\"consent-capture\\"...</script>',
+      }),
+    ).toBe(true);
+    expect(isResolvedForRoute("/en/consent/new", retired("/en/consent/history"))).toBe(false);
+    expect(isResolvedForRoute("/en/consent/new", notFound)).toBe(false);
+    // A marker on a route that is not explicitly retired is never sufficient.
+    expect(isResolvedForRoute("/en/admin/audit", retired("/en/consent/new"))).toBe(false);
+  });
+
+  it("warms a compiled retired route without hiding a generic route-tree 404", async () => {
+    const rescan = vi.fn(async () => {});
+    const resolved = await runWarmPasses(
+      deps({
+        routes: ["/en/consent/new"],
+        probe: async () => retired("/en/consent/new"),
+        rescan,
+      }),
+    );
+    expect(resolved).toEqual([]);
+    expect(rescan).not.toHaveBeenCalled();
+
+    const unresolved = await runWarmPasses(
+      deps({
+        routes: ["/en/consent/new"],
+        probe: async () => notFound,
+        rescan,
+      }),
+    );
+    expect(unresolved).toEqual([{ route: "/en/consent/new", detail: "404" }]);
+    expect(rescan).toHaveBeenCalledTimes(1);
+  });
+
   it("is a no-op when every route resolves", async () => {
     const rescan = vi.fn(async () => {});
     const unresolved = await runWarmPasses(deps({ rescan }));

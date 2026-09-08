@@ -4,12 +4,14 @@ title: "ADR-0044 (sbom) — SBOM CycloneDX toolchain: cargo-cyclonedx + sbomqs +
 description: "Pins the canonical SBOM generation/validation/signing stack with NTIA 10/10 gate, cosign keyless OIDC via Fulcio+Rekor, a release-only signing guard, and a fail-closed Sigstore-outage policy."
 source_files:
   - "specs/03_architecture/adrs/ADR-0044-sbom-cyclonedx-toolchain.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "sbom", "supply-chain", "cosign", "ci"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0044-sbom-cyclonedx-toolchain.md@6d34958e31f929ce81da3d5d99b72654c1e589c6"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0044 (sbom) — SBOM CycloneDX toolchain: cargo-cyclonedx + sbomqs + cosign keyless
 
 ADR-0014 chose CycloneDX 1.5 as the SBOM format but left the concrete CI pipeline unspecified; this

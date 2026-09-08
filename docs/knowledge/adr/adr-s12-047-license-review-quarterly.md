@@ -4,12 +4,14 @@ title: "ADR-S12-047 — Quarterly license review process"
 description: "Why CoreLink runs a manual quarterly license review on top of the automated cargo-deny SPDX gate, and what that review covers."
 source_files:
   - "specs/03_architecture/adrs/ADR-S12-047-license-review-quarterly.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s12", "supply-chain", "license", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S12-047-license-review-quarterly.md@843ad0ee1307ab3c2c430727c502b1dbd91c8300"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S12-047 — Quarterly license review process
 
 Automated license enforcement (cargo-deny + `deny.toml`) only validates the SPDX expression a crate *declares* in its `Cargo.toml`; it cannot tell whether that declaration matches the crate's actual license. This ADR records the decision to close that gap with a structured manual review on a quarterly cadence, the cost-effective midpoint between continuous (too expensive) and annual (too infrequent) cycles. It is the dependency-license compliance backbone for SOC 2 CC7.1 / OWASP ASVS V14.

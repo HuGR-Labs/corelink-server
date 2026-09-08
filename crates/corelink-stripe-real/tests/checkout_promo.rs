@@ -52,14 +52,47 @@ fn ok_session_body() -> String {
         .to_string()
 }
 
-#[tokio::test]
-async fn default_checkout_sends_allow_promotion_codes() {
-    let server = MockServer::start().await;
+fn ok_customer_body() -> String {
+    r#"{"id":"cus_promo","email":null}"#.to_string()
+}
+
+async fn mount_checkout_mocks(server: &MockServer) {
+    // `create_checkout_session` first creates the Customer, then creates the
+    // Checkout Session. Keep both endpoints explicit so a 404 cannot make the
+    // promo assertions vacuously exercise the wrong request.
+    Mock::given(method("POST"))
+        .and(path("/v1/customers"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(ok_customer_body()))
+        .mount(server)
+        .await;
     Mock::given(method("POST"))
         .and(path("/v1/checkout/sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_string(ok_session_body()))
-        .mount(&server)
+        .mount(server)
         .await;
+}
+
+fn assert_checkout_request_sequence(received: &[wiremock::Request]) -> String {
+    assert_eq!(
+        received.len(),
+        2,
+        "one customer and one checkout request are required"
+    );
+    assert_eq!(received[0].url.path(), "/v1/customers");
+    assert_eq!(received[1].url.path(), "/v1/checkout/sessions");
+    let customer_body = String::from_utf8(received[0].body.clone()).expect("customer utf8");
+    assert!(
+        customer_body.contains("metadata%5Btenant_id%5D=tenant_promo")
+            || customer_body.contains("metadata[tenant_id]=tenant_promo"),
+        "customer creation must be tenant-scoped: {customer_body}"
+    );
+    String::from_utf8(received[1].body.clone()).expect("checkout utf8")
+}
+
+#[tokio::test]
+async fn default_checkout_sends_allow_promotion_codes() {
+    let server = MockServer::start().await;
+    mount_checkout_mocks(&server).await;
 
     let cfg = StripeClientConfig::direct(
         server.uri(),
@@ -88,8 +121,7 @@ async fn default_checkout_sends_allow_promotion_codes() {
     assert_eq!(resp.session_id, "cs_test_promo");
 
     let received = server.received_requests().await.expect("wiremock log");
-    assert_eq!(received.len(), 1);
-    let body = String::from_utf8(received[0].body.clone()).expect("utf8 body");
+    let body = assert_checkout_request_sequence(&received);
     assert!(
         body.contains("allow_promotion_codes=true"),
         "default checkout must send allow_promotion_codes=true: {body}"
@@ -103,11 +135,7 @@ async fn default_checkout_sends_allow_promotion_codes() {
 #[tokio::test]
 async fn configured_coupon_preapplies_discount() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/checkout/sessions"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(ok_session_body()))
-        .mount(&server)
-        .await;
+    mount_checkout_mocks(&server).await;
 
     let cfg = StripeClientConfig::direct(
         server.uri(),
@@ -136,8 +164,7 @@ async fn configured_coupon_preapplies_discount() {
     assert_eq!(resp.session_id, "cs_test_promo");
 
     let received = server.received_requests().await.expect("wiremock log");
-    assert_eq!(received.len(), 1);
-    let body = String::from_utf8(received[0].body.clone()).expect("utf8 body");
+    let body = assert_checkout_request_sequence(&received);
     // Form-encoded `discounts[0][coupon]=coupon_LAUNCH100` (brackets are
     // percent-encoded by reqwest's form encoder → `discounts%5B0%5D%5Bcoupon%5D`).
     assert!(

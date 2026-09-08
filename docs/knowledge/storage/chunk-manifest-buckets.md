@@ -7,12 +7,17 @@ source_files:
   - "crates/corelink-r2-multipart/src/object_key.rs"
   - "crates/corelink-r2-multipart/src/in_memory.rs"
   - "crates/corelink-container/src/routes/dsr/adapter_r2_cas.rs"
-checkpoint_sha: "8af9ed65caf286d3f800e91d3f823face3aefd31"
+source_blobs:
+  - "crates/corelink-r2-multipart/src/lib.rs@5a887634284550c847d3a6ee9fce5f9a2fa7549b"
+  - "crates/corelink-r2-multipart/src/object_key.rs@0be22a482b65ca7295595b54b8ced5270f4f18bb"
+  - "crates/corelink-r2-multipart/src/in_memory.rs@2b43f349cf14b481b7f3b6a59345fb80d644ea08"
+  - "crates/corelink-container/src/routes/dsr/adapter_r2_cas.rs@5ecdfa4c35a35aa415f3b4fe8ae2a5f83a8485cc"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "multipart", "chunk", "manifest", "tenant-isolation"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Chunk / manifest multipart buckets
 
 STATUS — designed-not-wired. This concept describes a storage shape that is **not in production use**:
@@ -100,3 +105,8 @@ CoreLink stores large objects today. It shares the per-tenant-prefix isolation d
 12. `crates/corelink-r2-multipart/src/in_memory.rs:206` — `impl MultipartAdapter for InMemoryMultipartAdapter` (test/dev fake).
 13. `crates/corelink-r2-multipart/src/in_memory.rs:528` — `impl MultipartAdapter for AlwaysFailingMultipartAdapter` (chaos fake); together these are the ONLY two `MultipartAdapter` impls in the workspace — no real R2 adapter exists.
 14. `crates/corelink-container/src/routes/dsr/adapter_r2_cas.rs:102-107` — explicit code comment: the container has zero multipart write-sites, no `corelink-r2-multipart` dependency, `R2_CHUNK_BUCKET` is never written.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

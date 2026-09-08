@@ -4,12 +4,14 @@ title: "ADR-0067 — Secrets broker: defer the broker, design as a D1-encrypted 
 description: "Why the per-tenant secrets broker is deferred for launch and pre-designed as a D1 envelope-encrypted TTL lease that works within Cloudflare's write-only secret constraint."
 source_files:
   - "specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "secrets", "broker", "d1", "deferred", "hugit-p2"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0067-secrets-broker-d1-encrypted-lease-deferred.md@e4ad4bb9167c51779292c1e184571409bf8e6b8c"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0067 — Secrets broker: defer the broker, design as a D1-encrypted lease
 
 hugit-P2 wanted a per-tenant secrets broker (lease a secret with a TTL, rotate, revoke), but the

@@ -23,7 +23,7 @@ vi.mock("@clerk/backend", () => ({ verifyToken: vi.fn() }));
 import { verifyToken } from "@clerk/backend";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
-import { mintScopedPat, MintGrant } from "../src/lib/session_exchange.js";
+import { mintScopedPat, MintGrant, checkMintThrottle } from "../src/lib/session_exchange.js";
 
 const mockVerifyToken = vi.mocked(verifyToken);
 
@@ -34,6 +34,112 @@ const CLERK_SECRET = "sk_test_clerk_secret";
 const GITHUGR_ISSUER = "https://clerk.githugr.com";
 const GITHUGR_JWT_KEY = "-----BEGIN PUBLIC KEY-----\nMOCKKEY\n-----END PUBLIC KEY-----";
 const GITHUGR_AZP = "https://www.githugr.com";
+
+describe("B-221 mint throttle contract", () => {
+  it("bounds the in-memory outage fallback", async () => {
+    const db = {
+      prepare() {
+        return {
+          bind() { return this; },
+          async first() { throw new Error("D1 unavailable"); },
+        };
+      },
+    } as unknown as D1Database;
+    const principal = `throttle-${crypto.randomUUID()}`;
+    expect(await checkMintThrottle(db, principal, "b221-1", { inMemoryBurstCap: 2 })).toBeNull();
+    expect(await checkMintThrottle(db, principal, "b221-2", { inMemoryBurstCap: 2 })).toBeNull();
+    const blocked = await checkMintThrottle(db, principal, "b221-3", { inMemoryBurstCap: 2 });
+    expect(blocked?.status).toBe(429);
+  });
+
+  it("uses an atomic rolling-window SQL update rather than a monotonic counter", async () => {
+    let sql = "";
+    const db = {
+      prepare(query: string) {
+        sql = query;
+        return { bind() { return this; }, async first() { return { count: 1 }; } };
+      },
+    } as unknown as D1Database;
+    expect(await checkMintThrottle(db, `window-${crypto.randomUUID()}`, "b221-sql")).toBeNull();
+    expect(sql).toContain("window_start_ms + ?3 <= ?2");
+    expect(sql).toContain("RETURNING count");
+    expect(sql).toContain("count + 1");
+  });
+
+  it("does not let a healthy D1 mint consume the outage backstop", async () => {
+    const principal = `healthy-${crypto.randomUUID()}`;
+    const healthyDb = {
+      prepare() {
+        return { bind() { return this; }, async first() { return { count: 1 }; } };
+      },
+    } as unknown as D1Database;
+    const outageDb = {
+      prepare() {
+        return { bind() { return this; }, async first() { throw new Error("D1 unavailable"); } };
+      },
+    } as unknown as D1Database;
+
+    // With a cap of one, a second call would be a false 429 if the healthy
+    // path mutated the outage-only local counter.
+    expect(await checkMintThrottle(healthyDb, principal, "b221-healthy", {
+      maxPerWindow: 2,
+      inMemoryBurstCap: 1,
+    })).toBeNull();
+    expect(await checkMintThrottle(outageDb, principal, "b221-outage", {
+      inMemoryBurstCap: 1,
+    })).toBeNull();
+  });
+
+  it("clears a stale outage snapshot even when healthy D1 returns over-limit", async () => {
+    const principal = `healthy-over-limit-${crypto.randomUUID()}`;
+    const outageDb = {
+      prepare() {
+        return { bind() { return this; }, async first() { throw new Error("D1 unavailable"); } };
+      },
+    } as unknown as D1Database;
+    const overLimitDb = {
+      prepare() {
+        return { bind() { return this; }, async first() { return { count: 3 }; } };
+      },
+    } as unknown as D1Database;
+
+    expect(await checkMintThrottle(outageDb, principal, "b221-stale", {
+      inMemoryBurstCap: 1,
+    })).toBeNull();
+    expect((await checkMintThrottle(overLimitDb, principal, "b221-over-limit", {
+      maxPerWindow: 2,
+      inMemoryBurstCap: 1,
+    }))?.status).toBe(429);
+    // The next outage starts a fresh local budget; the healthy 429 above must
+    // not leave a permanent local block behind.
+    expect(await checkMintThrottle(outageDb, principal, "b221-after-429", {
+      inMemoryBurstCap: 1,
+    })).toBeNull();
+  });
+
+  it("expires outage fallback state at the deterministic window boundary", async () => {
+    const now = vi.spyOn(Date, "now");
+    now.mockReturnValue(10_000);
+    const db = {
+      prepare() {
+        return {
+          bind() { return this; },
+          async first() { throw new Error("D1 unavailable"); },
+        };
+      },
+    } as unknown as D1Database;
+    const principal = `expiry-${crypto.randomUUID()}`;
+    try {
+      expect(await checkMintThrottle(db, principal, "b221-expiry-1", { inMemoryBurstCap: 2 })).toBeNull();
+      expect(await checkMintThrottle(db, principal, "b221-expiry-2", { inMemoryBurstCap: 2 })).toBeNull();
+      expect((await checkMintThrottle(db, principal, "b221-expiry-3", { inMemoryBurstCap: 2 }))?.status).toBe(429);
+      now.mockReturnValue(70_001);
+      expect(await checkMintThrottle(db, principal, "b221-expiry-recycled", { inMemoryBurstCap: 2 })).toBeNull();
+    } finally {
+      now.mockRestore();
+    }
+  });
+});
 
 /** v5-shaped UUID matcher — the shape of the per-user derived githugr tenant_id. */
 const UUID_V5_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -77,7 +183,7 @@ function makeConfigDb(
   opts: {
     patInsertCapture?: { binds?: unknown[]; sql?: string };
     patInsertThrows?: boolean;
-    /** In-memory tenant_org_map (clerk_org_id → tenant_id) for the githugr
+    /** In-memory githugr_tenant_org_map (githugr_subject → tenant_id) for the githugr
      *  provision-or-lookup path. Provisioning INSERTs write here; the read-back
      *  reads from here. Pre-seed it to simulate a PRIOR login. */
     orgMap?: Map<string, string>;
@@ -95,11 +201,11 @@ function makeConfigDb(
         sql.includes("INTO tier_selections") ||
         sql.includes("INTO runners_entitlement") ||
         sql.includes("INTO tenant_quota") ||
-        sql.includes("INTO tenant_org_map"))
+        sql.includes("INTO githugr_tenant_org_map"))
     ) {
       throw new Error("D1 githugr provision INSERT failure (simulated fault)");
     }
-    if (orgMap && sql.includes("INSERT OR IGNORE INTO tenant_org_map")) {
+    if (orgMap && sql.includes("INSERT OR IGNORE INTO githugr_tenant_org_map")) {
       // (clerk_org_id, tenant_id, created_at_ms). PRIMARY KEY = first writer wins.
       const [clerkOrgId, tenantId] = args as [string, string, number];
       if (!orgMap.has(clerkOrgId)) orgMap.set(clerkOrgId, tenantId);
@@ -117,10 +223,10 @@ function makeConfigDb(
             return { count: 1 } as T;
           }
           // githugr provision SELECT (lookup-first AND post-batch read-back):
-          // SELECT ... FROM tenant_org_map WHERE clerk_org_id.
-          if (sql.includes("tenant_org_map")) {
+          // SELECT ... FROM githugr_tenant_org_map WHERE githugr_subject.
+          if (sql.includes("githugr_tenant_org_map")) {
             if (opts.githugrProvisionThrows) {
-              throw new Error("D1 tenant_org_map SELECT failure (simulated fault)");
+              throw new Error("D1 githugr_tenant_org_map SELECT failure (simulated fault)");
             }
             const clerkOrgId = args[0] as string;
             const t = orgMap?.get(clerkOrgId);

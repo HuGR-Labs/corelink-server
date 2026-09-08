@@ -34,11 +34,6 @@ concurrency:
 jobs:
   ratchet:
     name: no file grows past the god-file baseline
-    if: >-
-      github.event_name != 'pull_request_target' ||
-      github.event.pull_request.author_association == 'OWNER' ||
-      github.event.pull_request.author_association == 'MEMBER' ||
-      github.event.pull_request.author_association == 'COLLABORATOR'
     runs-on: corelink
     timeout-minutes: 5
     steps:
@@ -47,6 +42,7 @@ jobs:
         with:
           # Candidate blobs are inspected by object id; no candidate code is
           # executed. Full history supplies both base and head objects.
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false

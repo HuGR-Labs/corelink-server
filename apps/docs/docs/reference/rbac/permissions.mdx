@@ -254,7 +254,7 @@ does not mutate state (`routes/byok_admin.rs:245-257`).
 | `GET /v1/customer/billing` | `requires_billing_admin` | `routes/customer.rs:210` |
 | `POST /v1/customer/billing/portal` | `requires_billing_admin` | `routes/customer.rs:211`, gate at `:706` |
 | `GET`/`POST /v1/customer/keys` | `requires_cache_write` | `routes/customer.rs:212-215`, gate at `:740` |
-| `POST /v1/customer/keys/{pat_id}/revoke` | `requires_cache_write` | `routes/customer.rs:216-219`, gate at `:849` |
+| `POST /v1/customer/keys/{pat_id}/revoke` | server-trusted role `owner`/`admin` (admin cannot target an Owner PAT) | `routes/customer.rs:216-219`, gate in `handle_keys_revoke` |
 | `POST /v1/customer/team/invite` | role `owner`/`admin` | `routes/customer.rs:221`, gate at `:943` |
 | `DELETE /v1/customer/team/{user_id}` | role `owner`/`admin` | `routes/customer.rs:222`, gate at `:999` |
 | `POST /v1/customer/account/delete` | role `owner` only | `routes/customer.rs:223`, gate at `:1065` |

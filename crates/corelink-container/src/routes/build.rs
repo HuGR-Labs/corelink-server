@@ -451,12 +451,15 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
 
                 // brew: shared map + verifier (public bottles, cross-tenant dedup).
                 let brew_map: Arc<dyn crate::adapter_cache::UrlMapStore> = d1.clone();
-                router = router.merge(brew::router(
+                let public_cap_resolver: Arc<dyn crate::oci_cap::TenantCapResolver> =
+                    Arc::new(crate::oci_cap::D1TenantCapResolver::new(d1.clone()));
+                router = router.merge(brew::router_with_cap_resolver(
                     brew_cas_read,
                     brew_cas_write,
                     brew_map,
                     verifier.clone(),
                     quota.clone(),
+                    Some(public_cap_resolver.clone()),
                 ));
 
                 // npm: shared map + verifier + the D1-backed metadata KV table
@@ -464,13 +467,20 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                 match crate::adapter_kv::npm_kv_from_env() {
                     Some(npm_meta_kv) => {
                         let npm_map: Arc<dyn crate::adapter_cache::UrlMapStore> = d1.clone();
-                        router = router.merge(npm::router(
+                        // npm tarball writes must resolve the same authoritative
+                        // per-tier cap as cargo, brew, pip, and OCI. A D1
+                        // lookup failure remains indeterminate and fails closed
+                        // inside the accounting decorator.
+                        let npm_cap_resolver: Arc<dyn crate::oci_cap::TenantCapResolver> =
+                            Arc::new(crate::oci_cap::D1TenantCapResolver::new(d1.clone()));
+                        router = router.merge(npm::router_with_cap_resolver(
                             npm_cas_read,
                             npm_cas_write,
                             npm_map,
                             npm_meta_kv,
                             verifier.clone(),
                             quota.clone(),
+                            npm_cap_resolver,
                         ));
                     }
                     None => {
@@ -543,13 +553,14 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                 // pip: shared map + verifier + the SAME D1 client (reused for the
                 // per-tenant simple-index KV table `adapter_pip_index`).
                 let pip_map: Arc<dyn crate::adapter_cache::UrlMapStore> = d1.clone();
-                router = router.merge(pip::router(
+                router = router.merge(pip::router_with_cap_resolver(
                     pip_cas_read,
                     pip_cas_write,
                     pip_map,
                     d1,
                     verifier,
                     quota.clone(),
+                    Some(public_cap_resolver),
                 ));
             }
             None => {

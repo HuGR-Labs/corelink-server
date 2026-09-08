@@ -4,12 +4,14 @@ title: "ADR-MULTI-REGION-V1 — Multi-region container deployments v1 (per-regio
 description: "Why v1 multi-region uses per-region wrangler env blocks + per-region container apps (Approach A) rather than per-request region routing in the container."
 source_files:
   - "specs/03_architecture/adrs/ADR-MULTI-REGION-V1.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "multi-region", "containers", "cloudflare", "wrangler", "r2", "deploy"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-MULTI-REGION-V1.md@fe848d00d4b2184a65211df9f8c524be6a45b429"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-MULTI-REGION-V1 — Multi-region container deployments v1 (per-region worker envs)
 
 CoreLink production ran a single Cloudflare Container app pinned to IAD even though five R2 bucket sets

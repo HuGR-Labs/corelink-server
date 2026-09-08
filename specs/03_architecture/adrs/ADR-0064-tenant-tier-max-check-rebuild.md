@@ -43,7 +43,7 @@ surfaced the following **verified landmine** in its body:
 
 PR #218 §4 open questions include **Q2**:
 
-> Approve the 0062-style rebuild ADR widening `tenant.tier` to add `max`
+> Approve an ADR widening `tenant.tier` to add `max`
 > (and `pilot`?), or keep create-time tier ⊂ {free,solo,starter,pro,enterprise} forever.
 
 The tech-lead ratified this as **non-blocking at PR #218 merge time** (design-only
@@ -82,9 +82,11 @@ document.
 
 ### ADR-0062 precedent
 
-ADR-0062 established the same rebuild pattern for `tier_selections` and
-`stripe_checkout_sessions`. This ADR mirrors ADR-0062's structure and
-zero-data-loss proof discipline exactly, applying it to `tenant`.
+ADR-0062 established the tier-domain widening decision for
+`tier_selections` and `stripe_checkout_sessions` using an in-place catalog edit.
+This ADR records a separate 12-step rebuild for `tenant`, with the same
+zero-data-loss proof discipline, because that table's migration is already
+governed by the rebuild mechanism described below.
 
 ## Decision
 
@@ -158,8 +160,9 @@ This is the standard one-way migration risk; the recommended path is a forward f
 
 - `migrations/d1/0064_tenant_tier_max.sql` (the migration)
 - `migrations/d1/0057_tenant_tier.sql` (original inline CHECK)
-- `migrations/d1/0062_expand_tier_selections_6tier.sql` (12-step rebuild pattern)
-- ADR-0062 (tier CHECK widen via rebuild — the direct precedent for this ADR)
+- `migrations/d1/0062_expand_tier_selections_6tier.sql` (in-place catalog-edit
+  pattern; no table replacement)
+- ADR-0062 (tier CHECK widen via in-place catalog edit — the tier-domain precedent for this ADR)
 - ADR-S19-001 (tier taxonomy 5→6, product decision)
 - PR #218 §4-Q2 (ratification record)
 - `scripts/check_migrations_additive.py` (the gate this ADR suppresses)

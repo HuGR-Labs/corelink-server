@@ -4,12 +4,14 @@ title: "ADR-S13-001 — DO config-singleton per-region with CAS atomic update"
 description: "Why CoreLink's runtime config (flags, rate-limit tunables, retention) lives in a per-region Durable Object with compare-and-swap versioning rather than D1 or KV."
 source_files:
   - "specs/03_architecture/adrs/ADR-S13-001-do-config-singleton-cas.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s13", "config", "durable-object", "cas", "admin-plane"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S13-001-do-config-singleton-cas.md@a987c331f63100198e38fd1e7634b38f32c3a8bd"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S13-001 — DO config-singleton per-region with CAS atomic update
 
 CoreLink needs a single runtime source-of-truth for feature flags, rate-limit tunables, and retention policies that is strongly consistent (concurrent admin writes must never lose data — the blast radius is global multi-tenant), low-latency on the read hot path, audited for 90 days, and propagated to the edge within 5s p99. This ADR records the decision to host that config in a per-region Durable Object guarded by compare-and-swap versioning, and why KV and D1 were rejected.

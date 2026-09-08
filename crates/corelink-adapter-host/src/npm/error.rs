@@ -59,6 +59,12 @@ pub enum NpmAdapterError {
     #[error("tarball exceeds limit: {0} bytes")]
     TarballOversized(u64),
 
+    /// Upstream metadata/search response exceeded the bounded buffering cap.
+    /// Maps to `502 Bad Gateway`; this is an upstream protocol violation, not
+    /// a client-upload limit.
+    #[error("metadata response exceeds limit: {0} bytes")]
+    MetadataOversized(u64),
+
     /// The downloaded tarball bytes' SHA256 did not match the
     /// `dist.shasum` field from npm metadata. Adapter REJECTS the
     /// store and emits `npm.tarball.integrity_mismatch.v1` audit.
@@ -157,6 +163,7 @@ impl NpmAdapterError {
             Self::Upstream(_)
             | Self::IntegrityMismatch { .. }
             | Self::MetadataParse(_)
+            | Self::MetadataOversized(_)
             | Self::MetadataNameMismatch { .. } => 502,
             Self::TarballOversized(_) => 413,
         }
@@ -188,6 +195,7 @@ mod tests {
         assert_eq!(NpmAdapterError::Kv("x".into()).status_code(), 503);
         assert_eq!(NpmAdapterError::Audit("x".into()).status_code(), 503);
         assert_eq!(NpmAdapterError::Upstream("x".into()).status_code(), 502);
+        assert_eq!(NpmAdapterError::MetadataOversized(17).status_code(), 502);
         assert_eq!(
             NpmAdapterError::MetadataParse("x".into()).status_code(),
             502

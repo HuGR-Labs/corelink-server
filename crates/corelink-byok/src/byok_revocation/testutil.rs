@@ -7,6 +7,7 @@ use crate::{BYOKError, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderK
 use async_trait::async_trait;
 
 use super::alerter::{CustomerAlerter, RevocationAlertPayload};
+use super::detector::ActiveByokKeySource;
 use super::error::RevocationError;
 use super::store::{TenantByokStatus, TenantStatusStore};
 
@@ -110,6 +111,38 @@ impl KmsProvider for StubKmsProvider {
 // ---------------------------------------------------------------------------
 // InMemoryTenantStore
 // ---------------------------------------------------------------------------
+
+/// Hermetic active-key source for behavioral revocation tests.
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct StaticActiveByokKeySource {
+    keys: Arc<Vec<KmsKeyId>>,
+}
+
+impl StaticActiveByokKeySource {
+    /// Build a source with a closed, immutable key population.
+    #[must_use]
+    pub fn new(keys: Vec<KmsKeyId>) -> Self {
+        Self {
+            keys: Arc::new(keys),
+        }
+    }
+}
+
+#[async_trait]
+impl ActiveByokKeySource for StaticActiveByokKeySource {
+    async fn list_active_byok_keys(
+        &self,
+        provider: KmsProviderKind,
+    ) -> Result<Vec<KmsKeyId>, RevocationError> {
+        Ok(self
+            .keys
+            .iter()
+            .filter(|key| key.provider == provider)
+            .cloned()
+            .collect())
+    }
+}
 
 /// In-memory implementation of [`TenantStatusStore`] for testing.
 ///

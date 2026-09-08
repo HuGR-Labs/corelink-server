@@ -19,6 +19,23 @@ without making an unauthenticated public event invoke the ephemeral fabric.
 The five-minute timeout limits only a running greeting; it is not represented
 as a queue deadline.
 
+`file-size-ratchet.yml` is the explicit, safe data-only exception. It must
+inspect every fork PR so an untrusted author cannot grow an existing god file
+or add a new one. Its `pull_request_target` workflow is loaded from the
+trusted base, grants only `contents: read`, checks out the candidate solely to
+read Git objects, and executes only the validator copied with
+`git show "${BASE_REF}:..."` into the runner temp directory. It does not
+execute a candidate script, action, or workflow, and the candidate checkout has
+no credentials. This lane has no actor gate because skipping it would reopen
+B-126. `BASE_REF` is resolved from `pull_request.base.sha` for
+`pull_request_target`, with only the trusted `event.before`/`github.sha`
+fallback for push and dispatch; it never comes from `head.sha`, `HEAD_REF`, or
+another candidate-controlled alias. Every executable-validator `git show`
+uses that trusted variable.
+The structural test also allowlists every `BASE_REF` occurrence in the shell
+block and rejects reassignment, aliases, inline environment overrides, and
+writes to `GITHUB_ENV`.
+
 The same Mac boundary is the permanent policy for the non-Dependabot sentinel
 in `dependabot-policy.yml`: it remains a required, no-op success for ordinary
 PRs, but an external PR cannot allocate `corelink`. Its `policy-gate` job and
@@ -50,14 +67,22 @@ The complete `pull_request_target` population on this baseline is
 `pr-labels.yml`, and `welcome-first-pr.yml`. The two Dependabot lanes have
 their independent Dependabot actor gates; this change also moves the
 non-Dependabot policy sentinel off the fabric. `tests/test_pull_request_target_spawn_boundary.py`
-fails if any `corelink` job loses its closed actor gate, if a non-gated job
-returns to `corelink`, if the welcome lane returns to the fabric or loses its
-runtime bound, if permissions drift, or if the trigger population changes. Its
-mutation cases prove that removing or widening an actor gate, moving a safe job
-back to the fabric, and broadening token scopes are not silently accepted.
+fails if any actor-gated `corelink` job loses its closed actor gate, if a
+non-gated executable job returns to `corelink` outside the B-126 data-only
+exception, if the welcome lane returns to the fabric
+or loses its runtime bound, if permissions drift, or if the trigger population
+changes. Its mutation cases prove that removing or widening an actor gate,
+moving a safe job back to the fabric, and broadening token scopes are not
+silently accepted. The
+file-size exception has separate mutations proving that loading or executing a
+candidate validator, adding a candidate action, adding a writable permission,
+or running a candidate shell file is rejected; only the base-loaded,
+data-only shape is accepted.
 
 The permanent policy decision is recorded here: first-timer greetings and the
 ordinary-PR sentinel remain on `[self-hosted, mac, corelink-builder]`; only
 trusted associations (or the exact Dependabot bot identity) may allocate
-`corelink`. B-141 is therefore closed. No repository-visibility observation or
-unverified external spawn quota is part of the admission proof.
+`corelink` for jobs that execute PR-facing behavior. The B-126 ratchet may
+allocate it for its base-loaded, read-only Git-object inspection because no
+candidate code executes. B-141 is therefore closed. No repository-visibility
+observation or unverified external spawn quota is part of the admission proof.

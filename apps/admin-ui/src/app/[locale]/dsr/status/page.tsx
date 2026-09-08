@@ -15,6 +15,16 @@ interface PageProps {
  * `Authorization: Bearer <token>` (without it the list was permanently empty).
  */
 async function getSessionToken(): Promise<string | undefined> {
+  // The legacy Playwright lane uses a synthetic cookie rather than Clerk FAPI.
+  // Provide only a test-mode token so the status screen can exercise its real
+  // list/detail fetch; the production branch remains Clerk-only and therefore
+  // cannot be unlocked by an env var in a production process.
+  if (
+    process.env["NEXT_PUBLIC_E2E_TEST_MODE"] === "1" &&
+    process.env.NODE_ENV !== "production"
+  ) {
+    return "e2e-dsr-session";
+  }
   const mod = await import("@clerk/nextjs/server").catch(() => null);
   if (!mod) return undefined;
   try {

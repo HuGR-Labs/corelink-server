@@ -4,12 +4,14 @@ title: "ADR-S14-009 — CAS residency: single-bucket launch posture + per-region
 description: "Records the decision to launch native CAS as a single physical R2 bucket — an explicit, tracked residency limitation — with a specified per-region-bucket remediation gated on bucket provisioning."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "storage", "residency", "cas", "r2", "schrems-ii", "lgpd", "s14"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md@88e2f7940d27d3145102f1b814f75d7ee3319578"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S14-009 — CAS residency: single-bucket launch posture + per-region remediation
 
 The native CAS write path stores whole blobs in one physical R2 bucket with the region carried only as a key prefix, so logical region tagging does not satisfy the physical residency that Schrems II / LGPD demand for EU-subject bytes. This ADR refuses the false-confidence "just add the region var" patch, launches with single-region CAS recorded as a known, explicit, gated limitation, and specifies the per-region-bucket remediation that mirrors the already-regional AC path. It exists so the residency gap is visible, scoped, and scheduled rather than a silent compliance hole. See the related storage concepts [native CAS R2 bucket](/storage/r2-cas-bucket.md) and [regional AC buckets](/storage/r2-ac-regional.md).

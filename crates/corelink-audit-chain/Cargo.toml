@@ -67,6 +67,7 @@ serde_jcs = "0.2"
 blake3 = { workspace = true }
 hex = { workspace = true }
 subtle = { workspace = true }
+zeroize = { workspace = true }
 uuid = { workspace = true, features = ["v7", "serde"] }
 corelink-analytics = { workspace = true }
 # DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` on the in-memory

@@ -3,20 +3,29 @@ type: "ComplianceControl"
 title: "Ed25519/JCS erasure attestation"
 description: "How a BYOK DSR erasure produces an Ed25519-signed, RFC 8785 JCS-canonicalized receipt that a data subject or auditor can verify offline."
 source_files:
-  - specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md
-  - crates/corelink-erasure-attestation/src/lib.rs
-  - crates/corelink-erasure-attestation/src/attestation.rs
-  - crates/corelink-erasure-attestation/src/key.rs
-  - crates/corelink-erasure-attestation/src/verify.rs
-  - crates/corelink-erasure-attestation/src/evidence.rs
-  - crates/corelink-container/src/routes/dsr/attestation.rs
-  - crates/corelink-container/src/routes/public_attestation.rs
-checkpoint_sha: "8af9ed65caf286d3f800e91d3f823face3aefd31"
+  - "specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md"
+  - "crates/corelink-erasure-attestation/src/lib.rs"
+  - "crates/corelink-erasure-attestation/src/attestation.rs"
+  - "crates/corelink-erasure-attestation/src/key.rs"
+  - "crates/corelink-erasure-attestation/src/verify.rs"
+  - "crates/corelink-erasure-attestation/src/evidence.rs"
+  - "crates/corelink-container/src/routes/dsr/attestation.rs"
+  - "crates/corelink-container/src/routes/public_attestation.rs"
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md@6d0d1e22fa3e3bd2e379db70ffbcc2eb662916f9"
+  - "crates/corelink-erasure-attestation/src/lib.rs@8336a891946ea7c8999e4727e09ad183d0f7d30d"
+  - "crates/corelink-erasure-attestation/src/attestation.rs@7682fdf19c0eeb4a05fe0094e32722eac99e18e5"
+  - "crates/corelink-erasure-attestation/src/key.rs@2dfc397e0897930d3b6b7a61c6fad6286a591e92"
+  - "crates/corelink-erasure-attestation/src/verify.rs@fb7a749fa13ad4e1c03b18844796b2a9844a31b5"
+  - "crates/corelink-erasure-attestation/src/evidence.rs@2f1ff9ce6c4c73240ae7c1e22dce7a964c7fa50e"
+  - "crates/corelink-container/src/routes/dsr/attestation.rs@b85b862aaa002b7d9124441eb55d453918e57e58"
+  - "crates/corelink-container/src/routes/public_attestation.rs@593a49601cfdbae3369eefb18a9dba5eb294727e"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["compliance", "erasure", "ed25519", "jcs", "rfc-8785", "nist-sp-800-88", "gdpr-art-17", "byok", "dsr"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 When a tenant files a DSR erasure request, CoreLink does not merely promise it deleted the data — it emits a cryptographically signed receipt proving the destroy occurred. **CoreLink's launch erasure mechanism is a real D1 / R2 / Stripe delete-set, NOT a BYOK KMS crypto-erase**: the attestation records this truthfully, with `kms_provider = "corelink_d1r2_erase"` hardcoded and `kms_key_id = "dsr:{dsr_id}"` (`crates/corelink-container/src/routes/dsr/attestation.rs:11-14`). The signature format is generic enough to ALSO cover a future BYOK CMK-destroy mechanism, which is why the crate and ADR are named for KMS/CMK erasure — but do not read that naming as a claim that CoreLink calls out to a KMS provider today. The receipt itself is an Ed25519 signature over an RFC 8785 JCS-canonicalized payload, persisted to an R2 audit bucket with 7-year retention and indexed in D1, so the customer and any external auditor can verify it offline with standard Ed25519 tooling and no access to CoreLink infrastructure. This is the control that turns GDPR Art. 17 / LGPD erasure and NIST SP 800-88 Rev.1 §2.4 crypto-erase language into a portable, tamper-evident proof of the ACTUAL delete-set mechanism CoreLink runs at launch. The sibling control `compliance/dsr-erasure` covers the request orchestration that drives this attestation.
 
 > ✅ Reality check (brutal-review H1 CLOSED, Artifact 1): the signed + served attestation is now REAL, not deferred. The pure-logic `corelink-erasure-attestation` crate (signing, JCS canonicalization, key derivation, offline verification) is wired into the container: on a bound `VerifiedComplete`, `sign_and_persist` produces a REAL Ed25519 signature over the JCS-canonical payload and persists it ALL-OR-NOTHING fail-CLOSED — region-gated (no silent mis-attribution) → R2 PUT FIRST → `erasure_public_keys` upsert → a signed D1 index row carrying BOTH `signature_ed25519` AND `canonical_payload_jcs` (migration 0079). It is served by `GET /v1/public/attestation/{request_id}` + `GET /v1/public/keys/erasure/{region}.pub` (the unauth `/v1/public/*` verifier), so a customer/auditor verifies the proof offline. The prior UNSIGNED-`evidence_hash` theater row is gone; the gate still REFUSES (no row) on incomplete/unverified evidence. The flow described below is now a live served proof.

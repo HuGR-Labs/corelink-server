@@ -54,6 +54,9 @@ rules:
       propagate or `match` with an explicit error arm. If unavoidable,
       annotate with `# nosemgrep: corelink.rust.no-unwrap-in-src  # reason: <...>; ADR-XXXX`.
     severity: ERROR
+    metadata:
+      policy: explicit-error
+      source: corelink-custom
     languages: [rust]
     pattern: $X.unwrap()
     paths:
@@ -101,6 +104,9 @@ rules:
       Use `async-lock`, `futures::*` primitives, or a `cfg(target_arch
       = "wasm32")` branch. Suppression requires Owner approval + ADR.
     severity: ERROR
+    metadata:
+      policy: explicit-error
+      source: corelink-custom
     languages: [rust]
     pattern-either:
       - pattern: tokio::$X
@@ -139,6 +145,9 @@ rules:
       payload fields are wrong. Destructure the variant explicitly and
       `prop_assert_eq!` (or `prop_assert!`) on each field.
     severity: ERROR
+    metadata:
+      policy: explicit-error
+      source: corelink-custom
     languages: [rust]
     pattern-either:
       - pattern: "prop_assert!(matches!($X, $V { .. }))"
@@ -177,6 +186,9 @@ rules:
       Propagate the error via `?` and emit a structured `BYOK*Error`
       variant with a redacted message.
     severity: ERROR
+    metadata:
+      policy: explicit-error
+      source: corelink-custom
     languages: [rust]
     pattern: $X.expect($MSG)
     paths:

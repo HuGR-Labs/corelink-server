@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 thiserror = { workspace = true }
 corelink-slo = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 corelink-slo = { workspace = true }

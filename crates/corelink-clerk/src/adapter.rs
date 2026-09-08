@@ -32,6 +32,8 @@ use crate::principal::{ClerkOrgId, ClerkPrincipal, ClerkRole, ClerkSessionId, Cl
 /// this). 60s is short enough that a legitimate key rotation lands
 /// in well under a minute, and long enough to absorb a burst.
 const NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(60);
+/// Hard memory bound for attacker-controlled, never-seen `kid` values.
+const NEGATIVE_CACHE_MAX_ENTRIES: usize = 1024;
 
 /// Refresh trigger for `corelink_auth_clerk_jwks_refresh_total{trigger=…}` (WI §6.1.6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -369,11 +371,6 @@ impl ClerkAdapter {
                 if let Some(k) = jwks.find(&kid).cloned() {
                     k
                 } else {
-                    // F-020: remember this `kid` as "fetched but not
-                    // found" so a subsequent request with the same
-                    // bogus `kid` does not drive another upstream
-                    // fetch within the TTL.
-                    self.negative_kid_cache_insert(&kid);
                     // Second fetch only meaningful when the first
                     // was a cold-start: a warm cache that already
                     // missed has just been replaced by a fetch that
@@ -383,8 +380,21 @@ impl ClerkAdapter {
                     // a fetch storm. WI §6.1.3 step 4 / §9.5.
                     if first_trigger == RefreshTrigger::Scheduled {
                         let jwks2 = self.fetch_and_cache(RefreshTrigger::KidMiss).await?;
-                        jwks2.find(&kid).cloned().ok_or(AuthError::KidNotInJwks)?
+                        if let Some(k) = jwks2.find(&kid).cloned() {
+                            // A key rotation can become visible between the
+                            // two refreshes. Never poison the negative cache
+                            // after that successful second fetch.
+                            k
+                        } else {
+                            // F-020: cache only after BOTH refresh attempts
+                            // failed to find this syntactically valid kid.
+                            self.negative_kid_cache_insert(&kid);
+                            return Err(AuthError::KidNotInJwks);
+                        }
                     } else {
+                        // A warm-cache miss has one refresh attempt; cache it
+                        // only after that attempt failed, never before it.
+                        self.negative_kid_cache_insert(&kid);
                         return Err(AuthError::KidNotInJwks);
                     }
                 }
@@ -532,6 +542,17 @@ impl ClerkAdapter {
             Ok(g) => g,
             Err(poisoned) => poisoned.into_inner(),
         };
+        if guard.len() >= NEGATIVE_CACHE_MAX_ENTRIES && !guard.contains_key(kid) {
+            // Expire stale entries first, then evict one arbitrary entry. The
+            // cache is only an amplification guard; eviction is safe because a
+            // subsequent miss simply performs the bounded refresh path again.
+            guard.retain(|_, expiry| *expiry > now);
+            if guard.len() >= NEGATIVE_CACHE_MAX_ENTRIES {
+                if let Some(oldest_key) = guard.keys().next().cloned() {
+                    guard.remove(&oldest_key);
+                }
+            }
+        }
         guard.insert(kid.to_owned(), deadline);
     }
 

@@ -143,6 +143,16 @@ mod tests {
     }
 
     #[test]
+    fn tampered_typed_payload_fails_recanonicalization() {
+        let (mut att, pk) = make_attestation_and_key();
+        // Keeping the original canonical bytes and signature while changing a
+        // consumer-visible field is the exact B-219 substitution mutation.
+        att.payload.tenant_id = "tenant-attacker".to_string();
+        let err = verify_attestation_signature(&att, &pk).unwrap_err();
+        assert!(matches!(err, AttestationError::Verify(_)));
+    }
+
+    #[test]
     fn wrong_key_fails_verify() {
         let (att, _pk) = make_attestation_and_key();
         // Generate a completely different key.

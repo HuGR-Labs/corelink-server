@@ -24,9 +24,9 @@
 //!   defense-in-depth). The `tier != 'free'` predicate is required: signup
 //!   seeds `('free','active')` for every tenant, so without it the guard
 //!   reports a subscription that does not exist and blocks all upgrades.
-//! - `persist_pending_checkout` → `UPDATE tier_selections SET state =
-//!   'pending_checkout', stripe_customer_id = ? ...` + `INSERT INTO
-//!   stripe_checkout_sessions (...)` ATOMICALLY (WI §6.7 drift prevention).
+//! - `persist_pending_checkout` → ledger-first `session_created` ownership
+//!   followed by idempotent tier/session mirrors; the ledger reconciler repairs
+//!   a process crash between the two D1-over-HTTP statements (WI §6.7).
 //! - `persist_free_active`    → `UPDATE tier_selections SET tier='free',
 //!   subscription_state='active' ...`.
 //! - `release_lock`           → `DELETE FROM tier_selection_locks WHERE
@@ -56,6 +56,40 @@ use crate::storage::d1_http::D1HttpClient;
 /// 60-second durable lock window — matches migration 0039's `lock_window_60s`
 /// CHECK (`expires_at_ms - acquired_at_ms <= 60000`) and WI §6.4.
 const LOCK_TTL_MS: i64 = 60_000;
+
+/// A pre-Stripe reservation is recoverable only for this bounded interval.
+/// Stripe's idempotency window is longer, but keeping a crashed reservation
+/// open for 24h would turn a lost mirror write into a tenant-wide lockout.
+const CHECKOUT_RESERVATION_RECOVERY_TTL_MS: i64 = 15 * 60 * 1000;
+
+/// A lock cleanup must identify the lease owner. A delayed request must not
+/// delete a newer request's lease after its own 60s window elapsed.
+const RELEASE_LOCK_SQL: &str =
+    "DELETE FROM tier_selection_locks WHERE tenant_id = ?1 AND correlation_id = ?2";
+
+/// Rebind only while the *new* request still owns a live lock. Without this
+/// predicate, a delayed request can rename a fresh reservation after its own
+/// lease has expired and steal the newer request's checkout ledger.
+const REBIND_RESERVATION_SQL: &str =
+    "UPDATE stripe_checkout_ownership_ledger SET correlation_id = ?2, updated_at_ms = ?3 WHERE correlation_id = ?1 AND tenant_id = ?4 AND tier = ?5 AND state = 'reserved' AND updated_at_ms >= ?3 - ?6 AND EXISTS (SELECT 1 FROM tier_selection_locks WHERE tenant_id = ?4 AND correlation_id = ?2 AND expires_at_ms >= ?3) RETURNING correlation_id";
+
+/// A pending hosted page is payable even before Stripe has emitted a
+/// subscription event. Keep it in the durable inventory and fail closed until
+/// its completion/expiry is observed; a fresh pre-Stripe reservation is
+/// intentionally omitted so the next request can rebind and retry Stripe's
+/// stable idempotency key after a crash.
+const HAS_PENDING_CHECKOUT_SQL: &str = "SELECT 1 FROM tier_selections t \
+     WHERE t.tenant_id = ?1 AND t.subscription_state = 'pending_checkout' \
+       AND NOT EXISTS (SELECT 1 FROM stripe_checkout_ownership_ledger l \
+         WHERE l.tenant_id = t.tenant_id AND l.correlation_id = t.correlation_id \
+           AND l.state = 'reserved' \
+           AND l.updated_at_ms >= strftime('%s','now') * 1000 - 900000) \
+     UNION ALL SELECT 1 FROM stripe_checkout_sessions s \
+     JOIN tier_selections t ON t.tenant_id = s.tenant_id \
+       AND t.correlation_id = s.correlation_id \
+     WHERE s.tenant_id = ?1 AND t.subscription_state = 'pending_checkout' \
+     UNION ALL SELECT 1 FROM stripe_checkout_ownership_ledger \
+     WHERE tenant_id = ?1 AND state = 'session_created' LIMIT 1";
 
 /// The "does this tenant already hold an active PAID cache subscription?" read
 /// behind [`TierSelectStore::has_active_subscription`].
@@ -237,7 +271,49 @@ impl TierSelectStore for D1HttpTierSelectStore {
             .d1
             .query(HAS_ACTIVE_PAID_CACHE_SUBSCRIPTION_SQL, &[json!(tenant_id)])
             .await?;
-        Ok(!rows.is_empty())
+        if !rows.is_empty() {
+            return Ok(true);
+        }
+        let pending = self
+            .d1
+            .query(HAS_PENDING_CHECKOUT_SQL, &[json!(tenant_id)])
+            .await?;
+        Ok(!pending.is_empty())
+    }
+
+    async fn reconcile_pending_checkout(&self, tenant_id: &str, now_ms: i64) -> Result<(), String> {
+        // A process crash after reservation but before Stripe returned a
+        // session must not permanently consume the axis. Keep the reservation
+        // only for the bounded recovery window; Stripe's longer idempotency
+        // window is still safe because the retry reuses the axis+tenant key.
+        self.d1
+            .query(
+                "UPDATE tier_selections SET subscription_state = 'inactive', stripe_customer_id = NULL, subscription_started_at_ms = NULL WHERE tenant_id = ?1 AND subscription_state = 'pending_checkout' AND correlation_id IN (SELECT correlation_id FROM stripe_checkout_ownership_ledger WHERE tenant_id = ?1 AND state = 'reserved' AND updated_at_ms < ?2 - ?3)",
+                &[json!(tenant_id), json!(now_ms), json!(CHECKOUT_RESERVATION_RECOVERY_TTL_MS)],
+            )
+            .await?;
+        self.d1
+            .query(
+                "UPDATE stripe_checkout_ownership_ledger SET state = 'abandoned', session_id = NULL, stripe_customer_id = NULL, updated_at_ms = ?2 WHERE tenant_id = ?1 AND state = 'reserved' AND updated_at_ms < ?2 - ?3",
+                &[json!(tenant_id), json!(now_ms), json!(CHECKOUT_RESERVATION_RECOVERY_TTL_MS)],
+            )
+            .await?;
+        // If the process crashed after Stripe returned but before either
+        // mirror write, replay both mirrors from the ledger. These statements
+        // are intentionally idempotent and can be run on every retry.
+        self.d1
+            .query(
+                "INSERT INTO tier_selections (tenant_id, tier, subscription_state, stripe_customer_id, correlation_id) SELECT tenant_id, tier, 'pending_checkout', stripe_customer_id, correlation_id FROM stripe_checkout_ownership_ledger WHERE tenant_id = ?1 AND state = 'session_created' ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'pending_checkout', stripe_customer_id = excluded.stripe_customer_id, correlation_id = excluded.correlation_id WHERE (tier_selections.subscription_state = 'pending_checkout' AND tier_selections.correlation_id = excluded.correlation_id) OR (tier_selections.subscription_state = 'active' AND tier_selections.tier = 'free') OR tier_selections.subscription_state = 'inactive' RETURNING tenant_id",
+                &[json!(tenant_id)],
+            )
+            .await?;
+        self.d1
+            .query(
+                "INSERT INTO stripe_checkout_sessions (session_id, tenant_id, tier, created_at_ms, correlation_id) SELECT session_id, tenant_id, tier, created_at_ms, correlation_id FROM stripe_checkout_ownership_ledger WHERE tenant_id = ?1 AND state = 'session_created' AND session_id IS NOT NULL ON CONFLICT(session_id) DO UPDATE SET tenant_id = excluded.tenant_id, tier = excluded.tier, created_at_ms = excluded.created_at_ms, correlation_id = excluded.correlation_id WHERE stripe_checkout_sessions.tenant_id = excluded.tenant_id AND stripe_checkout_sessions.correlation_id = excluded.correlation_id RETURNING session_id",
+                &[json!(tenant_id)],
+            )
+            .await?;
+        Ok(())
     }
 
     async fn has_active_runner_subscription(&self, tenant_id: &str) -> Result<bool, String> {
@@ -257,6 +333,100 @@ impl TierSelectStore for D1HttpTierSelectStore {
         Ok(!rows.is_empty())
     }
 
+    async fn reserve_pending_checkout(
+        &self,
+        tenant_id: &str,
+        tier: RequestedTier,
+        now_ms: i64,
+        correlation_id: &str,
+    ) -> Result<(), String> {
+        // A process can die after Stripe creates its idempotent session but
+        // before `persist_pending_checkout` runs. Rebind the still-fresh
+        // reservation to this request's lease, then call Stripe again with
+        // the same axis+tenant idempotency key. The bounded age prevents a
+        // stale reservation from blocking a tenant for Stripe's full 24h
+        // idempotency window; the tenant/tier predicates prevent adoption
+        // across tenants or entitlement axes.
+        let existing = self
+            .d1
+            .query(
+                "SELECT correlation_id FROM stripe_checkout_ownership_ledger WHERE tenant_id = ?1 AND tier = ?2 AND state = 'reserved' AND updated_at_ms >= ?3 - ?4 ORDER BY updated_at_ms DESC LIMIT 1",
+                &[
+                    json!(tenant_id),
+                    json!(tier_column(tier)),
+                    json!(now_ms),
+                    json!(CHECKOUT_RESERVATION_RECOVERY_TTL_MS),
+                ],
+            )
+            .await?;
+        if let Some(row) = existing.first() {
+            let prior = row
+                .get("correlation_id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| "tier-selection reservation missing correlation".to_string())?;
+            if prior != correlation_id {
+                let rebound = self
+                    .d1
+                    .query(
+                        REBIND_RESERVATION_SQL,
+                        &[
+                            json!(prior),
+                            json!(correlation_id),
+                            json!(now_ms),
+                            json!(tenant_id),
+                            json!(tier_column(tier)),
+                            json!(CHECKOUT_RESERVATION_RECOVERY_TTL_MS),
+                        ],
+                    )
+                    .await?;
+                if rebound.is_empty() {
+                    return Err("tier-selection reservation recovery conflict".to_string());
+                }
+                // Move the pending mirror to the new lease owner. If the
+                // process had crashed before that mirror existed, the
+                // idempotent repair below creates it from the ledger.
+                self.d1
+                    .query(
+                        "UPDATE tier_selections SET correlation_id = ?2 WHERE tenant_id = ?3 AND subscription_state = 'pending_checkout' AND correlation_id = ?1",
+                        &[json!(prior), json!(correlation_id), json!(tenant_id)],
+                    )
+                    .await?;
+            }
+            let repaired = self
+                .d1
+                .query(
+                    "INSERT INTO tier_selections (tenant_id, tier, subscription_state, correlation_id) SELECT ?1, ?2, 'pending_checkout', ?3 WHERE EXISTS (SELECT 1 FROM tier_selection_locks WHERE tenant_id = ?1 AND correlation_id = ?3 AND expires_at_ms >= ?4) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'pending_checkout', stripe_customer_id = NULL, correlation_id = excluded.correlation_id WHERE ((tier_selections.subscription_state = 'pending_checkout' AND tier_selections.correlation_id = excluded.correlation_id) OR (tier_selections.subscription_state = 'active' AND tier_selections.tier = 'free') OR tier_selections.subscription_state = 'inactive') AND EXISTS (SELECT 1 FROM tier_selection_locks WHERE tenant_id = ?1 AND correlation_id = ?3 AND expires_at_ms >= ?4) RETURNING tenant_id",
+                    &[json!(tenant_id), json!(tier_column(tier)), json!(correlation_id), json!(now_ms)],
+                )
+                .await?;
+            if repaired.is_empty() {
+                return Err("tier-selection reservation recovery lost lease".to_string());
+            }
+            return Ok(());
+        }
+        let ledger_rows = self
+            .d1
+            .query(
+                "INSERT INTO stripe_checkout_ownership_ledger (correlation_id, tenant_id, tier, state, created_at_ms, updated_at_ms) SELECT ?3, ?1, ?2, 'reserved', ?4, ?4 WHERE EXISTS (SELECT 1 FROM tier_selection_locks WHERE tenant_id = ?1 AND correlation_id = ?3 AND expires_at_ms >= ?4) ON CONFLICT(correlation_id) DO UPDATE SET tenant_id = excluded.tenant_id, tier = excluded.tier, state = 'reserved', created_at_ms = excluded.created_at_ms, updated_at_ms = excluded.updated_at_ms WHERE stripe_checkout_ownership_ledger.state = 'abandoned' RETURNING correlation_id",
+                &[json!(tenant_id), json!(tier_column(tier)), json!(correlation_id), json!(now_ms)],
+            )
+            .await?;
+        if ledger_rows.is_empty() {
+            return Err("tier-selection payable ledger conflict".to_string());
+        }
+        let rows = self
+            .d1
+            .query(
+                "INSERT INTO tier_selections (tenant_id, tier, subscription_state, correlation_id) SELECT ?1, ?2, 'pending_checkout', ?3 WHERE EXISTS (SELECT 1 FROM tier_selection_locks WHERE tenant_id = ?1 AND correlation_id = ?3 AND expires_at_ms >= ?4) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'pending_checkout', stripe_customer_id = NULL, correlation_id = excluded.correlation_id WHERE (tier_selections.subscription_state = 'inactive' OR (tier_selections.subscription_state = 'active' AND tier_selections.tier = 'free')) AND EXISTS (SELECT 1 FROM tier_selection_locks WHERE tenant_id = ?1 AND correlation_id = ?3 AND expires_at_ms >= ?4) RETURNING tenant_id",
+                &[json!(tenant_id), json!(tier_column(tier)), json!(correlation_id), json!(now_ms)],
+            )
+            .await?;
+        if rows.is_empty() {
+            return Err("tier-selection payable reservation conflict".to_string());
+        }
+        Ok(())
+    }
+
     async fn persist_pending_checkout(
         &self,
         tenant_id: &str,
@@ -265,21 +435,42 @@ impl TierSelectStore for D1HttpTierSelectStore {
         now_ms: i64,
         correlation_id: &str,
     ) -> Result<(), String> {
-        // (1) Map the Stripe customer id + paid tier onto the tenant row and
-        // move it to `pending_checkout`. UPSERT keeps this a SINGLE statement
-        // (all D1-over-HTTP offers — see `d1_http::query`) and tolerates a
-        // tenant with no prior `tier_selections` row.
-        self.d1
+        let ledger_rows = self
+            .d1
             .query(
-                "INSERT INTO tier_selections (tenant_id, tier, subscription_state, stripe_customer_id, correlation_id) VALUES (?1, ?2, 'pending_checkout', ?3, ?4) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'pending_checkout', stripe_customer_id = excluded.stripe_customer_id, correlation_id = excluded.correlation_id",
+                "UPDATE stripe_checkout_ownership_ledger SET session_id = ?2, stripe_customer_id = ?3, state = 'session_created', updated_at_ms = ?4 WHERE tenant_id = ?1 AND correlation_id = ?5 AND state IN ('reserved', 'session_created') AND (session_id IS NULL OR session_id = ?2) AND (stripe_customer_id IS NULL OR stripe_customer_id = ?3) RETURNING correlation_id",
+                &[
+                    json!(tenant_id),
+                    json!(created.session_id),
+                    json!(created.stripe_customer_id),
+                    json!(now_ms),
+                    json!(correlation_id),
+                ],
+            )
+            .await?;
+        if ledger_rows.is_empty() {
+            return Err("tier-selection checkout ledger ownership conflict".to_string());
+        }
+        // (1) Map the Stripe customer id + paid tier onto the tenant row and
+        // move it to `pending_checkout`. The ownership ledger was updated first;
+        // if this statement or the session mirror below fails, the next request
+        // replays both mirrors from that durable ledger row.
+        let rows = self
+            .d1
+            .query(
+                "INSERT INTO tier_selections (tenant_id, tier, subscription_state, stripe_customer_id, correlation_id) SELECT ?1, ?2, 'pending_checkout', ?3, ?4 WHERE EXISTS (SELECT 1 FROM tier_selection_locks WHERE tenant_id = ?1 AND correlation_id = ?4 AND expires_at_ms >= ?5) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'pending_checkout', stripe_customer_id = excluded.stripe_customer_id, correlation_id = excluded.correlation_id WHERE ((tier_selections.subscription_state IN ('inactive', 'active') AND (tier_selections.tier = 'free' OR tier_selections.subscription_state = 'inactive')) OR (tier_selections.subscription_state = 'pending_checkout' AND tier_selections.correlation_id = excluded.correlation_id)) AND (tier_selections.stripe_customer_id IS NULL OR tier_selections.stripe_customer_id = excluded.stripe_customer_id) AND EXISTS (SELECT 1 FROM tier_selection_locks WHERE tenant_id = ?1 AND correlation_id = ?4 AND expires_at_ms >= ?5) RETURNING tenant_id",
                 &[
                     json!(tenant_id),
                     json!(tier_column(tier)),
                     json!(created.stripe_customer_id),
                     json!(correlation_id),
+                    json!(now_ms),
                 ],
             )
             .await?;
+        if rows.is_empty() {
+            return Err("tier-selection pending checkout ownership conflict".to_string());
+        }
 
         // (2) Mirror the in-flight Checkout Session. D1-over-HTTP cannot span a
         // transaction across the two writes (single statement per request), so
@@ -287,9 +478,10 @@ impl TierSelectStore for D1HttpTierSelectStore {
         // (`corelink_onboarding_stripe_customer_id_drift_total`) is the drift
         // backstop for the (1)→(2) window; any failure here returns Err and the
         // orchestration releases the lock so the tenant can retry.
-        self.d1
+        let session_rows = self
+            .d1
             .query(
-                "INSERT INTO stripe_checkout_sessions (session_id, tenant_id, tier, created_at_ms, correlation_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO stripe_checkout_sessions (session_id, tenant_id, tier, created_at_ms, correlation_id) SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM tier_selection_locks WHERE tenant_id = ?2 AND correlation_id = ?5 AND expires_at_ms >= ?4) ON CONFLICT(session_id) DO UPDATE SET tenant_id = excluded.tenant_id, tier = excluded.tier, created_at_ms = excluded.created_at_ms, correlation_id = excluded.correlation_id WHERE stripe_checkout_sessions.tenant_id = excluded.tenant_id AND stripe_checkout_sessions.correlation_id = excluded.correlation_id RETURNING session_id",
                 &[
                     json!(created.session_id),
                     json!(tenant_id),
@@ -297,6 +489,35 @@ impl TierSelectStore for D1HttpTierSelectStore {
                     json!(now_ms),
                     json!(correlation_id),
                 ],
+            )
+            .await?;
+        if session_rows.is_empty() {
+            return Err("tier-selection lock ownership lost before session mirror".to_string());
+        }
+        Ok(())
+    }
+
+    async fn abandon_pending_checkout(
+        &self,
+        tenant_id: &str,
+        correlation_id: &str,
+    ) -> Result<(), String> {
+        self.d1
+            .query(
+                "UPDATE stripe_checkout_ownership_ledger SET state = 'abandoned', session_id = NULL, stripe_customer_id = NULL, updated_at_ms = strftime('%s','now') * 1000 WHERE tenant_id = ?1 AND correlation_id = ?2 AND state IN ('reserved', 'session_created')",
+                &[json!(tenant_id), json!(correlation_id)],
+            )
+            .await?;
+        self.d1
+            .query(
+                "DELETE FROM stripe_checkout_sessions WHERE tenant_id = ?1 AND correlation_id = ?2",
+                &[json!(tenant_id), json!(correlation_id)],
+            )
+            .await?;
+        self.d1
+            .query(
+                "DELETE FROM tier_selections WHERE tenant_id = ?1 AND subscription_state = 'pending_checkout' AND correlation_id = ?2",
+                &[json!(tenant_id), json!(correlation_id)],
             )
             .await?;
         Ok(())
@@ -311,23 +532,24 @@ impl TierSelectStore for D1HttpTierSelectStore {
         // Instant free activation. `subscription_started_at_ms` MUST be set when
         // state = 'active' (migration 0039 `subscription_started_when_active`
         // CHECK). UPSERT → single statement + idempotent on retry.
-        self.d1
+        let rows = self
+            .d1
             .query(
-                "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?1, 'free', 'active', ?2, ?3) ON CONFLICT(tenant_id) DO UPDATE SET tier = 'free', subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id",
+                "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) SELECT ?1, 'free', 'active', ?2, ?3 WHERE EXISTS (SELECT 1 FROM tier_selection_locks WHERE tenant_id = ?1 AND correlation_id = ?3 AND expires_at_ms >= ?2) ON CONFLICT(tenant_id) DO UPDATE SET tier = 'free', subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id WHERE EXISTS (SELECT 1 FROM tier_selection_locks WHERE tenant_id = ?1 AND correlation_id = ?3 AND expires_at_ms >= ?2) RETURNING tenant_id",
                 &[json!(tenant_id), json!(now_ms), json!(correlation_id)],
             )
             .await?;
+        if rows.is_empty() {
+            return Err("tier-selection lock ownership lost before free persist".to_string());
+        }
         Ok(())
     }
 
-    async fn release_lock(&self, tenant_id: &str) -> Result<(), String> {
+    async fn release_lock(&self, tenant_id: &str, correlation_id: &str) -> Result<(), String> {
         // Best-effort release; the 60s window also self-expires, so a delete
         // failure is not fatal to the already-completed orchestration.
         self.d1
-            .query(
-                "DELETE FROM tier_selection_locks WHERE tenant_id = ?1",
-                &[json!(tenant_id)],
-            )
+            .query(RELEASE_LOCK_SQL, &[json!(tenant_id), json!(correlation_id)])
             .await?;
         Ok(())
     }
@@ -440,7 +662,7 @@ mod tests {
 
         // Release, then re-acquire succeeds again.
         store
-            .release_lock(&tenant)
+            .release_lock(&tenant, cid)
             .await
             .expect("release_lock query");
 
@@ -452,7 +674,7 @@ mod tests {
 
         // Best-effort cleanup so the lock row does not linger.
         store
-            .release_lock(&tenant)
+            .release_lock(&tenant, cid)
             .await
             .expect("final release_lock query");
     }
@@ -553,5 +775,89 @@ mod tests {
             sql.contains("tenant_id = ?1"),
             "tenant must stay parameterised (never interpolated). Statement was: {sql}"
         );
+    }
+
+    #[test]
+    fn payable_guard_covers_pending_rows_and_owner_bound_writes() {
+        assert!(HAS_PENDING_CHECKOUT_SQL.contains("stripe_checkout_sessions"));
+        assert!(HAS_PENDING_CHECKOUT_SQL.contains("stripe_checkout_ownership_ledger"));
+        assert!(HAS_PENDING_CHECKOUT_SQL.contains("pending_checkout"));
+        assert!(RELEASE_LOCK_SQL.contains("correlation_id = ?2"));
+        let source = include_str!("tier_select_store.rs");
+        assert!(source.contains("expires_at_ms >= ?5"));
+        assert!(source.contains("RETURNING tenant_id"));
+        assert!(source.contains("state = 'session_created'"));
+        assert!(source.contains("state = 'abandoned'"));
+    }
+
+    #[test]
+    fn delayed_rebind_requires_the_current_request_lease() {
+        use rusqlite::{params, Connection};
+
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE stripe_checkout_ownership_ledger (
+                 correlation_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
+                 tier TEXT NOT NULL, state TEXT NOT NULL,
+                 created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL
+             );
+             CREATE TABLE tier_selection_locks (
+                 tenant_id TEXT NOT NULL, correlation_id TEXT NOT NULL,
+                 expires_at_ms INTEGER NOT NULL
+             );
+             INSERT INTO stripe_checkout_ownership_ledger
+               VALUES ('corr-reservation', 'tenant-a', 'pro', 'reserved', 1000, 1000);",
+        )
+        .unwrap();
+
+        // A delayed request with no live lease cannot rename the reservation.
+        let stale = db.prepare(REBIND_RESERVATION_SQL).unwrap().query_row(
+            params![
+                "corr-reservation",
+                "corr-delayed",
+                2000_i64,
+                "tenant-a",
+                "pro",
+                CHECKOUT_RESERVATION_RECOVERY_TTL_MS,
+            ],
+            |_| Ok::<_, rusqlite::Error>(()),
+        );
+        assert!(
+            stale.is_err(),
+            "an unleased delayed request must not rebind"
+        );
+        let owner: String = db
+            .query_row(
+                "SELECT correlation_id FROM stripe_checkout_ownership_ledger",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(owner, "corr-reservation");
+
+        // The same exact SQL succeeds once the replacement request owns a
+        // non-expired lease, proving the guard is behavioural rather than a
+        // source-string assertion.
+        db.execute(
+            "INSERT INTO tier_selection_locks VALUES (?1, ?2, ?3)",
+            params!["tenant-a", "corr-current", 3000_i64],
+        )
+        .unwrap();
+        let rebound: String = db
+            .prepare(REBIND_RESERVATION_SQL)
+            .unwrap()
+            .query_row(
+                params![
+                    "corr-reservation",
+                    "corr-current",
+                    2000_i64,
+                    "tenant-a",
+                    "pro",
+                    CHECKOUT_RESERVATION_RECOVERY_TTL_MS,
+                ],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(rebound, "corr-current");
     }
 }

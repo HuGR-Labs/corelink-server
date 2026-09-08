@@ -26,7 +26,11 @@ def _sources() -> dict[str, str]:
             # suite needlessly expensive and does not add signal.
             result[path] = ""
         else:
-            result[path] = target.read_text(encoding="utf-8")
+            # Route modules are include!-assembled; use the same source loader
+            # as the production validator so mutations hit the live parts.
+            errors: list[str] = []
+            result[path] = gate._read(ROOT, path, errors)
+            assert errors == [], errors
     return result
 
 
@@ -94,6 +98,112 @@ def test_missing_route_gate_fails_closed() -> None:
     assert any("Write CAS blobs + AC" in error and path in error for error in errors)
 
 
+def test_load_bearing_gate_mutations_stay_red() -> None:
+    source = _sources()
+    route_path = "crates/corelink-container/src/routes/customer.rs"
+    route = source[route_path]
+    start = route.index("async fn handle_keys_revoke(")
+    end = route.index("async fn handle_team_list(", start)
+    route_mutant = route[:start] + route[start:end].replace(
+        "caller_is_owner_or_admin(&headers)", "true", 1
+    ) + route[end:]
+    source[route_path] = route_mutant
+    errors = gate.check(_matrix(), source)
+    assert any("Revoke a PAT in tenant" in error and "context" in error for error in errors)
+
+    source = _sources()
+    for path, end_marker in (
+        (
+            "crates/corelink-container/src/routes/cas.rs",
+            "async fn handle_list(",
+        ),
+        (
+            "crates/corelink-container/src/routes/ac.rs",
+            "async fn handle_list_refs(",
+        ),
+    ):
+        text = source[path]
+        start = text.index("async fn handle_delete(")
+        end = text.index(end_marker, start)
+        source[path] = text[:start] + text[start:end].replace(
+            "scope.can_write()", "scope.can_read()", 1
+        ) + text[end:]
+    errors = gate.check(_matrix(), source)
+    assert any("Delete a CAS blob / AC ref" in error and "context" in error for error in errors)
+
+
+def test_exact_reviewer_reproducers_stay_red() -> None:
+    """The B144/B153 proof must reject bait, dead branches, and all predicates."""
+
+    route_path = "crates/corelink-container/src/routes/customer.rs"
+    d1_path = "crates/corelink-container/src/customer_d1.rs"
+    cas_path = "crates/corelink-container/src/routes/cas.rs"
+
+    source = _sources()
+    source[route_path] = source[route_path].replace(
+        "caller_is_owner_or_admin(&headers)",
+        '"caller_is_owner_or_admin(&headers)"',
+        1,
+    )
+    errors = gate.check(_matrix(), source)
+    assert any("Revoke a PAT in tenant" in error and "load-bearing" in error for error in errors)
+
+    source = _sources()
+    source[route_path] = source[route_path].replace(
+        "if !caller_is_owner_or_admin(&headers)",
+        "let _owner_admin = caller_is_owner_or_admin(&headers); if true",
+        1,
+    )
+    errors = gate.check(_matrix(), source)
+    assert any("Revoke a PAT in tenant" in error and "load-bearing" in error for error in errors)
+
+    source = _sources()
+    source[d1_path] = source[d1_path].replace(
+        'if req.caller_role.trim().eq_ignore_ascii_case("admin")',
+        'if false && req.caller_role.trim().eq_ignore_ascii_case("admin")',
+        1,
+    )
+    errors = gate.check(_matrix(), source)
+    assert any("Revoke a PAT in tenant" in error and "load-bearing" in error for error in errors)
+
+    source = _sources()
+    owner_guard = 'if req.caller_role.trim().eq_ignore_ascii_case("admin")'
+    source[d1_path] = source[d1_path].replace(
+        owner_guard,
+        'if false { ' + owner_guard,
+        1,
+    )
+    errors = gate.check(_matrix(), source)
+    assert any("Revoke a PAT in tenant" in error and "load-bearing" in error for error in errors)
+
+    # Three direct predicate mutations: route role, CAS delete scope, and D1
+    # owner target safeguard. Each must independently reopen its row.
+    mutations = (
+        (route_path, "if !caller_is_owner_or_admin(&headers)", "if caller_is_owner_or_admin(&headers)"),
+        (cas_path, "scope.can_write()", "scope.can_read()"),
+        (d1_path, 'if req.caller_role.trim().eq_ignore_ascii_case("admin")', 'if !req.caller_role.trim().eq_ignore_ascii_case("admin")'),
+    )
+    for path, old, new in mutations:
+        source = _sources()
+        start = {
+            route_path: "async fn handle_keys_revoke(",
+            cas_path: "async fn handle_delete(",
+            d1_path: "fn revoke(&self, req: KeyRevokeRequest)",
+        }[path]
+        end = {
+            route_path: "async fn handle_team_list(",
+            cas_path: "async fn handle_list(",
+            d1_path: "impl CustomerTeamHandler",
+        }[path]
+        first = source[path].index(start)
+        last = source[path].index(end, first)
+        context = source[path][first:last]
+        assert old in context
+        source[path] = source[path][:first] + context.replace(old, new, 1) + source[path][last:]
+        errors = gate.check(_matrix(), source)
+        assert any("Revoke a PAT in tenant" in error or "Delete a CAS blob / AC ref" in error for error in errors), (path, errors)
+
+
 def test_comment_only_predicate_does_not_count() -> None:
     source = _sources()
     path = "crates/corelink-container/src/routes/cas.rs"
@@ -141,6 +251,45 @@ def test_unknown_published_row_and_missing_row_fail_closed() -> None:
     errors = gate.check(matrix, source)
     assert any("unmapped published row" in error for error in errors)
     assert any("closed-world coverage failure" in error for error in errors)
+
+
+def test_role_header_stale_missing_and_extra_fail_closed() -> None:
+    matrix = _matrix()
+    for replacement in (
+        ("| Owner | Admin | Member | Viewer |", "| Owner | Admin | Developer | Viewer |"),
+        ("| Owner | Admin | Member | Viewer |", "| Owner | Admin | Viewer |"),
+        ("| Owner | Admin | Member | Viewer |", "| Owner | Admin | Member | Viewer | Support |"),
+    ):
+        mutated = matrix.replace(*replacement)
+        errors = gate.check(mutated, _sources())
+        assert any("role header drift" in error for error in errors), (replacement, errors)
+
+
+def test_missing_manifest_source_fails_closed() -> None:
+    source = _sources()
+    source.pop("crates/corelink-container/src/routes/cas.rs")
+    errors = gate.check(_matrix(), source)
+    assert any("applied gate missing" in error for error in errors)
+
+
+def test_extra_manifest_mapping_fails_closed() -> None:
+    source = _sources()
+    original = gate.APPLIED.get("extra-test-row")
+    gate.APPLIED["extra-test-row"] = gate.Applied(
+        (gate.DENIED,) * 4,
+        ("crates/corelink-container/src/routes",),
+        (),
+        None,
+        ("definitely-not-served",),
+    )
+    try:
+        errors = gate.check(_matrix(), source)
+    finally:
+        if original is None:
+            gate.APPLIED.pop("extra-test-row", None)
+        else:
+            gate.APPLIED["extra-test-row"] = original
+    assert any("checked 22 of 23 mapped rows" in error for error in errors)
 
 
 def test_companion_published_claims_are_part_of_the_gate() -> None:

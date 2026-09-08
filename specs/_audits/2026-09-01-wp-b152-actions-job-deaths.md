@@ -16,22 +16,63 @@ command below is the verifier for these historical facts: if any current API pag
 is unavailable, malformed, capped, or incomplete, it must report `INDETERMINATE`
 rather than reassert them. No token, log body, or other secret is stored here.
 
+## Read-only refresh (2026-09-05)
+
+The same closed historical window was queried again from the Actions API (no
+dispatch, rerun, mutation, log body, or secret access). The 1,621-run
+population and all three known run/job controls are still present. Their
+durations remain exactly 600 seconds, with one independent lane each. The API
+retains the setup step as `in_progress` and exposes post-kill cleanup steps as
+`pending`; checkout is `completed` in all three records. The collector retains
+both fields (`step_in_progress` and `step_not_completed`) and does not mistake
+an unevaluated state for a successful step.
+
+The refresh also covered `2026-09-04T00:00:00Z` through
+`2026-09-05T23:59:59Z`: 286 runs, all `startup_failure`, with zero jobs. A
+sample run points to workflow ID `303501160`, whose read-only workflow record
+is the deleted `BuildFailed` path. This is a separate Actions control-plane
+failure, not evidence that the B-152 600-second jobs were cured or caused.
+The repository diagnostic now retains non-success run conclusions (including
+`startup_failure`) instead of reporting this population as an empty set.
+
+## Closed-population snapshot (2026-09-06)
+
+The exact historical window was collected again through the read-only Actions
+API and persisted at
+`reports/perf/b152-actions-2026-09-06.json`. The snapshot contains all 1,621
+selected run IDs, all 33 failed-run job objects, and the three in-window jobs;
+each failed job retains its run ID, job ID, creation/start/completion times,
+runner, and every API step ID/status/timestamp. It contains no log body. The
+three log requests were unavailable again, so each has the fixed
+`log_signature: "indeterminate"` and no digest; no causal conclusion is
+asserted.
+
+The snapshot is checked offline with the fail-closed verifier below. Missing
+run/job/step identity, a duplicated ID, an omitted log signature, an
+unavailable log marked causal, or a zero-population closure guard is a verifier
+failure. The verifier also rejects a `closed` causal result, so a clean window
+cannot close B-152.
+
+```sh
+python3 scripts/verify_b152_snapshot.py reports/perf/b152-actions-2026-09-06.json
+```
+
 ## Retained failed-job matches
 
 The API returned 33 failed runs and 33 failed jobs in this window; exactly three
 failed jobs fell in the inclusive 594–615 second duration window:
 
-| run ID | job ID | workflow / lane | job created → started | started → completed | duration | declared job timeout | step still `in_progress` | checkout incomplete | runner |
+| run ID | job ID | workflow / lane | job created → started | started → completed | duration | declared job timeout | unfinished step (current API state) | checkout incomplete | runner |
 |---:|---:|---|---|---|---:|---:|---|---|---|
-| 33355619309 | 99377079175 | docs CI / `typecheck + lint + test + build` | 04:00:22 → 04:03:26Z (184 s) | 04:03:26 → 04:13:26Z | 600 s | 20 min (`.github/workflows/docs-ci.yml:132`) | Set up Node.js | no | `cf-runner-ad7db4f0` |
-| 33356199472 | 99378740877 | OKF-CoreLink Wiki Validation / `okf-wiki-validation` | 04:11:09 → 04:13:30Z (141 s) | 04:13:30 → 04:23:30Z | 600 s | no explicit `timeout-minutes` (`.github/workflows/okf_wiki.yml`; platform default applies) | Install PyYAML (venv on system python3) | no | `cf-runner-8bf42fee` |
-| 33359740663 | 99388658702 | admin-ui e2e / `playwright critical-flows (chromium)` | 05:13:13 → 05:13:14Z (1 s) | 05:13:14 → 05:23:14Z | 600 s | 30 min (`.github/workflows/admin-ui-e2e.yml:111`) | Set up pnpm | no | `cf-runner-9debaeaa` |
+| 33355619309 | 99377079175 | docs CI / `typecheck + lint + test + build` | 04:00:22 → 04:03:26Z (184 s) | 04:03:26 → 04:13:26Z | 600 s | 20 min (`.github/workflows/docs-ci.yml:132`) | Set up Node.js (`in_progress`); cleanup `pending` | no | `cf-runner-ad7db4f0` |
+| 33356199472 | 99378740877 | OKF-CoreLink Wiki Validation / `okf-wiki-validation` | 04:11:09 → 04:13:30Z (141 s) | 04:13:30 → 04:23:30Z | 600 s | no explicit `timeout-minutes` (`.github/workflows/okf_wiki.yml`; platform default applies) | Install PyYAML (`in_progress`); cleanup `pending` | no | `cf-runner-8bf42fee` |
+| 33359740663 | 99388658702 | admin-ui e2e / `playwright critical-flows (chromium)` | 05:13:13 → 05:13:14Z (1 s) | 05:13:14 → 05:23:14Z | 600 s | 30 min (`.github/workflows/admin-ui-e2e.yml:111`) | Set up pnpm (`in_progress`); cleanup `pending` | no | `cf-runner-9debaeaa` |
 
 The exact lane distribution is one match each; the three jobs use different
 workflow suites and different ephemeral runner names. All three stopped with a
-step in progress. The retained records show checkout completed before the
-in-progress step; the earlier claim that one checkout was incomplete cannot be
-rechecked because that job attempt is no longer in the API result set.
+step in progress and later pending steps. The refreshed records show checkout
+completed before the in-progress step in every case; the earlier claim that one
+checkout was incomplete is not supported by the currently retained metadata.
 
 The regenerated collector output derives the queue figures above from the job
 objects (rather than from prose): `count=3`, `min=1 s`, `median=141 s`,
@@ -49,13 +90,17 @@ observed queue waits (`job.created_at - job.started_at`) were approximately 184 
 
 `GET /repos/HuGR-Labs/corelink-server/actions/jobs/<job-id>/logs` returned HTTP
 404 `BlobNotFound` for all three retained matches. The collector records each as
-`{"status":"indeterminate","causal":"indeterminate"}` and emits the top-level
-`causal_classification.status = "indeterminate"`; a normal-looking report with a
-missing log is not a valid result. This is consistent with an expired/unavailable
-log blob, but it does not distinguish runner termination, service interruption, a
-wrapper timeout, or another external kill. The logs therefore cannot be classified
-as clean, and no `ENOSPC`, `os error 28`, or `Bus error` refutation can be made from
-currently available evidence.
+`{"status":"indeterminate","causal":"indeterminate","log_signature":"indeterminate"}`
+and emits the top-level `causal_classification.status = "indeterminate"`; a
+normal-looking report with a missing log is not a valid result. When a log is
+available, the collector stores only a SHA-256 digest and a conservative
+signature from the explicit categories `runner_cancellation`,
+`playwright_webserver`, `job_timeout`, `billing_or_startup`,
+`enospc_or_linker_failure`, `test_failure`, or `indeterminate`; availability
+alone never establishes a common cause. The current unavailable blobs therefore
+do not distinguish runner termination, Playwright webServer failure, a job
+timeout, billing/startup failure, or ENOSPC, and no ENOSPC refutation can be made
+from currently available evidence.
 
 Classification: **common 600-second signature confirmed; common root cause
 unclassified; HALT pending log/artifact recovery or a fresh instrumented
@@ -69,17 +114,25 @@ From the repository root, with `gh` authenticated read-only:
 ```sh
 PYTHONPATH=scripts python3 scripts/b152_actions_diagnostic.py \
   --start 2026-08-31T03:50:00Z --end 2026-08-31T07:20:00Z \
-  --known-run 33355619309 --known-run 33359740663 \
+  --known-run 33355619309 --known-run 33356199472 --known-run 33359740663 \
   --fetch-logs --output /tmp/b152-report.json
+```
+
+For a retained report, run the snapshot verifier as well:
+
+```sh
+python3 scripts/verify_b152_snapshot.py /tmp/b152-report.json
 ```
 
 `--fetch-logs` records only a fixed availability/error category; it never writes
 log contents or raw command errors. Fractional runtime/queue values are rejected
 rather than truncated, while fractional CLI bounds through six digits are
 preserved in the API query; greater precision is rejected rather than rounded.
-Step status evidence is limited to the API states `queued`, `in_progress`, and
-`completed`; any other value, including a non-string JSON value, exits
-`INDETERMINATE`. Each `gh` request has a 30-second timeout and at most three
+Step status evidence accepts the explicit API states `queued`, `in_progress`,
+`pending`, and `completed`; any other value, including a non-string JSON value,
+exits `INDETERMINATE`. `pending` is retained as unfinished evidence because it
+is present on historical post-kill job objects. Each `gh` request has a
+30-second timeout and at most three
 attempts with bounded 1/2-second retry delays. API/network failures, malformed
 or truncated pages, exhausted API timeouts, and output-write failures exit with
 `INDETERMINATE`; an exhausted log-download timeout remains the structured,
@@ -95,6 +148,7 @@ or its pytest invocation makes the suite red.
 
 ```sh
 python3 scripts/test_b152_actions_diagnostic.py
+python3 scripts/test_b152_snapshot.py
 ```
 
 ## Proposed backlog follow-up
@@ -102,5 +156,5 @@ python3 scripts/test_b152_actions_diagnostic.py
 | status | owner | exact verifier | evidence | completeness | next action |
 |---|---|---|---|---|---|
 | **OPEN — B-152** | GitHub Actions / runner operations owner | Run the command above with both known-run controls; preserve any newly available job log or runner-side artifact under the incident retention process, then correlate it to the exact job ID and timestamp. | Three independent lanes share the 600-second signature, but all retained job-log blobs were unavailable and none establishes a causal chain. | Incomplete: logs/artifacts cannot presently prove causation. | Recover retained artifacts if still possible, or capture a fresh instrumented occurrence. Close only when the exact cause is evidenced; a clean later window or an available log without such evidence is not closure. |
-| **PROPOSED — B-170, OPEN** | B-152 diagnostic maintainer | Add fixture tests where a selected run or listed job has a non-string/unknown `conclusion`; the collector must exit `INDETERMINATE` rather than omit it from failure accounting. | Current collection filters on `conclusion == "failure"` without structurally validating all conclusion values; malformed values could reduce the failed set silently. | Incomplete: review finding only; no production fixture is retained. | Define accepted GitHub conclusion states from the API contract, validate before filtering, add red/restore mutation coverage, and link the resulting commit here. |
-| **PROPOSED — B-171, OPEN** | B-152 diagnostic maintainer | Add a multi-run fixture that repeats one job ID in different runs; assert either globally unique evidence or an `INDETERMINATE` result according to the documented API identity contract. | The collector rejects duplicate job IDs within one run, but does not yet detect a repeated job ID across distinct failed runs. | Incomplete: review finding only; no retained API response demonstrates cross-run duplication. | Establish whether GitHub job IDs are globally unique for this endpoint, enforce the chosen invariant across the collected evidence set, add red/restore mutation coverage, and link the resulting commit here. |
+| **IMPLEMENTED IN THIS DIAGNOSTIC — no backlog state change** | B-152 diagnostic maintainer | Every run/job conclusion is validated against an explicit Actions contract before filtering; unknown/non-string values exit `INDETERMINATE`. | `test_unknown_run_conclusion_fails_closed_before_failure_filtering` and `test_unknown_job_conclusion_fails_closed_before_job_filtering`. | Complete for repository-controlled collection; production cause remains open. | Keep the tests required by `python-tests.yml`; do not treat this structural guard as B-152 causal closure. |
+| **IMPLEMENTED IN THIS DIAGNOSTIC — no backlog state change** | B-152 diagnostic maintainer | Job IDs are checked globally across selected failed runs; repeated identity exits `INDETERMINATE`. | `test_duplicate_job_ids_across_runs_fail_closed`. | Complete for repository-controlled collection; production cause remains open. | Preserve the exact identity contract and retain any future runner artifact by run/job ID. |

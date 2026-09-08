@@ -23,15 +23,14 @@
  * pure and have no side effects on real backends.
  */
 
-import type { AuditEventDetail, AuditPage, Tenant } from "./types";
+import type { AdminOp } from "./types";
 import type {
-  CustomerAuditEvent,
-  CustomerBilling,
   CustomerOverview,
   CustomerPat,
   CustomerTeamMember,
   CustomerUsage,
 } from "./customer-types";
+import { freshState, makeAuditDetail, type MockState } from "./e2e-mock-fixture-state";
 
 export interface MockRequest {
   method: string;
@@ -47,29 +46,6 @@ export interface MockResponse {
   contentType?: string;
 }
 
-interface MockState {
-  tenants: Tenant[];
-  auditEvents: AuditPage["rows"];
-  auditDetails: Map<string, AuditEventDetail>;
-  dsrRequests: Array<{
-    request_id: string;
-    action: string;
-    submitted_at: string;
-    status: "pending" | "review" | "approved" | "rejected";
-    actor: string;
-  }>;
-  customer: {
-    tenant_id: string;
-    tenant_name: string;
-    plan: CustomerOverview["plan"];
-    audit: CustomerAuditEvent[];
-    pats: CustomerPat[];
-    team: CustomerTeamMember[];
-    byok: CustomerOverview["byok"];
-    billing: CustomerBilling;
-  };
-}
-
 function rfc7807(status: number, title: string, detail: string): MockResponse {
   return {
     status,
@@ -78,227 +54,41 @@ function rfc7807(status: number, title: string, detail: string): MockResponse {
   };
 }
 
-function makeTenants(): Tenant[] {
-  const regions: Array<Tenant["region"]> = ["us-east", "us-west", "eu-west", "ap-south"];
-  const plans: Array<Tenant["plan"]> = [
-    "free",
-    "solo",
-    "starter",
-    "team",
-    "pro",
-    "max",
-    "enterprise",
-  ];
-  return Array.from({ length: 25 }, (_, i) => ({
-    tenant_id: `tenant_${String(i + 1).padStart(3, "0")}`,
-    name: `Tenant ${i + 1}`,
-    plan: plans[i % plans.length]!,
-    region: regions[i % regions.length]!,
-    byok_status: i % 5 === 0 ? "active" : "none",
-    created_at: `2026-0${(i % 5) + 1}-01T00:00:00Z`,
-  }));
+interface E2EIdentity {
+  sub: string;
+  tenant_id: string;
+  role: "user" | "admin" | "approver";
+  mfaAt?: number;
 }
 
-function makeAuditEvents(): MockState["auditEvents"] {
-  return [
-    {
-      event_id: "evt_001",
-      ts: "2026-05-10T10:00:00Z",
-      tenant_id: "tenant_001",
-      event_type: "auth.login",
-      severity: "info",
-      actor: "user_e2e_admin",
-      summary: "operator login from 10.0.0.1",
-      correlation_id: "corr-001",
-    },
-    {
-      event_id: "evt_002",
-      ts: "2026-05-12T11:30:00Z",
-      tenant_id: "tenant_002",
-      event_type: "byok.cmk_rotated",
-      severity: "warn",
-      actor: "user_e2e_approver",
-      summary: "CMK rotated for tenant_002",
-      correlation_id: "corr-002",
-    },
-    {
-      event_id: "evt_003",
-      ts: "2026-05-13T09:00:00Z",
-      tenant_id: "tenant_001",
-      event_type: "dsr.request",
-      severity: "info",
-      actor: "user_e2e_admin",
-      summary: "DSR access submitted",
-      correlation_id: "corr-003",
-    },
-  ];
+function parseIdentity(raw: string | undefined): E2EIdentity | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw)) as Partial<E2EIdentity>;
+    if (
+      typeof parsed.sub !== "string" ||
+      typeof parsed.tenant_id !== "string" ||
+      (parsed.role !== "user" && parsed.role !== "admin" && parsed.role !== "approver")
+    ) return null;
+    return parsed as E2EIdentity;
+  } catch {
+    return null;
+  }
 }
 
-function makeAuditDetail(id: string, state: MockState): AuditEventDetail {
-  const summary = state.auditEvents.find((e) => e.event_id === id) ?? state.auditEvents[0]!;
-  return {
-    ...summary,
-    cloudevent: {
-      specversion: "1.0",
-      id: summary.event_id,
-      source: "corelink/admin-ui-e2e",
-      type: String(summary.event_type),
-      time: summary.ts,
-      datacontenttype: "application/json",
-      subject: summary.tenant_id,
-    },
-    payload: { tenant_id: summary.tenant_id, redacted: true },
-    merkle_proof: {
-      leaf_hash: "00".repeat(32),
-      siblings: [
-        { hash: "11".repeat(32), position: "left" },
-        { hash: "22".repeat(32), position: "right" },
-      ],
-      expected_root: "ff".repeat(32),
-      algorithm: "sha256",
-    },
-    r2_url: "https://example.invalid/audit-archive/" + summary.event_id,
-  };
+function authFromHeaders(headers: Record<string, string>): E2EIdentity | null {
+  const bearer = headers.authorization?.match(/^Bearer\s+e2e:(.+)$/i)?.[1];
+  const tokenIdentity = parseIdentity(bearer);
+  if (tokenIdentity) return tokenIdentity;
+  const raw = headers.cookie?.match(/(?:^|;\s*)__corelink_e2e_session=([^;]+)/)?.[1];
+  return parseIdentity(raw);
 }
 
-function makeCustomerAudit(): CustomerAuditEvent[] {
-  return [
-    {
-      event_id: "cevt_001",
-      ts: "2026-05-10T10:00:00Z",
-      event_type: "auth.login",
-      severity: "info",
-      actor: "user_e2e_admin",
-      summary: "signin from 10.0.0.1",
-    },
-    {
-      event_id: "cevt_002",
-      ts: "2026-05-12T11:30:00Z",
-      event_type: "pat.created",
-      severity: "info",
-      actor: "user_e2e_admin",
-      summary: "created PAT 'ci-runner'",
-    },
-    {
-      event_id: "cevt_003",
-      ts: "2026-05-13T09:00:00Z",
-      event_type: "byok.cmk_rotated",
-      severity: "warn",
-      actor: "user_e2e_admin",
-      summary: "CMK rotated to cmk_v2",
-    },
-  ];
-}
-
-// The `scopes` values below MUST come from the real codomain of
-// `customer_d1.rs::scope_to_list`, which is the only producer the dashboard
-// ever sees: ["cache:read"], ["cache:read","cache:write"],
-// ["cache:find-missing"] (find-only is EXCLUSIVE — never combined with
-// read/write), [] , or an unrecognized legacy value surfaced verbatim.
-// `cache:r` / `cache:w` are REQUEST-side spellings and are never returned.
-function makeCustomerPats(): CustomerPat[] {
-  return [
-    {
-      pat_id: "pat_001",
-      name: "ci-runner",
-      scopes: ["cache:read", "cache:write"],
-      created_at: "2026-04-15T09:00:00Z",
-      last_used_at: "2026-05-14T22:01:00Z",
-    },
-    {
-      pat_id: "pat_002",
-      name: "dashboard-readonly",
-      scopes: ["cache:read"],
-      created_at: "2026-03-20T12:00:00Z",
-      last_used_at: "2026-05-13T18:42:00Z",
-    },
-  ];
-}
-
-function makeCustomerTeam(): CustomerTeamMember[] {
-  return [
-    {
-      user_id: "user_e2e_admin",
-      email: "admin@acme.example",
-      role: "owner",
-      joined_at: "2026-01-15T09:00:00Z",
-      status: "active",
-    },
-    {
-      user_id: "user_e2e_approver",
-      email: "approver@acme.example",
-      role: "admin",
-      joined_at: "2026-02-01T09:00:00Z",
-      status: "active",
-    },
-    {
-      user_id: "user_e2e_member",
-      email: "member@acme.example",
-      role: "member",
-      joined_at: "2026-03-10T09:00:00Z",
-      status: "active",
-    },
-  ];
-}
-
-function makeCustomerBilling(): CustomerBilling {
-  return {
-    status: "active",
-    plan: "team",
-    current_period_start: "2026-05-01T00:00:00Z",
-    current_period_end: "2026-05-31T23:59:59Z",
-    amount_due_cents: 19900,
-    currency: "usd",
-    payment_method: { brand: "visa", last4: "4242", exp_month: 12, exp_year: 2028 },
-    invoices: [
-      {
-        invoice_id: "inv_2026_04",
-        issued_at: "2026-04-30T23:00:00Z",
-        amount_cents: 19900,
-        status: "paid",
-        hosted_url: "https://billing.example.invalid/inv_2026_04",
-      },
-      {
-        invoice_id: "inv_2026_03",
-        issued_at: "2026-03-30T23:00:00Z",
-        amount_cents: 19900,
-        status: "paid",
-        hosted_url: "https://billing.example.invalid/inv_2026_03",
-      },
-    ],
-  };
-}
-
-function freshState(): MockState {
-  const events = makeAuditEvents();
-  return {
-    tenants: makeTenants(),
-    auditEvents: events,
-    auditDetails: new Map(),
-    dsrRequests: [
-      {
-        request_id: "dsr_001",
-        action: "access",
-        submitted_at: "2026-05-13T09:00:00Z",
-        status: "pending",
-        actor: "data_subject_001@example.invalid",
-      },
-    ],
-    customer: {
-      tenant_id: "tenant_acme",
-      tenant_name: "Acme Inc.",
-      plan: "team",
-      audit: makeCustomerAudit(),
-      pats: makeCustomerPats(),
-      team: makeCustomerTeam(),
-      byok: {
-        status: "active",
-        cmk_id: "cmk_v2",
-        last_rotated_at: "2026-05-13T09:00:00Z",
-      },
-      billing: makeCustomerBilling(),
-    },
-  };
+function mfaIsFresh(identity: E2EIdentity, headers: Record<string, string>): boolean {
+  const override = headers.cookie?.match(/(?:^|;\s*)__corelink_e2e_mfa=([^;]+)/)?.[1];
+  const at = override ? Number(override) : identity.mfaAt;
+  return typeof at === "number" && Number.isFinite(at) &&
+    Date.now() - at * 1000 <= 30 * 60 * 1000 && Date.now() >= at * 1000;
 }
 
 // ─── Persistent mock state (globalThis-backed singleton) ─────────────────────
@@ -337,7 +127,7 @@ export function __resetMockState(): void {
 }
 
 export function getFixtureResponse(req: MockRequest): MockResponse {
-  const { method, path, query, body } = req;
+  const { method, path, query, body, headers } = req;
   const g = mockGlobals();
   const state = g.state;
 
@@ -351,17 +141,35 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     return { status: 200, body: { ok: true } };
   }
 
+  // A step-up is a server-validated transition. The browser writes the
+  // returned timestamp to its short-lived E2E MFA cookie; subsequent approval
+  // requests are checked here again, so disabling the button cannot bypass it.
+  if (path === "/v1/_e2e/mfa/step-up" && method === "POST") {
+    const identity = authFromHeaders(headers);
+    if (!identity) return rfc7807(401, "Unauthorized", "operator identity required");
+    if (identity.role !== "admin" && identity.role !== "approver") {
+      return rfc7807(403, "Forbidden", "operator role required");
+    }
+    return { status: 200, body: { mfa_verified_at: Math.floor(Date.now() / 1000) } };
+  }
+
+  const identity = authFromHeaders(headers);
+
   // ----- tenants -----
   if (path === "/v1/admin/tenants" && method === "GET") {
+    if (!identity || (identity.role !== "admin" && identity.role !== "approver")) {
+      return rfc7807(403, "Forbidden", "operator role required");
+    }
     const q = (query["q"] ?? "").toLowerCase();
     const cursor = query["cursor"] ?? "0";
     const offset = Number.parseInt(cursor, 10) || 0;
     const pageSize = 10;
+    const scoped = state.tenants.filter((t) => t.tenant_id === identity.tenant_id);
     const filtered = q
-      ? state.tenants.filter(
+      ? scoped.filter(
           (t) => t.tenant_id.toLowerCase().includes(q) || t.name.toLowerCase().includes(q),
         )
-      : state.tenants;
+      : scoped;
     const page = filtered.slice(offset, offset + pageSize);
     return {
       status: 200,
@@ -373,7 +181,11 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     };
   }
   if (path.startsWith("/v1/admin/tenants/") && method === "GET") {
+    if (!identity || (identity.role !== "admin" && identity.role !== "approver")) {
+      return rfc7807(403, "Forbidden", "operator role required");
+    }
     const id = path.split("/").pop()!;
+    if (id !== identity.tenant_id) return rfc7807(404, "Not Found", `tenant ${id} not found`);
     const t = state.tenants.find((x) => x.tenant_id === id);
     if (!t) return rfc7807(404, "Not Found", `tenant ${id} not found`);
     return { status: 200, body: t };
@@ -381,8 +193,11 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
 
   // ----- audit -----
   if (path === "/v1/admin/audit" && method === "GET") {
+    if (!identity || (identity.role !== "admin" && identity.role !== "approver")) {
+      return rfc7807(403, "Forbidden", "operator role required");
+    }
     const sinceParam = query["since"];
-    let rows = state.auditEvents;
+    let rows = state.auditEvents.filter((row) => row.tenant_id === identity.tenant_id);
     if (sinceParam) {
       const since = Date.parse(sinceParam);
       if (!Number.isNaN(since)) {
@@ -397,9 +212,217 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     return { status: 200, body: { rows, next_cursor: null } };
   }
   if (path.startsWith("/v1/admin/audit/") && method === "GET") {
+    if (!identity || (identity.role !== "admin" && identity.role !== "approver")) {
+      return rfc7807(403, "Forbidden", "operator role required");
+    }
     const id = path.split("/").pop()!;
+    const event = state.auditEvents.find((row) => row.event_id === id);
+    if (!event || event.tenant_id !== identity.tenant_id) {
+      return rfc7807(404, "Not Found", "audit event not found");
+    }
     if (!state.auditDetails.has(id)) state.auditDetails.set(id, makeAuditDetail(id, state));
     return { status: 200, body: state.auditDetails.get(id) };
+  }
+
+  // ----- dual-approval operations -----
+  if (path === "/v1/admin/ops" && method === "GET") {
+    if (!identity || (identity.role !== "admin" && identity.role !== "approver")) {
+      return rfc7807(403, "Forbidden", "operator role required");
+    }
+    const requestedStatus = query["status"];
+    const ops = requestedStatus
+      ? state.ops.filter((op) => op.status === requestedStatus)
+      : state.ops;
+    const scoped = ops.filter((op) => op.tenant_scope.includes(identity.tenant_id));
+    return { status: 200, body: { ops: scoped } };
+  }
+  if (path === "/v1/admin/ops" && method === "POST") {
+    if (!identity || (identity.role !== "admin" && identity.role !== "approver")) {
+      return rfc7807(403, "Forbidden", "operator role required");
+    }
+    if (!mfaIsFresh(identity, headers)) return rfc7807(403, "Forbidden", "fresh MFA required");
+    const b = (body ?? {}) as { op_type?: string; payload?: Record<string, unknown> };
+    const payload = b.payload ?? {};
+    const allowedTypes: AdminOp["op_type"][] = [
+      "tenant_data_export",
+      "byok_cmk_rotation",
+      "tenant_account_deletion",
+      "data_residency_change",
+    ];
+    if (!b.op_type || !allowedTypes.includes(b.op_type as AdminOp["op_type"]) || typeof payload.tenant_id !== "string") {
+      return rfc7807(400, "Bad Request", "operation type and payload required");
+    }
+    if (payload.tenant_id !== identity.tenant_id) {
+      return rfc7807(404, "Not Found", "tenant not found");
+    }
+    const op = {
+      op_id: `op_e2e_${state.ops.length + 1}`,
+      op_type: b.op_type as AdminOp["op_type"],
+      requestor: identity.sub,
+      requested_at: new Date().toISOString(),
+      status: "awaiting_approval" as const,
+      payload,
+      impact_summary: `Sensitive operation for ${identity.tenant_id}.`,
+      tenant_scope: [identity.tenant_id],
+      approvals: [],
+    } satisfies AdminOp;
+    state.ops.push(op);
+    return { status: 201, body: op };
+  }
+  if (path.startsWith("/v1/admin/ops/") && path.endsWith("/approve") && method === "POST") {
+    const opId = path.split("/")[4];
+    const op = state.ops.find((candidate) => candidate.op_id === opId);
+    if (!op) return rfc7807(404, "Not Found", "operation not found");
+    const actor = identity?.sub;
+    const reason = headers["x-admin-operation-reason"]?.trim();
+    if (!identity || !actor) return rfc7807(401, "Unauthorized", "operator identity required");
+    if (identity.role !== "admin" && identity.role !== "approver") return rfc7807(403, "Forbidden", "approver role required");
+    if (!mfaIsFresh(identity, headers)) return rfc7807(403, "Forbidden", "fresh MFA required");
+    if (!op.tenant_scope.includes(identity.tenant_id)) return rfc7807(404, "Not Found", "operation not found");
+    if (!reason) return rfc7807(400, "Bad Request", "operation reason required");
+    if (actor === op.requestor) {
+      return rfc7807(409, "Conflict", "requestor cannot approve own operation");
+    }
+    if (op.approvals.some((approval) => approval.approver === actor)) {
+      return rfc7807(409, "Conflict", "operator already approved operation");
+    }
+    op.approvals.push({ approver: actor, approved_at: new Date().toISOString(), reason });
+    op.status = op.approvals.length >= 2 ? "executed" : "approved";
+    state.auditEvents.unshift({
+      event_id: `evt_op_${op.op_id}_${op.approvals.length}`,
+      ts: new Date().toISOString(),
+      tenant_id: op.tenant_scope[0] ?? "tenant_001",
+      event_type: "admin.op_approved",
+      severity: "warn",
+      actor,
+      summary: `approved ${op.op_type} ${op.op_id}`,
+      correlation_id: `corr-${op.op_id}`,
+    });
+    return { status: 200, body: op };
+  }
+  if (path.startsWith("/v1/admin/ops/") && path.endsWith("/reject") && method === "POST") {
+    const opId = path.split("/")[4];
+    const op = state.ops.find((candidate) => candidate.op_id === opId);
+    if (!op) return rfc7807(404, "Not Found", "operation not found");
+    const actor = identity?.sub;
+    const reason = headers["x-admin-operation-reason"]?.trim();
+    if (!identity || !actor) return rfc7807(401, "Unauthorized", "operator identity required");
+    if (identity.role !== "admin" && identity.role !== "approver") return rfc7807(403, "Forbidden", "approver role required");
+    if (!mfaIsFresh(identity, headers)) return rfc7807(403, "Forbidden", "fresh MFA required");
+    if (!op.tenant_scope.includes(identity.tenant_id)) return rfc7807(404, "Not Found", "operation not found");
+    if (!reason) return rfc7807(400, "Bad Request", "operation reason required");
+    if (actor === op.requestor) return rfc7807(409, "Conflict", "requestor cannot reject own operation");
+    if (op.status === "rejected" || op.status === "executed") return rfc7807(409, "Conflict", "operation is terminal");
+    op.rejection = { rejector: actor, rejected_at: new Date().toISOString(), reason };
+    op.status = "rejected";
+    state.auditEvents.unshift({
+      event_id: `evt_op_${op.op_id}_rejected`,
+      ts: op.rejection.rejected_at,
+      tenant_id: identity.tenant_id,
+      event_type: "admin.op_rejected",
+      severity: "warn",
+      actor,
+      summary: `rejected ${op.op_type} ${op.op_id}`,
+      correlation_id: `corr-${op.op_id}`,
+    });
+    return { status: 200, body: op };
+  }
+  if (path.startsWith("/v1/admin/ops/") && method === "GET") {
+    const opId = path.split("/").pop()!;
+    const op = state.ops.find((candidate) => candidate.op_id === opId);
+    if (op && (!identity || (identity.role !== "admin" && identity.role !== "approver") || !op.tenant_scope.includes(identity.tenant_id))) {
+      return rfc7807(404, "Not Found", "operation not found");
+    }
+    return op ? { status: 200, body: op } : rfc7807(404, "Not Found", "operation not found");
+  }
+
+  // ----- customer DSR action flow (legacy B-069 browser journey) -----
+  // These responses are test-only and deliberately use the same synthetic
+  // state as the admin queue. Production cannot reach this branch because the
+  // catch-all route is double-gated on E2E mode and non-production runtime.
+  if (path === "/v1/users/me" && method === "GET") {
+    return {
+      status: 200,
+      body: { email: "user@acme.example", name: "E2E User", language: "en" },
+    };
+  }
+  if (path === "/v1/data-categories" && method === "GET") {
+    return {
+      status: 200,
+      body: [
+        { id: "profile", label: "Profile" },
+        { id: "activity", label: "Activity" },
+      ],
+    };
+  }
+  if (path.startsWith("/v1/privacy/dsr/") && method === "POST") {
+    if (!identity) return rfc7807(401, "Unauthorized", "authenticated user required");
+    if (identity.role !== "user" && identity.role !== "admin" && identity.role !== "approver") {
+      return rfc7807(403, "Forbidden", "valid tenant role required");
+    }
+    if (!mfaIsFresh(identity, headers)) return rfc7807(403, "Forbidden", "fresh MFA required");
+    const action = path.split("/").pop() ?? "access";
+    const request_id = `dsr_e2e_${state.dsrRequests.length + 1}`;
+    const submitted_at = new Date().toISOString();
+    const sla_deadline = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+    state.dsrRequests.push({
+      request_id,
+      action,
+      submitted_at,
+      status: "pending",
+      actor: identity.sub,
+    });
+    return {
+      status: 201,
+      body: {
+        request_id,
+        action,
+        jurisdiction: "gdpr",
+        sla_deadline,
+        jwt_receipt: `e2e.${Buffer.from(JSON.stringify({
+          request_id,
+          action,
+          jurisdiction: "gdpr",
+          sla_deadline,
+        })).toString("base64url")}.signature`,
+      },
+    };
+  }
+  if (path === "/v1/privacy/dsr" && method === "GET") {
+    if (!identity) return rfc7807(401, "Unauthorized", "authenticated user required");
+    return {
+      status: 200,
+      body: {
+        items: state.dsrRequests.filter((r) => r.actor === identity.sub).map((r) => ({
+          request_id: r.request_id,
+          action: r.action,
+          status: r.status,
+          submitted_at: r.submitted_at,
+          sla_deadline: new Date(Date.parse(r.submitted_at) + 30 * 24 * 3600 * 1000).toISOString(),
+          jurisdiction: "gdpr",
+        })),
+        next_cursor: null,
+      },
+    };
+  }
+  if (path.startsWith("/v1/privacy/dsr/") && path.endsWith("/status") && method === "GET") {
+    if (!identity) return rfc7807(401, "Unauthorized", "authenticated user required");
+    const request_id = path.split("/").at(-2) ?? "";
+    const found = state.dsrRequests.find((r) => r.request_id === request_id);
+    if (!found) return rfc7807(404, "Not Found", "DSR not found");
+    if (found.actor !== identity.sub) return rfc7807(404, "Not Found", "DSR not found");
+    return {
+      status: 200,
+      body: {
+        request_id,
+        action: found.action,
+        status: found.status,
+        submitted_at: found.submitted_at,
+        sla_deadline: new Date(Date.parse(found.submitted_at) + 30 * 24 * 3600 * 1000).toISOString(),
+        jurisdiction: "gdpr",
+        timeline: [{ at: found.submitted_at, to: found.status }],
+      },
+    };
   }
 
   // ----- customer audit-chain visualization (wt/r-prep-audit-chain-viz) -----
@@ -494,21 +517,27 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
 
   // ----- DSR (admin-facing list / approve) -----
   if (path === "/v1/admin/dsr/requests" && method === "GET") {
+    if (!identity || (identity.role !== "admin" && identity.role !== "approver")) {
+      return rfc7807(403, "Forbidden", "operator role required");
+    }
     return { status: 200, body: { items: state.dsrRequests } };
   }
   if (path.startsWith("/v1/admin/dsr/requests/") && path.endsWith("/approve") && method === "POST") {
     const id = path.split("/")[4];
     const r = state.dsrRequests.find((x) => x.request_id === id);
     if (!r) return rfc7807(404, "Not Found", "DSR not found");
+    if (!identity || identity.role !== "admin" || !mfaIsFresh(identity, headers)) {
+      return rfc7807(403, "Forbidden", "admin role and fresh MFA required");
+    }
     r.status = "approved";
     state.auditEvents = [
       {
         event_id: `evt_dsr_${r.request_id}`,
         ts: new Date().toISOString(),
-        tenant_id: "tenant_001",
+        tenant_id: identity.tenant_id,
         event_type: "dsr.request",
         severity: "info",
-        actor: "user_e2e_admin",
+        actor: identity.sub,
         summary: `approved DSR ${r.request_id}`,
         correlation_id: `corr-${r.request_id}`,
       },
@@ -517,6 +546,9 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     return { status: 200, body: r };
   }
   if (path.startsWith("/v1/admin/dsr/requests/") && method === "GET") {
+    if (!identity || (identity.role !== "admin" && identity.role !== "approver")) {
+      return rfc7807(403, "Forbidden", "operator role required");
+    }
     const id = path.split("/").pop()!;
     const r = state.dsrRequests.find((x) => x.request_id === id);
     if (!r) return rfc7807(404, "Not Found", "DSR not found");

@@ -1,15 +1,16 @@
 //! `corelink-customer-alerts` — multi-channel customer alert delivery.
 //!
-//! Implements `CustomerAlerter` for production use, dispatching to:
+//! Implements `CustomerAlerter` for production use, dispatching a closed,
+//! PII-minimized envelope through configured owned provider endpoints:
 //!
-//! - **Dashboard**: D1 row INSERT into `customer_alerts` + WebSocket fanout.
-//! - **Email**: SendGrid / SES (configurable per tenant).
-//! - **In-app notification**: D1 row + WebSocket push.
-//! - **Slack webhook**: optional; customer-configured per tenant.
+//! - **Dashboard**: owned dashboard alert ingress (D1/WebSocket adapter).
+//! - **Email**: owned SendGrid / SES relay ingress.
+//! - **In-app notification**: owned D1/WebSocket notification ingress.
+//! - **Slack webhook**: optional HTTPS webhook configured by the owner.
 //!
-//! At least one channel must succeed; `Ok` is returned if any succeeds.
-//! Failed channels are logged at WARN. If all channels fail, `Err` is
-//! returned.
+//! At least one channel must return a provider receipt; `Ok` is returned if
+//! any succeeds. Failed channels are logged at WARN. If all channels fail,
+//! `Err` is returned.
 //!
 //! Used by `corelink-byok-revocation` kill switch (WI-S14-006).
 //!
@@ -53,5 +54,9 @@ pub mod alerter;
 pub mod channel;
 pub mod config;
 
-pub use alerter::MultiChannelAlerter;
+pub use alerter::{HttpAlertTransport, MultiChannelAlerter};
+pub use channel::{
+    AlertChannel, AlertEnvelope, AlertTransport, AlertTransportError, DeliveryReceipt,
+    RecordingAlertTransport,
+};
 pub use config::AlerterConfig;

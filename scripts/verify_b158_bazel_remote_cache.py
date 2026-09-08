@@ -16,7 +16,10 @@ from urllib.parse import urlparse
 
 
 DOC = "apps/docs/docs/integrations/bazel.md"
-ROUTES = "crates/corelink-container/src/routes/bazel_v2.rs"
+ROUTES = (
+    "crates/corelink-container/src/routes/bazel_v2/part-00.rs",
+    "crates/corelink-container/src/routes/bazel_v2/part-01.rs",
+)
 EXPECTED_CACHE = "https://corelink-api.humangr.com/bazel/cache"
 HASH = "a" * 64
 CAS_ROUTE = "/bazel/cache/cas/{hash}"
@@ -29,14 +32,22 @@ class VerificationError(RuntimeError):
     """The verifier could not safely inspect its required inputs."""
 
 
-def _read(root: Path, relative: str) -> str:
-    path = root / relative
-    if not path.is_file() or path.is_symlink():
-        raise VerificationError(f"required regular file missing or symlinked: {relative}")
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise VerificationError(f"cannot read {relative}: {error}") from error
+def _read(root: Path, relative: str | tuple[str, ...]) -> str:
+    paths = (relative,) if isinstance(relative, str) else relative
+    missing: list[str] = []
+    chunks: list[str] = []
+    for item in paths:
+        path = root / item
+        if not path.is_file() or path.is_symlink():
+            missing.append(item)
+            continue
+        try:
+            chunks.append(path.read_text(encoding="utf-8"))
+        except OSError as error:
+            raise VerificationError(f"cannot read {item}: {error}") from error
+    if missing:
+        raise VerificationError(f"required regular file missing or symlinked: {', '.join(missing)}")
+    return "\n".join(chunks)
 
 
 def _ini_block(document: str) -> str:

@@ -46,6 +46,7 @@
 import type { Env } from "../index.js";
 import { requireConsumerAuth } from "./internal_auth.js";
 import { mintScopedPat, MintGrant, canonicalizePatScope } from "./session_exchange.js";
+import { patRowKvKey } from "./pat_verify_cache.js";
 
 /**
  * Default lifetime (seconds) of the rotated PAT when the OLD PAT's remaining
@@ -228,6 +229,7 @@ export async function handleAuthRotate(
   // NULL = active).
   interface PatRow {
     tenant_id: string;
+    token_id: string;
     scope: string;
     expires_ms: number;
     revoked_at_ms: number | null;
@@ -235,7 +237,7 @@ export async function handleAuthRotate(
   let oldRow: PatRow | null;
   try {
     oldRow = await env.CONFIG_DB.prepare(
-      "SELECT tenant_id, scope, expires_ms, revoked_at_ms FROM pat WHERE pat_id = ?1",
+      "SELECT tenant_id, token_id, scope, expires_ms, revoked_at_ms FROM pat WHERE pat_id = ?1",
     )
       .bind(patId)
       .first<PatRow>();
@@ -253,6 +255,13 @@ export async function handleAuthRotate(
   if (typeof oldRow.tenant_id !== "string" || oldRow.tenant_id.length === 0) {
     // A row with no tenant cannot be rotated (the mint is tenant-scoped).
     console.error(`[${requestId}] auth rotate pat row missing tenant`);
+    return reapiError("INTERNAL_ERROR", "auth rotate unavailable", 500, requestId);
+  }
+  if (typeof oldRow.token_id !== "string" || oldRow.token_id.length === 0) {
+    // Without the non-secret cache handle we cannot prove revocation has
+    // propagated to the edge; refuse rotation rather than minting a key into
+    // an unverifiable stale-cache state.
+    console.error(`[${requestId}] auth rotate pat row missing token_id`);
     return reapiError("INTERNAL_ERROR", "auth rotate unavailable", 500, requestId);
   }
   if (ownerTenant !== oldRow.tenant_id) {
@@ -326,6 +335,20 @@ export async function handleAuthRotate(
     )
       .bind(Date.now(), patId)
       .run();
+    // The D1 revoke is authoritative; evict the edge positive row immediately
+    // so auth_rotate has the same propagation guarantee as runner/customer
+    // revokes. KV is only a latency cache, therefore deletion failure is logged
+    // and the bounded TTL remains the backstop.
+    const revokeKv = (env as unknown as {
+      METADATA_KV?: { delete(key: string): Promise<void> };
+    }).METADATA_KV;
+    if (revokeKv) {
+      await revokeKv.delete(patRowKvKey(oldRow.token_id)).catch((kvErr: unknown) => {
+        console.error(
+          `[${requestId}] auth rotate KV eviction failed (TTL backstop): ${kvErr instanceof Error ? kvErr.message.slice(0, 80) : "unknown error"}`,
+        );
+      });
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     // The NEW PAT is already minted and valid — that is the whole point of rotate,

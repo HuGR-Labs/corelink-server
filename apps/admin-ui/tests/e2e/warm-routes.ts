@@ -117,7 +117,20 @@ import { directoryChainFor, resolveAppPage } from "./app-route-index";
  * difference between "this list is stale" and "turbopack lost the route".
  */
 export const ROUTES = [
+  "/",
   "/sign-in",
+  // B-069 legacy journeys. Keep every non-retired route in this list so a
+  // missing Next dev route-tree entry fails before a spec can inspect it.
+  "/en/welcome",
+  "/en/dsr",
+  "/en/dsr/access",
+  "/en/dsr/erasure",
+  "/en/admin/audit",
+  "/en/privacy",
+  // These are intentional 404s, accepted only with their route-local marker
+  // below. A generic not-found response remains unresolved and fatal.
+  "/en/consent/new",
+  "/en/consent/history",
   "/en/customer",
   "/en/customer/audit",
   "/en/customer/audit/visualization",
@@ -127,6 +140,22 @@ export const ROUTES = [
   "/en/admin/audit",
   "/en/admin/tenants",
 ];
+
+/**
+ * B-069's two intentional 404 journeys. The marker is rendered by the
+ * route-local `not-found.tsx`, not by the generic app-level 404. This is the
+ * evidence that distinguishes a compiled retired route from a route-tree miss.
+ */
+export const RETIRED_ROUTE_MARKERS = {
+  "/en/consent/new": {
+    testId: "consent-capture-retired",
+    routeId: "consent-capture",
+  },
+  "/en/consent/history": {
+    testId: "consent-history-retired",
+    routeId: "consent-history",
+  },
+} as const;
 
 /**
  * A 120 s ceiling per attempt: generous enough for a cold turbopack compile on
@@ -156,6 +185,8 @@ export interface ProbeResult {
   status: number | null;
   /** Human-readable outcome for the log / error report. */
   detail: string;
+  /** Response body, used only to prove a route-local intentional 404. */
+  body?: string;
 }
 
 export interface Unresolved {
@@ -165,11 +196,36 @@ export interface Unresolved {
 
 /**
  * A route counts as RESOLVED on any status except 404 — a 3xx redirect or a
- * 403 still proves Next found and compiled the entry, which is all this file
- * is responsible for. Correctness of what the route renders is the specs' job.
+ * 403 still proves Next found and compiled the entry. The two intentional
+ * B-069 consent 404s are resolved only by their route-local marker; a bare
+ * 404 remains unresolved and fatal.
  */
 export function isResolved(result: ProbeResult): boolean {
   return result.status !== null && result.status !== 404;
+}
+
+/**
+ * Resolve a route using both HTTP status and, for retired routes, route-local
+ * evidence. Never accept a bare 404: that is exactly the uncompiled-route
+ * failure this warm-up is intended to catch.
+ */
+export function isResolvedForRoute(route: string, result: ProbeResult): boolean {
+  if (isResolved(result)) return true;
+
+  const marker = RETIRED_ROUTE_MARKERS[route as keyof typeof RETIRED_ROUTE_MARKERS];
+  if (result.status !== 404 || !marker || !result.body) return false;
+
+  // Next's dev server may carry the marker in a React Flight script rather
+  // than raw HTML. Accept both serializations, but require both attributes in
+  // either form so unrelated 404 text cannot satisfy the probe.
+  const hasAttribute = (name: string, value: string): boolean =>
+    result.body!.includes(`${name}="${value}"`) ||
+    result.body!.includes(`${name}\\":\\"${value}\\"`);
+
+  return (
+    hasAttribute("data-testid", marker.testId) &&
+    hasAttribute("data-retired-route", marker.routeId)
+  );
 }
 
 async function probe(url: string): Promise<ProbeResult> {
@@ -178,7 +234,8 @@ async function probe(url: string): Promise<ProbeResult> {
       redirect: "manual",
       signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS),
     });
-    return { status: res.status, detail: String(res.status) };
+    const body = await res.text();
+    return { status: res.status, detail: String(res.status), body };
   } catch (err) {
     return {
       status: null,
@@ -267,15 +324,16 @@ export async function runWarmPasses(deps: WarmDeps): Promise<Unresolved[]> {
       let result: ProbeResult = { status: null, detail: "not attempted" };
       for (let attempt = 1; attempt <= attempts; attempt += 1) {
         result = await deps.probe(route);
-        if (isResolved(result)) break;
+        if (isResolvedForRoute(route, result)) break;
         if (attempt < attempts) await deps.sleep(backoffMs);
       }
 
-      if (isResolved(result)) {
+      if (isResolvedForRoute(route, result)) {
         // `process.stdout.write`, not `console.log`: the admin-ui eslint config
         // allows only console.warn/error, and neither is honest for routine
         // progress output from a setup script.
-        deps.log(`[warm] ${result.detail} ${route}\n`);
+        const retired = result.status === 404 ? " (route-local retired marker)" : "";
+        deps.log(`[warm] ${result.detail}${retired} ${route}\n`);
       } else {
         deps.log(
           `[warm] UNRESOLVED ${result.detail} ${route} (after ${attempts} attempts)\n`,

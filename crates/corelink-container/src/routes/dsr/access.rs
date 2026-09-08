@@ -196,7 +196,8 @@ pub(super) struct GatherQuery {
 /// 2. erase-set `namespace`-keyed tables (bound value = tenant UUID, never
 ///    `'_public'`, so shared public-registry content is never gathered);
 /// 3. the bespoke specials (`signup_orchestration`/`tenant` by `tenant_id`;
-///    `signup_attempts` via the `idempotency_key` join the erase path uses);
+///    `signup_attempts` via the `idempotency_key` join the erase path uses;
+///    `clerk_provisioning_lock` via `tenant.clerk_user_id`);
 /// 4. the `tenant_id`-keyed RETAIN-set disclosable subset (marked retained).
 #[must_use]
 pub(super) fn build_gather_plan(tenant_id: &str) -> Vec<GatherQuery> {
@@ -219,8 +220,9 @@ pub(super) fn build_gather_plan(tenant_id: &str) -> Vec<GatherQuery> {
             params: tid(),
         });
     }
-    // Specials (kept exactly aligned with SPECIAL_ERASE_TABLES): the two
-    // identity rows by tenant_id + signup_attempts via the join.
+    // Specials (kept exactly aligned with SPECIAL_ERASE_TABLES): identity
+    // rows by tenant_id, signup_attempts via the join, and the Clerk lock via
+    // tenant.clerk_user_id.
     plan.push(GatherQuery {
         table: "signup_orchestration",
         retained: false,
@@ -232,6 +234,14 @@ pub(super) fn build_gather_plan(tenant_id: &str) -> Vec<GatherQuery> {
         retained: false,
         sql: "SELECT * FROM signup_attempts WHERE idempotency_key IN \
               (SELECT idempotency_key FROM signup_orchestration WHERE tenant_id = ?1)"
+            .to_owned(),
+        params: tid(),
+    });
+    plan.push(GatherQuery {
+        table: "clerk_provisioning_lock",
+        retained: false,
+        sql: "SELECT * FROM clerk_provisioning_lock WHERE clerk_user_id = \
+              (SELECT clerk_user_id FROM tenant WHERE tenant_id = ?1)"
             .to_owned(),
         params: tid(),
     });
@@ -268,6 +278,10 @@ pub(super) fn gather_subject_data<Q>(
 where
     Q: FnMut(&str, &[Value]) -> Result<Vec<D1Row>, String>,
 {
+    // The access/portability plan is derived from the same D1 registry as
+    // erasure. Refuse to disclose a partial view if that registry is ever
+    // ambiguous or incomplete, including in release builds.
+    super::adapter_d1::ensure_tenant_keyed_tables_classified()?;
     let plan = build_gather_plan(tenant_id);
     let mut tables: Vec<SubjectTable> = Vec::with_capacity(plan.len());
     for q in plan {
@@ -639,6 +653,19 @@ mod tests {
             gathered, erase_set,
             "access gather (erasable) must equal the D1 erase-set exactly"
         );
+    }
+
+    #[test]
+    fn clerk_provisioning_lock_access_is_bound_through_tenant_root() {
+        let plan = build_gather_plan(TID);
+        let lock = plan
+            .iter()
+            .find(|query| query.table == "clerk_provisioning_lock")
+            .expect("Clerk provisioning lock must be in the access plan");
+        assert!(!lock.retained);
+        assert!(lock.sql.contains("clerk_user_id"));
+        assert!(lock.sql.contains("FROM tenant WHERE tenant_id = ?1"));
+        assert_eq!(lock.params, vec![json!(TID)]);
     }
 
     /// The retained disclosable subset is a real subset of RETAIN_SET and never

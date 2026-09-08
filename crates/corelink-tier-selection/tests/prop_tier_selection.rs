@@ -311,7 +311,7 @@ proptest! {
 }
 
 // -------------------------------------------------------------------
-// Surface-stability regression: canonical 11-tier list
+// Surface-stability regression: customer taxonomy (runner SKUs are separate).
 // -------------------------------------------------------------------
 
 #[test]
@@ -319,19 +319,7 @@ fn canonical_tier_strings_stable() {
     let strs: Vec<&str> = canonical_tiers().iter().map(|t| t.as_str()).collect();
     assert_eq!(
         strs,
-        [
-            "free",
-            "solo",
-            "starter",
-            "pro",
-            "max",
-            "enterprise",
-            "runner_starter",
-            "runner_pro",
-            "runner_team",
-            "runner_scale",
-            "runner_max",
-        ]
+        ["free", "solo", "starter", "pro", "max", "enterprise",]
     );
 }
 

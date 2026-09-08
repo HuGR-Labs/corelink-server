@@ -24,7 +24,7 @@ pub enum BazelBridgeError {
     /// or failed validation. Covers:
     /// - hash is not exactly 64 lowercase hex characters
     /// - `size_bytes` is not a valid `u64`
-    /// - `size_bytes` exceeds 4 GiB
+    /// - `size_bytes` exceeds 64 MiB
     ///
     /// HTTP 400 equivalent.
     #[error("invalid REAPI digest: {reason}")]

@@ -55,6 +55,8 @@ async function defaultProvider(): Promise<AuthContext> {
       role?: "user" | "admin" | "approver";
       mfaAt?: number;
     };
+    const override = store.get("__corelink_e2e_mfa")?.value;
+    const overrideAt = override ? Number(override) : NaN;
     // Map fixture role → Clerk org role. Admin + approver both map to
     // `corelink-admin` for RbacGuard purposes (approver gets viewer-style
     // access too in real Clerk org config); a plain `user` maps to
@@ -70,9 +72,13 @@ async function defaultProvider(): Promise<AuthContext> {
       user_id: decoded.sub ?? null,
       org_id: decoded.tenant_id ?? null,
       role,
-      mfa_verified_at: decoded.mfaAt
-        ? new Date(decoded.mfaAt * 1000).toISOString()
-        : new Date().toISOString(),
+      // Missing/invalid MFA is stale. Never manufacture a fresh timestamp in
+      // the test provider: that would make an unauthenticated step-up green.
+      mfa_verified_at: Number.isFinite(overrideAt)
+        ? new Date(overrideAt * 1000).toISOString()
+        : typeof decoded.mfaAt === "number" && Number.isFinite(decoded.mfaAt)
+          ? new Date(decoded.mfaAt * 1000).toISOString()
+          : null,
     };
   } catch {
     return empty;

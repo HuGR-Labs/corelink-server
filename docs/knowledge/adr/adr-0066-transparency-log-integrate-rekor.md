@@ -4,12 +4,14 @@ title: "ADR-0066 — Transparency log: integrate public Rekor/sigstore, do not r
 description: "Why CoreLink submits witnessed entries to the public Rekor transparency log instead of operating its own."
 source_files:
   - "specs/03_architecture/adrs/ADR-0066-transparency-log-integrate-rekor.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "transparency-log", "rekor", "sigstore", "audit", "hugit-p2"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0066-transparency-log-integrate-rekor.md@65ae67e31c92899739e422a9fe2e4dcb463ddd06"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0066 — Transparency log: integrate public Rekor/sigstore, do not rebuild
 
 hugit-P2 wanted tamper-evident *public* witnessing of audit/attestation entries, and CoreLink's

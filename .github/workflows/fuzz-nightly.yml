@@ -5,7 +5,10 @@ concurrency:
   # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
   # a outra. Foi o que matou tres dispatches em 2026-08-31.
   group: "ci-fuzz-nightly-byok-tenant-path-audit-chain-hkdf-${{ github.event.pull_request.number || github.ref }}"
-  cancel-in-progress: true
+  # A manual dispatch is a long-running, expensive measurement.  Cancelling
+  # one because another ref was dispatched destroys the only evidence of the
+  # first run; the per-job timeout below is the bounded stop condition.
+  cancel-in-progress: false
 
 # Nightly fuzz lane for the pre-pentest hardening surface: BYOK
 # envelope encryption, tenant-path HMAC derivation (extended), audit-
@@ -33,21 +36,12 @@ concurrency:
 # i.e. libfuzzer's sanitizer build cannot link on this host. No amount of
 # re-running changes that.
 #
-# STRONG LEAD for whoever picks this up: the header two lines below still says
-# "on a fresh Ubuntu runner", but `runs-on` is the self-hosted Mac pool. The
-# lane was written for Ubuntu and moved later; the sanitizer toolchain came
-# along in name only. The obvious fix is to move it BACK to `ubuntu-latest`
-# (6 targets × 30 min ≈ 3 h/run ≈ $1.44 on GitHub-hosted, ~$43/mo — cheap for a
-# gate that would actually run).
-#
-# ⚠️ That move is NOT a one-line change, which is why this PR parks rather than
-# migrates: the "ROOT FIX (2026-06-15)" step below deliberately uses the
-# PRE-INSTALLED host nightly toolchain instead of `dtolnay/rust-toolchain@nightly`,
-# because installing nightly on the shared Mac once deleted the rustup shim and
-# broke EVERY Rust gate on the host for a day. `ubuntu-latest` has no
-# pre-installed nightly, so that step must be rewritten as part of the move —
-# and the result has to be PROVEN with a `workflow_dispatch` run before the
-# schedule goes back on. Same discipline applied to `reproducible-build`.
+# Historical note (2026-08-02): the lane was originally drafted for Ubuntu, but
+# its canonical execution target is the self-hosted macOS builder pool shown by
+# `runs-on` below. This repair does not silently migrate platforms: the schedule
+# stays parked and only an explicit `workflow_dispatch` may run it. Re-arming
+# requires an owner-approved toolchain/platform change followed by a successful
+# manual run, with the existing shared-Mac rustup safety boundary preserved.
 #
 # Re-arming checklist: fix the runner + toolchain → dispatch manually → observe
 # a GREEN run → restore the `schedule:` block below in that same PR.
@@ -119,6 +113,7 @@ jobs:
       # Fix: build it into a PER-RUNNER CARGO_HOME. Isolated, so the shared registry
       # is never written; persistent, so each runner pays the compile at most once.
       - name: Install cargo-fuzz (isolated CARGO_HOME — never the shared one)
+        timeout-minutes: 20
         run: |
           set -euo pipefail
           TOOLS="$HOME/.cargo-tools/${RUNNER_NAME:-default}"
@@ -150,6 +145,7 @@ jobs:
 
       - name: Run fuzz target (${{ env.FUZZ_DURATION }}s)
         working-directory: crates/${{ matrix.crate }}
+        timeout-minutes: 35
         run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ env.FUZZ_DURATION }}
 
       - name: Upload fuzz artifacts on failure

@@ -59,6 +59,18 @@ describe("route matcher", () => {
     expect(isProtectedPath("/en/securityx")).toBe(true);
   });
 
+  it("requires a path boundary after public prefixes", () => {
+    expect(isPublicPath("/api/healthcheck")).toBe(false);
+    expect(isPublicPath("/api/csp-reporting")).toBe(false);
+    expect(isPublicPath("/sign-in-evil")).toBe(false);
+    expect(isPublicPath("/api/health/live")).toBe(true);
+    // Prefixes declared with a trailing slash must still match their child
+    // path, while lookalike siblings stay protected.
+    expect(isPublicPath("/_next/static/chunk.js")).toBe(true);
+    expect(isPublicPath("/locales/en/messages.json")).toBe(true);
+    expect(isPublicPath("/locales-evil/en/messages.json")).toBe(false);
+  });
+
   it("marks /upgrade as self-gated (Clerk context, no middleware protect)", () => {
     expect(isSelfGatedPath("/upgrade")).toBe(true);
     expect(isSelfGatedPath("/en/upgrade")).toBe(true);

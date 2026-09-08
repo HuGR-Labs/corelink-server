@@ -103,6 +103,7 @@ const PIP_UPSTREAM_DEFAULT: &str = DEFAULT_UPSTREAM_PYPI;
 #[derive(Debug)]
 struct PipMoatStore {
     moat: Arc<MoatCache>,
+    cap_resolver: Option<Arc<dyn crate::oci_cap::TenantCapResolver>>,
 }
 
 #[async_trait]
@@ -124,15 +125,23 @@ impl CasStore for PipMoatStore {
 
     async fn put(
         &self,
-        _tenant: &TenantId,
+        tenant: &TenantId,
         digest: &Digest,
         bytes: Vec<u8>,
     ) -> Result<(), PipAdapterError> {
+        let tenant_id = tenant.to_string();
+        let storage_quota_bytes = match self.cap_resolver.as_ref() {
+            Some(resolver) => resolver.resolve_storage_cap(&tenant_id).await,
+            None => None,
+        };
         self.moat
-            // `None`: pip wheels accrue against the tenant's EXISTING
-            // `tenant_storage_state` row's stored cap (the OCI surface — WP #10 —
-            // is the one that threads a resolved cap; pip keeps the prior posture).
-            .put(PUBLIC_NAMESPACE, &digest.to_hex(), bytes, None)
+            .put_for_tenant(
+                PUBLIC_NAMESPACE,
+                &tenant_id,
+                &digest.to_hex(),
+                bytes,
+                storage_quota_bytes,
+            )
             .await
             .map_err(|e| match e {
                 MoatError::Backend(m) => PipAdapterError::Cas(m),
@@ -340,13 +349,28 @@ pub fn router(
     verifier: Arc<PatVerifier>,
     quota: Option<crate::routes::QuotaGate>,
 ) -> Router {
+    router_with_cap_resolver(cas_read, cas_write, map, d1, verifier, quota, None)
+}
+
+/// Build the production Pip router with the shared D1-backed tier-cap
+/// resolver. The compatibility `router` above remains resolver-free for
+/// hermetic fixtures; production wiring must use this constructor.
+pub fn router_with_cap_resolver(
+    cas_read: Arc<dyn CasReadHandler>,
+    cas_write: Arc<dyn CasWriteHandler>,
+    map: Arc<dyn UrlMapStore>,
+    d1: Arc<D1HttpClient>,
+    verifier: Arc<PatVerifier>,
+    quota: Option<crate::routes::QuotaGate>,
+    cap_resolver: Option<Arc<dyn crate::oci_cap::TenantCapResolver>>,
+) -> Router {
     let moat = Arc::new(MoatCache::production(
         cas_read,
         cas_write,
         map,
         PIP_SERVICE_PRINCIPAL,
     ));
-    let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore { moat });
+    let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore { moat, cap_resolver });
     let metadata_kv: Arc<dyn KvStore> = Arc::new(PipIndexKvStore { d1 });
     let resolver: TenantResolverHandle = Arc::new(PipPatResolver(verifier));
     let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());

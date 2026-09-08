@@ -135,10 +135,10 @@ jobs:
 
     steps:
       - name: Checkout
-        # actions/checkout v4.2.2 — SHA-pinned (matches cargo-audit.yml).
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        # actions/checkout v7.0.0 — SHA-pinned (matches the verified ref).
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout@v7.0.0
 
-      - name: Run Semgrep (bundled rulesets + CoreLink custom pack)
+      - name: Run Semgrep (separate bundled and CoreLink packs)
         id: semgrep
         shell: bash
         # Semgrep 1.164.0 installed into a throwaway venv (no Docker, no
@@ -152,13 +152,12 @@ jobs:
         # FF-HR-005 + ADR-S12-045 §6 — bump only via ADR + Security review
         # (§14.s12.004.1).
         #
-        # The `--config` flags mirror the former SEMGREP_RULES list: bundled
-        # rulepacks first, the repo-local CoreLink pack LAST (local wins
-        # duplicate-rule-ID tie-breaks). `--sarif --output` feeds the upload
-        # step below; we capture semgrep's exit code, expose `outputs.sarif`,
-        # then re-exit with it so a blocking ERROR-severity finding (`--error`)
-        # fails the job — replacing the old SEMGREP_FAIL_OPEN=false — WHILE the
-        # SARIF still uploads (the upload step is `if: always()`).
+        # The bundled and custom scans are intentionally separate so their
+        # SARIF counts/severities cannot be conflated. Semgrep itself does not
+        # receive `--error`: scripts/verify_b139_semgrep.py is the explicit
+        # policy evaluator and fails closed only for SARIF level `error` or a
+        # scanner/output failure. This preserves blocking semantics without
+        # turning every finding into an implicit gate.
         run: |
           set -uo pipefail
           PYBIN="$(command -v python3)"
@@ -177,75 +176,106 @@ jobs:
             --config p/python \
             --config p/owasp-top-ten \
             --config p/cwe-top-25 \
-            --config ./semgrep.yml \
-            --error \
-            --sarif --output semgrep.sarif \
+            --sarif --output semgrep-bundled.sarif \
             --metrics off
-          SEMGREP_RC=$?
+          BUNDLED_RC=$?
+          semgrep scan \
+            --config ./semgrep.yml \
+            --sarif --output semgrep-custom.sarif \
+            --metrics off
+          CUSTOM_RC=$?
           set -e
-          if [ -f semgrep.sarif ]; then
-            echo "sarif=semgrep.sarif" >> "$GITHUB_OUTPUT"
-          fi
-          exit "${SEMGREP_RC}"
+          echo "bundled_rc=${BUNDLED_RC}" >> "$GITHUB_OUTPUT"
+          echo "custom_rc=${CUSTOM_RC}" >> "$GITHUB_OUTPUT"
+          test -f semgrep-bundled.sarif || echo "::error::bundled SARIF was not emitted"
+          test -f semgrep-custom.sarif || echo "::error::custom SARIF was not emitted"
+          exit 0
         env:
           # Consumed by `semgrep scan` for any GitHub-API interactions; granted
           # via the workflow `permissions` block above.
           SEMGREP_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload SARIF to GitHub Security tab
-        # github/codeql-action/upload-sarif@v3.27.0 (same pin as codeql.yml
+      - name: Upload bundled SARIF to GitHub Security tab
+        # github/codeql-action/upload-sarif@v4.37.1 (same verified pin as codeql.yml
         # init/analyze; bump together via single ADR).
         #
-        # SARIF upload requires GitHub Advanced Security (code scanning), which
-        # is NOT enabled on this private repo — the upload returns "Code scanning
-        # is not enabled for this repository" and would otherwise red the whole
-        # Semgrep job even though the scan above (which sets the job's pass/fail
-        # via its own exit code) succeeded. `continue-on-error` keeps the JOB
-        # status driven by the actual Semgrep result; until GHAS is enabled this
-        # upload no-ops without failing the gate. The scan still runs. Once GHAS
-        # is enabled the SARIF populates the Security tab with no further change.
-        # (Mirrors the tfsec pattern in terraform-lint.yml + codeql.yml.)
+        # SARIF upload requires GitHub Advanced Security (code scanning). The
+        # upload outcome is recorded explicitly after both upload attempts;
+        # a non-success is unavailable_or_unverified, never a claim that the
+        # Security tab received this SARIF. `continue-on-error` keeps delivery
+        # capability separate from the fail-closed Semgrep policy evaluator.
         continue-on-error: true
-        if: always() && steps.semgrep.outputs.sarif != ''
+        id: upload_bundled
+        if: always() && hashFiles('semgrep-bundled.sarif') != ''
         uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a  # github/codeql-action/upload-sarif@v4.37.1
         with:
-          sarif_file: semgrep.sarif
-          category: semgrep
+          sarif_file: semgrep-bundled.sarif
+          category: semgrep-bundled
+
+      - name: Upload custom SARIF to GitHub Security tab
+        # GHAS may be unavailable. A failed upload is retained as an explicit
+        # unavailable_or_unverified outcome below, never reported as success.
+        continue-on-error: true
+        id: upload_custom
+        if: always() && hashFiles('semgrep-custom.sarif') != ''
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a  # github/codeql-action/upload-sarif@v4.37.1
+        with:
+          sarif_file: semgrep-custom.sarif
+          category: semgrep-custom
+
+      - name: Evaluate explicit Semgrep ERROR policy
+        id: policy
+        if: always()
+        run: |
+          python3 scripts/verify_b139_semgrep.py --evaluate --bundled-sarif semgrep-bundled.sarif --custom-sarif semgrep-custom.sarif --bundled-rc "${{ steps.semgrep.outputs.bundled_rc }}" --custom-rc "${{ steps.semgrep.outputs.custom_rc }}" --report semgrep-b139-report.json
+
+      - name: Record SARIF upload truth
+        if: always()
+        env:
+          BUNDLED_UPLOAD_OUTCOME: ${{ steps.upload_bundled.outcome }}
+          CUSTOM_UPLOAD_OUTCOME: ${{ steps.upload_custom.outcome }}
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          import os
+          from pathlib import Path
+
+          report_path = Path("semgrep-b139-report.json")
+          if report_path.is_file():
+              report = json.loads(report_path.read_text())
+          else:
+              report = {"schema_version": 1, "finding": "B-139", "status": "missing-policy-report"}
+          def truth(name):
+              return "uploaded" if os.environ.get(name) == "success" else "unavailable_or_unverified"
+          report["sarif_upload"] = {
+              "bundled": truth("BUNDLED_UPLOAD_OUTCOME"),
+              "custom": truth("CUSTOM_UPLOAD_OUTCOME"),
+              "advanced_security_claim": "verified" if (
+                  truth("BUNDLED_UPLOAD_OUTCOME") == "uploaded"
+                  and truth("CUSTOM_UPLOAD_OUTCOME") == "uploaded"
+              ) else "unverified-until-upload-step-succeeds",
+          }
+          report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+          print(json.dumps(report["sarif_upload"], sort_keys=True))
+          PYEOF
+
+      - name: Retain Semgrep evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7.0.1
+        with:
+          name: semgrep-b139-evidence-${{ github.run_id }}
+          path: |
+            semgrep-bundled.sarif
+            semgrep-custom.sarif
+            semgrep-b139-report.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Summarise findings in step output
         if: always()
         run: |
-          if [ -f semgrep.sarif ]; then
-            python3 - <<'PYEOF'
-          import json
-          import os
-          import sys
-
-          try:
-              with open("semgrep.sarif") as f:
-                  sarif = json.load(f)
-          except (FileNotFoundError, json.JSONDecodeError):
-              print("No SARIF emitted.")
-              sys.exit(0)
-
-          totals = {"error": 0, "warning": 0, "note": 0, "none": 0}
-          custom_corelink = 0
-          for run in sarif.get("runs", []):
-              for r in run.get("results", []):
-                  lvl = r.get("level", "warning")
-                  totals[lvl] = totals.get(lvl, 0) + 1
-                  rid = r.get("ruleId", "")
-                  if rid.startswith("corelink."):
-                      custom_corelink += 1
-
-          summary = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null")
-          with open(summary, "a") as f:
-              f.write("## Semgrep findings\n\n")
-              for k, v in totals.items():
-                  f.write(f"- {k}: {v}\n")
-              f.write(f"\nCoreLink custom-rule hits: **{custom_corelink}**\n")
-          print(json.dumps({"totals": totals, "custom_corelink": custom_corelink}))
-          PYEOF
+          if [ -f semgrep-b139-report.json ]; then
+            cat semgrep-b139-report.json >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "::warning::No semgrep.sarif emitted — check run logs."
+            echo "::error::No Semgrep policy report emitted — evidence gap."
           fi

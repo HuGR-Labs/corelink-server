@@ -7,14 +7,15 @@ source_files:
   - "docs/sdk/go.md"
   - "docs/sdk/javascript.md"
 source_blobs:
-  - "docs/sdk/python.md@ec9f1468c8196bc7f53298b7b55cbb23219ede28"
-  - "docs/sdk/go.md@a02a374b5a65de2c0b471dcfc7544c22f22ba79b"
-checkpoint_sha: "d53bcc2dc642c656a37708e0f92c25bdf73e285e"
+  - "docs/sdk/python.md@f6e57200ecd1320b00b57700d8ccfdbc54d3e90a"
+  - "docs/sdk/go.md@f46ade4443e229dc2bba2721ad4fd62b091f3110"
+  - "docs/sdk/javascript.md@867049a5648b8f6bab54a730ac0e32b5e1f59545"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "sdk", "client-verify", "blake3", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # SDK reference (python/go/javascript)
 
 CoreLink defines three first-party client SDKs over the [native CAS surface](/surfaces/native-cas.md) —
@@ -96,3 +97,8 @@ reads before wiring a client.
 9. `docs/sdk/javascript.md:47-90` — JS/TS API (`put`/`get`/`stat`), `clientVerify` default, `DigestMismatchError` throw.
 10. `docs/sdk/javascript.md:147-160` — JS error reference (`DigestMismatchError` / `COR_CAS_DIGEST_MISMATCH`).
 11. `docs/sdk/javascript.md:1-10` — pure-JS (`@noble/hashes`), no WASM/native build step.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

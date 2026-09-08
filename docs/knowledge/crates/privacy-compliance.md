@@ -8,12 +8,18 @@ source_files:
   - "crates/corelink-erasure-attestation/src/lib.rs"
   - "crates/corelink-erasure-attestation/src/attestation.rs"
   - "crates/corelink-erasure-attestation/src/key.rs"
-checkpoint_sha: "30ec21dc78d79c85f4d7e1e19e13118c66025c9e"
+source_blobs:
+  - "crates/corelink-privacy/src/lib.rs@44ebdbc8d1fb6e048f9cd3d1d0dc9ce84680a56d"
+  - "crates/corelink-dsr/src/lib.rs@9499a36d58012395ae7464ec961fa96af28ab64a"
+  - "crates/corelink-erasure-attestation/src/lib.rs@8336a891946ea7c8999e4727e09ad183d0f7d30d"
+  - "crates/corelink-erasure-attestation/src/attestation.rs@7682fdf19c0eeb4a05fe0094e32722eac99e18e5"
+  - "crates/corelink-erasure-attestation/src/key.rs@2dfc397e0897930d3b6b7a61c6fad6286a591e92"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["crates", "privacy", "dsr", "gdpr", "erasure", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Privacy/compliance crate cluster
 
 A multi-tenant cache that stores customer data carries regulatory obligations — right-to-erasure, data-subject requests, breach notification, consent, sub-processor disclosure — and this cluster is where CoreLink discharges them in code rather than in a policy PDF. It is grouped around a single posture distinction: privacy/DSR events are regulatory-grade and fail CLOSED (silent loss is never tolerated), unlike billing's fail-open arms. `corelink-privacy` is the aggregator over the 11 privacy primitives; `corelink-dsr` is the self-service rights orchestrator; `corelink-erasure-attestation` is the offline Ed25519 signing primitive for a destroy proof — STATUS: a crate-level primitive only (no production caller produces, persists, or serves an attestation yet; WI-S11-008).

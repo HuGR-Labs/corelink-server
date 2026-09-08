@@ -605,7 +605,10 @@ describe("TeamClient", () => {
       status: "invited",
     };
     customerClientMock.listTeam.mockResolvedValue(TEAM_FIXTURE);
-    customerClientMock.inviteTeam.mockResolvedValue(newMember);
+    customerClientMock.inviteTeam.mockResolvedValue({
+      member: newMember,
+      invitation_token: "a".repeat(64),
+    });
 
     render(<TeamClient />);
     await waitFor(() => expect(screen.getByTestId("team-invite")).toBeInTheDocument());

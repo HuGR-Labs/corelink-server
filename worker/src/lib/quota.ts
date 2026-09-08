@@ -2,10 +2,9 @@
  * Per-tier quota definitions and enforcement helpers for the CoreLink Worker.
  *
  * Quota checks run AFTER PAT auth succeeds and BEFORE forwarding to the
- * Durable Object. On a D1 error the posture is verb-aware (CAA-360 #25):
- * READ-style requests fail OPEN (quota status unknown → allow through) to
- * preserve availability, while MUTATING (PUT/POST) requests fail CLOSED with a
- * short Retry-After so an outage cannot be used to write past the cap. The DO
+ * Durable Object. Storage authorization fails CLOSED on a D1 error (B181): an
+ * unreadable quota is not permission to proceed. The request counter retains
+ * its separate under-counting contract on transient write loss. The DO
  * performs its own deeper quota enforcement (CAS / quota_fsm_state) on every
  * mutation.
  *
@@ -41,8 +40,8 @@
  *
  * Fix: getTierForTenant now returns `{ tier, d1Error: boolean }`. When
  * d1Error=true, the caller (checkStorageQuota and any combined check) MUST
- * skip the storage check entirely and return ok:true (consistent fail-open),
- * matching the file's documented "fail-open on D1 errors" posture.
+ * skip the storage SUM and return a short fail-closed retry outcome; comparing
+ * against a fallback tier would authorize against an unconfirmed cap.
  */
 
 import type { D1Database, D1PreparedStatement, D1Result } from "@cloudflare/workers-types";
@@ -102,8 +101,8 @@ export const QUOTAS: Record<Tier, Quota> = {
  * read (F21 fix — symmetric failure-mode signalling).
  *
  * When `d1Error` is true, the caller MUST treat the tier as unconfirmed and
- * skip any downstream storage-quota check (fail-open the entire quota
- * decision), preventing the false-positive 429 that arises from combining an
+ * skip any downstream storage SUM, returning a retryable fail-closed result.
+ * This prevents the false-positive 429 that arises from combining an
  * error-derived 'free' tier with an actual high-storage-usage query.
  */
 export interface TierResult {
@@ -112,7 +111,7 @@ export interface TierResult {
   /**
    * True when both tier queries failed with a D1 error and the returned tier
    * is the hard-coded 'free' fallback (NOT a confirmed DB value). Callers
-   * must skip the storage-quota check to maintain fail-open symmetry (F21).
+   * must skip the storage SUM and fail closed to maintain cap integrity (F21).
    */
   readonly d1Error: boolean;
 }
@@ -297,17 +296,19 @@ const STORAGE_QUOTA_D1_ERROR_RETRY_SEC = 2;
  *   - The tier has a finite storageBytesMax, AND
  *   - The tenant's current bytes_used >= storageBytesMax.
  *
- * Fails OPEN on D1 errors (returns ok:true) to preserve availability;
- * the DO enforces the hard CAS boundary on every mutation.
+ * Fails CLOSED on D1 errors (returns a short retryable rejection). A quota
+ * decision made without a readable tier or storage total is not a decision at
+ * all: allowing it through would make an outage an unbounded write/read quota
+ * bypass. The short retry keeps this distinct from a genuine month-long cap.
  *
  * F21 fix — symmetric failure modes: if the tier was derived from a D1
  * error (`tierResult.d1Error === true`), this function SKIPS the storage
- * query entirely and returns ok:true. Combining an error-derived 'free'
+ * query entirely and returns a short fail-closed retry. Combining an error-derived 'free'
  * tier with a successful storage query would produce false-positive 429s
  * for paid tenants (e.g. solo with 40 GiB stored → free cap 10 GiB → 429).
- * Skipping the check when the tier is unconfirmed keeps the overall
- * posture consistently fail-open during partial D1 outages, matching the
- * file's documented "fail-open on D1 errors" intent.
+ * Skipping the SUM when the tier is unconfirmed still avoids comparing bytes
+ * against a guessed tier, but the result is fail-closed because the cap is
+ * unverifiable.
  *
  * retryAfterSec is set to seconds-until-next-UTC-month-start (capped at
  * 31 days = 2678400 s) for a real over-cap breach, consistent with the
@@ -319,13 +320,9 @@ const STORAGE_QUOTA_D1_ERROR_RETRY_SEC = 2;
  * the tier lookup errored — `tierResult.d1Error` — or the storage SUM query
  * threw), the failure mode now depends on the request verb:
  *
- *   - **READ-style requests** (`isMutating === false`) → fail OPEN (ok:true),
- *     preserving availability — a read cannot grow storage past the cap.
- *   - **MUTATING requests** (`isMutating === true`, i.e. PUT/POST writes that
- *     ADD bytes) → fail CLOSED with a SHORT Retry-After, so a D1 outage cannot
- *     be used to write past the storage cap unbounded. This mirrors the
- *     residency gate's fail-closed posture on writes. The DO's CAS quota FSM
- *     is the deeper net; this closes the edge hole.
+ *   - **All request verbs** fail CLOSED with a SHORT Retry-After. Reads can
+ *     still expose quota-protected data and must not become an outage bypass;
+ *     mutations receive the same response, preserving one unambiguous contract.
  *
  * @param tierResult  Result from {@link getTierForTenant} carrying the
  *                    resolved tier and the d1Error flag (F21).
@@ -339,8 +336,8 @@ export async function checkStorageQuota(
   isMutating: boolean,
 ): Promise<QuotaCheckResult> {
   // F21 + #25: if the tier lookup itself errored, the tier is unconfirmed.
-  // Reads pass through (avoid a false-positive 429 for a paid tenant); writes
-  // fail closed (cannot confirm headroom on a byte-adding op).
+  // Do not compare against the fallback `free` tier, and do not pass through:
+  // an unconfirmed quota must fail closed for every verb.
   if (tierResult.d1Error) {
     return storageD1ErrorResult(isMutating);
   }
@@ -356,7 +353,7 @@ export async function checkStorageQuota(
   try {
     row = await storageSumStatement(db, tenantId).first<StorageSumRow>();
   } catch {
-    // D1 error → fail open on reads, fail closed on writes (CAA-360 #25).
+    // D1 error → fail closed for every verb (B181).
     return storageD1ErrorResult(isMutating);
   }
 
@@ -388,19 +385,17 @@ export function storageCapIsFinite(tier: Tier): boolean {
 }
 
 /**
- * The verb-aware D1-error posture for the storage gate (CAA-360 #25). Reads fail
- * OPEN (availability — a read cannot grow storage past the cap); byte-adding
- * writes fail CLOSED with a SHORT Retry-After so an outage cannot be used to
- * write past the cap unbounded.
+ * D1-error posture for the storage gate (B181 / CAA-360 #25). Every verb fails
+ * CLOSED with a SHORT Retry-After. `isMutating` remains in the signature so
+ * existing callers and the batch/standalone parity stay source-compatible;
+ * quota failure is intentionally not verb-dependent.
  */
-function storageD1ErrorResult(isMutating: boolean): QuotaCheckResult {
-  return isMutating
-    ? {
-        ok: false,
-        retryAfterSec: STORAGE_QUOTA_D1_ERROR_RETRY_SEC,
-        reason: "storage quota temporarily unverifiable (store error); retry",
-      }
-    : { ok: true };
+function storageD1ErrorResult(_isMutating: boolean): QuotaCheckResult {
+  return {
+    ok: false,
+    retryAfterSec: STORAGE_QUOTA_D1_ERROR_RETRY_SEC,
+    reason: "storage quota temporarily unverifiable (store error); retry",
+  };
 }
 
 /**
@@ -476,13 +471,10 @@ export function currentYearMonthUtc(): string {
  *
  * ## D1-error / unconfirmed-tier posture
  *
- * Consistent with {@link checkStorageQuota} and the file's documented posture,
- * this READ-style check fails OPEN:
- *   - `tierResult.d1Error === true` (tier unconfirmed) → ok:true, no count
- *     (we cannot know the cap; avoid a false-positive 429 for a paid tenant).
- *   - the UPSERT throws (transient store error) → ok:true (availability).
- * Uncapped tiers (team / enterprise, MAX_SAFE_INTEGER) skip the counter write
- * entirely — there is nothing to enforce and no reason to pay a D1 write.
+ * A storage failure is fail-closed for both reads and writes:
+ * The storage half is fail-closed as described above. The monthly request
+ * counter intentionally remains fail-open on a transient write loss: an
+ * uncounted request is safer than a false-positive bill/quota denial.
  *
  * @param db                  D1 handle (CONFIG_DB) carrying monthly_request_counts.
  * @param tenantId            Resolved tenant id (the counter key; never logged).
@@ -671,12 +663,13 @@ export interface QuotaBatchResult {
  *     under-counts a BILLING/quota counter. The statement, its bindings, the
  *     bucket key and the cap comparison are byte-for-byte what they were.
  *   - **The fail-open/fail-closed posture.** A batch failure yields exactly what
- *     a failure of the serial pair yielded: `counted:false` (request cap fails
- *     OPEN, uncounted) and {@link storageD1ErrorResult} (storage fails OPEN on
- *     reads, CLOSED with a short Retry-After on byte-adding writes).
+ *     the independent quotas require: `counted:false` (request cap is
+ *     uncounted) and {@link storageD1ErrorResult} (storage fails CLOSED with a
+ *     short Retry-After for every verb).
  *   - **What is counted.** Skips are unchanged: no metering statement when the
  *     caller says so (fan-out sub-request / kill-switch), no storage statement
- *     for an unlimited-storage tier or an unconfirmed (`d1Error`) tier.
+ *     for an unlimited-storage tier; an unconfirmed (`d1Error`) tier skips the
+ *     SUM but returns the fail-closed storage verdict.
  *
  * # The one honest consequence: `db.batch()` is a transaction
  *
@@ -702,8 +695,8 @@ export async function runQuotaBatch(
 ): Promise<QuotaBatchResult> {
   const notCounted: RequestCountIncrement = { counted: false, count: 0 };
 
-  // F21 + CAA-360 #25: an unconfirmed tier means we cannot know the cap, so the
-  // storage read is SKIPPED entirely and the verb-aware error posture applies —
+  // F21 + B181: an unconfirmed tier means we cannot know the cap, so the
+  // storage read is SKIPPED entirely and the fail-closed error posture applies —
   // identical to checkStorageQuota's first branch.
   const storageSkipped: QuotaCheckResult = tierResult.d1Error
     ? storageD1ErrorResult(opts.isMutating)
@@ -729,8 +722,9 @@ export async function runQuotaBatch(
   try {
     results = await db.batch(statements);
   } catch {
-    // Transient store error → fail OPEN on the counter (uncounted) and apply the
-    // verb-aware posture to storage. Same as the serial path under an outage.
+    // Transient store error → fail OPEN on the request counter (uncounted), but
+    // fail CLOSED on storage. The two quotas have different evidence: storage
+    // must never be authorized from an unknown byte total.
     return {
       increment: notCounted,
       storage: wantStorage ? storageD1ErrorResult(opts.isMutating) : storageSkipped,

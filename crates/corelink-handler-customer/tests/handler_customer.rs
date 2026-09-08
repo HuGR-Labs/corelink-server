@@ -373,6 +373,12 @@ fn team_invite_happy_path() {
     assert_eq!(resp.member.email, "bob@acme.com");
     assert_eq!(resp.member.status, "invited");
     assert_eq!(resp.member.role, "member");
+    let token = resp
+        .invitation_token
+        .as_deref()
+        .expect("in-memory invites must return a one-time token");
+    assert_eq!(token.len(), 64);
+    assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
 
     let rows = audit.snapshot().unwrap();
     assert_eq!(rows[0].kind, AuditEventKind::TeamInviteAttempted);
@@ -621,6 +627,166 @@ fn audit_event_kind_slugs_are_unique_and_non_empty() {
 }
 
 // ─── Multi-tenant isolation ───────────────────────────────────────────────────
+
+#[test]
+fn cross_tenant_denial_is_audited_before_error_for_all_six_groups() {
+    let (h, audit, sli) = make_handler();
+    h.seed_overview("tenant_b", sample_overview("tenant_b"))
+        .unwrap();
+    h.seed_usage("tenant_b", sample_usage("tenant_b")).unwrap();
+    h.seed_billing("tenant_b", sample_billing("tenant_b"))
+        .unwrap();
+    h.seed_pat("tenant_b", sample_pat("tenant_b")).unwrap();
+    h.seed_member(
+        "tenant_b",
+        corelink_handler_customer::request::TeamMemberRow::new(
+            "victim",
+            "victim@example.com",
+            "member",
+            "2026-05-01",
+            "active",
+        ),
+    )
+    .unwrap();
+    h.seed_audit_rows(
+        "tenant_b",
+        vec![CustomerAuditEventRow::new(
+            "event_b",
+            "2026-05-01",
+            "tenant.b.event",
+            "info",
+            "actor",
+            "row",
+        )],
+    )
+    .unwrap();
+
+    let assert_denied = |before: usize, expected: AuditEventKind| {
+        let rows = audit.snapshot().unwrap();
+        assert_eq!(rows.len(), before + 1);
+        assert_eq!(rows[before].kind, expected);
+        assert_eq!(rows[before].tenant, "tenant_b");
+        assert!(sli.snapshot().unwrap().last().unwrap().is_error);
+    };
+
+    let err = h
+        .overview(OverviewRequest::new("tenant_a", "attacker", 10).for_tenant("tenant_b"))
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        corelink_handler_customer::CustomerHandlerError::CrossTenantDenied { .. }
+    ));
+    assert_denied(0, AuditEventKind::OverviewDenied);
+
+    let err = h
+        .usage(UsageRequest::new("tenant_a", "attacker", None, 11).for_tenant("tenant_b"))
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        corelink_handler_customer::CustomerHandlerError::CrossTenantDenied { .. }
+    ));
+    assert_denied(1, AuditEventKind::UsageDenied);
+
+    let err = h
+        .billing(BillingRequest::new("tenant_a", "attacker", 12).for_tenant("tenant_b"))
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        corelink_handler_customer::CustomerHandlerError::CrossTenantDenied { .. }
+    ));
+    assert_denied(2, AuditEventKind::BillingDenied);
+
+    let err = CustomerKeysHandler::list(
+        &h,
+        KeysListRequest::new("tenant_a", "attacker", 13).for_tenant("tenant_b"),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        corelink_handler_customer::CustomerHandlerError::CrossTenantDenied { .. }
+    ));
+    assert_denied(3, AuditEventKind::KeysDenied);
+
+    let err = CustomerTeamHandler::list(
+        &h,
+        TeamListRequest::new("tenant_a", "attacker", 14).for_tenant("tenant_b"),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        corelink_handler_customer::CustomerHandlerError::CrossTenantDenied { .. }
+    ));
+    assert_denied(4, AuditEventKind::TeamDenied);
+
+    let err = h
+        .query(
+            AuditQueryRequest::new("tenant_a", "attacker", None, vec![], 15).for_tenant("tenant_b"),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        corelink_handler_customer::CustomerHandlerError::CrossTenantDenied { .. }
+    ));
+    assert_denied(5, AuditEventKind::AuditQueryDenied);
+}
+
+#[test]
+fn cross_tenant_mutations_are_denied_before_any_state_change() {
+    let (h, audit, _sli) = make_handler();
+
+    let err = h
+        .create(
+            KeyCreateRequest::new("tenant_a", "attacker", "forged", vec![], 20)
+                .for_tenant("tenant_b"),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        corelink_handler_customer::CustomerHandlerError::CrossTenantDenied { .. }
+    ));
+    assert!(
+        CustomerKeysHandler::list(&h, KeysListRequest::new("tenant_a", "attacker", 21))
+            .unwrap()
+            .pats
+            .is_empty()
+    );
+
+    let err = h
+        .invite(
+            TeamInviteRequest::new("tenant_a", "attacker", "new@example.com", "member", 22)
+                .for_tenant("tenant_b"),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        corelink_handler_customer::CustomerHandlerError::CrossTenantDenied { .. }
+    ));
+    assert!(
+        CustomerTeamHandler::list(&h, TeamListRequest::new("tenant_a", "attacker", 23))
+            .unwrap()
+            .members
+            .is_empty()
+    );
+
+    let rows = audit.snapshot().unwrap();
+    assert_eq!(rows[0].kind, AuditEventKind::KeysDenied);
+    assert_eq!(rows[1].kind, AuditEventKind::TeamDenied);
+}
+
+#[test]
+fn cross_tenant_audit_failure_is_fail_closed() {
+    let (h, audit, sli) = make_handler();
+    audit.inject_failure("audit unavailable").unwrap();
+    let err = h
+        .overview(OverviewRequest::new("tenant_a", "attacker", 30).for_tenant("tenant_b"))
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        corelink_handler_customer::CustomerHandlerError::AuditFailed(_)
+    ));
+    assert!(audit.snapshot().unwrap().is_empty());
+    assert!(sli.snapshot().unwrap().last().unwrap().is_error);
+}
 
 #[test]
 fn keys_list_isolation_across_tenants() {

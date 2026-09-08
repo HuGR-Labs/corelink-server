@@ -178,6 +178,8 @@ def parse_baseline(text: str) -> dict[str, int]:
         raw_parts = path.split("/")
         if path.startswith("/") or any(part in ("", ".", "..") for part in raw_parts):
             raise MeasurementError(f"baseline path fora do repo na linha {number}: {path}")
+        if not _is_source(path) or _is_excluded(path):
+            raise MeasurementError(f"baseline path nao pertence ao censo de fontes: {path}")
         base[path] = int(value)
     return base
 
@@ -210,15 +212,34 @@ def validate_baseline_transition(previous: dict[str, int], candidate: dict[str, 
     return violations
 
 
-def evaluate(previous: dict[str, int], candidate: dict[str, int], counts: dict[str, int]) -> tuple[list[str], list[str]]:
+def evaluate(
+    previous: dict[str, int],
+    candidate: dict[str, int],
+    counts: dict[str, int],
+    *,
+    trusted_base_counts: dict[str, int] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Evaluate a candidate against the historical and trusted-base floors.
+
+    The inventory is intentionally immutable evidence.  A repository may have
+    accumulated growth before this gate was installed or while an older gate
+    was bypassed; rejecting every future PR because of that inherited drift
+    would incentivise a baseline increase.  When CI supplies a trusted base,
+    the effective floor for an existing path is therefore ``max(historical,
+    trusted-base)``.  A candidate still cannot grow one line beyond the tree it
+    started from, and a new oversized path remains a hard failure.
+    """
     baseline_violations = validate_baseline_transition(previous, candidate, counts)
     policy: list[str] = []
     for path, count in counts.items():
         recorded = previous.get(path)
+        floor = recorded
+        if trusted_base_counts is not None and path in trusted_base_counts:
+            floor = max(floor or 0, trusted_base_counts[path])
         if recorded is None and count > LIMIT:
             policy.append(f"ARQUIVO NOVO acima de {LIMIT}: {path} tem {count} linhas")
-        elif recorded is not None and count > recorded:
-            policy.append(f"CRESCEU: {path} passou de {recorded} para {count} linhas (+{count - recorded})")
+        elif recorded is not None and floor is not None and count > floor:
+            policy.append(f"CRESCEU: {path} passou de {floor} para {count} linhas (+{count - floor})")
         if path in candidate and count <= LIMIT:
             policy.append(f"baseline nao graduada: {path} caiu para {count} linhas")
     return baseline_violations, policy
@@ -229,11 +250,21 @@ def run(base_ref: str | None, head_ref: str) -> int:
     candidate = parse_baseline(baseline_text(head_ref))
     entries = source_entries(head_ref)
     counts = source_counts(entries)
-    baseline_violations, policy = evaluate(previous, candidate, counts)
+    trusted_base_counts = None
+    if base_ref is not None:
+        trusted_base_counts = source_counts(source_entries(base_ref))
+    baseline_violations, policy = evaluate(
+        previous,
+        candidate,
+        counts,
+        trusted_base_counts=trusted_base_counts,
+    )
     print(f"catraca de tamanho — limite {LIMIT} linhas")
     print(f"  arquivos de codigo rastreados : {len(counts)}")
     print(f"  acima do limite hoje          : {sum(n > LIMIT for n in counts.values())}")
     print(f"  na baseline confiavel         : {len(previous)}")
+    if trusted_base_counts is not None:
+        print(f"  floor da arvore confiavel     : {len(trusted_base_counts)} arquivos")
     for item in sorted(baseline_violations + policy):
         print(f"⛔ {item}")
     if baseline_violations or policy:

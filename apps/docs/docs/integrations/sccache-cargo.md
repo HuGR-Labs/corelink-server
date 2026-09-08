@@ -90,7 +90,7 @@ internal-only. A normal PAT may remove an arbitrary cache key in its tenant.
 
 During its startup/write health probe, sccache sends `PUT`, `GET`, and then
 `DELETE` for `.sccache_check`. That key is reserved for this probe and cleanup:
-it is **probe-only**, not a build-artifact key. This does not change the fact
+it is probe-only, not a build-artifact key. This does not change the fact
 that `DELETE` is also available for ordinary cache keys. A method-filtering
 proxy must allow all six methods, including this control request.
 

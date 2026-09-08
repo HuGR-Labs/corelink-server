@@ -85,7 +85,7 @@ pub mod testutil;
 
 pub use alerter::CustomerAlerter;
 pub use config::RevocationConfig;
-pub use detector::RevocationDetector;
+pub use detector::{ActiveByokKeySource, RevocationDetector};
 pub use error::RevocationError;
 pub use event::RevocationAuditEvent;
 pub use store::TenantStatusStore;

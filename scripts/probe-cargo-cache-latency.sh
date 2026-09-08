@@ -43,11 +43,6 @@ PROBE_BASE="${PROBE_BASE:-https://corelink-api.humangr.com}"
 PROBE_TENANT="${PROBE_TENANT:-ee30f7ba-fc25-4d71-939e-ebe130b4c6a3}"
 CARGO_BASE="${PROBE_BASE}/cargo/${PROBE_TENANT}"
 
-if [ -z "${PROBE_TOKEN:-}" ]; then
-  echo "FATAL: PROBE_TOKEN is empty — this run would measure nothing." >&2
-  exit 2
-fi
-
 randkey() { openssl rand -hex 32; }
 
 # p50/p90 from a whitespace-separated list of seconds on stdin.
@@ -63,6 +58,197 @@ pct() {
              label, NR, v[1]*1000, v[p50i]*1000, v[p90i]*1000, v[NR]*1000, (s/NR)*1000
     }'
 }
+
+# Reconcile one or more final Server-Timing response rows. The container
+# phases are ordinary additive entries; only `ohandler`/`oother` are aliases
+# for the same handler window. Keep this in one helper so the probe and its
+# no-network self-test execute exactly the same parser.
+reconcile_origin_split() {
+  awk '
+    BEGIN {
+      phases["ohop"] = 1
+      phases["opat"] = 1
+      phases["oquota"] = 1
+      phases["ostore"] = 1
+      phases["oaccounting"] = 1
+    }
+    {
+      origin = -1; origin_seen = 0; origin_valid = 0
+      sum = 0; parts = 0; unrec = 0
+      handler = 0; handler_seen = 0; malformed = 0; known_seen = 0
+      if ($0 ~ /desc="unreconciled"/) unrec = 1
+      n = split($0, e, ",")
+      for (i = 1; i <= n; i++) {
+        part = e[i]
+        if (tolower(part) ~ /^[[:space:]]*server-timing:/) {
+          sub(/^[^:]*:[[:space:]]*/, "", part)
+        }
+        sub(/^[[:space:]]*/, "", part)
+        name = part
+        sub(/[[:space:];].*$/, "", name)
+        if (name == "origin" || (name in phases) || name == "ohandler" || name == "oother") {
+          known_seen = 1
+
+          # A known metric is never ignored merely because its parameter is
+          # malformed. Require exactly one non-negative finite numeric `dur`.
+          semi = index(part, ";")
+          valid = 1; dur_seen = 0; value = 0
+          if (semi == 0) {
+            valid = 0
+          } else {
+            params = substr(part, semi + 1)
+            pn = split(params, p, ";")
+            for (j = 1; j <= pn; j++) {
+              param = p[j]
+              sub(/^[[:space:]]*/, "", param)
+              sub(/[[:space:]]*$/, "", param)
+              if (param ~ /^dur[[:space:]]*=/) {
+                dur_seen++
+                raw = param
+                sub(/^dur[[:space:]]*=[[:space:]]*/, "", raw)
+                if (raw !~ /^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$/) {
+                  valid = 0
+                } else {
+                  value = raw + 0
+                  rendered = tolower(sprintf("%.17g", value))
+                  if (value != value || rendered ~ /nan|inf/) valid = 0
+                }
+              }
+            }
+            if (dur_seen != 1) valid = 0
+          }
+          if (!valid) {
+            malformed = 1
+            if (name == "origin") origin_seen = 1
+            continue
+          }
+          if (name == "origin") {
+            if (origin_seen) malformed = 1
+            origin = value
+            origin_seen = 1
+            origin_valid = 1
+          } else if (name == "ohandler" || name == "oother") {
+            # The dual producer must report one exact handler duration under
+            # both names. Equal aliases deduplicate; disagreement refuses the
+            # row rather than choosing whichever appeared last.
+            if (handler_seen && handler != value) malformed = 1
+            handler = value
+            handler_seen = 1
+          } else if (seen[name] == NR) {
+            # Duplicate ordinary phases could otherwise be double-counted.
+            malformed = 1
+          } else {
+            seen[name] = NR
+            values[name] = value
+          }
+        }
+      }
+      for (name in phases) {
+        if (seen[name] == NR) { sum += values[name]; parts++ }
+      }
+      if (handler_seen) { sum += handler; parts++ }
+      if (!origin_seen) {
+        if (malformed && known_seen) {
+          total++
+          bad++
+          badmsg = badmsg sprintf("\n      INVALID: malformed known phase without a valid origin")
+        }
+        next
+      }
+      if (malformed) {
+        total++
+        bad++
+        badmsg = badmsg sprintf("\n      INVALID: malformed, conflicting, or duplicate known phase")
+        next
+      }
+      if (!origin_valid) {
+        total++
+        bad++
+        badmsg = badmsg sprintf("\n      INVALID: malformed origin duration")
+        next
+      }
+      if (unrec) { u++; next }
+      if (parts == 0) { absent++; next }
+      total++
+      if ((sum - origin < 0 ? origin - sum : sum - origin) < 0.000001) {
+        ok++
+      } else {
+        bad++
+        badmsg = badmsg sprintf("\n      MISMATCH: origin=%gms but the sub-phases sum to %gms", origin, sum)
+      }
+    }
+    END {
+      if (u > 0)      printf "%d response(s) carried desc=\"unreconciled\" — the container reported a split the Worker refused. ", u
+      if (absent > 0) printf "%d response(s) had NO sub-phases (the deployed container predates them — NOT a free hop). ", absent
+      if (total == 0) { printf "no decomposed response to check.\n"; exit }
+      printf "%d/%d reconcile exactly (ohop + opat + oquota + ostore + oaccounting + ohandler == origin).", ok, total
+      if (bad > 0) printf "%s\n      ^ the accounting is NOT trustworthy; do not act on the split above.", badmsg
+      printf "\n"
+    }' "$1"
+}
+
+probe_self_test() {
+  local self_test_dir
+  self_test_dir="$(mktemp -d)"
+  trap 'if [ -n "${self_test_dir:-}" ]; then rm -rf "${self_test_dir}"; fi' EXIT
+
+  expect_reconcile() {
+    local label="$1" expected="$2" header="$3" output
+    printf '%s\n' "${header}" > "${self_test_dir}/${label}.txt"
+    output="$(reconcile_origin_split "${self_test_dir}/${label}.txt")"
+    case "${output}" in
+      *"${expected}"*) ;;
+      *)
+        echo "self-test failed: ${label}: ${output}" >&2
+        return 1
+        ;;
+    esac
+  }
+
+  # `ohop=78` is the Worker-derived remainder for the exact container values:
+  # 300 - (97 + 118 + 1 + 2 + 4) = 78.
+  expect_reconcile canonical "1/1 reconcile exactly" \
+    'Server-Timing: origin;dur=300, ohop;dur=78, opat;dur=97, oquota;dur=118, ostore;dur=1, oaccounting;dur=2, ohandler;dur=4'
+  expect_reconcile decimal_zero "1/1 reconcile exactly" \
+    'origin;dur=12.5, ohop;dur=0.5, opat;dur=1.25, oquota;dur=2, ostore;dur=0, oaccounting;dur=4.75, ohandler;dur=4'
+  expect_reconcile legacy "1/1 reconcile exactly" \
+    'origin;dur=300, ohop;dur=78, opat;dur=97, oquota;dur=118, ostore;dur=1, oaccounting;dur=2, oother;dur=4'
+  expect_reconcile dual "1/1 reconcile exactly" \
+    'origin;dur=300, ohop;dur=78, opat;dur=97, oquota;dur=118, ostore;dur=1, oaccounting;dur=2, ohandler;dur=4, oother;dur=4;desc="legacy-alias"'
+  expect_reconcile reordered "1/1 reconcile exactly" \
+    'oother;dur=4, oaccounting;dur=2, ostore;dur=1, ohandler;dur=4, oquota;dur=118, ohop;dur=78, opat;dur=97, origin;dur=300'
+  expect_reconcile missing "0/1 reconcile exactly" \
+    'origin;dur=300, ohop;dur=78, opat;dur=97, oquota;dur=118, ostore;dur=1, ohandler;dur=4'
+  expect_reconcile legacy_missing "1/1 reconcile exactly" \
+    'origin;dur=300, ohop;dur=80, opat;dur=97, oquota;dur=118, ostore;dur=1, ohandler;dur=4'
+  expect_reconcile conflict "0/1 reconcile exactly" \
+    'origin;dur=300, ohop;dur=78, opat;dur=97, oquota;dur=118, ostore;dur=1, oaccounting;dur=2, ohandler;dur=4, oother;dur=5'
+  expect_reconcile duplicate "0/1 reconcile exactly" \
+    'origin;dur=300, ohop;dur=78, opat;dur=97, opat;dur=97, oquota;dur=118, ostore;dur=1, oaccounting;dur=2, ohandler;dur=4'
+  expect_reconcile malformed_accounting "0/1 reconcile exactly" \
+    'origin;dur=300, ohop;dur=78, opat;dur=97, oquota;dur=118, ostore;dur=1, oaccounting;dur=abc, ohandler;dur=4'
+  expect_reconcile malformed_alias "0/1 reconcile exactly" \
+    'origin;dur=300, ohop;dur=78, opat;dur=97, oquota;dur=118, ostore;dur=1, oaccounting;dur=2, oother;dur=Inf'
+  expect_reconcile nan_duration "0/1 reconcile exactly" \
+    'origin;dur=300, ohop;dur=78, opat;dur=97, oquota;dur=118, ostore;dur=1, oaccounting;dur=NaN, ohandler;dur=4'
+  expect_reconcile negative_duration "0/1 reconcile exactly" \
+    'origin;dur=300, ohop;dur=78, opat;dur=97, oquota;dur=118, ostore;dur=1, oaccounting;dur=2, ohandler;dur=-4'
+  expect_reconcile missing_duration "0/1 reconcile exactly" \
+    'origin;dur=300, ohop;dur=78, opat;dur=97, oquota;dur=118, ostore;dur=1, oaccounting;foo=2, ohandler;dur=4'
+  expect_reconcile no_origin_malformed "0/1 reconcile exactly" \
+    'Server-Timing: oaccounting;dur=abc'
+  echo "probe origin reconciliation self-test: PASS"
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+  probe_self_test
+  exit 0
+fi
+
+if [ -z "${PROBE_TOKEN:-}" ]; then
+  echo "FATAL: PROBE_TOKEN is empty — this run would measure nothing." >&2
+  exit 2
+fi
 
 echo "=============================================================="
 echo " /cargo cache-lookup latency probe"
@@ -189,13 +375,16 @@ echo
 #                       a D1 round trip on every billable request
 #              ostore — the moat storage lookup: the url->content-hash map read
 #                       plus, on a hit, the CAS/R2 blob fetch
-#              oother — the container's own residue: routing, the rate-limit
-#                       layer, HMAC, Argon2id (or its memo hit), response
-#                       assembly. Computed by the CONTAINER against its own
-#                       whole-request clock.
-#            The container reports opat/oquota/ostore/oother on the subresponse's
-#            own `Server-Timing` and the Worker merges them; the five ALWAYS sum
-#            to `origin` exactly. A Worker deployed BEFORE the container image is
+#              ohandler — explicitly named container framework work: routing, the
+#                       rate-limit layer, HMAC, Argon2id (or its memo hit), and
+#                       response assembly. Computed by the CONTAINER against its
+#                       own whole-request clock.
+#            The container reports opat/oquota/ostore/oaccounting/ohandler on the
+#            subresponse's own `Server-Timing` and the Worker merges them. During
+#            the mixed rollout it also emits the identical `oother` compatibility
+#            alias; the Worker treats that alias as the same handler value, never
+#            as a sixth phase. The five normal phases plus one handler value ALWAYS
+#            sum to `origin` exactly. A Worker deployed BEFORE the container image is
 #            repinned emits `origin` alone (the container says nothing to merge),
 #            so the o* rows read ABSENT — that is "prod is behind this branch",
 #            not "the hop was free". A container report the Worker cannot
@@ -238,12 +427,15 @@ else
   # `qmeter`/`qstor` are the PRE-merge names of `qbatch` — kept in the list so a
   # probe run against an older deployed Worker still attributes its `wdb`
   # instead of silently reporting an unexplained aggregate. The `origin`
-  # sub-phases (`ohop` … `oother`) are queried on the SAME terms: they exist only
-  # on a Worker+container at or past the commit that introduced them, and asking
-  # for them costs nothing on an older deployment beyond an honest ABSENT row.
+  # sub-phases (`ohop` … `ohandler`) are queried on the SAME terms. During the
+  # mixed rollout the container emits identical `ohandler`/`oother` handler
+  # values; this parser canonicalizes both names and never counts the alias twice.
+  # Older responses may be legacy-only. These rows exist only on a
+  # Worker+container at or past the commit that introduced them, and asking for
+  # them costs nothing on an older deployment beyond an honest ABSENT row.
   # THAT is why the last transition was measurable — the probe knew both
   # vocabularies across the deploy, so a run before the deploy still attributed.
-  for ph in auth wdb qtier qbatch qresid qmeter qstor origin ohop opat oquota ostore oother total; do
+  for ph in auth wdb qtier qbatch qresid qmeter qstor origin ohop opat oquota ostore oaccounting ohandler total; do
     # `dur` is milliseconds; `pct` takes seconds.
     #
     # An ABSENT phase must not kill the probe. Under `set -euo pipefail` a `grep`
@@ -254,9 +446,32 @@ else
     # empty case is reported EXPLICITLY: a phase nobody emitted is a fact worth
     # seeing (it means prod is behind this branch, or the phase was skipped on
     # every request), and it must never be silently mistaken for a fast phase.
-    vals="$(grep -oE "(^|[ ,])${ph};dur=[0-9]+" /tmp/probe_st.txt \
-      | grep -oE '[0-9]+$' \
-      | awk '{ print $1 / 1000 }' || true)"
+    if [ "${ph}" = "ohandler" ]; then
+      # Normalize per response: canonical wins in a dual report, while a
+      # legacy-only response contributes its `oother` value. This preserves
+      # mixed old/new populations without counting the alias twice.
+      vals="$(awk '
+        { canonical = ""; legacy = ""; conflict = 0; n = split($0, e, ",")
+          for (i = 1; i <= n; i++) {
+            if (match(e[i], /ohandler;dur=[0-9]+/)) {
+              value = substr(e[i], RSTART + 13, RLENGTH - 13)
+              if (canonical != "" && canonical != value) conflict = 1
+              canonical = value
+            } else if (match(e[i], /oother;dur=[0-9]+/)) {
+              value = substr(e[i], RSTART + 11, RLENGTH - 11)
+              if (legacy != "" && legacy != value) conflict = 1
+              legacy = value
+            }
+          }
+          if (!conflict && canonical != "" && legacy != "" && canonical != legacy) conflict = 1
+          if (!conflict && canonical != "") print canonical / 1000
+          else if (!conflict && legacy != "") print legacy / 1000
+        }' /tmp/probe_st.txt || true)"
+    else
+      vals="$(grep -oE "(^|[ ,])${ph};dur=[0-9]+" /tmp/probe_st.txt \
+        | grep -oE '[0-9]+$' \
+        | awk '{ print $1 / 1000 }' || true)"
+    fi
     if [ -z "${vals}" ]; then
       printf '  %-32s ABSENT — not emitted on ANY of the %s responses (the deployed Worker does not publish this phase, or it was skipped on every request — NOT "it was fast")\n' \
         "${ph}" "${SAMPLES}"
@@ -276,34 +491,11 @@ else
   # this script documents. Report it per-response, loudly, rather than averaging
   # over it — an average hides exactly the responses worth looking at.
   echo -n "  origin split      : "
-  awk '
-    { origin = -1; sum = 0; parts = 0; unrec = 0
-      if ($0 ~ /desc="unreconciled"/) unrec = 1
-      n = split($0, e, ",")
-      for (i = 1; i <= n; i++) {
-        if (match(e[i], /origin;dur=[0-9]+/))                { origin = substr(e[i], RSTART + 11, RLENGTH - 11) + 0 }
-        else if (match(e[i], /(ohop|opat|oquota|ostore|oother);dur=[0-9]+/)) {
-          f = substr(e[i], RSTART, RLENGTH); split(f, kv, ";dur="); sum += kv[2] + 0; parts++
-        }
-      }
-      if (origin < 0) next
-      if (unrec) { u++; next }
-      if (parts == 0) { absent++; next }
-      total++
-      if (sum == origin) ok++; else { bad++; badmsg = badmsg sprintf("\n      MISMATCH: origin=%dms but the sub-phases sum to %dms", origin, sum) }
-    }
-    END {
-      if (u > 0)      printf "%d response(s) carried desc=\"unreconciled\" — the container reported a split the Worker refused. ", u
-      if (absent > 0) printf "%d response(s) had NO sub-phases (the deployed container predates them — NOT a free hop). ", absent
-      if (total == 0) { printf "no decomposed response to check.\n"; exit }
-      printf "%d/%d reconcile exactly (ohop + opat + oquota + ostore + oother == origin).", ok, total
-      if (bad > 0) printf "%s\n      ^ the accounting is NOT trustworthy; do not act on the split above.", badmsg
-      printf "\n"
-    }' /tmp/probe_st.txt
+  reconcile_origin_split /tmp/probe_st.txt
 
   echo "  (ohop is the DO hop — dispatch + placement + the DO's prologue + the wire;"
   echo "   opat/oquota are D1 round trips the CONTAINER makes on every request;"
-  echo "   ostore is the storage lookup; oother is everything else in-container."
+  echo "   ostore is the storage lookup; ohandler is named framework work in-container."
   echo "   A large wdb instead means it is the Worker's own uncached D1 reads.)"
 fi
 echo

@@ -188,6 +188,14 @@ silently introduce new untracked credentials.
 Evidence sources:
 
 - `secrets-drift-report.json` artifact (90d retention) — daily snapshot.
+- `secrets-drift-evidence-watchdog.json` artifact (90d retention) — independent
+  proof that a recent scheduled run completed successfully and retained the
+  report. A missing run, failed run, missing report, or expired report is a
+  fail-closed evidence gap and opens/updates the tracking issue.
+- The watchdog uses `ubuntu-latest` only when the owner explicitly sets
+  `vars.HOSTED_ACTIONS_AVAILABLE=true`; otherwise it falls back to `corelink`.
+  The variable is not created by this repository and is never treated as proof
+  of availability.
 - `cf-deploy-prod.yml` deploy gate log — proves drift cannot reach
   production without an explicit override (no override path exists).
 - `docs/internal/secrets-checklist.md` git history — proves every row
@@ -202,8 +210,10 @@ Mapped to: `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md` §CC6.1.
 - `docs/internal/secrets-checklist.md` — canonical matrix
 - `docs/internal/secrets-runbook.md` — rotation procedures
 - `scripts/validate_secrets_matrix.py` — Python validator (this runbook's primary trigger)
+- `scripts/check_secrets_drift_evidence.py` — Actions API evidence watchdog (run/artifact absence)
 - `scripts/secrets-checklist-verify.sh` — bash deploy-gate verifier
 - `.github/workflows/secrets-drift.yml` — daily cron + PR gate
+- `.github/workflows/secrets-drift-evidence-watchdog.yml` — daily run/artifact absence alarm
 - `.github/workflows/cf-deploy-prod.yml` — production deploy gate
 - `ROADMAP-TO-GA.md` §9 — Human Track credential acquisition
 - `specs/_audits/sealed/2026-05-15-secrets-coverage-baseline.md` — baseline snapshot

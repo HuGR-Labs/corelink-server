@@ -5,6 +5,7 @@ use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use uuid::Uuid;
 
 /// The PAT-resolved tenant for this request. Construction is only possible from
 /// a concrete, non-sentinel `x-corelink-tenant-id`; handlers that take this as
@@ -12,8 +13,17 @@ use axum::response::{IntoResponse, Response};
 #[derive(Debug, Clone)]
 pub struct AuthTenant(
     /// The authenticated, PAT-resolved tenant identifier (never a sentinel).
+    /// This extractor does not compare secrets or zero-pad values: the Worker
+    /// has already resolved the PAT, and this is only the native fail-closed
+    /// reserved-sentinel backstop.
     pub String,
 );
+
+/// Maximum authenticated tenant identifier retained by request handlers.
+/// Production tenants are UUIDs, while bounded synthetic/dev identifiers are
+/// also supported. Keeping this edge value finite makes every pre-body guard's
+/// tenant clone part of its declared request envelope.
+pub const MAX_TENANT_ID_BYTES: usize = 256;
 
 /// Sentinels the Worker/DO use for non-tenant traffic — never a real tenant.
 ///
@@ -54,6 +64,16 @@ pub fn is_reserved_sentinel(raw: &str) -> bool {
     SENTINELS.contains(&raw)
 }
 
+/// A tenant id is a canonical UUID on the production wire.  Keeping this
+/// predicate separate makes the invariant reusable by pre-body guards and
+/// gives mutation tests a single fail-closed decision point.
+#[must_use]
+pub fn is_canonical_tenant_id(raw: &str) -> bool {
+    Uuid::parse_str(raw)
+        .map(|uuid| uuid.to_string() == raw)
+        .unwrap_or(false)
+}
+
 impl<S: Send + Sync> FromRequestParts<S> for AuthTenant {
     type Rejection = Response;
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
@@ -63,8 +83,13 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthTenant {
             .and_then(|v| v.to_str().ok())
             .map(str::trim)
             .unwrap_or("");
-        if is_reserved_sentinel(raw) {
+        if is_reserved_sentinel(raw) || raw.len() > MAX_TENANT_ID_BYTES {
             // Fail CLOSED: no authenticated tenant ⇒ deny. Do not leak which.
+            return Err((StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response());
+        }
+        if !is_canonical_tenant_id(raw) {
+            // Never let an opaque/non-UUID value reach storage key derivation;
+            // otherwise a degraded Turbo path could reach a public prefix.
             return Err((StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response());
         }
         Ok(AuthTenant(raw.to_owned()))
@@ -97,20 +122,52 @@ mod tests {
 
     #[tokio::test]
     async fn concrete_header_is_accepted() {
-        let mut parts = parts_with_header("tenant_abc123");
+        let tenant = "00000000-0000-0000-0000-000000000001";
+        let mut parts = parts_with_header(tenant);
         let extracted = AuthTenant::from_request_parts(&mut parts, &())
             .await
-            .expect("concrete tenant header must be accepted");
-        assert_eq!(extracted.0, "tenant_abc123");
+            .expect("canonical UUID tenant header must be accepted");
+        assert_eq!(extracted.0, tenant);
+    }
+
+    #[test]
+    fn canonical_tenant_predicate_rejects_opaque_values() {
+        assert!(is_canonical_tenant_id(
+            "0190abcd-1234-75ab-8def-0123456789ab"
+        ));
+        assert!(!is_canonical_tenant_id(
+            "0190ABCD-1234-75AB-8DEF-0123456789AB"
+        ));
+        assert!(!is_canonical_tenant_id("tenant_abc123"));
+        assert!(!is_canonical_tenant_id("_oci"));
     }
 
     #[tokio::test]
     async fn concrete_header_is_trimmed() {
-        let mut parts = parts_with_header("  tenant_abc123  ");
+        let tenant = "00000000-0000-0000-0000-000000000002";
+        let mut parts = parts_with_header(&format!("  {tenant}  "));
         let extracted = AuthTenant::from_request_parts(&mut parts, &())
             .await
-            .expect("trimmed concrete tenant header must be accepted");
-        assert_eq!(extracted.0, "tenant_abc123");
+            .expect("trimmed canonical UUID tenant header must be accepted");
+        assert_eq!(extracted.0, tenant);
+    }
+
+    #[tokio::test]
+    async fn opaque_tenant_is_rejected_by_the_extractor() {
+        let mut parts = parts_with_header("tenant_abc123");
+        let rejection = AuthTenant::from_request_parts(&mut parts, &())
+            .await
+            .expect_err("opaque tenant ids must never reach native handlers");
+        assert_eq!(rejection.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn oversized_tenant_header_is_rejected_before_handler_clones() {
+        let mut parts = parts_with_header(&"t".repeat(MAX_TENANT_ID_BYTES + 1));
+        let rejection = AuthTenant::from_request_parts(&mut parts, &())
+            .await
+            .expect_err("oversized tenant header must be rejected");
+        assert_eq!(rejection.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

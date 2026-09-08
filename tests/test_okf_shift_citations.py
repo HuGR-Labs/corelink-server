@@ -30,7 +30,20 @@ class ShiftHarness(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp)
         self.scripts = self.tmp / "scripts"
         self.scripts.mkdir()
-        for name in ("okf_shift_citations.py", "validate_okf.py", "okf_git_batch.py"):
+        # validate_okf.py is a split validator; copy its complete standalone
+        # import closure so the hermetic subprocess exercises the same code as
+        # the production entry point.
+        for name in (
+            "okf_shift_citations.py",
+            "validate_okf.py",
+            "validate_okf_runtime.py",
+            "validate_okf_core1.py",
+            "validate_okf_core2.py",
+            "validate_okf_checks.py",
+            "okf_git_batch.py",
+            # C5c is imported dynamically by validate_okf_runtime.py.
+            "okf_anchor_reverify.py",
+        ):
             shutil.copy(ROOT / "scripts" / name, self.scripts / name)
         self._git("init", "-q")
         self._git("config", "user.email", "tests@example.invalid")
@@ -39,6 +52,54 @@ class ShiftHarness(unittest.TestCase):
         self._write_concept("src.txt:3", "base claim")
         self._git("add", ".")
         self._git("commit", "-qm", "base")
+
+    def test_standalone_closure_rejects_missing_dynamic_c5c_module(self) -> None:
+        """A missing dynamic C5c import must be an explicit standalone failure."""
+        required = self.scripts / "okf_anchor_reverify.py"
+        self.assertTrue(required.is_file(), "the standalone closure omitted the C5c module")
+
+        base = self._git("rev-parse", "HEAD").strip()
+        self._write_source(["inserted", "zero", "alpha", "beta", "gamma", "delta"])
+        moved_blob = self._git("hash-object", "-w", "src.txt").strip()
+        concept = self.tmp / "docs/knowledge/auth/x.md"
+        concept.write_text(
+            "---\n"
+            "type: AuthMechanism\n"
+            "title: B-124 standalone C5c\n"
+            "description: dynamic import closure\n"
+            "source_files:\n"
+            "  - src.txt\n"
+            f"source_blobs:\n  - src.txt@{moved_blob}\n"
+            f"checkpoint_sha: {base}\n"
+            "provenance: AUTHORED\n"
+            "---\n\n"
+            "# C5c standalone closure\n\n"
+            "# How it works\n- moved source (`src.txt:4`).\n\n"
+            "# Invariants\n- moved source remains grounded (`src.txt:4`).\n\n"
+            "# Citations\n1. `src.txt:4` — moved source.\n",
+            encoding="utf-8",
+        )
+        self._git("add", ".")
+        self._git("commit", "-qm", "move source")
+
+        required.unlink()
+        result = subprocess.run(
+            [
+                "python3",
+                str(self.scripts / "validate_okf.py"),
+                "--bundle",
+                "docs/knowledge",
+                "--manifest",
+                "/nonexistent-b124-manifest",
+                "--base-ref",
+                base,
+            ],
+            cwd=self.tmp,
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("okf_anchor_reverify", result.stderr)
 
     def _git(self, *args: str) -> str:
         return subprocess.run(

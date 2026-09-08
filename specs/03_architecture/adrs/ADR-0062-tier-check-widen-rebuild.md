@@ -3,9 +3,9 @@ id: "ADR-0062"
 type: "adr"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "2.0.0"
 created: "2026-06-09"
-updated: "2026-06-09"
+updated: "2026-09-06"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -20,14 +20,13 @@ references:
   - "scripts/check_migrations_additive.py"
 ---
 
-# ADR-0062 — tier-CHECK widening via additive table rebuild (migration 0062)
+# ADR-0062 — tier-CHECK widening via additive catalog edit (migration 0062)
 
 ## Status
 
-**ACCEPTED** (2026-06-09). Companion to **ADR-S19-001** (the 5→6 tier taxonomy
-*product* decision); this ADR records the D1 migration **mechanism** and is the
-record cited by the `additive-allowed: ADR-0062` gate annotations in
-`migrations/d1/0062_expand_tier_selections_6tier.sql`.
+**ACCEPTED** (2026-06-09; mechanism amended 2026-09-06). Companion to
+**ADR-S19-001** (the 5→6 tier taxonomy *product* decision); this ADR records the
+D1 migration **mechanism** and its additive proof.
 
 ## Context
 
@@ -38,47 +37,42 @@ domain to accept `'solo'` + `'max'`. That domain is the **inline**
 0039.
 
 SQLite (hence Cloudflare D1) has **no** `ALTER TABLE … ALTER COLUMN` /
-`DROP CONSTRAINT` / `ADD CONSTRAINT` to relax an existing inline CHECK in place.
-The only schema-correct way to widen it is the SQLite-documented **12-step table
-rebuild**. (The 0057 `tenant.tier` precedent widened the taxonomy by ADDing a
-brand-new column — an idiom that only works for a not-yet-existing column, so it
-cannot relax 0039's pre-existing CHECKs.) The other in-place workaround in the
-repo — `BEFORE INSERT/UPDATE … RAISE(ABORT)` triggers (0023) — can only ADD
-restrictions, never RELAX a CHECK, so it does not apply.
+`DROP CONSTRAINT` / `ADD CONSTRAINT` to relax an existing inline CHECK through
+ordinary DDL. A 12-step rebuild would replace tables and violate
+`INV-AUTH-MIGRATION-ADDITIVE`, so it is not acceptable for this migration. The
+0057 `tenant.tier` ADD-column precedent and 0023 restriction triggers likewise
+cannot alter 0039's existing column.
 
-The `check_migrations_additive.py` gate (INV-AUTH-MIGRATION-ADDITIVE, HIGH)
-rejects raw `DROP TABLE` / `RENAME` tokens unless annotated
-`-- additive-allowed: ADR-NNNN <reason>` against a recorded ADR.
+The property gate (INV-AUTH-MIGRATION-ADDITIVE, HIGH) rejects destructive
+statement prefixes, including table-swap `ALTER TABLE <name> RENAME TO`.
 
 ## Decision
 
 Migration `0062_expand_tier_selections_6tier.sql` widens **both** CHECKs to
-accept `'solo'` + `'max'` (retaining `'team'` for back-compat) via the 12-step
-rebuild: `CREATE …_new` (widened CHECK) → `INSERT … SELECT` explicit-column
-**1:1 copy** → `DROP` old → `RENAME` new → re-create **every** index (incl. the
-UNIQUE partial `idx_tenant_active_subscription` that enforces
-INV-ONBOARD-DPA-FIRST). `PRAGMA foreign_keys` is toggled OFF/ON around the swap
-per the SQLite guidance.
+accept `'solo'` + `'max'` (retaining `'team'` for back-compat) by exact
+`UPDATE sqlite_master SET sql = replace(...)` statements scoped to the two
+0039 table names. SQLite's `writable_schema` pragma is enabled only for those
+catalog edits, then disabled; the schema cookie is invalidated so the current
+connection reparses the CHECKs. A TEMP `CHECK (ok = 1)` postcondition fails
+closed if either edit is missing or partial. No physical table, row, index, FK,
+or dependent view is replaced.
 
-The `DROP`/`RENAME` tokens carry `-- additive-allowed: ADR-0062 …`. The change
-is **destructive in mechanism** (rebuild) but **purely additive in effect**: the
-accepted-value set only grows, and **zero rows are dropped or mutated**.
+## Zero-data-loss and replay proof
 
-## Zero-data-loss proof
-
-1. The copy is `INSERT INTO …_new (<all columns>) SELECT <all columns> FROM <old>`
-   with no `WHERE` and no transform → every row and every column value preserved.
-2. No accepted tier value is removed (`'team'` is retained) → no pre-existing row
-   can violate the widened CHECK, so the copy cannot fail on a constraint.
-3. All indexes — including the at-most-one-`active`-subscription UNIQUE partial —
-   are re-created verbatim after the swap, so the persisted invariants hold across
-   the rebuild.
+1. Both table objects remain in place; only their catalog CHECK expressions are
+   replaced. Existing rows and every column value are therefore untouched.
+2. No accepted tier value is removed (`'team'` is retained), while `'solo'` and
+   `'max'` are added to the appropriate domains.
+3. Existing indexes, the at-most-one-`active` UNIQUE partial, FK, and dependent
+   view are not dropped or recreated.
+4. Replaying 0062 finds no old expression, performs no durable edit, and passes
+   the same postcondition guard.
 
 ## Consequences
 
-- **One-shot** (a rebuild is not self-idempotent); guarded by the migration
-  runner's sequential numbering (`wrangler d1 migrations apply` records 0062
-  exactly once — the same guarantee 0057 relies on).
+- **Replay-safe** (old-expression replacements become no-ops); also guarded by
+  the migration runner's sequential numbering (`wrangler d1 migrations apply`
+  records 0062 exactly once).
 - Applied to prod **only** via `scripts/apply-d1-migrations-prod.sh`
   (`EXPECTED_FILE_COUNT` bumped 60→61), an owner-gated step.
 - `tier_selection_locks` is untouched (its CHECKs do not reference `tier`).
@@ -89,4 +83,7 @@ accepted-value set only grows, and **zero rows are dropped or mutated**.
   `migrations/d1/0039_tier_selection.sql` (original inline CHECKs);
   `migrations/d1/0057_tenant_tier.sql` (ADD-COLUMN widening precedent).
 - ADR-S19-001 (tier taxonomy 5→6, product); ADR-0036 (D1 migration governance);
-  `scripts/check_migrations_additive.py` (the gate).
+  `scripts/check_migrations_additive.py` and
+  `crates/corelink-ops/tests/migrations_prop_migration_additivity.rs` (the
+  destructive-prefix gates); `scripts/verify_b256_migration_additivity.py`
+  (focal SQLite and mutation proof).

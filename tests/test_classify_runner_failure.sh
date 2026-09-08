@@ -15,6 +15,12 @@ set -e; [ "$rc" -eq 42 ]
 printf '%s\n' 'assertion failed in PR code' | python3 "$s" | grep -qx CODE_FAILURE
 printf '%s\n' 'test fixture says bus error in test output' | python3 "$s" | grep -qx CODE_FAILURE
 printf '%s\n' 'collect2: ld: Bus error; error[E0308]: code mismatch' | python3 "$s" | grep -qx CODE_FAILURE
+set +e
+printf '%s\n' 'Runner lost communication while the operation was canceled' | python3 "$s" >/dev/null
+rc=$?
+set -e
+[ "$rc" -eq 43 ]
+printf '%s\n' 'Runner lost communication; assertion failed in test' | python3 "$s" | grep -qx CODE_FAILURE
 chmod +x "$wrapper"
 
 # The wrapper must preserve the original status for infrastructure failures;
@@ -71,7 +77,7 @@ elapsed=$(( $(date +%s) - start ))
 [ "$rc" -eq 124 ]
 [ "$elapsed" -le 5 ]
 grep -q '^GATE_TIMEOUT ' <<<"$timeout_output"
-grep -q '^classification: CODE_FAILURE$' <<<"$timeout_output"
+grep -q '^classification: TIMEOUT$' <<<"$timeout_output"
 
 # The timeout helper itself rejects malformed bounds instead of running an
 # unbounded command.

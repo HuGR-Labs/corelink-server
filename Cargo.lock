@@ -1332,6 +1332,7 @@ dependencies = [
  "tokio-postgres-rustls",
  "uuid",
  "webpki-roots",
+ "zeroize",
 ]
 
 [[package]]
@@ -1366,6 +1367,7 @@ version = "0.1.0"
 dependencies = [
  "corelink-handler-ac",
  "corelink-handler-cas",
+ "corelink-hash",
  "hex",
  "serde",
  "serde_json",
@@ -1960,6 +1962,7 @@ version = "0.1.0"
 dependencies = [
  "corelink-slo",
  "thiserror",
+ "uuid",
 ]
 
 [[package]]
@@ -2323,6 +2326,7 @@ dependencies = [
  "corelink-dsr",
  "corelink-erasure-attestation",
  "corelink-failover-router",
+ "corelink-gc",
  "corelink-handler-ac",
  "corelink-handler-admin",
  "corelink-handler-cas",

@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CAIQ = Path("marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md")
 SIG = Path("marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md")
+OWNER_ACTIONS = Path("docs/internal/b087-questionnaire-owner-actions.md")
+FALSE_BYOK_PROVIDER_CLAIM = "InMemoryFake"
 
 # This is a bounded, named population.  Adding or removing a row requires a
 # deliberate update here and in the mutation suite; a missing row is never a
@@ -27,13 +31,13 @@ CAIQ_ROWS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
     "AIS-04.1": ("P", ("CodeQL", "workflow_dispatch", "cargo-fuzz", "not daily"), ("CodeQL + Semgrep (custom rules) on every PR", "cargo-fuzz daily")),
     "BCR-04.1": ("Y", ("provider-managed keys", "BYOK is NOT shipped"), ("BYOK if enabled", "optional BYOK")),
     "CEK-02.1": ("Y", ("provider-managed keys", "BYOK is NOT shipped"), ("Optional BYOK envelope.",)),
-    "CEK-04.1": ("P", ("501 byok_not_available", "InMemoryFake", "No FIPS-validated-module claim is made"), ()),
+    "CEK-04.1": ("P", ("501 byok_not_available", "ActiveProvider::Unavailable", "No FIPS-validated-module claim is made"), ()),
     "CEK-05.1": ("P", ("Documented, not served", "501 byok_not_available"), ()),
     "CEK-06.1": ("P", ("Customer-key rotation: no", "501 byok_not_available"), ("DEK rotation on customer trigger",)),
     "CEK-07.1": ("P", ("CoreLink genuinely never holds CMK material", "501 byok_not_available"), ()),
-    "CEK-09.1": ("N", ("No — BYOK is not shipped", "501 Not Implemented", "InMemoryFake"), ("BYOK available",)),
+    "CEK-09.1": ("N", ("No — BYOK is not shipped", "501 Not Implemented", "ActiveProvider::Unavailable"), ("BYOK available",)),
     "CEK-10.1": ("N", ("BYOK is NOT shipped", "byok_not_available", "shell simulation"), ("| Y |", "drilled weekly")),
-    "CEK-11.1": ("N", ("BYOK is NOT shipped", "InMemoryFake"), ("| Y |", "HSM-backed key material")),
+    "CEK-11.1": ("N", ("BYOK is NOT shipped", "ActiveProvider::Unavailable"), ("| Y |", "HSM-backed key material")),
     "CEK-16.1": ("P", ("EVT-KMS-*` events are BYOK events", "501 byok_not_available"), ()),
     "CEK-17.1": ("P", ("Customer-controlled crypto-shredding is not available", "501 byok_not_available"), ()),
     "CEK-18.1": ("P", ("documents a **design**, not a served boundary", "501 Not Implemented"), ("apps/docs/docs/security/byok",)),
@@ -63,19 +67,40 @@ SIG_ROWS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
     "K.10": ("Y", ("**one** supplementary measure", "BYOK is not shipped", "501 byok_not_available"), ("supplementary measures (BYOK envelope encryption",)),
     "N.2": ("Y", ("BYOK is not shipped", "no CoreLink tenant reaches any of them"), ("customer-side BYOK KMS providers",)),
     "N.4": ("Y", ("provider-managed keys", "not shipped", "501 byok_not_available"), ("The \"optional BYOK envelope encryption per blob\"",)),
-    "N.6": ("N", ("No — BYOK is not shipped", "501 Not Implemented", "InMemoryFake", "shell simulation"), ("| Y |", "across 4 providers … drilled weekly")),
+    "N.6": ("N", ("No — BYOK is not shipped", "501 Not Implemented", "ActiveProvider::Unavailable", "shell simulation"), ("| Y |", "across 4 providers … drilled weekly")),
 }
 
 SOURCE_CHECKS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("crates/corelink-container/src/routes/byok_admin.rs", ("REAL_KMS_PROVIDER_WIRED", "byok_not_available", "NOT_IMPLEMENTED")),
-    ("crates/corelink-container/src/byok_orchestrator.rs", ("ActiveProvider::InMemoryFake", "Ok(Arc::new(InMemoryFake::new()))")),
+    # These are code-level witnesses, not historical prose markers.  The
+    # production binary now has no fake provider at all: the no-feature branch
+    # returns an error and the admin route maps it to 501 before D1.
+    (
+        "crates/corelink-container/src/routes/byok_admin.rs",
+        (
+            "crate::byok_orchestrator::make_provider().await",
+            "StatusCode::NOT_IMPLEMENTED",
+        ),
+    ),
+    (
+        "crates/corelink-container/src/byok_orchestrator.rs",
+        (
+            "ActiveProvider::Unavailable",
+            "Err(BYOKError::Provider(",
+            "#[cfg(not(any(",
+        ),
+    ),
     ("crates/corelink-container/Cargo.toml", ("default = []",)),
     (".github/workflows/codeql.yml", ("schedule:", "workflow_dispatch:",)),
-    (".github/workflows/semgrep.yml", ("workflow_dispatch:", "schedule:",)),
-    (".github/workflows/fuzz-nightly.yml", ("workflow_dispatch:", "schedule:",)),
+    # Both lanes are intentionally parked: their schedules are comments, so
+    # only the explicit manual trigger is a live witness.
+    (".github/workflows/semgrep.yml", ("workflow_dispatch:",)),
+    (".github/workflows/fuzz-nightly.yml", ("workflow_dispatch:",)),
     (".github/workflows/cargo-audit.yml", ("pull_request:", "schedule:",)),
     (".github/workflows/cargo-deny.yml", ("pull_request:", "schedule:",)),
-    ("wrangler.toml", ("production env intentionally omits [triggers]", "<PIN_AT_RELEASE>")),
+    # `wrangler.toml` is checked structurally below.  Keep the path in this
+    # closed-world fixture list, but do not accept a comment that merely says
+    # production has no cron.
+    ("wrangler.toml", ()),
     (".github/CODEOWNERS", ("*",)),
 )
 
@@ -89,6 +114,186 @@ class Row:
     key: str
     answer: str
     text: str
+
+
+def _mask_comments(
+    text: str, *, slash_comments: bool = False, hash_comments: bool = False
+) -> str:
+    """Remove comments while preserving strings and line numbers.
+
+    Source witnesses must not be satisfiable by stale prose in a Rust `//!`
+    block or a TOML `#` comment.  Strings remain because the admin response
+    marker is itself a deliberate wire contract; the caller checks that marker
+    together with the surrounding executable status branch.
+    """
+
+    out: list[str] = []
+    i = 0
+    block_depth = 0
+    quote: str | None = None
+    escaped = False
+    while i < len(text):
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+        if block_depth:
+            if ch == "/" and nxt == "*":
+                block_depth += 1
+                out.extend((" ", " "))
+                i += 2
+            elif ch == "*" and nxt == "/":
+                block_depth -= 1
+                out.extend((" ", " "))
+                i += 2
+            else:
+                out.append("\n" if ch == "\n" else " ")
+                i += 1
+            continue
+        if quote:
+            out.append(ch)
+            # TOML/YAML single-quoted strings escape a quote by doubling it.
+            if quote == "'" and ch == "'" and nxt == "'":
+                out.append(nxt)
+                i += 2
+                continue
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch == '"' or (ch == "'" and (hash_comments or not slash_comments)):
+            quote = ch
+            out.append(ch)
+            i += 1
+        elif slash_comments and ch == "/" and nxt == "/":
+            out.extend((" ", " "))
+            i += 2
+            while i < len(text) and text[i] != "\n":
+                out.append(" ")
+                i += 1
+        elif slash_comments and ch == "/" and nxt == "*":
+            block_depth = 1
+            out.extend((" ", " "))
+            i += 2
+        elif hash_comments and ch == "#":
+            out.append(" ")
+            i += 1
+            while i < len(text) and text[i] != "\n":
+                out.append(" ")
+                i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
+def _mask_literals(text: str, *, single_quotes: bool = False) -> str:
+    """Blank literals so code witnesses cannot be string decoys."""
+
+    out: list[str] = []
+    i = 0
+    quote: str | None = None
+    escaped = False
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            out.append("\n" if ch == "\n" else " ")
+            if quote == "'" and ch == "'" and i + 1 < len(text) and text[i + 1] == "'":
+                out.append(" ")
+                i += 2
+                continue
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                quote = None
+            elif ch == "'" and quote == "'":
+                quote = None
+            i += 1
+            continue
+        if ch == '"' or (single_quotes and ch == "'"):
+            quote = ch
+            out.append(" ")
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _source_failures(root: Path, relative: str, needles: tuple[str, ...]) -> list[str]:
+    path = root / relative
+    if not path.is_file():
+        return [f"missing source control: {relative}"]
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return [f"source control unreadable: {relative}: {exc}"]
+
+    if relative == "wrangler.toml":
+        try:
+            config = tomllib.loads(text)
+        except tomllib.TOMLDecodeError as exc:
+            return [f"source control changed or malformed: {relative}: {exc}"]
+        prod = config.get("env", {}).get("prod")
+        triggers = prod.get("triggers") if isinstance(prod, dict) else None
+        if not isinstance(triggers, dict) or triggers.get("crons") != []:
+            return [
+                "source control changed or missing: wrangler.toml: "
+                "env.prod.triggers.crons must be an explicit empty list"
+            ]
+        return []
+
+    code = _mask_comments(
+        text,
+        slash_comments=relative.endswith(".rs"),
+        hash_comments=relative.endswith((".toml", ".yml", ".yaml")),
+    )
+    code_tokens = _mask_literals(
+        code, single_quotes=relative.endswith((".toml", ".yml", ".yaml"))
+    )
+    failures = [
+        f"source control changed or missing: {relative}: {needle}"
+        for needle in needles
+        if needle not in code_tokens
+    ]
+    if relative in {
+        ".github/workflows/semgrep.yml",
+        ".github/workflows/fuzz-nightly.yml",
+    }:
+        # The parked lanes must remain dispatch-only.  A commented schedule is
+        # historical context; an active schedule silently changes the answer
+        # in the procurement population and must turn this guard red.
+        if re.search(r"(?m)^\s*schedule\s*:", code):
+            failures.append(
+                f"source control changed or missing: {relative}: "
+                "parked lane has an active schedule"
+            )
+        if re.search(r"(?m)^\s*pull_request\s*:", code):
+            failures.append(
+                f"source control changed or missing: {relative}: "
+                "parked lane has an active pull_request trigger"
+            )
+    if relative == "crates/corelink-container/src/routes/byok_admin.rs":
+        # Couple the response literal to the executable provider-error arm.
+        # The prefix is matched after masking literals, while the response is
+        # then required in the same short source window.  A copy of the whole
+        # witness in a comment or string cannot satisfy this.
+        prefix = re.compile(
+            r"crate::byok_orchestrator::make_provider\(\)\.await"
+            r"(?s:.*?)StatusCode::NOT_IMPLEMENTED\s*,\s*"
+        )
+        response = '"{\\"error\\":\\"byok_not_available\\"}"'
+        match = prefix.search(code_tokens)
+        if not match or response not in code[match.start() : match.end() + 256]:
+            failures.append(
+                "source control changed or missing: "
+                "crates/corelink-container/src/routes/byok_admin.rs: "
+                "provider error maps to executable 501 byok_not_available"
+            )
+    return failures
 
 
 def _rows(path: Path) -> dict[str, Row]:
@@ -130,19 +335,51 @@ def _check_rows(path: Path, specs: dict[str, tuple[str, tuple[str, ...], tuple[s
     return failures
 
 
+def _check_no_false_byok_provider_claims(root: Path) -> list[str]:
+    """Keep procurement documents aligned with the shipped no-provider build.
+
+    ``InMemoryFake`` is a test-only implementation elsewhere in the tree.  It
+    must not appear in the bounded customer-facing documents or owner packet,
+    where it would falsely describe the default runtime.  The positive marker
+    checks above prove the affected rows carry the executable ``Unavailable``
+    and 501 reality; this closed-world scan prevents a stale claim in any
+    unlisted row (or owner handoff) from silently returning the guard to green.
+    """
+
+    failures: list[str] = []
+    for relative in (CAIQ, SIG, OWNER_ACTIONS):
+        path = root / relative
+        if not path.is_file():
+            failures.append(f"missing questionnaire reality packet: {relative}")
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            failures.append(f"questionnaire reality packet unreadable: {relative}: {exc}")
+            continue
+        if FALSE_BYOK_PROVIDER_CLAIM in text:
+            failures.append(
+                f"false default BYOK provider claim in {relative}: "
+                f"{FALSE_BYOK_PROVIDER_CLAIM}"
+            )
+        if relative == OWNER_ACTIONS:
+            for marker in (
+                "ActiveProvider::Unavailable",
+                "no real provider is compiled in",
+                "501 byok_not_available",
+            ):
+                if marker not in text:
+                    failures.append(f"owner packet missing BYOK reality marker: {marker}")
+    return failures
+
+
 def verify(root: Path = ROOT) -> dict[str, object]:
     failures: list[str] = []
     for relative, needles in SOURCE_CHECKS:
-        path = root / relative
-        if not path.is_file():
-            failures.append(f"missing source control: {relative}")
-            continue
-        text = path.read_text(encoding="utf-8")
-        for needle in needles:
-            if needle not in text:
-                failures.append(f"source control changed or missing: {relative}: {needle}")
+        failures.extend(_source_failures(root, relative, needles))
     failures.extend(_check_rows(root / CAIQ, CAIQ_ROWS))
     failures.extend(_check_rows(root / SIG, SIG_ROWS))
+    failures.extend(_check_no_false_byok_provider_claims(root))
     # The legal instruments are intentionally observed, not mutated.  Their
     # live promises are owner/legal residue and must remain visible in output.
     owner_actions = [

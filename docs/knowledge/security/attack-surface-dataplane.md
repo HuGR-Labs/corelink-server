@@ -4,12 +4,14 @@ title: "Data-plane attack surface"
 description: "What an attacker-grade red-team of CoreLink's cache data plane and every cache surface actually found — and why the data plane held."
 source_files:
   - "docs/security/2026-06-23-brutal-dataplane.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+source_blobs:
+  - "docs/security/2026-06-23-brutal-dataplane.md@eb8983127253d0daf5eb273efb589a91f6eced73"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["security", "data-plane", "cache-poisoning", "tenant-isolation", "red-team"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Data-plane attack surface
 
 CoreLink's data plane is the bytes path — native CAS/AC plus every off-native cache surface

@@ -13,6 +13,7 @@ on:
     paths:
       - "apps/admin-ui/**"
       - ".github/workflows/admin-ui-e2e.yml"
+      - "scripts/verify-b069-e2e.sh"
       # This job's `pnpm install` behaviour comes from the composite action as
       # much as from this file, so a change to it must re-run this gate.
       - ".github/actions/setup-pnpm/**"
@@ -21,6 +22,7 @@ on:
     paths:
       - "apps/admin-ui/**"
       - ".github/workflows/admin-ui-e2e.yml"
+      - "scripts/verify-b069-e2e.sh"
       # This job's `pnpm install` behaviour comes from the composite action as
       # much as from this file, so a change to it must re-run this gate.
       - ".github/actions/setup-pnpm/**"
@@ -84,6 +86,9 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Verify B-069 journeys are executable
+        run: bash ../../scripts/verify-b069-e2e.sh
 
       # See the critical-e2e job below for why `--reporter=line` is gone: the CLI
       # flag overrides the config's reporter list and silently disables the html

@@ -15,14 +15,23 @@ source_files:
   - "crates/corelink-ratelimit/src/bucket.rs"
   - "crates/corelink-ratelimit/src/key.rs"
 source_blobs:
-  - "crates/corelink-ratelimit/src/limiter.rs@c6384aac307b1b9e41ea7a85ae330d220d989c41"
+  - "crates/corelink-gc/src/lib.rs@a90ca4ba9de9b10d9a17bc14d764a21840765ebf"
+  - "crates/corelink-gc/src/run.rs@2442bb040da2a3e222b1350d140b48eced77c44f"
+  - "crates/corelink-gc/src/degrade.rs@cc8083ee0c3f24ffc66055996784bb54e98208ab"
+  - "crates/corelink-gc/src/worker.rs@82048c93af987e9194d76123778e99c9a1d415a8"
+  - "crates/corelink-eviction/src/lib.rs@47ee8e633f4ec00a9a5221390381b79d7e33e042"
+  - "crates/corelink-eviction/src/reachable.rs@767578f6a50ef144ff7e4070d179d538344a7491"
+  - "crates/corelink-eviction/src/blob_meta.rs@666009e8186b86382adaef9c7423a5a1c3316433"
+  - "crates/corelink-ratelimit/src/lib.rs@f6d03b3f5d8eea26914501b0c8f8438a00f17a3f"
+  - "crates/corelink-ratelimit/src/limiter.rs@fee38491616f6d81ea78c740549e5a99b2e04a41"
   - "crates/corelink-ratelimit/src/bucket.rs@4ab6aa7c1baf67ad2824cc5a96b23ebb01f8da6b"
-checkpoint_sha: "db0dc2936842d0e43fa41a613317245b80c89da6"
+  - "crates/corelink-ratelimit/src/key.rs@1bb056c23a2b683edc8a9564529aa0bb1e9fcb1c"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["crates", "gc", "eviction", "ratelimit", "ops", "sre"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Operations crate cluster (GC, replication, ratelimit, SRE)
 
 A content-addressed cache that never reclaims space goes bankrupt on storage COGS, and one that reclaims carelessly corrupts a tenant's data — so this cluster is the background plane that frees bytes safely and protects availability under load. It is grouped around two correctness spines: reclamation is reachability-gated and soft-delete-first (nothing is physically deleted while it could still be referenced, and the race-aware boundary uses a strict `created_at < evict_started_at_ms` so a concurrent write is protected), and rate limiting is per-tenant-isolated by a leftmost-tenant key so one tenant can never throttle another. `corelink-gc` is the GC worker + scheduler with an emergency degrade-mode stop; `corelink-eviction` is the LRU/TTL/quota-trigger evictor; `corelink-ratelimit` is the token-bucket engine.

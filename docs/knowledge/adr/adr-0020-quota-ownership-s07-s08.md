@@ -4,12 +4,14 @@ title: "ADR-0020 — Quota ownership: S-07 storage soft-pressure, S-08 hard-bloc
 description: "Splits quota ownership by category so S-07 owns storage soft-pressure eviction (≤95%) and S-08 owns the 100% hard-block plus bandwidth and behavioral rate-limits."
 source_files:
   - "specs/03_architecture/adrs/ADR-0020-quota-ownership-s07-s08.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "ownership", "quota", "rate-limit", "eviction"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0020-quota-ownership-s07-s08.md@82f403ec969bce70e46b5cb5559bfe3dd864f029"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0020 — Quota ownership: S-07 storage soft-pressure, S-08 hard-block + bandwidth
 
 CoreLink enforces several distinct quota categories, and two sprints both claimed "quota," leaving it unclear who detects a breach, who enforces it, and who alerts. This ADR decomposes ownership by category: S-07 owns storage soft-pressure (eviction below 100%) and S-08 owns the 100% hard-block plus bandwidth and behavioral rate-limits. It matters because a clean owner per category turns quota from a cliff into a gradient (silent eviction, then a 429) and prevents blind eviction. It governs the same tenant-quota machinery surfaced via the [storage-quota header](/tenancy/storage-quota-header.md) and the [request quota](/tenancy/request-quota.md).

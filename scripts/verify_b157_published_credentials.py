@@ -78,17 +78,22 @@ def census(root: Path) -> dict[str, object]:
                 if CURL_ARGV.search(command):
                     findings.append({"kind": "curl_argv", "path": rel, "line": line_number})
                 if CONFIG_CURL.search(command):
-                    block = lines[end + 1 : end + 5]
+                    block: list[str] = []
+                    for entry in lines[end + 1 : end + 10]:
+                        block.append(entry)
+                        if entry.strip() == "EOF":
+                            break
                     normalized = [entry.strip() for entry in block]
-                    valid = (
-                        len(normalized) >= 2
-                        and SAFE_HEADER.match(normalized[0])
-                        and normalized[1] == "EOF"
-                    ) or (
-                        len(normalized) >= 3
-                        and normalized[0].startswith('url = "')
-                        and SAFE_HEADER.match(normalized[1])
-                        and normalized[2] == "EOF"
+                    valid = bool(normalized and normalized[-1] == "EOF")
+                    if valid and normalized[0].startswith('url = "'):
+                        valid = len(normalized) >= 3 and SAFE_HEADER.match(normalized[1]) is not None
+                        payload = normalized[2:-1]
+                    else:
+                        valid = len(normalized) >= 2 and SAFE_HEADER.match(normalized[0]) is not None
+                        payload = normalized[1:-1]
+                    valid = valid and all(
+                        entry.startswith(("header = ", "data = ", "url = "))
+                        for entry in payload
                     )
                     if not valid:
                         findings.append({"kind": "malformed_stdin_config", "path": rel, "line": line_number})

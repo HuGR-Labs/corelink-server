@@ -1,0 +1,91 @@
+name: real ignored integration harnesses (B-068)
+
+# This is an operator lane for real D1/R2/Stripe/Neon test infrastructure.
+# It is deliberately not a PR, push, or scheduled job: repository code is
+# allowed to make outbound calls only after an operator dispatches the pinned
+# main ref and the protected environment approval is granted.
+#
+# The secret PAT-seed harness is not a profile here. It prints a PAT and seed
+# SQL and therefore remains permanently outside CI; this workflow never
+# receives the PAT signing key.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Real harness profile to execute"
+        required: true
+        type: choice
+        default: all
+        options:
+          - d1
+          - r2
+          - stripe
+          - neon
+          - all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-ignored-harnesses-${{ inputs.profile }}
+  cancel-in-progress: false
+
+jobs:
+  real-integration:
+    name: real integration (${{ inputs.profile }})
+    # Secrets are protected by this environment and are attached only to the
+    # final executor step below. The contract/mutation step has no credentials.
+    environment: real-integration
+    runs-on: corelink
+    timeout-minutes: 90
+    steps:
+      - name: Checkout pinned main
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Ref and event safety gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "HuGR-Labs/corelink-server"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_REF" = "refs/heads/main"
+          echo "protected manual executor: repository/ref/event verified"
+
+      - name: Verify executor contract and mutation guards
+        run: python3 scripts/verify_real_ignored_harnesses.py
+
+      - name: Execute selected real harnesses
+        shell: bash
+        env:
+          # D1/R2 native adapter credentials. They are passed only after the
+          # protected environment gate and are masked by Actions automatically.
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_S3_ACCESS_KEY_ID: ${{ secrets.R2_S3_ACCESS_KEY_ID }}
+          R2_S3_SECRET_ACCESS_KEY: ${{ secrets.R2_S3_SECRET_ACCESS_KEY }}
+          R2_TEST_BUCKET: ${{ vars.R2_TEST_BUCKET }}
+          # Stripe live integration uses the wallet broker's test reference;
+          # CoreLink never receives a raw Stripe secret key.
+          HUGR_WALLET_BASE: ${{ vars.HUGR_WALLET_BASE }}
+          HUGR_WALLET_TOKEN: ${{ secrets.HUGR_WALLET_TOKEN }}
+          HUGR_STRIPE_REF: ${{ vars.HUGR_STRIPE_REF }}
+          STRIPE_AUTH_MODE: wallet-broker
+          STRIPE_PRICE_ID_STARTER: ${{ vars.STRIPE_PRICE_ID_STARTER }}
+          # Neon is separately selected and receives only its staging DSN.
+          NEON_TEST_DSN: ${{ secrets.NEON_TEST_DSN }}
+          # Pass the untrusted input as data, never by interpolating it into
+          # the shell program. The runner's allow-list validates it again.
+          REAL_HARNESS_PROFILE: ${{ inputs.profile }}
+        run: |
+          set -euo pipefail
+          for name in HUGR_WALLET_TOKEN NEON_TEST_DSN R2_S3_SECRET_ACCESS_KEY; do
+            if [[ -n "${!name:-}" ]]; then
+              echo "::add-mask::${!name}"
+            fi
+          done
+          bash scripts/run-real-ignored-harnesses.sh "$REAL_HARNESS_PROFILE"

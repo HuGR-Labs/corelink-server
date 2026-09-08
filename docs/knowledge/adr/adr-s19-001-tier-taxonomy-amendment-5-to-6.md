@@ -4,12 +4,14 @@ title: "ADR-S19-001 — Tier taxonomy amendment: 5 → 6 tiers"
 description: "Amends the sealed S-19 tier taxonomy from 5 to 6 tiers (adds Solo + Max, removes Team) while carrying forward every other R-S19-7/R-S19-8 onboarding clause unchanged."
 source_files:
   - "specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "launch", "tier-taxonomy", "stripe-checkout", "pricing", "onboarding", "s19"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md@c62746b9f202e0a90444455d4f184d858b86c5dc"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S19-001 — Tier taxonomy amendment: 5 → 6 tiers
 
 The sealed S-19 spec froze a 5-tier ladder (free/starter/team/pro/enterprise), but post-launch packaging analysis found it under-served both ends of the self-serve funnel and that `team` overlapped its neighbours without a distinct job-to-be-done. This ADR is the sanctioned non-sealed amendment that re-shapes the ladder to six tiers — adding Solo (entry paid) and Max (premium self-serve), removing Team — without editing immutable sealed history and without touching any invariant, security control, or latency/cost gate. It is the authoritative source for the live tier domain that checkout, billing, and the pricing page transcribe. Related: [the per-tenant dollar ceiling](/tenancy/dollar-ceiling.md) and [the billing/quota check flow](/flows/billing-quota-check.md).
@@ -24,10 +26,10 @@ The decision amends the tier count 5 → 6, widens the paid set to {Solo, Starte
 
 # Consequences
 
-The code is already aligned (the 6-member enum, the amended Stripe map, the price vars), the persisted tier domain is widened additively via the standard 12-step D1 rebuild migration 0062 (destructive in mechanism, purely additive in effect — `'team'` retained for back-compat and retired at the app layer), and the sealed S-19 docs remain untouched historical record with a one-directional ADR→spec back-link, per `specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md:146-205`.
+The code is already aligned (the 6-member enum, the amended Stripe map, the price vars), the persisted tier domain is widened additively via the in-place catalog-edit migration 0062 (physical tables and rows retained; `'team'` retained for back-compat and retired at the app layer), and the sealed S-19 docs remain untouched historical record with a one-directional ADR→spec back-link, per `specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md:146-205`.
 
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md:42-85` — the sealed 5-tier baseline and the 6-tier re-shape (add Solo/Max, remove Team) with wire strings (Context).
 2. `specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md:86-145` — the amendment decision: paid set, Stripe plan map, price vars, prices-out-of-enum, carried-forward clauses.
-3. `specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md:146-205` — code-aligned consequences, the additive 0062 rebuild migration, and the sealed-history spec hygiene.
+3. `specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md:146-205` — code-aligned consequences, the additive 0062 catalog-edit migration, and the sealed-history spec hygiene.

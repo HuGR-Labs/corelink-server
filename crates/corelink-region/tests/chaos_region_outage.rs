@@ -1,6 +1,6 @@
 //! Chaos test: region outage simulation — WI-S14-001 §6.1.5 + §15.
 //!
-//! 4 scenarios (one per region): WNAM/ENAM/WEUR/SAM outage.
+//! One isolation scenario per canonical region.
 //! Simulates CF region partial outage (traffic blackhole) and verifies:
 //! - Affected region tenants see degraded service (metrics: health_status=1).
 //! - Other regions remain healthy (isolation enforced).
@@ -88,7 +88,7 @@ fn test_chaos_wnam_outage_isolation() {
         "WNAM must be Degraded during outage"
     );
 
-    // ENAM/WEUR/SAM remain healthy (region isolation)
+    // Every non-WNAM canonical region remains healthy (region isolation).
     verify_region_isolation(&metrics, Region::Wnam);
 
     // Alert: outage event fired
@@ -188,7 +188,7 @@ fn test_chaos_weur_outage_isolation() {
         "WEUR must be Degraded during outage"
     );
 
-    // WNAM/ENAM/SAM remain healthy
+    // Every non-WEUR canonical region remains healthy.
     for (region_str, status) in &metrics.health_status {
         if region_str != "weur" {
             assert_eq!(
@@ -257,10 +257,10 @@ fn test_chaos_sam_outage_recovery() {
 }
 
 // ---------------------------------------------------------------------------
-// All 4 scenarios composite: isolation invariant holds for each region
+// Composite: isolation invariant holds for every canonical region
 // ---------------------------------------------------------------------------
 #[test]
-fn test_chaos_all_4_regions_outage_isolation() {
+fn test_chaos_all_regions_outage_isolation() {
     // For each region, simulate outage + verify isolation
     let mut results: Vec<(&str, bool)> = Vec::new();
 
@@ -289,7 +289,7 @@ fn test_chaos_all_4_regions_outage_isolation() {
         results.push((affected.as_str(), is_degraded && others_healthy));
     }
 
-    // All 4 scenarios must pass
+    // Every canonical scenario must pass.
     for (region, passed) in &results {
         assert!(
             *passed,
@@ -298,8 +298,12 @@ fn test_chaos_all_4_regions_outage_isolation() {
         );
     }
 
-    assert_eq!(results.len(), 4, "All 4 region scenarios must run");
-    println!("Chaos test results (4/4 green):");
+    assert_eq!(
+        results.len(),
+        Region::ALL.len(),
+        "Every canonical region scenario must run"
+    );
+    println!("Chaos test results ({0}/{0} green):", Region::ALL.len());
     for (region, passed) in &results {
         println!("  {}: {}", region, if *passed { "PASS" } else { "FAIL" });
     }

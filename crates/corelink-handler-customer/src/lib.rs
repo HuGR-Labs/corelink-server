@@ -36,11 +36,12 @@
 //!   (PAT create/revoke, team invite) emits the corresponding audit row
 //!   BEFORE the mutation; audit failure aborts the op + returns
 //!   [`CustomerHandlerError::AuditFailed`].
-//! - **INV-CROSS-TENANT-DENIED** — every request carries `caller_tenant`;
-//!   if `caller_tenant != tenant` the handler emits `*Denied` audit BEFORE
-//!   returning `CrossTenantDenied`. Read-only endpoints (overview, usage,
-//!   billing, audit query) emit `ReadDenied`; mutation endpoints emit their
-//!   respective `*Denied` variant.
+//! - **INV-CROSS-TENANT-DENIED** — every request carries `caller_tenant` and
+//!   an optional `requested_tenant` (defaulting to the caller). If the target
+//!   differs from the authenticated caller, the handler emits the group's
+//!   `*Denied` audit BEFORE returning `CrossTenantDenied`; audit-sink failure
+//!   returns `AuditFailed` instead. The guard covers overview, usage, billing,
+//!   keys, team, and audit-query operations.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

@@ -83,13 +83,14 @@ export async function acceptDpaAction(input: {
 }
 
 export async function configureTenantAction(input: {
-  tenantId: string;
   region: Region;
   plan: Plan;
 }): Promise<{ ok: true }> {
   const token = await getSessionToken();
   return apiPost<{ ok: true }>(
-    `/v1/tenants/${encodeURIComponent(input.tenantId)}/configure`,
+    // The Worker resolves the tenant from the verified Clerk session. Never
+    // interpolate a browser-supplied tenant id into an authority-bearing URL.
+    "/v1/onboarding/configure",
     { region: input.region, plan: input.plan },
     { token },
   );

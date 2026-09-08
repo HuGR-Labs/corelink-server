@@ -21,17 +21,67 @@
  */
 
 import {
+  buildErasureQueueMessage,
+  claimClerkProvision,
+  completeClerkProvision,
+  deriveErasureSalt,
+  deterministicDsrId,
+  handleUserDeleted,
+  isValidClerkUserId,
+  MIN_INTERNAL_AUTH_KEY_LEN,
+} from "./clerk_erasure.js";
+import type { ClerkUserDeletedEvent, DsrQueuedV1 } from "./clerk_erasure.js";
+import {
+  d1AnalyticsEmitter,
+  emailHashCandidates,
+  emailHashFor,
+  emailHashLegacy,
+  isProvisionedMacro,
+  orgMapKeyFor,
+  primaryEmailOf,
+  PROVISIONED_MACROS,
+  regionFromColo,
+  tenantSlugFor,
+  UnprovisionedRegionError,
+} from "./clerk_identity.js";
+import type { AnalyticsEmitter, ApiClient, MacroRegion } from "./clerk_identity.js";
+export {
+  d1AnalyticsEmitter,
+  emailHashCandidates,
+  emailHashFor,
+  emailHashLegacy,
+  isProvisionedMacro,
+  orgMapKeyFor,
+  primaryEmailOf,
+  PROVISIONED_MACROS,
+  regionFromColo,
+  tenantSlugFor,
+  UnprovisionedRegionError,
+} from "./clerk_identity.js";
+export type { AnalyticsEmitter, ApiClient, MacroRegion } from "./clerk_identity.js";
+export {
+  buildErasureQueueMessage,
+  deriveErasureSalt,
+  deterministicDsrId,
+  handleUserDeleted,
+  isValidClerkUserId,
+} from "./clerk_erasure.js";
+export type { ClerkUserDeletedEvent, DsrQueuedV1 } from "./clerk_erasure.js";
+import {
   insertTenant,
   insertTenantOrgMap,
   seedTenantEntitlements,
-  acceptTeamInvitation,
 } from "../lib/d1.js";
 
 export interface ClerkUserCreatedEvent {
   type: "user.created";
   data: {
     id: string;
-    email_addresses: Array<{ id: string; email_address: string }>;
+    email_addresses: Array<{
+      id: string;
+      email_address: string;
+      verification?: { status?: string | null } | null;
+    }>;
     primary_email_address_id?: string | null;
     external_accounts?: Array<{
       provider: string;
@@ -129,305 +179,6 @@ export interface AutoProvisionEnv {
 }
 
 /** Clerk `user.deleted` webhook payload (account-deletion → GDPR erasure). */
-export interface ClerkUserDeletedEvent {
-  type: "user.deleted";
-  data: { id: string; deleted?: boolean };
-}
-
-/**
- * Frozen wire contract for the DSR erasure queue message (`dsr.queued.v1`).
- * The Rust queue consumer (WI-S11-008) deserializes this into the
- * orchestrator's `ErasureRequest`. `erasure_salt_hex` is 64 hex chars (32
- * bytes); `subject_id == tenant_id` because CoreLink provisions exactly one
- * tenant per Clerk user, so the tenant IS the unit of deletion.
- */
-export interface DsrQueuedV1 {
-  schema: "dev.hugr.corelink.dsr.queued.v1";
-  dsr_id: string;
-  tenant_id: string;
-  subject_id: string;
-  erasure_salt_hex: string;
-  queued_at_ms: number;
-  legal_hold: boolean;
-  source: "clerk.user.deleted";
-  clerk_user_id: string;
-}
-
-function bytesToHex(buf: ArrayBuffer): string {
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/**
- * Deterministic name-based (v5-shaped) UUID from a Clerk user id. STABLE across
- * Svix redeliveries, so the same account deletion always maps to ONE `dsr_id`
- * and the erasure orchestrator (which dedups per `(dsr_id, backend)`) is
- * idempotent — a redelivered `user.deleted` never double-runs erasure.
- */
-export async function deterministicDsrId(clerkUserId: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`corelink-dsr-v1:${clerkUserId}`),
-  );
-  const b = new Uint8Array(digest).slice(0, 16);
-  b[6] = ((b[6] ?? 0) & 0x0f) | 0x50; // version 5 (name-based)
-  b[8] = ((b[8] ?? 0) & 0x3f) | 0x80; // RFC 4122 variant
-  const h = bytesToHex(b.buffer);
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
-
-/**
- * 32-byte erasure salt (hex). `HMAC-SHA256(ERASURE_SALT_KEY, dsr_id)` when the
- * key is set (secret → unlinkable pseudonymization per GDPR Art. 4(5)).
- *
- * Fail-closed in prod (F9, CAA-360 2026-06-13): when `key` is absent and
- * `environment` starts with `"prod"`, throws an error so the caller returns 500
- * and Svix retries the erasure — the right-to-erasure obligation stays alive
- * while the operator misconfiguration is corrected.
- *
- * In non-prod environments (dev/CI) the deterministic `SHA-256("erasure-salt:"
- * + dsr_id)` fallback is still used so tests run without secrets; it is NOT
- * secret and MUST NOT reach production.
- */
-export async function deriveErasureSalt(
-  dsrId: string,
-  key: string | undefined,
-  environment?: string,
-): Promise<string> {
-  if (key && key.length > 0) {
-    const k = await crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(key),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"],
-    );
-    const sig = await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(dsrId));
-    return bytesToHex(sig);
-  }
-  // ERASURE_SALT_KEY absent — fail CLOSED in prod (the predictable fallback
-  // breaks GDPR pseudonymization unlinkability).
-  if (environment && environment.startsWith("prod")) {
-    throw new Error(
-      "ERASURE_SALT_KEY is not configured — refusing to derive a predictable erasure salt in prod (fail-CLOSED)",
-    );
-  }
-  // Non-prod fallback: deterministic but NOT secret. Never reaches production.
-  const d = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`erasure-salt:${dsrId}`),
-  );
-  return bytesToHex(d);
-}
-
-/**
- * Build the `dsr.queued.v1` erasure message for a deleted Clerk user. Pure
- * given its inputs (deterministic `dsr_id` + salt) → fully testable + idempotent.
- *
- * Throws when `saltKey` is absent and `environment` starts with `"prod"` (F9,
- * CAA-360 2026-06-13) — the caller must surface this as a 500 for Svix retry.
- */
-export async function buildErasureQueueMessage(input: {
-  clerkUserId: string;
-  tenantId: string;
-  nowMs: number;
-  saltKey: string | undefined;
-  environment?: string;
-  /**
-   * Whether the tenant is under a legal hold (litigation / regulatory /
-   * retention obligation). When true, the erasure orchestrator and every
-   * backend adapter PRESERVE the data instead of erasing it (CTRL-PRIV-033;
-   * adapter_d1.rs:202, adapter_r2_cas.rs:157, adapter_r2_ac.rs:144 all return
-   * NotApplicable on `legal_hold == true`). Resolved by the caller from the
-   * tenant's legal-hold state. Defaults to false — the absence of a hold — so
-   * existing callers are unaffected; the caller MUST pass `true` for a held
-   * tenant or the preservation branch is never reached.
-   */
-  legalHold?: boolean;
-}): Promise<DsrQueuedV1> {
-  const dsrId = await deterministicDsrId(input.clerkUserId);
-  const saltHex = await deriveErasureSalt(dsrId, input.saltKey, input.environment);
-  return {
-    schema: "dev.hugr.corelink.dsr.queued.v1",
-    dsr_id: dsrId,
-    tenant_id: input.tenantId,
-    subject_id: input.tenantId, // 1 Clerk user : 1 tenant — tenant is the deletion unit
-    erasure_salt_hex: saltHex,
-    queued_at_ms: input.nowMs,
-    legal_hold: input.legalHold ?? false,
-    source: "clerk.user.deleted",
-    clerk_user_id: input.clerkUserId,
-  };
-}
-
-/**
- * Resolve whether `tenantId` is under a legal hold from D1.
- *
- * Legal hold is an OPERATOR-ONLY control (litigation / regulatory / unpaid-
- * invoice retention) with no self-serve surface at launch; it is recorded in a
- * dedicated `tenant_legal_hold` table (one row per held tenant, cleared by
- * DELETING the row). A self-serve account deletion (Clerk
- * `user.deleted`) MUST honor an active hold by carrying `legal_hold: true` into
- * the erasure message so the CTRL-PRIV-033 preservation branch in the
- * orchestrator/adapters fires and the legally-retained data is NOT destroyed.
- *
- * Posture on a query error → `false` (NOT held). This is deliberate: the
- * `tenant_legal_hold` table is not yet provisioned in prod, and a missing table
- * surfaces here as a thrown error. Returning `true` on error would make EVERY
- * account deletion a no-op preservation and silently break the live GDPR
- * right-to-erasure obligation — a far larger harm than the low-severity, not-
- * yet-built hold feature. So until an operator provisions the table (and a hold
- * actually exists), this resolves to false and erasure proceeds exactly as it
- * does today; the moment the table + a row exist, a held tenant's deletion
- * carries `legal_hold: true` and preservation kicks in. An ABSENT row (the
- * common case once the table exists — no hold) likewise returns false.
- *
- * NOTE: this wires the previously-dead CTRL-PRIV-033 branch to a real
- * source-of-truth. The hold WRITE surface (operator tooling + the
- * `tenant_legal_hold` migration) is the operator's launch step; this is the
- * READ side that the live erasure trigger consults.
- */
-async function tenantUnderLegalHold(
-  db: NonNullable<AutoProvisionEnv["CONFIG_DB"]>,
-  tenantId: string,
-): Promise<boolean> {
-  try {
-    // Frozen schema (migration 0076, C-LEGALHOLD): tenant_legal_hold has
-    // columns (tenant_id, reason, held_at_ms) ONLY. A hold IS the presence of a
-    // row keyed by tenant_id; it is cleared by DELETING the row (there is no
-    // `released_at_ms` soft-delete column). So existence of a row == held.
-    const row = await db
-      .prepare(
-        "SELECT 1 AS held FROM tenant_legal_hold WHERE tenant_id = ?1 LIMIT 1",
-      )
-      .bind(tenantId)
-      .first<{ held: number }>();
-    return row != null;
-  } catch {
-    // Hold table not yet provisioned / transient read error → no hold exists
-    // that we can honor; let erasure proceed (preserving the live obligation).
-    // See the posture note above for why this is false, not true.
-    return false;
-  }
-}
-
-/**
- * Handle a verified Clerk `user.deleted` event: look up the tenant and enqueue
- * a GDPR erasure request. FAIL-LOUD (500 → Svix retries) when a tenant exists
- * but the queue binding is absent, so a right-to-erasure obligation is never
- * silently dropped. No tenant (deleted pre-provision or already erased) → 200 no-op.
- */
-export async function handleUserDeleted(
-  event: ClerkUserDeletedEvent,
-  env: AutoProvisionEnv,
-  svixId: string,
-): Promise<Response> {
-  const clerkUserId = event.data?.id;
-  if (!clerkUserId) {
-    return Response.json({ ok: true, erasure_enqueued: false, reason: "no_user_id" });
-  }
-
-  let tenantId: string | null = null;
-  if (env.CONFIG_DB) {
-    try {
-      const row = await env.CONFIG_DB.prepare(
-        "SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1 LIMIT 1",
-      )
-        .bind(clerkUserId)
-        .first<{ tenant_id: string }>();
-      tenantId = row?.tenant_id ?? null;
-    } catch {
-      // D1 error — 500 so Svix retries. We must NOT silently drop a deletion.
-      return new Response(
-        JSON.stringify({ ok: false, error: "tenant_lookup_failed" }),
-        { status: 500, headers: { "content-type": "application/json" } },
-      );
-    }
-  }
-
-  if (!tenantId) {
-    // No provisioned tenant — nothing to erase. Ack so Svix stops retrying.
-    return Response.json({ ok: true, erasure_enqueued: false, reason: "no_tenant" });
-  }
-
-  if (!env.DSR_QUEUE) {
-    console.error(
-      `[clerk-webhook] user.deleted tenant=${tenantId} but DSR_QUEUE unbound — ` +
-        `cannot honor erasure; returning 500 for Svix retry (svix=${svixId})`,
-    );
-    return new Response(
-      JSON.stringify({ ok: false, error: "dsr_queue_unconfigured" }),
-      { status: 500, headers: { "content-type": "application/json" } },
-    );
-  }
-
-  // Honor an operator legal hold: a held tenant's data MUST be PRESERVED, not
-  // erased, even when the (self-serve, or attacker-driven) Clerk account is
-  // deleted. Resolve the hold from D1 and carry it into the message so the
-  // CTRL-PRIV-033 preservation branch is actually reachable (it was dead while
-  // legal_hold was hardcoded false). CONFIG_DB is the same binding used for the
-  // tenant lookup above; if it is absent we cannot read a hold and proceed
-  // as un-held (no hold capability provisioned).
-  const legalHold = env.CONFIG_DB ? await tenantUnderLegalHold(env.CONFIG_DB, tenantId) : false;
-
-  let msg: DsrQueuedV1;
-  try {
-    msg = await buildErasureQueueMessage({
-      clerkUserId,
-      tenantId,
-      nowMs: Date.now(),
-      saltKey: env.ERASURE_SALT_KEY,
-      environment: env.ENVIRONMENT,
-      legalHold,
-    });
-  } catch (saltErr) {
-    // F9 (CAA-360 2026-06-13): ERASURE_SALT_KEY absent in prod → fail CLOSED.
-    // Return 500 so Svix retries — the erasure obligation stays alive until
-    // the operator provisions the secret.
-    console.error(
-      `[clerk-webhook] erasure salt derivation failed for tenant=${tenantId} svix=${svixId}: ${String(saltErr)}`,
-    );
-    return new Response(
-      JSON.stringify({ ok: false, error: "erasure_salt_key_unconfigured" }),
-      { status: 500, headers: { "content-type": "application/json" } },
-    );
-  }
-  // G4 (WI-S11-008): write a durable "DSR requested" anchor BEFORE enqueue so the
-  // 24h verify sweep can detect an SLA breach even when the erasure fails before
-  // ANY backend tombstone lands (audit-fail-closed → no dsr_erasure_log row).
-  // Idempotent: dsr_id is the deterministic name-based UUID, so a Svix
-  // redelivery is an INSERT-OR-IGNORE no-op. Best-effort: a D1 failure here must
-  // NOT block the enqueue (the queue + orchestrator + audit chain are the
-  // primary obligation path); the sweep degrades to its dsr_erasure_log source.
-  if (env.CONFIG_DB) {
-    try {
-      await env.CONFIG_DB.prepare(
-        "INSERT OR IGNORE INTO dsr_requested (dsr_id, tenant_id, requested_at, status) " +
-          "VALUES (?1, ?2, ?3, 'requested')",
-      )
-        .bind(msg.dsr_id, tenantId, msg.queued_at_ms)
-        .run();
-    } catch (reqErr) {
-      console.error(
-        `[clerk-webhook] dsr_requested write failed dsr_id=${msg.dsr_id} svix=${svixId}: ${String(reqErr)}`,
-      );
-    }
-  }
-
-  await env.DSR_QUEUE.send(msg);
-  // dsr_id is a pseudonymous id; tenant_id is not secret. erasure_salt is NEVER logged.
-  console.log(
-    `[clerk-webhook] erasure enqueued dsr_id=${msg.dsr_id} tenant=${tenantId} svix=${svixId}`,
-  );
-  return Response.json({
-    ok: true,
-    erasure_enqueued: true,
-    dsr_id: msg.dsr_id,
-    tenant_id: tenantId,
-  });
-}
-
 export interface AutoProvisionResult {
   tenant_id: string;
   region: string;
@@ -534,309 +285,6 @@ export async function verifySvixSignature(ctx: VerifyContext): Promise<boolean> 
  * are what `tenant.primary_region` holds (D1 CHECK in migrations 0023/0028). The
  * MUST mirror `worker/src/region-map.ts` MacroRegion + the Rust region_map.rs.
  */
-export type MacroRegion = "wnam" | "enam" | "weur" | "sam" | "apac" | "afr";
-
-/**
- * Macro regions backed by a jurisdiction-correct R2 bucket; signup MUST reject
- * the rest with a terminal 422 (never silently mis-land a tenant's data — backlog
- * #29).
- *
- * Provisionable = `{wnam, enam, weur, apac}` — exactly the macros whose serving
- * infra stores data in the CORRECT location/jurisdiction. `wnam`/`enam`→`iad`
- * (US R2); `weur`→`lhr` (EU R2 bucket `corelink-cas-eu` via the eu R2 endpoint —
- * LGPD/GDPR compliant); `apac`→`nrt` (WP4 — APAC-LOCATED bucket `corelink-cas-apac`,
- * Tokyo; a physical location hint, no APAC residency jurisdiction exists in R2).
- *
- * `sam` is DELIBERATELY EXCLUDED even though it is a valid, routable macro:
- * `PROD_SAM` still points at the DEFAULT US R2 endpoint + the shared US bucket
- * (`corelink-cas-prod`), so a `sam`-labelled tenant's data would land in US
- * storage under a FALSE residency label — an LGPD cross-border violation.
- * Cloudflare has NO SAM region (documented platform limit), so `sam` stays
- * non-provisionable EVERYWHERE while remaining routable. `afr` remains
- * unprovisioned (no colo build-out).
- *
- * SINGLE SOURCE OF TRUTH: this set MUST equal `worker/src/region-map.ts`
- * `PROVISIONED_MACROS` and the Rust `region_map.rs` `PROVISIONED_MACROS`. The
- * 3-way drift is gated by `worker/tests/region-map.test.ts` (which parses all
- * three copies) and by `tests/clerk.test.ts` here.
- */
-export const PROVISIONED_MACROS: ReadonlySet<MacroRegion> = new Set<MacroRegion>([
-  "wnam",
-  "enam",
-  "weur",
-  "apac",
-]);
-
-/**
- * Thrown when a tenant's geo-derived macro region is a VALID canonical region
- * but is NOT provisioned (afr today; sam is a CF platform limit — apac was
- * provisioned by WP4). Caught by the webhook
- * handler and mapped to a TERMINAL 422 (no Svix retry) — signup MUST reject the
- * tenant rather than silently downgrade them to a US region (backlog #29).
- */
-export class UnprovisionedRegionError extends Error {
-  readonly region: string;
-  constructor(region: string) {
-    super(`data-residency region '${region}' is not provisioned`);
-    this.name = "UnprovisionedRegionError";
-    this.region = region;
-  }
-}
-
-/**
- * Map a CF colo code (the closest PoP to the end-user, e.g. "FRA", "GRU",
- * "NRT") to a canonical MACRO residency region. The mapping is geo-coarse:
- * European colos → weur, South-American → sam, Asia-Pacific → apac, everything
- * else (incl. unknown/absent) → enam (the genuine US-east default).
- *
- * NOTE: this returns the macro region the tenant SHOULD be assigned. Whether
- * that region is actually servable is a SEPARATE check (`PROVISIONED_MACROS`) —
- * an unprovisioned macro is REJECTED at signup, never silently downgraded.
- */
-export function regionFromColo(colo: string | undefined | null): MacroRegion {
-  if (!colo || typeof colo !== "string") return "enam";
-  const c = colo.trim().toUpperCase();
-  if (c.length === 0) return "enam";
-  // Western-European colos → weur (the EU residency region; closing the leak).
-  const WEUR = new Set([
-    "LHR", "LCY", "MAN", "EDI", // UK + Ireland-adjacent
-    "DUB",
-    "FRA", "MUC", "DUS", "HAM", "STR", "TXL", "BER", // Germany
-    "CDG", "MRS", "LYS", // France
-    "AMS", "BRU", "ARN", "CPH", "HEL", "OSL", "VIE", "ZRH", "GVA",
-    "MAD", "BCD", "BCN", "LIS", "MXP", "FCO", "PMO", "WAW", "PRG", "BUD",
-  ]);
-  // South-American colos → sam.
-  const SAM = new Set([
-    "GRU", "GIG", "BSB", "POA", "FOR", "REC", "CWB", "CNF", // Brazil
-    "EZE", "SCL", "BOG", "LIM", "UIO", "MDE", "MVD", "ASU",
-  ]);
-  // Asia-Pacific + Oceania colos → apac (provisioned by WP4 → Tokyo/nrt,
-  // physical bucket corelink-cas-apac; Oceania is served from Tokyo until an OC
-  // region exists).
-  const APAC = new Set([
-    "NRT", "KIX", "ITM", "HND", // Japan
-    "ICN", "TPE", "HKG", "SIN", "KUL", "BKK", "CGK", "MNL",
-    "BOM", "DEL", "MAA", "BLR", "HYD", "CCU",
-    "SYD", "MEL", "PER", "BNE", "AKL", // Oceania
-  ]);
-  if (WEUR.has(c)) return "weur";
-  if (SAM.has(c)) return "sam";
-  if (APAC.has(c)) return "apac";
-  // North-American + African + Middle-Eastern + anything unknown → enam
-  // (the genuine US-east default for unspecified/unmapped geos).
-  return "enam";
-}
-
-/** True iff the macro region is provisioned in Phase 1 (signup-acceptable). */
-export function isProvisionedMacro(region: string): region is MacroRegion {
-  return (PROVISIONED_MACROS as ReadonlySet<string>).has(region);
-}
-
-/**
- * Derive a tenant slug from a Clerk user payload.
- *
- *   1. Prefer GitHub external-account username (`@github` provider).
- *   2. Else use the local-part of the primary email.
- *   3. Append `-default` and lower-case the whole thing.
- *   4. Strip anything not [a-z0-9-] to satisfy the tenant validator.
- */
-export function tenantSlugFor(user: ClerkUserCreatedEvent["data"]): string {
-  const github = user.external_accounts?.find(
-    (e) => e.provider === "oauth_github" || e.provider === "github",
-  );
-  const primary = user.primary_email_address_id
-    ? user.email_addresses.find((e) => e.id === user.primary_email_address_id)
-    : user.email_addresses[0];
-  const emailLocal = primary?.email_address.split("@")[0];
-  const seed = github?.username ?? user.username ?? emailLocal ?? user.id;
-  const cleaned = seed
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  // Tenant name validator (admin-ui `validators.ts`) requires 3–64 chars.
-  const safe = cleaned.length >= 3 ? cleaned : `user-${user.id.slice(0, 12)}`;
-  return `${safe}-default`.slice(0, 64);
-}
-
-/**
- * The `tenant_org_map` key for this provisioning event — the Clerk principal
- * identifier githugr scopes a token to (A1 auto-provision, frozen decision).
- *
- * Prefer the Clerk **org id** (`organization_id`, else `org_id`) when the event
- * carries one; otherwise fall back to the user `id` (`sub`). Individual pilot
- * users have no org, so the sub fallback guarantees EVERY principal maps to its
- * isolated tenant — which is exactly what `resolve-tenant` looks up (a missing
- * row is the `org_not_mapped` lockout A1 closes).
- *
- * NOTE (githugr contract): "org_id else sub" is a githugr token-scoping
- * contract; confirm it matches what githugr's Option-B token exchange scopes to.
- */
-export function orgMapKeyFor(user: ClerkUserCreatedEvent["data"]): string {
-  const org = user.organization_id ?? user.org_id;
-  if (typeof org === "string" && org.length > 0) return org;
-  return user.id;
-}
-
-/**
- * The new user's primary email address (the one a team invitation was sent to),
- * or null when the payload carries no usable address. Mirrors `tenantSlugFor`'s
- * primary-address selection: prefer `primary_email_address_id`, else the first.
- */
-export function primaryEmailOf(
-  user: ClerkUserCreatedEvent["data"],
-): string | null {
-  const primary = user.primary_email_address_id
-    ? user.email_addresses.find((e) => e.id === user.primary_email_address_id)
-    : user.email_addresses[0];
-  return primary?.email_address ?? null;
-}
-
-/**
- * Canonical `team_member.email_hash` pseudonym for `email`, normalized (trim +
- * lower-case) — the CROSS-LANG twin of the container's `email_hash::hash_email`
- * (Rust). CTRL-PRIV-001: the raw email is never stored.
- *
- * - `salt` set + non-empty → `hex(HMAC-SHA256(key=salt, msg=normalized))`
- * - `salt` unset / empty   → legacy `hex(SHA-256(normalized))` (byte-identical
- *   to the pre-salt scheme → zero regression until the salt is registered)
- *
- * MUST match the normalization + scheme the container's `invite()` write uses,
- * or an accepted user will never match their seat. `salt` is the same server
- * secret (`EMAIL_HASH_SALT`) the container reads — pass `env.EMAIL_HASH_SALT`.
- */
-export async function emailHashFor(
-  email: string,
-  salt?: string,
-): Promise<string> {
-  const normalized = new TextEncoder().encode(email.trim().toLowerCase());
-  if (salt && salt.length > 0) {
-    const key = await crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(salt),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"],
-    );
-    return bytesToHex(await crypto.subtle.sign("HMAC", key, normalized));
-  }
-  return bytesToHex(await crypto.subtle.digest("SHA-256", normalized));
-}
-
-/**
- * The **legacy, always-unsalted** `email_hash` for `email` — `hex(SHA-256(trim +
- * lowercase))`, byte-identical to the pre-salt scheme regardless of the salt.
- * Cross-lang twin of the container's `email_hash::hash_email_legacy`.
- *
- * NOT a write helper — it exists so a LOOKUP can also match rows written BEFORE
- * `EMAIL_HASH_SALT` was registered (the 5 pending team-invites + 123 legacy
- * tenant rows). See {@link emailHashCandidates}.
- */
-export async function emailHashLegacy(email: string): Promise<string> {
-  return emailHashFor(email, undefined);
-}
-
-/**
- * The set of `email_hash` values a LOOKUP for `email` must match against — the
- * salted candidate (current WRITE scheme) plus the legacy unsalted candidate,
- * **deduplicated**. Cross-lang twin of `email_hash::email_hash_candidates`.
- *
- * - salt UNSET → both candidates are identical → returns a SINGLE value → the
- *   lookup is behaviorally identical to today (zero regression).
- * - salt SET   → returns `[salted, legacy]` → the lookup finds BOTH a row
- *   written under the new salted scheme AND a legacy pre-salt row (no
- *   false-negative on the 5-invite / 123-legacy rows).
- *
- * WRITES never call this — they stay on {@link emailHashFor} (salted-if-set).
- */
-export async function emailHashCandidates(
-  email: string,
-  salt?: string,
-): Promise<string[]> {
-  const salted = await emailHashFor(email, salt);
-  const legacy = await emailHashLegacy(email);
-  return salted === legacy ? [salted] : [salted, legacy];
-}
-
-interface ApiClient {
-  /**
-   * Insert the tenant row with its data-residency MACRO region (backlog #29).
-   * `region` is the geo-derived, provisioned macro (wnam/enam/weur/sam) — the
-   * caller has already rejected unprovisioned macros. The region is persisted as
-   * `tenant.primary_region` (NO LONGER hardcoded to 'enam').
-   */
-  createTenant(
-    name: string,
-    ownerUserId: string,
-    region: MacroRegion,
-  ): Promise<{ id: string }>;
-  configureTenant(
-    tenantId: string,
-    region: string,
-    plan: "free",
-  ): Promise<void>;
-  issuePat(
-    tenantId: string,
-    scope: "read-write",
-  ): Promise<{ id: string; plaintext: string }>;
-  publishUserMetadata(
-    userId: string,
-    publicMetadata: Record<string, unknown>,
-    privateMetadata: Record<string, unknown>,
-  ): Promise<void>;
-}
-
-interface AnalyticsEmitter {
-  emit(
-    eventName: string,
-    tenantId: string | null,
-    userId: string | null,
-    properties: Record<string, unknown>,
-  ): Promise<void>;
-}
-
-/**
- * Default analytics emitter backed by the D1 binding owned by the
- * Phase-0 analytics-worker. No-op when the binding is absent so the
- * provisioning path stays alive in environments where agent G's worker
- * hasn't shipped yet.
- */
-export function d1AnalyticsEmitter(
-  db: D1Database | undefined,
-): AnalyticsEmitter {
-  return {
-    async emit(
-      eventName: string,
-      tenantId: string | null,
-      userId: string | null,
-      properties: Record<string, unknown>,
-    ): Promise<void> {
-      if (!db) return;
-      const id = crypto.randomUUID();
-      await db
-        .prepare(
-          "INSERT INTO analytics_events " +
-            "(id, event_name, tenant_id, user_id, session_id, properties, created_at) " +
-            "VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6)",
-        )
-        .bind(
-          id,
-          eventName,
-          tenantId,
-          userId,
-          JSON.stringify(properties),
-          new Date().toISOString(),
-        )
-        .run();
-    },
-  };
-}
-
-/**
- * Pure provisioning orchestration. Tests inject `api` + `analytics` so the
- * unit tests run without HTTP or D1.
- */
 export async function autoProvisionFromClerkEvent(input: {
   event: ClerkUserCreatedEvent;
   colo: string | undefined | null;
@@ -876,7 +324,7 @@ export async function autoProvisionFromClerkEvent(input: {
   const name = tenantSlugFor(user);
   const region = regionFromColo(input.colo);
 
-  // backlog #29: REJECT unprovisioned macro regions (apac/afr today) BEFORE any
+  // backlog #29: REJECT unprovisioned macro regions (sam/afr today) BEFORE any
   // tenant write. Silently downgrading them to a US region is the residency leak
   // we're closing. This throws BEFORE createTenant, so no orphan row is created;
   // the webhook handler maps it to a terminal 422 (no Svix retry — it is a
@@ -1027,11 +475,28 @@ export async function handleClerkWebhook(
     return new Response("invalid_signature", { status: 401 });
   }
 
+  // The container boot gate protects its own email-hash writer, but this
+  // separate deployment writes the same pseudonym. Refuse production writes
+  // when the shared salt is absent so the six targets cannot silently drift
+  // back to reversible unsalted hashes.
+  if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim()) {
+    return new Response("email_hash_salt_unconfigured", { status: 500 });
+  }
+
   let parsed: { type?: string; data?: { id?: string } };
   try {
     parsed = JSON.parse(body) as { type?: string; data?: { id?: string } };
   } catch {
     return new Response("invalid_json", { status: 400 });
+  }
+
+  // Validate the provider identity before dispatching either lifecycle arm.
+  // Do not let a malformed id reach a tenant lookup, D1 key, or DSR hash.
+  if (
+    (parsed.type === "user.created" || parsed.type === "user.deleted") &&
+    !isValidClerkUserId(parsed.data?.id)
+  ) {
+    return new Response("invalid_clerk_user_id", { status: 400 });
   }
 
   // Account deletion → enqueue a GDPR right-to-erasure request (WI-S11-008).
@@ -1043,6 +508,27 @@ export async function handleClerkWebhook(
   }
   const event = parsed as ClerkUserCreatedEvent;
 
+  // Clerk can emit `user.created` before an address is verified. Provisioning
+  // at that point creates a tenant and a usable PAT for an identity that has
+  // not proved control of the mailbox (and lets disposable/fake addresses
+  // enter the money path). This is deliberately before idempotency reads and
+  // before every provisioning side effect. A later verified webhook may retry;
+  // the safe outcome here is an acknowledged, non-provisioning response.
+  // Do not fall back to the first array element: Clerk's primary id is the
+  // authoritative binding, and an absent/mismatched id must fail closed rather
+  // than verifying a different address supplied by the event.
+  const primaryEmail = event.data.primary_email_address_id
+    ? event.data.email_addresses.find(
+        (address) => address.id === event.data.primary_email_address_id,
+      )
+    : undefined;
+  if (primaryEmail?.verification?.status !== "verified") {
+    return Response.json(
+      { ok: false, reason: "email_not_verified" },
+      { status: 202 },
+    );
+  }
+
   // RESIDENCY SOURCE — do NOT derive the tenant region from this webhook's
   // `cf.colo`. A Clerk webhook is delivered by SVIX (server-to-server), so
   // `request.cf.colo` is SVIX's sender PoP, NOT the end-user's location. Deriving
@@ -1053,7 +539,7 @@ export async function handleClerkWebhook(
   // legitimate paying signup lost to the luck of Svix's routing. The webhook
   // carries no reliable user-geo signal, so webhook-provisioned tenants default to
   // a provisioned region (enam, via regionFromColo's null default; see
-  // PROVISIONED_MACROS = {wnam, enam, weur}). Real per-tenant residency selection
+  // PROVISIONED_MACROS = {wnam, enam, weur, apac}). Real per-tenant residency selection
   // is a deliberate post-signup action; SAM stays gated until its
   // jurisdiction-correct bucket lands (residency Phase-2). (Svix's sender PoP is
   // still captured in the request logs for diagnostics — it just never drives
@@ -1087,6 +573,7 @@ export async function handleClerkWebhook(
           .bind(existing.tenant_id, Date.now())
           .first<{ pat_id: string }>();
         if (livePat !== null) {
+          await completeClerkProvision(env.CONFIG_DB, event.data.id);
           return Response.json({ ok: true, tenant_id: existing.tenant_id, idempotent: true });
         }
         // Tenant exists but NO live PAT — a prior attempt died mid-provision.
@@ -1118,14 +605,12 @@ export async function handleClerkWebhook(
   // the first write — makes a missing key 500 with ZERO side effects, so
   // redelivery cleanly re-provisions once the secret is set. (issuePat also
   // throws as a backstop.)
-  // Resolve dedicated-if-set, then fail-loud on a BLANK resolved key too (not
-  // just unset) — mirrors the 4 main-Worker callers' guard exactly
-  // (`!internalAuthKey || internalAuthKey.length === 0`, commit c88508f1): an
-  // empty-string secret would pass a bare truthiness check yet cannot authorize
-  // the mint.
+  // Resolve dedicated-if-set, then fail-loud on a blank or sub-floor resolved
+  // key too (not just unset). A short dedicated key must not widen back to the
+  // shared key; the container's internal-auth contract has a 32-char floor.
   const preflightAuthKey =
     env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY;
-  if (!preflightAuthKey || preflightAuthKey.length === 0) {
+  if (!preflightAuthKey || preflightAuthKey.length < MIN_INTERNAL_AUTH_KEY_LEN) {
     console.error(
       `[clerk-webhook] CORELINK_PAT_MINT_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY absent — cannot mint PAT; ` +
         `returning 500 before any tenant write (user=${event.data.id}, svix=${svixId})`,
@@ -1134,6 +619,46 @@ export async function handleClerkWebhook(
       JSON.stringify({ ok: false, error: "internal_auth_key_unconfigured" }),
       { status: 500, headers: { "content-type": "application/json" } },
     );
+  }
+
+  // A UNIQUE tenant.clerk_user_id only serializes tenant creation. Claim a
+  // durable per-user lease before the PAT mint as well, otherwise two
+  // concurrent deliveries can both pass the tenant/live-PAT read and create
+  // two live credentials. The key preflight above intentionally runs first so
+  // a misconfigured delivery does not consume a five-minute retry lease.
+  // A held lease returns 409 so Svix retries; a crashed owner becomes
+  // reclaimable after the bounded lease expires.
+  if (env.CONFIG_DB) {
+    let claimed: boolean;
+    try {
+      claimed = await claimClerkProvision(env.CONFIG_DB, event.data.id);
+    } catch {
+      // Missing/unavailable lock storage is a server fault, never permission
+      // to continue into a non-idempotent mint.
+      return new Response("provisioning_lock_unavailable", { status: 503 });
+    }
+    if (!claimed) {
+      try {
+        const existing = await env.CONFIG_DB
+          .prepare("SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1 LIMIT 1")
+          .bind(event.data.id)
+          .first<{ tenant_id: string }>();
+        if (existing !== null) {
+          const livePat = await env.CONFIG_DB
+            .prepare(
+              "SELECT pat_id FROM pat WHERE tenant_id = ?1 AND expires_ms > ?2 LIMIT 1",
+            )
+            .bind(existing.tenant_id, Date.now())
+            .first<{ pat_id: string }>();
+          if (livePat !== null) {
+            return Response.json({ ok: true, tenant_id: existing.tenant_id, idempotent: true });
+          }
+        }
+      } catch {
+        return new Response("provisioning_lock_unavailable", { status: 503 });
+      }
+      return new Response("provisioning_in_progress", { status: 409 });
+    }
   }
 
   try {
@@ -1178,31 +703,8 @@ export async function handleClerkWebhook(
       seedEntitlements,
     });
 
-    // WP-T3 (ADR-S33-001 WP-4): if this new user was invited to a team, flip the
-    // outstanding `invited` seat to `active` and bind the real Clerk user id.
-    // Runs AFTER the user's own tenant + PAT are provisioned (above) so the user
-    // always has their personal tenant regardless of any invitation. Best-effort
-    // + idempotent: a non-invited signup (the common case) is a no-op (returns
-    // false), and a D1 hiccup here must NOT fail an already-complete signup — the
-    // seat acceptance self-heals on the next webhook redelivery / list refresh.
     if (env.CONFIG_DB) {
-      try {
-        const email = primaryEmailOf(event.data);
-        if (email) {
-          await acceptTeamInvitation(
-            env.CONFIG_DB,
-            event.data.id,
-            // DUAL-READ: match salted-OR-legacy so a pre-salt invite still binds
-            // after EMAIL_HASH_SALT is set (writes stay salted; lookups find both).
-            await emailHashCandidates(email, env.EMAIL_HASH_SALT),
-          );
-        }
-      } catch (inviteErr) {
-        console.error(
-          `[clerk-webhook] team-invitation accept failed user=${event.data.id} ` +
-            `svix=${svixId}: ${String(inviteErr)}`,
-        );
-      }
+      await completeClerkProvision(env.CONFIG_DB, event.data.id);
     }
 
     return Response.json({
@@ -1338,11 +840,10 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
       // Same posture as the 4 main-Worker callers (commit c88508f1).
       const internalAuthKey =
         env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY;
-      // Fail-loud on a BLANK resolved key too (not just unset) — mirrors the 4
-      // main-Worker callers' guard exactly (`!internalAuthKey ||
-      // internalAuthKey.length === 0`, commit c88508f1); an empty-string secret
-      // would pass bare truthiness yet cannot authorize the mint.
-      if (!internalAuthKey || internalAuthKey.length === 0) {
+      // Fail-loud on an absent or sub-floor resolved key — the container's
+      // internal-auth contract requires at least 32 characters. A dedicated
+      // short key also blocks shared fallback, preserving isolation.
+      if (!internalAuthKey || internalAuthKey.length < MIN_INTERNAL_AUTH_KEY_LEN) {
         // FAIL-LOUD (signup money path): without the internal auth key we
         // CANNOT mint a real PAT. The old behavior returned a fake
         // "corelink_pat_DEVSTUB" that looked valid to the user but
@@ -1452,16 +953,4 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
       }
     },
   };
-}
-
-// Minimal local D1 type — we don't import @cloudflare/workers-types here
-// to keep the unit-test surface independent of the runtime types package.
-interface D1PreparedStatement {
-  bind(...values: unknown[]): D1PreparedStatement;
-  run(): Promise<{ success: boolean; error?: string }>;
-  all<T = unknown>(): Promise<{ results?: T[] }>;
-  first<T = unknown>(): Promise<T | null>;
-}
-interface D1Database {
-  prepare(query: string): D1PreparedStatement;
 }

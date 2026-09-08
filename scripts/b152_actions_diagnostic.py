@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -25,10 +26,43 @@ from urllib.parse import urlencode
 
 
 UTC = dt.timezone.utc
+SCHEMA = "b152-actions-diagnostic/v2"
 MAX_SEARCH_RESULTS = 1_000
 PAGE_SIZE = 100
-STEP_STATUSES = frozenset({"queued", "in_progress", "completed"})
+# GitHub's documented step states are queued/in_progress/completed.  Historical
+# job objects can also retain ``pending`` after a runner/startup failure; it is
+# an unevaluated step, not a successful completion.  Keep the set explicit so
+# a newly invented/non-string state still fails closed.
+STEP_STATUSES = frozenset({"queued", "in_progress", "pending", "completed"})
+ACTIVE_STEP_STATUSES = frozenset({"queued", "in_progress", "pending"})
+# These are the conclusion values documented by the Actions API.  ``None`` is
+# valid while a run/job is still in progress; unknown values are evidence
+# corruption, not a reason to silently drop a failed object.
+RUN_CONCLUSIONS = frozenset({
+    "success", "failure", "neutral", "cancelled", "skipped", "timed_out",
+    "action_required", "startup_failure", "stale",
+})
+JOB_CONCLUSIONS = frozenset({
+    "success", "failure", "neutral", "cancelled", "skipped", "timed_out",
+    "action_required", "stale",
+})
+STEP_CONCLUSIONS = frozenset({
+    "success", "failure", "neutral", "cancelled", "skipped", "timed_out",
+    "action_required", "stale",
+})
+NON_SUCCESS_RUN_CONCLUSIONS = frozenset(RUN_CONCLUSIONS - {"success"})
+RUN_CLASSIFICATIONS = {
+    "failure": "job_or_test_failure",
+    "cancelled": "cancelled_before_cause_established",
+    "timed_out": "actions_timeout",
+    "action_required": "action_required",
+    "startup_failure": "runner_startup_failure",
+    "stale": "stale_run",
+    "neutral": "neutral_outcome",
+    "skipped": "skipped_outcome",
+}
 FRACTIONAL_COMPONENTS = re.compile(r"[.,](\d+)")
+HTTP_STATUS = re.compile(r"\bHTTP(?:/\d(?:\.\d)?)?\s+([1-5]\d\d)\b", re.IGNORECASE)
 # Keep every external API invocation bounded.  The retry delays are constants so
 # the tests can replace ``time.sleep`` and prove both the bound and the retry
 # path without waiting for a wall-clock timeout.
@@ -96,6 +130,79 @@ def api_id(value: Any, kind: str) -> int:
     return value
 
 
+def conclusion(value: Any, kind: str, allowed: frozenset[str]) -> str | None:
+    """Validate an Actions conclusion before any population filtering."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or value not in allowed:
+        raise EvidenceUnavailable(f"{kind} has unknown conclusion")
+    return value
+
+
+def classify_log_text(text: str) -> str:
+    """Classify retained text without returning or storing the text itself.
+
+    This is intentionally conservative: an ENOSPC/linker signature wins only
+    when no code-failure signature is present; otherwise the result remains
+    ``indeterminate``.  Callers must still retain the original non-zero status.
+    """
+    if not isinstance(text, str):
+        raise EvidenceUnavailable("log text is not a string")
+    code_failure = re.search(r"error\s*\[E\d+\]|assertion failed|panicked at|tests? .*FAILED", text, re.I)
+    storage = re.search(
+        r"(no space left on device|\bENOSPC\b|disk\s+(?:is\s+)?full).{0,120}"
+        r"(os error 28|write|create|cargo|rustc|filesystem|disk)|"
+        r"(?:os error 28|write).{0,120}(no space left on device|\bENOSPC\b)",
+        text,
+        re.I,
+    )
+    linker = re.search(
+        r"(?:collect2|\bld(?:\.exe)?\b|linker).{0,120}(bus error|signal\s+7)|"
+        r"(?:bus error|signal\s+7).{0,120}(?:collect2|\bld(?:\.exe)?\b|linker)",
+        text,
+        re.I,
+    )
+    playwright = re.search(
+        r"playwright.{0,160}(?:webserver|web server|webServer)|"
+        r"(?:webserver|web server|webServer).{0,160}playwright|"
+        r"config\.webServer|webServer command failed",
+        text,
+        re.I,
+    )
+    job_timeout = re.search(
+        r"(?:job|workflow).{0,120}(?:timed out|timeout|maximum execution time)|"
+        r"(?:timed out|timeout|maximum execution time).{0,120}(?:job|workflow)|"
+        r"exceeded the maximum allowed execution time",
+        text,
+        re.I,
+    )
+    billing_startup = re.search(
+        r"(?:billing|startup_failure|failed to start|runner.{0,80}(?:provision|startup|registration))",
+        text,
+        re.I,
+    )
+    runner = re.search(
+        r"runner\s+(?:lost|disconnect|shutdown|unreachable)|"
+        r"(?:job|workflow)\s+(?:was\s+)?cancel(?:led|ed)\b|"
+        r"the operation was canceled|received\s+termination|\bSIGTERM\b",
+        text,
+        re.I,
+    )
+    if code_failure:
+        return "test_failure"
+    if storage or linker:
+        return "enospc_or_linker_failure"
+    if playwright:
+        return "playwright_webserver"
+    if job_timeout:
+        return "job_timeout"
+    if billing_startup:
+        return "billing_or_startup"
+    if runner:
+        return "runner_cancellation"
+    return "indeterminate"
+
+
 def page_runs(repo: str, start: dt.datetime, end: dt.datetime, page: int) -> dict[str, Any]:
     query = urlencode({"per_page": PAGE_SIZE, "page": page, "created": f"{iso(start)}..{iso(end)}"})
     result = run_gh(repo, f"repos/{repo}/actions/runs?{query}")
@@ -106,6 +213,8 @@ def page_runs(repo: str, start: dt.datetime, end: dt.datetime, page: int) -> dic
         raise EvidenceUnavailable("run page has invalid total_count")
     if any(not isinstance(item, dict) for item in result["workflow_runs"]):
         raise EvidenceUnavailable("run page contains a malformed workflow run")
+    for item in result["workflow_runs"]:
+        conclusion(item.get("conclusion"), "run", RUN_CONCLUSIONS)
     return result
 
 
@@ -196,6 +305,7 @@ def collect_jobs(repo: str, run: dict[str, Any]) -> list[dict[str, Any]]:
             raise EvidenceUnavailable(f"run {run_id} jobs page contains a malformed job")
         for job in batch:
             job_id = api_id(job.get("id"), "job")
+            conclusion(job.get("conclusion"), "job", JOB_CONCLUSIONS)
             if job_id in job_ids:
                 raise EvidenceUnavailable(f"run {run_id} jobs page contains a duplicate job id")
             job_ids.add(job_id)
@@ -248,6 +358,19 @@ def queue_duration(job: dict[str, Any]) -> int:
     return whole_seconds(started - created, "queue")
 
 
+def optional_timestamp(value: Any, label: str) -> str | None:
+    """Validate an optional Actions timestamp without normalizing evidence."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise EvidenceUnavailable(f"{label} is not a timestamp")
+    try:
+        parse_time(value)
+    except (ValueError, argparse.ArgumentTypeError) as exc:
+        raise EvidenceUnavailable(f"{label} is not a timestamp") from exc
+    return value
+
+
 def summarize_queue(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
     values = sorted(
         item["queue_duration_seconds"]
@@ -267,6 +390,7 @@ def summarize_queue(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
 
 
 def classify_job(job: dict[str, Any], run: dict[str, Any], low: int, high: int) -> dict[str, Any]:
+    job_conclusion = conclusion(job.get("conclusion"), "job", JOB_CONCLUSIONS)
     steps = job.get("steps")
     if not isinstance(steps, list) or any(not isinstance(step, dict) for step in steps):
         raise EvidenceUnavailable("job has malformed step evidence")
@@ -288,6 +412,25 @@ def classify_job(job: dict[str, Any], run: dict[str, Any], low: int, high: int) 
     if runner_name is not None and not isinstance(runner_name, str):
         raise EvidenceUnavailable("job has malformed runner evidence")
     in_progress = [step["name"] for step in steps if step["status"] == "in_progress"]
+    not_completed = [step["name"] for step in steps if step["status"] in ACTIVE_STEP_STATUSES]
+    step_records = []
+    for step in steps:
+        number = step.get("number")
+        if number is not None and (isinstance(number, bool) or not isinstance(number, int) or number <= 0):
+            raise EvidenceUnavailable("job has malformed step identity")
+        step_conclusion = step.get("conclusion")
+        if step_conclusion is not None and (
+            not isinstance(step_conclusion, str) or step_conclusion not in STEP_CONCLUSIONS
+        ):
+            raise EvidenceUnavailable("job has malformed step conclusion")
+        step_records.append({
+            "step_id": number,
+            "name": step["name"],
+            "status": step["status"],
+            "conclusion": step_conclusion,
+            "started_at": optional_timestamp(step.get("started_at"), "step.started_at"),
+            "completed_at": optional_timestamp(step.get("completed_at"), "step.completed_at"),
+        })
     checkout = [
         s for s in steps
         if "checkout" in s["name"].lower()
@@ -302,38 +445,92 @@ def classify_job(job: dict[str, Any], run: dict[str, Any], low: int, high: int) 
         "job_id": api_id(job.get("id"), "job"),
         "workflow": workflow,
         "lane": lane,
-        "conclusion": job.get("conclusion"),
+        "conclusion": job_conclusion,
+        "created_at": job.get("created_at"),
         "started_at": job.get("started_at"),
         "completed_at": job.get("completed_at"),
         "duration_seconds": seconds,
         "queue_duration_seconds": queue_duration(job),
         "runner_name": runner_name,
         "step_in_progress": in_progress,
+        "step_not_completed": not_completed,
+        "steps": step_records,
         "checkout_incomplete": checkout_incomplete,
         "checkout_observed": bool(checkout),
         "in_window": seconds is not None and low <= seconds <= high,
+        # Metadata is a signal only.  A 600-second kill with an unfinished
+        # step points away from a test assertion, but cannot name the external
+        # cause without retained logs/runner evidence.
+        "metadata_signal": (
+            "runner_death_candidate"
+            if low <= seconds <= high and not_completed
+            else "job_failure_candidate"
+        ),
     }
 
 
 def collect_evidence(repo: str, start: dt.datetime, end: dt.datetime, low: int, high: int) -> dict[str, Any]:
     runs = collect_runs(repo, start, end)
-    failed_runs = [r for r in runs if r.get("conclusion") == "failure"]
+    # Validate every run again here because tests/callers may provide a
+    # pre-collected list rather than going through page_runs().
+    validated_runs: list[dict[str, Any]] = []
+    run_outcomes: list[dict[str, Any]] = []
+    run_conclusion_counts: Counter[str] = Counter()
+    for run in runs:
+        run_id = api_id(run.get("id"), "run")
+        run_conclusion = conclusion(run.get("conclusion"), "run", RUN_CONCLUSIONS)
+        validated_runs.append(run)
+        if run_conclusion is not None:
+            run_conclusion_counts[run_conclusion] += 1
+        if run_conclusion in NON_SUCCESS_RUN_CONCLUSIONS:
+            run_outcomes.append({
+                "run_id": run_id,
+                "conclusion": run_conclusion,
+                "classification": RUN_CLASSIFICATIONS[run_conclusion],
+                "workflow": run.get("name") if isinstance(run.get("name"), str) else None,
+                "event": run.get("event") if isinstance(run.get("event"), str) else None,
+                "created_at": run.get("created_at"),
+                "updated_at": run.get("updated_at"),
+            })
+    failed_runs = [r for r in validated_runs if r.get("conclusion") == "failure"]
     records: list[dict[str, Any]] = []
+    all_job_ids: set[int] = set()
     for run in failed_runs:
-        for job in collect_jobs(repo, run):
+        jobs = collect_jobs(repo, run)
+        for job in jobs:
+            job_id = api_id(job.get("id"), "job")
+            if job_id in all_job_ids:
+                # GitHub job IDs are globally unique.  Reuse across runs means
+                # the evidence identity contract is broken; never overwrite a
+                # record and accidentally undercount the death rate.
+                raise EvidenceUnavailable("job id is repeated across selected runs")
+            all_job_ids.add(job_id)
             if job.get("conclusion") == "failure":
                 records.append(classify_job(job, run, low, high))
     return {
+        "schema": SCHEMA,
+        "collection": {
+            "source": "GitHub Actions REST API via gh api",
+            "read_only": True,
+            "logs_persisted": False,
+            "zero_window_jobs_is_not_closure": True,
+        },
         "repo": repo,
         "window": {"start": iso(start), "end_exclusive": iso(end)},
         "duration_window_seconds": {"low": low, "high": high},
         "run_count": len(runs),
-        "run_ids": sorted(int(r["id"]) for r in runs),
+        "run_ids": sorted(api_id(r.get("id"), "run") for r in validated_runs),
+        "run_conclusion_counts": dict(sorted(run_conclusion_counts.items())),
+        "non_success_run_count": len(run_outcomes),
+        "run_outcomes": run_outcomes,
         "failed_run_count": len(failed_runs),
         "failed_job_count": len(records),
         "window_jobs": [r for r in records if r["in_window"]],
         "failed_jobs": records,
         "lane_distribution": dict(Counter(r["lane"] for r in records if r["in_window"])),
+        "metadata_signal_distribution": dict(
+            Counter(r["metadata_signal"] for r in records if r["in_window"])
+        ),
         "queue_duration": {
             "measured_from": "job.created_at -> job.started_at",
             "not_run_started_at": True,
@@ -347,30 +544,52 @@ def collect_evidence(repo: str, start: dt.datetime, end: dt.datetime, low: int, 
     }
 
 
+def _http_status(value: Any) -> int | None:
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    if not isinstance(value, str):
+        return None
+    match = HTTP_STATUS.search(value)
+    return int(match.group(1)) if match else None
+
+
 def fetch_job_log(repo: str, job_id: int) -> tuple[bool, str | None]:
     """Return log availability after a bounded, sanitized retrieval attempt."""
+    available, error, _signature, _digest, _http_code = fetch_job_log_details(repo, job_id)
+    return available, error
+
+
+def fetch_job_log_details(repo: str, job_id: int) -> tuple[bool, str | None, str, str | None, int | None]:
+    """Fetch a log only in memory and retain a digest/classification, never its body."""
     for attempt in range(GH_MAX_ATTEMPTS):
         try:
             proc = subprocess.run(
                 ["gh", "api", f"repos/{repo}/actions/jobs/{job_id}/logs"],
                 check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=False,
                 timeout=GH_API_TIMEOUT_SECONDS,
             )
         except subprocess.TimeoutExpired:
             if attempt < GH_MAX_ATTEMPTS - 1:
                 time.sleep(GH_RETRY_DELAYS_SECONDS[attempt])
                 continue
-            return False, "log retrieval timed out"
+            return False, "log retrieval timed out", "indeterminate", None, None
         except OSError as exc:
             raise EvidenceUnavailable("gh api could not be started while fetching logs") from exc
         if proc.returncode == 0:
-            return True, None
+            payload = proc.stdout
+            if not isinstance(payload, (bytes, bytearray)):
+                raise EvidenceUnavailable("log response body is malformed")
+            digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+            signature = classify_log_text(bytes(payload).decode("utf-8", errors="replace"))
+            return True, None, signature, digest, 200
         if attempt < GH_MAX_ATTEMPTS - 1:
             time.sleep(GH_RETRY_DELAYS_SECONDS[attempt])
-    return False, "log retrieval failed"
+    # gh writes the HTTP response status to stderr for API errors.  Parse only
+    # the status code and never retain/render the provider's error text.
+    return False, "log retrieval failed", "indeterminate", None, _http_status(getattr(proc, "stderr", None))
 
 
 def fetch_logs(repo: str, records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -378,12 +597,15 @@ def fetch_logs(repo: str, records: Iterable[dict[str, Any]]) -> list[dict[str, A
     result = []
     for record in records:
         job_id = record["job_id"]
-        available, error = fetch_job_log(repo, job_id)
+        available, error, signature, digest, http_status = fetch_job_log_details(repo, job_id)
         result.append({
             "job_id": job_id,
             "available": available,
             "status": "available" if available else "indeterminate",
             "causal": False if available else "indeterminate",
+            "http_status": http_status,
+            "log_signature": signature,
+            "log_sha256": digest,
             "error": error,
         })
     return result
@@ -412,6 +634,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.fetch_logs:
             report["logs"] = fetch_logs(args.repo, report["window_jobs"])
             unavailable = [item for item in report["logs"] if item["status"] == "indeterminate"]
+            report["log_signature_distribution"] = dict(
+                Counter(item.get("log_signature", "indeterminate") for item in report["logs"])
+            )
             report["causal_classification"] = {
                 "status": "indeterminate" if unavailable else "not_established",
                 "causal": "indeterminate" if unavailable else False,
@@ -420,6 +645,7 @@ def main(argv: list[str] | None = None) -> int:
                     if unavailable else "logs available, but availability alone does not establish a common cause"
                 ),
                 "unavailable_job_ids": [item["job_id"] for item in unavailable],
+                "known_log_categories": sorted(report["log_signature_distribution"]),
             }
         else:
             report["causal_classification"] = {
@@ -427,6 +653,7 @@ def main(argv: list[str] | None = None) -> int:
                 "causal": "indeterminate",
                 "reason": "logs were not requested; no causal conclusion is permitted",
                 "unavailable_job_ids": [],
+                "known_log_categories": [],
             }
     except EvidenceUnavailable as exc:
         print(f"INDETERMINATE: {exc}", file=sys.stderr)

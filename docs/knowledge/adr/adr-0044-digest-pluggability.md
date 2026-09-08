@@ -4,12 +4,14 @@ title: "ADR-0044 (digest) — Digest type: BLAKE3 sealed newtype, future SHA-256
 description: "The CAS Digest is a sealed BLAKE3-256 newtype with a constant-time compare and no public bytes constructor; SHA-256/PQ pluggability is deferred to a new type + schema migration, not an enum."
 source_files:
   - "specs/03_architecture/adrs/ADR-0044-digest-pluggability.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s01", "cas", "blake3", "crypto-load-bearing", "inv-cas-integrity"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0044-digest-pluggability.md@e895d2ac863121c136ec1afcb71909400709ad3f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0044 (digest) — Digest type: BLAKE3 sealed newtype, future SHA-256 path
 
 The `Digest` type is the integrity primitive on the CAS hot path: making it a sealed newtype with a

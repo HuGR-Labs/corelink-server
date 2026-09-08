@@ -7,12 +7,17 @@ source_files:
   - "crates/corelink-adapter-host/src/overload.rs"
   - "crates/corelink-bazel-bridge/src/lib.rs"
   - "crates/corelink-byok/src/lib.rs"
-checkpoint_sha: "a298cd91a4f0429d6e3d31a64191d2b0e87eced5"
+source_blobs:
+  - "crates/corelink-adapter-host/src/lib.rs@de5f5c3585ffecef3d7dba46c0a6c14605f7251d"
+  - "crates/corelink-adapter-host/src/overload.rs@c90795e4b3f5e9f0626a295a751ff702b112569f"
+  - "crates/corelink-bazel-bridge/src/lib.rs@97d1c683608fa1b8614c0d4ac06f71705413632d"
+  - "crates/corelink-byok/src/lib.rs@61f5bb2b8d0df1524da7c72a2bf218aa8575deca"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["crates", "adapters", "bazel", "byok", "kms", "surfaces"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 # Adapter-host crate cluster (surfaces + KMS)
 
 CoreLink sells one cache but speaks many protocols: cargo, npm, pip, brew, OCI, Bazel REAPI, Turborepo — plus it must encrypt at rest under a customer's own KMS. This cluster is the set of translation crates that keep that protocol/provider sprawl out of the core. Each adapter maps a foreign wire format onto the same canonical workspace SPI traits (`CasReadHandler`, `CasWriteHandler`, `PatValidator`, `KvBackend`, `AuditEmitter`) so the CAS core never learns what a Homebrew bottle or an OCI manifest is; and `corelink-byok` keeps the four KMS providers behind a compile-time microkernel so exactly one provider SDK is linked per build.
@@ -32,16 +37,16 @@ These crates are the outer ring of the [adapter / package-manager surfaces](/sur
 # Invariants
 
 - The adapters stay free of workspace SPI imports — the bridge crate composes them at boot, so a protocol adapter never couples to the CAS core directly (`crates/corelink-adapter-host/src/lib.rs:1-7`).
-- Bazel digests are validated at the boundary: hash must be 64 lowercase hex, size ≤ 4 GiB on writes, PUT body length must equal `size_bytes`, and `findMissingBlobs` rejects batches > 4096 digests (`crates/corelink-bazel-bridge/src/lib.rs:42-50`, `crates/corelink-bazel-bridge/src/lib.rs:68-75`).
+- Bazel digests are validated at the boundary: hash must be 64 lowercase hex, size ≤ 64 MiB on HTTP writes (the shared `corelink_hash::CACHE_ENTRY_MAX_BYTES` invariant), PUT body length must equal `size_bytes`, and `findMissingBlobs` rejects batches > 4096 digests (`crates/corelink-bazel-bridge/src/lib.rs:42-50`, `crates/corelink-bazel-bridge/src/lib.rs:68-75`).
 - The bridge is REST-only by invariant `INV-BAZEL-NO-GRPC` — no tonic/prost/gRPC dependency (`crates/corelink-bazel-bridge/src/lib.rs:48-50`). The invariant id is spelled correctly as `INV-BAZEL-NO-GRPC` in the code (the prior `GROPC` one-char typo was fixed in this change).
-- At most one BYOK provider is active per build, enforced by a compile-time guard, eliminating runtime branching on the crypto hot path (`crates/corelink-byok/src/lib.rs:105-150`).
+- At most one BYOK provider is active per build, enforced by a compile-time guard, eliminating runtime branching on the crypto hot path (`crates/corelink-byok/src/lib.rs:106-151`).
 - Every package-manager adapter carries a `VerifierOverloaded` variant DISTINCT from its `Auth` variant, mapping a PAT-verifier load shed to `503 + Retry-After` rather than `401`. A shed reaches no verdict on the credential, so a 401 lies to a caller holding a valid PAT — and the container's shed is symmetric across D1 row existence (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`), which is only observable end-to-end if the HTTP status matches on both arms (`crates/corelink-adapter-host/src/overload.rs:35`).
 
 # Gotchas
 
 - `KvBackend` uses RPITIT (`impl Future`) so it is not object-safe; bridges targeting it are generic over `K: KvBackend + …`, never `dyn`.
 - The package-manager adapters write public-dedup content to the `_public` namespace, which has its own fail-closed storage-chain requirement (a `tenant_storage_state` row + sentinel R2 prefix) — a separate gotcha from the bridge itself.
-- BYOK default build links no provider (trait + in-memory fake only), matching the test/CI build; a real provider is a deliberate per-deployment cargo-feature choice that cargo-deny can then lock down.
+- BYOK default build links no provider and fails closed; the shipped image selects one real provider (`byok-aws-real`), while owner credentials remain a deployment requirement. Test doubles are explicit test wiring only.
 
 # Citations
 
@@ -51,6 +56,6 @@ These crates are the outer ring of the [adapter / package-manager surfaces](/sur
 2c. `crates/corelink-adapter-host/src/overload.rs:35` — `SHED_RETRY_AFTER_SECS`: the one `Retry-After` horizon all four surfaces attach to a verifier shed.
 3. `crates/corelink-bazel-bridge/src/lib.rs:1-50` — REAPI v2 REST → CAS/AC trait mapping, REST-only.
 4. `crates/corelink-bazel-bridge/src/lib.rs:42-50` — the hard digest-validate + find-missing-cap + no-gRPC invariants.
-5. `crates/corelink-bazel-bridge/src/lib.rs:68-75` — `FIND_MISSING_BLOB_CAP` (4096) and `MAX_BLOB_SIZE_BYTES` (4 GiB).
+5. `crates/corelink-bazel-bridge/src/lib.rs:68-75` — `FIND_MISSING_BLOB_CAP` (4096) and `MAX_BLOB_SIZE_BYTES` (64 MiB, sourced from `corelink_hash::CACHE_ENTRY_MAX_BYTES`).
 6. `crates/corelink-byok/src/lib.rs:1-43` — the BYOK microkernel: thin core + one feature-gated provider.
-7. `crates/corelink-byok/src/lib.rs:105-150` — compile-time mutual-exclusion guards (one provider per build).
+7. `crates/corelink-byok/src/lib.rs:106-151` — compile-time mutual-exclusion guards (one provider per build).

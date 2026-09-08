@@ -164,9 +164,13 @@ The exact customer-portal shapes are:
 - `POST /v1/customer/keys/:pat_id/revoke` → `200 { "pat": { … } }`. Revocation
   is a POST to a sub-path, **not** a `DELETE` on the token.
 
-All three are admin-grade operations on the tenant's credentials and require a
-cache-write capability; a read-only (`cas:r`) token gets `403` for each. A
-read-only token also cannot mint a write-scoped token for itself.
+Listing and minting retain their cache-write capability gate. Revocation is a
+separate destructive team-admin operation: it requires the server-trusted
+`owner` or `admin` role from a Clerk dashboard session, not cache-write scope
+alone. An owner may revoke any PAT in the tenant; an admin may revoke member
+PATs but not the owner's PAT. Members, viewers, native PAT callers, and
+cross-tenant targets are rejected. A read-only token also cannot mint a
+write-scoped token for itself.
 
 An admin-only, read-only surface exists for support to inspect a tenant's PATs
 (`GET /v1/admin/tenants/{tenant_id}/pats`); it requires an admin PAT and is not

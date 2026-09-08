@@ -23,6 +23,9 @@ rejected until a DPA acceptance row exists for the tenant.
 Returns a Stripe Checkout session URL; final activation happens
 when the corresponding `checkout.session.completed` event lands
 on `/v1/billing/stripe-webhook`.
+A tenant may have only one payable checkout in flight. Repeating the
+request is idempotent for that tenant; a second paid subscription is
+rejected rather than replacing the existing billing owner.
 
 ## Authentication
 

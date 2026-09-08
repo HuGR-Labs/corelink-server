@@ -36,7 +36,9 @@ superseded_by: null
 
 ## Context
 
-CoreLink S-14 delivers data residency, BYOK encryption, and erasure attestation for 4 enumerated regions (WNAM/ENAM/WEUR/SAM). Enterprise customers — particularly in the EU/EEA, Brazil, and US financial/regulated sectors — require:
+CoreLink S-14 delivers data residency, BYOK encryption, and erasure attestation for the 4 provisioned regions `{wnam, enam, weur, apac}` (WNAM/ENAM/WEUR/APAC); APAC (`apac`) is pinned to Tokyo (`nrt`). `sam` and `afr` are not provisioned and are rejected at signup. Enterprise customers — particularly in the EU/EEA, Brazil, and US financial/regulated sectors — require:
+
+The current provisioned residency contract is `{wnam, enam, weur, apac}`, with `apac → nrt`; `sam` and `afr` are not provisioned and are rejected at signup.
 
 1. A **Data Processing Agreement (DPA)** per GDPR Art. 28 covering residency commitment per region.
 2. A **Schrems II Transfer Impact Assessment (TIA)** per EDPB Recommendations 01/2020, documenting supplementary measures for US sub-processor (Cloudflare) jurisdiction risk.

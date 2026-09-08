@@ -482,7 +482,7 @@ export class ReplicationCoordinatorDO implements DurableObject {
   }
 
   /** evaluate(current primary) → promote if a replica is eligible. */
-  async runTick(now_ms: number): Promise<PromotionDecision | null> {
+  async runTick(now_ms: number): Promise<PromotionDecision | CoordError | null> {
     const primary = primaryIn(this.roles);
     if (primary === null) {
       // No primary registered yet — nothing to drive (safe no-op).
@@ -504,7 +504,7 @@ export class ReplicationCoordinatorDO implements DurableObject {
       );
       return decision;
     }
-    return decision as PromotionDecision;
+    return decision;
   }
 
   private async applyPromote(primary: string, replica: string, now_ms: number, requestId: string): Promise<Response> {
@@ -561,8 +561,8 @@ export class ReplicationCoordinatorDO implements DurableObject {
     if (request.method === "POST" && path === "/_repl/register") {
       const body = await this.parseJson(request);
       if (body === null) return errorResponse("INVALID_BODY", "body must be JSON", 400, requestId);
-      const region = String((body as Record<string, unknown>).region ?? "");
-      const role = String((body as Record<string, unknown>).role ?? "");
+      const region = String((body as Record<string, unknown>)["region"] ?? "");
+      const role = String((body as Record<string, unknown>)["role"] ?? "");
       if (!isRegionCode(region)) return errorResponse("INVALID_REGION", `unknown region ${region}`, 400, requestId);
       if (!isRegionRole(role)) return errorResponse("INVALID_ROLE", `unknown role ${role}`, 400, requestId);
       // Split-brain guard at registration time (mirrors coordinator.rs::register).
@@ -592,16 +592,16 @@ export class ReplicationCoordinatorDO implements DurableObject {
       const body = await this.parseJson(request);
       if (body === null) return errorResponse("INVALID_BODY", "body must be JSON", 400, requestId);
       const b = body as Record<string, unknown>;
-      const region = String(b.region ?? "");
+      const region = String(b["region"] ?? "");
       if (!isRegionCode(region)) return errorResponse("INVALID_REGION", `unknown region ${region}`, 400, requestId);
       // Telemetry only — NEVER a freshness input (see block comment above).
       const reported_ts_ms = Number(b["ts_ms"] ?? now_ms);
-      const lagRaw = (b.lag ?? {}) as Record<string, unknown>;
+      const lagRaw = (b["lag"] ?? {}) as Record<string, unknown>;
       const lag: LagBundle = {
-        r2_s: Number(lagRaw.r2_s ?? 0),
-        d1_s: Number(lagRaw.d1_s ?? 0),
-        kv_s: Number(lagRaw.kv_s ?? 0),
-        neon_s: Number(lagRaw.neon_s ?? 0),
+        r2_s: Number(lagRaw["r2_s"] ?? 0),
+        d1_s: Number(lagRaw["d1_s"] ?? 0),
+        kv_s: Number(lagRaw["kv_s"] ?? 0),
+        neon_s: Number(lagRaw["neon_s"] ?? 0),
       };
       if (!Number.isFinite(reported_ts_ms) || !Number.isFinite(lag.r2_s) || !Number.isFinite(lag.d1_s) || !Number.isFinite(lag.kv_s)) {
         return errorResponse("INVALID_HEARTBEAT", "ts_ms/lag must be finite numbers", 400, requestId);
@@ -618,15 +618,15 @@ export class ReplicationCoordinatorDO implements DurableObject {
       const body = await this.parseJson(request);
       if (body === null) return errorResponse("INVALID_BODY", "body must be JSON", 400, requestId);
       const b = body as Record<string, unknown>;
-      const primary = String(b.primary ?? "");
-      const replica = String(b.replica ?? "");
+      const primary = String(b["primary"] ?? "");
+      const replica = String(b["replica"] ?? "");
       return this.applyPromote(primary, replica, now_ms, requestId);
     }
 
     if (request.method === "POST" && path === "/_repl/failback") {
       const body = await this.parseJson(request);
       if (body === null) return errorResponse("INVALID_BODY", "body must be JSON", 400, requestId);
-      const region = String((body as Record<string, unknown>).region ?? "");
+      const region = String((body as Record<string, unknown>)["region"] ?? "");
       return this.applyFailback(region, now_ms, requestId);
     }
 

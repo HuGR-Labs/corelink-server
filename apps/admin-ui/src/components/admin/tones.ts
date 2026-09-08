@@ -33,3 +33,18 @@ export function byokTone(status: string): Tone {
       return "neutral";
   }
 }
+
+/** Dual-approval operation status → semantic badge tone. */
+export function opStatusTone(status: string): Tone {
+  switch (status) {
+    case "executed":
+      return "success";
+    case "awaiting_approval":
+    case "approved":
+      return "warn";
+    case "rejected":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}

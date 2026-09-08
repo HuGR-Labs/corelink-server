@@ -79,6 +79,8 @@ Detrás de escena:
 - Solo se guarda un hash seudonimizado del correo (sin espacios al
   principio ni al final y en minúsculas); la dirección en texto plano
   nunca se persiste.
+- La respuesta incluye un `invitation_token` aleatorio de 256 bits. Compártelo
+  por un canal seguro; se muestra una sola vez y solo se guarda su digest.
 - Se escribe una fila de auditoría visible para el cliente, con tipo de
   evento `team.invited`, *antes* de la fila del asiento: así una
   invitación nunca se concreta sin su registro de auditoría. Su detalle
@@ -107,10 +109,12 @@ rutas.
 
 1. Inicia sesión en CoreLink —o se registra y configura MFA, si es su
    primera vez— usando **la misma dirección de correo que invitaste**.
-2. Clerk la redirige de vuelta a CoreLink.
-3. CoreLink localiza el asiento pendiente por el hash del correo, lo
-   vincula a su `user_id` real y cambia el estado de `invited` a `active`.
-   El rol que elegiste al invitar se conserva.
+2. Clerk debe marcar su correo principal como `verified`.
+3. Con la sesión iniciada, llama a `POST /v1/customer/team/accept` con
+   `{"invitation_token":"..."}`. CoreLink valida digest, tenant, expiración
+   de 14 días y correo verificado de forma atómica; los reintentos, tokens
+   vencidos o de otro tenant se rechazan.
+4. El rol elegido se conserva y el asiento pasa a `active`.
 
 Desde ese momento aparece en **Members** y ya no en
 **Pending invitations**.
@@ -134,13 +138,9 @@ el `role`, el `joined_at` y el `status` del miembro (`invited` hasta que
 inicie sesión, y después `active`). También hay un campo `email`, pero
 vuelve como un marcador de posición: mira la nota de abajo.
 
-> **CoreLink nunca almacena el correo en texto plano.** La invitación
-> persiste solo un hash seudonimizado de la dirección (sin espacios al
-> principio ni al final y en minúsculas, `CTRL-PRIV-001`), y ese hash es
-> además la clave con la que se localiza la invitación cuando la persona
-> inicia sesión. Las filas de auditoría siguen la misma regla
-> (`INV-AUDIT-NO-RAW-PII`): el registro `team.invited` guarda el rol, no
-> la dirección.
+> **CoreLink nunca almacena el correo ni el token en texto plano.** Solo
+> persiste digests seudonimizados (`CTRL-PRIV-001`); la aceptación exige un
+> correo primario de Clerk verificado y registra `team.accepted`.
 
 ## Paso 5 — Emitir su primer PAT (`Member` o superior)
 

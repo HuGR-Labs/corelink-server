@@ -90,8 +90,9 @@ fn validate_hash(hash: &str) -> Result<(), BazelBridgeError> {
 ```
 
 Uppercase hash? Rejected. 63-char hash? Rejected. A size that exceeds
-4 GiB? Also rejected — blobs that large require the ByteStream API,
-which this REST bridge does not implement (see Limitations below).
+64 MiB? Also rejected by the shared HTTP cache-entry ceiling — larger
+blobs require the separately sealed ByteStream API, which this REST bridge
+does not implement (see Limitations below).
 
 ### findMissingBlobs: the bandwidth saver
 
@@ -315,7 +316,7 @@ wired. All traffic currently goes through the IAD data plane
 regardless of the client's location.
 
 **No ByteStream.** The REAPI bridge is REST-only. Blobs larger than
-4 GiB cannot be uploaded through the Bazel bridge — `--remote_cache`
+64 MiB cannot be uploaded through the Bazel bridge — `--remote_cache`
 will fall back to local build for those targets. Bazel's ByteStream
 API (gRPC) is explicitly excluded from this crate:
 
@@ -327,9 +328,9 @@ API (gRPC) is explicitly excluded from this crate:
 //!   prost, or any gRPC runtime. REST only.
 ```
 
-In practice, individual blobs over 4 GiB are rare for compiled
-artifacts. If you are caching large model weights or Docker layer
-tarballs through Bazel, you will hit this limit.
+In practice, individual blobs over 64 MiB are uncommon for ordinary
+compiled artifacts. If you are caching large model weights or Docker
+layer tarballs through Bazel, use the gRPC/ByteStream contract instead.
 
 **findMissingBlobs is sequential today.** The `InMemoryFindMissing`
 implementation iterates the digest list sequentially and calls the

@@ -25,12 +25,35 @@ source_files:
   - "crates/corelink-dsr-statuspage-scheduler/src/scheduler.rs"
   - "crates/corelink-clerk-cf/src/dsr_statuspage_cron.rs"
   - "crates/corelink-clerk-cf/wrangler.toml"
-checkpoint_sha: "0c44977b9ee49e2a67556377c1f973aa92d5f5b2"
+source_blobs:
+  - "crates/corelink-ops/src/lib.rs@440470d297248bab67ce6cf7da370f28c7e8b771"
+  - "crates/corelink-ops/src/chaos.rs@470b192abd69cbdce1e5da278bd4ddfa767b47b1"
+  - "crates/corelink-ops/src/rotation.rs@78227b795e1f1825ff08513e29880327870ec390"
+  - "crates/corelink-ops/src/rotation/worker.rs@4477879c9b33b3196e5b6a700438e4d4702f5c5e"
+  - "crates/corelink-ops/src/rotation/worker/rollback.rs@bb92d8caf77ffeeeb562ab706ef89f45042111dd"
+  - "crates/corelink-ops/src/statuspage.rs@89c2f4ac7232d1e82f265e6bb808771063d8d793"
+  - "crates/corelink-ops/src/slack.rs@a95953329ccf0ba49e86f8f278afbf510b9500fe"
+  - "crates/corelink-ops/src/terraform.rs@f4528ede400f0c7df4f26c7317655a578560a2bb"
+  - "crates/corelink-ops/src/runbook.rs@75274eea7c5c238e5a3181b25a7ae2808ace7508"
+  - "crates/corelink-ops/src/dt.rs@87e797e0881b878e50ec175f837066bde20dc320"
+  - "crates/corelink-chaos-scheduler/src/runner.rs@d5fb6cac4f40c73cd54d3c3206b047d545727c5e"
+  - "crates/corelink-chaos-scheduler/src/catalog.rs@0f8afa5d8c29243fcdbca69848f06ce40387aaf4"
+  - "crates/corelink-rotation-adapters/src/adapter.rs@9b6d65475731e4fec5b9371afba3534b7324244a"
+  - "crates/corelink-slack-real/src/http.rs@db2683fc141c34e2a39fa353f1e5ff423603abb4"
+  - "crates/corelink-statuspage-real/src/http.rs@be4475b1f217211050f0f99c06690ba67556e375"
+  - "crates/corelink-statuspage-real/src/lib.rs@36268b916b8ebe88116b9584e6083679b4297c10"
+  - "crates/corelink-dt-webhook/src/handler.rs@3aa0cba9ea6f44f190365c8a9e6684c6639d67dc"
+  - "crates/corelink-terraform-drift-consumer/src/consumer.rs@c62022ee9b81fe4fa54472c0957459f4f5b7acb5"
+  - "crates/corelink-runbook-tracker/src/lib.rs@c3c770e37961eef6451c51f047a28c669dc017c0"
+  - "crates/corelink-dsr-statuspage-scheduler/src/scheduler.rs@bd62eac30c7c531e3ba9a4054cace111a7d633ed"
+  - "crates/corelink-clerk-cf/src/dsr_statuspage_cron.rs@25fc5359f7579ace71a51868d92a8e88c9a07688"
+  - "crates/corelink-clerk-cf/wrangler.toml@38f5cf283ac07ebf36aab47d00c19cca621cd31f"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["sre", "operations", "alerting", "chaos", "rotation"]
 timestamp: "2026-06-28T00:00:00Z"
----
 
+---
 # SRE operations hub (corelink-ops + satellites)
 
 `corelink-ops` is the **single import target** for every ops/SRE primitive in the
@@ -128,7 +151,7 @@ below before assuming any of these "fires" in production.
   `InMemoryDtWebhookHandler` — it does real HMAC verify + severity routing + DLQ, but
   `deliver_to_channel` is an explicit in-memory simulation and the header says production CF Worker
   wiring is deferred (`crates/corelink-dt-webhook/src/handler.rs:7-9`,
-  `crates/corelink-dt-webhook/src/handler.rs:168-184`). The `rotation::worker` is likewise a
+  `crates/corelink-dt-webhook/src/handler.rs:197-213`). The `rotation::worker` is likewise a
   pure-logic skeleton with Cron/D1/KMS deferred to WI-S13-006
   (`crates/corelink-ops/src/rotation/worker.rs:7-11`). Do not claim either "alerts" or "rotates"
   in prod from this crate alone.
@@ -163,7 +186,7 @@ below before assuming any of these "fires" in production.
 16. `crates/corelink-statuspage-real/src/http.rs:166-275` — real `api.statuspage.io` POST + rate-limit + retry + audit.
 17. `crates/corelink-statuspage-real/src/lib.rs:55-76` — native http vs wasm32 backend target split.
 18. `crates/corelink-dt-webhook/src/handler.rs:7-9` — production CF Worker wiring deferred.
-19. `crates/corelink-dt-webhook/src/handler.rs:168-184` — `deliver_to_channel` is an in-memory simulation.
+19. `crates/corelink-dt-webhook/src/handler.rs:197-213` — `deliver_to_channel` is an in-memory simulation.
 20. `crates/corelink-terraform-drift-consumer/src/consumer.rs:58-96` — classify→audit-before-store→insert→metrics.
 21. `crates/corelink-terraform-drift-consumer/src/consumer.rs:124-128` — no `terraform apply` surface by construction.
 22. `crates/corelink-runbook-tracker/src/lib.rs:256-272` — `compute_drift` (ratio > 2.0 → flagged).

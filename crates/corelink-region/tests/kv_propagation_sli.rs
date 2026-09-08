@@ -72,7 +72,11 @@ fn inmemory_probe_records_typical_lag() {
             samples.push(p.probe(*w, *r, 0).expect("probe"));
         }
     }
-    assert_eq!(samples.len(), 12, "4 × 3 = 12 inter-region pairs");
+    assert_eq!(
+        samples.len(),
+        Region::ALL.len() * (Region::ALL.len() - 1),
+        "every directed inter-region pair must be sampled"
+    );
     assert!(samples
         .iter()
         .all(|s| s.lag_seconds <= (KV_PROPAGATION_TYPICAL_P99_CEILING_SECONDS as f64)));

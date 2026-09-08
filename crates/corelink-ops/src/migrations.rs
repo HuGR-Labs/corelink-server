@@ -169,6 +169,9 @@ pub fn split_statements(sql: &str) -> Vec<String> {
     let mut chars = sql.chars().peekable();
     let mut in_str: Option<char> = None;
     let mut trigger_depth: u32 = 0;
+    // Trigger bodies may contain searched CASE expressions. Their END
+    // keywords must not close the surrounding trigger body.
+    let mut case_depth: u32 = 0;
     let mut line_comment = false;
     // Word-boundary tracker: we count BEGIN/END exactly once per word.
     // `last_was_word` records whether the previous char was alnum/_; we
@@ -229,6 +232,10 @@ pub fn split_statements(sql: &str) -> Vec<String> {
             let upper = last_word.to_ascii_uppercase();
             if upper == "BEGIN" && stmt_is_trigger {
                 trigger_depth = trigger_depth.saturating_add(1);
+            } else if upper == "CASE" && trigger_depth > 0 {
+                case_depth = case_depth.saturating_add(1);
+            } else if upper == "END" && case_depth > 0 {
+                case_depth = case_depth.saturating_sub(1);
             } else if upper == "END" && trigger_depth > 0 {
                 trigger_depth = trigger_depth.saturating_sub(1);
             } else if (upper == "CREATE" || upper == "TRIGGER")
@@ -247,6 +254,7 @@ pub fn split_statements(sql: &str) -> Vec<String> {
             }
             buf.clear();
             stmt_is_trigger = false;
+            case_depth = 0;
         }
     }
 
@@ -436,6 +444,29 @@ mod tests {
         assert_eq!(parts.len(), 3, "got: {parts:#?}");
         assert!(parts[1].contains("CREATE TRIGGER"));
         assert!(parts[1].contains("END"));
+    }
+
+    #[test]
+    fn split_statements_respects_case_end_inside_trigger_body() {
+        let sql = "
+            CREATE TABLE t (id INT, state TEXT);
+            CREATE TABLE audit (kind TEXT, detail TEXT);
+            CREATE TRIGGER tr AFTER UPDATE OF state ON t
+            WHEN NEW.state IS NOT OLD.state
+            BEGIN
+              INSERT INTO audit (kind, detail)
+              VALUES (
+                CASE NEW.state WHEN 'active' THEN 'restored' ELSE 'revoked' END,
+                CASE NEW.state WHEN 'active' THEN 'resumed' ELSE 'suspended' END
+              );
+            END;
+            CREATE INDEX ix ON t (id);
+        ";
+        let parts = split_statements(sql);
+        assert_eq!(parts.len(), 4, "got: {parts:#?}");
+        assert!(parts[2].contains("CREATE TRIGGER"));
+        assert!(parts[2].contains("CASE NEW.state"));
+        assert!(parts[2].contains("END"));
     }
 
     #[test]

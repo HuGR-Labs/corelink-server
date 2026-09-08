@@ -4,12 +4,14 @@ title: "ADR-S11-007 — Privacy Notice Material vs Minor Change Criteria"
 description: "The typed semver criteria that decide whether a privacy-notice change is material (force re-consent) or minor (silent), making the Privacy Officer's judgment consistent and auditable."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-007-privacy-notice-material-vs-minor.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s11", "privacy-notice", "consent", "semver"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S11-007-privacy-notice-material-vs-minor.md@b163b6a86bdba39be7d29e96c84f50e2ac0e8d4b"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S11-007 — Privacy Notice Material vs Minor Change Criteria
 
 A "material change" to a privacy notice legally triggers force re-consent, but "material" is a judgment call that drifts between reviewers and over time, creating audit-defensibility gaps. This ADR codifies the call as a **typed semver convention** — a major bump means material (re-consent), a minor bump means clarification (silent) — so the Privacy Officer applies a written table instead of ad-hoc judgment, and CI can enforce a valid bump.

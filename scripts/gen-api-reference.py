@@ -5,34 +5,10 @@ gen-api-reference.py — Auto-generate the typed REST API reference under
 ``apps/docs/docs/reference/api/endpoints/`` from
 ``openapi/corelink-v1.yaml``.
 
-For every ``paths.<path>.<method>`` entry the generator emits one MDX
-page containing:
-
-* HTTP method + canonical path (badge + heading)
-* Summary + description (OpenAPI ``summary``/``description``)
-* Tag, operationId, security requirements, rate-limit class
-* Parameter table (path / query / header)
-* Request body schema (typed; ``$ref`` resolved one level)
-* Response status table + per-status schema
-* Example invocations in **five** languages:
-  curl, Rust (``reqwest``-style), Python (``httpx``-style),
-  Go (``net/http``-style), JavaScript (``fetch``).
-
-A landing page (``index.mdx``) is also written with an alphabetical
-endpoint list grouped by tag.
-
-Charter compliance:
-
-* Strict ``argparse`` CLI; ``--help`` exits 0.
-* ``--dry-run`` exits 0 without writing files.
-* Explicit ``sys.exit`` on every error path (no silent ``except``).
-* No external deps beyond ``pyyaml`` (already pinned for
-  ``scripts/openapi_sync.py``).
-
-This file is deterministic — running twice on the same YAML emits
-byte-identical output (sorted keys, stable ordering).
-
-CI drift gate: ``.github/workflows/api-reference-sync.yml``.
+Each endpoint receives a typed MDX page (including parameters, schemas, and
+curl/Rust/Python/Go/JavaScript examples), plus a tag-grouped landing page.
+The strict, deterministic CLI supports ``--dry-run`` and is drift-gated by
+``.github/workflows/api-reference-sync.yml``; PyYAML is its only dependency.
 """
 
 from __future__ import annotations
@@ -46,6 +22,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from api_reference_i18n_check import validate_localized_api_indexes
+from api_reference_examples import render_examples as render_endpoint_examples
 
 try:
     import yaml  # type: ignore[import-untyped]
@@ -592,150 +569,14 @@ def _example_url(endpoint: Endpoint, spec: Spec) -> str:
     return base
 
 
+
 def render_examples(endpoint: Endpoint, spec: Spec) -> str:
-    url = _example_url(endpoint, spec)
-    headers = _example_headers(endpoint, spec)
-    body = _example_body_for_endpoint(endpoint, spec)
-    body_json = json.dumps(body, indent=2, sort_keys=True) if body is not None else None
-
-    # ---- curl ----
-    curl_parts: list[str] = [f"curl -X {endpoint.method}", f"  '{url}'"]
-    for h, v in headers:
-        curl_parts.append(f"  -H '{h}: {v}'")
-    if body_json is not None:
-        body_inline = body_json.replace("'", "'\\''")
-        curl_parts.append(f"  -d '{body_inline}'")
-    # Join with ' \\\n' so every continuation line ends with a backslash
-    # except the last one.
-    curl = " \\\n".join(curl_parts)
-
-    # ---- Rust (reqwest-style) ----
-    rust_headers = "\n".join(
-        f'        .header("{h}", "{v}")' for h, v in headers
-    )
-    if body_json is not None:
-        # Use a raw string literal so we don't need to escape the JSON.
-        rust_body_decl = (
-            "    let body: Value = serde_json::from_str(r#\"\n"
-            f"{body_json}\n"
-            "    \"#)?;\n"
-        )
-        rust_body_send = "        .json(&body)\n"
-    else:
-        rust_body_decl = ""
-        rust_body_send = ""
-    rust = (
-        "use reqwest::Client;\n"
-        "use serde_json::Value;\n\n"
-        "#[tokio::main]\n"
-        "async fn main() -> Result<(), Box<dyn std::error::Error>> {\n"
-        "    let client = Client::new();\n"
-        f"{rust_body_decl}"
-        f"    let resp = client\n        .{endpoint.method.lower()}(\"{url}\")\n"
-        f"{rust_headers}\n"
-        f"{rust_body_send}"
-        "        .send()\n"
-        "        .await?\n"
-        "        .json::<Value>()\n"
-        "        .await?;\n"
-        "    println!(\"{resp:#?}\");\n"
-        "    Ok(())\n"
-        "}\n"
-    )
-
-    # ---- Python (httpx-style) ----
-    if headers:
-        py_header_lines = "".join(f'        "{h}": "{v}",\n' for h, v in headers)
-        py_headers_repr = "{\n" + py_header_lines + "    }"
-    else:
-        py_headers_repr = "{}"
-    py_body = (
-        f"    body = {body_json}\n" if body_json is not None else ""
-    )
-    py_call = (
-        f'    resp = httpx.{endpoint.method.lower()}(\n'
-        f'        "{url}",\n'
-        f'        headers=headers,\n'
-        + ("        json=body,\n" if body_json is not None else "")
-        + "    )\n"
-    )
-    python = (
-        "import httpx\n\n"
-        "def main() -> None:\n"
-        f"    headers = {py_headers_repr}\n"
-        f"{py_body}"
-        f"{py_call}"
-        "    resp.raise_for_status()\n"
-        "    print(resp.json())\n\n"
-        "if __name__ == \"__main__\":\n"
-        "    main()\n"
-    )
-
-    # ---- Go (net/http) ----
-    go_headers = "\n".join(
-        f'    req.Header.Set("{h}", "{v}")' for h, v in headers
-    )
-    go_body_init = (
-        f"    body := []byte(`{body_json}`)\n"
-        if body_json is not None
-        else "    var body []byte\n"
-    )
-    go_body_reader = (
-        "bytes.NewReader(body)" if body_json is not None else "nil"
-    )
-    go = (
-        "package main\n\n"
-        "import (\n"
-        "    \"bytes\"\n"
-        "    \"fmt\"\n"
-        "    \"io\"\n"
-        "    \"net/http\"\n"
-        ")\n\n"
-        "func main() {\n"
-        f"{go_body_init}"
-        f'    req, err := http.NewRequest("{endpoint.method}", "{url}", {go_body_reader})\n'
-        "    if err != nil {\n        panic(err)\n    }\n"
-        f"{go_headers}\n"
-        "    resp, err := http.DefaultClient.Do(req)\n"
-        "    if err != nil {\n        panic(err)\n    }\n"
-        "    defer resp.Body.Close()\n"
-        "    out, _ := io.ReadAll(resp.Body)\n"
-        "    fmt.Println(string(out))\n"
-        "}\n"
-    )
-
-    # ---- JavaScript (fetch) ----
-    if headers:
-        js_header_lines = "".join(f'    "{h}": "{v}",\n' for h, v in headers)
-        js_headers = "{\n" + js_header_lines + "  }"
-    else:
-        js_headers = "{}"
-    js_body = (
-        f"  body: JSON.stringify({body_json}),\n" if body_json is not None else ""
-    )
-    js = (
-        f"const resp = await fetch(\"{url}\", {{\n"
-        f"  method: \"{endpoint.method}\",\n"
-        f"  headers: {js_headers},\n"
-        f"{js_body}"
-        "});\n"
-        "if (!resp.ok) {\n"
-        "  throw new Error(`HTTP ${resp.status}`);\n"
-        "}\n"
-        "console.log(await resp.json());\n"
-    )
-
-    return (
-        "### curl\n\n"
-        f"```bash\n{curl}\n```\n\n"
-        "### Rust (reqwest)\n\n"
-        f"```rust\n{rust}```\n\n"
-        "### Python (httpx)\n\n"
-        f"```python\n{python}```\n\n"
-        "### Go (net/http)\n\n"
-        f"```go\n{go}```\n\n"
-        "### JavaScript (fetch)\n\n"
-        f"```javascript\n{js}```\n"
+    return render_endpoint_examples(
+        endpoint,
+        spec,
+        _example_url,
+        _example_headers,
+        _example_body_for_endpoint,
     )
 
 
@@ -863,18 +704,22 @@ def render_index_mdx(endpoints: list[Endpoint]) -> str:
 
 def write_if_changed(path: Path, content: str, *, dry_run: bool) -> bool:
     """Return True if the file was (or would be) written."""
+    # Keep generated documents to one terminal newline.  A double terminal
+    # newline is semantically harmless but makes `git diff --check` report a
+    # blank line at EOF for newly generated endpoints.
+    normalized = content.rstrip("\n") + "\n"
     if path.is_file():
         try:
             current = path.read_text(encoding="utf-8")
         except OSError as exc:
             sys.stderr.write(f"fatal: cannot read {path}: {exc}\n")
             sys.exit(4)
-        if current == content:
+        if current.rstrip("\n") + "\n" == normalized:
             return False
     if dry_run:
         return True
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_text(normalized, encoding="utf-8")
     return True
 
 

@@ -1,0 +1,635 @@
+#!/usr/bin/env python3
+"""Verify the B-029 load gate's executable contract.
+
+This is deliberately a small structural verifier.  The comparison itself is
+exercised by ``tests/test_b029_load_gate.py``; this command makes the workflow
+wiring and the backlog's open/done polarity executable as well.  AST contract
+checks follow only conservatively reachable code, so dead ``if False`` bait
+cannot stand in for the load gate.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import operator
+import re
+import shlex
+import textwrap
+from dataclasses import dataclass
+from pathlib import Path
+
+
+DEFAULT_ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW = ".github/workflows/load-test-nightly.yml"
+COMPARATOR = "scripts/load-test-baseline-check.py"
+OPERATOR_README = "tests/load/README.md"
+COMPARE_STEP = "compare median vs stored baseline"
+EXPECTED_COMPARATOR = (
+    "python3",
+    "scripts/load-test-baseline-check.py",
+    "--results-dir",
+    "tests/load/results/current",
+    "--baseline",
+    "tests/load/baseline/k6-baseline.json",
+    "--threshold",
+    "${REGRESSION_THRESHOLD}",
+    "--expected-scenarios",
+    "${EXPECTED_SCENARIOS}",
+)
+
+
+@dataclass(frozen=True)
+class _YamlStep:
+    name: str
+    line: int
+    runs: tuple[str, ...]
+    uses: tuple[str, ...]
+
+
+def _yaml_run_blocks(lines: list[str]) -> tuple[str, ...]:
+    """Extract literal YAML ``run: |`` blocks from one step section."""
+
+    blocks: list[str] = []
+    for index, line in enumerate(lines):
+        match = re.match(r"^(?P<indent>\s*)run:\s*\|[+-]?\s*$", line)
+        if not match:
+            continue
+        run_indent = len(match.group("indent"))
+        body: list[str] = []
+        for candidate in lines[index + 1 :]:
+            if candidate.strip() and len(candidate) - len(candidate.lstrip()) <= run_indent:
+                break
+            body.append(candidate)
+        blocks.append(textwrap.dedent("\n".join(body)).strip("\n"))
+    return tuple(blocks)
+
+
+def _yaml_steps(workflow: str) -> tuple[_YamlStep, ...]:
+    """Read step names, run blocks, and uses keys without trusting prose."""
+
+    lines = workflow.splitlines()
+    starts: list[tuple[int, int, str]] = []
+    for index, line in enumerate(lines):
+        match = re.match(r"^(?P<indent>\s*)-\s+name:\s*(?P<name>.+?)\s*$", line)
+        if match:
+            starts.append((index, len(match.group("indent")), match.group("name")))
+    steps: list[_YamlStep] = []
+    for offset, (start, indent, name) in enumerate(starts):
+        end = len(lines)
+        for candidate, candidate_indent, _ in starts[offset + 1 :]:
+            if candidate_indent <= indent:
+                end = candidate
+                break
+        section = lines[start:end]
+        uses = tuple(
+            match.group(1)
+            for line in section
+            if (match := re.match(r"^\s*uses:\s*([^\s#]+)", line))
+        )
+        steps.append(
+            _YamlStep(
+                name=name,
+                line=start,
+                runs=_yaml_run_blocks(section),
+                uses=uses,
+            )
+        )
+    return tuple(steps)
+
+
+def _shell_tokens(source: str) -> list[str]:
+    lexer = shlex.shlex(source, posix=True, punctuation_chars=";&|()<>")
+    lexer.whitespace_split = True
+    lexer.commenters = "#"
+    return list(lexer)
+
+
+def _without_heredoc_bodies(source: str) -> str:
+    """Remove heredoc payloads so text in them is not executable evidence."""
+
+    pending: list[tuple[str, bool]] = []
+    kept: list[str] = []
+    for line in source.splitlines():
+        if pending:
+            candidate = line.lstrip("\t") if pending[0][1] else line
+            if candidate.strip() == pending[0][0]:
+                pending.pop(0)
+            continue
+        kept.append(line)
+        try:
+            tokens = _shell_tokens(line)
+        except ValueError:
+            continue
+        for index, token in enumerate(tokens[:-1]):
+            if token != "<<":
+                continue
+            delimiter = tokens[index + 1]
+            strip_tabs = delimiter.startswith("-")
+            if strip_tabs:
+                delimiter = delimiter[1:]
+            if delimiter and delimiter not in {";", "&", "|"}:
+                pending.append((delimiter, strip_tabs))
+    return "\n".join(kept)
+
+
+def _split_shell_commands(source: str) -> list[list[str]]:
+    """Tokenize shell commands while retaining simple-command boundaries."""
+
+    try:
+        # A physical newline terminates a shell command unless escaped.  Turn
+        # those boundaries into the same separator used by ``;`` before
+        # tokenizing; this also keeps a five-line continued invocation one
+        # command while preventing ``set -e`` from swallowing the next line.
+        shell = _without_heredoc_bodies(source)
+        shell = shell.replace("\\\n", " ").replace("\n", ";")
+        tokens = _shell_tokens(shell)
+    except ValueError:
+        return []
+    commands: list[list[str]] = []
+    command: list[str] = []
+    for token in tokens:
+        if token in {";", "&&", "||", "|", "&", "(", ")"}:
+            if command:
+                commands.append(command)
+                command = []
+        else:
+            command.append(token)
+    if command:
+        commands.append(command)
+    return commands
+
+
+def _false_shell_condition(tokens: list[str]) -> bool | None:
+    if tokens in (["false"], [":"]):
+        return tokens == [":"]
+    if len(tokens) == 5 and tokens[0] in {"[", "test"} and tokens[-1] == "]":
+        left, operator_name, right = tokens[1:4]
+        if operator_name in {"=", "==", "-eq"}:
+            return left == right
+        if operator_name in {"!=", "-ne"}:
+            return left != right
+    return None
+
+
+def _active_shell_commands(source: str) -> tuple[tuple[str, ...], ...]:
+    """Return executable simple commands, excluding comments/strings/heredocs."""
+
+    commands = _split_shell_commands(source)
+    active_branches: list[bool | None] = []
+    found: list[tuple[str, ...]] = []
+    reserved = {"if", "then", "else", "elif", "fi", "do", "done", "for", "in", "while", "until", "{", "}"}
+
+    for command in commands:
+        if not command:
+            continue
+        first = command[0]
+        if first == "if":
+            condition = command[1:]
+            if "then" in condition:
+                condition = condition[:condition.index("then")]
+            active_branches.append(_false_shell_condition(condition))
+            continue
+        if first == "else" and active_branches:
+            state = active_branches[-1]
+            active_branches[-1] = None if state is None else not state
+            continue
+        if first == "elif" and active_branches:
+            condition = command[1:]
+            if "then" in condition:
+                condition = condition[:condition.index("then")]
+            active_branches[-1] = _false_shell_condition(condition)
+            continue
+        if first == "fi":
+            if active_branches:
+                active_branches.pop()
+            continue
+        if active_branches and False in active_branches:
+            continue
+        while command and ("=" in command[0] and not command[0].startswith("-")):
+            command = command[1:]
+        while command and command[0] in reserved:
+            command = command[1:]
+        if command:
+            found.append(tuple(command))
+    return tuple(found)
+
+
+def _function(tree: ast.AST, name: str) -> ast.FunctionDef | None:
+    return next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == name
+        ),
+        None,
+    )
+
+
+def _static_truth(test: ast.AST) -> bool | None:
+    """Evaluate only conditions that are statically and safely decidable."""
+
+    if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
+        value = _static_truth(test.operand)
+        return None if value is None else not value
+    if isinstance(test, ast.BoolOp):
+        values = [_static_truth(value) for value in test.values]
+        if isinstance(test.op, ast.And):
+            if any(value is False for value in values):
+                return False
+            return True if all(value is True for value in values) else None
+        if any(value is True for value in values):
+            return True
+        return False if all(value is False for value in values) else None
+    if isinstance(test, ast.Compare):
+        try:
+            values = [ast.literal_eval(test.left)] + [
+                ast.literal_eval(comparator) for comparator in test.comparators
+            ]
+        except (ValueError, TypeError, SyntaxError, MemoryError):
+            return None
+        operations = {
+            ast.Eq: operator.eq,
+            ast.NotEq: operator.ne,
+            ast.Lt: operator.lt,
+            ast.LtE: operator.le,
+            ast.Gt: operator.gt,
+            ast.GtE: operator.ge,
+            ast.Is: operator.is_,
+            ast.IsNot: operator.is_not,
+            ast.In: lambda left, right: left in right,
+            ast.NotIn: lambda left, right: left not in right,
+        }
+        results: list[bool] = []
+        for index, comparison in enumerate(test.ops):
+            operation = next(
+                (fn for kind, fn in operations.items() if isinstance(comparison, kind)),
+                None,
+            )
+            if operation is None:
+                return None
+            try:
+                results.append(operation(values[index], values[index + 1]))
+            except (TypeError, ValueError, KeyError):
+                return None
+        return all(results)
+    try:
+        return bool(ast.literal_eval(test))
+    except (ValueError, TypeError, SyntaxError, MemoryError):
+        return None
+
+
+def _block_terminates(statements: list[ast.stmt]) -> bool:
+    """Whether every path through a small statement block terminates."""
+
+    for statement in statements:
+        if isinstance(statement, (ast.Return, ast.Raise, ast.Break, ast.Continue)):
+            return True
+        if isinstance(statement, ast.If):
+            truth = _static_truth(statement.test)
+            if truth is True and _block_terminates(statement.body):
+                return True
+            if truth is False and _block_terminates(statement.orelse):
+                return True
+            if truth is None and statement.orelse:
+                if _block_terminates(statement.body) and _block_terminates(statement.orelse):
+                    return True
+    return False
+
+
+def _reachable_nodes(function: ast.AST) -> list[ast.AST]:
+    """Collect AST nodes that can execute in *function*.
+
+    Unknown predicates retain both branches. Constant-false/zero/always-false
+    branches are omitted, and statements after unconditional return/raise are
+    not considered live. Nested function/class bodies are declarations, not
+    executable implementations of the target function.
+    """
+
+    nodes: list[ast.AST] = []
+
+    def visit(node: ast.AST, *, descend_function: bool = False) -> None:
+        nodes.append(node)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if descend_function:
+                visit_block(node.body)
+            return
+        if isinstance(node, ast.ClassDef):
+            return
+        if isinstance(node, ast.If):
+            visit(node.test)
+            truth = _static_truth(node.test)
+            if truth is True:
+                visit_block(node.body)
+            elif truth is False:
+                visit_block(node.orelse)
+            else:
+                visit_block(node.body)
+                visit_block(node.orelse)
+            return
+        if isinstance(node, ast.While):
+            visit(node.test)
+            truth = _static_truth(node.test)
+            if truth is False:
+                visit_block(node.orelse)
+            elif truth is True:
+                visit_block(node.body)
+            else:
+                visit_block(node.body)
+                visit_block(node.orelse)
+            return
+        if isinstance(node, (ast.For, ast.AsyncFor)):
+            visit(node.target)
+            visit(node.iter)
+            visit_block(node.body)
+            visit_block(node.orelse)
+            return
+        if isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                visit(item)
+            visit_block(node.body)
+            return
+        if isinstance(node, ast.Try):
+            visit_block(node.body)
+            for handler in node.handlers:
+                if handler.type is not None:
+                    visit(handler.type)
+                visit_block(handler.body)
+            visit_block(node.orelse)
+            visit_block(node.finalbody)
+            return
+        if isinstance(node, ast.ExceptHandler):
+            if node.type is not None:
+                visit(node.type)
+            visit_block(node.body)
+            return
+        if isinstance(node, ast.Match):
+            visit(node.subject)
+            for case in node.cases:
+                if case.guard is not None:
+                    visit(case.guard)
+                visit_block(case.body)
+            return
+        for child in ast.iter_child_nodes(node):
+            visit(child)
+
+    def visit_block(statements: list[ast.stmt]) -> None:
+        for statement in statements:
+            visit(statement)
+            if isinstance(statement, (ast.Return, ast.Raise, ast.Break, ast.Continue)):
+                break
+            if isinstance(statement, ast.If):
+                truth = _static_truth(statement.test)
+                if (
+                    (truth is True and _block_terminates(statement.body))
+                    or (truth is False and _block_terminates(statement.orelse))
+                    or (
+                        truth is None
+                        and statement.orelse
+                        and _block_terminates(statement.body)
+                        and _block_terminates(statement.orelse)
+                    )
+                ):
+                    break
+
+    visit(function, descend_function=True)
+    return nodes
+
+
+def _calls(function: ast.AST, name: str) -> bool:
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == name
+        for node in _reachable_nodes(function)
+    )
+
+
+def _rglob(function: ast.AST, filename: str) -> bool:
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "rglob"
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value == filename
+        for node in _reachable_nodes(function)
+    )
+
+
+def _string_constants(function: ast.AST) -> set[str]:
+    """Return executable string literals, excluding docstrings/comments."""
+    values: set[str] = set()
+    parents = {
+        child: node
+        for node in _reachable_nodes(function)
+        for child in ast.iter_child_nodes(node)
+    }
+    for node in _reachable_nodes(function):
+        if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+            continue
+        parent = parents.get(node)
+        if isinstance(parent, ast.Expr) and parent.value is node:
+            continue
+        values.add(node.value)
+    return values
+
+
+def _set_population_check(function: ast.AST, variable: str) -> bool:
+    return any(
+        isinstance(node, ast.Compare)
+        and isinstance(node.left, ast.Call)
+        and isinstance(node.left.func, ast.Name)
+        and node.left.func.id == "set"
+        and len(node.left.args) == 1
+        and isinstance(node.left.args[0], ast.Name)
+        and node.left.args[0].id == variable
+        and any(
+            isinstance(comparator, ast.Name) and comparator.id == "expected"
+            for comparator in node.comparators
+        )
+        for node in _reachable_nodes(function)
+    )
+
+
+def _comparison(function: ast.AST, left: str, right: str) -> bool:
+    return any(
+        isinstance(node, ast.Compare)
+        and isinstance(node.left, ast.Name)
+        and node.left.id == left
+        and any(
+            isinstance(comparator, ast.Name) and comparator.id == right
+            for comparator in node.comparators
+        )
+        for node in _reachable_nodes(function)
+    )
+
+
+def _raises(function: ast.AST, name: str) -> bool:
+    return any(
+        isinstance(node, ast.Raise)
+        and isinstance(node.exc, ast.Call)
+        and isinstance(node.exc.func, ast.Name)
+        and node.exc.func.id == name
+        for node in _reachable_nodes(function)
+    )
+
+
+def assess(root: Path, *, expect: str) -> list[str]:
+    gaps: list[str] = []
+    workflow_path = root / WORKFLOW
+    comparator_path = root / COMPARATOR
+    readme_path = root / OPERATOR_README
+    try:
+        workflow = workflow_path.read_text(encoding="utf-8")
+        comparator = comparator_path.read_text(encoding="utf-8")
+        readme = readme_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [f"instrument error: {exc}"]
+
+    # The gate must compare the current run with a prior cached baseline and
+    # publish only after a successful comparison.  These checks are intentionally
+    # anchored to the executable command/action, not to prose in the header.
+    if workflow.count("runs-on: corelink") != 2:
+        gaps.append("both load jobs must run on corelink")
+    if "actions/cache/restore@" not in workflow or "restore-keys:" not in workflow:
+        gaps.append("previous baseline is not restored by cache prefix")
+    steps = _yaml_steps(workflow)
+    compare_steps = [step for step in steps if step.name == COMPARE_STEP]
+    if len(compare_steps) != 1 or len(compare_steps[0].runs) != 1:
+        gaps.append("workflow must contain exactly one literal comparator run block")
+    else:
+        compare_step = compare_steps[0]
+        compare_run = compare_step.runs[0]
+        invocations = _active_shell_commands(compare_run)
+        comparator_invocations = [
+            command
+            for command in invocations
+            if command and command[0] == "python3"
+        ]
+        if len(comparator_invocations) != 1:
+            gaps.append(
+                "comparison run block must contain exactly one active comparator invocation"
+            )
+        elif comparator_invocations[0] != EXPECTED_COMPARATOR:
+            gaps.append("comparator invocation flags or values are not exact")
+        comparator_index = next(
+            index
+            for index, command in enumerate(invocations)
+            if command == comparator_invocations[0]
+        ) if comparator_invocations else -1
+        if not any(
+            index < comparator_index
+            and command[:3] == ("set", "-euo", "pipefail")
+            for index, command in enumerate(invocations)
+        ):
+            gaps.append("comparison step is not fail-closed shell")
+        save_after = any(
+            step.line > compare_step.line
+            and any(uses.startswith("actions/cache/save@") for uses in step.uses)
+            for step in steps
+        )
+        if not save_after:
+            gaps.append("baseline is not saved after the comparison")
+    if not any(
+        any(uses.startswith("actions/cache/save@") for uses in step.uses)
+        for step in steps
+    ):
+        gaps.append("new baseline is not persisted")
+    if "BASELINE_CACHE_PREFIX }}-" not in workflow:
+        gaps.append("cache restore is not scoped to the baseline prefix")
+    if workflow.count("persist-credentials: false") != 2:
+        gaps.append("both checkouts must disable credential persistence")
+    if "K6_TARGET_HOST" not in workflow or "exit 1" not in workflow:
+        gaps.append("missing staging target is not a hard pre-flight failure")
+    if "dispatch-only until staging is provisioned" not in readme:
+        gaps.append("operator README overclaims that staging load tests are live")
+    if "Until then it is dispatch-only" not in readme:
+        gaps.append("operator README does not state the disabled-schedule truth")
+
+    # Inspect the comparator's AST rather than raw source strings.  A string
+    # or comment containing `status.json` / `collect_statuses` is not evidence
+    # that the executable path enforces the contract.
+    try:
+        tree = ast.parse(comparator, filename=str(comparator_path))
+    except SyntaxError as exc:
+        gaps.append(f"comparator is not valid Python: {exc}")
+    else:
+        current_fn = _function(tree, "collect_current")
+        statuses_fn = _function(tree, "collect_statuses")
+        baseline_fn = _function(tree, "load_baseline")
+        main_fn = _function(tree, "main")
+        if current_fn is None:
+            gaps.append("comparator has no executable collect_current function")
+        else:
+            current_strings = _string_constants(current_fn)
+            if not _rglob(current_fn, "summary.json"):
+                gaps.append("collect_current does not enumerate k6 summary artifacts")
+            if not _set_population_check(current_fn, "out"):
+                gaps.append("collect_current does not enforce the exact scenario population")
+            if "http_req_duration" not in current_strings or "p(99)" not in current_strings:
+                gaps.append("collect_current does not validate the k6 duration metrics")
+        if statuses_fn is None:
+            gaps.append("comparator has no executable collect_statuses function")
+        else:
+            statuses_strings = _string_constants(statuses_fn)
+            if not _rglob(statuses_fn, "status.json"):
+                gaps.append("collect_statuses does not enumerate matrix status artifacts")
+            if "success" not in statuses_strings or not _set_population_check(statuses_fn, "statuses"):
+                gaps.append("collect_statuses does not require an exact successful population")
+        if baseline_fn is None:
+            gaps.append("comparator has no executable load_baseline function")
+        else:
+            if not _raises(baseline_fn, "BaselineError"):
+                gaps.append("missing or malformed baseline is not fail-closed")
+            baseline_strings = _string_constants(baseline_fn)
+            if "captured_at" not in baseline_strings or "commit" not in baseline_strings:
+                gaps.append("baseline provenance does not require captured_at and commit")
+        if main_fn is None:
+            gaps.append("comparator has no executable main function")
+        else:
+            for call in ("collect_statuses", "collect_current", "load_baseline"):
+                if not _calls(main_fn, call):
+                    gaps.append(f"main does not execute {call}")
+            main_names = {
+                node.id for node in _reachable_nodes(main_fn) if isinstance(node, ast.Name)
+            }
+            if "expected_set" not in main_names or "InputError" not in main_names:
+                gaps.append("main does not require an explicit expected scenario set")
+            if not _comparison(main_fn, "cur_med", "limit"):
+                gaps.append("main does not compare current median against the threshold")
+            comparator_names = {
+                node.id for node in _reachable_nodes(main_fn) if isinstance(node, ast.Name)
+            }
+            if "EXIT_REGRESSION" not in comparator_names or "EXIT_USAGE" not in comparator_names:
+                gaps.append("main does not expose distinct regression and input failures")
+            if not _calls(main_fn, "write_baseline"):
+                gaps.append("main does not persist a passing baseline")
+
+    active_cron = any(
+        re.match(r"^\s*-\s*cron:", line) and not line.lstrip().startswith("#")
+        for line in workflow.splitlines()
+    )
+    if expect in {"open", "parked"} and active_cron:
+        gaps.append(f"{expect} B-029 cannot have an active nightly schedule")
+    if expect == "done" and not active_cron:
+        gaps.append("done B-029 requires the nightly schedule to be enabled")
+    return gaps
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    parser.add_argument("--expect", choices=("open", "parked", "done"), required=True)
+    args = parser.parse_args(argv)
+    gaps = assess(args.root, expect=args.expect)
+    state = "open" if gaps and args.expect != "parked" else ("parked" if args.expect == "parked" else args.expect)
+    print(f"B-029 {state}: {len(gaps)} gap(s)")
+    for gap in gaps:
+        print(f"- {gap}")
+    return 0 if not gaps else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

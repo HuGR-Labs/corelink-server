@@ -89,8 +89,8 @@ export interface KvReader {
 const KV_PAT_ROW_PREFIX = "patrow:";
 
 /**
- * KV entry TTL for a cached positive `pat` row, in SECONDS. 60 s is KV's floor
- * and bounds the revocation window on the L2 layer: a PAT revoked in D1 keeps
+ * KV entry TTL for a cached positive `pat` row, in SECONDS. Thirty seconds
+ * bounds the revocation window on the L2 layer: a PAT revoked in D1 keeps
  * edge access until this entry expires. That is the MAX of ADR-0030's
  * `SLO-FRESH-PAT-REVOKE ≤ 60 s p99` — compliant, and it REPLACES (not adds to)
  * the D1-read axis on the hot path, so it is not additive with replication lag.
@@ -101,7 +101,7 @@ const KV_PAT_ROW_PREFIX = "patrow:";
  * TTL remains the uniform backstop for every OTHER revoke path (container-side
  * revokes never touch this Worker's KV).
  */
-const KV_PAT_ROW_TTL_S = 60;
+const KV_PAT_ROW_TTL_S = 30;
 
 /** The KV key for a token_id's cached pat row. */
 export function patRowKvKey(tokenId: string): string {

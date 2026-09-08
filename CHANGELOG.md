@@ -24,6 +24,66 @@ Each entry cross-references:
 
 ### Fixed
 
+- **B-231–B-243 contract hardening.** Public Brew/Pip fills now charge the
+  authenticated tenant with live downgrade caps; Stripe refunds revoke fully
+  refunded access; billing webhooks require durable D1 DLQ state; DPA hashes
+  are server-pinned to versioned notice bytes; six regions, bounded Clerk
+  `kid` negative caching, escaped usage scans, issuer-separated tenant maps,
+  and production email-salt gates are enforced. The focused verifier proves
+  source and adversarial invariants only; no production latency or deployment
+  closure is claimed.
+  The follow-up repair separates customer tiers from runner SKUs, proves
+  `_public` physical dedup with real-tenant accounting, evicts PAT KV rows on
+  rotate/customer revoke, reads DSR residency before deletion, retries JWKS
+  before negative caching, and gates `EMAIL_HASH_SALT` across all six
+  production destinations. B-125 remains open pending authorized read-only
+  production remeasurement.
+
+- **B-093 cache-entry ceilings are now one invariant.** Native CAS, Bazel REST,
+  and Turborepo HTTP cache entries share a 64 MiB fail-closed ceiling sourced
+  from `corelink-hash`; OpenAPI and backlog verification are wired to the same
+  boundary while the 10 MiB non-cache router default remains intact.
+- **Money-path internal-auth gates now use dedicated 32-character authorities (B-074).**
+  Tier checkout and DPA acceptance resolve their endpoint-specific keys through
+  the canonical fail-closed resolver, retain the shared migration fallback, and
+  receive the dedicated values through the Worker and Durable Object wiring.
+- **B-112 release-chain integrity.** Rebuilt the CLI's staged-manifest,
+  platform-signing, Rekor-backed SLSA, and final closed-world inventory chain
+  with exact tag/source binding and fail-closed identity gates. Focused
+  behavioral and mutation coverage now protects the manifest, checksum, Rekor,
+  and workflow-trigger contracts. The backlog item remains open because no
+  successful production release run has yet been observed.
+
+- **Tenant PAT revocation now fails closed on trusted team role (B-144).** The
+  customer route admits only owner/admin Clerk roles, D1 prevents admins from
+  revoking owner/legacy PATs, and member/viewer/native/cross-tenant attempts do
+  not mutate. Idempotent retries preserve the original revocation timestamp.
+- **BYOK no longer has an in-memory XOR fallback (B-083).** The orchestrator
+  now fails closed when no real KMS provider is compiled, the shipped image
+  selects `byok-aws-real`, and activation constructs the provider plus confirms
+  CMK access before any D1 state mutation. Runtime credentials and owner KMS
+  evidence remain explicitly pending rather than being simulated.
+- **B-073 team invitations now fail closed.** Invites carry a 256-bit opaque
+  token whose digest is tenant-bound in D1; redemption requires the verified
+  Clerk primary email, a 14-day window, and an atomic `team.accepted` audit /
+  status transition. Replay, cross-tenant, legacy hash-only and malformed
+  redemptions are rejected.
+
+- **Daily secrets-drift SOC 2 evidence could disappear silently (B-132).** The
+  scanner now runs on the product-owned `corelink` fabric with zero hosted
+  Actions spend, fails artifact upload when its report is absent, and retains a
+  90-day run manifest. A separate API-backed watchdog checks for a recent
+  successful scheduled run and an unexpired `secrets-drift-report`, opening or
+  updating one evidence-gap issue when a run, report, or API observation is
+  missing. The scanner's secret population and the failure/absence mutations
+  are covered by a stdlib-only focal test.
+- **CodeQL nightly no longer dies before receiving a runner (B-142).** The
+  three-language matrix runs on the product-owned `corelink` fleet with a
+  serialized, resource-bounded execution and CodeQL dependency caching. Each
+  leg now requires retained SARIF evidence and an independent watchdog checks
+  the exact matrix/artifact population. GitHub Advanced Security remains an
+  owner-side prerequisite for Security-tab ingestion; scan evidence is retained
+  and that external limitation is reported explicitly.
 - **`chacha20` 0.10.0 was yanked upstream, blocking every Rust PR.** `cargo deny
   check` went red on `main` between 08-27 and 08-28 with no commit in between —
   crates.io yanked the version, which is exactly the class of failure a cron
@@ -231,6 +291,18 @@ Each entry cross-references:
   byte-identical to the previous behaviour.
 
 ### Added
+
+- **B-068 real integration executor wiring.** Added the protected,
+  `workflow_dispatch`-only `real-ignored-harnesses.yml` lane and its explicit
+  D1/R2/Stripe/Neon test allow-list. Credential presence, explicit
+  `STRIPE_AUTH_MODE=wallet-broker`, and the protected `STRIPE_PRICE_ID_STARTER`
+  test price are validated before execution; the lane is pinned to `main`, and
+  a dependency-free semantic verifier runs negative mutations for partial or
+  commented-out targets, wrong tests, missing triggers, and PAT-secret
+  exposure. The credential-printing PAT seed remains outside every profile.
+  B-068 stays open until the owner supplies fresh green evidence from each
+  protected real-infrastructure dispatch; wiring alone is not reported as a
+  live success.
 
 - **At-rest CAS integrity scrubber — `POST /_internal/cas/scrub` (B-050).**
   The read-path digest re-verify in `R2CasHandler::read` was the only integrity

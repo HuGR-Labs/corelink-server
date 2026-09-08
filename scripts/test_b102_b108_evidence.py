@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""Focused stdlib tests for every B-102..B-108 evidence contract and mutation."""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+import verify_b102_b108_evidence as verifier
+import collect_b102_b107_measurements as collector
+import collect_b102_b108_context as context_collector
+
+ROOT = Path(__file__).parents[1]
+NOW = 1_800_000_000.0
+TENANT = "123e4567-e89b-42d3-a456-426614174000"
+SHA = subprocess.run(("git", "rev-parse", "HEAD"), cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+ZERO64 = "a" * 64
+RAW64 = "sha256:" + ZERO64
+
+
+def deployment(op: str) -> dict:
+    return {
+        "repository": verifier.REPO,
+        "environment": "production",
+        "deployed_commit": SHA,
+        "source_head": SHA,
+        "github_sha": SHA,
+        "github_repository": verifier.REPO,
+        "github_event": "workflow_dispatch",
+        "github_run_id": "123456789",
+        "github_deployment_id": "987654321",
+        "provider_record": {"provider": "cloudflare", "environment": "production", "commit": SHA, "deployment_id": "deploy-123456"},
+        "provider_blob_sha256": RAW64,
+        "deployment_id": "deploy-123456",
+        "version": SHA,
+        "tenant_id": TENANT,
+        "operation_id": op,
+    }
+
+
+def row(op: str, **kwargs) -> dict:
+    return {"tenant_id": TENANT, "operation_id": op, **kwargs}
+
+
+def packet() -> dict:
+    stamp = datetime.fromtimestamp(NOW - 10, timezone.utc).isoformat().replace("+00:00", "Z")
+    deployments = {item: deployment(f"op-deploy-{item.lower()}") for item in verifier.ITEMS}
+    req = [row(f"op-b102-{i:02d}", method="PUT", status=200, payload_bytes=1024, server_timing="auth;dur=1", elapsed_ms=40, raw_output_sha256=RAW64) for i in range(3)]
+    runs = [row(f"op-b103-{i:02d}", concurrency=c, requests=c, successes=c, failures={}, wall_ms=1000 / (c / 4), throughput_rps=c / (1000 / (c / 4) / 1000), raw_output_sha256=RAW64) for i, c in enumerate((4, 16, 64))]
+    samples104 = [row(f"op-b104-{i:02d}", method="GET", status=404, authenticated=True, auth_source="d1", colo="GRU", response_request_id=f"req-b104-{i:02d}", elapsed_ms=20 + i, raw_output_sha256=RAW64) for i in range(10)]
+    pairs = []
+    for i in range(6):
+        pairs.append({"tenant_id": TENANT, "operation_id": f"op-b105-{i:02d}", "control_first": i % 2 == 0,
+                      "control": row(f"op-b105-c-{i:02d}", cache_mode="disabled", status="complete", revision=SHA, runner="corelink", machine="m1", toolchain="t1", command=["cargo", "test"], raw_output_sha256=RAW64, sccache_stats_raw_sha256=RAW64, duration_seconds=10, sccache={"hits": 0, "misses": 0, "read_errors": 0, "write_errors": 0}),
+                      "treatment": row(f"op-b105-t-{i:02d}", cache_mode="enabled", status="complete", revision=SHA, runner="corelink", machine="m1", toolchain="t1", command=["cargo", "test"], raw_output_sha256=RAW64, sccache_stats_raw_sha256=RAW64, duration_seconds=5, sccache={"hits": 1, "misses": 0, "read_errors": 0, "write_errors": 0})})
+    samples107 = [row(f"op-b107-{i:02d}", r2_ms=20, accounting_ms=10, ostore_ms=20, storage_total_ms=30, r2_raw_output_sha256=RAW64, accounting_raw_output_sha256=RAW64) for i in range(10)]
+    source = subprocess.run(("git", "show", f"{SHA}:{verifier.SOURCE}"), cwd=ROOT, capture_output=True, check=True).stdout
+    blob = "sha256:" + hashlib.sha256(source).hexdigest()
+    b108 = {"tenant_id": TENANT, "deployment": deployments["B-108"], "source_binding": {"path": verifier.SOURCE, "commit": SHA, "blob_sha256": blob}, "counter_statement": verifier.COUNTER_SQL, "counter_statement_sha256": "sha256:" + hashlib.sha256(verifier.COUNTER_SQL.encode()).hexdigest()}
+    result = {"schema": verifier.SCHEMA, "environment": "production", "captured_at": stamp, "tenant_id": TENANT,
+            "items": {
+                "B-102": {"tenant_id": TENANT, "deployment": deployments["B-102"], "requests": req, "sequence_window_seconds": 10, "token_fingerprint": "sha256:" + ZERO64},
+                "B-103": {"tenant_id": TENANT, "deployment": deployments["B-103"], "runs": runs},
+                "B-104": {"tenant_id": TENANT, "deployment": deployments["B-104"], "samples": samples104, "computed": {"median_ms": 24.5, "p90_ms": 28.1}},
+                "B-105": {"tenant_id": TENANT, "deployment": deployments["B-105"], "pairs": pairs},
+                "B-106": {"tenant_id": TENANT, "deployment": deployments["B-106"], "kv_ttl_seconds": 60, "cold_attestation": row("op-b106-mint", mint_operation_id="op-b106-mint", minted_at_epoch=NOW - 130, unused_since_epoch=NOW - 120, observed_at_epoch=NOW - 60, mint_raw_output_sha256=RAW64, mint_response_sha256=RAW64, mint_response_binding_sha256=RAW64, mint_request_id="req-b106-mint", pat_id="pat-b106", token_id="tok-b106", expires_ms=(NOW + 300) * 1000, token_fingerprint="sha256:" + ZERO64), "cold": row("op-b106-cold", status=404, authenticated=True, auth_source="d1", colo="GRU", response_request_id="req-b106-cold", auth_ms=40, raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64), "warm_control": row("op-b106-warm", status=404, authenticated=True, auth_source="kv", colo="GRU", response_request_id="req-b106-warm", raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64)},
+                "B-107": {"tenant_id": TENANT, "deployment": deployments["B-107"], "samples": [dict(s, method="PUT", status=200, payload_bytes=1024) for s in samples107], "computed": {"p50_ms": 30, "p90_ms": 30, "p99_ms": 30}},
+                "B-108": b108,
+            }}
+    result["items"]["B-106"]["cold_attestation"]["mint_response_binding_sha256"] = verifier.mint_binding_sha256(result["items"]["B-106"]["cold_attestation"])
+    return result
+
+
+def expect_error(mutator, label: str) -> None:
+    candidate = packet()
+    mutator(candidate)
+    try:
+        verifier.assess(candidate, ROOT, NOW)
+    except verifier.EvidenceError:
+        return
+    raise AssertionError(f"mutation was accepted: {label}")
+
+
+class FakeResponse:
+    def __init__(self, payload: bytes, status: int, headers: dict[str, str]):
+        self._payload, self.status, self.headers = payload, status, headers
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return self._payload
+
+
+def collector_wire_and_join_round_trip() -> None:
+    """Exercise collector wire fields and the real collector→join→verifier path."""
+    original_urlopen = collector.urlopen
+    try:
+        def fake_404(_request, **_kwargs):
+            return FakeResponse(b"{}", 404, {"Server-Timing": 'auth;dur=3;desc="d1", total;dur=3', "X-Request-Id": "wire-404", "CF-Ray": "ray-GRU"})
+
+        collector.urlopen = fake_404
+        samples = [collector.call("https://example.invalid", TENANT, "pat", "GET", f"op-wire-b104-{i:02d}", f"missing-{i}") for i in range(10)]
+        assert all(row["authenticated"] is True and row["auth_source"] == "d1" and row["colo"] == "GRU" for row in samples)
+        values = sorted(row["elapsed_ms"] for row in samples)
+        median = (values[4] + values[5]) / 2
+        p90 = verifier.percentile(values, .90)
+        evidence = packet()
+        evidence["items"]["B-104"]["samples"] = samples
+        evidence["items"]["B-104"]["computed"] = {"median_ms": median, "p90_ms": p90}
+        live_now = time.time()
+        attestation = evidence["items"]["B-106"]["cold_attestation"]
+        attestation.update(minted_at_epoch=live_now - 130, unused_since_epoch=live_now - 120, observed_at_epoch=live_now - 60)
+
+        deployment_record = evidence["items"]["B-108"]["deployment"]
+        context = {"schema": "corelink.performance-evidence.context.v1", "repository": verifier.REPO,
+                   "environment": "production", "source_head": SHA, "github_event": "workflow_dispatch",
+                   "github_run_id": "123456789", "github_deployment_id": "987654321", "deployment_id": deployment_record["deployment_id"],
+                   "provider": "cloudflare", "provider_commit": SHA, "provider_record": deployment_record["provider_record"],
+                   "provider_blob_sha256": RAW64}
+        measurements = {"tenant_id": TENANT, "items": {item: evidence["items"][item] for item in ("B-102", "B-103", "B-104", "B-106", "B-107")}}
+        lane = {"schema": "corelink.b105-lane.v2", "pairs": evidence["items"]["B-105"]["pairs"]}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, value in (("context", context), ("measurements", measurements), ("b105", lane)):
+                (root / f"{name}.json").write_text(json.dumps(value), encoding="utf-8")
+            output = root / "packet.json"
+            subprocess.run((sys.executable, str(ROOT / "scripts/join_b102_b108_evidence.py"), "--context", str(root / "context.json"),
+                            "--measurements", str(root / "measurements.json"), "--b105", str(root / "b105.json"), "--root", str(ROOT), "--output", str(output)),
+                           check=True, capture_output=True, text=True)
+            joined = json.loads(output.read_text(encoding="utf-8"))
+            result = verifier.assess(joined, ROOT)
+            assert result["B-108"] == "closed" and all(result[item] == "open" for item in verifier.ITEMS[:-1])
+    finally:
+        collector.urlopen = original_urlopen
+
+
+def mint_wire_binding_round_trip() -> None:
+    original_urlopen = collector.urlopen
+    try:
+        payload = json.dumps({"token_plaintext": "opaque-token", "tenant": TENANT, "pat_id": "pat-b106", "token_id": "tok-b106", "expires_ms": (NOW + 300) * 1000}).encode()
+        observed = {}
+
+        def fake_mint(request, **_kwargs):
+            observed["url"] = request.full_url
+            observed["operation"] = request.headers["X-corelink-operation"]
+            return FakeResponse(payload, 200, {"X-Request-Id": "mint-response-1"})
+
+        collector.urlopen = fake_mint
+        minted = collector.mint_fresh("https://example.invalid", TENANT, "session", "internal", "op-b106-mint")
+        assert observed["url"].endswith("/v1/session/exchange") and observed["operation"] == "op-b106-mint"
+        assert minted["mint_operation_id"] == "op-b106-mint" and minted["mint_request_id"] == "mint-response-1"
+        assert minted["mint_response_sha256"].startswith("sha256:") and minted["mint_response_binding_sha256"].startswith("sha256:")
+    finally:
+        collector.urlopen = original_urlopen
+
+
+def provider_record_boundary() -> None:
+    records = list(context_collector.provider_records({"result": [{"id": "wrong-id", "commit": "other"}, {"id": "right-id", "commit": SHA}]}))
+    assert (SHA, "right-id") in records and (SHA, "wrong-id") not in records
+
+
+def main() -> int:
+    result = verifier.assess(packet(), ROOT, NOW)
+    assert result["B-108"] == "closed"
+    assert all(result[item] == "open" for item in verifier.ITEMS[:-1])
+    expect_error(lambda p: p.update(captured_at="1970-01-01T00:00:00Z"), "stale packet")
+    expect_error(lambda p: p["items"]["B-102"]["requests"][0].update(tenant_id="223e4567-e89b-42d3-a456-426614174000"), "B102 tenant")
+    expect_error(lambda p: p["items"]["B-103"]["runs"][-1].update(throughput_rps=1), "B103 math/scaling")
+    expect_error(lambda p: p["items"]["B-103"]["runs"][0].update(failures={"429": 1}), "B103 low-level failure")
+    expect_error(lambda p: p["items"]["B-103"]["runs"][0].update(raw_output_sha256=ZERO64), "raw hash prefix")
+    expect_error(lambda p: p["items"]["B-104"]["samples"][0].update(operation_id=""), "B104 operation")
+    expect_error(lambda p: p["items"]["B-104"]["samples"][0].pop("auth_source"), "B104 auth source")
+    expect_error(lambda p: p["items"]["B-104"]["samples"][0].pop("colo"), "B104 colo")
+    expect_error(lambda p: p["items"]["B-104"]["samples"][0].pop("response_request_id"), "B104 response request identity")
+    expect_error(lambda p: p["items"]["B-105"]["pairs"][0]["treatment"].update(cache_mode="disabled"), "B105 cache wiring")
+    expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(unused_since_epoch=NOW - 1), "B106 idle")
+    expect_error(lambda p: p["items"]["B-106"]["cold"].update(token_fingerprint="sha256:" + "b" * 64), "B106 token binding")
+    expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(mint_response_sha256="sha256:" + "b" * 64), "B106 response digest")
+    expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(mint_response_binding_sha256="sha256:" + "b" * 64), "B106 binding digest")
+    expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(mint_request_id="substituted-request"), "B106 request identity")
+    expect_error(lambda p: p["items"]["B-106"]["cold"].pop("response_request_id"), "B106 wire request identity")
+    expect_error(lambda p: p["items"]["B-105"]["pairs"].pop(), "B105 six pairs")
+    expect_error(lambda p: p["items"]["B-107"]["samples"][0].update(status=500), "B107 status")
+    expect_error(lambda p: p["items"]["B-107"]["samples"][0].update(storage_total_ms=31), "B107 phase math")
+    expect_error(lambda p: p["items"]["B-108"]["source_binding"].update(blob_sha256="b" * 64), "B108 deployed blob")
+    expect_error(lambda p: p["items"]["B-104"]["samples"][0].update(operation_id=p["items"]["B-104"]["samples"][1]["operation_id"]), "duplicate operation")
+    expect_error(lambda p: p["items"]["B-105"].update(password="redacted"), "secret-shaped field")
+    collector_wire_and_join_round_trip()
+    mint_wire_binding_round_trip()
+    provider_record_boundary()
+    print("B102-B108 evidence verifier mutations: PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

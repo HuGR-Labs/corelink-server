@@ -127,14 +127,17 @@ comments and posts a warning if any have aged past `expires_at`.
 
 ## 6. SHA-pin bump procedure
 
-The workflows ship with `# TBD-SHA replace post-baseline` placeholders
-on three upstream actions:
+The current CodeQL workflow has three immutable refs, all verified against the
+same upstream release:
 
-- `github/codeql-action/init@v3.27.0` → replace with verified SHA
-  from <https://github.com/github/codeql-action/releases/tag/v3.27.0>.
-- `github/codeql-action/analyze@v3.27.0` → same SHA as init (single
-  upstream release).
-- `github/codeql-action/upload-sarif@v3.27.0` → same SHA.
+- `github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a` — `v4.37.1`.
+- `github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a` — `v4.37.1`.
+- `github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a` — `v4.37.1`.
+
+The friendly `v4.37.1` declaration, the workflow env value, and all three SHA
+comments are one approval unit. A version/SHA mismatch is drift, not a cosmetic
+comment issue, and requires correction before merge. Version bumps require an
+ADR + Security review (§14.s12.004.1).
 - `returntocorp/semgrep-action@v1` → resolve current v1.x tag SHA via
   `gh api repos/returntocorp/semgrep-action/git/ref/tags/v1`.
 - `returntocorp/semgrep` container digest → resolve via
@@ -142,13 +145,14 @@ on three upstream actions:
 
 Procedure:
 
-1. Open a PR titled `chore(r-prep): SHA-pin CodeQL + Semgrep post-baseline`.
-2. Replace each `# TBD-SHA replace post-baseline` line with the verified
-   SHA + the upstream tag in a trailing comment (matching the
-   cargo-audit.yml style: `uses: foo/bar@<sha> # <tag>`).
-3. Reference this runbook §6 in the PR body.
-4. Require Security review (§14.s12.004.1 — pinning is part of the
-   high-risk lane tooling policy).
+1. Open a PR titled `chore(r-prep): bump CodeQL + Semgrep action pins`.
+2. Resolve the new upstream release tag through the GitHub API, verify the
+   release commit, and update all three CodeQL refs together. Update the env
+   version and trailing friendly-tag comments in the same change; never change
+   only the comment or only the SHA.
+3. Reference this runbook §6 in the PR body and retain the release/SHA evidence.
+4. Require Security review (§14.s12.004.1 — pinning is part of the high-risk
+   lane tooling policy) before merging.
 
 ---
 
@@ -167,6 +171,10 @@ Procedure:
   - `RB-SECRETS-DRIFT.md` — companion supply-chain gate runbook.
 - Workflows:
   - `.github/workflows/codeql.yml` — CodeQL gate.
+  - `.github/workflows/codeql-evidence-watchdog.yml` — independent nightly
+    proof that all three CodeQL matrix jobs and their retained SARIF artifacts
+    exist. A missing run, failed leg, stale artifact, or unexpected matrix
+    population is an evidence gap, not a clean scan.
   - `.github/workflows/semgrep.yml` — Semgrep gate.
 - Custom rule pack: `semgrep.yml` (repo root).
 - Ignore list: `.semgrepignore` (repo root).

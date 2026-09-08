@@ -58,7 +58,7 @@ PATs não têm rotação automática. Cadência de rotação recomendada para PA
 
 ### Revogação
 
-A rota de revogação do dashboard, `POST /v1/customer/keys/{pat_id}/revoke`, é vinculada ao tenant e exige um caller com capacidade de escrita. A operação pública `DELETE /v1/pats/{pat_id}` ainda não está ativa. Após a revogação, requisições em andamento com aquele PAT falharão com `401` dentro da janela de propagação da borda da Cloudflare (tipicamente < 100 ms).
+A rota de revogação do dashboard, `POST /v1/customer/keys/{pat_id}/revoke`, é uma operação destrutiva de administração do tenant e exige o papel Clerk confiável pelo servidor `owner` ou `admin`, não apenas capacidade de escrita. O Owner pode revogar qualquer PAT do tenant; o Admin pode revogar PATs de membros, mas não o PAT do Owner. Membros, viewers, callers com PAT nativo e alvos de outro tenant são rejeitados. A operação pública `DELETE /v1/pats/{pat_id}` ainda não está ativa. Após a revogação, requisições em andamento com aquele PAT falharão com `401` dentro da janela de propagação da borda da Cloudflare (tipicamente < 100 ms).
 
 ## Escopos
 

@@ -4,12 +4,13 @@ title: "ADR-S34-002 — the CAS read path is bounded by object SIZE, not by stre
 description: "Measuring the read path to plan streaming showed the concurrency permit bounds the count but not the size, that a CAS object may legitimately reach the 1 GiB mirror cap, and that 95% of stored objects are under 1 MiB — so the fix is a size ceiling, not a protocol change."
 source_files:
   - "specs/03_architecture/adrs/ADR-S34-002-cas-read-bound-size-not-protocol.md"
-checkpoint_sha: "5f0ff0446ba99a3b8ecae6b912c98898dad54545"
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S34-002-cas-read-bound-size-not-protocol.md@0d81f2e49bad9c34dd907420dfb1986a85ef87af"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["adr", "cas", "read-path", "memory", "streaming", "availability", "dos"]
 timestamp: "2026-08-26T00:00:00Z"
 ---
-
 # ADR-S34-002 — the CAS read path is bounded by object SIZE, not by streaming
 
 ADR-S34-001 parked the read-path memory argument on the assumption that the per-tenant concurrency permit added by B-052 answered it, leaving streaming to justify itself on time-to-first-byte alone. Measurement showed both halves of that assumption were wrong, in opposite directions: the memory concern is NOT closed, and streaming is still not the answer.
@@ -40,3 +41,8 @@ Three alternatives were rejected: shipping streaming as originally scoped (a lar
 4. `specs/03_architecture/adrs/ADR-S34-002-cas-read-bound-size-not-protocol.md:99-127` — the four decisions, including the async-trait migration cost that makes streaming expensive.
 5. `specs/03_architecture/adrs/ADR-S34-002-cas-read-bound-size-not-protocol.md:129-137` — consequences: B-051 re-scoped, and the threshold question left open on purpose.
 6. `specs/03_architecture/adrs/ADR-S34-002-cas-read-bound-size-not-protocol.md:139-155` — the three rejected alternatives.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

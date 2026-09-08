@@ -25,6 +25,24 @@
  *   - Container is started fresh per cold-start; idle timeout triggers stop.
  */
 
+import {
+  emitLifecycleEvent,
+  hashForLog,
+  probeD1Path,
+  proxyToContainer,
+  resolveDoColo,
+  timedD1Read,
+  timingSafeEqual,
+  errText,
+  unavailablePath,
+} from "./durable_object_probes.js";
+import { startContainer as runStartContainer } from "./durable_object_start.js";
+import type {
+  D1ProbeBinding,
+  D1PathProbeResult,
+  D1ProbeReport,
+} from "./durable_object_probes.js";
+export { timingSafeEqual };
 import type {
   DurableObject,
   DurableObjectState,
@@ -33,7 +51,6 @@ import type {
   Fetcher,
 } from "@cloudflare/workers-types";
 import type { Env } from "./index.js";
-import { patRotationEnv } from "./lib/pat_rotation_env.js";
 import {
   enforcePatIssueRateLimit,
   PAT_ISSUE_AUTHORIZED_HEADER,
@@ -72,79 +89,6 @@ interface LifecycleState {
 type ContainerStatus = "stopped" | "starting" | "running" | "degraded";
 
 /** Telemetry event shape (emitted to PagerDuty change events API + audit). */
-interface LifecycleEvent {
-  readonly event_type: string;
-  readonly routing_key: string;
-  readonly payload: {
-    readonly summary: string;
-    readonly severity: "info" | "warning" | "error" | "critical";
-    readonly source: string;
-    readonly custom_details: {
-      readonly tenant_id_hash: string;
-      readonly do_id_hash: string;
-      readonly cold_start_count: number;
-      readonly environment: string;
-      readonly timestamp_ms: number;
-    };
-  };
-}
-
-/**
- * One D1 read path (primary or nearest-replica) as measured by the
- * `/_do/health` placement instrument.
- *
- * The three failure modes are DELIBERATELY distinguishable — collapsing them is
- * how a broken instrument reports a fast number it never measured:
- *   - `available: false`            → the path could not be attempted at all.
- *   - `available: true, ok: false`  → attempted and THREW (`error` is non-null).
- *   - `available: true, ok: true`   → measured; `samples_ms` are real.
- */
-interface D1PathProbeResult {
-  /** Could this path be attempted at all (binding bound / Sessions API present)? */
-  readonly available: boolean;
-  /** Did every attempted sample succeed? False whenever `error` is non-null. */
-  readonly ok: boolean;
-  /** Wall-clock ms per sample, in order. Empty when the path was unavailable. */
-  readonly samples_ms: readonly number[];
-  /** Fastest sample — the number to read. `null` when nothing was measured. */
-  readonly min_ms: number | null;
-  /** Non-null iff a read threw or was unavailable. NEVER silently a number. */
-  readonly error: string | null;
-  /** D1 `meta.served_by_region` (e.g. "ENAM") of the last successful sample. */
-  readonly served_by_region: string | null;
-  /** D1 `meta.served_by_primary` — false proves a real replica served the read. */
-  readonly served_by_primary: boolean | null;
-  /** D1 `meta.served_by_colo` (e.g. "MIA") of the last successful sample. */
-  readonly served_by_colo: string | null;
-}
-
-/** The `d1_probe` object added to the `/_do/health` body. Purely additive. */
-interface D1ProbeReport {
-  readonly probe_version: number;
-  readonly samples: number;
-  readonly binding_bound: boolean;
-  readonly sessions_api_available: boolean;
-  /** Uncounted first read that absorbs connection setup (the "cold" number). */
-  readonly warmup_ms: number | null;
-  readonly warmup_error: string | null;
-  readonly primary: D1PathProbeResult;
-  readonly replica: D1PathProbeResult;
-  /** Serving colo of THIS DO — only with `?colo=1`, best-effort. */
-  readonly do_colo: string | null;
-  readonly do_colo_error: string | null;
-}
-
-/** Minimal structural shape of a D1 read handle (a DB or a session). */
-interface D1ProbeHandle {
-  prepare(query: string): { all(): Promise<unknown> };
-}
-
-/** A `CONFIG_DB` binding: a read handle that MAY expose the Sessions API. */
-interface D1ProbeBinding extends D1ProbeHandle {
-  withSession?: (constraint: string) => D1ProbeHandle;
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
 // Constants
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -206,311 +150,6 @@ const STALE_STARTING_MS = STARTUP_TIMEOUT_MS + 30_000;
 // Hashing helpers (INV-NO-PII-IN-LOGS)
 // ──────────────────────────────────────────────────────────────────────────────
 
-async function hashForLog(value: string): Promise<string> {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest("SHA-256", enc.encode(value));
-  const arr = new Uint8Array(buf);
-  return Array.from(arr.slice(0, 8))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Constant-time comparison
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Per-isolate random HMAC key for {@link timingSafeEqual}.
- *
- * F22 (2026-06-13 audit): the previous implementation used an all-zero key,
- * which offers no confidentiality if an attacker can observe the HMAC output.
- * The key MUST be a real secret. It is generated once per isolate from a CSPRNG
- * and never leaves this module; HMAC-ing both inputs under a key the attacker
- * does not know makes the post-HMAC byte comparison non-forgeable.
- */
-let hmacKeyPromise: Promise<CryptoKey> | undefined;
-function getHmacKey(): Promise<CryptoKey> {
-  if (hmacKeyPromise === undefined) {
-    const raw = crypto.getRandomValues(new Uint8Array(32));
-    hmacKeyPromise = crypto.subtle.importKey(
-      "raw",
-      raw,
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"],
-    );
-  }
-  return hmacKeyPromise;
-}
-
-/**
- * Constant-time bytes equality.
- *
- * HMAC-SHA256s both inputs under a per-isolate random key, then XOR-compares
- * the two 32-byte tags. Because HMAC-SHA256 always yields a fixed 32-byte
- * output regardless of input length, NO length branch is taken — equal and
- * unequal-length inputs run the exact same two HMACs and the same fixed-width
- * compare, so there is no length-equality timing oracle (F22). The random key
- * (not a zero key) means the post-HMAC tags cannot be forged or replayed.
- * Equivalent to Rust's `subtle::ConstantTimeEq`.
- */
-async function timingSafeEqual(a: string, b: string): Promise<boolean> {
-  const enc = new TextEncoder();
-  const aBytes = enc.encode(a);
-  const bBytes = enc.encode(b);
-  const key = await getHmacKey();
-  // Both HMACs run unconditionally regardless of length — HMAC-SHA256 emits a
-  // fixed 32-byte tag, so the comparison below is always over equal widths and
-  // there is no length-dependent fast path.
-  const [sigA, sigB] = await Promise.all([
-    crypto.subtle.sign("HMAC", key, aBytes),
-    crypto.subtle.sign("HMAC", key, bBytes),
-  ]);
-  const viewA = new Uint8Array(sigA);
-  const viewB = new Uint8Array(sigB);
-  let diff = 0;
-  for (let i = 0; i < viewA.length; i++) {
-    diff |= (viewA[i] ?? 0) ^ (viewB[i] ?? 0);
-  }
-  return diff === 0;
-}
-
-// Keep the export so tests can call it directly
-export { timingSafeEqual };
-
-// ──────────────────────────────────────────────────────────────────────────────
-// PagerDuty telemetry (fire-and-forget)
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Emit a lifecycle event to PagerDuty Change Events API.
- * ALWAYS called BEFORE the state mutation it describes.
- *
- * INV-NO-PII-IN-LOGS: tenant_id is pre-hashed before emission.
- */
-async function emitLifecycleEvent(
-  routingKey: string,
-  eventType: string,
-  summary: string,
-  severity: "info" | "warning" | "error" | "critical",
-  tenantIdHash: string,
-  doIdHash: string,
-  coldStartCount: number,
-  environment: string,
-): Promise<void> {
-  if (routingKey.length === 0) return;
-
-  const event: LifecycleEvent = {
-    event_type: eventType,
-    routing_key: routingKey,
-    payload: {
-      summary,
-      severity,
-      source: "corelink-do",
-      custom_details: {
-        tenant_id_hash: tenantIdHash,
-        do_id_hash: doIdHash,
-        cold_start_count: coldStartCount,
-        environment,
-        timestamp_ms: Date.now(),
-      },
-    },
-  };
-
-  try {
-    const resp = await fetch("https://events.pagerduty.com/v2/change/enqueue", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(event),
-    });
-    if (!resp.ok) {
-      console.error(`[do] PagerDuty emit failed status=${resp.status}`);
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message.slice(0, 80) : "unknown";
-    console.error(`[do] PagerDuty emit threw: ${msg}`);
-  }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Container proxy helpers
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Forward an HTTP request to the running container via the Fetcher obtained
- * from `container.getTcpPort(CONTAINER_PORT)`.
- *
- * The Rust gRPC server (corelink-server) speaks HTTP/2 natively (tonic +
- * tonic-web). The Fetcher routes HTTP to the container port. We preserve the
- * full path + query string so the gRPC-gateway transcoding inside the Rust
- * binary handles protocol routing.
- *
- * INV-NO-BODY-IN-LOGS: we never read or log the body.
- */
-async function proxyToContainer(request: Request, fetcher: Fetcher): Promise<Response> {
-  const url = new URL(request.url);
-  const containerUrl = `http://localhost:${CONTAINER_PORT}${url.pathname}${url.search}`;
-
-  const proxied = new Request(containerUrl, {
-    method: request.method,
-    headers: request.headers,
-    body: request.method !== "GET" && request.method !== "HEAD" ? request.body : null,
-    // @ts-expect-error duplex is required for streaming request bodies
-    duplex: request.method !== "GET" && request.method !== "HEAD" ? "half" : undefined,
-  });
-
-  return fetcher.fetch(proxied);
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// D1 placement instrument helpers (used ONLY by /_do/health)
-// ──────────────────────────────────────────────────────────────────────────────
-
-/** Short, bounded error text. Never carries a body or a secret. */
-function errText(err: unknown): string {
-  return err instanceof Error ? err.message.slice(0, 160) : "unknown error";
-}
-
-/**
- * Reject after `ms` if `p` has not settled. The loser's rejection is absorbed
- * (`void p.catch`) so a late failure cannot surface as an unhandled rejection.
- */
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  void p.catch(() => {});
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-  });
-  return Promise.race([p, timeout]).finally(() => {
-    if (timer !== undefined) clearTimeout(timer);
-  }) as Promise<T>;
-}
-
-/** Extract D1's own `meta.served_by_*` provenance from a result, defensively. */
-function readServedBy(result: unknown): {
-  region: string | null;
-  primary: boolean | null;
-  colo: string | null;
-} {
-  const empty = { region: null, primary: null, colo: null };
-  if (typeof result !== "object" || result === null) return empty;
-  const meta = (result as { meta?: unknown }).meta;
-  if (typeof meta !== "object" || meta === null) return empty;
-  const m = meta as Record<string, unknown>;
-  return {
-    region: typeof m["served_by_region"] === "string" ? m["served_by_region"] : null,
-    primary: typeof m["served_by_primary"] === "boolean" ? m["served_by_primary"] : null,
-    colo: typeof m["served_by_colo"] === "string" ? m["served_by_colo"] : null,
-  };
-}
-
-/**
- * One timed `SELECT 1` against a D1 read handle.
- *
- * `SELECT 1` touches no table, so what is measured is the ROUND TRIP to whatever
- * D1 instance serves the handle — which is exactly the placement question.
- */
-async function timedD1Read(
-  handle: D1ProbeHandle,
-): Promise<{ ms: number | null; error: string | null; result: unknown }> {
-  const started = Date.now();
-  try {
-    const result = await withTimeout(
-      handle.prepare("SELECT 1").all(),
-      D1_PROBE_TIMEOUT_MS,
-      "d1 probe read",
-    );
-    return { ms: Date.now() - started, error: null, result };
-  } catch (err: unknown) {
-    // A throw is reported as an EXPLICIT error — never as a fast number and
-    // never as a missing field. That distinction is the whole instrument.
-    return { ms: null, error: errText(err), result: null };
-  }
-}
-
-/** A path that could not be attempted at all (distinct from attempted-and-failed). */
-function unavailablePath(reason: string): D1PathProbeResult {
-  return {
-    available: false,
-    ok: false,
-    samples_ms: [],
-    min_ms: null,
-    error: reason,
-    served_by_region: null,
-    served_by_primary: null,
-    served_by_colo: null,
-  };
-}
-
-/** Take {@link D1_PROBE_SAMPLES} timed reads on one handle; stop at the first throw. */
-async function probeD1Path(handle: D1ProbeHandle): Promise<D1PathProbeResult> {
-  const samples: number[] = [];
-  let error: string | null = null;
-  let servedBy: { region: string | null; primary: boolean | null; colo: string | null } = {
-    region: null,
-    primary: null,
-    colo: null,
-  };
-
-  for (let i = 0; i < D1_PROBE_SAMPLES; i++) {
-    const sample = await timedD1Read(handle);
-    if (sample.error !== null || sample.ms === null) {
-      error = sample.error ?? "no timing produced";
-      break;
-    }
-    samples.push(sample.ms);
-    const provenance = readServedBy(sample.result);
-    if (provenance.region !== null || provenance.primary !== null || provenance.colo !== null) {
-      servedBy = provenance;
-    }
-  }
-
-  return {
-    available: true,
-    ok: error === null && samples.length === D1_PROBE_SAMPLES,
-    samples_ms: samples,
-    min_ms: samples.length > 0 ? Math.min(...samples) : null,
-    error,
-    served_by_region: servedBy.region,
-    served_by_primary: servedBy.primary,
-    served_by_colo: servedBy.colo,
-  };
-}
-
-/**
- * Best-effort serving colo of THIS DO (`/_do/health?colo=1` only).
- *
- * An outbound `fetch` from a DO egresses through the colo the DO runs in, so
- * `cdn-cgi/trace` reports that colo. ADVISORY: it is a inference from an
- * external call, not a platform-attested placement API — read it as a hint that
- * EXPLAINS the timings, never as the timing itself. Off by default so the plain
- * health probe makes no external request.
- */
-async function resolveDoColo(): Promise<{ colo: string | null; error: string | null }> {
-  try {
-    const resp = await withTimeout(
-      fetch("https://workers.cloudflare.com/cdn-cgi/trace", {
-        method: "GET",
-        headers: { "Cache-Control": "no-cache" },
-      }),
-      DO_COLO_TIMEOUT_MS,
-      "colo trace",
-    );
-    if (!resp.ok) return { colo: null, error: `trace status ${resp.status}` };
-    const text = await resp.text();
-    const line = text.split("\n").find((l) => l.startsWith("colo="));
-    return line === undefined
-      ? { colo: null, error: "no colo line in trace" }
-      : { colo: line.slice("colo=".length).trim(), error: null };
-  } catch (err: unknown) {
-    return { colo: null, error: errText(err) };
-  }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Durable Object class
-// ──────────────────────────────────────────────────────────────────────────────
-
 export class CoreLinkServer implements DurableObject {
   private readonly state: DurableObjectState;
   private readonly storage: DurableObjectStorage;
@@ -549,6 +188,66 @@ export class CoreLinkServer implements DurableObject {
     );
   }
 
+  /**
+   * Durable admission gate for the two container routes whose native Rust
+   * token-bucket state is process-local in dev/test builds.
+   *
+   * The DO storage transaction is the authority: a container recycle cannot
+   * mint a fresh burst. The state is a bounded fixed window (one counter per
+   * route/key), deliberately cheap and conservative at this edge boundary;
+   * the native route may still apply its finer-grained policy after admission.
+   */
+  private async enforceDurableRouteRateLimit(
+    request: Request,
+    url: URL,
+  ): Promise<Response | null> {
+    const isSignup = request.method === "POST" && url.pathname === "/v1/signup/pilot";
+    const isAuditAnalytics =
+      url.pathname.startsWith("/v1/audit/analytics/") &&
+      (request.method === "GET" || request.method === "HEAD");
+    if (!isSignup && !isAuditAnalytics) return null;
+
+    const limit = isSignup ? 5 : 10;
+    const windowMs = isSignup ? 60 * 60 * 1000 : 60 * 1000;
+    const rawKey = isSignup
+      ? request.headers.get("x-corelink-client-ip") ?? "_no_ip"
+      : request.headers.get("x-corelink-tenant-id") ?? "_anonymous";
+    // Never persist a raw IP/tenant identifier in DO storage.
+    const keyHash = await hashForLog(rawKey);
+    const storageKey = `durable-route-rate:v1:${isSignup ? "signup" : "audit"}:${keyHash}`;
+    try {
+      const result = await this.state.blockConcurrencyWhile(async () => {
+        const now = Date.now();
+        const current = (await this.storage.get<{ windowStartedMs: number; count: number }>(
+          storageKey,
+        )) ?? { windowStartedMs: now, count: 0 };
+        const windowStartedMs =
+          now - current.windowStartedMs >= windowMs ? now : current.windowStartedMs;
+        const count = windowStartedMs === current.windowStartedMs ? current.count : 0;
+        if (count >= limit) {
+          return {
+            allowed: false,
+            retryAfter: Math.max(1, Math.ceil((windowStartedMs + windowMs - now) / 1000)),
+          };
+        }
+        await this.storage.put(storageKey, { windowStartedMs, count: count + 1 });
+        return { allowed: true, retryAfter: 0 };
+      });
+      if (result.allowed) return null;
+      return new Response("rate_limited", {
+        status: 429,
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          "retry-after": String(result.retryAfter),
+        },
+      });
+    } catch (err: unknown) {
+      // A rate-limit storage failure must not silently become a bypass.
+      console.error(`[${this.doIdHash}] durable route rate-limit unavailable: ${errText(err)}`);
+      return new Response("rate_limit_unavailable", { status: 503 });
+    }
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // fetch — DO entry point
   // ──────────────────────────────────────────────────────────────────────────
@@ -566,6 +265,9 @@ export class CoreLinkServer implements DurableObject {
     if (url.pathname === "/_do/stop") {
       return this.handleStop(requestId);
     }
+
+    const durableRouteGate = await this.enforceDurableRouteRateLimit(request, url);
+    if (durableRouteGate) return durableRouteGate;
 
     // Both public PAT aliases are authorized by this tenant DO before the
     // container starts. The DO's serialized durable decision is the sole
@@ -742,431 +444,27 @@ export class CoreLinkServer implements DurableObject {
     return { ok: false, reason: "unexpected_lifecycle_state" };
   }
 
-  /**
-   * Start the container.
-   *
-   * Telemetry order (charter requirement — BEFORE mutation):
-   *   1. Emit corelink.do.cold_start.v1 BEFORE calling container.start().
-   *   2. Emit corelink.do.container_started.v1 after health confirmed.
-   *   3. Emit corelink.do.container_died.v1 if start fails.
-   */
-  private async startContainer(
-    requestId: string,
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const container = this.state.container;
-    if (container === undefined) {
-      return { ok: false, reason: "no_container_binding" };
-    }
-
-    // CONCURRENT-START GUARD (REV-S2):
-    // Cloudflare DOs are single-threaded but ASYNC-concurrent — each `await`
-    // below (emitLifecycleEvent, transitionStatus, container.start) is a yield
-    // point at which another queued fetch() can run. If two requests arrive
-    // while status is "stopped"/"degraded", both pass the ensureContainerRunning
-    // check and both enter startContainer, double-calling container.start() and
-    // double-counting cold starts. Closing the race requires flipping the
-    // IN-MEMORY status to "starting" SYNCHRONOUSLY here — before the first await
-    // — so any concurrent request that runs ensureContainerRunning next sees
-    // "starting" and falls into the waitForContainerReady branch instead of re-entering this method. (We avoid blockConcurrencyWhile here so we do not
-    // serialize ALL fetches for the full ~90s startup window; the in-memory flip
-    // is sufficient because the check and this flip are in the same microtask
-    // turn with no intervening await.) The persisted write happens via
-    // transitionStatus below; the in-memory field is the load-bearing guard.
-    if (this.lifecycleState.containerStatus === "starting") {
-      // A concurrent caller already won the start; defer to the wait path.
-      return this.waitForContainerReady(requestId);
-    }
-    // Synchronous in-memory flip (containerStatus is readonly → replace the object).
-    // Stamp startingAt_ms so a start that later dies without transitioning is
-    // detectable as stale by ensureContainerRunning (F-020 self-heal).
-    this.lifecycleState = {
-      ...this.lifecycleState,
-      containerStatus: "starting",
-      startingAt_ms: Date.now(),
-    };
-
-    const tenantHash = await hashForLog(this.lifecycleState.tenantId ?? "_unknown");
-    const newColdStartCount = this.lifecycleState.coldStartCount + 1;
-
-    // AUDIT BEFORE MUTATION
-    await emitLifecycleEvent(
-      this.env.PAGERDUTY_ROUTING_KEY ?? "",
-      "corelink.do.cold_start.v1",
-      `CoreLink DO cold start #${newColdStartCount} for tenant ${tenantHash}`,
-      "info",
-      tenantHash,
-      this.doIdHash,
-      newColdStartCount,
-      this.env.ENVIRONMENT,
-    );
-
-    // Persist the "starting" status (the in-memory flip above already closed the
-    // concurrent-start race; this durably records it across DO eviction).
-    await this.transitionStatus("starting", requestId);
-
-    try {
-      // Start container — returns void; container begins asynchronously
-      container.start({
-        // Egress required (P0-5): the native container reaches R2 (S3 API) and
-        // D1 (HTTP API) over the public internet — DECISION-GATE-1 Option A.
-        // CF Workers has no VPC-style internal route to R2 for native containers.
-        enableInternet: true,
-        entrypoint: ["/usr/local/bin/corelink-server"],
-        env: {
-          RUST_LOG: "info",
-          PORT: String(CONTAINER_PORT),
-          // WP-S1 StorageEnv contract: all six must be present + non-empty for
-          // the container to use real R2/D1 storage. Any missing/empty → the
-          // container falls back to InMemory (dev/CI without secrets). These are
-          // sourced from Worker vars (endpoint, db id) + secrets (keys, token).
-          R2_S3_ENDPOINT: this.env.R2_S3_ENDPOINT ?? "",
-          R2_S3_ACCESS_KEY_ID: this.env.R2_S3_ACCESS_KEY_ID ?? "",
-          R2_S3_SECRET_ACCESS_KEY: this.env.R2_S3_SECRET_ACCESS_KEY ?? "",
-          CLOUDFLARE_ACCOUNT_ID: this.env.CLOUDFLARE_ACCOUNT_ID ?? "",
-          CF_API_TOKEN: this.env.CF_API_TOKEN ?? "",
-          D1_DATABASE_ID: this.env.D1_DATABASE_ID ?? "",
-          // Stream-5: internal PAT mint route gate secrets.
-          // Container mounts `/_internal/pat/mint` only when both are non-empty.
-          CORELINK_INTERNAL_AUTH_KEY: this.env.CORELINK_INTERNAL_AUTH_KEY ?? "",
-          // CP-1 (go-live audit): the container's `resolve_internal_auth_key`
-          // prefers a per-consumer DEDICATED key and falls back to the shared
-          // one. Those dedicated keys MUST be forwarded or (a) the blast-radius
-          // isolation is inert (everything gates on the shared key) AND (b) the
-          // moment an operator provisions a dedicated key, the container — never
-          // receiving it — 401s every mint/admin/erase call (a self-inflicted
-          // outage). Forward them (empty when unset ⇒ shared fallback, unchanged).
-          CORELINK_PAT_MINT_AUTH_KEY: this.env.CORELINK_PAT_MINT_AUTH_KEY ?? "",
-          CORELINK_ADMIN_AUTH_KEY: this.env.CORELINK_ADMIN_AUTH_KEY ?? "",
-          CORELINK_ERASE_AUTH_KEY: this.env.CORELINK_ERASE_AUTH_KEY ?? "",
-          // Dual-key rotation: the OUTGOING erase key, accepted alongside the
-          // current one by the container (`dsr::internal_auth_ok_any`) for the
-          // duration of a rotation so an in-flight erase leg never 401s while the
-          // DO containers cycle onto the new key. Empty when unset ⇒ single-key.
-          CORELINK_ERASE_AUTH_KEY_PREVIOUS: this.env.CORELINK_ERASE_AUTH_KEY_PREVIOUS ?? "",
-          // Edge-probe audit emit: the container's `POST /_internal/audit/cas-attempted`
-          // gate reads a DEDICATED `CORELINK_AUDIT_ATTEMPTED_AUTH_KEY` with NO shared
-          // fallback (it writes tenant-attributed audit rows for an arbitrary tenant).
-          // Unforwarded, the route would stay unmounted no matter what the operator
-          // provisions — the edge findMissingBlobs path would silently keep taking the
-          // slow container route with no way to tell why.
-          CORELINK_AUDIT_ATTEMPTED_AUTH_KEY: this.env.CORELINK_AUDIT_ATTEMPTED_AUTH_KEY ?? "",
-          // H5 dual-approval: the container's `POST /v1/admin/approve` gate reads
-          // a DEDICATED `CORELINK_ADMIN_APPROVER_AUTH_KEY` (distinct from the
-          // mutate/admin key so approve+mutate need different keys — real
-          // two-person control). Forward it or the container 401s every approve
-          // call the moment the dedicated key is bound (the CP-1 self-inflicted
-          // outage this block guards against). Empty when unset ⇒ shared fallback.
-          CORELINK_ADMIN_APPROVER_AUTH_KEY: this.env.CORELINK_ADMIN_APPROVER_AUTH_KEY ?? "",
-          // #634: the per-user DSR legitimacy-anchor route (`/_internal/dsr/anchor`)
-          // reads a dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY`; forward it too or the
-          // container 401s every anchor call the moment the dedicated key is bound
-          // (the exact CP-1 self-inflicted-outage this block guards against).
-          CORELINK_DSR_ANCHOR_AUTH_KEY: this.env.CORELINK_DSR_ANCHOR_AUTH_KEY ?? "",
-          // Read-only tenant-quota lookup (`/_internal/tenant/{tenant_id}/quota`):
-          // the container's `tenant_quota_read::build_state_from_env` reads a
-          // dedicated `CORELINK_QUOTA_READ_AUTH_KEY` (shared-key fallback). Forward
-          // it or the container 401s every quota-read call the moment the dedicated
-          // key is bound (the CP-1 self-inflicted-outage this block guards against).
-          CORELINK_QUOTA_READ_AUTH_KEY: this.env.CORELINK_QUOTA_READ_AUTH_KEY ?? "",
-          // DSR customer portal (union #717): the receipt-JWT signer
-          // (`dsr/portal.rs:659`) reads `DSR_RECEIPT_SIGNING_KEY`; forward it or a
-          // bound CF secret silently no-ops and the portal falls back to a weak
-          // default (the F8/ERASURE_SALT class of self-inflicted bug).
-          DSR_RECEIPT_SIGNING_KEY: this.env.DSR_RECEIPT_SIGNING_KEY ?? "",
-          // DPA click-through acceptance (money-path unblock): the container's
-          // `/v1/onboarding/dpa-accept` route (`dpa_accept::build_state_from_env`)
-          // reads `DPA_RECEIPT_SIGNING_KEY` (RSA PKCS#8/PKCS#1 PEM) from its OWN
-          // process env to RS256-sign the acceptance receipt. It MUST be forwarded
-          // or the route stays UNMOUNTED (fail-CLOSED) and every paid checkout
-          // 403s `dpa_required` (the DPA row never gets written).
-          DPA_RECEIPT_SIGNING_KEY: this.env.DPA_RECEIPT_SIGNING_KEY ?? "",
-          ...patRotationEnv(this.env),
-          // L3 money path: `POST /v1/onboarding/tier-select` runs INSIDE the
-          // container and reads these from its OWN process env
-          // (`tier_select::build_state_from_env` + `StripeRealClient::from_env`).
-          // They MUST be forwarded or the route stays unmounted (404, missing
-          // CORELINK_DPA_VERSION) and Stripe checkout 500s (missing price ids).
-          STRIPE_SECRET_KEY: this.env.STRIPE_SECRET_KEY ?? "",
-          STRIPE_AUTH_MODE: this.env.STRIPE_AUTH_MODE ?? "",
-          STRIPE_WEBHOOK_SECRET: this.env.STRIPE_WEBHOOK_SECRET ?? "",
-          STRIPE_PRICE_ID_SOLO: this.env.STRIPE_PRICE_ID_SOLO ?? "",
-          STRIPE_PRICE_ID_STARTER: this.env.STRIPE_PRICE_ID_STARTER ?? "",
-          STRIPE_PRICE_ID_TEAM: this.env.STRIPE_PRICE_ID_TEAM ?? "",
-          STRIPE_PRICE_ID_PRO: this.env.STRIPE_PRICE_ID_PRO ?? "",
-          STRIPE_PRICE_ID_MAX: this.env.STRIPE_PRICE_ID_MAX ?? "",
-          // Runners-tier prices: the container's seed handler
-          // (`build_runners_resolver` in main.rs) reads these from its OWN env
-          // to map a Runners-tier Stripe subscription → `runners_entitlement`.
-          // Absent ⇒ the Runners seed stays dormant (cache path only).
-          STRIPE_PRICE_ID_RUNNER_STARTER: this.env.STRIPE_PRICE_ID_RUNNER_STARTER ?? "",
-          STRIPE_PRICE_ID_RUNNER_PRO: this.env.STRIPE_PRICE_ID_RUNNER_PRO ?? "",
-          STRIPE_PRICE_ID_RUNNER_TEAM: this.env.STRIPE_PRICE_ID_RUNNER_TEAM ?? "",
-          STRIPE_PRICE_ID_RUNNER_SCALE: this.env.STRIPE_PRICE_ID_RUNNER_SCALE ?? "",
-          STRIPE_PRICE_ID_RUNNER_MAX: this.env.STRIPE_PRICE_ID_RUNNER_MAX ?? "",
-          CORELINK_DPA_VERSION: this.env.CORELINK_DPA_VERSION ?? "",
-          // DSR Wave 1 (#254): the container's erasure adapters derive the
-          // pseudonymization/idempotency salt from ERASURE_SALT_KEY. If absent the
-          // container falls back to a PREDICTABLE non-secret salt — forward it so
-          // the real secret is used (launch-required GDPR path).
-          ERASURE_SALT_KEY: this.env.ERASURE_SALT_KEY ?? "",
-          // DSR G3 (#269): the container signs an Ed25519 erasure attestation on
-          // VerifiedComplete, reading the seed/key-id/region from these env vars
-          // (`routes/dsr/attestation.rs` from_seed/key_id/resolve_region). They
-          // MUST be forwarded or setting ERASURE_ATTESTATION_SEED_HEX later never
-          // reaches the container and attestation silently no-ops (fail-OPEN) —
-          // the exact ERASURE_SALT_KEY-class gap. (caught by check-env-contract.py)
-          ERASURE_ATTESTATION_SEED_HEX: this.env.ERASURE_ATTESTATION_SEED_HEX ?? "",
-          ERASURE_ATTESTATION_KEY_ID: this.env.ERASURE_ATTESTATION_KEY_ID ?? "",
-          // CF-6: OPTIONAL dedicated audit-chain head-signing key (defaults to
-          // reusing the erasure-attestation seed/key above when unset).
-          AUDIT_CHAIN_SIGNING_SEED_HEX: this.env.AUDIT_CHAIN_SIGNING_SEED_HEX ?? "",
-          AUDIT_CHAIN_SIGNING_KEY_ID: this.env.AUDIT_CHAIN_SIGNING_KEY_ID ?? "",
-          AUDIT_CHAIN_TRUST_UNSIGNED_RESUME: this.env.AUDIT_CHAIN_TRUST_UNSIGNED_RESUME ?? "",
-          // Non-secret tuning knob (secrets-matrix #189): per-call row budget for
-          // the audit/drain sweep. "" ⇒ container default (200). Forwarded so a
-          // Worker-side var actually reaches the container process.
-          AUDIT_DRAIN_BATCH_LIMIT: this.env.AUDIT_DRAIN_BATCH_LIMIT ?? "",
-          // B-038 rollout flag (default OFF). "1"/"true" serialises audit drains
-          // behind a per-partition lease + seal fence. Forwarded so the container
-          // process actually sees the toggle (else setting it as a Worker var is
-          // silently inert). Not a secret.
-          AUDIT_DRAIN_LEASE_ENABLED: this.env.AUDIT_DRAIN_LEASE_ENABLED ?? "",
-          NEAR_CEILING_ALERT_SINK: this.env.NEAR_CEILING_ALERT_SINK ?? "",
-          // Sample floor before the rolling health probe is allowed to declare a
-          // region unhealthy (`routes/failover.rs:228`). "" ⇒ container default
-          // (50). Forwarded because the container reads it at construction — an
-          // operator raising the floor during an incident would otherwise be
-          // setting a Worker var the failover path never sees. Not a secret.
-          FAILOVER_MIN_SAMPLES: this.env.FAILOVER_MIN_SAMPLES ?? "",
-          // S-09 offsite archive (`POST /_internal/audit/archive`). Both are
-          // non-secret tuning knobs; "" ⇒ container defaults (bucket
-          // `corelink-audit-weur`, which already carries the 7-year Object
-          // Lock, and a 2000-row per-partition budget). Forwarded because the
-          // container reads them at boot — an operator override that is not on
-          // this list silently no-ops (the ERASURE_SALT_KEY-class bug).
-          R2_AUDIT_BUCKET: this.env.R2_AUDIT_BUCKET ?? "",
-          AUDIT_ARCHIVE_BATCH_LIMIT: this.env.AUDIT_ARCHIVE_BATCH_LIMIT ?? "",
-          // Objects one `POST /_internal/cas/scrub` call resolves before it
-          // truncates and hands back a cursor (`routes/cas_scrub.rs`,
-          // `build_state_from_env`). "" ⇒ container default (500). Forwarded
-          // because the container reads it at construction — an operator
-          // retuning the sweep would otherwise be setting a Worker var the
-          // scrubber never sees. Not a secret.
-          CAS_SCRUB_OBJECT_BUDGET: this.env.CAS_SCRUB_OBJECT_BUDGET ?? "",
-          // Container origin-timing detail phases (`oargon`/`opermit`/`ortier`).
-          // "on" arms them; anything else (the production default) leaves their
-          // time inside the `oother` residue and the header byte-identical.
-          // Forwarded because the container reads it via std::env::var — a
-          // Worker secret that is not on this list silently no-ops, which for a
-          // diagnostic flag means it reads as "armed, and the phases just are
-          // not there" rather than as a failure. See `detail_phases_enabled`
-          // for why OFF is the load-bearing default.
-          CORELINK_ORIGIN_TIMING_DETAIL: this.env.CORELINK_ORIGIN_TIMING_DETAIL ?? "",
-          // CTRL-PRIV-001: server-held salt for the email_hash pseudonym. Unset →
-          // legacy unsalted SHA-256 (zero regression); set → HMAC-SHA256. MUST be
-          // forwarded or the container can't see it when the owner registers it.
-          EMAIL_HASH_SALT: this.env.EMAIL_HASH_SALT ?? "",
-          // Optional launch coupon id. Set → checkout pre-applies discounts[0][coupon]
-          // (clean checkout→$0); unset → allow_promotion_codes=true (promo-code field).
-          // MUST be forwarded or the container's Stripe client can't see it when set.
-          STRIPE_LAUNCH_COUPON: this.env.STRIPE_LAUNCH_COUPON ?? "",
-          ERASURE_ATTESTATION_REGION: this.env.ERASURE_ATTESTATION_REGION ?? "",
-          // Brutal-audit #1 fix: the single-region assertion flag gates whether a
-          // post-deletion attestation may sign with the env-default region. MUST be
-          // forwarded or the operator flag silently never reaches the container.
-          ERASURE_ATTESTATION_SINGLE_REGION: this.env.ERASURE_ATTESTATION_SINGLE_REGION ?? "",
-          // corelink-runners auth seam (#261): `POST /internal/v1/auth/introspect`
-          // mounts in the container only when FABRIC_INTROSPECT_AUTH_KEY (+ PAT +
-          // D1) are present. Forward it or the route stays unmounted (404).
-          FABRIC_INTROSPECT_AUTH_KEY: this.env.FABRIC_INTROSPECT_AUTH_KEY ?? "",
-          // HuGR toolkits introspect consumer (#398): the per-consumer key the
-          // container's auth_introspect gate ALSO accepts. Must be forwarded too —
-          // else setting the worker secret never reaches the container and HuGR's
-          // token 401s (the check-env-contract gap that caught this).
-          FABRIC_INTROSPECT_AUTH_KEY_HUGR:
-            this.env.FABRIC_INTROSPECT_AUTH_KEY_HUGR ?? "",
-          // ASK-2 runner billing usage-push ingest: `POST /internal/v1/billing/usage`
-          // mounts in the container only when BILLING_INGEST_AUTH_KEY (+ D1) are
-          // present. Forward it or the route stays unmounted (404) — the same
-          // env-contract class as FABRIC_INTROSPECT_AUTH_KEY above (check-env-contract.py).
-          BILLING_INGEST_AUTH_KEY: this.env.BILLING_INGEST_AUTH_KEY ?? "",
-          // Complete the env contract (2026-06-13 audit): every var the container
-          // reads via env::var MUST be forwarded UNCONDITIONALLY, else setting the
-          // secret later silently never reaches the container (the class of bug
-          // that hid the ERASURE_SALT_KEY gap). Some of these ARE set in prod
-          // (verified 2026-08-10: R2_TDK_HEX is populated on prod + all regionals,
-          // so CAS uses real per-tenant HMAC prefix derivation — NOT the fallback;
-          // the OCI signing key is set under the legacy HUGR_OCI_TOKEN_KEY name
-          // below). Others remain unset; forwarding an empty string when a var is
-          // unset is a harmless no-op that makes a future secret-set "just work".
-          R2_TDK_HEX: this.env.R2_TDK_HEX ?? "",
-          SIGNUP_TOKEN_KEY: this.env.SIGNUP_TOKEN_KEY ?? "",
-          // OCI token-mint signing key — read by the container's OCI adapter.
-          // (Gap caught by scripts/check-env-contract.py on its first run, 2026-06-13.)
-          CORELINK_OCI_TOKEN_KEY: this.env.CORELINK_OCI_TOKEN_KEY ?? "",
-          // Legacy alias of CORELINK_OCI_TOKEN_KEY (CAA-360 #8 name drift): the
-          // prod Worker holds the OCI signing key under HUGR_OCI_TOKEN_KEY, and the
-          // container reads it via the routes.rs `.or_else(...)` fallback. Forward
-          // it too — otherwise that fallback is a silent no-op (the value never
-          // reaches the container). Retire once the prod secret is renamed to the
-          // canonical name. See crates/corelink-container/src/routes/oci.rs
-          // (OCI_TOKEN_KEY_ENV_LEGACY).
-          HUGR_OCI_TOKEN_KEY: this.env.HUGR_OCI_TOKEN_KEY ?? "",
-          CORELINK_PORTAL_RETURN_URL: this.env.CORELINK_PORTAL_RETURN_URL ?? "",
-          // BYOK (enterprise) provider regions/vault — off for the SMB launch.
-          AWS_REGION: this.env.AWS_REGION ?? "",
-          GCP_REGION: this.env.GCP_REGION ?? "",
-          CORELINK_BYOK_AZURE_REGION: this.env.CORELINK_BYOK_AZURE_REGION ?? "",
-          CORELINK_BYOK_AZURE_VAULT_URL: this.env.CORELINK_BYOK_AZURE_VAULT_URL ?? "",
-          CORELINK_BYOK_VAULT_REGION: this.env.CORELINK_BYOK_VAULT_REGION ?? "",
-          // ADR-MULTI-REGION-V1 — per-region R2 bucket overrides.
-          // Absent/empty → container defaults to IAD (corelink-ac-iad / iad).
-          // Set by [env.prod-<region>].vars in wrangler.toml.
-          R2_AC_BUCKET: this.env.R2_AC_BUCKET ?? "",
-          R2_AC_REGION: this.env.R2_AC_REGION ?? "",
-          R2_CHUNK_BUCKET: this.env.R2_CHUNK_BUCKET ?? "",
-          R2_CHUNK_REGION: this.env.R2_CHUNK_REGION ?? "",
-          // F7/F8 (2026-06-13 audit) — CAS residency. The container reads
-          // R2_CAS_REGION/R2_CAS_BUCKET (`routes/cas.rs:125-126`) but they were
-          // NOT forwarded, so the F7 residency fix (set R2_CAS_REGION per
-          // regional env) would have silently no-op'd: the operator sets the
-          // var, deploy succeeds, container keeps keying CAS under "iad". Each
-          // [env.prod-<region>].vars now sets R2_CAS_REGION so EU/regional CAS
-          // bytes key to their own region. Absent/empty → container defaults to
-          // IAD (corelink-cas-prod / iad).
-          R2_CAS_REGION: this.env.R2_CAS_REGION ?? "",
-          R2_CAS_BUCKET: this.env.R2_CAS_BUCKET ?? "",
-          // F8 — remaining container-read env vars missing from the forward
-          // list: the AC R2 bucket prefix (`dsr/adapter_r2_ac.rs:68`) and the
-          // Turborepo bucket (`storage/r2_kv.rs:178`). Unset in prod today
-          // (defaults match intended values), but any operator override would
-          // silently no-op without these — the ERASURE_SALT_KEY-class bug.
-          R2_AC_BUCKET_PREFIX: this.env.R2_AC_BUCKET_PREFIX ?? "",
-          R2_TURBO_BUCKET: this.env.R2_TURBO_BUCKET ?? "",
-          // Brutal-audit M3 — container tuning knobs read via a const-aliased
-          // `std::env::var(CONST)` (invisible to the old check-env-contract.py
-          // string-literal scan, now caught). Each falls back to a built-in
-          // default when unset, so an operator `wrangler secret put` was being
-          // SILENTLY ignored — the ERASURE_SALT_KEY class. Forward them so an
-          // override actually reaches the container (empty ⇒ default, unchanged):
-          //   PAT_MINT_MAX_INFLIGHT     routes/internal_pat.rs:165 (MAX_INFLIGHT_MINTS_ENV)
-          //   PAT_MINT_MAX_PER_MINUTE   routes/internal_pat.rs:298 (MAX_MINTS_PER_WINDOW_ENV)
-          //   QUOTA_COST_PER_OP_MICROS  tenant_quota.rs:98       (COST_PER_OP_MICROS_ENV)
-          //   EXPORT_ROW_BUFFER_BYTES   routes/audit_export/stream.rs:320 (ENV_EXPORT_ROW_BUFFER_BYTES)
-          PAT_MINT_MAX_INFLIGHT: this.env.PAT_MINT_MAX_INFLIGHT ?? "",
-          PAT_MINT_MAX_PER_MINUTE: this.env.PAT_MINT_MAX_PER_MINUTE ?? "",
-          QUOTA_COST_PER_OP_MICROS: this.env.QUOTA_COST_PER_OP_MICROS ?? "",
-          EXPORT_ROW_BUFFER_BYTES: this.env.EXPORT_ROW_BUFFER_BYTES ?? "",
-          // F3.2 WP-E — client-side `_public` dedup flag. "0" (Roll-1) keeps
-          // client OCI finalize per-tenant; a later roll flips it on. Empty ⇒
-          // container default (OFF).
-          OCI_PUBLIC_DEDUP_ENABLED: this.env.OCI_PUBLIC_DEDUP_ENABLED ?? "",
-          OCI_UPSTREAM_ON_MISS: this.env.OCI_UPSTREAM_ON_MISS ?? "",
+  /** Delegate container boot orchestration to the lifecycle domain module. */
+  private startContainer(requestId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    return runStartContainer(
+      {
+        container: this.state.container,
+        env: this.env,
+        doIdHash: this.doIdHash,
+        getLifecycleState: () => this.lifecycleState,
+        setLifecycleState: (state) => {
+          this.lifecycleState = state;
         },
-      });
-
-      // Arm the PLATFORM idle reaper immediately — before the health poll, so
-      // a container that starts and then wedges on /_health is still reaped by
-      // Cloudflare even if every line below this one fails to run.
-      await this.armInactivityTimeout(container, requestId);
-
-      // Poll health until container is responsive or timeout
-      const healthy = await this.waitForContainerHealth(requestId, container);
-      if (!healthy) {
-        await emitLifecycleEvent(
-          this.env.PAGERDUTY_ROUTING_KEY ?? "",
-          "corelink.do.container_died.v1",
-          `CoreLink container failed health check on start for tenant ${tenantHash}`,
-          "error",
-          tenantHash,
-          this.doIdHash,
-          newColdStartCount,
-          this.env.ENVIRONMENT,
-        );
-        // DESTROY, don't just re-label. `container.start()` already ran, so the
-        // container may well be RESIDENT (up but wedged on /_health — the R2/S3
-        // init alone was measured at 26s+). Marking lifecycle "stopped" without
-        // destroying leaves it resident and BILLED with no alarm chain to reap
-        // it — the same immortality this fix exists to close, entered through
-        // the failure door. (This is the per-DO `container_start_threw` wedge
-        // that previously cleared only on an image roll.)
-        await this.destroyContainer(requestId);
-        return { ok: false, reason: "container_health_check_failed" };
-      }
-
-      await this.updateLifecycleState({
-        ...this.lifecycleState,
-        containerStatus: "running",
-        lastHealthCheckMs: Date.now(),
-        lastActivityMs: Date.now(),
-        coldStartCount: newColdStartCount,
-      });
-
-      // AUDIT AFTER SUCCESSFUL START
-      await emitLifecycleEvent(
-        this.env.PAGERDUTY_ROUTING_KEY ?? "",
-        "corelink.do.container_started.v1",
-        `CoreLink container started for tenant ${tenantHash}`,
-        "info",
-        tenantHash,
-        this.doIdHash,
-        newColdStartCount,
-        this.env.ENVIRONMENT,
-      );
-
-      // Schedule alarm for periodic health checks (which also runs the
-      // durable idle reaper — see alarm())
-      const nextAlarm = Date.now() + HEALTH_CHECK_INTERVAL_MS;
-      await this.storage.setAlarm(nextAlarm);
-
-      return { ok: true };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message.slice(0, 80) : "unknown";
-
-      // ALREADY-RUNNING RACE (mirrors the idempotent-start guard at the top of
-      // this method): `container.running` can flip true BETWEEN that guard and
-      // this `start()` call (CF's start is async), so start() throws "start()
-      // cannot be called on a container that is already running". The container
-      // IS up — destroying it here would re-open the exact thrash the guard
-      // closes. Treat it as started: health-gate the live container, don't
-      // destroy on the throw.
-      if (err instanceof Error && /already running/i.test(err.message)) {
-        console.warn(
-          `[${requestId}] start() raced an already-running container — health-gating instead of destroying`,
-        );
-        const healthy = await this.waitForContainerHealth(requestId, container);
-        if (healthy) {
-          await this.updateLifecycleState({
-            ...this.lifecycleState,
-            containerStatus: "running",
-            lastHealthCheckMs: Date.now(),
-            lastActivityMs: Date.now(),
-          });
-          return { ok: true };
-        }
-        await this.destroyContainer(requestId);
-        return { ok: false, reason: "container_health_check_failed" };
-      }
-
-      console.error(`[${requestId}] container start error: ${msg}`);
-
-      await emitLifecycleEvent(
-        this.env.PAGERDUTY_ROUTING_KEY ?? "",
-        "corelink.do.container_died.v1",
-        `CoreLink container start threw for tenant ${tenantHash}`,
-        "error",
-        tenantHash,
-        this.doIdHash,
-        newColdStartCount,
-        this.env.ENVIRONMENT,
-      );
-
-      // DESTROY, don't just re-label — see the health-check arm above: the
-      // throw may have happened AFTER container.start() took effect, leaving a
-      // resident, billed, un-reapable container.
-      await this.destroyContainer(requestId);
-      return { ok: false, reason: "container_start_threw" };
-    }
+        transitionStatus: (status, id) => this.transitionStatus(status, id),
+        updateLifecycleState: (state) => this.updateLifecycleState(state),
+        waitForContainerReady: (id) => this.waitForContainerReady(id),
+        armInactivityTimeout: (container, id) => this.armInactivityTimeout(container, id),
+        waitForContainerHealth: (id, container) => this.waitForContainerHealth(id, container),
+        destroyContainer: (id) => this.destroyContainer(id),
+        setAlarm: (when) => this.storage.setAlarm(when),
+      },
+      requestId,
+    );
   }
 
   /** Wait briefly for a container in "starting" state to become ready. */

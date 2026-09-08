@@ -1,0 +1,134 @@
+name: perf-production-evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      tenant_id:
+        description: "Dogfood tenant UUID (owner supplied; never a token)"
+        required: true
+        type: string
+      worker_script:
+        description: "Cloudflare production Worker script name"
+        required: true
+        type: string
+      confirm:
+        description: 'Type "collect-production-evidence" to run the bounded lane'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  deployments: read
+
+concurrency:
+  group: perf-production-evidence-${{ inputs.tenant_id }}
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: corelink
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Confirm intent (fail closed)
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: test "${CONFIRM}" = "collect-production-evidence"
+
+      - name: Checkout without a credential helper
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch GitHub deployment identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          gh api --paginate \
+            --slurp \
+            "repos/${GITHUB_REPOSITORY}/deployments?sha=${GITHUB_SHA}&environment=production&per_page=100" \
+            > "${RUNNER_TEMP}/github-deployments.json"
+
+      - name: Fetch Cloudflare deployment identity (redacted output)
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_WORKER_SCRIPT: ${{ inputs.worker_script }}
+        run: |
+          set -eu
+          test -n "${CF_API_TOKEN}" -a -n "${CF_ACCOUNT_ID}"
+          curl --fail --silent --show-error --location \
+            --header "Authorization: Bearer ${CF_API_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/workers/scripts/${CF_WORKER_SCRIPT}/deployments" \
+            > "${RUNNER_TEMP}/cloudflare-deployments.json"
+          # The response is used only to bind commit/id and is never uploaded.
+          chmod 600 "${RUNNER_TEMP}/cloudflare-deployments.json"
+
+      - name: Build immutable run context
+        env:
+          TENANT_ID: ${{ inputs.tenant_id }}
+        run: |
+          set -eu
+          python3 scripts/collect_b102_b108_context.py \
+            --github-deployment "${RUNNER_TEMP}/github-deployments.json" \
+            --provider-deployment "${RUNNER_TEMP}/cloudflare-deployments.json" \
+            --output "${RUNNER_TEMP}/evidence-context.json"
+          python3 - <<'PY'
+          import json, os, pathlib, uuid
+          p = pathlib.Path(os.environ['RUNNER_TEMP']) / 'evidence-context.json'
+          d = json.loads(p.read_text())
+          tenant = uuid.UUID(os.environ['TENANT_ID'])
+          if tenant.version != 4:
+              raise SystemExit('tenant_id must be a v4 UUID')
+          d['tenant_id'] = str(tenant)
+          p.write_text(json.dumps(d, sort_keys=True, indent=2) + '\n')
+          PY
+
+      - name: Collect authenticated B-102..B-107 measurements
+        env:
+          CORELINK_PERF_BASE: ${{ vars.CORELINK_PERF_BASE }}
+          CORELINK_PERF_TENANT: ${{ inputs.tenant_id }}
+          CORELINK_PERF_PAT: ${{ secrets.CORELINK_PERF_PAT }}
+          CORELINK_FRESH_MINT_URL: ${{ vars.CORELINK_FRESH_MINT_URL }}
+          CORELINK_FRESH_SESSION: ${{ secrets.CORELINK_FRESH_SESSION }}
+          CORELINK_INTERNAL_AUTH_KEY: ${{ secrets.CORELINK_INTERNAL_AUTH_KEY }}
+        run: |
+          set -eu
+          python3 scripts/collect_b102_b107_measurements.py --output "${RUNNER_TEMP}/b102-b107-measurements.json"
+
+      - name: Collect B-105 identical cache off/on build lane
+        env:
+          CORELINK_PERF_BASE: ${{ vars.CORELINK_PERF_BASE }}
+          CORELINK_PERF_TENANT: ${{ inputs.tenant_id }}
+          CORELINK_PERF_PAT: ${{ secrets.CORELINK_PERF_PAT }}
+        run: |
+          set -eu
+          python3 scripts/collect_b105_same_lane.py "${RUNNER_TEMP}/b105-lane.json"
+
+      - name: Join canonical v2 evidence packet
+        run: |
+          set -eu
+          python3 scripts/join_b102_b108_evidence.py \
+            --context "${RUNNER_TEMP}/evidence-context.json" \
+            --measurements "${RUNNER_TEMP}/b102-b107-measurements.json" \
+            --b105 "${RUNNER_TEMP}/b105-lane.json" \
+            --root "${GITHUB_WORKSPACE}" \
+            --output "${RUNNER_TEMP}/corelink-performance-evidence.v2.json"
+
+      - name: Verify canonical packet (fail closed; B-102..B-107 remain open)
+        run: |
+          set -eu
+          python3 scripts/verify_b102_b108_evidence.py \
+            --packet "${RUNNER_TEMP}/corelink-performance-evidence.v2.json" \
+            --expect open
+
+      - name: Publish verifier-backed owner handoff (no credentials)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b102-b108-owner-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/corelink-performance-evidence.v2.json
+          retention-days: 7
+          if-no-files-found: error

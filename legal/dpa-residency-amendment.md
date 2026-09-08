@@ -36,6 +36,8 @@ superseded_by: null
 >
 > **References**: GDPR Art. 28, Art. 33, Art. 37, Art. 46 · LGPD Art. 33 §1, Art. 46, Art. 48 · Schrems II (C-311/18) · EDPB Recommendations 01/2020 · NIST SP 800-88 Rev.1 §2.4 · INV-DATA-RESIDENCY · INV-REGION-NO-CROSS-LEAK · INV-BYOK-CRYPTO-SOVEREIGNTY · INV-ERASURE-ATTESTATION-SIGNED
 
+> **CURRENT LAUNCH BOUNDARY (DD-051 / B-204):** BYOK is not enabled or provisioned in the launched CoreLink data plane. No FIPS-validated BYOK module, CMK activation path, BYOK kill switch, or set of four KMS providers is currently available. The live service uses provider-managed R2 encryption and its ordinary DSR erasure pipeline. Every BYOK, FIPS, CMK, crypto-erase, and four-provider reference below is a **future-state design requirement**, conditional on separately approved production enablement and current evidence; it is not an unconditional customer commitment or a statement that the feature is available today.
+
 ---
 
 ## Section 1 — Parties
@@ -87,7 +89,7 @@ superseded_by: null
 
 CoreLink processes Personal Data on documented instruction from Customer solely for the following purposes:
 1. Storage and retrieval of cache blobs uploaded by Customer or Customer's authorised users.
-2. Access control enforcement (tenant isolation, RBAC, BYOK key operations).
+2. Access control enforcement (tenant isolation and RBAC; BYOK key operations only if separately enabled for a tenant).
 3. Audit log generation for compliance, integrity, and forensic purposes (7-year retention per CTRL-AUDIT-005).
 4. Breach detection, incident response, and security operations.
 
@@ -110,7 +112,7 @@ Categories of Personal Data that may be processed are determined by Customer. Co
 |---|---|---|
 | Identifiers | User IDs, email addresses (hashed in audit chain) | CTRL-PRIV-001 |
 | Audit metadata | Timestamps, operation type, tenant\_id, region | CTRL-PRIV-002 |
-| Blob content | Customer-uploaded cache blobs (encrypted at rest; CoreLink cannot access plaintext) | CTRL-PRIV-010 |
+| Blob content | Customer-uploaded cache blobs (encrypted at rest with provider-managed R2 encryption; BYOK plaintext-separation is not active at launch) | CTRL-PRIV-010 |
 | Access logs | IP addresses (pseudonymised), request paths, response codes | CTRL-PRIV-020 |
 
 CoreLink does not knowingly process special-category data (GDPR Art. 9) or data concerning children. Customer is responsible for ensuring such data is not uploaded without appropriate safeguards.
@@ -128,7 +130,8 @@ CoreLink commits to storing and processing Customer's Tenant data within the fol
 | **WNAM** | Western North America | Cloudflare us-west infrastructure | Tenant data stored and processed in us-west facilities. |
 | **ENAM** | Eastern North America | Cloudflare us-east infrastructure | Tenant data stored and processed in us-east facilities. |
 | **WEUR** | Western Europe | Cloudflare eu-west infrastructure | Tenant data stored and processed in eu-west facilities. `jurisdictional_restriction = "eu"` enforced (WI-S14-001). |
-| **SAM** | South America | Cloudflare sa-east infrastructure | Tenant data stored and processed in sa-east facilities. |
+| **APAC** | Asia-Pacific | Cloudflare Tokyo (`nrt`) infrastructure and APAC R2 bucket | Tenant data stored and served through the provisioned APAC path. This is a physical-location commitment, not an APAC legal-jurisdiction claim. |
+| **SAM** | South America | **Not provisioned** | New SAM residency provisioning is rejected; this template makes no claim that SAM data is stored in Brazil. |
 
 ### 7.2 Failover Restrictions
 
@@ -139,7 +142,8 @@ CoreLink may replicate data to a secondary region solely for high-availability p
 | WNAM | ENAM (US sibling pair only) |
 | ENAM | WNAM (US sibling pair only) |
 | WEUR | WEUR read-replica only; no cross-jurisdiction transfer |
-| SAM | SAM read-replica only |
+| APAC | APAC read-replica only, where provisioned |
+| SAM | Not applicable — SAM is not provisioned |
 
 **WEUR data NEVER replicates outside the EU jurisdiction.** This restriction is enforced at the infrastructure level (Cloudflare DO `jurisdictional_restriction`) and validated by `PAT-REGION-FAILOVER-001` (WI-S14-003).
 
@@ -150,9 +154,9 @@ For Customer tenants in WEUR: data transfers, if any, are governed by:
 - Schrems II Transfer Impact Assessment (`legal/tia-template.md`).
 - EDPB Recommendations 01/2020 supplementary measures (Section 12 and Appendix A).
 
-For Customer tenants in SAM (Brazil): transfers are governed by:
-- LGPD Art. 33 §1 and its permitted mechanisms.
-- Adequacy decision or appropriate safeguards per LGPD Art. 33.
+SAM is not a provisioned signup region. A future SAM deployment would require a
+separate residency decision and legal review under LGPD Art. 33; this template
+does not make a current Brazil-localisation commitment.
 
 ---
 
@@ -165,11 +169,14 @@ CoreLink engages the following Sub-processors. Customer authorises their engagem
 | Sub-processor | Role | Data Categories | DPA Reference | Region Scope |
 |---|---|---|---|---|
 | **Cloudflare, Inc.** | Infrastructure: Workers, R2, D1, KV, Durable Objects, Custom Domains | Blob content (encrypted), audit metadata, access logs | [cf-dpa.cloudflare.com](https://www.cloudflare.com/cloudflare-customer-dpa/) | Tenant-pinned (Section 7) |
-| **Customer KMS Provider** | BYOK CMK storage and key operations (Customer-controlled) | CMK (customer-held; CoreLink cannot access) | Customer's agreement with their chosen KMS provider | N/A (customer-controlled) |
+| **Customer KMS Provider (future only)** | No current service processing; candidate BYOK CMK integration | Not applicable while BYOK is unavailable | Would require a separately enabled customer agreement | Not an active sub-processor |
 
 ### 8.2 Customer KMS Provider Options
 
-Customer may choose any of the following FIPS 140-2 / FIPS 140-3 validated KMS providers for BYOK:
+The following are **design candidates only**, not currently available or enabled
+providers. CoreLink makes no FIPS validation or four-provider availability claim
+until a production provider is explicitly provisioned and its current evidence
+is recorded in `docs/compliance/byok-fips-evidence.md`:
 - AWS Key Management Service (KMS)
 - Google Cloud Key Management Service
 - Azure Key Vault (Premium tier, HSM-backed)
@@ -187,9 +194,9 @@ CoreLink implements and maintains the following technical and organisational sec
 
 ### 9.1 Encryption at Rest
 
-- **Envelope Encryption**: Each blob encrypted with a unique DEK (AES-256-GCM). DEK wrapped by Customer CMK via BYOK (WI-S14-004, WI-S14-005). CoreLink cannot decrypt blob content without Customer-provided CMK.
-- **BYOK FIPS Verification**: CMK operations performed via FIPS 140-2 or FIPS 140-3 validated KMS endpoints (per provider). FIPS compliance documented in `docs/compliance/byok-fips-evidence.md`.
-- **Per-region Key Isolation**: Audit chain signing keys and attestation keys are per-region; no cross-region key sharing.
+- **Current encryption**: The launched service uses provider-managed R2 encryption. BYOK envelope encryption (unique DEK wrapped by a customer CMK) is a future-state design, not an active control.
+- **BYOK FIPS Verification (future only)**: No FIPS-backed BYOK endpoint is enabled and no FIPS validation is claimed. A future enablement would require provider-specific evidence in `docs/compliance/byok-fips-evidence.md` before any customer commitment.
+- **Per-region Key Isolation**: Any future BYOK key isolation is conditional on production enablement; this template is not evidence that such a control is active.
 
 ### 9.2 Encryption in Transit
 
@@ -212,9 +219,8 @@ CoreLink implements and maintains the following technical and organisational sec
 
 ### 9.5 Erasure Attestation
 
-- Cryptographic erasure via BYOK CMK revocation (NIST SP 800-88 Rev.1 §2.4 crypto-erase mode): Customer revokes CMK; all DEKs become permanently inaccessible; blobs irrecoverably inaccessible ≤ 5 minutes globally (INV-BYOK-CRYPTO-SOVEREIGNTY).
-- Ed25519-signed erasure attestation issued post-erasure (INV-ERASURE-ATTESTATION-SIGNED, WI-S14-007).
-- Attestation document retained by Customer as forensic evidence.
+- **Current erasure**: Erasure uses the launched DSR pipeline and its documented retention/SLA controls. BYOK CMK revocation and a five-minute crypto-erase are not available at launch and are not a current commitment.
+- Any future Ed25519-signed attestation or NIST SP 800-88 crypto-erase mode is conditional on production enablement and evidence; this template does not itself prove either control.
 
 ---
 
@@ -227,10 +233,13 @@ CoreLink shall assist Customer in fulfilling Data Subject rights requests within
 | **Right of Access** | Customer exports tenant data via CoreLink admin API (S-11) | 30 days (GDPR Art. 12) |
 | **Right to Portability** | Customer exports blobs in standard format via admin API (S-11) | 30 days |
 | **Right to Correction** | Customer updates metadata via standard write operations | Immediate |
-| **Right to Erasure** | Customer revokes CMK (BYOK kill switch) → crypto-erase ≤ 5 min globally (INV-BYOK-CRYPTO-SOVEREIGNTY) + Ed25519 attestation (INV-ERASURE-ATTESTATION-SIGNED) | ≤ 5 min (technical); 7-day cooling-off period (S-11) |
+| **Right to Erasure** | Launched DSR/erasure pipeline; BYOK kill switch and crypto-erase are unavailable unless separately enabled | Per the applicable service SLA and legal deadline |
 | **Right to Restriction** | Customer disables tenant via admin API | Immediate |
 
-**Erasure Note**: The crypto-erase mechanism satisfies NIST SP 800-88 Rev.1 §2.4 and constitutes effective erasure — all DEKs wrapped by the revoked CMK are permanently inaccessible. The Ed25519-signed attestation provides documentary evidence of erasure for regulatory purposes.
+**Erasure Note**: This template does not assert that a BYOK crypto-erase mechanism
+or signed attestation is active. Those are future-state controls requiring legal
+review, production enablement, and retained evidence; the current service relies
+on its ordinary DSR/erasure pipeline.
 
 **Cooling-off period**: 7 calendar days between erasure request and irreversible execution (S-11), during which Customer may cancel the request.
 
@@ -281,16 +290,18 @@ Where Personal Data is transferred from the European Economic Area (EEA) to a th
 CoreLink has conducted a Transfer Impact Assessment (TIA) per EDPB Recommendations 01/2020. The TIA:
 - Assesses US surveillance law (FISA 702, EO 12333, CLOUD Act) risk.
 - Documents supplementary measures (technical, organisational, contractual) rendering the transfer compliant.
-- Concludes that BYOK customer-controlled CMK (Customer-held key; CoreLink and Cloudflare cannot access plaintext) renders the transfer compliant notwithstanding US surveillance risk.
+- Does not rely on BYOK to conclude that a transfer is compliant: BYOK is not
+  active in the launched data plane. Any future TIA must be re-reviewed after a
+  real CMK path and provider evidence are provisioned.
 
 Full TIA available at `legal/tia-template.md`.
 
-### 12.3 LGPD Art. 33 §1 (Brazil — SAM Region)
+### 12.3 LGPD Art. 33 §1 (Brazil — SAM is not provisioned)
 
-For Customer tenants in SAM region (sa-east / Brazil):
-- Transfers governed by LGPD Art. 33 §1 and applicable ANPD decisions.
-- CoreLink commits to equivalent supplementary measures as documented in `legal/tia-template.md`.
-- SAM data stored in Cloudflare sa-east infrastructure; no transfer outside Brazil without Customer consent.
+SAM is not currently provisioned. CoreLink therefore makes no commitment that
+SAM data is stored in Cloudflare sa-east or that a Brazil-local processing path
+is available. A future SAM path would require an explicit deployment decision,
+LGPD Art. 33 review, and an amended DPA before signup is enabled.
 
 ---
 
@@ -315,8 +326,11 @@ CoreLink shall cooperate with supervisory authorities (including ANPD, European 
 
 Upon termination or expiry of the Service Agreement for any reason:
 - CoreLink shall, within **30 days**, delete or return (at Customer's option) all Customer Personal Data.
-- Deletion shall use the BYOK crypto-erase mechanism (Section 9.5 / Section 10).
-- CoreLink shall issue an **Ed25519-signed erasure attestation** (INV-ERASURE-ATTESTATION-SIGNED) within 30 days of termination as documentary evidence of deletion.
+- Deletion shall use the launched DSR/erasure pipeline. A BYOK crypto-erase
+  mechanism (Section 9.5 / Section 10) is future-state only and unavailable
+  unless separately enabled.
+- Any **Ed25519-signed erasure attestation** is likewise future-state evidence;
+  this template does not promise that it is issued by the current service.
 
 ### 14.2 Audit Log Retention Post-Termination
 
@@ -334,7 +348,8 @@ At Customer's written request (within 30 days of termination notice), CoreLink s
 |---|---|---|
 | WEUR (EU/EEA customers) | Laws of Ireland (EU Member State) | Courts of Ireland; GDPR supervisory authority: Data Protection Commission (Ireland) |
 | WNAM / ENAM (US customers) | Laws of the State of Delaware, USA | Courts of Delaware, USA |
-| SAM (Brazil customers) | Laws of the Federative Republic of Brazil (LGPD) | Courts of São Paulo, Brazil; ANPD (regulatory) |
+| APAC (current physical-location path) | `[TO BE DETERMINED BY LEGAL EXTERNO REVIEW]` | `[TO BE DETERMINED]` |
+| SAM (not provisioned) | No active commitment | No active commitment |
 | Default (unspecified) | `[TO BE DETERMINED BY LEGAL EXTERNO REVIEW]` | `[TO BE DETERMINED]` |
 
 > Note: Governing law and jurisdiction clauses require Legal externo review and finalisation. The above is a structural placeholder.
@@ -347,13 +362,13 @@ The following CoreLink implementation artefacts evidence the technical security 
 
 | Measure | Evidence Reference | Sprint WI |
 |---|---|---|
-| BYOK envelope encryption (AES-256-GCM + DEK + CMK) | `docs/compliance/byok-fips-evidence.md` | WI-S14-004, WI-S14-005 |
-| BYOK kill switch ≤ 5 min global revocation | `specs/04_sprints/S14/work_items/WI-S14-006-*.md` | WI-S14-006 |
-| Erasure attestation Ed25519-signed | `specs/04_sprints/S14/work_items/WI-S14-007-*.md` | WI-S14-007 |
+| BYOK envelope encryption (future design; not enabled) | `docs/compliance/byok-fips-evidence.md` (status unavailable) | WI-S14-004, WI-S14-005 |
+| BYOK kill switch (future design; not enabled) | `specs/04_sprints/S14/work_items/WI-S14-006-*.md` | WI-S14-006 |
+| Erasure attestation (future design; not enabled) | `specs/04_sprints/S14/work_items/WI-S14-007-*.md` | WI-S14-007 |
 | Region pinning + INV-REGION-NO-CROSS-LEAK | `specs/04_sprints/S14/work_items/WI-S14-002-*.md` | WI-S14-002 |
 | Failover restriction PAT-REGION-FAILOVER-001 | `specs/04_sprints/S14/work_items/WI-S14-003-*.md` | WI-S14-003 |
 | Audit chain integrity (Ed25519 + 7y retention) | S-09 audit chain | S-09 |
-| FIPS-validated BYOK (4 providers) | `docs/compliance/byok-fips-evidence.md` | WI-S14-005 |
+| FIPS-validated BYOK (future design; zero providers enabled) | `docs/compliance/byok-fips-evidence.md` (no evidence yet) | WI-S14-005 |
 | TLS 1.2 floor / 1.3 negotiated + mTLS | Cloudflare certificate management | S-06 |
 
 ---
@@ -369,7 +384,7 @@ The following CoreLink implementation artefacts evidence the technical security 
 | Vendor management | Sub-processor disclosure (Section 8); 30-day advance notice of changes |
 | Quarterly Legal review | EDPB monitoring; Schrems II landscape; DPA + TIA updates if needed |
 | Sub-processor audit | Annual Cloudflare DPA review; SOC 2 Type II verification |
-| 4 regions enumerated | WNAM / ENAM / WEUR / SAM — explicit residency commitments (Section 7) |
+| 4 regions enumerated | WNAM / ENAM / WEUR / APAC — current provisioned paths (Section 7); SAM is not provisioned |
 
 ---
 
@@ -378,7 +393,7 @@ The following CoreLink implementation artefacts evidence the technical security 
 | Sub-processor | Agreement | Status |
 |---|---|---|
 | Cloudflare, Inc. | [Cloudflare Customer DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) (incorporating SCCs) | Signed 2026-04-23 (see `legal/sub-processors.md`) |
-| Customer KMS Provider | Customer's own agreement with chosen KMS provider (AWS / GCP / Azure / Vault) | Customer responsibility |
+| Customer KMS Provider (future only) | Would require a separately enabled provider agreement | Not an active sub-processor or service option |
 
 **Customer right to audit Sub-processors**: Customer may request CoreLink to exercise its audit rights under the Cloudflare DPA on Customer's behalf, subject to Cloudflare's audit procedures and reasonable scheduling constraints.
 

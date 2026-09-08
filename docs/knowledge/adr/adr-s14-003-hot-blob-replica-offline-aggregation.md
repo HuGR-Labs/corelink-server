@@ -4,12 +4,14 @@ title: "ADR-S14-003 — Hot-blob replica via offline aggregation + residency-res
 description: "Why hot-blob detection uses daily offline batch aggregation (not a tenant-id-labeled live metric) and why replication is restricted to acyclic same-jurisdiction sibling pairs."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-003-hot-blob-replica-offline-aggregation.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "s14", "region", "failover", "replica", "cardinality"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-S14-003-hot-blob-replica-offline-aggregation.md@605259d198ea08a75836970882bc609404e04331"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S14-003 — Hot-blob replica via offline aggregation + residency-restricted failover
 
 To survive a regional outage, CoreLink proactively replicates the hottest CAS blobs to sibling regions. The naive design — a live `corelink_cas_get_bytes_total{tenant_id, blob_hash}` metric to find the top 1% — was rejected during review as a cardinality-budget violation (1M+ series vs a 100k budget). This ADR (DRAFT) records the decision to detect hot blobs via daily offline batch aggregation instead, to restrict replication to acyclic same-jurisdiction sibling pairs, and to gate failover on a 3-signal acyclic router.

@@ -3,13 +3,15 @@ type: "LaunchControl"
 title: "Go-live readiness / launch due-diligence"
 description: "The 2026-06-15 pre-launch due-diligence audit verdict (NO-GO), the launch paths it checked, and the blocking vs non-blocking findings."
 source_files:
-  - docs/security/2026-06-15-launch-due-diligence-audit.md
-checkpoint_sha: "cc51893253fa3a86ae5b02bff56c8022cbeb72b5"
+  - "docs/security/2026-06-15-launch-due-diligence-audit.md"
+source_blobs:
+  - "docs/security/2026-06-15-launch-due-diligence-audit.md@381b2e65be7494373d7dc47beb04ade0cf1cf7b5"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["launch", "due-diligence", "go-live", "readiness", "security", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"
----
 
+---
 > **Dated snapshot — 2026-06-15.** This concept transcribes the verdict and blocker list of the
 > `docs/security/2026-06-15-launch-due-diligence-audit.md` due-diligence audit **as it stood on
 > 2026-06-15**. Its NO-GO verdict and every blocker below are a HISTORICAL record of that audit, NOT

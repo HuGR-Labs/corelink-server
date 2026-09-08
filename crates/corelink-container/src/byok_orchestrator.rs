@@ -13,7 +13,7 @@
 //!
 //! | Flag set | Concrete type | Audit target |
 //! |---|---|---|
-//! | (none) | [`InMemoryFake`] (this module) | `corelink.byok.in_memory.audit` |
+//! | (none) | no provider (fail-closed) | `corelink.byok.orchestrator.audit` |
 //! | `byok-aws-real` | `corelink_byok::aws::AwsKmsRealProvider` | `corelink.byok.aws.audit` |
 //! | `byok-gcp-real` | `corelink_byok::gcp::GcpKmsRealProvider` | `corelink.byok.gcp.audit` |
 //! | `byok-azure-real` | `corelink_byok::azure::AzureKeyVaultRealProvider` | `corelink.byok.azure.audit` |
@@ -49,9 +49,10 @@
 //! | `byok-vault-real` | `VAULT_ADDR` | Vault cluster URL (consumed by `VaultRealProvider::from_env`) |
 //! | `byok-vault-real` | `CORELINK_BYOK_VAULT_REGION` | Logical region label (default `customer-hosted`) |
 //!
-//! AWS / GCP credentials, Entra ID auth, Vault auth method, etc. are
-//! resolved by each provider's native credential chain — see the
-//! provider crate docs.
+//! AWS credentials are explicit `CORELINK_BYOK_KMS_*` (or standard AWS)
+//! environment variables, while GCP ADC, Entra ID, and Vault auth are
+//! resolved by their provider-specific constructors. Missing owner
+//! credentials fail closed; see the provider crate docs.
 //!
 //! # Pattern reference
 //!
@@ -61,9 +62,7 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use corelink_byok::types::{FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek};
-use corelink_byok::{BYOKError, Dek, KmsProvider};
+use corelink_byok::{BYOKError, KmsProvider};
 use tracing::{info, warn};
 
 // ── Multi-flag guard ─────────────────────────────────────────────────
@@ -125,9 +124,9 @@ compile_error!(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ActiveProvider {
-    /// No real provider compiled in — orchestrator returns
-    /// [`InMemoryFake`].
-    InMemoryFake,
+    /// No real provider compiled in. BYOK operations are unavailable and
+    /// fail closed; plaintext fallback is never permitted.
+    Unavailable,
     /// `byok-aws-real` enabled.
     AwsKms,
     /// `byok-gcp-real` enabled.
@@ -143,7 +142,7 @@ impl ActiveProvider {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::InMemoryFake => "in_memory_fake",
+            Self::Unavailable => "unavailable",
             Self::AwsKms => "aws",
             Self::GcpKms => "gcp",
             Self::AzureKeyVault => "azure",
@@ -178,7 +177,7 @@ pub const fn active_provider() -> ActiveProvider {
         feature = "byok-vault-real",
     )))]
     {
-        ActiveProvider::InMemoryFake
+        ActiveProvider::Unavailable
     }
 }
 
@@ -188,9 +187,9 @@ pub const fn active_provider() -> ActiveProvider {
 ///
 /// Returns an `Arc<dyn KmsProvider>` whose concrete type is selected at
 /// compile time by which (single) `byok-*-real` feature flag is set.
-/// With no flag set, the default [`InMemoryFake`] is returned — every
-/// `wrap_dek` / `unwrap_dek` operation is in-process and the orchestrator
-/// is safe to use in unit tests + local dev.
+/// With no flag set, construction fails closed. There is deliberately no
+/// in-process crypto fallback: a binary without a real KMS provider cannot
+/// claim BYOK protection or persist a tenant as active.
 ///
 /// # Errors
 ///
@@ -267,147 +266,16 @@ async fn build_active() -> Result<Arc<dyn KmsProvider>, BYOKError> {
         feature = "byok-vault-real",
     )))]
     {
-        Ok(Arc::new(InMemoryFake::new()))
-    }
-}
-
-// ── InMemoryFake (default; in-process echo wrap, no network) ─────────
-
-/// In-process fake `KmsProvider` used when no `byok-*-real` feature is
-/// enabled.
-///
-/// **Not for production.** Wraps a DEK by storing the plaintext bytes
-/// as the ciphertext (XOR-masked with a fixed module-private key so the
-/// raw 32-byte material does not appear verbatim in memory dumps);
-/// unwraps by re-applying the XOR mask. AAD is bound by storing
-/// `encryption_context` verbatim on the `WrappedDek` and rejecting
-/// unwrap when it is `None` (matches the production providers' AAD-
-/// mandatory contract).
-///
-/// Use cases: unit tests, local dev gRPC server, CI smoke tests where
-/// real KMS access is unavailable.
-#[derive(Debug, Default)]
-#[non_exhaustive]
-pub struct InMemoryFake {
-    region: String,
-}
-
-/// Module-private XOR mask used by [`InMemoryFake`]. Constant — this
-/// is a fake and offers no cryptographic confidentiality; the mask
-/// exists only so that the raw DEK bytes are not byte-identical to the
-/// "ciphertext" stored in `WrappedDek`, which would mask real-provider
-/// bugs in matrix tests that round-trip via the orchestrator.
-const IN_MEMORY_FAKE_MASK: [u8; 32] = [
-    0xA5, 0x5A, 0xC3, 0x3C, 0xF0, 0x0F, 0x96, 0x69, 0xA5, 0x5A, 0xC3, 0x3C, 0xF0, 0x0F, 0x96, 0x69,
-    0x69, 0x96, 0x0F, 0xF0, 0x3C, 0xC3, 0x5A, 0xA5, 0x69, 0x96, 0x0F, 0xF0, 0x3C, 0xC3, 0x5A, 0xA5,
-];
-
-impl InMemoryFake {
-    /// Construct an in-memory fake provider bound to the canonical
-    /// dev region `local-fake`.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            region: "local-fake".to_string(),
-        }
-    }
-
-    /// Construct with an explicit region label (for tests that pin
-    /// region-aware code paths).
-    #[must_use]
-    pub fn with_region(region: impl Into<String>) -> Self {
-        Self {
-            region: region.into(),
-        }
-    }
-}
-
-fn xor_mask_32(input: &[u8]) -> Result<[u8; 32], BYOKError> {
-    if input.len() != 32 {
-        return Err(BYOKError::DekLengthInvalid { got: input.len() });
-    }
-    let mut out = [0u8; 32];
-    for (i, b) in input.iter().enumerate() {
-        // `i < 32` is guaranteed by the length check above; the
-        // indexing is into a fixed-size array so this is bounded.
-        let mask_byte = IN_MEMORY_FAKE_MASK.get(i).copied().unwrap_or(0);
-        let out_slot = out.get_mut(i).ok_or_else(|| {
-            BYOKError::EnvelopeError("InMemoryFake: xor_mask_32 index out of bounds".to_string())
-        })?;
-        *out_slot = b ^ mask_byte;
-    }
-    Ok(out)
-}
-
-#[async_trait]
-impl KmsProvider for InMemoryFake {
-    fn provider_kind(&self) -> KmsProviderKind {
-        // The fake reports `AwsKms` so downstream code (which validates
-        // `key_id.provider == self.provider_kind()`) works uniformly
-        // in dev. The orchestrator does not expose the fake under a
-        // production label — `active_provider()` returns
-        // `ActiveProvider::InMemoryFake` for the boot-time observability
-        // path.
-        KmsProviderKind::AwsKms
-    }
-
-    fn region(&self) -> &str {
-        &self.region
-    }
-
-    fn fips_level(&self) -> FipsLevel {
-        // The fake is NOT FIPS-validated. Reporting `None` makes that
-        // explicit in any audit / compliance scrape.
-        FipsLevel::None
-    }
-
-    async fn wrap_dek(
-        &self,
-        dek: &Dek,
-        key_id: &KmsKeyId,
-        encryption_context: Option<&serde_json::Value>,
-    ) -> Result<WrappedDek, BYOKError> {
-        if encryption_context.is_none() {
-            warn!(
-                target: "corelink.byok.in_memory.audit",
-                audit = true,
-                op = "wrap_dek",
-                key = key_id.as_str(),
-                reason = "aad_missing",
-                "InMemoryFake: encryption_context required"
-            );
-            return Err(BYOKError::EnvelopeError(
-                "InMemoryFake: encryption_context is mandatory".to_string(),
-            ));
-        }
-        let masked = xor_mask_32(&dek.bytes)?;
-        Ok(WrappedDek {
-            provider: KmsProviderKind::AwsKms,
-            key_id: key_id.clone(),
-            ciphertext: masked.to_vec(),
-            encryption_context: encryption_context.cloned(),
-        })
-    }
-
-    async fn unwrap_dek(&self, wrapped: &WrappedDek) -> Result<Dek, BYOKError> {
-        if wrapped.encryption_context.is_none() {
-            warn!(
-                target: "corelink.byok.in_memory.audit",
-                audit = true,
-                op = "unwrap_dek",
-                key = wrapped.key_id.as_str(),
-                reason = "aad_missing",
-                "InMemoryFake: encryption_context required"
-            );
-            return Err(BYOKError::EnvelopeError(
-                "InMemoryFake: encryption_context is mandatory".to_string(),
-            ));
-        }
-        let masked = xor_mask_32(&wrapped.ciphertext)?;
-        Ok(Dek { bytes: masked })
-    }
-
-    async fn check_access(&self, _key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
-        Ok(KmsAccessStatus::Ok)
+        warn!(
+            target: "corelink.byok.orchestrator.audit",
+            audit = true,
+            op = "boot",
+            provider = "unavailable",
+            reason = "no_real_provider_compiled",
+            "BYOK orchestrator: no real KMS provider compiled; refusing crypto operations"
+        );
+        Err(BYOKError::Provider(
+            "no real KMS provider compiled (enable exactly one byok-*-real feature)".to_string(),
+        ))
     }
 }

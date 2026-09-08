@@ -4,12 +4,14 @@ title: "ADR-0012 — FF-HR-011 forcing factor for GC / reachability changes"
 description: "Adds a dedicated high-risk forcing factor so any change to garbage-collection, refcount, or the reachability invariant is automatically routed to the HIGH_RISK lane."
 source_files:
   - "specs/03_architecture/adrs/ADR-0012-ff-hr-011-gc-reachability.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "risk-lanes", "garbage-collection", "reachability", "framework"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0012-ff-hr-011-gc-reachability.md@33cdb0f72bff5c85d7cf9847de5e8a4ffa0297df"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0012 — FF-HR-011 forcing factor for GC / reachability changes
 
 CoreLink's risk-lane framework classifies every work item by its blast radius; a misclassified GC change is dangerous because deleting a still-reachable blob is a silent cross-tenant data-integrity break. This ADR closes a gap where GC/refcount work could slip through as a STANDARD lane because no forcing factor matched its semantics — so it adds `FF-HR-011` to make that routing automatic. It matters as the governance hook that forces TLA+ + chaos testing onto exactly the changes that can corrupt the cache.

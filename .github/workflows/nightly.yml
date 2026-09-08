@@ -193,6 +193,10 @@ jobs:
     name: proptest extended (100k iter cross-component)
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 30
+    # This job shares a physical Mac with the other builder labels. Keep the
+    # workspace execution lane bounded even when a runner has more cores.
+    env:
+      CARGO_BUILD_JOBS: "4"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -212,13 +216,16 @@ jobs:
           workspaces: ". -> target"
 
       - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        timeout-minutes: 8
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build first so the test binary is cached; PROPTEST_CASES applies at
-      # runtime only.
-      - name: cargo build --release (test artifacts)
-        run: cargo test --release --workspace --no-run
+      # Execute the workspace tests, rather than merely compiling their
+      # binaries. The helper enforces a 25-minute process-group deadline and a
+      # four-job compiler ceiling; the later proptest steps remain explicit
+      # high-iteration targets for their own nightly contract.
+      - name: bounded workspace test execution
+        run: bash scripts/ci-bounded-workspace-tests.sh
 
       - name: proptest 100k iter (cross-component WI-S01-006)
         env:
@@ -408,6 +415,7 @@ jobs:
           workspaces: "crates/${{ matrix.crate }}/fuzz -> target"
 
       - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        timeout-minutes: 8
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -454,6 +462,7 @@ jobs:
           workspaces: ". -> target"
 
       - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        timeout-minutes: 8
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -463,8 +472,13 @@ jobs:
         # silently shift our kill-rate. Prebuilt binary (taiki-e) avoids the
         # from-source compile race on the contended self-hosted Mac.
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        timeout-minutes: 10
         with:
           tool: cargo-mutants@27.0.0
+          # Never fall back to an unpinned source install on the shared Mac.
+          # A missing prebuilt asset is an explicit installer failure.
+          fallback: none
 
       - name: cargo-mutants workspace
+        timeout-minutes: 225
         run: cargo mutants --workspace --no-shuffle --minimum-test-timeout=600

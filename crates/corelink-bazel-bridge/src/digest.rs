@@ -10,7 +10,7 @@
 //!
 //! 1. `hash` MUST be exactly 64 lowercase hexadecimal characters.
 //! 2. `size_bytes` MUST be parseable as a `u64`.
-//! 3. `size_bytes` MUST be ≤ [`crate::MAX_BLOB_SIZE_BYTES`] (4 GiB).
+//! 3. `size_bytes` MUST be ≤ [`crate::MAX_BLOB_SIZE_BYTES`] (64 MiB).
 //!    Larger blobs require ByteStream which this REST bridge does not
 //!    implement.
 
@@ -81,7 +81,7 @@ impl Digest {
     /// - the input does not contain exactly one `/` separator
     /// - the hash portion is not exactly 64 lowercase hex characters
     /// - the size portion is not a valid `u64`
-    /// - the size exceeds 4 GiB
+    /// - the size exceeds 64 MiB
     pub fn parse(s: &str) -> Result<Self, BazelBridgeError> {
         let (hash_part, size_part) =
             s.split_once('/')
@@ -148,13 +148,13 @@ fn validate_hash(hash: &str) -> Result<(), BazelBridgeError> {
     Ok(())
 }
 
-/// Validate that `size_bytes` does not exceed the 4 GiB blob cap.
+/// Validate that `size_bytes` does not exceed the 64 MiB HTTP cache-entry cap.
 fn validate_size(size_bytes: u64) -> Result<(), BazelBridgeError> {
     if size_bytes > crate::MAX_BLOB_SIZE_BYTES {
         return Err(BazelBridgeError::InvalidDigest {
             reason: format!(
-                "size_bytes {size_bytes} exceeds 4 GiB cap ({}); \
-                 use ByteStream for large blobs",
+                "size_bytes {size_bytes} exceeds 64 MiB cap ({}); \
+                 use the gRPC/ByteStream contract for large blobs",
                 crate::MAX_BLOB_SIZE_BYTES
             ),
         });

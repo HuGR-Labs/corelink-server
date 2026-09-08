@@ -36,7 +36,10 @@ BASELINE PERSISTENCE
 The baseline is a single JSON file carried across runs by the GitHub Actions
 cache (`actions/cache/restore` with a prefix restore-key, then
 `actions/cache/save` under a run-unique key). Restore therefore returns the
-most recent PREVIOUS run's file; save publishes this run's.
+most recent PREVIOUS run's file; save publishes this run's. A missing file is
+an UNKNOWN input and REDs the check: a first run cannot prove a regression
+comparison. An unreadable or malformed file is likewise an instrument error
+and is never silently replaced by a fresh baseline.
 
 Ratchet policy: the baseline is rewritten only when the comparison PASSES. A
 regressing run leaves the old baseline in place, so a regression cannot become
@@ -44,15 +47,19 @@ the new normal by simply being measured twice.
 
 EXIT CODES
 ----------
-  0 — every compared scenario within threshold, or baseline seeded (first run)
-  1 — usage / IO / schema error
+  0 — every expected scenario is present and within threshold
+  1 — usage / IO / schema error, including invalid or ambiguous measurements
   2 — at least one scenario regressed beyond REGRESSION_THRESHOLD, or the run
       produced no parseable k6 summary at all
 
-Note on exit 2 for "no results": an empty result set is not evidence of health.
-The k6 matrix legs carry `continue-on-error: true`, so a suite that failed to
-produce a single summary.json would otherwise land here as a silent green —
-exactly the defect this script exists to remove.
+An empty or partial result set is an UNKNOWN input, not evidence of health. The
+k6 matrix legs carry `continue-on-error: true`, so a suite that failed to
+produce a complete set of summary/status files would otherwise land here as a
+silent green — exactly the defect this script exists to remove.
+
+`--expected-scenarios` closes the artifact population: the current summaries and
+matrix-leg status records must match it exactly. A focused manual dispatch must
+therefore pass its selected list explicitly.
 
 stdlib-only on purpose: the self-hosted fleets have no guaranteed third-party
 python packages.
@@ -63,6 +70,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import math
 import os
 import pathlib
 import sys
@@ -79,48 +87,160 @@ EXIT_USAGE = 1
 EXIT_REGRESSION = 2
 
 
+class InputError(ValueError):
+    """The run produced ambiguous or invalid measurement input."""
+
+
+class BaselineError(ValueError):
+    """A stored baseline exists but cannot be trusted."""
+
+
+def _finite_positive(value: object, *, label: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise InputError(f"{label} is not numeric: {value!r}") from exc
+    if not math.isfinite(number) or number <= 0:
+        raise InputError(f"{label} must be finite and > 0: {value!r}")
+    return number
+
+
+def _finite_nonnegative(value: object, *, label: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise InputError(f"{label} is not numeric: {value!r}") from exc
+    if not math.isfinite(number) or number < 0:
+        raise InputError(f"{label} must be finite and >= 0: {value!r}")
+    return number
+
+
 def _now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def collect_current(results_dir: pathlib.Path) -> dict[str, dict[str, float]]:
+def collect_current(
+    results_dir: pathlib.Path, expected: set[str] | None = None
+) -> dict[str, dict[str, float | None]]:
     """Read every `summary.json` under results_dir into {scenario: stats}."""
-    out: dict[str, dict[str, float]] = {}
+    out: dict[str, dict[str, float | None]] = {}
     if not results_dir.exists():
         return out
     for summary in sorted(results_dir.rglob("summary.json")):
         try:
             data = json.loads(summary.read_text())
         except (OSError, ValueError) as exc:
-            print(f"::warning::failed to parse {summary}: {exc}")
-            continue
-        dur = ((data.get("metrics") or {}).get("http_req_duration") or {})
+            raise InputError(f"failed to parse {summary}: {exc}") from exc
+        if not isinstance(data, dict):
+            raise InputError(f"{summary} is not a JSON object")
+        metrics = data.get("metrics")
+        if not isinstance(metrics, dict):
+            raise InputError(f"{summary} has no metrics object")
+        dur = metrics.get("http_req_duration")
+        if not isinstance(dur, dict):
+            raise InputError(f"{summary} has no http_req_duration object")
         median = dur.get("med")
         p99 = dur.get("p(99)")
         if median is None:
-            print(f"::warning::{summary} has no http_req_duration.med — skipped")
-            continue
+            raise InputError(f"{summary} has no http_req_duration.med")
         scenario = summary.parent.name
+        if scenario in out:
+            raise InputError(
+                f"duplicate k6 summary for scenario {scenario!r}; refusing to choose one"
+            )
+        median_ms = _finite_positive(median, label=f"{summary} http_req_duration.med")
+        p99_ms = _finite_positive(p99, label=f"{summary} http_req_duration.p(99)")
         out[scenario] = {
-            "median_ms": float(median),
-            "p99_ms": float(p99) if p99 is not None else None,
+            "median_ms": median_ms,
+            "p99_ms": p99_ms,
         }
+    if expected is not None and set(out) != expected:
+        missing = sorted(expected - set(out))
+        unexpected = sorted(set(out) - expected)
+        raise InputError(
+            "current scenario population mismatch: "
+            f"missing={missing or '-'} unexpected={unexpected or '-'}"
+        )
     return out
 
 
 def load_baseline(path: pathlib.Path) -> dict[str, dict[str, float]]:
     if not path.exists():
-        return {}
+        raise BaselineError(f"baseline {path} is missing")
     try:
         data = json.loads(path.read_text())
     except (OSError, ValueError) as exc:
-        print(f"::warning::baseline {path} unreadable ({exc}) — treating as absent")
-        return {}
+        raise BaselineError(f"baseline {path} is unreadable: {exc}") from exc
+    if not isinstance(data, dict):
+        raise BaselineError(f"baseline {path} must be a JSON object")
+    if data.get("schema") != BASELINE_SCHEMA:
+        raise BaselineError(
+            f"baseline {path} has unsupported schema {data.get('schema')!r}"
+        )
+    if data.get("metric") != "http_req_duration.med (ms)":
+        raise BaselineError(f"baseline {path} has an unexpected metric")
+    for field in ("captured_at", "commit"):
+        if not isinstance(data.get(field), str) or not data[field].strip():
+            raise BaselineError(f"baseline {path} is missing metadata field {field!r}")
     scenarios = data.get("scenarios")
     if not isinstance(scenarios, dict):
-        print(f"::warning::baseline {path} has no `scenarios` map — treating as absent")
-        return {}
-    return scenarios
+        raise BaselineError(f"baseline {path} has no `scenarios` map")
+    validated: dict[str, dict[str, float | None]] = {}
+    for scenario, values in scenarios.items():
+        if not isinstance(scenario, str) or not scenario:
+            raise BaselineError(f"baseline {path} contains an invalid scenario name")
+        if not isinstance(values, dict):
+            raise BaselineError(f"baseline {path} scenario {scenario!r} is not an object")
+        median = values.get("median_ms")
+        if median is None:
+            raise BaselineError(f"baseline {path} scenario {scenario!r} has no median_ms")
+        try:
+            median_ms = _finite_positive(median, label=f"baseline {scenario} median_ms")
+            p99 = values.get("p99_ms")
+            p99_ms = _finite_positive(p99, label=f"baseline {scenario} p99_ms")
+        except InputError as exc:
+            raise BaselineError(str(exc)) from exc
+        validated[scenario] = {"median_ms": median_ms, "p99_ms": p99_ms}
+    return validated
+
+
+def collect_statuses(results_dir: pathlib.Path, expected: set[str]) -> None:
+    """Require one successful matrix-leg status for every expected scenario."""
+    statuses: dict[str, str] = {}
+    for status_file in sorted(results_dir.rglob("status.json")):
+        try:
+            data = json.loads(status_file.read_text())
+        except (OSError, ValueError) as exc:
+            raise InputError(f"failed to parse {status_file}: {exc}") from exc
+        scenario = status_file.parent.name
+        if scenario in statuses:
+            raise InputError(f"duplicate status population for scenario {scenario!r}")
+        if not isinstance(data, dict) or data.get("scenario") != scenario:
+            raise InputError(f"{status_file} has a malformed scenario status")
+        outcome = data.get("outcome")
+        if outcome != "success":
+            raise InputError(
+                f"scenario {scenario!r} matrix leg outcome is {outcome!r}, not success"
+            )
+        statuses[scenario] = outcome
+    if set(statuses) != expected:
+        missing = sorted(expected - set(statuses))
+        unexpected = sorted(set(statuses) - expected)
+        raise InputError(
+            "scenario status population mismatch: "
+            f"missing={missing or '-'} unexpected={unexpected or '-'}"
+        )
+
+
+def parse_expected_scenarios(value: str | None) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    names = tuple(part.strip() for part in value.split(",") if part.strip())
+    if not names:
+        raise InputError("--expected-scenarios must name at least one scenario")
+    if len(set(names)) != len(names):
+        raise InputError("--expected-scenarios contains duplicate scenario names")
+    return names
 
 
 def write_baseline(
@@ -175,48 +295,53 @@ def main(argv: list[str]) -> int:
         default=os.environ.get("GITHUB_STEP_SUMMARY", ""),
         help="optional markdown summary sink (GitHub step summary)",
     )
+    ap.add_argument(
+        "--expected-scenarios",
+        default=os.environ.get("K6_EXPECTED_SCENARIOS"),
+        help=(
+            "comma-separated scenarios requested for this run; when supplied, "
+            "the current artifact set must match it exactly"
+        ),
+    )
     args = ap.parse_args(argv)
 
     threshold = args.threshold
-    if threshold <= 1.0:
+    if not math.isfinite(threshold) or threshold <= 1.0:
         print(f"::error::REGRESSION_THRESHOLD must be > 1.0 (got {threshold})")
         return EXIT_USAGE
 
     results_dir = pathlib.Path(args.results_dir)
     baseline_path = pathlib.Path(args.baseline)
 
-    current = collect_current(results_dir)
-    if not current:
-        print(
-            "::error::no parseable k6 summary.json under "
-            f"{results_dir} — the load suite produced no measurement, so this "
-            "run proves nothing about performance"
-        )
-        return EXIT_REGRESSION
+    try:
+        expected = parse_expected_scenarios(args.expected_scenarios)
+        if expected is None:
+            raise InputError("--expected-scenarios must define a non-empty population")
+        expected_set = set(expected)
+        collect_statuses(results_dir, expected_set)
+        current = collect_current(results_dir, expected_set)
+    except InputError as exc:
+        print(f"::error::{exc}")
+        return EXIT_USAGE
 
-    baseline = load_baseline(baseline_path)
+    try:
+        baseline = load_baseline(baseline_path)
+    except BaselineError as exc:
+        print(f"::error::{exc}")
+        return EXIT_USAGE
     lines: list[str] = []
     regressions: list[str] = []
-    seeded: list[str] = []
     compared = 0
 
     for scenario in sorted(current):
         cur = current[scenario]
         cur_med = cur["median_ms"]
         p99_note = "" if cur["p99_ms"] is None else f" p99={cur['p99_ms']:.2f}ms"
-        prev = baseline.get(scenario) or {}
-        prev_med = prev.get("median_ms")
-        if prev_med is None:
-            seeded.append(scenario)
-            print(
-                f"SEED    scenario={scenario} median={cur_med:.2f}ms{p99_note} "
-                "— no stored baseline for this scenario; recording it as the "
-                "baseline (this run cannot regress)"
-            )
-            lines.append(
-                f"| `{scenario}` | {cur_med:.2f} | — | — | 🌱 seeded |"
-            )
-            continue
+        prev = baseline.get(scenario)
+        if prev is None:
+            print(f"::error::baseline scenario population is partial; missing: {scenario}")
+            return EXIT_USAGE
+        prev_med = prev["median_ms"]
         compared += 1
         limit = float(prev_med) * threshold
         delta_pct = ((cur_med / float(prev_med)) - 1.0) * 100.0
@@ -257,20 +382,11 @@ def main(argv: list[str]) -> int:
         merged = dict(baseline)
         merged.update(current)
         write_baseline(baseline_path, merged, args.commit)
-        if compared == 0:
-            print(
-                f"BASELINE SEEDED — {len(seeded)} scenario(s) recorded, nothing "
-                "to compare against yet. The NEXT run compares against this "
-                "file and can go red."
-            )
-            outcome = "🌱 baseline seeded (first run)"
-        else:
-            print(
-                f"PASS — {compared} scenario(s) compared against the stored "
-                f"baseline, all within {(threshold - 1.0) * 100:.0f}%. "
-                "Baseline updated."
-            )
-            outcome = "✅ within threshold"
+        print(
+            f"PASS — {compared} scenario(s) compared against the stored "
+            f"baseline, all within {(threshold - 1.0) * 100:.0f}%. Baseline updated."
+        )
+        outcome = "✅ within threshold"
         exit_code = EXIT_OK
 
     if args.summary_out:

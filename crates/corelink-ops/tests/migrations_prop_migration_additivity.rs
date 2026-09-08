@@ -118,14 +118,92 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
     "DROP CONSTRAINT",
     "ALTER COLUMN",
     "ALTER TABLE RENAME",
+    "RENAME TO",
     "RENAME TABLE",
     "RENAME COLUMN",
 ];
 
-/// Normalize a SQL fragment for keyword detection: comment-strip, uppercase,
-/// collapse runs of whitespace (incl. tab/newline) into single spaces.
+fn line_comment_start(
+    line: &str,
+    in_block_comment: &mut bool,
+    quote: &mut Option<u8>,
+) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if *in_block_comment {
+            if bytes.get(index..index + 2) == Some(b"*/") {
+                *in_block_comment = false;
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+        if let Some(delimiter) = *quote {
+            if bytes[index] == delimiter {
+                if bytes.get(index + 1) == Some(&delimiter) {
+                    index += 2;
+                    continue;
+                }
+                *quote = None;
+            }
+            index += 1;
+            continue;
+        }
+        if bytes.get(index..index + 2) == Some(b"/*") {
+            *in_block_comment = true;
+            index += 2;
+        } else if bytes.get(index..index + 2) == Some(b"--") {
+            return Some(index);
+        } else if matches!(bytes[index], b'\'' | b'"') {
+            *quote = Some(bytes[index]);
+            index += 1;
+        } else {
+            index += 1;
+        }
+    }
+    None
+}
+
+fn valid_line_waiver(line: &str, comment_start: usize) -> bool {
+    let sql = &line[..comment_start];
+    if sql.matches(';').count() != 1 || !sql.trim_end().ends_with(';') {
+        return false;
+    }
+    let comment = line[comment_start + 2..].to_ascii_lowercase();
+    let Some((_, waiver)) = comment.split_once("additive-allowed:") else {
+        return false;
+    };
+    let Some(adr) = waiver.trim_start().strip_prefix("adr-") else {
+        return false;
+    };
+    let digits: String = adr.chars().take(4).collect();
+    let remainder = adr.get(4..).unwrap_or_default();
+    digits.len() == 4
+        && digits.chars().all(|c| c.is_ascii_digit())
+        && remainder.starts_with(char::is_whitespace)
+        && !remainder.trim().is_empty()
+}
+
+/// Normalize a SQL fragment for keyword detection: apply audited line-local
+/// waivers, strip comments, uppercase, and collapse whitespace.
 fn normalize_for_scan(sql: &str) -> String {
-    let stripped = strip_sql_comments(sql);
+    let mut in_block_comment = false;
+    let mut quote = None;
+    let waiver_filtered = sql
+        .lines()
+        .map(|line| {
+            let comment_start = line_comment_start(line, &mut in_block_comment, &mut quote);
+            if comment_start.is_some_and(|start| valid_line_waiver(line, start)) {
+                ""
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let stripped = strip_sql_comments(&waiver_filtered);
     let upper = stripped.to_ascii_uppercase();
     let mut out = String::with_capacity(upper.len());
     let mut prev_ws = false;
@@ -155,7 +233,11 @@ fn find_violations(canonical_sql: &str) -> Vec<String> {
             continue;
         }
         for prefix in FORBIDDEN_PREFIXES {
-            if trimmed.starts_with(prefix) {
+            // SQLite spells a table swap `ALTER TABLE <name> RENAME TO`; the
+            // rename token is therefore not at statement offset zero.
+            let forbidden = trimmed.starts_with(prefix)
+                || (*prefix == "RENAME TO" && trimmed.contains("RENAME TO"));
+            if forbidden {
                 // Truncate excerpt.
                 let excerpt: String = trimmed.chars().take(80).collect();
                 viol.push(format!("[{prefix}] {excerpt}"));
@@ -358,6 +440,37 @@ fn forbidden_prefix_detector_handles_case_and_whitespace() {
         !viol.is_empty(),
         "newline-separated DROP TABLE not detected"
     );
+
+    // SQLite table swaps place `RENAME TO` after the table identifier.
+    let sql = "ALTER TABLE tier_selections_new RENAME TO tier_selections;";
+    let canon = normalize_for_scan(sql);
+    let viol = find_violations(&canon);
+    assert!(
+        !viol.is_empty(),
+        "ALTER TABLE ... RENAME TO was not detected"
+    );
+}
+
+#[test]
+fn adr_waiver_is_line_local_and_requires_a_reason() {
+    let valid = "DROP TABLE tenant; -- additive-allowed: ADR-0064 widening rebuild";
+    assert!(find_violations(&normalize_for_scan(valid)).is_empty());
+
+    let missing_reason = "DROP TABLE tenant; -- additive-allowed: ADR-0064";
+    assert!(!find_violations(&normalize_for_scan(missing_reason)).is_empty());
+
+    let next_line = "DROP TABLE tenant;\n-- additive-allowed: ADR-0064 wrong line";
+    assert!(!find_violations(&normalize_for_scan(next_line)).is_empty());
+
+    let string_bypass = "SELECT '-- additive-allowed: ADR-0064 approved'; DROP TABLE tenant;";
+    assert!(!find_violations(&normalize_for_scan(string_bypass)).is_empty());
+
+    let block_bypass = "/* -- additive-allowed: ADR-0064 approved */ DROP TABLE tenant;";
+    assert!(!find_violations(&normalize_for_scan(block_bypass)).is_empty());
+
+    let two_statement_bypass =
+        "SELECT 1; DROP TABLE tenant; -- additive-allowed: ADR-0064 approved";
+    assert!(!find_violations(&normalize_for_scan(two_statement_bypass)).is_empty());
 }
 
 /// Unit canary: comment-aware lexer prevents false positives from

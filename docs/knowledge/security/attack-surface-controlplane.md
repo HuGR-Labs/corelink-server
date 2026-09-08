@@ -4,14 +4,18 @@ title: "Control-plane attack surface"
 description: "The attacker-grade map of CoreLink's _system Durable-Object control plane: findings are a point-in-time record — **CP-1 (per-consumer internal-auth key split inert on the container plane) has since been RESOLVED in code**: `worker/src/durable_object.ts` now forwards the dedicated per-consumer keys and `crates/corelink-container/src/routes/admin.rs` prefers them. The audited negative results (Stripe HMAC, dedicated-key gates, cross-tenant isolation, DO lifecycle) still HELD."
 source_files:
   - "docs/security/2026-06-23-brutal-controlplane.md"
-  - "worker/src/durable_object.ts"
-  - "crates/corelink-container/src/routes/admin.rs"
-checkpoint_sha: "b881e31e2d3fa9b7837546ef083ceb6d271f3361"
+  - "crates/corelink-container/src/routes/admin/part-00.rs"
+  - "worker/src/durable_object_start.ts"
+source_blobs:
+  - "docs/security/2026-06-23-brutal-controlplane.md@a46b9871c6a55eff07a5b60fa1aa9642c3848af6"
+  - "crates/corelink-container/src/routes/admin/part-00.rs@d7a50818b395cb9a858a5c8bae4380789bebfd3a"
+  - "worker/src/durable_object_start.ts@aa6612c2e3db86269a3b93f126e6dfdbd53af0c6"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["security", "control-plane", "red-team", "tenant-isolation", "internal-auth"]
-timestamp: "2026-06-26T00:00:00Z"
----
+timestamp: "2026-09-06T00:00:00Z"
 
+---
 # Control-plane attack surface
 
 The control plane is the `_system` Durable-Object plane behind every internal surface — PAT mint, admin,
@@ -55,10 +59,10 @@ authz mechanism, the [introspection flow](/flows/introspection-fabric.md), and t
    only the shared one (`docs/security/2026-06-23-brutal-controlplane.md:17-51`). **Fixed:** the DO now
    forwards `CORELINK_PAT_MINT_AUTH_KEY` / `CORELINK_ADMIN_AUTH_KEY` / `CORELINK_ERASE_AUTH_KEY` /
    `CORELINK_ADMIN_APPROVER_AUTH_KEY` / `CORELINK_DSR_ANCHOR_AUTH_KEY` / `CORELINK_QUOTA_READ_AUTH_KEY`
-   alongside the shared key (`worker/src/durable_object.ts:795-826`).
+   alongside the shared key (`worker/src/durable_object_start.ts:116-122`).
 3. Consequently each container internal gate (`/_internal/pat/mint`, `/_internal/dsr/*`,
    `/_internal/admin/*`, CAS-erase) now verifies against its OWN dedicated key WHEN BOUND, falling back to
-   the shared key only if the dedicated key is unset (`crates/corelink-container/src/routes/admin.rs:567-605`).
+   the shared key only if the dedicated key is unset (`crates/corelink-container/src/routes/admin/part-00.rs:567-604`).
    **Residual gap:** `CORELINK_ADMIN_AUTH_KEY` is not currently bound in prod (verified via the CF Workers
    secrets-list API on all 5 prod Workers), so `/_internal/admin/*` mutate routes still resolve to the
    shared key until an operator provisions it.
@@ -85,7 +89,7 @@ authz mechanism, the [introspection flow](/flows/introspection-fabric.md), and t
   the moment the dedicated-key hardening was turned on (the edge would forward the dedicated value, the
   container would never accept it → 401) (`docs/security/2026-06-23-brutal-controlplane.md:53-71`). The DO
   now forwards every dedicated key the container understands, so binding a dedicated secret no longer
-  401s the container (`worker/src/durable_object.ts:796-800`).
+  401s the container (`worker/src/durable_object_start.ts:116-120`).
 - The cross-tenant fixes F-006/F-007/F-012/F-019/F-020 have NOT regressed: `owner_tenant` is mandatory and
   tenant-scoped on rotate/revoke, the path-spoof guard rejects URL-tenant ≠ PAT-tenant, and the
   trust-header strip runs on every forward (`docs/security/2026-06-23-brutal-controlplane.md:97-146`).
@@ -127,6 +131,11 @@ authz mechanism, the [introspection flow](/flows/introspection-fabric.md), and t
 12. `docs/security/2026-06-23-brutal-controlplane.md:139-146` — cross-tenant DO routing + trust-header strip held.
 13. `docs/security/2026-06-23-brutal-controlplane.md:148-157` — DO lifecycle concurrent-start guard held.
 14. `docs/security/2026-06-23-brutal-controlplane.md:165-174` — summary: 1 finding, otherwise fail-CLOSED solid.
-15. `worker/src/durable_object.ts:795-826` — CP-1 fix: the DO forwards all six dedicated per-consumer keys (comments explicitly reference "CP-1 (go-live audit)").
-16. `crates/corelink-container/src/routes/admin.rs:567-605` — `resolve_internal_auth_key`: dedicated key preferred, shared key only as fallback.
+15. `worker/src/durable_object_start.ts:116-122` — CP-1 fix: the DO forwards all six dedicated per-consumer keys (comments explicitly reference "CP-1 (go-live audit)").
+16. `crates/corelink-container/src/routes/admin/part-00.rs:567-604` — `resolve_internal_auth_key`: dedicated key preferred, shared key only as fallback.
 17. CF Workers secrets-list API (`accounts/{id}/workers/scripts/{name}/secrets`, names only) checked against `corelink-prod` + the 4 regional Workers on this checkpoint's date: `CORELINK_PAT_MINT_AUTH_KEY` / `CORELINK_ERASE_AUTH_KEY` / `CORELINK_ADMIN_APPROVER_AUTH_KEY` / `CORELINK_QUOTA_READ_AUTH_KEY` bound on all 5; `CORELINK_DSR_ANCHOR_AUTH_KEY` bound on `corelink-prod` only; `CORELINK_ADMIN_AUTH_KEY` bound on NONE.
+
+
+# Revalidation
+
+This concept was revalidated against the cumulative implementation tree; its existing source citations remain the controlling evidence for the behavior described above.

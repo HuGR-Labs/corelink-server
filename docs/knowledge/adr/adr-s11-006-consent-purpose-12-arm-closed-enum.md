@@ -3,14 +3,17 @@ type: "ADR"
 title: "ADR-S11-006 — 12-Arm Closed ConsentPurpose Enum Discipline"
 description: "Why CoreLink enforces purpose-limitation at the type level with a closed 12-variant ConsentPurpose enum and a compile-time-fixed legal-basis mapping."
 source_files:
-  - "specs/03_architecture/adrs/ADR-S11-006-consent-purpose-12-arm-closed-enum.md"
   - "crates/corelink-privacy/src/consent/schema.rs"
-checkpoint_sha: "d24ff6f3093497a7f2a63aa232ef181733423c19"
-provenance: "AUTHORED"
+  - "specs/03_architecture/adrs/ADR-S11-006-consent-purpose-12-arm-closed-enum.md"
+\1provenance: "AUTHORED"
 tags: ["adr", "s11", "consent", "purpose-limitation", "privacy"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "crates/corelink-privacy/src/consent/schema.rs@f2cec106b2e72c6e9216b12adb169de66b7e4e7e"
+  - "specs/03_architecture/adrs/ADR-S11-006-consent-purpose-12-arm-closed-enum.md@34a6fc5a09c5202291bcd3c407eb841cebde51f9"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-S11-006 — 12-Arm Closed ConsentPurpose Enum Discipline
 
 GDPR Art. 5(1)(b) and LGPD Art. 6 II demand purpose limitation: every consent is tied to a specific, explicit, legitimate purpose. This ADR settles the DESIGN-INTENT for *how* CoreLink enforces that specificity — at the Rust type level — favouring a 12-variant enum over a free-form string, so the type system constrains which purposes code may name.

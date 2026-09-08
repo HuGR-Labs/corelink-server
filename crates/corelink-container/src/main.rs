@@ -29,22 +29,28 @@ use std::sync::{Arc, OnceLock};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
-use corelink_billing::stripe::real::dlq::InMemoryWebhookDlqStore;
 use corelink_billing::stripe::real::webhook_dispatch::{
     RecordingSliRecorder, StateMaterializer, SystemClock, WebhookDispatcher,
 };
 use corelink_billing_stripe_materializer::{
     BillingAuditEmitter, BillingD1Writer, D1IdempotencyStore, D1SubscriptionStateHandler,
-    InMemoryBillingAuditEmitter, InMemoryBillingD1, InMemoryRunnersEntitlementResolver,
-    InMemoryTierSelector, RealStripeAuditEmitter, RunnersEntitlement,
+    InMemoryBillingAuditEmitter, InMemoryBillingD1, RealStripeAuditEmitter,
 };
 use corelink_server::billing_d1_http::D1HttpBillingWriter;
 use corelink_server::routes;
 use corelink_server::routes::audit_analytics::ShadowSinkFactory;
 use corelink_server::webhook::{router as webhook_router, WebhookState};
-use corelink_tier_selection::tier::TierKind;
 use tokio::signal;
 use tracing::{info, warn};
+
+#[path = "main_boot.rs"]
+mod boot;
+use boot::{
+    build_runners_resolver, build_tier_selector, cache_tier_price_ids_missing_in_prod,
+    email_hash_salt_missing_in_prod, should_fatal_on_missing_gate,
+};
+#[cfg(test)]
+use boot::{build_runners_resolver_from, build_tier_selector_from};
 
 /// Storage backing kind captured once at boot by `main()`.
 ///
@@ -57,180 +63,6 @@ use tracing::{info, warn};
 /// lock is read before it is set, we fall back to the literal `"unknown"`
 /// so the health endpoint remains available.
 static STORAGE_BACKING: OnceLock<&'static str> = OnceLock::new();
-
-/// Decide whether a missing native PAT gate is a FATAL boot condition
-/// (red-team finding #7, HIGH).
-///
-/// The native data planes (CAS / AC / Bazel / Turbo) mount with the
-/// container-side Argon2id possession backstop ONLY when
-/// `adapter_pat::PatVerifier::from_env()` (and thus
-/// `native_pat_gate_from_env()`) builds. That builder returns `None` not only
-/// in dev/CI (benign) but ALSO in prod when a `PAT_SIGNING_KEY` rotation
-/// sibling (`PAT_SIGNING_KEY_PREV` / `_NEW`) is PRESENT-but-malformed — a
-/// one-character typo at deploy. In that case the planes would silently mount
-/// WITHOUT the backstop fleet-wide: a silent security downgrade.
-///
-/// This pure predicate isolates the policy so it is unit-testable (the caller
-/// does the `std::process::exit(1)`): in prod (`prod == true`) a missing gate
-/// (`gate_present == false`) is fatal; otherwise (dev/CI, or the gate is
-/// present) it is not.
-#[must_use]
-const fn should_fatal_on_missing_gate(prod: bool, gate_present: bool) -> bool {
-    prod && !gate_present
-}
-
-/// Decide whether a missing/empty `EMAIL_HASH_SALT` is a FATAL boot condition
-/// (CAA-360 MEDIUM — email-hash salt fail-fast).
-///
-/// The CTRL-PRIV-001 `email_hash::hash_email` helper HMAC-SHA256s the normalized
-/// email under `EMAIL_HASH_SALT` when it is set+non-empty, but silently falls
-/// back to a rainbow-table-reversible plain `SHA-256(email)` when it is
-/// unset/empty. The salt is now SET on every prod target, so a future deploy
-/// that DROPPED it must NOT be allowed to silently regress to the unsalted
-/// scheme. This pure predicate isolates the policy so it is unit-testable (the
-/// caller does the `std::process::exit(1)`): in prod (`prod == true`) a missing
-/// salt (`salt_present == false`) is fatal; outside prod (dev/CI) or when the
-/// salt is present it is not — so non-prod behavior is unchanged.
-#[must_use]
-const fn email_hash_salt_missing_in_prod(prod: bool, salt_present: bool) -> bool {
-    prod && !salt_present
-}
-
-/// The REVENUE path's must-arm control. Each of the four cache-tier
-/// `STRIPE_PRICE_ID_*` env vars ([`TIER_PRICE_ENV_TABLE`]) must resolve to a real
-/// Stripe price id in prod. When one is unset/empty, [`build_tier_selector_from`]
-/// silently registers the literal `plan_{tier}` placeholder (F-001 back-compat)
-/// — which a real Stripe `price_live_…` event can NEVER match, so the container
-/// webhook materializer resolves `UnknownPlan` → 422, Stripe stops retrying, and
-/// a PAYING customer is stranded on the free serving path with NO alarm. Solo
-/// ($30/mo) is the primary self-serve SMB tier, so this is launch-critical.
-/// Returns the env-var names still unset/empty in prod (empty ⇒ armed). Pure and
-/// injectable so the policy is unit-tested without the process environment
-/// (mirrors [`email_hash_salt_missing_in_prod`]). Keep the container's map
-/// identical to the signup-worker's reverse map (`apps/signup-worker/src/webhooks/
-/// stripe.ts`) — divergence re-opens the same `UnknownPlan` → 422 seam.
-fn cache_tier_price_ids_missing_in_prod<F>(prod: bool, lookup: F) -> Vec<&'static str>
-where
-    F: Fn(&str) -> Option<String>,
-{
-    if !prod {
-        return Vec::new();
-    }
-    TIER_PRICE_ENV_TABLE
-        .iter()
-        .filter(|(env_name, _fallback, _tier)| {
-            // MSRV 1.80 — `Option::is_none_or` is 1.82; `map_or(true, …)` is the
-            // MSRV-safe equivalent (unset OR whitespace-only ⇒ "missing").
-            lookup(env_name).map_or(true, |v| v.trim().is_empty())
-        })
-        .map(|(env_name, _, _)| *env_name)
-        .collect()
-}
-
-/// Canonical `(env-var-name, literal-fallback-key, tier)` table for the
-/// container Stripe-webhook tier reconciliation (F-001).
-///
-/// Each tuple says: the live Stripe price id is read from the env var
-/// `0`; if that env var is unset/empty we fall back to the literal
-/// placeholder key `1` (back-compat with pre-price-id deployments and
-/// the historical test fixtures). Both keys map to tier `2`.
-///
-/// Only the four Stripe-checkout tiers (`Solo/Starter/Pro/Max`) have a
-/// [`TierKind`] variant; `team` is a legacy operator-assigned SKU and
-/// `enterprise` is a contact-sales route (neither flows through this
-/// container path), so they are intentionally absent.
-const TIER_PRICE_ENV_TABLE: &[(&str, &str, TierKind)] = &[
-    ("STRIPE_PRICE_ID_SOLO", "plan_solo", TierKind::Solo),
-    ("STRIPE_PRICE_ID_STARTER", "plan_starter", TierKind::Starter),
-    ("STRIPE_PRICE_ID_PRO", "plan_pro", TierKind::Pro),
-    ("STRIPE_PRICE_ID_MAX", "plan_max", TierKind::Max),
-];
-
-/// Runners-tier price → `(max_concurrency, max_vcpu_h)` mapping (a SEPARATE
-/// axis from the cache tiers above). Owner-ratified loss-proof ladder
-/// (`corelink-runners docs/product/pricing.md §2`, 2026-06-16) on the real
-/// ~$0.10/vCPU-h Cloudflare-Containers basis: Starter 20/100 · Pro 40/240 ·
-/// Team 80/600 · Scale 160/1200 · Max 320/2400. Keyed on the live
-/// `STRIPE_PRICE_ID_RUNNER_*` price id; unset env ⇒ that tier is dormant (no
-/// literal fallback — a Runners price must be a real Stripe id, never guessed).
-const RUNNER_PRICE_ENV_TABLE: &[(&str, u32, u32)] = &[
-    ("STRIPE_PRICE_ID_RUNNER_STARTER", 20, 100),
-    ("STRIPE_PRICE_ID_RUNNER_PRO", 40, 240),
-    ("STRIPE_PRICE_ID_RUNNER_TEAM", 80, 600),
-    ("STRIPE_PRICE_ID_RUNNER_SCALE", 160, 1200),
-    ("STRIPE_PRICE_ID_RUNNER_MAX", 320, 2400),
-];
-
-/// Build the container tier mapping from the live `STRIPE_PRICE_ID_*`
-/// env values, falling back to the literal `plan_{tier}` keys when an
-/// env var is unset/empty (F-001 fix).
-fn build_tier_selector() -> InMemoryTierSelector {
-    build_tier_selector_from(|name| std::env::var(name).ok())
-}
-
-/// Build the Runners entitlement resolver from the live `STRIPE_PRICE_ID_RUNNER_*`
-/// env, or `None` when NONE are set (the Runners seed path stays dormant →
-/// every subscription is a cache-tier event, exactly as before the price IDs
-/// exist). Mirrors [`build_tier_selector`] but with NO literal fallback (a
-/// Runners price must be a real Stripe id) and returns `Option` so the caller
-/// only wires the resolver when at least one Runners price is configured.
-fn build_runners_resolver() -> Option<InMemoryRunnersEntitlementResolver> {
-    build_runners_resolver_from(|name| std::env::var(name).ok())
-}
-
-fn build_runners_resolver_from<F>(lookup: F) -> Option<InMemoryRunnersEntitlementResolver>
-where
-    F: Fn(&str) -> Option<String>,
-{
-    let mut resolver = InMemoryRunnersEntitlementResolver::new();
-    for (env_name, max_concurrency, max_vcpu_h) in RUNNER_PRICE_ENV_TABLE {
-        if let Some(price_id) = lookup(env_name) {
-            if !price_id.trim().is_empty() {
-                resolver = resolver.with_price(
-                    price_id.trim(),
-                    RunnersEntitlement {
-                        max_concurrency: *max_concurrency,
-                        max_vcpu_h: *max_vcpu_h,
-                    },
-                );
-            }
-        }
-    }
-    if resolver.is_empty() {
-        None
-    } else {
-        Some(resolver)
-    }
-}
-
-/// Pure mapping builder: `lookup` resolves an env-var name to its value
-/// (injected so the policy is unit-testable without touching the
-/// process environment).
-///
-/// For each row: if `lookup(env_name)` yields a non-empty value, map
-/// that real price id → tier; otherwise map the literal `plan_{tier}`
-/// placeholder → tier so test fixtures and pre-price-id deployments
-/// still classify. When the env var IS set, the real price id is the
-/// authoritative key and the literal placeholder is NOT registered
-/// (the real Stripe event never carries it).
-fn build_tier_selector_from<F>(lookup: F) -> InMemoryTierSelector
-where
-    F: Fn(&str) -> Option<String>,
-{
-    let selector = InMemoryTierSelector::new();
-    for (env_name, literal_fallback, tier) in TIER_PRICE_ENV_TABLE {
-        match lookup(env_name) {
-            Some(price_id) if !price_id.trim().is_empty() => {
-                selector.register(price_id.trim(), *tier);
-            }
-            _ => {
-                selector.register(literal_fallback, *tier);
-            }
-        }
-    }
-    selector
-}
-
 /// Liveness probe for two callers:
 /// (1) the DO's `waitForContainerHealth` — only checks status === 200;
 /// (2) `scripts/smoke-prod-corelink.sh` check [2] — asserts 200 *and*
@@ -292,9 +124,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,corelink_server=debug".into()),
+                .unwrap_or_else(|_| "info,corelink_server=info".into()),
         )
         .init();
+
+    // B-077: refuse to serve if the compiled process-wide memory envelope no
+    // longer fits the deployed basic container. This is intentionally before
+    // route construction or listener bind so a stale resize fails closed.
+    corelink_server::container_capacity::validate_runtime_budget()
+        .map_err(|reason| format!("container capacity invariant failed: {reason}"))?;
 
     // Determine storage backing once at boot so `/_health` can surface it.
     // This mirrors the decision gate in `routes/cas.rs` and `routes/ac.rs`
@@ -538,6 +376,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // `turbo_v8::router()` and is NOT constrained by this global default.
     const GLOBAL_BODY_LIMIT_BYTES: usize = 10 * 1024 * 1024; // 10 MiB
     let mut app = routes::build_with_factory(shadow_factory)
+        // The failover heartbeat is deliberately a separate authenticated
+        // internal route. Public `/_health` readiness probes never refresh
+        // failover state and therefore cannot spoof liveness anonymously.
+        .merge(corelink_server::routes::failover::internal_heartbeat_router())
         .route("/_health", get(health_handler))
         .layer(axum::extract::DefaultBodyLimit::max(
             GLOBAL_BODY_LIMIT_BYTES,
@@ -809,8 +651,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // L3: `POST /v1/onboarding/tier-select` — self-serve Stripe Checkout.
-    // Mounted only when the internal-auth secret + D1 + Stripe + DPA version
-    // are ALL configured (fail-safe; same internal-auth gate as the PAT route).
+    // Mounted only when the dedicated tier-select auth secret (or its
+    // documented CORELINK_INTERNAL_AUTH_KEY fallback) + D1 + Stripe + DPA
+    // version are ALL configured (fail-safe; same 32-char gate as other
+    // internal-auth routes).
     if let Some(tier_select_state) = corelink_server::routes::tier_select::build_state_from_env() {
         info!(
             "routes: /v1/onboarding/tier-select mounted (internal auth + D1 + Stripe + DPA version present)"
@@ -820,7 +664,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ));
     } else {
         warn!(
-            "tier-select config incomplete (CORELINK_INTERNAL_AUTH_KEY / CORELINK_DPA_VERSION / \
+            "tier-select config incomplete (CORELINK_TIER_SELECT_AUTH_KEY or CORELINK_INTERNAL_AUTH_KEY / CORELINK_DPA_VERSION / \
              D1 / Stripe); /v1/onboarding/tier-select NOT mounted (dev/CI mode)"
         );
     }
@@ -829,7 +673,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // durable `dpa_acceptances` row the tier-select gate (`is_dpa_accepted`)
     // reads (INV-ONBOARD-DPA-FIRST). Same onboarding proxy contract as
     // tier-select (worker sets x-corelink-internal-auth + x-corelink-tenant-id).
-    // Mounted only when the internal-auth secret + D1 + DPA version + the RS256
+    // Mounted only when the dedicated DPA auth secret (or its documented
+    // CORELINK_INTERNAL_AUTH_KEY fallback) + D1 + DPA version + the RS256
     // receipt signing key (DPA_RECEIPT_SIGNING_KEY) are ALL present — fail-CLOSED
     // (unmounted, logged) rather than 500 when the key is unset/invalid.
     if let Some(dpa_accept_state) = corelink_server::routes::dpa_accept::build_state_from_env() {
@@ -841,15 +686,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ));
     } else {
         warn!(
-            "dpa-accept config incomplete (CORELINK_INTERNAL_AUTH_KEY / CORELINK_DPA_VERSION / \
+            "dpa-accept config incomplete (CORELINK_DPA_ACCEPT_AUTH_KEY or CORELINK_INTERNAL_AUTH_KEY / CORELINK_DPA_VERSION / \
              DPA_RECEIPT_SIGNING_KEY / D1); /v1/onboarding/dpa-accept NOT mounted (fail-CLOSED)"
         );
     }
 
+    // Shared D1 client (WP-D1): one StorageEnv → one D1HttpClient shared by
+    // the billing state writer, durable audit emitter (MED-5), and durable
+    // webhook DLQ. Build it before the mount gate so a webhook secret alone
+    // can never enable a non-durable money path; dev/CI without D1 remain
+    // unmounted (fail-CLOSED).
+    let d1_client: Option<Arc<corelink_server::storage::d1_http::D1HttpClient>> =
+        match corelink_server::storage::StorageEnv::from_env() {
+            Some(storage_env) => {
+                match corelink_server::storage::d1_http::D1HttpClient::new(&storage_env) {
+                    Ok(client) => Some(Arc::new(client)),
+                    Err(e) => {
+                        warn!(
+                            error = %e,
+                            "billing: D1HttpClient init failed; \
+                             webhook NOT mounted (fail-CLOSED)"
+                        );
+                        None
+                    }
+                }
+            }
+            None => {
+                warn!(
+                    "billing: D1 config absent (R2_S3_*/CF D1); \
+                     Stripe webhook NOT mounted (fail-CLOSED)"
+                );
+                None
+            }
+        };
+
     // R2-12: the Stripe webhook route is MERGED onto the same listener when
     // STRIPE_WEBHOOK_SECRET is present; absent → skip (dev/CI without billing
     // config stays green). Either way the data plane above is always served.
-    if let Ok(secret) = std::env::var("STRIPE_WEBHOOK_SECRET") {
+    // A webhook secret alone is not enough to mount billing: deduplication,
+    // materialization, audit, and DLQ all require durable D1. Never substitute
+    // an in-memory DLQ after claiming an idempotency row: a restart would lose
+    // the only copy of a failed event.
+    if let (Ok(secret), Some(client)) = (std::env::var("STRIPE_WEBHOOK_SECRET"), d1_client.as_ref())
+    {
         // Wave 17 + 18: the HTTP shell binds the production
         // materializer + audit emitter + D1-backed idempotency store
         // from `corelink-billing-stripe-materializer`. The native
@@ -885,43 +764,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 ArchiveProducerBillingEmitter as _, CfD1BillingWriter as _,
             };
         }
-        // Item 7b (money-path launch-blocker): wire the DURABLE D1-HTTP
-        // billing writer when the D1 config is present, so Stripe-webhook
-        // state (customers / subscriptions / invoices / disputes / refunds
-        // / tier / the idempotency dedup row) is materialized to D1 over
-        // the CF REST API — NOT lost to the in-memory mirror on the next
-        // container restart. The sync `BillingD1Writer` trait is bridged
-        // to the async `D1HttpClient` inside `D1HttpBillingWriter`
-        // (`block_in_place`; the trait stays sync for the shared wasm32
-        // Worker path). Dev/CI without `R2_S3_*`/CF D1 config keep the
-        // `InMemoryBillingD1` mirror so the suite stays green offline.
-        // Shared D1 client (WP-D1): one StorageEnv → one D1HttpClient shared
-        // by the billing STATE writer, the durable AUDIT emitter (MED-5), and
-        // the durable webhook DLQ. Dev/CI without the CF D1 config keep all
-        // three in-memory so the suite stays green offline.
-        let d1_client: Option<Arc<corelink_server::storage::d1_http::D1HttpClient>> =
-            match corelink_server::storage::StorageEnv::from_env() {
-                Some(storage_env) => {
-                    match corelink_server::storage::d1_http::D1HttpClient::new(&storage_env) {
-                        Ok(client) => Some(Arc::new(client)),
-                        Err(e) => {
-                            warn!(
-                                error = %e,
-                                "billing: D1HttpClient init failed; \
-                                 FALLING BACK to in-memory billing state/audit/DLQ"
-                            );
-                            None
-                        }
-                    }
-                }
-                None => {
-                    warn!(
-                        "billing: D1 config absent (R2_S3_*/CF D1); \
-                         using in-memory billing state/audit/DLQ (dev/CI — NOT durable)"
-                    );
-                    None
-                }
-            };
         let billing_d1: Arc<dyn BillingD1Writer> = match &d1_client {
             Some(client) => {
                 info!(
@@ -994,16 +836,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // WP-D1: durable DLQ — a quarantined event MUST survive a container
         // restart (the dedup row committed before materialize means Stripe's
         // retries can never re-run the handler; the DLQ is the only copy).
-        let webhook_dlq: Arc<dyn corelink_billing::stripe::real::dlq::WebhookDlqStore> =
-            match &d1_client {
-                Some(client) => {
-                    info!("billing: DURABLE D1 webhook-DLQ store wired (migrations 0045+0094)");
-                    Arc::new(corelink_server::webhook_dlq_d1::D1WebhookDlqStore::new(
-                        Arc::clone(client),
-                    ))
-                }
-                None => Arc::new(InMemoryWebhookDlqStore::new()),
-            };
+        info!("billing: DURABLE D1 webhook-DLQ store wired (migrations 0045+0094)");
+        let webhook_dlq: Arc<dyn corelink_billing::stripe::real::dlq::WebhookDlqStore> = Arc::new(
+            corelink_server::webhook_dlq_d1::D1WebhookDlqStore::new(Arc::clone(client)),
+        );
         let dispatcher = Arc::new(
             WebhookDispatcher::new(
                 secret.into_bytes(),
@@ -1021,6 +857,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             "Stripe webhook route mounted on the data-plane listener"
         );
         app = app.merge(webhook_router(state));
+    } else if std::env::var("STRIPE_WEBHOOK_SECRET").is_ok() {
+        warn!("Stripe webhook secret present but durable D1 is unavailable; webhook NOT mounted (fail-CLOSED)");
     } else {
         warn!("STRIPE_WEBHOOK_SECRET unset; Stripe webhook route NOT mounted (dev/CI mode)");
     }
@@ -1047,24 +885,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
-    // ── BYOK activation inert-in-prod boot note (C1) ──
-    // The prod container links NO `byok-*-real` feature, so the only
-    // `KmsProvider` is the `InMemoryFake` (XOR-mask "crypto", "Not for
-    // production"). `/v1/admin/byok/activate` fail-CLOSES to 501 in that build
-    // so a tenant can never be reported `active` under fake crypto. Log it once
-    // at boot so the inert state is observable alongside the other guards.
-    // (Emitted last, after the OKF-cited boot blocks above, to keep the
-    // anti-drift line-anchors stable — same rule as the DSR-anchor mount.)
+    // ── BYOK provider readiness boot note (C1) ──
+    // A binary without a real provider is deliberately unavailable; there is
+    // no plaintext/XOR fallback. The activation route repeats this readiness
+    // check immediately before any D1 mutation, so a feature flag or stale
+    // boot state can never masquerade as usable KMS custody.
     if corelink_server::byok_orchestrator::active_provider()
-        == corelink_server::byok_orchestrator::ActiveProvider::InMemoryFake
+        == corelink_server::byok_orchestrator::ActiveProvider::Unavailable
     {
         info!(
-            event = "byok_activation_inert",
+            event = "byok_activation_unavailable",
             provider = corelink_server::byok_orchestrator::active_provider().as_str(),
-            "BYOK activation is INERT (no real KmsProvider) — \
+            "BYOK activation is UNAVAILABLE (no real KmsProvider) — \
              /v1/admin/byok/activate returns 501"
         );
     }
+
+    // ── B-083: production BYOK revocation scheduler ──
+    // The detector is only useful when its active-key population, status
+    // store, and customer notification sink are all durable.  In particular,
+    // never start a loop backed by the detector's hermetic empty source: that
+    // would be a healthy-looking but vacuous scheduler.  A real-provider
+    // binary therefore refuses to serve when durable D1 wiring is absent.
+    #[cfg(any(
+        feature = "byok-aws-real",
+        feature = "byok-gcp-real",
+        feature = "byok-azure-real",
+        feature = "byok-vault-real"
+    ))]
+    let _byok_revocation_task = {
+        let storage_env = corelink_server::storage::StorageEnv::from_env()
+            .ok_or("BYOK revocation scheduler requires durable D1/R2 configuration")?;
+        let client = corelink_server::storage::d1_http::D1HttpClient::new(&storage_env)
+            .map_err(|error| format!("BYOK revocation D1 client init failed: {error}"))?;
+        let provider = corelink_server::byok_orchestrator::make_provider()
+            .await
+            .map_err(|error| format!("BYOK provider init failed: {error}"))?;
+        let detector = corelink_server::byok_revocation_runtime::detector_for_client(
+            Arc::new(client),
+            provider,
+        )
+        .map_err(|error| format!("BYOK revocation detector init failed: {error}"))?;
+        debug_assert!(detector.has_key_source());
+        info!(
+            event = "byok_revocation_scheduler_started",
+            provider = corelink_server::byok_orchestrator::active_provider().as_str(),
+            "BYOK revocation run_loop wired before listener bind"
+        );
+        tokio::spawn(detector.run_loop())
+    };
+
+    #[cfg(not(any(
+        feature = "byok-aws-real",
+        feature = "byok-gcp-real",
+        feature = "byok-azure-real",
+        feature = "byok-vault-real"
+    )))]
+    let _byok_revocation_task: Option<tokio::task::JoinHandle<()>> = None;
 
     // Single HTTP/1.1 listener on PORT (50051) — the DO's getTcpPort target.
     let listener = tokio::net::TcpListener::bind(serve_addr).await?;
@@ -1085,214 +962,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 #[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
-
-    use super::{
-        build_runners_resolver_from, build_tier_selector_from,
-        cache_tier_price_ids_missing_in_prod, email_hash_salt_missing_in_prod,
-        should_fatal_on_missing_gate,
-    };
-    use corelink_billing_stripe_materializer::{
-        RunnersEntitlement, RunnersEntitlementResolver, TierSelectError, TierSelector,
-    };
-    use corelink_tier_selection::tier::TierKind;
-    use std::collections::HashMap;
-
-    /// Finding #7 truth table: the boot guard fails fatal ONLY when prod is
-    /// detected AND the native PAT gate did not build. Dev/CI (not prod) is
-    /// never fatal regardless of the gate; a present gate in prod is fine.
-    #[test]
-    fn fatal_only_when_prod_and_gate_missing() {
-        // prod + gate missing → FATAL (the silent-downgrade case finding #7
-        // closes).
-        assert!(should_fatal_on_missing_gate(true, false));
-        // prod + gate present → OK (the backstop is wired).
-        assert!(!should_fatal_on_missing_gate(true, true));
-        // dev/CI + gate missing → OK (benign; this is the normal dev posture).
-        assert!(!should_fatal_on_missing_gate(false, false));
-        // dev/CI + gate present → OK.
-        assert!(!should_fatal_on_missing_gate(false, true));
-    }
-
-    /// Revenue-path truth table: in prod the boot guard names EXACTLY the
-    /// cache-tier `STRIPE_PRICE_ID_*` env vars that are unset/empty (the case
-    /// where a real `price_live_…` would fall back to the un-matchable
-    /// `plan_{tier}` placeholder → `UnknownPlan` → 422 on a paying customer).
-    /// Non-prod is never gated (dev/CI + fixture deployments keep the literal
-    /// fallbacks). A fully-configured prod map arms clean (empty result).
-    #[test]
-    fn cache_tier_price_ids_missing_names_exactly_the_unset_tiers_in_prod() {
-        fn map_of(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-            pairs
-                .iter()
-                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-                .collect()
-        }
-
-        // prod + all four set → armed (empty).
-        let full = map_of(&[
-            ("STRIPE_PRICE_ID_SOLO", "price_live_solo"),
-            ("STRIPE_PRICE_ID_STARTER", "price_live_starter"),
-            ("STRIPE_PRICE_ID_PRO", "price_live_pro"),
-            ("STRIPE_PRICE_ID_MAX", "price_live_max"),
-        ]);
-        assert!(cache_tier_price_ids_missing_in_prod(true, |n| full.get(n).cloned()).is_empty());
-
-        // prod + Solo unset → names EXACTLY Solo (the primary-tier-unsellable case).
-        let no_solo = map_of(&[
-            ("STRIPE_PRICE_ID_STARTER", "price_live_starter"),
-            ("STRIPE_PRICE_ID_PRO", "price_live_pro"),
-            ("STRIPE_PRICE_ID_MAX", "price_live_max"),
-        ]);
-        assert_eq!(
-            cache_tier_price_ids_missing_in_prod(true, |n| no_solo.get(n).cloned()),
-            vec!["STRIPE_PRICE_ID_SOLO"]
-        );
-
-        // prod + a whitespace-only value counts as unset (trim → empty).
-        let blank_pro = map_of(&[
-            ("STRIPE_PRICE_ID_SOLO", "price_live_solo"),
-            ("STRIPE_PRICE_ID_STARTER", "price_live_starter"),
-            ("STRIPE_PRICE_ID_PRO", "   "),
-            ("STRIPE_PRICE_ID_MAX", "price_live_max"),
-        ]);
-        assert_eq!(
-            cache_tier_price_ids_missing_in_prod(true, |n| blank_pro.get(n).cloned()),
-            vec!["STRIPE_PRICE_ID_PRO"]
-        );
-
-        // NON-prod is never gated, even with every price id unset.
-        assert!(cache_tier_price_ids_missing_in_prod(false, |_| None).is_empty());
-    }
-
-    /// CAA-360 MEDIUM truth table: the boot guard refuses to boot ONLY when prod
-    /// is detected AND `EMAIL_HASH_SALT` is unset/empty — the exact case where
-    /// `email_hash::hash_email` would silently regress to the rainbow-table-
-    /// reversible unsalted `SHA-256`. Prod + salt present is fine (salted path);
-    /// non-prod is never fatal regardless of the salt (dev/CI + tests unchanged).
-    #[test]
-    fn email_hash_salt_fatal_only_when_prod_and_salt_missing() {
-        // prod + salt unset/empty → FATAL (the silent-unsalted-regression case).
-        assert!(email_hash_salt_missing_in_prod(true, false));
-        // prod + salt present → OK (the salted HMAC path is guaranteed).
-        assert!(!email_hash_salt_missing_in_prod(true, true));
-        // non-prod + salt unset → OK (no regression: dev/CI + tests run unsalted).
-        assert!(!email_hash_salt_missing_in_prod(false, false));
-        // non-prod + salt present → OK.
-        assert!(!email_hash_salt_missing_in_prod(false, true));
-    }
-
-    /// F-001 regression: when the live `STRIPE_PRICE_ID_*` env values are
-    /// present, the tier selector MUST classify the real `price_…` ids
-    /// (the keys a real `customer.subscription.updated` carries) — not
-    /// the literal `plan_*` placeholders. Before the fix the container
-    /// map only held `plan_*`, so every real event 422'd (`UnknownPlan`).
-    #[test]
-    fn tier_selector_maps_real_price_ids_when_env_set() {
-        let env: HashMap<&str, &str> = HashMap::from([
-            ("STRIPE_PRICE_ID_SOLO", "price_live_solo_abc"),
-            ("STRIPE_PRICE_ID_STARTER", "price_live_starter_def"),
-            ("STRIPE_PRICE_ID_PRO", "price_live_pro_ghi"),
-            ("STRIPE_PRICE_ID_MAX", "price_live_max_jkl"),
-        ]);
-        let sel = build_tier_selector_from(|name| env.get(name).map(|s| (*s).to_string()));
-
-        // Real price ids resolve.
-        assert_eq!(
-            sel.compute_tier("price_live_solo_abc", 1).unwrap(),
-            TierKind::Solo
-        );
-        assert_eq!(
-            sel.compute_tier("price_live_starter_def", 3).unwrap(),
-            TierKind::Starter
-        );
-        assert_eq!(
-            sel.compute_tier("price_live_pro_ghi", 5).unwrap(),
-            TierKind::Pro
-        );
-        assert_eq!(
-            sel.compute_tier("price_live_max_jkl", 1).unwrap(),
-            TierKind::Max
-        );
-
-        // The literal placeholder is NOT registered once the real id wins
-        // (a real Stripe event never carries `plan_solo`).
-        assert!(matches!(
-            sel.compute_tier("plan_solo", 1),
-            Err(TierSelectError::UnknownPlan(_))
-        ));
-    }
-
-    /// F-001: an empty/whitespace env value falls back to the literal
-    /// `plan_{tier}` key so test fixtures + pre-price-id deployments
-    /// still classify (back-compat, no regression for the old wiring).
-    #[test]
-    fn tier_selector_falls_back_to_literal_when_env_unset_or_blank() {
-        let env: HashMap<&str, &str> = HashMap::from([
-            // SOLO unset entirely; STARTER blank; PRO whitespace-only.
-            ("STRIPE_PRICE_ID_MAX", "price_live_max_only"),
-            ("STRIPE_PRICE_ID_STARTER", ""),
-            ("STRIPE_PRICE_ID_PRO", "   "),
-        ]);
-        let sel = build_tier_selector_from(|name| env.get(name).map(|s| (*s).to_string()));
-
-        assert_eq!(sel.compute_tier("plan_solo", 1).unwrap(), TierKind::Solo);
-        assert_eq!(
-            sel.compute_tier("plan_starter", 1).unwrap(),
-            TierKind::Starter
-        );
-        assert_eq!(sel.compute_tier("plan_pro", 1).unwrap(), TierKind::Pro);
-        // MAX had a real id → real id wins.
-        assert_eq!(
-            sel.compute_tier("price_live_max_only", 1).unwrap(),
-            TierKind::Max
-        );
-    }
-
-    #[test]
-    fn runners_resolver_dormant_when_no_price_ids_set() {
-        // No STRIPE_PRICE_ID_RUNNER_* env → None (Runners seed stays dormant,
-        // every subscription routes to the cache tier path).
-        let env: HashMap<&str, &str> = HashMap::new();
-        let r = build_runners_resolver_from(|name| env.get(name).map(|s| (*s).to_string()));
-        assert!(r.is_none());
-    }
-
-    #[test]
-    fn runners_resolver_maps_set_prices_to_the_ratified_ladder() {
-        let env: HashMap<&str, &str> = HashMap::from([
-            ("STRIPE_PRICE_ID_RUNNER_STARTER", "price_live_run_starter"),
-            ("STRIPE_PRICE_ID_RUNNER_TEAM", "price_live_run_team"),
-            ("STRIPE_PRICE_ID_RUNNER_MAX", "price_live_run_max"),
-            ("STRIPE_PRICE_ID_RUNNER_PRO", ""), // unset/blank → not wired
-        ]);
-        let r = build_runners_resolver_from(|name| env.get(name).map(|s| (*s).to_string()))
-            .expect("at least one runner price set → Some");
-        // Ratified ladder: Starter 20/100, Team 80/600, Max 320/2400.
-        assert_eq!(
-            r.resolve("price_live_run_starter"),
-            Some(RunnersEntitlement {
-                max_concurrency: 20,
-                max_vcpu_h: 100
-            })
-        );
-        assert_eq!(
-            r.resolve("price_live_run_team"),
-            Some(RunnersEntitlement {
-                max_concurrency: 80,
-                max_vcpu_h: 600
-            })
-        );
-        assert_eq!(
-            r.resolve("price_live_run_max"),
-            Some(RunnersEntitlement {
-                max_concurrency: 320,
-                max_vcpu_h: 2400
-            })
-        );
-        // Blank PRO was not wired; a cache price is not a runner price.
-        assert_eq!(r.resolve("price_live_run_pro"), None);
-        assert_eq!(r.resolve("plan_pro"), None);
-    }
-}
+#[path = "main_tests.rs"]
+mod tests;

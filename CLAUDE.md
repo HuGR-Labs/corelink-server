@@ -6,8 +6,8 @@ Context for AI agents working in this repo. Keep it lean + high-signal.
 
 A **multi-tenant content-addressable cache + storage-governance platform** on
 Cloudflare (Workers + Durable Objects + Containers + R2 + D1). **95 Rust packages**
-in the workspace — count them with `cargo metadata`, never by listing `crates/`:
-that directory holds **75** of them, and 20 live under `tests/`, `tools/` and
+in the workspace — the population guard is `cargo metadata --no-deps --format-version=1`,
+never a listing of `crates/`: that directory holds **75** of them, and 20 live under `tests/`, `tools/` and
 `apps/` (the 12 `e2e-*` suites among them). Directory name is also not package
 name — `crates/corelink-container` is the package `corelink-server`,
 `crates/tenant-path` is `corelink-tenant-path`, `tools/dt-cli` is
@@ -20,7 +20,8 @@ It already exposes multiple cache surfaces: native CAS/AC, **Bazel REAPI v2**
 
 ## Architecture wiki (OKF)
 
-`docs/knowledge/` is the **code-grounded architecture wiki** — 160 OKF concepts,
+`docs/knowledge/` is the **code-grounded architecture wiki** — **170 OKF concepts**
+(recount with `python3 scripts/validate_okf.py`; `index.md` and `log.md` are reserved),
 each naming the `source_files` it explains (anti-drift gated against them).
 Browse `docs/knowledge/index.md`, or the rendered site `docs/okf-wiki-site/index.html` (search + cross-link graph; regen via `scripts/okf_render.py`). **Rule: before modifying a
 subsystem, load its concepts first** — don't work blind. Query them with
@@ -43,7 +44,7 @@ for bodies), or invoke the **`okf-context`** skill.
 
 ## Gates (must stay green before merge)
 
-- `python3 scripts/validate_specs.py` → **474 full-schema + 11 YAML-only (485 total), 0 failures**.
+- `python3 scripts/validate_specs.py` → **479 full-schema + 11 YAML-only (490 total), 0 failures** (counts are produced by the validator, not a hand-maintained gate).
 - Secrets matrix: `bash scripts/secrets-checklist-verify.sh` (OK, no drift) +
   `python3 scripts/validate_secrets_matrix.py` (code_only=0). Both exclude build output
   (`.open-next`/`.wrangler`) — don't let them scan generated bundles.

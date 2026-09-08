@@ -4,12 +4,14 @@ title: "ADR-0040 — Multipart D1 sharding strategy (per-region, 80% trigger)"
 description: "Shards the chunks table per-region (5 shards) with an 80%-of-10GB sharding trigger, because projected row counts exceed the D1 per-database hard limit."
 source_files:
   - "specs/03_architecture/adrs/ADR-0040-multipart-d1-sharding.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
-provenance: "AUTHORED"
+\1provenance: "AUTHORED"
 tags: ["adr", "multipart", "d1", "sharding", "scaling", "s05"]
 timestamp: "2026-06-26T00:00:00Z"
----
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0040-multipart-d1-sharding.md@6dbc5e174b7b06cd2637a2df21a52f7c16465570"
+checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 
+---
 # ADR-0040 — Multipart D1 sharding strategy (per-region, 80% trigger)
 
 The `chunks` table is the densest control-plane table CoreLink has, and at GA-target workload its

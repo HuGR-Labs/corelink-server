@@ -289,9 +289,10 @@ async fn state_mutators_route_to_correct_materializer_methods() {
             "charge.dispute.created",
             CanonicalWebhookEventType::ChargeDisputeCreated,
         ),
+        ("charge.refunded", CanonicalWebhookEventType::ChargeRefunded),
     ];
     for (i, (raw, expected)) in pairs.iter().enumerate() {
-        let (state, _idem, mat, _audit, _sli) = build_fixture();
+        let (state, _idem, mat, audit, _sli) = build_fixture();
         let event_id = format!("evt_smut_{i}");
         let body = event_body(&event_id, raw);
         let headers = signed_headers(&body, FIXED_TS);
@@ -303,6 +304,11 @@ async fn state_mutators_route_to_correct_materializer_methods() {
         assert_eq!(calls.len(), 1, "raw={raw}");
         assert_eq!(&calls[0].0, expected, "raw={raw}");
         assert_eq!(calls[0].1, event_id);
+        assert_eq!(
+            audit.count_with_outcome(AuditOutcome::Dispatched),
+            1,
+            "raw={raw} must emit a dispatched audit",
+        );
     }
 }
 
@@ -316,7 +322,6 @@ async fn observability_echoes_audit_without_state_mutation() {
     let echoes = [
         "customer.subscription.created",
         "customer.subscription.trial_will_end",
-        "charge.refunded",
         "customer.created",
         "invoice.created",
     ];

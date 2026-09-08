@@ -1,0 +1,101 @@
+name: CodeQL evidence watchdog
+
+# A step in codeql.yml cannot observe a matrix job that never received a
+# runner. This independent schedule checks GitHub's platform truth: a recent
+# successful scheduled run, the exact three-language job population, and one
+# retained SARIF artifact per language. It stays on the product-owned fabric
+# to preserve the zero-hosted-CI mandate; runner-fleet-health remains the
+# separate signal for an unavailable fabric.
+
+on:
+  schedule:
+    # CodeQL starts at 05:30 UTC. Leave 4.5 hours for its serialized
+    # three-leg matrix (each leg has a 60-minute ceiling).
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: codeql-evidence-watchdog
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Verify CodeQL nightly evidence
+    runs-on: corelink
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Inspect scheduled CodeQL run, matrix, and artifacts
+        id: evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 scripts/check_codeql_evidence.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --workflow codeql.yml \
+            --max-age-hours 26 \
+            --report artifacts/codeql-evidence-watchdog.json
+
+      - name: Upload watchdog evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7.0.1
+        with:
+          name: codeql-evidence-watchdog-${{ github.run_id }}
+          path: artifacts/codeql-evidence-watchdog.json
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Open or update evidence-gap issue
+        if: steps.evidence.outcome == 'failure'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script@v9.0.0
+        env:
+          REPORT_PATH: artifacts/codeql-evidence-watchdog.json
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- codeql-evidence-gap -->';
+            const report = fs.existsSync(process.env.REPORT_PATH)
+              ? JSON.parse(fs.readFileSync(process.env.REPORT_PATH, 'utf8'))
+              : { status: 'watchdog_error', reason: 'watchdog report was not produced' };
+            const { owner, repo } = context.repo;
+            const title = '[SEV-2] CodeQL nightly evidence gap';
+            const body = [
+              marker,
+              '## CodeQL nightly evidence gap',
+              '',
+              `The watchdog could not prove that the scheduled CodeQL matrix completed with all retained SARIF artifacts: **${report.reason}**.`,
+              '',
+              `- Status: \`${report.status}\``,
+              `- Scanner run: ${report.html_url || 'not observed'}`,
+              `- Watchdog run: ${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+              '- Expected jobs: `CodeQL rust`, `CodeQL javascript-typescript`, `CodeQL python`',
+              '- Expected artifacts: `codeql-sarif-{language}` (90-day retention)',
+              '',
+              'Action packet: follow `RB-STATIC-ANALYSIS-TRIAGE`, inspect the CoreLink runner fleet, and restore a successful retained matrix before closing this issue.',
+            ].join('\n');
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const existing = open.find((issue) => issue.body && issue.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, title, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }
+
+      - name: Fail closed on CodeQL evidence gap
+        if: steps.evidence.outcome == 'failure'
+        run: |
+          echo 'CodeQL nightly evidence is absent or unhealthy; see the tracking issue and watchdog artifact.' >&2
+          exit 1

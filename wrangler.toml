@@ -7,8 +7,9 @@ compatibility_date = "2026-04-01"
 # nodejs_compat: required by @sentry/cloudflare (worker/src/index.ts), which imports
 # node:async_hooks (AsyncLocalStorage). Without it the prod deploy is rejected by the
 # CF API with `No such module "node:async_hooks"` [10021]. Top-level so it applies to
-# ALL envs (prod + prod-sam/lhr/nrt/syd + staging); matches the other workers
-# (apps/signup-worker, apps/get-corelink-worker). date 2026-04-01 ≥ the flag's floor.
+# All deployed root-worker environments (prod + prod-sam/lhr/nrt/syd) inherit
+# this flag. Other Workers may have their own staging configurations; the root
+# Worker has no staging deployment. date 2026-04-01 ≥ the flag's floor.
 compatibility_flags = ["nodejs_compat"]
 
 # Worker (control plane) — Wave 32 Phase B implementation
@@ -258,12 +259,6 @@ new_sqlite_classes = ["RequestMeterCoordinatorDO", "RequestMeterShardDO"]
 [vars]
 ENVIRONMENT = "dev"
 
-# WI-S17-001 — Chaos scheduler weekly cron (Mondays 06:00 UTC).
-# Default = dev/staging only; production env intentionally omits [triggers]
-# so chaos NEVER fires in prod (HARD env check at code level is the
-# second line of defense; this cron-level omission is the first).
-# Catalog: specs/_runbooks/RB-CHAOS-CATALOG.md.
-#
 # WI-S20-006 — Synthetic page weekly drill (Mondays 14:00 UTC).
 # Triggers `corelink-synthetic-pager` to emit a synthetic SEV-2 page
 # through the dedicated PagerDuty `synthetic-drill` service routing
@@ -278,7 +273,6 @@ ENVIRONMENT = "dev"
 #   <PIN_AT_RELEASE> — pinned at PRR ship gate per supply-chain canonical.
 [triggers]
 crons = [
-    "0 6 * * 1",
     "0 14 * * 1",
 ]
 
@@ -310,7 +304,14 @@ name = "corelink-prod"
 # put, WP3 2026-08-17); declared here as non-secret vars so the live prod behavior
 # is reproducible from config and a fresh deploy does NOT silently ship them OFF
 # (which would regress edge-HIT latency + under-count billing).
-vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad", R2_CAS_REGION = "iad", EDGE_PUBLIC_READ = "serve", EDGE_ASYNC_METER = "on", EDGE_DO_METER = "serve", OCI_PUBLIC_DEDUP_ENABLED = "1", OCI_UPSTREAM_ON_MISS = "1", AUDIT_DRAIN_LEASE_ENABLED = "1", EDGE_FIND_MISSING = "on" }
+# B-125: the container default is 200 rows per call. Keep the production
+# budget explicit at 512; the container writes bounded JSON1 chunks (32 rows)
+# and the signup-worker caller still caps calls + wall time, so this raises
+# burst capacity without an unbounded D1 write storm.
+vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad", R2_CAS_REGION = "iad", R2_CHUNK_BUCKET = "corelink-chunk-iad", R2_CHUNK_REGION = "iad", EDGE_PUBLIC_READ = "serve", EDGE_ASYNC_METER = "on", EDGE_DO_METER = "serve", OCI_PUBLIC_DEDUP_ENABLED = "1", OCI_UPSTREAM_ON_MISS = "1", AUDIT_DRAIN_BATCH_LIMIT = "512", AUDIT_DRAIN_LEASE_ENABLED = "1", EDGE_FIND_MISSING = "on" }
+
+[env.prod.triggers]
+crons = []
 
 # Native retained Workers Logs (per-env; not inherited from top-level).
 [env.prod.observability]
@@ -393,9 +394,10 @@ service = "corelink-prod-syd"
 # corelink-prod deploys with `entrypoint =` set — a binding that names an
 # entrypoint the target Worker does not export is rejected at deploy time.
 #
-# Scope note: this is the ONLY ANALYTICS_SVC binding in the repo. [env.staging]
-# and the regional envs (prod-sam/lhr/nrt/syd) declare no services blocks at
-# all, so the emit stays a silent no-op there — unchanged by this WP.
+# Scope note: this is the ONLY ANALYTICS_SVC binding in the root Worker config.
+# The root Worker has no staging deployment, and the regional envs
+# (prod-sam/lhr/nrt/syd) declare no services blocks at all, so the emit stays a
+# silent no-op there — unchanged by this WP.
 [[env.prod.services]]
 binding = "ANALYTICS_SVC"
 service = "corelink-analytics-prod"
@@ -568,145 +570,6 @@ class_name = "RequestMeterShardDO"
 # it. Every one of the other bindings above is mirrored for the same reason.
 
 # ============================================================================
-# R2-10 — Staging environment (`wrangler deploy --env staging`).
-#
-# Staging is a 1:1 mirror of prod topology with reduced container max
-# instances and a separate bucket / KV / D1 namespace per binding. The
-# canary + rollout flows promote artifacts staging -> prod, so all
-# binding NAMES must match prod exactly — only the underlying
-# `bucket_name` / `database_id` / `id` values change.
-# ============================================================================
-
-[env.staging]
-name = "corelink-staging"
-vars = { ENVIRONMENT = "staging" }
-
-# Native retained Workers Logs (per-env; not inherited from top-level).
-[env.staging.observability]
-enabled = true
-head_sampling_rate = 1
-
-[[env.staging.r2_buckets]]
-binding = "CAS_BUCKET"
-bucket_name = "corelink-cas-staging"
-
-[[env.staging.r2_buckets]]
-binding = "AC_BUCKET_SAM"
-bucket_name = "corelink-ac-sam-staging"
-
-[[env.staging.r2_buckets]]
-binding = "AC_BUCKET_IAD"
-bucket_name = "corelink-ac-iad-staging"
-
-[[env.staging.r2_buckets]]
-binding = "AC_BUCKET_LHR"
-bucket_name = "corelink-ac-lhr-staging"
-
-[[env.staging.r2_buckets]]
-binding = "AC_BUCKET_NRT"
-bucket_name = "corelink-ac-nrt-staging"
-
-[[env.staging.r2_buckets]]
-binding = "AC_BUCKET_SYD"
-bucket_name = "corelink-ac-syd-staging"
-
-[[env.staging.r2_buckets]]
-binding = "CHUNK_BUCKET_SAM"
-bucket_name = "corelink-chunk-sam-staging"
-
-[[env.staging.r2_buckets]]
-binding = "CHUNK_BUCKET_IAD"
-bucket_name = "corelink-chunk-iad-staging"
-
-[[env.staging.r2_buckets]]
-binding = "CHUNK_BUCKET_LHR"
-bucket_name = "corelink-chunk-lhr-staging"
-
-[[env.staging.r2_buckets]]
-binding = "CHUNK_BUCKET_NRT"
-bucket_name = "corelink-chunk-nrt-staging"
-
-[[env.staging.r2_buckets]]
-binding = "CHUNK_BUCKET_SYD"
-bucket_name = "corelink-chunk-syd-staging"
-
-[[env.staging.r2_buckets]]
-binding = "MANIFEST_BUCKET_SAM"
-bucket_name = "corelink-manifest-sam-staging"
-
-[[env.staging.r2_buckets]]
-binding = "MANIFEST_BUCKET_IAD"
-bucket_name = "corelink-manifest-iad-staging"
-
-[[env.staging.r2_buckets]]
-binding = "MANIFEST_BUCKET_LHR"
-bucket_name = "corelink-manifest-lhr-staging"
-
-[[env.staging.r2_buckets]]
-binding = "MANIFEST_BUCKET_NRT"
-bucket_name = "corelink-manifest-nrt-staging"
-
-[[env.staging.r2_buckets]]
-binding = "MANIFEST_BUCKET_SYD"
-bucket_name = "corelink-manifest-syd-staging"
-
-[[env.staging.kv_namespaces]]
-binding = "METADATA_KV"
-id = "PLACEHOLDER_STAGING_METADATA_KV_ID"
-
-[[env.staging.kv_namespaces]]
-binding = "CLERK_JWKS_KV"
-id = "PLACEHOLDER_STAGING_CLERK_JWKS_KV_ID"
-
-[[env.staging.kv_namespaces]]
-binding = "NEGATIVE_CACHE_KV"
-id = "PLACEHOLDER_STAGING_NEG_CACHE_KV_ID"
-
-[[env.staging.d1_databases]]
-binding = "CONFIG_DB"
-database_name = "corelink-config-staging"
-database_id = "PLACEHOLDER_STAGING_D1_CONFIG_DB_ID"
-
-[[env.staging.durable_objects.bindings]]
-name = "CORELINK_SERVER"
-class_name = "CoreLinkServer"
-
-[[env.staging.durable_objects.bindings]]
-name = "ROLLOUT_DO"
-class_name = "RolloutController"
-
-[[env.staging.durable_objects.bindings]]
-name = "EVENT_LOG_DO"
-class_name = "EventLogDO"
-
-[[env.staging.durable_objects.bindings]]
-name = "REPLICATION_COORDINATOR_DO"
-class_name = "ReplicationCoordinatorDO"
-
-# P3 metering DOs (INERT until EDGE_DO_METER flip) — see base bindings.
-[[env.staging.durable_objects.bindings]]
-name = "REQUEST_METER_COORDINATOR_DO"
-class_name = "RequestMeterCoordinatorDO"
-
-[[env.staging.durable_objects.bindings]]
-name = "REQUEST_METER_SHARD_DO"
-class_name = "RequestMeterShardDO"
-
-[[env.staging.containers]]
-class_name = "CoreLinkServer"
-image = "./Dockerfile"
-max_instances = 10
-instance_type = "basic"
-
-# Staging crons — chaos + synthetic-pager fire here too (per WI-S17/S20
-# default = dev/staging only). Prod remains crons-omitted.
-[env.staging.triggers]
-crons = [
-    "0 6 * * 1",
-    "0 14 * * 1",
-]
-
-# ============================================================================
 # ADR-MULTI-REGION-V1 — Regional production environments (Approach A).
 #
 # Four new worker envs, one per non-IAD region. Each deploys:
@@ -742,6 +605,9 @@ crons = [
 name = "corelink-prod-sam"
 workers_dev = false
 
+[env.prod-sam.triggers]
+crons = []
+
 # Native retained Workers Logs (per-env; not inherited from top-level).
 [env.prod-sam.observability]
 enabled = true
@@ -764,6 +630,10 @@ EDGE_FIND_MISSING = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
 OCI_PUBLIC_DEDUP_ENABLED = "1"
 OCI_UPSTREAM_ON_MISS = "1"
+# B-125: keep the regional production worker from falling back to the
+# container's 200-row default; the caller and container write chunks remain
+# bounded exactly as in the primary production environment.
+AUDIT_DRAIN_BATCH_LIMIT = "512"
 R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
 D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
 R2_AC_BUCKET = "corelink-ac-sam"
@@ -899,6 +769,9 @@ instance_type = "basic"
 name = "corelink-prod-lhr"
 workers_dev = false
 
+[env.prod-lhr.triggers]
+crons = []
+
 # Native retained Workers Logs (per-env; not inherited from top-level).
 [env.prod-lhr.observability]
 enabled = true
@@ -921,6 +794,9 @@ EDGE_FIND_MISSING = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
 OCI_PUBLIC_DEDUP_ENABLED = "1"
 OCI_UPSTREAM_ON_MISS = "1"
+# B-125: explicit bounded production drain budget (regional envs do not inherit
+# [env.prod].vars).
+AUDIT_DRAIN_BATCH_LIMIT = "512"
 # EU residency (2026-06-23) — the container's CAS/AC R2 config now points at the
 # REAL eu-jurisdiction buckets (corelink-cas-eu / corelink-ac-eu, both physically
 # EEUR) served via the EU S3 endpoint. The non-eu per-region buckets
@@ -1065,6 +941,9 @@ instance_type = "basic"
 name = "corelink-prod-nrt"
 workers_dev = false
 
+[env.prod-nrt.triggers]
+crons = []
+
 # Native retained Workers Logs (per-env; not inherited from top-level).
 [env.prod-nrt.observability]
 enabled = true
@@ -1087,6 +966,9 @@ EDGE_FIND_MISSING = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
 OCI_PUBLIC_DEDUP_ENABLED = "1"
 OCI_UPSTREAM_ON_MISS = "1"
+# B-125: explicit bounded production drain budget (regional envs do not inherit
+# [env.prod].vars).
+AUDIT_DRAIN_BATCH_LIMIT = "512"
 R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
 D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
 R2_AC_BUCKET = "corelink-ac-nrt"
@@ -1225,6 +1107,9 @@ instance_type = "basic"
 name = "corelink-prod-syd"
 workers_dev = false
 
+[env.prod-syd.triggers]
+crons = []
+
 # Native retained Workers Logs (per-env; not inherited from top-level).
 [env.prod-syd.observability]
 enabled = true
@@ -1247,6 +1132,9 @@ EDGE_FIND_MISSING = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
 OCI_PUBLIC_DEDUP_ENABLED = "1"
 OCI_UPSTREAM_ON_MISS = "1"
+# B-125: explicit bounded production drain budget (regional envs do not inherit
+# [env.prod].vars).
+AUDIT_DRAIN_BATCH_LIMIT = "512"
 R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
 D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
 R2_AC_BUCKET = "corelink-ac-syd"

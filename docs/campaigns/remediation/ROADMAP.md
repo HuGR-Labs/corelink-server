@@ -1,5 +1,23 @@
 # CoreLink — Roadmap canônico de remediação
 
+<!-- B061-CANONICAL-METRICS
+okf_documents=170
+okf_checkpoint_claims=169
+okf_orphan_anchors=0
+tier_kind_variants=11
+rate_ladder_variants=5
+actions_zero_success_lanes=20
+actions_ran_never_success_lanes=19
+actions_never_run_lanes=1
+actions_runs_without_success=unavailable
+B061-CANONICAL-METRICS -->
+
+> **B-061 contract:** the values in this block are the canonical projection of
+> `scripts/verify_b061_remediation_roadmap.py`. OKF and tier values are derived
+> from committed repository inputs; the Actions lane identities are an external,
+> dated inventory. The raw run export is unavailable in this checkout, so the
+> total historical run count is intentionally not asserted.
+
 > ## PARTE 0 — ÂNCORA (leia isto primeiro, sempre)
 >
 > Este bloco existe para que o lead — eu, ou quem assumir — retome sem perder
@@ -29,7 +47,7 @@ retórica: o portão foi furado 4 vezes num dia, e três mensagens de commit diz
 | **Pendente é pendente**, mesmo quando o job se diz informativo. | O cabeçalho descreve a intenção do job, não o estado do check. |
 | **A prosa não é evidência.** Verifique no caminho que produção toma. | Um cap de leitura foi ligado no ramo de teste; produção segue sem limite. |
 | **Nenhum teste que passa antes do fix.** Reverta o fix: a suíte tem de ficar vermelha. | Um teste verificava o parâmetro, não o bug. |
-| **Âncora tem de sobreviver ao squash.** Prefira **blob anchor** (content-addressed, sobrevive a rebase); commit anchor é fallback. | **64 de 164 conceitos (38%)** com âncora inalcançável — e `validate_okf` passa **verde localmente** porque o objeto órfão ainda existe no clone. Único check local fiel: `git merge-base --is-ancestor <sha> origin/main`. |
+| **Âncora tem de sobreviver ao squash.** Prefira **blob anchor** (content-addressed, sobrevive a rebase); commit anchor é fallback. | **66 de 165 documentos com checkpoint** com âncora inalcançável — e `validate_okf` passa **verde localmente** porque o objeto órfão ainda existe no clone. Único check local fiel: `git merge-base --is-ancestor <sha> origin/main`. |
 | **Ao estabelecer um negativo, varra o que depende dele.** | Escreveram no PR que uma proteção não vale em release e deixaram de pé, na wiki, a frase que dependia dela. |
 | **Antes de despachar, verifique se o trabalho já existe.** | Um defeito foi consertado duas vezes por duas auditorias com nomes diferentes. |
 | **Nunca `git add -A`.** Índice compartilhado entre worktrees. | Varreu 54 workflows e um módulo inteiro para dentro de um PR. |
@@ -201,7 +219,7 @@ Derivados de defeitos reais desta campanha. Não são conselhos — são condiç
 |---|---|---|
 | Q1 | **A prosa não é evidência.** Toda afirmação do PR é verificada contra o código no caminho que **produção** toma. | Um cap de leitura foi ligado no ramo de teste; produção segue sem limite. |
 | Q2 | **Nenhum teste que passa antes do fix.** Reverta o fix: a suíte tem de ficar vermelha. | Teste que verificava o parâmetro, não o bug. Reverter o fix deixava tudo verde. |
-| Q3 | **Nenhuma âncora que o squash orfana.** Referencie blob do conteúdo final ou commit já em `origin/main` — nunca o HEAD do próprio branch. | 64 de 164 conceitos com âncora inalcançável — e o validador passa VERDE localmente. |
+| Q3 | **Nenhuma âncora que o squash orfana.** Referencie blob do conteúdo final ou commit já em `origin/main` — nunca o HEAD do próprio branch. | 66 de 165 documentos com checkpoint têm âncora inalcançável — e o validador passa VERDE localmente. |
 | Q4 | **Ao estabelecer um negativo, varra o que depende dele.** "Compilado fora", "não wired", "sem consumidor" → procure quem afirma o contrário, **no momento do achado**. | Sessão escreveu no corpo do PR que uma proteção não vale em release e deixou de pé, na wiki, a frase que dependia dela. |
 | Q5 | **Contagem ≠ conjunto.** Verificar CI compara o **conjunto** de lanes contra um PR de mesmo escopo, não o número. | Duas lanes trocadas dão a mesma contagem e escondem o que a régua existe para pegar. |
 | Q6 | **`verify` de item concluído é guarda de regressão.** Passa enquanto a asserção existe; DRIFTED se alguém a apagar. Nunca escrito na polaridade "aberto". | Item `done` com `verify` na polaridade errada quebra o portão no merge do PR **seguinte**. |
@@ -297,10 +315,12 @@ não-herdadas. Falha herdada é nomeada e rastreada, nunca ignorada.
 
 ### WP-4 — Higiene de CI  🔵 **EM VOO — #1434**
 
-> **Redimensionado com medição, 2026-08-30.** Não são 5 lanes nem 19: são **20** sem
-> nenhuma conclusão `success`, contadas pela API de Actions sobre os 129 workflows
-> registrados. E elas se partem em duas classes que NÃO têm a mesma correção:
-> **19 rodaram e nunca passaram** (1.539 execuções) e **1 nunca disparou**
+> **Redimensionado por snapshot da API, 2026-08-30.** Não são 5 lanes nem 19: o
+> snapshot registrou **20** sem nenhuma conclusão `success`, entre os 129 workflows
+> então registrados. O export bruto não está disponível neste checkout, portanto
+> os números de execuções abaixo são contexto histórico, não uma medição canônica
+> atual. As lanes se partem em duas classes que NÃO têm a mesma correção:
+> **19 rodaram e nunca passaram** (1.539 execuções no snapshot) e **1 nunca disparou**
 > (`cosign-sign.yml`, 0 runs — defeito de GATILHO, e com waiver humano do owner datado
 > 2026-08-11 para permanecer hosted; não migrar).
 >
@@ -320,7 +340,8 @@ não-herdadas. Falha herdada é nomeada e rastreada, nunca ignorada.
 > quatro defeitos independentes inventa três trabalhos que não existem.
 
 - **Worktree:** `/tmp/wt-wp4` · **Branch:** `ci/hygiene-sweep` · **Depende de:** #1402 resolver (mesmos arquivos)
-- **Escopo:** aposentar 5 lanes com **1.057 execuções e zero sucessos**; remover 5 crons redundantes;
+- **Escopo:** aposentar as **20 lanes** sem sucesso no snapshot (**19** com 1.539 execuções e **1** sem execução),
+  removendo 5 crons redundantes;
   `cosign-sign.yml` (gatilho `push`, **0 execuções na vida**); `cas-canary` (job hosted `skipped`
   ⇒ workflow verde **sem testar** o caminho off-fabric).
 - **DoD:** cada lane ou volta a funcionar, ou é removida com item de backlog explicando o que falta. **Nenhuma fica vermelha crônica.**
@@ -520,7 +541,7 @@ consertar os outros quatro.
 
 | Item | Medido |
 |---|---|
-| **64 de 164 conceitos (38%)** com `checkpoint_sha` **inalcançável** | Medido em `origin/main`: para cada conceito com `checkpoint_sha`, `git merge-base --is-ancestor <sha> origin/main` falha em 64. **Correção de escopo:** eu havia registrado "13", que era só a contagem de **dois SHAs específicos** vindos do #1408. A população real é 4,8× maior, e o item de backlog B-049 já a tinha medido em 57/161 **antes** deste roadmap existir. Não é acidente pontual — é **defeito sistêmico de squash-orphaning**, e o conserto tem de incluir a prevenção (falhar `validate_okf` em âncora inalcançável), não só a re-ancoragem. |
+| **66 de 165 documentos com `checkpoint_sha` (40%)** com âncora **inalcançável** | Derivado pelo B-061 sobre `HEAD`: para cada documento com `checkpoint_sha`, `git merge-base --is-ancestor <sha> HEAD` falha em 66. **Correção de escopo:** eu havia registrado "13", que era só a contagem de **dois SHAs específicos** vindos do #1408. A população real é 4,8× maior, e o item de backlog B-049 já a tinha medido em 57/161 **antes** deste roadmap existir. Não é acidente pontual — é **defeito sistêmico de squash-orphaning**, e o conserto tem de incluir a prevenção (falhar `validate_okf` em âncora inalcançável), não só a re-ancoragem. |
 | Este número é um INSTANTÂNEO datado, não uma alegação gateada | Medido em `2ab90523` (2026-08-30). No MESMO dia foi 63, depois 59 (três PRs reancoraram), depois **64** — porque o squash-merge do #1432 orfanou as âncoras dos conceitos do próprio PR, que é o mecanismo do defeito operando em tempo real. Fixar um número exato num `verify` reprova em duas situações opostas (quando alguém conserta e quando alguém apenas mergeia) e derruba PRs sem relação, que herdam o vermelho — aconteceu com o #1402. O B-061 passou a afirmar a AUSÊNCIA DA PREVENÇÃO, que é estável e só muda quando o conserto existe. |
 | `index.md` gerado afirma **162**; disco tem **165** | Defasado em 3; é o índice que uma pessoa navega |
 | `planes/container.md:132` cita `main.rs:661-681` como mount do archive | É a **rota de quota**; o archive mounta em 622-639 |
@@ -557,8 +578,8 @@ desconhecidos declarados — não como resolvidos.
 
 | Item | Número |
 |---|---|
-| Lanes com **zero sucesso na vida inteira** | 5 workflows, **1.057 execuções** |
-| Correção (2026-08-30, re-medido pela API de Actions sobre os 129 workflows) | **20 lanes** sem nenhuma conclusão `success`: **19 que rodaram e nunca passaram** (1.539 execuções) **+ 1 que nunca disparou** (`cosign-sign.yml`). As duas metades não são a mesma coisa e não têm a mesma correção — a segunda tem defeito de GATILHO, não de conteúdo, e "consertar" a lane muda é consertar o que não está quebrado. Extremo oposto do mesmo dado: `semgrep.yml` acumula **388 execuções** com zero verdes, `cas_foundation.yml` 321, `coverage.yml` 180 — volume alto com zero sucesso não é flake, é defeito estrutural repetido centenas de vezes, a mesma cara da `reproducible-build`. |
+| Lanes com **zero sucesso na vida inteira** | **Snapshot histórico de 2026-08-30:** 20 lanes: 19 com **1.539 execuções** e 1 sem execução. O export bruto está indisponível; o B-061 só canoniza a identidade das lanes e marca o total como `unavailable`. |
+| Correção (snapshot de 2026-08-30 da API de Actions sobre os 129 workflows) | **Snapshot:** **20 lanes** sem nenhuma conclusão `success`: **19 que rodaram e nunca passaram** (1.539 execuções) **+ 1 que nunca disparou** (`cosign-sign.yml`). As duas metades não são a mesma coisa e não têm a mesma correção — a segunda tem defeito de GATILHO, não de conteúdo, e "consertar" a lane muda é consertar o que não está quebrado. Extremo oposto do mesmo dado: `semgrep.yml` acumulava **388 execuções** com zero verdes, `cas_foundation.yml` 321, `coverage.yml` 180 — volume alto com zero sucesso não é flake, é defeito estrutural repetido centenas de vezes, a mesma cara da `reproducible-build`. |
 | `cosign-sign.yml` — assinatura de release | **0 execuções na vida**, apesar de gatilho `push` |
 | `cas-canary` | Job hosted `skipped` ⇒ workflow **verde sem testar** o caminho off-fabric |
 | Crons redundantes (já cobertos por PR/push) | 5 |
@@ -579,9 +600,10 @@ desconhecidos declarados — não como resolvidos.
    de leitura D1 usada só no lookup de auth, nunca repassada às leituras de tier/quota
    (`:3532`, `:4054`), custando uma ida a região distante por request autenticado.
    O relatório o destina a "WP-F2+", que **não existe** neste roadmap.
-6. **Itens de `BACKLOG.md` abertos sem referência aqui:** B-057 (fluxo de SLI de CAS/AC
-   sem consumidor, sem latência real, sem limite — mesma família das cegueiras do §II.3),
-   B-055 (F2 na borda não emite SLI), B-048 (`mutation-pr.yml` com fetch depth-1 alimenta
+6. **Itens de `BACKLOG.md` relevantes sem referência aqui:** B-057 (resolvido: consumidor
+   bounded, janelas reais e latência medida — mesma família das cegueiras do §II.3),
+   B-055 (resolvido: F2 na borda já emite `AvailCasGet`/`LatencyCasGetP99` pela costura
+   de auditoria; resta apenas o desenho operacional do transporte edge→container), B-048 (`mutation-pr.yml` com fetch depth-1 alimenta
    diff de três pontos errado — o portão pode passar sobre base velha), B-053 (piso de 50
    amostras torna região de baixo tráfego **não-failoverável**), B-056 (sem orçamento de
    leitura CAS por processo).
@@ -625,7 +647,7 @@ destino.
 | F-002/003 | gRPC e BYOK anunciados vs 501 | Em PR de claims (docs) |
 | F-004 | Hostnames mortos no corpo do 429 | **Fechado** |
 | F-005 | "4+3 regiões" vs 2 vivas | Em PR de claims (docs) |
-| **F-006** | **Taxonomia de pricing divergente** | ⚠️ **SEM DONO** — medido: `tier.rs` tem 6 tiers, `ratelimit/tier.rs` tem 5. Mesmo rótulo, faturamento diferente. |
+| **F-006** | **Taxonomia de pricing divergente** | ⚠️ **SEM DONO** — medido: `TierKind` tem **11 variantes** e o rate ladder canônico tem **5 tiers**. Mesmo rótulo, faturamento diferente. |
 | F-007/008 | `_public` sem cap + cap velho após downgrade | Metade npm feita; a metade `_public` é redesenho de accounting (ver II.8) |
 | **F-009** | Turborepo sem verificação de conteúdo | **NÃO É DEFEITO** — ver III.2 |
 | **F-010** | **Reembolso não revoga acesso** | ⚠️ **SEM DONO** — mesma decisão que OWNER-4 |
@@ -738,7 +760,7 @@ registrado como pressuposto explícito, não como decisão inventada — se esti
 domínio estava defasado). Os dois precisam apenas de **rebase** para destravar — parados
 há dias por dívida que não era deles.
 
-## IV.2 — A SÉTIMA cegueira, e por que ela explica os 63/164
+## IV.2 — A SÉTIMA cegueira, e por que o snapshot histórico dizia 63/164
 
 Atualiza §III.4. Esta é a mais cara encontrada.
 
@@ -753,12 +775,12 @@ não os alcança, e reporta stale.
 git merge-base --is-ancestor <checkpoint_sha> origin/main   # por conceito
 ```
 
-**Consequência medida:** 64 de 164 conceitos (38%) com âncora inalcançável em
+**Consequência no snapshot histórico:** 66 de 165 documentos com checkpoint (40%) com âncora inalcançável em
 `origin/main`. Não é acidente de um merge — é **toda pilha rebaseada de toda campanha**,
 apodrecendo sem nunca ficar vermelho onde alguém olhasse. Uma única sessão pagou 3
 rebases num dia e órfã 10 conceitos.
 
-**Isso muda o WP-5.** Re-ancorar os 63 sem prevenção recria o problema na próxima rodada
+**Isso muda o WP-5.** Re-ancorar a população histórica de 63 sem prevenção recria o problema na próxima rodada
 de rebases. O conserto tem de incluir:
 1. `validate_okf` **reprova** âncora inalcançável (hoje ele cai em silêncio para base-ref);
 2. **preferir blob anchor** — ele é content-addressed e **sobrevive ao rebase**; só o
@@ -847,7 +869,7 @@ de conformidade de protocolo, verificável e não hipotética.
 
 | Alegação minha | Medido | Consequência |
 |---|---|---|
-| "5 lanes, 1.057 execuções, zero sucessos" | **19 lanes, 1.539 execuções** | O WP-4 deixa **14 lanes** de fora enquanto seu DoD diz *"nenhuma fica vermelha crônica"*. As duas frases não podem ser satisfeitas juntas. **E o número errado já vazou** para o corpo de um PR mergeado. |
+| "5 lanes, 1.057 execuções, zero sucessos" | **Snapshot histórico: 19 lanes, 1.539 execuções** | O WP-4 deixa **14 lanes** de fora enquanto seu DoD diz *"nenhuma fica vermelha crônica"*. As duas frases não podem ser satisfeitas juntas. **E o número errado já vazou** para o corpo de um PR mergeado. |
 | "10 dos 13 PRs abertos editam CHANGELOG" | ≥11 de 15 | A lista **omite o #1397** — os 28.642 linhas, cujo conflito de changelog é o mais caro — e **inclui o #1412**, já mergeado. |
 | "F-006: `tier.rs` tem 6 tiers" | **11 variantes**; o "6" é doc-comment **obsoleto** | Medi da **prosa**, não do código — violando o Q1 no achado que o Q1 deveria proteger. A divergência real é 11 vs 5, **com fallback silencioso**: `ratelimit/tier.rs` não tem arm para nenhum `runner_*`, então **os 5 SKUs de runner são limitados como Team**. |
 
@@ -903,12 +925,13 @@ mergeado** — o commit ancorado deixa de existir na `main`. Taxa: ~1 órfão po
 reancorado por merge. É **estrutural e contínuo**, não resíduo de campanha, e explica
 38% em vez de 5%.
 
-**Consequência dura para o WP-5:** reancorar os 63 **sem mudar o portão é trabalho que
+**Consequência dura para o WP-5:** reancorar a população histórica de 63 **sem mudar o portão é trabalho que
 se desfaz na semana seguinte**. O blob anchor é a correção certa por um motivo mais
 forte do que eu tinha registrado: sendo content-addressed, sobrevive ao rebase **e ao
 squash**. O commit anchor não sobrevive a nenhum dos dois.
 
-Já existe item para isso — **B-049**, aberto medindo 57/161; hoje 63/164, taxa
+Já existe item para isso — **B-049**, aberto medindo 57/161; o snapshot histórico registrou 63/164,
+enquanto o B-061 deriva hoje 66/165, taxa
 compatível. **Reaproveitar o B-049**, não abrir item novo.
 
 ## V.7 — A recomendação que eu adoto: este documento precisa de `verify`
@@ -952,7 +975,7 @@ vigia (destrói a propriedade que o faz existir) · caminhos de deploy e assinat
 grupo de concorrência **sem** `cancel-in-progress` — serializar, nunca cancelar.
 
 **Qualidade:** a lista de lanes é **derivada**, nunca transcrita — foi transcrever que
-produziu "5 lanes / 1.057 execuções" quando são **19 / 1.539**, número que vazou para
+produziu "5 lanes / 1.057 execuções" quando o snapshot registrou **19 / 1.539**, número que vazou para
 um PR mergeado.
 
 **Completude (comando):**
@@ -1077,9 +1100,9 @@ Cada um verificado, nenhum atribuído até aqui.
 | # | Dívida | Estado |
 |---|---|---|
 | 1 | **Band-aid no `verify` do B-061.** Meu check passava local e reprovava na CI; em vez de consertar a raiz, adicionei um guard que **pulava** em clone raso — fazendo-o passar na CI **sem verificar nada**. Era a forma band-aid do defeito que este documento cataloga sete vezes. | ✅ **Fechado** — o workflow passa a clonar com `fetch-depth: 0`, e o guard virou **recusa** (`exit 1`), não skip. Descobriu-se que **quatro** `verify` do backlog dependiam de histórico e estavam cegos, não só o meu. |
-| 2 | **Número errado vazado.** O "1.057 execuções / 5 lanes" (real: **1.539 / 19**) entrou no corpo de um PR já mergeado, como argumento para escolher um piso de cobertura. | ⚠️ **Aberto** — texto em commit mergeado. Fecha na próxima edição daquele fragmento; não vale reescrever histórico. |
+| 2 | **Número errado vazado.** O "1.057 execuções / 5 lanes" (snapshot histórico corrigido para **1.539 / 19**) entrou no corpo de um PR já mergeado, como argumento para escolher um piso de cobertura. | ⚠️ **Aberto** — texto em commit mergeado. Fecha na próxima edição daquele fragmento; não vale reescrever histórico. |
 | 3 | **Não cumpri o DoD do meu próprio WP-1.** Ele exige que *cada merge registre no comentário do PR o conjunto de lanes conferido*. Medido: **9 de 9 merges sem o registro.** Escrevi o contrato e não o segui em nenhum. | ✅ **Fechado por mudança de mecanismo** — ver abaixo. |
-| 4 | **"13 conceitos" obsoleto** sobrevivendo na `main` depois da correção para 63. | ✅ **Fechado** neste commit. |
+| 4 | **"13 conceitos" obsoleto** sobrevivendo na `main` depois da correção histórica para 63. | ✅ **Fechado** neste commit; o valor canônico atual é 66 de 165. |
 
 ### Por que o item 3 fecha mudando o mecanismo, e não prometendo cumprir
 

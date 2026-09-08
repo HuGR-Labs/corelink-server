@@ -17,6 +17,7 @@ TRUSTED_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 ALL_PULL_REQUEST_TARGET_WORKFLOWS = {
     "dependabot-auto-merge.yml",
     "dependabot-policy.yml",
+    "dependabot-policy-trust-boundary.yml",
     "file-size-ratchet.yml",
     "pr-labels.yml",
     "welcome-first-pr.yml",
@@ -24,6 +25,7 @@ ALL_PULL_REQUEST_TARGET_WORKFLOWS = {
 EXPECTED_JOBS = {
     "dependabot-auto-merge.yml": {"auto-merge"},
     "dependabot-policy.yml": {"sentinel", "policy-gate"},
+    "dependabot-policy-trust-boundary.yml": {"trust-boundary-teeth"},
     "file-size-ratchet.yml": {"ratchet"},
     "pr-labels.yml": {"label", "size"},
     "welcome-first-pr.yml": {"welcome"},
@@ -35,6 +37,9 @@ EXPECTED_RUNNERS = {
     "dependabot-policy.yml": {
         "sentinel": ["self-hosted", "mac", "corelink-builder"],
         "policy-gate": "corelink",
+    },
+    "dependabot-policy-trust-boundary.yml": {
+        "trust-boundary-teeth": "corelink",
     },
     "file-size-ratchet.yml": {
         "ratchet": "corelink",
@@ -54,6 +59,7 @@ EXPECTED_PERMISSIONS = {
         "pull-requests": "read",
         "checks": "read",
     },
+    "dependabot-policy-trust-boundary.yml": {"contents": "read"},
     "file-size-ratchet.yml": {"contents": "read"},
     "pr-labels.yml": {
         "contents": "read",
@@ -66,6 +72,14 @@ EXPECTED_PERMISSIONS = {
 
 _YAML_KEY = re.compile(r"^(?P<key>[^:#][^:]*?):(?:[ \t]*(?P<value>.*))?$")
 _TARGET_TOKEN = re.compile(r"\bpull_request_target\b")
+_TRUSTED_BASE_EXPRESSION = (
+    "${{ github.event.pull_request.base.sha || github.event.before || github.sha }}"
+)
+_ALLOWED_BASE_REF_RUN_LINES = (
+    'git show "${BASE_REF}:scripts/validate_file_size_ratchet.py" > '
+    '"$RUNNER_TEMP/validate_file_size_ratchet.py"',
+    '--base-ref "$BASE_REF" --head-ref "$HEAD_REF"',
+)
 
 
 def _workflow_lines(text: str) -> list[tuple[int, str]]:
@@ -442,15 +456,155 @@ def assert_runners(test: unittest.TestCase, workflow: dict, name: str) -> None:
         test.assertEqual(workflow["jobs"][job_name].get("runs-on"), expected)
 
 
-def assert_file_size_boundary(test: unittest.TestCase, workflow: dict) -> None:
+def assert_file_size_boundary(
+    test: unittest.TestCase, workflow: dict, raw: str | None = None
+) -> None:
+    """Allow B-126's safe data-only exception to the actor-gated fabric rule.
+
+    The ratchet intentionally runs for every PR, including forks, but its
+    trusted-base workflow executes only a validator copied from ``BASE_REF``.
+    The candidate checkout is Git-object input: no candidate script, action, or
+    writable token is consumed.
+    """
     jobs = workflow.get("jobs")
     test.assertIsInstance(jobs, dict)
     test.assertEqual(set(jobs), {"ratchet"})
-    expected_comparisons(
-        test,
-        jobs["ratchet"],
-        "ratchet",
-        include_non_target_branch=True,
+    ratchet = jobs["ratchet"]
+    test.assertEqual(ratchet.get("runs-on"), "corelink")
+    test.assertNotIn("if", ratchet, "data-only ratchet must not skip fork PRs")
+    test.assertEqual(workflow.get("permissions"), {"contents": "read"})
+
+    raw = raw or (WORKFLOWS / "file-size-ratchet.yml").read_text(encoding="utf-8")
+    test.assertRegex(raw, r"(?m)^permissions:\n  contents: read\s*$")
+    assert_file_size_trusted_base(test, raw)
+    test.assertIn(
+        'git show "${BASE_REF}:scripts/validate_file_size_ratchet.py"', raw
+    )
+    test.assertIn(
+        'python3 "$RUNNER_TEMP/validate_file_size_ratchet.py"', raw
+    )
+    test.assertIn('--base-ref "$BASE_REF" --head-ref "$HEAD_REF"', raw)
+    test.assertIn(
+        "repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}",
+        raw,
+    )
+    test.assertIn(
+        "ref: ${{ github.event.pull_request.head.sha || github.sha }}", raw
+    )
+    test.assertIn("fetch-depth: 0", raw)
+    test.assertIn("persist-credentials: false", raw)
+    uses = re.findall(r"^\s+uses:\s*(\S+)", raw, flags=re.MULTILINE)
+    test.assertEqual(
+        uses,
+        [
+            "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+        ],
+        "the data-only lane may use only its pinned checkout action",
+    )
+    test.assertNotRegex(
+        raw,
+        r'(?m)^\s*python3\s+scripts/',
+        "the ratchet must not execute a candidate-tree script",
+    )
+    test.assertNotRegex(
+        raw,
+        r'(?m)^\s*(?:bash|sh|python3)\s+"?\$GITHUB_WORKSPACE/',
+        "the ratchet must not execute a candidate-tree file",
+    )
+    test.assertNotIn(
+        'git show "$HEAD_REF:scripts/validate_file_size_ratchet.py"', raw
+    )
+
+
+def assert_file_size_trusted_base(test: unittest.TestCase, raw: str) -> None:
+    """Require one event-aware, non-candidate-controlled base expression.
+
+    The PR base SHA is the trusted workflow boundary. For push and dispatch,
+    ``event.before`` (or the current trusted ``github.sha``) is the only valid
+    fallback. Keeping this as an exact assignment check prevents a future
+    alias, indirection, or ``HEAD_REF`` fallback from silently turning the
+    executable validator into candidate-controlled input.
+    """
+    lines = _workflow_lines(raw)
+    ratchet_start = next(
+        (index for index, (indent, content) in enumerate(lines)
+         if indent == 6 and content == "- name: Ratchet"),
+        None,
+    )
+    test.assertIsNotNone(ratchet_start, "ratchet step must be structurally present")
+    ratchet_lines = lines[ratchet_start + 1 :]
+    ratchet_end = next(
+        (index for index, (indent, _content) in enumerate(ratchet_lines)
+         if indent <= 6),
+        len(ratchet_lines),
+    )
+    ratchet_lines = ratchet_lines[:ratchet_end]
+    env_start = next(
+        (index for index, (indent, content) in enumerate(ratchet_lines)
+         if indent == 8 and content == "env:"),
+        None,
+    )
+    test.assertIsNotNone(env_start, "BASE_REF must live in the ratchet job env")
+    env_lines = ratchet_lines[env_start + 1 :]
+    env_end = next(
+        (index for index, (indent, _content) in enumerate(env_lines)
+         if indent <= 8),
+        len(env_lines),
+    )
+    env_lines = env_lines[:env_end]
+    assignments = [
+        content.split(":", 1)[1].strip()
+        for indent, content in env_lines
+        if indent == 10 and content.startswith("BASE_REF:")
+    ]
+    test.assertEqual(
+        assignments,
+        [_TRUSTED_BASE_EXPRESSION],
+        "BASE_REF must be exactly PR base.sha, then trusted before/sha fallback",
+    )
+    all_declarations = [
+        (indent, content)
+        for indent, content in lines
+        if content.startswith("BASE_REF:")
+    ]
+    test.assertEqual(
+        all_declarations,
+        [(10, f"BASE_REF: {_TRUSTED_BASE_EXPRESSION}")],
+        "BASE_REF must be declared exactly once in the trusted ratchet env",
+    )
+
+    run_start = next(
+        (index for index, (indent, content) in enumerate(ratchet_lines)
+         if indent == 8 and content == "run: |"),
+        None,
+    )
+    test.assertIsNotNone(run_start, "ratchet command must be a structural run block")
+    run_lines = ratchet_lines[run_start + 1 :]
+    base_ref_lines = [
+        content
+        for _indent, content in run_lines
+        if re.search(r"\bBASE_REF\b", content)
+    ]
+    test.assertEqual(
+        base_ref_lines,
+        list(_ALLOWED_BASE_REF_RUN_LINES),
+        "every BASE_REF in run must be one of the two read-only trusted uses",
+    )
+    git_show_lines = [
+        content for _indent, content in run_lines if re.search(r"\bgit\s+show\b", content)
+    ]
+    test.assertEqual(
+        git_show_lines,
+        [_ALLOWED_BASE_REF_RUN_LINES[0]],
+        "every git show in ratchet run must be the trusted validator read",
+    )
+    base_argument_lines = [
+        content for _indent, content in run_lines if re.search(r"--base-ref\b", content)
+    ]
+    test.assertEqual(
+        base_argument_lines,
+        [_ALLOWED_BASE_REF_RUN_LINES[1]],
+        "every --base-ref in ratchet run must use the exact trusted argument",
     )
 
 
@@ -540,13 +694,11 @@ jobs:
                     name == "dependabot-policy.yml" and job_name == "policy-gate"
                 ):
                     assert_dependabot_gate(self, job, f"{name}:{job_name}")
+                elif name == "dependabot-policy-trust-boundary.yml":
+                    self.assertEqual(job.get("timeout-minutes"), 10)
+                    assert_dependabot_gate(self, job, f"{name}:{job_name}")
                 elif name == "file-size-ratchet.yml":
-                    expected_comparisons(
-                        self,
-                        job,
-                        f"{name}:{job_name}",
-                        include_non_target_branch=True,
-                    )
+                    assert_file_size_boundary(self, workflow)
                 else:
                     assert_actor_gate(self, job, f"{name}:{job_name}")
 
@@ -610,42 +762,158 @@ jobs:
                         assert_labels_boundary(self, mutant)
 
         file_size = load_workflow("file-size-ratchet.yml")
-        for label, mutation in (
-            ("remove ratchet actor gate", lambda job: job.pop("if")),
+        with self.subTest(mutant="add ratchet actor gate"):
+            mutant = copy.deepcopy(file_size)
+            mutant["jobs"]["ratchet"]["if"] = "true"
+            with self.assertRaises(AssertionError):
+                assert_file_size_boundary(self, mutant)
+
+        file_size_text = (WORKFLOWS / "file-size-ratchet.yml").read_text(
+            encoding="utf-8"
+        )
+        data_only_mutations = (
             (
-                "widen ratchet actor gate",
-                lambda job: job.__setitem__(
-                    "if",
-                    job["if"]
-                    + " || github.event.pull_request.author_association == 'CONTRIBUTOR'",
+                "execute candidate validator",
+                lambda text: text.replace(
+                    'python3 "$RUNNER_TEMP/validate_file_size_ratchet.py"',
+                    "python3 scripts/validate_file_size_ratchet.py",
                 ),
             ),
-        ):
-            with self.subTest(mutant=label):
-                mutant = copy.deepcopy(file_size)
-                mutation(mutant["jobs"]["ratchet"])
-                with self.assertRaises(AssertionError):
-                    assert_file_size_boundary(self, mutant)
-
-        for label, mutation in (
-            ("ratchet tautology", lambda condition: condition + " || true"),
             (
-                "ratchet boolean inversion",
-                lambda condition: condition.replace(" || ", " && "),
+                "load validator from candidate",
+                lambda text: text.replace(
+                    'git show "${BASE_REF}:scripts/validate_file_size_ratchet.py"',
+                    'git show "${HEAD_REF}:scripts/validate_file_size_ratchet.py"',
+                ),
             ),
-            ("ratchet boolean addition", lambda condition: condition + " && true"),
             (
-                "ratchet comparison inversion",
-                lambda condition: condition.replace("== 'OWNER'", "!= 'OWNER'", 1),
+                "resolve base from candidate head",
+                lambda text: text.replace(
+                    _TRUSTED_BASE_EXPRESSION,
+                    "${{ github.event.pull_request.head.sha || github.sha }}",
+                ),
             ),
-        ):
-            with self.subTest(mutant=label):
-                mutant = copy.deepcopy(file_size)
-                mutant["jobs"]["ratchet"]["if"] = mutation(
-                    mutant["jobs"]["ratchet"]["if"]
-                )
+            (
+                "resolve base through head alias",
+                lambda text: text.replace(
+                    _TRUSTED_BASE_EXPRESSION,
+                    "${{ HEAD_REF }}",
+                ),
+            ),
+            (
+                "resolve base from current candidate",
+                lambda text: text.replace(
+                    _TRUSTED_BASE_EXPRESSION,
+                    "${{ github.sha }}",
+                ),
+            ),
+            (
+                "overwrite base through shell alias",
+                lambda text: text.replace(
+                    '          set -euo pipefail\n',
+                    '          set -euo pipefail\n          BASE_REF="$HEAD_REF"\n',
+                ),
+            ),
+            (
+                "export base through shell alias",
+                lambda text: text.replace(
+                    '          set -euo pipefail\n',
+                    '          set -euo pipefail\n          export BASE_REF="$HEAD_REF"\n',
+                ),
+            ),
+            (
+                "declare base through shell alias",
+                lambda text: text.replace(
+                    '          set -euo pipefail\n',
+                    '          set -euo pipefail\n          declare BASE_REF="$HEAD_REF"\n',
+                ),
+            ),
+            (
+                "typeset base through shell alias",
+                lambda text: text.replace(
+                    '          set -euo pipefail\n',
+                    '          set -euo pipefail\n          typeset BASE_REF="$HEAD_REF"\n',
+                ),
+            ),
+            (
+                "local base through shell alias",
+                lambda text: text.replace(
+                    '          set -euo pipefail\n',
+                    '          set -euo pipefail\n          local BASE_REF="$HEAD_REF"\n',
+                ),
+            ),
+            (
+                "readonly base through shell alias",
+                lambda text: text.replace(
+                    '          set -euo pipefail\n',
+                    '          set -euo pipefail\n          readonly BASE_REF="$HEAD_REF"\n',
+                ),
+            ),
+            (
+                "inline base environment",
+                lambda text: text.replace(
+                    '          GODFILE_REPO_ROOT="$GITHUB_WORKSPACE" \\\n',
+                    '          BASE_REF="$HEAD_REF" GODFILE_REPO_ROOT="$GITHUB_WORKSPACE" \\\n',
+                ),
+            ),
+            (
+                "write base through GITHUB_ENV",
+                lambda text: text.replace(
+                    '          set -euo pipefail\n',
+                    '          set -euo pipefail\n          echo "BASE_REF=$HEAD_REF" >> "$GITHUB_ENV"\n',
+                ),
+            ),
+            (
+                "unknown extra base occurrence",
+                lambda text: text.replace(
+                    '          set -euo pipefail\n',
+                    '          set -euo pipefail\n          echo "BASE_REF is trusted"\n',
+                ),
+            ),
+            (
+                "load validator through trusted-base alias",
+                lambda text: text.replace(
+                    'git show "${BASE_REF}:scripts/validate_file_size_ratchet.py"',
+                    'git show "${TRUSTED_BASE}:scripts/validate_file_size_ratchet.py"',
+                ),
+            ),
+            (
+                "load arbitrary candidate file",
+                lambda text: text.replace(
+                    'git show "${BASE_REF}:scripts/validate_file_size_ratchet.py"',
+                    'git show "${HEAD_REF}:evil.sh"',
+                ),
+            ),
+            (
+                "echo an untrusted base argument",
+                lambda text: text.replace(
+                    '--base-ref "$BASE_REF" --head-ref "$HEAD_REF"',
+                    'echo --base-ref "$HEAD_REF"',
+                ),
+            ),
+            (
+                "add candidate action",
+                lambda text: text.replace(
+                    "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+                    "${{ github.event.pull_request.head.ref }}",
+                ),
+            ),
+            (
+                "broaden token permission",
+                lambda text: text.replace("  contents: read", "  contents: write"),
+            ),
+            (
+                "execute candidate shell file",
+                lambda text: text.replace(
+                    'GODFILE_REPO_ROOT="$GITHUB_WORKSPACE"',
+                    'bash "$GITHUB_WORKSPACE/scripts/evil.sh"\n          GODFILE_REPO_ROOT="$GITHUB_WORKSPACE"',
+                ),
+            ),
+        )
+        for label, mutation in data_only_mutations:
+            with self.subTest(mutant=f"ratchet {label}"):
                 with self.assertRaises(AssertionError):
-                    assert_file_size_boundary(self, mutant)
+                    assert_file_size_boundary(self, file_size, mutation(file_size_text))
 
         for name, job_name in (
             ("dependabot-auto-merge.yml", "auto-merge"),

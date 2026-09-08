@@ -122,7 +122,7 @@ pub use physical_delete::{
     BlobMetaPurgeStore, CountingPhysicalDeleteClock, InMemoryBlobMetaPurgeStore,
     InMemoryPhysicalDeletePhase, InMemoryR2Delete, PhysicalDeleteClock, PhysicalDeleteConfig,
     PhysicalDeleteDecision, PhysicalDeleteError, PhysicalDeletePhase, PhysicalDeleteResult,
-    PurgeState, R2Delete, R2DeleteError, R2DeleteOutcome, ReclaimClassification,
+    PurgeStage, PurgeState, R2Delete, R2DeleteError, R2DeleteOutcome, ReclaimClassification,
     CANONICAL_PHYSICAL_DELETE_PHASE_BUDGET_MS,
 };
 pub use reconcile::{
