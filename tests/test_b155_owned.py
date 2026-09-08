@@ -43,6 +43,19 @@ class _MirrorResponse:
 
 
 class B155OwnedSemanticTests(unittest.TestCase):
+    def test_cas_include_path_drift_fails_closed(self) -> None:
+        entry = verifier._read(ROOT, verifier.CAS_ROUTE_ENTRY)
+        foundation_drift = entry.replace(
+            "cas/foundation_core.rs", "cas/foundation_state.rs", 1
+        )
+        single_drift = entry.replace(
+            "cas/single_handlers.rs", "cas/single_setup.rs", 1
+        )
+        with self.assertRaises(verifier.VerificationError):
+            verifier._b051(ROOT, {verifier.CAS_ROUTE_ENTRY: foundation_drift})
+        with self.assertRaises(verifier.VerificationError):
+            verifier._b052(ROOT, {verifier.CAS_ROUTE_ENTRY: single_drift})
+
     def test_each_focal_mutation_adapter_is_live(self) -> None:
         helper = ROOT / "scripts/verify_b155_owned.py"
         for ident, polarity in EXPECTED.items():
@@ -53,7 +66,7 @@ class B155OwnedSemanticTests(unittest.TestCase):
                     cwd=ROOT, text=True, capture_output=True, timeout=15,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("mutations=22 rejected", result.stdout)
+                self.assertIn("mutations=24 rejected", result.stdout)
 
     def test_backlog_wires_only_the_owned_ids_to_helper(self) -> None:
         backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")

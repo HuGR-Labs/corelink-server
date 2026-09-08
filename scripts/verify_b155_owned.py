@@ -65,7 +65,9 @@ def _raw_string_end(text: str, start: int) -> int | None:
     return close + len(hashes) + 1
 
 
-def _read(root: Path, rel: str) -> str:
+def _read(root: Path, rel: str, overrides: dict[str, str] | None = None) -> str:
+    if overrides and rel in overrides:
+        return overrides[rel]
     path = root / rel
     if not path.is_file() or path.is_symlink():
         raise VerificationError(f"missing/non-regular target: {rel}")
@@ -170,6 +172,139 @@ def _active_code_lines(text: str, line_comments=("//",)) -> list[str]:
         out.append(c); i += 1
     if block or quote: raise VerificationError("unterminated comment or string")
     return "".join(out).splitlines()
+
+
+def _rust_include_paths(text: str) -> list[str]:
+    """Return active static ``include!("...")`` paths from Rust source.
+
+    This scanner skips comments, ordinary strings, and raw strings before
+    recognizing a macro.  A dynamic or malformed include is rejected rather
+    than silently omitted from the census, so a path can never drift behind a
+    comment/string decoy or an expression that this verifier cannot resolve.
+    """
+    paths: list[str] = []
+    index = 0
+    length = len(text)
+    while index < length:
+        if text.startswith("//", index):
+            newline = text.find("\n", index + 2)
+            index = length if newline < 0 else newline + 1
+            continue
+        if text.startswith("/*", index):
+            depth = 1
+            index += 2
+            while index < length and depth:
+                if text.startswith("/*", index):
+                    depth += 1; index += 2
+                elif text.startswith("*/", index):
+                    depth -= 1; index += 2
+                else:
+                    index += 1
+            if depth:
+                raise VerificationError("unterminated Rust block comment while reading includes")
+            continue
+        raw_end = _raw_string_end(text, index)
+        if raw_end is not None:
+            index = raw_end
+            continue
+        if text[index] == '"':
+            index += 1
+            escaped = False
+            while index < length:
+                char = text[index]
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    index += 1
+                    break
+                index += 1
+            else:
+                raise VerificationError("unterminated Rust string while reading includes")
+            continue
+        if text.startswith("include!", index):
+            end = index + len("include!")
+            if index and (text[index - 1].isalnum() or text[index - 1] == "_"):
+                index = end
+                continue
+            while end < length and text[end].isspace():
+                end += 1
+            if end >= length or text[end] != "(":
+                index = end
+                continue
+            end += 1
+            while end < length and text[end].isspace():
+                end += 1
+            if end >= length or text[end] != '"':
+                raise VerificationError("dynamic or malformed Rust include is not auditable")
+            start = end + 1
+            end = start
+            escaped = False
+            while end < length:
+                char = text[end]
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    break
+                end += 1
+            if end >= length:
+                raise VerificationError("unterminated Rust include path")
+            path = text[start:end]
+            if not path or "\\" in path:
+                raise VerificationError("Rust include path is empty or escaped")
+            end += 1
+            while end < length and text[end].isspace():
+                end += 1
+            if end >= length or text[end] != ")":
+                raise VerificationError("Rust include must use a static single-string argument")
+            paths.append(path)
+            index = end + 1
+            continue
+        index += 1
+    return paths
+
+
+def _rust_include_closure(
+    root: Path, entry: str, overrides: dict[str, str] | None = None
+) -> set[str]:
+    """Resolve an active Rust include tree with path and cycle checks."""
+    root = root.resolve()
+    visiting: list[Path] = []
+    visited: set[Path] = set()
+
+    def visit(relative: str) -> None:
+        path = (root / relative).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise VerificationError(f"Rust include escapes repository root: {relative}") from exc
+        canonical = path.relative_to(root).as_posix()
+        if path in visiting:
+            chain = " -> ".join(str(item.relative_to(root)) for item in (*visiting, path))
+            raise VerificationError(f"Rust include cycle detected: {chain}")
+        if path in visited:
+            return
+        source = _read(root, canonical, overrides)
+        visiting.append(path)
+        try:
+            visited.add(path)
+            for include in _rust_include_paths(source):
+                child = (path.parent / include).resolve()
+                try:
+                    child_relative = child.relative_to(root).as_posix()
+                except ValueError as exc:
+                    raise VerificationError(
+                        f"Rust include escapes repository root: {canonical} -> {include}"
+                    ) from exc
+                visit(child_relative)
+        finally:
+            visiting.pop()
+
+    visit(entry)
+    return {path.relative_to(root).as_posix() for path in visited}
 
 
 def _active_route_literals(text: str) -> list[str]:
@@ -426,8 +561,41 @@ def _b050(root: Path) -> str:
     return "B-050 PASS (one active scrub route and one active main mount)"
 
 
-def _b051(root: Path) -> str:
-    f="\n".join(_active_lines(_read(root,"crates/corelink-container/src/routes/cas/foundation.rs")))
+CAS_ROUTE_ENTRY = "crates/corelink-container/src/routes/cas.rs"
+CAS_FOUNDATION_PATHS = frozenset((
+    "crates/corelink-container/src/routes/cas/foundation_core.rs",
+    "crates/corelink-container/src/routes/cas/foundation_state.rs",
+))
+CAS_SINGLE_PATHS = frozenset((
+    "crates/corelink-container/src/routes/cas/single_setup.rs",
+    "crates/corelink-container/src/routes/cas/single_handlers.rs",
+))
+
+
+def _cas_module_paths(
+    root: Path, expected: frozenset[str], label: str,
+    overrides: dict[str, str] | None = None,
+) -> set[str]:
+    closure = _rust_include_closure(root, CAS_ROUTE_ENTRY, overrides)
+    actual = {
+        path for path in closure
+        if path.startswith("crates/corelink-container/src/routes/cas/")
+        and Path(path).name.startswith(label)
+    }
+    if actual != expected:
+        missing = sorted(expected - actual)
+        drift = sorted(actual - expected)
+        raise VerificationError(f"{label} path census drift: missing={missing}, unexpected={drift}")
+    return closure
+
+
+def _b051(root: Path, overrides: dict[str, str] | None = None) -> str:
+    closure = _cas_module_paths(root, CAS_FOUNDATION_PATHS, "foundation", overrides)
+    f="\n".join(
+        line
+        for path in sorted(CAS_FOUNDATION_PATHS)
+        for line in _active_lines(_read(root, path, overrides))
+    )
     c="\n".join(_active_lines(_read(root,"crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs")))
     const=re.findall(r"\bpub\s+const\s+CAS_READ_MAX_OBJECT_BYTES\s*:\s*u64\s*=",f)
     capped=re.findall(r"\.get_capped\s*\(",c)
@@ -435,8 +603,9 @@ def _b051(root: Path) -> str:
     return "B-051 PASS (active size ceiling and capped read path present)"
 
 
-def _b052(root: Path) -> str:
-    text=_read(root,"crates/corelink-container/src/routes/cas/single.rs")
+def _b052(root: Path, overrides: dict[str, str] | None = None) -> str:
+    closure = _cas_module_paths(root, CAS_SINGLE_PATHS, "single", overrides)
+    text="\n".join(_read(root,path,overrides) for path in sorted(CAS_SINGLE_PATHS))
     code=_strip_code_comments(text,("//",))
     matches=list(re.finditer(r"\basync\s+fn\s+handle_read\s*\(",code))
     if len(matches)!=1: raise VerificationError("B-052 handle_read missing or ambiguous")
@@ -562,11 +731,29 @@ EDGE_FIND_MISSING = \"on\"
         raise VerificationError("B-060 unannotated test mutation self-test failed")
     if _b060_executable(_strip_code_comments("#[test]\n#[ignore]\nfn every_registry_table_is_actually_created_by_a_migration() {}", ("//",))):
         raise VerificationError("B-060 ignored-test mutation self-test failed")
+    # The CAS source is intentionally split into include fragments.  A stale
+    # verifier that opens the pre-split foundation.rs/single.rs names can pass
+    # only by missing the active implementation entirely, so keep exact path
+    # drift mutations red in the same semantic self-test.
+    cas_entry = _read(ROOT, CAS_ROUTE_ENTRY)
+    for label, check, old_path, replacement in (
+        ("B-051 foundation include drift", _b051, "cas/foundation_core.rs", "cas/foundation_state.rs"),
+        ("B-052 single include drift", _b052, "cas/single_handlers.rs", "cas/single_setup.rs"),
+    ):
+        mutated = cas_entry.replace(old_path, replacement, 1)
+        if mutated == cas_entry:
+            raise VerificationError(f"{label} mutation marker is absent")
+        try:
+            check(ROOT, {CAS_ROUTE_ENTRY: mutated})
+        except VerificationError:
+            pass
+        else:
+            raise VerificationError(f"{label} unexpectedly passed")
     # Keep the focal mutation inventory explicit so a new broad grep cannot
     # silently replace this batch's semantic checks.
     if set(TARGET_IDS) != {"B-014", "B-015", "B-035", "B-039", "B-045", "B-047", "B-050", "B-051", "B-052", "B-060"}:
         raise VerificationError("focal mutation inventory does not cover exactly the owned batch")
-    return len(cases) + 12
+    return len(cases) + 14
 
 
 def main(argv=None) -> int:
