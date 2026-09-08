@@ -276,6 +276,19 @@ crons = [
     "0 14 * * 1",
 ]
 
+# Staging-only receiver binding. The environment is intentionally triggerless
+# until the synthetic-drill activation review enables its cron explicitly.
+[env.staging]
+name = "corelink-staging"
+workers_dev = false
+
+[env.staging.triggers]
+crons = []
+
+[[env.staging.services]]
+binding = "SCHEDULED_DRILL_DELIVERY"
+service = "corelink-synthetic-pager-staging"
+
 # Secrets: `wrangler secret put STRIPE_KEY` etc
 # - CLERK_SECRET_KEY
 # - CLERK_ISSUER_URL  — Clerk JWT issuer URL pin; read by worker/src/index.ts to
@@ -400,9 +413,9 @@ service = "corelink-prod-syd"
 # entrypoint the target Worker does not export is rejected at deploy time.
 #
 # Scope note: this is the ONLY ANALYTICS_SVC binding in the root Worker config.
-# The root Worker has no staging deployment, and the regional envs
-# (prod-sam/lhr/nrt/syd) declare no services blocks at all, so the emit stays a
-# silent no-op there — unchanged by this WP.
+# The staging environment above is reserved for the separately reviewed
+# synthetic-drill binding; the regional envs (prod-sam/lhr/nrt/syd) declare no
+# ANALYTICS_SVC binding, so this emit stays a silent no-op there.
 [[env.prod.services]]
 binding = "ANALYTICS_SVC"
 service = "corelink-analytics-prod"

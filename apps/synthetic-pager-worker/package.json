@@ -1,0 +1,17 @@
+{
+  "name": "@corelink/synthetic-pager-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fail-closed receiver for CoreLink synthetic-page drill deliveries.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260619.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.111.0"
+  }
+}

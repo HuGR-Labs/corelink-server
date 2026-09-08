@@ -1,0 +1,179 @@
+export const SYNTHETIC_PAGE_PATH = "/v1/drills/synthetic_page" as const;
+export const PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue" as const;
+export const SYNTHETIC_SERVICE = "synthetic-drill" as const;
+export const SYNTHETIC_SEVERITY = "sev2_synthetic" as const;
+export const SYNTHETIC_EVENT_SEVERITY = "info" as const;
+export const SYNTHETIC_CORRELATION_PREFIX = "PAT-CORRELATION-ID-001:" as const;
+
+export type SyntheticRegion = "americas" | "emea" | "apac" | "boundary_handoff";
+export type SyntheticDeliveryMode = "immediate" | "deferred";
+
+export interface SyntheticPagePayload {
+  readonly service: typeof SYNTHETIC_SERVICE;
+  readonly event_action: "trigger";
+  readonly severity: typeof SYNTHETIC_EVENT_SEVERITY;
+  readonly synthetic_severity: typeof SYNTHETIC_SEVERITY;
+  readonly region: SyntheticRegion;
+  readonly rotation_week: 0 | 1 | 2 | 3;
+  readonly emit_at_ms: number;
+  readonly delivery_mode: SyntheticDeliveryMode;
+  readonly dedup_key: string;
+  readonly correlation_id: string;
+}
+
+export interface SyntheticPageEnvelope {
+  readonly drill: "synthetic_page";
+  readonly cron: "0 14 * * 1";
+  readonly scheduled_at_ms: number;
+  readonly synthetic_page: SyntheticPagePayload;
+}
+
+export interface ReceiverEnv {
+  readonly ENVIRONMENT?: string;
+  readonly SYNTHETIC_DRILL_ENABLED?: string;
+  readonly PAGERDUTY_EVENTS_URL?: string;
+  readonly PAGERDUTY_SERVICE?: string;
+  readonly PAGERDUTY_SYNTHETIC_ROUTING_KEY?: string;
+  readonly CONFIG_DB?: D1Database;
+}
+
+export interface PagerDutyEvent {
+  readonly routing_key: string;
+  readonly event_action: "trigger";
+  readonly dedup_key: string;
+  readonly payload: {
+    readonly summary: string;
+    readonly source: "corelink-synthetic-pager";
+    readonly severity: typeof SYNTHETIC_EVENT_SEVERITY;
+    readonly custom_details: {
+      readonly synthetic_severity: typeof SYNTHETIC_SEVERITY;
+      readonly region: SyntheticRegion;
+      readonly rotation_week: 0 | 1 | 2 | 3;
+      readonly emit_at_ms: number;
+      readonly delivery_mode: SyntheticDeliveryMode;
+      readonly correlation_id: string;
+    };
+  };
+}
+
+const ENVELOPE_KEYS = ["drill", "cron", "scheduled_at_ms", "synthetic_page"] as const;
+const PAYLOAD_KEYS = [
+  "service",
+  "event_action",
+  "severity",
+  "synthetic_severity",
+  "region",
+  "rotation_week",
+  "emit_at_ms",
+  "delivery_mode",
+  "dedup_key",
+  "correlation_id",
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  return actual.length === keys.length && actual.every((key, index) => key === [...keys].sort()[index]);
+}
+
+function isInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+export function parseSyntheticPageEnvelope(value: unknown): SyntheticPageEnvelope | null {
+  if (!isRecord(value) || !hasExactlyKeys(value, ENVELOPE_KEYS)) return null;
+  if (value.drill !== "synthetic_page" || value.cron !== "0 14 * * 1" || !isInteger(value.scheduled_at_ms)) {
+    return null;
+  }
+  const page = value.synthetic_page;
+  if (!isRecord(page) || !hasExactlyKeys(page, PAYLOAD_KEYS)) return null;
+  if (
+    page.service !== SYNTHETIC_SERVICE ||
+    page.event_action !== "trigger" ||
+    page.severity !== SYNTHETIC_EVENT_SEVERITY ||
+    page.synthetic_severity !== SYNTHETIC_SEVERITY ||
+    !["americas", "emea", "apac", "boundary_handoff"].includes(page.region as string) ||
+    ![0, 1, 2, 3].includes(page.rotation_week as number) ||
+    !isInteger(page.emit_at_ms) ||
+    !["immediate", "deferred"].includes(page.delivery_mode as string) ||
+    typeof page.dedup_key !== "string" ||
+    page.dedup_key.length < 1 ||
+    page.dedup_key.length > 200 ||
+    typeof page.correlation_id !== "string" ||
+    page.correlation_id !== `${SYNTHETIC_CORRELATION_PREFIX}${page.dedup_key}`
+  ) {
+    return null;
+  }
+  if (
+    (page.delivery_mode === "deferred" && page.region !== "boundary_handoff") ||
+    (page.delivery_mode === "immediate" && page.region === "boundary_handoff")
+  ) {
+    return null;
+  }
+  return {
+    drill: "synthetic_page",
+    cron: "0 14 * * 1",
+    scheduled_at_ms: value.scheduled_at_ms,
+    synthetic_page: {
+      service: SYNTHETIC_SERVICE,
+      event_action: "trigger",
+      severity: SYNTHETIC_EVENT_SEVERITY,
+      synthetic_severity: SYNTHETIC_SEVERITY,
+      region: page.region as SyntheticRegion,
+      rotation_week: page.rotation_week as 0 | 1 | 2 | 3,
+      emit_at_ms: page.emit_at_ms,
+      delivery_mode: page.delivery_mode as SyntheticDeliveryMode,
+      dedup_key: page.dedup_key,
+      correlation_id: page.correlation_id,
+    },
+  };
+}
+
+/**
+ * Reject production before checking a secret, D1, or the PagerDuty endpoint.
+ * `prod-*` regional names are rejected as well as the exact `prod` name.
+ */
+export function validateReceiverEnvironment(env: ReceiverEnv): string | null {
+  const environment = env.ENVIRONMENT?.trim().toLowerCase();
+  if (environment === "prod" || environment?.startsWith("prod-")) {
+    return "synthetic drill receiver is not activatable in production";
+  }
+  if (environment !== "dev" && environment !== "staging") return "unsupported receiver environment";
+  if (env.SYNTHETIC_DRILL_ENABLED !== "true") return "synthetic drill receiver is disabled";
+  if (env.PAGERDUTY_EVENTS_URL !== PAGERDUTY_EVENTS_URL) return "PagerDuty endpoint is not canonical";
+  if (env.PAGERDUTY_SERVICE !== SYNTHETIC_SERVICE) return "PagerDuty service is not synthetic-drill";
+  if (!env.PAGERDUTY_SYNTHETIC_ROUTING_KEY?.trim()) return "synthetic routing key is unavailable";
+  if (env.CONFIG_DB === undefined) return "synthetic drill database binding is unavailable";
+  return null;
+}
+
+export function buildPagerDutyEvent(page: SyntheticPagePayload, routingKey: string): PagerDutyEvent {
+  return {
+    routing_key: routingKey,
+    event_action: "trigger",
+    dedup_key: page.dedup_key,
+    payload: {
+      summary: `CoreLink synthetic page (${page.region})`,
+      source: "corelink-synthetic-pager",
+      severity: SYNTHETIC_EVENT_SEVERITY,
+      custom_details: {
+        synthetic_severity: SYNTHETIC_SEVERITY,
+        region: page.region,
+        rotation_week: page.rotation_week,
+        emit_at_ms: page.emit_at_ms,
+        delivery_mode: page.delivery_mode,
+        correlation_id: page.correlation_id,
+      },
+    },
+  };
+}
+
+export async function stableDrillId(dedupKey: string): Promise<string> {
+  const bytes = new TextEncoder().encode(dedupKey);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `SP-${hex.slice(0, 32)}`;
+}

@@ -1,0 +1,45 @@
+name = "corelink-synthetic-pager"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+workers_dev = false
+
+# This Worker has no cron of its own. The corelink Worker owns the schedule and
+# reaches this receiver only through the staging service binding. Production
+# activation requires an explicit, separately reviewed configuration change.
+[vars]
+ENVIRONMENT = "dev"
+SYNTHETIC_DRILL_ENABLED = "false"
+PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue"
+PAGERDUTY_SERVICE = "synthetic-drill"
+
+[[d1_databases]]
+binding = "CONFIG_DB"
+database_name = "corelink-config-dev"
+database_id = "PLACEHOLDER_CONFIG_DB_DEV_ID"
+migrations_dir = "../../migrations/d1"
+
+# The routing key is a secret and is intentionally absent from committed vars.
+# Set it only in the non-production drill receiver after the explicit activation
+# review: `wrangler secret put PAGERDUTY_SYNTHETIC_ROUTING_KEY`.
+
+[env.staging]
+name = "corelink-synthetic-pager-staging"
+vars = { ENVIRONMENT = "staging", SYNTHETIC_DRILL_ENABLED = "false", PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue", PAGERDUTY_SERVICE = "synthetic-drill" }
+
+[[env.staging.d1_databases]]
+binding = "CONFIG_DB"
+database_name = "corelink-config-staging"
+database_id = "PLACEHOLDER_CONFIG_DB_STAGING_ID"
+migrations_dir = "../../migrations/d1"
+
+[env.staging.triggers]
+crons = []
+
+# A production receiver deployment is intentionally inert and is rejected by
+# the handler even if an operator supplies a routing-key secret accidentally.
+[env.prod]
+name = "corelink-synthetic-pager-prod"
+vars = { ENVIRONMENT = "prod", SYNTHETIC_DRILL_ENABLED = "false", PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue", PAGERDUTY_SERVICE = "synthetic-drill" }
+
+[env.prod.triggers]
+crons = []
