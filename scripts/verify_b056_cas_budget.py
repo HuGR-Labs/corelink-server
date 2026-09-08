@@ -9,6 +9,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# The CAS route is an include-based module.  Keep the verifier's population
+# aligned with the compiled source units rather than the pre-split files; a
+# missing fragment must fail closed instead of silently shrinking the proof.
+CAS_PARTS = (
+    "crates/corelink-container/src/routes/cas/foundation_core.rs",
+    "crates/corelink-container/src/routes/cas/foundation_state.rs",
+    "crates/corelink-container/src/routes/cas/single_setup.rs",
+    "crates/corelink-container/src/routes/cas/single_handlers.rs",
+    "crates/corelink-container/src/routes/cas/batch_write.rs",
+    "crates/corelink-container/src/routes/cas/batch_read.rs",
+    "crates/corelink-container/src/routes/cas/list_delete.rs",
+)
+
 
 class VerificationError(RuntimeError):
     pass
@@ -25,14 +38,8 @@ def read(path: Path) -> str:
 
 
 def source() -> dict[str, str]:
-    cas_parts = (
-        "crates/corelink-container/src/routes/cas/foundation.rs",
-        "crates/corelink-container/src/routes/cas/single.rs",
-        "crates/corelink-container/src/routes/cas/batch.rs",
-        "crates/corelink-container/src/routes/cas/list_delete.rs",
-    )
     return {
-        "cas": "\n".join(read(ROOT / part) for part in cas_parts),
+        "cas": "\n".join(read(ROOT / part) for part in CAS_PARTS),
         "backlog": read(ROOT / "BACKLOG.md"),
         "native": read(ROOT / "docs/knowledge/surfaces/native-cas.md"),
         "container": read(ROOT / "docs/knowledge/planes/container.md"),
@@ -69,7 +76,13 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
             ),
         ),
         "CAS_READ_GLOBAL_BUDGET_BYTES / CAS_READ_BUDGET_UNIT_BYTES <= u32::MAX as u64",
-        "static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<Semaphore>> = OnceLock::new();",
+        (
+            "global read semaphore",
+            (
+                "static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<Semaphore>> = OnceLock::new();",
+                "static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();",
+            ),
+        ),
         (
             "weighted acquire",
             (
@@ -78,6 +91,7 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
             ),
         ),
         "CAS_READ_GLOBAL_PERMIT_WAIT",
+        "const CAS_READ_BATCH_OBJECT_PERMITS: u32 =",
         "GlobalCasReadBudgetGuard",
         "GlobalCasBatchReadBudgetGuard",
         "StatusCode::SERVICE_UNAVAILABLE",
@@ -112,7 +126,7 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
         fail("CAS batch-read buffers its body before reserving the byte budget")
     if not any(
         name in batch for name in ("acquire_cas_read_budget_from", "acquire_global_cas_read_budget")
-    ) or "CAS_READ_SINGLE_PERMITS" not in batch:
+    ) or "CAS_READ_BATCH_OBJECT_PERMITS" not in batch:
         fail("CAS batch-read object fan-out lost its per-object byte reservations")
 
     # Global saturation logs deliberately carry only a static route and weight;
@@ -155,6 +169,12 @@ def mutation_checks(files: dict[str, str]) -> None:
             ),
         ),
         ("weighted acquire", "cas", "acquire_many_owned(permits)", "acquire_owned()"),
+        (
+            "global semaphore",
+            "cas",
+            "static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();",
+            "static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<tokio::sync::MISSING>> = OnceLock::new();",
+        ),
         (
             "single guard",
             "cas",

@@ -23,7 +23,7 @@ CONTRACTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         "pub enum PurgeStage {", "fn begin_purge(", "fn claim_retry_epoch(",
         "fn mark_r2_deleted(", "fn mark_r2_retry(", "fn finalize_purge(",
     ), ()),
-    ("crates/corelink-container/src/gc_sweep.rs", (
+    ("crates/corelink-container/src/gc_sweep/part-03.rs", (
         "SELECT epoch, state, updated_at FROM gc_purge_intent", "fn begin_purge(",
         "fn claim_retry_epoch(", "fn mark_r2_deleted(", "fn mark_r2_retry(",
         "fn finalize_purge(",
@@ -31,12 +31,16 @@ CONTRACTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("crates/corelink-container/src/routes/dsr/portal/part-00.rs", (
         "super::super::d1util::d1_query_blocking", "super::super::access::run_access",
         "super::super::access::run_portability", "super::super::access::run_rectification",
+    ), ()),
+    ("crates/corelink-container/src/routes/dsr/portal/part-00-01.rs", (
         "super::super::build_audit_r2_client",
     ), ()),
-    ("crates/corelink-container/src/routes/tier_select/part-00.rs", (
+    ("crates/corelink-container/src/routes/tier_select/part-00-00.rs", (
         "crate::routes::tier_select_store::D1HttpTierSelectStore",
         "crate::routes::tier_select_checkout::StripeCheckoutCreator",
         "crate::routes::tier_select_audit::TierSelectAuditAdapter",
+    ), ()),
+    ("crates/corelink-container/src/routes/tier_select/part-00-01.rs", (
         "crate::routes::admin::resolve_internal_auth_key",
     ), ()),
     ("tests/e2e-tenant-isolation/src/fakes/extended.rs", (), ("use corelink_audit::",)),

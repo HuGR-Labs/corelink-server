@@ -33,12 +33,13 @@ def test_current_bundle_passes_and_population_is_closed() -> None:
         (verify.REVOCATION, '#[must_use = "handle the result to obtain the configured revocation detector"]'),
         (verify.ACCOUNTING, "let committed_len = {"),
         (verify.AUDIT_DRAIN, "clippy::too_many_arguments"),
-        (verify.CAS_SINGLE, "clippy::too_many_arguments"),
-        (verify.CAS_BATCH, "clippy::too_many_arguments"),
+        (verify.CAS_SINGLE, "(auth, scope, headers): CasRequestAuth"),
+        (verify.CAS_BATCH_WRITE, "(auth, scope, headers): CasRequestAuth"),
+        (verify.CAS_BATCH_READ, "(auth, scope, headers): CasRequestAuth"),
         (verify.CAS_ERASE, "max_tenants.clamp(1, DEFAULT_MAX_TENANT_BLOOMS)"),
         (verify.SLI, ".is_some_and(|bucket|"),
         (verify.ADAPTER_CACHE, "type WriteRecord = (String, String, String, bool);"),
-        (verify.REVOCATION, "#[cfg(test)]\n#[allow(clippy::expect_used, clippy::indexing_slicing)]"),
+        (verify.REVOCATION_TESTS, "#[cfg(test)]\nmod tests {\n    #![allow(clippy::expect_used, clippy::indexing_slicing)]"),
         (verify.ORIGIN, "clippy::expect_used"),
         (verify.OCI_TEST, "seeded_hog_budget.is_some_and(|bytes| bytes < OCI_MAX_INFLIGHT_BYTES)"),
         (verify.BILLING, "let is_allow = matches!(outcome.decision, QuotaCasDecision::Allow { .. });"),
@@ -122,8 +123,8 @@ def test_reviewer_reproducers_reject_incomplete_semantics() -> None:
     )
     _reject_mutation(
         verify.CAS_SINGLE,
-        "#[allow(\n    clippy::too_many_arguments,",
-        "#[allow(\n    clippy::all,\n    clippy::too_many_arguments,",
+        "(auth, scope, headers): CasRequestAuth,",
+        "auth: crate::auth_tenant::AuthTenant,\n    scope: crate::scope::CacheScope,\n    headers: axum::http::HeaderMap,",
     )
 
 
