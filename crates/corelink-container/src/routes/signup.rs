@@ -615,25 +615,18 @@ impl SignupStore for InMemorySignupStore {
 /// `(refill_rate_per_sec, burst_capacity, retry_floor_secs,
 ///   retry_ceiling_secs, retry_canceled_secs)`. We pick
 /// `burst_capacity = 5` (the bucket starts FULL so the first 5
-/// requests admit) and `refill = 0 tokens/sec` (rounded — 5 / 3600s
-/// is < 1 tps integer). With `retry_after_floor = 720s` (hour / 5),
-/// the 6th request in the same hour surfaces 429 + `Retry-After: 720`.
+/// requests admit) and retain the exact `5 / 3600` tokens/sec ratio.
+/// Keeping the fractional ratio is load-bearing: the integer constructor's
+/// old `1 token/sec` value let an attacker refill one pilot request every
+/// second after the initial burst. With `retry_after_floor = 720s`
+/// (hour / 5), a drained bucket surfaces 429 + `Retry-After: 720`.
 /// The hard ceiling is 1d; the canceled-tenant value is 7d
 /// (mirrors the audit-export config).
-///
-/// Note: `with_overrides` REQUIRES `default_burst_capacity > 0` — so
-/// we set burst=5 and refill=1 (the bucket effectively drains in 5
-/// requests because the refill / 1s contribution between requests
-/// in a wall-clock-aligned test is bounded by the now_ms granularity:
-/// the test pins the clock so refill is zero between requests).
-/// Production behavior on the live clock: 1 token / sec refill is
-/// 12 tokens / 5s → far below the 5/h policy floor; the
-/// `retry_after_floor_secs = 720` clamps the 429 retry to 12 min.
 #[must_use]
 pub fn pilot_signup_rate_limit_config() -> RateLimitConfig {
-    // (refill_per_sec=1, burst=5, floor=720s, ceiling=86_400s,
-    //  canceled=7*86_400s).
-    RateLimitConfig::with_overrides(1, 5, 720, 86_400, 7 * 86_400)
+    // (refill=5/3600 tokens/sec, burst=5, floor=720s,
+    // ceiling=86_400s, canceled=7*86_400s).
+    RateLimitConfig::with_fractional_refill_ratio(5, 3_600, 5, 720, 86_400, 7 * 86_400)
         .unwrap_or_else(RateLimitConfig::canonical)
 }
 

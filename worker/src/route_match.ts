@@ -17,6 +17,21 @@ export type RouteKind =
   | "runner_mint" | "runner_revoke" | "auth_rotate" | "internal"
   | "health_container" | "health_container_authed" | "not_found";
 
+/**
+ * True only for the pilot-signup endpoint (with an optional token segment).
+ *
+ * The base path is retained for compatibility with older callers, while the
+ * canonical public endpoint is `/v1/signup/pilot/{token}`. Do not broaden
+ * this to every `/v1/signup/*` path: those paths are distinct signup flows
+ * and must not consume the pilot programme's IP quota.
+ */
+export function isPilotSignupPath(path: string): boolean {
+  const base = "/v1/signup/pilot";
+  if (path === base) return true;
+  const token = path.slice(base.length + 1);
+  return path.startsWith(`${base}/`) && token.length > 0 && !token.includes("/");
+}
+
 const INTERNAL_DO_D1_PROBE_PREFIX = "/_internal/do-d1-probe/";
 
 /**
