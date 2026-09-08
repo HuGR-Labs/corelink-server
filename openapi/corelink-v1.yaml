@@ -5,10 +5,11 @@ info:
   summary: REST surface for CoreLink customer onboarding, privacy (DSR / DPA),
     billing webhooks, admin operations and health.
   description: |
-    Hand-authored OpenAPI 3.1 contract for the **non-REAPI** surface of CoreLink.
-    The high-volume CAS / AC / ByteStream / Capabilities surface is gRPC
-    (Remote Execution API v2) and documented separately under
-    `docs/reference/reapi/`.
+    Hand-authored OpenAPI 3.1 contract for CoreLink's customer, admin and
+    HTTP Remote Execution surfaces. High-volume CAS / AC / ByteStream /
+    Capabilities traffic is available through gRPC (Remote Execution API v2)
+    and HTTP bridges, including the native CAS batch routes documented below;
+    gRPC-only details remain under `docs/reference/reapi/`.
 
     Endpoint canonical paths are sourced from the implementing crates' doc-comments:
     `corelink-signup`, `corelink-dpa-acceptance`, `corelink-dpa-versioning`,
