@@ -7,6 +7,7 @@
 struct MockD1 {
     canned: Vec<(&'static str, Vec<D1Row>)>,
     calls: Mutex<Vec<(String, Vec<Value>)>>,
+    state: Mutex<AtomicRows>,
     fail: bool,
     /// When `Some(fragment)`, ONLY the queries whose SQL contains
     /// `fragment` fail (every other query behaves normally). Lets a test
@@ -15,11 +16,19 @@ struct MockD1 {
     fail_on: Option<&'static str>,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct AtomicRows {
+    audit: usize,
+    pats: usize,
+    team_members: usize,
+}
+
 impl MockD1 {
     fn with(canned: Vec<(&'static str, Vec<D1Row>)>) -> Self {
         Self {
             canned,
             calls: Mutex::new(Vec::new()),
+            state: Mutex::new(AtomicRows::default()),
             fail: false,
             fail_on: None,
         }
@@ -37,6 +46,7 @@ impl MockD1 {
         Self {
             canned,
             calls: Mutex::new(Vec::new()),
+            state: Mutex::new(AtomicRows::default()),
             fail: false,
             fail_on: Some(fragment),
         }
@@ -44,6 +54,10 @@ impl MockD1 {
 
     fn calls(&self) -> Vec<(String, Vec<Value>)> {
         self.calls.lock().unwrap().clone()
+    }
+
+    fn atomic_rows(&self) -> AtomicRows {
+        *self.state.lock().unwrap()
     }
 }
 
@@ -64,6 +78,62 @@ impl CustomerD1 for MockD1 {
             }
         }
         Ok(Vec::new())
+    }
+
+    fn create_pat_with_audit(
+        &self,
+        op: CustomerPatCreateOperation,
+    ) -> Result<(), CustomerAtomicError> {
+        self.calls.lock().unwrap().push((
+            "INSERT INTO customer_audit_events (tenant_id, event_type, actor, target, ts_ms, detail) VALUES (?1, 'pat.created', ?2, ?3, ?4, ?5)".to_owned(),
+            vec![json!(op.tenant_id.clone()), json!(op.audit_actor.clone()), json!(op.pat_id.clone()), json!(op.audit_ts_ms), json!(op.audit_detail.clone())],
+        ));
+        if self.fail {
+            return Err(CustomerAtomicError::Transport("D1 HTTP 500: transport down".to_owned()));
+        }
+        if self.fail_on == Some("customer_audit_events") {
+            return Err(CustomerAtomicError::Audit("induced audit failure".to_owned()));
+        }
+        self.calls.lock().unwrap().push((
+            "INSERT INTO pat (pat_id, tenant_id, pat_hash, scope, expires_ms, shown_once_token, shown_once_consumed, created_ms, token_id, name, find_only) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, ?10)".to_owned(),
+            vec![json!(op.pat_id), json!(op.tenant_id), json!(op.pat_hash), json!(op.scope), json!(op.expires_ms), json!(op.shown_once_token), json!(op.created_ms), json!(op.token_id), json!(op.name), json!(i32::from(op.find_only))],
+        ));
+        if self.fail_on == Some("INSERT INTO pat") {
+            return Err(CustomerAtomicError::Mutation("induced PAT failure".to_owned()));
+        }
+        let mut staged = *self.state.lock().unwrap();
+        staged.audit += 1;
+        staged.pats += 1;
+        *self.state.lock().unwrap() = staged;
+        Ok(())
+    }
+
+    fn invite_team_member_with_audit(
+        &self,
+        op: CustomerTeamInviteOperation,
+    ) -> Result<(), CustomerAtomicError> {
+        self.calls.lock().unwrap().push((
+            "INSERT INTO customer_audit_events (tenant_id, event_type, actor, target, ts_ms, detail) VALUES (?1, 'team.invited', ?2, ?3, ?4, ?5)".to_owned(),
+            vec![json!(op.tenant_id.clone()), json!(op.audit_actor.clone()), json!(op.invitation_id.clone()), json!(op.audit_ts_ms), json!(op.audit_detail.clone())],
+        ));
+        if self.fail {
+            return Err(CustomerAtomicError::Transport("D1 HTTP 500: transport down".to_owned()));
+        }
+        if self.fail_on == Some("customer_audit_events") {
+            return Err(CustomerAtomicError::Audit("induced audit failure".to_owned()));
+        }
+        self.calls.lock().unwrap().push((
+            "INSERT INTO team_member (tenant_id, user_id, email_hash, invitation_token_hash, role, status, invited_by, invited_at_ms) VALUES (?1, ?2, ?3, ?4, ?5, 'invited', ?6, ?7)".to_owned(),
+            vec![json!(op.tenant_id), json!(op.invitation_id), json!(op.email_hash), json!(op.invitation_token_hash), json!(op.role), json!(op.invited_by), json!(op.invited_at_ms)],
+        ));
+        if self.fail_on == Some("INSERT INTO team_member") {
+            return Err(CustomerAtomicError::Mutation("induced team-member failure".to_owned()));
+        }
+        let mut staged = *self.state.lock().unwrap();
+        staged.audit += 1;
+        staged.team_members += 1;
+        *self.state.lock().unwrap() = staged;
+        Ok(())
     }
 }
 

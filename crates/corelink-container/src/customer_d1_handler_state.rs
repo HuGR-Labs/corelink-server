@@ -237,59 +237,23 @@ impl D1CustomerHandler {
         })
     }
 
-    /// Write one customer-facing audit row (migration 0077) — the WRITE half of
-    /// `GET /v1/customer/audit`. **Fail-CLOSED / unskippable** (INV-AUDIT-EMIT-
-    /// ATOMIC-WITH-HANDLER): a failed insert propagates as
-    /// [`CustomerHandlerError::AuditFailed`] (→ 503 "audit closed") so the
-    /// customer-visible control-plane audit trail can NEVER be silently skipped.
-    ///
-    /// Callers MUST invoke this BEFORE the primary state mutation (emit-before-
-    /// mutate, the canonical audit-fail-CLOSED ordering the DSR endpoint + the
-    /// audit-chain sink use): if the audit row cannot be persisted the mutation
-    /// never happens, so a committed op is never left without its audit row (and
-    /// the non-idempotent mints/invites are never double-applied by a client that
-    /// retries a committed-then-500 response). The row is wall-clock timestamped,
-    /// tenant-scoped + fully parameterised (INV-TENANT-ISOLATION). `target` /
-    /// `detail` MUST be PII-free (e.g. a PAT id / invitation id + role, never a
-    /// raw email — CTRL-PRIV-001).
-    ///
-    /// # Errors
-    ///
-    /// [`CustomerHandlerError::AuditFailed`] on any D1 transport/decode failure
-    /// (the caller MUST propagate it — never `.ok()`/`let _ =`).
-    fn insert_audit_event(
-        &self,
-        tenant_id: &str,
-        event_type: &str,
-        actor: &str,
-        target: &str,
-        detail: &str,
-    ) -> Result<(), CustomerHandlerError> {
-        let ts_ms = i64::try_from(self.clock.now_ms()).unwrap_or(i64::MAX);
-        self.db
-            .query(
-                "INSERT INTO customer_audit_events \
-                 (tenant_id, event_type, actor, target, ts_ms, detail) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                vec![
-                    json!(tenant_id),
-                    json!(event_type),
-                    json!(actor),
-                    json!(target),
-                    json!(ts_ms),
-                    json!(detail),
-                ],
-            )
-            .map(|_rows| ())
-            .map_err(|e| {
-                // Fail-CLOSED: mark the op errored + surface AuditFailed so the
-                // caller aborts BEFORE the primary mutation. Never a silent drop.
-                self.emit_sli(true);
-                tracing::error!(error = %e, event_type, "customer_d1: unskippable audit insert failed (fail-CLOSED)");
-                CustomerHandlerError::AuditFailed(format!(
-                    "customer audit row insert failed for {event_type}: {e}"
-                ))
-            })
+    /// Preserve fail-CLOSED error semantics for the typed D1 mutation batch.
+    fn atomic_error(&self, error: CustomerAtomicError) -> CustomerHandlerError {
+        self.emit_sli(true);
+        match error {
+            CustomerAtomicError::Audit(e) | CustomerAtomicError::Transport(e) => {
+                tracing::error!(error = %e, "customer_d1: atomic audit transaction failed");
+                CustomerHandlerError::AuditFailed(format!("customer audit transaction failed: {e}"))
+            }
+            CustomerAtomicError::Mutation(e) => {
+                tracing::error!(error = %e, "customer_d1: atomic handler transaction failed");
+                CustomerHandlerError::Internal(format!("customer_d1: {e}"))
+            }
+            CustomerAtomicError::Unsupported(e) => {
+                tracing::error!(error = %e, "customer_d1: typed atomic operation unavailable");
+                CustomerHandlerError::Internal(format!("customer_d1: {e}"))
+            }
+        }
     }
 
     /// Fetch the tenant row (`tier` / `clerk_user_id` / `byok_status` /

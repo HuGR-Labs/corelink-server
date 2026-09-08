@@ -66,6 +66,8 @@ struct D1Response {
 #[derive(Debug, Deserialize)]
 struct D1QueryResult {
     results: Vec<D1Row>,
+    #[serde(default)]
+    success: Option<bool>,
 }
 
 /// A Cloudflare API error object.
@@ -79,6 +81,34 @@ struct D1Error {
 struct D1QueryRequest<'a> {
     sql: &'a str,
     params: Vec<serde_json::Value>,
+}
+
+/// One parameterised statement in the crate-private transactional primitive.
+/// Domain adapters expose typed operations instead of arbitrary SQL batches.
+#[derive(Debug, Serialize)]
+pub(crate) struct D1BatchStatement {
+    sql: String,
+    params: Vec<serde_json::Value>,
+}
+
+impl D1BatchStatement {
+    pub(crate) fn new(sql: impl Into<String>, params: Vec<serde_json::Value>) -> Self {
+        Self {
+            sql: sql.into(),
+            params,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct D1BatchRequest {
+    batch: Vec<D1BatchStatement>,
+}
+
+#[derive(Debug)]
+pub(crate) struct D1BatchError {
+    pub(crate) statement: Option<usize>,
+    pub(crate) message: String,
 }
 
 impl D1HttpClient {
@@ -187,6 +217,58 @@ impl D1HttpClient {
             .next()
             .map(|r| r.results)
             .unwrap_or_default())
+    }
+
+    /// Execute a parameterised D1 REST batch. Cloudflare runs statements
+    /// sequentially in one transaction and rolls the complete batch back if
+    /// any statement fails. Kept crate-private to avoid arbitrary SQL batch
+    /// exposure at domain seams.
+    pub(crate) async fn batch(
+        &self,
+        statements: Vec<D1BatchStatement>,
+    ) -> Result<Vec<Vec<D1Row>>, D1BatchError> {
+        debug!(statements = statements.len(), "D1HttpClient::batch");
+        let body = D1BatchRequest { batch: statements };
+        let resp = self
+            .http
+            .post(&self.query_url)
+            .bearer_auth(&self.api_token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| D1BatchError {
+                statement: None,
+                message: format!("D1 HTTP batch request failed: {e}"),
+            })?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "<unreadable>".to_owned());
+            return Err(D1BatchError {
+                statement: None,
+                message: format!("D1 HTTP {status}: {text}"),
+            });
+        }
+        let parsed: D1Response = resp.json().await.map_err(|e| D1BatchError {
+            statement: None,
+            message: format!("D1 batch response JSON parse failed: {e}"),
+        })?;
+        if !parsed.success {
+            let message = parsed
+                .errors
+                .iter()
+                .map(|e| e.message.as_str())
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(D1BatchError {
+                statement: parsed.result.iter().position(|r| r.success == Some(false)),
+                message: format!("D1 batch errors: {message}"),
+            });
+        }
+        Ok(parsed.result.into_iter().map(|r| r.results).collect())
     }
 }
 

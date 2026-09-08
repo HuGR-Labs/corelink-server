@@ -102,7 +102,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::storage::d1_http::{D1HttpClient, D1Row};
+use crate::storage::d1_http::{D1BatchStatement, D1HttpClient, D1Row};
 use crate::wall_clock::WallClock;
 
 include!("customer_d1_seams.rs");

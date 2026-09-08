@@ -13,6 +13,98 @@ pub trait CustomerD1: Send + Sync + core::fmt::Debug {
     /// Returns `Err(String)` on any D1 transport, HTTP, or decode
     /// failure.
     fn query(&self, sql: &str, binds: Vec<Value>) -> Result<Vec<D1Row>, String>;
+
+    /// Atomically persist a `pat.created` customer-audit row together with
+    /// the PAT mutation. The default keeps read-only test seams from gaining
+    /// an arbitrary SQL batch surface.
+    fn create_pat_with_audit(
+        &self,
+        _op: CustomerPatCreateOperation,
+    ) -> Result<(), CustomerAtomicError> {
+        Err(CustomerAtomicError::Unsupported(
+            "atomic PAT create is not supported by this D1 seam".to_owned(),
+        ))
+    }
+
+    /// Atomically persist a `team.invited` customer-audit row together with
+    /// the invited-seat mutation.
+    fn invite_team_member_with_audit(
+        &self,
+        _op: CustomerTeamInviteOperation,
+    ) -> Result<(), CustomerAtomicError> {
+        Err(CustomerAtomicError::Unsupported(
+            "atomic team invite is not supported by this D1 seam".to_owned(),
+        ))
+    }
+}
+
+/// Typed values for the fixed PAT-create transaction.
+#[derive(Debug, Clone)]
+pub struct CustomerPatCreateOperation {
+    /// Owning tenant id.
+    pub tenant_id: String,
+    /// Public PAT identifier.
+    pub pat_id: String,
+    /// Hashed PAT secret.
+    pub pat_hash: String,
+    /// Persisted base scope.
+    pub scope: String,
+    /// Expiry in Unix milliseconds.
+    pub expires_ms: i64,
+    /// Opaque shown-once marker.
+    pub shown_once_token: String,
+    /// Creation instant in Unix milliseconds.
+    pub created_ms: i64,
+    /// Embedded PAT token identifier.
+    pub token_id: String,
+    /// Customer display name.
+    pub name: String,
+    /// Whether this PAT is find-only.
+    pub find_only: bool,
+    /// Audit actor.
+    pub audit_actor: String,
+    /// Audit timestamp in Unix milliseconds.
+    pub audit_ts_ms: i64,
+    /// PII-safe customer audit detail.
+    pub audit_detail: String,
+}
+
+/// Typed values for the fixed team-invite transaction.
+#[derive(Debug, Clone)]
+pub struct CustomerTeamInviteOperation {
+    /// Owning tenant id.
+    pub tenant_id: String,
+    /// Invitation id placeholder until acceptance.
+    pub invitation_id: String,
+    /// Pseudonymized invitee email hash.
+    pub email_hash: String,
+    /// One-time invitation-token digest.
+    pub invitation_token_hash: String,
+    /// Canonical persisted role.
+    pub role: String,
+    /// Issuing principal.
+    pub invited_by: String,
+    /// Invitation instant in Unix milliseconds.
+    pub invited_at_ms: i64,
+    /// Audit actor.
+    pub audit_actor: String,
+    /// Audit timestamp in Unix milliseconds.
+    pub audit_ts_ms: i64,
+    /// PII-safe customer audit detail.
+    pub audit_detail: String,
+}
+
+/// Failure stage for a typed customer transaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CustomerAtomicError {
+    /// The audit statement failed.
+    Audit(String),
+    /// The handler mutation failed and D1 rolled the audit statement back.
+    Mutation(String),
+    /// REST transport or response failure before a statement was identified.
+    Transport(String),
+    /// A non-production seam did not implement the operation.
+    Unsupported(String),
 }
 
 /// Production [`CustomerD1`] over the CF D1 REST API. Single documented
@@ -63,6 +155,99 @@ impl CustomerD1 for D1HttpCustomerDb {
         // `Handle::current().block_on` drives the D1 round-trip.
         tokio::task::block_in_place(move || {
             tokio::runtime::Handle::current().block_on(async move { d1.query(sql, &binds).await })
+        })
+    }
+
+    fn create_pat_with_audit(
+        &self,
+        op: CustomerPatCreateOperation,
+    ) -> Result<(), CustomerAtomicError> {
+        self.atomic_batch(vec![
+            D1BatchStatement::new(
+                "INSERT INTO customer_audit_events \
+                 (tenant_id, event_type, actor, target, ts_ms, detail) \
+                 VALUES (?1, 'pat.created', ?2, ?3, ?4, ?5)",
+                vec![
+                    json!(op.tenant_id.clone()),
+                    json!(op.audit_actor),
+                    json!(op.pat_id.clone()),
+                    json!(op.audit_ts_ms),
+                    json!(op.audit_detail),
+                ],
+            ),
+            D1BatchStatement::new(
+                "INSERT INTO pat \
+                 (pat_id, tenant_id, pat_hash, scope, expires_ms, \
+                  shown_once_token, shown_once_consumed, created_ms, token_id, name, find_only) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, ?10)",
+                vec![
+                    json!(op.pat_id),
+                    json!(op.tenant_id),
+                    json!(op.pat_hash),
+                    json!(op.scope),
+                    json!(op.expires_ms),
+                    json!(op.shown_once_token),
+                    json!(op.created_ms),
+                    json!(op.token_id),
+                    json!(op.name),
+                    json!(i32::from(op.find_only)),
+                ],
+            ),
+        ])
+    }
+
+    fn invite_team_member_with_audit(
+        &self,
+        op: CustomerTeamInviteOperation,
+    ) -> Result<(), CustomerAtomicError> {
+        self.atomic_batch(vec![
+            D1BatchStatement::new(
+                "INSERT INTO customer_audit_events \
+                 (tenant_id, event_type, actor, target, ts_ms, detail) \
+                 VALUES (?1, 'team.invited', ?2, ?3, ?4, ?5)",
+                vec![
+                    json!(op.tenant_id.clone()),
+                    json!(op.audit_actor),
+                    json!(op.invitation_id.clone()),
+                    json!(op.audit_ts_ms),
+                    json!(op.audit_detail),
+                ],
+            ),
+            D1BatchStatement::new(
+                "INSERT INTO team_member \
+                 (tenant_id, user_id, email_hash, invitation_token_hash, role, status, invited_by, invited_at_ms) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'invited', ?6, ?7)",
+                vec![
+                    json!(op.tenant_id),
+                    json!(op.invitation_id),
+                    json!(op.email_hash),
+                    json!(op.invitation_token_hash),
+                    json!(op.role),
+                    json!(op.invited_by),
+                    json!(op.invited_at_ms),
+                ],
+            ),
+        ])
+    }
+}
+
+impl D1HttpCustomerDb {
+    /// Execute one of the fixed customer mutation batches. This helper is
+    /// deliberately not part of `CustomerD1`, preventing arbitrary SQL batch
+    /// exposure to domain callers.
+    fn atomic_batch(
+        &self,
+        statements: Vec<D1BatchStatement>,
+    ) -> Result<(), CustomerAtomicError> {
+        let d1 = Arc::clone(&self.d1);
+        tokio::task::block_in_place(move || {
+            tokio::runtime::Handle::current().block_on(async move { d1.batch(statements).await })
+        })
+        .map(|_| ())
+        .map_err(|e| match e.statement {
+            Some(0) => CustomerAtomicError::Audit(e.message),
+            Some(1) => CustomerAtomicError::Mutation(e.message),
+            _ => CustomerAtomicError::Transport(e.message),
         })
     }
 }

@@ -113,36 +113,22 @@ impl CustomerTeamHandler for D1CustomerHandler {
         let invitation_token = hex::encode(token_bytes);
         let invitation_token_hash = hex::encode(Sha256::digest(invitation_token.as_bytes()));
 
-        // Customer-facing audit row (migration 0077, write half). UNSKIPPABLE /
-        // fail-CLOSED (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER): emitted BEFORE the
-        // team_member INSERT so an invite can NEVER commit without its customer-
-        // visible audit row. PII-safe — `target` is the invitation id and the
-        // summary names only the role, NEVER the raw invitee email (CTRL-PRIV-001;
-        // only `email_hash` is persisted below). A failed insert → 503 and no seat
-        // is written.
-        self.insert_audit_event(
-            &req.caller_tenant,
-            "team.invited",
-            &req.principal,
-            &invitation_id,
-            &format!("Invited a team member with role {role}"),
-        )?;
-
-        // `joined_at_ms` is left NULL until acceptance flips the seat to `active`.
-        self.run(
-            "INSERT INTO team_member \
-             (tenant_id, user_id, email_hash, invitation_token_hash, role, status, invited_by, invited_at_ms) \
-             VALUES (?1, ?2, ?3, ?4, ?5, 'invited', ?6, ?7)",
-            vec![
-                json!(req.caller_tenant),
-                json!(invitation_id),
-                json!(email_hash),
-                json!(invitation_token_hash),
-                json!(role),
-                json!(req.principal),
-                json!(invited_at_ms),
-            ],
-        )?;
+        // Audit and invited-seat persistence are one typed D1 transaction. D1
+        // rolls both rows back if either fixed statement fails.
+        self.db
+            .invite_team_member_with_audit(CustomerTeamInviteOperation {
+                tenant_id: req.caller_tenant.clone(),
+                invitation_id: invitation_id.clone(),
+                email_hash,
+                invitation_token_hash,
+                role: role.to_owned(),
+                invited_by: req.principal.clone(),
+                invited_at_ms,
+                audit_actor: req.principal.clone(),
+                audit_ts_ms: invited_at_ms,
+                audit_detail: format!("Invited a team member with role {role}"),
+            })
+            .map_err(|e| self.atomic_error(e))?;
 
         self.emit_audit(
             AuditEventKind::TeamInviteCommitted,

@@ -56,9 +56,10 @@ the [billing quota check](/flows/billing-quota-check.md).
    `request_count` since BE-1a) — real where a table
    exists, honest empty/501 where it does not
    (`crates/corelink-container/src/customer_d1_seams.rs:1`). The `customer_audit_events` rows are written
-   UNSKIPPABLE / fail-CLOSED (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER), not best-effort: a failed insert now
-   surfaces as `AuditFailed` → 503 and the control-plane mutation never commits
-   (`crates/corelink-container/src/customer_d1_seams.rs:1`).
+   UNSKIPPABLE / fail-CLOSED (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER), not best-effort: each `pat.created`
+   or `team.invited` row shares one REST D1 transaction with its handler mutation. A failed statement
+   rolls both rows back and surfaces as `AuditFailed` (503) or internal (500) according to the failure stage
+   (`crates/corelink-container/src/customer_d1_seams.rs:1`, `crates/corelink-container/src/storage/d1_http.rs`).
 4. Each sync handler call bridges to the async D1 client through `block_in_place` +
    `Handle::current().block_on`, valid because the native server is multi-thread `#[tokio::main]`
    (`crates/corelink-container/src/customer_d1_seams.rs:1`).
