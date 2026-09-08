@@ -105,14 +105,21 @@ def assess_source(route: str, handler: str, storage: str, openapi: str, docs: st
     except ContractError as error:
         gaps.append(str(error))
         read = ""
-    if read.count("self.get_capped_for_read(&key, max_bytes)") != 2 or "get_capped(key, max_bytes)" not in storage:
+    if (
+        read.count("self.get_capped_for_read(&key, max_bytes)") != 1
+        or storage.count("self.client.get_capped(key, max_bytes).await") != 1
+    ):
         gaps.append("r2-pre-collection-cap-on-both-paths")
     if "self.client.get(&key)" in read:
         gaps.append("unbounded-r2-read")
 
     try:
         capped = _section(storage, "pub async fn get_capped", "pub async fn head_size")
-        capped += _section(storage, "async fn collect_capped_body<S", "pub async fn new(")
+        capped += _section(
+            storage,
+            "async fn collect_capped_body<S",
+            "\n}\n\nimpl R2S3Client",
+        )
     except ContractError as error:
         gaps.append(str(error))
         capped = ""

@@ -109,14 +109,11 @@ class B078ContractTests(unittest.TestCase):
         route, handler, storage = self._sources()
         openapi = (ROOT / "openapi/corelink-v1.yaml").read_text()
         docs = (ROOT / "docs/knowledge/surfaces/native-cas.md").read_text()
-        start = storage.index("async fn collect_capped_body_with_deadlines")
-        end = storage.index("pub async fn new(", start)
-        capped = storage[start:end].replace(
+        mutated_storage = storage.replace(
             "body.next_chunk()",
             "body.collect().await?",
             1,
         )
-        mutated_storage = storage[:start] + capped + storage[end:]
         gaps = verifier.assess_source(route, handler, mutated_storage, openapi, docs)
         self.assertIn("bounded-r2-body-loop", gaps)
 
