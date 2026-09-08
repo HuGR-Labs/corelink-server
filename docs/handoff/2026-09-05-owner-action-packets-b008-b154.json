@@ -533,7 +533,7 @@
       },
       "expected_postcondition": "The owner has a reproducible in-fleet hot PUT measurement that separates cold authentication from the steady path; B-102 remains open until the target or an explicit decision is evidenced.",
       "retry_and_rollback": "Retry with a fresh payload only after preserving the original three samples and confirming the same release. Revoke the probe PAT after measurement; the probe creates no durable product state beyond the test object and must not change production configuration.",
-      "references": ["BACKLOG.md#B-102", ".github/workflows/cargo-cache-latency-probe.yml", "worker/src/index.ts", "worker/src/lib/pat_verify_cache.ts"]
+      "references": ["BACKLOG.md#B-102", "historical, non-executable reference only: .github/workflows/cargo-cache-latency-probe.yml (archived; do not dispatch)", "worker/src/index.ts", "worker/src/lib/pat_verify_cache.ts"]
     },
     {
       "id": "B-106",
