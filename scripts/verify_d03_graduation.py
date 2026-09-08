@@ -128,9 +128,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "profiles": [], "sample_count": 6,
         "required": [
             "perf-production-evidence.yml",
-            "collect_b105_same_lane.py", "run_id", "gh run view", "gh run download",
+            "collect_b105_same_lane.py", "expected_sha", "gh api repos/HuGR-Labs/corelink-server/commits/main", "run_id", "gh run view", "gh run download",
             "b102-b108-owner-evidence-", "corelink-performance-evidence.v2.json",
-            "cache_mode", "disabled", "enabled", "B105-cache-comparison.json", "createdAt", "dispatch_started_at",
+            "cache_mode", "disabled", "enabled", "B105-cache-comparison.json", "createdAt", "dispatch_started_at", "headSha", ".headSha == $expected_sha",
             "verify_b102_b108_evidence.py --packet", "--expect open",
         ],
         "safety": ["--ref main", "OWNER_APPROVED_LANE_DISPATCH=1", "status", "completed"],
@@ -228,7 +228,8 @@ COMMAND_OPERATIONS: dict[str, tuple[str, ...]] = {
     "B-104": ("does-not-exist-$ordinal",),
     "B-105": (
         "gh workflow run perf-production-evidence.yml --ref main",
-        "run_id=\"\"", "gh run view \"$run_id\"", "gh run download \"$run_id\"",
+        "expected_sha=\"$(gh api repos/HuGR-Labs/corelink-server/commits/main --jq .sha)\"", "run_id=\"\"", "gh run view \"$run_id\"", "gh run download \"$run_id\"",
+        ".headSha == $expected_sha",
         "tee artifacts/d03/B105-cache-comparison.json", "verify_b102_b108_evidence.py --packet",
     ),
     "B-106": ("$CORELINK_PROD_BASE/v1/customer/keys",),
@@ -290,7 +291,7 @@ EXCLUDED = frozenset(("B-061", "B-126", "B-155"))
 GRADUATED = tuple(item for item in ORIGINAL_TL_OPEN if item not in EXCLUDED) + ("B-006",)
 GRADUATED_SET = frozenset(GRADUATED)
 ORIGINAL_SET = frozenset(ORIGINAL_TL_OPEN)
-DONE_SET = frozenset(("B-028", "B-074", "B-135", "B-253"))
+DONE_SET = frozenset(("B-028", "B-074", "B-135", "B-229", "B-253"))
 B006_ARTIFACT = "artifacts/d03/B006-capability-metrics.json"
 B006_PROVIDER_ARTIFACT = "artifacts/d03/B006-provider-binding.json"
 EXCLUDED_FINGERPRINTS = {
@@ -816,6 +817,14 @@ def _check_command_contract(item: str, packet: dict[str, Any], root: Path) -> No
             raise GraduationError("B-112 initial headSha predicate is not bound to skipped-release guard")
         if terminal.count('.status == "completed" and .conclusion == "skipped"') != 4:
             raise GraduationError("B-112 terminal headSha predicates are not bound to skipped-release guards")
+    if item == "B-105":
+        expected_sha_assignment = 'expected_sha="$(gh api repos/HuGR-Labs/corelink-server/commits/main --jq .sha)"'
+        if command.count(expected_sha_assignment) != 1:
+            raise GraduationError("B-105: expected SHA must come from the main-branch commit API")
+        if command.count('[[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]]') != 1:
+            raise GraduationError("B-105: expected SHA must be validated as a full commit SHA")
+        if command.count('.headSha == $expected_sha') != 2:
+            raise GraduationError("B-105: run selection and terminal metadata must bind exact headSha")
     if "set -euo pipefail" not in command:
         raise GraduationError(f"{item}: command must enable fail-closed shell options")
     if "printf" in command:

@@ -5776,7 +5776,7 @@ verify: |
   python3 scripts/verify_b229_clerk_webhook.py --self-test && \
   python3 -m unittest tests/test_verify_b229_clerk_webhook.py
 verify-means: |
-  **Polaridade `done` (regressão):** o verificador exige o pacote de evidência
+  done — o verificador exige o pacote de evidência redigido e a polaridade `done`:
   redigido, os campos operacionais do deploy e a declaração explícita de que
   payloads/segredos foram omitidos. Ele rejeita qualquer shape de credencial,
   assinatura ou payload; o self-test muta cada campo e exige falha fechado.

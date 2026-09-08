@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_closed_population_and_inverted_guards() -> None:
     result = verify_document(run_guards=True, run_gates=False)
-    assert result == {"original": 42, "graduated": 40, "done": 4, "parked": 35, "reopened": 1}
+    assert result == {"original": 42, "graduated": 40, "done": 5, "parked": 34, "reopened": 1}
 
 
 def test_register_mutations_are_red() -> None:
@@ -369,6 +369,33 @@ def test_b105_packet_binds_to_production_evidence_workflow() -> None:
     )
     with pytest.raises(GraduationError, match="B-105"):
         _check_packets(commented_jq, ROOT)
+
+
+def test_b105_run_selection_requires_exact_head_sha() -> None:
+    packet = _load_packets(
+        (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
+    )
+    command = packet["packets"]["B-105"]["command"]
+    for needle, replacement in (
+        ("expected_sha=\"$(gh api repos/HuGR-Labs/corelink-server/commits/main --jq .sha)\"", "expected_sha=\"stale\""),
+        (".headSha == $expected_sha", ".headSha != $expected_sha"),
+    ):
+        mutated = copy.deepcopy(packet)
+        mutated["packets"]["B-105"]["command"] = command.replace(needle, replacement, 1)
+        with pytest.raises(GraduationError, match="B-105"):
+            _check_packets(mutated, ROOT)
+
+
+def test_b229_packet_matches_redacted_production_receipt() -> None:
+    packet = _load_packets(
+        (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
+    )
+    assert packet["packets"]["B-229"]["disposition"] == "DONE"
+    assert "B-229 production" in packet["packets"]["B-229"]["evidence"]
+    mutated = copy.deepcopy(packet)
+    mutated["packets"]["B-229"]["disposition"] = "PARKED"
+    with pytest.raises(GraduationError, match="B-229"):
+        _check_packets(mutated, ROOT)
 
     bad_even_median = copy.deepcopy(packet)
     bad_even_median["packets"]["B-104"]["command"] = bad_even_median["packets"]["B-104"]["command"].replace(

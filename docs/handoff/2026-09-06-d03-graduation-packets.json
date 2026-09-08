@@ -215,13 +215,13 @@
       }
     },
     "B-229": {
-      "disposition": "PARKED",
+      "disposition": "DONE",
       "owner": "tl",
       "dependency": "production secret binding and verified Clerk webhook",
       "action": "Owner deploys with CLERK_WEBHOOK_SECRET bound and records one accepted signed webhook plus deploy-gate output.",
-      "artifact": "artifacts/d03/B229-clerk-secret-deploy.json",
-      "command": "wrangler tail corelink --format json --search CLERK_WEBHOOK > artifacts/d03/B229-clerk-secret-deploy.json",
-      "verify_means": "parked"
+      "artifact": "evidence/production/B-229-clerk-webhook-2026-09-08.md",
+      "command": "set -euo pipefail; python3 scripts/verify_b229_clerk_webhook.py --evidence evidence/production/B-229-clerk-webhook-2026-09-08.md; python3 scripts/verify_b229_clerk_webhook.py --evidence evidence/production/B-229-clerk-webhook-2026-09-08.md --self-test",
+      "evidence": "B-229 production receipt evidence/production/B-229-clerk-webhook-2026-09-08.md is verified by scripts/verify_b229_clerk_webhook.py: exact source SHA, Cloudflare version, 100% traffic, health 200, signed probe 200 ignored, and omitted payload/credential values."
     },
     "B-028": {
       "disposition": "DONE",
@@ -628,7 +628,7 @@
       "dependency": "paired GitHub runner executions with cache on and off",
       "action": "Owner runs the same lane under both cache settings on the same runner and compares total duration.",
       "artifact": "artifacts/d03/B105-cache-comparison.json",
-      "command": "set -euo pipefail; mkdir -p artifacts/d03; test \"${OWNER_APPROVED_LANE_DISPATCH:?set OWNER_APPROVED_LANE_DISPATCH=1 for the approved paired lane}\" = 1; export D03_SAMPLE_COUNT=6; workflow=\"perf-production-evidence.yml\"; test \"$workflow\" = \"perf-production-evidence.yml\"; grep -Fq 'python3 scripts/collect_b105_same_lane.py' \".github/workflows/$workflow\"; dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; gh workflow run perf-production-evidence.yml --ref main -f tenant_id=\"${CORELINK_PERF_TENANT:?}\" -f worker_script=\"${CORELINK_PROD_WORKER_SCRIPT:?}\" -f confirm=collect-production-evidence; run_id=\"\"; for attempt in $(seq 1 30); do run_candidates=\"$(gh run list --workflow \"$workflow\" --limit 20 --json databaseId,createdAt,event,headBranch --jq 'map(select(.event == \"workflow_dispatch\" and .headBranch == \"main\"))')\"; run_id=\"$(jq -r --arg started \"$dispatch_started_at\" 'map(select(.createdAt >= $started)) | .[0].databaseId // empty' <<<\"$run_candidates\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; timeout 900s gh run watch \"$run_id\"; run_meta=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,workflowName,headBranch,headSha,event,createdAt)\"; jq -e --arg workflow_name \"perf-production-evidence\" --arg started \"$dispatch_started_at\" '.status == \"completed\" and .conclusion == \"success\" and .workflowName == $workflow_name and .event == \"workflow_dispatch\" and .headBranch == \"main\" and .createdAt >= $started' <<<\"$run_meta\" >/dev/null; download_dir=\"$(mktemp -d)\"; gh run download \"$run_id\" --name \"b102-b108-owner-evidence-$run_id\" --dir \"$download_dir\"; artifact_source=\"$(find \"$download_dir\" -type f -name corelink-performance-evidence.v2.json -print -quit)\"; test -n \"$artifact_source\"; tee artifacts/d03/B105-cache-comparison.json < \"$artifact_source\" >/dev/null; test -s artifacts/d03/B105-cache-comparison.json; jq -e '.schema == \"corelink.performance-evidence.v2\" and (.items[\"B-105\"].pairs | length) == 6 and all(.items[\"B-105\"].pairs[]; .control.cache_mode == \"disabled\" and .treatment.cache_mode == \"enabled\")' artifacts/d03/B105-cache-comparison.json >/dev/null; python3 scripts/verify_b102_b108_evidence.py --packet artifacts/d03/B105-cache-comparison.json --expect open >/dev/null; rm -rf \"$download_dir\"",
+      "command": "set -euo pipefail; mkdir -p artifacts/d03; test \"${OWNER_APPROVED_LANE_DISPATCH:?set OWNER_APPROVED_LANE_DISPATCH=1 for the approved paired lane}\" = 1; export D03_SAMPLE_COUNT=6; workflow=\"perf-production-evidence.yml\"; test \"$workflow\" = \"perf-production-evidence.yml\"; grep -Fq 'python3 scripts/collect_b105_same_lane.py' \".github/workflows/$workflow\"; expected_sha=\"$(gh api repos/HuGR-Labs/corelink-server/commits/main --jq .sha)\"; [[ \"$expected_sha\" =~ ^[0-9a-f]{40}$ ]]; dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; gh workflow run perf-production-evidence.yml --ref main -f tenant_id=\"${CORELINK_PERF_TENANT:?}\" -f worker_script=\"${CORELINK_PROD_WORKER_SCRIPT:?}\" -f confirm=collect-production-evidence; run_id=\"\"; for attempt in $(seq 1 30); do run_candidates=\"$(gh run list --workflow \"$workflow\" --limit 20 --json databaseId,createdAt,event,headBranch,headSha --jq 'map(select(.event == \"workflow_dispatch\" and .headBranch == \"main\"))')\"; run_id=\"$(jq -r --arg started \"$dispatch_started_at\" --arg expected_sha \"$expected_sha\" 'map(select(.createdAt >= $started and .headSha == $expected_sha)) | .[0].databaseId // empty' <<<\"$run_candidates\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; timeout 900s gh run watch \"$run_id\"; run_meta=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,workflowName,headBranch,headSha,event,createdAt)\"; jq -e --arg workflow_name \"perf-production-evidence\" --arg started \"$dispatch_started_at\" --arg expected_sha \"$expected_sha\" '.status == \"completed\" and .conclusion == \"success\" and .workflowName == $workflow_name and .event == \"workflow_dispatch\" and .headBranch == \"main\" and .headSha == $expected_sha and .createdAt >= $started' <<<\"$run_meta\" >/dev/null; download_dir=\"$(mktemp -d)\"; gh run download \"$run_id\" --name \"b102-b108-owner-evidence-$run_id\" --dir \"$download_dir\"; artifact_source=\"$(find \"$download_dir\" -type f -name corelink-performance-evidence.v2.json -print -quit)\"; test -n \"$artifact_source\"; tee artifacts/d03/B105-cache-comparison.json < \"$artifact_source\" >/dev/null; test -s artifacts/d03/B105-cache-comparison.json; jq -e '.schema == \"corelink.performance-evidence.v2\" and (.items[\"B-105\"].pairs | length) == 6 and all(.items[\"B-105\"].pairs[]; .control.cache_mode == \"disabled\" and .treatment.cache_mode == \"enabled\")' artifacts/d03/B105-cache-comparison.json >/dev/null; python3 scripts/verify_b102_b108_evidence.py --packet artifacts/d03/B105-cache-comparison.json --expect open >/dev/null; rm -rf \"$download_dir\"",
       "verify_means": "parked",
       "command_contract": {
         "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B105",
@@ -637,6 +637,8 @@
         "required": [
           "perf-production-evidence.yml",
           "collect_b105_same_lane.py",
+          "expected_sha",
+          "gh api repos/HuGR-Labs/corelink-server/commits/main",
           "run_id",
           "gh run view",
           "gh run download",
@@ -648,6 +650,8 @@
           "B105-cache-comparison.json",
           "createdAt",
           "dispatch_started_at",
+          "headSha",
+          ".headSha == $expected_sha",
           "verify_b102_b108_evidence.py --packet",
           "--expect open"
         ],
