@@ -1,4 +1,4 @@
-name: load-test-nightly (R3-prep)
+name: load-test (operator dispatch, R3-prep)
 
 # Runner: `corelink` (the Cloudflare container fabric — Ubuntu 24.04, apt
 # available, a datacenter IP). Previously pinned to a self-hosted Linux/X64
@@ -19,7 +19,7 @@ name: load-test-nightly (R3-prep)
 # the nightly `schedule` in the SAME change that wires the staging secrets;
 # enabling it before then only manufactures a nightly red on missing infra.
 #
-# R3-prep load test suite — nightly run against staging.
+# R3-prep load test suite — operator-dispatched run against staging.
 #
 # Five k6 scenarios cover the critical paths:
 #   1. signup orchestration burst
@@ -28,7 +28,7 @@ name: load-test-nightly (R3-prep)
 #   4. CAS hot path (PUT/GET)
 #   5. BYOK kill-switch stampede
 #
-# Does not block merges (it is dispatch-only, not a PR check), but the run
+# Does not block merges (it is dispatch-only, not a PR check), but a dispatched run
 # itself DOES go red: the `baseline-regression` job fails when a scenario's
 # MEDIAN `http_req_duration` regresses more than REGRESSION_THRESHOLD versus
 # the stored baseline. That baseline is persisted across runs in the GitHub
@@ -73,7 +73,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: load-test-nightly
+  group: load-test-operator
   cancel-in-progress: false
 
 env:

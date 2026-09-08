@@ -1,9 +1,6 @@
 # R3-prep — K6 Load Test Suite (Operator Playbook)
 
-> Status: **dispatch-only until staging is provisioned**. The workflow's
-> regression comparator is live and fail-closed, but the nightly schedule stays
-> disabled while `staging.corelink.humangr.com` and its GitHub Environment
-> secrets do not exist. **DO NOT** run any of these scripts against the
+> Status: **dispatch-only until staging is provisioned**; operator-only and requires a real staging target. **DO NOT** run any of these scripts against the
 > production environment from CI or any unattended automation. The
 > kill-switch stampede + signup burst scenarios both mutate D1 state and
 > can burn out free-tier D1 quotas if cleanup is skipped.
@@ -21,13 +18,12 @@ deploy — i.e. the first thing the operator runs after the GA staging cutover.
 | 3 | `k6/dsr-api.js`                 | `POST /v1/privacy/dsr/{access,erasure,portability}` | 20 RPS sustained 10 min   | ≤ 1 s     | receipt JWT structural, idempotency holds    |
 | 4 | `k6/cas-write-read.js`          | `PUT/GET /v1/cas/blobs/:digest` | 200 RPS PUT (1 MiB) + 1000 RPS GET, 5 min | PUT ≤ 800 ms / GET ≤ 150 ms | hit-ratio ≥ 90% post-warm-up    |
 | 5 | `k6/byok-revoke-stampede.js`    | `POST /v1/admin/byok/cmk/:id/revoke` + status polling | single revoke, 10k DEK entries  | n/a       | full evict ≤ 60 s, SEV-1 alert fires, SLA counter == 0 |
-| 6 | `k6/scenarios/endurance-24h.js` | Realistic mix: 60% CAS read / 15% CAS write / 10% audit / 8% BYOK / 5% admin / 2% webhook | 50 VUs sustained 24h (5m ramp + 23h50m steady + 5m ramp-down). 50 tenants, Zipfian s=1.07. Configurable via `DURATION`: 24h (manual), 2h (CI nightly), 30s (smoke). | drift floors per op (see analysis template) | error rate < 0.1% / 5-min window; 3-strike budget breach tripwire; memory drift ≤ 5 MiB/h |
+| 6 | `k6/scenarios/endurance-24h.js` | Realistic mix: 60% CAS read / 15% CAS write / 10% audit / 8% BYOK / 5% admin / 2% webhook | 50 VUs sustained 24h (5m ramp + 23h50m steady + 5m ramp-down). 50 tenants, Zipfian s=1.07. Configurable via `DURATION`: 24h (manual), 2h (operator dispatch), 30s (smoke). | drift floors per op (see analysis template) | error rate < 0.1% / 5-min window; 3-strike budget breach tripwire; memory drift ≤ 5 MiB/h |
 
-Scenarios 1–5 are the **acceptance gate** (short-burst SLO assertions) — a
-release is not staging-clean unless every script passes its thresholds.
-Scenario 6 is the **endurance / drift-detection gate**: 2h variant runs
-daily via `.github/workflows/endurance-2h-nightly.yml`; the full 24h
-variant is a manual pre-GA drill — see
+Scenarios 1–5 are the **acceptance suite** (short-burst SLO assertions) for an
+operator-provisioned staging run. Scenario 6 is the **endurance / drift-
+detection harness**: both the 2h and full 24h variants are on-demand; there is
+no automated performance gate in the retired staging workflow. See
 `specs/_runbooks/RB-ENDURANCE-24H-DRILL.md` and the analysis report
 template at `tests/load/k6/scenarios/endurance-24h-ANALYSIS-TEMPLATE.md`.
 
@@ -61,11 +57,10 @@ environment.
 - **Pre-GA**: run all five scenarios manually on the staging deploy
   candidate before promoting to production. Required artifact in the GA
   evidence pack: `tests/load/results/{date}/*.json`.
-- **Weekly post-GA**: intended to run via `.github/workflows/load-test-nightly.yml`
-  on Sundays 02:00 UTC, once staging is provisioned and the cron is re-enabled
-  in the same change. Until then it is dispatch-only. When it runs, the
-  median-vs-baseline comparator fails on a regression and on missing/partial
-  evidence; it is a run-level gate, not a pull-request merge check.
+- **Post-GA**: on-demand only via `.github/workflows/load-test-nightly.yml`.
+  The workflow is intentionally not scheduled; it requires a real staging
+  deployment and dedicated secrets. Until then it is dispatch-only. When dispatched, the baseline comparison
+  fails on a median regression > 20% versus the stored baseline.
 - **On-demand**: any time a change merges into `apps/server/**`,
   `crates/corelink-{signup,dsr,cas,tier-selection}/**`, or
   `migrations/d1/**`, an operator should re-run scenarios 1-4 manually.
@@ -85,7 +80,7 @@ npx k6-html-reporter@1.x \
   --output tests/load/results/$(date +%Y-%m-%d)/signup.html
 ```
 
-The nightly CI uploads the JSON artifacts to the workflow run; the HTML
+The dispatch workflow uploads the JSON artifacts to the workflow run; the HTML
 reporter step runs offline on the operator workstation when needed.
 
 ## Cleanup
@@ -106,7 +101,7 @@ Each scenario creates synthetic state:
 - **byok-revoke-stampede**: re-warm the CMK + DEK cache via
   `scripts/byok-load-warmup.sh --cmk-id $K6_BYOK_TEST_CMK_ID --entries 10000`.
 
-Failure to clean up will burn staging D1 quota. The nightly workflow runs a
+Failure to clean up will burn staging D1 quota. The dispatch workflow runs a
 cleanup job after every scenario.
 
 ## Target environment safety rails
@@ -133,6 +128,6 @@ cleanup job after every scenario.
 
 ## Versioning
 
-Bump the suite version (and re-baseline the nightly regression budget) when
+Bump the suite version (and re-baseline the operator comparison budget) when
 the SLO catalog floors change. The current version is **r3-prep v1** —
 matches HEAD of `wt/r3-prep-load-tests`.

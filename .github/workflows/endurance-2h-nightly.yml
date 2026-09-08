@@ -1,4 +1,4 @@
-name: endurance-2h-nightly (R-prep)
+name: endurance-2h (operator dispatch, R-prep)
 
 # Runner: `corelink` — the Cloudflare container fabric (Ubuntu 24.04, apt +
 # sudo available, which is what the k6 apt install below needs).
@@ -19,13 +19,12 @@ name: endurance-2h-nightly (R-prep)
 # R-prep endurance load — 2-hour variant of the 24h endurance drill.
 #
 # The full 24h exercise (manual; see specs/_runbooks/RB-ENDURANCE-24H-DRILL)
-# is too long for CI. This workflow runs the 2-hour variant nightly so that
+# is too long for CI. An operator can dispatch the 2-hour variant so that
 # slow-drift symptoms (memory growth, p99 climb, log volume escalation) are
-# surfaced within a single business-day window instead of waiting for the
-# monthly 24h drill.
+# surfaced within a single business-day window before the 24h drill.
 #
-# Non-blocking on PR merges — this is a scheduled-only workflow. BUT we
-# DO fail the run when the 7-day rolling p99 baseline drifts > 20% on any
+# Non-blocking on PR merges — this is an operator-dispatched workflow. A
+# dispatched run fails when the 7-day rolling p99 baseline drifts > 20% on any
 # SLO (cas_read, cas_write, audit_query, byok_op, admin_op, webhook).
 #
 # SHA-pinned per ADR-S12-045 §6 tooling-pin policy.
@@ -51,7 +50,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: endurance-2h-nightly
+  group: endurance-2h-operator
   cancel-in-progress: false
 
 jobs:
@@ -172,8 +171,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Fetch the last 7 successful endurance-2h-nightly runs (one per
-          # day on the schedule). History and the rolling baseline are inputs
+          # Fetch the last 7 successful operator-dispatched runs. History and
+          # the rolling baseline are inputs
           # to a gate: absent or malformed data must fail closed.
           mkdir -p tests/load/results/endurance-2h-baseline
           # Use the GitHub REST API via gh CLI to enumerate prior runs.
