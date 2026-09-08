@@ -50,6 +50,11 @@ jobs:
       - name: Prove BASE checker mutation teeth
         working-directory: _base
         run: python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py
+      - name: Prove BASE B-314 owner-gate mutation teeth
+        working-directory: _base
+        run: |
+          python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test
+          python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py
       - name: Execute trusted main semantic checks
         if: github.event_name == 'push' || github.event_name == 'schedule'
         working-directory: _base
