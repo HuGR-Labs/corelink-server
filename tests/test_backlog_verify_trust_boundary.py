@@ -102,6 +102,36 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
             backlog_verify.validate_candidate_workflow(self.candidate)
 
+    def test_b046_trusted_step_shape_and_placement_are_fail_closed(self) -> None:
+        workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
+        baseline = workflow.read_text(encoding="utf-8")
+        backlog_verify.validate_candidate_workflow(self.candidate)
+        marker = "      - name: Execute B-046 Object-Lock contract and mutation checks"
+        b046_start = baseline.index(marker)
+        prefix, b046_step = baseline[:b046_start], baseline[b046_start:]
+        semantic_marker = "      - name: Execute trusted main semantic checks"
+        semantic_start = prefix.index(semantic_marker)
+        prefix_without_semantic = prefix[:semantic_start]
+        semantic_step = prefix[semantic_start:]
+        mutations = {
+            "removed": prefix.rstrip() + "\n",
+            "wrong-if": prefix + b046_step.replace(
+                "if: github.event_name == 'push' || github.event_name == 'schedule'",
+                "if: github.event_name == 'workflow_dispatch'",
+                1,
+            ),
+            "wrong-working-directory": prefix + b046_step.replace(
+                "working-directory: _base", "working-directory: _candidate", 1
+            ),
+            "reordered": prefix_without_semantic + b046_step + semantic_step,
+        }
+        for label, mutated in mutations.items():
+            with self.subTest(label=label):
+                workflow.write_text(mutated, encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
+                    backlog_verify.validate_candidate_workflow(self.candidate)
+        workflow.write_text(baseline, encoding="utf-8")
+
     def test_transitive_control_mutation_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             trusted = Path(directory) / "trusted"

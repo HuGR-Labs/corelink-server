@@ -584,7 +584,7 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         raise RuntimeError("candidate workflow policy must contain only the verify job")
     job = jobs["verify"]
     steps = job.get("steps") if isinstance(job, dict) else None
-    if not isinstance(job, dict) or job.get("runs-on") != "corelink" or not isinstance(steps, list) or len(steps) != 5:
+    if not isinstance(job, dict) or job.get("runs-on") != "corelink" or not isinstance(steps, list) or len(steps) != 6:
         raise RuntimeError("candidate workflow policy has unexpected verify job shape")
     if not all(isinstance(step, dict) for step in steps):
         raise RuntimeError("candidate workflow policy has a malformed verify step")
@@ -593,7 +593,13 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         ("${{ github.event.pull_request.head.sha || github.sha }}", "_candidate"),
         ("${{ github.event.pull_request.base.sha || github.sha }}", "_base"),
     )
-    for step, (ref, path) in zip(steps[:2], expected_checkouts):
+    expected_checkout_names = (
+        "Checkout candidate data (immutable event SHA)",
+        "Checkout BASE control tree (immutable event SHA)",
+    )
+    for step, (ref, path), name in zip(steps[:2], expected_checkouts, expected_checkout_names):
+        if step.get("name") != name:
+            raise RuntimeError("candidate workflow policy has an unexpected checkout step")
         if not isinstance(step, dict) or step.get("uses") != f"actions/checkout@{checkout_ref}":
             raise RuntimeError("candidate workflow policy uses an unexpected checkout action")
         if step.get("with") != {
@@ -605,18 +611,40 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         '--trusted-file "$TRUSTED_ROOT/BACKLOG.md" --candidate-root "$CANDIDATE_ROOT" '
         '--trusted-root "$TRUSTED_ROOT"'
     )
-    if steps[2].get("working-directory") != "_base" or steps[2].get("run") != expected_gate:
+    if (
+        steps[2].get("name") != "Validate candidate as data with BASE checker"
+        or steps[2].get("working-directory") != "_base"
+        or steps[2].get("run") != expected_gate
+    ):
         raise RuntimeError("candidate workflow policy has an unexpected BASE gate command")
-    if steps[3].get("working-directory") != "_base" or steps[3].get("run") != (
-        "python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py"
+    if (
+        steps[3].get("name") != "Prove BASE checker mutation teeth"
+        or steps[3].get("working-directory") != "_base"
+        or steps[3].get("run") != "python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py"
     ):
         raise RuntimeError("candidate workflow policy has an unexpected BASE test command")
     if (
+        steps[4].get("name") != "Execute trusted main semantic checks"
+        or
         steps[4].get("if") != "github.event_name == 'push' || github.event_name == 'schedule'"
         or steps[4].get("working-directory") != "_base"
         or steps[4].get("run") != "python3 scripts/backlog_verify.py --trusted-semantic"
     ):
         raise RuntimeError("candidate workflow policy has an unexpected trusted semantic command")
+    expected_b046_gate = (
+        "python3 scripts/verify_b046_object_lock_probe.py\n"
+        "python3 -m unittest -q tests/test_verify_b046_object_lock_probe.py\n"
+        "test -f crates/corelink-container/src/routes/dsr/adapter_r2_cas_legalhold.rs\n"
+        "test -f migrations/d1/0102_cas_retention.sql\n"
+    )
+    if (
+        steps[5].get("name") != "Execute B-046 Object-Lock contract and mutation checks"
+        or
+        steps[5].get("if") != "github.event_name == 'push' || github.event_name == 'schedule'"
+        or steps[5].get("working-directory") != "_base"
+        or steps[5].get("run") != expected_b046_gate
+    ):
+        raise RuntimeError("candidate workflow policy has an unexpected B-046 trusted gate")
 
 
 def main() -> int:

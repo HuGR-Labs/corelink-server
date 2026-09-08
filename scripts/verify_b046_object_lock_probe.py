@@ -39,11 +39,10 @@ WORKFLOW_PATH = ROOT / ".github/workflows/backlog-verify.yml"
 ADAPTER_PATH = ROOT / "crates/corelink-container/src/routes/dsr/adapter_r2_cas_legalhold.rs"
 MIGRATION_PATH = ROOT / "migrations/d1/0102_cas_retention.sql"
 
-NOT_SUPPORTED_RE = re.compile(
-    r"(?:NotImplemented|Not Implemented|object.?lock[^\n]{0,80}unsupported)",
-    re.IGNORECASE,
-)
+NOT_SUPPORTED_RE = re.compile(r"\bNotImplemented\b|\bNot[ \t]+Implemented\b", re.IGNORECASE)
 SAFE_BUCKET_RE = re.compile(r"^corelink-b046-probe-[a-z0-9-]{3,50}$")
+BACKLOG_BLOCK_RE = re.compile(r"^```backlog\n(.*?)^```", re.MULTILINE | re.DOTALL)
+B046_VERIFY_COMMAND = "python3 scripts/verify_owner_action_packets.py --id B-046"
 
 
 class ProbeError(RuntimeError):
@@ -65,6 +64,25 @@ def classify_operation(returncode: int, stdout: str = "", stderr: str = "") -> s
     if NOT_SUPPORTED_RE.search(f"{stdout}\n{stderr}"):
         return "NOT_SUPPORTED"
     return "INDETERMINATE"
+
+
+def _b046_record(backlog: str) -> str:
+    """Return the one fenced B-046 record, rejecting ambiguous population."""
+    matches = [
+        match.group(1)
+        for match in BACKLOG_BLOCK_RE.finditer(backlog)
+        if re.search(r"^id:\s*B-046\s*$", match.group(1), re.MULTILINE)
+    ]
+    if len(matches) != 1:
+        raise ProbeError(f"expected exactly one fenced B-046 backlog record, found {len(matches)}")
+    return matches[0]
+
+
+def _record_field(record: str, field: str) -> str:
+    match = re.search(rf"^{re.escape(field)}:\s*(.*?)\s*$", record, re.MULTILINE)
+    if not match:
+        raise ProbeError(f"B-046 backlog record is missing exact field {field!r}")
+    return match.group(1)
 
 
 def evaluate_operations(create: OperationResult, put: OperationResult) -> str:
@@ -227,8 +245,6 @@ def _required_markers() -> Mapping[str, tuple[str, ...]]:
     return {
         BACKLOG_PATH.as_posix(): (
             "id: B-046",
-            "status: parked",
-            "verify: manual",
             "NotImplemented",
             "INDETERMINATE",
             "does not claim Compliance mode",
@@ -292,12 +308,15 @@ def validate_repository_contract(files: Mapping[str, str] | None = None) -> None
         if missing:
             raise ProbeError(f"{path} missing contract markers: {', '.join(missing)}")
     backlog = texts[BACKLOG_PATH.as_posix()]
-    b046 = backlog[backlog.index("id: B-046") :]
-    if "status: done" in b046.split("```", 1)[0]:
-        raise ProbeError("B-046 cannot be marked done without external provider evidence")
-    if "R2 does not implement S3 Object Lock" not in backlog:
+    b046 = _b046_record(backlog)
+    if _record_field(b046, "status") != "parked":
+        raise ProbeError("B-046 status must remain parked without external provider evidence")
+    if _record_field(b046, "verify") != B046_VERIFY_COMMAND:
+        raise ProbeError(f"B-046 verify must remain {B046_VERIFY_COMMAND!r}")
+    compact_b046 = " ".join(b046.split())
+    if "R2 does not implement S3 Object Lock" not in compact_b046:
         raise ProbeError("B-046 must preserve the current R2 platform blocker")
-    if "compliance" in b046.lower() and "does not claim Compliance mode" not in b046:
+    if "compliance" in compact_b046.lower() and "does not claim Compliance mode" not in compact_b046:
         raise ProbeError("B-046 backlog contract lost its no-claim marker")
 
 

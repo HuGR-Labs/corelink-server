@@ -17,7 +17,10 @@ SPEC.loader.exec_module(verifier)
 class B046ObjectLockProbeTests(unittest.TestCase):
     def test_only_explicit_not_implemented_is_provider_block(self) -> None:
         self.assertEqual(verifier.classify_operation(1, "", "NotImplemented"), "NOT_SUPPORTED")
+        self.assertEqual(verifier.classify_operation(1, "", "Not Implemented"), "NOT_SUPPORTED")
         self.assertEqual(verifier.classify_operation(1, "", "AccessDenied"), "INDETERMINATE")
+        self.assertEqual(verifier.classify_operation(1, "", "object lock unsupported"), "INDETERMINATE")
+        self.assertEqual(verifier.classify_operation(1, "", "NotImplementedError"), "INDETERMINATE")
         self.assertEqual(verifier.classify_operation(1, "", "timeout"), "INDETERMINATE")
         self.assertEqual(verifier.classify_operation(0, "NotImplemented", ""), "PASS")
 
@@ -73,6 +76,18 @@ class B046ObjectLockProbeTests(unittest.TestCase):
         b046_start = mutated[backlog].index("id: B-046")
         prefix, suffix = mutated[backlog][:b046_start], mutated[backlog][b046_start:]
         mutated[backlog] = prefix + suffix.replace("status: parked", "status: done", 1)
+        with self.assertRaises(verifier.ProbeError):
+            verifier.validate_repository_contract(mutated)
+
+        mutated = dict(paths)
+        mutated[backlog] = prefix + suffix.replace(
+            "verify: " + verifier.B046_VERIFY_COMMAND, "verify: true", 1
+        )
+        with self.assertRaises(verifier.ProbeError):
+            verifier.validate_repository_contract(mutated)
+
+        mutated = dict(paths)
+        mutated[backlog] += "\n```backlog\nid: B-046\nstatus: parked\nverify: manual\n```\n"
         with self.assertRaises(verifier.ProbeError):
             verifier.validate_repository_contract(mutated)
 
