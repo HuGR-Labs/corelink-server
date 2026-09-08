@@ -11,10 +11,8 @@ name: endurance-2h (operator dispatch, R-prep)
 # landed: `corelink` IS Linux, and `buck2-starter-ci` / `sign-windows` had
 # already moved to it for exactly this reason. The claim outlived the fact.
 #
-# STILL dispatch-only. Re-arming the nightly cron is a SPEND decision, not a
-# wiring one: this is a 2-hour job and the container fabric is metered. The
-# cadence rule would justify a cron (staging drift changes without a commit),
-# but that is the owner's money and it is not mine to start spending silently.
+# Dispatch-only. This is a 2-hour job on metered container infrastructure, so
+# unattended scheduling remains retired pending an explicit owner decision.
 #
 # R-prep endurance load — 2-hour variant of the 24h endurance drill.
 #
@@ -30,13 +28,8 @@ name: endurance-2h (operator dispatch, R-prep)
 # SHA-pinned per ADR-S12-045 §6 tooling-pin policy.
 
 on:
-  # schedule deliberately absent — see the header. The runner-label defect that
-  # originally forced this is fixed; what remains is the cost decision. To
-  # re-arm, add:
-  #   schedule:
-  #     # 03:00 UTC daily — well after the 02:00 UTC weekly load-test-nightly
-  #     # so they don't contend for staging.
-  #     - cron: '0 3 * * *'
+  # No unattended schedule: this workflow is intentionally operator-dispatched
+  # until an owner explicitly approves the metered staging spend.
   workflow_dispatch:
     inputs:
       duration:

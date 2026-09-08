@@ -9,15 +9,15 @@ name: load-test (operator dispatch, R3-prep)
 # own CPU does not — which is also why it was never suitable for the residential
 # macOS builder fleet.
 #
-# STILL dispatch-only, and the reason is now the TRUE one (B-029): there is no
+# Dispatch-only, and the reason is now the TRUE one (B-029): there is no
 # staging environment to fire at. `staging.corelink.humangr.com` does not
 # resolve, and the `staging` GitHub environment carries none of the secrets this
 # suite reads (K6_TARGET_HOST, K6_STAGING_PAT, …). The pre-flight target-host
 # check below therefore fail-closes every run until staging exists. Standing up
 # a staging deployment (or retiring the staging-targeted suites) is an owner
-# cost decision — see docs/internal/2026-08-24-owner-decision-brief.md. Re-add
-# the nightly `schedule` in the SAME change that wires the staging secrets;
-# enabling it before then only manufactures a nightly red on missing infra.
+# cost decision — see docs/internal/2026-08-24-owner-decision-brief.md. Any
+# future automation requires that owner decision together with staging secrets;
+# enabling it before then only manufactures a red run on missing infrastructure.
 #
 # R3-prep load test suite — operator-dispatched run against staging.
 #
@@ -52,14 +52,8 @@ name: load-test (operator dispatch, R3-prep)
 # SHA-pinned per ADR-S12-045 §6 tooling-pin policy.
 
 on:
-  # schedule disabled: the runner is fixed (now `corelink`), but there is no
-  # staging environment to load-test against — the pre-flight check fail-closes
-  # on the missing K6_TARGET_HOST secret every run. Re-add this cron in the SAME
-  # change that stands up staging and wires its secrets, never before:
-  #   schedule:
-  #     # Sundays 02:00 UTC — out of normal business + after the weekly
-  #     # staging redeploy completes (Sat 22:00 UTC).
-  #     - cron: '0 2 * * 0'
+  # No unattended schedule: the pre-flight check fail-closes without a staging
+  # target, and this workflow remains operator-dispatched pending provisioning.
   workflow_dispatch:
     inputs:
       scenarios:

@@ -89,7 +89,7 @@ Each scenario creates synthetic state:
 
 - **signup-orchestration**: creates ~15 000 staging tenants over a 6-min
   run. Cleanup script: `scripts/load-test-cleanup.sh signup` (TODO — for
-  R3 we rely on the staging D1 weekly purge cron).
+  R3, coordinate with the staging D1 purge process).
 - **stripe-webhook-burst**: writes ≤ 10 rows in
   `stripe_webhook_events_processed` (only the 10 canonical event_ids).
   Cleanup: `DELETE FROM stripe_webhook_events_processed WHERE event_id LIKE 'evt_load_%'`.
