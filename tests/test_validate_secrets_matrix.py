@@ -29,9 +29,6 @@ GC_CONFIG_NAMES = {
 }
 
 NON_SECRET_CONFIG_NAMES = {
-    "CORELINK_HTTP_PORT_FILE",
-    "CORELINK_HTTP_REQUEST_FILE",
-    "CORELINK_HTTP_STATUS",
     "D1_DATABASE_ID",
     "R2_S3_ENDPOINT",
 }
@@ -102,3 +99,11 @@ def test_non_secret_config_names_are_allowlisted_by_both_validators() -> None:
     assert not gate.ALLOWLIST_REGEX.match("D1_DATABASE_TOKEN")
     assert not gate.ALLOWLIST_REGEX.match("R2_S3_SECRET_ACCESS_KEY")
     assert not gate.ALLOWLIST_REGEX.match("CORELINK_HTTP_SECRET_FILE")
+
+
+def test_synthetic_names_are_not_global_allowlist_entries() -> None:
+    """Synthetic raw-curl names stay visible outside their exact fixture paths."""
+    shell_gate = (ROOT / "scripts/secrets-checklist-verify.sh").read_text(encoding="utf-8")
+    for name in SYNTHETIC_NAMES:
+        assert not gate.ALLOWLIST_REGEX.match(name)
+        assert f"|{name}$" not in shell_gate

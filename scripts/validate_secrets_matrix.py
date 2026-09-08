@@ -216,13 +216,6 @@ ALLOWLIST_REGEX = re.compile(
     # SMOKE_* smoke-harness vars above.
     r"|BASE_URL$"
     r"|PW_EXECUTABLE_PATH$"
-    # 2026-09-05 (B-163) — loopback HTTP fixture coordination for the raw-curl
-    # directory-upload test. These carry a temporary pathname, an ephemeral
-    # loopback port pathname and an HTTP status integer; none is credential
-    # material and none is read by production code.
-    r"|CORELINK_HTTP_PORT_FILE$"
-    r"|CORELINK_HTTP_REQUEST_FILE$"
-    r"|CORELINK_HTTP_STATUS$"
     # 2026-07-09 — client SDK log-level toggle (`CORELINK_LOG=debug` enables
     # verbose logging), NOT a credential. Same class as RUST_LOG / NODE_ENV.
     #   Consumer: sdks/js/src/client.ts (process.env.CORELINK_LOG === "debug")

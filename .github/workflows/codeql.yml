@@ -93,6 +93,9 @@ env:
 jobs:
   analyze:
     name: CodeQL ${{ matrix.language }}
+    # Manual dispatch is valid only from trusted main. Scheduled runs are
+    # emitted by GitHub from the default branch.
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     # Product-owned ephemeral Linux runner (zero GitHub-hosted billing). The
     # CodeQL bundle supports Linux x64 and the corelink image carries Python,
     # Node and the workspace-pinned Rust toolchain.
@@ -131,11 +134,13 @@ jobs:
       - name: Checkout
         # actions/checkout v7.0.0 — SHA-pinned (matches the verified ref).
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
 
       # -----------------------------------------------------------------
-      # GHAS probe is informational only. Advanced Security controls whether
-      # GitHub accepts the SARIF upload, not whether CodeQL may scan. Keeping
-      # this as a non-gating probe avoids the old silent green zero-scan.
+      # GHAS preflight distinguishes the documented disabled response from
+      # auth/network/API failures. Only the former is a permitted disabled
+      # state; all other failures fail closed rather than skipping analysis.
       # -----------------------------------------------------------------
       - name: GHAS code-scanning preflight
         id: preflight
@@ -143,13 +148,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh api "repos/${{ github.repository }}/code-scanning/alerts" \
-               --jq 'length' > /dev/null 2>&1; then
+          err_file="$(mktemp)"
+          trap 'rm -f "${err_file}"' EXIT
+          set +e
+          gh api "repos/${{ github.repository }}/code-scanning/alerts" \
+            --jq 'length' > /dev/null 2>"${err_file}"
+          rc=$?
+          set -e
+          if [ "${rc}" -eq 0 ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Code scanning is enabled — CodeQL will run."
-          else
+          elif grep -Eiq 'advanced security.*(must be enabled|not enabled|disabled)|code[- ]scanning.*(not enabled|disabled)' "${err_file}"; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Code scanning is not enabled — CodeQL will still run; Security-tab upload requires owner GHAS enablement."
+            echo "::notice::Code scanning is disabled for this repository — CodeQL will run and retain local evidence."
+          else
+            redacted="$(sed -E 's/(token|authorization|bearer|ghs_[[:alnum:]_-]+)/[REDACTED]/Ig' "${err_file}" | tr '\n' ' ' | cut -c1-400)"
+            echo "::error::GHAS code-scanning preflight failed (auth/network/API); refusing to classify it as disabled. ${redacted}"
+            exit 1
           fi
 
       # -----------------------------------------------------------------

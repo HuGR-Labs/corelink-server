@@ -15,6 +15,7 @@
 #
 # Usage:
 #   scripts/secrets-checklist-verify.sh
+#   scripts/secrets-checklist-verify.sh --repo-root /path/to/candidate
 #
 # Exit codes:
 #   0 — matrix and code are in sync
@@ -32,6 +33,20 @@
 # `specs/_audits/sealed/2026-05-16-secrets-x-false-positive-fix.md`.
 
 set -euo pipefail
+
+REPO_ROOT_OVERRIDE=""
+if [ "${1:-}" = "--repo-root" ]; then
+    if [ -z "${2:-}" ] || [ "$2" = "--" ]; then
+        echo "ERROR: --repo-root requires a directory" >&2
+        exit 2
+    fi
+    REPO_ROOT_OVERRIDE="$2"
+    shift 2
+fi
+if [ "$#" -ne 0 ] && [ "${1:-}" != "--self-test" ]; then
+    echo "ERROR: unsupported argument: $1" >&2
+    exit 2
+fi
 
 # -----------------------------------------------------------------------------
 # Self-test mode: exercise the env-var name regex against canonical inputs.
@@ -97,7 +112,11 @@ EOF
     fi
 fi
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -n "${REPO_ROOT_OVERRIDE}" ]; then
+    REPO_ROOT="$(cd "${REPO_ROOT_OVERRIDE}" && pwd)"
+else
+    REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+fi
 cd "${REPO_ROOT}"
 
 MATRIX_FILE="docs/internal/secrets-checklist.md"
@@ -156,14 +175,10 @@ fi
 #   (scripts/e2e-admin-ui-render-smoke.mjs + e2e-admin-ui-render.yml) — the
 #   (public) URL to smoke + an optional local Chromium path; CI/test config,
 #   not a deployed secret (same precedent as SMOKE_BASE_URL) — added 2026-06-14.
-# - CORELINK_HTTP_PORT_FILE/CORELINK_HTTP_REQUEST_FILE/CORELINK_HTTP_STATUS:
-#   raw-curl documentation fixture coordination (temporary pathnames, loopback
-#   port pathname, and HTTP status integer); no credential material and no
-#   production consumer (B-163).
 # GC_LIVE_DELETE_CONFIRM / GC_R2_BUCKET / GC_RUN_ID / GC_VALIDATE_ONLY are
 # non-secret GC controls and identifiers. Keep this exact: do not hide a future
 # GC credential behind a broad GC_* prefix.
-ALLOWLIST_REGEX='^(PROPTEST_|HOME$|USERPROFILE$|CARGO_|GITHUB_(TOKEN|OUTPUT|ENV|PATH|STEP_SUMMARY|ACTIONS|REPOSITORY|SHA|REF|WORKFLOW|RUN_ID|RUN_NUMBER|ACTOR|EVENT_NAME|EVENT_PATH|JOB|API_URL|SERVER_URL|GRAPHQL_URL|WORKSPACE)$|RUNNER_|GH_TOKEN$|GNUPGHOME$|SOURCE_DATE_EPOCH$|PATH$|PWD$|USER$|SHELL$|TERM$|CI$|TZ$|LANG$|LC_|NODE_ENV$|ENVIRONMENT$|NEXT_RUNTIME$|RUST_|TODO_|DOCS_BASE_URL$|DOCS_BASE_PATH$|LH_BASE_URL$|LH_START_COMMAND$|E2E_|NEXT_PUBLIC_|PROJECTS$|SKIP_WEBSERVER$|GCP_TEST_KEY_RESOURCE$|GCP_TEST_REGION$|DT_API_KEY_TEST_|DT_MOCK_INJECTION_ENABLED$|CORELINK_PAT_SIGNING_KEY_HEX$|CORELINK_E2E_|CF_PAGES_|GIT_SHA$|NEON_TEST_DSN$|SENTRY_(ENVIRONMENT|ORG|PROJECT|RELEASE)$|R2_(AC|CAS)_(BUCKET|REGION)$|R2_TEST_BUCKET$|R2_S3_ENDPOINT$|D1_DATABASE_ID$|CORELINK_PORTAL_RETURN_URL$|SMOKE_USER_EMAIL$|SMOKE_USER_PASSWORD$|SMOKE_BASE_URL$|BASE_URL$|PW_EXECUTABLE_PATH$|CORELINK_HTTP_PORT_FILE$|CORELINK_HTTP_REQUEST_FILE$|CORELINK_HTTP_STATUS$|CLERK_FAPI$|CLERK_LIVE_SECRET_KEY$|CORELINK_API_ENDPOINT$|CORELINK_APP_URL$|CLERK_JS_VERSION$|CORELINK_LOG$|AUDIT_DRAIN_LEASE_ENABLED$|NEAR_CEILING_ALERT_SINK$|GC_LIVE_DELETE_CONFIRM$|GC_R2_BUCKET$|GC_RUN_ID$|GC_VALIDATE_ONLY$)'
+ALLOWLIST_REGEX='^(PROPTEST_|HOME$|USERPROFILE$|CARGO_|GITHUB_(TOKEN|OUTPUT|ENV|PATH|STEP_SUMMARY|ACTIONS|REPOSITORY|SHA|REF|WORKFLOW|RUN_ID|RUN_NUMBER|ACTOR|EVENT_NAME|EVENT_PATH|JOB|API_URL|SERVER_URL|GRAPHQL_URL|WORKSPACE)$|RUNNER_|GH_TOKEN$|GNUPGHOME$|SOURCE_DATE_EPOCH$|PATH$|PWD$|USER$|SHELL$|TERM$|CI$|TZ$|LANG$|LC_|NODE_ENV$|ENVIRONMENT$|NEXT_RUNTIME$|RUST_|TODO_|DOCS_BASE_URL$|DOCS_BASE_PATH$|LH_BASE_URL$|LH_START_COMMAND$|E2E_|NEXT_PUBLIC_|PROJECTS$|SKIP_WEBSERVER$|GCP_TEST_KEY_RESOURCE$|GCP_TEST_REGION$|DT_API_KEY_TEST_|DT_MOCK_INJECTION_ENABLED$|CORELINK_PAT_SIGNING_KEY_HEX$|CORELINK_E2E_|CF_PAGES_|GIT_SHA$|NEON_TEST_DSN$|SENTRY_(ENVIRONMENT|ORG|PROJECT|RELEASE)$|R2_(AC|CAS)_(BUCKET|REGION)$|R2_TEST_BUCKET$|R2_S3_ENDPOINT$|D1_DATABASE_ID$|CORELINK_PORTAL_RETURN_URL$|SMOKE_USER_EMAIL$|SMOKE_USER_PASSWORD$|SMOKE_BASE_URL$|BASE_URL$|PW_EXECUTABLE_PATH$|CLERK_FAPI$|CLERK_LIVE_SECRET_KEY$|CORELINK_API_ENDPOINT$|CORELINK_APP_URL$|CLERK_JS_VERSION$|CORELINK_LOG$|AUDIT_DRAIN_LEASE_ENABLED$|NEAR_CEILING_ALERT_SINK$|GC_LIVE_DELETE_CONFIRM$|GC_R2_BUCKET$|GC_RUN_ID$|GC_VALIDATE_ONLY$)'
 
 # -----------------------------------------------------------------------------
 # Extract env-var names from the matrix.
@@ -215,37 +230,30 @@ extract_code_vars() {
             | grep -oE '"[A-Z][A-Z0-9_]+"' \
             | tr -d '"' || true
 
-        # TS/JS: process.env.FOO
-        grep -rEh 'process\.env\.[A-Z][A-Z0-9_]+' \
-            --include='*.ts' --include='*.tsx' \
-            --include='*.js' --include='*.jsx' --include='*.mjs' --include='*.cjs' \
-            --exclude-dir=node_modules \
-            --exclude-dir=.next \
-            --exclude-dir=.open-next \
-            --exclude-dir=.wrangler \
-            --exclude-dir=dist \
-            --exclude-dir=build \
-            --exclude-dir=_archive \
-            --exclude-dir=.git \
-            . 2>/dev/null \
-            | grep -oE 'process\.env\.[A-Z][A-Z0-9_]+' \
-            | sed 's/process\.env\.//' || true
-
-        # TS/JS: process.env["FOO"]
-        grep -rEh 'process\.env\["[A-Z][A-Z0-9_]+"\]' \
-            --include='*.ts' --include='*.tsx' \
-            --include='*.js' --include='*.jsx' --include='*.mjs' --include='*.cjs' \
-            --exclude-dir=node_modules \
-            --exclude-dir=.next \
-            --exclude-dir=.open-next \
-            --exclude-dir=.wrangler \
-            --exclude-dir=dist \
-            --exclude-dir=build \
-            --exclude-dir=_archive \
-            --exclude-dir=.git \
-            . 2>/dev/null \
-            | grep -oE '"[A-Z][A-Z0-9_]+"' \
-            | tr -d '"' || true
+        # TS/JS: process.env.FOO and process.env["FOO"]. Iterate files so the
+        # synthetic raw-curl fixture can be excluded by its exact path. A
+        # name-only allowlist would let the same name hide in production code;
+        # B-245 requires path-scoped handling here as it already has in the
+        # Python validator.
+        while IFS= read -r -d '' f; do
+            case "${f#./}" in
+                apps/docs/tests/fixtures/raw-curl-http-server.mjs|\
+                apps/docs/tests/raw-curl-directory-upload.test.ts) continue ;;
+            esac
+            grep -Eh 'process\.env\.[A-Z][A-Z0-9_]+' "${f}" 2>/dev/null \
+                | grep -oE 'process\.env\.[A-Z][A-Z0-9_]+' \
+                | sed 's/process\.env\.//' || true
+            grep -Eh 'process\.env\["[A-Z][A-Z0-9_]+"\]' "${f}" 2>/dev/null \
+                | grep -oE '"[A-Z][A-Z0-9_]+"' \
+                | tr -d '"' || true
+        done < <(
+            find . -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' \
+                -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' \) \
+                ! -path './node_modules/*' ! -path './.next/*' \
+                ! -path './.open-next/*' ! -path './.wrangler/*' \
+                ! -path './dist/*' ! -path './build/*' \
+                ! -path './_archive/*' ! -path './.git/*' -print0
+        )
 
         # GHA: ${{ secrets.FOO }} — rejects template placeholder `secrets.X`
         # in `.github/workflows/_TEMPLATE.yml.md`.
