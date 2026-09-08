@@ -5,16 +5,7 @@
         }
 
         impl R2BodyChunkStream for StalledAfterHeaders {
-            fn next_chunk<'a>(
-                &'a mut self,
-            ) -> std::pin::Pin<
-                Box<
-                    dyn std::future::Future<
-                            Output = Option<Result<bytes::Bytes, String>>,
-                        > + Send
-                        + 'a,
-                >,
-            > {
+            fn next_chunk<'a>(&'a mut self) -> R2BodyChunkFuture<'a> {
                 Box::pin(async move {
                     if !self.emitted {
                         self.emitted = true;
@@ -43,16 +34,7 @@
         struct SlowChunks;
 
         impl R2BodyChunkStream for SlowChunks {
-            fn next_chunk<'a>(
-                &'a mut self,
-            ) -> std::pin::Pin<
-                Box<
-                    dyn std::future::Future<
-                            Output = Option<Result<bytes::Bytes, String>>,
-                        > + Send
-                        + 'a,
-                >,
-            > {
+            fn next_chunk<'a>(&'a mut self) -> R2BodyChunkFuture<'a> {
                 Box::pin(async {
                     // Each chunk arrives below the 20 ms idle deadline. The
                     // stream never goes idle, so only a non-resetting total

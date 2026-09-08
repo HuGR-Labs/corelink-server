@@ -181,32 +181,18 @@ pub enum CappedGet {
 /// The narrow body interface keeps the bounded collector testable with a
 /// deterministic stream while the production adapter wraps AWS's
 /// `ByteStream` below.
+type R2BodyChunkFuture<'a> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Option<Result<bytes::Bytes, String>>> + Send + 'a>,
+>;
+
 trait R2BodyChunkStream {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Option<Result<bytes::Bytes, String>>,
-                > + Send
-                + 'a,
-        >,
-    >;
+    fn next_chunk<'a>(&'a mut self) -> R2BodyChunkFuture<'a>;
 }
 
 struct R2SdkBodyStream(aws_sdk_s3::primitives::ByteStream);
 
 impl R2BodyChunkStream for R2SdkBodyStream {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Option<Result<bytes::Bytes, String>>,
-                > + Send
-                + 'a,
-        >,
-    > {
+    fn next_chunk<'a>(&'a mut self) -> R2BodyChunkFuture<'a> {
         Box::pin(async move {
             self.0
                 .next()
@@ -223,16 +209,7 @@ struct R2TestStalledAfterHeaders {
 
 #[cfg(test)]
 impl R2BodyChunkStream for R2TestStalledAfterHeaders {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Option<Result<bytes::Bytes, String>>,
-                > + Send
-                + 'a,
-        >,
-    > {
+    fn next_chunk<'a>(&'a mut self) -> R2BodyChunkFuture<'a> {
         Box::pin(async move {
             if !self.emitted {
                 self.emitted = true;

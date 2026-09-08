@@ -1487,7 +1487,7 @@ source-document: "PR containment audit #1550/#1558"
 source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
 finding-title: "canonical WP ledger must stay aligned with the dense backlog population"
 problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
-evidence: "python3 scripts/verify_backlog_wp_ledger.py after final reconciliation: 348 items, 16 open, 294 done, 38 parked; the prior 324/16/269/39 population is retained only as the obsolete baseline this item corrected; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after final reconciliation: 349 items, 16 open, 295 done, 38 parked; the prior 324/16/269/39 population is retained only as the obsolete baseline this item corrected; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
@@ -1500,14 +1500,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 348
+  assert len(ledger.all_backlog_ids(text)) == 349
   assert len(ledger.open_backlog_ids(text)) == 16
-  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 294, "parked": 38}
+  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 295, "parked": 38}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 16/16 open-ID ownership, 348 total records,
+  done — the live verifier proves 16/16 open-ID ownership, 349 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1812,7 +1812,7 @@ source-locator: ".claude/skills/techlead/SKILL.md:L2.10; reports/b326-loc-cap-ba
 finding-title: "new Rust and TypeScript source files had no CI-enforced 500-line hard cap"
 problem: "The Tech Lead charter required every new .rs/.ts/.tsx file to stay at or below 500 LOC, but its shell example depended on a locally available origin/main ref and was not a stable CI contract. A shallow or remote-less checkout could skip the population entirely or report an indeterminate result."
 evidence: "The committed origin/main-equivalent path manifest is pinned to main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266; the stdlib verifier classifies tracked source paths absent from that manifest, rejects unmarked files over 500 LOC, reports the 200-LOC advisory band, and passes its mutation/self-tests. Related charter, spec/frontmatter and secrets-matrix findings are closed in the cumulative B-326 tree."
-acceptance: "A reviewed baseline manifest is required and hash-checked; the tracked added .rs/.ts/.tsx population is non-empty and closed; missing, malformed, stale or empty populations fail closed; generated exceptions require an explicit @generated marker; any unmarked file over 500 LOC is a hard failure; workflow paths and both PR/push steps run the verifier and its mutations; B-155 and the D03 ledgers report 348 total, 294 done, 38 parked, 16 open (0 TL-open) and 327 command-bearing records."
+acceptance: "A reviewed baseline manifest is required and hash-checked; the tracked added .rs/.ts/.tsx population is non-empty and closed; missing, malformed, stale or empty populations fail closed; generated exceptions require an explicit @generated marker; any unmarked file over 500 LOC is a hard failure; workflow paths and both PR/push steps run the verifier and its mutations; B-155 and the D03 ledgers report 349 total, 295 done, 38 parked, 16 open (0 TL-open) and 328 command-bearing records."
 verify: python3 scripts/verify_b326_loc_cap.py --self-test
 verify-means: |
   done — the verifier uses only the committed baseline manifest and local tracked
@@ -2379,6 +2379,26 @@ verify-means: |
   done — the production collector-to-handler-to-route test proves timeout-driven
   unwind and lease restoration, while cancellation, idle, total and size-bound
   mutations remain guarded.
+last-verified: 2026-09-08
+```
+
+### B-349 — R2 body stream seam failed the workspace Clippy type-complexity gate
+
+```backlog
+id: B-349
+repo: corelink-server
+owner: tl
+status: done
+source-document: "final audit-remediation bundled CI"
+source-locator: "crates/corelink-container/src/storage/r2_s3_parts/client.rs; crates/corelink-container/src/storage/r2_s3_parts/tests_3.rs"
+finding-title: "boxed R2 body future was repeated as an over-complex trait signature"
+problem: "The final bundled Clippy gate rejected the explicit nested Pin/Box/Future/Option/Result signature in R2BodyChunkStream, including its production and test implementations."
+evidence: "R2BodyChunkFuture centralizes the exact Send lifetime-bound future contract and every implementation now returns the alias without changing collector behavior."
+acceptance: "The production adapter and deterministic timeout streams share one explicit future alias; strict workspace Clippy passes without an allow attribute; idle, total-deadline and lease-release tests retain their behavior."
+verify: cargo clippy -p corelink-server --lib --tests --locked -- -D warnings
+verify-means: |
+  done — the strict focal Clippy gate accepts the aliased seam with no
+  suppression, and the final bundled CI covers the same crate and test targets.
 last-verified: 2026-09-08
 ```
 
@@ -15525,8 +15545,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-08):** `records=348`,
-  `command_records=327`, `manual=21`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-08):** `records=349`,
+  `command_records=328`, `manual=21`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
