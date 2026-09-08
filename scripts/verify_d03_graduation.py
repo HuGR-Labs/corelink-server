@@ -32,6 +32,148 @@ OWNER_PACKET_FIELDS = {"owner", "status", "dependency", "action", "artifact", "c
 OWNER_MIRROR_URL = "https://corelink-artifacts.humangr.com/tlaplus/v1.8.0/eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a/tla2tools.jar"
 OWNER_MIRROR_SHA256 = "eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a"
 
+# The compact D03 register is only a handoff index.  Its command must still
+# preserve the load-bearing parts of the detailed owner packet.  Keep this
+# map closed: accepting a self-declared profile/sample count would let a
+# command redirect arbitrary output while claiming to run the right proof.
+COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
+    "B-044": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-044",
+        "profiles": [], "sample_count": 1,
+        "required": ["orphan_reconcile_scan", "sbox", "observe", "type-1", "type-2"],
+        "safety": ["RECONCILE_ORPHAN_TEARDOWN=0"],
+        "forbidden": ["RECONCILE_ORPHAN_TEARDOWN=1", "wrangler delete", "wrangler destroy"],
+    },
+    "B-046": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-046",
+        "profiles": [], "sample_count": 2,
+        "required": ["--probe", "object-lock", "COMPLIANCE"],
+        "safety": ["B046_PROBE_ALLOW_MUTATION=1", "corelink-b046-probe-"],
+        "forbidden": ["corelink-prod", "0102_cas_retention", "compliance database"],
+    },
+    "B-063": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-063",
+        "profiles": ["93da3f7a", "enam"], "sample_count": 3,
+        "required": ["audit_outbox", "GROUP BY", "part_last_archived", "audit-archive-lag", "PagerDuty", "workflow_dispatch"],
+        "safety": ["--remote", "--ref main", "SELECT", "B063_REPAIR_APPROVED=1"],
+        "forbidden": ["DELETE FROM", "UPDATE ", "INSERT INTO"],
+    },
+    "B-068": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-068",
+        "profiles": ["d1", "r2", "stripe", "neon"], "sample_count": 4,
+        "required": ["real-ignored-harnesses.yml", "workflow_dispatch", "seed"],
+        "safety": ["--ref main", "profile=", "OWNER_APPROVED_REAL_INTEGRATION=1"],
+        "forbidden": ["emit_e2e_seed", "PAT signing seed"],
+    },
+    "B-071": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-071",
+        "profiles": [], "sample_count": 1,
+        "required": ["gc-sweep-dry-run.yml", "GC_LIVE_DELETE=false", "deleted_count", "0"],
+        "safety": ["credentialless", "dry-run"],
+        "forbidden": ["GC_LIVE_DELETE=true", "container-build-push-prod.yml", "DELETE "],
+    },
+    "B-072": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-072",
+        "profiles": ["0 * * * *", "*/15 * * * *"], "sample_count": 1,
+        "required": ["SCHEDULED_DRILL_DELIVERY", "correlation", "PagerDuty", "synthetic_page_drills"],
+        "safety": ["receiver", "202", "SCHEDULED_DRILL_RECEIVER_DEPLOYED"],
+        "forbidden": ["PAGERDUTY_ROUTING_KEY=", "Authorization: Bearer"],
+    },
+    "B-083": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-083",
+        "profiles": ["byok-aws-real"], "sample_count": 1,
+        "required": ["/v1/admin/byok/activate", "/v1/admin/byok/deactivate", "check_access", "cas", "run_loop"],
+        "safety": ["test-tenant", "fail-closed", "OWNER_APPROVED_BYOK_TEST=1"],
+        "forbidden": ["production tenant", "plaintext Tcs", "customer CMK"],
+    },
+    "B-098": {
+        "owner_packet": "docs/handoff/2026-09-05-b098-owner-action-packet.md",
+        "profiles": [], "sample_count": 1,
+        "required": ["verify_b098_repo_hygiene.py", "--dry-run", "--expected-main-sha"],
+        "safety": ["no semver release tag", "not create a tag"],
+        "forbidden": ["git tag -a", "git push", "--force"],
+    },
+    "B-102": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-102",
+        "profiles": ["cas:rw"], "sample_count": 3,
+        "required": ["/cargo", "1 KiB", "Server-Timing", "third_request_hot"],
+        "safety": ["within 60 seconds", "same", "OWNER_APPROVED_PROBE=1"],
+        "forbidden": ["/v1/customer/cas/probe"],
+    },
+    "B-104": {
+        "owner_packet": "docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md#B-104",
+        "profiles": ["authenticated"], "sample_count": 10,
+        "required": ["missing", "median", "p90", "version"],
+        "safety": ["Authorization: Bearer", "HTTP status", "OWNER_APPROVED_PROBE=1"],
+        "forbidden": ["--fail", "maximum"],
+    },
+    "B-106": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-106",
+        "profiles": ["d1", "kv", "l1"], "sample_count": 2,
+        "required": ["cold", "60 seconds", "Server-Timing", "colo"],
+        "safety": ["CORELINK_COLD_PAT", "revocation", "OWNER_APPROVED_PROBE=1"],
+        "forbidden": ["TTL", "KV_TTL", "--fail"],
+    },
+    "B-112": {
+        "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B112",
+        "profiles": ["linux", "windows"], "sample_count": 1,
+        "required": ["release-cli.yml", "cargo-zigbuild", "checksums", "SLSA"],
+        "safety": ["--root", "production release remains parked"],
+        "forbidden": ["git tag", "cosign-sign.yml", "--force"],
+    },
+    "B-113": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-113",
+        "profiles": ["nightly.yml", "sbom.yml", "buck2-starter-ci.yml", "fuzz-nightly.yml", "endurance-2h-nightly.yml", "load-test-nightly.yml", "billing-health-daily.yml"],
+        "sample_count": 7,
+        "required": ["runner", "conclusion", "terraform-drift.yml"],
+        "safety": ["read-only", "B-111", "OWNER_APPROVED_LANE_DISPATCH=1"],
+        "forbidden": ["terraform-drift.yml --dispatch"],
+    },
+    "B-122": {
+        "owner_packet": "docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md#B-122",
+        "profiles": ["B-102", "B-107"], "sample_count": 3,
+        "required": ["deployed commit", "ostore", "oaccounting", "phase sum"],
+        "safety": ["1 KiB", "within 60 seconds", "OWNER_APPROVED_PROBE=1"],
+        "forbidden": ["sqlite_master", "DROP ", "DELETE FROM"],
+    },
+    "B-125": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-125",
+        "profiles": ["audit_outbox"], "sample_count": 1,
+        "required": ["D-1-audit-trail", "arrivals", "sealed rows", "oldest unsealed", "seal latency", "512"],
+        "safety": ["--remote", "read-only", "SELECT", "OWNER_APPROVED_READONLY=1"],
+        "forbidden": ["AUDIT_DRAIN", "DELETE ", "UPDATE ", "drain --run"],
+    },
+    "B-127": {
+        "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B127",
+        "profiles": ["satisfied", "violated", "unevaluable", "weur"], "sample_count": 1,
+        "required": ["LEFT JOIN", "audit_outbox", "5 tenants", "144 rows", "denominator"],
+        "safety": ["--remote", "SELECT", "OWNER_APPROVED_READONLY=1"],
+        "forbidden": ["sqlite_master", "DELETE ", "UPDATE ", "DROP "],
+    },
+    "B-129": {
+        "owner_packet": "docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md#B-129",
+        "profiles": ["qtier", "qdo", "qbatch", "qresid", "qcontrol"], "sample_count": 10,
+        "required": ["SERVER_TIMING_WDB_DETAIL=on", "deployed commit", "residual", "<10%", "ohop", "wdb", "origin"],
+        "safety": ["diagnostic", "authenticated", "OWNER_APPROVED_PROBE=1"],
+        "forbidden": ["--fail", "production config"],
+    },
+    "B-134": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-134",
+        "profiles": ["smoke-install.yml", "cosign-sign.yml"], "sample_count": 2,
+        "required": ["docker info", "image_digest", "Rekor", "webhook", "UNMEASURED"],
+        "safety": ["workflow_dispatch", "corelink", "OWNER_APPROVED_B134=1"],
+        "forbidden": ["codeql.yml", "secrets-drift.yml", "--force"],
+    },
+    "B-251": {
+        "owner_packet": "docs/campaigns/remediation/work-packages/B131-B167.md#WP-B251",
+        "profiles": ["deterministic", "D02"], "sample_count": 1000,
+        "required": ["verify_b251_quota_cas_budget.py", "--ignored", "--exact", "p99", "seed", "blob"],
+        "safety": ["opt-in", "--nocapture"],
+        "forbidden": ["--force", "production quota redesign"],
+    },
+}
+SEMANTIC_PACKET_FIELDS = {"owner_packet", "profiles", "sample_count", "required", "safety", "forbidden"}
+
 # Frozen from the 42 TL/open records at the D03 starting head.  Do not derive
 # this set from the candidate: doing so would make deletion look like closure.
 ORIGINAL_TL_OPEN = (
@@ -90,9 +232,40 @@ def _require_string(mapping: dict[str, Any], key: str, item: str) -> str:
     return value
 
 
-def _check_packets(packets: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    if packets.get("schema_version") != 1:
-        raise GraduationError("packet schema_version must be 1")
+def _check_command_contract(item: str, packet: dict[str, Any], root: Path) -> None:
+    expected = COMMAND_CONTRACTS.get(item)
+    if expected is None:
+        return
+    contract = packet.get("command_contract")
+    if not isinstance(contract, dict) or set(contract) != SEMANTIC_PACKET_FIELDS:
+        raise GraduationError(f"{item}: command_contract fields are missing or ambiguous")
+    if contract != expected:
+        raise GraduationError(f"{item}: command_contract disagrees with the authoritative owner packet")
+    command = packet["command"]
+    marker = f"D03_SAMPLE_COUNT={expected['sample_count']}"
+    if marker not in command:
+        raise GraduationError(f"{item}: command must carry the explicit {marker} population marker")
+    for token in (*expected["required"], *expected["safety"]):
+        if token not in command:
+            raise GraduationError(f"{item}: command is missing semantic token {token!r}")
+    for profile in expected["profiles"]:
+        if profile not in command:
+            raise GraduationError(f"{item}: command omits required profile/population {profile!r}")
+    for token in expected["forbidden"]:
+        if token in command:
+            raise GraduationError(f"{item}: command contains forbidden unsafe token {token!r}")
+    reference = expected["owner_packet"].split("#", 1)[0]
+    source = root / reference
+    if not source.is_file() or source.is_symlink():
+        raise GraduationError(f"{item}: authoritative owner packet is missing/non-regular: {reference}")
+    source_text = source.read_text(encoding="utf-8")
+    if item not in source_text:
+        raise GraduationError(f"{item}: authoritative owner packet does not mention the item")
+
+
+def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict[str, Any]]:
+    if packets.get("schema_version") != 2:
+        raise GraduationError("packet schema_version must be 2")
     if tuple(packets.get("original_tl_open", ())) != ORIGINAL_TL_OPEN:
         raise GraduationError("packet original population is not the frozen 42-item order")
     if tuple(packets.get("graduated_scope", ())) != GRADUATED:
@@ -116,6 +289,7 @@ def _check_packets(packets: dict[str, Any]) -> dict[str, dict[str, Any]]:
         _require_string(packet, "owner", item)
         _require_string(packet, "dependency", item)
         _require_string(packet, "action", item)
+        _check_command_contract(item, packet, root)
         if disposition == "PARKED":
             artifact = _require_string(packet, "artifact", item)
             command = _require_string(packet, "command", item)
@@ -196,7 +370,7 @@ def verify_document(
         raise GraduationError(f"repository still has owner tl/status open: {remaining_open}")
     packet_data = _load_packets(packet_text)
     _check_owner_packets(packet_data, by_id)
-    packets = _check_packets(packet_data)
+    packets = _check_packets(packet_data, root)
     packet_done = frozenset(item for item, packet in packets.items() if packet["disposition"] == "DONE")
     if packet_done != DONE_SET:
         raise GraduationError(f"DONE population is not exactly {sorted(DONE_SET)}: {sorted(packet_done)}")
@@ -292,7 +466,13 @@ def self_test(root: Path = ROOT) -> None:
         ("packet-command-removed", backlog, packets.replace('"command":"', '"command_removed":"', 1)),
         ("packet-unclassified", backlog, packets.replace('"disposition":"PARKED"', '"disposition":"UNKNOWN"', 1)),
         ("fake-done", backlog.replace("id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: parked", "id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: done", 1), packets.replace('"B-044": {"disposition":"PARKED"', '"B-044": {"disposition":"DONE"', 1)),
-        ("artifact-capture-removed", backlog, packets.replace(" > artifacts/d03/B102-server-timing.json", "", 1)),
+        (
+            "artifact-capture-removed",
+            backlog,
+            packets.replace(" > artifacts/d03/B102-server-timing.json", "", 1).replace(
+                " >> artifacts/d03/B102-server-timing.json", "", 1
+            ),
+        ),
     )
     for name, mutated_backlog, mutated_packets in cases:
         try:
@@ -334,6 +514,29 @@ def self_test(root: Path = ROOT) -> None:
         except GraduationError:
             continue
         raise GraduationError(f"mutation unexpectedly passed: {name}")
+
+    # Every flagged parked command has a population/safety contract.  Kill one
+    # load-bearing safety token and one declared count per item; a verifier that
+    # checks only artifact redirection must not accept either mutant.
+    for item, contract in COMMAND_CONTRACTS.items():
+        for name, mutation in (
+            ("semantic-token-removed", lambda data, token=contract["safety"][0]: data["packets"][item].update(command=data["packets"][item]["command"].replace(token, ""))),
+            ("semantic-count-mutated", lambda data: data["packets"][item]["command_contract"].update(sample_count=contract["sample_count"] + 1)),
+        ):
+            mutated = copy.deepcopy(owner_data)
+            # Start from the full graduation document, not only owner packets.
+            full = _load_packets(packets)
+            mutation(full)
+            try:
+                verify_document(
+                    root,
+                    packet_text=json.dumps(full),
+                    run_guards=False,
+                    run_gates=False,
+                )
+            except GraduationError:
+                continue
+            raise GraduationError(f"mutation unexpectedly passed: {item} {name}")
 
 
 def main(argv: list[str] | None = None) -> int:
