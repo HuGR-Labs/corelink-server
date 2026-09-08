@@ -90,6 +90,7 @@
 //! that is silently unarchivable forever is the defect class this endpoint was
 //! built to remove.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -107,7 +108,7 @@ use corelink_audit_chain::{
     SEALED_LINE_SCHEMA,
 };
 
-use crate::storage::d1_http::D1HttpClient;
+use crate::storage::d1_http::{D1HttpClient, D1Row};
 use crate::storage::r2_s3::R2S3Client;
 
 const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
@@ -487,22 +488,93 @@ async fn put_chunk_if_absent(
     }
 }
 
-/// Mark one chunk's rows archived, guarded by `archived_at IS NULL` so a re-run
-/// (or a concurrent archiver) never double-counts.
+/// The one and only archive-bookkeeping UPDATE. JSON1 expands the bounded row
+/// id array inside SQLite, and the exact-set CTE makes the update an all-or-
+/// nothing operation: a concurrent archiver that claims even one requested row
+/// causes this statement to return no rows and update nothing.
+const MARK_ARCHIVED_SQL: &str = "WITH requested AS (
+       SELECT CAST(value AS TEXT) AS id FROM json_each(?2)
+    ), eligible AS (
+       SELECT o.id FROM audit_outbox o
+       JOIN requested r ON r.id = o.id
+       WHERE o.emitted_at IS NOT NULL AND o.archived_at IS NULL
+    ), exact AS (
+       SELECT 1
+       WHERE (SELECT COUNT(*) FROM requested) = CAST(?3 AS INTEGER)
+         AND (SELECT COUNT(*) FROM requested) =
+             (SELECT COUNT(DISTINCT id) FROM requested)
+         AND (SELECT COUNT(*) FROM eligible) = CAST(?3 AS INTEGER)
+         AND (SELECT COUNT(*) FROM eligible) =
+             (SELECT COUNT(DISTINCT id) FROM eligible)
+    )
+    UPDATE audit_outbox
+    SET archived_at = CAST(?1 AS INTEGER)
+    WHERE id IN (SELECT id FROM requested)
+      AND emitted_at IS NOT NULL AND archived_at IS NULL
+      AND EXISTS (SELECT 1 FROM exact)
+    RETURNING id";
+
+fn validate_archived_returned_ids(
+    lines: &[SealedArchiveLine],
+    returned: &[D1Row],
+) -> Result<(), String> {
+    let expected = lines
+        .iter()
+        .map(|line| line.row_id.clone())
+        .collect::<BTreeSet<_>>();
+    if expected.len() != lines.len() {
+        return Err("archive watermark input contains duplicate row ids".to_owned());
+    }
+
+    let mut actual = BTreeSet::new();
+    for row in returned {
+        let id = row
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or("archive watermark RETURNING row has missing/non-text id")?;
+        if !actual.insert(id.to_owned()) {
+            return Err("archive watermark RETURNING contained duplicate row ids".to_owned());
+        }
+    }
+    if actual != expected {
+        return Err(format!(
+            "archive watermark returned {} rows for {} requested rows; refusing partial/unexpected update",
+            actual.len(),
+            expected.len()
+        ));
+    }
+    Ok(())
+}
+
+/// Mark one chunk's rows archived in one atomic, exact-set UPDATE. A re-run
+/// (or a concurrent archiver) is accepted only when this call owns every row.
 async fn mark_archived(
     d1: &D1HttpClient,
     lines: &[SealedArchiveLine],
     now: i64,
 ) -> Result<(), String> {
-    for line in lines {
-        d1.query(
-            "UPDATE audit_outbox SET archived_at = ?1 \
-             WHERE id = ?2 AND emitted_at IS NOT NULL AND archived_at IS NULL",
-            &[json!(now), json!(line.row_id)],
+    if lines.is_empty() {
+        return Err("archive watermark refuses an empty chunk".to_owned());
+    }
+    if lines.len() > DEFAULT_SEALED_MAX_LINES_PER_CHUNK {
+        return Err(format!(
+            "archive watermark chunk exceeds {}-row bound",
+            DEFAULT_SEALED_MAX_LINES_PER_CHUNK
+        ));
+    }
+    let row_ids = lines
+        .iter()
+        .map(|line| Value::String(line.row_id.clone()))
+        .collect::<Vec<_>>();
+    let row_ids_json = serde_json::to_string(&row_ids)
+        .map_err(|e| format!("archive watermark row-id JSON encoding failed: {e}"))?;
+    let returned = d1
+        .query(
+            MARK_ARCHIVED_SQL,
+            &[json!(now), Value::String(row_ids_json), json!(lines.len())],
         )
         .await?;
-    }
-    Ok(())
+    validate_archived_returned_ids(lines, &returned)
 }
 
 /// Census of what a quarantine sweep is about to take out of the work queue.
@@ -939,6 +1011,51 @@ mod tests {
         let mut different = candidate[..2].to_vec();
         different[1].row_id = "not-the-same-row".to_owned();
         assert_eq!(existing_prefix_len(&different, &candidate), None);
+    }
+
+    fn returned_ids(ids: &[&str]) -> Vec<D1Row> {
+        ids.iter()
+            .map(|id| {
+                let mut row = D1Row::new();
+                row.insert("id".to_owned(), json!(id));
+                row
+            })
+            .collect()
+    }
+
+    #[test]
+    fn archive_watermark_accepts_the_exact_returned_id_set() {
+        let lines = verifying_lines(2);
+        assert!(validate_archived_returned_ids(&lines, &returned_ids(&["row-1", "row-0"])).is_ok());
+    }
+
+    #[test]
+    fn archive_watermark_rejects_partial_or_unexpected_returned_ids() {
+        let lines = verifying_lines(2);
+        assert!(validate_archived_returned_ids(&lines, &returned_ids(&["row-0"])).is_err());
+        assert!(
+            validate_archived_returned_ids(&lines, &returned_ids(&["row-0", "other"])).is_err()
+        );
+    }
+
+    #[test]
+    fn archive_watermark_rejects_duplicate_returned_or_requested_ids() {
+        let lines = verifying_lines(2);
+        assert!(
+            validate_archived_returned_ids(&lines, &returned_ids(&["row-0", "row-0"])).is_err()
+        );
+        let mut duplicate_input = lines.clone();
+        duplicate_input[1].row_id = duplicate_input[0].row_id.clone();
+        assert!(validate_archived_returned_ids(&duplicate_input, &returned_ids(&[])).is_err());
+    }
+
+    #[test]
+    fn archive_watermark_sql_is_one_bounded_exact_set_update() {
+        assert!(MARK_ARCHIVED_SQL.contains("json_each(?2)"));
+        assert!(MARK_ARCHIVED_SQL.contains("COUNT(DISTINCT id)"));
+        assert!(MARK_ARCHIVED_SQL.contains("CAST(?1 AS INTEGER)"));
+        assert!(MARK_ARCHIVED_SQL.contains("emitted_at IS NOT NULL AND archived_at IS NULL"));
+        assert!(MARK_ARCHIVED_SQL.contains("RETURNING id"));
     }
 
     /// The columns this module is ALLOWED to write. Anything else in a `SET`
