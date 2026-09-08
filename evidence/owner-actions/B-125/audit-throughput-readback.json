@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-08T19:01:53Z",
+  "operator": "codex-live-b125-wrangler-oauth",
+  "database_binding": "CONFIG_DB",
+  "database_environment": "prod",
+  "database_access": "remote-read-only",
+  "production_deploy_pin": null,
+  "source_fix_deployed": false,
+  "query_set": [
+    {
+      "id": "population-control",
+      "query_hash": "22e8e8d52cf5a7b3354351b3bd9317c3d105fba78981f64ea82c6a4aafc9f2c9",
+      "interval": "all audit_outbox rows",
+      "row_count": 84932,
+      "source": "reports/go-live/D-1-audit-trail.md; owner packet B-125"
+    },
+    {
+      "id": "current-six-hour-throughput",
+      "query_hash": "3ffc68550a2c88eefd861e1218b409b4f242d8ae9512a211aabee2032a506baf",
+      "interval": "2026-09-08T12:46:11Z/2026-09-08T18:46:11Z",
+      "row_count": 0,
+      "source": "owner packet B-125; D03 B-125 contract"
+    },
+    {
+      "id": "historical-six-hour-control",
+      "query_hash": "0140a373e8c2c17c47c3d11d6573a0239ce30628e1b04674757693f00ef5fea5",
+      "interval": "2026-09-06T18:40:17.082Z/2026-09-07T00:40:17.082Z",
+      "row_count": 14,
+      "source": "owner packet B-125; D-1 six-hour readback"
+    },
+    {
+      "id": "historical-seven-day-burst",
+      "query_hash": "eb68d498279f4056df0e0e9e933b5cb5bc1431a32e76438510a3c3145fc32a1d",
+      "interval": "2026-08-31T00:40:17.082Z/2026-09-08T18:46:11Z",
+      "row_count": 6947,
+      "source": "B-125 burst control derived from D-1 arrival samples"
+    },
+    {
+      "id": "historical-six-hour-latency",
+      "query_hash": "19eabc849bdcd6dda2004a51cdc69900e6a66f5d08f874464d38b8a783b790c0",
+      "interval": "2026-09-06T18:40:17.082Z/2026-09-07T00:40:17.082Z",
+      "row_count": 14,
+      "source": "B-125 median/p90 aggregate over non-negative seal latencies"
+    },
+    {
+      "id": "partition-control",
+      "query_hash": "53e981f53538a3148e2becd13f921f36d85ab198ba000d927791a48b603a8252",
+      "interval": "all audit_outbox rows grouped by region",
+      "row_count": 4,
+      "source": "owner packet B-125 population/partition control"
+    },
+    {
+      "id": "head-signature-control",
+      "query_hash": "9a6195beb713dca176fcdab896f426bea328693c6fbad507102fff8c26535d1b",
+      "interval": "all audit_chain_head rows",
+      "row_count": 367,
+      "source": "reports/go-live/D-1-audit-trail.md control"
+    },
+    {
+      "id": "seal-integrity-control",
+      "query_hash": "767d4c38da9f503c653b19f64eb462509d3ba6c671789bfb3a20d1ecf5c4a872",
+      "interval": "all sealed audit_outbox rows",
+      "row_count": 84932,
+      "source": "B-125 replay/integrity control"
+    },
+    {
+      "id": "replay-sequence-control",
+      "query_hash": "dd5776dc60fb819b29cbd44a601553e41cc6173f4ecf1158f140c76792d049e7",
+      "interval": "all sealed audit_outbox rows grouped by partition/sequence",
+      "row_count": 84932,
+      "source": "B-125 burst/replay control"
+    },
+    {
+      "id": "head-tail-control",
+      "query_hash": "4563ebd725fd9464e5b931ddd5d7c3822996725221d1c78d9dd3589509280c8e",
+      "interval": "all audit_chain_head rows joined to sealed tails",
+      "row_count": 367,
+      "source": "B-125 replay/integrity control"
+    }
+  ],
+  "controls": {
+    "population": {
+      "total_rows": 84932,
+      "sealed_rows": 84932,
+      "unsealed_rows": 0,
+      "valid": true
+    },
+    "partition_coverage": {
+      "regions": 4,
+      "region_rows": 84932,
+      "region_unsealed_rows": 0,
+      "valid": true
+    },
+    "chain_heads": {
+      "heads": 367,
+      "signed_heads": 367,
+      "valid_sequence_heads": 367,
+      "valid": true
+    },
+    "seal_integrity": {
+      "malformed_seals": 0,
+      "negative_latency_rows": 64,
+      "duplicate_chain_hash_rows": 0,
+      "valid": false,
+      "note": "64 sealed rows have emitted_at earlier than enqueued_at; latency statistics must exclude or separately report them."
+    },
+    "replay_sequence_control": {
+      "rows_checked": 84932,
+      "repeated_sequence_rows": 1505,
+      "sequence_gap_rows": 1502,
+      "duplicate_sequence_groups": 1505,
+      "valid": false,
+      "note": "Aggregate-only control; no tenant identifiers or payloads retained."
+    },
+    "head_tail_control": {
+      "joined_heads": 367,
+      "head_tail_mismatches": 2,
+      "head_behind": 1,
+      "head_ahead": 1,
+      "valid": false
+    }
+  },
+  "arrivals": {
+    "current_six_hour": 0,
+    "historical_six_hour_control": 14,
+    "historical_sealed_rows": 14,
+    "historical_unsealed_rows": 0,
+    "seven_day_total": 6947,
+    "seven_day_peak_hour": 1732,
+    "seven_day_mean_populated_hour": 161.5581395348837,
+    "configured_batch_limit_literal": 512,
+    "production_batch_limit_proven": false
+  },
+  "sealed_rows": {
+    "all_time": 84932,
+    "current_six_hour": 0,
+    "historical_six_hour_control": 14
+  },
+  "oldest_unsealed_age_seconds": {
+    "all_time": 0,
+    "current_six_hour": 0,
+    "historical_six_hour_control": 0
+  },
+  "seal_latency": {
+    "historical_six_hour_control": {
+      "count": 14,
+      "min_ms": 1232614,
+      "mean_ms": 1245320.7142857143,
+      "median_ms": 1254095,
+      "p90_ms": 1255373,
+      "max_ms": 1255373,
+      "negative_latency_rows_excluded": 0
+    },
+    "historical_peak_burst_window": {
+      "interval": "2026-08-30T20:00:00Z/2026-08-31T02:00:00Z",
+      "arrivals_sealed_nonnegative": 2370,
+      "min_ms": 49685,
+      "mean_ms": 14990959.783966245,
+      "median_ms": 11330769,
+      "p90_ms": 33121303,
+      "max_ms": 218278973
+    },
+    "current_window_valid": false,
+    "note": "Current six-hour window has no arrivals; no current latency percentile is claimable."
+  },
+  "thresholds": {
+    "owner_latency_threshold": "not numerically specified in owner packet",
+    "owner_throughput_threshold": "requires post-deploy burst/readback above one 512-row call",
+    "batch_limit": 512,
+    "pass_requires": [
+      "deployed commit/config pin proving the repaired caller and 512-row production setting",
+      "non-empty live six-hour aggregate with hourly arrivals/seals and oldest-unsealed age",
+      "median and p90 latency over valid non-negative samples",
+      "burst above one batch with no replay/sequence/head-tail control failure"
+    ]
+  },
+  "verdict": "fail",
+  "verdict_reason": "The current window is empty and cannot prove post-deploy capacity; the retained production population has 1505 repeated sequence groups, 1502 sequence-gap rows, 2 head/tail mismatches, and 64 negative-latency rows. B-125 remains open.",
+  "redaction": {
+    "tenant_ids": "omitted",
+    "payloads": "omitted",
+    "request_ids": "omitted",
+    "raw_rows": "omitted"
+  }
+}
