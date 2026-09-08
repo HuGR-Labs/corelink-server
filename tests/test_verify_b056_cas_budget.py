@@ -57,3 +57,39 @@ def test_wrong_or_missing_current_cas_markers_fail(
     mutant["cas"] = files["cas"].replace(needle, replacement, 1)
     with pytest.raises(verify.VerificationError):
         verify.assess(mutant)
+
+
+def test_comment_markers_cannot_prove_real_guards() -> None:
+    files = verify.source()
+    mutant = dict(files)
+    mutant["cas"] = files["cas"].replace(
+        "_global_read_budget: GlobalCasReadBudgetGuard",
+        "/* _global_read_budget: GlobalCasReadBudgetGuard */ MissingGuard",
+        1,
+    )
+    with pytest.raises(verify.VerificationError):
+        verify.assess(mutant)
+
+
+def test_comment_markers_cannot_prove_weighted_acquire() -> None:
+    files = verify.source()
+    mutant = dict(files)
+    mutant["cas"] = files["cas"].replace(
+        "global_cas_read_budget().acquire_many_owned(permits)",
+        "/* global_cas_read_budget().acquire_many_owned(permits) */ acquire_owned()",
+        1,
+    )
+    with pytest.raises(verify.VerificationError):
+        verify.assess(mutant)
+
+
+def test_parent_include_removal_fails_closed() -> None:
+    files = verify.source()
+    mutant = dict(files)
+    mutant["cas_module"] = files["cas_module"].replace(
+        'include!("cas/batch_read.rs");',
+        '/* include!("cas/batch_read.rs"); */',
+        1,
+    )
+    with pytest.raises(verify.VerificationError):
+        verify.assess(mutant)

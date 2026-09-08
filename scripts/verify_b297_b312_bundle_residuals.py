@@ -270,6 +270,19 @@ def _imports(s: str, crate: str, label: str) -> str:
     return m.group("body")
 
 
+def _include_paths(source: str, label: str) -> tuple[str, ...]:
+    """Return real include! paths, excluding comment/string bait."""
+    code = _code(source)
+    paths: list[str] = []
+    for match in re.finditer(r'include!\(\s*"([^"]+)"\s*\)\s*;', source):
+        if code[match.start() : match.start() + len("include!")] != "include!":
+            continue
+        paths.append(match.group(1))
+    if not paths:
+        raise VerificationError(f"{label}: include! census is empty")
+    return tuple(paths)
+
+
 def _check_adversarial_import(sources: dict[str, str]) -> None:
     body = _imports(_code(sources[ADVERSARIAL]), "e2e_tenant_isolation", ADVERSARIAL)
     expected = {
@@ -472,6 +485,9 @@ def _check_type_complexity(sources: dict[str, str]) -> None:
 
 
 def _check_revocation_test_lints(sources: dict[str, str]) -> None:
+    includes = _include_paths(sources[REVOCATION], REVOCATION)
+    if includes != ("byok_revocation_runtime/part-01.rs",):
+        raise VerificationError(f"{REVOCATION}: test fragment include census is stale")
     _one(_code(sources[REVOCATION_TESTS]), r"#\[cfg\(test\)\]\s*mod\s+tests\s*\{\s*#!\[allow\(clippy::expect_used,\s*clippy::indexing_slicing\)\]", REVOCATION_TESTS + ":tests lint scope")
 
 

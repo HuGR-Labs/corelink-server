@@ -21,6 +21,23 @@ CAS_PARTS = (
     "crates/corelink-container/src/routes/cas/batch_read.rs",
     "crates/corelink-container/src/routes/cas/list_delete.rs",
 )
+CAS_PARENT = "crates/corelink-container/src/routes/cas.rs"
+CAS_INCLUDE_CENSUS = (
+    "foundation_core.rs",
+    "foundation_state.rs",
+    "single_setup.rs",
+    "single_handlers.rs",
+    "batch_write.rs",
+    "batch_read.rs",
+    "list_delete.rs",
+    "tests_core_part1.rs",
+    "tests_core_part2.rs",
+    "tests_batch_part1.rs",
+    "tests_batch_part2.rs",
+    "tests_batch_write_part2.rs",
+    "tests_edges.rs",
+    "tests_read_ceiling.rs",
+)
 
 
 class VerificationError(RuntimeError):
@@ -37,9 +54,157 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _strip_comments(source: str) -> str:
+    """Blank Rust comments while retaining strings for include! extraction."""
+    out: list[str] = []
+    i = 0
+    state = "code"
+    depth = 0
+    while i < len(source):
+        ch = source[i]
+        nxt = source[i + 1] if i + 1 < len(source) else ""
+        if state == "line":
+            if ch == "\n":
+                out.append(ch)
+                state = "code"
+            else:
+                out.append(" ")
+            i += 1
+        elif state == "block":
+            if ch == "/" and nxt == "*":
+                depth += 1
+                out.extend((" ", " "))
+                i += 2
+            elif ch == "*" and nxt == "/":
+                depth -= 1
+                out.extend((" ", " "))
+                i += 2
+                if depth == 0:
+                    state = "code"
+            else:
+                out.append("\n" if ch == "\n" else " ")
+                i += 1
+        elif ch == "/" and nxt == "/":
+            out.extend((" ", " "))
+            state = "line"
+            i += 2
+        elif ch == "/" and nxt == "*":
+            out.extend((" ", " "))
+            state = "block"
+            depth = 1
+            i += 2
+        elif ch == '"':
+            # Include paths live in ordinary strings. Preserve string bytes so
+            # the census can inspect them, but do not treat // inside a string
+            # as a comment opener.
+            out.append(ch)
+            i += 1
+            while i < len(source):
+                out.append(source[i])
+                if source[i] == "\\" and i + 1 < len(source):
+                    i += 1
+                    out.append(source[i])
+                elif source[i] == '"':
+                    i += 1
+                    break
+                i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
+def _code(source: str) -> str:
+    """Blank Rust comments and literals, preserving line/offset shape."""
+    out: list[str] = []
+    i = 0
+    state = "code"
+    depth = 0
+    while i < len(source):
+        ch = source[i]
+        nxt = source[i + 1] if i + 1 < len(source) else ""
+        if state == "line":
+            if ch == "\n":
+                out.append(ch)
+                state = "code"
+            else:
+                out.append(" ")
+            i += 1
+            continue
+        if state == "block":
+            if ch == "/" and nxt == "*":
+                depth += 1
+                out.extend((" ", " "))
+                i += 2
+            elif ch == "*" and nxt == "/":
+                depth -= 1
+                out.extend((" ", " "))
+                i += 2
+                if depth == 0:
+                    state = "code"
+            else:
+                out.append("\n" if ch == "\n" else " ")
+                i += 1
+            continue
+        if state in {"string", "char"}:
+            quote = '"' if state == "string" else "'"
+            if ch == "\\":
+                out.append(" ")
+                if i + 1 < len(source):
+                    out.append("\n" if source[i + 1] == "\n" else " ")
+                    i += 2
+                else:
+                    i += 1
+            elif ch == quote:
+                out.append(" ")
+                state = "code"
+                i += 1
+            else:
+                out.append("\n" if ch == "\n" else " ")
+                i += 1
+            continue
+        # Raw strings (including r###"..."### and br###"..."###).
+        raw_start = i
+        if ch == "r" or (ch == "b" and nxt == "r"):
+            quote_index = i + (1 if ch == "r" else 2)
+            hash_index = quote_index
+            while hash_index < len(source) and source[hash_index] == "#":
+                hash_index += 1
+            if hash_index < len(source) and source[hash_index] == '"':
+                hashes = source[quote_index:hash_index]
+                terminator = '"' + hashes
+                end = source.find(terminator, hash_index + 1)
+                end = len(source) if end < 0 else end + len(terminator)
+                out.extend("\n" if c == "\n" else " " for c in source[raw_start:end])
+                i = end
+                continue
+        if ch == "/" and nxt == "/":
+            out.extend((" ", " "))
+            state = "line"
+            i += 2
+        elif ch == "/" and nxt == "*":
+            out.extend((" ", " "))
+            state = "block"
+            depth = 1
+            i += 2
+        elif ch == '"':
+            out.append(" ")
+            state = "string"
+            i += 1
+        elif ch == "'" and i + 2 < len(source) and source[i + 2] == "'":
+            out.append(" ")
+            state = "char"
+            i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 def source() -> dict[str, str]:
     return {
         "cas": "\n".join(read(ROOT / part) for part in CAS_PARTS),
+        "cas_module": read(ROOT / CAS_PARENT),
         "backlog": read(ROOT / "BACKLOG.md"),
         "native": read(ROOT / "docs/knowledge/surfaces/native-cas.md"),
         "container": read(ROOT / "docs/knowledge/planes/container.md"),
@@ -60,6 +225,11 @@ def handler_span(cas: str, name: str, next_name: str | None = None) -> str:
 
 def assess(files: dict[str, str], expected_status: str = "done") -> None:
     cas = files["cas"]
+    parent = _strip_comments(files["cas_module"])
+    includes = tuple(re.findall(r'include!\(\s*"cas/([^"]+)"\s*\)\s*;', parent))
+    if includes != CAS_INCLUDE_CENSUS:
+        fail("B-056 CAS parent include census is stale or incomplete")
+    code = _code(cas)
     required = (
         (
             "budget declaration",
@@ -95,21 +265,20 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
         "GlobalCasReadBudgetGuard",
         "GlobalCasBatchReadBudgetGuard",
         "StatusCode::SERVICE_UNAVAILABLE",
-        '"global CAS read budget saturated; returning 503 before buffering"',
     )
     for requirement in required:
         if isinstance(requirement, tuple):
             label, alternatives = requirement
-            if not any(needle in cas for needle in alternatives):
+            if not any(needle in code for needle in alternatives):
                 fail(f"B-056 CAS budget contract missing: {label}")
-        elif requirement not in cas:
+        elif requirement not in code:
             fail(f"B-056 CAS budget contract missing: {requirement}")
-    if "crate::container_capacity::CAS_READ_GLOBAL_BUDGET_BYTES" in cas and (
+    if "crate::container_capacity::CAS_READ_GLOBAL_BUDGET_BYTES" in code and (
         "pub const CAS_READ_GLOBAL_BUDGET_BYTES: u64 =" not in files["capacity"]
     ):
         fail("B-056 shared budget does not resolve to the central capacity declaration")
 
-    single = handler_span(cas, "handle_read", "handle_write")
+    single = handler_span(code, "handle_read", "handle_write")
     if "_read_concurrency: CasReadConcurrencyGuard" not in single:
         fail("single CAS GET lost its per-tenant guard")
     if "_global_read_budget: GlobalCasReadBudgetGuard" not in single:
@@ -117,7 +286,7 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
     if single.index("_global_read_budget") < single.index("_read_concurrency"):
         fail("single CAS GET process-wide guard is not after the per-tenant guard")
 
-    batch = handler_span(cas, "handle_batch_read", "handle_batch_exists")
+    batch = handler_span(code, "handle_batch_read", "handle_batch_exists")
     if "_read_concurrency: CasReadConcurrencyGuard" not in batch:
         fail("CAS batch-read lost its per-tenant guard")
     if "_global_read_budget: GlobalCasBatchReadBudgetGuard" not in batch:
@@ -132,7 +301,11 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
     # Global saturation logs deliberately carry only a static route and weight;
     # tenant/hash/request identifiers would turn a bounded guard into a high-
     # cardinality observability sink.
-    saturation = cas[cas.index('"global CAS read budget saturated'):cas.index('"global CAS read budget saturated') + 180]
+    clean_cas = _strip_comments(cas)
+    if clean_cas.count('"global CAS read budget saturated; returning 503 before buffering"') != 1:
+        fail("B-056 saturation log marker is missing or ambiguous")
+    offset = clean_cas.index('"global CAS read budget saturated')
+    saturation = clean_cas[offset:offset + 180]
     if "tenant_id" in saturation or "hash" in saturation or "request_id" in saturation:
         fail("B-056 saturation log contains high-cardinality identity")
 
@@ -170,6 +343,12 @@ def mutation_checks(files: dict[str, str]) -> None:
         ),
         ("weighted acquire", "cas", "acquire_many_owned(permits)", "acquire_owned()"),
         (
+            "comment-hidden weighted acquire",
+            "cas",
+            "global_cas_read_budget().acquire_many_owned(permits)",
+            "/* global_cas_read_budget().acquire_many_owned(permits) */ acquire_owned()",
+        ),
+        (
             "global semaphore",
             "cas",
             "static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();",
@@ -186,6 +365,18 @@ def mutation_checks(files: dict[str, str]) -> None:
             "cas",
             "_global_read_budget: GlobalCasBatchReadBudgetGuard",
             "_global_read_budget: MissingGuard",
+        ),
+        (
+            "comment-hidden guard",
+            "cas",
+            "_global_read_budget: GlobalCasReadBudgetGuard",
+            "/* _global_read_budget: GlobalCasReadBudgetGuard */ MissingGuard",
+        ),
+        (
+            "parent include wiring",
+            "cas_module",
+            'include!("cas/batch_read.rs");',
+            '/* include!("cas/batch_read.rs"); */',
         ),
         ("backlog status", "backlog", "status: done", "status: open"),
         (

@@ -293,6 +293,14 @@ def test_reviewer_reproducers_reject_renamed_or_non_test_declarations() -> None:
     )
 
 
+def test_reviewer_reproducers_reject_removed_revocation_test_include() -> None:
+    _reject_mutation(
+        verify.REVOCATION,
+        'include!("byok_revocation_runtime/part-01.rs");',
+        '/* include!("byok_revocation_runtime/part-01.rs"); */',
+    )
+
+
 def test_reviewer_reproducers_reject_registry_population_or_identity_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
     families = dict(verify.FAMILY_PATHS)
     families["B-297 adversarial imports"] = (verify.MAIN,)
