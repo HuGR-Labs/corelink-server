@@ -14,6 +14,9 @@ WORKFLOW = ".github/workflows/" + NEEDLE
 ALLOWED_REFERENCES = {
     "BACKLOG.md",
     "docs/campaigns/remediation/devenv-manifest.tsv",
+    # The work package keeps the archived filename in its historical
+    # allowlist/non-goals prose; it is not an instruction to dispatch it.
+    "docs/campaigns/remediation/work-packages/B091-B130.md",
     "docs/internal/sccache-pilot-diagnosis-2026-08-04.md",
     "docs/internal/secrets-checklist.md",
     # The owner packet retains the archived path as a historical evidence
