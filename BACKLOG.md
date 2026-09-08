@@ -12722,22 +12722,12 @@ sujeito OCI que não era o Worker; `ZONE_ID_PLACEHOLDER` no deploy; e atestaçã
 SLSA que era apenas um `echo` stub. O waiver do owner de 2026-08-11 era real,
 mas não transforma uma lane inexecutável em evidência.
 
-```
-gh run list --workflow=cosign-sign.yml --limit 5   →  zero linhas
-gh run list --workflow=nightly.yml     --limit 2   →  2 linhas
-```
-
-A segunda consulta existe para provar o mecanismo: a mesma chamada devolve linhas quando há
-linhas, então o vazio da primeira é ausência real e não consulta quebrada.
-
-Ela é, portanto, mais uma lane com zero sucessos — só que do lado protegido da fronteira,
-onde a varredura de lanes hosted não a procura porque o waiver a marca como resolvida.
-
-**Consequência que já chegou ao cliente.** O `apps/docs/docs/trust/index.mdx` prometia
-entradas de transparência Sigstore/Rekor para a imagem do Worker, "verificáveis com
-`cosign verify` contra o emissor `token.actions.githubusercontent.com`, sem chave nossa".
-Nada disso jamais foi emitido. O #1356 remove a promessa — e a remoção deixa de ser
-plausível e passa a ser provada por este item.
+A inspeção do Actions antes da remoção não encontrou execução concluída para
+esta lane; essa observação histórica fica apenas como contexto. Ela não é usada
+como evidência do estado atual agora que o workflow foi apagado. A afirmação
+pública sobre Sigstore/Rekor foi removida junto com a lane, enquanto os caminhos
+independentes de assinatura release-SLSA e CAS continuam separados, gated e
+verificados abaixo.
 
 O precedente que define o padrão de reparo é a `reproducible-build`: zero verdes por motivo
 **estrutural**, não por flake — ela hasheava um artefato wasm que o build não produz, e
@@ -12760,7 +12750,7 @@ verify: |
   if rg -n -i "cosign-sign\\.yml|Worker container image.*signed keyless|transparency-log entries for the \\*\\*Worker container image\\*\\*" apps/docs legal docs/internal/secrets-checklist.md scripts/compliance-weekly-digest.py; then exit 1; fi
   echo "done: former OCI lane absent; release-SLSA/CAS signer paths retained"'
 verify-means: |
-  done — a antiga lane OCI permanece ausente, as promessas públicas permanecem removidas e os caminhos release-SLSA/CAS, que não são a antiga lane OCI, continuam com assinatura e verificação. O histórico vazio foi capturado como evidência; não é usado como falso-green runtime proof.
+  done — a antiga lane OCI permanece ausente, as promessas públicas permanecem removidas e os caminhos release-SLSA/CAS, que não são a antiga lane OCI, continuam com assinatura e verificação. A inspeção histórica foi capturada como contexto; não é usada como falso-green runtime proof.
 last-verified: 2026-09-08
 ```
 
