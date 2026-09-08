@@ -137,8 +137,15 @@ def verify(snapshot: dict[str, Any]) -> dict[str, Any]:
         for key in ("created_at", "started_at", "completed_at"):
             _timestamp(row.get(key), f"failed_jobs[{index}].{key}")
         steps = row.get("steps")
-        if not isinstance(steps, list) or not steps:
-            raise SnapshotError("failed job is missing complete step evidence")
+        if not isinstance(steps, list):
+            raise SnapshotError("failed job step evidence must be an array")
+        step_evidence_available = row.get("step_evidence_available", True)
+        if not isinstance(step_evidence_available, bool):
+            raise SnapshotError("failed job step_evidence_available must be boolean")
+        if step_evidence_available and not steps:
+            raise SnapshotError("failed job claims step evidence but has no steps")
+        if not step_evidence_available and steps:
+            raise SnapshotError("failed job marks step evidence unavailable but retains steps")
         for step_index, step in enumerate(steps):
             step_obj = _obj(step, f"failed_jobs[{index}].steps[{step_index}]")
             if isinstance(step_obj.get("step_id"), bool) or not isinstance(step_obj.get("step_id"), int) or step_obj["step_id"] <= 0:

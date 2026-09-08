@@ -27,9 +27,10 @@ from typing import Any
 REPO = "HuGR-Labs/corelink-server"
 ALERTS_PATH = f"/repos/{REPO}/dependabot/alerts"
 
-# The authoritative query was captured against the old default branch before
-# this candidate can affect GitHub's alert census. These nine records are
-# expected *pre-merge*; a changed census is drift, not evidence of closure.
+# The pre-merge census remains retained for the focused tests and provenance.
+# The live default branch census is now separately expected to be empty after
+# the dependency remediation landed.  Keeping both expectations prevents a
+# stale pre-merge fixture from being mistaken for current GitHub truth.
 EXPECTED_OLD_MAIN_ALERTS: dict[int, tuple[str, str, str]] = {
     26: ("image-size", "GHSA-w3rx-r6r6-pgpr", "high"),
     27: ("image-size", "GHSA-5p2g-fcmc-qvqq", "high"),
@@ -41,9 +42,9 @@ EXPECTED_OLD_MAIN_ALERTS: dict[int, tuple[str, str, str]] = {
     37: ("fast-uri", "GHSA-jqff-g426-hqxp", "high"),
     38: ("qs", "GHSA-4mjr-xmp4-gh2g", "medium"),
 }
-# Compatibility name for focused callers; this is intentionally non-empty
-# until a post-merge authenticated census proves the alerts closed.
+# Compatibility name for focused callers and the pre-merge adjudication path.
 EXPECTED_RESIDUALS = EXPECTED_OLD_MAIN_ALERTS
+EXPECTED_POST_MERGE_ALERTS: dict[int, tuple[str, str, str]] = {}
 BASELINE_SNAPSHOT = "docs/security/b028-dependabot-census-2026-09-06.json"
 CANDIDATE_CONTAINED = {26, 27, 28}
 
@@ -161,7 +162,10 @@ def _summary(alert: dict[str, Any]) -> tuple[int, str, str, str]:
     return number, package, ghsa, severity
 
 
-def verify_alerts(alerts: list[dict[str, Any]]) -> list[tuple[int, str, str, str]]:
+def verify_alerts(
+    alerts: list[dict[str, Any]],
+    expected: dict[int, tuple[str, str, str]] | None = None,
+) -> list[tuple[int, str, str, str]]:
     open_alerts: dict[int, tuple[str, str, str]] = {}
     for alert in alerts:
         number, package, ghsa, severity = _summary(alert)
@@ -182,9 +186,9 @@ def verify_alerts(alerts: list[dict[str, Any]]) -> list[tuple[int, str, str, str
             raise CensusError(f"open alert #{number} has malformed vulnerability details")
 
     actual = {number: value for number, value in sorted(open_alerts.items())}
-    expected = dict(sorted(EXPECTED_RESIDUALS.items()))
-    if actual != expected:
-        raise CensusError(f"open alert census drifted: expected {expected}, got {actual}")
+    expected_census = dict(sorted((EXPECTED_RESIDUALS if expected is None else expected).items()))
+    if actual != expected_census:
+        raise CensusError(f"open alert census drifted: expected {expected_census}, got {actual}")
     return [(number, *values) for number, values in sorted(open_alerts.items())]
 
 
@@ -194,12 +198,14 @@ def verify_baseline_snapshot(root: Path) -> None:
         snapshot = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise CensusError(f"B-028 baseline snapshot unavailable or invalid: {exc}") from exc
-    if snapshot.get("default_branch_commit") != "ed0cd972a7453ccbd9783d258f2e46d204085ef8":
-        raise CensusError("B-028 snapshot is not anchored to the reviewed old-main commit")
+    if snapshot.get("default_branch_commit") != "cdd6a671484a378e443bd8b4c4b7b5e0948dcb8b":
+        raise CensusError("B-028 snapshot is not anchored to the refreshed default branch")
     if snapshot.get("candidate_commit") != "8796799192daf00aa98c99a60e0bd4d790ec1ce9":
-        raise CensusError("B-028 snapshot is not anchored to the candidate commit")
-    if snapshot.get("post_merge_refresh_required") is not True:
-        raise CensusError("B-028 snapshot must remain open pending post-merge refresh")
+        raise CensusError("B-028 snapshot lost the reviewed remediation candidate anchor")
+    if snapshot.get("post_merge_refresh_required") is not False:
+        raise CensusError("B-028 snapshot still claims a post-merge refresh is required")
+    if snapshot.get("open_alert_count") != 0:
+        raise CensusError("B-028 snapshot does not record an empty open-alert census")
     records = snapshot.get("alerts")
     if not isinstance(records, list):
         raise CensusError("B-028 snapshot alerts must be a list")
@@ -221,9 +227,9 @@ def verify_baseline_snapshot(root: Path) -> None:
             raise CensusError(
                 f"B-028 snapshot alert #{number} has wrong candidate classification"
             )
-    if actual != EXPECTED_OLD_MAIN_ALERTS:
+    if actual:
         raise CensusError(
-            f"B-028 snapshot census drifted: expected {EXPECTED_OLD_MAIN_ALERTS}, got {actual}"
+            f"B-028 post-merge snapshot must contain no open alerts, got {actual}"
         )
 
 
@@ -287,7 +293,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         alerts = read_alerts(args.repo, args.alerts_file)
-        census = verify_alerts(alerts)
+        # ``--alerts-file`` is a focused-test compatibility path for the
+        # retained pre-merge fixture.  The authenticated live API is always
+        # adjudicated against the post-merge empty census.
+        census = verify_alerts(
+            alerts,
+            expected=EXPECTED_RESIDUALS if args.alerts_file is not None else EXPECTED_POST_MERGE_ALERTS,
+        )
         verify_baseline_snapshot(args.root)
         verify_lockfile(args.root)
     except CensusError as exc:
