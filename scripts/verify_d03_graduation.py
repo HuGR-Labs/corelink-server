@@ -4,8 +4,9 @@
 This is intentionally a bounded register check.  It does not dispatch CI,
 contact GitHub, or pretend that production evidence is present.  It proves
 that the one DCO candidate accounts for the exact original population, that
-every parked item has an executable owner packet, and that the three DONE items
-still pass their local inverted guards.
+every parked item has an executable owner packet, that every post-graduation
+retired item has a local retirement gate, and that the three DONE items still
+pass their local inverted guards.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from scripts.backlog_verify import parse
 ROOT = Path(__file__).resolve().parents[1]
 PACKET_PATH = ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json"
 OWNER_POPULATION = ("B-039",)
-POST_GRADUATION_PARKED = ("B-210",)
+POST_GRADUATION_RETIRED = ("B-210",)
 OWNER_PACKET_FIELDS = {"owner", "status", "dependency", "action", "artifact", "command"}
 OWNER_MIRROR_URL = "https://corelink-artifacts.humangr.com/tlaplus/v1.8.0/eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a/tla2tools.jar"
 OWNER_MIRROR_SHA256 = "eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a"
@@ -741,12 +742,17 @@ def verify_document(
     if remaining_open:
         raise GraduationError(f"repository still has owner tl/status open: {remaining_open}")
     packet_data = _load_packets(packet_text)
-    if tuple(packet_data.get("post_graduation_parked", ())) != POST_GRADUATION_PARKED:
-        raise GraduationError("post-graduation parked population is missing or not closed")
-    for item in POST_GRADUATION_PARKED:
+    if tuple(packet_data.get("post_graduation_retired", ())) != POST_GRADUATION_RETIRED:
+        raise GraduationError("post-graduation retired population is missing or not closed")
+    for item in POST_GRADUATION_RETIRED:
         record = by_id.get(item)
-        if record is None or record.raw.get("owner") != "tl" or record.raw.get("status") != "parked":
-            raise GraduationError(f"{item}: post-graduation disposition must remain tl/parked")
+        if record is None or record.raw.get("owner") != "tl" or record.raw.get("status") != "done":
+            raise GraduationError(f"{item}: post-graduation disposition must remain tl/done")
+        means = str(record.raw.get("verify-means", ""))
+        if not means.lstrip().lower().startswith("done —"):
+            raise GraduationError(f"{item}: retired disposition must use done verify-means")
+        if "B-119" not in means or "retir" not in means.lower():
+            raise GraduationError(f"{item}: retired disposition must name the B-119 decision")
     _check_owner_packets(packet_data, by_id)
     packets = _check_packets(packet_data, root)
     packet_done = frozenset(item for item, packet in packets.items() if packet["disposition"] == "DONE")
@@ -803,6 +809,7 @@ def verify_document(
                 raise GraduationError(f"{item}: inverted guard failed: {result.stdout}{result.stderr}")
     if run_gates:
         _run_parked_gates(root, by_id)
+        _run_retired_gates(root, by_id)
     return {"original": len(ORIGINAL_TL_OPEN), "graduated": len(GRADUATED), "done": 3, "parked": len(GRADUATED) - 3}
 
 
@@ -836,6 +843,18 @@ def _run_parked_gates(root: Path, records: dict[str, Any]) -> None:
             raise GraduationError(f"{item}: parked gate failed rc={result.returncode}: {output}")
 
 
+def _run_retired_gates(root: Path, records: dict[str, Any]) -> None:
+    """Run the local gate for each post-graduation retired item."""
+    for item in POST_GRADUATION_RETIRED:
+        if records[item].raw.get("status") != "done":
+            continue
+        command = (sys.executable, "scripts/verify_b210_retirement.py")
+        result = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            output = (result.stdout + result.stderr).strip()[-1000:]
+            raise GraduationError(f"{item}: retired gate failed rc={result.returncode}: {output}")
+
+
 def self_test(root: Path = ROOT) -> None:
     backlog = _read(root / "BACKLOG.md")
     packets = _read(root / PACKET_PATH.relative_to(ROOT))
@@ -844,7 +863,22 @@ def self_test(root: Path = ROOT) -> None:
         ("stale-means", backlog.replace("verify-means: |\n  parked —", "verify-means: |\n  open —", 1), packets),
         ("packet-command-removed", backlog, packets.replace('"command":"', '"command_removed":"', 1)),
         ("packet-unclassified", backlog, packets.replace('"disposition":"PARKED"', '"disposition":"UNKNOWN"', 1)),
-        ("post-graduation-omitted", backlog, packets.replace('  "post_graduation_parked": ["B-210"],\n', "", 1)),
+        ("post-graduation-omitted", backlog, packets.replace('  "post_graduation_retired": ["B-210"],\n', "", 1)),
+        (
+            "post-graduation-parked",
+            backlog,
+            packets.replace('  "post_graduation_retired": ["B-210"],\n', '  "post_graduation_parked": ["B-210"],\n', 1),
+        ),
+        (
+            "retired-status-parked",
+            backlog.replace("id: B-210\nrepo: corelink-server\nowner: tl\nstatus: done", "id: B-210\nrepo: corelink-server\nowner: tl\nstatus: parked", 1),
+            packets,
+        ),
+        (
+            "retired-means-parked",
+            backlog.replace("verify-means: |\n  done — B-210", "verify-means: |\n  parked — B-210", 1),
+            packets,
+        ),
         ("fake-done", backlog.replace("id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: parked", "id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: done", 1), packets.replace('"B-044": {"disposition":"PARKED"', '"B-044": {"disposition":"DONE"', 1)),
         (
             "artifact-capture-removed",

@@ -22,16 +22,17 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-ROOTS = (
-    REPO / "apps" / "admin-ui",
-    REPO / "apps" / "docs",
-    REPO / "crates",
-    REPO / "docs",
-    REPO / "examples",
-    REPO / "marketing",
-    REPO / "openapi",
-    REPO / "tools",
+ROOTS_RELATIVE = (
+    Path("apps/admin-ui"),
+    Path("apps/docs"),
+    Path("crates"),
+    Path("docs"),
+    Path("examples"),
+    Path("marketing"),
+    Path("openapi"),
+    Path("tools"),
 )
+ROOTS = tuple(REPO / relative for relative in ROOTS_RELATIVE)
 SKIP_DIRS = {".git", "node_modules", "target", ".next", "dist", "build", "changelog.d", "specs"}
 # This module is an E2E-only response fixture, not a published SDK/mock
 # surface. Its synthetic admin-operation paths are retained only as historical

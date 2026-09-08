@@ -5,10 +5,12 @@ from pathlib import Path
 
 import pytest
 
+from scripts.backlog_verify import parse
 from scripts.verify_d03_graduation import (
     COMMAND_CONTRACTS,
     COMMAND_OPERATIONS,
     GraduationError,
+    POST_GRADUATION_RETIRED,
     _check_packets,
     _load_packets,
     self_test,
@@ -26,6 +28,19 @@ def test_closed_population_and_inverted_guards() -> None:
 
 def test_register_mutations_are_red() -> None:
     self_test()
+
+
+def test_b210_is_retired_and_not_parked_debt() -> None:
+    packet_text = (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
+    packet = _load_packets(packet_text)
+    assert tuple(packet["post_graduation_retired"]) == POST_GRADUATION_RETIRED
+    assert "post_graduation_parked" not in packet
+    backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
+    result = verify_document(backlog_text=backlog, packet_text=packet_text, run_guards=False, run_gates=False)
+    assert result["done"] == 3
+    b210 = next(record.raw for record in parse(backlog) if record.id == "B-210")
+    assert b210["status"] == "done"
+    assert b210["verify-means"].lstrip().startswith("done —")
 
 
 def test_flagged_commands_have_load_bearing_semantic_mutations() -> None:

@@ -4966,40 +4966,43 @@ Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW i
 Atualização canônica: a decisão B-119 aposentou a superfície não vinculada
 `/admin/ops*` e removeu suas páginas, cliente e exemplos. Portanto, o artefato
 descrito por este achado não existe mais para receber um reparo de ordenação;
-reintroduzi-lo publicaria novamente uma API fantasma. B-210 fica estacionado,
-subordinado à eventual reabertura de B-119, e não representa uma closure de
-código.
+reintroduzi-lo publicaria novamente uma API fantasma. B-210 está encerrado como
+retirado/superseded por B-119, e não é dívida estacionada.
 
 Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
 
-Next action: Keep B-210 parked while B-119 retires `/admin/ops*`; if a durable,
-securely bound approval surface is restored, re-open DD-062 and re-audit SSR
-guard ordering before publishing any page.
+Next action: Keep B-210 done while B-119 remains done and the `/admin/ops*`
+surface remains absent. If a durable, securely bound approval surface is ever
+restored, re-open B-119 and B-210 together and re-audit SSR guard ordering
+before publishing any page.
 
-Acceptance/closure evidence: Evidence for DD-062: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+Acceptance/closure evidence: B-210 is retired/superseded by the done B-119
+decision: the vulnerable `/admin/ops*` surface is absent, B-119's census remains
+done, and this retirement gate fails closed if either status regresses or the
+surface is reintroduced. A future approval surface reopens both items before
+publication; it does not revive this historical finding as parked debt.
 
 ```backlog
 id: B-210
 repo: corelink-server
 owner: tl
-status: parked
+status: done
 source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
 source-locator: "MEDIUM / LOW item 41"
 finding-title: "Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
 problem: "Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
 evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 41: Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
 dependencies: []
-next-action: "Keep B-210 parked while B-119 retires /admin/ops*; if a durable, securely bound approval surface is restored, re-open DD-062 and re-audit SSR guard ordering before publishing any page."
-acceptance: "Evidence for DD-062 is deferred until B-119 is re-opened; the retirement gate must continue to prove that the page is absent and the status is parked."
+next-action: "Keep B-210 done while B-119 remains done and /admin/ops* remains absent; if a durable, securely bound approval surface is restored, re-open B-119 and B-210 together and re-audit SSR guard ordering before publishing any page."
+acceptance: "B-210 is retired/superseded by done B-119: /admin/ops* is absent, the B-119 census remains done, and the retirement gate fails closed on status regression or surface reintroduction; restore of a durable bound surface reopens both items."
 verify: |
   python3 scripts/verify_b210_retirement.py --self-test
   python3 scripts/verify_b210_retirement.py
 verify-means: |
-  parked — B-119 retired the unbound `/admin/ops*` surface, so the B-210 page is
-  intentionally absent; the local retirement gate checks that absence, the
-  parked status, and the B-119 decision, with route/status mutations failing
-  closed.
-last-verified: 2026-09-06
+  done — B-210 is retired/superseded by B-119: the unbound `/admin/ops*` surface
+  is intentionally absent; the local retirement gate checks the full B-119
+  census, both done statuses, and fails closed on route/status mutations.
+last-verified: 2026-09-08
 ```
 
 ### B-211 — Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)

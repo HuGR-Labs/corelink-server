@@ -16,7 +16,7 @@
     "B-139", "B-142", "B-152", "B-250", "B-251", "B-165", "B-253", "B-006"
   ],
   "owner_population": ["B-039"],
-  "post_graduation_parked": ["B-210"],
+  "post_graduation_retired": ["B-210"],
   "owner_packets": {
     "B-039": {"owner":"owner","status":"open","dependency":"owner-controlled R2 mirror credentials and a public immutable-object read path","action":"Owner restores or publishes the pinned tla2tools.jar object, then records the HTTP result and SHA-256 without placing credentials in the repository.","artifact":"artifacts/d03/B039-mirror-availability.json","command":"set -o pipefail && mkdir -p artifacts/d03 && tmp=\"$(mktemp)\" && trap 'rm -f \"$tmp\"' EXIT && curl -fsSL --location -o \"$tmp\" https://corelink-artifacts.humangr.com/tlaplus/v1.8.0/eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a/tla2tools.jar && printf '%s  %s\\n' eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a \"$tmp\" | sha256sum -c - > artifacts/d03/B039-mirror-availability.json"}
   },
