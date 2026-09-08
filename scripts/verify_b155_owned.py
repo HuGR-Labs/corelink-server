@@ -26,6 +26,10 @@ LEGAL_TLS = (
     "legal/privacy-notice/v1.0.0/pt-BR.md", "legal/privacy-notice/v1.0.0/es-MX.md",
 )
 MIRROR_URL = "https://corelink-artifacts.humangr.com/tlaplus/v1.8.0/eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a/tla2tools.jar"
+MIRROR_SHA256_PINNED = "eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a"
+MIRROR_USER_AGENT = "CoreLink-B039-Verifier/1.0"
+MIRROR_READ_CHUNK_BYTES = 1024 * 1024
+MIRROR_MAX_BYTES = 128 * 1024 * 1024
 UPSTREAM_RE = re.compile(r"https://github\.com/tlaplus/tlaplus/releases/download/[^\s\"']+/tla2tools\.jar")
 B039_TARGETS = (".github/workflows/nightly.yml", ".github/workflows/tla_check.yml", "scripts/run_tlc_corelink.sh")
 B014_FIXTURE = "tests/fixtures/b014_webhook_endpoints.json"
@@ -313,19 +317,59 @@ def _b035(root: Path) -> str:
     return f"B-035 open PASS ({sum(n for _,n in claims)} active TLS claims in {len(claims)}/{len(LEGAL_TLS)} instruments)"
 
 
+def _read_mirror_digest() -> tuple[int, str]:
+    """Read the pinned mirror object and return its size and SHA-256.
+
+    The mirror's WAF rejects urllib's default ``Python-urllib/...`` user agent,
+    while allowing the explicit verifier identity used here.  Streaming keeps
+    the live check bounded and hashing the complete response preserves the
+    supply-chain check instead of treating any 2xx response as sufficient.
+    """
+    request = urllib.request.Request(
+        MIRROR_URL,
+        headers={"User-Agent": MIRROR_USER_AGENT},
+    )
+    digest = hashlib.sha256()
+    size = 0
+    with urllib.request.urlopen(request, timeout=30) as response:
+        status = getattr(response, "status", None)
+        if not isinstance(status, int) or not (200 <= status < 300):
+            raise VerificationError(f"mirror status {status!r}")
+        while True:
+            chunk = response.read(MIRROR_READ_CHUNK_BYTES)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MIRROR_MAX_BYTES:
+                raise VerificationError(
+                    f"mirror response exceeds {MIRROR_MAX_BYTES} bytes"
+                )
+            digest.update(chunk)
+    actual = digest.hexdigest()
+    if actual != MIRROR_SHA256_PINNED:
+        raise VerificationError(
+            "mirror SHA-256 mismatch: "
+            f"expected {MIRROR_SHA256_PINNED}, got {actual}"
+        )
+    return size, actual
+
+
 def _b039(root: Path, live: bool) -> str:
     hits=[]
     for rel in B039_TARGETS:
         for line in _active_config_lines(_read(root,rel)):
             if UPSTREAM_RE.search(line): hits.append(rel)
     if hits: raise VerificationError("mutable upstream URL remains in active target(s): "+", ".join(hits))
+    if f"/{MIRROR_SHA256_PINNED}/" not in MIRROR_URL:
+        raise VerificationError("mirror URL and SHA-256 pin diverge")
     if not live:
         return "B-039 open static PASS (mirror availability unverified; query skipped)"
     try:
-        with urllib.request.urlopen(MIRROR_URL,timeout=30) as response:
-            if not (200 <= response.status < 300): raise VerificationError(f"mirror status {response.status}")
+        size, actual = _read_mirror_digest()
+    except VerificationError:
+        raise
     except OSError as exc: raise VerificationError(f"artifact mirror query failed: {exc}") from exc
-    return "B-039 PASS (no upstream carrier and mirror responds 2xx)"
+    return f"B-039 PASS (mirror HTTP 2xx and SHA-256 verified; bytes={size}, sha256={actual})"
 
 
 def _b045(root: Path) -> str:
