@@ -25,6 +25,7 @@ type DrillRow = {
   scheduled_at_ms: number;
   correlation_id: string;
   delivery_mode: "immediate" | "deferred";
+  delivered_at_ms: number | null;
 };
 
 function pageForRow(row: DrillRow): SyntheticPageEnvelope {
@@ -144,9 +145,10 @@ async function runDeferredDeliveries(
   const environmentError = validateReceiverEnvironment(env);
   if (environmentError !== null) throw new Error("receiver not ready");
   const result = await env.CONFIG_DB!.prepare(
-    `SELECT drill_id, region, emit_ts_ms, scheduled_at_ms, correlation_id, delivery_mode
+    `SELECT drill_id, region, emit_ts_ms, scheduled_at_ms, correlation_id, delivery_mode, delivered_at_ms
        FROM synthetic_page_drills
-      WHERE delivery_mode = 'deferred' AND outcome = 'unacked' AND emit_ts_ms <= ?
+      WHERE delivery_mode = 'deferred' AND delivered_at_ms IS NULL
+        AND outcome = 'unacked' AND emit_ts_ms <= ?
       ORDER BY emit_ts_ms ASC
       LIMIT 20`,
   ).bind(controller.scheduledTime).all<DrillRow>();
@@ -166,8 +168,8 @@ async function runDeferredDeliveries(
       ),
       env.CONFIG_DB!.prepare(
         `UPDATE synthetic_page_drills
-            SET delivery_mode = 'immediate', delivered_at_ms = ?
-          WHERE drill_id = ? AND delivery_mode = 'deferred'`,
+            SET delivered_at_ms = ?, outcome = 'unacked'
+          WHERE drill_id = ? AND delivery_mode = 'deferred' AND delivered_at_ms IS NULL`,
       ).bind(controller.scheduledTime, row.drill_id),
     ]);
   }

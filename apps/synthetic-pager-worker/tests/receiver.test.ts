@@ -43,13 +43,25 @@ function fakeDb(options: { row?: unknown; rows?: unknown[]; failBatch?: boolean 
   const batch = vi.fn().mockImplementation(async () => {
     calls.push("batch");
     if (options.failBatch) throw new Error("storage unavailable");
+    for (const row of options.rows ?? []) {
+      if (typeof row === "object" && row !== null && "delivery_mode" in row && "delivered_at_ms" in row) {
+        (row as { delivered_at_ms: number | null }).delivered_at_ms = 1_785_905_940_000;
+      }
+    }
     return [];
   });
   const prepare = vi.fn().mockImplementation((sql: string) => {
     calls.push(`prepare:${sql.slice(0, 24)}`);
     return {
       bind: vi.fn().mockImplementation(() => ({
-        all: vi.fn().mockResolvedValue({ results: options.rows ?? [] }),
+        all: vi.fn().mockResolvedValue({
+          results: (options.rows ?? []).filter((row) =>
+            typeof row === "object" && row !== null && "delivery_mode" in row && "delivered_at_ms" in row
+              ? (row as { delivery_mode: string; delivered_at_ms: number | null }).delivery_mode === "deferred" &&
+                (row as { delivered_at_ms: number | null }).delivered_at_ms === null
+              : true,
+          ),
+        }),
         first: vi.fn().mockResolvedValue(options.row ?? null),
         run,
       })),
@@ -166,6 +178,7 @@ describe("synthetic receiver contract", () => {
         scheduled_at_ms: 1_785_844_800_000,
         correlation_id: correlation,
         delivery_mode: "deferred",
+        delivered_at_ms: null,
       }],
     });
     const pagerDutyFetch = vi.fn<typeof fetch>()
@@ -173,6 +186,7 @@ describe("synthetic receiver contract", () => {
       .mockResolvedValueOnce(new Response(null, { status: 202 }));
     const controller = { cron: "59 23 * * 0", scheduledTime: 1_785_905_940_000, noRetry: vi.fn() } as ScheduledController;
     await expect(runDeferredDeliveries(controller, receiver.value, pagerDutyFetch)).rejects.toThrow("PagerDuty delivery failed");
+    await expect(runDeferredDeliveries(controller, receiver.value, pagerDutyFetch)).resolves.toBeUndefined();
     await expect(runDeferredDeliveries(controller, receiver.value, pagerDutyFetch)).resolves.toBeUndefined();
     expect(pagerDutyFetch).toHaveBeenCalledTimes(2);
     expect(pagerDutyFetch.mock.calls[0]?.[1]?.body).toBe(pagerDutyFetch.mock.calls[1]?.[1]?.body);

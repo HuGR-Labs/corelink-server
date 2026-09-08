@@ -12,6 +12,7 @@ import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
 
 const TEST_SCHEDULED_AT_MS = 1_785_844_800_000;
+const TEST_DRILL_ID = `SP-${TEST_SCHEDULED_AT_MS}`;
 const WORKTREE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 function controllerFor(cron: string): ScheduledController & { readonly noRetrySpy: ReturnType<typeof vi.fn> } {
@@ -69,7 +70,7 @@ describe("scheduled drill delivery", () => {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-corelink-scheduled-drill-id": `${drill}:${cron}:${TEST_SCHEDULED_AT_MS}`,
+        "x-corelink-scheduled-drill-id": TEST_DRILL_ID,
       },
       body: expect.any(String),
     });
@@ -85,8 +86,8 @@ describe("scheduled drill delivery", () => {
         rotation_week: 0,
         emit_at_ms: TEST_SCHEDULED_AT_MS,
         delivery_mode: "immediate",
-        dedup_key: `synthetic_page:${cron}:${TEST_SCHEDULED_AT_MS}`,
-        correlation_id: `PAT-CORRELATION-ID-001:synthetic_page:${cron}:${TEST_SCHEDULED_AT_MS}`,
+        dedup_key: TEST_DRILL_ID,
+        correlation_id: `PAT-CORRELATION-ID-001:${TEST_DRILL_ID}`,
       });
     }
     expect(controller.noRetrySpy).not.toHaveBeenCalled();
