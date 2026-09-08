@@ -153,7 +153,7 @@ def _active_test_include_count(source: str) -> int:
 
 
 def _has_cfg_attribute_on_include(masked: str, include_start: int) -> bool:
-    """Return whether an active ``cfg`` attribute directly gates an include.
+    """Return whether an active ``cfg``/``cfg_attr`` directly gates an include.
 
     ``masked`` has comments and string bodies replaced with spaces, so only
     executable attributes remain visible.  We reject *any* cfg attribute on
@@ -161,7 +161,7 @@ def _has_cfg_attribute_on_include(masked: str, include_start: int) -> bool:
     false under another build profile, while ``cfg(any())`` and ``cfg(test)``
     are unconditionally compile-disabled for the production adapter.
     """
-    attribute = re.compile(r"#\s*\[\s*cfg\b")
+    attribute = re.compile(r"#\s*\[\s*(?:cfg|cfg_attr)\b")
 
     def matching_bracket(start: int) -> int | None:
         depth = 0
@@ -586,6 +586,17 @@ def mutation_self_test(main: str, runtime: str, detector: str, focal: str, migra
             runtime.replace(
                 TEST_INCLUDE_MARKER,
                 "#[cfg(test)]\n" + TEST_INCLUDE_MARKER,
+                1,
+            ),
+            detector,
+            focal,
+            migration,
+        ),
+        "test-include-cfg-attr-all-test": (
+            main,
+            runtime.replace(
+                TEST_INCLUDE_MARKER,
+                "#[cfg_attr(all(), cfg(test))]\n" + TEST_INCLUDE_MARKER,
                 1,
             ),
             detector,
