@@ -14,6 +14,25 @@ const DRY_RUN_WORKFLOW: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../.github/workflows/gc-sweep-dry-run.yml"
 ));
+const PRODUCTION_SWEEP_BIN: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/src/bin/gc_sweep.rs"
+));
+
+fn gate_4b_source(workflow: &str) -> Option<&str> {
+    let start_marker = "      - name: Gate 4b — native production GC binary is present and fail-closed";
+    let end_marker = "      - name: ADR-0015 reproducibility attestation (reminder)";
+    let start = workflow.find(start_marker)?;
+    let body_start = start + start_marker.len();
+    let end = workflow[body_start..].find(end_marker)? + body_start;
+    Some(&workflow[start..end])
+}
+
+fn gate_4b_has_required_contract(gate: &str) -> bool {
+    gate.contains("GC_OBSERVATION_ONLY=true")
+        && gate.contains("GC_LIVE_DELETE=false")
+        && gate.contains("gc_sweep FAILED (fail-closed)")
+}
 
 #[test]
 fn runtime_image_contains_a_separately_invoked_gc_binary() {
@@ -68,7 +87,6 @@ fn native_sweep_observation_requires_explicit_false_delete_gate() {
         "GC_OBSERVATION_ONLY",
         "GC_OBSERVATION_ONLY=true requires GC_LIVE_DELETE=false",
         "pub observation_only: bool",
-        "observation_only={}",
     ] {
         assert!(
             source.contains(required),
@@ -76,8 +94,8 @@ fn native_sweep_observation_requires_explicit_false_delete_gate() {
         );
     }
     assert!(
-        !DOCKERFILE.contains("GC_LIVE_DELETE=true"),
-        "the image must not arm live deletion"
+        PRODUCTION_SWEEP_BIN.contains("observation_only={}"),
+        "the native sweep binary must report the observation-only contract"
     );
 }
 
@@ -97,6 +115,17 @@ fn image_inspection_runs_gc_as_a_measurable_dry_run() {
             "image inspection must contain {required:?}"
         );
     }
+}
+
+#[test]
+fn native_production_gate_scopes_explicit_false_delete_guard() {
+    let gate = gate_4b_source(BUILD_WORKFLOW).expect("Gate 4b must be present");
+    assert!(gate_4b_has_required_contract(gate));
+
+    // A mutation that removes the explicit false delete guard from Gate 4b
+    // must not be rescued by the identical dry-run setting in Gate 4.
+    let mutated = gate.replacen("GC_LIVE_DELETE=false", "GC_LIVE_DELETE", 1);
+    assert!(!gate_4b_has_required_contract(&mutated));
 }
 
 #[test]

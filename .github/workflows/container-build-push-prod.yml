@@ -222,6 +222,31 @@ jobs:
           grep -F 'deleted_count             = 0' "$out"
           grep -F 'deleted_bytes             = 0' "$out"
 
+      - name: Gate 4b — native production GC binary is present and fail-closed
+        run: |
+          set -euo pipefail
+          B="$RUNNER_TEMP/smoke"
+          [ -x "$B/rootfs/usr/local/bin/corelink-gc-sweep-production" ] || {
+            echo "::error::native production GC binary is absent from the runtime image"
+            exit 1
+          }
+          runc spec -b "$B"
+          jq \
+            '.process.args=["/usr/local/bin/corelink-gc-sweep-production"]
+             | .process.terminal=false
+             | .process.env=["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "GC_OBSERVATION_ONLY=true", "GC_LIVE_DELETE=false"]
+             | .root.readonly=false' \
+            "$B/config.json" > "$B/gc-production-config.json"
+          mv "$B/gc-production-config.json" "$B/config.json"
+          cid="corelink-gc-production-fail-closed-${{ steps.meta.outputs.short_sha }}"
+          out="$RUNNER_TEMP/gc-production-fail-closed.out"
+          ec=0
+          timeout -s KILL 10 sudo runc run --bundle "$B" "$cid" >"$out" 2>&1 || ec=$?
+          sudo runc delete -f "$cid" >/dev/null 2>&1 || true
+          cat "$out"
+          [ "$ec" != "0" ] || { echo "::error::native production GC exited zero without durable scope configuration"; exit 1; }
+          grep -F 'gc_sweep FAILED (fail-closed)' "$out"
+
       - name: ADR-0015 reproducibility attestation (reminder)
         run: |
           echo "ADR-0015: to verify reproducibility, rebuild on the same HEAD and compare the OCI manifest digest."
