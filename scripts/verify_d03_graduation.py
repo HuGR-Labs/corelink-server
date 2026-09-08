@@ -128,9 +128,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
     "B-112": {
         "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B112",
         "profiles": ["linux", "windows"], "sample_count": 1,
-        "required": ["release-cli.yml", "cargo-zigbuild", "checksums", "SLSA", "gh run rerun", "B112_RUN_ID", "B112_EXPECTED_REF", "B112_EXPECTED_SHA", "workflowName", "headBranch", "headSha", "event", "push", "cli-v", "status == \"completed\"", "conclusion"],
+        "required": ["release-cli.yml", "cargo-zigbuild", "checksums", "SLSA", "gh run rerun", "B112_RUN_ID", "B112_EXPECTED_REF", "B112_EXPECTED_SHA", "B112_EXPECTED_ATTEMPT", "workflowName", "headBranch", "headSha", "event", "push", "cli-v", "cli-vMAJOR.MINOR.PATCH", "status == \"completed\"", "conclusion", "--failed", "--attempt", "workflow_call", "slsa_meta", "slsa_run_id"],
         "safety": ["--root", "OWNER_APPROVED_RELEASE_RERUN=1"],
-        "forbidden": ["git tag", "cosign-sign.yml", "--force", "workflow_dispatch"],
+        "forbidden": ["git tag", "cosign-sign.yml", "--force", "workflow_dispatch", "--all"],
     },
     "B-113": {
         "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-113",
@@ -214,8 +214,14 @@ COMMAND_OPERATIONS: dict[str, tuple[str, ...]] = {
         "run_meta=\"$(gh run view",
         "expected_sha=\"${B112_EXPECTED_SHA",
         ".workflowName == \"release-cli\" and .event == \"push\"",
-        ".conclusion == \"failure\" and (.headBranch == ($ref | sub(\"^refs/tags/\";\"\"))) and (.headBranch | startswith(\"cli-v\"))",
-        ".databaseId == ($run_id | tonumber)",
+        ".conclusion == \"failure\" and ($ref | test(\"^refs/tags/cli-v[0-9]+\\.[0-9]+\\.[0-9]+$\")) and .headBranch == ($ref | sub(\"^refs/tags/\";\"\")) and (.headBranch | test(\"^cli-v[0-9]+\\.[0-9]+\\.[0-9]+$\"))",
+        "gh run rerun \"$run_id\" --failed",
+        ".databaseId == $expected_run_id",
+        ".attempt == ($expected_attempt + 1) and (.databaseId | type == \"number\") and .status == \"completed\"",
+        "gh run view \"$run_id\" --attempt \"$attempt_after\" --log",
+        "slsa_meta=\"$(jq -c",
+        ".event == \"workflow_call\" and .headBranch == ($ref | sub(\"^refs/tags/\";\"\")) and (.headBranch | test(\"^cli-v[0-9]+\\.[0-9]+\\.[0-9]+$\"))",
+        ".databaseId != ($release_run_id | tonumber)",
     ),
     "B-113": ("gh workflow run \"$workflow\"",),
     "B-125": ("wrangler d1 execute corelink-prod",),
@@ -596,6 +602,8 @@ def _check_command_contract(item: str, packet: dict[str, Any], root: Path) -> No
             _check_b216_semantics(command)
         else:
             _check_b251_semantics(command, packet["artifact"])
+    if item == "B-112" and "#" in command:
+        raise GraduationError("B-112 command must not contain shell-comment predicate bait")
     if "set -euo pipefail" not in command:
         raise GraduationError(f"{item}: command must enable fail-closed shell options")
     if "printf" in command:

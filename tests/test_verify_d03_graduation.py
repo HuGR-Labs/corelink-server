@@ -188,11 +188,16 @@ def test_b112_uses_push_tag_identity_and_terminal_revalidation() -> None:
     )
     command = packet["packets"]["B-112"]["command"]
     assert '.event == "push"' in command
-    assert '.headBranch | startswith("cli-v")' in command
+    assert '.headBranch | test("^cli-v[0-9]+\\.[0-9]+\\.[0-9]+$")' in command
     assert '.status == "completed"' in command
     assert '.conclusion == "failure"' in command
     assert '.conclusion != null' in command
     assert '.databaseId == ($run_id | tonumber)' in command
+    assert 'B112_EXPECTED_ATTEMPT' in command
+    assert 'gh run rerun "$run_id" --failed' in command
+    assert '--attempt "$attempt_after" --log' in command
+    assert '.event == "workflow_call"' in command
+    assert 'slsa_meta=' in command
     assert 'workflow_dispatch' not in command
 
     mutated = copy.deepcopy(packet)
@@ -200,4 +205,11 @@ def test_b112_uses_push_tag_identity_and_terminal_revalidation() -> None:
         '.event == "push"', '.event == "workflow_dispatch"', 1
     )
     with pytest.raises(GraduationError, match="B-112"):
+        _check_packets(mutated, ROOT)
+
+    mutated = copy.deepcopy(packet)
+    mutated["packets"]["B-112"]["command"] = command.replace(
+        '.event == "push"', '# .event == "push"', 1
+    )
+    with pytest.raises(GraduationError, match="comment predicate bait"):
         _check_packets(mutated, ROOT)
