@@ -285,8 +285,31 @@ fn seal_chunk_sql_is_bounded_and_guarded() {
     assert_eq!(AUDIT_SEAL_ROWS_PER_STATEMENT, 32);
     assert!(AUDIT_SEAL_CHUNK_SQL.contains("json_each(?1)"));
     assert!(AUDIT_SEAL_CHUNK_SQL.contains("emitted_at IS NULL"));
+    assert!(AUDIT_SEAL_CHUNK_SQL.contains("pending.enqueued_at <="));
+    assert!(AUDIT_SEAL_CHUNK_SQL.contains("collision.sequence_number"));
     assert!(AUDIT_SEAL_CHUNK_SQL.contains("json_array_length(?1)"));
     assert!(AUDIT_SEAL_CHUNK_SQL.contains("RETURNING id"));
+}
+
+#[test]
+fn duplicate_sealed_tail_sequence_fails_closed() {
+    let mut first = serde_json::Map::new();
+    first.insert("sequence_number".to_owned(), json!(7));
+    let mut second = serde_json::Map::new();
+    second.insert("sequence_number".to_owned(), json!(7));
+
+    let err = reject_duplicate_sealed_tail(&[first, second]).unwrap_err();
+    assert!(err.contains("duplicate sequence_number 7"));
+}
+
+#[test]
+fn distinct_sealed_tail_sequences_are_not_rejected() {
+    let mut first = serde_json::Map::new();
+    first.insert("sequence_number".to_owned(), json!(7));
+    let mut second = serde_json::Map::new();
+    second.insert("sequence_number".to_owned(), json!(6));
+
+    assert!(reject_duplicate_sealed_tail(&[first, second]).is_ok());
 }
 
 #[test]
@@ -297,6 +320,11 @@ fn seal_chunk_payload_rejects_empty_and_duplicate_mutations() {
     let duplicate = vec![rows[0].clone(), rows[0].clone()];
     let err = seal_chunk_payload(&duplicate, 1_700_000_000_000).unwrap_err();
     assert!(err.contains("duplicate id"));
+
+    let mut same_sequence = rows[1].clone();
+    same_sequence.sequence_number = rows[0].sequence_number;
+    let err = seal_chunk_payload(&[rows[0].clone(), same_sequence], 1_700_000_000_000).unwrap_err();
+    assert!(err.contains("duplicate sequence_number"));
 }
 
 #[test]

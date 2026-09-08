@@ -207,6 +207,32 @@ async fn read_checkpoint(
     }))
 }
 
+/// A partition's sealed tail must have one row at its maximum sequence.
+///
+/// Historical/concurrent-writer residue can leave two rows carrying the same
+/// maximum sequence.  Picking one with `LIMIT 1` would make resume dependent
+/// on SQLite row order and could extend the wrong chain.  Fail closed instead;
+/// the operator can repair the partition from an offline evidence copy.
+fn reject_duplicate_sealed_tail(rows: &[crate::storage::d1_http::D1Row]) -> Result<(), String> {
+    if rows.len() < 2 {
+        return Ok(());
+    }
+    let first = rows[0]
+        .get("sequence_number")
+        .and_then(Value::as_i64)
+        .ok_or("audit_outbox.sequence_number negative/non-integer on sealed tail")?;
+    let second = rows[1]
+        .get("sequence_number")
+        .and_then(Value::as_i64)
+        .ok_or("audit_outbox.sequence_number negative/non-integer on sealed tail")?;
+    if first == second {
+        return Err(format!(
+            "audit_outbox sealed tail has duplicate sequence_number {first}; refusing ambiguous resume"
+        ));
+    }
+    Ok(())
+}
+
 /// Read the durable sealed-rows tail (MAX sequence sealed row) for a partition.
 async fn read_sealed_tail(
     d1: &D1HttpClient,
@@ -218,10 +244,11 @@ async fn read_sealed_tail(
             "SELECT sequence_number, chain_hash, algorithm_id, epoch_id, link_key_id FROM audit_outbox \
              WHERE tenant_id = ?1 AND region = ?2 \
                AND emitted_at IS NOT NULL AND sequence_number IS NOT NULL \
-             ORDER BY sequence_number DESC LIMIT 1",
+             ORDER BY sequence_number DESC LIMIT 2",
             &[json!(tenant_id), json!(region)],
         )
         .await?;
+    reject_duplicate_sealed_tail(&rows)?;
     let Some(row) = rows.into_iter().next() else {
         return Ok(None);
     };
@@ -316,6 +343,17 @@ const AUDIT_SEAL_CHUNK_SQL: &str = "UPDATE audit_outbox \
       AND (SELECT COUNT(*) FROM audit_outbox AS pending \
            WHERE pending.id IN (SELECT json_extract(value, '$.id') FROM json_each(?1)) \
              AND pending.emitted_at IS NULL) = json_array_length(?1) \
+      AND (SELECT COUNT(*) FROM audit_outbox AS pending \
+           WHERE pending.id IN (SELECT json_extract(value, '$.id') FROM json_each(?1)) \
+             AND pending.emitted_at IS NULL \
+             AND pending.enqueued_at <= (SELECT MIN(CAST(json_extract(value, '$.sealed_at') AS INTEGER)) FROM json_each(?1))) = json_array_length(?1) \
+      AND NOT EXISTS (SELECT 1 FROM audit_outbox AS collision, json_each(?1) AS candidate \
+           WHERE json_extract(candidate.value, '$.id') = audit_outbox.id \
+             AND collision.id <> audit_outbox.id \
+             AND collision.tenant_id = audit_outbox.tenant_id \
+             AND collision.region = audit_outbox.region \
+             AND collision.sequence_number = json_extract(candidate.value, '$.sequence_number') \
+             AND collision.emitted_at IS NOT NULL) \
     RETURNING id";
 
 /// Build the single JSON parameter consumed by [`AUDIT_SEAL_CHUNK_SQL`].
@@ -326,10 +364,17 @@ fn seal_chunk_payload(rows: &[SealedRow], now: i64) -> Result<Value, String> {
         return Err("audit seal chunk must not be empty".to_owned());
     }
     let mut ids = std::collections::HashSet::with_capacity(rows.len());
+    let mut sequence_numbers = std::collections::HashSet::with_capacity(rows.len());
     let mut payload = Vec::with_capacity(rows.len());
     for row in rows {
         if !ids.insert(&row.id) {
             return Err(format!("audit seal chunk contains duplicate id {}", row.id));
+        }
+        if !sequence_numbers.insert(row.sequence_number) {
+            return Err(format!(
+                "audit seal chunk contains duplicate sequence_number {}",
+                row.sequence_number
+            ));
         }
         let sequence_number =
             i64::try_from(row.sequence_number).map_err(|_| "sequence_number exceeds i64")?;
