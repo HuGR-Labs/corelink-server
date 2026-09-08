@@ -19,6 +19,7 @@ on:
 permissions:
   contents: read
   deployments: read
+  actions: read
   id-token: write
   attestations: write
 
@@ -69,11 +70,23 @@ jobs:
           # The response is used only to bind commit/id and is never uploaded.
           chmod 600 "${RUNNER_TEMP}/cloudflare-deployments.json"
 
+      - name: Resolve GitHub run start timestamp
+        id: github-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_started_at="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --jq '.run_started_at')"
+          test -n "${run_started_at}"
+          printf 'started_at=%s\n' "${run_started_at}" >> "${GITHUB_OUTPUT}"
+
       - name: Build immutable run context
         env:
           TENANT_ID: ${{ inputs.tenant_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
-          GITHUB_RUN_STARTED_AT: ${{ github.run_started_at }}
+          GITHUB_RUN_STARTED_AT: ${{ steps.github-run.outputs.started_at }}
         run: |
           set -eu
           python3 scripts/collect_b102_b108_context.py \

@@ -225,6 +225,15 @@ def provider_record_boundary() -> None:
     assert (SHA, "right-id") in records and (SHA, "wrong-id") not in records
 
 
+def workflow_run_timestamp_contract() -> None:
+    """Keep the workflow bound to the Actions API's authoritative run time."""
+    workflow = (ROOT / ".github/workflows/perf-production-evidence.yml").read_text(encoding="utf-8")
+    assert "${{ github.run_started_at }}" not in workflow
+    assert "actions: read" in workflow
+    assert 'gh api \\\n            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"' in workflow
+    assert "GITHUB_RUN_STARTED_AT: ${{ steps.github-run.outputs.started_at }}" in workflow
+
+
 def main() -> int:
     result = verifier.assess(packet(), ROOT, NOW)
     assert result["B-108"] == "closed"
@@ -272,6 +281,7 @@ def main() -> int:
     collector_wire_and_join_round_trip()
     mint_wire_binding_round_trip()
     provider_record_boundary()
+    workflow_run_timestamp_contract()
     print("B102-B108 evidence verifier mutations: PASS")
     return 0
 
