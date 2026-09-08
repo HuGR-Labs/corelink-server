@@ -193,11 +193,22 @@ def test_b112_uses_push_tag_identity_and_terminal_revalidation() -> None:
     assert '.conclusion == "failure"' in command
     assert '.conclusion != null' in command
     assert '.databaseId == ($run_id | tonumber)' in command
+    assert 'all(.jobs[]; ((.name | ascii_downcase | startswith("create release")) | not) or .conclusion == "skipped")' in command
+    assert 'all(.jobs[]; ((.name | ascii_downcase | startswith("publish verified signed release")) | not) or .conclusion == "skipped")' in command
+    assert '.status == "completed" and .conclusion == "skipped"' in command
     assert 'B112_EXPECTED_ATTEMPT' in command
     assert 'gh run rerun "$run_id" --failed' in command
     assert '--attempt "$attempt_after" --log' in command
-    assert '.event == "workflow_call"' in command
+    assert 'caller_attempt="$(gh api' in command
+    assert 'referenced_workflows' in command
+    assert '.head_sha == $sha' in command
+    assert '(.run_attempt | type) == "number"' in command
+    assert '.slsa_workflow.sha == $sha' in command
+    assert '.slsa_ref == $ref' in command
+    assert 'slsa_event="workflow_call"' in command
+    assert 'slsa_run_id="$(jq -r' in command
     assert 'slsa_meta=' in command
+    assert 'lock_dir="${artifact}.lock"' in command
     assert 'workflow_dispatch' not in command
 
     mutated = copy.deepcopy(packet)
@@ -213,3 +224,24 @@ def test_b112_uses_push_tag_identity_and_terminal_revalidation() -> None:
     )
     with pytest.raises(GraduationError, match="comment predicate bait"):
         _check_packets(mutated, ROOT)
+
+    mutations = (
+        (
+            'all(.jobs[]; ((.name | ascii_downcase | startswith("create release")) | not) or .conclusion == "skipped")',
+            'all(.jobs[]; ((.name | ascii_downcase | startswith("create release")) | not) or .conclusion != "skipped")',
+        ),
+        (
+            'all(.jobs[]; ((.name | ascii_downcase | startswith("publish verified signed release")) | not) or .conclusion == "skipped")',
+            'all(.jobs[]; ((.name | ascii_downcase | startswith("publish verified signed release")) | not) or .conclusion != "skipped")',
+        ),
+        ('.head_sha == $sha', '.head_sha != $sha'),
+        ('(.run_attempt | type) == "number"', '(.run_attempt | type) != "number"'),
+        ('.run_attempt == $expected_attempt', '.run_attempt != $expected_attempt'),
+        ('.slsa_workflow.ref == $ref', '.slsa_workflow.ref != $ref'),
+        ('lock_dir="${artifact}.lock"', 'lock_dir="${run_id}.lock"'),
+    )
+    for original, inverted in mutations:
+        mutated = copy.deepcopy(packet)
+        mutated["packets"]["B-112"]["command"] = command.replace(original, inverted)
+        with pytest.raises(GraduationError, match="B-112"):
+            _check_packets(mutated, ROOT)
