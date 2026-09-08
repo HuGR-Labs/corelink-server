@@ -3,6 +3,7 @@ type: "CacheSurface"
 title: "Native CAS surface"
 description: "CoreLink's first-party content-addressable storage surface — the GET/PUT/DELETE/list + bulk-batch CAS routes every other surface ultimately stores into."
 source_files:
+  - "crates/corelink-container/src/routes/cas.rs"
   - "crates/corelink-container/src/routes/cas/foundation_core.rs"
   - "crates/corelink-container/src/routes/cas/foundation_state.rs"
   - "crates/corelink-container/src/routes/cas/single_setup.rs"
@@ -10,8 +11,13 @@ source_files:
   - "crates/corelink-container/src/routes/cas/batch_write.rs"
   - "crates/corelink-container/src/routes/cas/batch_read.rs"
   - "crates/corelink-container/src/routes/cas/list_delete.rs"
-  - "crates/corelink-container/src/routes/cas/tests_edges.rs"
+  - "crates/corelink-container/src/routes/cas/tests_core_part1.rs"
+  - "crates/corelink-container/src/routes/cas/tests_core_part2.rs"
+  - "crates/corelink-container/src/routes/cas/tests_batch_part1.rs"
   - "crates/corelink-container/src/routes/cas/tests_batch_part2.rs"
+  - "crates/corelink-container/src/routes/cas/tests_batch_write_part2.rs"
+  - "crates/corelink-container/src/routes/cas/tests_read_ceiling.rs"
+  - "crates/corelink-container/src/routes/cas/tests_edges.rs"
 source_blobs:
   - "crates/corelink-container/src/routes/cas/foundation_core.rs@0dba9d2c8044223ec110cf8c852730a87e245885"
   - "crates/corelink-container/src/routes/cas/batch_read.rs@0dba9d2c8044223ec110cf8c852730a87e245885"
@@ -77,6 +83,12 @@ path segment.
    The RAII permits remain held through response assembly and a 250 ms wait timeout fails closed
    with 503 under saturation (`crates/corelink-container/src/routes/cas/foundation_core.rs:190-330`;
    guards at `crates/corelink-container/src/routes/cas/foundation_state.rs:319-350`).
+
+The `#[cfg(test)]` CAS module registers the split test units in `cas.rs` in
+source order, including the dedicated `tests_batch_write_part2.rs` unit. The
+focused batch census is 28 named tests across the registered parser, batch,
+batch-write, and edge units; the B-337 verifier treats both that registration
+sequence and those names as load-bearing.
 
 # Invariants
 - A non-canonical `:hash` is rejected 400 BEFORE it derives an R2 key (`crates/corelink-container/src/routes/cas/single_handlers.rs:27-34`).
