@@ -1487,7 +1487,7 @@ source-document: "PR containment audit #1550/#1558"
 source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
 finding-title: "canonical WP ledger must stay aligned with the dense 324-item population"
 problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
-evidence: "python3 scripts/verify_backlog_wp_ledger.py after reconciliation: 324 items, 16 open, 269 done, 39 parked; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after final reconciliation: 336 items, 16 open, 281 done, 39 parked; the prior 324/16/269/39 population is retained only as the obsolete baseline this item corrected; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
@@ -1500,14 +1500,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 334
-  assert len(ledger.open_backlog_ids(text)) == 19
-  assert ledger.backlog_status_counts(text) == {"open": 19, "done": 276, "parked": 39}
+  assert len(ledger.all_backlog_ids(text)) == 336
+  assert len(ledger.open_backlog_ids(text)) == 16
+  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 281, "parked": 39}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 19/19 open-ID ownership, 334 total records,
+  done — the live verifier proves 16/16 open-ID ownership, 336 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1812,7 +1812,7 @@ source-locator: ".claude/skills/techlead/SKILL.md:L2.10; reports/b326-loc-cap-ba
 finding-title: "new Rust and TypeScript source files had no CI-enforced 500-line hard cap"
 problem: "The Tech Lead charter required every new .rs/.ts/.tsx file to stay at or below 500 LOC, but its shell example depended on a locally available origin/main ref and was not a stable CI contract. A shallow or remote-less checkout could skip the population entirely or report an indeterminate result."
 evidence: "The committed origin/main-equivalent path manifest is pinned to main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266; the stdlib verifier classifies tracked source paths absent from that manifest, rejects unmarked files over 500 LOC, reports the 200-LOC advisory band, and passes its mutation/self-tests. Related charter, spec/frontmatter and secrets-matrix findings are closed in the cumulative B-326 tree."
-acceptance: "A reviewed baseline manifest is required and hash-checked; the tracked added .rs/.ts/.tsx population is non-empty and closed; missing, malformed, stale or empty populations fail closed; generated exceptions require an explicit @generated marker; any unmarked file over 500 LOC is a hard failure; workflow paths and both PR/push steps run the verifier and its mutations; B-155 and the D03 ledgers report 334 total, 276 done, 39 parked, 19 open (3 TL-open) and 310 command-bearing records."
+acceptance: "A reviewed baseline manifest is required and hash-checked; the tracked added .rs/.ts/.tsx population is non-empty and closed; missing, malformed, stale or empty populations fail closed; generated exceptions require an explicit @generated marker; any unmarked file over 500 LOC is a hard failure; workflow paths and both PR/push steps run the verifier and its mutations; B-155 and the D03 ledgers report 336 total, 281 done, 39 parked, 16 open (0 TL-open) and 315 command-bearing records."
 verify: python3 scripts/verify_b326_loc_cap.py --self-test
 verify-means: |
   done — the verifier uses only the committed baseline manifest and local tracked
@@ -1911,30 +1911,33 @@ last-verified: 2026-09-07
 
 ### B-330 — CAS batch-read still couples memory, concurrency and task lifetime unsafely
 
-The final CI review found that `batch-read` fans out spawned reads while the
-response payload and weighted process-wide permits have overlapping lifetimes.
-The current shape can make a completed result retain its reservation while the
-producer advances, and cancellation/error paths must drain every task and
-permit. This is an open runtime design defect; the existence of a candidate
-patch on another branch is not integration evidence.
+The final CI review found that `batch-read` fanned out spawned reads while the
+response payload and weighted process-wide permits had overlapping lifetimes.
+The integrated repair now bounds the working set, preserves input order, and
+owns every task and permit through success, error, response drop and request
+cancellation.
 
 ```backlog
 id: B-330
 repo: corelink-server
 owner: tl
-status: open
+status: done
 source-document: "D03 final CI CAS batch-read review"
 source-locator: "crates/corelink-container/src/routes/cas/batch_read.rs; crates/corelink-container/src/routes/cas/foundation_core.rs; crates/corelink-container/src/routes/cas/foundation_state.rs; crates/corelink-container/src/routes/cas/tests_batch_part2.rs"
 finding-title: "CAS batch-read has an unresolved memory/concurrency/lifetime contract"
 problem: "The spawned batch fan-out, response accumulation and process-wide weighted reservations do not yet have one proven contract for peak memory, bounded concurrency, deterministic ordering, and cancellation-safe task/permit lifetime; an error path must not leave detached work or stranded budget."
-evidence: "Observed on the integrated 806a44248 tree; candidate follow-up commits 816a70c5f, f1c2ab04a and 0dba9d2c8 are not ancestors of this head and are not closure evidence."
+evidence: "Integrated by b0f8a4edd, ce863c1dd and 43536e071 on b99251c0d; the B-077/B-078 bundle and focused batch-read cargo test passed, covering bounded memory/concurrency, input order, terminal drain and request-cancellation ownership."
 acceptance: "A solution must prove a bounded memory peak, bounded concurrency, deterministic input-order output, and no detached tasks: every spawned task is awaited or explicitly aborted and drained, every permit/response buffer is released on success, error and cancellation, and adversarial mutations turn the proof red. Do not mark done from a static constant or a candidate branch alone."
-verify: manual
+verify: |
+  python3 scripts/verify_b077_capacity.py
+  python3 -S scripts/verify_b078_batch_read.py
+  cargo test -p corelink-server --lib routes::cas::tests::batch_read --locked
 verify-means: |
-  open — the integrated tree still requires a reviewed implementation and
-  mutation-backed proof of the complete memory/concurrency/order/lifetime
-  contract. A candidate patch, source comment or Cargo result outside this
-  integrated head does not close the item.
+  done — the final bundle proves the shared capacity envelope and the
+  B-078 bounded reader, while the focused Rust tests cover input-order output,
+  byte/concurrency ceilings, error/overflow draining, and cancellation abort
+  plus unwind. Every spawned read is awaited or aborted and drained; no
+  candidate-only result is used as closure evidence.
 last-verified: 2026-09-07
 ```
 
@@ -1995,55 +1998,109 @@ last-verified: 2026-09-07
 
 ### B-333 — money-path effect wiring is not yet deterministic
 
-The money-path auth test now reaches the local proxy in the observed CI
-environment, but its effect probe still relies on a background TCP listener,
-polling and wall-clock settling. That is test-environment plumbing, not a
-deterministic proof that unauthorized requests cause zero D1/Stripe effects and
-authorized controls cause exactly the intended effects in order.
+The money-path auth test now uses an injected loopback effect seam with a
+deterministic recorder. Rejected credentials prove zero D1/Stripe effects,
+while authorized controls prove the intended effect cardinality and ordering.
 
 ```backlog
 id: B-333
 repo: corelink-server
 owner: tl
-status: open
+status: done
 source-document: "D03 final CI money-path review"
 source-locator: "crates/corelink-container/tests/money_path_auth_wiring.rs; crates/corelink-container/Cargo.toml; crates/corelink-container/src/routes/tier_select/part-00-02.rs"
 finding-title: "money-path effect assertions depend on timing and external proxy wiring"
 problem: "The auth/effect test uses a background refusing TCP listener, polling and proxy behavior to infer D1/Stripe effects; this leaves deterministic ordering and exact effect cardinality coupled to timing and environment instead of an injected effect seam."
-evidence: "The current integrated adjustment is 60ce8f24a (clearing the CGI proxy marker in the test fixture; the earlier f2391c942/9d88829b4 proxy experiment was reverted); none of these commits provides the deterministic effect seam required for closure."
+evidence: "Integrated by f293af7e3, 8f5edb4cf and 6465cd695 on b99251c0d; the exact money_path_auth_wiring test passed with the validated loopback D1 seam and deterministic zero-effect/positive-control assertions."
 acceptance: "Integrate a deterministic, injected effect recorder at the production boundary: unauthorized/malformed/tenant-mismatch cases must prove zero effects, authorized controls must prove the exact D1/Stripe effect sequence and cardinality, no ambient proxy or wall-clock polling may decide pass/fail, and a targeted mutator removing the wiring must fail."
-verify: manual
+verify: cargo test -p corelink-server --test money_path_auth_wiring money_path_enforces_resolver_matrix_and_stops_unauthenticated_requests_before_effects
 verify-means: |
-  open — proxy support makes the current test runnable but does not close the
-  deterministic effect-wiring defect. Keep the item open until the injected
-  recorder, exact ordering/cardinality proof and mutation are integrated.
+  done — the exact fixture test exercises absent, malformed, mismatched and
+  valid controls through the injected loopback seam; rejected requests make
+  zero D1/Stripe calls and authorized controls assert the exact recorder
+  counts/order. The test no longer relies on ambient proxy state or settling
+  to decide pass/fail.
 last-verified: 2026-09-07
 ```
 
 ### B-334 — CI runs can contaminate each other through Cargo target/doctest state
 
-The final CI sweep found that the shared workspace target can be reused by
-concurrent or sequential runs. Doctest and test-target artifacts can then be
-selected from another invocation, producing false failures or false greens.
-The required fix is per-invocation isolation with safe cleanup and explicit
-doctest contamination coverage; it is not integrated on this head.
+The final CI sweep found that the shared workspace target could be reused by
+concurrent or sequential runs. The integrated runner now allocates a private
+per-invocation target, preserves cancellation evidence, and guards cleanup and
+doctest/test artifact isolation.
 
 ```backlog
 id: B-334
 repo: corelink-server
 owner: tl
-status: open
+status: done
 source-document: "D03 final CI runner review"
-source-locator: "scripts/ci.sh; scripts/tests/ci-target-isolation.sh (candidate, not on this head); .github/workflows/*.yml Cargo/test and doctest gates"
+source-locator: "scripts/ci.sh; scripts/tests/ci-target-isolation.sh; .github/workflows/*.yml Cargo/test and doctest gates"
 finding-title: "CI has no integrated per-run Cargo target isolation and doctest contamination guard"
 problem: "CI invocations can share the checkout target directory, so concurrent or stale artifacts from another run can contaminate test and doctest selection; cancellation can also leave state that the next invocation reuses."
-evidence: "Observed on integrated 806a44248; the per-run isolation implementation 58b54dd73 exists only as a non-ancestor candidate and is not closure evidence."
+evidence: "Integrated by 2441e13ee, 2ac10bcb1 and 96585db89 on b99251c0d; scripts/tests/ci-target-isolation.sh passed its static/lifecycle guard for unique targets, ambient-path shadowing, owned cleanup, cancellation preservation and doctest/test contamination controls."
 acceptance: "Each CI invocation must allocate a unique private CARGO_TARGET_DIR, prefer the runner temp area, shadow ambient caller paths, clean only an owned directory on normal exit and signals, and prove that Cargo test plus doctest outputs cannot reuse another run's artifacts. Static/mutation guards must fail on shared-target, unsafe-cleanup or doctest-contamination regressions; do not claim the candidate branch is integrated."
-verify: manual
+verify: bash scripts/tests/ci-target-isolation.sh
 verify-means: |
-  open — the integrated head still lacks the required per-run target lifecycle
-  and doctest contamination proof. Keep this open until the isolation workflow,
-  owned cleanup and static/mutation guard land together.
+  done — each invocation gets a unique private target, caller-provided targets
+  are shadowed, normal cleanup is ownership-checked, cancellation preserves
+  evidence, child PIDs are reaped, and the guard rejects shared-target,
+  unsafe-cleanup or doctest-contamination regressions.
+last-verified: 2026-09-07
+```
+
+### B-335 — D1 loopback seam rejected bracketed IPv6 literals
+
+The injected D1 loopback seam parsed IPv4 loopback endpoints but rejected the
+bracketed host spelling required by an IPv6 URL. That made the valid `::1`
+fixture fail before the money-path effect test could exercise its contract.
+The parser now removes URL brackets before the IP-literal check while retaining
+the explicit loopback, scheme and port restrictions.
+
+```backlog
+id: B-335
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI focal bundle"
+source-locator: "crates/corelink-container/src/storage/d1_http.rs:204-235,752-755"
+finding-title: "D1 loopback seam rejected bracketed IPv6 test endpoints"
+problem: "URL host_str preserves brackets around IPv6 literals, so direct IpAddr parsing rejected the valid http://[::1]:8787/d1 loopback fixture."
+evidence: "Fixed by b99251c0d in d1_http.rs; the exact loopback_query_url_validation_accepts_explicit_loopback_endpoint test passes and covers http://[::1]:8787/d1 while unsafe endpoint cases remain rejected."
+acceptance: "The injected D1 seam accepts explicit IPv4 and bracketed IPv6 loopback literals with a port, rejects non-loopback/unsafe endpoints, and the exact unit test remains green without weakening scheme, userinfo, query, fragment or port checks."
+verify: cargo test -p corelink-server --lib loopback_query_url_validation_accepts_explicit_loopback_endpoint
+verify-means: |
+  done — the exact unit test passes on the integrated head; bracket stripping
+  is limited to URL host syntax before IpAddr parsing, and the companion
+  rejection matrix preserves the fail-closed endpoint contract.
+last-verified: 2026-09-07
+```
+
+### B-336 — Turbo concurrency fixture exceeded the productive tenant limit
+
+The Turbo byte-accounting test launched six same-tenant PUTs even though the
+production per-tenant guard admits four. The fixture therefore tested a
+synthetic over-limit workload instead of proving the productive ceiling. The
+test now derives its fan-out from the production constant and keeps the exact
+byte-accounting assertion.
+
+```backlog
+id: B-336
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 final CI focal bundle"
+source-locator: "crates/corelink-container/src/routes/turbo_v8/b126_m2_test_1_2.rs:319-348; crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:49"
+finding-title: "Turbo concurrency fixture exceeded the productive same-tenant limit"
+problem: "The concurrent distinct-key PUT test launched six same-tenant requests against a production limit of four, so its byte-accounting result did not prove the real concurrency ceiling."
+evidence: "Fixed by b99251c0d; concurrent_distinct_key_puts_stay_concurrent_and_sum now launches TURBO_PUT_CONCURRENCY_LIMIT requests and the exact test passes with the production limit of four and the expected byte sum."
+acceptance: "Production TURBO_PUT_CONCURRENCY_LIMIT remains four; the fixture launches exactly that many distinct-key same-tenant PUTs, proves all productive requests succeed concurrently, and asserts the corresponding byte-accounting sum without changing production behavior."
+verify: cargo test -p corelink-server --lib concurrent_distinct_key_puts_stay_concurrent_and_sum
+verify-means: |
+  done — the exact Turbo fixture test passes on the integrated head, derives
+  its four-request fan-out from the production constant, and retains the
+  load-bearing aggregate byte assertion.
 last-verified: 2026-09-07
 ```
 
@@ -15190,8 +15247,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-07):** `records=334`,
-  `command_records=310`, `manual=24`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-07):** `records=336`,
+  `command_records=315`, `manual=21`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma
