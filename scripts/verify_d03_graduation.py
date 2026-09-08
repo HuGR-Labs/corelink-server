@@ -128,9 +128,9 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
     "B-112": {
         "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B112",
         "profiles": ["linux", "windows"], "sample_count": 1,
-        "required": ["release-cli.yml", "cargo-zigbuild", "checksums", "SLSA", "gh run rerun", "B112_RUN_ID", "B112_EXPECTED_REF", "B112_EXPECTED_SHA", "workflowName", "headBranch", "headSha", "event"],
+        "required": ["release-cli.yml", "cargo-zigbuild", "checksums", "SLSA", "gh run rerun", "B112_RUN_ID", "B112_EXPECTED_REF", "B112_EXPECTED_SHA", "workflowName", "headBranch", "headSha", "event", "push", "cli-v", "status == \"completed\"", "conclusion"],
         "safety": ["--root", "OWNER_APPROVED_RELEASE_RERUN=1"],
-        "forbidden": ["git tag", "cosign-sign.yml", "--force"],
+        "forbidden": ["git tag", "cosign-sign.yml", "--force", "workflow_dispatch"],
     },
     "B-113": {
         "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-113",
@@ -209,7 +209,14 @@ COMMAND_OPERATIONS: dict[str, tuple[str, ...]] = {
     "B-107": ("$CORELINK_PROD_BASE/cargo/${CORELINK_DOGFOOD_TENANT:?}/b107-${ordinal}",),
     "B-104": ("does-not-exist-$ordinal",),
     "B-106": ("$CORELINK_PROD_BASE/v1/customer/keys",),
-    "B-112": ("gh run rerun", "run_meta=\"$(gh run view", "expected_sha=\"${B112_EXPECTED_SHA", ".workflowName == \"release-cli\""),
+    "B-112": (
+        "gh run rerun",
+        "run_meta=\"$(gh run view",
+        "expected_sha=\"${B112_EXPECTED_SHA",
+        ".workflowName == \"release-cli\" and .event == \"push\"",
+        ".conclusion == \"failure\" and (.headBranch == ($ref | sub(\"^refs/tags/\";\"\"))) and (.headBranch | startswith(\"cli-v\"))",
+        ".databaseId == ($run_id | tonumber)",
+    ),
     "B-113": ("gh workflow run \"$workflow\"",),
     "B-125": ("wrangler d1 execute corelink-prod",),
     "B-127": ("wrangler d1 execute corelink-prod",),

@@ -180,3 +180,24 @@ def test_b216_b251_reject_exact_inert_jq_comment_and_string_mutations() -> None:
         mutated["packets"][item]["command"] = command.replace(needle, replacement, 1)
         with pytest.raises(GraduationError, match=item):
             _check_packets(mutated, ROOT)
+
+
+def test_b112_uses_push_tag_identity_and_terminal_revalidation() -> None:
+    packet = _load_packets(
+        (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
+    )
+    command = packet["packets"]["B-112"]["command"]
+    assert '.event == "push"' in command
+    assert '.headBranch | startswith("cli-v")' in command
+    assert '.status == "completed"' in command
+    assert '.conclusion == "failure"' in command
+    assert '.conclusion != null' in command
+    assert '.databaseId == ($run_id | tonumber)' in command
+    assert 'workflow_dispatch' not in command
+
+    mutated = copy.deepcopy(packet)
+    mutated["packets"]["B-112"]["command"] = command.replace(
+        '.event == "push"', '.event == "workflow_dispatch"', 1
+    )
+    with pytest.raises(GraduationError, match="B-112"):
+        _check_packets(mutated, ROOT)
