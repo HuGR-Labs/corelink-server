@@ -39,9 +39,12 @@
 //! already there, and the writer then GETs it and compares bytes:
 //!
 //! - identical  → SUCCESS (this chunk was already archived; mark the rows)
-//! - different  → HARD FAILURE, rows are NOT marked. Two different chunks under
-//!   one key means either a key collision or a rewritten chain, and both are
-//!   incidents. Never "resolve" this by overwriting or by skipping.
+//! - different  → parse and verify the existing object. A valid semantic
+//!   PREFIX is a recoverable R2-first/D1-bookkeeping crash window: mark only
+//!   the rows represented by that immutable object, then continue under the
+//!   next sequence key. Any non-prefix or unverifiable object is a HARD
+//!   FAILURE; rows are NOT marked. Never "resolve" that case by overwriting or
+//!   by skipping.
 //!
 //! ## Fail loud, never fail open
 //!
@@ -271,6 +274,49 @@ enum ChunkWrite {
     /// The object already existed with byte-identical content — a prior run (or
     /// a concurrent one) wrote it. Idempotent success.
     AlreadyIdentical,
+    /// The immutable object is a valid semantic prefix of the current chunk.
+    /// This happens when a prior run completed R2 PUT but crashed before D1
+    /// bookkeeping, and newer rows later joined the same day/key window.
+    ExistingPrefix(usize),
+}
+
+/// Read an immutable archive object and return its semantic lines.
+///
+/// Archive objects are NDJSON emitted by `serialize_chunk`.  Parse and verify
+/// the object before using it to advance D1: a malformed or unverifiable
+/// pre-existing object is a hard conflict, never evidence that rows may be
+/// marked archived.
+fn parse_existing_chunk(bytes: &[u8]) -> Result<Vec<SealedArchiveLine>, String> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|e| format!("existing archive object is not UTF-8: {e}"))?;
+    if text.is_empty() {
+        return Err("existing archive object is empty".to_owned());
+    }
+    let lines = text
+        .split('\n')
+        .map(|line| {
+            serde_json::from_str::<SealedArchiveLine>(line)
+                .map_err(|e| format!("existing archive object has invalid NDJSON: {e}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if lines.is_empty() {
+        return Err("existing archive object has no lines".to_owned());
+    }
+    corelink_audit_chain::verify_chunk(&lines)
+        .map_err(|e| format!("existing archive object does not verify: {e}"))?;
+    Ok(lines)
+}
+
+/// Return the number of candidate lines represented by an existing immutable
+/// object, when that object is a non-empty semantic prefix of the candidate.
+fn existing_prefix_len(
+    existing: &[SealedArchiveLine],
+    candidate: &[SealedArchiveLine],
+) -> Option<usize> {
+    (!existing.is_empty()
+        && existing.len() <= candidate.len()
+        && candidate[..existing.len()] == existing[..])
+        .then_some(existing.len())
 }
 
 /// Every partition that still owns sealed-but-unarchived rows.
@@ -407,15 +453,35 @@ async fn put_chunk_if_absent(
                     format!("archive key {key} rejected create-if-absent but reads absent")
                 })?;
             if existing == bytes {
-                Ok(ChunkWrite::AlreadyIdentical)
-            } else {
-                Err(format!(
-                    "AUDIT_ARCHIVE_KEY_CONFLICT key={key} existing_bytes={} new_bytes={} — \
+                return Ok(ChunkWrite::AlreadyIdentical);
+            }
+            // A previous run can have written a valid PREFIX of this chunk,
+            // then died before marking `archived_at`.  As additional rows are
+            // appended on the same day the deterministic first-sequence key
+            // now names a larger candidate, so byte equality is too strict.
+            // Recover only a semantically exact prefix; every other mismatch
+            // remains a hard Object-Lock conflict.
+            let existing_lines = parse_existing_chunk(&existing).map_err(|reason| {
+                format!(
+                    "AUDIT_ARCHIVE_KEY_CONFLICT key={key} existing_bytes={} new_bytes={} ({reason}) — \
                      refusing to overwrite an immutable archive object",
                     existing.len(),
                     bytes.len()
-                ))
-            }
+                )
+            })?;
+            let candidate_lines = parse_existing_chunk(bytes).map_err(|reason| {
+                format!("archive candidate for key={key} failed self-parse ({reason})")
+            })?;
+            let Some(prefix_len) = existing_prefix_len(&existing_lines, &candidate_lines) else {
+                return Err(format!(
+                    "AUDIT_ARCHIVE_KEY_CONFLICT key={key} existing_bytes={} new_bytes={} — \
+                     existing object is not the current candidate's semantic prefix; \
+                     refusing to overwrite an immutable archive object",
+                    existing.len(),
+                    bytes.len()
+                ));
+            };
+            Ok(ChunkWrite::ExistingPrefix(prefix_len))
         }
         Err(e) => Err(e),
     }
@@ -593,16 +659,20 @@ async fn archive_partition(
     // fork). Archive the longest verifying prefix; the break, if any, tells us
     // exactly where the quarantine starts.
     let (prefix, brk) = split_verifying_prefix(&lines);
-    let chunks = split_into_chunks(
-        prefix.to_vec(),
-        state.max_lines_per_chunk,
-        state.max_bytes_per_chunk,
-    );
     let mut outcome = PartitionOutcome {
         truncated,
         ..PartitionOutcome::default()
     };
-    for chunk in chunks {
+    let mut offset = 0usize;
+    while offset < prefix.len() {
+        let chunks = split_into_chunks(
+            prefix[offset..].to_vec(),
+            state.max_lines_per_chunk,
+            state.max_bytes_per_chunk,
+        );
+        let Some(chunk) = chunks.first() else {
+            break;
+        };
         // `split_into_chunks` never emits an empty chunk, but the key derives
         // from the FIRST line and an empty chunk would have no key at all --
         // ask for the line rather than index and assume.
@@ -621,10 +691,23 @@ async fn archive_partition(
             ChunkWrite::AlreadyIdentical => {
                 outcome.chunks_already_present = outcome.chunks_already_present.saturating_add(1);
             }
+            ChunkWrite::ExistingPrefix(rows) => {
+                if rows == 0 || rows > chunk.len() {
+                    return Err(format!(
+                        "archive key {key} existing prefix has invalid line count {rows}"
+                    ));
+                }
+                outcome.chunks_already_present = outcome.chunks_already_present.saturating_add(1);
+                mark_archived(&state.d1, &chunk[..rows], now).await?;
+                outcome.rows = outcome.rows.saturating_add(rows as u64);
+                offset = offset.saturating_add(rows);
+                continue;
+            }
         }
         // R2 first, D1 second — see the module docs.
         mark_archived(&state.d1, &chunk, now).await?;
         outcome.rows = outcome.rows.saturating_add(chunk.len() as u64);
+        offset = offset.saturating_add(chunk.len());
     }
     // Quarantine LAST, and only after every prefix chunk is durable in R2 and
     // marked. A `?` above returns before this line, so a partial R2 failure
@@ -735,6 +818,35 @@ mod tests {
     use super::*;
     use axum::http::HeaderValue;
 
+    fn verifying_lines(count: u64) -> Vec<SealedArchiveLine> {
+        let mut head = corelink_audit_chain::ChainHash::genesis();
+        (0..count)
+            .map(|sequence_number| {
+                let canonical_jcs = format!(r#"{{"n":{sequence_number}}}"#);
+                let chain_hash = corelink_audit_chain::link_chain_hash_from_canonical(
+                    &head,
+                    canonical_jcs.as_bytes(),
+                );
+                let line = SealedArchiveLine {
+                    schema: SEALED_LINE_SCHEMA.to_owned(),
+                    algorithm_id: 0,
+                    epoch_id: 0,
+                    link_key_id: None,
+                    tenant_id: "tenant".to_owned(),
+                    region: "enam".to_owned(),
+                    sequence_number,
+                    prev_hash: head.to_hex(),
+                    chain_hash: chain_hash.to_hex(),
+                    enqueued_at_ms: 1_787_824_088_488,
+                    row_id: format!("row-{sequence_number}"),
+                    canonical_jcs,
+                };
+                head = chain_hash;
+                line
+            })
+            .collect()
+    }
+
     fn headers_with(key: &str) -> HeaderMap {
         let mut h = HeaderMap::new();
         h.insert(
@@ -791,6 +903,42 @@ mod tests {
                 "partial/downgrade metadata must not become E0: {partial}"
             );
         }
+    }
+
+    #[test]
+    fn existing_object_can_recover_a_legacy_serialized_prefix() {
+        let candidate = verifying_lines(3);
+        let legacy_prefix = candidate[..2]
+            .iter()
+            .map(|line| {
+                json!({
+                    "schema": &line.schema,
+                    "tenant_id": &line.tenant_id,
+                    "region": &line.region,
+                    "sequence_number": line.sequence_number,
+                    "prev_hash": &line.prev_hash,
+                    "chain_hash": &line.chain_hash,
+                    "enqueued_at_ms": line.enqueued_at_ms,
+                    "row_id": &line.row_id,
+                    "canonical_jcs": &line.canonical_jcs,
+                })
+                .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let existing = parse_existing_chunk(legacy_prefix.as_bytes()).expect("legacy object");
+        assert_eq!(existing, candidate[..2]);
+        assert_eq!(existing_prefix_len(&existing, &candidate), Some(2));
+    }
+
+    #[test]
+    fn existing_object_must_be_an_exact_nonempty_prefix() {
+        let candidate = verifying_lines(3);
+        assert_eq!(existing_prefix_len(&[], &candidate), None);
+        assert_eq!(existing_prefix_len(&candidate, &candidate[..2]), None);
+        let mut different = candidate[..2].to_vec();
+        different[1].row_id = "not-the-same-row".to_owned();
+        assert_eq!(existing_prefix_len(&different, &candidate), None);
     }
 
     /// The columns this module is ALLOWED to write. Anything else in a `SET`
