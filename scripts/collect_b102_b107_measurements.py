@@ -24,6 +24,11 @@ from urllib.request import Request, urlopen
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 PHASE = re.compile(r"(?:^|[, ])([a-z][a-z0-9_]*);dur=([0-9]+(?:\.[0-9]+)?)")
 AUTH_PHASE = re.compile(r'(?:^|[, ])auth;dur=[0-9]+(?:\.[0-9]+)?;desc="(l1|kv|d1)"(?:[, ]|$)')
+# Keep the evidence field bound to the deployed Worker contract.  The cold
+# proof intentionally remains stricter than this TTL: a token must be idle for
+# at least 60 seconds, even though the current L2 entry expires after 30 s.
+KV_PAT_ROW_TTL_SECONDS = 30
+COLD_IDLE_SECONDS = 61
 
 
 def op(prefix: str) -> str:
@@ -194,7 +199,7 @@ def main() -> int:
     # B-106: the real minted token must remain idle for a full revocation-cache
     # window before the cold request and same-colo warm control are observed.
     idle_started = time.time()
-    time.sleep(60)
+    time.sleep(COLD_IDLE_SECONDS)
     observed = time.time()
     cold = call(args.base, args.tenant, mint["token"], "GET", op("b106-cold"), uuid.uuid4().hex)
     warm = call(args.base, args.tenant, mint["token"], "GET", op("b106-warm"), uuid.uuid4().hex)
@@ -205,7 +210,7 @@ def main() -> int:
     if not cold["colo"] or cold["colo"] != warm["colo"] or not cold["response_request_id"] or not warm["response_request_id"] or cold["response_request_id"] == warm["response_request_id"]:
         raise RuntimeError("B-106 requests did not prove same-colo wire request identities")
     cold["token_fingerprint"] = warm["token_fingerprint"] = token_fp
-    result["items"]["B-106"] = {"tenant_id": args.tenant, "kv_ttl_seconds": 60,
+    result["items"]["B-106"] = {"tenant_id": args.tenant, "kv_ttl_seconds": KV_PAT_ROW_TTL_SECONDS,
                                   "cold_attestation": {"tenant_id": args.tenant, "operation_id": mint["mint_operation_id"], "mint_operation_id": mint["mint_operation_id"], "minted_at_epoch": mint["minted_at_epoch"],
                                                         "unused_since_epoch": idle_started, "observed_at_epoch": observed,
                                                         "token_fingerprint": token_fp, "mint_request_id": mint["mint_request_id"],

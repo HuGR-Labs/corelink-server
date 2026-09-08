@@ -16,8 +16,13 @@ Token = tuple[str, str]
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = "worker/src/lib/pat_verify_cache.ts"
-AUTH = "worker/src/index_auth.ts"
-QUOTA = "worker/src/index_quota_stage.ts"
+# Authentication was split out of index_auth.ts.  Keep both sides of the
+# split in the census: the implementation carries the serving path while the
+# facade must continue exporting it from the public module.
+AUTH = "worker/src/index_auth_verify.ts"
+AUTH_FACADE = "worker/src/index_auth.ts"
+QUOTA = "worker/src/index_quota_impl.ts"
+QUOTA_FACADE = "worker/src/index_quota_stage.ts"
 
 
 class VerificationError(RuntimeError):
@@ -129,8 +134,16 @@ def _active_constant(source_tokens: list[Token], name: str) -> int | None:
 def verify() -> None:
     cache = read(CACHE)
     auth = read(AUTH)
+    auth_facade = read(AUTH_FACADE)
     quota = read(QUOTA)
-    sources = {CACHE: cache, AUTH: auth, QUOTA: quota}
+    quota_facade = read(QUOTA_FACADE)
+    sources = {
+        CACHE: cache,
+        AUTH: auth,
+        AUTH_FACADE: auth_facade,
+        QUOTA: quota,
+        QUOTA_FACADE: quota_facade,
+    }
     tokens = {path: _ts_tokens(source) for path, source in sources.items()}
     required = {
         CACHE: (
@@ -151,12 +164,18 @@ def verify() -> None:
             "...(kvBinding ? { kv: kvBinding } : {})",
             "...(waitUntil ? { waitUntil } : {})",
         ),
+        AUTH_FACADE: (
+            'export { extractAuth } from "./index_auth_verify.js";',
+        ),
         QUOTA: (
             "const isStorageMutating = request.method === \"PUT\" || request.method === \"POST\";",
             "const asyncMeterEligible =",
             "meter && !isStorageMutating && !quotaTier.d1Error",
             "runQuotaBatch(env.CONFIG_DB, resolvedTenantId, quotaTier, {",
             "isMutating: isStorageMutating",
+        ),
+        QUOTA_FACADE: (
+            'export { enforceQuota } from "./index_quota_impl.js";',
         ),
     }
     problems = [
@@ -167,12 +186,12 @@ def verify() -> None:
     ]
     if problems:
         raise VerificationError("\n".join(problems))
-    for name, ceiling in (("PAT_VERIFY_CACHE_TTL_MS", 5_000), ("KV_PAT_ROW_TTL_S", 60)):
+    for name, expected in (("PAT_VERIFY_CACHE_TTL_MS", 5_000), ("KV_PAT_ROW_TTL_S", 30)):
         value = _active_constant(tokens[CACHE], name)
         if value is None:
             raise VerificationError(f"{CACHE} has no numeric {name} constant")
-        if value < 1 or value > ceiling:
-            raise VerificationError(f"{CACHE} {name} must stay in the bounded range 1..{ceiling}")
+        if value != expected:
+            raise VerificationError(f"{CACHE} {name} must remain exactly {expected}")
 
 
 def main() -> int:

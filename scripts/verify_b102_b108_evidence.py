@@ -31,6 +31,8 @@ OP = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
 SECRET = re.compile(r"(?i)(bearer\s+|pat[_-]?token|api[_-]?key|password|secret|private[_-]?key|authorization)")
 FINGERPRINT = re.compile(r"^sha256:[0-9a-f]{64}$")
 MAX_AGE = 15 * 60
+COLD_MIN_IDLE_SECONDS = 60
+KV_PAT_ROW_TTL_SECONDS = 30
 CLOCK_TOLERANCE = 2
 COUNTER_SQL = (
     "INSERT INTO monthly_request_counts (tenant_id, year_month, request_count, updated_at_ms) "
@@ -287,8 +289,8 @@ def b105(item: dict[str, Any], root: Path, tenant: str) -> str:
 
 def b106(item: dict[str, Any], root: Path, tenant: str, now: float) -> str:
     deployment(item, "B-106", root, tenant)
-    if item.get("kv_ttl_seconds") != 60:
-        raise EvidenceError("B-106 must preserve the 60-second revocation floor")
+    if item.get("kv_ttl_seconds") != KV_PAT_ROW_TTL_SECONDS:
+        raise EvidenceError(f"B-106 evidence must report the runtime {KV_PAT_ROW_TTL_SECONDS}-second KV TTL")
     att = obj(item.get("cold_attestation"), "B-106.cold_attestation")
     common(att, "B-106.cold_attestation", tenant)
     raw_hash(att.get("mint_raw_output_sha256"), "B-106.mint_raw_output_sha256")
@@ -311,8 +313,8 @@ def b106(item: dict[str, Any], root: Path, tenant: str, now: float) -> str:
     for key in ("minted_at_epoch", "unused_since_epoch", "observed_at_epoch"):
         num(att.get(key), f"B-106.{key}", 1)
     minted, unused, observed = (float(att[k]) for k in ("minted_at_epoch", "unused_since_epoch", "observed_at_epoch"))
-    if not minted <= unused <= observed - 60 or observed > now + CLOCK_TOLERANCE:
-        raise EvidenceError("B-106 does not prove a newly minted token idle for 60 seconds")
+    if not minted <= unused <= observed - COLD_MIN_IDLE_SECONDS or observed > now + CLOCK_TOLERANCE:
+        raise EvidenceError(f"B-106 does not prove a newly minted token idle for {COLD_MIN_IDLE_SECONDS} seconds")
     cold, warm = obj(item.get("cold"), "B-106.cold"), obj(item.get("warm_control"), "B-106.warm_control")
     for row, label in ((cold, "B-106.cold"), (warm, "B-106.warm_control")):
         common(row, label, tenant)

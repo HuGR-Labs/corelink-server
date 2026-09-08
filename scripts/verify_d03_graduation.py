@@ -715,6 +715,16 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
         _require_string(packet, "dependency", item)
         _require_string(packet, "action", item)
         _check_command_contract(item, packet, root)
+        if item == "B-105":
+            command = packet["command"]
+            if "perf-production-evidence.yml" not in command:
+                raise GraduationError("B-105: gate must dispatch perf-production-evidence.yml")
+            if "release-slsa3.yml" in command:
+                raise GraduationError("B-105: stale release-slsa3.yml dispatch remains in the owner packet")
+            workflow = root / ".github/workflows/perf-production-evidence.yml"
+            workflow_text = _read(workflow)
+            if "collect_b105_same_lane.py" not in workflow_text:
+                raise GraduationError("B-105: perf-production-evidence.yml does not collect the paired lane")
         if disposition == "PARKED":
             artifact = _require_string(packet, "artifact", item)
             command = _require_string(packet, "command", item)

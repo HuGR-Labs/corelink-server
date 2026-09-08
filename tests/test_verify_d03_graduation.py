@@ -269,3 +269,16 @@ def test_b112_uses_push_tag_identity_and_terminal_revalidation() -> None:
     )
     with pytest.raises(GraduationError, match="terminal release headSha"):
         _check_packets(mutated, ROOT)
+
+
+def test_b105_packet_binds_to_production_evidence_workflow() -> None:
+    packet = _load_packets(
+        (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
+    )
+    _check_packets(packet, ROOT)
+    mutated = copy.deepcopy(packet)
+    mutated["packets"]["B-105"]["command"] = mutated["packets"]["B-105"]["command"].replace(
+        "perf-production-evidence.yml", "release-slsa3.yml", 1
+    )
+    with pytest.raises(GraduationError, match="B-105"):
+        _check_packets(mutated, ROOT)

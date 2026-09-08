@@ -71,10 +71,14 @@ def packet() -> dict:
                 "B-103": {"tenant_id": TENANT, "deployment": deployments["B-103"], "runs": runs},
                 "B-104": {"tenant_id": TENANT, "deployment": deployments["B-104"], "samples": samples104, "computed": {"median_ms": 24.5, "p90_ms": 28.1}},
                 "B-105": {"tenant_id": TENANT, "deployment": deployments["B-105"], "pairs": pairs},
-                "B-106": {"tenant_id": TENANT, "deployment": deployments["B-106"], "kv_ttl_seconds": 60, "cold_attestation": row("op-b106-mint", mint_operation_id="op-b106-mint", minted_at_epoch=NOW - 130, unused_since_epoch=NOW - 120, observed_at_epoch=NOW - 60, mint_raw_output_sha256=RAW64, mint_response_sha256=RAW64, mint_response_binding_sha256=RAW64, mint_request_id="req-b106-mint", pat_id="pat-b106", token_id="tok-b106", expires_ms=(NOW + 300) * 1000, token_fingerprint="sha256:" + ZERO64), "cold": row("op-b106-cold", status=404, authenticated=True, auth_source="d1", colo="GRU", response_request_id="req-b106-cold", auth_ms=40, raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64), "warm_control": row("op-b106-warm", status=404, authenticated=True, auth_source="kv", colo="GRU", response_request_id="req-b106-warm", raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64)},
+                "B-106": {"tenant_id": TENANT, "deployment": deployments["B-106"], "kv_ttl_seconds": verifier.KV_PAT_ROW_TTL_SECONDS, "cold_attestation": row("op-b106-mint", mint_operation_id="op-b106-mint", minted_at_epoch=NOW - 130, unused_since_epoch=NOW - 120, observed_at_epoch=NOW - 60, mint_raw_output_sha256=RAW64, mint_response_sha256=RAW64, mint_response_binding_sha256=RAW64, mint_request_id="req-b106-mint", pat_id="pat-b106", token_id="tok-b106", expires_ms=(NOW + 300) * 1000, token_fingerprint="sha256:" + ZERO64), "cold": row("op-b106-cold", status=404, authenticated=True, auth_source="d1", colo="GRU", response_request_id="req-b106-cold", auth_ms=40, raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64), "warm_control": row("op-b106-warm", status=404, authenticated=True, auth_source="kv", colo="GRU", response_request_id="req-b106-warm", raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64)},
                 "B-107": {"tenant_id": TENANT, "deployment": deployments["B-107"], "samples": [dict(s, method="PUT", status=200, payload_bytes=1024) for s in samples107], "computed": {"p50_ms": 30, "p90_ms": 30, "p99_ms": 30}},
                 "B-108": b108,
             }}
+    # Keep the fixture bound to the deployed runtime contract rather than a
+    # duplicated TTL literal; the cold attestation remains independently
+    # required to prove a 60-second idle interval below.
+    result["items"]["B-106"]["kv_ttl_seconds"] = verifier.KV_PAT_ROW_TTL_SECONDS
     result["items"]["B-106"]["cold_attestation"]["mint_response_binding_sha256"] = verifier.mint_binding_sha256(result["items"]["B-106"]["cold_attestation"])
     return result
 
@@ -186,6 +190,7 @@ def main() -> int:
     expect_error(lambda p: p["items"]["B-104"]["samples"][0].pop("response_request_id"), "B104 response request identity")
     expect_error(lambda p: p["items"]["B-105"]["pairs"][0]["treatment"].update(cache_mode="disabled"), "B105 cache wiring")
     expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(unused_since_epoch=NOW - 1), "B106 idle")
+    expect_error(lambda p: p["items"]["B-106"].update(kv_ttl_seconds=60), "B106 runtime TTL")
     expect_error(lambda p: p["items"]["B-106"]["cold"].update(token_fingerprint="sha256:" + "b" * 64), "B106 token binding")
     expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(mint_response_sha256="sha256:" + "b" * 64), "B106 response digest")
     expect_error(lambda p: p["items"]["B-106"]["cold_attestation"].update(mint_response_binding_sha256="sha256:" + "b" * 64), "B106 binding digest")

@@ -321,7 +321,7 @@ export async function verifyPatRowCached(
       }
       putCache(tokenId, row, nowMs);
       // Populate L2 best-effort: a KV write failure must NEVER break auth (the
-      // read already succeeded against D1). Bounded 60 s TTL = the L2 revocation
+      // read already succeeded against D1). Bounded 30 s TTL = the L2 revocation
       // backstop; positive rows only. CRUCIAL: hand the write to `waitUntil` so
       // it survives the response — a bare `void kv.put(...)` is cancelled when
       // the Worker returns, so KV would never populate (measured: 100% D1 reads
