@@ -53,6 +53,13 @@ CLAIMS = (
     ),
 )
 
+POLARITY_RE = re.compile(
+    r"\b(?:no|not|never|without|cannot|can't|does\s+not|doesn't|"
+    r"isn't|is\s+not|aren't|are\s+not|unavailable|deferred|"
+    r"future(?:[- ]only)?|not\s+guaranteed)\b",
+    re.IGNORECASE,
+)
+
 
 def _active_lines(markdown: str) -> list[tuple[int, str]]:
     """Return active Markdown lines with presentation syntax removed."""
@@ -94,7 +101,15 @@ def scan_claims(markdown: str, path: Path) -> list[tuple[str, int, str]]:
         if claim.path != path:
             continue
         for line_number, line in _active_lines(markdown):
-            if claim.pattern.search(line):
+            for match in claim.pattern.finditer(line):
+                # A negated/disclaimed sentence is not evidence of an active
+                # positive instrument claim.  Inspect a bounded context on
+                # both sides so phrases such as ``No ... Object Lock`` and
+                # ``... is not guaranteed`` cannot satisfy the contract.
+                context_before = line[max(0, match.start() - 96) : match.start()]
+                context_after = line[match.end() : match.end() + 96]
+                if POLARITY_RE.search(context_before) or POLARITY_RE.search(context_after):
+                    continue
                 found.append((claim.label, line_number, line.strip()))
     return found
 
@@ -143,7 +158,17 @@ def self_test(dpa_text: str, sla_text: str) -> None:
     )
     _must_reject("## Object Lock\nR2 retention is not configured.\n", sla_text, "heading-only-object-lock")
     _must_reject("R2 does not implement Object Lock.\n", sla_text, "negative-object-lock-status")
+    _must_reject(
+        "No immutable R2 with Object Lock is guaranteed.\n",
+        sla_text,
+        "negated-object-lock-claim",
+    )
     _must_reject(dpa_text, "BYOK kill-switch is not available.\n", "negative-byok-status")
+    _must_reject(
+        dpa_text,
+        "BYOK kill-switch p99 ≤ 5 min is not guaranteed.\n",
+        "disclaimed-byok-claim",
+    )
 
 
 def main() -> int:

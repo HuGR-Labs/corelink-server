@@ -41,6 +41,8 @@ def test_current_instruments_find_bold_claims() -> None:
         ("immutable R2 with Object Lock", "BYOK activation is unavailable"),
         ("## Object Lock\nR2 retention is not configured.", "BYOK kill-switch p99 ≤ 5 min"),
         ("R2 does not implement Object Lock.", "BYOK kill-switch is not available."),
+        ("No immutable R2 with Object Lock is guaranteed.", "BYOK kill-switch p99 ≤ 5 min"),
+        ("immutable R2 with Object Lock", "BYOK kill-switch p99 ≤ 5 min is not guaranteed."),
     ],
 )
 def test_claim_removal_or_negative_status_fails_closed(

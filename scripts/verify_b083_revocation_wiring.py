@@ -21,6 +21,7 @@ RUNTIME = ROOT / "crates/corelink-container/src/byok_revocation_runtime.rs"
 DETECTOR = ROOT / "crates/corelink-byok/src/byok_revocation/detector.rs"
 FOCAL = ROOT / "crates/corelink-byok/tests/byok_revocation_wiring.rs"
 MIGRATION = ROOT / "migrations/d1/0114_byok_revocation_customer_audit_atomic.sql"
+TEST_INCLUDE_MARKER = 'include!("byok_revocation_runtime/part-01.rs");'
 
 
 def require(haystack: str, needle: str, label: str) -> None:
@@ -122,6 +123,38 @@ def _mask_rust_comments_and_strings(source: str) -> str:
             else:
                 i += 1
     return "".join(out)
+
+
+def _active_test_include_count(source: str) -> int:
+    """Count executable ``include!`` calls for the revocation test module.
+
+    The comment/string masker removes comments and string bodies, leaving the
+    macro token visible only when it is executable.  The original source is
+    then consulted at that token to validate the macro's actual string path;
+    this prevents both ``// include!(...)`` and string-literal bait from being
+    accepted as the include boundary.
+    """
+    masked = _mask_rust_comments_and_strings(source)
+    call = re.compile(r"\binclude!\s*\(\s*")
+    literal = re.compile(
+        r'include!\s*\(\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*\)\s*;'
+    )
+    count = 0
+    for match in call.finditer(masked):
+        candidate = literal.match(source[match.start() :])
+        if candidate and candidate.group(1) == TEST_INCLUDE_MARKER.split('"', 2)[1]:
+            count += 1
+    return count
+
+
+def _require_active_test_include(source: str) -> None:
+    """Require exactly one executable runtime/test include, not comment bait."""
+    count = _active_test_include_count(source)
+    if count != 1:
+        raise AssertionError(
+            "production/test include boundary must contain exactly one active include "
+            f"(found {count})"
+        )
 
 
 def _rust_string_literals(source: str) -> str:
@@ -378,6 +411,7 @@ def _verify_sqlite_trigger_semantics(migration: str) -> None:
 
 def verify(main: str, runtime: str, detector: str, focal: str, migration: str) -> None:
     runtime_production = runtime.split("#[cfg(test)]", 1)[0]
+    _require_active_test_include(runtime_production)
     main_code = _mask_rust_comments_and_strings(main)
     runtime_code = _mask_rust_comments_and_strings(runtime_production)
     detector_code = _mask_rust_comments_and_strings(detector)
@@ -460,13 +494,31 @@ def mutation_self_test(main: str, runtime: str, detector: str, focal: str, migra
         could exercise the verifier.  Keep the boundary assertion fail-closed
         by anchoring to the executable include itself.
         """
-        marker = 'include!("byok_revocation_runtime/part-01.rs");'
+        marker = TEST_INCLUDE_MARKER
         if marker not in source:
             raise AssertionError("B083 mutation fixture lost the production/test include boundary")
         return source.replace(marker, bait + "\n" + marker, 1)
 
     inactive_population = runtime.replace("state IN ('active', 'partial')", "state IN ('inactive')", 1)
     mutations = {
+        "test-include-commented": (
+            main,
+            runtime.replace(TEST_INCLUDE_MARKER, "// " + TEST_INCLUDE_MARKER, 1),
+            detector,
+            focal,
+            migration,
+        ),
+        "test-include-string-bait": (
+            main,
+            runtime.replace(
+                TEST_INCLUDE_MARKER,
+                'const INCLUDE_BAIT: &str = "include!(\\"byok_revocation_runtime/part-01.rs\\");";',
+                1,
+            ),
+            detector,
+            focal,
+            migration,
+        ),
         "spawn-empty-future": (main.replace("tokio::spawn(detector.run_loop())", "tokio::spawn(async {})", 1), runtime, detector, focal, migration),
         "population-empty-state": (main, inactive_population, detector, focal, migration),
         "focal-source-removed": (main, runtime, detector, focal.replace(".with_key_source(source)", "", 1), migration),
