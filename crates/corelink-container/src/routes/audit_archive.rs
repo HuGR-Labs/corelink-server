@@ -101,9 +101,10 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde_json::{json, Value};
 use subtle::ConstantTimeEq;
+use zeroize::Zeroizing;
 
 use corelink_audit_chain::{
-    sealed_chunk_key, serialize_chunk, split_into_chunks, split_verifying_prefix,
+    sealed_chunk_key, serialize_chunk, split_into_chunks, split_verifying_prefix, LinkKeyring,
     SealedArchiveLine, DEFAULT_SEALED_MAX_BYTES_PER_CHUNK, DEFAULT_SEALED_MAX_LINES_PER_CHUNK,
     SEALED_LINE_SCHEMA,
 };
@@ -165,6 +166,9 @@ pub struct AuditArchiveState {
     batch_limit: i64,
     max_lines_per_chunk: usize,
     max_bytes_per_chunk: usize,
+    /// Forwarded write-only keyring held in zeroizing memory. Versioned archive
+    /// verification remains parked until the signed epoch-ledger cutover.
+    link_keyring: Option<Arc<LinkKeyring>>,
 }
 
 impl std::fmt::Debug for AuditArchiveState {
@@ -176,6 +180,10 @@ impl std::fmt::Debug for AuditArchiveState {
             .field("batch_limit", &self.batch_limit)
             .field("max_lines_per_chunk", &self.max_lines_per_chunk)
             .field("max_bytes_per_chunk", &self.max_bytes_per_chunk)
+            .field(
+                "link_keyring",
+                &self.link_keyring.as_ref().map(|keyring| keyring.len()),
+            )
             .finish()
     }
 }
@@ -217,6 +225,19 @@ pub async fn build_state_from_env() -> Option<AuditArchiveState> {
             return None;
         }
     };
+    let link_keyring = match std::env::var("AUDIT_CHAIN_LINK_KEYS_JSON") {
+        Ok(raw) if !raw.trim().is_empty() => {
+            let raw = Zeroizing::new(raw);
+            match LinkKeyring::parse_json(&raw) {
+                Ok(keyring) => Some(Arc::new(keyring)),
+                Err(error) => {
+                    tracing::warn!(error = %error, "audit/archive: malformed link keyring; route NOT mounted (fail-CLOSED)");
+                    return None;
+                }
+            }
+        }
+        _ => None,
+    };
     let batch_limit = std::env::var("AUDIT_ARCHIVE_BATCH_LIMIT")
         .ok()
         .and_then(|s| s.trim().parse::<i64>().ok())
@@ -230,6 +251,7 @@ pub async fn build_state_from_env() -> Option<AuditArchiveState> {
         batch_limit,
         max_lines_per_chunk: DEFAULT_SEALED_MAX_LINES_PER_CHUNK,
         max_bytes_per_chunk: DEFAULT_SEALED_MAX_BYTES_PER_CHUNK,
+        link_keyring,
     })
 }
 

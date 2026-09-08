@@ -164,8 +164,8 @@ pub use chain::{
 };
 pub use epoch::{
     key_matches_commitment, link_for_epoch, link_key_commitment, ChainEpoch, EpochChainState,
-    EpochError, LinkAlgorithm, LinkKey, KEYED_ALGORITHM_ID, KEYED_LINK_DOMAIN,
-    LINK_KEY_COMMITMENT_DOMAIN, UNKEYED_ALGORITHM_ID,
+    EpochError, LinkAlgorithm, LinkKey, LinkKeyring, LinkKeyringError, KEYED_ALGORITHM_ID,
+    KEYED_LINK_DOMAIN, LINK_KEY_COMMITMENT_DOMAIN, UNKEYED_ALGORITHM_ID,
 };
 pub use error::{AuditChainAuditSinkError, AuditChainError, R2AuditSinkError};
 pub use event::{
