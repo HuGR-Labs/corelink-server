@@ -320,8 +320,7 @@ impl D1AuditOutboxSink {
     /// the whole call.
     ///
     /// It deliberately opens NO [`crate::origin_timing::PhaseScope`]: the
-    /// caller wraps the whole concurrent join in one `Phase::Store` scope so
-    /// the overlapping window is attributed exactly once.
+    /// synchronous batch caller wraps this await in one `Phase::Audit` scope.
     async fn append_batch_async(&self, rows: Vec<AuditRow>) -> Result<(), String> {
         let statements = Self::build_batch_statements(&rows)?;
         // Chunks are independent `INSERT OR IGNORE`s over disjoint row sets,
@@ -362,9 +361,9 @@ impl D1AuditOutboxSink {
     /// `PhaseScope` use: instrumentation can never change this method's
     /// result.
     ///
-    /// The batch writer is the ONE exception: it drives the same SQL through
-    /// `self.d1.query` directly (no `block_in_place`, no `PhaseScope` here)
-    /// so its caller can attribute the joined audit/probe window itself.
+    /// The batch writer drives the same SQL through `self.d1.query` directly
+    /// because its synchronous caller owns the `block_in_place` bridge and
+    /// wraps this await in an audit-phase scope.
     fn write_blocking(&self, sql: &str, params: Vec<Value>) -> Result<(), String> {
         let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Audit);
         let d1 = Arc::clone(&self.d1);
@@ -401,10 +400,9 @@ impl corelink_handler_ac::AuditSink for D1AuditOutboxSink {
 }
 
 impl D1AuditOutboxSink {
-    /// Batch audit writer for the `findMissingBlobs` seam. This is the only
-    /// native read path that intentionally overlaps its durable audit write
-    /// with storage probes; no result is returned until the batch audit
-    /// future has succeeded.
+    /// Batch audit writer for the `findMissingBlobs` seam. The caller awaits
+    /// this future before dispatching any storage probe, so no result can be
+    /// returned unless the batch audit has succeeded.
     /// `findMissingBlobs` seam only — see [`Self::append_batch_async`].
     ///
     /// Preserves the taxonomy exactly: one row per event, in request order,

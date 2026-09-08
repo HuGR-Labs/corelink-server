@@ -288,20 +288,17 @@ impl CasReadHandler for R2CasHandler {
     ///
     /// # `None` ⇒ serial fallback
     ///
-    /// Returns `None` when the async audit seam is not wired
-    /// (`audit_async == None`: every test handler in this module, and any
-    /// non-D1 `AuditSink`), so those callers keep looping [`Self::exists`],
-    /// byte-identical to before this method existed. This is the sole
-    /// explicit read-audit/storage overlap exception.
+    /// Returns `None` when the async batch-audit seam is not wired
+    /// (`audit_async == None`: test handlers and non-D1 `AuditSink`s), so
+    /// those callers keep looping [`Self::exists`]. When wired, the batched
+    /// durable audit completes before any bounded-concurrent probe starts.
     ///
     /// # Fail-CLOSED
     ///
-    /// The audit batch and the probes are DISPATCHED together, but the audit
-    /// result is evaluated FIRST and an `Err` short-circuits to
-    /// `AuditFailed` — no probe result can reach the caller without its audit
-    /// rows having committed. Cross-tenant denial happens strictly before
-    /// anything is dispatched, and still emits its own `ReadDenied` row. See
-    /// `list()`'s doc for the full argument; this path is the same shape.
+    /// The audit batch commits before the probes are dispatched. An audit
+    /// error returns `AuditFailed` with zero storage calls. Cross-tenant
+    /// denial happens strictly before anything is dispatched, and still emits
+    /// its own `ReadDenied` row.
     fn exists_batch(&self, reqs: &[CasReadRequest]) -> Option<Result<Vec<bool>, CasHandlerError>> {
         // No async-capable durable sink ⇒ no batch capability ⇒ the caller
         // uses the unchanged per-digest `exists()` loop.
