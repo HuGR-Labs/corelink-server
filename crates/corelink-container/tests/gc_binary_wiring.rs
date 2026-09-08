@@ -20,6 +20,12 @@ fn runtime_image_contains_a_separately_invoked_gc_binary() {
     let build = "cargo build --release --locked -p corelink-gc --bin gc_sweep;";
     let stage = "cp /build/target/release/gc_sweep /out/gc_sweep";
     let runtime = "COPY --from=builder /out/gc_sweep /usr/local/bin/gc_sweep";
+    let production_build =
+        "cargo build --release --locked -p corelink-server --bin corelink-gc-sweep-production";
+    let production_stage =
+        "cp /build/target/release/corelink-gc-sweep-production /out/corelink-gc-sweep-production";
+    let production_runtime =
+        "COPY --from=builder /out/corelink-gc-sweep-production /usr/local/bin/corelink-gc-sweep-production";
 
     assert!(
         DOCKERFILE.contains(build),
@@ -34,12 +40,44 @@ fn runtime_image_contains_a_separately_invoked_gc_binary() {
         "gc_sweep must enter the runtime image"
     );
     assert!(
+        DOCKERFILE.contains(production_build),
+        "native production sweep must be built under its distinct name"
+    );
+    assert!(
+        DOCKERFILE.contains(production_stage),
+        "native production sweep must leave the cache mount"
+    );
+    assert!(
+        DOCKERFILE.contains(production_runtime),
+        "native production sweep must enter the runtime image"
+    );
+    assert!(
         !DOCKERFILE.contains("ENV GC_LIVE_DELETE=true"),
         "the image must never default to live deletion"
     );
     assert!(
         DOCKERFILE.contains("ENTRYPOINT [\"/usr/local/bin/corelink-server\"]"),
         "shipping gc_sweep must not replace the server entrypoint"
+    );
+}
+
+#[test]
+fn native_sweep_observation_requires_explicit_false_delete_gate() {
+    let source = include_str!("../src/gc_sweep.rs");
+    for required in [
+        "GC_OBSERVATION_ONLY",
+        "GC_OBSERVATION_ONLY=true requires GC_LIVE_DELETE=false",
+        "pub observation_only: bool",
+        "observation_only={}",
+    ] {
+        assert!(
+            source.contains(required),
+            "observation contract must contain {required:?}"
+        );
+    }
+    assert!(
+        !DOCKERFILE.contains("GC_LIVE_DELETE=true"),
+        "the image must not arm live deletion"
     );
 }
 

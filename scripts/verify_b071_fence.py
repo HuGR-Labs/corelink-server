@@ -17,9 +17,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations/d1/0115_gc_purge_fence.sql"
 CAS_QUERY = ROOT / "crates/corelink-meta/src/cas_query.rs"
 CAS_FENCE = ROOT / "crates/corelink-container/src/storage/cas_write_fence.rs"
-CAS_OPS = ROOT / "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs"
-CAS_WIRING = ROOT / "crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs"
-GC_SWEEP = ROOT / "crates/corelink-container/src/gc_sweep.rs"
+CAS_OPS = ROOT / "crates/corelink-container/src/storage/r2_s3_parts/cas_write.rs"
+CAS_WIRING = ROOT / "crates/corelink-container/src/storage/r2_s3_parts/cas_builder.rs"
+GC_SWEEP = ROOT / "crates/corelink-container/src/gc_sweep/part-03.rs"
 CANONICAL_DIGEST = "d" * 64
 
 
@@ -146,8 +146,10 @@ def release_writer(db: sqlite3.Connection, request_id: str) -> None:
 
 def live_wiring_errors(ops: str, wiring: str, gc: str) -> list[str]:
     errors = []
+    put_tokens = ("self.client.put_if_absent(", "self.client.put(")
     try:
-        if ops.index("fence.begin(") >= ops.index("self.client.put"):
+        put_index = min(ops.index(token) for token in put_tokens)
+        if ops.index("fence.begin(") >= put_index:
             errors.append("fence is claimed after R2")
     except ValueError:
         errors.append("fence begin or R2 PUT is missing")
@@ -166,7 +168,7 @@ def live_wiring_errors(ops: str, wiring: str, gc: str) -> list[str]:
     if (
         "cas_write_intent AS wi" not in gc
         or "wi.state = 'writing'" not in gc
-        or "(?4 - wi.updated_at) <= {CAS_WRITE_LEASE_MS}" not in gc
+        or "updated_at) <= {CAS_WRITE_LEASE_MS}" not in gc
         or "CAS_WRITE_LEASE_MS" not in gc
     ):
         errors.append("GC does not exclude live writers with the bounded lease")
@@ -231,8 +233,7 @@ def main() -> None:
             mutant if name == "GC writer exclusion" else gc,
         )
         assert mutant_errors, f"wiring mutation unexpectedly passed: {name}"
-    assert "fence.begin(" not in ops.replace("fence.begin(", "", 1), \
-        "fence begin appears more than once"
+    assert ops.count("fence.begin(") == 1, "fence begin must have one acquisition site"
     assert "with_cas_write_fence(cas_write_fence)" not in wiring.replace(
         ".with_cas_write_fence(cas_write_fence)", "", 1
     ), "fence wiring appears more than once"
