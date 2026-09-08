@@ -80,14 +80,13 @@ def test_b251_identity_and_fixture_truth_mutations_are_red() -> None:
         (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
     )
     mutations = {
-        "B251_D02_SEED": "B251_D02_SEED_MISSING",
-        "B251_D02_FAILURE": "B251_D02_FAILURE_MISSING",
-        "B251_D02_BLOB": "B251_D02_BLOB_MISSING",
         "B251_OBSERVED_SEED": "B251_OBSERVED_SEED_MISSING",
         "B251_OBSERVED_FAILURE": "B251_OBSERVED_FAILURE_MISSING",
         "B251_OBSERVED_BLOB": "B251_OBSERVED_BLOB_MISSING",
-        "fixture_only": "production_only",
-        "production_latency_measured=false": "production_latency_measured=true",
+        "reports/owner-actions/b251-d02-identity.json": "reports/owner-actions/unretained.json",
+        "measurement_mode:\"fixture_only\"": "measurement_mode:\"production\"",
+        "production_latency_measured:false": "production_latency_measured:true",
+        ".measurement_mode == \"fixture_only\" and .production_latency_measured == false": ".measurement_mode == \"fixture_only\" and .production_latency_measured == true",
     }
     for needle, replacement in mutations.items():
         mutated = copy.deepcopy(packet)
@@ -96,3 +95,38 @@ def test_b251_identity_and_fixture_truth_mutations_are_red() -> None:
         )
         with pytest.raises(GraduationError, match="B-251"):
             _check_packets(mutated, ROOT)
+
+
+def test_b216_b251_reject_shell_escape_and_inert_token_mutations() -> None:
+    packet = _load_packets(
+        (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
+    )
+    mutations = {
+        "B-216": (
+            ("__APPEND__", "; rm -f artifacts/d03/B216-dlq-incident.json"),
+            ("__APPEND__", "; :"),
+            ("; export D03_SAMPLE_COUNT=1", " && export D03_SAMPLE_COUNT=1"),
+            ("; test -n", "; $(date); test -n"),
+            (".event == \"dsr.erasure.dead_letter\"", ".event == \"inert-token\""),
+            ("exit \"$tail_rc\"", "rm \"$tail_rc\""),
+        ),
+        "B-251": (
+            ("__APPEND__", "; curl https://example.invalid"),
+            ("__APPEND__", "; :"),
+            ("; export D03_SAMPLE_COUNT=1000", " && export D03_SAMPLE_COUNT=1000"),
+            ("; test -n", "; $(date); test -n"),
+            ("jq -n '{measurement_mode:\"fixture_only\", production_latency_measured:false}'", "echo fixture_only"),
+            ("| tee artifacts/d03/B251-latency-probe.log", "> /tmp/inert.log"),
+        ),
+    }
+    for item, item_mutations in mutations.items():
+        for needle, replacement in item_mutations:
+            mutated = copy.deepcopy(packet)
+            command = mutated["packets"][item]["command"]
+            if needle == "__APPEND__":
+                command = command + replacement
+            else:
+                command = command.replace(needle, replacement, 1)
+            mutated["packets"][item]["command"] = command
+            with pytest.raises(GraduationError, match=item):
+                _check_packets(mutated, ROOT)

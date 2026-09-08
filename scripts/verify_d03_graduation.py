@@ -16,8 +16,10 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -175,14 +177,14 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
     "B-216": {
         "owner_packet": "docs/internal/b215-b230-runtime-owner-actions.md#B-216",
         "profiles": ["corelink-signup-worker", "corelink-dsr-erasure-dlq"], "sample_count": 1,
-        "required": ["dsr.erasure.dead_letter", "requeue_once", "paging", "revision", "priorRequeues < 1"],
+        "required": ["dsr.erasure.dead_letter", "requeue_once", "paging", "revision", "priorRequeues < 1", "B216_EXPECTED_REVISION", "B216_EVENT_ID", "event_id", "exhausted", "requeue_count", "delivery_status", "receipt_id"],
         "safety": ["OWNER_APPROVED_B216=1", "timeout 30s"],
         "forbidden": ["wrangler queue send", "wrangler queues delete", "DELETE FROM", "--force"],
     },
     "B-251": {
         "owner_packet": "docs/campaigns/remediation/work-packages/B131-B167.md#WP-B251",
         "profiles": ["deterministic", "D02", "fixture"], "sample_count": 1000,
-        "required": ["verify_b251_quota_cas_budget.py", "--ignored", "--exact", "p99", "seed", "failure", "blob", "D02_SEED", "D02_FAILURE", "D02_BLOB", "OBSERVED_SEED", "OBSERVED_FAILURE", "OBSERVED_BLOB", "fixture_only", "production_latency_measured=false", "InMemoryAtomicQuotaChecker"],
+        "required": ["verify_b251_quota_cas_budget.py", "--ignored", "--exact", "p99", "seed", "failure", "blob", "OBSERVED_SEED", "OBSERVED_FAILURE", "OBSERVED_BLOB", "b251-d02-identity.json", "fixture_only", "production_latency_measured", "InMemoryAtomicQuotaChecker"],
         "safety": ["opt-in", "--nocapture", "B251_ALLOW_IGNORED_PROBE=1"],
         "forbidden": ["--force", "production quota redesign"],
     },
@@ -213,8 +215,8 @@ COMMAND_OPERATIONS: dict[str, tuple[str, ...]] = {
     "B-122": ("$CORELINK_PROD_BASE/cargo/${CORELINK_DOGFOOD_TENANT:?}/b122-${ordinal}",),
     "B-129": ("$CORELINK_PROD_BASE/cargo/${CORELINK_DOGFOOD_TENANT:?}/${CORELINK_DOGFOOD_CARGO_KEY:?}",),
     "B-134": ("check_b134_observability.py", "expected_sha=\"$(gh api", ".headSha == $sha"),
-    "B-216": ("wrangler tail corelink-signup-worker", "event: \"dsr.erasure.dead_letter\"", "test -s reports/owner-actions/b216-alert-delivery.json", "test -s reports/owner-actions/b216-exhausted-observation.md"),
-    "B-251": ("cargo test -p corelink-billing", "test \"$B251_OBSERVED_SEED\" = \"$B251_D02_SEED\"", "test \"$B251_OBSERVED_FAILURE\" = \"$B251_D02_FAILURE\"", "test \"$B251_OBSERVED_BLOB\" = \"$B251_D02_BLOB\"", "echo 'measurement_mode=fixture_only; production_latency_measured=false'"),
+    "B-216": ("wrangler tail corelink-signup-worker", "jq -e --arg worker \"corelink-signup-worker\" --arg queue \"corelink-dsr-erasure-dlq\"", "jq -e --arg worker \"corelink-signup-worker\" --arg revision \"$B216_EXPECTED_REVISION\" --arg event_id \"$B216_EVENT_ID\"", "test -s reports/owner-actions/b216-alert-delivery.json", "test -s reports/owner-actions/b216-exhausted-observation.md"),
+    "B-251": ("cargo test -p corelink-billing", "jq -e --arg seed", "jq -n '{measurement_mode:\"fixture_only\", production_latency_measured:false}'", "jq -e '.measurement_mode == \"fixture_only\"", "test -s reports/owner-actions/b251-d02-identity.json"),
 }
 
 # Frozen from the 42 TL/open records at the D03 starting head.  Do not derive
@@ -275,6 +277,152 @@ def _require_string(mapping: dict[str, Any], key: str, item: str) -> str:
     return value
 
 
+def _check_bounded_shell(item: str, command: str, artifact: str) -> None:
+    """Reject shell features outside the two bounded owner-command grammars.
+
+    This is deliberately a small allowlist rather than a general shell parser:
+    the packet commands are reviewable evidence collectors, not an escape hatch
+    for arbitrary owner-provided scripts.  Bash still performs syntax checking,
+    while this layer rejects command substitution, unsafe separators/redirects,
+    and commands which only smuggle a required token through an inert branch.
+    """
+    if "\n" in command or "$ (" in command:
+        raise GraduationError(f"{item}: command contains an unbounded shell construct")
+    if "$(__" in command or "$(" in command or "`" in command:
+        raise GraduationError(f"{item}: command substitution is not allowed")
+    syntax = subprocess.run(
+        ["bash", "-n"], input=command, text=True, capture_output=True, check=False
+    )
+    if syntax.returncode != 0:
+        raise GraduationError(f"{item}: command is not valid bash syntax")
+    if command.rstrip().endswith((";", "|", "||", "&&")):
+        raise GraduationError(f"{item}: command has a trailing separator")
+
+    try:
+        tokens = list(shlex.shlex(command, posix=True, punctuation_chars=";&|><()"))
+    except ValueError as exc:
+        raise GraduationError(f"{item}: command cannot be tokenized safely") from exc
+    forbidden_operators = {"&&", "&", "<<", "<<<", ">>", "<", "&>"}
+    if any(token in forbidden_operators for token in tokens):
+        raise GraduationError(f"{item}: command contains an unapproved shell operator")
+    expected_operators = {
+        "B-216": {";": 22, ">": 6, ";;": 2, "||": 1, "|": 1},
+        "B-251": {";": 22, ">": 4, "|": 2, ">&": 1},
+    }[item]
+    operators = Counter(
+        token for token in tokens if token in {";", ";;", "||", "|", ">", "<", ">>", ">&", "&&", "&"}
+    )
+    if dict(operators) != expected_operators:
+        raise GraduationError(f"{item}: command separator/redirect shape is not the reviewed bounded form")
+    if item == "B-251" and ">" in tokens:
+        # B-251 emits its structured envelope exactly once.  Probe output is
+        # tee'd into a separate log, so a second redirect cannot hide evidence.
+        redirect_targets = [tokens[index + 1] for index, token in enumerate(tokens[:-1]) if token == ">"]
+        if redirect_targets != ["/dev/null", artifact, "/dev/null", "/dev/null"]:
+            raise GraduationError(f"{item}: redirect is not the declared evidence artifact")
+    if item == "B-216" and ">" in tokens:
+        redirect_targets = [tokens[index + 1] for index, token in enumerate(tokens[:-1]) if token == ">"]
+        if redirect_targets != [artifact, "/dev/null", "/dev/null", artifact, "/dev/null", "/dev/null"]:
+            raise GraduationError(f"{item}: redirects must only capture the declared event artifact")
+    if item == "B-251" and tokens.count(">&") != 1:
+        raise GraduationError(f"{item}: probe stderr must have exactly one bounded 2>&1 capture")
+    if item == "B-216" and tokens.count(";;") != 2:
+        raise GraduationError(f"{item}: timeout status case must remain structurally bounded")
+
+    allowed = {
+        "B-216": {"set", "export", "test", ":", "grep", "tail_rc=0", "timeout", "wrangler", "jq", "case", "exit"},
+        "B-251": {"set", "export", "test", ":", "grep", "jq", "tee", "python3", "cargo"},
+    }[item]
+    control = {";", "||", "|", ")", "(", ";;", "in", "esac", "*"}
+    at_command_start = True
+    in_case = False
+    in_case_pattern = False
+    for token in tokens:
+        if token == "case":
+            in_case = True
+            in_case_pattern = True
+            at_command_start = False
+            continue
+        if in_case:
+            if token == "esac":
+                in_case = False
+                in_case_pattern = False
+                at_command_start = True
+            elif token == ";;":
+                in_case_pattern = True
+                at_command_start = True
+            elif token == ")":
+                in_case_pattern = False
+                at_command_start = True
+            elif in_case_pattern or token in {"in", "|", "*"}:
+                continue
+            elif at_command_start:
+                if token not in allowed:
+                    raise GraduationError(f"{item}: unapproved shell command {token!r}")
+                at_command_start = False
+            continue
+        if token in control:
+            at_command_start = token not in {")", "(", "in", "*"}
+            continue
+        if token in {">", ">&"}:
+            at_command_start = False
+            continue
+        if at_command_start:
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", token):
+                at_command_start = False
+                continue
+            if token not in allowed:
+                raise GraduationError(f"{item}: unapproved shell command {token!r}")
+            at_command_start = False
+
+
+def _check_b216_semantics(command: str) -> None:
+    required_fragments = (
+        "test -n \"${B216_EXPECTED_REVISION:?provide deployed revision}\"",
+        "test -n \"${B216_EVENT_ID:?provide exhausted event ID}\"",
+        "test -s reports/owner-actions/b216-deployed-signup-worker.json",
+        "test -s reports/owner-actions/b216-alert-delivery.json",
+        "test -s reports/owner-actions/b216-exhausted-observation.md",
+        "timeout 30s wrangler tail corelink-signup-worker --format json --search dsr.erasure.dead_letter > artifacts/d03/B216-dlq-incident.json",
+        "event_id == $event_id",
+        "revision == $revision",
+        ".channel == \"paging\"",
+        ".event == \"dsr.erasure.dead_letter\"",
+        "exhausted == true",
+        "action == \"requeue_once\"",
+        "requeue_count == 1",
+        "delivery_status == \"delivered\"",
+        "receipt_id|type==\"string\"",
+        "event_id=$B216_EVENT_ID revision=$B216_EXPECTED_REVISION exhausted=true action=requeue_once requeue_count=1 operator_disposition=manual_followup",
+    )
+    for fragment in required_fragments:
+        if fragment not in command:
+            raise GraduationError(f"B-216: command lacks correlated evidence assertion {fragment!r}")
+    if "grep -Eiq" in command or "|" not in command:
+        raise GraduationError("B-216: evidence must use structured all-fields correlation, not OR greps")
+
+
+def _check_b251_semantics(command: str, artifact: str) -> None:
+    required_fragments = (
+        "test -s reports/owner-actions/b251-d02-identity.json",
+        "jq -e --arg seed \"$B251_OBSERVED_SEED\" --arg failure \"$B251_OBSERVED_FAILURE\" --arg blob \"$B251_OBSERVED_BLOB\"",
+        ".source == \"D02\"",
+        ".seed == $seed",
+        ".failure == $failure",
+        ".blob == $blob",
+        "jq -n '{measurement_mode:\"fixture_only\", production_latency_measured:false}' > " + artifact,
+        "jq -e '.measurement_mode == \"fixture_only\" and .production_latency_measured == false' " + artifact,
+        "artifacts/d03/B251-latency-probe.log",
+    )
+    for fragment in required_fragments:
+        if fragment not in command:
+            raise GraduationError(f"B-251: command lacks structural identity/measurement assertion {fragment!r}")
+    if "B251_D02_" in command:
+        raise GraduationError("B-251: D02 identity must come from the retained artifact, not environment fields")
+    if "echo" in command or "grep -Eiq" in command:
+        raise GraduationError("B-251: fixture/production truth must be a structured jq assertion")
+
+
 def _check_command_contract(item: str, packet: dict[str, Any], root: Path) -> None:
     expected = COMMAND_CONTRACTS.get(item)
     if expected is None:
@@ -285,6 +433,12 @@ def _check_command_contract(item: str, packet: dict[str, Any], root: Path) -> No
     if contract != expected:
         raise GraduationError(f"{item}: command_contract disagrees with the authoritative owner packet")
     command = packet["command"]
+    if item in {"B-216", "B-251"}:
+        _check_bounded_shell(item, command, packet["artifact"])
+        if item == "B-216":
+            _check_b216_semantics(command)
+        else:
+            _check_b251_semantics(command, packet["artifact"])
     if "set -euo pipefail" not in command:
         raise GraduationError(f"{item}: command must enable fail-closed shell options")
     if "printf" in command:
