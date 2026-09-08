@@ -8889,23 +8889,34 @@ instalacao. **Este item e sobre o padrao pre-existente, nao sobre os que eu acre
 basta um `hadolint`/dry-run barato que pegue erro de forma sem construir. E nao decide se
 os rotulos devem ganhar consumidor ou desaparecer.
 
+**Fechado em 2026-09-08 no PR #561 do `corelink-runners`.** A evidencia cross-repo foi
+registrada em `docs/campaigns/remediation/B-135-corelink-runners-closure.md` com valores
+sensitivos redigidos e tres amarras que nao podem ser substituidas por um numero de PR:
+o head testado `d8124b1ab89cf6afb08682442e94c4f4d18c6ba8`, a arvore testada e entregue
+`d9cadd3741c77bb58d7162922f1510ded41c844f`, e o merge em `main`
+`ec9b6d69dbb1f3bd64ef4f9a4ce7e9d9100e69c1`. O verificador local exige o receipt completo,
+o comportamento entregue (gatilho `pull_request`, build secretless sem publicacao e
+rotulos sem consumidor removidos) e o estado `done`; receipt ausente, SHA encurtado,
+comportamento ausente ou credencial deixam o portao vermelho. Isto fecha somente B-135:
+o build/publicacao/repin/rollout de imagens continua sendo B-114/B-138.
+
 ```backlog
 id: B-135
 repo: corelink-runners
 owner: tl
-status: open
-verify: manual
+status: done
+verify: |
+  python3 scripts/check_b135_cross_repo.py
+  bash scripts/test_b135_cross_repo.sh
 verify-means: |
-  vive em corelink-runners; o token do Actions nao le repo irmao, entao nao da para
-  automatizar ate [B-012] entregar credencial cross-repo.
-
-  Checagem manual, dois comandos no clone de corelink-runners:
-    grep -n "workflow_dispatch\|pull_request" .github/workflows/build-cf-container-images.yml
-      -> so workflow_dispatch  => item aberto
-    grep -rn "corelink.rust\|corelink.gh.version" --include=*.yml --include=*.sh --include=*.py .
-      | grep -v Dockerfile
-      -> vazio  => rotulos sem consumidor, item aberto
-last-verified: 2026-08-31
+  done — `scripts/check_b135_cross_repo.py` e fail-closed: ele exige o receipt redigido
+  completo, o tested head e a arvore que foram testados, o merge commit que entregou a mesma
+  arvore em `corelink-runners/main`, e as amarras de comportamento da lane `pull_request`
+  secretless e dos rotulos removidos. Nao consulta o token do Actions nem inventa acesso
+  ao repo irmao: a ausencia ou adulteracao da evidencia commitada sai nao-zero. A suite
+  `scripts/test_b135_cross_repo.sh` planta mutacoes no head, merge, estado do backlog,
+  comportamento e credencial e exige que todas fiquem vermelhas.
+last-verified: 2026-09-08
 ```
 
 ### B-136 — `github.ref` colapsa `push`, `schedule` e `workflow_dispatch` na `main`, e o cron do backlog pode morrer calado
