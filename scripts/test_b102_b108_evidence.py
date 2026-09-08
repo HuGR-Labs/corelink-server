@@ -40,6 +40,7 @@ def deployment(op: str) -> dict:
         "github_run_id": "123456789",
         "github_run_attempt": "1",
         "github_run_started_at": run_started_at,
+        "github_ref": "refs/heads/main",
         "github_deployment_id": "987654321",
         "provider_record": {"provider": "cloudflare", "environment": "production", "commit": SHA, "deployment_id": "deploy-123456"},
         "provider_blob_sha256": RAW64,
@@ -55,16 +56,37 @@ def row(op: str, **kwargs) -> dict:
 
 
 def github_attestation(attestation: dict, deployment_record: dict) -> dict:
+    predicate = {
+        "buildDefinition": {
+            "buildType": verifier.GITHUB_WORKFLOW_BUILD_TYPE,
+            "externalParameters": {
+                "workflow": {
+                    "ref": deployment_record["github_ref"],
+                    "repository": "https://github.com/HuGR/corelink-server",
+                    "path": ".github/workflows/perf-production-evidence.yml",
+                }
+            },
+            "resolvedDependencies": [{"digest": {"gitCommit": deployment_record["source_head"]}}],
+        },
+        "runDetails": {
+            "metadata": {
+                "invocationId": (
+                    f"https://github.com/HuGR/corelink-server/actions/runs/{deployment_record['github_run_id']}"
+                    f"/attempts/{deployment_record['github_run_attempt']}"
+                )
+            }
+        },
+    }
     subject = {
         "_type": "https://in-toto.io/Statement/v1",
         "subject": [{"name": "b106-cold-attestation.json", "digest": {"sha256": verifier.sha(verifier.b106_subject_bytes(attestation, deployment_record))[len("sha256:") : ]}}],
         "predicateType": "https://slsa.dev/provenance/v1",
-        "predicate": {},
+        "predicate": predicate,
     }
     payload = base64.b64encode(json.dumps(subject, sort_keys=True, separators=(",", ":")).encode()).decode()
     bundle = {
         "mediaType": "application/vnd.dev.sigstore.bundle+json;version=0.3",
-        "dsseEnvelope": {"payloadType": "application/vnd.in-toto+json", "payload": payload, "signatures": [{"sig": "fixture-signature"}]},
+        "dsseEnvelope": {"payloadType": "application/vnd.in-toto+json", "payload": payload, "signatures": [{"sig": "ZmFrZQ=="}]},
         "verificationMaterial": {"fixture": True},
     }
     return {
@@ -72,7 +94,7 @@ def github_attestation(attestation: dict, deployment_record: dict) -> dict:
         "subject_name": "b106-cold-attestation.json",
         "bundle_sha256": verifier.sha(verifier.canonical_json(bundle)),
         "bundle": bundle,
-        "verification": [{"verificationResult": {"signature": {"certificate": {"sourceRepository": verifier.REPO, "subjectAlternativeName": "https://github.com/HuGR/corelink-server/.github/workflows/perf-production-evidence.yml@refs/heads/main"}}, "verifiedTimestamps": [{"type": "tlog"}], "statement": subject}}],
+        "verification": [{"attestation": copy.deepcopy(bundle), "verificationResult": {"signature": {"certificate": {"sourceRepository": verifier.REPO, "subjectAlternativeName": "https://github.com/HuGR/corelink-server/.github/workflows/perf-production-evidence.yml@refs/heads/main"}}, "verifiedTimestamps": [{"type": "tlog"}], "statement": subject}}],
         "verification_policy": {
             "repository": verifier.REPO,
             "signer_workflow": f"{verifier.REPO}/.github/workflows/perf-production-evidence.yml",
@@ -103,7 +125,7 @@ def packet() -> dict:
                 "B-103": {"tenant_id": TENANT, "deployment": deployments["B-103"], "runs": runs},
                 "B-104": {"tenant_id": TENANT, "deployment": deployments["B-104"], "samples": samples104, "computed": {"median_ms": 24.5, "p90_ms": 28.1}},
                 "B-105": {"tenant_id": TENANT, "deployment": deployments["B-105"], "pairs": pairs},
-                "B-106": {"tenant_id": TENANT, "deployment": deployments["B-106"], "kv_ttl_seconds": verifier.KV_PAT_ROW_TTL_SECONDS, "cold_attestation": row("op-b106-mint", mint_operation_id="op-b106-mint", minted_at_epoch=NOW - 130, unused_since_epoch=NOW - 120, observed_at_epoch=NOW - 59, mint_raw_output_sha256=RAW64, mint_response_sha256=RAW64, mint_response_binding_sha256=RAW64, mint_request_id="req-b106-mint", pat_id="pat-b106", token_id="tok-b106", expires_ms=(NOW + 300) * 1000, token_fingerprint="sha256:" + ZERO64, attestation_source={"kind": "github_actions_run", "workflow": "perf-production-evidence", "repository": verifier.REPO, "run_id": "123456789", "attempt": "1", "event": "workflow_dispatch", "head_sha": SHA, "started_at": deployments["B-106"]["github_run_started_at"]}), "cold": row("op-b106-cold", status=404, authenticated=True, auth_source="d1", colo="GRU", response_request_id="req-b106-cold", auth_ms=40, raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64), "warm_control": row("op-b106-warm", status=404, authenticated=True, auth_source="kv", colo="GRU", response_request_id="req-b106-warm", raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64)},
+                "B-106": {"tenant_id": TENANT, "deployment": deployments["B-106"], "kv_ttl_seconds": verifier.KV_PAT_ROW_TTL_SECONDS, "cold_attestation": row("op-b106-mint", mint_operation_id="op-b106-mint", minted_at_epoch=NOW - 130, unused_since_epoch=NOW - 120, observed_at_epoch=NOW - 59, mint_raw_output_sha256=RAW64, mint_response_sha256=RAW64, mint_response_binding_sha256=RAW64, mint_request_id="req-b106-mint", pat_id="pat-b106", token_id="tok-b106", expires_ms=(NOW + 300) * 1000, token_fingerprint="sha256:" + ZERO64, attestation_source={"kind": "github_actions_run", "workflow": "perf-production-evidence", "repository": verifier.REPO, "run_id": "123456789", "attempt": "1", "event": "workflow_dispatch", "ref": "refs/heads/main", "head_sha": SHA, "started_at": deployments["B-106"]["github_run_started_at"]}), "cold": row("op-b106-cold", status=404, authenticated=True, auth_source="d1", colo="GRU", response_request_id="req-b106-cold", auth_ms=40, raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64), "warm_control": row("op-b106-warm", status=404, authenticated=True, auth_source="kv", colo="GRU", response_request_id="req-b106-warm", auth_ms=40, raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64)},
                 "B-107": {"tenant_id": TENANT, "deployment": deployments["B-107"], "samples": [dict(s, method="PUT", status=200, payload_bytes=1024) for s in samples107], "computed": {"p50_ms": 30, "p90_ms": 30, "p99_ms": 30}},
                 "B-108": b108,
             }}
@@ -170,7 +192,7 @@ def collector_wire_and_join_round_trip() -> None:
         deployment_record = evidence["items"]["B-108"]["deployment"]
         context = {"schema": "corelink.performance-evidence.context.v1", "repository": verifier.REPO,
                    "environment": "production", "source_head": SHA, "github_event": "workflow_dispatch",
-                   "github_run_id": "123456789", "github_run_attempt": "1", "github_run_started_at": deployment_record["github_run_started_at"], "github_deployment_id": "987654321", "deployment_id": deployment_record["deployment_id"],
+                   "github_run_id": "123456789", "github_run_attempt": "1", "github_run_started_at": deployment_record["github_run_started_at"], "github_ref": "refs/heads/main", "github_deployment_id": "987654321", "deployment_id": deployment_record["deployment_id"],
                    "provider": "cloudflare", "provider_commit": SHA, "provider_record": deployment_record["provider_record"],
                    "provider_blob_sha256": RAW64}
         measurements = {"tenant_id": TENANT, "items": {item: evidence["items"][item] for item in ("B-102", "B-103", "B-104", "B-106", "B-107")}}
@@ -277,6 +299,40 @@ def main() -> int:
     expect_error(lambda p: p["items"]["B-107"]["samples"][0].update(storage_total_ms=31), "B107 phase math")
     expect_error(lambda p: p["items"]["B-108"]["source_binding"].update(blob_sha256="b" * 64), "B108 deployed blob")
     expect_error(lambda p: p["items"]["B-104"]["samples"][0].update(operation_id=p["items"]["B-104"]["samples"][1]["operation_id"]), "duplicate operation")
+    expect_error(lambda p: p["items"]["B-104"].pop("computed"), "B104 derived percentiles")
+    expect_error(lambda p: p["items"]["B-104"]["computed"].update(p90_ms=999), "B104 p90 recomputation")
+    def wrong_b105_revision(p: dict) -> None:
+        for pair in p["items"]["B-105"]["pairs"]:
+            pair["control"]["revision"] = pair["treatment"]["revision"] = "0" * 40
+    expect_error(wrong_b105_revision, "B105 deployed SHA binding")
+    def wrong_deployed_sha(p: dict) -> None:
+        parent = subprocess.run(("git", "rev-parse", f"{SHA}^"), cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+        for item in verifier.ITEMS:
+            d = p["items"][item]["deployment"]
+            d["deployed_commit"] = d["version"] = parent
+            d["provider_record"]["commit"] = parent
+        source = subprocess.run(("git", "show", f"{parent}:{verifier.SOURCE}"), cwd=ROOT, capture_output=True, check=True).stdout
+        p["items"]["B-108"]["source_binding"].update(commit=parent, blob_sha256="sha256:" + hashlib.sha256(source).hexdigest())
+    expect_error(wrong_deployed_sha, "exact deployed SHA")
+    def wrong_attestation_san(p: dict) -> None:
+        p["items"]["B-106"]["github_attestation"]["verification"][0]["verificationResult"]["signature"]["certificate"]["subjectAlternativeName"] = "https://github.com/HuGR/corelink-server/.github/workflows/perf-production-evidence.yml@refs/heads/evil"
+    expect_error(wrong_attestation_san, "exact signer workflow ref")
+    def wrong_attestation_invocation(p: dict) -> None:
+        p["items"]["B-106"]["github_attestation"]["verification"][0]["verificationResult"]["statement"]["predicate"]["runDetails"]["metadata"]["invocationId"] = "https://github.com/HuGR/corelink-server/actions/runs/1/attempts/1"
+    expect_error(wrong_attestation_invocation, "exact attested run")
+    def wrong_attestation_subject_name(p: dict) -> None:
+        attestation = p["items"]["B-106"]["github_attestation"]
+        bundle = attestation["bundle"]
+        subject = json.loads(base64.b64decode(bundle["dsseEnvelope"]["payload"]))
+        subject["subject"][0]["name"] = "other.json"
+        bundle["dsseEnvelope"]["payload"] = base64.b64encode(json.dumps(subject, sort_keys=True, separators=(",", ":")).encode()).decode()
+        attestation["bundle_sha256"] = verifier.sha(verifier.canonical_json(bundle))
+    expect_error(wrong_attestation_subject_name, "exact attested subject name")
+    def forged_dsse_signature(p: dict) -> None:
+        bundle = p["items"]["B-106"]["github_attestation"]["bundle"]
+        bundle["dsseEnvelope"]["signatures"][0]["sig"] = "Zm9yZ2Vk"
+        p["items"]["B-106"]["github_attestation"]["bundle_sha256"] = verifier.sha(verifier.canonical_json(bundle))
+    expect_error(forged_dsse_signature, "DSSE signature/bundle linkage")
     expect_error(lambda p: p["items"]["B-105"].update(password="redacted"), "secret-shaped field")
     collector_wire_and_join_round_trip()
     mint_wire_binding_round_trip()

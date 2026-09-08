@@ -53,6 +53,7 @@ def main() -> int:
         "run_id": context["github_run_id"],
         "attempt": context["github_run_attempt"],
         "event": context["github_event"],
+        "ref": context["github_ref"],
         "head_sha": context["source_head"],
         "started_at": context["github_run_started_at"],
     }
@@ -66,6 +67,7 @@ def main() -> int:
         "run_id": context["github_run_id"],
         "run_attempt": context["github_run_attempt"],
         "event": context["github_event"],
+        "ref": context["github_ref"],
         "head_sha": context["source_head"],
         "run_started_at": context["github_run_started_at"],
         "cold_attestation": attestation,

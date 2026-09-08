@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+from statistics import quantiles
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -29,6 +30,14 @@ AUTH_PHASE = re.compile(r'(?:^|[, ])auth;dur=[0-9]+(?:\.[0-9]+)?;desc="(l1|kv|d1
 # at least 61 seconds, even though the current L2 entry expires after 30 s.
 KV_PAT_ROW_TTL_SECONDS = 30
 COLD_IDLE_SECONDS = 61
+
+
+def percentile(values: list[float], p: float) -> float:
+    """Return the same inclusive percentile used by the packet verifier."""
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    return quantiles(ordered, n=100, method="inclusive")[int(p * 100) - 1]
 
 
 def mint_binding_sha256(attestation: dict[str, object]) -> str:
@@ -218,7 +227,17 @@ def main() -> int:
                      "raw_output_sha256": "sha256:" + hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()})
     result["items"]["B-103"] = {"tenant_id": args.tenant, "runs": runs}
     # B-104: ten authenticated 404s on random keys.
-    result["items"]["B-104"] = {"tenant_id": args.tenant, "samples": [call(args.base, args.tenant, args.token, "GET", op("b104"), uuid.uuid4().hex) for _ in range(10)]}
+    b104_samples = [call(args.base, args.tenant, args.token, "GET", op("b104"), uuid.uuid4().hex) for _ in range(10)]
+    b104_times = [float(row["elapsed_ms"]) for row in b104_samples]
+    ordered_b104 = sorted(b104_times)
+    result["items"]["B-104"] = {
+        "tenant_id": args.tenant,
+        "samples": b104_samples,
+        "computed": {
+            "median_ms": (ordered_b104[4] + ordered_b104[5]) / 2,
+            "p90_ms": percentile(b104_times, 0.90),
+        },
+    }
     # B-106: the real minted token must remain idle for a full revocation-cache
     # window before the cold request and same-colo warm control are observed.
     idle_started = time.time()

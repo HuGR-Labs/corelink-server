@@ -94,6 +94,7 @@ def main() -> int:
             "github_run_id": context["github_run_id"],
             "github_run_attempt": context["github_run_attempt"],
             "github_run_started_at": context["github_run_started_at"],
+            "github_ref": context["github_ref"],
             "github_deployment_id": context["github_deployment_id"],
             "provider_record": provider,
             "provider_blob_sha256": context["provider_blob_sha256"],

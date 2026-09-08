@@ -87,6 +87,7 @@ jobs:
           TENANT_ID: ${{ inputs.tenant_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           GITHUB_RUN_STARTED_AT: ${{ steps.github-run.outputs.started_at }}
+          GITHUB_REF: ${{ github.ref }}
         run: |
           set -eu
           python3 scripts/collect_b102_b108_context.py \
@@ -153,8 +154,10 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --bundle "${B106_BUNDLE}" \
             --predicate-type https://slsa.dev/provenance/v1 \
-            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/perf-production-evidence.yml" \
+            --cert-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/perf-production-evidence.yml@${GITHUB_REF}" \
             --signer-digest "${GITHUB_SHA}" \
+            --source-digest "${GITHUB_SHA}" \
+            --source-ref "${GITHUB_REF}" \
             --format json > "${B106_VERIFICATION}"
 
       - name: Join canonical v2 evidence packet
