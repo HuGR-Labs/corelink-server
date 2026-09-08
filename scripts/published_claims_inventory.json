@@ -1158,7 +1158,7 @@
       "apps/docs/docs/trust/index.mdx": "f470caf5457de2aea7351227916697d1588de155654e5d2040706f5bf0579159",
       "apps/docs/docs/trust/iso27001.mdx": "b409cbb83e588d3244ac33576d1bb61e4addf0d84a270f2bb4b3e0a3116a8f1a",
       "apps/docs/docs/trust/pci-dss.mdx": "b79676b5e6fa7501409d7b319ea5b44dec24694259372b2732b460b0b015b620",
-      "apps/docs/docs/trust/subprocessors.mdx": "e8c84e290bd40c8b4c774268c5d42cf05f15ba42b5516398b9e01ba7a12ab352",
+      "apps/docs/docs/trust/subprocessors.mdx": "dc46db39ffc13ee4e5237bc940a435be9146b390ff3a7ba9ae4d31efdf07f061",
       "apps/docs/docs/tutorial/01-installation.mdx": "54400405bf3226560f466ad980d98cb15fc501fd4fb707801e4a3d6dcaada1a5",
       "apps/docs/docs/tutorial/02-first-pat.mdx": "adccd08219b6994b1e1ae40045959e03409c4105f91a82bf12805a946ef96915",
       "apps/docs/docs/tutorial/03-bazel-quickstart.mdx": "48e6abcd76b1652787730f22d183a1f982215eccd3033f0c677847d3ba712050",
@@ -1810,7 +1810,7 @@
       "legal/quarterly-legal-review-template.md": "755a783fcae1bc3d99c4d35f2bcc1d2b18b1e00d696ad47c025db4a8cd98f490",
       "legal/sla/CHANGELOG.md": "c61c21da3fb1a0d36da9e4e4ea4885448f7193dd11ce229ae8ba1ce2d9bfc185",
       "legal/sla/v1.0.0.md": "4b6e39a0891eecf32640e9815386436e155e3334cd655ea180ca6f3bc1af6d09",
-      "legal/sub-processors.md": "491dfcc3c788dd0b57f2cb8036acb99c4145673f31ac0a9be50322e7ae9c74b1",
+      "legal/sub-processors.md": "b898ffaab17ca0ceb2de7a5868d919d9b4a52564c5d9ff49d24151eeef3501a4",
       "legal/tia-template.md": "f4966b0697fb63bc80cb79314da2f5a60f26a6507b3cdb2aff0552c3d27cb733",
       "marketing/corelink-feature-catalog.html": "60e6fa2b89ace82e0d78cedc63089cbf8117e1dc021967afba5caed4b5183fb5",
       "marketing/corelink-features-overview.html": "32464c6cf3cab69944eb41232ab4fc24a1eee87a7b324d3a6ccb94d2e3e57d3c",
@@ -1824,7 +1824,7 @@
       "marketing/launch/BLOG-POSTS/03-audit-chain-merkle-proofs.md": "f3911ea8df4dd86602f16057dc610257b4ab6ca61228a0da75706fe3eed79203",
       "marketing/launch/BLOG-POSTS/04-multi-region-residency.md": "9c4bc5b5c7eb2cdb34e1b6124c61de815bcaf6396ebbec24756d0beda147aedb",
       "marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md": "d856ed606b4a83762ef82bba8515e94e80a46bb353749083fc1fb9f3844bf8e3",
-      "marketing/launch/CASE-STUDIES/enterprise-byok.md": "618449045560bd0787460d3dc34eb21a4a77076e96a6a3b312c3d1529407f084",
+      "marketing/launch/CASE-STUDIES/enterprise-byok.md": "cef63f996a9450a9376fb361d7f4ca035802d71440f8c74dd5712d3ccd6ad2bf",
       "marketing/launch/CASE-STUDIES/forge-team-tier.md": "7d65451690bb6e6c9f7dcb306fe582ec08b278bc26959e2b5ad7fcaa8d98a57e",
       "marketing/launch/CASE-STUDIES/oss-team-tier.md": "5bd2a376b0dd60b7841dd41474e5e865d80f542c962ac16703377a0d8e667aed",
       "marketing/launch/COORDINATION/LAUNCH-RUNBOOK.md": "97004336d1c45fec725455df956c699b90379002e3951caebc6e38bdbb2844d2",
@@ -3035,12 +3035,14 @@
       "5d692499785078f379a0ca40",
       "4a4a95f463a43054788d3c10",
       "2a09f7056afff1c6b714529c",
-      "cb2769d90c045528fc0e11bb",
+      "a12ddff08751cd4f6dabf0bb",
       "b182ea24864a19bbb20cdab6",
-      "a556485dbee8aad934b47d36",
-      "ba05bed1855b1dc9392646b2",
-      "0078dd53cbb9df0ab7b96eb0",
-      "56a832a31d2e8db685ddacfc",
+      "78e0bbc2448e56ea198d0850",
+      "4fa1f8c7b758598ad542b01e",
+      "24b176a001ed7b973af6c78c",
+      "9aa3ae361f634e349a942ebb",
+      "73fb58e559eaae09be51bec5",
+      "0bbca87b20726b2869d41f9a",
       "0c85d002e2e479d7ef3928cb",
       "1d83963962c0505fab0d0465",
       "1dc757fbc2f7cb635f9f18e6",
@@ -12767,11 +12769,11 @@
       "triage": "untriaged"
     },
     {
-      "id": "cb2769d90c045528fc0e11bb",
+      "id": "a12ddff08751cd4f6dabf0bb",
       "path": "marketing/launch/CASE-STUDIES/enterprise-byok.md",
       "line": 4,
       "term": "BYOK",
-      "text": "> Trace: spec contract S-20 \u00a75.2 R-S20-4 \u00b7 WI-S20-004 lighthouse customer attestations (1 enterprise BYOK slot) \u00b7 WI-S20-008 \u00a72.1.3 (case study #3) \u00b7 CAP-GA-004 \u00b7 WI-S20-005 DPA signed.",
+      "text": "> Trace: spec contract S-20 \u00a75.2 R-S20-4 \u00b7 WI-S20-004 lighthouse customer attestations (1 enterprise BYOK slot) \u00b7 WI-S20-008 \u00a72.1.3 (case study #3) \u00b7 CAP-GA-004 \u00b7 WI-S20-005 DPA signature gate.",
       "triage": "untriaged"
     },
     {
@@ -12783,35 +12785,51 @@
       "triage": "untriaged"
     },
     {
-      "id": "a556485dbee8aad934b47d36",
+      "id": "78e0bbc2448e56ea198d0850",
       "path": "marketing/launch/CASE-STUDIES/enterprise-byok.md",
-      "line": 33,
+      "line": 37,
       "term": "BYOK",
-      "text": "The customer selected CoreLink as their enterprise BYOK lighthouse based on:",
+      "text": "path satisfies `INV-BYOK-CRYPTO-SOVEREIGNTY`.",
       "triage": "untriaged"
     },
     {
-      "id": "ba05bed1855b1dc9392646b2",
+      "id": "4fa1f8c7b758598ad542b01e",
       "path": "marketing/launch/CASE-STUDIES/enterprise-byok.md",
-      "line": 35,
-      "term": "BYOK",
-      "text": "- **Customer-managed kill switch** semantics as a structural property (`INV-BYOK-CRYPTO-SOVEREIGNTY`), not a configurable opt-in.",
-      "triage": "untriaged"
-    },
-    {
-      "id": "0078dd53cbb9df0ab7b96eb0",
-      "path": "marketing/launch/CASE-STUDIES/enterprise-byok.md",
-      "line": 38,
+      "line": 40,
       "term": "pentest",
-      "text": "- **Internal adversarial-review and sealed cargo-fuzz summaries** available under NDA; no external pentest has been commissioned.",
+      "text": "- Whether an external pentest is commissioned; no such assessment exists for",
       "triage": "untriaged"
     },
     {
-      "id": "56a832a31d2e8db685ddacfc",
+      "id": "24b176a001ed7b973af6c78c",
       "path": "marketing/launch/CASE-STUDIES/enterprise-byok.md",
-      "line": 46,
+      "line": 49,
       "term": "BYOK",
-      "text": "BYOK provisioning used **[CUSTOMER_KMS_PROVIDER]** (one of AWS KMS / GCP KMS / Azure Key Vault / HashiCorp Vault). The customer's security team performed an unwrap-call audit of CoreLink's KMS access pattern using their own KMS audit logs as the source of truth \u2014 not CoreLink's logs. The audit reconciled cleanly.",
+      "text": "If the future capability is enabled, BYOK provisioning would use",
+      "triage": "untriaged"
+    },
+    {
+      "id": "9aa3ae361f634e349a942ebb",
+      "path": "marketing/launch/CASE-STUDIES/enterprise-byok.md",
+      "line": 51,
+      "term": "BYOK",
+      "text": "HashiCorp Vault). No customer KMS audit or CoreLink BYOK provisioning exists",
+      "triage": "untriaged"
+    },
+    {
+      "id": "73fb58e559eaae09be51bec5",
+      "path": "marketing/launch/CASE-STUDIES/enterprise-byok.md",
+      "line": 61,
+      "term": "BYOK",
+      "text": "- No BYOK kill-switch drill has been executed and no customer-side artifact",
+      "triage": "untriaged"
+    },
+    {
+      "id": "0bbca87b20726b2869d41f9a",
+      "path": "marketing/launch/CASE-STUDIES/enterprise-byok.md",
+      "line": 70,
+      "term": "BYOK",
+      "text": "> enterprise customer has completed the BYOK drill, supplied attributable",
       "triage": "untriaged"
     },
     {

@@ -1,7 +1,7 @@
 # Case Study — [ENTERPRISE_CUSTOMER_NAME or SECTOR_DESCRIPTOR]: Enterprise BYOK on CoreLink
 
 > **DRAFT — pending Fortune-500 lighthouse engagement confirmation. NOT FOR PUBLICATION until customer-approved + Legal-cleared for external distribution.**
-> Trace: spec contract S-20 §5.2 R-S20-4 · WI-S20-004 lighthouse customer attestations (1 enterprise BYOK slot) · WI-S20-008 §2.1.3 (case study #3) · CAP-GA-004 · WI-S20-005 DPA signed.
+> Trace: spec contract S-20 §5.2 R-S20-4 · WI-S20-004 lighthouse customer attestations (1 enterprise BYOK slot) · WI-S20-008 §2.1.3 (case study #3) · CAP-GA-004 · WI-S20-005 DPA signature gate.
 > Status: **DRAFT — pending Fortune-500 enterprise engagement (sector candidates: financial services / FedRAMP-ready / EU regulated). Sanitized variant under NDA available for sales.**
 
 ---
@@ -30,40 +30,51 @@ The customer's existing build infrastructure was a hybrid of self-hosted caches 
 
 ## Why CoreLink
 
-The customer selected CoreLink as their enterprise BYOK lighthouse based on:
+No customer has selected CoreLink for this lighthouse yet. The following are
+the proposed evaluation criteria, not customer results or shipped capabilities:
 
-- **Customer-managed kill switch** semantics as a structural property (`INV-BYOK-CRYPTO-SOVEREIGNTY`), not a configurable opt-in.
-- **Verifiable crypto-erasure** with NIST SP 800-88 Rev. 1 crypto-erase classification (`INV-ERASURE-ATTESTATION-SIGNED`); a customer-served **Ed25519 erasure attestation** is on the near-term roadmap.
-- **`INV-REGION-NO-CROSS-LEAK`** as a TLA+-verified property in the tenant isolation specification.
-- **Internal adversarial-review and sealed cargo-fuzz summaries** available under NDA; no external pentest has been commissioned.
-- **DPA + SCC modules** Legal-reviewed by external EU privacy counsel (per WI-S20-005) before signature.
-- **24/7 incident response** with sub-five-minute synthetic page response sustained 30 days pre-GA (`CAP-GA-006`).
+- Whether a future, separately enabled customer-managed key and kill-switch
+  path satisfies `INV-BYOK-CRYPTO-SOVEREIGNTY`.
+- Whether a future erasure-attestation implementation satisfies
+  `INV-ERASURE-ATTESTATION-SIGNED` with current evidence.
+- Whether an external pentest is commissioned; no such assessment exists for
+  this draft.
+- The residency and incident-response evidence a candidate requires.
+- The DPA/SCC review and signature path required by external counsel.
 
 ## The migration
 
 The customer's migration was a phased rollout across **[ROLLOUT_PHASES]** CI environments, beginning with a low-risk pre-production CI tier and expanding to the regulated production-equivalent CI estate over **[MIGRATION_DURATION]**.
 
-BYOK provisioning used **[CUSTOMER_KMS_PROVIDER]** (one of AWS KMS / GCP KMS / Azure Key Vault / HashiCorp Vault). The customer's security team performed an unwrap-call audit of CoreLink's KMS access pattern using their own KMS audit logs as the source of truth — not CoreLink's logs. The audit reconciled cleanly.
+If the future capability is enabled, BYOK provisioning would use
+**[CUSTOMER_KMS_PROVIDER]** (one of AWS KMS / GCP KMS / Azure Key Vault /
+HashiCorp Vault). No customer KMS audit or CoreLink BYOK provisioning exists
+for this draft.
 
-DPA + SCC signature was completed pre-migration per WI-S20-005 (Legal externo: Cooley / DLA Piper / Bird & Bird).
+No DPA or SCC signature exists for this draft. Counsel and the customer would
+need to execute the applicable instrument before any migration.
 
 ## 30-day observation window
 
-- SLA claim met every day across SLOs in the GA SLO catalog.
+- No observation window has started; no SLA result is available.
 - **[INCIDENT_SUMMARY]** — placeholder pending observation window completion.
-- **Kill-switch drill** executed as a contractual test. The customer disabled their KEK in their KMS, observed CoreLink data path hard-fail within the documented DEK-cache expiry bound, then re-enabled. The drill produced a customer-side artifact (KMS audit log + CoreLink data-path response trace) that the customer's security team has retained.
-- **Erasure-attestation replay** executed against a synthetic in-scope tenant subset. The customer's auditor independently verified the Ed25519 signature against CoreLink's published signing key.
+- No BYOK kill-switch drill has been executed and no customer-side artifact
+  exists.
+- No erasure-attestation replay or independent auditor verification exists.
 
-## Enterprise lighthouse testimonial (sanitized)
+## Enterprise lighthouse testimonial (not yet collected)
 
-> "Customer-managed kill switch is not a feature for us; it is a procurement precondition. CoreLink is the only cache vendor we evaluated that exposed a verifiable Ed25519 erasure attestation we could replay into our own audit pipeline. The kill-switch drill produced the artifact our compliance team needed; the residency story survived our Schrems II evaluation; the DPA was Legal-reviewed by external counsel before we saw it."
->
-> — **[ENTERPRISE_CUSTOMER_TITLE]**, **[ENTERPRISE_CUSTOMER_NAME or SANITIZED_DESCRIPTOR]**
-> _Quote DRAFT — sanitized; sharable in sales conversations under NDA pending customer engagement + customer approval._
+> **No customer testimonial exists yet.** The former paragraph was illustrative
+> copy, not a statement made by an identified customer. Do not attribute it,
+> circulate it as a quote, or use it in a sales conversation until a real
+> enterprise customer has completed the BYOK drill, supplied attributable
+> evidence, and approved the exact wording for the intended audience.
 
 ## Sales availability
 
-A non-sanitized variant of this case study, including the customer's name and quantitative SLA / latency / hit-rate deltas, is available under NDA for active enterprise sales conversations. Contact: `sales@humangr.com`.
+No customer-specific or sanitized variant is available for sales. A future
+variant may be prepared only after the engagement, evidence, customer approval,
+and Legal clearance described above. Contact: `sales@humangr.com`.
 
 ---
 
@@ -73,4 +84,5 @@ A non-sanitized variant of this case study, including the customer's name and qu
 - Status DRAFT pending engagement + customer approval + Legal clearance per WI-S20-005 cumulative.
 - Sanitized variant maintained for NDA-gated sales distribution.
 - All metrics are placeholders. No specific dollar amounts. No unverified compliance claims.
-- The customer kill-switch drill and erasure-attestation replay narratives describe the intended observation methodology; specific incident counts pending observation window completion.
+- The kill-switch and erasure-attestation bullets now state that no execution or
+  evidence exists; they are not a methodology claim or a customer result.
