@@ -5,7 +5,7 @@ doc_status: "ACTIVE"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-09-05"
-updated: "2026-09-05"
+updated: "2026-09-08"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -35,6 +35,17 @@ The population is bound server-side by requesting
 Therefore unrelated `backlog-verify` and Dependabot runs cannot be counted as
 this finding. The verifier also checks every returned run's `workflow_id` as a
 second binding.
+
+## Read-only refresh (2026-09-08)
+
+The same workflow-scoped query was repeated with the closed UTC bounds and
+returned the same **278 unique runs**, all with conclusion `startup_failure`.
+Workflow metadata still identifies ID `303501160` as path `BuildFailed` with
+state `deleted`. The refresh fetched no log body, dispatched or reran nothing,
+and did not change the owner-action HOLD: the stale emitter remains
+unidentified and uncorrected. The retained snapshot therefore refreshes its
+`last_refreshed` timestamp while preserving the exact closed-window population
+and the explicit `closure_permitted: false` boundary.
 
 This is a separate Actions control-plane finding surfaced during B-152 work. It
 does not explain or cure the three historical 600-second job deaths: those are

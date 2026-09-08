@@ -57,6 +57,14 @@ async fn pre_body_guards_reject_oversized_tenant_before_cloning() {
     assert_eq!(read.status(), StatusCode::UNAUTHORIZED);
 }
 
+fn test_batch_read_admission() -> Arc<tokio::sync::Semaphore> {
+    Arc::new(tokio::sync::Semaphore::new(CAS_READ_BATCH_MAX_IN_FLIGHT))
+}
+
+fn test_read_budget() -> Arc<tokio::sync::Semaphore> {
+    Arc::new(tokio::sync::Semaphore::new(CAS_READ_GLOBAL_PERMITS))
+}
+
 fn fixture() -> CasRouteState {
     let audit = Arc::new(InMemoryAuditSink::new());
     let sli = Arc::new(InMemorySliObserver::new());
@@ -75,6 +83,8 @@ fn fixture() -> CasRouteState {
         pat_gate: None,
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_budget: test_read_budget(),
+        batch_read_admission: test_batch_read_admission(),
         usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     }
 }
@@ -102,6 +112,8 @@ fn fixture_with_tombstone(tenant: &str, hash: &str) -> CasRouteState {
         pat_gate: None,
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_budget: test_read_budget(),
+        batch_read_admission: test_batch_read_admission(),
         usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     }
 }
@@ -125,6 +137,8 @@ fn fixture_unavailable() -> CasRouteState {
         pat_gate: None,
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_budget: test_read_budget(),
+        batch_read_admission: test_batch_read_admission(),
         usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     }
 }

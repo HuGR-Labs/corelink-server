@@ -35,6 +35,9 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::Client;
@@ -96,6 +99,61 @@ pub struct R2S3Client {
     /// does not grow without bound.
     delete_locks:
         std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+    /// Test-only dispatch recorder used to prove audit gating without a live
+    /// R2 endpoint. It is absent from production builds.
+    #[cfg(test)]
+    storage_recorder: Option<Arc<StorageDispatchRecorder>>,
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct StorageDispatchRecorder {
+    pub calls: AtomicUsize,
+    pub premature: AtomicBool,
+    pub audit_committed: AtomicBool,
+    successful: AtomicBool,
+    body: std::sync::Mutex<Option<Vec<u8>>>,
+}
+
+#[cfg(test)]
+impl StorageDispatchRecorder {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self {
+            calls: AtomicUsize::new(0),
+            premature: AtomicBool::new(false),
+            audit_committed: AtomicBool::new(false),
+            successful: AtomicBool::new(false),
+            body: std::sync::Mutex::new(None),
+        })
+    }
+
+    pub(crate) fn successful(body: Vec<u8>) -> Arc<Self> {
+        let recorder = Self::new();
+        recorder.successful.store(true, Ordering::SeqCst);
+        if let Ok(mut stored) = recorder.body.lock() {
+            *stored = Some(body);
+        }
+        recorder
+    }
+
+    fn record(&self) {
+        if !self.audit_committed.load(Ordering::SeqCst) {
+            self.premature.store(true, Ordering::SeqCst);
+        }
+        self.calls.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn should_succeed(&self) -> bool {
+        self.successful.load(Ordering::SeqCst)
+    }
+
+    fn body(&self) -> Vec<u8> {
+        self.body
+            .lock()
+            .ok()
+            .and_then(|stored| stored.clone())
+            .unwrap_or_default()
+    }
 }
 
 /// Outcome of [`R2S3Client::get_capped`].
@@ -118,4 +176,130 @@ pub enum CappedGet {
         /// Size the storage layer reported, when it reported one.
         actual_bytes: Option<u64>,
     },
+}
+
+/// The narrow body interface keeps the bounded collector testable with a
+/// deterministic stream while the production adapter wraps AWS's
+/// `ByteStream` below.
+type R2BodyChunkFuture<'a> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Option<Result<bytes::Bytes, String>>> + Send + 'a>,
+>;
+
+trait R2BodyChunkStream {
+    fn next_chunk<'a>(&'a mut self) -> R2BodyChunkFuture<'a>;
+}
+
+struct R2SdkBodyStream(aws_sdk_s3::primitives::ByteStream);
+
+impl R2BodyChunkStream for R2SdkBodyStream {
+    fn next_chunk<'a>(&'a mut self) -> R2BodyChunkFuture<'a> {
+        Box::pin(async move {
+            self.0
+                .next()
+                .await
+                .map(|chunk| chunk.map_err(|error| error.to_string()))
+        })
+    }
+}
+
+#[cfg(test)]
+struct R2TestStalledAfterHeaders {
+    emitted: bool,
+}
+
+#[cfg(test)]
+impl R2BodyChunkStream for R2TestStalledAfterHeaders {
+    fn next_chunk<'a>(&'a mut self) -> R2BodyChunkFuture<'a> {
+        Box::pin(async move {
+            if !self.emitted {
+                self.emitted = true;
+                Some(Ok(bytes::Bytes::from_static(b"headers-arrived")))
+            } else {
+                std::future::pending::<Option<Result<bytes::Bytes, String>>>().await
+            }
+        })
+    }
+}
+
+impl R2S3Client {
+    /// Bound the three phases that can otherwise leave a synchronous CAS
+    /// reader parked forever when R2 stops making progress. The operation
+    /// timeout is deliberately longer than the per-read timeout because a
+    /// large object may legitimately need several read windows, while still
+    /// giving cancellation a finite unwind point.
+    pub(crate) const R2_CONNECT_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(2);
+    pub(crate) const R2_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    pub(crate) const R2_OPERATION_ATTEMPT_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(30);
+    pub(crate) const R2_OPERATION_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(60);
+    /// Body-level deadlines remain necessary after `GetObject` headers arrive:
+    /// the SDK operation timeout does not reliably cover a stalled stream.
+    pub(crate) const R2_BODY_IDLE_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(30);
+    pub(crate) const R2_BODY_TOTAL_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(60);
+
+    #[cfg(test)]
+    pub(crate) fn test_post_header_body_timeout() -> Result<CappedGet, String> {
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| {
+            handle.block_on(Self::collect_capped_body_with_deadlines(
+                "batch-post-header-stall",
+                1024,
+                R2TestStalledAfterHeaders { emitted: false },
+                std::time::Duration::from_millis(10),
+                std::time::Duration::from_millis(50),
+            ))
+        })
+    }
+
+    async fn collect_capped_body<S: R2BodyChunkStream>(
+        key: &str,
+        max_bytes: u64,
+        body: S,
+    ) -> Result<CappedGet, String> {
+        Self::collect_capped_body_with_deadlines(
+            key,
+            max_bytes,
+            body,
+            Self::R2_BODY_IDLE_TIMEOUT,
+            Self::R2_BODY_TOTAL_TIMEOUT,
+        )
+        .await
+    }
+
+    async fn collect_capped_body_with_deadlines<S: R2BodyChunkStream>(
+        key: &str,
+        max_bytes: u64,
+        mut body: S,
+        idle_timeout: std::time::Duration,
+        total_timeout: std::time::Duration,
+    ) -> Result<CappedGet, String> {
+        let collect = async {
+            let mut bytes = Vec::new();
+            let mut actual_bytes = 0_u64;
+            loop {
+                let next = tokio::time::timeout(idle_timeout, body.next_chunk())
+                    .await
+                    .map_err(|_| format!("R2 body idle timeout for key {key}"))?;
+                let Some(chunk) = next else {
+                    return Ok(CappedGet::Found(bytes));
+                };
+                let chunk = chunk
+                    .map_err(|error| format!("R2 body read failed for key {key}: {error}"))?;
+                actual_bytes = actual_bytes.saturating_add(chunk.len() as u64);
+                if actual_bytes > max_bytes {
+                    return Ok(CappedGet::TooLarge {
+                        actual_bytes: Some(actual_bytes),
+                    });
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+        };
+        tokio::time::timeout(total_timeout, collect)
+            .await
+            .map_err(|_| format!("R2 body total timeout for key {key}"))?
+    }
 }

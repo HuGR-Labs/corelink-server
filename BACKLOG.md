@@ -1485,9 +1485,9 @@ owner: tl
 status: done
 source-document: "PR containment audit #1550/#1558"
 source-locator: "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md:3-20"
-finding-title: "canonical WP ledger must stay aligned with the dense 324-item population"
+finding-title: "canonical WP ledger must stay aligned with the dense backlog population"
 problem: "the ledger verifier, catalogs and pending changelogs once described an obsolete pre-D03 baseline instead of the delivered main base and live owner population"
-evidence: "python3 scripts/verify_backlog_wp_ledger.py after final reconciliation: 337 items, 16 open, 282 done, 39 parked; the prior 324/16/269/39 population is retained only as the obsolete baseline this item corrected; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+evidence: "python3 scripts/verify_backlog_wp_ledger.py after final reconciliation: 351 items, 16 open, 297 done, 38 parked; the prior 324/16/269/39 population is retained only as the obsolete baseline this item corrected; immutable base main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
 acceptance: "the ledger and catalogs name delivered main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266 as the immutable ancestry base, retain 7b992e9db123abeb76381b1c1337011692f2e834 only as D03 provenance, reconcile live counts, and fail closed on wrong or unrelated ancestry"
 verify: |
   set -euo pipefail
@@ -1500,14 +1500,14 @@ verify: |
   sys.path.insert(0, "scripts")
   import verify_backlog_wp_ledger as ledger
   text = Path("BACKLOG.md").read_text()
-  assert len(ledger.all_backlog_ids(text)) == 337
+  assert len(ledger.all_backlog_ids(text)) == 351
   assert len(ledger.open_backlog_ids(text)) == 16
-  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 282, "parked": 39}
+  assert ledger.backlog_status_counts(text) == {"open": 16, "done": 297, "parked": 38}
   assert ledger.LEDGER_BASE_REF == "main"
   assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
   PY
 verify-means: |
-  done — the live verifier proves 16/16 open-ID ownership, 337 total records,
+  done — the live verifier proves 16/16 open-ID ownership, 351 total records,
   exact catalog populations, predecessor ordering, editable/workflow ownership,
   and the D03 base ref/SHA relationship. The focused parser suite remains
   load-bearing: stale metadata, a tampered base and missing CI predecessor are
@@ -1812,7 +1812,7 @@ source-locator: ".claude/skills/techlead/SKILL.md:L2.10; reports/b326-loc-cap-ba
 finding-title: "new Rust and TypeScript source files had no CI-enforced 500-line hard cap"
 problem: "The Tech Lead charter required every new .rs/.ts/.tsx file to stay at or below 500 LOC, but its shell example depended on a locally available origin/main ref and was not a stable CI contract. A shallow or remote-less checkout could skip the population entirely or report an indeterminate result."
 evidence: "The committed origin/main-equivalent path manifest is pinned to main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266; the stdlib verifier classifies tracked source paths absent from that manifest, rejects unmarked files over 500 LOC, reports the 200-LOC advisory band, and passes its mutation/self-tests. Related charter, spec/frontmatter and secrets-matrix findings are closed in the cumulative B-326 tree."
-acceptance: "A reviewed baseline manifest is required and hash-checked; the tracked added .rs/.ts/.tsx population is non-empty and closed; missing, malformed, stale or empty populations fail closed; generated exceptions require an explicit @generated marker; any unmarked file over 500 LOC is a hard failure; workflow paths and both PR/push steps run the verifier and its mutations; B-155 and the D03 ledgers report 337 total, 282 done, 39 parked, 16 open (0 TL-open) and 316 command-bearing records."
+acceptance: "A reviewed baseline manifest is required and hash-checked; the tracked added .rs/.ts/.tsx population is non-empty and closed; missing, malformed, stale or empty populations fail closed; generated exceptions require an explicit @generated marker; any unmarked file over 500 LOC is a hard failure; workflow paths and both PR/push steps run the verifier and its mutations; B-155 and the D03 ledgers report 351 total, 297 done, 38 parked, 16 open (0 TL-open) and 330 command-bearing records."
 verify: python3 scripts/verify_b326_loc_cap.py --self-test
 verify-means: |
   done — the verifier uses only the committed baseline manifest and local tracked
@@ -2118,10 +2118,10 @@ repo: corelink-server
 owner: tl
 status: done
 source-document: "D03 postmerge B-326 proof"
-source-locator: "crates/corelink-container/src/routes/cas.rs; crates/corelink-container/src/routes/cas/tests_batch_part2.rs; crates/corelink-container/src/routes/cas/tests_batch_write_part2.rs"
+source-locator: "crates/corelink-container/src/routes/cas.rs; crates/corelink-container/src/routes/cas/tests_batch_part2.rs; crates/corelink-container/src/routes/cas/tests_batch_cancellation_part3.rs; crates/corelink-container/src/routes/cas/tests_batch_write_part2.rs"
 finding-title: "final CAS test module exceeded the mechanically enforced 500-line hard cap"
 problem: "The final cancellation tests landed after the B-326 source split and grew tests_batch_part2.rs to 590 lines, so the postmerge B-326 guard correctly rejected the delivered tree."
-evidence: "Commit 3e4c263af splits the module into 410-line batch-read/cancellation and 179-line batch-write files; the B-326 guard/self-test passes and the focused CAS batch test population remains 10/10 green."
+evidence: "Commit 3e4c263af split batch-write coverage; the final cancellation split keeps every fragment below 500 lines. The B-326 guard/self-test passes and the hardened B-337 census proves all 30 registered CAS batch tests remain present exactly once."
 acceptance: "Every new CAS source file is at most 500 lines without a generated exception or lint suppression; all preexisting batch tests remain registered exactly once; the focused tests and B-326 mutation-backed closed-population guard pass; production behavior is unchanged."
 verify: |
   python3 scripts/verify_b326_loc_cap.py --self-test
@@ -2129,9 +2129,317 @@ verify: |
 verify-means: |
   done — the enforced population reports both split files below 500 lines and
   still rejects an oversized mutation. The focused Rust population executes all
-  ten batch tests once, preserving read ordering, cancellation ownership and
+  30 batch tests once, preserving read ordering, cancellation ownership and
   batch-write behavior while the diff touches test module wiring only.
-last-verified: 2026-09-07
+last-verified: 2026-09-08
+```
+
+### B-338 — untrusted pull requests could execute backlog verifiers on the persistent runner
+
+```backlog
+id: B-338
+repo: corelink-server
+owner: tl
+status: done
+source-document: "post-delivery D01 adversarial audit"
+source-locator: ".github/workflows/backlog-verify.yml; scripts/backlog_verify.py; tests/test_backlog_verify_trust_boundary.py"
+finding-title: "pull-request backlog verification crossed the trusted-code boundary"
+problem: "Candidate-controlled verify commands and helpers could execute on the persistent runner with mutable PR checkout semantics, while the trusted control population was incomplete."
+evidence: "The pull_request_target lane now treats the immutable candidate SHA as data only, checks it with BASE-owned code, uses credentialless checkouts, preserves dense transition rules and closes direct plus dynamic-import control dependencies. Push/schedule semantic execution runs only trusted main bytes and strips runner tokens."
+acceptance: "No pull-request byte, verifier or shell fragment executes; both trees use immutable event SHAs; candidate paths are contained and non-symlinked; new IDs and transitions are structurally constrained; push/schedule retain trusted semantic and freshness verification without runner tokens."
+verify: |
+  python3 -m pytest -q tests/test_backlog_verify_trust_boundary.py tests/test_pull_request_target_spawn_boundary.py
+  bash scripts/test_backlog_verify.sh
+verify-means: |
+  done — adversarial tests reject mutable refs, credential persistence, candidate
+  execution, control deletion and unresolved dynamic loaders, while stale B-001
+  remains detectable on the trusted push/schedule path.
+last-verified: 2026-09-08
+```
+
+### B-339 — native CAS sibling routes were absent from the published OpenAPI contract
+
+```backlog
+id: B-339
+repo: corelink-server
+owner: tl
+status: done
+source-document: "post-delivery D03 adversarial audit"
+source-locator: "openapi/corelink-v1.yaml; openapi/corelink-v1.json; apps/docs/static/openapi-corelink-v1.yaml; scripts/verify_b078_batch_read.py"
+finding-title: "native CAS batch-write and batch-exists routes were missing from OpenAPI"
+problem: "The server registered three native CAS batch routes but the published contract and guard covered only batch-read, allowing sibling routes and their 413/415/429 schemas to drift invisibly."
+evidence: "Canonical YAML, generated JSON, docs copy and embedded Worker spec now contain batch, batch-read and batch-exists with synchronized operation IDs, shared limits and response schemas; B078 closes all three registrations."
+acceptance: "All three native CAS batch routes remain synchronized across runtime registration and every published OpenAPI encoding, including media types, shared 413 shape, limits and terminal responses."
+verify: |
+  python3 scripts/openapi_sync.py --check
+  python3 scripts/verify_b078_batch_read.py
+  python3 -m pytest -q tests/test_b078_batch_read_contract.py
+verify-means: |
+  done — the synchronized contract and mutation suite reject removal or method,
+  response, schema and limit drift for each sibling route.
+last-verified: 2026-09-08
+```
+
+### B-340 — pre-tenant signup audits used a noncanonical future tenant identity
+
+```backlog
+id: B-340
+repo: corelink-server
+owner: tl
+status: done
+source-document: "post-delivery signup adversarial audit"
+source-locator: "crates/corelink-container/src/routes/signup.rs; crates/corelink-container/src/storage/d1_audit_sink.rs; crates/corelink-container/src/storage/d1_audit_sink/tests_signup.rs"
+finding-title: "signup denial and reservation audits were written before a tenant existed"
+problem: "Pre-tenant token, quota and reservation events used the requested future tenant as the audit partition, causing residency lookup failures to turn expected 401/429 outcomes into 503."
+evidence: "Pre-tenant events now use the canonical _public/wnam partition and retain the requested tenant only as correlation; D1-shaped tests cover denial, quota and reservation paths."
+acceptance: "Every audit emitted before tenant creation uses the public partition, preserves useful correlation, and cannot replace the route's intended authentication or rate-limit response with a residency failure."
+verify: cargo test -p corelink-server --lib pre_tenant_pilot_audits_use_public_namespace_and_pass_0107
+verify-means: |
+  done — the focused D1-shaped test proves canonical public identity, wnam
+  residence and stable denied/reserved response semantics.
+last-verified: 2026-09-08
+```
+
+### B-341 — per-region pilot quota allowed five signups per IP in every region
+
+```backlog
+id: B-341
+repo: corelink-server
+owner: tl
+status: done
+source-document: "post-delivery signup adversarial audit"
+source-locator: "worker/src/index_routing_stage.ts; worker/src/index_env.ts; wrangler.toml; worker/tests/signup_global_authority.test.ts"
+finding-title: "pilot signup quota was regional rather than global"
+problem: "Each region could enforce its own 5/IP/hour Durable Object bucket, so one client could multiply the documented limit by changing the serving region."
+evidence: "All four non-IAD production regions forward only exact pilot POST routes to the IAD authority, IAD terminates locally, missing authority fails closed and neighboring signup paths remain local."
+acceptance: "The five production entry regions share one 5/IP/hour authority without forwarding loops; the sixth request is refused globally, trust headers cannot bypass the key and non-pilot signup paths do not consume quota."
+verify: pnpm --dir worker exec vitest run tests/signup_global_authority.test.ts tests/signup_pilot_rate_limit.test.ts
+verify-means: |
+  done — focused Worker tests cover multi-region bypass, missing binding,
+  exact-path selection, hourly refill and the sixth-request refusal.
+last-verified: 2026-09-08
+```
+
+### B-342 — D03 source verifiers remained anchored to removed monoliths and string bait
+
+```backlog
+id: B-342
+repo: corelink-server
+owner: tl
+status: done
+source-document: "post-delivery D03 verifier audit"
+source-locator: "scripts/rust_source_lexer.py; scripts/verify_b056_cas_budget.py; scripts/verify_b270_b281_bundle_repairs.py; scripts/verify_b297_b312_bundle_residuals.py"
+finding-title: "split-module verification did not prove the compiled source population"
+problem: "Several D03 guards searched stale parent files or accepted markers in comments, raw strings and unrelated constants, so real child-module regressions could remain green."
+evidence: "A shared Rust lexer, closed parent/child include censuses and owning-call checks now cover CAS, GC, DSR, tier, accounting, OCI and audit families, including B056 and B270 semantic markers."
+acceptance: "Every guarded module exists and is included exactly once; removed includes, missing children, comment/string bait and markers outside their owning macro/query reopen the gate."
+verify: |
+  python3 scripts/verify_b056_cas_budget.py --self-test
+  python3 scripts/verify_b270_b281_bundle_repairs.py
+  python3 scripts/verify_b297_b312_bundle_residuals.py
+  python3 -m pytest -q tests/test_verify_b056_cas_budget.py tests/test_verify_b270_b281_bundle_repairs.py tests/test_verify_b297_b312_bundle_residuals.py
+verify-means: |
+  done — closed censuses and adversarial lexer/include/ownership mutations pass
+  and reject every stale-source proof class found by the audit.
+last-verified: 2026-09-08
+```
+
+### B-343 — the postmerge CAS test census and LOC exception guard were incomplete
+
+```backlog
+id: B-343
+repo: corelink-server
+owner: tl
+status: done
+source-document: "post-delivery D04/B337 adversarial audit"
+source-locator: "scripts/verify_b337_cas_batch_tests.py; scripts/verify_b326_loc_cap.py; tests/test_verify_b337_cas_batch_tests.py"
+finding-title: "CAS split guards undercounted tests and accepted lexical bait"
+problem: "The B337 evidence still claimed 10 batch tests after the split exposed 30, and the LOC/generated-exception checks could be satisfied outside the owning syntax or omitted from workflow coverage."
+evidence: "The guard now closes the exact 30-test include census, masks nested comments and strings, binds generated exceptions to the proper source form and is wired into the backlog workflow contract."
+acceptance: "Exactly 30 CAS batch tests remain registered once; all compiled fragments and workflow paths are closed; comment, string, include, count and generated-exception mutations fail."
+verify: |
+  python3 scripts/verify_b326_loc_cap.py --self-test
+  python3 scripts/verify_b337_cas_batch_tests.py
+  python3 -m pytest -q tests/test_verify_b326_loc_cap.py tests/test_verify_b337_cas_batch_tests.py
+verify-means: |
+  done — exact population and mutation-backed syntax/workflow guards pass with
+  all 30 tests represented and no lexical false green.
+last-verified: 2026-09-08
+```
+
+### B-344 — parked D03 commands did not preserve their owner-packet semantics
+
+```backlog
+id: B-344
+repo: corelink-server
+owner: tl
+status: done
+source-document: "post-delivery D03 packet audit"
+source-locator: "docs/handoff/2026-09-06-d03-graduation-packets.json; scripts/verify_d03_graduation.py; tests/test_verify_d03_graduation.py"
+finding-title: "parked evidence commands were syntactically present but operationally ambiguous"
+problem: "Commands could omit fail-closed behavior, leak or accept token bait, capture unbounded output, select an unrelated workflow run or claim a rerun without binding its workflow/ref/SHA."
+evidence: "The graduation schema now binds load-bearing operations, safety/forbidden tokens, bounded captures and event/ref/SHA/time correlation; B044, B068, B112 and B134 close the final command defects."
+acceptance: "Every semantically governed parked packet executes the named bounded operation, correlates remote runs exactly, validates terminal evidence, preserves safety gates and rejects token-only or unsafe substitutions."
+verify: |
+  python3 scripts/verify_d03_graduation.py --schema-only
+  python3 -m pytest -q tests/test_verify_d03_graduation.py
+verify-means: |
+  done — the closed 42-item register and semantic mutation population pass;
+  removing any operation, bound, correlation or safety condition fails closed.
+last-verified: 2026-09-08
+```
+
+### B-345 — the PAT permission guard missed real runtime and workflow paths
+
+```backlog
+id: B-345
+repo: corelink-server
+owner: tl
+status: done
+source-document: "post-delivery B160 permission audit"
+source-locator: "scripts/verify_b160_pat_limit.py; tests/test_verify_b160_pat_limit.py; tests/test_validate_permission_matrix.py; .github/workflows/permission-matrix.yml"
+finding-title: "PAT lease and permission verification accepted shim and trigger drift"
+problem: "The verifier could accept declarations hidden in TypeScript strings/comments, a rewired or no-op shim, and permission-matrix triggers that omitted published source paths."
+evidence: "A TypeScript-aware tokenizer binds the unique CLIENT_TRUST_HEADERS initializer and real removal path; shim behavior is checked and the 254-source PR/push trigger census is closed."
+acceptance: "The lease header appears exactly once in the owning initializer, runtime removal is effective, the production shim reaches the policy implementation, and every published source triggers both permission lanes."
+verify: |
+  python3 scripts/verify_b160_pat_limit.py --self-test
+  python3 -m pytest -q tests/test_verify_b160_pat_limit.py tests/test_validate_permission_matrix.py
+verify-means: |
+  done — initializer, string/comment/template, shim, no-op and trigger mutations
+  are rejected while the production 17-header initializer and 254-source census pass.
+last-verified: 2026-09-08
+```
+
+### B-346 — customer mutations could commit without their audit record
+
+```backlog
+id: B-346
+repo: corelink-server
+owner: tl
+status: done
+source-document: "post-delivery customer audit atomicity review"
+source-locator: "crates/corelink-container/src/customer_d1_seams.rs; crates/corelink-container/src/customer_d1_team_audit.rs; crates/corelink-container/src/storage/d1_http.rs; migrations/d1/0077_customer_audit_events.sql"
+finding-title: "PAT and team mutation audit writes were not transactionally atomic"
+problem: "Separate audit and mutation calls could leave a customer-visible PAT/team change without its required audit row or publish an audit for a failed mutation."
+evidence: "Typed CustomerD1 operations submit audit-first D1 transactional batches; the REST client requires exact result cardinality and explicit success for every statement, and rollback tests cover both mutation families."
+acceptance: "PAT creation and team invitation commit mutation plus one audit together or neither; arbitrary batching is not exposed; empty, missing, short, extra or partially failed D1 results are rejected."
+verify: |
+  cargo test -p corelink-server --lib keys_create_mutation_failure_rolls_back_audit_row
+  cargo test -p corelink-server --lib team_invite_mutation_failure_rolls_back_audit_row
+  cargo test -p corelink-server --lib batch_response_
+verify-means: |
+  done — typed rollback tests prove audit-first staging and no partial durable
+  state, while malformed D1 response-shape cases fail closed.
+last-verified: 2026-09-08
+```
+
+### B-347 — storage reads could dispatch before durable attempted-audit completion
+
+```backlog
+id: B-347
+repo: corelink-server
+owner: tl
+status: done
+source-document: "post-delivery storage audit-ordering review"
+source-locator: "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs; crates/corelink-container/src/storage/r2_s3_parts/ac_ops.rs; crates/corelink-container/src/storage/r2_s3_parts/cas_batch.rs; crates/corelink-container/src/storage/r2_s3_parts/tests_4.rs"
+finding-title: "ReadAttempted/ListAttempted/LookupAttempted were not strict backend gates"
+problem: "CAS/AC reads and batch-exists could start R2 work before the durable attempted audit completed, so an audit failure could still produce external storage calls."
+evidence: "All read/list/lookup paths now await the durable audit before resolving keys or constructing probes; deterministic recorders prove audit failure produces zero backend dispatch, including batch-exists."
+acceptance: "Every attempted audit completes successfully before any storage call; denial and audit failure are fail-closed with zero backend work; timing attributes audit and store phases separately; source fragments stay below 500 LOC."
+verify: |
+  cargo test -p corelink-server --lib attempted_audit_is_a_hard_storage_dispatch_gate
+  cargo test -p corelink-server --lib batch_audit_failure_precedes_all_storage_probes
+  cargo test -p corelink-server --lib cross_tenant_reads_are_denied_before_storage_dispatch
+verify-means: |
+  done — serial gate and loopback-D1 tests prove audit-before-dispatch and zero
+  storage calls on failure across single, list and batch paths.
+last-verified: 2026-09-08
+```
+
+### B-348 — cancelled batch reads and stalled R2 bodies could outlive admission leases
+
+```backlog
+id: B-348
+repo: corelink-server
+owner: tl
+status: done
+source-document: "post-delivery CAS cancellation/timeout review"
+source-locator: "crates/corelink-container/src/routes/cas/batch_read.rs; crates/corelink-container/src/routes/cas/tests_batch_part2.rs; crates/corelink-container/src/routes/cas/tests_batch_cancellation_part3.rs; crates/corelink-container/src/storage/r2_s3_parts/client.rs; crates/corelink-container/src/storage/r2_s3_parts/tests_3.rs"
+finding-title: "batch cancellation released ownership before synchronous R2 unwind and body reads lacked terminal deadlines"
+problem: "Aborted request tasks could release tenant/global admission while blocking reads continued, and a GetObject body stalled after headers could hang beyond SDK header completion."
+evidence: "BatchReadLease stays shared until every task aborts and drains; R2 config covers connect/read/attempt/operation phases; the actual incremental body collector enforces per-chunk idle and one non-resetting total deadline."
+acceptance: "Cancellation cannot oversubscribe admission; real post-header timeout unwinds through R2CasHandler and the batch route before both leases release; continuous sub-idle chunks still hit the total deadline; body size remains bounded."
+verify: |
+  python3 scripts/verify_b078_batch_read.py
+  cargo test -p corelink-server --lib batch_read_post_header_timeout_releases_admission_and_tenant_lease
+  cargo test -p corelink-server --lib batch_read_cancellation_retains_leases_until_sync_read_unwinds
+  cargo test -p corelink-server --lib r2_capped_body_total_deadline_does_not_reset_between_chunks
+verify-means: |
+  done — the production collector-to-handler-to-route test proves timeout-driven
+  unwind and lease restoration, while cancellation, idle, total and size-bound
+  mutations remain guarded.
+last-verified: 2026-09-08
+```
+
+### B-349 — R2 body stream seam failed the workspace Clippy type-complexity gate
+
+```backlog
+id: B-349
+repo: corelink-server
+owner: tl
+status: done
+source-document: "final audit-remediation bundled CI"
+source-locator: "crates/corelink-container/src/storage/r2_s3_parts/client.rs; crates/corelink-container/src/storage/r2_s3_parts/tests_3.rs"
+finding-title: "boxed R2 body future was repeated as an over-complex trait signature"
+problem: "The final bundled Clippy gate rejected the explicit nested Pin/Box/Future/Option/Result signature in R2BodyChunkStream, including its production and test implementations."
+evidence: "R2BodyChunkFuture centralizes the exact Send lifetime-bound future contract and every implementation now returns the alias without changing collector behavior."
+acceptance: "The production adapter and deterministic timeout streams share one explicit future alias; strict workspace Clippy passes without an allow attribute; idle, total-deadline and lease-release tests retain their behavior."
+verify: cargo clippy -p corelink-server --lib --tests --locked -- -D warnings
+verify-means: |
+  done — the strict focal Clippy gate accepts the aliased seam with no
+  suppression, and the final bundled CI covers the same crate and test targets.
+last-verified: 2026-09-08
+```
+
+### B-350 — parallel CAS lease test could deadlock the bundled workspace gate
+
+```backlog
+id: B-350
+repo: corelink-server
+owner: tl
+status: done
+source-document: "final audit-remediation bundled CI"
+source-locator: "crates/corelink-container/src/routes/cas/foundation_core.rs; crates/corelink-container/src/routes/cas/foundation_state.rs; crates/corelink-container/src/routes/cas/tests_batch_part2.rs; crates/corelink-container/src/routes/cas/tests_batch_cancellation_part3.rs"
+finding-title: "global CAS budget assertions raced parallel batch tests and leaked blocked reads on panic"
+problem: "The batch tests shared process-wide admission and weighted byte-budget singletons; parallel fixtures could consume one another's permits, return spurious 503 responses, or panic before releasing a synthetic blocking read, leaving Tokio runtime teardown waiting forever."
+evidence: "CasRouteState now carries both production singleton semaphores as injectable dependencies; every explicit test state receives private admission and read-budget instances, and ReleaseOnDrop guarantees the synthetic blocking read unwinds even if an assertion fails."
+acceptance: "Production states still share both process-wide singleton budgets; parallel test fixtures cannot throttle or observe unrelated requests; assertion unwind always releases deterministic blocking reads; the parallel batch and workspace gates terminate."
+verify: cargo test -p corelink-server --lib --locked batch_read_ -- --test-threads=16
+verify-means: |
+  done — all 13 matching tests pass together against private admission and byte
+  budgets with panic-safe release; the previously hanging parallel gate terminates.
+last-verified: 2026-09-08
+```
+
+### B-351 — signup audit schema fixture erased SQL token boundaries
+
+```backlog
+id: B-351
+repo: corelink-server
+owner: tl
+status: done
+source-document: "final audit-remediation bundled CI"
+source-locator: "crates/corelink-container/src/storage/d1_audit_sink/tests_signup.rs"
+finding-title: "escaped Rust line continuations concatenated audit_outbox and FOR in the SQLite fixture"
+problem: "The production-shaped signup audit regression fixture used escaped newlines whose following indentation Rust also removes, producing invalid trigger SQL such as audit_outboxFOR EACH and failing the complete parallel library suite."
+evidence: "SCHEMA is now a raw multiline string that preserves SQL token boundaries; the exact D1-shaped trigger and three pre-tenant insert cases execute successfully in SQLite."
+acceptance: "The fixture parses as valid SQLite, retains both residency triggers, and proves rejected, rate-limited and reserved pilot events use the public audit namespace without weakening production SQL."
+verify: cargo test -p corelink-server --lib --locked pre_tenant_pilot_audits_use_public_namespace_and_pass_0107
+verify-means: |
+  done — the production-shaped schema and all three signup audit rows execute;
+  the full library suite reaches completion without this deterministic SQL error.
+last-verified: 2026-09-08
 ```
 
 ### B-003 — the 864s ceiling from 2026-08-02 has no established mechanism
@@ -5949,7 +6257,7 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-028 — Dependabot dependency paths are remediated; post-merge census refresh remains open
+### B-028 — Dependabot dependency paths are remediated and the live census is empty
 
 The issue is an owner-reviewed alert census, not a blanket dependency update.
 The repository runs `cargo-audit`, `cargo-deny`, `semgrep`, `trivy`, and
@@ -5974,29 +6282,29 @@ and rejects unsupported formats and inputs over 10 MiB; `vendor/extract-zip`
 rejects archive traversal, symlink escape, and symlink overwrite before writing.
 The root overrides and frozen lockfile remove the vulnerable published package
 nodes entirely, while `fast-uri` and `qs` resolve to their published patched
-versions. The authoritative pre-merge census remains nine open alerts on old
-main; this is engineering remediation, not a dismissal or a zero-census claim.
-Merge the candidate, refresh the authenticated census, and only then close this
-item if all nine alerts disappear.
+versions. The authoritative pre-merge census contained nine open alerts on old
+main; this was engineering remediation, not a dismissal. On 2026-09-08 an
+authenticated, paginated GitHub API refresh against delivered `main@cdd6a6714`
+returned zero open alerts. A second unfiltered census returned 37 historical
+alerts, all `fixed`, proving that the empty open set is not an authentication or
+pagination artifact. The redacted snapshot and lockfile/vendor guards now close
+the item.
 
 ```backlog
 id: B-028
 repo: corelink-server
 owner: tl
-status: parked
+status: done
 verify: python3 scripts/verify_b028_dependabot.py
 verify-means: |
-  parked — the fail-closed verifier requires the authenticated nine-alert census
+  done — the fail-closed verifier requires the authenticated zero-open census
   captured in `docs/security/b028-dependabot-census-2026-09-06.json`, anchored
-  to old-main `ed0cd972`, and verifies that this candidate's lockfile already
-  contains patched `fast-uri`/`qs`, local audited `extract-zip`/`image-size`, no
-  vulnerable published nodes, and no audit-ignore masking. The snapshot
-  explicitly classifies old-main alerts as candidate-contained or
-  candidate-patched; it does not claim GitHub has refreshed. After merge, run
-  the same command against the live API, replace the snapshot with the
-  post-merge empty census, and invert this guard/status only when all alerts are
-  closed. Any API, lockfile, marker, or classification drift fails closed.
-last-verified: 2026-09-05
+  to delivered `main@cdd6a6714`, and verifies patched `fast-uri`/`qs`, local
+  audited `extract-zip`/`image-size`, no vulnerable published nodes, no
+  audit-ignore masking, complete pagination metadata and a non-vacuous
+  historical census. Any API, lockfile, marker or classification drift fails
+  closed.
+last-verified: 2026-09-08
 ```
 
 ### B-033 — the workspace lint gate runs nowhere, and its stated compensation does not hold
@@ -15277,8 +15585,8 @@ verify-means: |
   População vazia, fence inválido, IDs duplicados, padrão dinâmico não resolvido, ausência de
   PyYAML ou contagem divergente falham fechado; não podem produzir um falso `done`.
 
-  **Medido na árvore cumulativa atual (2026-09-07):** `records=337`,
-  `command_records=316`, `manual=21`, `grep_invocations=194`, `assertions=191`,
+  **Medido na árvore cumulativa atual (2026-09-08):** `records=351`,
+  `command_records=330`, `manual=21`, `grep_invocations=194`, `assertions=191`,
   `comment_sensitive=0`, `unsafe=0`, `indeterminate=0`. Cada assertion recebe uma
   classificação explícita somente pelo alvo real do grep; extensão no padrão não é
   evidência. O parser mantém população, sintaxe e mutações fail-closed: remover uma

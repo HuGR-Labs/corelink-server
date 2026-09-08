@@ -5,10 +5,11 @@ info:
   summary: REST surface for CoreLink customer onboarding, privacy (DSR / DPA),
     billing webhooks, admin operations and health.
   description: |
-    Hand-authored OpenAPI 3.1 contract for the **non-REAPI** surface of CoreLink.
-    The high-volume CAS / AC / ByteStream / Capabilities surface is gRPC
-    (Remote Execution API v2) and documented separately under
-    `docs/reference/reapi/`.
+    Hand-authored OpenAPI 3.1 contract for CoreLink's customer, admin and
+    HTTP Remote Execution surfaces. High-volume CAS / AC / ByteStream /
+    Capabilities traffic is available through gRPC (Remote Execution API v2)
+    and HTTP bridges, including the native CAS batch routes documented below;
+    gRPC-only details remain under `docs/reference/reapi/`.
 
     Endpoint canonical paths are sourced from the implementing crates' doc-comments:
     `corelink-signup`, `corelink-dpa-acceptance`, `corelink-dpa-versioning`,
@@ -1047,9 +1048,53 @@ paths:
                 $ref: "#/components/schemas/TimelineResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /v1/cas/{tenant}/batch:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/cas/batch_write.rs (handle_batch_write)
+    post:
+      tags: [reapi-http]
+      summary: Write multiple CAS blobs with length-framed upload.
+      operationId: casBatchWrite
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        description: |
+          Length-framed upload: newline-delimited JSON manifest entries
+          (`{"hash":"<blake3>","len":<bytes>}`), one blank line, then
+          the concatenated raw object bytes in manifest order. The manifest
+          and payload together are capped at 10 MiB; object bytes at 8 MiB
+          and 2,000 objects.
+        content:
+          application/x-hugit-cas-batch:
+            schema:
+              $ref: "#/components/schemas/BatchUploadBody"
+      responses:
+        "200":
+          description: Per-object outcomes in manifest order; one bad object does not abort the batch.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 2000
+                items:
+                  $ref: "#/components/schemas/BatchUploadResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413": { $ref: "#/components/responses/BatchTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/InternalError" }
+
   /v1/cas/{tenant}/batch-read:
     x-status: implemented
-    x-implementing-handler: crates/corelink-container/src/routes/cas.rs (handle_batch_read)
+    x-implementing-handler: crates/corelink-container/src/routes/cas/batch_read.rs (handle_batch_read)
     post:
       tags: [reapi-http]
       summary: Read multiple CAS blobs with bounded, ordered framing.
@@ -1066,8 +1111,10 @@ paths:
         content:
           application/x-ndjson:
             schema:
-              type: string
-              description: NDJSON hash objects, at most 2,000 lines.
+              $ref: "#/components/schemas/BatchHashNdjsonBody"
+          application/x-hugit-cas-batch:
+            schema:
+              $ref: "#/components/schemas/BatchHashNdjsonBody"
       responses:
         "200":
           description: Ordered manifest lines, a blank-line terminator, then concatenated blob bytes.
@@ -1076,20 +1123,52 @@ paths:
               schema: { type: string, format: binary }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403":
-          description: Cross-tenant attempt.
-        "413":
-          description: Object or aggregate payload exceeds the 8 MiB batch-read ceiling; no over-cap body is collected.
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413": { $ref: "#/components/responses/BatchTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/InternalError" }
+
+  /v1/cas/{tenant}/batch-exists:
+    x-status: implemented
+    x-implementing-handler: crates/corelink-container/src/routes/cas/batch_read.rs (handle_batch_exists)
+    post:
+      tags: [reapi-http]
+      summary: Probe existence of multiple CAS blobs without returning bytes.
+      operationId: casBatchExists
+      security:
+        - BearerPAT: []
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/x-ndjson:
+            schema:
+              $ref: "#/components/schemas/BatchHashNdjsonBody"
+          application/x-hugit-cas-batch:
+            schema:
+              $ref: "#/components/schemas/BatchHashNdjsonBody"
+      responses:
+        "200":
+          description: Existence results in request order; object bytes are never included.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                required: [error, limit_objects, limit_bytes]
-                properties:
-                  error: { type: string, const: batch_too_large }
-                  limit_objects: { type: integer, format: int64, example: 2000 }
-                  limit_bytes: { type: integer, format: int64, example: 8388608 }
+                type: array
+                maxItems: 2000
+                items:
+                  $ref: "#/components/schemas/BatchExistsResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413": { $ref: "#/components/responses/BatchTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/InternalError" }
 
   /v1/cas/{tenant}/{hash}:
     x-status: implemented
@@ -1686,6 +1765,13 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    BatchTooLarge:
+      description: Batch exceeds the 2,000-object or 8 MiB object-byte limit, or the 10 MiB request-body limit.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/BatchTooLargeResponse" }
+        text/plain:
+          schema: { type: string }
     Unauthorized:
       description: Missing or invalid credentials.
       content:
@@ -1719,6 +1805,11 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    UnsupportedMediaType:
+      description: Content-Type is not accepted by this batch route.
+      content:
+        text/plain:
+          schema: { type: string, example: unsupported media type }
     InternalError:
       description: Server error. Safe to retry idempotent operations.
       content:
@@ -1734,6 +1825,60 @@ components:
         idempotency_key: "idem-2026-05-14-1f3c"
         correlation_id: "evt_2NmPsl2HxqGq7BhM4VqW8Y3JxAa"
   schemas:
+    BatchUploadBody:
+      type: string
+      format: binary
+      maxLength: 10485760
+      description: |
+        Length-framed CAS upload body. The manifest is NDJSON with `hash` and
+        `len` fields, followed by one blank line and the concatenated raw
+        object bytes. The body is capped at 10 MiB; declared object bytes are
+        capped at 8 MiB and 2,000 objects.
+    BatchHashNdjsonBody:
+      type: string
+      maxLength: 10485760
+      description: NDJSON body containing `{"hash":"<blake3>"}` lines, at most 2,000 lines.
+    BatchTooLargeResponse:
+      type: object
+      additionalProperties: false
+      required: [error, limit_objects, limit_bytes]
+      properties:
+        error: { type: string, const: batch_too_large }
+        limit_objects:
+          type: integer
+          format: int64
+          const: 2000
+        limit_bytes:
+          type: integer
+          format: int64
+          const: 8388608
+    BatchUploadResult:
+      type: object
+      additionalProperties: false
+      required: [hash, status, error]
+      properties:
+        hash:
+          type: string
+          maxLength: 128
+          description: Echo of the manifest hash claim.
+        status:
+          type: string
+          enum: [created, exists, error]
+        error:
+          type: [string, "null"]
+          description: Compact per-object failure reason; null for created or exists.
+    BatchExistsResult:
+      type: object
+      additionalProperties: false
+      required: [hash, present]
+      properties:
+        hash:
+          type: string
+          maxLength: 128
+          description: Echo of the requested hash.
+        present:
+          type: boolean
+          description: True only when the storage existence probe found the blob.
     CustomerPat:
       type: object
       description: |

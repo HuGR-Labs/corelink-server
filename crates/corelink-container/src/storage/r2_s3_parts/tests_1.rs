@@ -410,14 +410,13 @@
     }
 
     // ---------------------------------------------------------------
-    // Concurrent audit+R2 `list()` seam
+    // Durable-audit-before-R2 `list()` timing
     // ---------------------------------------------------------------
 
-    /// `list()`'s SERIAL FALLBACK path (`audit_async` unset — every test
-    /// handler in this module) is exercised no differently than before this
-    /// PR: the `block_in_place` R2 `ListObjectsV2` call still lands in
+    /// `list()`'s durable attempted audit is completed before the
+    /// `block_in_place` R2 `ListObjectsV2` call, which still lands in
     /// `Phase::Store` (`ostore`). Network-free (stub S3 endpoint), so this
-    /// runs in CI, unlike the concurrent-path test below.
+    /// runs in CI.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn r2_cas_list_serial_fallback_attributes_the_r2_call_to_ostore() {
         let handler = std::sync::Arc::new(make_test_handler("iad").await);

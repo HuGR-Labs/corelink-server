@@ -249,45 +249,29 @@ impl CustomerKeysHandler for D1CustomerHandler {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
 
-        // Customer-facing audit row (migration 0077, write half). UNSKIPPABLE /
-        // fail-CLOSED (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER): emitted BEFORE the pat
-        // INSERT so a self-serve key mint can NEVER commit without its customer-
-        // visible audit row. `target` is the PAT id (no PII, minted above); the
-        // summary names the key + granted scope. A failed insert → 503 and the
-        // key is never created (the non-idempotent mint is not left half-applied).
-        self.insert_audit_event(
-            &req.caller_tenant,
-            "pat.created",
-            &req.principal,
-            &pat.id.to_string(),
-            &format!("Created API key {:?} ({scope_label})", req.name),
-        )?;
-
-        // Durable INSERT. `shown_once_token` (NOT NULL UNIQUE, 0037) is
-        // a fresh UUID immediately marked consumed: the dashboard
-        // returns the plaintext in THIS response (shown once) and the
-        // reveal-endpoint path is never used for self-serve keys.
-        self.run(
-            "INSERT INTO pat \
-             (pat_id, tenant_id, pat_hash, scope, expires_ms, \
-              shown_once_token, shown_once_consumed, created_ms, token_id, name, find_only) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, ?10)",
-            vec![
-                json!(pat.id.to_string()),
-                json!(req.caller_tenant),
-                json!(pat.hash.as_str()),
-                json!(scope),
-                json!(i64::try_from(expires_ms).unwrap_or(i64::MAX)),
-                json!(Uuid::now_v7().to_string()),
-                json!(i64::try_from(now_ms).unwrap_or(i64::MAX)),
-                json!(pat.token_id.as_str()),
-                json!(req.name),
-                json!(i32::from(find_only)),
-            ],
-        )?;
+        // Audit and PAT persistence are one typed D1 transaction. D1 rolls
+        // both rows back if either fixed statement fails.
+        let pat_id = pat.id.to_string();
+        self.db
+            .create_pat_with_audit(CustomerPatCreateOperation {
+                tenant_id: req.caller_tenant.clone(),
+                pat_id: pat_id.clone(),
+                pat_hash: pat.hash.as_str().to_owned(),
+                scope: scope.to_owned(),
+                expires_ms: i64::try_from(expires_ms).unwrap_or(i64::MAX),
+                shown_once_token: Uuid::now_v7().to_string(),
+                created_ms: i64::try_from(now_ms).unwrap_or(i64::MAX),
+                token_id: pat.token_id.as_str().to_owned(),
+                name: req.name.clone(),
+                find_only,
+                audit_actor: req.principal.clone(),
+                audit_ts_ms: i64::try_from(now_ms).unwrap_or(i64::MAX),
+                audit_detail: format!("Created API key {:?} ({scope_label})", req.name),
+            })
+            .map_err(|e| self.atomic_error(e))?;
 
         let row = PatRow::new(
-            pat.id.to_string(),
+            pat_id,
             req.name.clone(),
             scope_to_list(scope, find_only),
             ms_to_iso8601(i64::try_from(now_ms).unwrap_or(i64::MAX)),

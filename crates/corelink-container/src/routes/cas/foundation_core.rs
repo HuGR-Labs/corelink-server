@@ -251,25 +251,26 @@ static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock:
 static GLOBAL_CAS_BATCH_READ_ADMISSION: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 static GLOBAL_CAS_WRITE_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 
-fn global_cas_read_budget() -> Arc<tokio::sync::Semaphore> {
+pub(super) fn global_cas_read_budget() -> Arc<tokio::sync::Semaphore> {
     Arc::clone(
         GLOBAL_CAS_READ_BUDGET
             .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(CAS_READ_GLOBAL_PERMITS))),
     )
 }
 
-fn global_cas_batch_read_admission() -> Arc<tokio::sync::Semaphore> {
+pub(super) fn global_cas_batch_read_admission() -> Arc<tokio::sync::Semaphore> {
     Arc::clone(
         GLOBAL_CAS_BATCH_READ_ADMISSION
             .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(CAS_READ_BATCH_MAX_IN_FLIGHT))),
     )
 }
 
-async fn acquire_global_cas_batch_read_admission(
+async fn acquire_cas_batch_read_admission(
+    admission: Arc<tokio::sync::Semaphore>,
 ) -> Result<tokio::sync::OwnedSemaphorePermit, axum::response::Response> {
     match tokio::time::timeout(
         CAS_READ_GLOBAL_PERMIT_WAIT,
-        global_cas_batch_read_admission().acquire_owned(),
+        admission.acquire_owned(),
     )
     .await
     {
@@ -296,13 +297,14 @@ async fn acquire_global_cas_batch_read_admission(
     }
 }
 
-async fn acquire_global_cas_read_budget(
+async fn acquire_cas_read_budget(
+    budget: Arc<tokio::sync::Semaphore>,
     permits: u32,
     route: &'static str,
 ) -> Result<tokio::sync::OwnedSemaphorePermit, axum::response::Response> {
     match tokio::time::timeout(
         CAS_READ_GLOBAL_PERMIT_WAIT,
-        global_cas_read_budget().acquire_many_owned(permits),
+        budget.acquire_many_owned(permits),
     )
     .await
     {

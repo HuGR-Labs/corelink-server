@@ -1,3 +1,62 @@
+    #[tokio::test]
+    async fn r2_capped_body_stall_after_headers_hits_idle_deadline() {
+        struct StalledAfterHeaders {
+            emitted: bool,
+        }
+
+        impl R2BodyChunkStream for StalledAfterHeaders {
+            fn next_chunk<'a>(&'a mut self) -> R2BodyChunkFuture<'a> {
+                Box::pin(async move {
+                    if !self.emitted {
+                        self.emitted = true;
+                        Some(Ok(bytes::Bytes::from_static(b"headers-arrived")))
+                    } else {
+                        std::future::pending::<Option<Result<bytes::Bytes, String>>>().await
+                    }
+                })
+            }
+        }
+
+        let err = R2S3Client::collect_capped_body_with_deadlines(
+            "stalled-after-headers",
+            1024,
+            StalledAfterHeaders { emitted: false },
+            std::time::Duration::from_millis(10),
+            std::time::Duration::from_millis(50),
+        )
+        .await
+        .expect_err("a body that stalls after headers must fail closed");
+        assert_eq!(err, "R2 body idle timeout for key stalled-after-headers");
+    }
+
+    #[tokio::test]
+    async fn r2_capped_body_total_deadline_does_not_reset_between_chunks() {
+        struct SlowChunks;
+
+        impl R2BodyChunkStream for SlowChunks {
+            fn next_chunk<'a>(&'a mut self) -> R2BodyChunkFuture<'a> {
+                Box::pin(async {
+                    // Each chunk arrives below the 20 ms idle deadline. The
+                    // stream never goes idle, so only a non-resetting total
+                    // deadline can terminate this body.
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    Some(Ok(bytes::Bytes::from_static(b"slow-chunk")))
+                })
+            }
+        }
+
+        let err = R2S3Client::collect_capped_body_with_deadlines(
+            "slow-total",
+            1024 * 1024,
+            SlowChunks,
+            std::time::Duration::from_millis(20),
+            std::time::Duration::from_millis(35),
+        )
+        .await
+        .expect_err("continuous below-idle chunks must hit the total deadline");
+        assert_eq!(err, "R2 body total timeout for key slow-total");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn byok_mode_b_read_fails_closed_when_kms_down() {
         // A wired Mode-B handler whose KMS unwrap fails must NOT serve raw bytes.

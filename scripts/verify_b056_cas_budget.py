@@ -7,7 +7,40 @@ import argparse
 import re
 from pathlib import Path
 
+from rust_source_lexer import include_paths, mask, normal_string_literals, strip_comments
+
 ROOT = Path(__file__).resolve().parent.parent
+
+# The CAS route is an include-based module.  Keep the verifier's population
+# aligned with the compiled source units rather than the pre-split files; a
+# missing fragment must fail closed instead of silently shrinking the proof.
+CAS_PARTS = (
+    "crates/corelink-container/src/routes/cas/foundation_core.rs",
+    "crates/corelink-container/src/routes/cas/foundation_state.rs",
+    "crates/corelink-container/src/routes/cas/single_setup.rs",
+    "crates/corelink-container/src/routes/cas/single_handlers.rs",
+    "crates/corelink-container/src/routes/cas/batch_write.rs",
+    "crates/corelink-container/src/routes/cas/batch_read.rs",
+    "crates/corelink-container/src/routes/cas/list_delete.rs",
+)
+CAS_PARENT = "crates/corelink-container/src/routes/cas.rs"
+CAS_INCLUDE_CENSUS = (
+    "foundation_core.rs",
+    "foundation_state.rs",
+    "single_setup.rs",
+    "single_handlers.rs",
+    "batch_write.rs",
+    "batch_read.rs",
+    "list_delete.rs",
+    "tests_core_part1.rs",
+    "tests_core_part2.rs",
+    "tests_batch_part1.rs",
+    "tests_batch_part2.rs",
+    "tests_batch_cancellation_part3.rs",
+    "tests_batch_write_part2.rs",
+    "tests_edges.rs",
+    "tests_read_ceiling.rs",
+)
 
 
 class VerificationError(RuntimeError):
@@ -25,14 +58,9 @@ def read(path: Path) -> str:
 
 
 def source() -> dict[str, str]:
-    cas_parts = (
-        "crates/corelink-container/src/routes/cas/foundation.rs",
-        "crates/corelink-container/src/routes/cas/single.rs",
-        "crates/corelink-container/src/routes/cas/batch.rs",
-        "crates/corelink-container/src/routes/cas/list_delete.rs",
-    )
     return {
-        "cas": "\n".join(read(ROOT / part) for part in cas_parts),
+        "cas": "\n".join(read(ROOT / part) for part in CAS_PARTS),
+        "cas_module": read(ROOT / CAS_PARENT),
         "backlog": read(ROOT / "BACKLOG.md"),
         "native": read(ROOT / "docs/knowledge/surfaces/native-cas.md"),
         "container": read(ROOT / "docs/knowledge/planes/container.md"),
@@ -51,8 +79,43 @@ def handler_span(cas: str, name: str, next_name: str | None = None) -> str:
     return match.group(0)
 
 
+def _matching_delimiter(code: str, opening: int, opener: str, closer: str) -> int:
+    depth = 0
+    for index in range(opening, len(code)):
+        if code[index] == opener:
+            depth += 1
+        elif code[index] == closer:
+            depth -= 1
+            if depth == 0:
+                return index
+    fail(f"B-056 unterminated tracing macro delimiter: {opener}")
+    raise AssertionError("unreachable")
+
+
+def _saturation_log_span(cas: str, marker: str) -> tuple[int, int]:
+    """Find the marker as an argument of a real ``tracing::warn!`` call."""
+    code = mask(cas)
+    literals = normal_string_literals(cas)
+    hits: list[tuple[int, int]] = []
+    for call in re.finditer(r"\btracing::warn!\s*\(", code):
+        opening = code.find("(", call.start(), call.end())
+        closing = _matching_delimiter(code, opening, "(", ")")
+        for start, end, text in literals:
+            if opening < start < end < closing and text == marker:
+                hits.append((call.start(), closing))
+    if len(hits) != 1:
+        fail("B-056 saturation log marker is missing or not an argument of one tracing::warn! call")
+    return hits[0]
+
+
 def assess(files: dict[str, str], expected_status: str = "done") -> None:
     cas = files["cas"]
+    includes = tuple(
+        path.removeprefix("cas/") for path in include_paths(files["cas_module"])
+    )
+    if includes != CAS_INCLUDE_CENSUS:
+        fail("B-056 CAS parent include census is stale or incomplete")
+    code = mask(cas)
     required = (
         (
             "budget declaration",
@@ -69,7 +132,13 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
             ),
         ),
         "CAS_READ_GLOBAL_BUDGET_BYTES / CAS_READ_BUDGET_UNIT_BYTES <= u32::MAX as u64",
-        "static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<Semaphore>> = OnceLock::new();",
+        (
+            "global read semaphore",
+            (
+                "static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<Semaphore>> = OnceLock::new();",
+                "static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();",
+            ),
+        ),
         (
             "weighted acquire",
             (
@@ -78,24 +147,24 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
             ),
         ),
         "CAS_READ_GLOBAL_PERMIT_WAIT",
+        "const CAS_READ_BATCH_OBJECT_PERMITS: u32 =",
         "GlobalCasReadBudgetGuard",
         "GlobalCasBatchReadBudgetGuard",
         "StatusCode::SERVICE_UNAVAILABLE",
-        '"global CAS read budget saturated; returning 503 before buffering"',
     )
     for requirement in required:
         if isinstance(requirement, tuple):
             label, alternatives = requirement
-            if not any(needle in cas for needle in alternatives):
+            if not any(needle in code for needle in alternatives):
                 fail(f"B-056 CAS budget contract missing: {label}")
-        elif requirement not in cas:
+        elif requirement not in code:
             fail(f"B-056 CAS budget contract missing: {requirement}")
-    if "crate::container_capacity::CAS_READ_GLOBAL_BUDGET_BYTES" in cas and (
+    if "crate::container_capacity::CAS_READ_GLOBAL_BUDGET_BYTES" in code and (
         "pub const CAS_READ_GLOBAL_BUDGET_BYTES: u64 =" not in files["capacity"]
     ):
         fail("B-056 shared budget does not resolve to the central capacity declaration")
 
-    single = handler_span(cas, "handle_read", "handle_write")
+    single = handler_span(code, "handle_read", "handle_write")
     if "_read_concurrency: CasReadConcurrencyGuard" not in single:
         fail("single CAS GET lost its per-tenant guard")
     if "_global_read_budget: GlobalCasReadBudgetGuard" not in single:
@@ -103,22 +172,23 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
     if single.index("_global_read_budget") < single.index("_read_concurrency"):
         fail("single CAS GET process-wide guard is not after the per-tenant guard")
 
-    batch = handler_span(cas, "handle_batch_read", "handle_batch_exists")
+    batch = handler_span(code, "handle_batch_read", "handle_batch_exists")
     if "_read_concurrency: CasReadConcurrencyGuard" not in batch:
         fail("CAS batch-read lost its per-tenant guard")
     if "_global_read_budget: GlobalCasBatchReadBudgetGuard" not in batch:
         fail("CAS batch-read lost its process-wide byte guard")
     if batch.index("body: axum::body::Bytes") < batch.index("_global_read_budget"):
         fail("CAS batch-read buffers its body before reserving the byte budget")
-    if not any(
-        name in batch for name in ("acquire_cas_read_budget_from", "acquire_global_cas_read_budget")
-    ) or "CAS_READ_SINGLE_PERMITS" not in batch:
+    if "acquire_cas_read_budget" not in batch or "CAS_READ_BATCH_OBJECT_PERMITS" not in batch:
         fail("CAS batch-read object fan-out lost its per-object byte reservations")
 
     # Global saturation logs deliberately carry only a static route and weight;
     # tenant/hash/request identifiers would turn a bounded guard into a high-
     # cardinality observability sink.
-    saturation = cas[cas.index('"global CAS read budget saturated'):cas.index('"global CAS read budget saturated') + 180]
+    saturation_marker = "global CAS read budget saturated; returning 503 before buffering"
+    call_start, call_end = _saturation_log_span(cas, saturation_marker)
+    clean_cas = strip_comments(cas)
+    saturation = clean_cas[call_start:call_end]
     if "tenant_id" in saturation or "hash" in saturation or "request_id" in saturation:
         fail("B-056 saturation log contains high-cardinality identity")
 
@@ -136,8 +206,11 @@ def assess(files: dict[str, str], expected_status: str = "done") -> None:
         fail("B-056 OKF render is missing the process-wide byte budget")
     if "B-056" not in files["changelog"]:
         fail("B-056 changelog fragment is missing its finding ID")
-    if "B-056 CAS read budget verifier and mutations" not in files["workflow"]:
-        fail("workflow does not run the B-056 verifier")
+    workflow = files["workflow"]
+    if "pull_request_target:" not in workflow or workflow.count('paths: ["**"]') < 2:
+        fail("workflow does not track the complete B-056 input tree")
+    if "python3 scripts/backlog_verify.py --trusted-semantic" not in workflow:
+        fail("workflow does not run B-056 through trusted-main backlog semantics")
 
 
 def mutation_checks(files: dict[str, str]) -> None:
@@ -156,6 +229,18 @@ def mutation_checks(files: dict[str, str]) -> None:
         ),
         ("weighted acquire", "cas", "acquire_many_owned(permits)", "acquire_owned()"),
         (
+            "comment-hidden weighted acquire",
+            "cas",
+            "budget.acquire_many_owned(permits)",
+            "/* budget.acquire_many_owned(permits) */ budget.acquire_owned()",
+        ),
+        (
+            "global semaphore",
+            "cas",
+            "static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();",
+            "static GLOBAL_CAS_READ_BUDGET: OnceLock<Arc<tokio::sync::MISSING>> = OnceLock::new();",
+        ),
+        (
             "single guard",
             "cas",
             "_global_read_budget: GlobalCasReadBudgetGuard",
@@ -166,6 +251,24 @@ def mutation_checks(files: dict[str, str]) -> None:
             "cas",
             "_global_read_budget: GlobalCasBatchReadBudgetGuard",
             "_global_read_budget: MissingGuard",
+        ),
+        (
+            "comment-hidden guard",
+            "cas",
+            "_global_read_budget: GlobalCasReadBudgetGuard",
+            "/* _global_read_budget: GlobalCasReadBudgetGuard */ MissingGuard",
+        ),
+        (
+            "parent include wiring",
+            "cas_module",
+            'include!("cas/batch_read.rs");',
+            '/* include!("cas/batch_read.rs"); */',
+        ),
+        (
+            "trusted workflow execution",
+            "workflow",
+            "python3 scripts/backlog_verify.py --trusted-semantic",
+            "python3 scripts/backlog_verify.py --candidate-only",
         ),
         ("backlog status", "backlog", "status: done", "status: open"),
         (

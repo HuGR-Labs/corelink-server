@@ -322,6 +322,41 @@ fn keys_create_fails_closed_when_customer_audit_insert_faults() {
             .any(|(sql, _)| sql.contains("customer_audit_events")),
         "the customer audit insert must be attempted before the mutation"
     );
+    assert_eq!(f.db.atomic_rows(), AtomicRows::default());
+}
+
+#[test]
+fn keys_create_mutation_failure_rolls_back_audit_row() {
+    let f = fixture_with(MockD1::failing_on("INSERT INTO pat", vec![]), None);
+    let err = f
+        .handler
+        .create(KeyCreateRequest::new(
+            TENANT,
+            "clpat_x",
+            "deploy-key",
+            vec!["cache:read".to_owned()],
+            0,
+        ))
+        .expect_err("PAT mutation failure must fail closed");
+    assert!(matches!(err, CustomerHandlerError::Internal(_)));
+    let calls = f.db.calls();
+    let audit_index = calls
+        .iter()
+        .position(|(sql, _)| sql.contains("customer_audit_events"))
+        .expect("audit statement must be staged");
+    let pat_index = calls
+        .iter()
+        .position(|(sql, _)| sql.contains("INSERT INTO pat"))
+        .expect("PAT mutation must be attempted");
+    assert!(
+        audit_index < pat_index,
+        "audit statement must be staged before the PAT mutation"
+    );
+    assert_eq!(
+        f.db.atomic_rows(),
+        AtomicRows::default(),
+        "D1 rollback removes the staged customer audit row"
+    );
 }
 
 /// Item-4 fail-CLOSED sibling for team invite: an audit-insert fault must
@@ -350,6 +385,42 @@ fn team_invite_fails_closed_when_customer_audit_insert_faults() {
             .iter()
             .any(|(sql, _)| sql.contains("INSERT INTO team_member")),
         "no seat may be written when the unskippable audit row fails"
+    );
+    assert_eq!(f.db.atomic_rows(), AtomicRows::default());
+}
+
+#[test]
+fn team_invite_mutation_failure_rolls_back_audit_row() {
+    let _env = crate::email_hash::EnvGuard::acquire();
+    let f = fixture_with(MockD1::failing_on("INSERT INTO team_member", vec![]), None);
+    let err = f
+        .handler
+        .invite(TeamInviteRequest::new(
+            TENANT,
+            "clpat_x",
+            "Alice@Example.com",
+            "Member",
+            0,
+        ))
+        .expect_err("team-member mutation failure must fail closed");
+    assert!(matches!(err, CustomerHandlerError::Internal(_)));
+    let calls = f.db.calls();
+    let audit_index = calls
+        .iter()
+        .position(|(sql, _)| sql.contains("customer_audit_events"))
+        .expect("audit statement must be staged");
+    let team_member_index = calls
+        .iter()
+        .position(|(sql, _)| sql.contains("INSERT INTO team_member"))
+        .expect("team-member mutation must be attempted");
+    assert!(
+        audit_index < team_member_index,
+        "audit statement must be staged before the team-member mutation"
+    );
+    assert_eq!(
+        f.db.atomic_rows(),
+        AtomicRows::default(),
+        "D1 rollback removes the staged customer audit row"
     );
 }
 

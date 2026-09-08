@@ -31,9 +31,9 @@ impl R2AcHandler {
         }
     }
 
-    /// AC counterpart of [`R2CasHandler::with_async_audit`] — same
-    /// same-sink invariant applies (`audit_async` MUST be the same
-    /// `D1AuditOutboxSink` behind `audit`).
+    /// Retained for builder compatibility with the CAS batch-exists wiring.
+    /// AC reads and lists do not use this seam: their durable attempted audit
+    /// is always committed synchronously before storage dispatch.
     #[must_use]
     pub fn with_async_audit(
         mut self,

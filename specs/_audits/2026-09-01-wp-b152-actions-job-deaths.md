@@ -16,36 +16,38 @@ command below is the verifier for these historical facts: if any current API pag
 is unavailable, malformed, capped, or incomplete, it must report `INDETERMINATE`
 rather than reassert them. No token, log body, or other secret is stored here.
 
-## Read-only refresh (2026-09-05)
+## Read-only refresh (2026-09-08)
 
 The same closed historical window was queried again from the Actions API (no
 dispatch, rerun, mutation, log body, or secret access). The 1,621-run
 population and all three known run/job controls are still present. Their
-durations remain exactly 600 seconds, with one independent lane each. The API
-retains the setup step as `in_progress` and exposes post-kill cleanup steps as
-`pending`; checkout is `completed` in all three records. The collector retains
-both fields (`step_in_progress` and `step_not_completed`) and does not mistake
-an unevaluated state for a successful step.
+durations remain exactly 600 seconds, with one independent lane each. On this
+refresh the Jobs API returned an empty `steps` array for each retained match;
+the collector records `step_evidence_available: false` and does not infer either
+an in-progress step or completed checkout from that absence. The timing and
+identity metadata remain usable; step-level metadata has not been retained by
+the current API response.
 
-The refresh also covered `2026-09-04T00:00:00Z` through
+The prior 2026-09-05 refresh also covered `2026-09-04T00:00:00Z` through
 `2026-09-05T23:59:59Z`: 286 runs, all `startup_failure`, with zero jobs. A
-sample run points to workflow ID `303501160`, whose read-only workflow record
-is the deleted `BuildFailed` path. This is a separate Actions control-plane
+sample run pointed to workflow ID `303501160`, whose read-only workflow record
+was the deleted `BuildFailed` path. This is a separate Actions control-plane
 failure, not evidence that the B-152 600-second jobs were cured or caused.
 The repository diagnostic now retains non-success run conclusions (including
 `startup_failure`) instead of reporting this population as an empty set.
 
-## Closed-population snapshot (2026-09-06)
+## Closed-population snapshot (refreshed 2026-09-08)
 
 The exact historical window was collected again through the read-only Actions
 API and persisted at
 `reports/perf/b152-actions-2026-09-06.json`. The snapshot contains all 1,621
 selected run IDs, all 33 failed-run job objects, and the three in-window jobs;
 each failed job retains its run ID, job ID, creation/start/completion times,
-runner, and every API step ID/status/timestamp. It contains no log body. The
-three log requests were unavailable again, so each has the fixed
-`log_signature: "indeterminate"` and no digest; no causal conclusion is
-asserted.
+runner, and duration. The current response has no retained step records for the
+three matches, so each carries `step_evidence_available: false`; no step status
+or checkout claim is made. It contains no log body. The three log requests were
+unavailable again, so each has the fixed `log_signature: "indeterminate"` and no
+digest; no causal conclusion is asserted.
 
 The snapshot is checked offline with the fail-closed verifier below. Missing
 run/job/step identity, a duplicated ID, an omitted log signature, an
@@ -62,17 +64,18 @@ python3 scripts/verify_b152_snapshot.py reports/perf/b152-actions-2026-09-06.jso
 The API returned 33 failed runs and 33 failed jobs in this window; exactly three
 failed jobs fell in the inclusive 594–615 second duration window:
 
-| run ID | job ID | workflow / lane | job created → started | started → completed | duration | declared job timeout | unfinished step (current API state) | checkout incomplete | runner |
+| run ID | job ID | workflow / lane | job created → started | started → completed | duration | declared job timeout | step metadata / checkout | runner |
 |---:|---:|---|---|---|---:|---:|---|---|---|
-| 33355619309 | 99377079175 | docs CI / `typecheck + lint + test + build` | 04:00:22 → 04:03:26Z (184 s) | 04:03:26 → 04:13:26Z | 600 s | 20 min (`.github/workflows/docs-ci.yml:132`) | Set up Node.js (`in_progress`); cleanup `pending` | no | `cf-runner-ad7db4f0` |
-| 33356199472 | 99378740877 | OKF-CoreLink Wiki Validation / `okf-wiki-validation` | 04:11:09 → 04:13:30Z (141 s) | 04:13:30 → 04:23:30Z | 600 s | no explicit `timeout-minutes` (`.github/workflows/okf_wiki.yml`; platform default applies) | Install PyYAML (`in_progress`); cleanup `pending` | no | `cf-runner-8bf42fee` |
-| 33359740663 | 99388658702 | admin-ui e2e / `playwright critical-flows (chromium)` | 05:13:13 → 05:13:14Z (1 s) | 05:13:14 → 05:23:14Z | 600 s | 30 min (`.github/workflows/admin-ui-e2e.yml:111`) | Set up pnpm (`in_progress`); cleanup `pending` | no | `cf-runner-9debaeaa` |
+| 33355619309 | 99377079175 | docs CI / `typecheck + lint + test + build` | 04:00:22 → 04:03:26Z (184 s) | 04:03:26 → 04:13:26Z | 600 s | 20 min (`.github/workflows/docs-ci.yml:132`) | unavailable (`steps=[]`; checkout unknown) | `cf-runner-ad7db4f0` |
+| 33356199472 | 99378740877 | OKF-CoreLink Wiki Validation / `okf-wiki-validation` | 04:11:09 → 04:13:30Z (141 s) | 04:13:30 → 04:23:30Z | 600 s | no explicit `timeout-minutes` (`.github/workflows/okf_wiki.yml`; platform default applies) | unavailable (`steps=[]`; checkout unknown) | `cf-runner-8bf42fee` |
+| 33359740663 | 99388658702 | admin-ui e2e / `playwright critical-flows (chromium)` | 05:13:13 → 05:13:14Z (1 s) | 05:13:14 → 05:23:14Z | 600 s | 30 min (`.github/workflows/admin-ui-e2e.yml:111`) | unavailable (`steps=[]`; checkout unknown) | `cf-runner-9debaeaa` |
 
 The exact lane distribution is one match each; the three jobs use different
-workflow suites and different ephemeral runner names. All three stopped with a
-step in progress and later pending steps. The refreshed records show checkout
-completed before the in-progress step in every case; the earlier claim that one
-checkout was incomplete is not supported by the currently retained metadata.
+workflow suites and different ephemeral runner names. The current API response
+does not retain step state for any of the three, so it cannot establish whether
+the jobs stopped during setup or after checkout. The earlier step-level claims
+are historical evidence from the 2026-09-06 capture, not claims made by this
+refresh.
 
 The regenerated collector output derives the queue figures above from the job
 objects (rather than from prose): `count=3`, `min=1 s`, `median=141 s`,
@@ -102,10 +105,11 @@ do not distinguish runner termination, Playwright webServer failure, a job
 timeout, billing/startup failure, or ENOSPC, and no ENOSPC refutation can be made
 from currently available evidence.
 
-Classification: **common 600-second signature confirmed; common root cause
-unclassified; HALT pending log/artifact recovery or a fresh instrumented
-occurrence**. A zero count in a later window must not close B-152: it measures only
-that window and is not evidence that the intermittent fault was removed.
+Classification: **common 600-second signature confirmed; step metadata and
+common root cause unclassified; HALT pending log/artifact recovery or a fresh
+instrumented occurrence**. A zero count in a later window must not close B-152:
+it measures only that window and is not evidence that the intermittent fault was
+removed.
 
 ## Reproduction
 

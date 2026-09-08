@@ -11,10 +11,8 @@ and no mechanism existed that could notice.
 
 So a list is not enough. The list has to be able to disagree with the world and
 say so out loud. Every item in BACKLOG.md therefore carries its own verification
-command, and this script runs them:
-
-    verify exits 0        -> the declared status is CONFIRMED
-    verify exits non-zero -> DRIFTED; the item says one thing, the repo says another
+declaration. This gate validates the declaration and its trusted-base transition,
+but deliberately does not execute it: a PR is an untrusted data source.
 
 An item that genuinely cannot be checked by a command declares `verify: manual`
 and must carry a fresh `last-verified` date. Those decay: past `max-age-days`
@@ -27,16 +25,23 @@ USAGE
     python3 scripts/backlog_verify.py            # check every item
     python3 scripts/backlog_verify.py --id B-003 # check one
     python3 scripts/backlog_verify.py --format json
+    python3 scripts/backlog_verify.py --candidate-file PR/BACKLOG.md \
+        --trusted-file BASE/BACKLOG.md --candidate-root PR --trusted-root BASE
 
 Exit code is 0 only when every item is CONFIRMED. Anything else is a red gate.
+Candidate mode validates the PR register, dense-ID population, allowed field
+transitions, and trusted control closure but never executes candidate
+`verify:` strings or candidate verifier code.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import datetime as dt
 import json
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -66,8 +71,15 @@ REQUIRED_FIELDS = ("id", "repo", "owner", "status", "verify", "verify-means", "l
 VALID_STATUS = ("open", "done", "parked")
 VALID_OWNER = ("tl", "owner")
 DEFAULT_MAX_AGE_DAYS = 14
-# A command that hangs would turn a red gate into a stuck one, which is worse.
+# Candidate trees are data. Semantic execution is available only through the
+# explicit trusted-main workflow mode; candidate mode never executes a verifier.
+MAX_BACKLOG_BYTES = 2_000_000
 VERIFY_TIMEOUT_S = 120
+IMMUTABLE_ITEM_FIELDS = frozenset({
+    "id", "repo", "verify", "verify-means", "action-packet", "source-document",
+    "source-locator", "finding-title", "problem", "evidence", "acceptance",
+})
+ALLOWED_TRANSITION_FIELDS = frozenset({"status", "owner", "last-verified"})
 
 # A command's polarity cannot be inferred from arbitrary shell.  We can still
 # reject the known dangerous declaration: a `done` item whose human explanation
@@ -212,21 +224,48 @@ def age_days(item: Item, today: dt.date) -> int:
     return (today - parse_date(item.raw["last-verified"])).days
 
 
-def run_verify(command: str) -> tuple[int, str]:
+def run_verify(command: str, *, mode: str) -> tuple[int, str]:
+    """Run only trusted-main semantics; candidate and fixture text stay inert."""
+    if mode == "fixture":
+        if command == "true":
+            return 0, "true"
+        if command == "false":
+            return 1, "false"
+        return 125, "fixture verify command is not an allowlisted literal (not executed)"
+    if mode != "trusted":
+        return 125, "candidate verify command is data-only (not executed)"
+
+    # This mode is reached only by the explicit trusted-semantic workflow step,
+    # whose checkout is the immutable main github.sha. Keep the declaration's
+    # established shell semantics, but do not inherit runner credential tokens.
+    clean_env = {
+        key: value for key, value in os.environ.items()
+        if key not in {"GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN"}
+    }
     try:
-        p = subprocess.run(
-            command, shell=True, cwd=REPO_ROOT, timeout=VERIFY_TIMEOUT_S,
-            capture_output=True, text=True,
+        process = subprocess.run(
+            ["/bin/bash", "-o", "pipefail", "-c", command],
+            cwd=REPO_ROOT,
+            timeout=VERIFY_TIMEOUT_S,
+            capture_output=True,
+            text=True,
+            env=clean_env,
         )
     except subprocess.TimeoutExpired:
-        # Distinguished from a normal failure: a timeout means the check itself
-        # is broken, not that the item drifted.
         return 124, f"verify command exceeded {VERIFY_TIMEOUT_S}s"
-    tail = (p.stdout + p.stderr).strip().splitlines()
-    return p.returncode, tail[-1][:200] if tail else ""
+    tail = (process.stdout + process.stderr).strip().splitlines()
+    return process.returncode, tail[-1][:200] if tail else ""
 
 
-def check(item: Item, today: dt.date, max_age: int) -> None:
+def check(
+    item: Item,
+    today: dt.date,
+    max_age: int,
+    *,
+    trusted_by_id: dict[str, Item] | None = None,
+    enforce_manual_age: bool = False,
+    execution_mode: str = "candidate",
+) -> None:
     if item.verdict:  # already BROKEN at parse time
         return
     validate_schema(item)
@@ -238,27 +277,346 @@ def check(item: Item, today: dt.date, max_age: int) -> None:
     command = str(item.raw["verify"]).strip()
     if command == "manual":
         age = age_days(item, today)
-        if age > max_age:
+        if enforce_manual_age and age > max_age:
             item.verdict = STALE
             item.detail = (f"last verified {age} days ago (limit {max_age}); "
                            "re-verify it by hand and update last-verified, or give it a real check")
         else:
             item.verdict = CONFIRMED
-            item.detail = f"manual, verified {age} day(s) ago"
+            item.detail = (
+                f"manual, verified {age} day(s) ago"
+                if enforce_manual_age
+                else "manual declaration present; semantic freshness is deferred to exact-SHA CI"
+            )
         return
 
-    code, tail = run_verify(command)
-    item.evidence = tail
+    trusted = (trusted_by_id or {}).get(item.id)
+    if trusted is not None and item.raw.get("verify") != trusted.raw.get("verify"):
+        item.verdict = BROKEN
+        item.detail = "verify declaration differs from BASE; semantic execution is deferred to exact-SHA CI"
+        return
+    if execution_mode == "candidate":
+        item.verdict = CONFIRMED
+        item.detail = "verify declaration is syntactically present; semantic execution is deferred to exact-SHA CI"
+        return
+    code, evidence = run_verify(command, mode=execution_mode)
+    item.evidence = evidence
     if code == 0:
         item.verdict = CONFIRMED
         item.detail = "verify agrees with the declared status"
     elif code == 124:
         item.verdict = BROKEN
-        item.detail = tail
+        item.detail = evidence
     else:
         item.verdict = DRIFTED
         item.detail = (f"verify exited {code} — the item claims status "
                        f"`{item.raw['status']}` but the check for that no longer holds")
+
+
+_CONTROL_PATH_RE = re.compile(r"(?<![A-Za-z0-9_.-])((?:scripts|tests)/[A-Za-z0-9_./-]+)")
+
+
+def _normal_control_path(value: str) -> str | None:
+    """Normalize a statically discovered path without permitting escape."""
+    if value.startswith("/"):
+        return None
+    normalized = posixpath.normpath(value)
+    if normalized == ".." or normalized.startswith("../"):
+        return None
+    return normalized.removeprefix("./")
+
+
+def _static_path_expr(
+    expression: ast.AST, source_relative: str, bindings: dict[str, ast.AST], seen: set[str] | None = None
+) -> str | None:
+    """Resolve bounded Path(__file__) expressions used by dynamic loaders."""
+    seen = seen or set()
+    if isinstance(expression, ast.Constant) and isinstance(expression.value, str):
+        return _normal_control_path(expression.value)
+    if isinstance(expression, ast.Name) and expression.id not in seen and expression.id in bindings:
+        return _static_path_expr(expression=bindings[expression.id], source_relative=source_relative,
+                                  bindings=bindings, seen=seen | {expression.id})
+    if isinstance(expression, ast.Call):
+        if isinstance(expression.func, ast.Name) and expression.func.id == "Path":
+            if expression.args and isinstance(expression.args[0], ast.Name) and expression.args[0].id == "__file__":
+                return source_relative
+            if expression.args and isinstance(expression.args[0], ast.Constant):
+                return _normal_control_path(str(expression.args[0].value))
+        if isinstance(expression.func, ast.Attribute):
+            base = _static_path_expr(expression.func.value, source_relative, bindings, seen)
+            if expression.func.attr == "with_name" and base and expression.args:
+                name = _static_path_expr(expression.args[0], source_relative, bindings, seen)
+                return _normal_control_path(posixpath.join(posixpath.dirname(base), name)) if name else None
+            if expression.func.attr == "resolve":
+                return base
+    if isinstance(expression, ast.Attribute) and expression.attr == "parent":
+        base = _static_path_expr(expression.value, source_relative, bindings, seen)
+        return _normal_control_path(posixpath.dirname(base)) if base else None
+    if isinstance(expression, ast.Subscript) and isinstance(expression.value, ast.Attribute) and expression.value.attr == "parents":
+        base = _static_path_expr(expression.value.value, source_relative, bindings, seen)
+        index = expression.slice.value if isinstance(expression.slice, ast.Constant) else None
+        if base is not None and isinstance(index, int) and index >= 0:
+            for _ in range(index + 1):
+                base = posixpath.dirname(base)
+            return _normal_control_path(base)
+    if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Div):
+        base = _static_path_expr(expression.left, source_relative, bindings, seen)
+        suffix = _static_path_expr(expression.right, source_relative, bindings, seen)
+        if suffix is None:
+            return None
+        # A function parameter such as ``root`` is intentionally unresolved,
+        # but a literal scripts/tests suffix is still a safe control path.
+        return _normal_control_path(posixpath.join(base or "", suffix))
+    return None
+
+
+def _python_control_paths(source: Path, trusted_root: Path, relative: str) -> set[str]:
+    try:
+        tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+    except (OSError, UnicodeError, SyntaxError) as exc:
+        raise RuntimeError(f"cannot statically inspect trusted control {relative}: {exc}") from exc
+    bindings: dict[str, ast.AST] = {}
+    for node in ast.walk(tree):
+        assignment = node if isinstance(node, (ast.Assign, ast.AnnAssign)) else None
+        if isinstance(assignment, ast.Assign) and isinstance(assignment.value, ast.AST):
+            for target in assignment.targets:
+                if isinstance(target, ast.Name):
+                    bindings[target.id] = assignment.value
+        elif isinstance(assignment, ast.AnnAssign) and isinstance(assignment.target, ast.Name) and assignment.value:
+            bindings[assignment.target.id] = assignment.value
+
+    discovered: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "scripts" or alias.name.startswith("scripts."):
+                    discovered.add(alias.name.replace(".", "/") + ".py")
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            if node.module == "scripts" or node.module.startswith("scripts."):
+                module_path = node.module.replace(".", "/")
+                direct = module_path + ".py"
+                if (trusted_root / direct).is_file():
+                    discovered.add(direct)
+                for alias in node.names:
+                    imported = module_path + "/" + alias.name + ".py"
+                    if (trusted_root / imported).is_file():
+                        discovered.add(imported)
+        elif isinstance(node, ast.Call):
+            is_spec_loader = (
+                isinstance(node.func, ast.Attribute) and node.func.attr == "spec_from_file_location"
+            ) or (isinstance(node.func, ast.Name) and node.func.id == "spec_from_file_location")
+            if not is_spec_loader or len(node.args) < 2:
+                continue
+            loaded = _static_path_expr(node.args[1], relative, bindings)
+            if loaded is None:
+                raise RuntimeError(
+                    f"unresolved importlib loader path in trusted control {relative}:{node.lineno}"
+                )
+            if loaded.endswith(".py"):
+                discovered.add(loaded)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "import_module":
+            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                module = node.args[0].value
+                if module == "scripts" or module.startswith("scripts."):
+                    discovered.add(module.replace(".", "/") + ".py")
+    return {path for path in discovered if (trusted_root / path).is_file()}
+
+
+def _candidate_control_paths(trusted_root: Path, trusted_items: list[Item]) -> set[str]:
+    """Resolve the trusted verifier's direct and transitive data controls.
+
+    This is intentionally a static closure. It never imports or runs a
+    candidate module, and it does not blanket-freeze unrelated source files.
+    """
+    paths = {"scripts/backlog_verify.py"}
+    queue: list[str] = []
+    for item in trusted_items:
+        command = item.raw.get("verify")
+        if isinstance(command, str):
+            queue.extend(
+                match.group(1).rstrip("'\"`),;:}")
+                for match in _CONTROL_PATH_RE.finditer(command)
+            )
+    seen: set[str] = set()
+    while queue:
+        relative = queue.pop()
+        if relative in seen or not relative.endswith((".py", ".sh")):
+            continue
+        seen.add(relative)
+        paths.add(relative)
+        if not relative.endswith(".py"):
+            continue
+        source = trusted_root / relative
+        if not source.is_file() or source.is_symlink():
+            continue
+        queue.extend(_python_control_paths(source, trusted_root, relative))
+    return paths
+
+
+def _regular_control(root: Path, relative: str) -> bytes:
+    path = root / relative
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise RuntimeError(f"control path escapes checkout: {relative}") from exc
+    try:
+        current = root
+        for component in Path(relative).parts[:-1]:
+            current = current / component
+            if current.is_symlink():
+                raise RuntimeError(f"control parent is a symlink: {relative}")
+        path.lstat()
+    except OSError as exc:
+        raise RuntimeError(f"control file unavailable: {relative}: {exc}") from exc
+    if not path.is_file() or path.is_symlink():
+        raise RuntimeError(f"control file is not a regular non-symlink file: {relative}")
+    return path.read_bytes()
+
+
+def check_candidate_controls(candidate_root: Path, trusted_root: Path, trusted_items: list[Item]) -> None:
+    """Fail closed when PR data changes a trusted control in the closure."""
+    for relative in sorted(_candidate_control_paths(trusted_root, trusted_items)):
+        trusted = _regular_control(trusted_root, relative)
+        candidate = _regular_control(candidate_root, relative)
+        if candidate != trusted:
+            raise RuntimeError(
+                f"candidate mutated trusted backlog control {relative}; "
+                "candidate verifier code is data-only and was not executed"
+            )
+
+
+def validate_candidate_transitions(
+    candidate_items: list[Item], trusted_items: list[Item], today: dt.date
+) -> list[str]:
+    """Validate the small, auditable set of BACKLOG changes a PR may make."""
+    trusted_by_id = {item.id: item for item in trusted_items if item.raw}
+    candidate_by_id = {item.id: item for item in candidate_items if item.raw}
+    errors: list[str] = []
+    allowed_status = {
+        "open": {"open", "parked", "done"},
+        "parked": {"parked", "open", "done"},
+        "done": {"done"},
+    }
+    for item in candidate_items:
+        if not item.raw or item.id not in trusted_by_id:
+            if item.raw.get("status") != "open":
+                errors.append(f"new item {item.id} must start status: open")
+            continue
+        old = trusted_by_id[item.id]
+        old_raw, new_raw = old.raw, item.raw
+        for field in IMMUTABLE_ITEM_FIELDS:
+            if old_raw.get(field) != new_raw.get(field):
+                errors.append(f"{item.id}: immutable field {field!r} changed")
+        for field in set(old_raw) | set(new_raw):
+            if field not in IMMUTABLE_ITEM_FIELDS | ALLOWED_TRANSITION_FIELDS:
+                if old_raw.get(field) != new_raw.get(field):
+                    errors.append(f"{item.id}: unsupported field {field!r} changed")
+        old_status, new_status = old_raw.get("status"), new_raw.get("status")
+        if new_status not in allowed_status.get(old_status, set()):
+            errors.append(f"{item.id}: status transition {old_status!r} -> {new_status!r} is not allowed")
+        if old_raw.get("owner") != new_raw.get("owner") and old_status == new_status:
+            errors.append(f"{item.id}: owner may change only with a status transition")
+        if old_raw.get("verify-means") != new_raw.get("verify-means") and old_status == new_status:
+            errors.append(f"{item.id}: verify-means may change only with a status transition")
+        try:
+            old_date, new_date = parse_date(old_raw["last-verified"]), parse_date(new_raw["last-verified"])
+            if new_date < old_date or new_date > today:
+                errors.append(f"{item.id}: last-verified must move forward and not be future-dated")
+        except Exception:
+            pass  # validate_schema reports the precise date error
+    missing = sorted(set(trusted_by_id) - set(candidate_by_id))
+    if missing:
+        errors.append("candidate deleted BASE item(s): " + ", ".join(missing))
+    return errors
+
+
+def validate_candidate_workflow(candidate_root: Path) -> None:
+    """Inspect workflow policy as data; never execute the candidate workflow."""
+    text = _regular_control(candidate_root, ".github/workflows/backlog-verify.yml").decode("utf-8")
+    try:
+        document = yaml.load(text, Loader=_NoDuplicateKeysLoader) or {}
+    except yaml.YAMLError as exc:
+        raise RuntimeError(f"candidate workflow policy is not valid YAML: {exc}") from exc
+    if not isinstance(document, dict):
+        raise RuntimeError("candidate workflow policy must be a YAML mapping")
+    required = (
+        "pull_request_target:",
+        "github.event.pull_request.head.sha || github.sha",
+        "github.event.pull_request.base.sha || github.sha",
+        "types: [opened, synchronize, reopened]",
+        "persist-credentials: false",
+        'paths: ["**"]',
+        "runs-on: corelink",
+        "permissions:\n  contents: read",
+        "--candidate-file",
+        "--trusted-file",
+        "--trusted-semantic",
+    )
+    missing = [fragment for fragment in required if fragment not in text]
+    if missing:
+        raise RuntimeError("candidate workflow policy missing: " + ", ".join(missing))
+    forbidden = (
+        "pull_request:\n", "refs/pull/", "pull_request.head.ref", "pull_request.base.ref",
+        "GH_" + "TOKEN", "github." + "token", "shell" + "=" + "True", "bash" + " " + "-c",
+    )
+    found = [fragment for fragment in forbidden if fragment in text]
+    if found:
+        raise RuntimeError("candidate workflow contains mutable/credentialed execution policy: " + ", ".join(found))
+
+    # The workflow is not executed for this PR, but it becomes the BASE control
+    # plane after merge. Keep its executable shape closed while allowing harmless
+    # comments/concurrency edits. A candidate cannot add a shell step, swap the
+    # checkout action, or redirect the BASE checker without this data check going
+    # red first.
+    trigger = document.get(True, document.get("on")) or {}
+    pr_trigger = trigger.get("pull_request_target") if isinstance(trigger, dict) else None
+    push_trigger = trigger.get("push") if isinstance(trigger, dict) else None
+    if not isinstance(pr_trigger, dict) or pr_trigger.get("types") != ["opened", "synchronize", "reopened"]:
+        raise RuntimeError("candidate workflow policy has unexpected pull_request_target types")
+    if pr_trigger.get("paths") != ["**"]:
+        raise RuntimeError("candidate workflow policy must cover the complete PR tree")
+    if not isinstance(push_trigger, dict) or push_trigger.get("branches") != ["main"] or push_trigger.get("paths") != ["**"]:
+        raise RuntimeError("candidate workflow policy has unexpected main push trigger")
+    if document.get("permissions") != {"contents": "read"}:
+        raise RuntimeError("candidate workflow policy must grant contents: read only")
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict) or set(jobs) != {"verify"}:
+        raise RuntimeError("candidate workflow policy must contain only the verify job")
+    job = jobs["verify"]
+    steps = job.get("steps") if isinstance(job, dict) else None
+    if not isinstance(job, dict) or job.get("runs-on") != "corelink" or not isinstance(steps, list) or len(steps) != 5:
+        raise RuntimeError("candidate workflow policy has unexpected verify job shape")
+    if not all(isinstance(step, dict) for step in steps):
+        raise RuntimeError("candidate workflow policy has a malformed verify step")
+    checkout_ref = "9f698171ed81b15d1823a05fc7211befd50c8ae0"
+    expected_checkouts = (
+        ("${{ github.event.pull_request.head.sha || github.sha }}", "_candidate"),
+        ("${{ github.event.pull_request.base.sha || github.sha }}", "_base"),
+    )
+    for step, (ref, path) in zip(steps[:2], expected_checkouts):
+        if not isinstance(step, dict) or step.get("uses") != f"actions/checkout@{checkout_ref}":
+            raise RuntimeError("candidate workflow policy uses an unexpected checkout action")
+        if step.get("with") != {
+            "ref": ref, "path": path, "fetch-depth": 1, "persist-credentials": False
+        }:
+            raise RuntimeError("candidate workflow policy has an unsafe checkout configuration")
+    expected_gate = (
+        'python3 scripts/backlog_verify.py --candidate-file "$CANDIDATE_ROOT/BACKLOG.md" '
+        '--trusted-file "$TRUSTED_ROOT/BACKLOG.md" --candidate-root "$CANDIDATE_ROOT" '
+        '--trusted-root "$TRUSTED_ROOT"'
+    )
+    if steps[2].get("working-directory") != "_base" or steps[2].get("run") != expected_gate:
+        raise RuntimeError("candidate workflow policy has an unexpected BASE gate command")
+    if steps[3].get("working-directory") != "_base" or steps[3].get("run") != (
+        "python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py"
+    ):
+        raise RuntimeError("candidate workflow policy has an unexpected BASE test command")
+    if (
+        steps[4].get("if") != "github.event_name == 'push' || github.event_name == 'schedule'"
+        or steps[4].get("working-directory") != "_base"
+        or steps[4].get("run") != "python3 scripts/backlog_verify.py --trusted-semantic"
+    ):
+        raise RuntimeError("candidate workflow policy has an unexpected trusted semantic command")
 
 
 def main() -> int:
@@ -269,35 +627,78 @@ def main() -> int:
                     help="how long a `verify: manual` item may go unchecked")
     ap.add_argument("--today", help="override today's date (YYYY-MM-DD), for testing")
     ap.add_argument("--file", help="check a different backlog file (used by the self-test)")
+    ap.add_argument("--candidate-file", help="PR BACKLOG.md; parsed as data only")
+    ap.add_argument("--trusted-file", help="trusted-base BACKLOG.md paired with --candidate-file")
+    ap.add_argument("--candidate-root", help="PR checkout root paired with --candidate-file")
+    ap.add_argument("--trusted-root", help="trusted checkout root paired with --candidate-file")
+    ap.add_argument(
+        "--trusted-semantic", action="store_true",
+        help="execute declarations from this immutable trusted checkout (push/schedule only)",
+    )
     args = ap.parse_args()
 
-    # The D03 closed-population validator is the authority for the final TL
-    # lane.  Per-item invocations preflight its schema, while the graduation
-    # validator's nested gate runs set this env var to avoid recursion.
-    if args.id and not args.file and not os.environ.get("D03_GRADUATION_NESTED"):
-        validator = REPO_ROOT / "scripts/verify_d03_graduation.py"
-        try:
-            preflight = subprocess.run(
-                [sys.executable, str(validator), "--schema-only"],
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-                timeout=VERIFY_TIMEOUT_S,
-            )
-        except subprocess.TimeoutExpired:
-            print("FATAL: D03 graduation schema preflight exceeded timeout", file=sys.stderr)
-            return 2
-        if preflight.returncode:
-            print(preflight.stdout + preflight.stderr, file=sys.stderr)
-            return 2
+    candidate_mode = bool(args.candidate_file)
+    if bool(args.candidate_file) != bool(args.trusted_file):
+        print("FATAL: --candidate-file and --trusted-file must be supplied together", file=sys.stderr)
+        return 2
+    if candidate_mode and (not args.candidate_root or not args.trusted_root):
+        print("FATAL: candidate mode requires --candidate-root and --trusted-root", file=sys.stderr)
+        return 2
+    if args.trusted_semantic and (candidate_mode or args.file):
+        print("FATAL: --trusted-semantic cannot be combined with candidate or fixture mode", file=sys.stderr)
+        return 2
+    if args.trusted_semantic and os.environ.get("GITHUB_EVENT_NAME") not in {"push", "schedule"}:
+        print("FATAL: --trusted-semantic is restricted to push/schedule workflow events", file=sys.stderr)
+        return 2
 
-    path = Path(args.file).resolve() if args.file else BACKLOG_PATH
+    execution_mode = "fixture" if args.file else "trusted" if args.trusted_semantic else "candidate"
+
+    candidate_root = Path(args.candidate_root).resolve() if candidate_mode else None
+    path = Path(args.candidate_file).resolve() if candidate_mode else Path(args.file).resolve() if args.file else BACKLOG_PATH
+    if candidate_mode and (path != candidate_root / "BACKLOG.md" or not path.is_file() or path.is_symlink()):
+        print("FATAL: candidate BACKLOG.md must be a regular file in the candidate root", file=sys.stderr)
+        return 2
     if not path.exists():
         print(f"FATAL: {path} does not exist", file=sys.stderr)
         return 2
 
     today = dt.datetime.strptime(args.today, "%Y-%m-%d").date() if args.today else dt.date.today()
-    items = parse(path.read_text())
+    try:
+        if path.stat().st_size > MAX_BACKLOG_BYTES:
+            print(f"FATAL: {path.name} exceeds {MAX_BACKLOG_BYTES} bytes", file=sys.stderr)
+            return 2
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        print(f"FATAL: cannot read {path}: {exc}", file=sys.stderr)
+        return 2
+    items = parse(text)
+    trusted_by_id: dict[str, Item] | None = None
+    if candidate_mode:
+        trusted_path = Path(args.trusted_file).resolve()
+        if not trusted_path.is_file() or trusted_path.is_symlink():
+            print(f"FATAL: trusted backlog is not a regular file: {trusted_path}", file=sys.stderr)
+            return 2
+        if trusted_path.stat().st_size > MAX_BACKLOG_BYTES:
+            print(f"FATAL: trusted BACKLOG.md exceeds {MAX_BACKLOG_BYTES} bytes", file=sys.stderr)
+            return 2
+        trusted_items = parse(trusted_path.read_text(encoding="utf-8"))
+        trusted_by_id = {item.id: item for item in trusted_items if item.raw}
+        if len(trusted_by_id) != len(trusted_items) or any(item.verdict == BROKEN for item in trusted_items):
+            print("FATAL: trusted-base BACKLOG.md is not parseable; refusing candidate validation", file=sys.stderr)
+            return 2
+        try:
+            check_candidate_controls(
+                candidate_root,
+                Path(args.trusted_root).resolve(),
+                trusted_items,
+            )
+            transition_errors = validate_candidate_transitions(items, trusted_items, today)
+            if transition_errors:
+                raise RuntimeError("candidate transition rejected:\n" + "\n".join(transition_errors))
+            validate_candidate_workflow(candidate_root)
+        except (OSError, RuntimeError) as exc:
+            print(f"FATAL: {exc}", file=sys.stderr)
+            return 2
 
     if not items:
         # An empty backlog is not a pass. It is far more likely that the format
@@ -308,7 +709,6 @@ def main() -> int:
     # Each block must sit under a heading that names the SAME id. Checked before
     # the per-item verifies so a mislabelled item cannot be "confirmed" under a
     # heading that describes different work.
-    text = path.read_text()
     headings = [(m.start(), m.group(1)) for m in HEADING_RE.finditer(text)]
     mismatches: list[str] = []
     # An id that is not `B-<digits>` used to be SKIPPED here, and that silence was
@@ -522,7 +922,14 @@ def main() -> int:
         return 2
 
     for it in selected:
-        check(it, today, args.max_age_days)
+        check(
+            it,
+            today,
+            args.max_age_days,
+            trusted_by_id=trusted_by_id,
+            enforce_manual_age=execution_mode in {"fixture", "trusted"},
+            execution_mode=execution_mode,
+        )
 
     if args.format == "json":
         print(json.dumps([{

@@ -55,6 +55,7 @@ import {
   enforcePatIssueRateLimit,
   PAT_ISSUE_AUTHORIZED_HEADER,
 } from "./pat_issue_rate_limit.js";
+import { isPilotSignupPath } from "./route_match.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -154,6 +155,7 @@ export class CoreLinkServer implements DurableObject {
   private readonly state: DurableObjectState;
   private readonly storage: DurableObjectStorage;
   private readonly env: Env;
+  private readonly now: () => number;
   private lifecycleState: LifecycleState = {
     containerStatus: "stopped",
     lastHealthCheckMs: 0,
@@ -163,10 +165,11 @@ export class CoreLinkServer implements DurableObject {
   private healthFailures = 0;
   private doIdHash = "";
 
-  constructor(state: DurableObjectState, env: Env) {
+  constructor(state: DurableObjectState, env: Env, now: () => number = Date.now) {
     this.state = state;
     this.storage = state.storage;
     this.env = env;
+    this.now = now;
 
     // Restore persisted lifecycle state on DO wakeup
     void this.state.blockConcurrencyWhile(async () => {
@@ -201,7 +204,7 @@ export class CoreLinkServer implements DurableObject {
     request: Request,
     url: URL,
   ): Promise<Response | null> {
-    const isSignup = request.method === "POST" && url.pathname === "/v1/signup/pilot";
+    const isSignup = request.method === "POST" && isPilotSignupPath(url.pathname);
     const isAuditAnalytics =
       url.pathname.startsWith("/v1/audit/analytics/") &&
       (request.method === "GET" || request.method === "HEAD");
@@ -217,7 +220,7 @@ export class CoreLinkServer implements DurableObject {
     const storageKey = `durable-route-rate:v1:${isSignup ? "signup" : "audit"}:${keyHash}`;
     try {
       const result = await this.state.blockConcurrencyWhile(async () => {
-        const now = Date.now();
+        const now = this.now();
         const current = (await this.storage.get<{ windowStartedMs: number; count: number }>(
           storageKey,
         )) ?? { windowStartedMs: now, count: 0 };

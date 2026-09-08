@@ -45,6 +45,8 @@ async fn billable_request_under_ceiling_proceeds() {
         pat_gate: None,
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_budget: test_read_budget(),
+        batch_read_admission: test_batch_read_admission(),
         usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     };
     let app = router(st);
@@ -97,6 +99,8 @@ fn fixture_over_storage_cap(tenant: &str) -> CasRouteState {
         pat_gate: None,
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_budget: test_read_budget(),
+        batch_read_admission: test_batch_read_admission(),
         usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     }
 }
@@ -158,6 +162,8 @@ async fn put_under_storage_cap_accrues_and_succeeds() {
         pat_gate: None,
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_budget: test_read_budget(),
+        batch_read_admission: test_batch_read_admission(),
         usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     };
     let app = router(st);
@@ -225,6 +231,8 @@ async fn pat_gate_missing_bearer_returns_401() {
         pat_gate: Some(Arc::new(NativePatGate::new_for_test(verifier))),
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_budget: test_read_budget(),
+        batch_read_admission: test_batch_read_admission(),
         usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     };
     let app = router(st);

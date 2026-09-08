@@ -36,9 +36,9 @@
   },
   "source": {
     "document": "specs/_audits/2026-09-05-b250-deleted-workflow-startup-failure.md",
-    "document_sha256": "sha256:31d49f91547a09044ea13db8560b3b44f8a6ad3e10355d4856cf676fa8a59d36",
-    "last_refreshed": "2026-09-05T00:00:00Z",
-    "max_age_hours": 48,
+    "document_sha256": "sha256:3f8e93ab9ca1e0b6edc86bca1c417455a8de2603c3bd599433312c2ca84f4650",
+    "last_refreshed": "2026-09-08T06:20:00Z",
+    "max_age_hours": 72,
     "read_only": true,
     "raw_api_payload_persisted": false
   }

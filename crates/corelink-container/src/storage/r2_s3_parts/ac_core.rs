@@ -194,126 +194,47 @@ impl CasListHandler for R2CasHandler {
         // keys cannot appear in the result. Fail CLOSED if the prefix is not
         // derivable: an empty prefix would list a SHARED keyspace across every
         // non-derivable tenant. Both branches below log their own R2 error
-        // (with whatever prefix they had, if any) INSIDE the branch, so the
-        // shared post-join code only has to deal in `CasHandlerError`.
+        // (with whatever prefix they had, if any) in the storage branch.
         let handle = tokio::runtime::Handle::current();
-        type StoreResult = Result<(Vec<(String, u64, String)>, Option<String>), CasHandlerError>;
-
-        let (audit_result, store_result): (Result<(), String>, StoreResult) =
-            if let Some(audit_async) = self.audit_async.as_ref() {
-                // CONCURRENT PATH (production: durable D1 audit sink wired).
-                //
-                // The mandatory `ListAttempted` audit write and the R2
-                // `ListObjectsV2` call now run CONCURRENTLY — one
-                // `tokio::join!` under a single `block_in_place` +
-                // `block_on`, instead of two serial round trips (measured:
-                // ~236ms total on IAD, ~30-36ms `ostore` + ~108-120ms
-                // `oother` dominated by this blocking D1 INSERT — see the
-                // PR).
-                //
-                // FAIL-CLOSED IS PRESERVED. The two calls are dispatched
-                // together, but NEITHER result is used — and no bytes are
-                // served — until BOTH have completed and are checked BELOW,
-                // in the SAME order the old serial code checked them: the
-                // audit result first (`AuditFailed` short-circuits exactly
-                // as it did when the calls were serial), the store result
-                // second. What changes is that a failing audit no longer
-                // PREVENTS the R2 call from having been issued (it can no
-                // longer prevent it — they started together); what does NOT
-                // change is that a failing audit still prevents any R2
-                // result from ever reaching the caller. "No bytes served
-                // without the audit row" holds; "no R2 request issued
-                // without the audit row" is the guarantee traded away for
-                // the latency win, and it was never a stated invariant —
-                // only "audit before enumeration" was, and enumeration
-                // (returning rows to the caller) still cannot happen without
-                // the audit row.
-                //
-                // Cross-tenant denial (above) is UNAFFECTED — it returns
-                // before this point and never joins anything.
-                let audit_fut = audit_async.emit_cas_async(AuditEvent::new(
-                    AuditEventKind::ListAttempted,
-                    req.tenant.clone(),
-                    String::new(),
-                    req.principal.clone(),
-                    req.at_unix_ms,
-                ));
-                let store_fut = async {
-                    let prefix = self
-                        .r2_list_prefix(&req.tenant)
-                        .map_err(CasHandlerError::Internal)?;
-                    debug!(prefix = %prefix, "R2CasHandler::list");
-                    self.client
-                        .list_objects_page(&prefix, req.limit, req.cursor.as_deref())
-                        .await
-                        .map_err(|e| {
-                            warn!(error = %e, prefix = %prefix, "R2CasHandler::list error");
-                            CasHandlerError::Internal(e)
-                        })
-                };
-                // ONE `Phase::Store` scope wraps the ENTIRE joined window —
-                // NOT two separate scopes (one per future) — so the
-                // overlapping wall time is attributed exactly once.
-                // `oaudit` (`Phase::Audit`) is deliberately NOT entered
-                // here: `append_async` (which this drives) skips its own
-                // scope for exactly this reason. See `origin_timing.rs`'s
-                // "Concurrent native-plane list seam" note — without this,
-                // the two phases would double-count the same wall-clock
-                // window and the `Σ(phases) ≤ total` invariant would break.
-                let _scope =
-                    crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
-                tokio::task::block_in_place(|| {
-                    handle.block_on(async { tokio::join!(audit_fut, store_fut) })
-                })
-            } else {
-                // SERIAL FALLBACK — byte-identical to the pre-existing
-                // behavior. Taken whenever `audit_async` is unset (every
-                // test handler in this module, and any future `AuditSink`
-                // impl that is not the durable D1 sink).
-                let audit_result = self.audit.emit(AuditEvent::new(
-                    AuditEventKind::ListAttempted,
-                    req.tenant.clone(),
-                    String::new(),
-                    req.principal.clone(),
-                    req.at_unix_ms,
-                ));
-                let store_result = if audit_result.is_err() {
-                    // Mirrors the old code exactly: on audit failure it
-                    // returned via `?` before ever touching the prefix or
-                    // R2 — never compute or evaluate the store side here.
-                    Ok((Vec::new(), None))
-                } else {
-                    let prefix = match self.r2_list_prefix(&req.tenant) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            emit(true);
-                            return Err(CasHandlerError::Internal(e));
-                        }
-                    };
-                    debug!(prefix = %prefix, "R2CasHandler::list");
-                    let result = {
-                        let _scope = crate::origin_timing::PhaseScope::enter(
-                            crate::origin_timing::Phase::Store,
-                        );
-                        tokio::task::block_in_place(|| {
-                            handle.block_on(self.client.list_objects_page(
-                                &prefix,
-                                req.limit,
-                                req.cursor.as_deref(),
-                            ))
-                        })
-                    };
-                    match result {
-                        Ok(ok) => Ok(ok),
-                        Err(e) => {
-                            warn!(error = %e, prefix = %prefix, "R2CasHandler::list error");
-                            emit(true);
-                            return Err(CasHandlerError::Internal(e));
-                        }
-                    }
-                };
-                (audit_result, store_result)
+        let audit_result = self.audit.emit(AuditEvent::new(
+            AuditEventKind::ListAttempted,
+            req.tenant.clone(),
+            String::new(),
+            req.principal.clone(),
+            req.at_unix_ms,
+        ));
+        let store_result = if audit_result.is_err() {
+            Ok((Vec::new(), None))
+        } else {
+            let prefix = match self.r2_list_prefix(&req.tenant) {
+                Ok(p) => p,
+                Err(e) => {
+                    emit(true);
+                    return Err(CasHandlerError::Internal(e));
+                }
             };
+            debug!(prefix = %prefix, "R2CasHandler::list");
+            let result = {
+                let _scope = crate::origin_timing::PhaseScope::enter(
+                    crate::origin_timing::Phase::Store,
+                );
+                tokio::task::block_in_place(|| {
+                    handle.block_on(self.client.list_objects_page(
+                        &prefix,
+                        req.limit,
+                        req.cursor.as_deref(),
+                    ))
+                })
+            };
+            match result {
+                Ok(ok) => Ok(ok),
+                Err(e) => {
+                    warn!(error = %e, prefix = %prefix, "R2CasHandler::list error");
+                    emit(true);
+                    return Err(CasHandlerError::Internal(e));
+                }
+            }
+        };
 
         if let Err(e) = audit_result {
             emit(true);

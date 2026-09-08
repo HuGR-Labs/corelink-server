@@ -12,17 +12,10 @@ pub struct R2CasHandler {
     /// `Option<...>` because tests construct without a TDK.
     tdk: Option<TenantDerivationKey>,
     audit: Arc<dyn AuditSink>,
-    /// Narrow async-capable seam onto the SAME sink as `audit` (perf,
-    /// concurrent-list PR): `Some` only when `audit` is backed by the
-    /// durable `D1AuditOutboxSink` (the production builder always wires
-    /// this — see [`build_r2_cas_handler_from_env`] /
-    /// [`Self::with_async_audit`]). `list()` uses this to `tokio::join!`
-    /// the mandatory `ListAttempted` audit write with the R2 enumeration
-    /// instead of running them serially; `None` (tests, any other
-    /// `AuditSink` impl) keeps the fully serial fallback, byte-identical to
-    /// before this seam existed. This does NOT weaken fail-closed: the
-    /// response is still gated on the audit result, checked FIRST, exactly
-    /// as the serial path checks it — see `list()`'s doc.
+    /// Concrete durable sink used only by the explicit batch-exists
+    /// throughput exception. Single-object reads and lists always use the
+    /// synchronous `audit` trait object and serialize audit success before
+    /// storage dispatch.
     audit_async: Option<Arc<crate::storage::d1_audit_sink::D1AuditOutboxSink>>,
     /// D1 lease that fences the live CAS write path against GC purge epochs.
     /// `None` is retained only for in-memory/unit-test constructors; the
@@ -41,6 +34,8 @@ pub struct R2CasHandler {
     /// `None` → a tenant configured for `crypto_mode='random'` fails CLOSED on
     /// the data plane (never plaintext); Mode A (convergent) is unaffected.
     byok_mode_b: Option<Arc<ModeBEncryptor>>,
+    #[cfg(test)]
+    test_post_header_body_timeout: bool,
 }
 
 impl core::fmt::Debug for R2CasHandler {
@@ -76,7 +71,18 @@ impl R2CasHandler {
             byok_config_cache: None,
             tcs_resolver: None,
             byok_mode_b: None,
+            #[cfg(test)]
+            test_post_header_body_timeout: false,
         }
+    }
+
+    /// Test-only seam that sends the real R2 body collector timeout through
+    /// this production `CasReadHandler` implementation.
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn with_test_post_header_body_timeout(mut self) -> Self {
+        self.test_post_header_body_timeout = true;
+        self
     }
 
     /// Attach the concurrent-list async audit seam: `audit_async` MUST be
@@ -86,9 +92,9 @@ impl R2CasHandler {
     /// DIFFERENT sink here would let `list()` write its audit row to one
     /// sink while every other call writes to another — never do that.
     ///
-    /// Optional: a handler with `audit_async` left `None` keeps `list()`
-    /// fully serial (identical to the pre-existing behavior) — this is the
-    /// state every test handler in this module is in today.
+    /// Optional: a handler with `audit_async` left `None` keeps every path
+    /// fully serial. The production builder wires the same durable sink into
+    /// both audit interfaces.
     #[must_use]
     pub fn with_async_audit(
         mut self,
@@ -396,8 +402,8 @@ impl R2CasHandler {
     }
 
     /// Read one CAS object through the B-051 pre-materialisation ceiling.
-    /// Both the production concurrent-audit path and the serial fallback MUST
-    /// use this helper; keeping the capped storage read in one place prevents
+    /// Every production and test read path MUST use this helper; keeping the
+    /// capped storage read in one place prevents
     /// a path-specific `get()` from bypassing the B-077 process-wide envelope.
     /// `max_bytes` is supplied by the request so batch-read can use its tighter
     /// 8 MiB object ceiling while single reads retain the ordinary ceiling.

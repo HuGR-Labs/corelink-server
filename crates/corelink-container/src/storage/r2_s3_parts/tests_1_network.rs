@@ -1,23 +1,19 @@
-    /// The CONCURRENT path (`audit_async` wired — production shape): even
-    /// when the durable-audit D1 write fails (here: a reachable-but-wrong
-    /// token, `stub_env()` from `d1_audit_sink.rs`'s own test helper shape),
-    /// `list()` still returns `AuditFailed` and — the load-bearing part —
-    /// the joined window is attributed ONCE to `ostore`, and `oaudit` is
-    /// ABSENT (proving `append_async` did not enter its own `Phase::Audit`
-    /// scope, so the two never double-count the same wall-clock window; see
-    /// `origin_timing.rs`'s "Concurrent native-plane list seam" note).
+    /// The production durable sink shape (`audit_async` wired) remains
+    /// strictly serial: when the D1 write fails, `list()` returns
+    /// `AuditFailed` before the R2 enumeration is dispatched. The audit phase
+    /// is present and the storage phase is absent.
     ///
     /// Gated behind `#[ignore]` like the `d1_audit_sink.rs` async-phase
     /// test it mirrors — needs outbound reachability to
     /// `api.cloudflare.com` (not live credentials: a 401 still proves the
-    /// join ran). Run manually with:
+    /// audit gate ran). Run manually with:
     ///
     /// ```bash
-    /// cargo test -p corelink-server r2_cas_list_concurrent_path_fails_closed_on_bad_audit_creds -- --ignored
+    /// cargo test -p corelink-server r2_cas_list_durable_audit_failure_precedes_storage -- --ignored
     /// ```
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "requires outbound network reachability to api.cloudflare.com"]
-    async fn r2_cas_list_concurrent_path_fails_closed_on_bad_audit_creds() {
+    async fn r2_cas_list_durable_audit_failure_precedes_storage() {
         let stub_env = StorageEnv {
             r2_endpoint: "https://localhost:1".to_owned(),
             r2_access_key_id: "test".to_owned(),
@@ -85,31 +81,14 @@
             .to_owned();
         let parsed = parse_server_timing(&header);
         assert!(
-            parsed.contains_key("ostore"),
-            "the concurrent join must be attributed to Phase::Store (ostore). \
-             Header: {header}"
+            parsed.contains_key("oaudit"),
+            "durable audit failure must be attributed to Phase::Audit. Header: {header}"
         );
         assert!(
-            !parsed.contains_key("oaudit"),
-            "the concurrent list()'s audit write must NOT ALSO appear under \
-             oaudit — it would double-count the same wall-clock window \
-             `ostore` already reports. Header: {header}"
+            !parsed.contains_key("ostore"),
+            "R2 list must not dispatch after durable audit failure. Header: {header}"
         );
     }
-
-    // The `oaudit` assertion above used to be guarded by a mirror of
-    // `origin_timing::detail_phases_enabled`, because `oaudit` shipped only with
-    // `CORELINK_ORIGIN_TIMING_DETAIL=on`. B-109 narrowed that flag to the two
-    // credential-path phases (`oargon`/`opermit`), so `oaudit` now publishes
-    // ALWAYS — and the guard had to go with it.
-    //
-    // It was not merely redundant, it had become DOMINATED: with the flag off
-    // (the production default) `!detail_phases_enabled_for_test()` is true, so
-    // the whole assertion short-circuits to `true` and would pass even if the
-    // concurrent `list()` seam started double-counting its audit write under
-    // `oaudit`. A guard that cannot fail in the configuration that actually
-    // ships is not a guard. The assertion is now unconditional, which is what
-    // the double-counting property always required.
 
     // ---------------------------------------------------------------
     // Integration round-trip test (requires live R2 creds)

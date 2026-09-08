@@ -454,6 +454,11 @@ def classify_job(job: dict[str, Any], run: dict[str, Any], low: int, high: int) 
         "runner_name": runner_name,
         "step_in_progress": in_progress,
         "step_not_completed": not_completed,
+        # GitHub can retain the job identity/timing object after its step
+        # metadata has disappeared.  Preserve that distinction explicitly so
+        # a later empty ``steps`` array is not mistaken for evidence that all
+        # steps completed cleanly.
+        "step_evidence_available": bool(steps),
         "steps": step_records,
         "checkout_incomplete": checkout_incomplete,
         "checkout_observed": bool(checkout),

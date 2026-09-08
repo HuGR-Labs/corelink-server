@@ -1,5 +1,6 @@
 //! `corelink-openapi` — OpenAPI 3.1 contract surface for the CoreLink
-//! non-REAPI HTTP API.
+//! HTTP API, including the native CAS routes documented alongside the
+//! non-REAPI surfaces.
 //!
 //! # What this crate ships
 //!
@@ -174,6 +175,12 @@ pub mod paths {
     pub const CAS_READ_TENANT: &str = "/v1/cas/{tenant}/{hash}";
     /// CAS read (REAPI binary — `corelink-reapi`).
     pub const CAS_READ_DIGEST: &str = "/v1/cas/{digest}";
+    /// CAS bulk write (length-framed upload — container surface).
+    pub const CAS_BATCH: &str = "/v1/cas/{tenant}/batch";
+    /// CAS bulk read (NDJSON request, length-framed response — container surface).
+    pub const CAS_BATCH_READ: &str = "/v1/cas/{tenant}/batch-read";
+    /// CAS bulk existence probe (NDJSON request and JSON response — container surface).
+    pub const CAS_BATCH_EXISTS: &str = "/v1/cas/{tenant}/batch-exists";
     /// Action Cache lookup + update (REAPI HTTP fake).
     pub const AC_LOOKUP: &str = "/v1/ac/{tenant}/{action_digest}";
 
@@ -204,6 +211,9 @@ pub mod paths {
         AUDIT_ANALYTICS_TIMELINE,
         CAS_READ_TENANT,
         CAS_READ_DIGEST,
+        CAS_BATCH,
+        CAS_BATCH_READ,
+        CAS_BATCH_EXISTS,
         AC_LOOKUP,
     ];
 }

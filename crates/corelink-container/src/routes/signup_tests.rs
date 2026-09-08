@@ -134,6 +134,15 @@ fn body_validation_catches_missing_and_oversize() {
 }
 
 #[test]
+fn pilot_rate_limit_uses_exact_five_per_hour_refill() {
+    let config = pilot_signup_rate_limit_config();
+    assert_eq!(config.default_burst_capacity(), 5);
+    assert_eq!(config.default_refill_rate_per_sec(), 0);
+    assert!((config.default_refill_rate_per_sec_exact() - (5.0 / 3_600.0)).abs() < 1e-12);
+    assert_eq!(config.retry_after_floor_secs(), 720);
+}
+
+#[test]
 fn in_memory_store_dedupes_on_email() {
     let store = InMemorySignupStore::new();
     let mk = |email: &str, token_id: &str| PilotSignupRecord {

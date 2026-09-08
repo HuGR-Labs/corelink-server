@@ -14,6 +14,8 @@ from types import MappingProxyType
 from pathlib import Path
 from typing import Callable
 
+from rust_source_lexer import include_paths, mask as _code
+
 ROOT = Path(__file__).resolve().parents[1]
 
 ADVERSARIAL = "tests/e2e-tenant-isolation/tests/adversarial.rs"
@@ -24,15 +26,20 @@ FAILOVER = "crates/corelink-container/src/routes/failover.rs"
 OCI = "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs"
 SLI = "crates/corelink-container/src/sli_aggregate.rs"
 REVOCATION = "crates/corelink-container/src/byok_revocation_runtime.rs"
-ACCOUNTING = "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs"
+REVOCATION_TESTS = "crates/corelink-container/src/byok_revocation_runtime/part-01.rs"
+ACCOUNTING = "crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs"
 AUDIT_DRAIN = "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs"
-CAS_SINGLE = "crates/corelink-container/src/routes/cas/single.rs"
-CAS_BATCH = "crates/corelink-container/src/routes/cas/batch.rs"
+# The CAS route is compiled from include fragments.  Keep each handler family
+# anchored to its real source unit so deleting or moving one declaration cannot
+# be hidden by a marker that happens to survive in another fragment.
+CAS_SINGLE = "crates/corelink-container/src/routes/cas/single_handlers.rs"
+CAS_BATCH_WRITE = "crates/corelink-container/src/routes/cas/batch_write.rs"
+CAS_BATCH_READ = "crates/corelink-container/src/routes/cas/batch_read.rs"
 CAS_ERASE = "crates/corelink-container/src/routes/cas_erase/b126_m2_impl_02.rs"
 ADAPTER_CACHE = "crates/corelink-container/src/adapter_cache.rs"
 CAPACITY = "crates/corelink-container/src/container_capacity.rs"
 ORIGIN = "crates/corelink-container/src/origin_timing.rs"
-OCI_TEST = "crates/corelink-container/src/routes/oci/b126_m2_test_1_2.rs"
+OCI_TEST = "crates/corelink-container/src/routes/oci/b126_m2_test_1_2_part2.rs"
 BILLING = "crates/corelink-billing/tests/quota_cas_prop_quota_cas.rs"
 
 
@@ -47,10 +54,10 @@ _FAMILY_PATHS_DATA = {
     "B-298 failover test-only accessors": (FAILOVER,),
     "B-299 OCI test-only constructor": (OCI,),
     "B-300 SLI lints": (SLI,),
-    "B-301 BYOK revocation lints": (REVOCATION,),
+    "B-301 BYOK revocation lints": (REVOCATION, REVOCATION_TESTS),
     "B-302 byte-accounting match scrutinee": (ACCOUNTING,),
     "B-303 audit-drain arity": (AUDIT_DRAIN,),
-    "B-304 CAS handler arity": (CAS_SINGLE, CAS_BATCH),
+    "B-304 CAS handler arity": (CAS_SINGLE, CAS_BATCH_WRITE, CAS_BATCH_READ),
     "B-305 clamp idiom": (CAS_ERASE,),
     "B-306 named recording type": (ADAPTER_CACHE,),
     "B-307 R2/S3 test registration": (STORAGE_1, STORAGE_3),
@@ -100,95 +107,6 @@ def _one_attached_raw(source: str, pattern: str, name: str, label: str) -> re.Ma
     if len(matches) != 1:
         raise VerificationError(f"{label}: expected one attached match, found {len(matches)}")
     return matches[0]
-
-
-def _code(source: str) -> str:
-    """Blank Rust comments and string/char literals, retaining line shape."""
-    out: list[str] = []
-    i = 0
-    state = "code"
-    block_depth = 0
-    while i < len(source):
-        ch = source[i]
-        nxt = source[i + 1] if i + 1 < len(source) else ""
-        if state == "line":
-            if ch == "\n":
-                out.append(ch)
-                state = "code"
-            else:
-                out.append(" ")
-            i += 1
-            continue
-        if state == "block":
-            if ch == "/" and nxt == "*":
-                block_depth += 1
-                out.extend((" ", " "))
-                i += 2
-            elif ch == "*" and nxt == "/":
-                block_depth -= 1
-                out.extend((" ", " "))
-                i += 2
-                if block_depth == 0:
-                    state = "code"
-            else:
-                out.append("\n" if ch == "\n" else " ")
-                i += 1
-            continue
-        if state in {"string", "char"}:
-            quote = '"' if state == "string" else "'"
-            if ch == "\\":
-                out.append(" ")
-                if i + 1 < len(source):
-                    out.append("\n" if source[i + 1] == "\n" else " ")
-                    i += 2
-                else:
-                    i += 1
-            elif ch == quote:
-                out.append(" ")
-                state = "code"
-                i += 1
-            else:
-                out.append("\n" if ch == "\n" else " ")
-                i += 1
-            continue
-        # Rust raw strings (including byte raw strings) may contain quotes,
-        # brackets, and comment-looking text; blank the complete literal so
-        # reviewer bait inside one cannot satisfy a code predicate.
-        raw_start = i
-        if ch == "r" or (ch == "b" and nxt == "r"):
-            quote_index = i + (1 if ch == "r" else 2)
-            hash_index = quote_index
-            while hash_index < len(source) and source[hash_index] == "#":
-                hash_index += 1
-            if hash_index < len(source) and source[hash_index] == '"':
-                hashes = source[quote_index:hash_index]
-                terminator = '"' + hashes
-                end = source.find(terminator, hash_index + 1)
-                end = len(source) if end < 0 else end + len(terminator)
-                out.extend("\n" if c == "\n" else " " for c in source[raw_start:end])
-                i = end
-                continue
-        if ch == "/" and nxt == "/":
-            out.extend((" ", " "))
-            state = "line"
-            i += 2
-        elif ch == "/" and nxt == "*":
-            out.extend((" ", " "))
-            state = "block"
-            block_depth = 1
-            i += 2
-        elif ch == '"':
-            out.append(" ")
-            state = "string"
-            i += 1
-        elif ch == "'" and i + 2 < len(source) and source[i + 2] == "'":
-            out.append(" ")
-            state = "char"
-            i += 1
-        else:
-            out.append(ch)
-            i += 1
-    return "".join(out)
 
 
 def _one_name(source: str, name: str, label: str) -> re.Match[str]:
@@ -263,6 +181,14 @@ def _imports(s: str, crate: str, label: str) -> str:
         raise VerificationError(f"{label}: expected one depth-0 import, found {len(matches)}")
     m = matches[0]
     return m.group("body")
+
+
+def _include_paths(source: str, label: str) -> tuple[str, ...]:
+    """Return real include! paths, excluding comment/string bait."""
+    paths = include_paths(source)
+    if not paths:
+        raise VerificationError(f"{label}: include! census is empty")
+    return tuple(paths)
 
 
 def _check_adversarial_import(sources: dict[str, str]) -> None:
@@ -416,12 +342,30 @@ def _check_audit_arguments(sources: dict[str, str]) -> None:
 
 
 def _check_cas_arguments(sources: dict[str, str]) -> None:
-    expected = (("clippy::too_many_arguments",), "axum extractors form the request handler API; grouping them would change request routing")
-    _check_argument_attrs(sources[CAS_SINGLE], CAS_SINGLE, {"handle_write": expected})
-    _check_argument_attrs(
-        sources[CAS_BATCH], CAS_BATCH,
-        {name: expected for name in ("handle_batch_write", "handle_batch_read", "handle_batch_exists")},
+    # The split route now groups the three auth extractors into the named
+    # `CasRequestAuth` tuple.  This is the load-bearing B-304 repair: it keeps
+    # each handler's extractor boundary explicit without function-level
+    # `too_many_arguments` exemptions.  Check every handler in its real source
+    # fragment; a surviving marker in one fragment must not mask a moved or
+    # regressed sibling.
+    handlers = (
+        (CAS_SINGLE, ("handle_write",)),
+        (CAS_BATCH_WRITE, ("handle_batch_write",)),
+        (CAS_BATCH_READ, ("handle_batch_read", "handle_batch_exists")),
     )
+    for path, names in handlers:
+        source = _code(sources[path])
+        for name in names:
+            fn = _one_name(source, name, f"{path}:{name}")
+            body_open = source.find("{", fn.end())
+            if body_open < 0:
+                raise VerificationError(f"{path}:{name}: missing function body")
+            signature = source[fn.start() : body_open]
+            if "(auth, scope, headers): CasRequestAuth," not in signature:
+                raise VerificationError(f"{path}:{name}: auth extractors are not grouped")
+            attrs = _function_attrs(source, name, f"{path}:{name}")
+            if any("clippy::too_many_arguments" in attr for attr in attrs):
+                raise VerificationError(f"{path}:{name}: stale too_many_arguments exemption remains")
 
 
 def _check_clamp(sources: dict[str, str]) -> None:
@@ -449,7 +393,10 @@ def _check_type_complexity(sources: dict[str, str]) -> None:
 
 
 def _check_revocation_test_lints(sources: dict[str, str]) -> None:
-    _one(_code(sources[REVOCATION]), r"#\[cfg\(test\)\]\s*#\[allow\(\s*clippy::expect_used\s*,\s*clippy::indexing_slicing\s*\)\]\s*mod\s+tests\s*\{", REVOCATION + ":tests lint scope")
+    includes = _include_paths(sources[REVOCATION], REVOCATION)
+    if includes != ("byok_revocation_runtime/part-01.rs",):
+        raise VerificationError(f"{REVOCATION}: test fragment include census is stale")
+    _one(_code(sources[REVOCATION_TESTS]), r"#\[cfg\(test\)\]\s*mod\s+tests\s*\{\s*#!\[allow\(clippy::expect_used,\s*clippy::indexing_slicing\)\]", REVOCATION_TESTS + ":tests lint scope")
 
 
 def _check_origin_test_lints(sources: dict[str, str]) -> None:

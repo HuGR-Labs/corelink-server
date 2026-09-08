@@ -178,9 +178,10 @@ async fn expired_token_returns_401() {
 
 #[tokio::test]
 async fn rate_limit_kicks_in_at_sixth_request_same_ip() {
-    let (state, audit_sink, _store, _clock) = build_state();
+    let (state, audit_sink, _store, clock) = build_state();
     let app = router(state);
-    // The signup config: burst=5, refill=1, retry_floor=720s.
+    // The signup config: burst=5, refill=5/3600 tokens/sec,
+    // retry_floor=720s.
     // The first 5 requests admit (the bucket starts full); the 6th
     // request in the same window hits the 429 floor.
     for i in 0..5 {
@@ -198,6 +199,9 @@ async fn rate_limit_kicks_in_at_sixth_request_same_ip() {
             "request {i} should have succeeded",
         );
     }
+    // A one-second refill must not create a sixth admission. This is the
+    // production bypass that the old integer `1 token/sec` config allowed.
+    clock.advance(std::time::Duration::from_secs(1));
     // 6th request from the same IP → 429.
     let token =
         mint_pilot_token(TokenEnv::Prod, BASE_NOW_MS, "abababababababab", TEST_KEY).unwrap();

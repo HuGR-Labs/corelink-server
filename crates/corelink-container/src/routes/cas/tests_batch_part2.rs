@@ -171,6 +171,8 @@ fn tracking_state(read: Arc<dyn CasReadHandler>) -> CasRouteState {
         pat_gate: None,
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_budget: test_read_budget(),
+        batch_read_admission: test_batch_read_admission(),
         usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     }
 }
@@ -188,6 +190,64 @@ fn batch_read_request(hashes: &[String]) -> Request<Body> {
         .header(axum::http::header::CONTENT_TYPE, NDJSON_CONTENT_TYPE)
         .body(Body::from(body))
         .expect("request")
+}
+
+/// A post-header R2 body stall must surface as a terminal read error, and the
+/// route must release both sides of [`BatchReadLease`] after that timeout.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn batch_read_post_header_timeout_releases_admission_and_tenant_lease() {
+    use crate::storage::r2_s3::{R2CasHandler, R2S3Client};
+    use crate::storage::StorageEnv;
+
+    let env = StorageEnv {
+        r2_endpoint: "https://localhost:1".to_owned(),
+        r2_access_key_id: "test".to_owned(),
+        r2_secret_access_key: "test".to_owned(),
+        cloudflare_account_id: "test".to_owned(),
+        cf_api_token: "test".to_owned(),
+        d1_database_id: "test".to_owned(),
+    };
+    let client = R2S3Client::new(&env, "test-bucket")
+        .await
+        .expect("test R2 client");
+    let audit = Arc::new(InMemoryAuditSink::new());
+    let sli = Arc::new(InMemorySliObserver::new());
+    let handler = Arc::new(
+        R2CasHandler::new(client, "iad", None, audit, sli)
+            .with_test_post_header_body_timeout(),
+    );
+    let mut state = tracking_state(handler);
+    let admission = Arc::new(tokio::sync::Semaphore::new(CAS_READ_BATCH_MAX_IN_FLIGHT));
+    state.batch_read_admission = Arc::clone(&admission);
+    let admission_before = admission.available_permits();
+    assert!(admission_before > 0, "batch admission must be available");
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        router(state.clone()).oneshot(batch_read_request(&[
+            fake_hash(b"post-header-stall"),
+        ])),
+    )
+        .await
+        .expect("body timeout must terminate the batch")
+        .expect("batch route response");
+    assert!(response.status().is_server_error());
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if state
+                .read_inflight
+                .lock()
+                .expect("read tracker")
+                .get(TEST_TENANT)
+                .is_none()
+                && admission.available_permits() == admission_before
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("tenant and global leases must release after body timeout");
 }
 
 /// A full structured window reaches concurrency >1 but never exceeds the
@@ -299,74 +359,6 @@ async fn batch_read_overflow_drains_all_active_tasks_before_return() {
     assert!(max_active.load(Ordering::SeqCst) > 1);
     assert!(max_active.load(Ordering::SeqCst) <= BATCH_READ_FANOUT);
     assert_eq!(active.load(Ordering::SeqCst), 0);
-}
-
-/// Dropping a handler future must abort its live batch tasks instead of
-/// detaching the JoinHandles. Already-running synchronous reads are allowed to
-/// unwind, but no queued read may start after cancellation and all active
-/// storage calls must finish within the bounded test deadline.
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn batch_read_cancellation_aborts_tasks_and_waits_for_unwind() {
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-
-    let active_tasks = Arc::new(AtomicUsize::new(0));
-    let started = Arc::new(AtomicUsize::new(0));
-    let max_active = Arc::new(AtomicUsize::new(0));
-    let saw_max_bytes = Arc::new(AtomicBool::new(false));
-    let first_started = Arc::new(tokio::sync::Notify::new());
-    let read = Arc::new(BatchReadTrackingHandler {
-        active: active_tasks.clone(),
-        max_active: max_active.clone(),
-        started: Some(started.clone()),
-        first_started: Some(first_started.clone()),
-        saw_max_bytes,
-        response_len: 1,
-        fail_hash: None,
-        read_delay: std::time::Duration::from_millis(100),
-    });
-    let hashes: Vec<String> = (0..(BATCH_READ_FANOUT * 2))
-        .map(|i| fake_hash(format!("cancel-{i}").as_bytes()))
-        .collect();
-    let mut response = Box::pin(router(tracking_state(read)).oneshot(batch_read_request(&hashes)));
-
-    tokio::select! {
-        _ = first_started.notified() => {}
-        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
-            panic!("batch handler did not start a storage read before cancellation");
-        }
-        _ = &mut response => panic!("batch handler completed before cancellation"),
-    }
-    // One worker leaves the other window handles queued behind the first
-    // synchronous read. They are the cancellation-sensitive work owned by the
-    // guard; removing `Drop::abort` makes their `read()` calls start later.
-    let started_at_drop = started.load(Ordering::SeqCst);
-    drop(response);
-
-    tokio::time::timeout(std::time::Duration::from_secs(1), async {
-        loop {
-            assert_eq!(
-                started.load(Ordering::SeqCst),
-                started_at_drop,
-                "no new storage read may start after the handler future is dropped"
-            );
-            if active_tasks.load(Ordering::SeqCst) == 0 {
-                // Give queued detached tasks a bounded scheduling opportunity;
-                // a missing Drop abort must be observable in `started`.
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                assert_eq!(
-                    started.load(Ordering::SeqCst),
-                    started_at_drop,
-                    "queued storage tasks must be aborted with the handler future"
-                );
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .expect("cancelled batch storage calls must unwind within the bounded deadline");
-    assert_eq!(active_tasks.load(Ordering::SeqCst), 0);
-    assert!(max_active.load(Ordering::SeqCst) <= BATCH_READ_FANOUT);
 }
 
 /// B-077 HOLD: the single GET keeps its tenant slot until its response

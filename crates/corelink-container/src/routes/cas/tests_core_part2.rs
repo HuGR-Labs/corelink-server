@@ -241,6 +241,8 @@ fn fixture_erroring_tombstone() -> CasRouteState {
         pat_gate: None,
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_budget: test_read_budget(),
+        batch_read_admission: test_batch_read_admission(),
         usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     }
 }
@@ -305,6 +307,8 @@ fn fixture_over_ceiling(tenant: &str) -> CasRouteState {
         pat_gate: None,
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_budget: test_read_budget(),
+        batch_read_admission: test_batch_read_admission(),
         usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     }
 }

@@ -2,25 +2,25 @@
 
 > Historical D03 source checkpoint: `codex/d03-delivery-20260906@7b992e9db123abeb76381b1c1337011692f2e834`.
 > Immutable ancestry base: `main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266`,
-> observed 2026-09-07 in `America/Sao_Paulo`.
+> observed 2026-09-08 in `America/Sao_Paulo`.
 
 This is the execution ledger for the open CoreLink backlog. `BACKLOG.md` remains
 the single source of truth for item status. This ledger derives work ownership,
 dependency order and completion contracts from that source; it never overrides
 the backlog.
 
-The current population is 337 items: 16 open, 282 done and 39 parked. The 16
+The current population is 351 items: 16 open, 297 done and 38 parked. The 16
 open items are partitioned exactly once across four contract catalogs:
 
 ```ledger-state
 base-ref: main
 base-sha: ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266
-observed-at: 2026-09-07
-item-count: 337
+observed-at: 2026-09-08
+item-count: 351
 open-count: 16
-done-count: 282
-parked-count: 39
-catalog-counts: B001-B045=6,B046-B090=3,B091-B130=3,B131-B337=4
+done-count: 297
+parked-count: 38
+catalog-counts: B001-B045=6,B046-B090=3,B091-B130=3,B131-B351=4
 ```
 
 | Catalog | Numeric range | Open IDs |
@@ -28,7 +28,7 @@ catalog-counts: B001-B045=6,B046-B090=3,B091-B130=3,B131-B337=4
 | [`work-packages/B001-B045.md`](work-packages/B001-B045.md) | B-001..B-045 | 6 |
 | [`work-packages/B046-B090.md`](work-packages/B046-B090.md) | B-046..B-090 | 3 |
 | [`work-packages/B091-B130.md`](work-packages/B091-B130.md) | B-091..B-130 | 3 |
-| [`work-packages/B131-B167.md`](work-packages/B131-B167.md) | B-131..B-337 | 4 |
+| [`work-packages/B131-B167.md`](work-packages/B131-B167.md) | B-131..B-351 | 4 |
 | **Total** | | **16** |
 
 The logical base includes the current B-008/B-012/B-013/B-032/B-035/B-039,

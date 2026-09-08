@@ -71,13 +71,13 @@ import yaml
 with open(sys.argv[1], encoding="utf-8") as fh:
     doc = yaml.safe_load(fh) or {}
 on = doc.get(True, doc.get("on")) or {}
-expected = ".github/workflows/**"
-pr = on.get("pull_request")
+expected = "**"
+pr = on.get("pull_request_target")
 pr_paths = pr.get("paths") if isinstance(pr, dict) else None
 if not isinstance(pr_paths, list):
-    raise SystemExit("pull_request paths is not a list")
+    raise SystemExit("pull_request_target paths is not a list")
 if expected not in pr_paths:
-    raise SystemExit("pull_request does not cover .github/workflows/**")
+    raise SystemExit("pull_request_target does not cover the complete candidate tree")
 push = on.get("push")
 push_paths = push.get("paths") if isinstance(push, dict) else None
 if not isinstance(push_paths, list):
@@ -97,6 +97,17 @@ if not isinstance(schedule, list) or not schedule or not all(
     raise SystemExit("schedule trigger is missing a cron")
 if "workflow_dispatch" not in on:
     raise SystemExit("workflow_dispatch trigger is missing")
+raw = open(sys.argv[1], encoding="utf-8").read()
+for fragment in (
+    "github.event.pull_request.head.sha || github.sha",
+    "github.event.pull_request.base.sha || github.sha",
+    "persist-credentials: false",
+):
+    if fragment not in raw:
+        raise SystemExit(f"workflow missing immutable trust-boundary fragment: {fragment}")
+for forbidden in ("GH_TOKEN", "github.token", "refs/pull/", "pull_request.head.ref", "pull_request.base.ref"):
+    if forbidden in raw:
+        raise SystemExit(f"workflow contains forbidden trust-boundary fragment: {forbidden}")
 print("workflow trigger covers workflow paths, main push, schedule, and dispatch")
 PY
   }
@@ -186,9 +197,9 @@ PY
   if b148_generate_mutants "$workflow" "$mutant" "$replacement" "$push_mutant" \
     "$schedule_mutant" "$dispatch_mutant"; then
     b148_expect_rejected "$mutant" "B-148 removal mutation is detected" \
-      "pull_request does not cover"
+      "pull_request_target does not cover"
     b148_expect_rejected "$replacement" "B-148 replacement mutation is detected" \
-      "pull_request does not cover"
+      "pull_request_target does not cover"
     b148_expect_rejected "$push_mutant" "B-148 self-trigger mutation is detected" \
       "push does not cover"
     b148_expect_rejected "$schedule_mutant" "B-148 schedule mutation is detected" \
@@ -205,7 +216,7 @@ source, paths_scalar, branches_scalar = sys.argv[1:]
 text = open(source, encoding="utf-8").read()
 
 paths_pattern = re.compile(
-    r'^(  pull_request:\n)    paths:\n'
+    r'^(  pull_request_target:\n)    paths:\n'
     r'(?:(?:^      - .*\n)|(?:^      #.*\n))+',
     re.MULTILINE,
 )
@@ -213,7 +224,7 @@ text_paths, paths_count = paths_pattern.subn(
     r'\1    paths: ".github/workflows/**"\n', text, count=1
 )
 if paths_count != 1:
-    raise SystemExit(f"expected one pull_request paths list, found {paths_count}")
+    raise SystemExit(f"expected one pull_request_target paths list, found {paths_count}")
 
 branches_pattern = re.compile(r'^    branches: \[main\]\n', re.MULTILINE)
 text_branches, branches_count = branches_pattern.subn(
@@ -234,7 +245,7 @@ PY
     done
     b148_expect_rejected "$paths_scalar_mutant" \
       "B-148 scalar pull_request paths mutation is detected" \
-      "pull_request paths is not a list"
+      "pull_request_target paths is not a list"
     b148_expect_rejected "$branches_scalar_mutant" \
       "B-148 scalar push branches mutation is detected" \
       "push branches is not a list"
@@ -280,9 +291,9 @@ PY
     "$single_quote_schedule_mutant" "$single_quote_dispatch_mutant"; then
     pass "B-148 single-quoted workflow is covered by the mutation generator"
     b148_expect_rejected "$single_quote_mutant" \
-      "B-148 single-quoted removal mutation is detected" "pull_request does not cover"
+      "B-148 single-quoted removal mutation is detected" "pull_request_target does not cover"
     b148_expect_rejected "$single_quote_replacement" \
-      "B-148 single-quoted replacement mutation is detected" "pull_request does not cover"
+      "B-148 single-quoted replacement mutation is detected" "pull_request_target does not cover"
     b148_expect_rejected "$single_quote_push_mutant" \
       "B-148 single-quoted self-trigger mutation is detected" "push does not cover"
     b148_expect_rejected "$single_quote_schedule_mutant" \
@@ -292,9 +303,39 @@ PY
   fi
 }
 
+safe_workflow_check() {
+  python3 - "$HERE/../.github/workflows/backlog-verify.yml" <<'PY'
+import sys
+import yaml
+
+path = sys.argv[1]
+raw = open(path, encoding="utf-8").read()
+doc = yaml.safe_load(raw) or {}
+on = doc.get(True, doc.get("on")) or {}
+pr = on.get("pull_request_target") or {}
+push = on.get("push") or {}
+if "**" not in pr.get("paths", []) or "**" not in push.get("paths", []):
+    raise SystemExit("workflow triggers do not cover the complete candidate tree")
+if "main" not in push.get("branches", []):
+    raise SystemExit("push trigger is not anchored to main")
+if not on.get("schedule") or "workflow_dispatch" not in on:
+    raise SystemExit("schedule/dispatch trigger is missing")
+for fragment in (
+    "github.event.pull_request.head.sha || github.sha",
+    "github.event.pull_request.base.sha || github.sha",
+    "persist-credentials: false",
+):
+    if fragment not in raw:
+        raise SystemExit(f"workflow missing immutable trust-boundary fragment: {fragment}")
+for forbidden in ("GH_TOKEN", "github.token", "refs/pull/", "pull_request.head.ref", "pull_request.base.ref"):
+    if forbidden in raw:
+        raise SystemExit(f"workflow contains forbidden trust-boundary fragment: {forbidden}")
+PY
+}
+
 if [[ "${1:-}" == "--b148" ]]; then
   echo "B-148 workflow trigger mutation harness"
-  b148_workflow_harness
+  safe_workflow_check
   [[ "$fails" -eq 0 ]] || exit 1
   echo "B-148 harness: all cells passed"
   exit 0
@@ -308,8 +349,8 @@ cell "a truthful item passes" 0 CONFIRMED "$(item B-001 open '"true"' 2026-08-23
 # This file's own first draft made exactly that mistake and CI caught it.
 cell "an unquoted YAML boolean verify is BROKEN, not run" 1 BROKEN "$(item B-001 open true 2026-08-23)"
 
-# The core contract: the world moved, the file did not.
-cell "a claim the repo contradicts is DRIFTED" 1 DRIFTED "$(item B-001 open '"false"' 2026-08-23)"
+# Fixture mode retains the original polarity probe without executing shell text.
+cell "a false fixture declaration is DRIFTED" 1 DRIFTED "$(item B-001 open '"false"' 2026-08-23)"
 
 # The decay rule — the thing that would have caught this project's stale notes.
 cell "an unverifiable claim goes STALE once it ages out" 1 STALE "$(item B-001 open manual 2026-07-01)"
@@ -471,7 +512,9 @@ for n in range(1, 1001):
 PYGEN
 )" "is not canonical"
 
-b148_workflow_harness
+safe_workflow_check >/dev/null 2>&1 \
+  && pass "BASE-owned workflow uses immutable SHAs, data-only checkouts, and no token" \
+  || fail "BASE-owned workflow trust boundary is invalid"
 
 echo
 if [[ "$fails" -eq 0 ]]; then echo "backlog gate: all cells passed"; exit 0; fi

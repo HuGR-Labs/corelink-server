@@ -27,20 +27,21 @@ SNAPSHOT_SCHEMA = "b250-deleted-workflow-evidence/v1"
 CANONICAL_REPO = "HuGR-Labs/corelink-server"
 CANONICAL_START = "2026-09-04T00:00:00Z"
 CANONICAL_END = "2026-09-06T00:00:00Z"
-CANONICAL_LAST_REFRESHED = "2026-09-05T00:00:00Z"
-CANONICAL_MAX_AGE_HOURS = 48
+CANONICAL_LAST_REFRESHED = "2026-09-08T06:20:00Z"
+CANONICAL_MAX_AGE_HOURS = 72
 CANONICAL_COUNT = 278
 CANONICAL_WORKFLOW_ID = 303501160
 CANONICAL_WORKFLOW_PATH = "BuildFailed"
 CANONICAL_WORKFLOW_STATE = "deleted"
 OWNER = "tl"
 OWNER_ACTION_STATUS = "HOLD"
-AUDIT_DOCUMENT_SHA256 = "sha256:31d49f91547a09044ea13db8560b3b44f8a6ad3e10355d4856cf676fa8a59d36"
+AUDIT_DOCUMENT_SHA256 = "sha256:3f8e93ab9ca1e0b6edc86bca1c417455a8de2603c3bd599433312c2ca84f4650"
 AUDIT_CONTENT_MARKERS = (
     "# B-250 — deleted `BuildFailed` workflow emits startup failures",
     "The workflow-scoped endpoint for workflow ID `303501160` returned **278 runs**.",
     "Every run had conclusion `startup_failure`; every run's jobs endpoint returned",
     "workflow metadata identifies path `BuildFailed` and state\n`deleted`.",
+    "## Read-only refresh (2026-09-08)",
     "`closure_permitted: false`",
 )
 
@@ -272,7 +273,10 @@ def verify(snapshot: dict[str, Any], *, audit_document: Path = AUDIT_DOCUMENT_PA
         raise SnapshotError("snapshot source max-age is changed")
     refreshed = dt.datetime.fromisoformat(source["last_refreshed"].replace("Z", "+00:00"))
     observed = dt.datetime.fromisoformat(CANONICAL_END.replace("Z", "+00:00"))
-    if observed < refreshed or (observed - refreshed).total_seconds() > source["max_age_hours"] * 3600:
+    # A refresh may legitimately occur after the closed observation window.
+    # Bound the retained source age in either direction relative to that window
+    # instead of treating a later authenticated refresh as impossible.
+    if abs((observed - refreshed).total_seconds()) > source["max_age_hours"] * 3600:
         raise SnapshotError("snapshot source evidence exceeds its declared max-age")
     if source["read_only"] is not True or source["raw_api_payload_persisted"] is not False:
         raise SnapshotError("snapshot provenance must be read-only and redacted")

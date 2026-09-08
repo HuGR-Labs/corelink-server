@@ -45,6 +45,7 @@ mod implementation {
         include!("r2_s3_parts/tests_2.rs");
         include!("r2_s3_parts/tests_2_byok.rs");
         include!("r2_s3_parts/tests_3.rs");
+        include!("r2_s3_parts/tests_4.rs");
     }
 }
 
@@ -88,6 +89,7 @@ mod structure_tests {
         "tests_2.rs",
         "tests_2_byok.rs",
         "tests_3.rs",
+        "tests_4.rs",
     ];
 
     fn parts_dir() -> PathBuf {
@@ -97,7 +99,7 @@ mod structure_tests {
     #[test]
     fn every_extracted_part_is_bounded_and_present() {
         let dir = parts_dir();
-        assert_eq!(PARTS.len(), 21, "part population must not silently shrink");
+        assert_eq!(PARTS.len(), 22, "part population must not silently shrink");
         for name in PARTS {
             let path = dir.join(name);
             let text = fs::read_to_string(&path)
@@ -134,6 +136,7 @@ mod structure_tests {
             "tests_2.rs",
             "tests_2_byok.rs",
             "tests_3.rs",
+            "tests_4.rs",
         ] {
             assert_eq!(
                 facade

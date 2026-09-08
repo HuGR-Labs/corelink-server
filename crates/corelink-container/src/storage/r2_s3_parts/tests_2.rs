@@ -1,14 +1,12 @@
-    /// The CONCURRENT batch path, production shape: when the durable-audit
-    /// D1 write fails (reachable-but-wrong credentials), `exists_batch`
-    /// returns `AuditFailed` — NO probe result reaches the caller — and the
-    /// joined window is attributed ONCE to `ostore` with `oaudit` ABSENT
-    /// (proving neither `append_batch_async` nor the per-probe helper
-    /// opened a scope of its own). Mirrors
-    /// `r2_cas_list_concurrent_path_fails_closed_on_bad_audit_creds`.
+    /// The production batch shape: when the durable-audit D1 write fails
+    /// (reachable-but-wrong credentials), `exists_batch` returns
+    /// `AuditFailed` before any probe dispatch, and the audit phase is
+    /// present while storage is absent. Mirrors
+    /// `r2_cas_list_durable_audit_failure_precedes_storage`.
     ///
     /// `#[ignore]` for the same reason as that test: needs outbound
-    /// reachability to `api.cloudflare.com` (a 401 still proves the join
-    /// ran). Run manually with:
+    /// reachability to `api.cloudflare.com` (a 401 still proves the audit
+    /// gate ran). Run manually with:
     ///
     /// ```bash
     /// cargo test -p corelink-server r2_cas_exists_batch_fails_closed_on_bad_audit_creds -- --ignored
@@ -85,13 +83,12 @@
             .to_owned();
         let parsed = parse_server_timing(&header);
         assert!(
-            parsed.contains_key("ostore"),
-            "the joined window must be attributed to ostore. Header: {header}"
+            parsed.contains_key("oaudit"),
+            "the durable batch audit must be attributed to oaudit. Header: {header}"
         );
         assert!(
-            !parsed.contains_key("oaudit"),
-            "oaudit must be ABSENT on the concurrent batch path — a second \
-             scope over the same window would double-count it. Header: {header}"
+            !parsed.contains_key("ostore"),
+            "ostore must be absent when audit fails before probes. Header: {header}"
         );
     }
 

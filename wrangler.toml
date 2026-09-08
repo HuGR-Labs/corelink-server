@@ -364,6 +364,11 @@ service = "corelink-prod-nrt"
 binding = "PROD_SYD"
 service = "corelink-prod-syd"
 
+# Anonymous pilot signup is globally metered. Regional public Workers use this
+# binding to reach the IAD Worker’s single CORELINK_SERVER namespace; without
+# it, each regional namespace would provide an independent five-per-hour IP
+# bucket. The regional routing code fails closed when this authority is absent.
+
 # Onboarding funnel telemetry (PLG §7.1) — `first_cli_authed`.
 # `analytics_events` lives ONLY in corelink-analytics-prod (D1
 # d7fe391f-9fe0-4544-a1fb-64747bcd2639, see apps/analytics-worker/wrangler.toml);
@@ -605,6 +610,10 @@ class_name = "RequestMeterShardDO"
 name = "corelink-prod-sam"
 workers_dev = false
 
+[[env.prod-sam.services]]
+binding = "PROD_IAD"
+service = "corelink-prod"
+
 [env.prod-sam.triggers]
 crons = []
 
@@ -768,6 +777,10 @@ instance_type = "basic"
 [env.prod-lhr]
 name = "corelink-prod-lhr"
 workers_dev = false
+
+[[env.prod-lhr.services]]
+binding = "PROD_IAD"
+service = "corelink-prod"
 
 [env.prod-lhr.triggers]
 crons = []
@@ -941,6 +954,10 @@ instance_type = "basic"
 name = "corelink-prod-nrt"
 workers_dev = false
 
+[[env.prod-nrt.services]]
+binding = "PROD_IAD"
+service = "corelink-prod"
+
 [env.prod-nrt.triggers]
 crons = []
 
@@ -1106,6 +1123,10 @@ instance_type = "basic"
 [env.prod-syd]
 name = "corelink-prod-syd"
 workers_dev = false
+
+[[env.prod-syd.services]]
+binding = "PROD_IAD"
+service = "corelink-prod"
 
 [env.prod-syd.triggers]
 crons = []

@@ -70,29 +70,28 @@ impl R2CasHandler {
             .collect();
 
         let handle = tokio::runtime::Handle::current();
-        let audit_fut = audit_async.emit_cas_batch_async(&events);
-        let probes_fut = self.probe_existence_concurrently(reqs);
 
-        // ONE `Phase::Store` scope over the ENTIRE joined window — not one
-        // per future, and NOT a second `Phase::Audit` scope. `Σ(phases) ≤
-        // total` holds by construction rather than by `oother`'s `max(0)`
-        // guard swallowing a double count. See `origin_timing.rs`'s
-        // "Concurrent native-plane list seam" note, which covers this path.
-        let (audit_result, probe_results) = {
-            let _scope =
-                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+        // The durable batch audit is awaited to completion BEFORE any probe
+        // is created or dispatched. This is deliberately serial across the
+        // audit/storage boundary: a failed audit means zero R2 calls, not
+        // merely zero flags returned to the caller.
+        let audit_result = {
+            let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Audit);
             tokio::task::block_in_place(|| {
-                handle.block_on(async { tokio::join!(audit_fut, probes_fut) })
+                handle.block_on(audit_async.emit_cas_batch_async(&events))
             })
         };
-
-        // AUDIT FIRST. A failed audit returns `AuditFailed` and NO probe
-        // result reaches the caller — identical to the serial path, which
-        // returns from the first digest's audit `map_err(..)?` (and, like it,
-        // emits no SLI observation on that path).
         if let Err(e) = audit_result {
             return Err(CasHandlerError::AuditFailed(e));
         }
+
+        // Probes may still overlap with each other, but only after the
+        // durable audit has committed. The single store scope accounts for
+        // their bounded concurrent window once.
+        let probe_results = {
+            let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| handle.block_on(self.probe_existence_concurrently(reqs)))
+        };
 
         // Deterministic, request-ordered evaluation: FIRST error wins, and
         // the observations recorded before it are exactly the ones the serial
@@ -154,8 +153,8 @@ impl R2CasHandler {
     ///
     /// It also opens no [`crate::origin_timing::PhaseScope`] of its own: on
     /// the batch path N concurrent probes each entering `Phase::Store` would
-    /// count the same wall-clock window N times over. Each caller's single
-    /// scope covers its whole joined window instead.
+    /// count the same wall-clock window N times over. The caller's single
+    /// store scope covers the bounded probe window instead.
     ///
     /// Returns the RAW `head_size` outcome (`Some(len)` present / `None`
     /// absent) rather than a bool, because `exists` needs the same shape the

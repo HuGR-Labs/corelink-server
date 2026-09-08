@@ -39,6 +39,7 @@
       "run_id": 33360411046,
       "runner_name": "cf-runner-a408130b",
       "started_at": "2026-08-31T05:43:31Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -124,6 +125,7 @@
       "run_id": 33360411054,
       "runner_name": "cf-runner-cfab764d",
       "started_at": "2026-08-31T05:43:36Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -217,6 +219,7 @@
       "run_id": 33360411101,
       "runner_name": "cf-runner-ccaa78d3",
       "started_at": "2026-08-31T05:46:15Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -310,6 +313,7 @@
       "run_id": 33360411082,
       "runner_name": "cf-runner-c18645c4",
       "started_at": "2026-08-31T05:46:15Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -403,6 +407,7 @@
       "run_id": 33360411134,
       "runner_name": "cf-runner-b77accdc",
       "started_at": "2026-08-31T05:46:16Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -483,7 +488,7 @@
     },
     {
       "checkout_incomplete": false,
-      "checkout_observed": true,
+      "checkout_observed": false,
       "completed_at": "2026-08-31T05:23:14Z",
       "conclusion": "failure",
       "created_at": "2026-08-31T05:13:13Z",
@@ -491,97 +496,15 @@
       "in_window": true,
       "job_id": 99388658702,
       "lane": "playwright critical-flows (chromium)",
-      "metadata_signal": "runner_death_candidate",
+      "metadata_signal": "job_failure_candidate",
       "queue_duration_seconds": 1,
       "run_id": 33359740663,
       "runner_name": "cf-runner-9debaeaa",
       "started_at": "2026-08-31T05:13:14Z",
-      "step_in_progress": [
-        "Set up pnpm"
-      ],
-      "step_not_completed": [
-        "Set up pnpm",
-        "Set up Node.js",
-        "Install dependencies",
-        "Install Playwright browser",
-        "Run critical-flow Playwright suite",
-        "Upload Playwright failure evidence",
-        "Post Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
-      ],
-      "steps": [
-        {
-          "completed_at": "2026-08-31T05:13:16Z",
-          "conclusion": "success",
-          "name": "Set up job",
-          "started_at": "2026-08-31T05:13:15Z",
-          "status": "completed",
-          "step_id": 1
-        },
-        {
-          "completed_at": "2026-08-31T05:13:25Z",
-          "conclusion": "success",
-          "name": "Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-          "started_at": "2026-08-31T05:13:16Z",
-          "status": "completed",
-          "step_id": 2
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Set up pnpm",
-          "started_at": "2026-08-31T05:13:25Z",
-          "status": "in_progress",
-          "step_id": 3
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Set up Node.js",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 4
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Install dependencies",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 5
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Install Playwright browser",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 6
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Run critical-flow Playwright suite",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 7
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Upload Playwright failure evidence",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 8
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 16
-        }
-      ],
+      "step_evidence_available": false,
+      "step_in_progress": [],
+      "step_not_completed": [],
+      "steps": [],
       "workflow": "admin-ui e2e"
     },
     {
@@ -599,6 +522,7 @@
       "run_id": 33359740657,
       "runner_name": "cf-runner-34fe6997",
       "started_at": "2026-08-31T05:13:19Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -676,6 +600,7 @@
       "run_id": 33357671383,
       "runner_name": "corelink-builder-3",
       "started_at": "2026-08-31T04:36:33Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -785,6 +710,7 @@
       "run_id": 33356986997,
       "runner_name": "cf-runner-78f022be",
       "started_at": "2026-08-31T04:34:57Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -889,7 +815,7 @@
     },
     {
       "checkout_incomplete": false,
-      "checkout_observed": true,
+      "checkout_observed": false,
       "completed_at": "2026-08-31T04:40:43Z",
       "conclusion": "failure",
       "created_at": "2026-08-31T04:24:42Z",
@@ -902,125 +828,10 @@
       "run_id": 33356982883,
       "runner_name": "cf-runner-02fd585e",
       "started_at": "2026-08-31T04:28:42Z",
-      "step_in_progress": [
-        "Build"
-      ],
-      "step_not_completed": [
-        "Build",
-        "Set up Node.js 22 (wrangler runtime)",
-        "Install wrangler",
-        "Deploy Worker (Static Assets)",
-        "Print deployment URL",
-        "Post Set up Node.js",
-        "Post Set up pnpm",
-        "Post Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
-      ],
-      "steps": [
-        {
-          "completed_at": "2026-08-31T04:28:44Z",
-          "conclusion": "success",
-          "name": "Set up job",
-          "started_at": "2026-08-31T04:28:44Z",
-          "status": "completed",
-          "step_id": 1
-        },
-        {
-          "completed_at": "2026-08-31T04:28:49Z",
-          "conclusion": "success",
-          "name": "Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-          "started_at": "2026-08-31T04:28:44Z",
-          "status": "completed",
-          "step_id": 2
-        },
-        {
-          "completed_at": "2026-08-31T04:28:50Z",
-          "conclusion": "success",
-          "name": "Set up pnpm",
-          "started_at": "2026-08-31T04:28:49Z",
-          "status": "completed",
-          "step_id": 3
-        },
-        {
-          "completed_at": "2026-08-31T04:28:57Z",
-          "conclusion": "success",
-          "name": "Set up Node.js",
-          "started_at": "2026-08-31T04:28:50Z",
-          "status": "completed",
-          "step_id": 4
-        },
-        {
-          "completed_at": "2026-08-31T04:29:18Z",
-          "conclusion": "success",
-          "name": "Install dependencies",
-          "started_at": "2026-08-31T04:28:57Z",
-          "status": "completed",
-          "step_id": 5
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Build",
-          "started_at": "2026-08-31T04:29:18Z",
-          "status": "in_progress",
-          "step_id": 6
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Set up Node.js 22 (wrangler runtime)",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 7
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Install wrangler",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 8
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Deploy Worker (Static Assets)",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 9
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Print deployment URL",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 10
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Set up Node.js",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 18
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Set up pnpm",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 19
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 20
-        }
-      ],
+      "step_evidence_available": false,
+      "step_in_progress": [],
+      "step_not_completed": [],
+      "steps": [],
       "workflow": "docs \u2014 CF Worker deploy"
     },
     {
@@ -1038,6 +849,7 @@
       "run_id": 33356978562,
       "runner_name": "cf-runner-96a3a723",
       "started_at": "2026-08-31T04:25:53Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -1107,6 +919,7 @@
       "run_id": 33356959734,
       "runner_name": "corelink-builder-4",
       "started_at": "2026-08-31T04:25:26Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -1216,6 +1029,7 @@
       "run_id": 33356745353,
       "runner_name": "cf-runner-6b37e32f",
       "started_at": "2026-08-31T04:23:23Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -1301,6 +1115,7 @@
       "run_id": 33356598113,
       "runner_name": "cf-runner-0745443b",
       "started_at": "2026-08-31T04:18:16Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -1373,7 +1188,7 @@
     },
     {
       "checkout_incomplete": false,
-      "checkout_observed": true,
+      "checkout_observed": false,
       "completed_at": "2026-08-31T04:23:30Z",
       "conclusion": "failure",
       "created_at": "2026-08-31T04:11:09Z",
@@ -1381,79 +1196,15 @@
       "in_window": true,
       "job_id": 99378740877,
       "lane": "okf-wiki-validation",
-      "metadata_signal": "runner_death_candidate",
+      "metadata_signal": "job_failure_candidate",
       "queue_duration_seconds": 141,
       "run_id": 33356199472,
       "runner_name": "cf-runner-8bf42fee",
       "started_at": "2026-08-31T04:13:30Z",
-      "step_in_progress": [
-        "Install PyYAML (venv on system python3)"
-      ],
-      "step_not_completed": [
-        "Install PyYAML (venv on system python3)",
-        "Validate OKF-CoreLink knowledge bundle",
-        "Validator acceptance suite (good + per-check bad fixtures)",
-        "Reconciliation worklist (only if validation failed)",
-        "Post Checkout"
-      ],
-      "steps": [
-        {
-          "completed_at": "2026-08-31T04:13:32Z",
-          "conclusion": "success",
-          "name": "Set up job",
-          "started_at": "2026-08-31T04:13:31Z",
-          "status": "completed",
-          "step_id": 1
-        },
-        {
-          "completed_at": "2026-08-31T04:13:56Z",
-          "conclusion": "success",
-          "name": "Checkout",
-          "started_at": "2026-08-31T04:13:32Z",
-          "status": "completed",
-          "step_id": 2
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Install PyYAML (venv on system python3)",
-          "started_at": "2026-08-31T04:13:56Z",
-          "status": "in_progress",
-          "step_id": 3
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Validate OKF-CoreLink knowledge bundle",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 4
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Validator acceptance suite (good + per-check bad fixtures)",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 5
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Reconciliation worklist (only if validation failed)",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 6
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Checkout",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 12
-        }
-      ],
+      "step_evidence_available": false,
+      "step_in_progress": [],
+      "step_not_completed": [],
+      "steps": [],
       "workflow": "OKF-CoreLink Wiki Validation"
     },
     {
@@ -1471,6 +1222,7 @@
       "run_id": 33356199283,
       "runner_name": "cf-runner-10b051c9",
       "started_at": "2026-08-31T04:13:27Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -1519,7 +1271,7 @@
     },
     {
       "checkout_incomplete": false,
-      "checkout_observed": true,
+      "checkout_observed": false,
       "completed_at": "2026-08-31T04:13:26Z",
       "conclusion": "failure",
       "created_at": "2026-08-31T04:00:22Z",
@@ -1527,141 +1279,15 @@
       "in_window": true,
       "job_id": 99377079175,
       "lane": "typecheck + lint + test + build",
-      "metadata_signal": "runner_death_candidate",
+      "metadata_signal": "job_failure_candidate",
       "queue_duration_seconds": 184,
       "run_id": 33355619309,
       "runner_name": "cf-runner-ad7db4f0",
       "started_at": "2026-08-31T04:03:26Z",
-      "step_in_progress": [
-        "Set up Node.js"
-      ],
-      "step_not_completed": [
-        "Set up Node.js",
-        "Install dependencies",
-        "Typecheck",
-        "Lint",
-        "Test",
-        "Build",
-        "Bundle size assertion (\u2264 250 KB main bundle)",
-        "Upload build artifact",
-        "Post Set up Node.js",
-        "Post Set up pnpm",
-        "Post Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
-      ],
-      "steps": [
-        {
-          "completed_at": "2026-08-31T04:03:28Z",
-          "conclusion": "success",
-          "name": "Set up job",
-          "started_at": "2026-08-31T04:03:27Z",
-          "status": "completed",
-          "step_id": 1
-        },
-        {
-          "completed_at": "2026-08-31T04:03:32Z",
-          "conclusion": "success",
-          "name": "Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-          "started_at": "2026-08-31T04:03:28Z",
-          "status": "completed",
-          "step_id": 2
-        },
-        {
-          "completed_at": "2026-08-31T04:03:35Z",
-          "conclusion": "success",
-          "name": "Set up pnpm",
-          "started_at": "2026-08-31T04:03:32Z",
-          "status": "completed",
-          "step_id": 3
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Set up Node.js",
-          "started_at": "2026-08-31T04:03:35Z",
-          "status": "in_progress",
-          "step_id": 4
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Install dependencies",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 5
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Typecheck",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 6
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Lint",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 7
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Test",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 8
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Build",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 9
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Bundle size assertion (\u2264 250 KB main bundle)",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 10
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Upload build artifact",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 11
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Set up Node.js",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 20
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Set up pnpm",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 21
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 22
-        }
-      ],
+      "step_evidence_available": false,
+      "step_in_progress": [],
+      "step_not_completed": [],
+      "steps": [],
       "workflow": "docs CI"
     },
     {
@@ -1679,6 +1305,7 @@
       "run_id": 33355496035,
       "runner_name": "cf-runner-e41e5619",
       "started_at": "2026-08-31T04:00:31Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -1772,6 +1399,7 @@
       "run_id": 33355378504,
       "runner_name": "corelink-builder-4",
       "started_at": "2026-08-31T04:00:24Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -1881,6 +1509,7 @@
       "run_id": 33355309247,
       "runner_name": "cf-runner-fc338a14",
       "started_at": "2026-08-31T03:55:15Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -1974,6 +1603,7 @@
       "run_id": 33355309268,
       "runner_name": "corelink-builder-4",
       "started_at": "2026-08-31T04:06:53Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -2059,6 +1689,7 @@
       "run_id": 33355273219,
       "runner_name": "cf-runner-ccd48ec4",
       "started_at": "2026-08-31T03:53:47Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -2136,6 +1767,7 @@
       "run_id": 33355273193,
       "runner_name": "cf-runner-99888321",
       "started_at": "2026-08-31T03:53:41Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -2213,6 +1845,7 @@
       "run_id": 33355249989,
       "runner_name": "cf-runner-b3924b1e",
       "started_at": "2026-08-31T03:53:11Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -2277,7 +1910,7 @@
     },
     {
       "checkout_incomplete": false,
-      "checkout_observed": true,
+      "checkout_observed": false,
       "completed_at": "2026-08-31T07:22:05Z",
       "conclusion": "failure",
       "created_at": "2026-08-31T07:08:11Z",
@@ -2290,116 +1923,10 @@
       "run_id": 33367043829,
       "runner_name": "cf-runner-a372ac98",
       "started_at": "2026-08-31T07:11:05Z",
-      "step_in_progress": [
-        "Build for CF Worker"
-      ],
-      "step_not_completed": [
-        "Build for CF Worker",
-        "Install wrangler",
-        "Deploy to Cloudflare Worker",
-        "Print deployment URL",
-        "Post Set up Node.js",
-        "Post Set up pnpm",
-        "Post Checkout"
-      ],
-      "steps": [
-        {
-          "completed_at": "2026-08-31T07:11:07Z",
-          "conclusion": "success",
-          "name": "Set up job",
-          "started_at": "2026-08-31T07:11:06Z",
-          "status": "completed",
-          "step_id": 1
-        },
-        {
-          "completed_at": "2026-08-31T07:11:13Z",
-          "conclusion": "success",
-          "name": "Checkout",
-          "started_at": "2026-08-31T07:11:07Z",
-          "status": "completed",
-          "step_id": 2
-        },
-        {
-          "completed_at": "2026-08-31T07:11:15Z",
-          "conclusion": "success",
-          "name": "Set up pnpm",
-          "started_at": "2026-08-31T07:11:13Z",
-          "status": "completed",
-          "step_id": 3
-        },
-        {
-          "completed_at": "2026-08-31T07:11:22Z",
-          "conclusion": "success",
-          "name": "Set up Node.js",
-          "started_at": "2026-08-31T07:11:15Z",
-          "status": "completed",
-          "step_id": 4
-        },
-        {
-          "completed_at": "2026-08-31T07:11:43Z",
-          "conclusion": "success",
-          "name": "Install dependencies",
-          "started_at": "2026-08-31T07:11:22Z",
-          "status": "completed",
-          "step_id": 5
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Build for CF Worker",
-          "started_at": "2026-08-31T07:11:43Z",
-          "status": "in_progress",
-          "step_id": 6
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Install wrangler",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 7
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Deploy to Cloudflare Worker",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 8
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Print deployment URL",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 9
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Set up Node.js",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 16
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Set up pnpm",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 17
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Checkout",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 18
-        }
-      ],
+      "step_evidence_available": false,
+      "step_in_progress": [],
+      "step_not_completed": [],
+      "steps": [],
       "workflow": "admin-ui \u2014 CF Worker deploy"
     },
     {
@@ -2417,6 +1944,7 @@
       "run_id": 33363659711,
       "runner_name": "cf-runner-510101ce",
       "started_at": "2026-08-31T06:18:40Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -2486,6 +2014,7 @@
       "run_id": 33363125812,
       "runner_name": "cf-runner-3e593917",
       "started_at": "2026-08-31T06:10:41Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -2603,6 +2132,7 @@
       "run_id": 33362531923,
       "runner_name": "cf-runner-541e6c6d",
       "started_at": "2026-08-31T06:03:11Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -2672,6 +2202,7 @@
       "run_id": 33362191945,
       "runner_name": "cf-runner-ece544a6",
       "started_at": "2026-08-31T06:00:12Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -2741,6 +2272,7 @@
       "run_id": 33362149588,
       "runner_name": "cf-runner-436c0b21",
       "started_at": "2026-08-31T06:02:54Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -2810,6 +2342,7 @@
       "run_id": 33362106607,
       "runner_name": "cf-runner-88914dad",
       "started_at": "2026-08-31T06:01:05Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -2919,6 +2452,7 @@
       "run_id": 33362096190,
       "runner_name": "cf-runner-4d9949c0",
       "started_at": "2026-08-31T05:57:09Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -2988,6 +2522,7 @@
       "run_id": 33361286877,
       "runner_name": "cf-runner-4a92e1d1",
       "started_at": "2026-08-31T05:39:10Z",
+      "step_evidence_available": true,
       "step_in_progress": [],
       "step_not_completed": [],
       "steps": [
@@ -3070,8 +2605,8 @@
       "available": false,
       "causal": "indeterminate",
       "error": "log retrieval failed",
+      "http_status": 404,
       "job_id": 99388658702,
-      "http_status": 404,
       "log_sha256": null,
       "log_signature": "indeterminate",
       "status": "indeterminate"
@@ -3080,8 +2615,8 @@
       "available": false,
       "causal": "indeterminate",
       "error": "log retrieval failed",
+      "http_status": 404,
       "job_id": 99378740877,
-      "http_status": 404,
       "log_sha256": null,
       "log_signature": "indeterminate",
       "status": "indeterminate"
@@ -3090,15 +2625,15 @@
       "available": false,
       "causal": "indeterminate",
       "error": "log retrieval failed",
-      "job_id": 99377079175,
       "http_status": 404,
+      "job_id": 99377079175,
       "log_sha256": null,
       "log_signature": "indeterminate",
       "status": "indeterminate"
     }
   ],
   "metadata_signal_distribution": {
-    "runner_death_candidate": 3
+    "job_failure_candidate": 3
   },
   "non_success_run_count": 391,
   "queue_duration": {
@@ -8271,7 +7806,7 @@
   "window_jobs": [
     {
       "checkout_incomplete": false,
-      "checkout_observed": true,
+      "checkout_observed": false,
       "completed_at": "2026-08-31T05:23:14Z",
       "conclusion": "failure",
       "created_at": "2026-08-31T05:13:13Z",
@@ -8279,102 +7814,20 @@
       "in_window": true,
       "job_id": 99388658702,
       "lane": "playwright critical-flows (chromium)",
-      "metadata_signal": "runner_death_candidate",
+      "metadata_signal": "job_failure_candidate",
       "queue_duration_seconds": 1,
       "run_id": 33359740663,
       "runner_name": "cf-runner-9debaeaa",
       "started_at": "2026-08-31T05:13:14Z",
-      "step_in_progress": [
-        "Set up pnpm"
-      ],
-      "step_not_completed": [
-        "Set up pnpm",
-        "Set up Node.js",
-        "Install dependencies",
-        "Install Playwright browser",
-        "Run critical-flow Playwright suite",
-        "Upload Playwright failure evidence",
-        "Post Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
-      ],
-      "steps": [
-        {
-          "completed_at": "2026-08-31T05:13:16Z",
-          "conclusion": "success",
-          "name": "Set up job",
-          "started_at": "2026-08-31T05:13:15Z",
-          "status": "completed",
-          "step_id": 1
-        },
-        {
-          "completed_at": "2026-08-31T05:13:25Z",
-          "conclusion": "success",
-          "name": "Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-          "started_at": "2026-08-31T05:13:16Z",
-          "status": "completed",
-          "step_id": 2
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Set up pnpm",
-          "started_at": "2026-08-31T05:13:25Z",
-          "status": "in_progress",
-          "step_id": 3
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Set up Node.js",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 4
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Install dependencies",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 5
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Install Playwright browser",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 6
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Run critical-flow Playwright suite",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 7
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Upload Playwright failure evidence",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 8
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 16
-        }
-      ],
+      "step_evidence_available": false,
+      "step_in_progress": [],
+      "step_not_completed": [],
+      "steps": [],
       "workflow": "admin-ui e2e"
     },
     {
       "checkout_incomplete": false,
-      "checkout_observed": true,
+      "checkout_observed": false,
       "completed_at": "2026-08-31T04:23:30Z",
       "conclusion": "failure",
       "created_at": "2026-08-31T04:11:09Z",
@@ -8382,84 +7835,20 @@
       "in_window": true,
       "job_id": 99378740877,
       "lane": "okf-wiki-validation",
-      "metadata_signal": "runner_death_candidate",
+      "metadata_signal": "job_failure_candidate",
       "queue_duration_seconds": 141,
       "run_id": 33356199472,
       "runner_name": "cf-runner-8bf42fee",
       "started_at": "2026-08-31T04:13:30Z",
-      "step_in_progress": [
-        "Install PyYAML (venv on system python3)"
-      ],
-      "step_not_completed": [
-        "Install PyYAML (venv on system python3)",
-        "Validate OKF-CoreLink knowledge bundle",
-        "Validator acceptance suite (good + per-check bad fixtures)",
-        "Reconciliation worklist (only if validation failed)",
-        "Post Checkout"
-      ],
-      "steps": [
-        {
-          "completed_at": "2026-08-31T04:13:32Z",
-          "conclusion": "success",
-          "name": "Set up job",
-          "started_at": "2026-08-31T04:13:31Z",
-          "status": "completed",
-          "step_id": 1
-        },
-        {
-          "completed_at": "2026-08-31T04:13:56Z",
-          "conclusion": "success",
-          "name": "Checkout",
-          "started_at": "2026-08-31T04:13:32Z",
-          "status": "completed",
-          "step_id": 2
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Install PyYAML (venv on system python3)",
-          "started_at": "2026-08-31T04:13:56Z",
-          "status": "in_progress",
-          "step_id": 3
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Validate OKF-CoreLink knowledge bundle",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 4
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Validator acceptance suite (good + per-check bad fixtures)",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 5
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Reconciliation worklist (only if validation failed)",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 6
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Checkout",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 12
-        }
-      ],
+      "step_evidence_available": false,
+      "step_in_progress": [],
+      "step_not_completed": [],
+      "steps": [],
       "workflow": "OKF-CoreLink Wiki Validation"
     },
     {
       "checkout_incomplete": false,
-      "checkout_observed": true,
+      "checkout_observed": false,
       "completed_at": "2026-08-31T04:13:26Z",
       "conclusion": "failure",
       "created_at": "2026-08-31T04:00:22Z",
@@ -8467,141 +7856,15 @@
       "in_window": true,
       "job_id": 99377079175,
       "lane": "typecheck + lint + test + build",
-      "metadata_signal": "runner_death_candidate",
+      "metadata_signal": "job_failure_candidate",
       "queue_duration_seconds": 184,
       "run_id": 33355619309,
       "runner_name": "cf-runner-ad7db4f0",
       "started_at": "2026-08-31T04:03:26Z",
-      "step_in_progress": [
-        "Set up Node.js"
-      ],
-      "step_not_completed": [
-        "Set up Node.js",
-        "Install dependencies",
-        "Typecheck",
-        "Lint",
-        "Test",
-        "Build",
-        "Bundle size assertion (\u2264 250 KB main bundle)",
-        "Upload build artifact",
-        "Post Set up Node.js",
-        "Post Set up pnpm",
-        "Post Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
-      ],
-      "steps": [
-        {
-          "completed_at": "2026-08-31T04:03:28Z",
-          "conclusion": "success",
-          "name": "Set up job",
-          "started_at": "2026-08-31T04:03:27Z",
-          "status": "completed",
-          "step_id": 1
-        },
-        {
-          "completed_at": "2026-08-31T04:03:32Z",
-          "conclusion": "success",
-          "name": "Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-          "started_at": "2026-08-31T04:03:28Z",
-          "status": "completed",
-          "step_id": 2
-        },
-        {
-          "completed_at": "2026-08-31T04:03:35Z",
-          "conclusion": "success",
-          "name": "Set up pnpm",
-          "started_at": "2026-08-31T04:03:32Z",
-          "status": "completed",
-          "step_id": 3
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Set up Node.js",
-          "started_at": "2026-08-31T04:03:35Z",
-          "status": "in_progress",
-          "step_id": 4
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Install dependencies",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 5
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Typecheck",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 6
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Lint",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 7
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Test",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 8
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Build",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 9
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Bundle size assertion (\u2264 250 KB main bundle)",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 10
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Upload build artifact",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 11
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Set up Node.js",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 20
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Set up pnpm",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 21
-        },
-        {
-          "completed_at": null,
-          "conclusion": null,
-          "name": "Post Run actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
-          "started_at": null,
-          "status": "pending",
-          "step_id": 22
-        }
-      ],
+      "step_evidence_available": false,
+      "step_in_progress": [],
+      "step_not_completed": [],
+      "steps": [],
       "workflow": "docs CI"
     }
   ]

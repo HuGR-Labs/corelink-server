@@ -8,7 +8,7 @@
 -- deployed: the canonical security chain lives in the R2 NDJSON archive
 -- (operator-facing, served by the export route), with no per-tenant surface a
 -- customer can read from their dashboard. This table is that backing — a small,
--- customer-facing activity log keyed by `tenant_id`, written best-effort from
+-- customer-facing activity log keyed by `tenant_id`, written atomically with
 -- the control-plane mutations (PAT create, team invite) and read newest-first
 -- by the audit-query handler.
 --
@@ -20,8 +20,10 @@
 -- ## Read / write contract
 --
 --   write — `customer_d1.rs` inserts one row per committed control-plane op
---           (event_type `pat.created` / `team.invited`), best-effort / fail-OPEN
---           (a failed audit insert NEVER blocks the primary op).
+--           (event_type `pat.created` / `team.invited`) in the SAME D1 REST
+--           transaction as the PAT/team-member mutation. If either fixed,
+--           parameterised statement fails, D1 rolls both rows back
+--           (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER); audit is fail-CLOSED.
 --   read  — `SELECT … WHERE tenant_id = ?1 ORDER BY ts_ms DESC LIMIT ?` →
 --           `CustomerAuditEventRow { event_id=id, ts=ISO8601(ts_ms),
 --           event_type, severity="info", actor, summary=detail }`.

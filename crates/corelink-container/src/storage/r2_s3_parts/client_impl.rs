@@ -15,11 +15,9 @@ impl R2S3Client {
             None, // expiry
             "corelink-r2-s3-adapter",
         );
-
         // R2 uses `auto` as the region pseudo-value; the real routing
         // is done by the endpoint URL.
         let region = Region::new("auto");
-
         // CRITICAL — DO NOT call `aws_config::defaults(...).load().await`.
         // That helper triggers the AWS credential-provider chain (IMDS,
         // ECS, STS) which performs blocking outbound metadata probes.
@@ -34,13 +32,40 @@ impl R2S3Client {
             .endpoint_url(&env.r2_endpoint)
             .credentials_provider(credentials)
             .force_path_style(false) // R2 supports virtual-hosted style
+            .timeout_config(
+                aws_sdk_s3::config::timeout::TimeoutConfig::builder()
+                    .connect_timeout(Self::R2_CONNECT_TIMEOUT)
+                    .read_timeout(Self::R2_READ_TIMEOUT)
+                    .operation_attempt_timeout(Self::R2_OPERATION_ATTEMPT_TIMEOUT)
+                    .operation_timeout(Self::R2_OPERATION_TIMEOUT)
+                    .build(),
+            )
             .build();
-
         Ok(Self {
             inner: Client::from_conf(s3_config),
             bucket: bucket.into(),
             delete_locks: std::sync::Mutex::new(std::collections::HashMap::new()),
+            #[cfg(test)]
+            storage_recorder: None,
         })
+    }
+
+    /// Attach a test-only recorder that observes storage dispatches before
+    /// the AWS client is invoked. Production builds do not contain this seam.
+    #[cfg(test)]
+    pub(crate) fn with_test_storage_recorder(
+        mut self,
+        recorder: Arc<StorageDispatchRecorder>,
+    ) -> Self {
+        self.storage_recorder = Some(recorder);
+        self
+    }
+
+    #[cfg(test)]
+    fn record_storage_dispatch(&self) {
+        if let Some(recorder) = self.storage_recorder.as_ref() {
+            recorder.record();
+        }
     }
 
     /// Upload `bytes` under `key` in the configured bucket.
@@ -67,7 +92,6 @@ impl R2S3Client {
             .map_err(|e| format!("R2 put failed for key {key}: {e}"))?;
         Ok(())
     }
-
     /// Upload `bytes` under `key` ONLY if no object exists there.
     ///
     /// Returns `Ok(true)` when this call created the object and `Ok(false)`
@@ -118,12 +142,20 @@ impl R2S3Client {
             }
         }
     }
-
     /// Download the bytes stored under `key`.
     ///
     /// Returns `Ok(Some(bytes))` on success, `Ok(None)` if the object
     /// does not exist (HTTP 404), and `Err(String)` on other errors.
     pub async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, String> {
+        #[cfg(test)]
+        {
+            self.record_storage_dispatch();
+            if let Some(recorder) = self.storage_recorder.as_ref() {
+                if recorder.should_succeed() {
+                    return Ok(Some(recorder.body()));
+                }
+            }
+        }
         debug!(
             bucket = %self.bucket,
             key = %key,
@@ -136,7 +168,6 @@ impl R2S3Client {
             .key(key)
             .send()
             .await;
-
         match result {
             Ok(output) => {
                 let bytes = output
@@ -159,7 +190,6 @@ impl R2S3Client {
             }
         }
     }
-
     /// Read the byte size of the object stored under `key` WITHOUT
     /// downloading its body (S3 `HeadObject`).
     ///
@@ -193,6 +223,15 @@ impl R2S3Client {
     ///
     /// Returns `Err(String)` on any transport/service error other than a 404.
     pub async fn get_capped(&self, key: &str, max_bytes: u64) -> Result<CappedGet, String> {
+        #[cfg(test)]
+        {
+            self.record_storage_dispatch();
+            if let Some(recorder) = self.storage_recorder.as_ref() {
+                if recorder.should_succeed() {
+                    return Ok(CappedGet::Found(recorder.body()));
+                }
+            }
+        }
         debug!(bucket = %self.bucket, key = %key, max_bytes, "R2S3Client::get_capped");
         let result = self
             .inner
@@ -215,14 +254,13 @@ impl R2S3Client {
                         actual_bytes: Some(len),
                     });
                 }
-                let bytes = output
-                    .body
-                    .collect()
-                    .await
-                    .map_err(|e| format!("R2 body read failed for key {key}: {e}"))?
-                    .into_bytes()
-                    .to_vec();
-                Ok(CappedGet::Found(bytes))
+                // Do not use `ByteStream::collect()` here. Content-Length is
+                // useful admission metadata but is not a safe bound for a
+                // malformed/chunked response. Consume incrementally and stop
+                // as soon as the actual stream crosses the ceiling, keeping
+                // peak allocation bounded even when R2 lies about its length.
+                let body = R2SdkBodyStream(output.body);
+                Self::collect_capped_body(key, max_bytes, body).await
             }
             Err(sdk_err) => {
                 if let aws_sdk_s3::error::SdkError::ServiceError(ref se) = sdk_err {
@@ -237,6 +275,15 @@ impl R2S3Client {
 
     /// Returns `Err(String)` on any non-404 transport/service error.
     pub async fn head_size(&self, key: &str) -> Result<Option<u64>, String> {
+        #[cfg(test)]
+        {
+            self.record_storage_dispatch();
+            if let Some(recorder) = self.storage_recorder.as_ref() {
+                if recorder.should_succeed() {
+                    return Ok(Some(recorder.body().len() as u64));
+                }
+            }
+        }
         debug!(
             bucket = %self.bucket,
             key = %key,
@@ -408,93 +455,4 @@ impl R2S3Client {
         Ok(keys)
     }
 
-    /// List ONE page of objects under `prefix`, returning per-object
-    /// metadata + an opaque continuation token for the next page.
-    ///
-    /// Used by the D-7 / D-8 paginated enumeration routes. Unlike
-    /// [`Self::list_objects_v2`] (which drains every page for erasure),
-    /// this returns a single S3 `ListObjectsV2` page so the HTTP route
-    /// can stream pages back to the client under its own cursor. The
-    /// S3 V2 continuation token IS the route's opaque `next_cursor`.
-    ///
-    /// `max_keys` is clamped into `1..=1000` (the S3 hard cap). Each
-    /// returned tuple is `(full_key, size_bytes, rfc3339_last_modified)`;
-    /// the caller strips the `<region>/<tenant_prefix>/` segments to
-    /// recover the bare digest.
-    ///
-    /// # Errors
-    /// Returns `Err(String)` on any transport/service error.
-    pub async fn list_objects_page(
-        &self,
-        prefix: &str,
-        max_keys: u32,
-        cursor: Option<&str>,
-    ) -> Result<(Vec<(String, u64, String)>, Option<String>), String> {
-        let max_keys = max_keys.clamp(1, 1000) as i32;
-        let mut req = self
-            .inner
-            .list_objects_v2()
-            .bucket(&self.bucket)
-            .prefix(prefix)
-            .max_keys(max_keys);
-        if let Some(token) = cursor {
-            req = req.continuation_token(token);
-        }
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| format!("R2 list-page failed for prefix {prefix}: {e}"))?;
-
-        let mut out = Vec::new();
-        for obj in resp.contents() {
-            let Some(key) = obj.key() else { continue };
-            let size = u64::try_from(obj.size().unwrap_or(0)).unwrap_or(0);
-            // RFC-3339 last-modified; absent ⇒ unix epoch (deterministic
-            // fallback rather than a panic / skipped row).
-            let last_modified = obj
-                .last_modified()
-                .and_then(|dt| {
-                    dt.fmt(aws_sdk_s3::primitives::DateTimeFormat::DateTime)
-                        .ok()
-                })
-                .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_owned());
-            out.push((key.to_owned(), size, last_modified));
-        }
-
-        // Only surface a next cursor when S3 says the listing is
-        // truncated AND hands back a token (fail-safe: a missing token
-        // on a truncated page ends pagination rather than looping).
-        let next = if resp.is_truncated().unwrap_or(false) {
-            resp.next_continuation_token().map(str::to_owned)
-        } else {
-            None
-        };
-        Ok((out, next))
-    }
-
-    /// Compute the R2 object key for a blob, surface-partitioned by the
-    /// keyspace's content-addressing function ([`DigestAlgo`]).
-    ///
-    /// - **`Blake3`** (native CAS + sccache): `<region>/<tenant_prefix_16>/<digest>`.
-    /// - **`Sha256`** (Bazel REAPI v2): `<region>/<tenant_prefix_16>/bazel/sha256/<digest>`.
-    ///
-    /// The `bazel/sha256/` segment sits AFTER the tenant prefix so the
-    /// secret-keyed HMAC tenant isolation (layer 5 of `INV-TENANT-ISOLATION`)
-    /// is fully preserved; the sub-prefix only partitions the digest function
-    /// WITHIN a tenant's namespace. Each keyspace is single-function: a
-    /// SHA-256 blob is never co-resident with a BLAKE3 blob under one key,
-    /// so the durable gate's read-path re-verification always applies the
-    /// blob's own function (Option A, ADR-0044).
-    ///
-    /// The `tenant_prefix` is computed by the caller; on the production path
-    /// it is always `derive_prefix(secret_tdk, tenant_uuid)` (the handlers
-    /// fail closed without a TDK — F1/F2). `region` is the handler's
-    /// residency region (F7), so each regional env keys under its own region.
-    #[must_use]
-    pub fn blob_key(region: &str, tenant_prefix: &str, digest: &str, algo: DigestAlgo) -> String {
-        match algo {
-            DigestAlgo::Blake3 => format!("{region}/{tenant_prefix}/{digest}"),
-            DigestAlgo::Sha256 => format!("{region}/{tenant_prefix}/bazel/sha256/{digest}"),
-        }
-    }
 }
