@@ -72,7 +72,7 @@ def github_attestation(attestation: dict, deployment_record: dict) -> dict:
         "subject_name": "b106-cold-attestation.json",
         "bundle_sha256": verifier.sha(verifier.canonical_json(bundle)),
         "bundle": bundle,
-        "verification": [{"verificationResult": {"statement": subject}}],
+        "verification": [{"verificationResult": {"signature": {"certificate": {"sourceRepository": verifier.REPO, "subjectAlternativeName": "https://github.com/HuGR/corelink-server/.github/workflows/perf-production-evidence.yml@refs/heads/main"}}, "verifiedTimestamps": [{"type": "tlog"}], "statement": subject}}],
         "verification_policy": {
             "repository": verifier.REPO,
             "signer_workflow": f"{verifier.REPO}/.github/workflows/perf-production-evidence.yml",

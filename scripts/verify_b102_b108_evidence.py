@@ -439,6 +439,15 @@ def b106(item: dict[str, Any], root: Path, tenant: str, now: float) -> str:
         result = entry.get("verificationResult")
         if not isinstance(result, dict):
             continue
+        signature = result.get("signature")
+        certificate = signature.get("certificate") if isinstance(signature, dict) else None
+        if not isinstance(certificate, dict) or certificate.get("sourceRepository") != REPO:
+            continue
+        signer_san = certificate.get("subjectAlternativeName")
+        if not isinstance(signer_san, str) or "/.github/workflows/perf-production-evidence.yml@" not in signer_san:
+            continue
+        if not isinstance(result.get("verifiedTimestamps"), list) or not result["verifiedTimestamps"]:
+            continue
         statement = result.get("statement")
         if not isinstance(statement, dict):
             continue
