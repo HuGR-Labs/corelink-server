@@ -142,9 +142,60 @@ def _active_test_include_count(source: str) -> int:
     count = 0
     for match in call.finditer(masked):
         candidate = literal.match(source[match.start() :])
-        if candidate and candidate.group(1) == TEST_INCLUDE_MARKER.split('"', 2)[1]:
-            count += 1
+        if not candidate or candidate.group(1) != TEST_INCLUDE_MARKER.split('"', 2)[1]:
+            continue
+        if _has_cfg_attribute_on_include(masked, match.start()):
+            raise AssertionError(
+                "required revocation test include must not be cfg-gated"
+            )
+        count += 1
     return count
+
+
+def _has_cfg_attribute_on_include(masked: str, include_start: int) -> bool:
+    """Return whether an active ``cfg`` attribute directly gates an include.
+
+    ``masked`` has comments and string bodies replaced with spaces, so only
+    executable attributes remain visible.  We reject *any* cfg attribute on
+    this required include: a condition that is currently true can become
+    false under another build profile, while ``cfg(any())`` and ``cfg(test)``
+    are unconditionally compile-disabled for the production adapter.
+    """
+    attribute = re.compile(r"#\s*\[\s*cfg\b")
+
+    def matching_bracket(start: int) -> int | None:
+        depth = 0
+        for index in range(start, include_start):
+            if masked[index] == "[":
+                depth += 1
+            elif masked[index] == "]":
+                depth -= 1
+                if depth == 0:
+                    return index + 1
+        return None
+
+    def only_attributes(start: int) -> bool:
+        index = start
+        while index < include_start:
+            while index < include_start and masked[index].isspace():
+                index += 1
+            if index == include_start:
+                return True
+            if masked.startswith("#[", index):
+                end = matching_bracket(index + 1)
+                if end is None:
+                    return False
+                index = end
+                continue
+            return False
+        return True
+
+    for match in attribute.finditer(masked, 0, include_start):
+        open_bracket = masked.find("[", match.start(), match.end())
+        end = matching_bracket(open_bracket) if open_bracket >= 0 else None
+        if end is not None and only_attributes(end):
+            return True
+    return False
 
 
 def _require_active_test_include(source: str) -> None:
@@ -513,6 +564,28 @@ def mutation_self_test(main: str, runtime: str, detector: str, focal: str, migra
             runtime.replace(
                 TEST_INCLUDE_MARKER,
                 'const INCLUDE_BAIT: &str = "include!(\\"byok_revocation_runtime/part-01.rs\\");";',
+                1,
+            ),
+            detector,
+            focal,
+            migration,
+        ),
+        "test-include-cfg-any": (
+            main,
+            runtime.replace(
+                TEST_INCLUDE_MARKER,
+                "#[cfg(any())]\n" + TEST_INCLUDE_MARKER,
+                1,
+            ),
+            detector,
+            focal,
+            migration,
+        ),
+        "test-include-cfg-test": (
+            main,
+            runtime.replace(
+                TEST_INCLUDE_MARKER,
+                "#[cfg(test)]\n" + TEST_INCLUDE_MARKER,
                 1,
             ),
             detector,

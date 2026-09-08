@@ -62,3 +62,28 @@ def test_markdown_emphasis_is_not_a_claim_evasion() -> None:
     plain_dpa = dpa.replace("**immutable R2 with Object Lock**", "immutable R2 with Object Lock")
     plain_sla = sla.replace("**BYOK kill-switch p99 ≤ 5 min**", "BYOK kill-switch p99 ≤ 5 min")
     assert len(MODULE.verify_texts(plain_dpa, plain_sla)) == 2
+
+
+def test_long_filler_cannot_hide_sentence_negation() -> None:
+    _, sla = _sources()
+    filler = "x" * 120
+    dpa = f"No {filler} immutable R2 with Object Lock is guaranteed.\n"
+    with pytest.raises(MODULE.VerificationError):
+        MODULE.verify_texts(dpa, sla)
+
+
+def test_wrapped_sentence_negation_cannot_hide_behind_a_line_break() -> None:
+    _, sla = _sources()
+    dpa = f"No {'x' * 120}\nimmutable R2 with Object Lock is guaranteed.\n"
+    with pytest.raises(MODULE.VerificationError):
+        MODULE.verify_texts(dpa, sla)
+
+
+def test_sentence_scope_does_not_borrow_an_unrelated_prior_sentence() -> None:
+    _, sla = _sources()
+    dpa = "No unrelated retention feature is guaranteed. Immutable R2 with Object Lock is active.\n"
+    found = MODULE.verify_texts(dpa, sla)
+    assert {label for label, _line, _text in found} == {
+        "dpa_object_lock",
+        "sla_byok_kill_switch",
+    }

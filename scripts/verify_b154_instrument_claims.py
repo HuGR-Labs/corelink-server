@@ -59,6 +59,7 @@ POLARITY_RE = re.compile(
     r"future(?:[- ]only)?|not\s+guaranteed)\b",
     re.IGNORECASE,
 )
+SENTENCE_END_RE = re.compile(r"[.!?](?=\s|$)")
 
 
 def _active_lines(markdown: str) -> list[tuple[int, str]]:
@@ -95,20 +96,61 @@ def _active_lines(markdown: str) -> list[tuple[int, str]]:
     return lines
 
 
+def _claim_sentence_scope(
+    active_lines: list[tuple[int, str]], line_index: int, match: re.Match[str]
+) -> str:
+    """Return the sentence containing a claim, including wrapped Markdown lines."""
+    current = active_lines[line_index][1]
+    if current.lstrip().startswith("|"):
+        # Markdown table rows are independent claims; never borrow polarity
+        # from the row above or below.
+        combined = current
+        claim_start = match.start()
+    else:
+        start = line_index
+        while start > 0:
+            previous_number, previous = active_lines[start - 1]
+            if previous_number != active_lines[start][0] - 1:
+                break
+            if previous.lstrip().startswith("|"):
+                break
+            start -= 1
+        end = line_index
+        while end + 1 < len(active_lines):
+            next_number, following = active_lines[end + 1]
+            if next_number != active_lines[end][0] + 1:
+                break
+            if following.lstrip().startswith("|"):
+                break
+            end += 1
+        combined = " ".join(line for _number, line in active_lines[start : end + 1])
+        claim_start = sum(
+            len(line) + 1 for _number, line in active_lines[start:line_index]
+        ) + match.start()
+
+    scope_start = 0
+    for boundary in SENTENCE_END_RE.finditer(combined, 0, claim_start):
+        scope_start = boundary.end()
+    scope_end_match = SENTENCE_END_RE.search(combined, claim_start + len(match.group(0)))
+    scope_end = scope_end_match.start() if scope_end_match else len(combined)
+    return combined[scope_start:scope_end]
+
+
 def scan_claims(markdown: str, path: Path) -> list[tuple[str, int, str]]:
     found: list[tuple[str, int, str]] = []
+    active_lines = _active_lines(markdown)
     for claim in CLAIMS:
         if claim.path != path:
             continue
-        for line_number, line in _active_lines(markdown):
+        for line_index, (line_number, line) in enumerate(active_lines):
             for match in claim.pattern.finditer(line):
                 # A negated/disclaimed sentence is not evidence of an active
-                # positive instrument claim.  Inspect a bounded context on
-                # both sides so phrases such as ``No ... Object Lock`` and
-                # ``... is not guaranteed`` cannot satisfy the contract.
-                context_before = line[max(0, match.start() - 96) : match.start()]
-                context_after = line[match.end() : match.end() + 96]
-                if POLARITY_RE.search(context_before) or POLARITY_RE.search(context_after):
+                # positive instrument claim.  Scope the polarity check to the
+                # whole sentence containing the claim; a fixed character
+                # window would let a long filler string separate ``No`` from
+                # the claim and turn a disclaimer into a false positive.
+                sentence = _claim_sentence_scope(active_lines, line_index, match)
+                if POLARITY_RE.search(sentence):
                     continue
                 found.append((claim.label, line_number, line.strip()))
     return found
