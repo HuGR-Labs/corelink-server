@@ -8567,7 +8567,7 @@ the GitHub-hosted billing dependency without deleting a gate or changing its ass
 ```backlog
 id: B-110
 repo: corelink-server
-owner: owner
+owner: tl
 status: done
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
@@ -8603,7 +8603,7 @@ verify-means: |
   julgar). As cinco leituras de `runs-on:` são ancoradas em `^` de propósito:
   `semgrep.yml` cita `runs-on:` dentro de comentários históricos, e confundir
   comentário com código é exatamente o defeito que [B-128] registra.
-last-verified: 2026-09-05
+last-verified: 2026-09-08
 ```
 
 ### B-111 — aquisição de certificados Apple/Windows (o resto dos "secrets ausentes" não era isso)
