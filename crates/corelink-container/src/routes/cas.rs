@@ -62,6 +62,7 @@ mod tests {
     include!("cas/tests_core_part2.rs");
     include!("cas/tests_batch_part1.rs");
     include!("cas/tests_batch_part2.rs");
+    include!("cas/tests_batch_write_part2.rs");
     include!("cas/tests_edges.rs");
 }
 
