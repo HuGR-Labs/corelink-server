@@ -22,13 +22,13 @@ EXPECTED_ACCOUNT_ID = "6a1fc1c626fc2628823e60b9db01f5cd"
 EXPECTED_AUTH_EMAIL = "gmhelmold@gmail.com"
 EXPECTED_AUTH_TYPE = "OAuth Token"
 EXPECTED_WRANGLER_VERSION = "4.111.0"
-EXPECTED_WRANGLER_INTEGRITY = "sha512-bffpI9EyrnpKkF/1S+RaIv8oRD93GtbsA7TlfWwOsGJGB7VO3jVbdGzpC9TU7Bqom3z7jUxcte4Z9MPhaQ4HoQ=="
+LOCK_SOURCE = "pnpm-lock.yaml:wrangler@4.111.0"
 MAX_RECEIPT_AGE = timedelta(hours=24)
 MAX_RECEIPT_FUTURE = timedelta(minutes=5)
 PROVIDER_KEYS = frozenset(
     {
         "schema", "provider", "evidence_source", "authenticated", "credential_values_printed",
-        "auth_identity", "wrangler_version", "wrangler_package_integrity",
+        "auth_identity", "wrangler_version", "wrangler_lock_source", "wrangler_package_integrity",
         "deployment_api_success", "version_api_success",
         "worker", "metrics_source", "deployment_id", "version_id", "version_number",
         "script_etag", "rollout_percentage", "captured_at",
@@ -36,6 +36,22 @@ PROVIDER_KEYS = frozenset(
 )
 class ProviderBindingError(ValueError):
     """The receipt does not bind the metrics read to the deployed Worker."""
+
+
+def read_lock_integrity() -> str:
+    lockfile = Path(__file__).resolve().parents[1] / "pnpm-lock.yaml"
+    try:
+        text = lockfile.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ProviderBindingError(f"cannot read pinned Wrangler lockfile: {exc}") from exc
+    matches = re.findall(
+        r"^  wrangler@4\.111\.0:\n    resolution: \{integrity: ([^,}]+)(?:,|\})",
+        text,
+        re.MULTILINE,
+    )
+    if len(matches) != 1 or not matches[0].startswith("sha512-"):
+        raise ProviderBindingError("pinned Wrangler lockfile integrity is missing or ambiguous")
+    return matches[0]
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -69,8 +85,10 @@ def validate_provider_binding(binding: dict[str, Any]) -> None:
         "logged_in": True,
     }:
         raise ProviderBindingError("provider authentication identity drifted")
-    if binding["wrangler_version"] != EXPECTED_WRANGLER_VERSION or binding["wrangler_package_integrity"] != EXPECTED_WRANGLER_INTEGRITY:
+    if binding["wrangler_version"] != EXPECTED_WRANGLER_VERSION or binding["wrangler_lock_source"] != LOCK_SOURCE:
         raise ProviderBindingError("Wrangler binary version/integrity is not pinned")
+    if binding["wrangler_package_integrity"] != read_lock_integrity():
+        raise ProviderBindingError("computed Wrangler package integrity does not match the committed lockfile")
     if binding["deployment_api_success"] is not True or binding["version_api_success"] is not True:
         raise ProviderBindingError("provider deployment/version API result was not successful")
     if binding["worker"] != WORKER or binding["metrics_source"] != SOURCE:

@@ -152,6 +152,8 @@ def test_b006_closure_rejects_cross_binding_freshness_and_status_mutations() -> 
         (provider, {"secret": "must-never-be-retained"}),
         (provider, {"auth_identity": {"account_id": "wrong", "email": EXPECTED_AUTH_EMAIL, "auth_type": EXPECTED_AUTH_TYPE, "logged_in": True}}),
         (provider, {"wrangler_version": "4.130.0"}),
+        (provider, {"wrangler_package_integrity": "sha512-substituted"}),
+        (provider, {"wrangler_lock_source": "package.json"}),
         (provider, {"deployment_api_success": False}),
         (provider, {"captured_at": "2020-01-01T00:00:00Z"}),
         (provider, {"captured_at": "2999-01-01T00:00:00Z"}),
@@ -180,7 +182,7 @@ def test_b006_provider_collector_uses_provider_digest_and_auth_response(monkeypa
     version = ({"id": EXPECTED_VERSION_ID, "number": EXPECTED_VERSION_NUMBER, "resources": {"script": {"etag": EXPECTED_SCRIPT_ETAG}}}, True)
     responses = iter((identity, deployments, version))
     monkeypatch.setattr(provider_collector, "_wrangler_json", lambda *args: next(responses))
-    receipt = provider_collector.collect()
+    receipt = provider_collector.collect(lambda *args: next(responses))
     assert receipt["authenticated"] is True
     assert receipt["script_etag"] == EXPECTED_SCRIPT_ETAG
 
@@ -192,13 +194,30 @@ def test_b006_provider_collector_uses_provider_digest_and_auth_response(monkeypa
         responses = iter((identity, deployments, bad_response))
         monkeypatch.setattr(provider_collector, "_wrangler_json", lambda *args: next(responses))
         with pytest.raises(ValueError):
-            provider_collector.collect()
+            provider_collector.collect(lambda *args: next(responses))
 
     wrong_identity = ({"loggedIn": True, "authType": EXPECTED_AUTH_TYPE, "email": "other@example.invalid", "accounts": [{"id": EXPECTED_ACCOUNT_ID}]}, True)
     responses = iter((wrong_identity, deployments, version))
     monkeypatch.setattr(provider_collector, "_wrangler_json", lambda *args: next(responses))
     with pytest.raises(ValueError):
-        provider_collector.collect()
+        provider_collector.collect(lambda *args: next(responses))
+
+
+def test_b006_provider_collector_rejects_substituted_tarball_before_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeResponse:
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, _limit: int) -> bytes:
+            return b"substituted package bytes"
+
+    monkeypatch.setattr(provider_collector.urllib.request, "urlopen", lambda *_args, **_kwargs: FakeResponse())
+    with pytest.raises(ValueError, match="integrity"):
+        with provider_collector._verified_wrangler():
+            raise AssertionError("substituted package must never execute")
 
 
 def test_b006_d03_packet_cannot_mutate_indeterminate_receipt_to_done() -> None:
