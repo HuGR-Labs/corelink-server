@@ -170,7 +170,7 @@ sub-processors" table and `specs/_compliance/VENDOR-RISK-REGISTER.md` §2:
 
 | ID | Nome | Função | Região | Certificações | DPA |
 |---|---|---|---|---|---|
-| cloudflare | Cloudflare, Inc. | Infrastructure (Workers, R2, KV, DO, D1, Pages, Email) | Multi-region (tenant-pinned) | SOC 2 Type II, ISO 27001, ISO 27018, PCI-DSS Level 1 | [DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
+| cloudflare | Cloudflare, Inc. | Infrastructure (Workers, R2, KV, DO, D1, Pages, Email) | R2/DO tenant-pinned; D1 control-plane metadata global under SCC/TIA safeguards | SOC 2 Type II, ISO 27001, ISO 27018, PCI-DSS Level 1 | [DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
 | clerk | Clerk, Inc. | Authentication, identity provider, JWT issuer | Multi-region (tenant-pinned) | SOC 2 Type II, GDPR processor | Clerk DPA (on request) |
 | stripe | Stripe, Inc. | Payment processing and billing | US and EU | PCI-DSS Level 1, SOC 2 Type II, ISO 27001 | [DPA](https://stripe.com/legal/dpa) |
 | github | GitHub, Inc. | Source code repository and CI/CD | United States | SOC 2 Type II, ISO 27001 | [DPA](https://docs.github.com/en/site-policy/privacy-policies/github-data-protection-agreement) |

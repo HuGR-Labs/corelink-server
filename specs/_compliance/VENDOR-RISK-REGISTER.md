@@ -29,6 +29,10 @@ tags: ["soc2", "cc9.2", "vendor-risk", "register", "gap-14", "drata"]
 > **Operational cycle:** see `specs/_runbooks/RB-VENDOR-RISK-QUARTERLY-REVIEW.md`.
 > **Per-Critical-vendor DD files:** see `specs/_compliance/vendor-dd/`.
 > **Public sub-processor disclosure (subset):** `legal/sub-processors.md`.
+>
+> **Cloudflare region disclosure:** R2 objects and jurisdictional Durable Object
+> state are tenant-pinned; shared D1 control-plane metadata is global and uses
+> SCC/TIA safeguards. The public-page generator preserves this distinction.
 
 ---
 
