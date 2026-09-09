@@ -656,14 +656,14 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
       actor: "user_e2e_admin",
       summary: `created PAT '${pat.name}'`,
     });
-    // WIRE-SHAPE: the container replies `{ "pat": { … }, "token": "…" }` — the row
+    // WIRE-SHAPE: the customer API replies `{ "pat": { … }, "token_plaintext": "…" }` — the row
     // is ENVELOPED and the shown-once secret rides alongside it
     // (routes/customer.rs:810-820). This fixture used to return the flat row +
     // token, a shape the server never sends, which left the E2E gate structurally
     // unable to catch the missing unwrap in `createPat`. Mirror the real wire.
     return {
       status: 201,
-      body: { pat, token: `crl_pat_${pat.pat_id}_secret_shown_once` },
+      body: { pat, token_plaintext: `crl_pat_${pat.pat_id}_secret_shown_once` },
     };
   }
   if (path.startsWith("/v1/customer/keys/") && path.endsWith("/revoke") && method === "POST") {

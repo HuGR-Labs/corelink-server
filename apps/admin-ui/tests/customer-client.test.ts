@@ -47,7 +47,15 @@ describe("CustomerClient auth token", () => {
     const captured: Captured[] = [];
     const client = new CustomerClient({
       baseUrl: "https://api.test",
-      fetchImpl: makeFetch(captured),
+      fetchImpl: makeFetch(captured, {
+        pat: {
+          pat_id: "pat_post",
+          name: "ci",
+          scopes: ["cache:r"],
+          created_at: "2026-08-01T00:00:00Z",
+        },
+        token_plaintext: "crl_pat_post_secret",
+      }),
       getToken: async () => "sess_jwt_post",
     });
     await client.createPat({ name: "ci", scopes: ["cache:r"] });
@@ -167,14 +175,12 @@ describe("CustomerClient wire-shape contract", () => {
     expect(member.invitation_token).toHaveLength(64);
   });
 
-  // `POST /v1/customer/keys` → 201 `{ "pat": { … }, "token": "…" }`
-  // (routes/customer.rs:810-820).
+  // `POST /v1/customer/keys` → 201 `{ "pat": { … }, "token_plaintext": "…" }`
+  // (the canonical live response envelope).
   // Regression: the client declared `CustomerPat & { token? }` and bare-cast the
-  // envelope. `token` IS top-level so it survived by luck, but every PAT field
-  // (`pat_id` / `name` / `scopes`) was `undefined` — the create toast rendered
-  // `Token "undefined" created` and the rotate path fed the same undefined
-  // metadata to the shown-once reveal.
-  it("createPat unwraps the { pat, token } envelope the container actually sends", async () => {
+  // envelope. The old field name left the plaintext undefined, so the create
+  // and rotate paths opened an empty shown-once reveal.
+  it("createPat maps the canonical token_plaintext envelope to the reveal shape", async () => {
     const client = new CustomerClient({
       baseUrl: "https://api.test",
       fetchImpl: respondWith(
@@ -187,7 +193,7 @@ describe("CustomerClient wire-shape contract", () => {
             last_used_at: null,
             revoked_at: null,
           },
-          token: "crl_pat_shown_once_secret",
+          token_plaintext: "crl_pat_shown_once_secret",
         },
         201,
       ),
@@ -203,6 +209,58 @@ describe("CustomerClient wire-shape contract", () => {
     expect(pat.token).toBe("crl_pat_shown_once_secret");
     // The envelope key must not leak through — callers spread the row.
     expect(pat).not.toHaveProperty("pat");
+  });
+
+  it.each([
+    ["missing", { pat: { pat_id: "pat_missing" } }],
+    ["blank canonical", { pat: { pat_id: "pat_blank" }, token_plaintext: "   " }],
+    ["blank transition", { pat: { pat_id: "pat_blank_legacy" }, token: "" }],
+  ])("createPat fails closed when PAT plaintext is %s", async (_caseName, body) => {
+    const client = new CustomerClient({
+      baseUrl: "https://api.test",
+      fetchImpl: respondWith(body, 201),
+    });
+
+    await expect(client.createPat({ name: "ci-github", scopes: ["cache:r"] }))
+      .rejects.toMatchObject({
+        status: 502,
+        message: "customer api response missing nonblank token_plaintext or token",
+      });
+  });
+
+  it("createPat accepts the origin/main token transition field", async () => {
+    const client = new CustomerClient({
+      baseUrl: "https://api.test",
+      fetchImpl: respondWith({
+        pat: {
+          pat_id: "0198f0e3-0000-7000-8000-0000000000ad",
+          name: "ci-github",
+          scopes: ["cache:r"],
+          created_at: "2026-08-01T00:00:00Z",
+        },
+        token: "crl_pat_transition_secret",
+      }, 201),
+    });
+
+    await expect(client.createPat({ name: "ci-github", scopes: ["cache:r"] }))
+      .resolves.toMatchObject({ token: "crl_pat_transition_secret" });
+  });
+
+  it("createPat fails closed when both token fields conflict", async () => {
+    const client = new CustomerClient({
+      baseUrl: "https://api.test",
+      fetchImpl: respondWith({
+        pat: { pat_id: "pat_conflict", name: "ci-github", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" },
+        token_plaintext: "crl_pat_canonical",
+        token: "crl_pat_transition",
+      }, 201),
+    });
+
+    await expect(client.createPat({ name: "ci-github", scopes: ["cache:r"] }))
+      .rejects.toMatchObject({
+        status: 502,
+        message: "customer api response has conflicting token_plaintext and token fields",
+      });
   });
 
   // `POST /v1/customer/keys/:id/revoke` → 200 `{ "pat": { … } }`

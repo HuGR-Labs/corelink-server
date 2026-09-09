@@ -513,7 +513,7 @@ describe("KeysClient", () => {
   });
 
   it("create PAT flow — calls createPat and shows new token", async () => {
-    const newPat: CustomerPat & { token?: string } = {
+    const newPat: CustomerPat & { token: string } = {
       pat_id: "pat_new",
       name: "e2e-pat",
       scopes: ["cache:r"],

@@ -58,6 +58,53 @@ export class CustomerClientError extends Error {
   }
 }
 
+interface CustomerPatCreateResponse {
+  pat?: CustomerPat;
+  token_plaintext?: unknown;
+  token?: unknown;
+}
+
+function hasOwn(value: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+/**
+ * Normalize the live `token_plaintext` field and the origin/main `token`
+ * transition field. Both are accepted only when nonblank; if an envelope
+ * carries both fields they must agree exactly.
+ */
+function normalizePatPlaintext(response: CustomerPatCreateResponse): string {
+  const hasCanonical = hasOwn(response, "token_plaintext");
+  const hasLegacy = hasOwn(response, "token");
+  const canonical = typeof response.token_plaintext === "string" ? response.token_plaintext : null;
+  const legacy = typeof response.token === "string" ? response.token : null;
+
+  if (hasCanonical && hasLegacy) {
+    if (
+      canonical == null ||
+      canonical.trim() === "" ||
+      legacy == null ||
+      legacy.trim() === "" ||
+      canonical !== legacy
+    ) {
+      throw new CustomerClientError(
+        502,
+        "customer api response has conflicting token_plaintext and token fields",
+      );
+    }
+    return canonical;
+  }
+
+  const candidate = hasCanonical ? canonical : hasLegacy ? legacy : null;
+  if (candidate == null || candidate.trim() === "") {
+    throw new CustomerClientError(
+      502,
+      "customer api response missing nonblank token_plaintext or token",
+    );
+  }
+  return candidate;
+}
+
 // Prefers NEXT_PUBLIC_CORELINK_API_URL when set. In production the admin-ui
 // build sets NEXT_PUBLIC_CORELINK_API_URL=https://corelink-api.humangr.com at
 // build time (NEXT_PUBLIC_* is inlined into the client bundle), so the browser
@@ -162,21 +209,29 @@ export class CustomerClient {
   }
 
   /**
-   * [live] Mint a PAT. The container replies `201 { "pat": { … }, "token": "…" }`
-   * (`crates/corelink-container/src/routes/customer.rs:810-820`) — the row is
-   * ENVELOPED, the shown-once secret rides alongside it. `request<T>()` only
-   * CASTS, so declaring the flat row compiled clean while every PAT field came
-   * back `undefined`: the create toast read `Token "undefined" created` and the
-   * rotate path fed that same undefined metadata to the shown-once reveal.
-   * Unwrap here and re-flatten `token` onto the row, so callers keep the
-   * `{ …pat, token }` shape they already destructure.
+   * [live] Mint a PAT. The API replies `201 { "pat": { … },
+   * "token_plaintext": "…" }`; origin/main emits the transition field
+   * `token`. The row is enveloped and the shown-once secret rides alongside it.
+   * `request<T>()` only casts the parsed JSON, so normalize and validate the
+   * plaintext before re-flattening it as `token` for the existing reveal path.
+   * A malformed success response must never open an empty modal.
    */
-  async createPat(input: { name: string; scopes: string[] }): Promise<CustomerPat & { token?: string }> {
-    const { pat, token } = await this.request<{ pat: CustomerPat; token?: string }>(
+  async createPat(input: { name: string; scopes: string[] }): Promise<CustomerPat & { token: string }> {
+    const response = await this.request<CustomerPatCreateResponse>(
       "/v1/customer/keys",
       { method: "POST", body: JSON.stringify(input) },
     );
-    return { ...pat, token };
+    if (
+      response == null ||
+      typeof response !== "object" ||
+      response.pat == null
+    ) {
+      throw new CustomerClientError(
+        502,
+        "customer api response missing PAT metadata",
+      );
+    }
+    return { ...response.pat, token: normalizePatPlaintext(response) };
   }
 
   /**
