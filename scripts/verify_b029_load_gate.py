@@ -25,6 +25,14 @@ WORKFLOW = ".github/workflows/load-test-nightly.yml"
 COMPARATOR = "scripts/load-test-baseline-check.py"
 OPERATOR_README = "tests/load/README.md"
 COMPARE_STEP = "compare median vs stored baseline"
+CANONICAL_STAGING_HOST = "staging.corelink.humangr.com"
+STALE_STAGING_HOST = "api-staging.corelink.humangr.com"
+HOSTNAME_SOURCES = (
+    ".github/workflows/load-test-nightly.yml",
+    "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json",
+    "evidence/owner-actions/B-029/staging-load-gate.json",
+    "docs/internal/secrets-checklist.md",
+)
 EXPECTED_COMPARATOR = (
     "python3",
     "scripts/load-test-baseline-check.py",
@@ -476,6 +484,38 @@ def _raises(function: ast.AST, name: str) -> bool:
     )
 
 
+def _hostname_gaps(root: Path) -> list[str]:
+    """Require every shipped B-029 target reference to use one hostname.
+
+    The workflow, owner packet, and owner receipt are the canonical B-029
+    target contract.  The secrets checklist is included because its K6 input
+    row is operationally copied when the environment is provisioned; allowing
+    a second hostname there recreates the drift this verifier is meant to
+    catch.  This check asserts naming only — it does not assert that staging is
+    deployed or reachable.
+    """
+
+    gaps: list[str] = []
+    for relative in HOSTNAME_SOURCES:
+        path = root / relative
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            gaps.append(f"B-029 hostname source unreadable ({relative}): {exc}")
+            continue
+        if CANONICAL_STAGING_HOST not in text:
+            gaps.append(
+                f"B-029 hostname source {relative} does not name "
+                f"{CANONICAL_STAGING_HOST}"
+            )
+        if STALE_STAGING_HOST in text:
+            gaps.append(
+                f"B-029 hostname drift in {relative}: stale "
+                f"{STALE_STAGING_HOST}"
+            )
+    return gaps
+
+
 def assess(root: Path, *, expect: str) -> list[str]:
     gaps: list[str] = []
     workflow_path = root / WORKFLOW
@@ -487,6 +527,8 @@ def assess(root: Path, *, expect: str) -> list[str]:
         readme = readme_path.read_text(encoding="utf-8")
     except OSError as exc:
         return [f"instrument error: {exc}"]
+
+    gaps.extend(_hostname_gaps(root))
 
     # The gate must compare the current run with a prior cached baseline and
     # publish only after a successful comparison.  These checks are intentionally
