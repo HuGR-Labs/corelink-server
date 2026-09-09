@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09T09:22:25Z",
+  "production_source_sha": "64e57a2ccb218f475b44a260b64af95e0bc7df2c",
+  "deployed_worker": {
+    "name": "corelink-prod",
+    "version_id": "dd270ff0-8ab5-4dd7-8de3-54df432e927f",
+    "deployment_id": "62e0f9b2-f5e8-42d2-9b77-6c2bd2691a88",
+    "deployed_at": "2026-09-09T08:46:36.525166Z"
+  },
+  "rejection_samples": {
+    "artifact": "evidence/owner-actions/B-165/rejection-raw-2026-09-09.tsv",
+    "sha256": "820754b2b16d1f5532c9d71829d463819b84848f407f00250b6f1bafef43637e",
+    "samples_per_route": 10,
+    "discarded_first": true,
+    "complete": false,
+    "failure": "The OCI /v2 population returned HTTP 503 for every sample instead of the required authentication rejection HTTP 401."
+  },
+  "served_samples": [],
+  "route_statistics": [
+    {
+      "route": "/v1/cas/x/y",
+      "population": "rejection",
+      "sample_count": 9,
+      "discarded_first": true,
+      "median_ms": 50.405,
+      "p90_ms": 58.614,
+      "status_classes": {"401": 10},
+      "threshold_result": "status_pass"
+    },
+    {
+      "route": "/npm/x",
+      "population": "rejection",
+      "sample_count": 9,
+      "discarded_first": true,
+      "median_ms": 52.690,
+      "p90_ms": 104.131,
+      "status_classes": {"401": 10},
+      "threshold_result": "status_pass"
+    },
+    {
+      "route": "/pip/simple/x",
+      "population": "rejection",
+      "sample_count": 9,
+      "discarded_first": true,
+      "median_ms": 50.933,
+      "p90_ms": 53.165,
+      "status_classes": {"401": 10},
+      "threshold_result": "status_pass"
+    },
+    {
+      "route": "/v2/x/manifests/latest",
+      "population": "rejection",
+      "sample_count": 9,
+      "discarded_first": true,
+      "median_ms": 4469.263,
+      "p90_ms": 6093.667,
+      "status_classes": {"503": 10},
+      "threshold_result": "fail_wrong_status"
+    },
+    {
+      "route": "/health",
+      "population": "control",
+      "sample_count": 9,
+      "discarded_first": true,
+      "median_ms": 47.877,
+      "p90_ms": 56.820,
+      "status_classes": {"200": 10},
+      "threshold_result": "status_pass"
+    }
+  ],
+  "runtime_diagnosis": {
+    "followup_status": 503,
+    "followup_error": "CONTAINER_UNAVAILABLE",
+    "followup_message": "container_health_check_failed",
+    "followup_request_ids": [
+      "ee62912f-1142-47f6-ba99-250c7e77282c",
+      "a6369fdd-2eb5-4a98-8fc3-127198650afa",
+      "6562157b-86d7-4a6f-b896-3ba1d260319a"
+    ],
+    "worker_tail_outcome": "ok_with_503_response",
+    "container_application": {
+      "name": "corelink-prod-corelinkserver-prod",
+      "id": "a033572c-0803-4866-b3a3-61f4812843b1",
+      "state": "ready",
+      "version": 179,
+      "image_tag": "b90b245df-r1",
+      "updated_at": "2026-09-09T09:18:20.609999872Z",
+      "max_instances": 200,
+      "health_errors": [],
+      "provider_health_counts": {"healthy": 17, "assigned": 1, "failed": 0}
+    },
+    "oci_instance": {
+      "name": "_oci",
+      "state": "inactive",
+      "location": null,
+      "version": null,
+      "created_at": "2026-09-09T09:19:45Z"
+    },
+    "conclusion": "The edge Worker is healthy and returns the DO response, but the shared OCI container never reaches a located/versioned instance after the image rollout. The provider readback and repeated container_health_check_failed responses establish a runtime start failure; they do not establish whether its cause is image boot, scheduling, or a boot-time dependency."
+  },
+  "padding_decision": "not_evaluated_runtime_failure",
+  "pat_reference": "unavailable_local_default_pat_returned_401;_no_ambiguous_rotation_artifact_read",
+  "verdict": "blocked_runtime_failure_and_missing_two_authenticated_served_populations",
+  "operator": "codex-orchestrator"
+}
