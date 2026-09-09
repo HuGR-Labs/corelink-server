@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import pytest
 import yaml
@@ -14,6 +15,11 @@ DEPLOY_SCRIPT = ROOT / "scripts/deploy-container-prod.sh"
 PIN_SCRIPT = ROOT / "scripts/check-container-pin-fresh.sh"
 EXPECTED_FLEET_MATRIX = 'matrix={"env":["prod","prod-sam","prod-lhr","prod-nrt","prod-syd"]}'
 EXPECTED_ENVS = ("prod", "prod-sam", "prod-lhr", "prod-nrt", "prod-syd")
+EXPECTED_MIGRATION_IF = (
+    "always() && needs.gate-secrets-checklist.result == 'success' "
+    "&& needs.deploy.result == 'success' && inputs.env == '' "
+    "&& inputs.skip_pin_freshness != 'true'"
+)
 
 
 def _workflow(text: str) -> dict:
@@ -22,6 +28,11 @@ def _workflow(text: str) -> dict:
     jobs = parsed.get("jobs")
     assert isinstance(jobs, dict)
     return jobs
+
+
+def _normalize_expression(value: object) -> str:
+    """Normalize YAML folded whitespace while preserving expression structure."""
+    return re.sub(r"\s+", " ", str(value)).strip()
 
 
 def _assert_writer_first(jobs: dict) -> None:
@@ -47,14 +58,14 @@ def _assert_writer_first(jobs: dict) -> None:
         "gate-secrets-checklist",
         "gate-cf-secrets-populated",
     ]
-    assert migrate["needs"] == "deploy"
-    condition = str(migrate.get("if", ""))
-    assert "needs.deploy.result == 'success'" in condition
-    # A single-env dispatch proves only one of the five shared-D1 writers.
-    assert "github.event.inputs.env == ''" in condition
-    # Recycle/rollback is allowed to deploy a pinned image, but never to
-    # authorize a schema mutation.
-    assert "github.event.inputs.skip_pin_freshness != 'true'" in condition
+    assert migrate["needs"] == [
+        "gate-secrets-checklist",
+        "gate-cf-secrets-populated",
+        "deploy",
+    ]
+    # Compare the complete normalized expression. Substring assertions could
+    # let an unsafe `||` branch, env=prod widening, or omitted gate survive.
+    assert _normalize_expression(migrate.get("if", "")) == EXPECTED_MIGRATION_IF
 
 
 def test_migration_is_downstream_of_the_healthy_writer_matrix() -> None:
@@ -63,7 +74,9 @@ def test_migration_is_downstream_of_the_healthy_writer_matrix() -> None:
 
 def test_dependency_mutation_reopens_writer_first_boundary() -> None:
     original = WORKFLOW.read_text(encoding="utf-8")
-    mutated = original.replace("    needs: deploy\n", "    needs: gate-secrets-checklist\n", 1)
+    mutated = original.replace(
+        "      - deploy\n", "      - gate-secrets-checklist\n", 1
+    )
     assert mutated != original
     with pytest.raises(AssertionError):
         _assert_writer_first(_workflow(mutated))
@@ -72,8 +85,8 @@ def test_dependency_mutation_reopens_writer_first_boundary() -> None:
 def test_rollback_and_single_env_mutations_reopen_schema_guard() -> None:
     original = WORKFLOW.read_text(encoding="utf-8")
     for marker in (
-        "github.event.inputs.env == ''",
-        "github.event.inputs.skip_pin_freshness != 'true'",
+        "inputs.env == ''",
+        "inputs.skip_pin_freshness != 'true'",
     ):
         mutated = original.replace(marker, "true", 1)
         assert mutated != original
@@ -92,11 +105,26 @@ def test_default_matrix_and_single_env_prod_migration_mutations_reopen() -> None
     # `env=prod` is still a single-target dispatch, not proof of the complete
     # fleet. Widening this condition would allow a shared-D1 migration too soon.
     mutated_env_guard = original.replace(
-        "github.event.inputs.env == ''", "github.event.inputs.env == 'prod'", 1
+        "inputs.env == ''", "inputs.env == 'prod'", 1
     )
     assert mutated_env_guard != original
     with pytest.raises(AssertionError):
         _assert_writer_first(_workflow(mutated_env_guard))
+
+
+def test_exact_reviewer_condition_mutations_reopen_migration_gate() -> None:
+    original = WORKFLOW.read_text(encoding="utf-8")
+    mutations = (
+        # Reviewer mutation 1: introduce an OR branch that can bypass a gate.
+        ("&& inputs.env == ''", "|| inputs.env == ''"),
+        # Reviewer mutation 2: widen the shared-D1 migration to a single env.
+        ("inputs.env == ''", "inputs.env == 'prod'"),
+    )
+    for old, new in mutations:
+        mutated = original.replace(old, new, 1)
+        assert mutated != original
+        with pytest.raises(AssertionError):
+            _assert_writer_first(_workflow(mutated))
 
 
 def test_deploy_helper_is_the_non_bypassable_image_and_health_proof() -> None:

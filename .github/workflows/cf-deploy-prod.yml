@@ -336,12 +336,16 @@ jobs:
   # ---------------------------------------------------------------------------
   migrate-d1:
     name: apply D1 migrations (shared prod D1; writer rollout proven)
-    needs: deploy
+    needs:
+      - gate-secrets-checklist
+      - gate-cf-secrets-populated
+      - deploy
     if: >-
-      needs.deploy.result == 'success'
-      && (github.event_name != 'workflow_dispatch'
-      || (github.event.inputs.env == ''
-      && github.event.inputs.skip_pin_freshness != 'true'))
+      always()
+      && needs.gate-secrets-checklist.result == 'success'
+      && needs.deploy.result == 'success'
+      && inputs.env == ''
+      && inputs.skip_pin_freshness != 'true'
     runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
     environment: production
     steps:
