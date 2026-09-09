@@ -2,6 +2,8 @@
   "schema_version": 1,
   "captured_at": "2026-09-09T04:17:53Z",
   "worker": "corelink-signup-worker",
+  "queue": "corelink-dsr-erasure-dlq",
+  "revision": "64282952-57bf-49d5-832c-b4cc4723b8b3",
   "deployed_revision": "64282952-57bf-49d5-832c-b4cc4723b8b3",
   "deployed_at": "2026-09-08T18:58:57.510834Z",
   "deployment_source": "wrangler",
