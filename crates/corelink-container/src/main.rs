@@ -45,10 +45,17 @@ use tracing::{info, warn};
 
 #[path = "main_boot.rs"]
 mod boot;
+#[cfg(any(
+    test,
+    feature = "byok-aws-real",
+    feature = "byok-gcp-real",
+    feature = "byok-azure-real",
+    feature = "byok-vault-real"
+))]
+use boot::byok_revocation_scheduler_enabled;
 use boot::{
-    build_runners_resolver, build_tier_selector, byok_revocation_scheduler_enabled,
-    cache_tier_price_ids_missing_in_prod, email_hash_salt_missing_in_prod,
-    should_fatal_on_missing_gate,
+    build_runners_resolver, build_tier_selector, cache_tier_price_ids_missing_in_prod,
+    email_hash_salt_missing_in_prod, should_fatal_on_missing_gate,
 };
 #[cfg(test)]
 use boot::{build_runners_resolver_from, build_tier_selector_from};
