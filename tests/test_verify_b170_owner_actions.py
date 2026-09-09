@@ -1,0 +1,81 @@
+"""Focused tests for the B-170 external-owner evidence boundary."""
+
+from __future__ import annotations
+
+import shutil
+import sys
+from pathlib import Path
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+import verify_b170_owner_actions as verifier  # noqa: E402
+
+
+def _packet_fixture(root: Path) -> None:
+    destination = root / verifier.PACKET
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / verifier.PACKET, destination)
+
+
+def _evidence_fixture(root: Path, *, content: str = "owner evidence\n") -> None:
+    for relative in verifier.EVIDENCE:
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+
+
+def test_repository_state_is_truthfully_open() -> None:
+    result = verifier.verify(ROOT)
+    assert result["status"] == "open"
+    assert result["missing"] == [path.as_posix() for path in verifier.EVIDENCE]
+
+
+def test_all_present_artifacts_force_manual_owner_validation(tmp_path: Path) -> None:
+    _packet_fixture(tmp_path)
+    _evidence_fixture(tmp_path)
+    result = verifier.verify(tmp_path)
+    assert result["status"] == "DRIFTED"
+    assert result["missing"] == []
+
+
+def test_empty_artifact_is_an_instrument_error(tmp_path: Path) -> None:
+    _packet_fixture(tmp_path)
+    _evidence_fixture(tmp_path)
+    (tmp_path / verifier.EVIDENCE[1]).write_text(" \n", encoding="utf-8")
+    with pytest.raises(verifier.PacketError, match="empty"):
+        verifier.verify(tmp_path)
+
+
+def test_symlink_evidence_cannot_satisfy_presence(tmp_path: Path) -> None:
+    _packet_fixture(tmp_path)
+    target = tmp_path / "outside-evidence.txt"
+    target.write_text("owner evidence\n", encoding="utf-8")
+    destination = tmp_path / verifier.EVIDENCE[0]
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.symlink_to(target)
+    with pytest.raises(verifier.PacketError, match="regular file"):
+        verifier.verify(tmp_path)
+
+
+def test_packet_marker_loss_fails_closed(tmp_path: Path) -> None:
+    _packet_fixture(tmp_path)
+    packet = tmp_path / verifier.PACKET
+    packet.write_text(
+        packet.read_text(encoding="utf-8").replace("no notification is claimed here", "notification status unknown", 1),
+        encoding="utf-8",
+    )
+    with pytest.raises(verifier.PacketError, match="canonical action markers"):
+        verifier.verify(tmp_path)
+
+
+def test_packet_symlink_cannot_satisfy_the_contract(tmp_path: Path) -> None:
+    target = tmp_path / "packet-copy.md"
+    target.write_text((ROOT / verifier.PACKET).read_text(encoding="utf-8"), encoding="utf-8")
+    destination = tmp_path / verifier.PACKET
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.symlink_to(target)
+    with pytest.raises(verifier.PacketError, match="regular file"):
+        verifier.verify(tmp_path)

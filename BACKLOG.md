@@ -3724,36 +3724,16 @@ repo: corelink-server
 owner: owner
 status: open
 verify: |
-  python3 - <<'PY'
-  from pathlib import Path
-  import sys
-  packet = Path("docs/internal/b087-questionnaire-owner-actions.md")
-  if not packet.is_file():
-      print("INSTRUMENTO QUEBRADO: owner packet B-087 sumiu", file=sys.stderr); sys.exit(2)
-  text = packet.read_text(encoding="utf-8")
-  required = ("Object Lock", "PagerDuty", "superseded copy")
-  absent = [term for term in required if term not in text]
-  if absent:
-      print("INSTRUMENTO QUEBRADO: packet perdeu ações: " + ", ".join(absent), file=sys.stderr)
-      sys.exit(2)
-  evidence = (
-      Path("reports/owner-actions/b170-legal-contract-review.md"),
-      Path("reports/owner-actions/b170-pagerduty-export.json"),
-      Path("reports/owner-actions/b170-recipient-notification-decision.md"),
-  )
-  missing = [path.as_posix() for path in evidence if not path.is_file()]
-  if missing:
-      print("open: owner evidence pending: " + ", ".join(missing)); sys.exit(0)
-  print("DRIFTED: all three owner artifacts exist; validate their contents, close B-170, and invert this guard", file=sys.stderr)
-  sys.exit(1)
-  PY
+  python3 -S scripts/verify_b170_owner_actions.py
 verify-means: |
-  `open` — o pacote operacional precisa existir e nomear as três decisões externas; o
-  comando passa enquanto pelo menos um dos três artefatos canônicos ainda não existe.
-  Quando os três aparecerem, fica vermelho de propósito para forçar validação de conteúdo,
-  transição para `done` e inversão do guard. Arquivo de pacote ausente ou ambíguo é erro de
-  instrumento, nunca conclusão. Nenhuma assinatura, exportação ou notificação é alegada.
-last-verified: 2026-09-05
+  `open` — o pacote operacional precisa existir, ser um arquivo regular e nomear
+  exatamente as três decisões externas; o comando passa enquanto pelo menos um
+  dos três artefatos canônicos ainda não existe. Symlink, diretório, arquivo vazio
+  ou packet adulterado dá `INSTRUMENT BROKEN` (exit 2). Quando os três aparecerem,
+  fica vermelho de propósito para forçar validação de conteúdo, transição para
+  `done` e inversão do guard. Nenhuma assinatura, exportação ou notificação é
+  alegada pela presença dos arquivos.
+last-verified: 2026-09-08
 ```
 
 ### B-171 — Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace
