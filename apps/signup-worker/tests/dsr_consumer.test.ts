@@ -169,8 +169,16 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     expect(m.ack).toHaveBeenCalledOnce();
     expect(m.retry).not.toHaveBeenCalled();
     expect(errorCalls).toHaveLength(1);
-    expect(String(errorCalls[0]?.[0])).toContain('"event":"dsr.erasure.dead_letter"');
-    expect(String(errorCalls[0]?.[0])).toContain('"action":"requeue_once"');
+    const alert = JSON.parse(String(errorCalls[0]?.[0])) as Record<string, unknown>;
+    expect(alert).toMatchObject({
+      event: "dsr.erasure.dead_letter",
+      event_id: "dsr-erasure-dlq:dlq-1:0",
+      exhausted: true,
+      action: "requeue_once",
+      requeue_count: 1,
+      paging_status: "not_configured",
+      paging_configured: false,
+    });
   });
 
   it("leaves an already requeued message dead and alerts without looping", async () => {
@@ -188,8 +196,17 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     expect(m.ack).toHaveBeenCalledOnce();
     expect(m.retry).not.toHaveBeenCalled();
     expect(errorCalls).toHaveLength(1);
-    expect(String(errorCalls[0]?.[0])).toContain('"event":"dsr.erasure.dead_letter"');
-    expect(String(errorCalls[0]?.[0])).toContain('"severity":"critical"');
+    const alert = JSON.parse(String(errorCalls[0]?.[0])) as Record<string, unknown>;
+    expect(alert).toMatchObject({
+      event: "dsr.erasure.dead_letter",
+      severity: "critical",
+      event_id: "dsr-erasure-dlq:dlq-2:1",
+      exhausted: true,
+      requeue_count: 1,
+      action: "left_dead",
+      paging_status: "not_configured",
+      paging_configured: false,
+    });
   });
 
   it("retains the DLQ copy when the bounded requeue fails", async () => {
@@ -204,5 +221,116 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     expect(send).toHaveBeenCalledOnce();
     expect(m.retry).toHaveBeenCalledOnce();
     expect(m.ack).not.toHaveBeenCalled();
+  });
+
+  it("keeps a stable correlation id across redelivery of the same DLQ generation", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const first = fakeDlq(msg("stable-id"));
+    const second = fakeDlq(msg("stable-id"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await handleErasureDlqBatch({ messages: [first] }, { DSR_QUEUE: { send } });
+      await handleErasureDlqBatch({ messages: [second] }, { DSR_QUEUE: { send } });
+    } finally {
+      const alerts = error.mock.calls.map((call) => JSON.parse(String(call[0])) as Record<string, unknown>);
+      error.mockRestore();
+      expect(alerts[0]?.event_id).toBe(alerts[1]?.event_id);
+    }
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails closed when PagerDuty rejects the page and retains the DLQ copy", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const m = fakeDlq(msg("pager-fail"));
+    const pagerFetch = vi.fn<typeof fetch>(async () => new Response("bad", { status: 500 }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await handleErasureDlqBatch(
+        { messages: [m] },
+        {
+          DSR_QUEUE: { send },
+          PAGERDUTY_ROUTING_KEY: "routing-key",
+          PAGERDUTY_FETCH: pagerFetch,
+        },
+      );
+      const alert = JSON.parse(String(error.mock.calls[0]?.[0])) as Record<string, unknown>;
+      expect(alert).toMatchObject({
+        event_id: "dsr-erasure-dlq:pager-fail:0",
+        exhausted: true,
+        requeue_count: 0,
+        action: "retry_paging",
+        paging_status: "failed",
+      });
+    } finally {
+      error.mockRestore();
+    }
+    expect(pagerFetch).toHaveBeenCalledOnce();
+    expect(send).not.toHaveBeenCalled();
+    expect(m.retry).toHaveBeenCalledOnce();
+    expect(m.ack).not.toHaveBeenCalled();
+  });
+
+  it("uses the canonical PagerDuty Events API envelope and dedup key", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const m = fakeDlq(msg("pager-ok"));
+    let request: RequestInfo | URL | undefined;
+    let init: RequestInit | undefined;
+    const pagerFetch = vi.fn<typeof fetch>(async (input, options) => {
+      request = input;
+      init = options;
+      return new Response("accepted", { status: 202 });
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await handleErasureDlqBatch(
+        { messages: [m] },
+        {
+          DSR_QUEUE: { send },
+          PAGERDUTY_ROUTING_KEY: "routing-key",
+          PAGERDUTY_FETCH: pagerFetch,
+        },
+      );
+    } finally {
+      error.mockRestore();
+    }
+    expect(request).toBe("https://events.pagerduty.com/v2/enqueue");
+    const payload = JSON.parse(String(init?.body)) as Record<string, any>;
+    expect(payload).toMatchObject({
+      routing_key: "routing-key",
+      event_action: "trigger",
+      dedup_key: "dsr-erasure-dlq:pager-ok:0",
+      payload: {
+        severity: "critical",
+        custom_details: {
+          event_id: "dsr-erasure-dlq:pager-ok:0",
+          exhausted: true,
+          requeue_count: 0,
+        },
+      },
+    });
+    expect(m.ack).toHaveBeenCalledOnce();
+    expect(m.retry).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on malformed or oversized requeue markers instead of looping", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const m = fakeDlq({ ...msg("poison-marker"), _dlq_requeue: Number.NaN });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send } });
+      const alert = JSON.parse(String(error.mock.calls[0]?.[0])) as Record<string, unknown>;
+      expect(alert).toMatchObject({
+        event_id: "dsr-erasure-dlq:poison-marker:1",
+        exhausted: true,
+        action: "left_dead",
+        requeue_count: 1,
+      });
+    } finally {
+      error.mockRestore();
+    }
+    expect(send).not.toHaveBeenCalled();
+    const alreadyCapped = fakeDlq({ ...msg("oversized-marker"), _dlq_requeue: 99 });
+    await handleErasureDlqBatch({ messages: [alreadyCapped] }, { DSR_QUEUE: { send } });
+    expect(alreadyCapped.ack).toHaveBeenCalledOnce();
   });
 });

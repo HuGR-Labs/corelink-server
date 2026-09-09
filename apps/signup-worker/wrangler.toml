@@ -51,6 +51,11 @@ head_sampling_rate = 1
 #   SLA_OBSERVATION_INGEST_KEY    — dedicated ≥32-character key for the
 #                                  provider-operated monthly SLO observation
 #                                  hand-off; never reuse a Stripe or worker key.
+#   PAGERDUTY_ROUTING_KEY         — canonical PagerDuty Events API v2 key for
+#                                  exhausted DSR dead-letter pages. The DLQ
+#                                  handler fails closed on delivery errors and
+#                                  logs an explicit not_configured blocker if
+#                                  this key is absent at runtime.
 #
 # D1 bindings:
 #   CONFIG_DB  — corelink-prod-d1 (tenant, pat, tenant_billing tables).
