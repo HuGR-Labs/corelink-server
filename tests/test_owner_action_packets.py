@@ -111,6 +111,42 @@ class OwnerActionPacketTests(unittest.TestCase):
             with self.assertRaises(MODULE.PacketError):
                 MODULE.check_data(self.data, "B-054")
 
+        for field, value in (
+            ("algorithm_version", "E1/keyed"),
+            ("verification", "BLOCKED"),
+        ):
+            mutated = copy.deepcopy(original(MODULE.B054_EVIDENCE_PATH, MODULE.B054_EVIDENCE_REQUIRED_FIELDS, "B-054"))
+            mutated["legacy_epoch"][field] = value
+            def read_mutated(path, fields, label, receipt=mutated):
+                return receipt if path == MODULE.B054_EVIDENCE_PATH else original(path, fields, label)
+            with self.subTest(field=field), mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_mutated):
+                with self.assertRaises(MODULE.PacketError):
+                    MODULE.check_data(self.data, "B-054")
+
+        mutated = copy.deepcopy(original(MODULE.B054_EVIDENCE_PATH, MODULE.B054_EVIDENCE_REQUIRED_FIELDS, "B-054"))
+        mutated["keyed_epoch"]["status"] = "NOT_EXECUTED"
+        def read_keyed(path, fields, label):
+            return mutated if path == MODULE.B054_EVIDENCE_PATH else original(path, fields, label)
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_keyed):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-054")
+
+        mutated = copy.deepcopy(original(MODULE.B054_EVIDENCE_PATH, MODULE.B054_EVIDENCE_REQUIRED_FIELDS, "B-054"))
+        mutated["witness_receipt"]["status"] = "NOT_EXECUTED"
+        def read_witness(path, fields, label):
+            return mutated if path == MODULE.B054_EVIDENCE_PATH else original(path, fields, label)
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_witness):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-054")
+
+        mutated = copy.deepcopy(original(MODULE.B054_EVIDENCE_PATH, MODULE.B054_EVIDENCE_REQUIRED_FIELDS, "B-054"))
+        mutated["repository_checks"][0]["command"] = "backlog B-054 verification shell"
+        def read_command(path, fields, label):
+            return mutated if path == MODULE.B054_EVIDENCE_PATH else original(path, fields, label)
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_command):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-054")
+
         record = copy.deepcopy(original(MODULE.B054_EVIDENCE_PATH, MODULE.B054_EVIDENCE_REQUIRED_FIELDS, "B-054"))
         record["witness_receipt"]["reference"] = "forged-reference"
         with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_b054):
@@ -127,6 +163,27 @@ class OwnerActionPacketTests(unittest.TestCase):
             with self.assertRaises(MODULE.PacketError):
                 MODULE.check_data(self.data, "B-083")
 
+        for field, value in (("check_access", "PASS"), ("tenant_redacted", "tenant-redacted")):
+            mutated = copy.deepcopy(original(MODULE.B083_EVIDENCE_PATH, MODULE.B083_EVIDENCE_REQUIRED_FIELDS, "B-083"))
+            mutated[field] = value
+            def read_mutated(path, fields, label, receipt=mutated):
+                return receipt if path == MODULE.B083_EVIDENCE_PATH else original(path, fields, label)
+            with self.subTest(field=field), mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_mutated):
+                with self.assertRaises(MODULE.PacketError):
+                    MODULE.check_data(self.data, "B-083")
+
+        for field, value in (
+            ("command", "backlog B-083 verification shell"),
+            ("detail", "activation remains fail-closed"),
+        ):
+            mutated = copy.deepcopy(original(MODULE.B083_EVIDENCE_PATH, MODULE.B083_EVIDENCE_REQUIRED_FIELDS, "B-083"))
+            mutated["repository_checks"][1][field] = value
+            def read_repository_check(path, fields, label, receipt=mutated):
+                return receipt if path == MODULE.B083_EVIDENCE_PATH else original(path, fields, label)
+            with self.subTest(repository_check_field=field), mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_repository_check):
+                with self.assertRaises(MODULE.PacketError):
+                    MODULE.check_data(self.data, "B-083")
+
     def test_b097_read_only_capture_mutations_fail_closed(self) -> None:
         original = MODULE._read_json_evidence
         record = copy.deepcopy(original(MODULE.B097_EVIDENCE_PATH, MODULE.B097_EVIDENCE_REQUIRED_FIELDS, "B-097"))
@@ -137,11 +194,30 @@ class OwnerActionPacketTests(unittest.TestCase):
             with self.assertRaises(MODULE.PacketError):
                 MODULE.check_data(self.data, "B-097")
 
+        mutated = copy.deepcopy(original(MODULE.B097_EVIDENCE_PATH, MODULE.B097_EVIDENCE_REQUIRED_FIELDS, "B-097"))
+        mutated["read_only_capture"]["activity_readback"]["interpretation"] = "active tenants confirmed"
+        def read_interpretation(path, fields, label):
+            return mutated if path == MODULE.B097_EVIDENCE_PATH else original(path, fields, label)
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_interpretation):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-097")
+
         record = copy.deepcopy(original(MODULE.B097_EVIDENCE_PATH, MODULE.B097_EVIDENCE_REQUIRED_FIELDS, "B-097"))
         record["read_only_capture"]["active_tenant_metric"] = "available"
         with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_b097):
             with self.assertRaises(MODULE.PacketError):
                 MODULE.check_data(self.data, "B-097")
+
+    def test_base_sha_provenance_disclaimer_is_mandatory(self) -> None:
+        missing = copy.deepcopy(self.data)
+        missing["non_claim"] = "No claims."
+        with self.assertRaises(MODULE.PacketError):
+            MODULE.check_data(missing)
+
+        wrong_reference = copy.deepcopy(self.data)
+        wrong_reference["base_sha"] = "0" * 40
+        with self.assertRaises(MODULE.PacketError):
+            MODULE.check_data(wrong_reference)
 
     def test_every_load_bearing_field_mutation_fails(self) -> None:
         self.assertEqual(MODULE.mutation_self_test(self.data), 29 * (len(MODULE.ITEM_FIELDS) + 2) + 2)

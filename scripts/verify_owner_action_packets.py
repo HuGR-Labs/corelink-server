@@ -160,6 +160,35 @@ B097_EVIDENCE_REQUIRED_FIELDS = [
     "read_only_capture",
 ]
 RECEIPT_STATUSES = frozenset({"PASS", "FAIL", "BLOCKED", "NOT_EXECUTED"})
+PACKET_BASE_SHA = "908d3bdc86f17a8b41a280baaea9352d7ed450ab"
+BASE_SHA_PROVENANCE_DISCLAIMER = (
+    "The base_sha is an immutable D03 packet reference for provenance, not a claim that the reference "
+    "is an ancestor of every checkout carrying this packet."
+)
+B054_REPOSITORY_CHECKS = [
+    {
+        "command": "python3 scripts/verify_b054_audit_chain_contract.py",
+        "status": "PASS",
+        "detail": "Unknown, partial, and downgrade epoch metadata fail closed; mutation fixtures are rejected.",
+    },
+    {
+        "command": "python3 scripts/test_audit_chain_epoch_schema.py",
+        "status": "PASS",
+        "detail": "Additive schema constraints and no-replace guards pass with recursive_triggers=OFF.",
+    },
+]
+B083_REPOSITORY_CHECKS = [
+    {
+        "command": "python3 scripts/verify_b083_revocation_wiring.py",
+        "status": "PASS",
+        "detail": "Durable source, pre-bind run_loop wiring, focal behavior, and mutation checks pass.",
+    },
+    {
+        "command": "python3 tests/test_verify_b083_byok.py",
+        "status": "PASS",
+        "detail": "B083 verifier mutation: green baseline and named red mutant.",
+    },
+]
 
 
 class PacketError(ValueError):
@@ -554,23 +583,35 @@ def _check_b054_evidence(item: dict[str, object]) -> None:
     record = _read_json_evidence(B054_EVIDENCE_PATH, B054_EVIDENCE_REQUIRED_FIELDS, "B-054")
     if record["schema_version"] != 1 or not isinstance(record["captured_at"], str) or not record["captured_at"].strip():
         raise PacketError("B-054 evidence capture metadata drifted")
+    expected_epochs = {
+        "legacy_epoch": ("E0/unkeyed", "NOT_EXECUTED"),
+        "keyed_epoch": ("E1/keyed", "BLOCKED"),
+    }
     for name in ("legacy_epoch", "keyed_epoch"):
         epoch = _exact_keys(record[name], {"algorithm_version", "row_count", "verification", "status", "blocker"}, f"B-054 {name}")
         status = _receipt_status(epoch["status"], f"B-054 {name}")
-        if not isinstance(epoch["algorithm_version"], str) or not epoch["algorithm_version"].strip():
-            raise PacketError(f"B-054 {name} algorithm version missing")
-        if epoch["row_count"] is not None and (not isinstance(epoch["row_count"], int) or epoch["row_count"] < 0):
-            raise PacketError(f"B-054 {name} row count is invalid")
-        if epoch["verification"] not in RECEIPT_STATUSES:
-            raise PacketError(f"B-054 {name} verification verdict is invalid")
+        expected_algorithm, expected_status = expected_epochs[name]
+        if epoch["algorithm_version"] != expected_algorithm:
+            raise PacketError(f"B-054 {name} algorithm version drifted")
+        if epoch["row_count"] is not None:
+            raise PacketError(f"B-054 {name} row count would overstate an unexecuted probe")
+        if epoch["verification"] != expected_status or status != expected_status or status != epoch["verification"]:
+            raise PacketError(f"B-054 {name} status/verification coherence drifted")
         _receipt_blocker(epoch["blocker"], status, f"B-054 {name}")
     migration = _exact_keys(record["migration_receipts"], {"status", "migrations", "references", "blocker"}, "B-054 migration_receipts")
     migration_status = _receipt_status(migration["status"], "B-054 migration_receipts")
+    if migration_status != "NOT_EXECUTED":
+        raise PacketError("B-054 migration status would overstate an unexecuted rollout")
     if migration["migrations"] != ["0109_audit_chain_epoch_contract.sql", "0110_audit_chain_epoch_row_metadata.sql"]:
         raise PacketError("B-054 migration list drifted")
-    if not isinstance(migration["references"], list) or not all(isinstance(value, str) for value in migration["references"]):
-        raise PacketError("B-054 migration references are invalid")
+    if migration["references"] != []:
+        raise PacketError("B-054 migration references would overstate an applied migration")
     _receipt_blocker(migration["blocker"], migration_status, "B-054 migration_receipts")
+    expected_receipt_statuses = {
+        "witness_receipt": "BLOCKED",
+        "archive_verification": "NOT_EXECUTED",
+        "rotation_receipt": "BLOCKED",
+    }
     for name, fields in {
         "witness_receipt": {"status", "reference", "blocker"},
         "archive_verification": {"status", "proof_reference", "blocker"},
@@ -578,21 +619,23 @@ def _check_b054_evidence(item: dict[str, object]) -> None:
     }.items():
         nested = _exact_keys(record[name], fields, f"B-054 {name}")
         status = _receipt_status(nested["status"], f"B-054 {name}")
+        if status != expected_receipt_statuses[name]:
+            raise PacketError(f"B-054 {name} status would overstate the current rollout state")
         reference_key = "proof_reference" if name == "archive_verification" else "reference"
         if status != "PASS" and nested[reference_key] is not None:
             raise PacketError(f"B-054 {name} has a reference despite status {status}")
         _receipt_blocker(nested["blocker"], status, f"B-054 {name}")
     rollback = _exact_keys(record["rollback_plan"], {"status", "decision", "blocker"}, "B-054 rollback_plan")
     rollback_status = _receipt_status(rollback["status"], "B-054 rollback_plan")
-    if not isinstance(rollback["decision"], str) or not rollback["decision"].strip():
-        raise PacketError("B-054 rollback decision missing")
+    if rollback_status != "NOT_EXECUTED" or rollback["decision"] != "preserve E0 and do not cut over":
+        raise PacketError("B-054 rollback decision/status drifted")
     _receipt_blocker(rollback["blocker"], rollback_status, "B-054 rollback_plan")
     if not isinstance(record["operator"], str) or not record["operator"].strip():
         raise PacketError("B-054 operator missing")
-    _check_repository_checks(record["repository_checks"], "B-054")
+    _check_repository_checks(record["repository_checks"], "B-054", B054_REPOSITORY_CHECKS)
 
 
-def _check_repository_checks(value: object, label: str) -> None:
+def _check_repository_checks(value: object, label: str, expected: list[dict[str, str]] | None = None) -> None:
     if not isinstance(value, list) or not value:
         raise PacketError(f"{label} repository_checks must be a non-empty list")
     for index, entry in enumerate(value):
@@ -603,6 +646,8 @@ def _check_repository_checks(value: object, label: str) -> None:
             raise PacketError(f"{label} repository_checks[{index}] status invalid")
         if not isinstance(check["detail"], str) or not check["detail"].strip():
             raise PacketError(f"{label} repository_checks[{index}] detail missing")
+    if expected is not None and value != expected:
+        raise PacketError(f"{label} repository_checks commands/details drifted")
 
 
 def _check_b083_evidence(item: dict[str, object]) -> None:
@@ -617,17 +662,19 @@ def _check_b083_evidence(item: dict[str, object]) -> None:
         raise PacketError("B-083 evidence capture metadata drifted")
     if record["tenant_redacted"] != "NOT_PROVISIONED" or record["image_digest"] is not None or record["kms_provider"] != "aws":
         raise PacketError("B-083 evidence must identify the unprovisioned AWS runtime without a digest")
-    if record["check_access"] not in {"PASS", "FAIL", "BLOCKED"}:
-        raise PacketError("B-083 check_access verdict is invalid")
+    if record["check_access"] != "BLOCKED":
+        raise PacketError("B-083 check_access must be BLOCKED while the runtime is not provisioned")
     for name in ("activation", "cas_ac_round_trip", "revocation", "run_loop"):
         nested = _exact_keys(record[name], {"status", "audit_event_reference", "completed_at", "blocker"}, f"B-083 {name}")
         status = _receipt_status(nested["status"], f"B-083 {name}")
         if status != "PASS" and (nested["audit_event_reference"] is not None or nested["completed_at"] is not None):
             raise PacketError(f"B-083 {name} has completion evidence despite status {status}")
+        if status != "NOT_EXECUTED":
+            raise PacketError(f"B-083 {name} cannot run without a provisioned runtime")
         _receipt_blocker(nested["blocker"], status, f"B-083 {name}")
     if not isinstance(record["operator"], str) or not record["operator"].strip():
         raise PacketError("B-083 operator missing")
-    _check_repository_checks(record["repository_checks"], "B-083")
+    _check_repository_checks(record["repository_checks"], "B-083", B083_REPOSITORY_CHECKS)
 
 
 def _check_b097_evidence(item: dict[str, object]) -> None:
@@ -649,18 +696,20 @@ def _check_b097_evidence(item: dict[str, object]) -> None:
     if record["provider_decision"] != "pending":
         raise PacketError("B-097 provider decision must remain pending without an owner case")
     capture = _exact_keys(record["read_only_capture"], {"cloudchamber_account_endpoint", "provider_limit_confirmed", "provider_response", "active_tenant_metric", "activity_readback", "support_case"}, "B-097 read_only_capture")
+    if capture["cloudchamber_account_endpoint"] != "GET /accounts/{account}/containers/me":
+        raise PacketError("B-097 read_only_capture endpoint drifted")
     if capture["provider_limit_confirmed"] is not True or capture["support_case"] != "not submitted; owner Cloudflare support/account session is required":
         raise PacketError("B-097 read_only_capture support/limit boundary drifted")
     response = _exact_keys(capture["provider_response"], {"http_success", "total_vcpu", "vcpu_per_deployment", "total_memory_mib", "usage"}, "B-097 provider_response")
     if response != {"http_success": True, "total_vcpu": 1500, "vcpu_per_deployment": 4, "total_memory_mib": 6291456, "usage": None}:
         raise PacketError("B-097 provider response drifted")
-    if not isinstance(capture["active_tenant_metric"], str) or "unavailable" not in capture["active_tenant_metric"] or "stale" not in capture["active_tenant_metric"]:
-        raise PacketError("B-097 active-tenant metric must be explicitly unavailable/stale")
+    if capture["active_tenant_metric"] != "unavailable: CONFIG_DB activity is stale relative to capture and is not a concurrent-active metric":
+        raise PacketError("B-097 active-tenant metric disclaimer drifted")
     activity = _exact_keys(capture["activity_readback"], {"database", "access", "customer_audit_rows", "distinct_tenants_all_time", "last_customer_audit_ts_ms", "distinct_tenants_last_15m", "distinct_tenants_last_1h", "distinct_tenants_last_24h", "interpretation"}, "B-097 activity_readback")
     if activity["database"] != "CONFIG_DB/prod" or activity["access"] != "remote-read-only" or any(activity[name] != expected for name, expected in {"customer_audit_rows": 71, "distinct_tenants_all_time": 16, "last_customer_audit_ts_ms": 1784669020765, "distinct_tenants_last_15m": 0, "distinct_tenants_last_1h": 0, "distinct_tenants_last_24h": 0}.items()):
         raise PacketError("B-097 activity readback drifted")
-    if "not a concurrent-active-tenant measurement" not in activity["interpretation"]:
-        raise PacketError("B-097 activity readback must disclaim concurrent-active interpretation")
+    if activity["interpretation"] != "retained audit activity is stale; these aggregates are not a concurrent-active-tenant measurement":
+        raise PacketError("B-097 activity readback disclaimer drifted")
 
 
 def _check_item(
@@ -774,7 +823,7 @@ def check_data(
     # restacks may legitimately carry the packet on a branch that does not
     # descend from that snapshot.  Keep the exact immutable reference while
     # avoiding the false claim that it is an ancestor of every checkout.
-    if data["base_sha"] != "908d3bdc86f17a8b41a280baaea9352d7ed450ab":
+    if data["base_sha"] != PACKET_BASE_SHA:
         raise PacketError("packet base SHA is not the requested exact D03 provenance reference")
     if backlog_contracts is None:
         backlog_contracts = _read_backlog_contracts()
@@ -784,7 +833,9 @@ def check_data(
         raise PacketError("BACKLOG owner/status reconciliation population is not closed")
     _text(data["packet_id"], "packet_id")
     _text(data["status"], "status")
-    _text(data["non_claim"], "non_claim")
+    non_claim = _text(data["non_claim"], "non_claim")
+    if BASE_SHA_PROVENANCE_DISCLAIMER not in non_claim:
+        raise PacketError("non_claim must include the base_sha provenance disclaimer")
 
     population = data["population"]
     if population != list(EXPECTED_IDS):
