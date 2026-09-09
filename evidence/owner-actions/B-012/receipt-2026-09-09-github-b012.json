@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "receipt_type": "owner_action_observation",
+  "backlog_id": "B-012",
+  "captured_at": "2026-09-09T04:23:50Z",
+  "repository": "HuGR-Labs/corelink-server",
+  "authenticated_principal": "gmhelmold",
+  "queries": {
+    "repository_permissions": {
+      "admin": true,
+      "maintain": true,
+      "push": true
+    },
+    "repository_actions_permissions": {
+      "enabled": true,
+      "allowed_actions": "all",
+      "sha_pinning_required": true
+    },
+    "dedicated_secret": {
+      "name": "BOT_PR_TOKEN",
+      "present": false,
+      "source": "GET /repos/HuGR-Labs/corelink-server/actions/secrets"
+    },
+    "github_app_installations": {
+      "query": "GET /user/installations",
+      "result": "denied",
+      "http_status": 403,
+      "reason": "authenticated user token is not authorized as a GitHub App token"
+    },
+    "open_bot_prs": {
+      "count": 0,
+      "source": "GET /repos/HuGR-Labs/corelink-server/pulls?state=open"
+    }
+  },
+  "actions_runs_observed": [
+    {
+      "run_id": 34309102051,
+      "event": "pull_request",
+      "url": "https://github.com/HuGR-Labs/corelink-server/actions/runs/34309102051",
+      "status": "completed",
+      "conclusion": "startup_failure",
+      "jobs_observed": 0
+    },
+    {
+      "run_id": 34309101852,
+      "event": "pull_request_target",
+      "url": "https://github.com/HuGR-Labs/corelink-server/actions/runs/34309101852",
+      "status": "completed",
+      "conclusion": "startup_failure",
+      "jobs_observed": 0
+    },
+    {
+      "run_id": 34309085720,
+      "event": "push",
+      "url": "https://github.com/HuGR-Labs/corelink-server/actions/runs/34309085720",
+      "status": "completed",
+      "conclusion": "startup_failure",
+      "jobs_observed": 0
+    }
+  ],
+  "credential_provisioned": false,
+  "bot_pr_opened": false,
+  "all_required_checks_observed": false,
+  "status": "blocked",
+  "blocker": "The required dedicated fine-grained PAT or GitHub App credential has not been minted or stored as BOT_PR_TOKEN. The available authenticated user session cannot mint a fine-grained PAT through the GitHub API, and Actions currently returns startup_failure with zero jobs, so no bot-created PR check proof exists.",
+  "safety": {
+    "secret_values_recorded": false,
+    "release_credentials_reused": false,
+    "repository_mutations": [],
+    "corelink_runners_inspected": false,
+    "processes_inspected": false,
+    "worktrees_inspected": false
+  },
+  "reviewer": "Codex"
+}
