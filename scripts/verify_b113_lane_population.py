@@ -56,6 +56,9 @@ class Lane:
 # their own active-line validators below.
 ACTIVE_SHELL_MARKERS = frozenset(
     {
+        "cargo mutants --workspace --no-shuffle --minimum-test-timeout=600",
+        "time buck2 build :hello \\",
+        "./scripts/benchmark.sh --iterations 10",
         '"${BUCK2_INSTALL_DIR}/buck2" --version',
         "test -s /tmp/cold-report.json",
         "jq -e 'type == \"object\"' /tmp/cold-report.json",
@@ -95,6 +98,7 @@ LANES = (
             "tool: cargo-mutants@27.0.0",
             "fallback: none",
             "timeout-minutes: 225",
+            "cargo mutants --workspace --no-shuffle --minimum-test-timeout=600",
         ),
     ),
     Lane(
@@ -107,6 +111,8 @@ LANES = (
             'SBOM_VENV="${RUNNER_TEMP}/corelink-sbom-venv"',
             '"$SBOM_PYTHON" tests/verify_rust_sbom.py --check',
             "cp .sbom/cyclonedx-rust.json sbom.cdx.json",
+            "name: sbom-cdx-json",
+            "if-no-files-found: error",
         ),
     ),
     Lane(
@@ -121,6 +127,7 @@ LANES = (
             "test -s /tmp/cold-report.json",
             "jq -e 'type == \"object\"' /tmp/cold-report.json",
             "test -s /tmp/warm-report.json",
+            "time buck2 build :hello \\",
             ".cache_hits | type == \"number\"",
             ".total_actions > 0",
             "RATIO < 80",
@@ -152,6 +159,7 @@ LANES = (
             "name: Install Buck2",
             "--max-time 120",
             '"${ACTUAL_SHA256}" == "${BUCK2_SHA256}"',
+            "./scripts/benchmark.sh --iterations 10",
         ),
     ),
     Lane(
