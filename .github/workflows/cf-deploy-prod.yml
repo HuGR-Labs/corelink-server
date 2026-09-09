@@ -345,7 +345,7 @@ jobs:
       && needs.gate-secrets-checklist.result == 'success'
       && needs.deploy.result == 'success'
       && inputs.env == ''
-      && inputs.skip_pin_freshness != 'true'
+      && !inputs.skip_pin_freshness
     runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
     environment: production
     steps:
