@@ -81,6 +81,7 @@ def _typescript_has_active(text: str, needle: str) -> bool:
             "typeof",
             "void",
             "yield",
+            "await",
         }
         while cursor < length:
             if stop_at_closing_brace and text[cursor] == "}" and brace_depth == 0:
@@ -114,6 +115,13 @@ def _typescript_has_active(text: str, needle: str) -> bool:
                     continue
             if text.startswith(needle, cursor):
                 return True, cursor + len(needle)
+            if text.startswith(("++", "--"), cursor):
+                # A postfix update leaves an operand, while a prefix update
+                # leaves expression position where a regex may begin.
+                was_operand = not can_start_regex
+                cursor += 2
+                can_start_regex = not was_operand
+                continue
             if text[cursor] == "{":
                 brace_depth += 1
                 can_start_regex = True
@@ -342,6 +350,7 @@ def lexical_regressions() -> None:
         "const raw = `TARGET_GUARD()`; const active = `${TARGET_GUARD()}`;",
         "const quotient = value / TARGET_GUARD();",
         "const nested = `outer ${`inner ${TARGET_GUARD()}`}`;",
+        "let n = 1; n++; const quotient = n / TARGET_GUARD();",
     )
     for case in active_cases:
         language = "typescript" if case.startswith("const ") else "rust"
@@ -353,11 +362,12 @@ def lexical_regressions() -> None:
         "fn f<'a>(x: &'a str) { let c='\\''; let s='TARGET_GUARD()'; }",
         "const typed: 'TARGET_GUARD()' = null as any;",
         "function f() { return /TARGET_GUARD()/giu; }",
+        "async function f() { await /TARGET_GUARD()/giu; }",
         "const classBait = /[TARGET_GUARD()\\\\]/giu;",
         "const nestedRaw = `outer ${`inner TARGET_GUARD()`}`;",
     )
     for case in bait_only_cases:
-        language = "typescript" if case.startswith(("const ", "function ")) else "rust"
+        language = "typescript" if case.startswith(("const ", "function ", "async ")) else "rust"
         try:
             require_active(case, marker, "lexical bait regression", language)
         except AssertionError:
@@ -767,6 +777,32 @@ def mutation_checks() -> int:
             rejected += 1
         else:
             raise AssertionError(f"typescript regex bait mutation was accepted for B242 owner {rel}")
+
+    # `await /.../` is another regex-start context in both TS owners.
+    ts_await_baits = ts_regex_baits
+    for rel, salt_guard in ts_await_baits:
+        mutant = dict(files)
+        mutant[rel] = mutant[rel].replace(
+            salt_guard,
+            "const _B242_AWAIT_BAIT = await /" + salt_guard + "/giu;",
+            1,
+        )
+        try:
+            verify(mutant)
+        except AssertionError:
+            rejected += 1
+        else:
+            raise AssertionError(f"typescript await regex bait mutation was accepted for B242 owner {rel}")
+
+    # Conversely, a slash after a postfix update is division, so a marker in
+    # its right operand remains executable in each owner.
+    for rel, salt_guard in ts_regex_baits:
+        active_division = files[rel].replace(
+            salt_guard,
+            "let _B242_n = 1; _B242_n++; const _B242_ratio = _B242_n / " + salt_guard + ";",
+            1,
+        )
+        require_active(active_division, salt_guard, f"B242 postfix division {rel}", "typescript")
 
     # Rust has literal forms that contain quotes/comments verbatim. Exercise
     # arbitrary raw-string hash counts, a byte raw string, and nested block
