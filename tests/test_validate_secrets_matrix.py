@@ -189,3 +189,49 @@ def test_synthetic_names_are_not_global_allowlist_entries() -> None:
     for name in SYNTHETIC_NAMES:
         assert not gate.ALLOWLIST_REGEX.match(name)
         assert f"|{name}$" not in shell_gate
+
+
+def test_bash_repo_root_override_preserves_exact_raw_curl_fixture_exclusion(
+    tmp_path: Path,
+) -> None:
+    """The synthetic names stay excluded only at their exact fixture paths."""
+    names = (
+        "CORELINK_HTTP_PORT_FILE",
+        "CORELINK_HTTP_REQUEST_FILE",
+        "CORELINK_HTTP_STATUS",
+    )
+    fixture = tmp_path / "apps/docs/tests/fixtures/raw-curl-http-server.mjs"
+    fixture.parent.mkdir(parents=True, exist_ok=True)
+    fixture.write_text(
+        "".join(f"console.log(process.env.{name});\n" for name in names),
+        encoding="utf-8",
+    )
+    matrix = tmp_path / "docs/internal/secrets-checklist.md"
+    matrix.parent.mkdir(parents=True, exist_ok=True)
+    matrix.write_text(
+        "\n".join(
+            f"| {i} | Fixture {i} | `UNRELATED_FIXTURE_KEY_{i}` |"
+            for i in range(1, 21)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/secrets-checklist-verify.sh"), "--repo-root", str(tmp_path)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    production = tmp_path / "apps/admin-ui/src/http-leak.mjs"
+    production.parent.mkdir(parents=True, exist_ok=True)
+    production.write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/secrets-checklist-verify.sh"), "--repo-root", str(tmp_path)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert all(name in result.stderr for name in names)

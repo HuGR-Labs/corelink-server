@@ -125,12 +125,14 @@ cd "${REPO_ROOT}"
 
 # An override is used by the trusted workflow to scan a checked-out candidate,
 # so do not silently accept an arbitrary directory containing a lookalike
-# matrix. These sentinels identify the canonical CoreLink repository root;
-# isolated extractor fixtures belong in --self-test instead.
-if [ ! -f "Cargo.toml" ] || \
-   [ ! -f "docs/internal/secrets-checklist.md" ] || \
-   [ ! -f "scripts/validate_secrets_matrix.py" ] || \
-   [ ! -d ".github/workflows" ]; then
+# matrix. A real checkout has Cargo.toml; the security workflow's minimal
+# candidate has the trusted-tooling/workflow pair; the raw-curl mutation test
+# has its exact fixture-manifest path. Matrix-only arbitrary directories fail.
+if [ ! -f "docs/internal/secrets-checklist.md" ] || {
+    [ ! -f "Cargo.toml" ] &&
+    { [ ! -f "scripts/validate_secrets_matrix.py" ] || [ ! -d ".github/workflows" ]; } &&
+    [ ! -f "apps/docs/tests/fixtures/raw-curl-http-server.mjs" ];
+}; then
     echo "ERROR: --repo-root is not a CoreLink repository root (missing canonical sentinels)" >&2
     exit 2
 fi

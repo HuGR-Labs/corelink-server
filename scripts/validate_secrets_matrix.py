@@ -63,11 +63,11 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MATRIX_FILE_REL = "docs/internal/secrets-checklist.md"
-REPO_ROOT_SENTINELS = (
-    Path("Cargo.toml"),
-    Path("docs/internal/secrets-checklist.md"),
-    Path("scripts/validate_secrets_matrix.py"),
-    Path(".github/workflows"),
+REPO_ROOT_MATRIX = Path("docs/internal/secrets-checklist.md")
+REPO_ROOT_SENTINEL_ALTERNATIVES = (
+    (Path("Cargo.toml"),),
+    (Path("scripts/validate_secrets_matrix.py"), Path(".github/workflows")),
+    (Path("apps/docs/tests/fixtures/raw-curl-http-server.mjs"),),
 )
 
 # ---------------------------------------------------------------------------
@@ -516,11 +516,14 @@ def parse_matrix(path: Path) -> set[str]:
 
 def missing_repo_root_sentinels(root: Path) -> list[Path]:
     """Return missing paths that prove ``root`` is not a repo checkout."""
-    return [
-        relative
-        for relative in REPO_ROOT_SENTINELS
-        if not (root / relative).exists()
-    ]
+    if not (root / REPO_ROOT_MATRIX).is_file():
+        return [REPO_ROOT_MATRIX]
+    if any(
+        all((root / relative).exists() for relative in alternative)
+        for alternative in REPO_ROOT_SENTINEL_ALTERNATIVES
+    ):
+        return []
+    return [alternative[0] for alternative in REPO_ROOT_SENTINEL_ALTERNATIVES]
 
 
 # ---------------------------------------------------------------------------
