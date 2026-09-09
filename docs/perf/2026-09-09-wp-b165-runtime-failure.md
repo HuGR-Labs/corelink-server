@@ -1,6 +1,6 @@
 # B-165 production probe — runtime failure, 2026-09-09
 
-Status: **failed/open; this is not green latency evidence**
+Status: **runtime recovered/open; authenticated served paths remain unmeasured**
 
 The read-only B-165 probe ran against production source SHA
 `64e57a2ccb218f475b44a260b64af95e0bc7df2c`. The v1, npm, and pip refusal
@@ -24,11 +24,20 @@ The normalized receipt is
 TSV is `evidence/owner-actions/B-165/rejection-raw-2026-09-09.tsv`. Its SHA-256 is
 `820754b2b16d1f5532c9d71829d463819b84848f407f00250b6f1bafef43637e`.
 
-Next safe action: restore OCI availability before retrying latency. Either
-diagnose image `b90b245df-r1` boot logs/provider scheduling, or roll the IAD
-container application back to the last known OCI-serving image under the normal
-production rollout procedure. A source-only rename of the `_oci` Durable Object
-was deliberately not made: the current evidence shows a general container-start
-failure and does not prove a stale DO-placement defect. After availability is
-restored, rerun the complete B-165 probe with two distinct approved tenants,
-two distinct PATs, and one known served object per tenant.
+## Bounded recovery rerun
+
+After the roll-forward reached its independent deep gate, only the failed OCI
+population was rerun. Container application version 180 reported image
+`2cd609d25-r1` and no provider health errors. All ten requests to
+`/v2/x/manifests/latest` returned the required HTTP 401. After discarding the
+first sample, median was 207.119 ms and p90 was 239.544 ms (minimum 197.107 ms,
+maximum 239.544 ms). The exact sanitized recovery TSV is
+`evidence/owner-actions/B-165/oci-recovery-raw-2026-09-09.tsv`, SHA-256
+`d8d2f5cb4c5a8f7235ec5f0e667645b5f93acab8e63c2617c6c9e2b478eddc85`.
+
+This proves recovery of the OCI rejection path while preserving the earlier
+v1/npm/pip and health findings. B-165 remains open because no authenticated
+served population was run: closure still requires two distinct approved
+tenants, two distinct PATs, one known served object per tenant, and the padding
+decision. No source-only DO rename, deployment, mutation, or broader sweep was
+performed by this lane.

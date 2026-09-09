@@ -99,8 +99,33 @@
     },
     "conclusion": "The edge Worker is healthy and returns the DO response, but the shared OCI container never reaches a located/versioned instance after the image rollout. The provider readback and repeated container_health_check_failed responses establish a runtime start failure; they do not establish whether its cause is image boot, scheduling, or a boot-time dependency."
   },
-  "padding_decision": "not_evaluated_runtime_failure",
+  "runtime_recovery": {
+    "captured_at": "2026-09-09T11:09:30Z",
+    "scope": "oci_only_preserving_prior_v1_npm_pip_and_health_findings",
+    "route": "/v2/x/manifests/latest",
+    "artifact": "evidence/owner-actions/B-165/oci-recovery-raw-2026-09-09.tsv",
+    "sha256": "d8d2f5cb4c5a8f7235ec5f0e667645b5f93acab8e63c2617c6c9e2b478eddc85",
+    "samples": 10,
+    "retained_samples": 9,
+    "discarded_first": true,
+    "status_classes": {"401": 10},
+    "median_ms": 207.119,
+    "p90_ms": 239.544,
+    "min_ms": 197.107,
+    "max_ms": 239.544,
+    "threshold_result": "status_recovered",
+    "container_application": {
+      "name": "corelink-prod-corelinkserver-prod",
+      "id": "a033572c-0803-4866-b3a3-61f4812843b1",
+      "version": 180,
+      "image_tag": "2cd609d25-r1",
+      "updated_at": "2026-09-09T11:09:22.168Z",
+      "provider_health_errors": []
+    },
+    "conclusion": "The bounded OCI rerun returned the required authentication rejection for all ten requests after the roll-forward. The prior 503 runtime failure is recovered; this receipt does not supply either authenticated served population."
+  },
+  "padding_decision": "not_evaluated_missing_authenticated_served_populations",
   "pat_reference": "unavailable_local_default_pat_returned_401;_no_ambiguous_rotation_artifact_read",
-  "verdict": "blocked_runtime_failure_and_missing_two_authenticated_served_populations",
+  "verdict": "runtime_recovered_open_missing_two_authenticated_served_populations",
   "operator": "codex-orchestrator"
 }
