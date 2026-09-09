@@ -5,7 +5,10 @@ The probe's refusal population is useful even while customer PATs are not
 available, but it is not a complete B-165 acceptance.  This verifier reports
 that distinction explicitly: a refusal-only TSV exits 2 (partial/open), while
 ``--require-served`` additionally requires two complete authenticated served
-populations and exits 0 only when both are present.
+populations, explicit canonical tenant bindings, and two distinct redacted PAT
+fingerprints; it exits 0 only when all of those are present.  A TSV containing
+served rows but verified without ``--require-served`` is always partial/open and
+can never authorize closure.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -27,6 +31,7 @@ REFUSAL = {
 }
 CONTROL = {"health": ("/health", "200")}
 SERVING = {"served_a", "served_b"}
+PAT_FINGERPRINT = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 class EvidenceError(ValueError):
@@ -103,10 +108,26 @@ def _summarize(rows: list[dict[str, Any]], expected_path: str, expected_status: 
     }
 
 
+def _canonical_tenant(path: str) -> str:
+    """Extract a tenant only from the supported CAS object path formats."""
+    segments = path.split("/")
+    if any(not segment for segment in segments[1:]):
+        raise EvidenceError(f"served path is not canonical: {path}")
+    if len(segments) >= 5 and segments[1:3] == ["v1", "cas"]:
+        return segments[3]
+    if len(segments) >= 4 and segments[1] == "cargo":
+        return segments[2]
+    raise EvidenceError(f"served path has no canonical tenant segment: {path}")
+
+
 def _require_served_identity(
-    served_summaries: list[dict[str, Any]], tenant_a: str | None, tenant_b: str | None
-) -> None:
-    """Require served populations to be bound to two distinct tenant paths."""
+    served_summaries: list[dict[str, Any]],
+    tenant_a: str | None,
+    tenant_b: str | None,
+    pat_fingerprint_a: str | None,
+    pat_fingerprint_b: str | None,
+) -> dict[str, dict[str, str]]:
+    """Require distinct canonical tenant paths and redacted PAT fingerprints."""
     if not tenant_a or not tenant_b:
         raise EvidenceError(
             "served-path acceptance requires --tenant-a and --tenant-b bindings"
@@ -117,8 +138,18 @@ def _require_served_identity(
     path_a, path_b = by_surface["served_a"]["path"], by_surface["served_b"]["path"]
     if path_a == path_b:
         raise EvidenceError("served-path acceptance requires distinct served paths")
-    if tenant_a not in path_a or tenant_b not in path_b:
+    if _canonical_tenant(path_a) != tenant_a or _canonical_tenant(path_b) != tenant_b:
         raise EvidenceError("served paths are not bound to their declared tenants")
+    if not PAT_FINGERPRINT.fullmatch(pat_fingerprint_a or "") or not PAT_FINGERPRINT.fullmatch(
+        pat_fingerprint_b or ""
+    ):
+        raise EvidenceError("served-path acceptance requires two redacted PAT fingerprints")
+    if pat_fingerprint_a == pat_fingerprint_b:
+        raise EvidenceError("served-path acceptance requires distinct PAT fingerprints")
+    return {
+        "served_a": {"tenant": tenant_a, "pat_fingerprint": pat_fingerprint_a},
+        "served_b": {"tenant": tenant_b, "pat_fingerprint": pat_fingerprint_b},
+    }
 
 
 def verify(
@@ -127,6 +158,8 @@ def verify(
     require_served: bool = False,
     tenant_a: str | None = None,
     tenant_b: str | None = None,
+    pat_fingerprint_a: str | None = None,
+    pat_fingerprint_b: str | None = None,
 ) -> dict[str, Any]:
     populations = _load(path, samples)
     summaries = []
@@ -138,16 +171,21 @@ def verify(
     served_summaries = []
     for surface in sorted(SERVING & populations.keys()):
         served_summaries.append(_summarize(populations[surface], populations[surface][0]["path"], "200", samples))
+    served_credentials = None
     if require_served:
         if {summary["surface"] for summary in served_summaries} != SERVING:
             raise EvidenceError("served-path acceptance requires both served_a and served_b populations")
-        _require_served_identity(served_summaries, tenant_a, tenant_b)
+        served_credentials = _require_served_identity(
+            served_summaries, tenant_a, tenant_b, pat_fingerprint_a, pat_fingerprint_b
+        )
+    closure_allowed = require_served and len(served_summaries) == 2
     return {
-        "status": "complete" if len(served_summaries) == 2 else "partial/open",
-        "closure_allowed": len(served_summaries) == 2,
+        "status": "complete" if closure_allowed else "partial/open",
+        "closure_allowed": closure_allowed,
         "refusal": summaries[:-1],
         "control": summaries[-1],
         "served": served_summaries,
+        **({"served_credentials": served_credentials} if served_credentials else {}),
     }
 
 
@@ -158,9 +196,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--require-served", action="store_true")
     parser.add_argument("--tenant-a")
     parser.add_argument("--tenant-b")
+    parser.add_argument("--pat-fingerprint-a")
+    parser.add_argument("--pat-fingerprint-b")
     args = parser.parse_args(argv)
     try:
-        result = verify(args.tsv, args.samples, args.require_served, args.tenant_a, args.tenant_b)
+        result = verify(
+            args.tsv,
+            args.samples,
+            args.require_served,
+            args.tenant_a,
+            args.tenant_b,
+            args.pat_fingerprint_a,
+            args.pat_fingerprint_b,
+        )
     except (OSError, EvidenceError) as exc:
         print(f"INDETERMINATE: {exc}", file=sys.stderr)
         return 2

@@ -148,18 +148,52 @@ if [[ "$token_a" == "$token_b" ]]; then
   echo "FATAL: B165_PAT_A and B165_PAT_B must be distinct customer credentials" >&2
   exit 2
 fi
-for served_path in "$served_a" "$served_b"; do
-  case "$served_path" in
-    /*) ;;
-    *) echo "FATAL: served paths must begin with /" >&2; exit 2 ;;
+
+# Keep the tenant binding structural, not a substring check.  Only the two
+# canonical object routes are accepted, and the tenant is one exact path
+# segment.  This mirrors verify_b165_latency.py and prevents e.g.
+# `tenant-a` from being "proved" by `prefix-tenant-a`.
+canonical_tenant() {
+  local path="$1" rest tenant object
+  case "$path" in
+    /v1/cas/*/*)
+      rest="${path#/v1/cas/}"
+      tenant="${rest%%/*}"
+      object="${rest#*/}"
+      ;;
+    /cargo/*/*)
+      rest="${path#/cargo/}"
+      tenant="${rest%%/*}"
+      object="${rest#*/}"
+      ;;
+    *)
+      return 1
+      ;;
   esac
-done
+  [[ -n "$tenant" && -n "$object" && "$object" != */* && "$path" != *'//'* ]] || return 1
+  printf '%s\n' "$tenant"
+}
+
+served_tenant_a="$(canonical_tenant "$served_a")" || {
+  echo "FATAL: served path A is not a canonical /v1/cas/<tenant>/<object> or /cargo/<tenant>/<object> path" >&2
+  exit 2
+}
+served_tenant_b="$(canonical_tenant "$served_b")" || {
+  echo "FATAL: served path B is not a canonical /v1/cas/<tenant>/<object> or /cargo/<tenant>/<object> path" >&2
+  exit 2
+}
 if [[ "$served_a" == "$served_b" ]]; then
   echo "FATAL: served paths A and B must be distinct tenant paths" >&2
   exit 2
 fi
-case "$served_a" in *"$tenant_a"*) ;; *) echo "FATAL: served path A does not identify tenant A" >&2; exit 2 ;; esac
-case "$served_b" in *"$tenant_b"*) ;; *) echo "FATAL: served path B does not identify tenant B" >&2; exit 2 ;; esac
+if [[ "$served_tenant_a" != "$tenant_a" ]]; then
+  echo "FATAL: served path A does not identify tenant A in its canonical segment" >&2
+  exit 2
+fi
+if [[ "$served_tenant_b" != "$tenant_b" ]]; then
+  echo "FATAL: served path B does not identify tenant B in its canonical segment" >&2
+  exit 2
+fi
 
 echo "Served population: authenticated GET; sample 1 is discarded as cold."
 for sample in "${sample_numbers[@]}"; do request served served_a "$served_a" "$sample" "$token_a"; done

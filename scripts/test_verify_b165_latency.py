@@ -31,6 +31,9 @@ def _rows(
 
 
 class B165VerifierTests(unittest.TestCase):
+    PAT_A = "sha256:" + "a" * 64
+    PAT_B = "sha256:" + "b" * 64
+
     def write(self, content: str) -> pathlib.Path:
         handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False)
         handle.write(content)
@@ -54,14 +57,57 @@ class B165VerifierTests(unittest.TestCase):
             require_served=True,
             tenant_a="tenant-a",
             tenant_b="tenant-b",
+            pat_fingerprint_a=self.PAT_A,
+            pat_fingerprint_b=self.PAT_B,
         )
         self.assertEqual(report["status"], "complete")
         self.assertTrue(report["closure_allowed"])
         self.assertEqual(len(report["served"]), 2)
+        self.assertEqual(report["served_credentials"]["served_a"]["pat_fingerprint"], self.PAT_A)
+        self.assertEqual(report["served_credentials"]["served_b"]["pat_fingerprint"], self.PAT_B)
 
     def test_require_served_rejects_missing_tenant_bindings(self):
         with self.assertRaises(verifier.EvidenceError):
             verifier.verify(self.write(_rows(served=True)), 3, require_served=True)
+
+    def test_served_rows_without_flag_never_close(self):
+        report = verifier.verify(self.write(_rows(served=True)), 3)
+        self.assertEqual(report["status"], "partial/open")
+        self.assertFalse(report["closure_allowed"])
+
+    def test_require_served_rejects_missing_pat_fingerprints(self):
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(
+                self.write(_rows(served=True)),
+                3,
+                require_served=True,
+                tenant_a="tenant-a",
+                tenant_b="tenant-b",
+            )
+
+    def test_require_served_rejects_same_pat_fingerprint(self):
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(
+                self.write(_rows(served=True)),
+                3,
+                require_served=True,
+                tenant_a="tenant-a",
+                tenant_b="tenant-b",
+                pat_fingerprint_a=self.PAT_A,
+                pat_fingerprint_b=self.PAT_A,
+            )
+
+    def test_require_served_rejects_malformed_pat_fingerprint(self):
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(
+                self.write(_rows(served=True)),
+                3,
+                require_served=True,
+                tenant_a="tenant-a",
+                tenant_b="tenant-b",
+                pat_fingerprint_a="redacted-a",
+                pat_fingerprint_b=self.PAT_B,
+            )
 
     def test_require_served_rejects_same_tenant(self):
         with self.assertRaises(verifier.EvidenceError):
@@ -71,6 +117,8 @@ class B165VerifierTests(unittest.TestCase):
                 require_served=True,
                 tenant_a="tenant-a",
                 tenant_b="tenant-a",
+                pat_fingerprint_a=self.PAT_A,
+                pat_fingerprint_b=self.PAT_B,
             )
 
     def test_require_served_rejects_reused_path(self):
@@ -87,6 +135,22 @@ class B165VerifierTests(unittest.TestCase):
                 require_served=True,
                 tenant_a="tenant-a",
                 tenant_b="tenant-b",
+                pat_fingerprint_a=self.PAT_A,
+                pat_fingerprint_b=self.PAT_B,
+            )
+
+    def test_require_served_rejects_noncanonical_tenant_substring(self):
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(
+                self.write(
+                    _rows(served=True, served_path_a="/v1/cas/prefix-tenant-a/digest")
+                ),
+                3,
+                require_served=True,
+                tenant_a="tenant-a",
+                tenant_b="tenant-b",
+                pat_fingerprint_a=self.PAT_A,
+                pat_fingerprint_b=self.PAT_B,
             )
 
     def test_missing_sample_fails_closed(self):

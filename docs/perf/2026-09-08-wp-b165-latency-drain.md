@@ -50,8 +50,22 @@ for the served half, matching the newer B-165 completeness rule in
 `docs/campaigns/remediation/work-packages/B131-B167.md`. This is an unresolved
 owner contract mismatch, not evidence: the served half remains blocked until
 the owner either supplies the second distinct tenant/PAT or updates and
-approves the packet. The verifier now requires explicit distinct tenant
-bindings and rejects reused paths.
+approves the packet. For a future served artifact, closure must be invoked
+explicitly with two exact tenant bindings and two distinct redacted fingerprints
+(never raw PATs):
+
+```sh
+python3 scripts/verify_b165_latency.py /path/to/served-and-refusal.tsv \
+  --samples 10 --require-served \
+  --tenant-a "$B165_TENANT_A" --tenant-b "$B165_TENANT_B" \
+  --pat-fingerprint-a "$B165_PAT_FINGERPRINT_A" \
+  --pat-fingerprint-b "$B165_PAT_FINGERPRINT_B"
+```
+
+The verifier requires `sha256:<64 lowercase hex digits>` fingerprints,
+distinct canonical tenant segments, and distinct served paths. Without the
+explicit flag and all four bindings, even a TSV containing served rows remains
+`partial/open` and `closure_allowed=false`.
 
 No deployed-version receipt is included: the earlier read-only deployment
 lookup was not captured as a transcript. B-102/B-107/B-122/B-129 therefore
