@@ -27,6 +27,145 @@ def require(text: str, needle: str, label: str) -> None:
         raise AssertionError(f"{label}: missing {needle!r}")
 
 
+def _typescript_has_active(text: str, needle: str) -> bool:
+    """Find ``needle`` in TS code, including code inside template expressions."""
+    length = len(text)
+
+    def quoted_end(offset: int, quote: str) -> int:
+        cursor = offset + 1
+        while cursor < length:
+            if text[cursor] == "\\":
+                cursor += 2
+            elif text[cursor] == quote:
+                return cursor + 1
+            else:
+                cursor += 1
+        return length
+
+    def regex_end(offset: int) -> int | None:
+        cursor = offset + 1
+        in_class = False
+        while cursor < length:
+            character = text[cursor]
+            if character == "\\":
+                cursor += 2
+                continue
+            if character == "[":
+                in_class = True
+            elif character == "]":
+                in_class = False
+            elif character == "/" and not in_class:
+                cursor += 1
+                while cursor < length and (text[cursor].isalpha() or text[cursor] in "_$"):
+                    cursor += 1
+                return cursor
+            elif character in "\r\n":
+                return None
+            cursor += 1
+        return None
+
+    def scan_code(offset: int, stop_at_closing_brace: bool = False) -> tuple[bool, int]:
+        cursor = offset
+        brace_depth = 0
+        can_start_regex = True
+        regex_prefix_words = {
+            "case",
+            "delete",
+            "do",
+            "else",
+            "in",
+            "instanceof",
+            "of",
+            "return",
+            "throw",
+            "typeof",
+            "void",
+            "yield",
+        }
+        while cursor < length:
+            if stop_at_closing_brace and text[cursor] == "}" and brace_depth == 0:
+                return False, cursor + 1
+            if text[cursor].isspace():
+                cursor += 1
+                continue
+            if text.startswith("//", cursor):
+                newline = text.find("\n", cursor + 2)
+                cursor = length if newline < 0 else newline + 1
+                continue
+            if text.startswith("/*", cursor):
+                end = text.find("*/", cursor + 2)
+                cursor = length if end < 0 else end + 2
+                continue
+            if text[cursor] in "'\"":
+                cursor = quoted_end(cursor, text[cursor])
+                can_start_regex = False
+                continue
+            if text[cursor] == "`":
+                found, cursor = scan_template(cursor)
+                if found:
+                    return True, cursor
+                can_start_regex = False
+                continue
+            if text[cursor] == "/" and can_start_regex:
+                end = regex_end(cursor)
+                if end is not None:
+                    cursor = end
+                    can_start_regex = False
+                    continue
+            if text.startswith(needle, cursor):
+                return True, cursor + len(needle)
+            if text[cursor] == "{":
+                brace_depth += 1
+                can_start_regex = True
+            elif text[cursor] == "}" and brace_depth:
+                brace_depth -= 1
+                can_start_regex = False
+            elif text[cursor].isalpha() or text[cursor] in "_$":
+                word_start = cursor
+                cursor += 1
+                while cursor < length and (text[cursor].isalnum() or text[cursor] in "_$"):
+                    cursor += 1
+                can_start_regex = text[word_start:cursor] in regex_prefix_words
+                continue
+            elif text[cursor].isdigit():
+                cursor += 1
+                while cursor < length and (text[cursor].isalnum() or text[cursor] in "._"):
+                    cursor += 1
+                can_start_regex = False
+                continue
+            elif text[cursor] in "([{,:;!?&|=+*%^~<>-":
+                can_start_regex = True
+            elif text[cursor] == "/":
+                # A division operator leaves the next token in expression
+                # position, where another slash can begin a regex literal.
+                can_start_regex = True
+            else:
+                can_start_regex = False
+            if text.startswith(needle, cursor):
+                return True, cursor + len(needle)
+            cursor += 1
+        return False, cursor
+
+    def scan_template(offset: int) -> tuple[bool, int]:
+        cursor = offset + 1
+        while cursor < length:
+            if text[cursor] == "\\":
+                cursor += 2
+                continue
+            if text[cursor] == "`":
+                return False, cursor + 1
+            if text.startswith("${", cursor):
+                found, cursor = scan_code(cursor + 2, True)
+                if found:
+                    return True, cursor
+                continue
+            cursor += 1
+        return False, cursor
+
+    found, _ = scan_code(0)
+    return found
+
+
 def require_active(text: str, needle: str, label: str, language: str | None = None) -> None:
     """Require a marker in code, excluding language-specific literals."""
 
@@ -34,6 +173,10 @@ def require_active(text: str, needle: str, label: str, language: str | None = No
         raise ValueError("lexical language is required; pass 'rust' or 'typescript'")
     if language not in ("rust", "typescript"):
         raise ValueError(f"unsupported lexical language: {language!r}")
+    if language == "typescript":
+        if _typescript_has_active(text, needle):
+            return
+        raise AssertionError(f"{label}: missing active {needle!r}")
 
     def raw_string_end(offset: int) -> int | None:
         """Return the end of a Rust raw/byte-raw string beginning at offset."""
@@ -196,6 +339,9 @@ def lexical_regressions() -> None:
         "'outer: loop { if TARGET_GUARD() {} }",
         "let x = 'outer: loop { TARGET_GUARD(); };",
         "const typed: 'TARGET_GUARD()' = null as any; if (TARGET_GUARD()) {}",
+        "const raw = `TARGET_GUARD()`; const active = `${TARGET_GUARD()}`;",
+        "const quotient = value / TARGET_GUARD();",
+        "const nested = `outer ${`inner ${TARGET_GUARD()}`}`;",
     )
     for case in active_cases:
         language = "typescript" if case.startswith("const ") else "rust"
@@ -206,9 +352,12 @@ def lexical_regressions() -> None:
         'const bait = "TARGET_GUARD()"; /* TARGET_GUARD() */',
         "fn f<'a>(x: &'a str) { let c='\\''; let s='TARGET_GUARD()'; }",
         "const typed: 'TARGET_GUARD()' = null as any;",
+        "function f() { return /TARGET_GUARD()/giu; }",
+        "const classBait = /[TARGET_GUARD()\\\\]/giu;",
+        "const nestedRaw = `outer ${`inner TARGET_GUARD()`}`;",
     )
     for case in bait_only_cases:
-        language = "typescript" if case.startswith("const ") else "rust"
+        language = "typescript" if case.startswith(("const ", "function ")) else "rust"
         try:
             require_active(case, marker, "lexical bait regression", language)
         except AssertionError:
@@ -592,6 +741,32 @@ def mutation_checks() -> int:
             rejected += 1
         else:
             raise AssertionError(f"typescript type bait mutation was accepted for B242 owner {rel}")
+
+    # Regex literals are likewise opaque in both executable TypeScript owners;
+    # the marker must not be recovered from a pattern, including its flags.
+    ts_regex_baits = (
+        (
+            "worker/src/index_special_customer.ts",
+            'if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim())',
+        ),
+        (
+            "apps/signup-worker/src/webhooks/clerk.ts",
+            'if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim())',
+        ),
+    )
+    for rel, salt_guard in ts_regex_baits:
+        mutant = dict(files)
+        mutant[rel] = mutant[rel].replace(
+            salt_guard,
+            "const _B242_REGEX_BAIT = /" + salt_guard + "/giu;",
+            1,
+        )
+        try:
+            verify(mutant)
+        except AssertionError:
+            rejected += 1
+        else:
+            raise AssertionError(f"typescript regex bait mutation was accepted for B242 owner {rel}")
 
     # Rust has literal forms that contain quotes/comments verbatim. Exercise
     # arbitrary raw-string hash counts, a byte raw string, and nested block
