@@ -29,11 +29,12 @@ def verify(root: Path = ROOT) -> dict[str, object]:
                 failures.append(f"{path}: missing {needle}")
 
     need("apps/signup-worker/src/webhooks/sla_credit_cron.ts", (
-        "publishClosedSlaMeasurements", "recordCanonicalSlaObservation", "parseUtcMonth",
+        "publishClosedSlaMeasurements", "recordCanonicalSlaObservation", "handleSlaObservationIngest", "parseUtcMonth",
         "monthlyCutoffAtMs", "LIMIT ?", "state = 'pending'", "tenant_mapping_pending",
         "SLA_CREDITS_ENABLED", "provider_disabled", "Number.isSafeInteger", "BigInt",
         "sla_credit_outbox", "sla_credit_reconciliation", "db.batch",
-        "Idempotency-Key", "Math.min(100, percent)",
+        "Idempotency-Key", "Math.min(100, percent)", "attempts = attempts + 1",
+        "x-corelink-sla-observation-key", "SLA_OBSERVATIONS_ENABLED", "stripe_reconcile_mismatch",
     ))
     need("migrations/d1/0117_sla_credit_ledger.sql", (
         "sla_monthly_observations", "sla_monthly_measurements", "sla_credit_ledger",
@@ -42,10 +43,10 @@ def verify(root: Path = ROOT) -> dict[str, object]:
         "published_at_ms", "cutoff_at_ms", "next_attempt_at_ms", "lease_until_ms",
     ))
     need("apps/signup-worker/tests/sla_credit_cron.test.ts", (
-        "does not starve a newer row", "missing tenant mapping", "provider_disabled",
-        "outbox and reconciliation", "strict policy boundaries",
+        "does not starve a newer row", "mapping misses starve", "missing tenant mapping", "accepted provider object",
+        "provider_disabled", "outbox and reconciliation", "strict policy boundaries", "canonical observation producer",
     ))
-    need("apps/signup-worker/wrangler.toml", ("SLA_CREDITS_ENABLED = \"false\"", "STRIPE_SECRET_KEY"))
+    need("apps/signup-worker/wrangler.toml", ("SLA_CREDITS_ENABLED = \"false\"", "SLA_OBSERVATIONS_ENABLED = \"false\"", "STRIPE_SECRET_KEY", "FOUR sweep families"))
 
     sla = root / "legal/sla/v1.0.0.md"
     if not sla.is_file():

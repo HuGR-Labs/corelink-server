@@ -11088,8 +11088,11 @@ last-verified: 2026-09-05
 `legal/sla/v1.0.0.md:74` promete créditos *"issued automatically against the next
 invoice"*, e a §4.5 declara isso o *"sole and exclusive remedy"* do cliente.
 
-Busquei `service_credit`, `sla_credit`, `credit_note` e `balance_transaction` em todo
-`crates/`, `worker/` e `apps/` — nada, exceto cupons de lançamento da Stripe no checkout.
+O caminho repo-owned agora está localizado em `apps/signup-worker/src/webhooks/
+sla_credit_cron.ts`: a observação canônica, cutoff UTC, elegibilidade, ledger,
+outbox transacional, reconciliação e gate de provider são implementados e
+testados. Isso não é prova de provider: a flag continua desligada até a operação
+Stripe em test mode e a reconciliação exigidas abaixo.
 
 Agravantes na mesma cláusula: o SLA define quatro tiers enquanto o produto vende seis, de
 modo que um cliente Solo ($15) ou Max ($149) não tem tier no instrumento assinado, embora

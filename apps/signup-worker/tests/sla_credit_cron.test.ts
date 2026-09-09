@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   StripeInvoiceItemProvider,
   evaluateSlaCredit,
+  handleSlaObservationIngest,
   monthlyCutoffAtMs,
   parseUtcMonth,
   providerFromEnv,
@@ -9,6 +10,7 @@ import {
   type D1DatabaseLike,
   type D1PreparedStatement,
   type SlaMonthlyMeasurement,
+  type SlaCreditRequest,
 } from "../src/webhooks/sla_credit_cron.js";
 
 type Row = Record<string, unknown>;
@@ -39,7 +41,9 @@ class MemoryDb implements D1DatabaseLike {
   outbox = new Map<string, Row>();
   recon = new Map<string, Row>();
   audits: Row[] = [];
+  observations: Row[] = [];
   customer: string | null = "cus_test";
+  missingTenants = new Set<string>();
   constructor(measurements: Row[]) { this.measurements = measurements; }
 
   prepare(sql: string): D1PreparedStatement {
@@ -47,16 +51,20 @@ class MemoryDb implements D1DatabaseLike {
     const statement = {
       bind: (...values: unknown[]) => { args = values; return statement; },
       all: async <T = Row>() => {
-        if (sql.includes("sla_monthly_observations")) return { results: [] as T[] };
+        if (sql.includes("sla_credit_outbox") && sql.includes("SELECT")) {
+          const row = this.outbox.get(String(args[0]));
+          return { results: row ? [row] as T[] : [] as T[] };
+        }
+        if (sql.includes("sla_monthly_observations")) return { results: this.observations.filter((row) => row.published_at_ms == null) as T[] };
         if (sql.includes("sla_monthly_measurements")) {
           return { results: this.measurements.filter((row) => row.state === "pending" && Number(row.eligible_at_ms) <= Number(args[0])).slice(0, 100) as T[] };
         }
-        if (sql.includes("tenant_billing")) return { results: this.customer ? [{ stripe_customer_id: this.customer }] as T[] : [] as T[] };
+        if (sql.includes("tenant_billing")) return { results: this.customer && !this.missingTenants.has(String(args[0])) ? [{ stripe_customer_id: this.customer }] as T[] : [] as T[] };
         if (sql.includes("FROM sla_credit_ledger")) {
           const now = Number(args[0]);
           return { results: [...this.ledger.values()].filter((row) =>
             ((row.status === "pending" || row.status === "failed") && Number(row.next_attempt_at_ms) <= now) ||
-            (row.status === "processing" && Number(row.lease_until_ms) <= Number(args[1]))).slice(0, 100) as T[] };
+            (row.status === "processing" && Number(row.lease_until_ms) <= Number(args[1]))).sort((a, b) => Number(a.next_attempt_at_ms) - Number(b.next_attempt_at_ms)).slice(0, 100) as T[] };
         }
         return { results: [] as T[] };
       },
@@ -80,6 +88,10 @@ class MemoryDb implements D1DatabaseLike {
         stripe_customer_id: args[6], status: "pending", idempotency_key: args[7], catastrophic: args[8], attempts: 0,
         next_attempt_at_ms: args[9], created_at_ms: args[10], updated_at_ms: args[11],
       });
+      return { meta: { changes: 1 } };
+    }
+    if (sql.includes("INSERT OR IGNORE INTO sla_monthly_observations")) {
+      this.observations.push({ tenant_id: args[0], service_period: args[1], tier: args[2], monthly_fee_minor: args[3], currency: args[4], observed_at_ms: args[13] });
       return { meta: { changes: 1 } };
     }
     if (sql.includes("UPDATE sla_monthly_measurements")) {
@@ -106,7 +118,7 @@ class MemoryDb implements D1DatabaseLike {
     }
     if (sql.startsWith("UPDATE sla_credit_ledger SET status = 'failed', failure_kind = 'transient'")) {
       const row = this.ledger.get(String(args[3]));
-      if (row) { row.status = "failed"; row.failure_reason = "tenant_mapping_pending"; row.next_attempt_at_ms = args[1]; }
+      if (row) { row.status = "failed"; row.failure_reason = "tenant_mapping_pending"; row.next_attempt_at_ms = args[1]; row.attempts = Number(row.attempts) + 1; }
       return { meta: { changes: row ? 1 : 0 } };
     }
     if (sql.includes("SET status = 'applied'")) {
@@ -185,6 +197,24 @@ describe("B-089 gates, retries, and transaction boundaries", () => {
     const second = await runSlaCreditSweep({ BILLING_DB: db, SLA_CREDITS_ENABLED: "true" }, 120_000, provider);
     expect(second.applied).toBe(1);
     expect([...db.ledger.values()][0]?.stripe_customer_id).toBe("cus_late");
+    // One mapping retry plus one provider lease claim are both durable
+    // attempts; the mapping retry must not remain an invisible loop.
+    expect([...db.ledger.values()][0]?.attempts).toBe(2);
+    expect([...db.ledger.values()][0]?.next_attempt_at_ms).toBe(120_000);
+  });
+
+  it("does not let a due population of mapping misses starve the next ready tenant", async () => {
+    const rows = Array.from({ length: 101 }, (_, index) => measurementRow({ tenant_id: `missing-${index}` }));
+    rows[100] = measurementRow({ tenant_id: "ready-after-misses" });
+    const db = new MemoryDb(rows);
+    for (let index = 0; index < 100; index += 1) db.missingTenants.add(`missing-${index}`);
+    const provider = { applyCredit: vi.fn(async () => ({ provider_ref: "ii_ready" })) };
+    const first = await runSlaCreditSweep({ BILLING_DB: db, SLA_CREDITS_ENABLED: "true" }, 0, provider);
+    expect(first.failed).toBe(100);
+    expect([...db.ledger.values()].filter((row) => row.attempts === 1)).toHaveLength(100);
+    const second = await runSlaCreditSweep({ BILLING_DB: db, SLA_CREDITS_ENABLED: "true" }, 0, provider);
+    expect(second.applied).toBe(1);
+    expect(db.ledger.get("sla_credit:ready-after-misses:2026-08")?.status).toBe("applied");
   });
 
   it("does not starve a newer row behind a bounded batch of ineligible rows", async () => {
@@ -207,6 +237,38 @@ describe("B-089 gates, retries, and transaction boundaries", () => {
     expect(db.recon.get("sla_credit:tenant-1:2026-08")?.status).toBe("reconciled");
     expect(db.audits.map((row) => row.event_type)).toEqual(["created", "applied"]);
   });
+
+  it("recovers an accepted provider object from the outbox across a mapping change", async () => {
+    const db = new MemoryDb([]);
+    db.customer = "cus_new";
+    const request: SlaCreditRequest = {
+      credit_id: "sla_credit:tenant-crash:2026-08",
+      tenant_id: "tenant-crash",
+      stripe_customer_id: "cus_old",
+      amount_minor: 250,
+      currency: "USD",
+      service_period: "2026-08",
+      credit_percent: 5,
+      idempotency_key: "sla-credit:sla_credit:tenant-crash:2026-08",
+      catastrophic: false,
+    };
+    db.ledger.set(request.credit_id, {
+      ...request, status: "failed", attempts: 1, next_attempt_at_ms: 0, lease_until_ms: null,
+      created_at_ms: 0, updated_at_ms: 0,
+    });
+    db.outbox.set(request.credit_id, { credit_id: request.credit_id, idempotency_key: request.idempotency_key, payload_json: JSON.stringify(request), provider_ref: "ii_accepted", status: "sent" });
+    const apply = vi.fn(async () => ({ provider_ref: "ii_duplicate" }));
+    const reconcile = vi.fn(async (recovered: SlaCreditRequest, providerRef: string) => {
+      expect(recovered.stripe_customer_id).toBe("cus_old");
+      expect(providerRef).toBe("ii_accepted");
+      return { ok: true } as const;
+    });
+    const result = await runSlaCreditSweep({ BILLING_DB: db, SLA_CREDITS_ENABLED: "true" }, 0, { applyCredit: apply, reconcileCredit: reconcile });
+    expect(result).toMatchObject({ applied: 1, blocked: 0, reconciled: 1 });
+    expect(apply).not.toHaveBeenCalled();
+    expect(reconcile).toHaveBeenCalledOnce();
+    expect(db.ledger.get(request.credit_id)?.status).toBe("applied");
+  });
 });
 
 describe("Stripe provider gate and reconciliation", () => {
@@ -222,7 +284,7 @@ describe("Stripe provider gate and reconciliation", () => {
   it("uses the stable idempotency key and verifies the created invoice item", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: "ii_test" }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ amount: -100, customer: "cus", metadata: { credit_id: "c" } }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ amount: -100, currency: "usd", customer: "cus", metadata: { credit_id: "c", service_period: "2026-08", credit_percent: "1" } }), { status: 200 }));
     const provider = new StripeInvoiceItemProvider("sk_test", "https://stripe.test/", true);
     const request = { credit_id: "c", tenant_id: "t", stripe_customer_id: "cus", amount_minor: 100, currency: "USD", service_period: "2026-08", credit_percent: 1, idempotency_key: "stable", catastrophic: false };
     await expect(provider.applyCredit(request)).resolves.toEqual({ provider_ref: "ii_test" });
@@ -231,9 +293,47 @@ describe("Stripe provider gate and reconciliation", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("rejects a provider object whose currency, service period, or percentage drifts", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({ amount: -100, currency: "eur", customer: "cus", metadata: { credit_id: "c", service_period: "2026-09", credit_percent: "2" } }), { status: 200 }));
+    const provider = new StripeInvoiceItemProvider("sk_test", "https://stripe.test/", true);
+    const request = { credit_id: "c", tenant_id: "t", stripe_customer_id: "cus", amount_minor: 100, currency: "USD", service_period: "2026-08", credit_percent: 1, idempotency_key: "stable", catastrophic: false };
+    await expect(provider.reconcileCredit(request, "ii_test")).resolves.toEqual({ ok: false, failure: { kind: "permanent", reason: "stripe_reconcile_mismatch" } });
+  });
+
   it("requires both the parked gate and the Stripe secret", () => {
     expect(providerFromEnv({ STRIPE_SECRET_KEY: "sk_test" })).toBeUndefined();
     expect(providerFromEnv({ SLA_CREDITS_ENABLED: "true" })).toBeUndefined();
     expect(providerFromEnv({ SLA_CREDITS_ENABLED: "true", STRIPE_SECRET_KEY: "sk_test" })).toBeDefined();
+  });
+});
+
+describe("B-089 canonical observation producer", () => {
+  const key = "observation-ingest-key-012345678901234567890";
+  const body = {
+    tenant_id: "tenant-producer",
+    service_period: "2026-08",
+    tier: "pro",
+    monthly_fee_minor: 5_000,
+    currency: "usd",
+    availability_percent: 99.4,
+    force_majeure: false,
+    eligible_at_ms: 0,
+    observed_at_ms: Date.UTC(2026, 8, 1),
+  };
+
+  it("is an authenticated, gated production caller of the canonical writer", async () => {
+    const db = new MemoryDb([]);
+    const env = { BILLING_DB: db, SLA_CREDITS_ENABLED: "true", SLA_OBSERVATIONS_ENABLED: "true", SLA_OBSERVATION_INGEST_KEY: key };
+    await expect(handleSlaObservationIngest(new Request("https://worker.test/internal/sla/monthly-observation", { method: "POST", body: JSON.stringify(body) }), env)).resolves.toMatchObject({ status: 401 });
+    const response = await handleSlaObservationIngest(new Request("https://worker.test/internal/sla/monthly-observation", { method: "POST", headers: { "x-corelink-sla-observation-key": key, "content-type": "application/json" }, body: JSON.stringify(body) }), env);
+    expect(response.status).toBe(200);
+    expect(db.observations).toHaveLength(1);
+  });
+
+  it("stays parked even when a caller supplies a valid observation body", async () => {
+    const db = new MemoryDb([]);
+    const response = await handleSlaObservationIngest(new Request("https://worker.test/internal/sla/monthly-observation", { method: "POST", headers: { "x-corelink-sla-observation-key": key }, body: JSON.stringify(body) }), { BILLING_DB: db, SLA_CREDITS_ENABLED: "false", SLA_OBSERVATIONS_ENABLED: "true", SLA_OBSERVATION_INGEST_KEY: key });
+    expect(response.status).toBe(503);
+    expect(db.observations).toHaveLength(0);
   });
 });

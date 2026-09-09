@@ -21,6 +21,8 @@
  * no Stripe mutation happens until owner proof flips the explicit flag.
  */
 
+import { constantTimeEqual } from "./github_provision.js";
+
 export type CreditFailureKind = "transient" | "permanent";
 export type SlaTier = "free" | "starter" | "pro" | "enterprise";
 
@@ -222,7 +224,7 @@ export class StripeInvoiceItemProvider implements SlaCreditProvider {
 
   async applyCredit(request: SlaCreditRequest): Promise<ProviderResult> {
     if (!this.enabled) return { failure: { kind: "permanent", reason: "provider_disabled" } };
-    if (!Number.isSafeInteger(request.amount_minor) || request.amount_minor <= 0) return { failure: { kind: "permanent", reason: "invalid_amount" } };
+    if (!Number.isSafeInteger(request.amount_minor) || request.amount_minor <= 0 || !Number.isSafeInteger(request.credit_percent) || request.credit_percent < 1 || request.credit_percent > 100) return { failure: { kind: "permanent", reason: "invalid_amount" } };
     const currency = canonicalCurrency(request.currency);
     if (!currency || !parseUtcMonth(request.service_period)) return { failure: { kind: "permanent", reason: "invalid_request" } };
     const body = new URLSearchParams({
@@ -265,7 +267,17 @@ export class StripeInvoiceItemProvider implements SlaCreditProvider {
       const amount = value.amount;
       const customer = value.customer;
       const metadata = value.metadata;
-      if (amount !== -request.amount_minor || customer !== request.stripe_customer_id || !metadata || typeof metadata !== "object" || (metadata as Record<string, unknown>).credit_id !== request.credit_id) {
+      const metadataRecord = metadata && typeof metadata === "object" ? metadata as Record<string, unknown> : null;
+      const responseCurrency = typeof value.currency === "string" ? value.currency.toUpperCase() : null;
+      if (
+        amount !== -request.amount_minor ||
+        customer !== request.stripe_customer_id ||
+        responseCurrency !== canonicalCurrency(request.currency) ||
+        !metadataRecord ||
+        metadataRecord.credit_id !== request.credit_id ||
+        metadataRecord.service_period !== request.service_period ||
+        metadataRecord.credit_percent !== String(request.credit_percent)
+      ) {
         return { ok: false, failure: { kind: "permanent", reason: "stripe_reconcile_mismatch" } };
       }
       return { ok: true };
@@ -291,6 +303,8 @@ export interface D1DatabaseLike {
 export interface SlaCreditCronEnv {
   BILLING_DB?: D1DatabaseLike;
   SLA_CREDITS_ENABLED?: string;
+  SLA_OBSERVATIONS_ENABLED?: string;
+  SLA_OBSERVATION_INGEST_KEY?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_API_BASE?: string;
 }
@@ -320,6 +334,9 @@ const INSERT_OUTBOX_SQL = `INSERT OR IGNORE INTO sla_credit_outbox
 function idFor(tenant: string, period: string): string { return `sla_credit:${tenant}:${period}`; }
 function backoff(attempt: number): number { return Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.min(Math.max(attempt, 0), 10)); }
 function enabled(env: SlaCreditCronEnv): boolean { return env.SLA_CREDITS_ENABLED?.trim().toLowerCase() === "true"; }
+function observationIngestEnabled(env: SlaCreditCronEnv): boolean {
+  return enabled(env) && env.SLA_OBSERVATIONS_ENABLED?.trim().toLowerCase() === "true";
+}
 function asMeasurement(row: Record<string, unknown>): SlaMonthlyMeasurement {
   return {
     tenant_id: String(row.tenant_id), service_period: String(row.service_period), tier: String(row.tier),
@@ -407,9 +424,10 @@ async function markMeasurement(db: D1DatabaseLike, measurement: SlaMonthlyMeasur
 }
 
 async function retryMapping(db: D1DatabaseLike, creditId: string, attempts: number, nowMs: number): Promise<void> {
+  const nextAttempt = Math.min(10, Math.max(0, Number.isSafeInteger(attempts) ? attempts : 0) + 1);
   await atomic(db, [
-    db.prepare(`UPDATE sla_credit_ledger SET status = 'failed', failure_kind = 'transient', failure_reason = ?, next_attempt_at_ms = ?, lease_until_ms = NULL, updated_at_ms = ? WHERE credit_id = ? AND status IN ('pending', 'processing', 'failed')`)
-      .bind("tenant_mapping_pending", nowMs + backoff(attempts), nowMs, creditId),
+    db.prepare(`UPDATE sla_credit_ledger SET status = 'failed', failure_kind = 'transient', failure_reason = ?, next_attempt_at_ms = ?, lease_until_ms = NULL, attempts = attempts + 1, updated_at_ms = ? WHERE credit_id = ? AND status IN ('pending', 'processing', 'failed')`)
+      .bind("tenant_mapping_pending", nowMs + backoff(nextAttempt), nowMs, creditId),
     await audit(db, creditId, "retry", "tenant_mapping_pending", nowMs),
   ]);
 }
@@ -420,6 +438,84 @@ function requestFromRow(row: Record<string, unknown>, customerId: string): SlaCr
     amount_minor: Number(row.amount_minor), currency: String(row.currency), service_period: String(row.service_period),
     credit_percent: Number(row.credit_percent), idempotency_key: String(row.idempotency_key), catastrophic: row.catastrophic === true || row.catastrophic === 1,
   };
+}
+
+/**
+ * The outbox body is the durable source of truth after a provider call. A
+ * mapping lookup may change while a lease is being recovered; accepting a
+ * newly mapped customer in that case would turn crash recovery into a second,
+ * different money operation. Malformed or mismatched payloads are rejected so
+ * the normal mapping-change guard can block them for review.
+ */
+function requestFromOutbox(raw: unknown, row: Record<string, unknown>): SlaCreditRequest | null {
+  if (typeof raw !== "string") return null;
+  try {
+    const value = JSON.parse(raw) as Record<string, unknown>;
+    if (!value || typeof value !== "object") return null;
+    const currency = typeof value.currency === "string" ? canonicalCurrency(value.currency) : null;
+    const request: SlaCreditRequest = {
+      credit_id: String(value.credit_id ?? ""),
+      tenant_id: String(value.tenant_id ?? ""),
+      stripe_customer_id: String(value.stripe_customer_id ?? ""),
+      amount_minor: Number(value.amount_minor),
+      currency: currency ?? "",
+      service_period: String(value.service_period ?? ""),
+      credit_percent: Number(value.credit_percent),
+      idempotency_key: String(value.idempotency_key ?? ""),
+      catastrophic: value.catastrophic === true || value.catastrophic === 1,
+    };
+    if (
+      request.credit_id !== String(row.credit_id) ||
+      request.tenant_id !== String(row.tenant_id) ||
+      request.idempotency_key !== String(row.idempotency_key) ||
+      !request.stripe_customer_id ||
+      !currency ||
+      !parseUtcMonth(request.service_period) ||
+      !Number.isSafeInteger(request.amount_minor) || request.amount_minor <= 0 ||
+      !Number.isSafeInteger(request.credit_percent) || request.credit_percent < 1 || request.credit_percent > 100
+    ) return null;
+    if (
+      request.amount_minor !== Number(row.amount_minor) ||
+      request.credit_percent !== Number(row.credit_percent) ||
+      currency !== canonicalCurrency(String(row.currency))
+    ) return null;
+    return request;
+  } catch {
+    return null;
+  }
+}
+
+/** Authenticated production hand-off from the provider-operated SLO reporter. */
+export async function handleSlaObservationIngest(request: Request, env: SlaCreditCronEnv): Promise<Response> {
+  if (request.method !== "POST") return Response.json({ error: "method_not_allowed" }, { status: 405 });
+  if (!observationIngestEnabled(env)) return Response.json({ error: "sla_observation_ingest_disabled" }, { status: 503 });
+  const expected = env.SLA_OBSERVATION_INGEST_KEY?.trim();
+  if (!expected || expected.length < 32) return Response.json({ error: "unavailable" }, { status: 503 });
+  const presented = request.headers.get("x-corelink-sla-observation-key") ?? "";
+  if (!constantTimeEqual(presented, expected)) return Response.json({ error: "unauthorized" }, { status: 401 });
+  const db = env.BILLING_DB;
+  if (!db) return Response.json({ error: "billing_db_unbound" }, { status: 503 });
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "invalid_json" }, { status: 400 });
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "invalid_observation" }, { status: 400 });
+  const observation = body as SlaMonthlyObservation;
+  if (
+    typeof observation.tenant_id !== "string" || !observation.tenant_id.trim() ||
+    typeof observation.service_period !== "string" || typeof observation.tier !== "string" ||
+    typeof observation.currency !== "string" || typeof observation.force_majeure !== "boolean" ||
+    typeof observation.availability_percent !== "number" || typeof observation.monthly_fee_minor !== "number" ||
+    typeof observation.observed_at_ms !== "number"
+  ) return Response.json({ error: "invalid_observation" }, { status: 400 });
+  try {
+    await recordCanonicalSlaObservation(db, observation);
+  } catch {
+    return Response.json({ error: "invalid_observation" }, { status: 400 });
+  }
+  return Response.json({ accepted: true, service_period: observation.service_period });
 }
 
 /** Settle a bounded batch. Due rows are leased, so an old transient row cannot monopolise every tick. */
@@ -453,15 +549,20 @@ export async function runSlaCreditSweep(env: SlaCreditCronEnv, nowMs: number, pr
     for (const row of due.results ?? []) {
       const creditId = String(row.credit_id);
       const attempts = Number(row.attempts) || 0;
+      const outbox = await db.prepare("SELECT payload_json, provider_ref FROM sla_credit_outbox WHERE credit_id = ? LIMIT 1").bind(creditId).all<{ payload_json?: unknown; provider_ref?: string | null }>();
+      const outboxRow = outbox.results?.[0];
+      const recoveredRequest = outboxRow ? requestFromOutbox(outboxRow.payload_json, row) : null;
+      const recoveredProviderRef = recoveredRequest && typeof outboxRow?.provider_ref === "string" ? outboxRow.provider_ref.trim() : "";
       const mapping = await db.prepare("SELECT stripe_customer_id FROM tenant_billing WHERE tenant_id = ? LIMIT 1").bind(row.tenant_id).all<{ stripe_customer_id?: string | null }>();
       const customerId = mapping.results?.[0]?.stripe_customer_id?.trim() ?? "";
       const oldCustomer = typeof row.stripe_customer_id === "string" ? row.stripe_customer_id.trim() : "";
-      if (!customerId) {
+      const requestCustomer = recoveredRequest?.stripe_customer_id ?? customerId;
+      if (!requestCustomer) {
         await retryMapping(db, creditId, attempts, nowMs);
         result.failed += 1;
         continue;
       }
-      if (oldCustomer && oldCustomer !== customerId) {
+      if (!recoveredRequest && oldCustomer && oldCustomer !== customerId) {
         await atomic(db, [
           db.prepare("UPDATE sla_credit_ledger SET status = 'blocked', failure_kind = 'permanent', failure_reason = ?, lease_until_ms = NULL, updated_at_ms = ? WHERE credit_id = ?").bind("tenant_mapping_changed", nowMs, creditId),
           await audit(db, creditId, "blocked", "tenant_mapping_changed", nowMs),
@@ -469,15 +570,28 @@ export async function runSlaCreditSweep(env: SlaCreditCronEnv, nowMs: number, pr
         result.blocked += 1;
         continue;
       }
-      const request = requestFromRow(row, customerId);
+      const request = recoveredRequest ?? requestFromRow(row, requestCustomer);
       const payload = JSON.stringify(request);
       const claimed = await atomic(db, [
-        db.prepare(`UPDATE sla_credit_ledger SET status = 'processing', stripe_customer_id = ?, lease_until_ms = ?, attempts = attempts + 1, updated_at_ms = ? WHERE credit_id = ? AND ((status IN ('pending', 'failed') AND next_attempt_at_ms <= ?) OR (status = 'processing' AND lease_until_ms <= ?))`).bind(customerId, nowMs + LEASE_MS, nowMs, creditId, nowMs, nowMs),
+        db.prepare(`UPDATE sla_credit_ledger SET status = 'processing', stripe_customer_id = ?, lease_until_ms = ?, attempts = attempts + 1, updated_at_ms = ? WHERE credit_id = ? AND ((status IN ('pending', 'failed') AND next_attempt_at_ms <= ?) OR (status = 'processing' AND lease_until_ms <= ?))`).bind(request.stripe_customer_id, nowMs + LEASE_MS, nowMs, creditId, nowMs, nowMs),
         db.prepare(INSERT_OUTBOX_SQL).bind(creditId, request.idempotency_key, payload, nowMs, nowMs),
       ]);
       if (Number(claimed[0]?.meta?.changes ?? 0) !== 1) continue;
 
-      const applied = await provider.applyCredit(request);
+      let alreadyReconciled = false;
+      let applied: ProviderResult;
+      if (recoveredProviderRef && provider.reconcileCredit) {
+        const recovered = await provider.reconcileCredit(request, recoveredProviderRef);
+        applied = recovered.ok
+          ? { provider_ref: recoveredProviderRef }
+          : { failure: recovered.failure ?? { kind: "transient", reason: "provider_recovery_reconcile_failed" } };
+        alreadyReconciled = recovered.ok;
+      } else {
+        // No provider reference means the worker may have died before D1 saw
+        // an accepted object. Replaying the exact outbox body/key is the
+        // provider's idempotent recovery path.
+        applied = await provider.applyCredit(request);
+      }
       if (!("provider_ref" in applied)) {
         if (applied.failure.kind === "transient") {
           await atomic(db, [
@@ -497,7 +611,7 @@ export async function runSlaCreditSweep(env: SlaCreditCronEnv, nowMs: number, pr
         continue;
       }
 
-      const reconciliation = provider.reconcileCredit ? await provider.reconcileCredit(request, applied.provider_ref) : { ok: true };
+      const reconciliation = alreadyReconciled ? { ok: true } : provider.reconcileCredit ? await provider.reconcileCredit(request, applied.provider_ref) : { ok: true };
       if (!reconciliation.ok) {
         const failure = reconciliation.failure ?? { kind: "transient" as const, reason: "stripe_reconcile_failed" };
         if (failure.kind === "transient") {
