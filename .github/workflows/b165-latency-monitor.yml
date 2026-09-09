@@ -7,6 +7,15 @@ on:
   schedule:
     - cron: '17 */6 * * *'
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Population to measure"
+        required: true
+        default: refusal
+        type: choice
+        options:
+          - refusal
+          - served
 
 permissions:
   contents: read
@@ -17,6 +26,7 @@ concurrency:
 
 jobs:
   refusal:
+    if: github.event_name == 'schedule' || inputs.mode != 'served'
     name: measure refusal and control populations
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -67,3 +77,87 @@ jobs:
             echo "B-165 monitor did not produce the expected partial/open refusal result." >&2
             exit 1
           fi
+
+  served:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'served'
+    name: measure two existing served objects
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CANARY_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
+      DOGFOOD_PAT: ${{ secrets.CORELINK_SCCACHE_TOKEN }}
+      CANARY_TENANT: 93da3f7a-984d-4ef9-86e0-b0bd9fd0252e
+      DOGFOOD_TENANT: ee30f7ba-fc25-4d71-939e-ebe130b4c6a3
+      CANARY_DIGEST: 28cf8cf855dbf4f9a40949d44d4ba5ce2db8d0386e08105c52244f495ab0b441
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Measure only authenticated served populations
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${CANARY_PAT:?CORELINK_CANARY_PAT is not bound}"
+          : "${DOGFOOD_PAT:?CORELINK_SCCACHE_TOKEN is not bound}"
+          api=https://corelink-api.humangr.com
+          served_a="/v1/cas/$CANARY_TENANT/$CANARY_DIGEST"
+
+          # These are keys from the already-approved B-107/B-122 production
+          # packets. Discovery is HEAD-only and bounded; this job never writes.
+          served_b=""
+          for key in b107-1 b107-2 b107-3 b122-1 b122-2 b122-3; do
+            status="$(curl --connect-timeout 10 --max-time 20 --silent --show-error \
+              --output /dev/null --write-out '%{http_code}' --head \
+              -H "Authorization: Bearer $DOGFOOD_PAT" \
+              "$api/cargo/$DOGFOOD_TENANT/$key")"
+            if [[ "$status" == 200 ]]; then
+              served_b="/cargo/$DOGFOOD_TENANT/$key"
+              break
+            fi
+          done
+          test -n "$served_b"
+
+          raw="$RUNNER_TEMP/b165-served-only.tsv"
+          timing="$RUNNER_TEMP/b165-served-timing.tsv"
+          : > "$raw"
+          : > "$timing"
+          sample_one() {
+            local surface="$1" request_path="$2" token="$3" sample="$4"
+            local line headers server_timing
+            headers="$RUNNER_TEMP/b165-$surface-$sample.headers"
+            line="$(curl --connect-timeout 10 --max-time 20 --silent --show-error \
+              --output /dev/null --dump-header "$headers" \
+              --write-out '%{http_code}\t%{time_total}\t%{exitcode}' \
+              -H "Authorization: Bearer $token" "$api$request_path")"
+            IFS=$'\t' read -r status seconds curl_rc <<<"$line"
+            printf 'served\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+              "$surface" "$request_path" "$sample" "$status" "$curl_rc" "$seconds" >> "$raw"
+            server_timing="$(tr -d '\r' < "$headers" | awk 'BEGIN{IGNORECASE=1} /^server-timing:/ {sub(/^[^:]+:[[:space:]]*/, ""); print; exit}')"
+            printf '%s\t%s\t%s\n' "$surface" "$sample" "${server_timing:-absent}" >> "$timing"
+            rm -f "$headers"
+          }
+          for sample in {1..10}; do sample_one served_a "$served_a" "$CANARY_PAT" "$sample"; done
+          for sample in {1..10}; do sample_one served_b "$served_b" "$DOGFOOD_PAT" "$sample"; done
+
+          composite="$RUNNER_TEMP/b165-complete.tsv"
+          awk -F '\t' '$2 != "v2"' evidence/owner-actions/B-165/rejection-raw-2026-09-09.tsv > "$composite"
+          cat evidence/owner-actions/B-165/oci-recovery-raw-2026-09-09.tsv "$raw" >> "$composite"
+          fp_a="sha256:$(printf '%s' "$CANARY_PAT" | sha256sum | awk '{print $1}')"
+          fp_b="sha256:$(printf '%s' "$DOGFOOD_PAT" | sha256sum | awk '{print $1}')"
+          test "$fp_a" != "$fp_b"
+          python3 scripts/verify_b165_latency.py "$composite" --samples 10 --require-served \
+            --tenant-a "$CANARY_TENANT" --tenant-b "$DOGFOOD_TENANT" \
+            --pat-fingerprint-a "$fp_a" --pat-fingerprint-b "$fp_b" \
+            > "$RUNNER_TEMP/b165-served-verdict.json"
+
+      - name: Upload sanitized served evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b165-served-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/b165-served-only.tsv
+            ${{ runner.temp }}/b165-served-timing.tsv
+            ${{ runner.temp }}/b165-complete.tsv
+            ${{ runner.temp }}/b165-served-verdict.json
+          if-no-files-found: error
+          retention-days: 30
