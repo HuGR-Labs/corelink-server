@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09T04:13:53Z",
+  "provider": "configured R2 S3-compatible endpoint",
+  "bucket_operation": {
+    "operation": "CreateBucket with Object Lock enabled",
+    "status": "INDETERMINATE",
+    "provider_code": "InvalidArgument",
+    "detail": "provider rejected the local credential shape before bucket creation",
+    "request_reference": "redacted; no provider request id returned"
+  },
+  "object_operation": {
+    "operation": "PutObject with COMPLIANCE retention",
+    "status": "SKIPPED",
+    "provider_code": null,
+    "detail": "not attempted because CreateBucket did not prove Object-Lock support",
+    "request_reference": null
+  },
+  "classification": "INDETERMINATE",
+  "bucket_cleanup": {
+    "attempted": false,
+    "resources_created": false,
+    "reason": "CreateBucket failed before a probe bucket or object existed"
+  },
+  "operator": "codex-probe"
+}
