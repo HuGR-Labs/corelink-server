@@ -270,11 +270,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cli_keyring_option_is_fail_closed() {
+    fn cli_keyring_option_is_fail_closed() -> Result<(), String> {
         assert!(parse_args(&["--chain-keyring".to_owned()]).is_err());
         assert!(parse_args(&["--unknown".to_owned()]).is_err());
-        let (keyring, paths) = parse_args(&["archive.ndjson".to_owned()]).expect("plain CLI");
+        let (keyring, paths) = parse_args(&["archive.ndjson".to_owned()])?;
         assert!(keyring.is_empty());
         assert_eq!(paths, vec!["archive.ndjson"]);
+        Ok(())
     }
 }
