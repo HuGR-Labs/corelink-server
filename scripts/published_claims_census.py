@@ -24,7 +24,12 @@ INVENTORY = REPO_ROOT / "scripts" / "published_claims_inventory.json"
 SCHEMA = 1
 ROOTS = ("apps/docs", "marketing", "legal")
 ROOT_FILES = ("README.md",)
-EXTENSIONS = {".md", ".mdx", ".html", ".htm"}
+# Include the shipped docs application source, not only prose.  React pages
+# and components can carry the same public claims as Markdown; the inventory
+# must close that escape hatch as well as the existing docs/marketing/legal
+# roots.  TypeScript is included for Docusaurus page/config source that is
+# shipped or compiled into the public site.
+EXTENSIONS = {".md", ".mdx", ".html", ".htm", ".js", ".jsx", ".ts", ".tsx"}
 EXCLUDED_DIRS = {".git", ".docusaurus", ".wrangler", "build", "dist", "node_modules"}
 TERMS = ("BYOK", "Buck2", "pentest")
 TERM_RE = re.compile(
