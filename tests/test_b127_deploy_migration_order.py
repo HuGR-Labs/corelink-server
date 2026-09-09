@@ -18,7 +18,7 @@ EXPECTED_ENVS = ("prod", "prod-sam", "prod-lhr", "prod-nrt", "prod-syd")
 EXPECTED_MIGRATION_IF = (
     "always() && needs.gate-secrets-checklist.result == 'success' "
     "&& needs.deploy.result == 'success' && inputs.env == '' "
-    "&& inputs.skip_pin_freshness != 'true'"
+    "&& !inputs.skip_pin_freshness"
 )
 
 
@@ -86,7 +86,7 @@ def test_rollback_and_single_env_mutations_reopen_schema_guard() -> None:
     original = WORKFLOW.read_text(encoding="utf-8")
     for marker in (
         "inputs.env == ''",
-        "inputs.skip_pin_freshness != 'true'",
+        "!inputs.skip_pin_freshness",
     ):
         mutated = original.replace(marker, "true", 1)
         assert mutated != original
@@ -119,6 +119,21 @@ def test_exact_reviewer_condition_mutations_reopen_migration_gate() -> None:
         ("&& inputs.env == ''", "|| inputs.env == ''"),
         # Reviewer mutation 2: widen the shared-D1 migration to a single env.
         ("inputs.env == ''", "inputs.env == 'prod'"),
+    )
+    for old, new in mutations:
+        mutated = original.replace(old, new, 1)
+        assert mutated != original
+        with pytest.raises(AssertionError):
+            _assert_writer_first(_workflow(mutated))
+
+
+def test_boolean_rollback_mutations_reopen_migration_gate() -> None:
+    original = WORKFLOW.read_text(encoding="utf-8")
+    mutations = (
+        # A workflow boolean must not be compared to a quoted string.
+        ("!inputs.skip_pin_freshness", "inputs.skip_pin_freshness != 'true'"),
+        # A true rollback/recycle input must never authorize shared-D1 writes.
+        ("!inputs.skip_pin_freshness", "inputs.skip_pin_freshness == true"),
     )
     for old, new in mutations:
         mutated = original.replace(old, new, 1)
