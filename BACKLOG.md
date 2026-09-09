@@ -8732,11 +8732,11 @@ verify: |
 verify-means: |
   parked — o verificador fail-closed prova somente a correção de engenharia
   delimitada (sem `cargo install`/fetch manual, sem estado Cargo compartilhado,
-  pins e cache por run/attempt/target), a assinatura reproduzida e a preservação
-  do waiver/semântica de tags. Ele rejeita mutações reais e não lê histórico
+  pins e cache por run/attempt/target), a assinatura reproduzida e a fronteira
+  de aposentadoria da antiga lane OCI/semântica de tags. Ele rejeita mutações reais e não lê histórico
   como se fosse execução verde; a causa de `release-slsa3` permanece não
   diagnosticada por logs expirados.
-last-verified: 2026-09-05
+last-verified: 2026-09-08
 ```
 
 ### B-113 — sete workflows self-hosted sem sucesso, cada um por um motivo próprio

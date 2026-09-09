@@ -503,6 +503,7 @@ def test_release_chain_inputs_are_in_complete_ci_trigger_populations():
     assert python_tests.count("- 'tests/*.py'") == 2
     assert python_tests.count("- 'BACKLOG.md'") == 2
     assert python_tests.count("- '.github/workflows/release-cli.yml'") == 2
+    assert python_tests.count("- '.github/workflows/cosign-sign.yml'") == 2
     for source in (
         "scripts/cli_release_manifest.py",
         "scripts/verify_cli_rekor_bundle.py",

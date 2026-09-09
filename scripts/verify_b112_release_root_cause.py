@@ -658,6 +658,8 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
         )
         if means is None or not means.group("body").lstrip().startswith("parked —"):
             errors.append("B-112 parked claim must start verify-means with parked —")
+        if re.search(r"fronteira\s+de aposentadoria", b112) is None:
+            errors.append("B-112 verify-means must name the retired-lane boundary")
     require(backlog, "id: B-112", "B-112 record")
     require(backlog, "`cosign-sign.yml` foi removido em 2026-09-08 (B-118)", "B-118 retirement statement")
     require(backlog, "waiver não foi carregado para a árvore atual", "retired waiver boundary")
@@ -727,6 +729,12 @@ def mutation_self_test(release: str, cosign: str, backlog: str) -> None:
             "waiver não foi carregado para a árvore atual",
             "waiver was silently restored",
             1,
+        )),
+        "retirement boundary wording": (release, cosign, re.sub(
+            r"fronteira\s+de aposentadoria",
+            "preservação do waiver",
+            backlog,
+            count=1,
         )),
         "failure signature": (release, cosign, backlog.replace("could not execute process rustc", "compiler invocation", 1)),
         "B-112 status": (release, cosign, _mutate_b112_status(backlog)),
