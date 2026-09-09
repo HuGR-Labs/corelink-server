@@ -12753,18 +12753,14 @@ repo: corelink-server
 owner: tl
 status: done
 verify: |
-  bash -c 'set -euo pipefail
-  test ! -e .github/workflows/cosign-sign.yml
-  test -f .github/workflows/release-slsa3.yml
-  test -f .github/workflows/cas_foundation.yml
-  rg -q "cosign sign-blob" .github/workflows/release-slsa3.yml
-  rg -q "cosign verify-blob" .github/workflows/release-slsa3.yml
-  rg -q "cosign sign-blob" .github/workflows/cas_foundation.yml
-  rg -q "cosign verify-blob" .github/workflows/cas_foundation.yml
-  if rg -n -i "cosign-sign\\.yml|Worker container image.*signed keyless|transparency-log entries for the \\*\\*Worker container image\\*\\*" apps/docs legal docs/internal/secrets-checklist.md scripts/compliance-weekly-digest.py; then exit 1; fi
-  echo "done: former OCI lane absent; release-SLSA/CAS signer paths retained"'
+  python3 scripts/verify_b118_retirement.py
 verify-means: |
-  done — a antiga lane OCI permanece ausente, as promessas públicas permanecem removidas e os caminhos release-SLSA/CAS, que não são a antiga lane OCI, continuam com assinatura e verificação. A inspeção histórica foi capturada como contexto; não é usada como falso-green runtime proof.
+  done — a antiga lane OCI permanece ausente, a linha RETIRED (B-118) do controle
+  de release permanece exata, as promessas públicas permanecem removidas e os
+  caminhos release-SLSA/CAS, que não são a antiga lane OCI, continuam com
+  assinatura e verificação. O gate local `scripts/verify_b118_retirement.py`
+  rejeita a reintrodução da workflow ou a promoção do ledger; a inspeção
+  histórica é contexto, não falso-green runtime proof.
 last-verified: 2026-09-08
 ```
 

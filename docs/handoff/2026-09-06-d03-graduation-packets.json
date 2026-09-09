@@ -755,13 +755,14 @@
       "verify_means": "parked"
     },
     "B-118": {
-      "disposition": "PARKED",
+      "disposition": "DONE",
       "owner": "tl",
-      "dependency": "a real cosign-sign workflow dispatch with hosted waiver",
-      "action": "Owner dispatches cosign-sign with approved credentials and records a completed run or named platform block.",
-      "artifact": "artifacts/d03/B118-cosign-run.json",
-      "command": "gh run list --workflow cosign-sign.yml --limit 1 --json databaseId,conclusion > artifacts/d03/B118-cosign-run.json",
-      "verify_means": "parked"
+      "dependency": "retired former OCI lane; independent release-SLSA and CAS signing paths",
+      "action": "Retain the local retirement gate and independent signer controls; do not restore the deleted workflow or infer an OCI signing run.",
+      "artifact": "scripts/verify_b118_retirement.py",
+      "command": "python3 scripts/verify_b118_retirement.py",
+      "verify_means": "done",
+      "evidence": "BACKLOG.md B-118 retirement record; changelog.d/1490-remove-cosign-sign.md; docs/campaigns/remediation/B-134-docker-shim-experiment.md RETIRED (B-118) row; release-slsa3.yml and cas_foundation.yml executable cosign sign-blob/verify-blob paths; .github/workflows/cosign-sign.yml absent"
     },
     "B-122": {
       "disposition": "PARKED",

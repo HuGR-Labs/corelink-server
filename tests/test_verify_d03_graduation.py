@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_closed_population_and_inverted_guards() -> None:
     result = verify_document(run_guards=True, run_gates=False)
-    assert result == {"original": 42, "graduated": 40, "done": 5, "parked": 34, "reopened": 1}
+    assert result == {"original": 42, "graduated": 40, "done": 6, "parked": 33, "reopened": 1}
 
 
 def test_register_mutations_are_red() -> None:
@@ -38,7 +38,7 @@ def test_b210_is_retired_and_not_parked_debt() -> None:
     assert "post_graduation_parked" not in packet
     backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
     result = verify_document(backlog_text=backlog, packet_text=packet_text, run_guards=False, run_gates=False)
-    assert result["done"] == 4
+    assert result["done"] == 5
     b210 = next(record.raw for record in parse(backlog) if record.id == "B-210")
     assert b210["status"] == "done"
     assert b210["verify-means"].lstrip().startswith("done —")
@@ -404,6 +404,26 @@ def test_b229_packet_matches_redacted_production_receipt() -> None:
     mutated["packets"]["B-229"]["disposition"] = "PARKED"
     with pytest.raises(GraduationError, match="B-229"):
         _check_packets(mutated, ROOT)
+
+
+def test_b118_packet_is_retired_and_rejects_dispatch_or_parked_mutations() -> None:
+    packet = _load_packets(
+        (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
+    )
+    b118 = packet["packets"]["B-118"]
+    assert b118["disposition"] == "DONE"
+    assert b118["command"] == "python3 scripts/verify_b118_retirement.py"
+    assert "RETIRED (B-118)" in b118["evidence"]
+    assert "cosign-sign.yml absent" in b118["evidence"]
+    for mutation in (
+        {"disposition": "PARKED"},
+        {"command": "gh run list --workflow cosign-sign.yml"},
+        {"evidence": b118["evidence"].replace("RETIRED (B-118)", "UNMEASURED")},
+    ):
+        mutated = copy.deepcopy(packet)
+        mutated["packets"]["B-118"].update(mutation)
+        with pytest.raises(GraduationError, match="B-118"):
+            _check_packets(mutated, ROOT)
     for field, replacement in (
         ("artifact", "evidence/production/other.md"),
         ("command", packet["packets"]["B-229"]["command"].replace("--self-test", "--expect done")),

@@ -5,7 +5,7 @@ This is intentionally a bounded register check.  It does not dispatch CI,
 contact GitHub, or pretend that production evidence is present.  It proves
 that the one DCO candidate accounts for the exact original population, that
 every parked item has an executable owner packet, that every post-graduation
-retired item has a local retirement gate, and that the four DONE items still
+retired item has a local retirement gate, and that the six DONE items still
 pass their local inverted guards. A reopened item must retain a fail-closed
 evidence receipt.
 """
@@ -293,7 +293,15 @@ EXCLUDED = frozenset(("B-061", "B-126", "B-155"))
 GRADUATED = tuple(item for item in ORIGINAL_TL_OPEN if item not in EXCLUDED) + ("B-006",)
 GRADUATED_SET = frozenset(GRADUATED)
 ORIGINAL_SET = frozenset(ORIGINAL_TL_OPEN)
-DONE_SET = frozenset(("B-028", "B-074", "B-135", "B-229", "B-253"))
+DONE_SET = frozenset(("B-028", "B-074", "B-118", "B-135", "B-229", "B-253"))
+B118_ARTIFACT = "scripts/verify_b118_retirement.py"
+B118_COMMAND = "python3 scripts/verify_b118_retirement.py"
+B118_EVIDENCE = (
+    "BACKLOG.md B-118 retirement record; changelog.d/1490-remove-cosign-sign.md; "
+    "docs/campaigns/remediation/B-134-docker-shim-experiment.md RETIRED (B-118) row; "
+    "release-slsa3.yml and cas_foundation.yml executable cosign sign-blob/verify-blob paths; "
+    ".github/workflows/cosign-sign.yml absent"
+)
 B006_ARTIFACT = "artifacts/d03/B006-capability-metrics.json"
 B006_PROVIDER_ARTIFACT = "artifacts/d03/B006-provider-binding.json"
 EXCLUDED_FINGERPRINTS = {
@@ -945,6 +953,16 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
                 verify_b229_receipt(root / artifact)
             except (OSError, B229VerificationError) as exc:
                 raise GraduationError(f"B-229: standalone receipt verification failed: {exc}") from exc
+        if item == "B-118":
+            if disposition != "DONE":
+                raise GraduationError("B-118: retired lane must remain DONE, never PARKED")
+            if packet.get("artifact") != B118_ARTIFACT or packet.get("command") != B118_COMMAND:
+                raise GraduationError("B-118: packet must use the local retirement gate exactly")
+            if packet.get("verify_means") != "done" or packet.get("evidence") != B118_EVIDENCE:
+                raise GraduationError("B-118: DONE evidence must name the exact retired controls")
+            gate = root / B118_ARTIFACT
+            if gate.is_symlink() or not gate.is_file():
+                raise GraduationError("B-118: local retirement gate is missing/non-regular")
         if disposition == "PARKED":
             artifact = _require_string(packet, "artifact", item)
             command = _require_string(packet, "command", item)
@@ -1128,6 +1146,7 @@ def verify_document(
         commands = (
             ("B-028", (sys.executable, "scripts/verify_b028_dependabot.py")),
             ("B-074", (sys.executable, "scripts/verify_b074_money_path_auth.py", "--self-test")),
+            ("B-118", (sys.executable, B118_ARTIFACT)),
             ("B-253", (sys.executable, "-m", "pytest", "-q", "tests/test_b253_openapi_version.py")),
         )
         for item, command in commands:
@@ -1211,6 +1230,20 @@ def self_test(root: Path = ROOT) -> None:
             "retired-means-parked",
             backlog.replace("verify-means: |\n  done — B-210", "verify-means: |\n  parked — B-210", 1),
             packets,
+        ),
+        (
+            "b118-reintroduced-parked",
+            backlog,
+            packets.replace(
+                '"B-118": {\n      "disposition": "DONE"',
+                '"B-118": {\n      "disposition": "PARKED"',
+                1,
+            ),
+        ),
+        (
+            "b118-dispatch-command",
+            backlog,
+            packets.replace(B118_COMMAND, "gh run list --workflow cosign-sign.yml", 1),
         ),
         ("fake-done", backlog.replace("id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: parked", "id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: done", 1), packets.replace('"B-044": {"disposition":"PARKED"', '"B-044": {"disposition":"DONE"', 1)),
         (
