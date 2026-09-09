@@ -112,10 +112,17 @@ class B029LoadGateTests(unittest.TestCase):
         (contract / ".github/workflows").mkdir(parents=True, exist_ok=True)
         (contract / "scripts").mkdir()
         (contract / "tests/load").mkdir(parents=True)
-        (contract / ".github/workflows/load-test-nightly.yml").write_text(workflow)
         shutil.copy(ROOT / "scripts/load-test-baseline-check.py", contract / "scripts")
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
+        self._copy_hostname_sources(contract)
+        (contract / ".github/workflows/load-test-nightly.yml").write_text(workflow)
         return verifier.assess(contract, expect="open")
+
+    def _copy_hostname_sources(self, contract: Path) -> None:
+        for relative in verifier.HOSTNAME_SOURCES:
+            destination = contract / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(ROOT / relative, destination)
 
     def _workflow_and_invocation(self) -> tuple[str, str]:
         workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
@@ -326,6 +333,28 @@ class B029LoadGateTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_mutation_of_checklist_hostname_is_rejected(self) -> None:
+        workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
+        self.assertEqual(self._assess_workflow(workflow), [])
+        contract = self.root / "workflow-contract"
+        checklist = contract / "docs/internal/secrets-checklist.md"
+        source = checklist.read_text()
+        self.assertIn(verifier.CANONICAL_STAGING_HOST, source)
+        checklist.write_text(
+            source.replace(
+                verifier.CANONICAL_STAGING_HOST,
+                verifier.STALE_STAGING_HOST,
+                1,
+            )
+        )
+        gaps = verifier.assess(contract, expect="open")
+        self.assertTrue(
+            any(
+                gap.startswith("B-029 hostname drift in docs/internal/secrets-checklist.md")
+                for gap in gaps
+            )
+        )
+
     def test_mutation_disabling_comparison_is_killed(self) -> None:
         self.write_baseline(100)
         self.write_full_matrix(cas_median=121)
@@ -389,6 +418,7 @@ class B029LoadGateTests(unittest.TestCase):
             contract / ".github/workflows/load-test-nightly.yml",
         )
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
+        self._copy_hostname_sources(contract)
         (contract / "scripts").mkdir()
 
         source = SCRIPT.read_text()
@@ -435,6 +465,7 @@ class B029LoadGateTests(unittest.TestCase):
             contract / ".github/workflows/load-test-nightly.yml",
         )
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
+        self._copy_hostname_sources(contract)
         (contract / "scripts").mkdir()
         source = SCRIPT.read_text()
 
