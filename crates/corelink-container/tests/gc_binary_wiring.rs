@@ -14,13 +14,12 @@ const DRY_RUN_WORKFLOW: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../.github/workflows/gc-sweep-dry-run.yml"
 ));
-const PRODUCTION_SWEEP_BIN: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/bin/gc_sweep.rs"
-));
+const PRODUCTION_SWEEP_BIN: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bin/gc_sweep.rs"));
 
 fn gate_4b_source(workflow: &str) -> Option<&str> {
-    let start_marker = "      - name: Gate 4b — native production GC binary is present and fail-closed";
+    let start_marker =
+        "      - name: Gate 4b — native production GC binary is present and fail-closed";
     let end_marker = "      - name: ADR-0015 reproducibility attestation (reminder)";
     let start = workflow.find(start_marker)?;
     let body_start = start + start_marker.len();
