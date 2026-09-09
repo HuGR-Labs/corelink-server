@@ -164,6 +164,15 @@ def verify_source_digests(root: Path = ROOT, overrides: dict[str, bytes] | None 
             fail(f"source digest mismatch (reviewed manifest required): {relative}")
 
 
+def verify_source_binding_manifest(
+    target_sources: dict[str, str] | None = None,
+) -> None:
+    """Require every selected source, and no unselected source, to be digest-bound."""
+    bound_sources = REQUIRED_TARGET_SOURCES if target_sources is None else target_sources
+    if set(bound_sources.values()) != set(SOURCE_SHA256):
+        fail("target/source binding is not closed over the reviewed digest manifest")
+
+
 def rust_code_without_comments_and_strings(body: str) -> str:
     """Blank Rust comments/strings (including raw strings) but keep newlines."""
     out: list[str] = []
@@ -276,6 +285,7 @@ def exact_ignored_source(body: str, target: str) -> bool:
 def assert_contract(workflow: str, runner: str) -> None:
     # Digest binding is the first source gate; parser/attribute checks are
     # defense in depth and must never silently bless a changed source file.
+    verify_source_binding_manifest()
     verify_source_digests()
     wf = code_text(workflow)
     sh = code_text(runner)
@@ -500,6 +510,16 @@ def mutation_checks(workflow: str, runner: str) -> None:
         else:
             fail(f"{label} source mutation was accepted by digest")
     declaration = re.search(rf"(?m)^(\s*)(async\s+fn\s+{re.escape(source_target)}\s*\()", source_body)
+    # A target may not be remapped to an extra source that lacks a reviewed
+    # digest. The closed-set check must catch both missing and extra entries.
+    remapped_sources = dict(REQUIRED_TARGET_SOURCES)
+    remapped_sources[REQUIRED_D1[0]] = "crates/corelink-container/src/storage/r2_s3_parts/tests_1.rs"
+    try:
+        verify_source_binding_manifest(remapped_sources)
+    except AssertionError:
+        pass
+    else:
+        fail("target remapped to a source without a digest was accepted")
     if declaration is None:
         fail("source mutation setup could not find declaration")
     declaration_line_start = source_body.rfind("\n", 0, declaration.start()) + 1
