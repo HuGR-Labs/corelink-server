@@ -3,7 +3,9 @@
 > Status: **dispatch-only until staging is provisioned**; operator-only and requires a real staging target. **DO NOT** run any of these scripts against the
 > production environment from CI or any unattended automation. The
 > kill-switch stampede + signup burst scenarios both mutate D1 state and
-> can burn out free-tier D1 quotas if cleanup is skipped.
+> can burn out free-tier D1 quotas if cleanup is skipped. There is **no
+> automatic cleanup job** in the dispatch workflow; an owner-approved operator
+> must scope and verify cleanup on the staging tenant after each run.
 
 This directory contains five k6 scripts that exercise the critical paths
 mapped in R-3 (E2E + integration). They are designed to run dia-1 do staging
@@ -88,11 +90,14 @@ reporter step runs offline on the operator workstation when needed.
 Each scenario creates synthetic state:
 
 - **signup-orchestration**: creates ~15 000 staging tenants over a 6-min
-  run. Cleanup script: `scripts/load-test-cleanup.sh signup` (TODO — for
-  R3, coordinate with the staging D1 purge process).
+  run. No cleanup script exists today. Do not run this scenario until the
+  owner has approved a bounded staging-only cleanup procedure; the operator
+  is responsible for removing only the synthetic load-test rows and recording
+  the resulting count.
 - **stripe-webhook-burst**: writes ≤ 10 rows in
   `stripe_webhook_events_processed` (only the 10 canonical event_ids).
-  Cleanup: `DELETE FROM stripe_webhook_events_processed WHERE event_id LIKE 'evt_load_%'`.
+  No automatic cleanup exists. An owner-approved operator may remove only the
+  synthetic `evt_load_%` rows after verifying the target is the staging D1.
 - **dsr-api**: enqueues ~12 000 DSR jobs that drain to /dev/null on staging
   (the DSR worker is wired to a no-op exporter on the load-test tenant).
 - **cas-write-read**: writes ~60 000 1 MiB blobs (~60 GiB). Run on the
@@ -101,8 +106,11 @@ Each scenario creates synthetic state:
 - **byok-revoke-stampede**: re-warm the CMK + DEK cache via
   `scripts/byok-load-warmup.sh --cmk-id $K6_BYOK_TEST_CMK_ID --entries 10000`.
 
-Failure to clean up will burn staging D1 quota. The dispatch workflow runs a
-cleanup job after every scenario.
+There is no automatic cleanup job. Before dispatch, the owner/operator must
+confirm the staging tenant, synthetic identifiers, R2 lifecycle behavior, and
+the bounded cleanup steps above; after dispatch they must verify cleanup (or
+record the approved retention window) before another run. Never broaden a
+cleanup query to production or to rows outside the synthetic load-test scope.
 
 ## Target environment safety rails
 
