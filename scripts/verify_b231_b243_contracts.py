@@ -27,8 +27,23 @@ def require(text: str, needle: str, label: str) -> None:
         raise AssertionError(f"{label}: missing {needle!r}")
 
 
-def require_active(text: str, needle: str, label: str) -> None:
-    """Require a marker in code, excluding Rust/TypeScript lexical literals."""
+def require_active(text: str, needle: str, label: str, language: str | None = None) -> None:
+    """Require a marker in code, excluding language-specific literals."""
+
+    if language is None:
+        # Keep the three-argument helper compatible for focused callers while
+        # making source owners explicit below. Rust syntax is distinctive
+        # enough to identify the old direct Rust fixtures safely.
+        language = (
+            "rust"
+            if re.search(
+                r"\b(?:fn|impl|trait|struct|enum|pub|use|where)\b|&'[A-Za-z_]|(?:^|[;{}])\s*'[A-Za-z_]\w*\s*:|\b(?:break|continue)\s+'",
+                text,
+            )
+            else "typescript"
+        )
+    if language not in ("rust", "typescript"):
+        raise ValueError(f"unsupported lexical language: {language!r}")
 
     def raw_string_end(offset: int) -> int | None:
         """Return the end of a Rust raw/byte-raw string beginning at offset."""
@@ -115,7 +130,22 @@ def require_active(text: str, needle: str, label: str) -> None:
         word_start = word_end
         while word_start > 0 and (text[word_start - 1].isalnum() or text[word_start - 1] == "_"):
             word_start -= 1
-        return text[word_start:word_end] in ("for", "where")
+        if text[word_start:word_end] in ("for", "where", "break", "continue"):
+            return True
+        # Rust labels are declarations at statement/block boundaries, e.g.
+        # `'outer: loop`. The same spelling can occur in a TypeScript string
+        # after `:`, so this branch is reachable only in Rust mode.
+        next_token = identifier_end(offset + 1)
+        while next_token < len(text) and text[next_token].isspace():
+            next_token += 1
+        if next_token < len(text) and text[next_token] == ":":
+            line_start = text.rfind("\n", 0, offset) + 1
+            at_statement_boundary = not text[line_start:offset].strip() or (
+                previous >= 0 and text[previous] in "{};"
+            )
+            if at_statement_boundary:
+                return True
+        return False
 
     i = 0
     block_comment_depth = 0
@@ -142,7 +172,7 @@ def require_active(text: str, needle: str, label: str) -> None:
         if raw_end is not None:
             i = raw_end
             continue
-        if text[i] == "'" and is_lifetime(i):
+        if language == "rust" and text[i] == "'" and is_lifetime(i):
             i = identifier_end(i + 1)
             continue
         if text[i] in ('"', "'", "`"):
@@ -165,18 +195,23 @@ def lexical_regressions() -> None:
         "fn f<'a>(x: &'a str) where 'a: 'static { let c='\\n'; if TARGET_GUARD() {} }",
         "// TARGET_GUARD()\nfn f<'a>(x: &'a str) { let c='x'; if TARGET_GUARD() {} }",
         'const bait = "TARGET_GUARD()"; /* TARGET_GUARD() */\nif (TARGET_GUARD()) {}',
+        "'outer: loop { if TARGET_GUARD() {} }",
+        "const typed: 'TARGET_GUARD()' = null as any; if (TARGET_GUARD()) {}",
     )
     for case in active_cases:
-        require_active(case, marker, "lexical regression")
+        language = "typescript" if case.startswith("const ") else "rust"
+        require_active(case, marker, "lexical regression", language)
 
     bait_only_cases = (
         "fn f<'a>(x: &'a str) { let c='x'; } // TARGET_GUARD()",
         'const bait = "TARGET_GUARD()"; /* TARGET_GUARD() */',
         "fn f<'a>(x: &'a str) { let c='\\''; let s='TARGET_GUARD()'; }",
+        "const typed: 'TARGET_GUARD()' = null as any;",
     )
     for case in bait_only_cases:
+        language = "typescript" if case.startswith("const ") else "rust"
         try:
-            require_active(case, marker, "lexical bait regression")
+            require_active(case, marker, "lexical bait regression", language)
         except AssertionError:
             continue
         raise AssertionError("lexical bait regression: marker in a literal/comment was accepted")
@@ -226,7 +261,7 @@ def _verify_impl() -> int:
     require(request, "pub accounting_tenant: String", "B232")
     require(request, "pub fn for_public_namespace", "B232")
     require(request, "pub fn is_authorized_for_caller", "B232")
-    require_active(handler, "if !req.is_authorized_for_caller()", "B232")
+    require_active(handler, "if !req.is_authorized_for_caller()", "B232", "rust")
     r2 = read("crates/corelink-container/src/storage/r2_s3.rs")
     # The split R2 facade keeps read/exists helpers in cas_ops.rs, while the
     # write authorization owner lives in cas_write.rs.  Keep this source gate
@@ -237,7 +272,7 @@ def _verify_impl() -> int:
     require(r2, 'include!("r2_s3_parts/cas_ops.rs")', "B232")
     # The R2 facade is split into include fragments. Authorization lives in
     # the CasWriteHandler implementation, not in the facade itself.
-    require_active(r2_cas_write, "if !req.is_authorized_for_caller()", "B232")
+    require_active(r2_cas_write, "if !req.is_authorized_for_caller()", "B232", "rust")
     require(r2, 'include!("r2_s3_parts/tests_1.rs")', "B232")
     require(r2_tests_1, "r2_public_requests_share_physical_key_but_keep_accounting_tenant", "B232")
     put_body = cache[cache.index("pub async fn put_for_tenant"):]
@@ -249,7 +284,7 @@ def _verify_impl() -> int:
     require(accounting_impl, "let storage_namespace = req.tenant.clone()", "B232")
     require(accounting_impl, "let accounting_tenant = req.accounting_tenant.clone()", "B232")
     require(accounting_impl, "let quota_seed = req.storage_quota_bytes", "B232")
-    require_active(accounting_impl, "if !req.is_authorized_for_caller()", "B232")
+    require_active(accounting_impl, "if !req.is_authorized_for_caller()", "B232", "rust")
     if "unowned_shared_namespace" in accounting_impl or "quota_seed = if" in accounting_impl:
         raise AssertionError("B232: shared physical namespace bypasses authenticated quota")
     require(
@@ -325,7 +360,7 @@ def _verify_impl() -> int:
     # deletion is intentionally owned by the split finish-stage module.
     require(worker_index, 'from "./index_fetch.js"', "B237")
     require(worker_fetch, 'from "./index_finish_stage.js"', "B237")
-    require_active(worker_finish, "finalHeaders.delete(\"x-corelink-pat-cache-invalidate\")", "B237")
+    require_active(worker_finish, "finalHeaders.delete(\"x-corelink-pat-cache-invalidate\")", "B237", "typescript")
 
     region = read("crates/corelink-region/src/region.rs")
     require(region, "Region::Apac", "B238")
@@ -366,7 +401,7 @@ def _verify_impl() -> int:
     introspect = read("crates/corelink-container/src/routes/auth_introspect.rs")
     introspect_part_01 = read("crates/corelink-container/src/routes/auth_introspect/part-01.rs")
     require(introspect, 'include!("auth_introspect/part-01.rs")', "B241")
-    require_active(introspect_part_01, "len() > 128", "B241")
+    require_active(introspect_part_01, "len() > 128", "B241", "rust")
     if "with_auth_key(Arc::from(hugr_key" in introspect:
         raise AssertionError("B241: secondary fabric key still authorizes resolver")
     signup_secrets = read("scripts/verify-signup-worker-secrets.sh")
@@ -401,11 +436,13 @@ def _verify_impl() -> int:
         read("crates/corelink-container/src/main.rs"),
         "if email_hash_salt_missing_in_prod(prod_by_independent_signal, email_hash_salt_present)",
         "B242",
+        "rust",
     )
     require_active(
         signup_clerk,
         'if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim())',
         "B242",
+        "typescript",
     )
     # The Worker source is split: index_special_routes.ts is only a dispatcher;
     # the customer fragment owns the executable invitation acceptance guard.
@@ -413,6 +450,7 @@ def _verify_impl() -> int:
         worker_special_customer,
         'if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim())',
         "B242",
+        "typescript",
     )
 
     githugr = read("worker/src/lib/githugr_provision.ts")
@@ -528,6 +566,33 @@ def mutation_checks() -> int:
                 rejected += 1
             else:
                 raise AssertionError(f"{bait_label} bait mutation was accepted for B242 owner {rel}")
+
+    # A TypeScript string-literal type follows `:` and is therefore a distinct
+    # boundary from the Rust lifetime syntax. Keep an exact mutation for both
+    # executable TS owners so a future scanner cannot treat this bait as code.
+    ts_type_baits = (
+        (
+            "worker/src/index_special_customer.ts",
+            'if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim())',
+        ),
+        (
+            "apps/signup-worker/src/webhooks/clerk.ts",
+            'if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim())',
+        ),
+    )
+    for rel, salt_guard in ts_type_baits:
+        mutant = dict(files)
+        mutant[rel] = mutant[rel].replace(
+            salt_guard,
+            "const _B242_TYPED_BAIT: '" + salt_guard + "' = null as any;",
+            1,
+        )
+        try:
+            verify(mutant)
+        except AssertionError:
+            rejected += 1
+        else:
+            raise AssertionError(f"typescript type bait mutation was accepted for B242 owner {rel}")
 
     # Rust has literal forms that contain quotes/comments verbatim. Exercise
     # arbitrary raw-string hash counts, a byte raw string, and nested block
