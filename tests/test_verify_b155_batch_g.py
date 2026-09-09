@@ -165,6 +165,54 @@ class B110WorkflowVerifierTests(unittest.TestCase):
                     with self.assertRaises(verifier.CheckError):
                         verifier.verify_b110()
 
+    def test_yaml_backslash_newline_encoded_or_variants_are_red(self) -> None:
+        target = ".github/workflows/semgrep.yml"
+        old = "if: github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected"
+        head = (
+            'if: "github.repository == \'HuGR-Labs/corelink-server\' && '
+            "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && "
+            "github.ref_protected "
+        )
+        tail = " github.event_name == 'workflow_dispatch'\""
+        variants = (
+            ("lf", "\\x7c", "\\x7c", "\n", "      "),
+            ("crlf", "\\x7c", "\\x7c", "\r\n", "      "),
+            ("multiple", "\\x7c", "\\x7c", "\n", "            "),
+            ("indent", "\\x7c", "\\x7c", "\n", "                  "),
+            ("unicode", "\\u007c", "\\u007c", "\n", "      "),
+        )
+        for name, first_pipe, second_pipe, newline, indentation in variants:
+            with self.subTest(name=name):
+                # YAML resolves `\\x7c\\` + physical newline + `\\x7c` (and
+                # the corresponding Unicode form) to the forbidden `||`.
+                continuation = (
+                    head
+                    + first_pipe
+                    + "\\"
+                    + newline
+                    + indentation
+                    + second_pipe
+                    + tail
+                )
+                if name == "multiple":
+                    continuation = (
+                        head
+                        + first_pipe
+                        + "\\"
+                        + newline
+                        + indentation
+                        + second_pipe
+                        + "\\"
+                        + newline
+                        + indentation
+                        + second_pipe
+                        + tail
+                    )
+                mutation = self._mutated_text(target, old, continuation)
+                with mutation:
+                    with self.assertRaises(verifier.CheckError):
+                        verifier.verify_b110()
+
     def test_yaml_tag_and_anchor_encoded_or_variants_are_red(self) -> None:
         target = ".github/workflows/semgrep.yml"
         old = "if: github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected"

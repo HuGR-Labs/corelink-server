@@ -575,10 +575,19 @@ def workflow_job_if_expressions(block: list[str]) -> list[str]:
         if not re.match(r"^    if:\s*", line):
             continue
         parts = [line.split(":", 1)[1].strip()]
+        # YAML double-quoted scalars use a backslash immediately before a
+        # physical newline as a folding escape.  The local line collector
+        # cannot reproduce YAML's no-space join exactly; accepting it would
+        # permit two separately written escape fragments to resolve into `||`.
+        # Reject the construct before any hand-decoding instead.
+        if parts[0].endswith("\\"):
+            raise CheckError("backslash-newline YAML folding is not allowed in job if")
         for continuation in lines[index + 1 :]:
             if not continuation.strip() or _indent(continuation) <= 4:
                 break
             parts.append(continuation.strip())
+            if parts[-1].endswith("\\"):
+                raise CheckError("backslash-newline YAML folding is not allowed in job if")
         expressions.append(_semantic_if_expression(" ".join(part for part in parts if part), "job if"))
     return expressions
 
