@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0",
+  "captured_at": "2026-09-09T06:10:15Z",
+  "decision": "unresolved",
+  "production_bindings": [
+    {
+      "env": "prod",
+      "binding": "CONFIG_DB",
+      "database_name": "corelink-config-prod",
+      "database_id": "d64742ea-e102-40b2-a844-ff02e3f94562",
+      "residency_claim": "single global D1; wrangler binding has no jurisdiction key; Cloudflare API reports jurisdiction null and running_in_region ENAM"
+    },
+    {
+      "env": "prod-sam",
+      "binding": "CONFIG_DB",
+      "database_name": "corelink-config-prod",
+      "database_id": "d64742ea-e102-40b2-a844-ff02e3f94562",
+      "residency_claim": "single global D1; wrangler binding has no jurisdiction key; Cloudflare API reports jurisdiction null and running_in_region ENAM"
+    },
+    {
+      "env": "prod-lhr",
+      "binding": "CONFIG_DB",
+      "database_name": "corelink-config-prod",
+      "database_id": "d64742ea-e102-40b2-a844-ff02e3f94562",
+      "residency_claim": "single global D1; wrangler binding has no jurisdiction key; Cloudflare API reports jurisdiction null and running_in_region ENAM"
+    },
+    {
+      "env": "prod-nrt",
+      "binding": "CONFIG_DB",
+      "database_name": "corelink-config-prod",
+      "database_id": "d64742ea-e102-40b2-a844-ff02e3f94562",
+      "residency_claim": "single global D1; wrangler binding has no jurisdiction key; Cloudflare API reports jurisdiction null and running_in_region ENAM"
+    },
+    {
+      "env": "prod-syd",
+      "binding": "CONFIG_DB",
+      "database_name": "corelink-config-prod",
+      "database_id": "d64742ea-e102-40b2-a844-ff02e3f94562",
+      "residency_claim": "single global D1; wrangler binding has no jurisdiction key; Cloudflare API reports jurisdiction null and running_in_region ENAM"
+    }
+  ],
+  "distinct_database_ids": 1,
+  "dpa_status": "PENDING_LEGAL_REVIEW; active Cloudflare sub-processor row says Tenant-pinned (Section 7)",
+  "related_legal_surfaces": [
+    {
+      "path": "legal/sub-processors.md",
+      "observed_claim": "D1 control-plane metadata global under SCC/TIA safeguards",
+      "sha256": "a3c5f278d8678b7a4aaa9bfad893760b2ec998374c5ce328458f0af34225e491"
+    },
+    {
+      "path": "legal/dpa/SUB-PROCESSOR-COMMITMENTS.md",
+      "observed_claim": "Cloudflare service multi-region and tenant-pinned without a D1-specific qualification",
+      "sha256": "c0c7f3ddd648bf823c66fdf83bbada0f88e5072bb71c37c4b2c33497c8be7350"
+    },
+    {
+      "path": "legal/tia-template.md",
+      "observed_claim": "Cloudflare R2/D1/DO/KV/Workers data flow described as stored in tenant-pinned region per DPA Section 7",
+      "sha256": "f4966b0697fb63bc80cb79314da2f5a60f26a6507b3cdb2aff0552c3d27cb733"
+    }
+  ],
+  "effective_at": null,
+  "signed_document_sha256_or_provider_case": null,
+  "reviewer": "read-only executor; not owner or legal counsel",
+  "unresolved_reason": "Owner/counsel must choose between provisioning a jurisdictional D1 and executing a legal amendment disclosing the global D1. The repository and provider facts do not make that legal/cost decision.",
+  "cloudflare_observations": {
+    "account_id": "6a1fc1c626fc2628823e60b9db01f5cd",
+    "database_name": "corelink-prod-d1",
+    "database_id": "d64742ea-e102-40b2-a844-ff02e3f94562",
+    "running_in_region": "ENAM",
+    "jurisdiction": null,
+    "num_tables": 110,
+    "database_size": "242 MB",
+    "read_queries_24h": 241,
+    "write_queries_24h": 0,
+    "read_replication_mode": "auto",
+    "tenant_primary_region_counts": {
+      "apac": 1,
+      "enam": 155,
+      "wnam": 108
+    },
+    "read_only_request": {
+      "changed_db": false,
+      "rows_written": 0
+    }
+  },
+  "capability_observation": {
+    "wrangler_version": "4.111.0",
+    "create_supports_jurisdiction": ["eu", "fedramp"],
+    "create_supports_location_hint": ["weur", "eeur", "apac", "oc", "wnam", "enam"],
+    "create_dry_run": false,
+    "create_executed": false
+  },
+  "verification": {
+    "b086_self_test": "pass",
+    "owner_action_packet": "pass (29 items)",
+    "status": "open"
+  },
+  "source_sha256": {
+    "wrangler.toml": "a7230342badb5dfedabc8bce6911a7c6926caa2730c27f4316f740a172f75ec2",
+    "legal/dpa-residency-amendment.md": "380667ad98b644fe9ed1e2057353c3ba11f687f9420ab9cdc496e705a83965fb",
+    "scripts/verify_b086_d1_residency.py": "6b364b3453b3dd7efc2382929ee2b56f06470ae0f48353389954082fdf10a9c1",
+    "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json": "c4d47f039beef033564029ee32a785cddae73c3700b86ead6e7c1452fc0d0f8e"
+  },
+  "commands": [
+    "CI=1 pnpm exec wrangler whoami",
+    "CI=1 pnpm exec wrangler d1 list",
+    "CI=1 pnpm exec wrangler d1 info corelink-prod-d1",
+    "CI=1 pnpm exec wrangler d1 execute corelink-prod-d1 --remote --command \"PRAGMA table_info(tenant)\" --json",
+    "CI=1 pnpm exec wrangler d1 execute corelink-prod-d1 --remote --command \"SELECT primary_region, COUNT(*) AS tenant_count FROM tenant GROUP BY primary_region ORDER BY primary_region\" --json",
+    "python3 -S scripts/verify_b086_d1_residency.py --self-test",
+    "python3 -S scripts/verify_owner_action_packets.py --id B-086"
+  ],
+  "mutations_performed": []
+}
