@@ -105,6 +105,16 @@ class B165VerifierTests(unittest.TestCase):
                 server_timing_path=self.write(timing),
             )
 
+    def test_server_timing_rejects_nan(self):
+        timing = _timing_rows().replace("\t8.000\t2.000", "\t8.000\tnan", 1)
+        with self.assertRaisesRegex(verifier.EvidenceError, "non-finite"):
+            verifier.verify(
+                self.write(_rows(served=True)), 3, require_served=True,
+                tenant_a="tenant-a", tenant_b="tenant-b",
+                pat_fingerprint_a=self.PAT_A, pat_fingerprint_b=self.PAT_B,
+                server_timing_path=self.write(timing),
+            )
+
     def test_require_served_rejects_missing_tenant_bindings(self):
         with self.assertRaises(verifier.EvidenceError):
             verifier.verify(self.write(_rows(served=True)), 3, require_served=True)
@@ -270,6 +280,46 @@ class B165VerifierTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(verifier.EvidenceError, "404"):
+                verifier.verify_padding_policy(root)
+
+    def test_padding_policy_rejects_commented_out_404_call(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            for relative in (
+                "worker/src/index_auth_stage.ts", "worker/src/index_finish_stage.ts",
+                "worker/src/index_special_misc.ts",
+            ):
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = pathlib.Path(__file__).resolve().parent.parent / relative
+                target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            finish = root / "worker/src/index_finish_stage.ts"
+            finish.write_text(
+                finish.read_text(encoding="utf-8").replace(
+                    "      await applyTimingPad(", "      // await applyTimingPad("
+                ), encoding="utf-8",
+            )
+            with self.assertRaisesRegex(verifier.EvidenceError, "404"):
+                verifier.verify_padding_policy(root)
+
+    def test_padding_policy_rejects_aliased_auth_padding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            for relative in (
+                "worker/src/index_auth_stage.ts", "worker/src/index_finish_stage.ts",
+                "worker/src/index_special_misc.ts",
+            ):
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = pathlib.Path(__file__).resolve().parent.parent / relative
+                target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            auth = root / "worker/src/index_auth_stage.ts"
+            auth.write_text(
+                auth.read_text(encoding="utf-8")
+                + '\nimport { applyTimingPad as p } from "./index_auth_timing.js";\np();\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(verifier.EvidenceError, "401 authentication stage"):
                 verifier.verify_padding_policy(root)
 
 

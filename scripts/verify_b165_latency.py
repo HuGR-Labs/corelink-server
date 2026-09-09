@@ -32,7 +32,7 @@ REFUSAL = {
 CONTROL = {"health": ("/health", "200")}
 SERVING = {"served_a", "served_b"}
 PAT_FINGERPRINT = re.compile(r"^sha256:[0-9a-f]{64}$")
-PADDING_DECISION = "retain_padding_for_authenticated_404_misses_only;_never_pad_401"
+PADDING_DECISION = "retain_padding_for_404_misses_including_unmatched_routes;_never_pad_401"
 
 
 class EvidenceError(ValueError):
@@ -47,9 +47,49 @@ def verify_padding_policy(repo_root: Path) -> dict[str, Any]:
     becoming a deliberate CPU/latency amplification primitive, while the two
     supported 404 paths retain the cross-tenant enumeration defence.
     """
-    auth = (repo_root / "worker/src/index_auth_stage.ts").read_text(encoding="utf-8")
-    finish = (repo_root / "worker/src/index_finish_stage.ts").read_text(encoding="utf-8")
-    misc = (repo_root / "worker/src/index_special_misc.ts").read_text(encoding="utf-8")
+    def strip_ts_comments(source: str) -> str:
+        output: list[str] = []
+        index = 0
+        quote: str | None = None
+        while index < len(source):
+            char = source[index]
+            following = source[index + 1] if index + 1 < len(source) else ""
+            if quote is not None:
+                output.append(char)
+                if char == "\\" and following:
+                    output.append(following)
+                    index += 2
+                    continue
+                if char == quote:
+                    quote = None
+                index += 1
+                continue
+            if char in {'"', "'", "`"}:
+                quote = char
+                output.append(char)
+                index += 1
+                continue
+            if char == "/" and following == "/":
+                newline = source.find("\n", index + 2)
+                if newline < 0:
+                    break
+                output.append("\n")
+                index = newline + 1
+                continue
+            if char == "/" and following == "*":
+                closing = source.find("*/", index + 2)
+                if closing < 0:
+                    raise EvidenceError("unterminated TypeScript block comment")
+                output.append("\n" * source[index:closing + 2].count("\n"))
+                index = closing + 2
+                continue
+            output.append(char)
+            index += 1
+        return "".join(output)
+
+    auth = strip_ts_comments((repo_root / "worker/src/index_auth_stage.ts").read_text(encoding="utf-8"))
+    finish = strip_ts_comments((repo_root / "worker/src/index_finish_stage.ts").read_text(encoding="utf-8"))
+    misc = strip_ts_comments((repo_root / "worker/src/index_special_misc.ts").read_text(encoding="utf-8"))
     def guarded_block(source: str, guard: str) -> str:
         start = source.find(guard)
         if start < 0:
@@ -69,7 +109,7 @@ def verify_padding_policy(repo_root: Path) -> dict[str, Any]:
 
     if 'reapiError("UNAUTHORIZED", "authentication required", 401' not in auth:
         raise EvidenceError("401 authentication rejection anchor is missing")
-    if "applyTimingPad" in auth:
+    if any(marker in auth for marker in ("applyTimingPad", "index_auth_timing", "setTimeout(", "sleep(", "delay(")):
         raise EvidenceError("401 authentication stage must not invoke timing padding")
     forwarded_404 = guarded_block(finish, "if (doResponse.status === 404)")
     unmatched_404 = guarded_block(misc, 'if (route.routeKind === "not_found")')
@@ -183,6 +223,8 @@ def _load_server_timing(path: Path, populations: dict[str, list[dict[str, Any]]]
             transport_value = float(transport_ms)
         except ValueError as exc:
             raise EvidenceError(f"server-timing line {line_number} has malformed numeric evidence") from exc
+        if not all(math.isfinite(value) for value in (curl_value, server_value, transport_value)):
+            raise EvidenceError(f"server-timing line {line_number} has non-finite numeric evidence")
         matching = [row for row in populations.get(surface, []) if row["sample"] == sample_number]
         if len(matching) != 1 or matching[0]["path"] != request_path:
             raise EvidenceError(f"server-timing line {line_number} has no matching served sample")

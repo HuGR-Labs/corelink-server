@@ -16887,7 +16887,8 @@ diagnóstica não é apresentada como o SLI p99 de 30 dias.
 
 **Decisão fechada em 2026-09-09:** 401 não recebe padding. A recusa acontece antes do lookup
 de tenant/objeto e não revela existência; atrasá-la criaria apenas amplificação DoS não
-autenticada. O padding de ADR-0023 continua restrito ao 404 autenticado. A medição também
+autenticada. O padding de ADR-0023 continua restrito a respostas 404 de miss — incluindo a
+rota não reconhecida pré-auth e o 404 autenticado vindo do DO. A medição também
 separa agora o relógio do serviço (`Server-Timing total`) do transporte cliente↔colo; o alvo
 15–30 ms anterior não pode ser comparado ao RTT bruto de um Mac remoto.
 

@@ -13,8 +13,10 @@
     "sha256": "820754b2b16d1f5532c9d71829d463819b84848f407f00250b6f1bafef43637e",
     "samples_per_route": 10,
     "discarded_first": true,
-    "complete": false,
-    "failure": "The OCI /v2 population returned HTTP 503 for every sample instead of the required authentication rejection HTTP 401."
+    "complete": true,
+    "recovery_artifact": "evidence/owner-actions/B-165/oci-recovery-raw-2026-09-09.tsv",
+    "recovery_sha256": "d8d2f5cb4c5a8f7235ec5f0e667645b5f93acab8e63c2617c6c9e2b478eddc85",
+    "historical_initial_failure": "The initial OCI /v2 population returned HTTP 503 for every sample; its preserved rows are superseded for the complete population by the bounded 10/10 HTTP 401 recovery artifact."
   },
   "served_samples": {
     "artifact": "evidence/owner-actions/B-165/served-raw-2026-09-09.tsv",
@@ -180,8 +182,8 @@
     "conclusion": "The bounded OCI rerun returned the required authentication rejection for all ten requests after the roll-forward. The prior 503 runtime failure is recovered; this receipt does not supply either authenticated served population."
   },
   "padding_decision": {
-    "decision": "retain_padding_for_authenticated_404_misses_only;_never_pad_401",
-    "rationale": "An unauthenticated 401 occurs before tenant/object lookup and cannot reveal object existence. Padding it has no isolation benefit and would create an unauthenticated latency/DoS amplifier. ADR-0023 remains authoritative for authenticated 404 miss-classification only; 200, 401, 403, 413 and 503 are outside that padding boundary.",
+    "decision": "retain_padding_for_404_misses_including_unmatched_routes;_never_pad_401",
+    "rationale": "An unauthenticated 401 occurs before tenant/object lookup and cannot reveal object existence. Padding it has no isolation benefit and would create an unauthenticated latency/DoS amplifier. ADR-0023 remains authoritative for 404 misses: both the unmatched-route pre-auth branch and authenticated DO 404s are padded; 200, 401, 403, 413 and 503 are outside that padding boundary.",
     "code_evidence": [
       "worker/src/index_auth_stage.ts",
       "worker/src/index_finish_stage.ts",

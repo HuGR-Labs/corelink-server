@@ -94,7 +94,7 @@ request() {
           }
         }
       }')"
-    if [[ -n "$server_total_ms" ]]; then
+    if [[ "$population" == served && -n "$server_total_ms" ]]; then
       transport_ms="$(/usr/bin/awk -v curl_s="$seconds" -v server_ms="$server_total_ms" \
         'BEGIN { printf "%.3f", curl_s * 1000 - server_ms }')"
       printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
@@ -235,8 +235,15 @@ for sample in "${sample_numbers[@]}"; do request served served_a "$served_a" "$s
 for sample in "${sample_numbers[@]}"; do request served served_b "$served_b" "$sample" "$token_b"; done
 stats served served_a 200 || probe_failure=1
 stats served served_b 200 || probe_failure=1
+for surface in served_a served_b; do
+  timing_count="$(/usr/bin/awk -F '\t' -v surf="$surface" '$1 == surf { count++ } END { print count + 0 }' "$timing_raw")"
+  if (( timing_count != B165_SAMPLES )); then
+    echo "BLOCKED: $surface retained $timing_count of $B165_SAMPLES required Server-Timing totals." >&2
+    probe_failure=1
+  fi
+done
 if (( probe_failure )); then
-  echo "BLOCKED: served path did not return HTTP 200 for every retained sample." >&2
+  echo "BLOCKED: served path status or Server-Timing population is incomplete." >&2
   exit 3
 fi
 echo "PASS: both refusal and served populations were measured with the required controls."

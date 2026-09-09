@@ -1,8 +1,8 @@
 name: B-165 latency evidence monitor
 
-# The scheduled run keeps the unauthenticated refusal population fresh while
-# the customer-PAT prerequisite for the served population remains unresolved.
-# A refusal-only run is intentionally partial/open and never reports closure.
+# The scheduled run keeps the unauthenticated refusal population fresh. The
+# manually dispatched served mode revalidates the already-completed two-tenant
+# receipt; a refusal-only run remains intentionally partial and never closes it.
 on:
   schedule:
     - cron: '17 */6 * * *'
@@ -146,6 +146,7 @@ jobs:
             > "$RUNNER_TEMP/b165-served-verdict.json"
 
       - name: Upload sanitized served evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: b165-served-${{ github.run_id }}

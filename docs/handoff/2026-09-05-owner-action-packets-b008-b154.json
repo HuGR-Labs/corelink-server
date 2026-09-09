@@ -687,7 +687,7 @@
       "procedure": [
         "RUN: From the owner-approved probe origin, send ten unauthenticated requests each to /v1/cas/x/y, /npm/x, /pip/simple/x, and /v2/x/manifests/latest; discard the first sample and calculate median and p90 by route.",
         "RUN: With two distinct customer PATs supplied through protected local files, repeat the served-path requests against one known object per tenant and record status, Server-Timing, median, and p90 separately from rejection samples.",
-        "RUN: Record the ratified boundary: keep ADR-0023 padding on authenticated 404 misses only; never pad pre-lookup 401 rejection, which cannot reveal object existence and would create an unauthenticated amplification primitive."
+        "RUN: Record the ratified boundary: keep ADR-0023 padding on 404 misses, including the unmatched-route pre-auth branch and authenticated DO 404s; never pad the distinct 401 rejection, which cannot reveal object existence and would create an unauthenticated amplification primitive."
       ],
       "inputs_and_credentials_boundary": {
         "inputs": ["production API hostname", "four rejection routes", "two known served test objects in distinct tenants", "two distinct customer PATs", "ten samples per route"],
