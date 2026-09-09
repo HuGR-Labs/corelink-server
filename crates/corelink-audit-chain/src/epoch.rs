@@ -12,10 +12,10 @@
 //! from a write-only deployment secret/keyring.
 
 use core::fmt;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use blake3::Hasher;
-use serde::de::{self, Visitor};
+use serde::de::{self, MapAccess, Visitor};
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -147,6 +147,46 @@ impl<'de> Deserialize<'de> for RawLinkKey {
     }
 }
 
+/// JSON object visitor that rejects duplicate member names after JSON escape
+/// decoding, before a map can silently overwrite the first value. This keeps
+/// `{"7": ..., "\\u0037": ...}` from becoming an ambiguous keyring.
+struct RawLinkKeyMap(BTreeMap<String, RawLinkKey>);
+
+impl<'de> Deserialize<'de> for RawLinkKeyMap {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct RawLinkKeyMapVisitor;
+
+        impl<'de> Visitor<'de> for RawLinkKeyMapVisitor {
+            type Value = RawLinkKeyMap;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a JSON object with unique link-key ids")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut seen = BTreeSet::new();
+                let mut entries = BTreeMap::new();
+                while let Some(id_text) = map.next_key::<String>()? {
+                    if !seen.insert(id_text.clone()) {
+                        return Err(de::Error::custom("duplicate link-key id"));
+                    }
+                    let raw_key = map.next_value::<RawLinkKey>()?;
+                    entries.insert(id_text, raw_key);
+                }
+                Ok(RawLinkKeyMap(entries))
+            }
+        }
+
+        deserializer.deserialize_map(RawLinkKeyMapVisitor)
+    }
+}
+
 /// Fail-closed errors for the JSON keyring boundary.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum LinkKeyringError {
@@ -169,13 +209,13 @@ impl LinkKeyring {
     /// entry rejects the whole keyring; a partial map must never fall back to
     /// the legacy unkeyed epoch.
     pub fn parse_json(raw: &str) -> Result<Self, LinkKeyringError> {
-        let entries = serde_json::from_str::<BTreeMap<String, RawLinkKey>>(raw)
+        let entries = serde_json::from_str::<RawLinkKeyMap>(raw)
             .map_err(|_| LinkKeyringError::InvalidShape)?;
-        if entries.is_empty() {
+        if entries.0.is_empty() {
             return Err(LinkKeyringError::Empty);
         }
         let mut keyring = Self::default();
-        for (id_text, raw_key) in entries {
+        for (id_text, raw_key) in entries.0 {
             let hex_key = raw_key.0;
             let id = id_text
                 .parse::<u64>()
@@ -634,6 +674,23 @@ mod tests {
                 r#"{"7":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#
             ),
             Err(LinkKeyringError::InvalidKey(_))
+        ));
+    }
+
+    #[test]
+    fn keyring_rejects_duplicate_and_escaped_equivalent_members() {
+        let key_a = "ab".repeat(32);
+        let key_b = "cd".repeat(32);
+        let duplicate = format!(r#"{{"7":"{key_a}","7":"{key_b}"}}"#);
+        assert!(matches!(
+            LinkKeyring::parse_json(&duplicate),
+            Err(LinkKeyringError::InvalidShape)
+        ));
+
+        let escaped_equivalent = format!(r#"{{"7":"{key_a}","\u0037":"{key_b}"}}"#);
+        assert!(matches!(
+            LinkKeyring::parse_json(&escaped_equivalent),
+            Err(LinkKeyringError::InvalidShape)
         ));
     }
 }
