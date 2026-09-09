@@ -192,9 +192,37 @@ def exact_ignored_source(body: str, target: str) -> bool:
     declarations = list(re.finditer(pattern, code))
     if len(declarations) != 1:
         return False
-    line_start = code.rfind("\n", 0, declarations[0].start()) + 1
+    declaration = declarations[0]
+
+    # A macro_rules! body is not an executable test declaration: Cargo can
+    # compile it successfully while never expanding/invoking it.
+    for macro in re.finditer(r"macro_rules!\s*[A-Za-z_][A-Za-z0-9_]*\s*\{", code):
+        depth = 1
+        cursor = macro.end()
+        while cursor < len(code) and depth:
+            if code[cursor] == "{":
+                depth += 1
+            elif code[cursor] == "}":
+                depth -= 1
+            cursor += 1
+        if macro.end() <= declaration.start() < cursor:
+            return False
+
+    line_start = code.rfind("\n", 0, declaration.start()) + 1
     prior = code[:line_start].splitlines()
-    return bool(prior and re.fullmatch(r"\s*#\[ignore(?:\s*=\s*[^]]+)?\]\s*", prior[-1]))
+    attrs: list[str] = []
+    while prior and re.fullmatch(r"\s*#\[[^\n]*\]\s*", prior[-1]):
+        attrs.insert(0, prior.pop().strip())
+    if not attrs or not re.fullmatch(r"#\[ignore(?:\s*=\s*[^]]+)?\]", attrs[-1]):
+        return False
+    if not any(re.search(r"#\[\s*(?:tokio::)?test(?:\s*\(|\s*\])", attr, re.IGNORECASE) for attr in attrs):
+        return False
+    # Disablement mutations such as cfg(any()) and cfg(false) must not turn a
+    # syntactic test into a zero-test selector while preserving #[ignore].
+    attrs_text = " ".join(attrs).lower().replace(" ", "")
+    if re.search(r"#\[cfg\((?:any\(\)|false|not\(any\(\)\))\)\]", attrs_text):
+        return False
+    return True
 
 
 def assert_contract(workflow: str, runner: str) -> None:
@@ -403,6 +431,13 @@ def mutation_checks(workflow: str, runner: str) -> None:
     source_without_declaration = source_body[:declaration.start()] + "// " + source_body[declaration.start():]
     if exact_ignored_source(source_without_declaration, source_target):
         fail("commented source declaration mutation was accepted")
+    valid_attrs = "#[tokio::test]\n#[ignore]\nasync fn target() {}"
+    if exact_ignored_source(valid_attrs.replace("#[tokio::test]", "#[ignore]"), "target"):
+        fail("missing active test attribute mutation was accepted")
+    if exact_ignored_source("#[cfg(any())]\n" + valid_attrs, "target"):
+        fail("disabled cfg mutation was accepted")
+    if exact_ignored_source("macro_rules! unused {\n" + valid_attrs + "\n}", "target"):
+        fail("uninvoked macro declaration mutation was accepted")
     # Secret exposure: any PAT key-shaped input is forbidden, even if no seed
     # command is present.
     expect_rejected("PAT signing secret", workflow, runner + "\nexport CORELINK_PAT_SIGNING_KEY_HEX=unsafe\n")
