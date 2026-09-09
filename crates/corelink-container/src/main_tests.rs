@@ -1,8 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use super::{
-    build_runners_resolver_from, build_tier_selector_from, cache_tier_price_ids_missing_in_prod,
-    email_hash_salt_missing_in_prod, should_fatal_on_missing_gate,
+    build_runners_resolver_from, build_tier_selector_from, byok_revocation_scheduler_enabled,
+    cache_tier_price_ids_missing_in_prod, email_hash_salt_missing_in_prod,
+    should_fatal_on_missing_gate,
 };
 use corelink_billing_stripe_materializer::{
     RunnersEntitlement, RunnersEntitlementResolver, TierSelectError, TierSelector,
@@ -24,6 +25,27 @@ fn fatal_only_when_prod_and_gate_missing() {
     assert!(!should_fatal_on_missing_gate(false, false));
     // dev/CI + gate present → OK.
     assert!(!should_fatal_on_missing_gate(false, true));
+}
+
+/// Regression for the production image outage: compiling a real AWS provider
+/// does not itself enable the scheduler. With no credential-bearing opt-in the
+/// cache server proceeds to bind; BYOK work remains unavailable rather than
+/// falling back to local/plaintext crypto.
+#[test]
+fn byok_scheduler_requires_explicit_true() {
+    for disabled in [
+        None,
+        Some(""),
+        Some("0"),
+        Some("false"),
+        Some("yes"),
+        Some(" true-ish "),
+    ] {
+        assert!(!byok_revocation_scheduler_enabled(disabled));
+    }
+    for enabled in [Some("1"), Some(" true "), Some("TRUE")] {
+        assert!(byok_revocation_scheduler_enabled(enabled));
+    }
 }
 
 /// Revenue-path truth table: in prod the boot guard names EXACTLY the

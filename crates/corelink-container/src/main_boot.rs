@@ -24,6 +24,24 @@ pub(super) const fn should_fatal_on_missing_gate(prod: bool, gate_present: bool)
     prod && !gate_present
 }
 
+/// Whether the enterprise BYOK revocation scheduler may start.
+///
+/// A production image is compiled with a real-provider feature so BYOK
+/// operations can fail closed, but that feature alone must not make customer
+/// KMS credentials a readiness dependency of the cache data plane. Only an
+/// explicit operator opt-in enables the background scheduler.
+#[must_use]
+#[cfg(any(
+    test,
+    feature = "byok-aws-real",
+    feature = "byok-gcp-real",
+    feature = "byok-azure-real",
+    feature = "byok-vault-real"
+))]
+pub(super) fn byok_revocation_scheduler_enabled(value: Option<&str>) -> bool {
+    value.is_some_and(|raw| matches!(raw.trim().to_ascii_lowercase().as_str(), "1" | "true"))
+}
+
 /// Decide whether a missing/empty `EMAIL_HASH_SALT` is a FATAL boot condition
 /// (CAA-360 MEDIUM — email-hash salt fail-fast).
 ///
