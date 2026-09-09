@@ -127,14 +127,15 @@ class MemoryDb implements D1DatabaseLike {
       return { meta: { changes: row ? 1 : 0 } };
     }
     if (sql.includes("SET status = 'failed'")) {
-      const row = this.ledger.get(String(args[4]));
-      if (row) { row.status = "failed"; row.next_attempt_at_ms = args[2]; }
+      const hasProviderRef = sql.includes("provider_ref = ?");
+      const row = this.ledger.get(String(args[args.length - 1]));
+      if (row) { row.status = "failed"; row.next_attempt_at_ms = args[hasProviderRef ? 3 : 2]; if (hasProviderRef) row.provider_ref = args[0]; }
       return { meta: { changes: row ? 1 : 0 } };
     }
     if (sql.includes("SET status = 'blocked'")) {
       const id = String(args[args.length - 1]);
       const row = this.ledger.get(id);
-      if (row) row.status = "blocked";
+      if (row) { row.status = "blocked"; if (sql.includes("provider_ref = ?")) row.provider_ref = args[0]; }
       return { meta: { changes: row ? 1 : 0 } };
     }
     if (sql.includes("UPDATE sla_credit_outbox")) {
@@ -143,7 +144,7 @@ class MemoryDb implements D1DatabaseLike {
       return { meta: { changes: row ? 1 : 0 } };
     }
     if (sql.includes("INSERT INTO sla_credit_reconciliation")) {
-      this.recon.set(String(args[0]), { credit_id: args[0], provider_ref: args[1], status: sql.includes("'reconciled'") ? "reconciled" : "pending" });
+      this.recon.set(String(args[0]), { credit_id: args[0], provider_ref: args[1], status: sql.includes("'reconciled'") ? "reconciled" : sql.includes("'mismatch'") ? "mismatch" : "pending", next_attempt_at_ms: args[2], last_error: args[3] });
       return { meta: { changes: 1 } };
     }
     return { meta: { changes: 1 } };
@@ -268,6 +269,46 @@ describe("B-089 gates, retries, and transaction boundaries", () => {
     expect(apply).not.toHaveBeenCalled();
     expect(reconcile).toHaveBeenCalledOnce();
     expect(db.ledger.get(request.credit_id)?.status).toBe("applied");
+  });
+
+  it("persists a transient recovery-reconcile failure instead of orphaning the provider object", async () => {
+    const db = new MemoryDb([]);
+    db.customer = "cus_new";
+    const request: SlaCreditRequest = {
+      credit_id: "sla_credit:tenant-recovery-transient:2026-08", tenant_id: "tenant-recovery-transient",
+      stripe_customer_id: "cus_old", amount_minor: 250, currency: "USD", service_period: "2026-08",
+      credit_percent: 5, idempotency_key: "sla-credit:sla_credit:tenant-recovery-transient:2026-08", catastrophic: false,
+    };
+    db.ledger.set(request.credit_id, { ...request, status: "failed", attempts: 1, next_attempt_at_ms: 0, lease_until_ms: null, created_at_ms: 0, updated_at_ms: 0 });
+    db.outbox.set(request.credit_id, { credit_id: request.credit_id, idempotency_key: request.idempotency_key, payload_json: JSON.stringify(request), provider_ref: "ii_transient", status: "sent" });
+    const result = await runSlaCreditSweep({ BILLING_DB: db, SLA_CREDITS_ENABLED: "true" }, 0, {
+      applyCredit: vi.fn(async () => ({ provider_ref: "ii_duplicate" })),
+      reconcileCredit: async () => ({ ok: false, failure: { kind: "transient", reason: "stripe_reconcile_http_503" } }),
+    });
+    expect(result).toMatchObject({ applied: 0, failed: 1, blocked: 0 });
+    expect(db.ledger.get(request.credit_id)).toMatchObject({ status: "failed", provider_ref: "ii_transient" });
+    expect(db.outbox.get(request.credit_id)).toMatchObject({ status: "sent", provider_ref: "ii_transient" });
+    expect(db.recon.get(request.credit_id)).toMatchObject({ status: "pending", provider_ref: "ii_transient", last_error: "stripe_reconcile_http_503" });
+  });
+
+  it("marks a permanent recovery mismatch needs-review with durable reconciliation evidence", async () => {
+    const db = new MemoryDb([]);
+    db.customer = "cus_new";
+    const request: SlaCreditRequest = {
+      credit_id: "sla_credit:tenant-recovery-mismatch:2026-08", tenant_id: "tenant-recovery-mismatch",
+      stripe_customer_id: "cus_old", amount_minor: 250, currency: "USD", service_period: "2026-08",
+      credit_percent: 5, idempotency_key: "sla-credit:sla_credit:tenant-recovery-mismatch:2026-08", catastrophic: false,
+    };
+    db.ledger.set(request.credit_id, { ...request, status: "failed", attempts: 1, next_attempt_at_ms: 0, lease_until_ms: null, created_at_ms: 0, updated_at_ms: 0 });
+    db.outbox.set(request.credit_id, { credit_id: request.credit_id, idempotency_key: request.idempotency_key, payload_json: JSON.stringify(request), provider_ref: "ii_mismatch", status: "sent" });
+    const result = await runSlaCreditSweep({ BILLING_DB: db, SLA_CREDITS_ENABLED: "true" }, 0, {
+      applyCredit: vi.fn(async () => ({ provider_ref: "ii_duplicate" })),
+      reconcileCredit: async () => ({ ok: false, failure: { kind: "permanent", reason: "stripe_reconcile_mismatch" } }),
+    });
+    expect(result).toMatchObject({ applied: 0, failed: 0, blocked: 1 });
+    expect(db.ledger.get(request.credit_id)).toMatchObject({ status: "blocked", provider_ref: "ii_mismatch" });
+    expect(db.outbox.get(request.credit_id)).toMatchObject({ status: "needs_review", provider_ref: "ii_mismatch" });
+    expect(db.recon.get(request.credit_id)).toMatchObject({ status: "mismatch", provider_ref: "ii_mismatch", last_error: "stripe_reconcile_mismatch" });
   });
 });
 

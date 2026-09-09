@@ -11104,8 +11104,10 @@ Uma cláusula de remédio exclusivo que não pode ser cumprida é a primeira a c
 queda expõe danos sem teto.
 
 **Reverificado 2026-09-08 — a engenharia repo-owned está implementada, mas o item
-SEGUE ABERTO/PARKED por decisão legal/comercial e prova externa.** O SLA executado não foi
-alterado:
+SEGUE ABERTO por decisão legal/comercial e prova externa.** O SLA executado não foi
+alterado. O pacote de ação canônico mantém `status: open` até a decisão do owner;
+o gate de código e o resultado do guard podem dizer “parked until provider proof”
+sem mudar o estado do item ou os contadores do ledger:
 
 - `legal/sla/v1.0.0.md:74` ainda promete créditos *"issued automatically against the next
   invoice"*, e a §4 (linha 113) ainda os declara *"Customer's sole and exclusive remedy"*.
@@ -11154,7 +11156,7 @@ status: open
 verify: |
   python3 scripts/verify_b089_sla_credits.py
 verify-means: |
-  open/parked — o caminho repo-owned de medição, elegibilidade, ledger limitado,
+  open — o caminho repo-owned de medição, elegibilidade, ledger limitado,
   outbox transacional, provider idempotente e reconciliação está implementado, mas
   o guard não alega uma mutação Stripe live. Depois do deploy, o owner precisa
   aplicar 0117, executar uma operação Stripe em test mode com a flag habilitada,

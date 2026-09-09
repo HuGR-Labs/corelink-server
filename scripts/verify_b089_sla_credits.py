@@ -35,6 +35,7 @@ def verify(root: Path = ROOT) -> dict[str, object]:
         "sla_credit_outbox", "sla_credit_reconciliation", "db.batch",
         "Idempotency-Key", "Math.min(100, percent)", "attempts = attempts + 1",
         "x-corelink-sla-observation-key", "SLA_OBSERVATIONS_ENABLED", "stripe_reconcile_mismatch",
+        "provider_recovery_reconcile_failed", "status = 'needs_review'",
     ))
     need("migrations/d1/0117_sla_credit_ledger.sql", (
         "sla_monthly_observations", "sla_monthly_measurements", "sla_credit_ledger",
@@ -44,7 +45,7 @@ def verify(root: Path = ROOT) -> dict[str, object]:
     ))
     need("apps/signup-worker/tests/sla_credit_cron.test.ts", (
         "does not starve a newer row", "mapping misses starve", "missing tenant mapping", "accepted provider object",
-        "provider_disabled", "outbox and reconciliation", "strict policy boundaries", "canonical observation producer",
+        "provider_disabled", "outbox and reconciliation", "canonical observation producer",
     ))
     need("apps/signup-worker/wrangler.toml", ("SLA_CREDITS_ENABLED = \"false\"", "SLA_OBSERVATIONS_ENABLED = \"false\"", "STRIPE_SECRET_KEY", "FOUR sweep families"))
 

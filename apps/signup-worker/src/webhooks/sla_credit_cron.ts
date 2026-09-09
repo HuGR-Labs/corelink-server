@@ -579,12 +579,14 @@ export async function runSlaCreditSweep(env: SlaCreditCronEnv, nowMs: number, pr
       if (Number(claimed[0]?.meta?.changes ?? 0) !== 1) continue;
 
       let alreadyReconciled = false;
+      let recoveredReconciliationFailure: ProviderFailure | undefined;
       let applied: ProviderResult;
       if (recoveredProviderRef && provider.reconcileCredit) {
         const recovered = await provider.reconcileCredit(request, recoveredProviderRef);
         applied = recovered.ok
           ? { provider_ref: recoveredProviderRef }
-          : { failure: recovered.failure ?? { kind: "transient", reason: "provider_recovery_reconcile_failed" } };
+          : { provider_ref: recoveredProviderRef };
+        if (!recovered.ok) recoveredReconciliationFailure = recovered.failure ?? { kind: "transient", reason: "provider_recovery_reconcile_failed" };
         alreadyReconciled = recovered.ok;
       } else {
         // No provider reference means the worker may have died before D1 saw
@@ -611,7 +613,13 @@ export async function runSlaCreditSweep(env: SlaCreditCronEnv, nowMs: number, pr
         continue;
       }
 
-      const reconciliation = alreadyReconciled ? { ok: true } : provider.reconcileCredit ? await provider.reconcileCredit(request, applied.provider_ref) : { ok: true };
+      const reconciliation = recoveredReconciliationFailure
+        ? { ok: false, failure: recoveredReconciliationFailure }
+        : alreadyReconciled
+          ? { ok: true }
+          : provider.reconcileCredit
+            ? await provider.reconcileCredit(request, applied.provider_ref)
+            : { ok: true };
       if (!reconciliation.ok) {
         const failure = reconciliation.failure ?? { kind: "transient" as const, reason: "stripe_reconcile_failed" };
         if (failure.kind === "transient") {
