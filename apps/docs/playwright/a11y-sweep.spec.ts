@@ -12,32 +12,21 @@
  */
 
 import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
-// The docs are served under the canonical product path (Docusaurus
-// `baseUrl: /corelink/docs/`), so every route is prefixed. Kept as a constant
-// (overridable) so a future base-path change is a one-line edit.
+// Read the shared JSON directly: Playwright 1.61's Node loader cannot resolve
+// local TypeScript imports on every supported Node 22 patch release.
+const ROUTE_PATHS: string[] = JSON.parse(
+  readFileSync(join(__dirname, "../scripts/a11y-routes.json"), "utf8"),
+);
 const BASE_PATH = process.env.DOCS_BASE_PATH ?? "/corelink/docs";
-
-const ROUTES = [
-  "/",
-  "/tutorial/",
-  "/tutorial/getting-started/",
-  "/how-to/",
-  "/reference/",
-  "/reference/reapi/",
-  "/reference/cli/",
-  "/reference/sdk/python/",
-  "/reference/sdk/go/",
-  "/reference/sdk/javascript/",
-  "/explanation/",
-  "/explanation/security/",
-  "/compliance/",
-  "/security/",
-  "/pricing/",
-].map((r) => (r === "/" ? `${BASE_PATH}/` : `${BASE_PATH}${r}`));
+const A11Y_ROUTES = ROUTE_PATHS.map((route) =>
+  route === "/" ? `${BASE_PATH}/` : `${BASE_PATH}${route}`,
+);
 
 const FORBIDDEN_IMPACT = new Set(["serious", "critical"]);
 
@@ -121,7 +110,7 @@ async function scan(page: Page, route: string, testInfo: TestInfo) {
   ).toEqual([]);
 }
 
-for (const route of ROUTES) {
+for (const route of A11Y_ROUTES) {
   test(`a11y: ${route}`, async ({ page }, testInfo) => {
     await scan(page, route, testInfo);
   });

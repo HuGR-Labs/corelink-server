@@ -50,7 +50,11 @@ if [[ ! -s "${REPORT_JSON}" ]]; then
 fi
 
 if [[ ${WRITE_BASELINE} -eq 1 ]]; then
-  cp "${REPORT_JSON}" "${BASELINE_FILE}"
+  if [[ ${status} -ne 0 ]]; then
+    echo "[a11y-audit] refusing to update baseline after a failed Playwright audit." >&2
+    exit "${status}"
+  fi
+  pnpm exec tsx scripts/promote-a11y-baseline.ts "${REPORT_JSON}" "${BASELINE_FILE}"
   echo "[a11y-audit] wrote Playwright baseline -> ${BASELINE_FILE}"
 fi
 if [[ ${DIFF_BASELINE} -eq 1 ]]; then
