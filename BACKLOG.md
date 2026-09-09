@@ -8696,9 +8696,10 @@ SHA-pinado, toolchain host sem provisionamento, `cargo-zigbuild` 0.19.8/Zig
 0.16.0 validados e estado Cargo/zig isolado por run/attempt/target. B-112
 continua `open` até existir uma execução de produção verde.
 
-O waiver do `cosign-sign` permanece humano e explícito
-(`authorized-by: repo owner | 2026-08-11`); a lane continua hosted e só aceita
-tag semver `v*`. Não migrar nem apagar.
+O waiver humano de 2026-08-11 não foi carregado para a árvore atual: a antiga
+`cosign-sign` foi removida sob B-118, após a inspeção encontrar uma lane
+inexecutável. Recriar a assinatura OCI exige nova análise e contrato; B-112 não
+trata a lane aposentada como evidência de release.
 
 **D03 bundle (focal, sem Cargo/CI):**
 

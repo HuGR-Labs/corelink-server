@@ -45,7 +45,8 @@ def _b112_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     cosign = workflows / "cosign-sign.yml"
     backlog = tmp_path / "BACKLOG.md"
     release.write_text((ROOT / ".github/workflows/release-cli.yml").read_text(encoding="utf-8"), encoding="utf-8")
-    cosign.write_text((ROOT / ".github/workflows/cosign-sign.yml").read_text(encoding="utf-8"), encoding="utf-8")
+    # B-118 retired the former OCI lane.  Keep the path as an unwritten
+    # mutation target so the B-112 verifier proves reintroduction is red.
     backlog.write_text((ROOT / "BACKLOG.md").read_text(encoding="utf-8"), encoding="utf-8")
     return release, cosign, backlog
 
@@ -107,9 +108,7 @@ def test_b112_root_cause_guard_rejects_release_mutations(tmp_path: Path, label: 
 
 def test_b112_root_cause_guard_rejects_cosign_and_evidence_mutations(tmp_path: Path):
     release, cosign, backlog = _b112_fixture(tmp_path)
-    cosign.write_text(cosign.read_text(encoding="utf-8").replace(
-        "      - 'v[0-9]+.[0-9]+.[0-9]+'\n", "", 1
-    ), encoding="utf-8")
+    cosign.write_text("name: stale retired lane\n", encoding="utf-8")
     result = _run_b112_fixture(tmp_path)
     assert result.returncode != 0
 
@@ -502,6 +501,8 @@ def test_release_chain_inputs_are_in_complete_ci_trigger_populations():
     # its adversarial regression.
     assert python_tests.count("- 'scripts/**'") == 2
     assert python_tests.count("- 'tests/*.py'") == 2
+    assert python_tests.count("- 'BACKLOG.md'") == 2
+    assert python_tests.count("- '.github/workflows/release-cli.yml'") == 2
     for source in (
         "scripts/cli_release_manifest.py",
         "scripts/verify_cli_rekor_bundle.py",
@@ -511,17 +512,9 @@ def test_release_chain_inputs_are_in_complete_ci_trigger_populations():
         trigger = "- 'scripts/**'" if source.startswith("scripts/") else "- 'tests/*.py'"
         assert trigger in python_tests, f"{source} is outside the Python gate"
 
-    # The backlog guard consumes workflow text and therefore must rerun for
-    # every workflow mutation on both PR and main push paths.
-    assert backlog_verify.count('".github/workflows/**"') == 2
-    for workflow in (
-        "release-cli.yml",
-        "release-slsa3.yml",
-        "sign-linux.yml",
-        "sign-windows.yml",
-        "notarize-macos.yml",
-    ):
-        assert '".github/workflows/**"' in backlog_verify, f"{workflow} is outside the backlog gate"
+    # The trusted backlog gate consumes every path, so release workflow
+    # mutations remain covered on both PR and main push paths.
+    assert backlog_verify.count('paths: ["**"]') == 2
 
     # The Rust structural contract is selected by the cheap formatting lane's
     # root-inclusive Rust glob (on both PR and main push paths); universal
