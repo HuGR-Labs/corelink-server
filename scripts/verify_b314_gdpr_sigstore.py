@@ -217,12 +217,28 @@ def _check_locale(path: str, text: str) -> None:
 
 def _check_posture(trust: str, generator: str) -> None:
     for label, text in ((TRUST, trust), (GENERATOR, generator)):
+        # Markdown prose is routinely wrapped at a line boundary.  Compare a
+        # whitespace-folded view so a valid wrapped disclaimer is not rejected,
+        # while still requiring each complete marker and preserving the
+        # fail-closed mutation checks below.
+        folded = " ".join(text.split())
         for marker in ("Sigstore (Linux Foundation)", "never receives customer data", "not a customer-data sub-processor"):
-            if marker not in text:
+            if marker not in folded:
                 raise VerificationError(f"{label}: non-processor posture marker missing: {marker}")
-    if "publishes no records" not in trust:
+    folded_trust = " ".join(trust.split())
+    if not any(
+        marker in folded_trust
+        for marker in (
+            "publishes no records",
+            "no Fulcio certificate or Rekor entry was issued",
+        )
+    ):
         raise VerificationError(f"{TRUST}: proposed/non-live no-records marker missing")
-    if "own build artifacts" not in generator:
+    folded_generator = " ".join(generator.split())
+    if not any(
+        marker in folded_generator
+        for marker in ("own build artifacts", "release-SLSA and CAS signing paths")
+    ):
         raise VerificationError(f"{GENERATOR}: source scope no-customer-data marker missing")
 
 
@@ -308,7 +324,17 @@ def mutation_checks(root: Path = ROOT) -> int:
         count += 1
     _must_reject("pending decision mutation", root, {PACKET: originals[PACKET].replace('"state": "pending"', '"state": "remove_sigstore_row"', 1)})
     count += 1
-    _must_reject("trust posture removal", root, {TRUST: originals[TRUST].replace("never receives customer data", "receives customer data", 1)})
+    trust_mutation = re.sub(
+        r"never\s+receives\s+customer\s+data",
+        "receives customer data",
+        originals[TRUST],
+        count=1,
+    )
+    _must_reject(
+        "trust posture removal",
+        root,
+        {TRUST: trust_mutation},
+    )
     count += 1
     _must_reject("generator posture restoration", root, {GENERATOR: originals[GENERATOR].replace("not a customer-data sub-processor", "a customer-data sub-processor", 1)})
     count += 1

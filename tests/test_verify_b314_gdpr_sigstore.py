@@ -19,6 +19,17 @@ def test_open_baseline_and_mutations_pass() -> None:
     assert verify.mutation_checks() == 21
 
 
+def test_wrapped_posture_disclaimer_is_not_a_false_negative() -> None:
+    trust = _text(verify.TRUST)
+    wrapped = trust.replace(
+        "Sigstore never\n  receives customer data",
+        "Sigstore never receives\n  customer data",
+        1,
+    )
+    assert "never receives customer data" not in wrapped
+    verify.verify(overrides={verify.TRUST: wrapped})
+
+
 @pytest.mark.parametrize("path", verify.LOCALES)
 def test_each_locale_requires_the_exact_baseline_row(path: str) -> None:
     source = _text(path)
