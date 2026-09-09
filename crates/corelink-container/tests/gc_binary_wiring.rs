@@ -118,7 +118,9 @@ fn image_inspection_runs_gc_as_a_measurable_dry_run() {
 
 #[test]
 fn native_production_gate_scopes_explicit_false_delete_guard() {
-    let gate = gate_4b_source(BUILD_WORKFLOW).expect("Gate 4b must be present");
+    let gate = gate_4b_source(BUILD_WORKFLOW);
+    assert!(gate.is_some(), "Gate 4b must be present");
+    let Some(gate) = gate else { return };
     assert!(gate_4b_has_required_contract(gate));
 
     // A mutation that removes the explicit false delete guard from Gate 4b
