@@ -297,8 +297,8 @@ fn run(args: &CliArgs) -> Result<String, String> {
             .collect();
         let anchor = if let Some(checkpoint) = checkpoint_anchor.as_ref() {
             checkpoint
-        } else if witness_matches.len() == 1 {
-            witness_matches[0]
+        } else if let [anchor] = witness_matches.as_slice() {
+            *anchor
         } else {
             return Err(format!(
                 "tenant={tenant_id}: region={region}: authenticated external bootstrap anchor is absent or ambiguous"
@@ -385,10 +385,9 @@ fn verify_archive_object_binding(
 }
 
 fn reject_duplicate_lines(lines: &[SealedArchiveLine]) -> Result<(), String> {
-    if lines
-        .windows(2)
-        .any(|pair| pair[0].sequence_number == pair[1].sequence_number)
-    {
+    if lines.windows(2).any(
+        |pair| matches!(pair, [first, second] if first.sequence_number == second.sequence_number),
+    ) {
         return Err("duplicate sequence number".to_owned());
     }
     let mut row_ids = std::collections::BTreeSet::new();
@@ -402,10 +401,9 @@ fn reject_duplicate_lines(lines: &[SealedArchiveLine]) -> Result<(), String> {
 }
 
 fn anchor_matches_first(anchor: &PartitionAnchor, first: &SealedArchiveLine) -> bool {
-    let same_epoch = anchor.current_epoch_id == first.epoch_id
-        && anchor
-            .current_link_key_id
-            .is_none_or(|key_id| Some(key_id) == first.link_key_id);
+    let same_link_key =
+        anchor.current_link_key_id.is_none() || anchor.current_link_key_id == first.link_key_id;
+    let same_epoch = anchor.current_epoch_id == first.epoch_id && same_link_key;
     let rotated_epoch = anchor.current_epoch_id.checked_add(1) == Some(first.epoch_id)
         && anchor.current_link_key_id != first.link_key_id;
     anchor.tenant_id == first.tenant_id
@@ -839,10 +837,15 @@ fn next_day(day: &str) -> Result<String, String> {
         30,
         31,
     ];
-    if date == 0 || date > days[(month - 1) as usize] {
+    let month_index = usize::try_from(month - 1).map_err(|_| "invalid verify day".to_owned())?;
+    let max_day = days
+        .get(month_index)
+        .copied()
+        .ok_or_else(|| "invalid verify day".to_owned())?;
+    if date == 0 || date > max_day {
         return Err("invalid verify day".to_owned());
     }
-    let (next_year, next_month, next_date) = if date < days[(month - 1) as usize] {
+    let (next_year, next_month, next_date) = if date < max_day {
         (year, month, date + 1)
     } else if month < 12 {
         (year, month + 1, 1)
@@ -1103,6 +1106,8 @@ fn is_sealed_line(line: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::indexing_slicing)]
+
     use super::*;
 
     fn line(
