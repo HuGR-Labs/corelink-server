@@ -159,8 +159,8 @@ the dashboard route.
 The exact customer-portal shapes are:
 
 - `GET /v1/customer/keys` → `{ "pats": [ … ], "byok": { … } }`. Metadata only.
-- `POST /v1/customer/keys` with `{ "name": "...", "scopes": [ … ] }` → `201
-  { "pat": { … }, "token": "…" }`. The token is shown once.
+- `POST /v1/customer/keys` with `{ "name": "...", "scopes": [ … ] }` →
+  `201 { "pat": { … }, "token": "…" }`. The token is shown once.
 - `POST /v1/customer/keys/:pat_id/revoke` → `200 { "pat": { … } }`. Revocation
   is a POST to a sub-path, **not** a `DELETE` on the token.
 
