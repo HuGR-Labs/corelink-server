@@ -94,10 +94,25 @@ jobs:
         id: github-run
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_HOST: github.com
+          GH_CONFIG_DIR: ${{ runner.temp }}/corelink-gh-config
+          HOME: ${{ runner.temp }}/corelink-gh-home
+          CORELINK_GH_BIN: ${{ runner.temp }}/corelink-gh/gh
         run: |
           set -euo pipefail
-          run_started_at="$(gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+          mkdir -p -m 700 "${GH_CONFIG_DIR}" "${HOME}"
+          run_pinned_gh() {
+            /usr/bin/env -i \
+              "GH_TOKEN=${GH_TOKEN}" GH_HOST=github.com \
+              "GH_CONFIG_DIR=${GH_CONFIG_DIR}" "HOME=${HOME}" \
+              "XDG_CONFIG_HOME=${GH_CONFIG_DIR}" PATH=/usr/bin:/bin \
+              GITHUB_SERVER_URL=https://github.com GH_NO_UPDATE_NOTIFIER=1 \
+              GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 \
+              LANG=C LC_ALL=C NO_COLOR=1 "${CORELINK_GH_BIN}" "$@"
+          }
+          test "$(run_pinned_gh version | awk 'NR == 1 {print $3}')" = "2.79.0"
+          run_started_at="$(run_pinned_gh api \
+            "repos/HuGR-Labs/corelink-server/actions/runs/${GITHUB_RUN_ID}" \
             --jq '.run_started_at')"
           test -n "${run_started_at}"
           printf 'started_at=%s\n' "${run_started_at}" >> "${GITHUB_OUTPUT}"

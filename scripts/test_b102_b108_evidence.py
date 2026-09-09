@@ -255,12 +255,20 @@ def provider_record_boundary() -> None:
 
 
 def workflow_run_timestamp_contract() -> None:
-    """Keep the workflow bound to the Actions API's authoritative run time."""
+    """The authoritative run timestamp must use the pinned, isolated CLI."""
     workflow = (ROOT / ".github/workflows/perf-production-evidence.yml").read_text(encoding="utf-8")
     assert "${{ github.run_started_at }}" not in workflow
     assert "actions: read" in workflow
-    assert 'gh api \\\n            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"' in workflow
     assert "GITHUB_RUN_STARTED_AT: ${{ steps.github-run.outputs.started_at }}" in workflow
+    start = workflow.index("      - name: Resolve GitHub run start timestamp")
+    end = workflow.index("      - name: Build immutable run context", start)
+    timestamp_step = workflow[start:end]
+    assert "/usr/bin/env -i" in timestamp_step
+    assert "GH_HOST=github.com" in timestamp_step
+    assert "run_pinned_gh api" in timestamp_step
+    assert 'repos/HuGR-Labs/corelink-server/actions/runs/${GITHUB_RUN_ID}' in timestamp_step
+    assert "\n          gh api" not in timestamp_step
+    assert "HTTP_PROXY" not in timestamp_step and "SSL_CERT_FILE" not in timestamp_step
 
 
 def main() -> int:
@@ -383,7 +391,8 @@ def main() -> int:
     mint_wire_binding_round_trip()
     provider_record_boundary()
     workflow_run_timestamp_contract()
-    print("B102-B108 evidence verifier mutations: PASS")
+    verifier.verify_attestation_with_gh = original_gh_verifier
+    print("B102-B108 evidence verifier mutations: PASS (fake bundle rejected by pinned gh gate)")
     return 0
 
 
