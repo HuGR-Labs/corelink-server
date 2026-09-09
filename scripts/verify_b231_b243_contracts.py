@@ -241,12 +241,26 @@ def _verify_impl() -> int:
         raise AssertionError("B242: signup secret verifier does not require the salt across all destinations")
     if signup_secrets.count("|wrangler.toml|") != 5 or "apps/signup-worker/wrangler.toml|" not in signup_secrets:
         raise AssertionError("B242: verifier must enumerate exactly five root/regional plus signup destinations")
-    worker_special_routes = read("worker/src/index_special_routes.ts")
+    worker_special_customer = read("worker/src/index_special_customer.ts")
     worker_fetch = read("worker/src/index_fetch.ts")
     require(worker_fetch, 'from "./index_special_routes.js"', "B242")
-    for target in ("crates/corelink-container/src/main.rs", "apps/signup-worker/src/webhooks/clerk.ts"):
-        require(read(target), "EMAIL_HASH_SALT", "B242")
-    require_active(worker_special_routes, "EMAIL_HASH_SALT", "B242")
+    require(
+        read("crates/corelink-container/src/main.rs"),
+        "if email_hash_salt_missing_in_prod(prod_by_independent_signal, email_hash_salt_present)",
+        "B242",
+    )
+    require_active(
+        read("apps/signup-worker/src/webhooks/clerk.ts"),
+        'if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim())',
+        "B242",
+    )
+    # The Worker source is split: index_special_routes.ts is only a dispatcher;
+    # the customer fragment owns the executable invitation acceptance guard.
+    require_active(
+        worker_special_customer,
+        'if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim())',
+        "B242",
+    )
 
     githugr = read("worker/src/lib/githugr_provision.ts")
     require(githugr, "githugr_tenant_org_map", "B243")
@@ -282,6 +296,7 @@ def mutation_checks() -> int:
             "crates/corelink-billing-stripe-materializer/src/handler.rs",
             "crates/corelink-container/src/main.rs",
             ".github/workflows/cf-deploy-prod.yml",
+            "scripts/verify-signup-worker-secrets.sh",
             "docs/internal/secrets-checklist.md",
             "worker/src/lib/pat_verify_cache.ts",
             "crates/corelink-region/src/region.rs",
@@ -295,7 +310,8 @@ def mutation_checks() -> int:
             "crates/corelink-container/src/routes/customer/part-01.rs",
             "worker/src/index.ts",
             "worker/src/index_fetch.ts",
-            "worker/src/index_special_routes.ts",
+            "worker/src/index_special_customer.ts",
+            "apps/signup-worker/src/webhooks/clerk.ts",
             "worker/src/index_finish_stage.ts",
         )
     }
@@ -323,6 +339,29 @@ def mutation_checks() -> int:
             rejected += 1
         else:
             raise AssertionError(f"{label} bait mutation was accepted for split authorization")
+
+    # B242's split Worker and signup-worker guards must be executable code, not
+    # a comment/string marker in either owner.  Mutating one owner at a time
+    # proves the aggregate gate cannot be satisfied by a stale sibling anchor.
+    salt_guard = 'if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim())'
+    for rel in (
+        "worker/src/index_special_customer.ts",
+        "apps/signup-worker/src/webhooks/clerk.ts",
+    ):
+        comment_bait = dict(files)
+        string_bait = dict(files)
+        comment_bait[rel] = comment_bait[rel].replace(salt_guard, "// " + salt_guard)
+        string_bait[rel] = string_bait[rel].replace(
+            salt_guard, 'const _BAIT: string = "' + salt_guard + '";'
+        )
+        for label, mutant in (("comment", comment_bait), ("string", string_bait)):
+            try:
+                verify(mutant)
+            except AssertionError:
+                rejected += 1
+            else:
+                raise AssertionError(f"{label} bait mutation was accepted for B242 owner {rel}")
+
     noop = files["crates/corelink-handler-cas/src/handler.rs"].replace(
         "B232_NONEXISTENT_MARKER", ""
     )
@@ -347,7 +386,12 @@ def mutation_checks() -> int:
         ("crates/corelink-stripe-real/src/webhook_dispatch.rs", "on_charge_refunded"),
         ("crates/corelink-billing-stripe-materializer/src/handler.rs", "fully_refunded"),
         ("crates/corelink-container/src/main.rs", "durable D1 is unavailable; webhook NOT mounted"),
+        (
+            "crates/corelink-container/src/main.rs",
+            "if email_hash_salt_missing_in_prod(prod_by_independent_signal, email_hash_salt_present)",
+        ),
         (".github/workflows/cf-deploy-prod.yml", "EMAIL_HASH_SALT"),
+        ("scripts/verify-signup-worker-secrets.sh", "DESTINATIONS=("),
         ("docs/internal/secrets-checklist.md", "APPLE_DEVELOPER_ID_FINGERPRINT"),
         ("worker/src/lib/pat_verify_cache.ts", "PAT_VERIFY_CACHE_TTL_MS = 5_000"),
         ("crates/corelink-region/src/region.rs", "Region::Apac"),
@@ -362,7 +406,14 @@ def mutation_checks() -> int:
         ("worker/src/index.ts", 'from "./index_fetch.js"'),
         ("worker/src/index_fetch.ts", 'from "./index_finish_stage.js"'),
         ("worker/src/index_fetch.ts", 'from "./index_special_routes.js"'),
-        ("worker/src/index_special_routes.ts", "EMAIL_HASH_SALT"),
+        (
+            "worker/src/index_special_customer.ts",
+            'if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim())',
+        ),
+        (
+            "apps/signup-worker/src/webhooks/clerk.ts",
+            'if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim())',
+        ),
         ("worker/src/index_finish_stage.ts", "finalHeaders.delete(\"x-corelink-pat-cache-invalidate\")"),
     )
     for rel, marker in mutations:
