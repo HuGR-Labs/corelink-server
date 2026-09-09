@@ -104,13 +104,23 @@ def test_b063_b127_reject_d1_shell_injection_mutations() -> None:
             '; wrangler d1 execute corelink-config-prod --remote --command "SELECT 1" '
             "| tee artifacts/d03/injected.json"
         ),
+        "appended command": lambda command: command + "; rm -f /tmp/injected",
+        "appended newline": lambda command: command + "\ntrue",
+        "appended comment": lambda command: command + " # injected",
+        "appended subshell": lambda command: command + "; (echo injected)",
+        "appended background": lambda command: command + " &",
+        "appended redirect": lambda command: command + " > /tmp/injected",
     }
     for item in ("B-063", "B-127"):
-        for _label, mutate in mutations.items():
+        for label, mutate in mutations.items():
             mutated = copy.deepcopy(packet)
             mutated["packets"][item]["command"] = mutate(mutated["packets"][item]["command"])
-            with pytest.raises(GraduationError, match=item):
+            try:
                 _check_packets(mutated, ROOT)
+            except GraduationError as exc:
+                assert item in str(exc), f"{item} {label}: wrong rejection: {exc}"
+            else:
+                pytest.fail(f"{item} {label}: mutation was accepted")
 
 def test_b216_worker_event_requeue_and_paging_mutations_are_red() -> None:
     packet = _load_packets(

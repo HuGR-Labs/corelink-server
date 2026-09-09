@@ -663,7 +663,9 @@ def _check_d1_read_command(item: str, packet: dict[str, Any], command: str) -> N
     """
     lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>\n")
     lexer.whitespace_split = True
-    lexer.commenters = "#"
+    # Keep comments as tokens.  A trailing ``#`` is not inert evidence: it is
+    # an unreviewed shell construct and must fail the closed-world grammar.
+    lexer.commenters = ""
     try:
         tokens = list(lexer)
     except ValueError as exc:
@@ -679,6 +681,33 @@ def _check_d1_read_command(item: str, packet: dict[str, Any], command: str) -> N
         raise GraduationError(f"{item}: D1 command must contain exactly one wrangler d1 execute invocation")
 
     start = starts[0]
+    if item == "B-063":
+        expected_start = 120
+        expected_prefix = [
+            "set", "-euo", "pipefail", ";", "test",
+            "${B063_REPAIR_APPROVED:?set B063_REPAIR_APPROVED=1 only after the authorized repair}",
+            "=", "1", ";", "export", "D03_SAMPLE_COUNT=3", ";", ":", ">",
+            "artifacts/d03/B063-archive-lag-pagerduty.json", ";", "grep", "-Fq",
+            "workflow_dispatch", ".github/workflows/audit-archive-lag.yml", ";",
+        ]
+        expected_loop_prefix = ["for", "sample", "in", "1", "2", "3", ";", "do"]
+        expected_length = 144
+    else:
+        expected_start = 12
+        expected_prefix = [
+            "set", "-euo", "pipefail", ";", "test",
+            "${OWNER_APPROVED_READONLY:?set OWNER_APPROVED_READONLY=1 for ephemeral read-only D1 access}",
+            "=", "1", ";", "export", "D03_SAMPLE_COUNT=1", ";",
+        ]
+        expected_loop_prefix = []
+        expected_length = 36
+    if start != expected_start or tokens[: len(expected_prefix)] != expected_prefix:
+        raise GraduationError(f"{item}: command prefix is outside the reviewed shell grammar")
+    if expected_loop_prefix and tokens[start - len(expected_loop_prefix) : start] != expected_loop_prefix:
+        raise GraduationError(f"{item}: command loop prefix is outside the reviewed shell grammar")
+    if len(tokens) != expected_length:
+        raise GraduationError(f"{item}: command contains unrecognized shell tokens")
+
     prefix = tokens[start : start + 7]
     if len(prefix) != 7 or prefix[3] != "corelink-config-prod" or prefix[4:6] != ["--remote", "--command"]:
         raise GraduationError(f"{item}: D1 command target/options are outside the closed-world grammar")
@@ -698,8 +727,21 @@ def _check_d1_read_command(item: str, packet: dict[str, Any], command: str) -> N
     if tokens[tail_start : tail_start + len(tail)] != tail:
         raise GraduationError(f"{item}: D1 command pipeline is outside the closed-world grammar")
     after_tail = tail_start + len(tail)
-    if after_tail < len(tokens) and tokens[after_tail] != ";":
-        raise GraduationError(f"{item}: D1 command has an unexpected trailing shell operator/token")
+    if item == "B-063":
+        expected_suffix = [
+            ";", "grep", "-Eiq", "pending_old|part_last_archived", artifact,
+            ";", "dispatch_and_wait", ";", "done", ";", "test", "-n",
+            "${PAGERDUTY_REFERENCE:?redacted PagerDuty reference required}",
+        ]
+    else:
+        expected_suffix = [
+            ";", "test", "-s", artifact, ";", "grep", "-Eiq",
+            "satisfied|violated|unevaluable|weur|tenants|total_rows|denominator", artifact,
+            ";", "grep", "-Fq", "LEFT JOIN",
+            "docs/campaigns/remediation/work-packages/B091-B130.md",
+        ]
+    if tokens[after_tail:] != expected_suffix:
+        raise GraduationError(f"{item}: command has unrecognized post-processing tokens")
 
 
 def _require_b105_active_commands(command: str) -> None:
