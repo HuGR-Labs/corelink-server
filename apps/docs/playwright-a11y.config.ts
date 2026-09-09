@@ -29,6 +29,7 @@ export default defineConfig({
     ["list"],
     ["html", { outputFolder: "playwright-report/a11y", open: "never" }],
     ["json", { outputFile: "playwright-report/a11y-results.json" }],
+    ["./scripts/a11y-reporter.ts"],
   ],
   use: {
     baseURL: BASE_URL,

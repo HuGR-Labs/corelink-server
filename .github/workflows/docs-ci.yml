@@ -2,7 +2,7 @@ name: docs CI
 
 # WI-S18-001 + CI-OPT-002 consolidation — typecheck + lint + test + build +
 # Lighthouse-CI + axe + lychee broken-link + Vale prose lint + Playwright
-# a11y sweep (WCAG 2.2 AA) + axe-core/cli baseline diff + i18n coverage +
+# a11y sweep (WCAG 2.2 AA, powered by @axe-core/playwright) + i18n coverage +
 # REAPI auto-gen drift check for apps/docs/ (Docusaurus 3).
 #
 # All actions are SHA-pinned per S-12 supply-chain policy.
