@@ -58,7 +58,8 @@ jobs:
           CORELINK_GH_BIN: ${{ runner.temp }}/corelink-gh/gh
         run: |
           set -eu
-          mkdir -p -m 700 "${GH_CONFIG_DIR}" "${HOME}"
+          mkdir -p "${GH_CONFIG_DIR}" "${HOME}"
+          chmod 700 "${GH_CONFIG_DIR}" "${HOME}"
           run_pinned_gh() {
             /usr/bin/env -i \
               "GH_TOKEN=${GH_TOKEN}" GH_HOST=github.com \
@@ -100,7 +101,8 @@ jobs:
           CORELINK_GH_BIN: ${{ runner.temp }}/corelink-gh/gh
         run: |
           set -euo pipefail
-          mkdir -p -m 700 "${GH_CONFIG_DIR}" "${HOME}"
+          mkdir -p "${GH_CONFIG_DIR}" "${HOME}"
+          chmod 700 "${GH_CONFIG_DIR}" "${HOME}"
           run_pinned_gh() {
             /usr/bin/env -i \
               "GH_TOKEN=${GH_TOKEN}" GH_HOST=github.com \
@@ -188,7 +190,8 @@ jobs:
           B106_VERIFICATION: ${{ runner.temp }}/b106-attestation-verification.json
         run: |
           set -euo pipefail
-          mkdir -p -m 700 "${GH_CONFIG_DIR}" "${HOME}"
+          mkdir -p "${GH_CONFIG_DIR}" "${HOME}"
+          chmod 700 "${GH_CONFIG_DIR}" "${HOME}"
           run_pinned_gh() {
             /usr/bin/env -i \
               "GH_TOKEN=${GH_TOKEN}" GH_HOST=github.com \
