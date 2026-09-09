@@ -354,7 +354,7 @@
       "dependency": "production D1 access and PagerDuty state",
       "action": "Owner queries non-archived production partition rows and PagerDuty alert status with approved credentials.",
       "artifact": "artifacts/d03/B063-archive-lag-pagerduty.json",
-      "command": "set -euo pipefail; test \"${B063_REPAIR_APPROVED:?set B063_REPAIR_APPROVED=1 only after the authorized repair}\" = 1; export D03_SAMPLE_COUNT=3; : > artifacts/d03/B063-archive-lag-pagerduty.json; grep -Fq 'workflow_dispatch' .github/workflows/audit-archive-lag.yml; dispatch_and_wait() { dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; gh workflow run audit-archive-lag.yml --ref main -f lag_hours=3; run_id=\"\"; for attempt in $(seq 1 30); do run_id=\"$(gh run list --workflow audit-archive-lag.yml --limit 20 --json databaseId,createdAt,event,headBranch --jq \"map(select(.event == \\\"workflow_dispatch\\\" and .headBranch == \\\"main\\\" and .createdAt >= \\\"$dispatch_started_at\\\")) | .[0].databaseId // empty\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; watch_rc=0; timeout 900s gh run watch \"$run_id\" || watch_rc=$?; run_json=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,headSha,workflowName)\"; jq -c . <<<\"$run_json\" >> artifacts/d03/B063-archive-lag-pagerduty.json; jq -e '.status == \"completed\" and .conclusion == \"success\"' <<<\"$run_json\" >/dev/null; test \"$watch_rc\" -eq 0; }; for sample in 1 2 3; do wrangler d1 execute corelink-prod --remote --command \"SELECT o.tenant_id, o.region, COUNT(*) AS pending_old, MIN(o.enqueued_at) AS oldest_pending_ms, (SELECT MAX(o2.archived_at) FROM audit_outbox o2 WHERE o2.tenant_id=o.tenant_id AND o2.region=o.region) AS part_last_archived FROM audit_outbox o WHERE o.emitted_at IS NOT NULL AND o.archived_at IS NULL AND o.quarantined_at IS NULL AND o.enqueued_at < (strftime('%s','now') - 10800) * 1000 AND (o.tenant_id IN ('93da3f7a','enam') OR o.region IN ('93da3f7a','enam')) GROUP BY o.tenant_id, o.region HAVING part_last_archived IS NULL OR part_last_archived < (strftime('%s','now') - 10800) * 1000\" | tee -a artifacts/d03/B063-archive-lag-pagerduty.json; grep -Eiq 'pending_old|part_last_archived' artifacts/d03/B063-archive-lag-pagerduty.json; dispatch_and_wait; done; test -n \"${PAGERDUTY_REFERENCE:?redacted PagerDuty reference required}\"",
+      "command": "set -euo pipefail; test \"${B063_REPAIR_APPROVED:?set B063_REPAIR_APPROVED=1 only after the authorized repair}\" = 1; export D03_SAMPLE_COUNT=3; : > artifacts/d03/B063-archive-lag-pagerduty.json; grep -Fq 'workflow_dispatch' .github/workflows/audit-archive-lag.yml; dispatch_and_wait() { dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; gh workflow run audit-archive-lag.yml --ref main -f lag_hours=3; run_id=\"\"; for attempt in $(seq 1 30); do run_id=\"$(gh run list --workflow audit-archive-lag.yml --limit 20 --json databaseId,createdAt,event,headBranch --jq \"map(select(.event == \\\"workflow_dispatch\\\" and .headBranch == \\\"main\\\" and .createdAt >= \\\"$dispatch_started_at\\\")) | .[0].databaseId // empty\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; watch_rc=0; timeout 900s gh run watch \"$run_id\" || watch_rc=$?; run_json=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,headSha,workflowName)\"; jq -c . <<<\"$run_json\" >> artifacts/d03/B063-archive-lag-pagerduty.json; jq -e '.status == \"completed\" and .conclusion == \"success\"' <<<\"$run_json\" >/dev/null; test \"$watch_rc\" -eq 0; }; for sample in 1 2 3; do wrangler d1 execute corelink-config-prod --remote --command \"SELECT o.tenant_id, o.region, COUNT(*) AS pending_old, MIN(o.enqueued_at) AS oldest_pending_ms, (SELECT MAX(o2.archived_at) FROM audit_outbox o2 WHERE o2.tenant_id=o.tenant_id AND o2.region=o.region) AS part_last_archived FROM audit_outbox o WHERE o.emitted_at IS NOT NULL AND o.archived_at IS NULL AND o.quarantined_at IS NULL AND o.enqueued_at < (strftime('%s','now') - 10800) * 1000 AND (o.tenant_id IN ('93da3f7a','enam') OR o.region IN ('93da3f7a','enam')) GROUP BY o.tenant_id, o.region HAVING part_last_archived IS NULL OR part_last_archived < (strftime('%s','now') - 10800) * 1000\" | tee -a artifacts/d03/B063-archive-lag-pagerduty.json; grep -Eiq 'pending_old|part_last_archived' artifacts/d03/B063-archive-lag-pagerduty.json; dispatch_and_wait; done; test -n \"${PAGERDUTY_REFERENCE:?redacted PagerDuty reference required}\"",
       "verify_means": "parked",
       "command_contract": {
         "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-063",
@@ -369,7 +369,8 @@
           "part_last_archived",
           "audit-archive-lag",
           "PagerDuty",
-          "workflow_dispatch"
+          "workflow_dispatch",
+          "corelink-config-prod"
         ],
         "safety": [
           "--remote",
@@ -459,12 +460,13 @@
       "command_contract": {
         "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-072",
         "profiles": [
-          "0 * * * *",
-          "*/15 * * * *"
+          "0 14 * * 1",
+          "59 23 * * 0"
         ],
         "sample_count": 1,
         "required": [
           "SCHEDULED_DRILL_DELIVERY",
+          "corelink-synthetic-pager-staging",
           "correlation",
           "PagerDuty",
           "synthetic_page_drills"
@@ -836,7 +838,7 @@
       "dependency": "production D1 residency census and legal decision",
       "action": "Owner reruns the D-2 residency queries against production and records the decision for the migration constraint.",
       "artifact": "artifacts/d03/B127-residency-census.json",
-      "command": "set -euo pipefail; test \"${OWNER_APPROVED_READONLY:?set OWNER_APPROVED_READONLY=1 for ephemeral read-only D1 access}\" = 1; export D03_SAMPLE_COUNT=1; wrangler d1 execute corelink-prod --remote --command \"SELECT CASE WHEN t.tenant_id IS NULL THEN 'unevaluable' WHEN o.region=t.primary_region THEN 'satisfied' ELSE 'violated' END AS residency_state, o.region, COUNT(*) AS rows, COUNT(DISTINCT t.tenant_id) AS tenants, SUM(CASE WHEN o.region='weur' THEN 1 ELSE 0 END) AS weur_rows, SUM(COUNT(*)) OVER () AS total_rows FROM audit_outbox o LEFT JOIN tenant t ON t.tenant_id=o.tenant_id GROUP BY residency_state,o.region\" | tee artifacts/d03/B127-residency-census.json; test -s artifacts/d03/B127-residency-census.json; grep -Eiq 'satisfied|violated|unevaluable|weur|tenants|total_rows|denominator' artifacts/d03/B127-residency-census.json; grep -Fq 'LEFT JOIN' docs/campaigns/remediation/work-packages/B091-B130.md",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_READONLY:?set OWNER_APPROVED_READONLY=1 for ephemeral read-only D1 access}\" = 1; export D03_SAMPLE_COUNT=1; wrangler d1 execute corelink-config-prod --remote --command \"SELECT CASE WHEN t.tenant_id IS NULL THEN 'unevaluable' WHEN o.region=t.primary_region THEN 'satisfied' ELSE 'violated' END AS residency_state, o.region, COUNT(*) AS rows, COUNT(DISTINCT t.tenant_id) AS tenants, SUM(CASE WHEN o.region='weur' THEN 1 ELSE 0 END) AS weur_rows, SUM(COUNT(*)) OVER () AS total_rows FROM audit_outbox o LEFT JOIN tenant t ON t.tenant_id=o.tenant_id GROUP BY residency_state,o.region\" | tee artifacts/d03/B127-residency-census.json; test -s artifacts/d03/B127-residency-census.json; grep -Eiq 'satisfied|violated|unevaluable|weur|tenants|total_rows|denominator' artifacts/d03/B127-residency-census.json; grep -Fq 'LEFT JOIN' docs/campaigns/remediation/work-packages/B091-B130.md",
       "verify_means": "parked",
       "command_contract": {
         "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B127",
@@ -852,7 +854,8 @@
           "audit_outbox",
           "tenants",
           "total_rows",
-          "denominator"
+          "denominator",
+          "corelink-config-prod"
         ],
         "safety": [
           "--remote",
