@@ -5,6 +5,7 @@ import importlib.util
 import re
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 
@@ -15,6 +16,13 @@ assert spec and spec.loader
 gate = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = gate
 spec.loader.exec_module(gate)
+
+VERIFIER = ROOT / "scripts/verify_b245_secrets_matrix.py"
+verifier_spec = importlib.util.spec_from_file_location("verify_b245_secrets_matrix", VERIFIER)
+assert verifier_spec and verifier_spec.loader
+b245 = importlib.util.module_from_spec(verifier_spec)
+sys.modules[verifier_spec.name] = b245
+verifier_spec.loader.exec_module(b245)
 
 
 SYNTHETIC_NAMES = {
@@ -113,6 +121,16 @@ def test_gc_safety_flags_are_exact_non_secret_allowlist_entries() -> None:
             capture_output=True,
             check=False,
         ).returncode != 0
+
+
+def test_b245_gc_contract_rejects_a_broad_allowlist_mutation() -> None:
+    """The B-245 preflight must reject every GC name except the two flags."""
+    broad = SimpleNamespace(ALLOWLIST_REGEX=re.compile(r"^GC_"))
+    try:
+        b245.validate_gc_allowlist_contract(broad)
+    except AssertionError:
+        return
+    raise AssertionError("broad GC_* allowlist mutation was accepted")
 
 
 def test_bash_repo_root_override_requires_canonical_sentinels(tmp_path: Path) -> None:
