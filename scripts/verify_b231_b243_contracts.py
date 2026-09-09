@@ -61,22 +61,61 @@ def require_active(text: str, needle: str, label: str) -> None:
                 cursor += 1
         return len(text)
 
+    def identifier_end(offset: int) -> int:
+        cursor = offset
+        while cursor < len(text) and (text[cursor].isalnum() or text[cursor] == "_"):
+            cursor += 1
+        return cursor
+
+    def char_literal_end(offset: int) -> int | None:
+        """Return the end of a Rust char literal, if one starts at offset."""
+        cursor = offset + 1
+        if cursor >= len(text) or text[cursor] in "\r\n":
+            return None
+        if text[cursor] == "\\":
+            # A simple escape consumes the escaped code point.  Rust's unicode
+            # form (`'\\u{1f980}'`) consumes through the closing brace.
+            cursor += 1
+            if cursor >= len(text):
+                return None
+            if text[cursor] == "u" and cursor + 1 < len(text) and text[cursor + 1] == "{":
+                closing_brace = text.find("}", cursor + 2)
+                if closing_brace < 0:
+                    return None
+                cursor = closing_brace + 1
+            else:
+                cursor += 1
+        else:
+            cursor += 1
+        if cursor < len(text) and text[cursor] == "'":
+            return cursor + 1
+        return None
+
     def is_lifetime(offset: int) -> bool:
-        """Distinguish Rust lifetimes from single-quoted TS/Rust literals."""
+        """Distinguish Rust lifetimes from single-quoted TS/Rust literals.
+
+        The decision is deliberately local.  Looking for any later quote on
+        the line is incorrect for `&'a str` followed by a valid `let c='x'`:
+        that later char literal must not cause the lifetime to swallow the
+        executable guard that follows it.
+        """
         if offset + 1 >= len(text) or not (text[offset + 1].isalnum() or text[offset + 1] == "_"):
+            return False
+        if char_literal_end(offset) is not None:
             return False
         previous = offset - 1
         while previous >= 0 and text[previous].isspace():
             previous -= 1
-        # Generic bounds (`<'a`) and type bounds (`T: 'a`) are Rust lifetimes.
-        # A quote after `=`/`(`/`,` is a normal literal in the mutation fixtures
-        # and in both source languages.
-        if previous >= 0 and text[previous] in "<:":
+        # References, generic parameter lists, bounds, and `+ 'static` are
+        # unambiguous Rust lifetime contexts.  `for<'a>` and `where 'a: ...`
+        # are covered by their preceding keywords.
+        if previous >= 0 and text[previous] in "<&:,+":
             return True
-        line_end = text.find("\n", offset + 1)
-        if line_end < 0:
-            line_end = len(text)
-        return text.find("'", offset + 1, line_end) < 0
+        word_end = previous + 1
+        word_start = word_end
+        while word_start > 0 and (text[word_start - 1].isalnum() or text[word_start - 1] == "_"):
+            word_start -= 1
+        return text[word_start:word_end] in ("for", "where")
 
     i = 0
     block_comment_depth = 0
@@ -104,7 +143,7 @@ def require_active(text: str, needle: str, label: str) -> None:
             i = raw_end
             continue
         if text[i] == "'" and is_lifetime(i):
-            i += 1
+            i = identifier_end(i + 1)
             continue
         if text[i] in ('"', "'", "`"):
             i = quoted_end(i, text[i])
@@ -113,6 +152,34 @@ def require_active(text: str, needle: str, label: str) -> None:
             return
         i += 1
     raise AssertionError(f"{label}: missing active {needle!r}")
+
+
+def lexical_regressions() -> None:
+    """Exercise quote/comment boundaries used by the source-level gate."""
+    marker = "TARGET_GUARD()"
+    active_cases = (
+        # The original B242 HOLD: a lifetime and a valid char literal share a
+        # line before the executable marker.
+        "fn f<'a>(x: &'a str) { let c='x'; if TARGET_GUARD() {} }",
+        "fn f<'a, 'b>(x: &'a str, y: &'b str) { let c='\\''; if TARGET_GUARD() {} }",
+        "fn f<'a>(x: &'a str) where 'a: 'static { let c='\\n'; if TARGET_GUARD() {} }",
+        "// TARGET_GUARD()\nfn f<'a>(x: &'a str) { let c='x'; if TARGET_GUARD() {} }",
+        'const bait = "TARGET_GUARD()"; /* TARGET_GUARD() */\nif (TARGET_GUARD()) {}',
+    )
+    for case in active_cases:
+        require_active(case, marker, "lexical regression")
+
+    bait_only_cases = (
+        "fn f<'a>(x: &'a str) { let c='x'; } // TARGET_GUARD()",
+        'const bait = "TARGET_GUARD()"; /* TARGET_GUARD() */',
+        "fn f<'a>(x: &'a str) { let c='\\''; let s='TARGET_GUARD()'; }",
+    )
+    for case in bait_only_cases:
+        try:
+            require_active(case, marker, "lexical bait regression")
+        except AssertionError:
+            continue
+        raise AssertionError("lexical bait regression: marker in a literal/comment was accepted")
 
 
 def verify(sources: dict[str, str] | None = None) -> int:
@@ -579,6 +646,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
+    lexical_regressions()
     rejected = mutation_checks() if args.self_test else verify()
     if args.self_test:
         print(f"verify_b231_b243_contracts: PASS ({rejected} mutations rejected)")
