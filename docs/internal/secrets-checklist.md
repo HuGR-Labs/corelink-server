@@ -327,9 +327,8 @@ rotation owner → compromise response → storage location.
   non-secret runtime controls, not credentials and not provisioned secrets.
   They are allowlisted by exact name in the Bash and Python drift gates; the
   gates deliberately do **not** allowlist `GC_*` broadly. The native sweep's
-  bucket name, run UUID, and validation-only flag are separately allowlisted
-  by exact name; the live-delete confirmation remains the sensitive matrix row
-  above.
+  bucket name, run UUID, and validation-only flag remain explicit matrix rows;
+  the live-delete confirmation remains the sensitive matrix row above.
 
 ## Forward-looking secrets
 
@@ -398,6 +397,9 @@ If a secret is removed from the codebase, remove the matrix row in the SAME PR.
 | 244 | Buck2 quota-probe PAT (CI test only) | `CORELINK_QUOTA_PAT` | `.github/workflows/buck2-starter-ci.yml` → Scenario 4 “Dedicated quota PAT returns quota error” only; authenticates the dedicated negative quota/permission probe and is never a deployment binding or production-runtime credential. | self-generated | owner-provisioned GitHub Actions secret | Dedicated low-privilege PAT with no `cache:write` scope for the Buck2 quota assertion; do not reuse a canary or production deploy token. | 90d | SRE Lead | Revoke and provision a replacement in the reviewed Buck2 workflow; never print or persist it in artifacts. | gha-secret |
 | 245 | Audit-chain link-key keyring (JSON, 32-byte keys) | `AUDIT_CHAIN_LINK_KEYS_JSON` | `worker/src/durable_object_start.ts` forwards the write-only keyring to the native container; `crates/corelink-container` parses it for cross-region audit-link verification; `.github/workflows/audit-chain-daily-verify.yml` materializes it only in a mode-600 runner-temp file. | self-generated | n/a | JSON object mapping registered link-key ids to lower-case 32-byte hex keys; provision only on the audited worker/container path and never print or persist it in artifacts. | 180d / on compromise | SRE Lead | Rotate the keyring, retain only the reviewed overlap required for verification, and remove the old key after all links are migrated. | cf-wrangler + gha-secret |
 | 246 | GC live-delete confirmation token | `GC_LIVE_DELETE_CONFIRM` | `crates/corelink-container/src/gc_sweep.rs` → native production sweep; required only for the destructive branch and still blocked by the deployed fencing gate. | self-generated | n/a | Exact operator confirmation string (`I_UNDERSTAND`) is an explicit destructive-action control; never treat it as a broad `GC_*` allowlist entry. | per operation | SRE Lead | Do not provision until the fencing protocol is deployed and owner-approved; revoke/disable the live lane after any accidental exposure. | cf-wrangler |
+| 247 | GC CAS bucket name (native sweep config) | `GC_R2_BUCKET` | `crates/corelink-container/src/gc_sweep.rs` → native production sweep; selects the R2 CAS bucket for the tenant/region scope. | Cloudflare R2 | n/a | Resource name only; R2 access credentials remain separate matrix rows and this value is not a credential. | rotate-on-resource-change | SRE Lead | Update with the reviewed regional bucket binding; never broaden the GC allowlist for this name. | cf-wrangler |
+| 248 | GC run UUID (native sweep scope) | `GC_RUN_ID` | `crates/corelink-container/src/gc_sweep.rs` → optional native production sweep scope selector. | self-generated | n/a | UUID identifying the already-created sweep run; non-secret operational input, retained in the matrix because it is an active GC binding. | per run | SRE Lead | Generate/select only an owner-approved run; do not reuse a prior run id across scopes. | cf-wrangler |
+| 249 | GC configuration validation-only flag | `GC_VALIDATE_ONLY` | `crates/corelink-container/src/bin/gc_sweep.rs` → exits after validating configuration without D1/R2 operations. | self-generated | n/a | Boolean operator control; defaults to normal execution path and is not a credential. | per run | SRE Lead | Set only for reviewed validation probes; keep destructive execution separately fenced. | cf-wrangler |
 
 See also: `docs/internal/secrets-runbook.md` for operational procedures
 (initial population, rotation, compromise response).
