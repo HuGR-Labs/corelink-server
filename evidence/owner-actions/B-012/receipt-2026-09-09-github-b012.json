@@ -2,7 +2,7 @@
   "schema_version": 1,
   "receipt_type": "owner_action_observation",
   "backlog_id": "B-012",
-  "captured_at": "2026-09-09T04:23:50Z",
+  "captured_at": "2026-09-09T04:29:46Z",
   "repository": "HuGR-Labs/corelink-server",
   "authenticated_principal": "gmhelmold",
   "queries": {
@@ -28,14 +28,44 @@
       "reason": "authenticated user token is not authorized as a GitHub App token"
     },
     "open_bot_prs": {
-      "count": 0,
-      "source": "GET /repos/HuGR-Labs/corelink-server/pulls?state=open"
+      "total_open_prs": 1,
+      "bot_pr_count": 0,
+      "bot_identity": {
+        "status": "not_configured",
+        "login": null,
+        "credential_kind": null
+      },
+      "bot_filter": {
+        "predicate": "user.type == Bot OR lower(user.login) matches bot|dependabot",
+        "filter_command": "jq '[.[][] | select((.user.type == \"Bot\") or ((.user.login | ascii_downcase) | test(\"bot|dependabot\")))]'",
+        "case_sensitive": false,
+        "human_prs_do_not_count_as_bot": true
+      },
+      "open_prs": [
+        {
+          "number": 1590,
+          "author": "gmhelmold",
+          "author_type": "User",
+          "counts_as_bot": false,
+          "title": "Backlog drain: consolidated server sprint",
+          "head_sha": "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73",
+          "url": "https://github.com/HuGR-Labs/corelink-server/pull/1590"
+        }
+      ],
+      "pagination": {
+        "command": "gh api --paginate 'repos/HuGR-Labs/corelink-server/pulls?state=open&per_page=100' --slurp",
+        "pages_observed": 1,
+        "per_page": 100,
+        "complete": true
+      }
     }
   },
   "actions_runs_observed": [
     {
       "run_id": 34309102051,
       "event": "pull_request",
+      "associated_pr": 1590,
+      "head_sha": "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73",
       "url": "https://github.com/HuGR-Labs/corelink-server/actions/runs/34309102051",
       "status": "completed",
       "conclusion": "startup_failure",
@@ -44,6 +74,8 @@
     {
       "run_id": 34309101852,
       "event": "pull_request_target",
+      "associated_pr": 1590,
+      "head_sha": "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73",
       "url": "https://github.com/HuGR-Labs/corelink-server/actions/runs/34309101852",
       "status": "completed",
       "conclusion": "startup_failure",
@@ -52,6 +84,8 @@
     {
       "run_id": 34309085720,
       "event": "push",
+      "associated_pr": 1590,
+      "head_sha": "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73",
       "url": "https://github.com/HuGR-Labs/corelink-server/actions/runs/34309085720",
       "status": "completed",
       "conclusion": "startup_failure",
@@ -62,7 +96,8 @@
   "bot_pr_opened": false,
   "all_required_checks_observed": false,
   "status": "blocked",
-  "blocker": "The required dedicated fine-grained PAT or GitHub App credential has not been minted or stored as BOT_PR_TOKEN. The available authenticated user session cannot mint a fine-grained PAT through the GitHub API, and Actions currently returns startup_failure with zero jobs, so no bot-created PR check proof exists.",
+  "conclusion": "limited_observation_only",
+  "blocker": "The required dedicated fine-grained PAT or GitHub App credential has not been minted or stored as BOT_PR_TOKEN. The available authenticated user session cannot mint a fine-grained PAT through the GitHub API, and Actions currently returns startup_failure with zero jobs. The observed startup_failure runs belong to PR #1590 at candidate head 14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73, not to this receipt commit (97bc766f55cac28c8913d7d273f0d854f5d86fe3). No bot-created PR check proof exists.",
   "safety": {
     "secret_values_recorded": false,
     "release_credentials_reused": false,
