@@ -217,13 +217,13 @@ fn reject_duplicate_sealed_tail(rows: &[crate::storage::d1_http::D1Row]) -> Resu
     if rows.len() < 2 {
         return Ok(());
     }
-    let first = rows[0]
-        .get("sequence_number")
-        .and_then(Value::as_i64)
+    let first = rows
+        .first()
+        .and_then(|row| row.get("sequence_number").and_then(Value::as_i64))
         .ok_or("audit_outbox.sequence_number negative/non-integer on sealed tail")?;
-    let second = rows[1]
-        .get("sequence_number")
-        .and_then(Value::as_i64)
+    let second = rows
+        .get(1)
+        .and_then(|row| row.get("sequence_number").and_then(Value::as_i64))
         .ok_or("audit_outbox.sequence_number negative/non-integer on sealed tail")?;
     if first == second {
         return Err(format!(

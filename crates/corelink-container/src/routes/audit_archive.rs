@@ -338,8 +338,8 @@ fn existing_prefix_len(
 ) -> Option<usize> {
     (!existing.is_empty()
         && existing.len() <= candidate.len()
-        && candidate[..existing.len()] == existing[..])
-        .then_some(existing.len())
+        && candidate.get(..existing.len()) == Some(existing))
+    .then_some(existing.len())
 }
 
 /// Every partition that still owns sealed-but-unarchived rows.
@@ -759,8 +759,11 @@ async fn archive_partition(
     };
     let mut offset = 0usize;
     while offset < prefix.len() {
+        let Some(remaining) = prefix.get(offset..) else {
+            break;
+        };
         let chunks = split_into_chunks(
-            prefix[offset..].to_vec(),
+            remaining.to_vec(),
             state.max_lines_per_chunk,
             state.max_bytes_per_chunk,
         );
@@ -776,7 +779,7 @@ async fn archive_partition(
         // `serialize_chunk` re-verifies every link from the persisted bytes
         // before producing any output, so a chain break in D1 stops the archive
         // here instead of being copied offsite as if it were evidence.
-        let body = serialize_chunk(&chunk).map_err(|e| e.to_string())?;
+        let body = serialize_chunk(chunk).map_err(|e| e.to_string())?;
         let key = sealed_chunk_key(first);
         match put_chunk_if_absent(&state.r2, &key, &body).await? {
             ChunkWrite::Created => {
@@ -792,14 +795,19 @@ async fn archive_partition(
                     ));
                 }
                 outcome.chunks_already_present = outcome.chunks_already_present.saturating_add(1);
-                mark_archived(&state.d1, &chunk[..rows], now).await?;
+                let Some(existing_prefix) = chunk.get(..rows) else {
+                    return Err(format!(
+                        "archive key {key} existing prefix has invalid line count {rows}"
+                    ));
+                };
+                mark_archived(&state.d1, existing_prefix, now).await?;
                 outcome.rows = outcome.rows.saturating_add(rows as u64);
                 offset = offset.saturating_add(rows);
                 continue;
             }
         }
         // R2 first, D1 second — see the module docs.
-        mark_archived(&state.d1, &chunk, now).await?;
+        mark_archived(&state.d1, chunk, now).await?;
         outcome.rows = outcome.rows.saturating_add(chunk.len() as u64);
         offset = offset.saturating_add(chunk.len());
     }
@@ -1002,7 +1010,8 @@ mod tests {
     #[test]
     fn existing_object_can_recover_a_legacy_serialized_prefix() {
         let candidate = verifying_lines(3);
-        let legacy_prefix = candidate[..2]
+        let candidate_prefix = candidate.get(..2).expect("test fixture has two lines");
+        let legacy_prefix = candidate_prefix
             .iter()
             .map(|line| {
                 json!({
@@ -1021,7 +1030,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let existing = parse_existing_chunk(legacy_prefix.as_bytes()).expect("legacy object");
-        assert_eq!(existing, candidate[..2]);
+        assert_eq!(existing, candidate_prefix);
         assert_eq!(existing_prefix_len(&existing, &candidate), Some(2));
     }
 
@@ -1029,9 +1038,13 @@ mod tests {
     fn existing_object_must_be_an_exact_nonempty_prefix() {
         let candidate = verifying_lines(3);
         assert_eq!(existing_prefix_len(&[], &candidate), None);
-        assert_eq!(existing_prefix_len(&candidate, &candidate[..2]), None);
-        let mut different = candidate[..2].to_vec();
-        different[1].row_id = "not-the-same-row".to_owned();
+        let candidate_prefix = candidate.get(..2).expect("test fixture has two lines");
+        assert_eq!(existing_prefix_len(&candidate, candidate_prefix), None);
+        let mut different = candidate_prefix.to_vec();
+        different
+            .get_mut(1)
+            .expect("test fixture has two lines")
+            .row_id = "not-the-same-row".to_owned();
         assert_eq!(existing_prefix_len(&different, &candidate), None);
     }
 
@@ -1067,7 +1080,15 @@ mod tests {
             validate_archived_returned_ids(&lines, &returned_ids(&["row-0", "row-0"])).is_err()
         );
         let mut duplicate_input = lines.clone();
-        duplicate_input[1].row_id = duplicate_input[0].row_id.clone();
+        let first_row_id = duplicate_input
+            .first()
+            .expect("test fixture has rows")
+            .row_id
+            .clone();
+        duplicate_input
+            .get_mut(1)
+            .expect("test fixture has two rows")
+            .row_id = first_row_id;
         assert!(validate_archived_returned_ids(&duplicate_input, &returned_ids(&[])).is_err());
     }
 
