@@ -45,6 +45,7 @@ pub mod byok_backfill_crypto;
 /// compiling this PUT-before-checkpoint path into a release would reintroduce
 /// an unledgered crash orphan window.
 #[cfg(test)]
+#[allow(dead_code, clippy::indexing_slicing)]
 pub(crate) mod byok_backfill_d1;
 /// BYOK convergent-encryption helpers for native CAS storage.
 pub mod byok_cas;

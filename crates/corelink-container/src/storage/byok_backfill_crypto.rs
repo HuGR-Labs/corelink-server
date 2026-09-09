@@ -644,7 +644,22 @@ fn validate_hex_hash(expected: &str, actual: &str) -> Result<(), BackfillError> 
     Ok(())
 }
 
+fn validate_digest(digest: &str) -> Result<(), BackfillError> {
+    if digest.len() == 64
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        Ok(())
+    } else {
+        Err(BackfillError::InvalidRequest(
+            "backfill digest must be lowercase 64-hex".to_owned(),
+        ))
+    }
+}
+
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -729,19 +744,5 @@ mod tests {
         );
         assert!(parse_provider("unknown").is_err());
         assert_eq!(parse_mode("random").unwrap(), CryptoMode::Random);
-    }
-}
-
-fn validate_digest(digest: &str) -> Result<(), BackfillError> {
-    if digest.len() == 64
-        && digest
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        Ok(())
-    } else {
-        Err(BackfillError::InvalidRequest(
-            "backfill digest must be lowercase 64-hex".to_owned(),
-        ))
     }
 }

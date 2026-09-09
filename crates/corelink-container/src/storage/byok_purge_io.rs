@@ -528,6 +528,7 @@ fn bounded_error(error: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

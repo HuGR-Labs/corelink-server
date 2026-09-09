@@ -1559,6 +1559,7 @@ mod abort_tests {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic)]
 mod zero_source_tests {
     use rusqlite::{params_from_iter, Connection};
 

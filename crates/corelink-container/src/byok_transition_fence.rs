@@ -615,5 +615,6 @@ fn required_str<'a>(row: &'a D1Row, column: &str) -> Result<&'a str, FenceError>
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 #[path = "byok_transition_fence_tests.rs"]
 mod tests;

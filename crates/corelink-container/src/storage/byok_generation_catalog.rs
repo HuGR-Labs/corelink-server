@@ -1363,6 +1363,7 @@ pub fn generation_qualified_digest(
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 
