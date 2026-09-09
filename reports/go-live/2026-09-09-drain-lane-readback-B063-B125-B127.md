@@ -50,7 +50,10 @@ already records the non-empty historical burst/replay controls and their
 failures (repeated sequence groups, sequence gaps, head/tail mismatches, and
 negative seal latencies). A fresh empty-window aggregate cannot satisfy the
 owner threshold, so B-125 remains open; no batch limit was changed. The fresh
-receipt is retained in the follow-up commit alongside this report.
+receipt is formally linked at
+`evidence/owner-actions/B-125/audit-throughput-readback-2026-09-09.json`;
+the canonical historical receipt remains at
+`evidence/owner-actions/B-125/audit-throughput-readback.json`.
 
 ## B-127 — residency three-state census
 
