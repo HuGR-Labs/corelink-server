@@ -15,6 +15,8 @@ use core::fmt;
 use std::collections::BTreeMap;
 
 use blake3::Hasher;
+use serde::de::{self, Visitor};
+use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::chain::link_chain_hash_from_canonical;
@@ -107,6 +109,44 @@ impl fmt::Debug for LinkKey {
 #[derive(Clone, Default)]
 pub struct LinkKeyring(BTreeMap<u64, LinkKey>);
 
+/// Secret-bearing JSON string whose allocation is wiped when parsing exits.
+/// The custom visitor moves serde's owned string into [`Zeroizing`] before any
+/// validation or decoding can fail.
+struct RawLinkKey(Zeroizing<String>);
+
+impl<'de> Deserialize<'de> for RawLinkKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct RawLinkKeyVisitor;
+
+        impl<'de> Visitor<'de> for RawLinkKeyVisitor {
+            type Value = RawLinkKey;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a hexadecimal link key string")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(RawLinkKey(Zeroizing::new(value.to_owned())))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(RawLinkKey(Zeroizing::new(value)))
+            }
+        }
+
+        deserializer.deserialize_string(RawLinkKeyVisitor)
+    }
+}
+
 /// Fail-closed errors for the JSON keyring boundary.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum LinkKeyringError {
@@ -129,13 +169,14 @@ impl LinkKeyring {
     /// entry rejects the whole keyring; a partial map must never fall back to
     /// the legacy unkeyed epoch.
     pub fn parse_json(raw: &str) -> Result<Self, LinkKeyringError> {
-        let entries = serde_json::from_str::<BTreeMap<String, String>>(raw)
+        let entries = serde_json::from_str::<BTreeMap<String, RawLinkKey>>(raw)
             .map_err(|_| LinkKeyringError::InvalidShape)?;
         if entries.is_empty() {
             return Err(LinkKeyringError::Empty);
         }
         let mut keyring = Self::default();
-        for (id_text, hex_key) in entries {
+        for (id_text, raw_key) in entries {
+            let hex_key = raw_key.0;
             let id = id_text
                 .parse::<u64>()
                 .ok()
@@ -149,7 +190,7 @@ impl LinkKeyring {
                 return Err(LinkKeyringError::InvalidKey(id_text));
             }
             let mut bytes = Zeroizing::new([0_u8; 32]);
-            hex::decode_to_slice(&hex_key, bytes.as_mut())
+            hex::decode_to_slice(hex_key.as_bytes(), bytes.as_mut())
                 .map_err(|_| LinkKeyringError::InvalidKey(id_text.clone()))?;
             if keyring.0.insert(id, LinkKey::from_bytes(*bytes)).is_some() {
                 return Err(LinkKeyringError::InvalidKey(id_text));
