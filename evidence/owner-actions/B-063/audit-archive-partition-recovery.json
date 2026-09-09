@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09T01:51:17Z",
+  "operator": "codex-live-b063-readback",
+  "database_binding": "corelink-prod-d1",
+  "database_access": "remote-read-only",
+  "query": {
+    "query_hash": "ac0707c2f731fefbc248997c33024b5a703ff95ab547cc20be1c75016c41c7e7",
+    "shape": "per-(tenant,region) SELECT with GROUP BY and part_last_archived_ms HAVING predicate",
+    "cutoff": "now - 3h, inlined Unix milliseconds",
+    "raw_tenant_data": "omitted; only the documented eight-character prefix is retained"
+  },
+  "partition_reads": [
+    {
+      "sample": 1,
+      "captured_at": "2026-09-09T01:50:26Z",
+      "cutoff_ms": 1788907826000,
+      "failed_partitions": 1,
+      "target_idle_seconds": 1083738,
+      "rows": [{"tenant_prefix": "93da3f7a", "region": "enam", "pending_old": 188, "oldest_pending_ms": 1787824088488, "part_last_archived_ms": 1787799644403}],
+      "changes": 0,
+      "rows_written": 0
+    },
+    {
+      "sample": 2,
+      "captured_at": "2026-09-09T01:50:50Z",
+      "cutoff_ms": 1788907850000,
+      "failed_partitions": 1,
+      "target_idle_seconds": 1083762,
+      "rows": [{"tenant_prefix": "93da3f7a", "region": "enam", "pending_old": 188, "oldest_pending_ms": 1787824088488, "part_last_archived_ms": 1787799644403}],
+      "changes": 0,
+      "rows_written": 0
+    },
+    {
+      "sample": 3,
+      "captured_at": "2026-09-09T01:51:17Z",
+      "cutoff_ms": 1788907877000,
+      "failed_partitions": 1,
+      "target_idle_seconds": 1083789,
+      "rows": [{"tenant_prefix": "93da3f7a", "region": "enam", "pending_old": 188, "oldest_pending_ms": 1787824088488, "part_last_archived_ms": 1787799644403}],
+      "changes": 0,
+      "rows_written": 0
+    }
+  ],
+  "target_partition": {"tenant_prefix": "93da3f7a", "region": "enam", "failed_in_all_samples": true},
+  "lag_runs": [
+    {"run_id": 33544312348, "completed_at": "2026-09-01T18:33:45Z", "partitions_failed": 1, "verdict": "PAGE", "source_reference": "GitHub Actions read-only run metadata"},
+    {"run_id": 33522527135, "completed_at": "2026-09-01T14:55:57Z", "partitions_failed": 1, "verdict": "PAGE", "source_reference": "GitHub Actions read-only run metadata"},
+    {"run_id": 33495959736, "completed_at": "2026-09-01T10:10:01Z", "partitions_failed": 1, "verdict": "PAGE", "source_reference": "GitHub Actions read-only run metadata"}
+  ],
+  "pagerduty_reference": null,
+  "verdict": "fail",
+  "verdict_reason": "Three independent read-only partition reads still identify the same failing partition. No authorized repair was supplied, no post-repair zero reads exist, and no successful post-repair lag runs or PagerDuty read reference were available.",
+  "safety": {"operations": "SELECT-only", "rows_written": 0, "workflow_dispatch": false, "endpoint_invocation": false},
+  "redaction": {"tenant_ids": "eight-character prefix only", "payloads": "omitted", "credentials": "omitted"}
+}
