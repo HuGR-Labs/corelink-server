@@ -19,6 +19,17 @@ import math
 import re
 import subprocess
 import sys
+try:
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+except ImportError as exc:  # pragma: no cover - production must fail closed
+    x509 = None
+    hashes = None
+    ec = None
+    CRYPTO_IMPORT_ERROR = exc
+else:
+    CRYPTO_IMPORT_ERROR = None
 from pathlib import Path
 from typing import Any
 
@@ -147,25 +158,33 @@ def b106_subject_bytes(att: dict[str, Any], deployment_record: dict[str, Any]) -
     )
 
 
-def _valid_ecdsa_der_signature(value: bytes) -> bool:
-    """Require the DER shape emitted by Sigstore's ECDSA P-256 signer."""
-    if len(value) < 68 or value[0] != 0x30 or value[1] != len(value) - 2:
-        return False
-    offset = 2
-    integers: list[bytes] = []
-    for _ in range(2):
-        if offset + 2 > len(value) or value[offset] != 0x02:
-            return False
-        length = value[offset + 1]
-        offset += 2
-        if length < 1 or offset + length > len(value):
-            return False
-        integer = value[offset : offset + length]
-        if integer[0] & 0x80 or (len(integer) > 1 and integer[0] == 0 and not integer[1] & 0x80):
-            return False
-        integers.append(integer)
-        offset += length
-    return offset == len(value) and all(32 <= len(integer) <= 33 for integer in integers)
+def _dsse_pae(payload_type: bytes, payload: bytes) -> bytes:
+    return b"DSSEv1 " + str(len(payload_type)).encode() + b" " + payload_type + b" " + str(len(payload)).encode() + b" " + payload
+
+
+def _verify_dsse_signature(bundle: dict[str, Any], label: str) -> None:
+    if CRYPTO_IMPORT_ERROR is not None:
+        raise EvidenceError(f"{label} cannot cryptographically verify without cryptography") from CRYPTO_IMPORT_ERROR
+    envelope = obj(bundle["dsseEnvelope"], f"{label}.dsseEnvelope")
+    material = obj(bundle["verificationMaterial"], f"{label}.verificationMaterial")
+    certificate = obj(material["certificate"], f"{label}.verificationMaterial.certificate")
+    try:
+        cert_der = base64.b64decode(text(certificate["rawBytes"], f"{label}.certificate.rawBytes"), validate=True)
+        cert = x509.load_der_x509_certificate(cert_der)
+        payload = base64.b64decode(text(envelope["payload"], f"{label}.payload"), validate=True)
+        pae = _dsse_pae(envelope["payloadType"].encode(), payload)
+        now = dt.datetime.now(dt.timezone.utc)
+        if cert.not_valid_before_utc > now or cert.not_valid_after_utc < now:
+            raise EvidenceError(f"{label} signing certificate is outside its validity interval")
+        signatures = envelope["signatures"]
+        if not isinstance(signatures, list) or len(signatures) != 1:
+            raise EvidenceError(f"{label} must contain exactly one DSSE signature")
+        signature = base64.b64decode(text(obj(signatures[0], f"{label}.signature")["sig"], f"{label}.signature.sig"), validate=True)
+        cert.public_key().verify(signature, pae, ec.ECDSA(hashes.SHA256()))
+    except EvidenceError:
+        raise
+    except Exception as exc:
+        raise EvidenceError(f"{label} DSSE PAE signature verification failed") from exc
 
 
 def _attested_statement(bundle: dict[str, Any], label: str) -> dict[str, Any]:
@@ -182,8 +201,8 @@ def _attested_statement(bundle: dict[str, Any], label: str) -> dict[str, Any]:
             decoded_signature = base64.b64decode(encoded_signature, validate=True)
         except (ValueError, binascii.Error) as exc:
             raise EvidenceError(f"{label}.signatures[{index}] is not base64") from exc
-        if not _valid_ecdsa_der_signature(decoded_signature):
-            raise EvidenceError(f"{label}.signatures[{index}] is not a DER ECDSA signature")
+        if not decoded_signature:
+            raise EvidenceError(f"{label}.signatures[{index}] is empty")
     encoded = text(envelope.get("payload"), f"{label}.dsseEnvelope.payload")
     try:
         statement = obj(json.loads(base64.b64decode(encoded, validate=True)), f"{label}.statement")
@@ -204,6 +223,7 @@ def _attested_statement(bundle: dict[str, Any], label: str) -> dict[str, Any]:
     timestamp_data = obj(verification_material.get("timestampVerificationData"), f"{label}.timestampVerificationData")
     if not any(isinstance(timestamp_data.get(key), list) and timestamp_data[key] for key in ("tlogEntries", "rfc3161Timestamps")):
         raise EvidenceError(f"{label} has no retained transparency/timestamp verification")
+    _verify_dsse_signature(bundle, label)
     return statement
 
 
@@ -558,7 +578,13 @@ def b106(item: dict[str, Any], root: Path, tenant: str, now: float) -> str:
             continue
         signature = result.get("signature")
         certificate = signature.get("certificate") if isinstance(signature, dict) else None
-        if not isinstance(certificate, dict) or certificate.get("sourceRepository") != REPO:
+        if (
+            not isinstance(certificate, dict)
+            or certificate.get("sourceRepository") != REPO
+            or not isinstance(certificate.get("certificateIssuer"), str)
+            or not certificate.get("certificateIssuer")
+            or certificate.get("issuer") != "https://token.actions.githubusercontent.com"
+        ):
             continue
         signer_san = certificate.get("subjectAlternativeName")
         expected_san_prefix = f"https://github.com/{REPO}/{WORKFLOW}@"

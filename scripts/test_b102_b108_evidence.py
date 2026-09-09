@@ -13,6 +13,10 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 
 sys.path.insert(0, str(Path(__file__).parent))
 import verify_b102_b108_evidence as verifier
@@ -83,19 +87,32 @@ def github_attestation(attestation: dict, deployment_record: dict) -> dict:
         "predicateType": "https://slsa.dev/provenance/v1",
         "predicate": predicate,
     }
-    payload = base64.b64encode(json.dumps(subject, sort_keys=True, separators=(",", ":")).encode()).decode()
-    valid_signature = base64.b64encode(b"\x30\x44\x02\x20" + b"\x01" * 32 + b"\x02\x20" + b"\x02" * 32).decode()
+    payload_bytes = json.dumps(subject, sort_keys=True, separators=(",", ":")).encode()
+    payload = base64.b64encode(payload_bytes).decode()
+    key = ec.generate_private_key(ec.SECP256R1())
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "fixture")]))
+        .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "fixture")]))
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.now(timezone.utc).replace(microsecond=0))
+        .not_valid_after(datetime.now(timezone.utc).replace(microsecond=0).replace(year=datetime.now(timezone.utc).year + 1))
+        .sign(key, hashes.SHA256())
+    )
+    pae = b"DSSEv1 " + str(len(b"application/vnd.in-toto+json")).encode() + b" application/vnd.in-toto+json " + str(len(payload_bytes)).encode() + b" " + payload_bytes
+    valid_signature = base64.b64encode(key.sign(pae, ec.ECDSA(hashes.SHA256()))).decode()
     bundle = {
         "mediaType": "application/vnd.dev.sigstore.bundle+json;version=0.3",
         "dsseEnvelope": {"payloadType": "application/vnd.in-toto+json", "payload": payload, "signatures": [{"sig": valid_signature}]},
-        "verificationMaterial": {"certificate": {"rawBytes": base64.b64encode(b"fixture-certificate").decode()}, "timestampVerificationData": {"tlogEntries": [{"fixture": True}]}},
+        "verificationMaterial": {"certificate": {"rawBytes": base64.b64encode(cert.public_bytes(serialization.Encoding.DER)).decode()}, "timestampVerificationData": {"tlogEntries": [{"fixture": True}]}},
     }
     return {
         "subject_sha256": verifier.sha(verifier.b106_subject_bytes(attestation, deployment_record)),
         "subject_name": "b106-cold-attestation.json",
         "bundle_sha256": verifier.sha(verifier.canonical_json(bundle)),
         "bundle": bundle,
-        "verification": [{"attestation": copy.deepcopy(bundle), "verificationResult": {"signature": {"certificate": {"sourceRepository": verifier.REPO, "subjectAlternativeName": f"https://github.com/{verifier.REPO}/.github/workflows/perf-production-evidence.yml@refs/heads/main"}}, "verifiedTimestamps": [{"type": "tlog"}], "statement": subject}}],
+        "verification": [{"attestation": copy.deepcopy(bundle), "verificationResult": {"signature": {"certificate": {"sourceRepository": verifier.REPO, "certificateIssuer": "CN=fixture", "issuer": "https://token.actions.githubusercontent.com", "subjectAlternativeName": f"https://github.com/{verifier.REPO}/.github/workflows/perf-production-evidence.yml@refs/heads/main"}}, "verifiedTimestamps": [{"type": "tlog"}], "statement": subject}}],
         "verification_policy": {
             "repository": verifier.REPO,
             "signer_workflow": f"{verifier.REPO}/.github/workflows/perf-production-evidence.yml",
@@ -341,6 +358,15 @@ def main() -> int:
         bundle["dsseEnvelope"]["signatures"][0]["sig"] = base64.b64encode(forged).decode()
         p["items"]["B-106"]["github_attestation"]["bundle_sha256"] = verifier.sha(verifier.canonical_json(bundle))
     expect_error(forged_dsse_signature, "DSSE signature/bundle linkage")
+    def rebound_forged_dsse_signature(p: dict) -> None:
+        attestation = p["items"]["B-106"]["github_attestation"]
+        bundle = attestation["bundle"]
+        forged = bytearray(base64.b64decode(bundle["dsseEnvelope"]["signatures"][0]["sig"]))
+        forged[-1] ^= 1
+        bundle["dsseEnvelope"]["signatures"][0]["sig"] = base64.b64encode(forged).decode()
+        attestation["verification"][0]["attestation"] = copy.deepcopy(bundle)
+        attestation["bundle_sha256"] = verifier.sha(verifier.canonical_json(bundle))
+    expect_error(rebound_forged_dsse_signature, "rebound forged DSSE signature")
     def fake_base64_signature(p: dict) -> None:
         p["items"]["B-106"]["github_attestation"]["bundle"]["dsseEnvelope"]["signatures"][0]["sig"] = "ZmFrZQ=="
     expect_error(fake_base64_signature, "fake base64 is not a DSSE signature")

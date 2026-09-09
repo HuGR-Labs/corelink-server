@@ -31,6 +31,8 @@ from scripts.verify_b006_evidence import EvidenceError as B006EvidenceError
 from scripts.verify_b006_evidence import validate_closure as validate_b006_closure
 from scripts.verify_b006_evidence import validate_receipt as validate_b006_receipt
 from scripts.verify_b006_provider_binding import ProviderBindingError, validate_provider_binding
+from scripts.verify_b229_clerk_webhook import VerificationError as B229VerificationError
+from scripts.verify_b229_clerk_webhook import verify_repo as verify_b229_receipt
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -930,11 +932,19 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
             )
             if packet["artifact"] != artifact or command != expected_command:
                 raise GraduationError("B-229: packet artifact and standalone verifier command are not exact")
-            evidence = str(packet.get("evidence", ""))
-            if artifact not in evidence or "verify_b229_clerk_webhook.py" not in evidence:
-                raise GraduationError("B-229: DONE evidence does not name the exact production receipt and verifier")
+            expected_evidence = (
+                "B-229 production receipt evidence/production/B-229-clerk-webhook-2026-09-08.md is verified by "
+                "scripts/verify_b229_clerk_webhook.py: exact source SHA, Cloudflare version, 100% traffic, "
+                "health 200, signed probe 200 ignored, and omitted payload/credential values."
+            )
+            if packet.get("evidence") != expected_evidence:
+                raise GraduationError("B-229: DONE evidence description is not the exact closed-world receipt statement")
             if not (root / "scripts/verify_b229_clerk_webhook.py").is_file():
                 raise GraduationError("B-229: standalone production receipt verifier is missing")
+            try:
+                verify_b229_receipt(root / artifact)
+            except (OSError, B229VerificationError) as exc:
+                raise GraduationError(f"B-229: standalone receipt verification failed: {exc}") from exc
         if disposition == "PARKED":
             artifact = _require_string(packet, "artifact", item)
             command = _require_string(packet, "command", item)
