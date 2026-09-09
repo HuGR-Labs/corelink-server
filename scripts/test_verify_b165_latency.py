@@ -153,6 +153,22 @@ class B165VerifierTests(unittest.TestCase):
                 pat_fingerprint_b=self.PAT_B,
             )
 
+    def test_canonical_path_shape_parity_table(self):
+        # Keep this table in lockstep with probe-wp-b165-latency.sh:
+        # exactly one object segment is accepted for each route family.
+        cases = (
+            ("/v1/cas/tenant-a/digest", "tenant-a"),
+            ("/cargo/tenant-a/digest", "tenant-a"),
+            ("/v1/cas/tenant-a/nested/object", None),
+            ("/cargo/tenant-a/nested/object", None),
+        )
+        for path, expected in cases:
+            if expected is None:
+                with self.assertRaises(verifier.EvidenceError):
+                    verifier._canonical_tenant(path)
+            else:
+                self.assertEqual(verifier._canonical_tenant(path), expected)
+
     def test_missing_sample_fails_closed(self):
         content = _rows().replace("refusal\tv2\t/v2/x/manifests/latest\t3\t401\t0\t0.010\n", "")
         with self.assertRaises(verifier.EvidenceError):

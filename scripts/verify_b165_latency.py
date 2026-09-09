@@ -113,9 +113,9 @@ def _canonical_tenant(path: str) -> str:
     segments = path.split("/")
     if any(not segment for segment in segments[1:]):
         raise EvidenceError(f"served path is not canonical: {path}")
-    if len(segments) >= 5 and segments[1:3] == ["v1", "cas"]:
+    if len(segments) == 5 and segments[1:3] == ["v1", "cas"]:
         return segments[3]
-    if len(segments) >= 4 and segments[1] == "cargo":
+    if len(segments) == 4 and segments[1] == "cargo":
         return segments[2]
     raise EvidenceError(f"served path has no canonical tenant segment: {path}")
 
