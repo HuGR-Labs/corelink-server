@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09T04:16:11Z",
+  "target_host": "staging.corelink.humangr.com",
+  "dns_result": {
+    "status": "unresolved",
+    "resolver_observed": "no address",
+    "https_probe": "curl could not resolve host"
+  },
+  "secret_names": {
+    "expected": [
+      "K6_TARGET_HOST",
+      "K6_STAGING_PAT",
+      "K6_STAGING_STRIPE_WHSEC",
+      "K6_STAGING_MFA_STUB",
+      "K6_STAGING_BYOK_CMK_ID"
+    ],
+    "present_in_github_environment": []
+  },
+  "scenario_set": ["signup", "webhook", "dsr", "cas", "byok"],
+  "baseline_reference": {
+    "path": "tests/load/baseline/k6-baseline.json",
+    "status": "absent"
+  },
+  "run_id": null,
+  "comparison": {
+    "status": "not-run",
+    "reason": "staging DNS is unresolved and the protected staging environment has no K6 secrets"
+  },
+  "schedule_decision": "dispatch-only; do not enable unattended load runs",
+  "operator": "codex-readonly-probe"
+}
