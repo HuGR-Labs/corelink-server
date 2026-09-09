@@ -13,10 +13,6 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.x509.oid import NameOID
 
 sys.path.insert(0, str(Path(__file__).parent))
 import verify_b102_b108_evidence as verifier
@@ -89,23 +85,13 @@ def github_attestation(attestation: dict, deployment_record: dict) -> dict:
     }
     payload_bytes = json.dumps(subject, sort_keys=True, separators=(",", ":")).encode()
     payload = base64.b64encode(payload_bytes).decode()
-    key = ec.generate_private_key(ec.SECP256R1())
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "fixture")]))
-        .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "fixture")]))
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.now(timezone.utc).replace(microsecond=0))
-        .not_valid_after(datetime.now(timezone.utc).replace(microsecond=0).replace(year=datetime.now(timezone.utc).year + 1))
-        .sign(key, hashes.SHA256())
-    )
-    pae = b"DSSEv1 " + str(len(b"application/vnd.in-toto+json")).encode() + b" application/vnd.in-toto+json " + str(len(payload_bytes)).encode() + b" " + payload_bytes
-    valid_signature = base64.b64encode(key.sign(pae, ec.ECDSA(hashes.SHA256()))).decode()
     bundle = {
         "mediaType": "application/vnd.dev.sigstore.bundle+json;version=0.3",
-        "dsseEnvelope": {"payloadType": "application/vnd.in-toto+json", "payload": payload, "signatures": [{"sig": valid_signature}]},
-        "verificationMaterial": {"certificate": {"rawBytes": base64.b64encode(cert.public_bytes(serialization.Encoding.DER)).decode()}, "timestampVerificationData": {"tlogEntries": [{"fixture": True}]}},
+        # Deliberately non-verifying fixture: the real pinned gh verifier must
+        # reject this fake signature/certificate/tlog material before the
+        # structural mutation suite uses its monkeypatched verifier.
+        "dsseEnvelope": {"payloadType": "application/vnd.in-toto+json", "payload": payload, "signatures": [{"sig": "ZmFrZQ=="}]},
+        "verificationMaterial": {"certificate": {"rawBytes": base64.b64encode(b"fixture-certificate").decode()}, "timestampVerificationData": {"tlogEntries": [{"fixture": True}]}},
     }
     return {
         "subject_sha256": verifier.sha(verifier.b106_subject_bytes(attestation, deployment_record)),
@@ -278,6 +264,31 @@ def workflow_run_timestamp_contract() -> None:
 
 
 def main() -> int:
+    try:
+        verifier.assess(packet(), ROOT, NOW)
+    except verifier.EvidenceError:
+        pass
+    else:
+        raise AssertionError("fake fixture unexpectedly passed the pinned gh verifier")
+    original_gh_verifier = verifier.verify_attestation_with_gh
+
+    def expect_real_gh_error(mutator, label: str) -> None:
+        candidate = packet()
+        mutator(candidate)
+        item = candidate["items"]["B-106"]
+        attestation = item["github_attestation"]
+        try:
+            original_gh_verifier(
+                attestation["bundle"],
+                verifier.b106_subject_bytes(item["cold_attestation"], item["deployment"]),
+                item["deployment"],
+                attestation["verification"],
+            )
+        except verifier.EvidenceError:
+            return
+        raise AssertionError(f"real gh verifier accepted mutation: {label}")
+
+    verifier.verify_attestation_with_gh = lambda _bundle, _subject, _deployment, expected: expected
     result = verifier.assess(packet(), ROOT, NOW)
     assert result["B-108"] == "closed"
     assert all(result[item] == "open" for item in verifier.ITEMS[:-1])
@@ -357,7 +368,7 @@ def main() -> int:
         forged[-1] ^= 1
         bundle["dsseEnvelope"]["signatures"][0]["sig"] = base64.b64encode(forged).decode()
         p["items"]["B-106"]["github_attestation"]["bundle_sha256"] = verifier.sha(verifier.canonical_json(bundle))
-    expect_error(forged_dsse_signature, "DSSE signature/bundle linkage")
+    expect_real_gh_error(forged_dsse_signature, "DSSE signature/bundle linkage")
     def rebound_forged_dsse_signature(p: dict) -> None:
         attestation = p["items"]["B-106"]["github_attestation"]
         bundle = attestation["bundle"]
@@ -366,10 +377,7 @@ def main() -> int:
         bundle["dsseEnvelope"]["signatures"][0]["sig"] = base64.b64encode(forged).decode()
         attestation["verification"][0]["attestation"] = copy.deepcopy(bundle)
         attestation["bundle_sha256"] = verifier.sha(verifier.canonical_json(bundle))
-    expect_error(rebound_forged_dsse_signature, "rebound forged DSSE signature")
-    def fake_base64_signature(p: dict) -> None:
-        p["items"]["B-106"]["github_attestation"]["bundle"]["dsseEnvelope"]["signatures"][0]["sig"] = "ZmFrZQ=="
-    expect_error(fake_base64_signature, "fake base64 is not a DSSE signature")
+    expect_real_gh_error(rebound_forged_dsse_signature, "rebound forged DSSE signature")
     expect_error(lambda p: p["items"]["B-105"].update(password="redacted"), "secret-shaped field")
     collector_wire_and_join_round_trip()
     mint_wire_binding_round_trip()

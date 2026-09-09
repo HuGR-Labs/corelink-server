@@ -19,17 +19,7 @@ import math
 import re
 import subprocess
 import sys
-try:
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.asymmetric import ec
-except ImportError as exc:  # pragma: no cover - production must fail closed
-    x509 = None
-    hashes = None
-    ec = None
-    CRYPTO_IMPORT_ERROR = exc
-else:
-    CRYPTO_IMPORT_ERROR = None
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -158,35 +148,6 @@ def b106_subject_bytes(att: dict[str, Any], deployment_record: dict[str, Any]) -
     )
 
 
-def _dsse_pae(payload_type: bytes, payload: bytes) -> bytes:
-    return b"DSSEv1 " + str(len(payload_type)).encode() + b" " + payload_type + b" " + str(len(payload)).encode() + b" " + payload
-
-
-def _verify_dsse_signature(bundle: dict[str, Any], label: str) -> None:
-    if CRYPTO_IMPORT_ERROR is not None:
-        raise EvidenceError(f"{label} cannot cryptographically verify without cryptography") from CRYPTO_IMPORT_ERROR
-    envelope = obj(bundle["dsseEnvelope"], f"{label}.dsseEnvelope")
-    material = obj(bundle["verificationMaterial"], f"{label}.verificationMaterial")
-    certificate = obj(material["certificate"], f"{label}.verificationMaterial.certificate")
-    try:
-        cert_der = base64.b64decode(text(certificate["rawBytes"], f"{label}.certificate.rawBytes"), validate=True)
-        cert = x509.load_der_x509_certificate(cert_der)
-        payload = base64.b64decode(text(envelope["payload"], f"{label}.payload"), validate=True)
-        pae = _dsse_pae(envelope["payloadType"].encode(), payload)
-        now = dt.datetime.now(dt.timezone.utc)
-        if cert.not_valid_before_utc > now or cert.not_valid_after_utc < now:
-            raise EvidenceError(f"{label} signing certificate is outside its validity interval")
-        signatures = envelope["signatures"]
-        if not isinstance(signatures, list) or len(signatures) != 1:
-            raise EvidenceError(f"{label} must contain exactly one DSSE signature")
-        signature = base64.b64decode(text(obj(signatures[0], f"{label}.signature")["sig"], f"{label}.signature.sig"), validate=True)
-        cert.public_key().verify(signature, pae, ec.ECDSA(hashes.SHA256()))
-    except EvidenceError:
-        raise
-    except Exception as exc:
-        raise EvidenceError(f"{label} DSSE PAE signature verification failed") from exc
-
-
 def _attested_statement(bundle: dict[str, Any], label: str) -> dict[str, Any]:
     envelope = obj(bundle.get("dsseEnvelope"), f"{label}.dsseEnvelope")
     if envelope.get("payloadType") != "application/vnd.in-toto+json":
@@ -223,7 +184,6 @@ def _attested_statement(bundle: dict[str, Any], label: str) -> dict[str, Any]:
     timestamp_data = obj(verification_material.get("timestampVerificationData"), f"{label}.timestampVerificationData")
     if not any(isinstance(timestamp_data.get(key), list) and timestamp_data[key] for key in ("tlogEntries", "rfc3161Timestamps")):
         raise EvidenceError(f"{label} has no retained transparency/timestamp verification")
-    _verify_dsse_signature(bundle, label)
     return statement
 
 
