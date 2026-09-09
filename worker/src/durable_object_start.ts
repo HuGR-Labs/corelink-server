@@ -216,6 +216,10 @@ export async function startContainer(
           // reusing the erasure-attestation seed/key above when unset).
           AUDIT_CHAIN_SIGNING_SEED_HEX: ctx.env.AUDIT_CHAIN_SIGNING_SEED_HEX ?? "",
           AUDIT_CHAIN_SIGNING_KEY_ID: ctx.env.AUDIT_CHAIN_SIGNING_KEY_ID ?? "",
+          // B-054 write-only link-key keyring. Forward byte-for-byte through
+          // the Worker→DO→container boundary; the parked epoch runtime parses
+          // it atomically into zeroizing memory and refuses malformed input.
+          AUDIT_CHAIN_LINK_KEYS_JSON: ctx.env.AUDIT_CHAIN_LINK_KEYS_JSON ?? "",
           AUDIT_CHAIN_TRUST_UNSIGNED_RESUME: ctx.env.AUDIT_CHAIN_TRUST_UNSIGNED_RESUME ?? "",
           // Non-secret tuning knob (secrets-matrix #189): per-call row budget for
           // the audit/drain sweep. "" ⇒ container default (200). Forwarded so a

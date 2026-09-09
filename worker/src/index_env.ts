@@ -243,6 +243,8 @@ export interface Env {
   ERASURE_ATTESTATION_SINGLE_REGION?: string;
   AUDIT_CHAIN_SIGNING_SEED_HEX?: string;
   AUDIT_CHAIN_SIGNING_KEY_ID?: string;
+  /** JSON object mapping registered link_key_id values to 32-byte lower-case hex keys. */
+  AUDIT_CHAIN_LINK_KEYS_JSON?: string;
   AUDIT_CHAIN_TRUST_UNSIGNED_RESUME?: string;
   AUDIT_DRAIN_BATCH_LIMIT?: string;
   AUDIT_DRAIN_LEASE_ENABLED?: string;

@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Dependency-free static guard for B-072 receiver/schedule wiring."""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+import tomllib
+from pathlib import Path
+
+
+def fail(message: str) -> None:
+    raise AssertionError(message)
+
+
+def main(root: Path) -> None:
+    root_config = root / "wrangler.toml"
+    receiver_config = root / "apps/synthetic-pager-worker/wrangler.toml"
+    scheduler = root / "worker/src/index_schedule.ts"
+    receiver = root / "apps/synthetic-pager-worker/src/index.ts"
+    contract = root / "apps/synthetic-pager-worker/src/contract.ts"
+    migration = root / "migrations/d1/0116_synthetic_page_delivery_lifecycle.sql"
+    workspace = root / "pnpm-workspace.yaml"
+    deploy_workflow = root / ".github/workflows/synthetic-pager-worker-deploy.yml"
+    for path in (root_config, receiver_config, scheduler, receiver, contract, migration, workspace, deploy_workflow):
+        if not path.is_file():
+            fail(f"missing B-072 contract file: {path.relative_to(root)}")
+
+    root_data = tomllib.loads(root_config.read_text())
+    triggers = root_data.get("triggers", {}).get("crons", [])
+    if triggers != ["0 14 * * 1"]:
+        fail(f"root schedule must contain only the synthetic cron, got {triggers!r}")
+
+    staging = root_data.get("env", {}).get("staging", {})
+    if staging.get("triggers", {}).get("crons") != []:
+        fail("root staging schedule is not explicitly disabled")
+    staging_bindings = staging.get("services", [])
+    if not any(
+        item.get("binding") == "SCHEDULED_DRILL_DELIVERY"
+        and item.get("service") == "corelink-synthetic-pager-staging"
+        for item in staging_bindings
+    ):
+        fail("staging receiver service binding is missing")
+
+    for environment in ("prod", "prod-sam", "prod-lhr", "prod-nrt", "prod-syd"):
+        env_data = root_data.get("env", {}).get(environment, {})
+        if env_data.get("triggers", {}).get("crons") != []:
+            fail(f"{environment} does not explicitly disable schedules")
+        if any(item.get("binding") == "SCHEDULED_DRILL_DELIVERY" for item in env_data.get("services", [])):
+            fail(f"{environment} has an accidental synthetic receiver binding")
+
+    receiver_data = tomllib.loads(receiver_config.read_text())
+    if receiver_data.get("vars", {}).get("SYNTHETIC_DRILL_ENABLED") != "false":
+        fail("receiver default activation is not fail-closed")
+    for environment in ("staging", "prod"):
+        env_data = receiver_data.get("env", {}).get(environment, {})
+        if env_data.get("vars", {}).get("SYNTHETIC_DRILL_ENABLED") != "false":
+            fail(f"receiver {environment} activation is not disabled")
+    if receiver_data.get("triggers", {}).get("crons") != ["59 23 * * 0"]:
+        fail("receiver deferred-delivery cron is missing")
+    if receiver_data.get("env", {}).get("staging", {}).get("triggers", {}).get("crons") != ["59 23 * * 0"]:
+        fail("staging deferred-delivery cron is missing")
+    if receiver_data.get("env", {}).get("prod", {}).get("triggers", {}).get("crons") != []:
+        fail("receiver production cron is not explicitly disabled")
+
+    receiver_source = receiver.read_text()
+    contract_source = contract.read_text()
+    migration_source = migration.read_text()
+    scheduler_source = scheduler.read_text()
+    workspace_source = workspace.read_text()
+    deploy_source = deploy_workflow.read_text()
+    required_fragments = {
+        "production environment guard": 'environment === "prod" || environment?.startsWith("prod-")',
+        "activation gate": 'env.SYNTHETIC_DRILL_ENABLED !== "true"',
+        "canonical endpoint gate": "env.PAGERDUTY_EVENTS_URL !== PAGERDUTY_EVENTS_URL",
+        "routing-key gate": "PAGERDUTY_SYNTHETIC_ROUTING_KEY?.trim()",
+        "header/payload correlation gate": "deliveryId !== envelope.synthetic_page.dedup_key",
+        "PagerDuty non-2xx guard": "response === null || !response.ok",
+        "D1-before-PagerDuty path": "await persistDelivery(env, envelope)",
+        "deferred durability path": "delivery_mode = 'deferred'",
+        "deferred undelivered filter": "delivered_at_ms IS NULL",
+        "deferred terminal timestamp": "SET delivered_at_ms = ?, outcome = 'unacked'",
+        "deferred mode preserved": "WHERE drill_id = ? AND delivery_mode = 'deferred' AND delivered_at_ms IS NULL",
+        "webhook signature gate": "verifyPagerDutySignature",
+        "webhook D1 outcome update": "SET outcome = ?, engineer_slug = ?, ack_ts_ms = ?, mtta_ms = ?, ack_vector = ?",
+        "webhook production gate": "validateWebhookEnvironment",
+    }
+    for label, fragment in required_fragments.items():
+        combined_source = receiver_source + contract_source
+        if label in {"production environment guard", "webhook production gate"}:
+            if combined_source.count(fragment) < 2:
+                fail(f"missing {label}")
+            continue
+        if fragment not in combined_source:
+            fail(f"missing {label}")
+    for label, fragment in {
+        "scheduler canonical delivery id": "const deliveryId = `SP-${controller.scheduledTime}`",
+        "scheduler correlation id": "correlation_id: `PAT-CORRELATION-ID-001:${deliveryId}`",
+        "scheduler retry on non-2xx": "if (!response.ok)",
+    }.items():
+        if fragment not in scheduler_source:
+            fail(f"missing {label}")
+    if "`SP-<13-digit scheduled timestamp>`" not in migration_source:
+        fail("migration does not document canonical drill id/dedup format")
+    if "apps/synthetic-pager-worker" not in workspace_source:
+        fail("receiver package is not in the pnpm workspace")
+    if not re.search(r"(?m)^\s+workflow_dispatch:\s*$", deploy_source):
+        fail("receiver deploy must be manually dispatched")
+    if re.search(r"(?m)^\s+(push|pull_request|schedule):\s*$", deploy_source):
+        fail("receiver deploy must not have an automatic trigger")
+    for label, fragment in {
+        "staging-only input": "options: [staging]",
+        "staging environment": "environment: synthetic-drill-staging",
+        "inert pre-deploy guard": "python3 scripts/verify_b072_receiver.py",
+        "receiver typecheck": "pnpm run typecheck",
+        "staging deploy": 'pnpm exec wrangler deploy --env "${{ inputs.environment }}"',
+    }.items():
+        if fragment not in deploy_source:
+            fail(f"missing {label}")
+
+    print("B-072 receiver/schedule guard: PASS")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root", type=Path, default=Path.cwd())
+    args = parser.parse_args()
+    try:
+        main(args.root.resolve())
+    except (AssertionError, OSError, tomllib.TOMLDecodeError) as error:
+        print(f"B-072 receiver/schedule guard: FAIL: {error}", file=sys.stderr)
+        raise SystemExit(1)

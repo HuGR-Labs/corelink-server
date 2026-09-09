@@ -20,6 +20,8 @@ from verify_backlog_wp_ledger import (
     parse_workflow_ownership,
     validate_workflow_ownership,
     parse_ledger_state,
+    load_snapshot_manifest,
+    validate_snapshot_manifest,
     validate_ledger_state,
     parse_wp_dependency_order,
     validate_wp_dependency_order,
@@ -222,7 +224,7 @@ WP-150 | WP-148
 def test_ledger_state_rejects_stale_base_and_population():
     state = parse_ledger_state(
         """```ledger-state
-base-ref: main
+base-ref: 14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73
 base-sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 observed-at: 2026-09-06
 item-count: 168
@@ -257,12 +259,12 @@ catalog-counts: B001-B045=8,B046-B090=31,B091-B130=36,B131-B167=32
         validate_ledger_state(stale_population, **kwargs)
 
 
-def test_live_ledger_uses_immutable_d03_head_anchor():
-    assert ledger.LEDGER_BASE_REF == "main"
-    assert ledger.LEDGER_BASE_SHA == "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+def test_live_ledger_uses_immutable_candidate_anchor():
+    assert ledger.LEDGER_BASE_REF == "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73"
+    assert ledger.LEDGER_BASE_SHA == "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73"
 
 
-def test_current_d03_tree_has_delivered_main_ancestry_anchor():
+def test_current_candidate_tree_has_ancestry_anchor():
     ledger.validate_git_anchor(ledger.REPO_ROOT, source="current D03 tree")
 
 
@@ -326,13 +328,48 @@ def test_git_anchor_rejects_wrong_ref_and_unrelated_head(tmp_path):
 def test_main_rejects_tampered_base_sha_end_to_end(monkeypatch, tmp_path):
     source = ledger.LEDGER_PATH.read_text()
     tampered = source.replace(
-        "base-sha: ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266",
+        "base-sha: 14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73",
         "base-sha: 0000000000000000000000000000000000000000",
     )
     path = tmp_path / "BACKLOG-WP-LEDGER.md"
     path.write_text(tampered)
     monkeypatch.setattr(ledger, "LEDGER_PATH", path)
     assert ledger.main() == 1
+
+
+def test_snapshot_rejects_coordinated_b006_closure_and_count_rewrite():
+    backlog = ledger.REPO_ROOT.joinpath("BACKLOG.md").read_text()
+    start = backlog.index("### B-006")
+    end = backlog.index("### B-007", start)
+    mutated_backlog = (
+        backlog[:start]
+        + backlog[start:end].replace("status: open", "status: done", 1)
+        + backlog[end:]
+    )
+    ledger_text = ledger.LEDGER_PATH.read_text()
+    mutated_ledger = ledger_text.replace("open-count: 14", "open-count: 13", 1)
+    mutated_ledger = mutated_ledger.replace("done-count: 316", "done-count: 317", 1)
+    mutated_ledger = mutated_ledger.replace("B001-B045=5", "B001-B045=4", 1)
+    state = parse_ledger_state(mutated_ledger, "mutated-ledger.md")
+    with pytest.raises(LedgerError, match="outside the immutable snapshot"):
+        validate_snapshot_manifest(
+            load_snapshot_manifest(),
+            mutated_backlog,
+            state,
+            source="mutated-ledger.md",
+        )
+
+
+def test_snapshot_rejects_ledger_count_rewrite_without_backlog_change():
+    ledger_text = ledger.LEDGER_PATH.read_text().replace("open-count: 14", "open-count: 13", 1)
+    state = parse_ledger_state(ledger_text, "mutated-ledger.md")
+    with pytest.raises(LedgerError, match="ledger open-count is outside"):
+        validate_snapshot_manifest(
+            load_snapshot_manifest(),
+            ledger.REPO_ROOT.joinpath("BACKLOG.md").read_text(),
+            state,
+            source="mutated-ledger.md",
+        )
 
 
 @pytest.mark.parametrize("missing", ["WP-140", "WP-146"])

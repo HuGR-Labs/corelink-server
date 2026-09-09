@@ -1,31 +1,35 @@
-/// Write the pre-computed sealed rows in order, checking the self-fence
-/// (`should_fence`) with a FRESH clock reading before EACH write. On a fence trip
-/// it stops having written only the ordered prefix and reports `Fenced(prefix)`;
-/// otherwise `Complete(n)`. The `clock` and `write_row` seams make the fence
-/// deterministically unit-testable without D1 (drive `clock` across the expiry
-/// and assert only the prefix was written) while the real path passes `now_ms`
-/// and a `write_seal` closure — one shared loop, no divergence.
-async fn run_fenced_seal_loop<C, W, Fut>(
+/// Write sealed rows in bounded JSON1 chunks.  The lease fence is checked on
+/// both sides of each statement: if the lease expires after a chunk commits,
+/// the head is deliberately left unadvanced and the sealed prefix is resumed
+/// from its durable tail by the next drain.
+async fn run_chunked_fenced_seal_loop<C, W, Fut>(
     sealed: &[SealedRow],
     lease_enabled: bool,
     my_lease_expires_ms: i64,
     mut clock: C,
-    mut write_row: W,
+    mut write_chunk: W,
 ) -> Result<FencedSeal, String>
 where
     C: FnMut() -> i64,
-    W: FnMut(SealedRow) -> Fut,
+    W: FnMut(Vec<SealedRow>) -> Fut,
     Fut: std::future::Future<Output = Result<(), String>>,
 {
-    for (i, row) in sealed.iter().enumerate() {
+    let mut written = 0u64;
+    for chunk in sealed.chunks(AUDIT_SEAL_ROWS_PER_STATEMENT) {
         if should_fence(clock(), my_lease_expires_ms, lease_enabled) {
-            return Ok(FencedSeal::Fenced(u64::try_from(i).unwrap_or(u64::MAX)));
+            return Ok(FencedSeal::Fenced(written));
         }
-        write_row(row.clone()).await?;
+        let chunk = chunk.to_vec();
+        let chunk_len = chunk.len();
+        write_chunk(chunk).await?;
+        written = written
+            .checked_add(u64::try_from(chunk_len).map_err(|_| "seal chunk length exceeds u64")?)
+            .ok_or("sealed row count overflow")?;
+        if should_fence(clock(), my_lease_expires_ms, lease_enabled) {
+            return Ok(FencedSeal::Fenced(written));
+        }
     }
-    Ok(FencedSeal::Complete(
-        u64::try_from(sealed.len()).unwrap_or(u64::MAX),
-    ))
+    Ok(FencedSeal::Complete(written))
 }
 
 /// Acquire the per-partition drain lease atomically (B-038). One SQLite statement

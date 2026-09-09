@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-08T16:27:56-03:00",
+  "selected_option": "linux_self_hosted",
+  "workflows": [
+    {
+      "workflow": ".github/workflows/cas_foundation.yml",
+      "current_runner": "ubuntu-latest / ubuntu-x64-4core",
+      "selected_runner": "corelink",
+      "action": "migrated"
+    },
+    {
+      "workflow": ".github/workflows/coverage.yml",
+      "current_runner": "ubuntu-x64-4core",
+      "selected_runner": "corelink",
+      "action": "migrated"
+    },
+    {
+      "workflow": ".github/workflows/ffi-matrix-ci.yml",
+      "current_runner": "ubuntu-latest",
+      "selected_runner": "corelink",
+      "action": "migrated"
+    },
+    {
+      "workflow": ".github/workflows/mutation-nightly.yml",
+      "current_runner": "ubuntu-x64-4core",
+      "selected_runner": "corelink",
+      "action": "migrated"
+    }
+  ],
+  "capacity_or_billing_reference": "CoreLink runner image documentation: Linux x86_64, 4 vCPU, 12.5 GB; migration commit 41c47f236",
+  "coverage_impact": "No lane was deleted or parked. The FFI Python/Go/Node matrices remain intact; cache guards remain self-hosted-safe; workflow assertions are unchanged.",
+  "runner_labels": ["corelink"],
+  "rollback_owner": "owner",
+  "operator": "owner-authorized automation"
+}

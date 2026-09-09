@@ -13,6 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/load-test-baseline-check.py"
 VERIFIER = ROOT / "scripts/verify_b029_load_gate.py"
+FULL_SCENARIOS = ("signup", "webhook", "dsr", "cas", "byok")
+FULL_EXPECTED_SCENARIOS = ",".join(FULL_SCENARIOS)
 
 
 def load_module(path: Path, name: str):
@@ -67,13 +69,32 @@ class B029LoadGateTests(unittest.TestCase):
                     "commit": "base-commit",
                     "metric": "http_req_duration.med (ms)",
                     "scenarios": {
-                        "cas": {"median_ms": median, "p99_ms": 20}
+                        scenario: {"median_ms": median, "p99_ms": 20}
+                        for scenario in FULL_SCENARIOS
                     },
                 }
             )
         )
 
-    def run_gate(self, *extra: str) -> int:
+    def write_full_matrix(
+        self,
+        *,
+        cas_median: object = 100,
+        cas_status: str | None = "success",
+        medians: dict[str, object] | None = None,
+        statuses: dict[str, str | None] | None = None,
+    ) -> None:
+        """Write the complete matrix required for baseline publication."""
+        selected_medians = {"cas": cas_median}
+        selected_medians.update(medians or {})
+        selected_statuses: dict[str, str | None] = {"cas": cas_status}
+        selected_statuses.update(statuses or {})
+        for scenario in FULL_SCENARIOS:
+            median = selected_medians.get(scenario, 100)
+            status = selected_statuses.get(scenario, "success")
+            self.write_summary(scenario, median, status=status)
+
+    def run_full_gate(self, *extra: str) -> int:
         return comparator.main(
             [
                 "--results-dir",
@@ -81,7 +102,7 @@ class B029LoadGateTests(unittest.TestCase):
                 "--baseline",
                 str(self.baseline),
                 "--expected-scenarios",
-                "cas",
+                FULL_EXPECTED_SCENARIOS,
                 *extra,
             ]
         )
@@ -91,10 +112,17 @@ class B029LoadGateTests(unittest.TestCase):
         (contract / ".github/workflows").mkdir(parents=True, exist_ok=True)
         (contract / "scripts").mkdir()
         (contract / "tests/load").mkdir(parents=True)
-        (contract / ".github/workflows/load-test-nightly.yml").write_text(workflow)
         shutil.copy(ROOT / "scripts/load-test-baseline-check.py", contract / "scripts")
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
+        self._copy_hostname_sources(contract)
+        (contract / ".github/workflows/load-test-nightly.yml").write_text(workflow)
         return verifier.assess(contract, expect="open")
+
+    def _copy_hostname_sources(self, contract: Path) -> None:
+        for relative in verifier.HOSTNAME_SOURCES:
+            destination = contract / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(ROOT / relative, destination)
 
     def _workflow_and_invocation(self) -> tuple[str, str]:
         workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
@@ -105,83 +133,89 @@ class B029LoadGateTests(unittest.TestCase):
         return workflow, invocation
 
     def test_missing_baseline_is_unknown_and_never_seeds(self) -> None:
-        self.write_summary("cas", 100)
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.write_full_matrix()
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
         self.assertFalse(self.baseline.exists())
 
     def test_within_threshold_updates_baseline(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", 119)
-        self.assertEqual(self.run_gate(), 0)
+        self.write_full_matrix(cas_median=119)
+        self.assertEqual(self.run_full_gate(), 0)
         self.assertEqual(comparator.load_baseline(self.baseline)["cas"]["median_ms"], 119)
 
-    def test_regression_fails_and_does_not_ratchet(self) -> None:
-        self.write_baseline(100)
-        self.write_summary("cas", 121)
-        before = self.baseline.read_bytes()
-        self.assertEqual(self.run_gate(), comparator.EXIT_REGRESSION)
-        self.assertEqual(self.baseline.read_bytes(), before)
+    def test_each_scenario_regression_fails_and_does_not_ratchet(self) -> None:
+        for scenario in FULL_SCENARIOS:
+            with self.subTest(scenario=scenario):
+                self.write_baseline(100)
+                self.write_full_matrix(medians={scenario: 121})
+                before = self.baseline.read_bytes()
+                self.assertEqual(self.run_full_gate(), comparator.EXIT_REGRESSION)
+                self.assertEqual(self.baseline.read_bytes(), before)
 
     def test_empty_or_partial_artifacts_fail_closed(self) -> None:
         self.write_baseline(100)
         before = self.baseline.read_bytes()
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
-        self.write_summary("other", 100, status=None)
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
+        self.write_full_matrix()
+        (self.results / "cas" / "summary.json").unlink()
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
         self.assertEqual(self.baseline.read_bytes(), before)
 
     def test_missing_or_failed_status_is_unknown(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", 100, status=None)
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
-        self.write_summary("cas", 100, status="failure")
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.write_full_matrix(cas_status=None)
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
+        self.write_full_matrix(cas_status="failure")
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
 
     def test_status_population_must_match_summaries_exactly(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", 100)
+        self.write_full_matrix()
         (self.results / "extra" / "status.json").parent.mkdir(parents=True)
         (self.results / "extra" / "status.json").write_text(
             json.dumps({"scenario": "extra", "outcome": "success"})
         )
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
 
     def test_corrupt_baseline_is_not_treated_as_first_run(self) -> None:
-        self.write_summary("cas", 100)
+        self.write_full_matrix()
         self.baseline.write_text("{not-json")
         before = self.baseline.read_bytes()
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
         self.assertEqual(self.baseline.read_bytes(), before)
 
     def test_baseline_metadata_is_required(self) -> None:
-        self.write_summary("cas", 100)
+        self.write_full_matrix()
         for missing in ("captured_at", "commit"):
             data = {
                 "schema": 1,
                 "captured_at": "2026-09-06T00:00:00Z",
                 "commit": "base-commit",
                 "metric": "http_req_duration.med (ms)",
-                "scenarios": {"cas": {"median_ms": 100, "p99_ms": 20}},
+                "scenarios": {
+                    scenario: {"median_ms": 100, "p99_ms": 20}
+                    for scenario in FULL_SCENARIOS
+                },
             }
             del data[missing]
             self.baseline.write_text(json.dumps(data))
             before = self.baseline.read_bytes()
-            self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+            self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
             self.assertEqual(self.baseline.read_bytes(), before)
 
     def test_non_finite_measurement_is_rejected(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", "NaN")
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.write_full_matrix(cas_median="NaN")
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
 
     def test_duplicate_summaries_are_ambiguous(self) -> None:
-        self.write_summary("cas", 100)
+        self.write_full_matrix()
         duplicate = self.results / "second" / "cas" / "summary.json"
         duplicate.parent.mkdir(parents=True)
         duplicate.write_text(
             json.dumps({"metrics": {"http_req_duration": {"med": 100, "p(99)": 20}}})
         )
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
 
     def test_active_workflow_invocation_is_exact(self) -> None:
         workflow, invocation = self._workflow_and_invocation()
@@ -299,9 +333,54 @@ class B029LoadGateTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_mutation_of_checklist_hostname_is_rejected(self) -> None:
+        workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
+        self.assertEqual(self._assess_workflow(workflow), [])
+        contract = self.root / "workflow-contract"
+        checklist = contract / "docs/internal/secrets-checklist.md"
+        source = checklist.read_text()
+        self.assertIn(verifier.CANONICAL_STAGING_HOST, source)
+        checklist.write_text(
+            source.replace(
+                verifier.CANONICAL_STAGING_HOST,
+                verifier.STALE_STAGING_HOST,
+                1,
+            )
+        )
+        gaps = verifier.assess(contract, expect="open")
+        self.assertTrue(
+            any(
+                gap.startswith("B-029 hostname drift in docs/internal/secrets-checklist.md")
+                for gap in gaps
+            )
+        )
+
+    def test_target_source_mutations_are_rejected(self) -> None:
+        workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
+        self.assertEqual(self._assess_workflow(workflow), [])
+        contract = self.root / "workflow-contract"
+        for relative in verifier.HOSTNAME_SOURCES:
+            path = contract / relative
+            original = path.read_text()
+            for variant in verifier.STAGING_HOST_VARIANTS:
+                with self.subTest(source=relative, variant=variant):
+                    mutated = original.replace(
+                        verifier.CANONICAL_STAGING_HOST,
+                        variant,
+                        1,
+                    )
+                    self.assertNotEqual(mutated, original)
+                    path.write_text(mutated)
+                    gaps = verifier.assess(contract, expect="open")
+                    self.assertTrue(
+                        any("B-029" in gap for gap in gaps),
+                        f"{relative} mutation {variant} was not rejected: {gaps}",
+                    )
+            path.write_text(original)
+
     def test_mutation_disabling_comparison_is_killed(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", 121)
+        self.write_full_matrix(cas_median=121)
         before = self.baseline.read_bytes()
         mutated = self.root / "mutated.py"
         source = SCRIPT.read_text()
@@ -315,7 +394,7 @@ class B029LoadGateTests(unittest.TestCase):
                 "--baseline",
                 str(self.baseline),
                 "--expected-scenarios",
-                "cas",
+                FULL_EXPECTED_SCENARIOS,
             ],
             text=True,
             capture_output=True,
@@ -326,7 +405,7 @@ class B029LoadGateTests(unittest.TestCase):
 
     def test_mutation_removing_status_gate_is_killed(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", 100, status=None)
+        self.write_full_matrix(cas_status=None)
         mutated = self.root / "mutated-status.py"
         source = SCRIPT.read_text()
         needle = "        collect_statuses(results_dir, expected_set)\n"
@@ -341,7 +420,7 @@ class B029LoadGateTests(unittest.TestCase):
                 "--baseline",
                 str(self.baseline),
                 "--expected-scenarios",
-                "cas",
+                FULL_EXPECTED_SCENARIOS,
             ],
             text=True,
             capture_output=True,
@@ -362,6 +441,7 @@ class B029LoadGateTests(unittest.TestCase):
             contract / ".github/workflows/load-test-nightly.yml",
         )
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
+        self._copy_hostname_sources(contract)
         (contract / "scripts").mkdir()
 
         source = SCRIPT.read_text()
@@ -408,6 +488,7 @@ class B029LoadGateTests(unittest.TestCase):
             contract / ".github/workflows/load-test-nightly.yml",
         )
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
+        self._copy_hostname_sources(contract)
         (contract / "scripts").mkdir()
         source = SCRIPT.read_text()
 

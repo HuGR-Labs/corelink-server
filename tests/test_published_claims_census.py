@@ -34,8 +34,8 @@ def test_published_claims_census_mutations() -> None:
     assert MODULE.validate(ROOT, ROOT / "scripts/published_claims_inventory.json") == []
     current = MODULE.collect_occurrences(ROOT)
     pentest = [entry for entry in current if str(entry.get("term", "")).lower() == "pentest"]
-    assert len(pentest) == 203
-    assert len({str(entry["path"]) for entry in pentest}) == 60
+    assert len(pentest) == 209
+    assert len({str(entry["path"]) for entry in pentest}) == 61
 
     with tempfile.TemporaryDirectory(prefix="b156-census-") as raw:
         root = Path(raw)
@@ -66,10 +66,44 @@ def test_published_claims_census_mutations() -> None:
         (root / "apps/docs/page.mdx").write_text("External penetration testing is planned.\n", encoding="utf-8")
         occurrences = MODULE.collect_occurrences(root)
         assert [entry["term"] for entry in occurrences] == ["pentest"]
-
         (root / "apps/docs/page.mdx").write_text("External penetration-testing is planned.\n", encoding="utf-8")
         occurrences = MODULE.collect_occurrences(root)
         assert [entry["term"] for entry in occurrences] == ["pentest"]
+
+
+def test_enterprise_adoption_claim_guard_is_closed_world() -> None:
+    with tempfile.TemporaryDirectory(prefix="b156-enterprise-claims-") as raw:
+        root = Path(raw)
+        surface = root / "marketing/launch/SOCIAL"
+        surface.mkdir(parents=True)
+        (root / "apps/docs").mkdir(parents=True)
+        (root / "legal").mkdir()
+        (root / "apps/docs/page.mdx").write_text("CoreLink BYOK is documented.\n", encoding="utf-8")
+        page = surface / "POST.md"
+        page.write_text(
+            "No external lighthouse customer has adopted CoreLink yet.\n",
+            encoding="utf-8",
+        )
+        inventory = root / "inventory.json"
+        inventory.write_text(json.dumps(MODULE.build_inventory(root), indent=2) + "\n", encoding="utf-8")
+        assert MODULE.enterprise_adoption_violations(root) == []
+        assert MODULE.validate(root, inventory) == []
+
+        page.write_text("Three lighthouse customers attested before GA.\n", encoding="utf-8")
+        failures = MODULE.validate(root, inventory)
+        assert any("stale positive enterprise-adoption claim" in failure for failure in failures), failures
+
+        page.write_text("One enterprise BYOK deployment completed a 30-day SLA observation.\n", encoding="utf-8")
+        failures = MODULE.validate(root, inventory)
+        assert any("stale positive enterprise-adoption claim" in failure for failure in failures), failures
+
+        page.write_text("An enterprise BYOK customer adopted CoreLink.\n", encoding="utf-8")
+        failures = MODULE.validate(root, inventory)
+        assert any("stale positive enterprise-adoption claim" in failure for failure in failures), failures
+
+        page.write_text("Sanitized variant maintained for NDA-gated sales distribution.\n", encoding="utf-8")
+        failures = MODULE.validate(root, inventory)
+        assert any("stale positive enterprise-adoption claim" in failure for failure in failures), failures
 
 
 def main() -> int:

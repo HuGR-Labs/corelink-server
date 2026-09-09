@@ -163,16 +163,46 @@ fn residue_is_clamped_rather_than_reported_negative() {
 /// one storage window, so only the outermost scope owns the phase clock. This
 /// keeps `Server-Timing` additive instead of allowing a clamp to hide
 /// an overcount.
-#[test]
-fn nested_reentry_of_the_same_phase_records_once() {
+#[tokio::test]
+async fn nested_reentry_of_the_same_phase_records_once() {
     let ledger = std::sync::Arc::new(PhaseLedger::new());
     let outer = super::PhaseScope::with_handle(Some(std::sync::Arc::clone(&ledger)), Phase::Store);
     assert_eq!(ledger.active_depth_for_test(Phase::Store), 1);
-    let inner = super::PhaseScope::with_handle(Some(std::sync::Arc::clone(&ledger)), Phase::Store);
-    assert_eq!(ledger.active_depth_for_test(Phase::Store), 2);
-    drop(inner);
-    assert_eq!(ledger.completed_windows_for_test(Phase::Store), 0);
-    assert_eq!(ledger.recordings_for_test(Phase::Store), 0);
+
+    // Exercise the boundary that caused B-122: the inner scope must carry the
+    // same ledger explicitly because `spawn_blocking` does not inherit the
+    // request task-local. A same-task nested scope would not prove this.
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+    let inner = tokio::task::spawn_blocking({
+        let ledger = std::sync::Arc::clone(&ledger);
+        move || {
+            let inner = super::PhaseScope::with_handle(Some(ledger), Phase::Store);
+            entered_tx
+                .send(())
+                .expect("the parent must still be waiting for the inner scope");
+            release_rx
+                .recv()
+                .expect("the parent must release the inner scope");
+            drop(inner);
+        }
+    });
+    entered_rx
+        .await
+        .expect("the blocking task must enter the shared Store window");
+    // Keep the blocking scope alive until all active-window assertions have
+    // run. Catching assertion unwinds ensures the release is still sent on a
+    // test failure, so this diagnostic cannot strand the blocking task.
+    let active_assertions = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        assert_eq!(ledger.active_depth_for_test(Phase::Store), 2);
+        assert_eq!(ledger.completed_windows_for_test(Phase::Store), 0);
+        assert_eq!(ledger.recordings_for_test(Phase::Store), 0);
+    }));
+    release_tx
+        .send(())
+        .expect("the blocking task must still be waiting for release");
+    inner.await.expect("the blocking task must not panic");
+    active_assertions.expect("the inner scope must remain active during assertions");
     assert_eq!(ledger.active_depth_for_test(Phase::Store), 1);
     drop(outer);
 

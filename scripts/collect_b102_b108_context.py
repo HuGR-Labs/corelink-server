@@ -10,6 +10,7 @@ provider response is written to the artifact.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import os
@@ -67,10 +68,23 @@ def main() -> int:
         sha = required("GITHUB_SHA").lower()
         event = required("GITHUB_EVENT_NAME")
         run_id = required("GITHUB_RUN_ID")
-        if repo != "HuGR/corelink-server" or not SHA.fullmatch(sha) or not run_id.isdigit():
+        run_attempt = required("GITHUB_RUN_ATTEMPT")
+        run_started_at = required("GITHUB_RUN_STARTED_AT")
+        github_ref = required("GITHUB_REF")
+        if repo != "HuGR-Labs/corelink-server" or not SHA.fullmatch(sha) or not run_id.isdigit():
             raise ValueError("invalid canonical GitHub context")
+        if not run_attempt.isdigit() or int(run_attempt) < 1:
+            raise ValueError("invalid GitHub run attempt")
+        try:
+            started = dt.datetime.fromisoformat(run_started_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("invalid GitHub run start timestamp") from exc
+        if started.tzinfo is None:
+            raise ValueError("GitHub run start timestamp must include a timezone")
         if event not in {"workflow_dispatch", "workflow_run"}:
             raise ValueError("lane must be owner-triggered")
+        if not github_ref.startswith("refs/"):
+            raise ValueError("invalid full Git ref")
         github, github_digest = read(args.github_deployment)
         provider, provider_digest = read(args.provider_deployment)
         if isinstance(github, dict):
@@ -98,7 +112,9 @@ def main() -> int:
             "source_head": sha,
             "github_event": event,
             "github_run_id": run_id,
-            "github_run_attempt": required("GITHUB_RUN_ATTEMPT"),
+            "github_run_attempt": run_attempt,
+            "github_run_started_at": run_started_at,
+            "github_ref": github_ref,
             "github_actor": required("GITHUB_ACTOR"),
             # Provider and GitHub IDs are distinct namespaces; both are kept
             # so a reviewer can join the records without trusting a label.

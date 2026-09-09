@@ -217,16 +217,27 @@ create_ci_target_dir() {
 
 create_ci_target_dir || exit 2
 
+# Keep the CI target bounded even when the optional sccache binary is absent or
+# cannot start.  Incremental state is useful for a developer's edit loop, but
+# this invocation already gets a fresh target and runs the complete gate set;
+# retaining it only duplicates multi-gigabyte compiler state.  CI also does not
+# need debugger symbols to compile or execute tests.  These Cargo profile
+# overrides change artifact size, not test selection, assertions, or runtime
+# behavior, so the full workspace suite remains covered.
+export CARGO_INCREMENTAL=0
+export CARGO_PROFILE_DEV_DEBUG=0
+export CARGO_PROFILE_TEST_DEBUG=0
+
 # Compile cache. sccache only helps when incremental is OFF (it can't cache
 # `-C incremental`), so we enable it HERE — in the CI regime — by exporting
-# RUSTC_WRAPPER + CARGO_INCREMENTAL=0. This dedupes the redundant recompiles
+# RUSTC_WRAPPER alongside the bounded profile above. This dedupes the redundant
+# recompiles
 # across the build/clippy/test gates and caches across CI runs. The dev loop
 # (plain `cargo build`/`nextest`) stays incremental and does NOT use sccache.
 # Hard-capped at 4G (this box is disk-tight) so the cache can never overflow.
 # Bypass with CORELINK_NO_SCCACHE=1 (e.g. when chasing a cache-masked miscompile).
 if [ "${CORELINK_NO_SCCACHE:-0}" != 1 ] && command -v sccache >/dev/null 2>&1; then
     export RUSTC_WRAPPER=sccache
-    export CARGO_INCREMENTAL=0
     export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-4G}"
     sccache --start-server >/dev/null 2>&1 || true
     sccache --zero-stats >/dev/null 2>&1 || true

@@ -68,7 +68,7 @@ unresolved).
 
 | # | Vendor | Service to CoreLink | Customer-data class | Regions | DPA |
 | --- | --- | --- | --- | --- | --- |
-| 1 | **Cloudflare, Inc.** | Workers / R2 / D1 / DO / KV / Pages / Email | metadata, encrypted-blobs, audit-logs, telemetry | Multi-region (per tenant `primary_region` pin) | [Cloudflare DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
+| 1 | **Cloudflare, Inc.** | Workers / R2 / D1 / DO / KV / Pages / Email | metadata, encrypted-blobs, audit-logs, telemetry | R2/DO tenant-pinned; D1 control-plane metadata global under SCC/TIA safeguards | [Cloudflare DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
 | 2 | **Stripe, Inc.** | Payment processing + subscription billing + Stripe Atlas counsel | payment, pii | Multi-region (per tenant `primary_region` pin) | [Stripe DPA](https://stripe.com/legal/dpa) |
 | 3 | **Clerk, Inc.** | Authentication + identity provider + JWT issuer | pii | Multi-region (per tenant `primary_region` pin) | Clerk DPA (on request) |
 | 4 | **PagerDuty, Inc.** | Incident management + on-call alerting (prod + synthetic-drill routes) | audit-logs, metadata | US / EU (selectable) | [Trust portal](https://www.pagerduty.com/security/) |
@@ -133,11 +133,13 @@ zero-retention guarantee and no-customer-data scope, please raise it via
 The following appear in our internal registers but are **not**
 sub-processors:
 
-- **Sigstore (Linux Foundation)** — a proposed keyless-signing workflow
-  (`.github/workflows/cosign-sign.yml`) over CoreLink's **own build artifacts**;
-  it is not live and publishes no records. It never receives customer data and
-  is not a customer-data sub-processor; captured in `legal/sub-processors.md`
-  for completeness only.
+- **Sigstore (Linux Foundation)** — the former Worker OCI signing workflow was
+  removed on **2026-09-08** after review established that it never executed, so
+  no Fulcio certificate or Rekor entry was issued for that lane. The separate
+  release-SLSA and CAS signing paths remain independently gated. Sigstore never
+  receives customer data and is not a customer-data sub-processor; this entry
+  records the narrow OCI-lane removal rather than claiming Sigstore is absent
+  everywhere.
 - **Self-hosted Dependency-Track** — operated by CoreLink; no third party.
 - **Per-customer HashiCorp Vault instances** — customer-side infrastructure
   outside CoreLink's processor relationship.

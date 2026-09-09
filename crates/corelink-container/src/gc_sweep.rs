@@ -45,6 +45,8 @@ pub struct GcProductionConfig {
     pub run_id: Option<RunId>,
     /// Destructive mode, gated by `GC_LIVE_DELETE` and confirmation.
     pub mode: GcSweepMode,
+    /// Explicit read-only observation mode, requiring `GC_LIVE_DELETE=false`.
+    pub observation_only: bool,
     /// R2 bucket containing CAS objects.
     pub bucket: String,
     /// Secret tenant-key derivation material used by the CAS key scheme.
@@ -58,6 +60,7 @@ impl core::fmt::Debug for GcProductionConfig {
             .field("region", &self.region)
             .field("run_id", &self.run_id)
             .field("mode", &self.mode)
+            .field("observation_only", &self.observation_only)
             .field("bucket", &self.bucket)
             .field("tdk", &"[REDACTED]")
             .finish()
@@ -98,6 +101,10 @@ impl GcProductionConfig {
             .try_into()
             .map_err(|_| "R2_TDK_HEX must decode to exactly 32 bytes".to_owned())?;
 
+        let observation_only = observation_only_from_env(
+            std::env::var("GC_OBSERVATION_ONLY").ok().as_deref(),
+            std::env::var("GC_LIVE_DELETE").ok().as_deref(),
+        )?;
         let mode = GcSweepMode::from_env();
         if mode.is_live() {
             if std::env::var("GC_LIVE_DELETE_CONFIRM").ok().as_deref() != Some("I_UNDERSTAND") {
@@ -119,9 +126,64 @@ impl GcProductionConfig {
             region,
             run_id,
             mode,
+            observation_only,
             bucket,
             tdk,
         })
+    }
+}
+
+/// Resolve the opt-in observation contract without relying on the permissive
+/// sweep-mode parser.  A caller asking for observation must explicitly set
+/// `GC_LIVE_DELETE=false`; unset, malformed, or live values are rejected so a
+/// deployment cannot accidentally turn an observation invocation into an
+/// ambiguous mode.
+fn observation_only_from_env(
+    observation_raw: Option<&str>,
+    live_raw: Option<&str>,
+) -> Result<bool, String> {
+    let Some(observation_raw) = observation_raw else {
+        return Ok(false);
+    };
+    let observation_raw = observation_raw.trim();
+    if observation_raw.eq_ignore_ascii_case("false") || observation_raw == "0" {
+        return Ok(false);
+    }
+    if !(observation_raw.eq_ignore_ascii_case("true") || observation_raw == "1") {
+        return Err("GC_OBSERVATION_ONLY must be true or false".to_owned());
+    }
+    if live_raw
+        .map(str::trim)
+        .is_some_and(|value| value.eq_ignore_ascii_case("false"))
+    {
+        return Ok(true);
+    }
+    Err("GC_OBSERVATION_ONLY=true requires GC_LIVE_DELETE=false".to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::observation_only_from_env;
+
+    #[test]
+    fn observation_requires_explicit_false_live_delete() {
+        assert_eq!(
+            observation_only_from_env(Some("true"), Some("false")),
+            Ok(true)
+        );
+        assert!(observation_only_from_env(Some("true"), None).is_err());
+        assert!(observation_only_from_env(Some("true"), Some("true")).is_err());
+        assert!(observation_only_from_env(Some("true"), Some("maybe")).is_err());
+    }
+
+    #[test]
+    fn observation_is_opt_in_and_rejects_malformed_flag() {
+        assert_eq!(observation_only_from_env(None, None), Ok(false));
+        assert_eq!(
+            observation_only_from_env(Some("false"), Some("true")),
+            Ok(false)
+        );
+        assert!(observation_only_from_env(Some("maybe"), Some("false")).is_err());
     }
 }
 

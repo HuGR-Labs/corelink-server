@@ -126,6 +126,6 @@ If Drata exits or CoreLink terminates the subscription:
 
 | Review date | Reviewer | Type | Residual | Notes |
 |---|---|---|---|---|
-| 2026-05-15 | Gustavo Schneiter (VP-Sec) | Baseline | 4.8 | Initial DD; closes GAP-14. Highest residual of the Critical six because no failover, but inherent is lowest because Drata outage does not break customer surface. |
+| 2026-05-15 | Gustavo Schneiter (VP-Sec) | Baseline | 4.8 | Initial DD; closes GAP-14. Highest residual among the Critical vendors because no failover, but inherent is lowest because Drata outage does not break customer surface. |
 
 Next quarterly review: **2026-08-15**.

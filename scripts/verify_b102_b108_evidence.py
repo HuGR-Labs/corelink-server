@@ -10,27 +10,47 @@ credential is accepted in the packet.  The verifier never contacts production.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import datetime as dt
 import hashlib
 import json
 import math
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
-from statistics import quantiles
 from typing import Any
+
+try:
+    from install_pinned_gh import InstallError as PinnedGhError
+    from install_pinned_gh import install as install_pinned_gh
+    from install_pinned_gh import verify_binary as verify_pinned_gh_binary
+except ModuleNotFoundError:  # imported as scripts.verify_b102_b108_evidence
+    from scripts.install_pinned_gh import InstallError as PinnedGhError
+    from scripts.install_pinned_gh import install as install_pinned_gh
+    from scripts.install_pinned_gh import verify_binary as verify_pinned_gh_binary
 
 SCHEMA = "corelink.performance-evidence.v2"
 ITEMS = tuple(f"B-{n:03d}" for n in range(102, 109))
-REPO = "HuGR/corelink-server"
+REPO = "HuGR-Labs/corelink-server"
 SOURCE = "worker/src/lib/quota.ts"
+WORKFLOW = ".github/workflows/perf-production-evidence.yml"
+SLSA_PREDICATE = "https://slsa.dev/provenance/v1"
+GITHUB_WORKFLOW_BUILD_TYPE = "https://slsa-framework.github.io/github-actions-buildtypes/workflow/v1"
+GH_ATTESTATION_VERSION = "2.79.0"
+SUBJECT_NAME = "b106-cold-attestation.json"
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 SHA1 = re.compile(r"^[0-9a-f]{40}$")
 OP = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
 SECRET = re.compile(r"(?i)(bearer\s+|pat[_-]?token|api[_-]?key|password|secret|private[_-]?key|authorization)")
 FINGERPRINT = re.compile(r"^sha256:[0-9a-f]{64}$")
 MAX_AGE = 15 * 60
+FRESH_MINT_MAX_AGE_SECONDS = 15 * 60
+COLD_MIN_IDLE_SECONDS = 61
+KV_PAT_ROW_TTL_SECONDS = 30
 CLOCK_TOLERANCE = 2
 COUNTER_SQL = (
     "INSERT INTO monthly_request_counts (tenant_id, year_month, request_count, updated_at_ms) "
@@ -76,6 +96,18 @@ def sha(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
+WIRE_DIGEST_FIELDS = (
+    "tenant_id", "operation_id", "request_key", "method", "status", "payload_bytes",
+    "payload_sha256", "elapsed_ms", "server_timing", "error", "authenticated",
+    "auth_source", "colo", "response_request_id",
+)
+
+
+def wire_output_sha256(row: dict[str, Any]) -> str:
+    material = {key: row.get(key) for key in WIRE_DIGEST_FIELDS}
+    return sha(json.dumps(material, sort_keys=True, separators=(",", ":")).encode())
+
+
 def raw_hash(v: Any, label: str) -> str:
     value = text(v, label)
     if not FINGERPRINT.fullmatch(value):
@@ -94,11 +126,209 @@ def mint_binding_sha256(att: dict[str, Any]) -> str:
             "mint_operation_id": att.get("mint_operation_id"),
             "mint_request_id": att.get("mint_request_id"),
             "mint_response_sha256": att.get("mint_response_sha256"),
+            "minted_at_epoch": att.get("minted_at_epoch"),
+            "unused_since_epoch": att.get("unused_since_epoch"),
+            "observed_at_epoch": att.get("observed_at_epoch"),
+            "attestation_source": att.get("attestation_source"),
         },
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
     return sha(material)
+
+
+def canonical_json(value: Any) -> bytes:
+    return (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
+
+
+def b106_subject_bytes(att: dict[str, Any], deployment_record: dict[str, Any]) -> bytes:
+    source = obj(att.get("attestation_source"), "B-106.attestation_source")
+    return canonical_json(
+        {
+            "schema": "corelink.performance-evidence.b106-attestation.v1",
+            "repository": REPO,
+            "workflow": "perf-production-evidence",
+            "run_id": deployment_record["github_run_id"],
+            "run_attempt": deployment_record["github_run_attempt"],
+            "event": deployment_record["github_event"],
+            "ref": deployment_record["github_ref"],
+            "head_sha": deployment_record["source_head"],
+            "run_started_at": deployment_record["github_run_started_at"],
+            "cold_attestation": att,
+        }
+    )
+
+
+def _attested_statement(bundle: dict[str, Any], label: str) -> dict[str, Any]:
+    envelope = obj(bundle.get("dsseEnvelope"), f"{label}.dsseEnvelope")
+    if envelope.get("payloadType") != "application/vnd.in-toto+json":
+        raise EvidenceError(f"{label} is not an in-toto DSSE envelope")
+    signatures = envelope.get("signatures")
+    if not isinstance(signatures, list) or not signatures:
+        raise EvidenceError(f"{label} has no DSSE signature")
+    for index, signature in enumerate(signatures):
+        signature = obj(signature, f"{label}.signatures[{index}]")
+        encoded_signature = text(signature.get("sig"), f"{label}.signatures[{index}].sig")
+        try:
+            decoded_signature = base64.b64decode(encoded_signature, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise EvidenceError(f"{label}.signatures[{index}] is not base64") from exc
+        if not decoded_signature:
+            raise EvidenceError(f"{label}.signatures[{index}] is empty")
+    encoded = text(envelope.get("payload"), f"{label}.dsseEnvelope.payload")
+    try:
+        statement = obj(json.loads(base64.b64decode(encoded, validate=True)), f"{label}.statement")
+    except (ValueError, json.JSONDecodeError, binascii.Error) as exc:
+        raise EvidenceError(f"{label} has an invalid DSSE payload") from exc
+    if statement.get("_type") != "https://in-toto.io/Statement/v1":
+        raise EvidenceError(f"{label} is not an in-toto Statement v1")
+    if statement.get("predicateType") != SLSA_PREDICATE:
+        raise EvidenceError(f"{label} predicate type is not SLSA provenance v1")
+    verification_material = obj(bundle.get("verificationMaterial"), f"{label}.verificationMaterial")
+    certificate = obj(verification_material.get("certificate"), f"{label}.verificationMaterial.certificate")
+    encoded_certificate = text(certificate.get("rawBytes"), f"{label}.verificationMaterial.certificate.rawBytes")
+    try:
+        if not base64.b64decode(encoded_certificate, validate=True):
+            raise ValueError("empty certificate")
+    except (ValueError, binascii.Error) as exc:
+        raise EvidenceError(f"{label} has no retained signing certificate") from exc
+    timestamp_data = obj(verification_material.get("timestampVerificationData"), f"{label}.timestampVerificationData")
+    if not any(isinstance(timestamp_data.get(key), list) and timestamp_data[key] for key in ("tlogEntries", "rfc3161Timestamps")):
+        raise EvidenceError(f"{label} has no retained transparency/timestamp verification")
+    return statement
+
+
+def _validate_attestation_identity(
+    statement: dict[str, Any], deployment_record: dict[str, Any], subject_sha: str, label: str
+) -> None:
+    subjects = statement.get("subject")
+    if not isinstance(subjects, list) or len(subjects) != 1:
+        raise EvidenceError(f"{label} must have exactly one attested subject")
+    subject = obj(subjects[0], f"{label}.subject[0]")
+    if subject.get("name") != SUBJECT_NAME:
+        raise EvidenceError(f"{label} subject name is not canonical")
+    digest = obj(subject.get("digest"), f"{label}.subject[0].digest")
+    if digest.get("sha256") != subject_sha.removeprefix("sha256:"):
+        raise EvidenceError(f"{label} subject digest differs from the cold evidence")
+    predicate = obj(statement.get("predicate"), f"{label}.predicate")
+    build_definition = obj(predicate.get("buildDefinition"), f"{label}.predicate.buildDefinition")
+    if build_definition.get("buildType") != GITHUB_WORKFLOW_BUILD_TYPE:
+        raise EvidenceError(f"{label} build type is not the GitHub Actions workflow provenance")
+    external = obj(build_definition.get("externalParameters"), f"{label}.predicate.buildDefinition.externalParameters")
+    workflow = obj(external.get("workflow"), f"{label}.predicate.workflow")
+    if workflow != {
+        "ref": deployment_record["github_ref"],
+        "repository": f"https://github.com/{REPO}",
+        "path": WORKFLOW,
+    }:
+        raise EvidenceError(f"{label} workflow identity is not exact")
+    dependencies = build_definition.get("resolvedDependencies")
+    if not isinstance(dependencies, list) or not any(
+        isinstance(dep, dict)
+        and isinstance(dep.get("digest"), dict)
+        and dep["digest"].get("gitCommit") == deployment_record["source_head"]
+        for dep in dependencies
+    ):
+        raise EvidenceError(f"{label} resolved dependencies do not name the exact source SHA")
+    run_details = obj(predicate.get("runDetails"), f"{label}.predicate.runDetails")
+    metadata = obj(run_details.get("metadata"), f"{label}.predicate.runDetails.metadata")
+    expected_invocation = (
+        f"https://github.com/{REPO}/actions/runs/{deployment_record['github_run_id']}"
+        f"/attempts/{deployment_record['github_run_attempt']}"
+    )
+    if metadata.get("invocationId") != expected_invocation:
+        raise EvidenceError(f"{label} invocation does not bind the exact workflow run/attempt")
+
+
+def verify_attestation_with_gh(
+    bundle: dict[str, Any], subject_bytes: bytes, deployment_record: dict[str, Any], expected: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Run the pinned GitHub Sigstore verifier against the retained bundle.
+
+    The executable and version are deliberately not caller-overridable: an
+    environment-selected shim could claim a version while accepting forged
+    DSSE/tlog material.
+    """
+    with tempfile.TemporaryDirectory(prefix="corelink-b106-verify-") as directory:
+        root = Path(directory)
+        configured_binary = os.environ.get("CORELINK_GH_BIN")
+        try:
+            verifier_path = (
+                verify_pinned_gh_binary(Path(configured_binary))
+                if configured_binary is not None
+                else install_pinned_gh(root / "gh")
+            )
+        except (OSError, PinnedGhError) as exc:
+            raise EvidenceError(f"B-106 pinned gh verifier is unavailable: {exc}") from exc
+        verifier = str(verifier_path)
+        gh_home = root / "home"
+        gh_config = root / "config"
+        gh_home.mkdir(mode=0o700)
+        gh_config.mkdir(mode=0o700)
+        environment = gh_environment(gh_home, gh_config)
+        try:
+            version = subprocess.run(
+                (str(verifier_path), "version"), capture_output=True, text=True, check=True, timeout=15, env=environment
+            ).stdout
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise EvidenceError(f"B-106 pinned gh verifier is unavailable: {exc}") from exc
+        if not version.startswith(f"gh version {GH_ATTESTATION_VERSION}"):
+            raise EvidenceError(f"B-106 gh verifier version is not pinned to {GH_ATTESTATION_VERSION}")
+        subject_path = root / SUBJECT_NAME
+        bundle_path = root / "attestation.bundle.json"
+        subject_path.write_bytes(subject_bytes)
+        bundle_path.write_text(json.dumps(bundle, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        san = f"https://github.com/{REPO}/{WORKFLOW}@{deployment_record['github_ref']}"
+        command = (
+            verifier, "attestation", "verify", str(subject_path), "--repo", REPO, "--bundle", str(bundle_path),
+            "--predicate-type", SLSA_PREDICATE, "--cert-identity", san,
+            "--cert-oidc-issuer", "https://token.actions.githubusercontent.com",
+            "--signer-digest", deployment_record["source_head"], "--source-digest", deployment_record["source_head"],
+            "--source-ref", deployment_record["github_ref"], "--format", "json",
+        )
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=True, timeout=60, env=environment)
+            verified = json.loads(result.stdout)
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+            raise EvidenceError("B-106 pinned gh attestation verification failed") from exc
+    if not isinstance(verified, list) or not verified or verified != expected:
+        raise EvidenceError("B-106 gh verification result is not byte-for-byte bound to the retained result")
+    return verified
+
+
+def gh_environment(home: Path, config: Path) -> dict[str, str]:
+    """Run gh with a strict allowlist; no runner environment is inherited."""
+    environment = {
+        "GH_HOST": "github.com",
+        "GH_CONFIG_DIR": str(config),
+        "GH_NO_UPDATE_NOTIFIER": "1",
+        "HOME": str(home),
+        "PATH": os.defpath,
+        "XDG_CONFIG_HOME": str(config),
+        "GITHUB_SERVER_URL": "https://github.com",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "NO_COLOR": "1",
+    }
+    gh_token = os.environ.get("GH_TOKEN")
+    if gh_token:
+        environment["GH_TOKEN"] = gh_token
+    return environment
+
+
+def attested_subject_digest(bundle: dict[str, Any], label: str) -> str:
+    statement = _attested_statement(bundle, label)
+    subjects = statement.get("subject")
+    if not isinstance(subjects, list) or len(subjects) != 1:
+        raise EvidenceError(f"{label} must have exactly one attested subject")
+    digest = obj(subjects[0], f"{label}.subject[0]").get("digest")
+    digest = obj(digest, f"{label}.subject[0].digest").get("sha256")
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise EvidenceError(f"{label} subject has no SHA-256 digest")
+    return "sha256:" + digest
 
 
 def reject_secrets(v: Any, path: str = "packet") -> None:
@@ -145,11 +375,18 @@ def deployment(item: dict[str, Any], label: str, root: Path, tenant: str) -> str
         raise EvidenceError(f"{label} deployment SHAs must be full lowercase commits")
     if d.get("github_sha") != source_head or d.get("github_repository") != REPO:
         raise EvidenceError(f"{label} deployment is not bound to GitHub context")
+    github_ref = text(d.get("github_ref"), f"{label}.deployment.github_ref")
+    if not github_ref.startswith("refs/"):
+        raise EvidenceError(f"{label}.deployment.github_ref is not a full Git ref")
     if d.get("github_event") not in {"workflow_dispatch", "workflow_run"}:
         raise EvidenceError(f"{label} deployment lane is not owner-triggered")
     run_id = text(d.get("github_run_id"), f"{label}.deployment.github_run_id")
     if not run_id.isdigit():
         raise EvidenceError(f"{label}.deployment.github_run_id is malformed")
+    run_attempt = text(d.get("github_run_attempt"), f"{label}.deployment.github_run_attempt")
+    if not run_attempt.isdigit() or int(run_attempt) < 1:
+        raise EvidenceError(f"{label}.deployment.github_run_attempt is malformed")
+    iso_epoch(d.get("github_run_started_at"), f"{label}.deployment.github_run_started_at")
     github_deployment_id = text(d.get("github_deployment_id"), f"{label}.deployment.github_deployment_id")
     if not github_deployment_id.isdigit():
         raise EvidenceError(f"{label}.deployment.github_deployment_id is malformed")
@@ -173,11 +410,12 @@ def deployment(item: dict[str, Any], label: str, root: Path, tenant: str) -> str
         raise EvidenceError(f"{label}.deployment.operation_id is malformed")
     try:
         present = subprocess.run(("git", "cat-file", "-e", f"{commit}^{{commit}}"), cwd=root, capture_output=True, timeout=5)
-        ancestor = subprocess.run(("git", "merge-base", "--is-ancestor", commit, source_head), cwd=root, capture_output=True, timeout=5)
     except (OSError, subprocess.SubprocessError) as exc:
         raise EvidenceError(f"{label} git provenance unavailable: {exc}") from exc
-    if present.returncode or ancestor.returncode:
-        raise EvidenceError(f"{label} deployed commit is absent or not ancestral to GitHub SHA")
+    if present.returncode:
+        raise EvidenceError(f"{label} deployed commit is absent")
+    if commit != source_head:
+        raise EvidenceError(f"{label} deployed commit is not exactly the GitHub SHA")
     return commit
 
 
@@ -227,7 +465,11 @@ def b103(item: dict[str, Any], root: Path, tenant: str) -> str:
 
 
 def percentile(values: list[float], p: float) -> float:
-    return values[0] if len(values) == 1 else quantiles(values, n=100, method="inclusive")[int(p * 100) - 1]
+    ordered = sorted(values)
+    position = p * (len(ordered) - 1)
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
 
 
 def b104(item: dict[str, Any], root: Path, tenant: str) -> str:
@@ -244,7 +486,10 @@ def b104(item: dict[str, Any], root: Path, tenant: str) -> str:
             raise EvidenceError("B-104 requires a wire-derived colo")
         if not text(row.get("response_request_id"), f"B-104.samples[{i}].response_request_id"):
             raise EvidenceError("B-104 requires a wire-derived response request id")
-        raw_hash(row.get("raw_output_sha256"), f"B-104.samples[{i}].raw_output_sha256")
+        text(row.get("request_key"), f"B-104.samples[{i}].request_key")
+        raw_hash(row.get("payload_sha256"), f"B-104.samples[{i}].payload_sha256")
+        if row.get("raw_output_sha256") != wire_output_sha256(row):
+            raise EvidenceError("B-104 raw output hash is not bound to the complete wire sample")
         times.append(num(row.get("elapsed_ms"), "B-104.elapsed_ms"))
     ordered = sorted(times)
     median = (ordered[(len(ordered)-1)//2] + ordered[len(ordered)//2]) / 2
@@ -256,7 +501,7 @@ def b104(item: dict[str, Any], root: Path, tenant: str) -> str:
 
 
 def b105(item: dict[str, Any], root: Path, tenant: str) -> str:
-    deployment(item, "B-105", root, tenant)
+    commit = deployment(item, "B-105", root, tenant)
     pairs = entries(item.get("pairs"), "B-105.pairs", 6)
     if len(pairs) != 6:
         raise EvidenceError("B-105 requires exactly six paired runs")
@@ -279,6 +524,8 @@ def b105(item: dict[str, Any], root: Path, tenant: str) -> str:
         for key in ("revision", "runner", "machine", "toolchain", "command"):
             if control.get(key) != treatment.get(key):
                 raise EvidenceError(f"B-105 arms differ in {key}")
+        if control.get("revision") != commit:
+            raise EvidenceError("B-105 lane revision is not the deployed GitHub SHA")
         first.append(pair.get("control_first"))
     if any(x not in {True, False} for x in first) or any(a == b for a, b in zip(first, first[1:])):
         raise EvidenceError("B-105 must alternate control-first and treatment-first")
@@ -287,8 +534,9 @@ def b105(item: dict[str, Any], root: Path, tenant: str) -> str:
 
 def b106(item: dict[str, Any], root: Path, tenant: str, now: float) -> str:
     deployment(item, "B-106", root, tenant)
-    if item.get("kv_ttl_seconds") != 60:
-        raise EvidenceError("B-106 must preserve the 60-second revocation floor")
+    deployment_record = obj(item.get("deployment"), "B-106.deployment")
+    if item.get("kv_ttl_seconds") != KV_PAT_ROW_TTL_SECONDS:
+        raise EvidenceError(f"B-106 evidence must report the runtime {KV_PAT_ROW_TTL_SECONDS}-second KV TTL")
     att = obj(item.get("cold_attestation"), "B-106.cold_attestation")
     common(att, "B-106.cold_attestation", tenant)
     raw_hash(att.get("mint_raw_output_sha256"), "B-106.mint_raw_output_sha256")
@@ -308,11 +556,110 @@ def b106(item: dict[str, Any], root: Path, tenant: str, now: float) -> str:
         raise EvidenceError("B-106 token fingerprint is not SHA-256")
     if att.get("mint_response_binding_sha256") != mint_binding_sha256(att):
         raise EvidenceError("B-106 mint response binding is not reproducible")
+    source = obj(att.get("attestation_source"), "B-106.attestation_source")
+    if source.get("kind") != "github_actions_run":
+        raise EvidenceError("B-106 attestation source is not a GitHub Actions run")
+    if source.get("workflow") != "perf-production-evidence":
+        raise EvidenceError("B-106 attestation source workflow is not the production evidence lane")
+    if source.get("repository") != REPO:
+        raise EvidenceError("B-106 attestation source is not the canonical repository")
+    if source.get("event") != deployment_record.get("github_event"):
+        raise EvidenceError("B-106 attestation source event is not correlated")
+    if str(source.get("run_id")) != str(deployment_record.get("github_run_id")):
+        raise EvidenceError("B-106 attestation source run is not correlated")
+    if str(source.get("attempt")) != str(deployment_record.get("github_run_attempt")):
+        raise EvidenceError("B-106 attestation source attempt is not correlated")
+    if source.get("ref") != deployment_record.get("github_ref"):
+        raise EvidenceError("B-106 attestation source ref is not correlated")
+    if source.get("head_sha") != deployment_record.get("source_head"):
+        raise EvidenceError("B-106 attestation source SHA is not correlated")
+    source_started = iso_epoch(source.get("started_at"), "B-106.attestation_source.started_at")
+    deployment_started = iso_epoch(deployment_record.get("github_run_started_at"), "B-106.deployment.github_run_started_at")
+    if abs(source_started - deployment_started) > CLOCK_TOLERANCE:
+        raise EvidenceError("B-106 attestation source timestamp is not correlated")
     for key in ("minted_at_epoch", "unused_since_epoch", "observed_at_epoch"):
         num(att.get(key), f"B-106.{key}", 1)
     minted, unused, observed = (float(att[k]) for k in ("minted_at_epoch", "unused_since_epoch", "observed_at_epoch"))
-    if not minted <= unused <= observed - 60 or observed > now + CLOCK_TOLERANCE:
-        raise EvidenceError("B-106 does not prove a newly minted token idle for 60 seconds")
+    if minted < source_started - CLOCK_TOLERANCE:
+        raise EvidenceError("B-106 mint predates the trusted workflow attestation")
+    if (
+        not minted <= unused <= observed - COLD_MIN_IDLE_SECONDS
+        or minted > now + CLOCK_TOLERANCE
+        or unused > now + CLOCK_TOLERANCE
+        or observed > now + CLOCK_TOLERANCE
+        or now - minted > FRESH_MINT_MAX_AGE_SECONDS
+    ):
+        raise EvidenceError(
+            f"B-106 does not prove a fresh token minted within {FRESH_MINT_MAX_AGE_SECONDS} seconds "
+            f"and idle for {COLD_MIN_IDLE_SECONDS} seconds"
+        )
+    github_attestation = obj(item.get("github_attestation"), "B-106.github_attestation")
+    subject_sha = raw_hash(github_attestation.get("subject_sha256"), "B-106.github_attestation.subject_sha256")
+    if subject_sha != sha(b106_subject_bytes(att, deployment_record)):
+        raise EvidenceError("B-106 GitHub attestation subject does not bind the exact cold timestamps")
+    if github_attestation.get("subject_name") != "b106-cold-attestation.json":
+        raise EvidenceError("B-106 GitHub attestation subject name is not canonical")
+    bundle = obj(github_attestation.get("bundle"), "B-106.github_attestation.bundle")
+    if github_attestation.get("bundle_sha256") != sha(canonical_json(bundle)):
+        raise EvidenceError("B-106 GitHub attestation bundle hash is not reproducible")
+    if attested_subject_digest(bundle, "B-106.github_attestation.bundle") != subject_sha:
+        raise EvidenceError("B-106 GitHub attestation DSSE subject differs from the cold evidence")
+    policy = obj(github_attestation.get("verification_policy"), "B-106.github_attestation.verification_policy")
+    if policy != {
+        "repository": REPO,
+        "signer_workflow": f"{REPO}/{WORKFLOW}",
+        "signer_digest": deployment_record["source_head"],
+        "predicate_type": SLSA_PREDICATE,
+    }:
+        raise EvidenceError("B-106 GitHub attestation verification policy is not the production workflow")
+    bundle_statement = _attested_statement(bundle, "B-106.github_attestation.bundle")
+    _validate_attestation_identity(bundle_statement, deployment_record, subject_sha, "B-106.github_attestation.bundle")
+    verification = github_attestation.get("verification")
+    if not isinstance(verification, list) or not verification:
+        raise EvidenceError("B-106 GitHub attestation has no successful gh verification result")
+    verify_attestation_with_gh(
+        bundle,
+        b106_subject_bytes(att, deployment_record),
+        deployment_record,
+        verification,
+    )
+    verified_subject = False
+    for entry in verification:
+        if not isinstance(entry, dict):
+            continue
+        result = entry.get("verificationResult")
+        if not isinstance(result, dict):
+            continue
+        if entry.get("attestation") != bundle:
+            continue
+        signature = result.get("signature")
+        certificate = signature.get("certificate") if isinstance(signature, dict) else None
+        if (
+            not isinstance(certificate, dict)
+            or certificate.get("sourceRepository") != REPO
+            or not isinstance(certificate.get("certificateIssuer"), str)
+            or not certificate.get("certificateIssuer")
+            or certificate.get("issuer") != "https://token.actions.githubusercontent.com"
+        ):
+            continue
+        signer_san = certificate.get("subjectAlternativeName")
+        expected_san_prefix = f"https://github.com/{REPO}/{WORKFLOW}@"
+        if signer_san != expected_san_prefix + deployment_record["github_ref"]:
+            continue
+        if not isinstance(result.get("verifiedTimestamps"), list) or not result["verifiedTimestamps"]:
+            continue
+        statement = result.get("statement")
+        if not isinstance(statement, dict):
+            continue
+        if statement != bundle_statement:
+            continue
+        try:
+            _validate_attestation_identity(statement, deployment_record, subject_sha, "B-106.github_attestation.verification")
+        except EvidenceError:
+            continue
+        verified_subject = True
+    if not verified_subject:
+        raise EvidenceError("B-106 gh attestation verification output does not name the subject")
     cold, warm = obj(item.get("cold"), "B-106.cold"), obj(item.get("warm_control"), "B-106.warm_control")
     for row, label in ((cold, "B-106.cold"), (warm, "B-106.warm_control")):
         common(row, label, tenant)

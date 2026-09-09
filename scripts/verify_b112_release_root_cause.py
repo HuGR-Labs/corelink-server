@@ -5,7 +5,7 @@ The historical Actions logs are expired, so this gate does not pretend that a
 live release is green.  It proves the bounded claim we can make from the
 workflow bytes and the repository's deterministic reproduction: the old
 source-install/shared-home race is removed from ``release-cli`` while the
-``v*`` Cosign lane and its owner waiver remain untouched.
+former OCI/Cosign lane remains retired under B-118.
 """
 
 from __future__ import annotations
@@ -26,7 +26,10 @@ ROOT = Path(__file__).resolve().parents[1]
 RELEASE = ".github/workflows/release-cli.yml"
 COSIGN = ".github/workflows/cosign-sign.yml"
 BACKLOG = "BACKLOG.md"
-WAIVER = "authorized-by: repo owner | 2026-08-11"
+# This marker belongs to the former B-118 lane.  It is retained only as a
+# negative control: a retired workflow must not silently bring its old waiver
+# back into the B-112 release contract.
+RETIRED_WAIVER = "authorized-by: repo owner | 2026-08-11"
 CARGO_HOME_BINDING = 'CARGO_HOME="${RUNNER_TEMP}/corelink-cargo/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"'
 CARGO_TARGET_BINDING = 'CARGO_TARGET_DIR="${RUNNER_TEMP}/corelink-target/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"'
 ZIGBUILD_CACHE_BINDING = 'ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"'
@@ -572,7 +575,6 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
     """Return all violations for supplied bytes; never return green on absence."""
     errors: list[str] = []
     release_code = "\n".join(_active_lines(release))
-    cosign_code = "\n".join(_active_lines(cosign))
 
     def require(haystack: str, needle: str, label: str) -> None:
         if needle not in haystack:
@@ -633,10 +635,12 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
     if re.search(r"(?m)^\s*[^#\n]*--repo\s+HumanGuardrail/corelink-cli", release_code):
         errors.append("release-cli contains the forbidden stale release repository")
 
-    if "v[0-9]+.[0-9]+.[0-9]+" not in _yaml_trigger_values(cosign, "tags"):
-        errors.append("cosign-sign lost its executable vMAJOR.MINOR.PATCH trigger")
-    if not re.search(r"(?m)^\s*workflow_dispatch:\s*$", cosign_code):
-        errors.append("cosign-sign lost its explicit manual trigger")
+    # B-118 retired the former OCI signing workflow.  Keep this negative
+    # control in the B-112 gate so a stale/reintroduced file cannot make the
+    # bundled release contract look green.  The dedicated B-118 verifier owns
+    # the independent signing-path and public-surface checks.
+    if cosign.strip():
+        errors.append("retired .github/workflows/cosign-sign.yml must remain absent")
 
     b112 = _backlog_block(backlog, "B-112")
     if b112 is None:
@@ -654,8 +658,13 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
         )
         if means is None or not means.group("body").lstrip().startswith("parked —"):
             errors.append("B-112 parked claim must start verify-means with parked —")
+        if re.search(r"fronteira\s+de aposentadoria", b112) is None:
+            errors.append("B-112 verify-means must name the retired-lane boundary")
     require(backlog, "id: B-112", "B-112 record")
-    require(backlog, WAIVER, "Cosign owner waiver")
+    require(backlog, "`cosign-sign.yml` foi removido em 2026-09-08 (B-118)", "B-118 retirement statement")
+    require(backlog, "waiver não foi carregado para a árvore atual", "retired waiver boundary")
+    if RETIRED_WAIVER in backlog:
+        errors.append("B-112 must not restore the retired B-118 owner waiver")
     require(backlog, "26663769142", "historical release run evidence")
     require(backlog, "78592387578", "historical failing job evidence")
     require(backlog, "HTTP 410", "expired-log limitation")
@@ -710,8 +719,23 @@ def mutation_self_test(release: str, cosign: str, backlog: str) -> None:
         "cache export": (release.replace("CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}", "CARGO_ZIGBUILD_CACHE_MUTATED=${ZIGBUILD_CACHE}", 1), cosign, backlog),
         "prebuilt action": (release.replace("taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b", "actions/checkout@deadbeef", 1), cosign, backlog),
         "cli trigger": (release.replace('      - "cli-v*"\n', "", 1), cosign, backlog),
-        "cosign trigger": (release, cosign.replace("      - 'v[0-9]+.[0-9]+.[0-9]+'\n", "", 1), backlog),
-        "owner waiver": (release, cosign, backlog.replace(WAIVER, "authorized-by: UNDECIDED")),
+        "retired workflow": (release, "name: stale\n", backlog),
+        "retirement statement": (release, cosign, backlog.replace(
+            "`cosign-sign.yml` foi removido em 2026-09-08 (B-118)",
+            "`cosign-sign.yml` permaneceu ativo",
+            1,
+        )),
+        "retired waiver boundary": (release, cosign, backlog.replace(
+            "waiver não foi carregado para a árvore atual",
+            "waiver was silently restored",
+            1,
+        )),
+        "retirement boundary wording": (release, cosign, re.sub(
+            r"fronteira\s+de aposentadoria",
+            "preservação do waiver",
+            backlog,
+            count=1,
+        )),
         "failure signature": (release, cosign, backlog.replace("could not execute process rustc", "compiler invocation", 1)),
         "B-112 status": (release, cosign, _mutate_b112_status(backlog)),
         "shared Cargo home": (release.replace(CARGO_HOME_BINDING, 'CARGO_HOME="$HOME/.cargo"', 1), cosign, backlog),
@@ -783,7 +807,11 @@ def main(argv: list[str] | None = None) -> int:
     root = args.root.resolve()
     try:
         release = _read_regular(root / RELEASE, RELEASE)
-        cosign = _read_regular(root / COSIGN, COSIGN)
+        cosign_path = root / COSIGN
+        # Missing is the expected B-118 state.  A regular file or symlink is
+        # still read so the negative control can reject a reintroduced lane;
+        # a broken symlink must not be mistaken for a clean retirement.
+        cosign = _read_regular(cosign_path, COSIGN) if cosign_path.exists() or cosign_path.is_symlink() else ""
         backlog = _read_regular(root / BACKLOG, BACKLOG)
         errors = verify_texts(release, cosign, backlog)
         if errors:

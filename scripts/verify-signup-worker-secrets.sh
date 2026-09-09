@@ -14,6 +14,9 @@
 #     - STRIPE_WEBHOOK_SECRET — Stripe webhook signature (the LIVE money path)
 #     - STRIPE_PRICE_ID_TEAM / _PRO / _STARTER — tier resolution
 #     - EMAIL_HASH_SALT — shared identity pseudonymisation key
+#     - PAGERDUTY_ROUTING_KEY — canonical Events API v2 route for DSR DLQ
+#       exhausted-message pages; absence would leave only a local log and is
+#       therefore blocked before deployment.
 #   The signup Worker is deployed separately from the root Worker, and the
 #   root Worker has four regional production destinations. If any of these is
 #   unset on one destination, signups /
@@ -55,6 +58,7 @@ REQUIRED=(
   STRIPE_PRICE_ID_PRO
   STRIPE_PRICE_ID_STARTER
   EMAIL_HASH_SALT
+  PAGERDUTY_ROUTING_KEY
 )
 
 # Six explicit deployment destinations must carry the same salt. Keeping this

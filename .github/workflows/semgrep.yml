@@ -53,9 +53,6 @@ permissions:
   # Required by codeql-action/upload-sarif.
   security-events: write
   contents: read
-  actions: read
-  # Required to leave the PR comment with finding summary.
-  pull-requests: write
 
 concurrency:
   group: semgrep-${{ github.workflow }}-${{ github.ref }}
@@ -130,8 +127,11 @@ jobs:
     runs-on: corelink
     timeout-minutes: 20
 
-    # Skip duplicate runs on dependabot push events (PR already covers them).
-    if: (github.actor != 'dependabot[bot]')
+    # This self-hosted job has security-events:write for SARIF upload. Keep the
+    # write-capable job on the protected canonical main ref and trusted source;
+    # workflow_dispatch from forks/unprotected refs is denied before a runner
+    # is assigned.
+    if: github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
 
     steps:
       - name: Checkout

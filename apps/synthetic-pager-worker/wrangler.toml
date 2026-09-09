@@ -1,0 +1,53 @@
+name = "corelink-synthetic-pager"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+workers_dev = false
+
+# Sunday 23:59 UTC is the deferred boundary-handoff delivery window. The
+# receiver remains activation-gated; production explicitly overrides this to
+# an empty list below.
+[triggers]
+crons = ["59 23 * * 0"]
+
+# The corelink Worker owns the Monday emit schedule and reaches this receiver
+# through the staging service binding. This Worker owns only the deferred
+# Sunday handoff sweep. Production activation requires an explicit, separately
+# reviewed configuration change.
+[vars]
+ENVIRONMENT = "dev"
+SYNTHETIC_DRILL_ENABLED = "false"
+PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue"
+PAGERDUTY_SERVICE = "synthetic-drill"
+
+[[d1_databases]]
+binding = "CONFIG_DB"
+database_name = "corelink-config-dev"
+database_id = "PLACEHOLDER_CONFIG_DB_DEV_ID"
+migrations_dir = "../../migrations/d1"
+
+# The routing key is a secret and is intentionally absent from committed vars.
+# Set it only in the non-production drill receiver after the explicit activation
+# review: `wrangler secret put PAGERDUTY_SYNTHETIC_ROUTING_KEY` and
+# `wrangler secret put PAGERDUTY_WEBHOOK_SECRET`.
+
+[env.staging]
+name = "corelink-synthetic-pager-staging"
+vars = { ENVIRONMENT = "staging", SYNTHETIC_DRILL_ENABLED = "false", PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue", PAGERDUTY_SERVICE = "synthetic-drill" }
+
+[[env.staging.d1_databases]]
+binding = "CONFIG_DB"
+database_name = "corelink-config-staging"
+database_id = "PLACEHOLDER_CONFIG_DB_STAGING_ID"
+migrations_dir = "../../migrations/d1"
+
+[env.staging.triggers]
+crons = ["59 23 * * 0"]
+
+# A production receiver deployment is intentionally inert and is rejected by
+# the handler even if an operator supplies a routing-key secret accidentally.
+[env.prod]
+name = "corelink-synthetic-pager-prod"
+vars = { ENVIRONMENT = "prod", SYNTHETIC_DRILL_ENABLED = "false", PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue", PAGERDUTY_SERVICE = "synthetic-drill" }
+
+[env.prod.triggers]
+crons = []

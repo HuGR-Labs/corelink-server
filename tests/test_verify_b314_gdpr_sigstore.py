@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -15,7 +16,18 @@ def _text(path: str) -> str:
 
 def test_open_baseline_and_mutations_pass() -> None:
     verify.verify()
-    assert verify.mutation_checks() == 20
+    assert verify.mutation_checks() == 21
+
+
+def test_wrapped_posture_disclaimer_is_not_a_false_negative() -> None:
+    trust = _text(verify.TRUST)
+    wrapped = trust.replace(
+        "Sigstore never\n  receives customer data",
+        "Sigstore never receives\n  customer data",
+        1,
+    )
+    assert "never receives customer data" not in wrapped
+    verify.verify(overrides={verify.TRUST: wrapped})
 
 
 @pytest.mark.parametrize("path", verify.LOCALES)
@@ -63,15 +75,21 @@ def test_packet_completion_ambiguous_decision_is_rejected() -> None:
         verify.verify(overrides={verify.PACKET: mutated})
 
 
-@pytest.mark.parametrize("path", verify.EXPECTED_WIRING)
-@pytest.mark.parametrize("kind", ("duplicate_in_pull_request", "moved_into_push"))
-def test_workflow_event_population_cannot_be_ambiguous(path: str, kind: str) -> None:
+@pytest.mark.parametrize("event", ("pull_request_target", "push"))
+def test_workflow_event_population_covers_the_complete_tree(event: str) -> None:
     source = _text(verify.WORKFLOW)
-    line = '      - "' + path + '"'
-    if kind == "duplicate_in_pull_request":
-        mutated = source.replace(line, line + "\n" + line, 1)
-    else:
-        mutated = source.replace(line, "", 1).replace(line, line + "\n" + line, 1)
+    assert source.count(f"  {event}:") == 1
+    boundary = {"pull_request_target": "push", "push": "schedule"}[event]
+    match = re.search(
+        rf"^  {event}:\n(?P<body>.*?)(?=^  {boundary}:)",
+        source,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match is not None
+    body = match.group("body")
+    assert body.count('paths: ["**"]') == 1
+
+    mutated = source.replace('    paths: ["**"]', "", 1)
     with pytest.raises(verify.VerificationError):
         verify.verify(overrides={verify.WORKFLOW: mutated})
 
@@ -85,6 +103,13 @@ def test_missing_target_and_unknown_override_fail_closed(tmp_path: Path) -> None
 
 def test_runtime_wiring_mutation_is_red() -> None:
     source = _text(verify.WORKFLOW)
-    mutated = source.replace('      - "' + verify.PACKET + '"', "", 1)
+    mutated = source.replace("python3 -m pytest -q " + verify.TEST, "", 1)
+    with pytest.raises(verify.VerificationError):
+        verify.verify(overrides={verify.WORKFLOW: mutated})
+
+
+def test_pull_request_trigger_is_rejected() -> None:
+    source = _text(verify.WORKFLOW)
+    mutated = source.replace("pull_request_target:", "pull_request:", 1)
     with pytest.raises(verify.VerificationError):
         verify.verify(overrides={verify.WORKFLOW: mutated})

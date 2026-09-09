@@ -10,6 +10,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SCENARIOS = ("signup", "webhook", "dsr", "cas", "byok")
 SPEC = importlib.util.spec_from_file_location(
     "load_test_baseline_check", ROOT / "scripts" / "load-test-baseline-check.py"
 )
@@ -49,7 +50,7 @@ def baseline_for(*scenarios: str) -> dict[str, dict[str, object]]:
     return {scenario: {"median_ms": 10, "p99_ms": 20} for scenario in scenarios}
 
 
-def run_gate(tmp_path: Path, expected: str = "signup,webhook") -> int:
+def run_gate(tmp_path: Path, expected: str = ",".join(SCENARIOS)) -> int:
     return MODULE.main(
         [
             "--results-dir",
@@ -64,9 +65,9 @@ def run_gate(tmp_path: Path, expected: str = "signup,webhook") -> int:
 
 def test_complete_population_compares_and_updates(tmp_path: Path) -> None:
     current = tmp_path / "current"
-    write_summary(current, "signup")
-    write_summary(current, "webhook")
-    write_baseline(tmp_path / "baseline.json", baseline_for("signup", "webhook"))
+    for scenario in SCENARIOS:
+        write_summary(current, scenario)
+    write_baseline(tmp_path / "baseline.json", baseline_for(*SCENARIOS))
 
     assert run_gate(tmp_path) == MODULE.EXIT_OK
 
@@ -74,13 +75,13 @@ def test_complete_population_compares_and_updates(tmp_path: Path) -> None:
 @pytest.mark.parametrize("mutation", ["missing-baseline", "malformed-baseline", "partial-baseline"])
 def test_baseline_mutations_fail_closed(tmp_path: Path, mutation: str) -> None:
     current = tmp_path / "current"
-    write_summary(current, "signup")
-    write_summary(current, "webhook")
+    for scenario in SCENARIOS:
+        write_summary(current, scenario)
     baseline = tmp_path / "baseline.json"
     if mutation == "malformed-baseline":
         baseline.write_text("not-json")
     elif mutation == "partial-baseline":
-        write_baseline(baseline, baseline_for("signup"))
+        write_baseline(baseline, baseline_for(*SCENARIOS[:-1]))
 
     assert run_gate(tmp_path) == MODULE.EXIT_USAGE
 
@@ -93,8 +94,9 @@ def test_malformed_current_summary_fails_closed(
 ) -> None:
     current = tmp_path / "current"
     write_summary(current, "signup", median, p99)
-    write_summary(current, "webhook")
-    write_baseline(tmp_path / "baseline.json", baseline_for("signup", "webhook"))
+    for scenario in SCENARIOS[1:]:
+        write_summary(current, scenario)
+    write_baseline(tmp_path / "baseline.json", baseline_for(*SCENARIOS))
 
     assert run_gate(tmp_path) == MODULE.EXIT_USAGE
 
@@ -102,18 +104,25 @@ def test_malformed_current_summary_fails_closed(
 def test_current_population_mutation_fails_closed(tmp_path: Path) -> None:
     current = tmp_path / "current"
     write_summary(current, "signup")
-    write_baseline(tmp_path / "baseline.json", baseline_for("signup", "webhook"))
+    for scenario in SCENARIOS[1:]:
+        write_summary(current, scenario)
+    write_baseline(tmp_path / "baseline.json", baseline_for(*SCENARIOS))
+    (current / "byok" / "summary.json").unlink()
 
     assert run_gate(tmp_path) == MODULE.EXIT_USAGE
 
 
 def test_continue_on_error_leg_cannot_be_green(tmp_path: Path) -> None:
     current = tmp_path / "current"
-    write_summary(current, "signup")
-    write_summary(current, "webhook")
+    for scenario in SCENARIOS:
+        write_summary(current, scenario)
     (current / "webhook" / "status.json").write_text(
         json.dumps({"scenario": "webhook", "outcome": "failure"})
     )
-    write_baseline(tmp_path / "baseline.json", baseline_for("signup", "webhook"))
+    write_baseline(tmp_path / "baseline.json", baseline_for(*SCENARIOS))
 
     assert run_gate(tmp_path) == MODULE.EXIT_USAGE
+
+
+def test_subset_population_cannot_publish_a_baseline(tmp_path: Path) -> None:
+    assert run_gate(tmp_path, "signup,webhook") == MODULE.EXIT_USAGE

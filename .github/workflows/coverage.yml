@@ -1,11 +1,16 @@
 name: coverage (R7-1 supply-quality rollup)
 
+# B-110: this heavy link runs on CoreLink's ephemeral Linux runner. The former
+# GitHub-hosted 4-core label was billing-blocked; CoreLink supplies the same
+# measured 4-vCPU/12.5-GB shape without hosted Actions minutes.
+
 concurrency:
-  # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
-  # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
-  # a outra. Foi o que matou tres dispatches em 2026-08-31.
-  group: "ci-coverage-r7-1-supply-quality-rollup-${{ github.event.pull_request.number || github.ref }}"
-  cancel-in-progress: true
+  # Shared with cas_foundation.yml: workspace and coverage builds must never
+  # compile concurrently against the same heavy-build resource class. A
+  # literal group queues dispatches across refs and non-cancelling preserves
+  # every result.
+  group: "corelink-heavy-cargo-build"
+  cancel-in-progress: false
 
 # Workspace test-coverage report (cargo-llvm-cov).
 #
@@ -50,7 +55,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 # Serialize the heavy release/coverage cargo builds across the self-hosted
 # mac fleet so two never compile against the SAME checkout `target/` dir at
@@ -65,7 +69,7 @@ permissions:
 jobs:
   coverage:
     name: cargo-llvm-cov (workspace HTML + summary)
-    runs-on: ubuntu-x64-4core  # 4-core hosted: cargo-llvm-cov instruments the whole workspace (heavy link); 2-core OOMs (ld Bus error, signal 7)
+    runs-on: corelink  # 4-vCPU/12.5-GB ephemeral Linux box; 2-core links OOM
     timeout-minutes: 45
     steps:
       - name: Checkout

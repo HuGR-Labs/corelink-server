@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09T01:53:00Z",
+  "operator": "codex-live-b127-readback",
+  "database_binding": "corelink-config-prod",
+  "database_id": "d64742ea-e102-40b2-a844-ff02e3f94562",
+  "database_access": "remote-read-only",
+  "query_hash": "2460cc5abcd5f09d573720d9cfaba83c0ed9b00e5c3e56227aeae1022471d2b4",
+  "query_source": "scripts/verify_audit_residency.py::RESIDENCY_SQL",
+  "success": true,
+  "result": [{"success": true, "results": [{
+    "total_rows": 84932,
+    "satisfied_rows": 81262,
+    "violated_rows": 0,
+    "unevaluable_rows": 3670,
+    "orphan_rows": 3670,
+    "orphan_tenants": 175,
+    "erased_orphan_rows": 3526,
+    "erased_orphan_tenants": 170,
+    "unexplained_orphan_rows": 144,
+    "unexplained_orphan_tenants": 5,
+    "weur_audit_rows": 4,
+    "weur_orphan_rows": 4,
+    "weur_tenants": 0,
+    "erasure_log_rows": 2044
+  }]}],
+  "controls": {"population_nonempty": true, "three_state_partition_exhaustive": true, "denominator": 84932, "changes": 0, "rows_written": 0},
+  "verdict": "fail",
+  "verdict_reason": "The full population is partitioned, but 3670 rows remain unevaluable, including 144 rows across five unexplained orphan tenants and all four weur rows. The production acceptance requires every unevaluable row to fail and the residual to be explained; no migration or row mutation was attempted.",
+  "safety": {"operations": "SELECT-only", "migration_applied": false, "rows_written": 0},
+  "redaction": {"tenant_ids": "omitted", "payloads": "omitted", "credentials": "omitted"}
+}

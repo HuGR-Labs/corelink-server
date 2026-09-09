@@ -243,6 +243,8 @@ ensure_app_id() {
 
 # Authoritative per-application read. Echoes TSV:
 #   <image ref>\t<healthy>\t<failed>\t<desired instances>\t<version>
+# Missing health/desired fields are emitted as blank values, not zeroes; the
+# convergence gate below must fail closed on an incomplete provider response.
 # or empty string if the app is unresolved / the API read failed.
 app_state() {
     local resp
@@ -252,9 +254,9 @@ app_state() {
     echo "$resp" | jq -r '
         if ((.success // false) and (.result != null)) then
             [ (.result.configuration.image // ""),
-              (.result.health.instances.healthy // 0),
-              (.result.health.instances.failed  // 0),
-              (.result.instances // 0),
+              (.result.health.instances.healthy // null),
+              (.result.health.instances.failed  // null),
+              (.result.instances // null),
               (.result.version  // 0) ] | @tsv
         else empty end
     ' 2>/dev/null || echo ""
@@ -265,8 +267,9 @@ LAST_STATE="<never read>"
 
 # Returns 0 only when the per-application read shows BOTH:
 #   - configuration.image == the pinned ref, and
-#   - a sane instance set: failed == 0, and healthy > 0 whenever the app wants
-#     instances at all (an idle scale-to-zero app legitimately has 0 of both).
+#   - a complete, non-empty instance set: desired > 0, healthy > 0, and failed == 0.
+# Missing health/desired fields and scale-to-zero are both unsafe for a writer
+# cutover, so neither can satisfy this proof.
 # The health check is what stops a rolled-but-crashlooping container from
 # passing as a good deploy — image match alone only proves CF accepted the
 # config, not that the new image can actually run.
@@ -280,10 +283,15 @@ rollout_converged() {
         return 1
     fi
     IFS=$'\t' read -r image healthy failed desired version <<< "$state"
-    # Defensive: never let a non-numeric field make an arithmetic test explode.
-    [[ "$healthy" =~ ^[0-9]+$ ]] || healthy=0
-    [[ "$failed"  =~ ^[0-9]+$ ]] || failed=0
-    [[ "$desired" =~ ^[0-9]+$ ]] || desired=0
+    # Provider omissions are not a healthy zero. Treat every missing or
+    # malformed health/desired field as an unverifiable rollout and retry/fail.
+    if ! [[ "$healthy" =~ ^[0-9]+$ ]] || \
+       ! [[ "$failed"  =~ ^[0-9]+$ ]] || \
+       ! [[ "$desired" =~ ^[0-9]+$ ]]; then
+        LAST_STATE="image=${image:-<none>} version=${version:-<none>} instances=${desired:-<missing>} healthy=${healthy:-<missing>} failed=${failed:-<missing>}"
+        log "  incomplete health response — refusing rollout proof [$LAST_STATE]"
+        return 1
+    fi
     LAST_STATE="image=${image:-<none>} version=${version} instances=${desired} healthy=${healthy} failed=${failed}"
 
     if [ "$image" != "$PINNED_REF" ]; then
@@ -294,8 +302,8 @@ rollout_converged() {
         log "  image matches the pin but $failed instance(s) FAILED — not converged  [$LAST_STATE]"
         return 1
     fi
-    if [ "$desired" -gt 0 ] && [ "$healthy" -lt 1 ]; then
-        log "  image matches the pin but 0/${desired} instances healthy — not converged  [$LAST_STATE]"
+    if [ "$desired" -le 0 ] || [ "$healthy" -le 0 ]; then
+        log "  image matches the pin but desired=${desired}, healthy=${healthy} — not converged  [$LAST_STATE]"
         return 1
     fi
     return 0

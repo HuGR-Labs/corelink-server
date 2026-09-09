@@ -237,21 +237,18 @@ async fn drain_partition_inner(
     // NULL). A crash here leaves correctly-sealed rows the next drain resumes from
     // (sealed-tail authoritative) — never a gap.
     //
-    // B-038 SELF-FENCE (load-bearing): before each write, if the lease regime is
-    // ON and our lease has expired (`now_ms() >= my_lease_expires_ms`), STOP —
-    // seal only the pre-expiry prefix and do NOT advance the head. NOT advancing
-    // is crash-safe: the next drain resumes from the now-ahead sealed tail and
-    // continues (the SAME crash-recovery path). This makes a holder provably stop
-    // writing at its own expiry, so it cannot still be sealing after a stealer
-    // takes the now-expired lease — closing the residual fork window a bare TTL
-    // lease leaves open. When the lease is OFF the fence never trips and the loop
-    // runs to completion exactly as before.
-    let fence = run_fenced_seal_loop(
+    // B-038 SELF-FENCE (load-bearing): before and after each bounded JSON1
+    // statement, if the lease regime is ON and our lease has expired
+    // (`now_ms() >= my_lease_expires_ms`), STOP — seal only the committed prefix
+    // and do NOT advance the head. A next drain resumes from the now-ahead
+    // sealed tail. The chunk is bounded to keep the post-check's race window
+    // finite; when the lease is OFF the fence remains inert.
+    let fence = run_chunked_fenced_seal_loop(
         &sealed,
         lease_enabled,
         my_lease_expires_ms,
         now_ms,
-        |row| async move { write_seal(d1, &row, now).await },
+        |chunk| async move { write_seal_chunk(d1, &chunk, now).await },
     )
     .await?;
     if let FencedSeal::Fenced(prefix) = fence {

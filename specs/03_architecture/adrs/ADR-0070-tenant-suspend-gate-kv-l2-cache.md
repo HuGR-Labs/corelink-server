@@ -36,7 +36,7 @@ Finding #99 isolated the South-America (São-Paulo) authenticated hot path as
 (`running_in_region: ENAM`) and **has no South-America region**, so each read from
 the SAM edge is ~120 ms even via a read replica. `extractAuth` did **two** such
 reads per request — the `pat` row AND this suspend gate. PR #858/#859 moved the
-`pat` read to a globally-replicated **Workers KV** L2 (`patrow:<token_id>`, 60 s
+`pat` read to a globally-replicated **Workers KV** L2 (`patrow:<token_id>`, 30 s
 TTL) — KV is edge-local (~3 ms) and, crucially, **per-colo cached so it survives
 Cloudflare's isolate fan-out** (a per-isolate in-memory cache does not: a single
 client's requests spread across many isolates, measured 0/30 hits). After #859
@@ -84,8 +84,8 @@ number.
      `patrow:` entry for immediacy), and the container `NativePatGate` is a second
      independent check. For an abuse response requiring a `≤ 0`-window stop, PAT
      revoke — not the offboarding state — is the operator lever.
-   - The window matches the `pat` L2's own `≤ 60 s` bound (ADR-0030), so the auth
-     plane has **one uniform, documented freshness window**, not two.
+   - The window remains within the `pat` L2's own `≤ 30 s` backstop and the shared
+     ADR-0030 `≤ 60 s` service-level target; both cache contracts are explicit.
 
 4. **Tighten the L1 in-memory TTL from 30 s → 5 s.** With KV now carrying the herd
    + far-D1 latency load, L1 reverts to pure micro-burst dedup within one isolate,
@@ -103,8 +103,8 @@ number.
 
 - **Positive:** removes the last ~120 ms far-D1 read from the SAM authenticated
   hot path (the `pat` read already served from KV after #859); the gate now serves
-  edge-local (~3 ms) for the not-suspended common case. One uniform 60 s auth
-  freshness window across the `pat` and suspend layers.
+  edge-local (~3 ms) for the not-suspended common case. The 60 s suspend-cache
+  window and 30 s PAT-cache backstop are explicit, bounded security trade-offs.
 - **Negative / risk:** a tenant suspended in D1 retains customer CAS/AC access for
   `≤ 65 s`. Mitigated by the unchanged immediate levers (PAT revoke; container
   gate) and by the coarse day-scale nature of the `suspended` arm. Documented and
@@ -127,8 +127,8 @@ number.
   would still hit D1 on every not-suspended request (the exact floor we are
   removing).
 - **Keep the 30 s L1, add KV on top.** Rejected: the chained window becomes 90 s,
-  wider than the `pat` L2's 60 s and dishonest against the "one uniform window"
-  goal. Tightening L1 to 5 s costs only slightly more (cheap ~3 ms) KV reads.
+  wider than the `pat` L2's 30 s and dishonest against the intended bounded window.
+  Tightening L1 to 5 s costs only slightly more (cheap ~3 ms) KV reads.
 - **Do nothing (leave the ~120 ms floor).** Rejected: it is the last removable
   component of the #99 SAM latency and the fix mirrors an already-shipped,
   already-proven pattern.

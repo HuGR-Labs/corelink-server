@@ -11,7 +11,6 @@ set -euo pipefail
 
 readonly SCRIPT_NAME="${0##*/}"
 readonly PROFILE="${1:-}"
-readonly CARGO_BIN="${CARGO_BIN:-cargo}"
 
 usage() {
   printf 'usage: %s {d1|r2|stripe|neon|all}\n' "$SCRIPT_NAME" >&2
@@ -38,7 +37,10 @@ require_https() {
 run_cargo() {
   # --locked makes the live lane execute the repository's resolved dependency
   # graph. --ignored is deliberately present only in this allow-listed runner.
-  "$CARGO_BIN" test --locked "$@" -- --ignored --nocapture
+  # Cargo and its toolchain are supplied by the trusted self-hosted runner
+  # image. A compromised host/toolchain or same-user TOCTOU is infrastructure
+  # outside this repository verifier's trust boundary.
+  cargo test --locked "$@" -- --ignored --nocapture
 }
 
 preflight_d1() {
@@ -90,7 +92,7 @@ run_d1() {
 }
 
 run_r2() {
-  run_cargo --package corelink-server --lib r2_cas_list_concurrent_path_fails_closed_on_bad_audit_creds
+  run_cargo --package corelink-server --lib r2_cas_list_durable_audit_failure_precedes_storage
   run_cargo --package corelink-server --lib storage_r2_round_trip
   run_cargo --package corelink-server --lib cas_idempotent_rewrite_reports_durable_false
   run_cargo --package corelink-server --lib delete_if_present_credits_size_once_then_none

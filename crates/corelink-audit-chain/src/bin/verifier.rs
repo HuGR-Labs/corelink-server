@@ -54,20 +54,32 @@ use std::collections::BTreeMap;
 use std::process::ExitCode;
 
 use corelink_audit_chain::{
-    AuditEvent, ChainVerifier, InMemoryAuditChainAuditSink, SealedArchiveLine, SEALED_LINE_SCHEMA,
+    verify_chunk_for_epoch, AuditEvent, ChainEpoch, ChainHash, ChainVerifier,
+    InMemoryAuditChainAuditSink, LinkKeyring, SealedArchiveLine, SEALED_LINE_SCHEMA,
+    SEALED_LINE_SCHEMA_V2,
 };
+use zeroize::Zeroizing;
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    let (keyring, args) = match parse_args(&raw_args) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            eprintln!(
+                "usage: verifier [--chain-keyring PATH] <ndjson_chunk_path>...\nerror: {error}"
+            );
+            return ExitCode::FAILURE;
+        }
+    };
     if args.is_empty() {
         // Zero-input is the cron-safe no-op (first day after deploy, no
         // chunks yet to verify). The OK marker keeps the cron grep happy.
-        eprintln!("usage: verifier <ndjson_chunk_path>...");
+        eprintln!("usage: verifier [--chain-keyring PATH] <ndjson_chunk_path>...");
         println!("AUDIT_CHAIN_VERIFY_OK: no input paths (cron no-op)");
         return ExitCode::SUCCESS;
     }
 
-    match run(&args) {
+    match run(&args, &keyring) {
         Ok(summary) => {
             println!("AUDIT_CHAIN_VERIFY_OK: {}", summary);
             ExitCode::SUCCESS
@@ -79,7 +91,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(paths: &[String]) -> Result<String, String> {
+fn run(paths: &[String], keyring: &LinkKeyring) -> Result<String, String> {
     let mut by_tenant: BTreeMap<uuid::Uuid, Vec<AuditEvent>> = BTreeMap::new();
     // Sealed-row lines are keyed by the LIVE chain's partition — `(tenant_id,
     // region)` — and their tenant id is an opaque `audit_outbox.tenant_id`
@@ -128,7 +140,7 @@ fn run(paths: &[String]) -> Result<String, String> {
     for ((tenant_id, region), mut lines) in by_partition {
         lines.sort_by_key(|l| l.sequence_number);
         lines.dedup_by(|a, b| a.sequence_number == b.sequence_number && a.row_id == b.row_id);
-        corelink_audit_chain::verify_chunk(&lines)
+        verify_sealed_partition(&lines, keyring)
             .map_err(|e| format!("tenant={}: region={}: {}", tenant_id, region, e))?;
         events_verified = events_verified.saturating_add(lines.len() as u64);
         chains_verified = chains_verified.saturating_add(1);
@@ -153,6 +165,89 @@ fn run(paths: &[String]) -> Result<String, String> {
     ))
 }
 
+/// Parse the optional write-only keyring before reading archive data. Invalid
+/// material fails closed; no partial keyring or legacy downgrade is allowed.
+fn parse_args(args: &[String]) -> Result<(LinkKeyring, Vec<String>), String> {
+    let mut keyring_path: Option<&str> = None;
+    let mut paths = Vec::new();
+    let mut index = 0;
+    while let Some(arg) = args.get(index) {
+        if arg == "--chain-keyring" {
+            index = index.saturating_add(1);
+            keyring_path = Some(
+                args.get(index)
+                    .ok_or_else(|| "--chain-keyring requires a path".to_owned())?,
+            );
+        } else if let Some(path) = arg.strip_prefix("--chain-keyring=") {
+            if path.is_empty() {
+                return Err("--chain-keyring requires a path".to_owned());
+            }
+            keyring_path = Some(path);
+        } else if arg == "--help" || arg == "-h" {
+            return Err("--chain-keyring PATH is optional; paths are NDJSON archives".to_owned());
+        } else if arg.starts_with('-') {
+            return Err(format!("unknown option: {arg}"));
+        } else {
+            paths.push(arg.clone());
+        }
+        index = index.saturating_add(1);
+    }
+    let keyring = match keyring_path {
+        Some(path) => {
+            let raw = Zeroizing::new(
+                std::fs::read_to_string(path).map_err(|e| format!("read keyring {path}: {e}"))?,
+            );
+            LinkKeyring::parse_json(&raw).map_err(|e| format!("parse keyring {path}: {e}"))?
+        }
+        None => LinkKeyring::default(),
+    };
+    Ok((keyring, paths))
+}
+
+fn parse_chain_hash(raw: &str) -> Result<ChainHash, String> {
+    let bytes =
+        hex::decode(raw).map_err(|_| "first keyed line has malformed prev_hash".to_owned())?;
+    if bytes.len() != 32 {
+        return Err("first keyed line has malformed prev_hash length".to_owned());
+    }
+    let mut hash = [0_u8; 32];
+    hash.copy_from_slice(&bytes);
+    Ok(ChainHash(hash))
+}
+
+fn verify_sealed_partition(
+    lines: &[SealedArchiveLine],
+    keyring: &LinkKeyring,
+) -> Result<(), String> {
+    let Some(first) = lines.first() else {
+        return Err("sealed archive chunk is empty".to_owned());
+    };
+    if lines
+        .iter()
+        .all(|line| line.algorithm_id == 0 && line.epoch_id == 0 && line.link_key_id.is_none())
+    {
+        return corelink_audit_chain::verify_chunk(lines).map_err(|e| e.to_string());
+    }
+    if first.algorithm_id != 1 || first.epoch_id == 0 {
+        return Err("unsupported or malformed keyed archive metadata".to_owned());
+    }
+    let link_key_id = first
+        .link_key_id
+        .ok_or_else(|| "keyed archive line is missing link_key_id".to_owned())?;
+    let key = keyring
+        .get(link_key_id)
+        .ok_or_else(|| format!("link-key id {link_key_id} is not present in keyring"))?;
+    let epoch = ChainEpoch::keyed_successor(
+        first.epoch_id,
+        link_key_id,
+        first.sequence_number,
+        parse_chain_hash(&first.prev_hash)?,
+        first.epoch_id.saturating_sub(1),
+    )
+    .map_err(|e| format!("invalid keyed archive epoch: {e}"))?;
+    verify_chunk_for_epoch(lines, &epoch, Some(key)).map_err(|e| e.to_string())
+}
+
 /// Cheap discriminator: a sealed-archive line carries the `schema` tag.
 ///
 /// Parsing into a `serde_json::Value` first (rather than trying
@@ -165,7 +260,22 @@ fn is_sealed_line(line: &str) -> bool {
         .and_then(|v| {
             v.get("schema")
                 .and_then(serde_json::Value::as_str)
-                .map(|s| s == SEALED_LINE_SCHEMA)
+                .map(|s| s == SEALED_LINE_SCHEMA || s == SEALED_LINE_SCHEMA_V2)
         })
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_keyring_option_is_fail_closed() -> Result<(), String> {
+        assert!(parse_args(&["--chain-keyring".to_owned()]).is_err());
+        assert!(parse_args(&["--unknown".to_owned()]).is_err());
+        let (keyring, paths) = parse_args(&["archive.ndjson".to_owned()])?;
+        assert!(keyring.is_empty());
+        assert_eq!(paths, vec!["archive.ndjson"]);
+        Ok(())
+    }
 }

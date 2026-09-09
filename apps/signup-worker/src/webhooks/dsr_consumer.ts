@@ -169,10 +169,104 @@ export async function handleErasureQueueBatch(
  */
 export type DsrDlqBody = DsrQueuedV1 & { _dlq_requeue?: number };
 
+const MAX_DLQ_REQUEUES = 1;
+const PAGERDUTY_EVENTS_V2_URL = "https://events.pagerduty.com/v2/enqueue";
+const DLQ_EVENT_NAME = "dsr.erasure.dead_letter";
+
+/**
+ * Queue payloads are external input. Normalize the marker before making a
+ * retry decision: NaN, fractions, negatives, and strings must never bypass
+ * the one-requeue cap or produce misleading operator counts.
+ */
+function normalizedDlqRequeueCount(value: unknown): number {
+  // An omitted marker is the first DLQ generation. A present-but-malformed
+  // marker is treated as exhausted, never as a fresh message: otherwise a
+  // forged string/NaN could bypass the one-requeue bound.
+  if (value === undefined) return 0;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    return MAX_DLQ_REQUEUES;
+  }
+  return Math.min(value, MAX_DLQ_REQUEUES);
+}
+
+/**
+ * Stable correlation for one DLQ generation. The deterministic value is
+ * intentionally derived from the immutable DSR identity and the bounded
+ * requeue generation, so redelivery of the same DLQ message keeps one event
+ * id while the one allowed requeue gets a distinct id on a later DLQ arrival.
+ */
+function dlqEventId(body: DsrDlqBody, requeueCount: number): string {
+  const dsrId = typeof body.dsr_id === "string" && body.dsr_id.length > 0 ? body.dsr_id : "unknown";
+  return `dsr-erasure-dlq:${encodeURIComponent(dsrId)}:${requeueCount}`;
+}
+
 /** Env the DLQ handler needs: the MAIN-queue producer binding for re-enqueue. */
 export interface DsrDlqEnv {
   /** Producer binding to the MAIN erasure queue (one bounded re-enqueue). */
   DSR_QUEUE?: { send(message: unknown): Promise<void> };
+  /** Canonical PagerDuty Events API v2 production routing key. */
+  PAGERDUTY_ROUTING_KEY?: string;
+  /** Injectable fetch seam for focused tests; production uses the Worker fetch. */
+  PAGERDUTY_FETCH?: typeof fetch;
+}
+
+type PagingResult =
+  | { status: "delivered" }
+  | { status: "not_configured" }
+  | { status: "failed"; error: "http_rejected" | "transport_error" };
+
+/** Deliver one critical DLQ page through the canonical PagerDuty procedure. */
+async function pageDlqEvent(
+  body: DsrDlqBody,
+  eventId: string,
+  requeueCount: number,
+  env: DsrDlqEnv,
+): Promise<PagingResult> {
+  const routingKey = env.PAGERDUTY_ROUTING_KEY?.trim();
+  if (!routingKey) return { status: "not_configured" };
+
+  const fetcher = env.PAGERDUTY_FETCH ?? fetch;
+  try {
+    const response = await fetcher(PAGERDUTY_EVENTS_V2_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        routing_key: routingKey,
+        event_action: "trigger",
+        dedup_key: eventId,
+        payload: {
+          summary: `DSR erasure dead-letter exhausted (${body.dsr_id})`,
+          source: "corelink-signup-worker",
+          severity: "critical",
+          custom_details: {
+            event_id: eventId,
+            dsr_id: body.dsr_id,
+            tenant_id: body.tenant_id,
+            exhausted: true,
+            requeue_count: requeueCount,
+          },
+        },
+      }),
+    });
+    if (!response.ok) {
+      // Do not copy provider response text/status into logs: the response can
+      // contain arbitrary data and must never become an operator-log sink.
+      return { status: "failed", error: "http_rejected" };
+    }
+    return { status: "delivered" };
+  } catch {
+    // The provider/transport exception is intentionally not logged. It may
+    // include URLs, credentials, or arbitrary upstream response text.
+    return { status: "failed", error: "transport_error" };
+  }
+}
+
+function logDlqEvent(fields: Record<string, unknown>): void {
+  // Keep this as one JSON object: external log shipping and the owner packet
+  // correlate by event_id and must never have to reconstruct a split message.
+  const canonicalEvent = { event: "dsr.erasure.dead_letter" };
+  if (fields.event === undefined) fields.event = canonicalEvent.event;
+  console.error(JSON.stringify(fields));
 }
 
 /**
@@ -196,38 +290,100 @@ export async function handleErasureDlqBatch(
 ): Promise<void> {
   for (const m of batch.messages) {
     const body = m.body;
-    const priorRequeues = body._dlq_requeue ?? 0;
-    const canRequeue = priorRequeues < 1 && !!env.DSR_QUEUE;
-    console.error(
-      JSON.stringify({
+    const priorRequeues = normalizedDlqRequeueCount(body._dlq_requeue);
+    const eventId = dlqEventId(body, priorRequeues);
+    const canRequeue = priorRequeues < MAX_DLQ_REQUEUES && !!env.DSR_QUEUE;
+
+    // A configured pager is part of the failure path: do not acknowledge or
+    // requeue the DLQ copy until PagerDuty accepted the page. Missing config is
+    // deliberately visible as a blocker, but preserves the existing bounded
+    // requeue/manual-follow-up behavior rather than inventing delivery proof.
+    const paging = await pageDlqEvent(body, eventId, priorRequeues, env);
+    if (paging.status === "failed") {
+      logDlqEvent({
         level: "alert",
         severity: "critical",
-        event: "dsr.erasure.dead_letter",
+        event: DLQ_EVENT_NAME,
         component: "dsr-erasure-dlq",
+        event_id: eventId,
+        exhausted: true,
+        requeue_count: priorRequeues,
         dsr_id: body.dsr_id,
         tenant_id: body.tenant_id,
         queued_at_ms: body.queued_at_ms,
-        prior_requeues: priorRequeues,
-        action: canRequeue ? "requeue_once" : "left_dead",
-        note: canRequeue
-          ? "GDPR Art.17 erasure exhausted main-queue retries — re-enqueuing for ONE bounded final attempt"
-          : "GDPR Art.17 erasure dead after bounded re-enqueue (or no producer binding) — MANUAL operator action required",
-      }),
-    );
+        action: "retry_paging",
+        paging_status: paging.status,
+        paging_error: paging.error,
+        note: "PagerDuty rejected the exhausted DSR alert; retaining the DLQ copy for delivery retry",
+      });
+      m.retry();
+      continue;
+    }
+
     if (!canRequeue) {
       // No safe re-enqueue path: leave it DEAD with the alert above. ack so the
       // DLQ does not spin redelivering the same dead message.
+      logDlqEvent({
+        level: "alert",
+        severity: "critical",
+        event: DLQ_EVENT_NAME,
+        component: "dsr-erasure-dlq",
+        event_id: eventId,
+        exhausted: true,
+        requeue_count: priorRequeues,
+        dsr_id: body.dsr_id,
+        tenant_id: body.tenant_id,
+        queued_at_ms: body.queued_at_ms,
+        action: "left_dead",
+        paging_status: paging.status,
+        paging_configured: paging.status !== "not_configured",
+        note: paging.status === "not_configured"
+          ? "PagerDuty routing key is not configured; no external page was claimed — MANUAL operator action required"
+          : "GDPR Art.17 erasure dead after bounded re-enqueue — MANUAL operator action required",
+      });
       m.ack();
       continue;
     }
     try {
       // env.DSR_QUEUE is non-null here (guarded by canRequeue).
       await env.DSR_QUEUE!.send({ ...body, _dlq_requeue: priorRequeues + 1 });
+      logDlqEvent({
+        level: "alert",
+        severity: "critical",
+        event: DLQ_EVENT_NAME,
+        component: "dsr-erasure-dlq",
+        event_id: eventId,
+        exhausted: true,
+        requeue_count: priorRequeues + 1,
+        dsr_id: body.dsr_id,
+        tenant_id: body.tenant_id,
+        queued_at_ms: body.queued_at_ms,
+        action: "requeue_once",
+        paging_status: paging.status,
+        paging_configured: paging.status !== "not_configured",
+        note: paging.status === "not_configured"
+          ? "GDPR Art.17 erasure exhausted main-queue retries — re-enqueued once; PagerDuty routing key is not configured, MANUAL operator follow-up required"
+          : "GDPR Art.17 erasure exhausted main-queue retries — re-enqueued for ONE bounded final attempt",
+      });
       m.ack(); // handed back to the main queue; consume the DLQ copy
     } catch (err) {
-      console.error(
-        `[dsr-erasure-dlq] re-enqueue FAILED dsr_id=${body.dsr_id}: ${(err as Error).message.slice(0, 120)} — retrying DLQ delivery`,
-      );
+      logDlqEvent({
+        level: "alert",
+        severity: "critical",
+        event: DLQ_EVENT_NAME,
+        component: "dsr-erasure-dlq",
+        event_id: eventId,
+        exhausted: true,
+        requeue_count: priorRequeues,
+        dsr_id: body.dsr_id,
+        tenant_id: body.tenant_id,
+        queued_at_ms: body.queued_at_ms,
+        action: "retry_requeue",
+        paging_status: paging.status,
+        paging_configured: paging.status !== "not_configured",
+        requeue_error: (err as Error).message.slice(0, 120),
+        note: "Bounded DSR re-enqueue failed; retaining the DLQ copy for delivery retry",
+      });
       m.retry(); // keep the DLQ copy; attempt the re-enqueue again
     }
   }

@@ -250,11 +250,14 @@ badpat  code=401  connect=0.009  appconnect=0.025  ttfb=0.047
 
 Those numbers measure the rejection, not the cache. A prior "~20 ms of server time, the
 network was never implicated" claim was made this way and has been retracted.
-`.github/workflows/cargo-cache-latency-probe.yml` + `scripts/probe-cargo-cache-latency.sh`
-exist so the authenticated path can be measured instead of inferred: they use the real
-PAT, assert a **404** (an authenticated miss on a random key — a lower bound on a hit, and
-never a write), and **exit non-zero on 401/403** so a run that measured nothing cannot look
-like a run that measured something.
+The historical probe paired `.github/workflows/cargo-cache-latency-probe.yml` with
+`scripts/probe-cargo-cache-latency.sh` so the authenticated path could be measured instead
+of inferred: it used the real PAT, asserted a **404** (an authenticated miss on a random key
+— a lower bound on a hit, and never a write), and **exited non-zero on 401/403** so a run
+that measured nothing could not look like a run that measured something. The workflow is archived
+from the current integration branch; the shell probe remains a manual, non-CI instrument.
+References below to dispatching this workflow are historical procedure, not a currently
+available dispatch surface.
 
 ### H4 — the `CARGO_INCREMENTAL=0` confound: **REFUTED as an explanation**
 
@@ -284,7 +287,10 @@ attribution of what the lane measured.
 The discriminating experiment is now cheap, and it is not a lane re-run.
 
 **Step 1 — measure the surface (≈1 minute, no compilation).**
-Dispatch `cargo-cache-latency-probe.yml` **before** PR #1022 deploys and again **after**.
+The original procedure dispatched `cargo-cache-latency-probe.yml` **before** PR #1022
+deployed and again **after**. That workflow is now archived from the current integration
+branch, so this historical step cannot be repeated as written; use the retained shell probe
+manually or a reviewed replacement workflow for any new live measurement.
 
 > A trap worth recording, because it nearly shipped an unproven instrument: GitHub will
 > only dispatch a `workflow_dispatch` workflow that already exists **on the default

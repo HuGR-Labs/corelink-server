@@ -16,7 +16,12 @@ Quick context on what we're shipping and why we think it matters.
 
 1. **Tenant isolation is a TLA+ invariant.** We maintain four formal specifications in CI and the build fails if the safety property regresses. Most "multi-tenant" caches are single-tenant SaaS with namespacing; this one is structurally different.
 2. **BYOK is real on AWS KMS** (GCP KMS, Azure Key Vault, and HashiCorp Vault are on the roadmap). Customer-managed kill switch. Verifiable crypto-erasure (a customer-served Ed25519 attestation is on the roadmap). The vendor cannot read your bytes unilaterally — that's the property, not the marketing.
-3. **Engineering gate separated from launch.** We split GA into a binary engineering gate (PRR + 30d staging + 3 lighthouse customers attested + `CAP-GA-002` external report and retest with no outstanding HIGH/CRITICAL findings) and a soft-gate launch orchestration (this post, the press release, the blog series). `CAP-GA-002` is unmet: no external pentest has been commissioned, so this draft does not authorize a GA claim.
+3. **Engineering gate separated from launch.** We split GA into a binary
+engineering gate (PRR + 30d staging + external lighthouse evidence +
+`CAP-GA-002` external report and retest with no outstanding HIGH/CRITICAL
+findings) and a soft-gate launch orchestration (this post, the press release,
+the blog series). The external customer and pentest gates are unmet, so this
+draft does not authorize a GA claim.
 
 **Who it's for.** Build-heavy engineering teams running Bazel at scale, particularly teams with residency, BYOK, or audit requirements that existing remote caches paper over.
 
@@ -30,7 +35,10 @@ Quick context on what we're shipping and why we think it matters.
 - Blog series (launch day): corelink-docs.humangr.com/blog
 - TLA+ specs: humangr.com/corelink/trust/formal-verification
 
-I'll be here through the launch day responding. Thank you to **[HUNTER_NAME]** for the hunt, and to the engineers — both inside HuGR and at our three lighthouse customers — who got this to a place where we could ship it without flinching.
+I'll be here through the launch day responding. Thank you to
+**[HUNTER_NAME]** for the hunt, and to the engineers inside HuGR and the
+internal Forge team that helped exercise the product. No external lighthouse
+customer has adopted CoreLink yet; the customer program remains pending.
 
 — Gustavo
 

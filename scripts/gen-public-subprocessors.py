@@ -89,6 +89,15 @@ PUBLIC_EXCLUDED = {
     "Cybot A/S (Cookiebot)",  # consent vendor; documented under /privacy
 }
 
+# The §2 register table describes vendor risk, not storage topology. Keep the
+# one architecture-sensitive public disclosure explicit here so generation
+# cannot resurrect the old blanket "tenant-pinned" claim for Cloudflare: R2
+# objects and jurisdictional DO state are tenant-pinned, while the shared D1
+# control-plane metadata is global and covered by SCC/TIA safeguards.
+PUBLIC_REGION_OVERRIDES = {
+    "Cloudflare, Inc.": "R2/DO tenant-pinned; D1 control-plane metadata global under SCC/TIA safeguards",
+}
+
 # Vendors that are registered (real client code + reviewed contract posture)
 # but are NOT currently receiving customer data: the credential is not
 # deployed anywhere, or no code path invokes the client. Kept off the
@@ -266,11 +275,14 @@ def extract_dpa_link(attestation_cell: str, vendor: str) -> str:
     return f"{vendor.split(',')[0]} DPA (on request)"
 
 
-def shorten_region(scope: str, data_sharing: str) -> str:
+def shorten_region(scope: str, data_sharing: str, vendor: str | None = None) -> str:
     """Derive a public-facing region string. The register doesn't carry a
     dedicated region column for §2, so we encode 'Multi-region (per tenant
     primary_region pin)' as the default, with a Brazil-residency hint when
-    LGPD scope is implied by the data-sharing class."""
+    LGPD scope is implied by the data-sharing class. Architecture-sensitive
+    disclosures use an explicit vendor override above."""
+    if vendor in PUBLIC_REGION_OVERRIDES:
+        return PUBLIC_REGION_OVERRIDES[vendor]
     if "encrypted-blobs" in data_sharing or "pii" in data_sharing:
         return "Multi-region (per tenant `primary_region` pin)"
     return "US / EU (selectable)"
@@ -305,7 +317,7 @@ def render_active_table(rows: Iterable[VendorRow]) -> str:
         out.append(
             f"| {n} | **{r.vendor}** | {shorten_service(r.service)} | "
             f"{shorten_data_sharing(r.data_sharing)} | "
-            f"{shorten_region(r.regulatory_scope, r.data_sharing)} | "
+            f"{shorten_region(r.regulatory_scope, r.data_sharing, r.vendor)} | "
             f"{extract_dpa_link(r.attestation, r.vendor)} |"
         )
     return "\n".join(out)
@@ -455,11 +467,13 @@ zero-retention guarantee and no-customer-data scope, please raise it via
 The following appear in our internal registers but are **not**
 sub-processors:
 
-- **Sigstore (Linux Foundation)** — a proposed keyless-signing workflow
-  (`.github/workflows/cosign-sign.yml`) over CoreLink's **own build artifacts**;
-  it is not live and publishes no records. It never receives customer data and
-  is not a customer-data sub-processor; captured in `legal/sub-processors.md`
-  for completeness only.
+- **Sigstore (Linux Foundation)** — the former Worker OCI signing workflow was
+  removed on **2026-09-08** after review established that it never executed, so
+  no Fulcio certificate or Rekor entry was issued for that lane. The separate
+  release-SLSA and CAS signing paths remain independently gated. Sigstore never
+  receives customer data and is not a customer-data sub-processor; this entry
+  records the narrow OCI-lane removal rather than claiming Sigstore is absent
+  everywhere.
 - **Self-hosted Dependency-Track** — operated by CoreLink; no third party.
 - **Per-customer HashiCorp Vault instances** — customer-side infrastructure
   outside CoreLink's processor relationship.

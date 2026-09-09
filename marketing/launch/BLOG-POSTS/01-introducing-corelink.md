@@ -30,7 +30,11 @@ Each of these is a serious project, and we recommend any of them to teams whose 
 
 CoreLink is a multi-tenant, content-addressable cache built on Cloudflare's global edge platform, designed to be a drop-in remote cache for Bazel and other clients that speak REAPI v2 over HTTP/REST. There is no gRPC ingress, so Buck2, Pants and NativeLink cannot use it today.
 
-> **Two claims were removed from this paragraph.** It previously said CoreLink shipped "after … an external pentest with post-remediation retest … and three lighthouse customer attestations." No external pentest has been commissioned (`reports/pentest-rfp-tracker.json`: every vendor `NOT_CONTACTED`). Neither claim may be reinstated without evidence.
+> **Two claims were removed from this paragraph.** It previously said CoreLink
+> shipped after an external pentest/retest and external customer attestations.
+> No external pentest has been commissioned
+> (`reports/pentest-rfp-tracker.json`: every vendor `NOT_CONTACTED`). Neither
+> claim may be reinstated without evidence.
 
 CoreLink is opinionated in three places where the existing market is not.
 
@@ -90,7 +94,7 @@ Forge's engineering lead has been candid in the lighthouse attestation: the migr
 
 We have, deliberately, two separate tracks at launch.
 
-The first is the **engineering gate** — binary, unappealable, enforced by the founder. It is the gate that decides whether CoreLink can be sold. It is `APPROVED` or it is not, and `APPROVED` requires all seven engineering work items in sprint S-20 sealed, the Production Readiness Review globally approved across thirteen canonical sign-offs, thirty days of sustained staging, three lighthouse customers with SLA met, SOC 2 gap analysis delivered, on-call runbooks rehearsed, and zero active waivers in CRITICAL controls. `CAP-GA-002` is also required: an independent external-pentest report and retest with no outstanding HIGH or CRITICAL findings. It is unmet because no external pentest has been commissioned.
+The first is the **engineering gate** — binary, unappealable, enforced by the founder. It is the gate that decides whether CoreLink can be sold. It is `APPROVED` or it is not, and `APPROVED` requires all seven engineering work items in sprint S-20 sealed, the Production Readiness Review globally approved across thirteen canonical sign-offs, thirty days of sustained staging, external lighthouse evidence, SOC 2 gap analysis delivered, on-call runbooks rehearsed, and zero active waivers in CRITICAL controls. `CAP-GA-002` is also required: an independent external-pentest report and retest with no outstanding HIGH or CRITICAL findings. The external customer and pentest gates are unmet, so GA is not authorized.
 
 The second is the **launch orchestration** — the press release, the blog posts you are reading, the Product Hunt launch, the social posts. It exists to communicate, in clear language, what the engineering gate has already proven. It does not gate the engineering decision, and it can shift its date without affecting engineering readiness. That separation is deliberate, documented in the spec contract, and enforced by the founder.
 
@@ -113,7 +117,10 @@ If you have a working Bazel toolchain, the on-ramp is short. Sign up at `humangr
 - **Press kit:** `humangr.com/corelink/press`
 - **Trust center:** `corelink-docs.humangr.com/trust`
 
-We are deeply proud of this launch and of the customers who came along for the ride before there was a launch to come along to. If you have a build cache that is, today, the bottleneck in your inner loop — we would like to hear from you.
+We are deeply proud of this launch and of the internal Forge team that helped
+exercise CoreLink before any external lighthouse customer adopted it. If you
+have a build cache that is, today, the bottleneck in your inner loop — we would
+like to hear from you.
 
 — The CoreLink team at HuGR Labs
 

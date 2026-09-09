@@ -1,65 +1,1094 @@
 {
   "schema_version": 2,
   "original_tl_open": [
-    "B-044", "B-046", "B-216", "B-229", "B-028", "B-029", "B-054", "B-112",
-    "B-113", "B-061", "B-063", "B-068", "B-071", "B-072", "B-074", "B-083",
-    "B-098", "B-102", "B-103", "B-104", "B-105", "B-106", "B-107", "B-114",
-    "B-118", "B-122", "B-125", "B-126", "B-127", "B-128", "B-129", "B-134",
-    "B-135", "B-138", "B-139", "B-142", "B-152", "B-250", "B-251", "B-155",
-    "B-165", "B-253"
+    "B-044",
+    "B-046",
+    "B-216",
+    "B-229",
+    "B-028",
+    "B-029",
+    "B-054",
+    "B-112",
+    "B-113",
+    "B-061",
+    "B-063",
+    "B-068",
+    "B-071",
+    "B-072",
+    "B-074",
+    "B-083",
+    "B-098",
+    "B-102",
+    "B-103",
+    "B-104",
+    "B-105",
+    "B-106",
+    "B-107",
+    "B-114",
+    "B-118",
+    "B-122",
+    "B-125",
+    "B-126",
+    "B-127",
+    "B-128",
+    "B-129",
+    "B-134",
+    "B-135",
+    "B-138",
+    "B-139",
+    "B-142",
+    "B-152",
+    "B-250",
+    "B-251",
+    "B-155",
+    "B-165",
+    "B-253"
   ],
   "graduated_scope": [
-    "B-044", "B-046", "B-216", "B-229", "B-028", "B-029", "B-054", "B-112",
-    "B-113", "B-063", "B-068", "B-071", "B-072", "B-074", "B-083", "B-098",
-    "B-102", "B-103", "B-104", "B-105", "B-106", "B-107", "B-114", "B-118",
-    "B-122", "B-125", "B-127", "B-128", "B-129", "B-134", "B-135", "B-138",
-    "B-139", "B-142", "B-152", "B-250", "B-251", "B-165", "B-253", "B-006"
+    "B-044",
+    "B-046",
+    "B-216",
+    "B-229",
+    "B-028",
+    "B-029",
+    "B-054",
+    "B-112",
+    "B-113",
+    "B-063",
+    "B-068",
+    "B-071",
+    "B-072",
+    "B-074",
+    "B-083",
+    "B-098",
+    "B-102",
+    "B-103",
+    "B-104",
+    "B-105",
+    "B-106",
+    "B-107",
+    "B-114",
+    "B-118",
+    "B-122",
+    "B-125",
+    "B-127",
+    "B-128",
+    "B-129",
+    "B-134",
+    "B-135",
+    "B-138",
+    "B-139",
+    "B-142",
+    "B-152",
+    "B-250",
+    "B-251",
+    "B-165",
+    "B-253",
+    "B-006"
   ],
-  "owner_population": ["B-039"],
-  "post_graduation_parked": ["B-210"],
+  "owner_population": [
+    "B-039"
+  ],
+  "post_graduation_retired": [
+    "B-210"
+  ],
   "owner_packets": {
-    "B-039": {"owner":"owner","status":"open","dependency":"owner-controlled R2 mirror credentials and a public immutable-object read path","action":"Owner restores or publishes the pinned tla2tools.jar object, then records the HTTP result and SHA-256 without placing credentials in the repository.","artifact":"artifacts/d03/B039-mirror-availability.json","command":"set -o pipefail && mkdir -p artifacts/d03 && tmp=\"$(mktemp)\" && trap 'rm -f \"$tmp\"' EXIT && curl -fsSL --location -o \"$tmp\" https://corelink-artifacts.humangr.com/tlaplus/v1.8.0/eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a/tla2tools.jar && printf '%s  %s\\n' eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a \"$tmp\" | sha256sum -c - > artifacts/d03/B039-mirror-availability.json"}
+    "B-039": {
+      "owner": "tl",
+      "status": "done",
+      "dependency": "live public immutable-object read path",
+      "action": "Retain the redacted live mirror witness and rerun the source verifier; no owner credential or production capability claim is inferred.",
+      "artifact": "artifacts/d03/B039-mirror-availability.json",
+      "command": "set -o pipefail && mkdir -p artifacts/d03 && tmp=\"$(mktemp)\" && trap 'rm -f \"$tmp\"' EXIT && curl -fsSL --location -o \"$tmp\" https://corelink-artifacts.humangr.com/tlaplus/v1.8.0/eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a/tla2tools.jar && test \"$(wc -c <\"$tmp\" | tr -d ' ')\" = 4487757 && printf '%s  %s\\n' eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a \"$tmp\" | sha256sum -c - > artifacts/d03/B039-mirror-availability.json"
+    }
   },
   "packets": {
-    "B-006": {"disposition":"PARKED","owner":"tl","dependency":"fleet demand; capability_claim_unserved must become nonzero","action":"Owner reads authenticated production metrics and records the first unserved capability claim.","artifact":"artifacts/d03/B006-capability-metrics.json","command":"curl --fail --silent --show-error -H \"Authorization: Bearer $CORELINK_PROD_TOKEN\" \"$CORELINK_PROD_BASE/internal/v1/metrics\" > artifacts/d03/B006-capability-metrics.json","verify_means":"parked"},
-    "B-044":{"disposition":"PARKED","owner":"tl","dependency":"production orphan classification and Cloudflare delete scope","action":"Owner enables teardown only after a real type-1 orphan is observed and captures the reconciler result.","artifact":"artifacts/d03/B044-orphan-teardown.json","command":"set -euo pipefail; export D03_SAMPLE_COUNT=1 RECONCILE_ORPHAN_BOXES=1 RECONCILE_ORPHAN_TEARDOWN=0 RECONCILE_ORPHAN_MODE=observe; tail_rc=0; timeout 30s wrangler tail corelink --format json --search orphan_reconcile_scan > artifacts/d03/B044-orphan-teardown.json || tail_rc=$?; case \"$tail_rc\" in 0|124) ;; *) exit \"$tail_rc\";; esac; test -s artifacts/d03/B044-orphan-teardown.json; grep -Eiq 'orphan|sboxKnown|orphan_count' artifacts/d03/B044-orphan-teardown.json; grep -Eiq 'type-1|type-2|unknown' artifacts/d03/B044-orphan-teardown.json","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-044","profiles":[],"sample_count":1,"required":["orphan_reconcile_scan","sbox","observe","type-1","type-2","tail_rc","124"],"safety":["RECONCILE_ORPHAN_TEARDOWN=0"],"forbidden":["RECONCILE_ORPHAN_TEARDOWN=1","wrangler delete","wrangler destroy"]}},
-    "B-046": {"disposition":"PARKED","owner":"tl","dependency":"R2 Object-Lock support or a compliant replacement backend","action":"Owner reruns the Object-Lock capability probe and records a platform decision before changing retention policy.","artifact":"artifacts/d03/B046-object-lock-probe.txt","command":"set -euo pipefail; export D03_SAMPLE_COUNT=2 B046_PROBE_ALLOW_MUTATION=1; export B046_PROBE_BUCKET=\"${B046_PROBE_BUCKET:?use a corelink-b046-probe-* bucket}\"; python3 scripts/verify_b046_object_lock_probe.py --probe | tee artifacts/d03/B046-object-lock-probe.txt; jq -e '.verdict == \"SUPPORTED\" or .verdict == \"BLOCKED\" or .verdict == \"INDETERMINATE\"' artifacts/d03/B046-object-lock-probe.txt >/dev/null; grep -Fq 'COMPLIANCE' scripts/verify_b046_object_lock_probe.py","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-046","profiles":[],"sample_count":2,"required":["--probe","object-lock","COMPLIANCE"],"safety":["B046_PROBE_ALLOW_MUTATION=1","corelink-b046-probe-"],"forbidden":["corelink-prod","0102_cas_retention","compliance database"]}},
-    "B-216": {"disposition":"PARKED","owner":"tl","dependency":"deployed DLQ consumer and on-call alert delivery","action":"Owner deploys the consumer, forces one exhausted DSR message, and captures consumer plus paging evidence.","artifact":"artifacts/d03/B216-dlq-incident.json","command":"wrangler tail corelink --format json --search DSR_ERASURE_DLQ > artifacts/d03/B216-dlq-incident.json","verify_means":"parked"},
-    "B-229": {"disposition":"PARKED","owner":"tl","dependency":"production secret binding and verified Clerk webhook","action":"Owner deploys with CLERK_WEBHOOK_SECRET bound and records one accepted signed webhook plus deploy-gate output.","artifact":"artifacts/d03/B229-clerk-secret-deploy.json","command":"wrangler tail corelink --format json --search CLERK_WEBHOOK > artifacts/d03/B229-clerk-secret-deploy.json","verify_means":"parked"},
-    "B-028": {"disposition":"DONE","owner":"tl","dependency":"none; the authenticated post-merge census is complete","action":"Retain the redacted zero-open snapshot and rerun the fail-closed focal verifier on dependency changes.","artifact":"docs/security/b028-dependabot-census-2026-09-06.json","command":"python3 scripts/verify_b028_dependabot.py","evidence":"Authenticated GitHub API refresh on 2026-09-08 returned zero open alerts and 37 historical alerts, all fixed; the snapshot is anchored to delivered main@cdd6a6714."},
-    "B-029": {"disposition":"PARKED","owner":"tl","dependency":"staging load environment and a re-enabled nightly schedule","action":"Owner provisions staging, uncomment the nightly cron, and records a complete comparator run.","artifact":"artifacts/d03/B029-load-gate-run.json","command":"gh workflow run load-test-nightly.yml --ref main && gh run list --workflow load-test-nightly.yml --limit 1 --json databaseId,conclusion > artifacts/d03/B029-load-gate-run.json","verify_means":"parked"},
-    "B-054": {"disposition":"PARKED","owner":"tl","dependency":"external witness, v2 D1 transaction, key custody, and archive verification","action":"Owner provisions the witness/key custody path, executes E0/E1 archive tests, and links independent verification.","artifact":"artifacts/d03/B054-audit-chain-witness.json","command":"python3 scripts/verify_b054_audit_chain_contract.py > artifacts/d03/B054-audit-chain-witness.json","verify_means":"parked"},
-    "B-112":{"disposition":"PARKED","owner":"tl","dependency":"expired release logs and external SLSA runner evidence","action":"Owner reruns the release workflow with preserved logs and names the remaining root cause.","artifact":"artifacts/d03/B112-release-root-cause.json","command":"set -euo pipefail; export D03_SAMPLE_COUNT=1; test \"${OWNER_APPROVED_RELEASE_RERUN:?set OWNER_APPROVED_RELEASE_RERUN=1 after owner approval}\" = 1; run_id=\"${B112_RUN_ID:?provide the prior release-cli run ID to rerun}\"; expected_ref=\"${B112_EXPECTED_REF:?provide the expected release ref}\"; expected_sha=\"${B112_EXPECTED_SHA:?provide the expected release SHA}\"; grep -Fq 'release-cli.yml' .github/workflows/release-cli.yml; run_meta=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,event,headBranch,headSha,workflowName)\"; jq -e --arg ref \"$expected_ref\" --arg sha \"$expected_sha\" '.workflowName == \"release-cli\" and .event == \"workflow_dispatch\" and (.headBranch == $ref or .headBranch == ($ref | sub(\"^refs/heads/\";\"\")) or .headBranch == ($ref | sub(\"^refs/tags/\";\"\"))) and .headSha == $sha' <<<\"$run_meta\" >/dev/null; python3 scripts/verify_b112_release_root_cause.py --root . | tee artifacts/d03/B112-release-root-cause.json; grep -Fq 'PASS' artifacts/d03/B112-release-root-cause.json; jq -c . <<<\"$run_meta\" >> artifacts/d03/B112-release-root-cause.json; gh run rerun \"$run_id\"; saw_active=0; for attempt in $(seq 1 180); do state=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,event,headBranch,headSha,workflowName)\"; if jq -e '.status != \"completed\"' <<<\"$state\" >/dev/null; then saw_active=1; fi; if test \"$saw_active\" -eq 1 && jq -e --arg workflow_name \"release-cli\" --arg ref \"$expected_ref\" --arg sha \"$expected_sha\" '.status == \"completed\" and .workflowName == $workflow_name and .event == \"workflow_dispatch\" and (.headBranch == $ref or .headBranch == ($ref | sub(\"^refs/heads/\";\"\")) or .headBranch == ($ref | sub(\"^refs/tags/\";\"\"))) and .headSha == $sha' <<<\"$state\" >/dev/null; then break; fi; sleep 5; done; test \"$saw_active\" -eq 1; gh run view \"$run_id\" --log >> artifacts/d03/B112-release-root-cause.json; state=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,event,headBranch,headSha,workflowName)\"; jq -e --arg workflow_name \"release-cli\" --arg ref \"$expected_ref\" --arg sha \"$expected_sha\" '.status == \"completed\" and .workflowName == $workflow_name and .event == \"workflow_dispatch\" and (.headBranch == $ref or .headBranch == ($ref | sub(\"^refs/heads/\";\"\")) or .headBranch == ($ref | sub(\"^refs/tags/\";\"\"))) and .headSha == $sha' <<<\"$state\" >/dev/null; grep -Fq 'cargo-zigbuild' artifacts/d03/B112-release-root-cause.json; grep -Eiq 'linux|windows' artifacts/d03/B112-release-root-cause.json; grep -Eiq 'checksums|checksum' artifacts/d03/B112-release-root-cause.json; gh run list --workflow release-slsa3.yml --limit 1 --json databaseId,status,conclusion | tee -a artifacts/d03/B112-release-root-cause.json; grep -Fq 'SLSA' docs/campaigns/remediation/work-packages/B091-B130.md","verify_means":"parked","command_contract":{"owner_packet":"docs/campaigns/remediation/work-packages/B091-B130.md#WP-B112","profiles":["linux","windows"],"sample_count":1,"required":["release-cli.yml","cargo-zigbuild","checksums","SLSA","gh run rerun","B112_RUN_ID","B112_EXPECTED_REF","B112_EXPECTED_SHA","workflowName","headBranch","headSha","event"],"safety":["--root","OWNER_APPROVED_RELEASE_RERUN=1"],"forbidden":["git tag","cosign-sign.yml","--force"]}},
-    "B-113": {"disposition":"PARKED","owner":"tl","dependency":"runner/network provisioning for cargo-mutants, Buck2, SBOM, fuzz, and load lanes","action":"Owner executes each of the seven external probes and records result or named infrastructure blocker.","artifact":"artifacts/d03/B113-focal-lane-results.json","command":"set -euo pipefail; test \"${OWNER_APPROVED_LANE_DISPATCH:?set OWNER_APPROVED_LANE_DISPATCH=1 for one protected run per lane}\" = 1; export D03_SAMPLE_COUNT=7; : > artifacts/d03/B113-focal-lane-results.json; dispatch_and_wait() { workflow=\"$1\"; dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; gh workflow run \"$workflow\" --ref main; run_id=\"\"; for attempt in $(seq 1 30); do run_id=\"$(gh run list --workflow \"$workflow\" --limit 20 --json databaseId,createdAt,event,headBranch --jq \"map(select(.event == \\\"workflow_dispatch\\\" and .headBranch == \\\"main\\\" and .createdAt >= \\\"$dispatch_started_at\\\")) | .[0].databaseId // empty\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; watch_rc=0; timeout 900s gh run watch \"$run_id\" || watch_rc=$?; run_json=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,headSha,workflowName)\"; jq -c --arg workflow \"$workflow\" '. + {workflow:$workflow}' <<<\"$run_json\" >> artifacts/d03/B113-focal-lane-results.json; gh run view \"$run_id\" --log >> artifacts/d03/B113-focal-lane-results.json; jq -e '.status == \"completed\" and .conclusion != null' <<<\"$run_json\" >/dev/null; test \"$watch_rc\" -eq 0; }; for workflow in nightly.yml sbom.yml buck2-starter-ci.yml fuzz-nightly.yml endurance-2h-nightly.yml load-test-nightly.yml billing-health-daily.yml; do dispatch_and_wait \"$workflow\"; done; grep -Eiq 'runner|conclusion' artifacts/d03/B113-focal-lane-results.json; grep -Eq 'terraform-drift.yml|B-111' BACKLOG.md; test \"$(git grep -l 'workflow_dispatch' -- .github/workflows/*.yml | wc -l)\" -gt 0","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-113","profiles":["nightly.yml","sbom.yml","buck2-starter-ci.yml","fuzz-nightly.yml","endurance-2h-nightly.yml","load-test-nightly.yml","billing-health-daily.yml"],"sample_count":7,"required":["runner","conclusion","terraform-drift.yml"],"safety":["--ref main","B-111","OWNER_APPROVED_LANE_DISPATCH=1"],"forbidden":["terraform-drift.yml --dispatch"]}},
-    "B-063": {"disposition":"PARKED","owner":"tl","dependency":"production D1 access and PagerDuty state","action":"Owner queries non-archived production partition rows and PagerDuty alert status with approved credentials.","artifact":"artifacts/d03/B063-archive-lag-pagerduty.json","command":"set -euo pipefail; test \"${B063_REPAIR_APPROVED:?set B063_REPAIR_APPROVED=1 only after the authorized repair}\" = 1; export D03_SAMPLE_COUNT=3; : > artifacts/d03/B063-archive-lag-pagerduty.json; grep -Fq 'workflow_dispatch' .github/workflows/audit-archive-lag.yml; dispatch_and_wait() { dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; gh workflow run audit-archive-lag.yml --ref main -f lag_hours=3; run_id=\"\"; for attempt in $(seq 1 30); do run_id=\"$(gh run list --workflow audit-archive-lag.yml --limit 20 --json databaseId,createdAt,event,headBranch --jq \"map(select(.event == \\\"workflow_dispatch\\\" and .headBranch == \\\"main\\\" and .createdAt >= \\\"$dispatch_started_at\\\")) | .[0].databaseId // empty\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; watch_rc=0; timeout 900s gh run watch \"$run_id\" || watch_rc=$?; run_json=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,headSha,workflowName)\"; jq -c . <<<\"$run_json\" >> artifacts/d03/B063-archive-lag-pagerduty.json; jq -e '.status == \"completed\" and .conclusion == \"success\"' <<<\"$run_json\" >/dev/null; test \"$watch_rc\" -eq 0; }; for sample in 1 2 3; do wrangler d1 execute corelink-prod --remote --command \"SELECT o.tenant_id, o.region, COUNT(*) AS pending_old, MIN(o.enqueued_at) AS oldest_pending_ms, (SELECT MAX(o2.archived_at) FROM audit_outbox o2 WHERE o2.tenant_id=o.tenant_id AND o2.region=o.region) AS part_last_archived FROM audit_outbox o WHERE o.emitted_at IS NOT NULL AND o.archived_at IS NULL AND o.quarantined_at IS NULL AND o.enqueued_at < (strftime('%s','now') - 10800) * 1000 AND (o.tenant_id IN ('93da3f7a','enam') OR o.region IN ('93da3f7a','enam')) GROUP BY o.tenant_id, o.region HAVING part_last_archived IS NULL OR part_last_archived < (strftime('%s','now') - 10800) * 1000\" | tee -a artifacts/d03/B063-archive-lag-pagerduty.json; grep -Eiq 'pending_old|part_last_archived' artifacts/d03/B063-archive-lag-pagerduty.json; dispatch_and_wait; done; test -n \"${PAGERDUTY_REFERENCE:?redacted PagerDuty reference required}\"","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-063","profiles":["93da3f7a","enam"],"sample_count":3,"required":["audit_outbox","GROUP BY","part_last_archived","audit-archive-lag","PagerDuty","workflow_dispatch"],"safety":["--remote","--ref main","SELECT","B063_REPAIR_APPROVED=1"],"forbidden":["DELETE FROM","UPDATE ","INSERT INTO"]}},
-    "B-068":{"disposition":"PARKED","owner":"tl","dependency":"real-integration credentials for D1, R2, Stripe, and Neon","action":"Owner dispatches all four approved real-integration profiles and attaches logs/results.","artifact":"artifacts/d03/B068-real-integration-results.json","command":"set -euo pipefail; test \"${OWNER_APPROVED_REAL_INTEGRATION:?set OWNER_APPROVED_REAL_INTEGRATION=1 after protected approval}\" = 1; export D03_SAMPLE_COUNT=4; : > artifacts/d03/B068-real-integration-results.json; dispatch_and_wait() { dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; profile=\"$1\"; gh workflow run real-ignored-harnesses.yml --ref main -f profile=\"$profile\"; run_id=\"\"; for attempt in $(seq 1 30); do run_id=\"$(gh run list --workflow real-ignored-harnesses.yml --limit 20 --json databaseId,createdAt,event,headBranch --jq \"map(select(.event == \\\"workflow_dispatch\\\" and .headBranch == \\\"main\\\" and .createdAt >= \\\"$dispatch_started_at\\\")) | .[0].databaseId // empty\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; watch_rc=0; timeout 900s gh run watch \"$run_id\" || watch_rc=$?; run_json=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,headSha,workflowName)\"; jq -c --arg profile \"$profile\" '. + {profile:$profile}' <<<\"$run_json\" >> artifacts/d03/B068-real-integration-results.json; jq -e '.status == \"completed\" and .conclusion != null' <<<\"$run_json\" >/dev/null; test \"$watch_rc\" -eq 0; }; for profile in d1 r2 stripe neon; do dispatch_and_wait \"$profile\"; done ; active_yaml=\"$(awk '!/^[[:space:]]*#/ { sub(/[[:space:]]+#.*/, \"\"); print }' .github/workflows/real-ignored-harnesses.yml)\"; ! grep -Eiq 'PAT[-_ ]?seed' <<<\"$active_yaml\"; grep -Eq 'profile:|REAL_HARNESS_PROFILE' <<<\"$active_yaml\"; test \"$(git grep -n 'workflow_dispatch' -- .github/workflows/real-ignored-harnesses.yml | wc -l)\" -gt 0","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-068","profiles":["d1","r2","stripe","neon"],"sample_count":4,"required":["real-ignored-harnesses.yml","workflow_dispatch","seed","active_yaml","awk"],"safety":["--ref main","profile=","OWNER_APPROVED_REAL_INTEGRATION=1"],"forbidden":["emit_e2e_seed","PAT signing seed"]}},
-    "B-071": {"disposition":"PARKED","owner":"tl","dependency":"production GC execution with real delete/archive evidence","action":"Owner runs the scheduled sweep in observe mode, then captures one approved deletion and image evidence.","artifact":"artifacts/d03/B071-gc-sweep.json","command":"set -euo pipefail; export D03_SAMPLE_COUNT=1; test \"${OWNER_APPROVED_GC_OBSERVATION:?set OWNER_APPROVED_GC_OBSERVATION=1 for the protected observation window}\" = 1; grep -Fq 'credentialless' .github/workflows/gc-sweep-dry-run.yml; grep -Fq 'dry-run' .github/workflows/gc-sweep-dry-run.yml; grep -Fq 'GC_LIVE_DELETE: \"false\"' .github/workflows/gc-sweep-dry-run.yml; dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; gh workflow run gc-sweep-dry-run.yml --ref main; run_id=\"\"; for attempt in $(seq 1 30); do run_id=\"$(gh run list --workflow gc-sweep-dry-run.yml --limit 20 --json databaseId,createdAt,event,headBranch --jq \"map(select(.event == \\\"workflow_dispatch\\\" and .headBranch == \\\"main\\\" and .createdAt >= \\\"$dispatch_started_at\\\")) | .[0].databaseId // empty\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; watch_rc=0; timeout 900s gh run watch \"$run_id\" || watch_rc=$?; gh run view \"$run_id\" --log > artifacts/d03/B071-gc-sweep.json; jq -e '.status == \"completed\"' <(gh run view \"$run_id\" --json status,conclusion) >/dev/null; test \"$watch_rc\" -eq 0; grep -Eiq 'deleted_count[[:space:]=:]+0' artifacts/d03/B071-gc-sweep.json","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-071","profiles":[],"sample_count":1,"required":["gc-sweep-dry-run.yml","GC_LIVE_DELETE=false","deleted_count","0"],"safety":["credentialless","dry-run"],"forbidden":["GC_LIVE_DELETE=true","container-build-push-prod.yml","DELETE "]}},
-    "B-072": {"disposition":"PARKED","owner":"tl","dependency":"PagerDuty receiver Worker and production Service Binding","action":"Owner deploys the receiver binding, runs each scheduled drill, and records 202/error behavior.","artifact":"artifacts/d03/B072-scheduled-drills.json","command":"set -euo pipefail; export D03_SAMPLE_COUNT=1; test \"${SCHEDULED_DRILL_RECEIVER_DEPLOYED:?deploy SCHEDULED_DRILL_DELIVERY before observing}\" = 1; python3 scripts/verify_b072_scheduled_drills.py | tee artifacts/d03/B072-scheduled-drills.json; grep -Fq 'B-072 PASS' artifacts/d03/B072-scheduled-drills.json; grep -Fq 'SCHEDULED_DRILL_DELIVERY' wrangler.toml; tail_rc=0; timeout 30s wrangler tail scheduled-drill-receiver --format json --search synthetic_page_drills >> artifacts/d03/B072-scheduled-drills.json || tail_rc=$?; test \"$tail_rc\" -eq 124; grep -Eiq 'correlation|PagerDuty|synthetic_page_drills|202' artifacts/d03/B072-scheduled-drills.json; grep -Fq '0 * * * *' wrangler.toml; grep -Fq '*/15 * * * *' wrangler.toml","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-072","profiles":["0 * * * *","*/15 * * * *"],"sample_count":1,"required":["SCHEDULED_DRILL_DELIVERY","correlation","PagerDuty","synthetic_page_drills"],"safety":["receiver","202","SCHEDULED_DRILL_RECEIVER_DEPLOYED"],"forbidden":["PAGERDUTY_ROUTING_KEY=","Authorization: Bearer"]}},
-    "B-074": {"disposition":"DONE","owner":"tl","dependency":"none; repository bytes are the acceptance surface","action":"No external action; retain the focal self-test as the inverted guard.","artifact":"crates/corelink-container/tests/money_path_auth_wiring.rs","command":"python3 scripts/verify_b074_money_path_auth.py --self-test","evidence":"Dedicated money-path auth keys, fail-closed invalid values, Worker route selection, DO forwarding, and Rust/Worker behavior are present in current bytes; all adversarial mutations are red."},
-    "B-083": {"disposition":"PARKED","owner":"tl","dependency":"signed production BYOK image and real provider execution","action":"Owner builds/publishes/verifies the pinned image, then executes the provider/no-provider focal against production config.","artifact":"artifacts/d03/B083-byok-production.json","command":"set -euo pipefail; test \"${OWNER_APPROVED_BYOK_TEST:?set OWNER_APPROVED_BYOK_TEST=1 for a disposable test tenant}\" = 1; export D03_SAMPLE_COUNT=1; grep -Fq 'byok-aws-real' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; grep -Fq 'cas' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; python3 scripts/verify_b083_revocation_wiring.py | tee artifacts/d03/B083-byok-production.json; grep -Eiq 'PASS|fail-closed|fail.closed|check_access|run_loop' artifacts/d03/B083-byok-production.json; test \"${CORELINK_BYOK_TEST_TOKEN:?}\"; test \"${CORELINK_BYOK_TEST_BASE:?}\"; status_file=\"$(mktemp)\"; curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}' -H \"Authorization: Bearer ${CORELINK_BYOK_TEST_TOKEN}\" -H 'Content-Type: application/json' -X POST \"$CORELINK_BYOK_TEST_BASE/v1/admin/byok/activate\" --data-binary @byok-test-tenant.json > \"$status_file\"; activate_status=\"$(cat \"$status_file\")\"; test \"$activate_status\" -ge 200 -a \"$activate_status\" -lt 300; sed 's/^/activate_status=/' \"$status_file\" | tee -a artifacts/d03/B083-byok-production.json; curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}' -H \"Authorization: Bearer ${CORELINK_BYOK_TEST_TOKEN}\" -X POST \"$CORELINK_BYOK_TEST_BASE/v1/admin/byok/deactivate\" > \"$status_file\"; deactivate_status=\"$(cat \"$status_file\")\"; test \"$deactivate_status\" -ge 200 -a \"$deactivate_status\" -lt 300; sed 's/^/deactivate_status=/' \"$status_file\" | tee -a artifacts/d03/B083-byok-production.json; rm -f \"$status_file\"; grep -Eq 'activate_status=2[0-9][0-9]|deactivate_status=2[0-9][0-9]' artifacts/d03/B083-byok-production.json","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-083","profiles":["byok-aws-real"],"sample_count":1,"required":["/v1/admin/byok/activate","/v1/admin/byok/deactivate","check_access","cas","run_loop"],"safety":["test-tenant","fail-closed","OWNER_APPROVED_BYOK_TEST=1"],"forbidden":["production tenant","plaintext Tcs","customer CMK"]}},
-    "B-098": {"disposition":"PARKED","owner":"tl","dependency":"annotated semver release tag and Cargo metadata execution","action":"Owner creates the signed semver tag, runs the hygiene verifier on that tag, and records the result.","artifact":"artifacts/d03/B098-release-hygiene.json","command":"set -euo pipefail; export D03_SAMPLE_COUNT=1; : \"${REVIEWED_MAIN_SHA:?}\"; { python3 scripts/verify_b098_repo_hygiene.py; bash scripts/cut-v1-0-0-ga-tag.sh --dry-run --expected-main-sha \"$REVIEWED_MAIN_SHA\"; } > artifacts/d03/B098-release-hygiene.json; grep -Eiq 'status|PASS|dry-run|no semver release tag' artifacts/d03/B098-release-hygiene.json; grep -Fq 'v1.0.0-GA' artifacts/d03/B098-release-hygiene.json; grep -Fq 'not create a tag' docs/handoff/2026-09-05-b098-owner-action-packet.md","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-b098-owner-action-packet.md","profiles":[],"sample_count":1,"required":["verify_b098_repo_hygiene.py","--dry-run","--expected-main-sha"],"safety":["no semver release tag","--dry-run"],"forbidden":["git tag -a","git push","--force"]}},
-    "B-102": {"disposition":"PARKED","owner":"tl","dependency":"authenticated dogfood tenant and production Server-Timing","action":"Owner performs three sequential 1 KiB PUTs within 60 seconds and records the third timing on the deployed commit.","artifact":"artifacts/d03/B102-server-timing.json","command":"set -euo pipefail; test \"${OWNER_APPROVED_PROBE:?set OWNER_APPROVED_PROBE=1 for the approved dogfood tenant}\" = 1; export D03_SAMPLE_COUNT=3; : > artifacts/d03/B102-server-timing.json; grep -Fq '1 KiB' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; start=\"$(date +%s)\"; for ordinal in 1 2 3; do headers=\"$(mktemp)\"; curl --silent --show-error --output /dev/null --dump-header \"$headers\" --write-out \"ordinal=$ordinal status=%{http_code} bytes=%{size_upload} wall_ms=%{time_total}\\n\" -H \"Authorization: Bearer ${CORELINK_PROD_TOKEN:?}\" -H 'Content-Type: application/octet-stream' -H 'X-Server-Timing-Wdb-Detail: on' -X PUT \"$CORELINK_PROD_BASE/cargo\" --data-binary @<(head -c 1024 /dev/zero) | tee -a artifacts/d03/B102-server-timing.json; tr -d '\\r' < \"$headers\" | grep -i '^server-timing:' | tee -a artifacts/d03/B102-server-timing.json; rm -f \"$headers\"; done; elapsed=$(( $(date +%s) - start )); test \"$elapsed\" -le 60; third_request_hot=\"$(grep -c '^ordinal=3 ' artifacts/d03/B102-server-timing.json)\"; test \"$third_request_hot\" -eq 1; hot_marker=\"$(mktemp)\"; awk '/^ordinal=3 /{print \"third_request_hot=true\"}' artifacts/d03/B102-server-timing.json > \"$hot_marker\"; cat \"$hot_marker\" >> artifacts/d03/B102-server-timing.json; rm -f \"$hot_marker\"; grep -Eiq 'ordinal=3 .*status=2[0-9][0-9].*bytes=1024|server-timing:.*' artifacts/d03/B102-server-timing.json; grep -Fq 'cas:rw' artifacts/d03/B102-server-timing.json; grep -Fq 'third_request_hot' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-102","profiles":["cas:rw"],"sample_count":3,"required":["/cargo","1 KiB","Server-Timing","third_request_hot"],"safety":["-le 60","cas:rw","OWNER_APPROVED_PROBE=1"],"forbidden":["/v1/customer/cas/probe"]}},
-    "B-103": {"disposition":"PARKED","owner":"tl","dependency":"production logs during an authenticated concurrency burst","action":"Owner runs the burst and captures unfiltered server logs to identify the serializer.","artifact":"artifacts/d03/B103-concurrency-cause.json","command":"wrangler tail corelink --format json > artifacts/d03/B103-concurrency-cause.json","verify_means":"parked"},
-    "B-104": {"disposition":"PARKED","owner":"tl","dependency":"authenticated production endpoint timing","action":"Owner executes at least ten authenticated missing-path GETs and records median and p90.","artifact":"artifacts/d03/B104-missing-path-timing.json","command":"set -euo pipefail; test \"${OWNER_APPROVED_PROBE:?set OWNER_APPROVED_PROBE=1 for authenticated missing-path timing}\" = 1; export D03_SAMPLE_COUNT=10; : > artifacts/d03/B104-missing-path-timing.json; for ordinal in $(seq 1 10); do curl --silent --show-error --output /dev/null --write-out \"sample=$ordinal HTTP status=%{http_code} wall_ms=%{time_total} missing=true\\n\" -H \"Authorization: Bearer ${CORELINK_PROD_TOKEN:?}\" \"$CORELINK_PROD_BASE/v1/does-not-exist-$ordinal\" | tee -a artifacts/d03/B104-missing-path-timing.json; done; git --version | tee -a artifacts/d03/B104-missing-path-timing.json; stats_file=\"$(mktemp)\"; awk -F'wall_ms=' '/wall_ms=/{split($2,a,\" \"); print a[1]}' artifacts/d03/B104-missing-path-timing.json | sort -n | awk 'BEGIN {n=0} {v[++n]=$1} END {if (n < 10) exit 1; print \"median_ms=\" v[int((n+1)/2)] \" p90_ms=\" v[int((n*90+99)/100)]}' > \"$stats_file\"; stats=\"$(cat \"$stats_file\")\"; test -n \"$stats\"; cat \"$stats_file\" >> artifacts/d03/B104-missing-path-timing.json; rm -f \"$stats_file\"; grep -Fq 'missing=true' artifacts/d03/B104-missing-path-timing.json; grep -Eq 'median_ms=[0-9.]+ p90_ms=[0-9.]+' <<<\"$stats\"; grep -Fq 'version' artifacts/d03/B104-missing-path-timing.json","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md#B-104","profiles":["authenticated"],"sample_count":10,"required":["missing","median","p90","version"],"safety":["Authorization: Bearer","HTTP status","OWNER_APPROVED_PROBE=1"],"forbidden":["--fail","maximum"]}},
-    "B-105": {"disposition":"PARKED","owner":"tl","dependency":"paired GitHub runner executions with cache on and off","action":"Owner runs the same lane under both cache settings on the same runner and compares total duration.","artifact":"artifacts/d03/B105-cache-comparison.json","command":"mkdir -p artifacts/d03 && { gh workflow run release-slsa3.yml --ref main -f CORELINK_SCCACHE_PILOT=true; gh workflow run release-slsa3.yml --ref main -f CORELINK_SCCACHE_PILOT=false; } > artifacts/d03/B105-cache-comparison.json 2>&1","verify_means":"parked"},
-    "B-106": {"disposition":"PARKED","owner":"tl","dependency":"cold production credential and 60-second cache expiry","action":"Owner sends authenticated cold requests at intervals above 60 seconds and records Server-Timing auth=d1.","artifact":"artifacts/d03/B106-cold-auth-timing.json","command":"set -euo pipefail; test \"${OWNER_APPROVED_PROBE:?set OWNER_APPROVED_PROBE=1 for the approved cold PAT}\" = 1; export D03_SAMPLE_COUNT=2; : > artifacts/d03/B106-cold-auth-timing.json; grep -Fq '60 seconds' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; grep -Fq 'colo' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; sleep_interval_seconds=61; test \"$sleep_interval_seconds\" -gt 60; for ordinal in 1 2; do sleep \"$sleep_interval_seconds\"; headers=\"$(mktemp)\"; curl --silent --show-error --output /dev/null --dump-header \"$headers\" --write-out \"sample=$ordinal status=%{http_code} wall_ms=%{time_total}\\n\" -H \"Authorization: Bearer ${CORELINK_COLD_PAT:?}\" -H 'X-Server-Timing-Wdb-Detail: on' \"$CORELINK_PROD_BASE/v1/customer/keys\" | tee -a artifacts/d03/B106-cold-auth-timing.json; tr -d '\\r' < \"$headers\" | grep -i '^server-timing:' | tee -a artifacts/d03/B106-cold-auth-timing.json; grep -Eiq 'server-timing:.*(d1|kv|l1)' \"$headers\"; rm -f \"$headers\"; done; awk -v interval=\"$sleep_interval_seconds\" 'BEGIN {print \"cold_interval_seconds=\" interval}' >> artifacts/d03/B106-cold-auth-timing.json; grep -Eiq 'sample=1|sample=2' artifacts/d03/B106-cold-auth-timing.json; grep -Fq 'revocation' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-106","profiles":["d1","kv","l1"],"sample_count":2,"required":["cold","sleep 61","Server-Timing"],"safety":["CORELINK_COLD_PAT","revocation","OWNER_APPROVED_PROBE=1"],"forbidden":["TTL","KV_TTL","--fail"]}},
-    "B-107": {"disposition":"PARKED","owner":"tl","dependency":"dogfood PAT and deployed production version","action":"Owner performs three sequential 1 KiB PUTs and records ostore plus deployed commit identity.","artifact":"artifacts/d03/B107-ostore-timing.json","command":"mkdir -p artifacts/d03 && { curl --fail -D - -H \"Authorization: Bearer $CORELINK_DOGFOOD_PAT\" -X PUT \"$CORELINK_PROD_BASE/v1/customer/cas/probe\" --data-binary @<(head -c 1024 /dev/zero); } > artifacts/d03/B107-ostore-timing.json 2>&1","verify_means":"parked"},
-    "B-114": {"disposition":"PARKED","owner":"tl","dependency":"cross-repository access to corelink-runners","action":"Owner runs the two documented grep checks in the corelink-runners clone and records both outputs.","artifact":"artifacts/d03/B114-runners-workflow-check.txt","command":"git -C ../corelink-runners grep -n 'workflow_dispatch\\|pull_request' .github/workflows/build-cf-container-images.yml > artifacts/d03/B114-runners-workflow-check.txt","verify_means":"parked"},
-    "B-118": {"disposition":"PARKED","owner":"tl","dependency":"a real cosign-sign workflow dispatch with hosted waiver","action":"Owner dispatches cosign-sign with approved credentials and records a completed run or named platform block.","artifact":"artifacts/d03/B118-cosign-run.json","command":"gh run list --workflow cosign-sign.yml --limit 1 --json databaseId,conclusion > artifacts/d03/B118-cosign-run.json","verify_means":"parked"},
-    "B-122": {"disposition":"PARKED","owner":"tl","dependency":"production remediated baseline and timing evidence","action":"Owner reruns the D-2 adapter/ledger timing queries against production and records the baseline delta.","artifact":"artifacts/d03/B122-adapter-timing.json","command":"set -euo pipefail; test \"${OWNER_APPROVED_PROBE:?set OWNER_APPROVED_PROBE=1 for the approved deployed baseline}\" = 1; export D03_SAMPLE_COUNT=3; : > artifacts/d03/B122-adapter-timing.json; grep -Fq '1 KiB' docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md; grep -Fq 'B-102' docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md; grep -Fq 'B-107' docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md; start=\"$(date +%s)\"; for ordinal in 1 2 3; do headers=\"$(mktemp)\"; curl --silent --show-error --output /dev/null --dump-header \"$headers\" --write-out \"ordinal=$ordinal status=%{http_code} bytes=%{size_upload} wall_ms=%{time_total}\\n\" -H \"Authorization: Bearer ${CORELINK_DOGFOOD_PAT:?}\" -H 'X-Server-Timing-Wdb-Detail: on' -X PUT \"$CORELINK_PROD_BASE/cargo\" --data-binary @<(head -c 1024 /dev/zero) | tee -a artifacts/d03/B122-adapter-timing.json; tr -d '\\r' < \"$headers\" | grep -i '^server-timing:' | tee -a artifacts/d03/B122-adapter-timing.json; rm -f \"$headers\"; done; elapsed=$(( $(date +%s) - start )); test \"$elapsed\" -le 60; git log -1 --format='deployed commit %H' | tee -a artifacts/d03/B122-adapter-timing.json; hot_marker=\"$(mktemp)\"; awk '/^ordinal=3 /{print \"third_request_hot=true\"}' artifacts/d03/B122-adapter-timing.json > \"$hot_marker\"; cat \"$hot_marker\" >> artifacts/d03/B122-adapter-timing.json; rm -f \"$hot_marker\"; grep -Eiq 'ordinal=3 .*bytes=1024|ostore|oaccounting|phase sum|server-timing:' artifacts/d03/B122-adapter-timing.json","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md#B-122","profiles":["B-102","B-107"],"sample_count":3,"required":["deployed commit","ostore","oaccounting","phase sum"],"safety":["1 KiB","-le 60","OWNER_APPROVED_PROBE=1"],"forbidden":["sqlite_master","DROP ","DELETE FROM"]}},
-    "B-125": {"disposition":"PARKED","owner":"tl","dependency":"production audit-drain batch and archive witness","action":"Owner executes a production drain above one batch, records sealed row/head counts, and links archive verification.","artifact":"artifacts/d03/B125-audit-drain.json","command":"set -euo pipefail; test \"${OWNER_APPROVED_READONLY:?set OWNER_APPROVED_READONLY=1 for ephemeral read-only D1 access}\" = 1; export D03_SAMPLE_COUNT=1; grep -Fq 'D-1-audit-trail' reports/go-live/D-1-audit-trail.md; wrangler d1 execute corelink-prod --remote --command \"SELECT COUNT(*) AS arrivals, SUM(CASE WHEN emitted_at IS NOT NULL THEN 1 ELSE 0 END) AS sealed_rows, MAX(CASE WHEN emitted_at IS NULL THEN (strftime('%s','now')*1000)-enqueued_at ELSE 0 END) AS oldest_unsealed_age_ms, AVG(CASE WHEN emitted_at IS NOT NULL THEN emitted_at-enqueued_at END) AS seal_latency_ms, 512 AS batch_limit FROM audit_outbox WHERE enqueued_at >= (strftime('%s','now')-21600)*1000\" | tee artifacts/d03/B125-audit-drain.json; test -s artifacts/d03/B125-audit-drain.json; grep -Eiq 'arrivals|sealed_rows|oldest_unsealed|seal_latency|batch_limit' artifacts/d03/B125-audit-drain.json","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-125","profiles":["audit_outbox"],"sample_count":1,"required":["D-1-audit-trail","arrivals","sealed_rows","oldest_unsealed","seal_latency","512"],"safety":["--remote","SELECT","OWNER_APPROVED_READONLY=1"],"forbidden":["AUDIT_DRAIN","DELETE ","UPDATE ","drain --run"]}},
-    "B-127": {"disposition":"PARKED","owner":"tl","dependency":"production D1 residency census and legal decision","action":"Owner reruns the D-2 residency queries against production and records the decision for the migration constraint.","artifact":"artifacts/d03/B127-residency-census.json","command":"set -euo pipefail; test \"${OWNER_APPROVED_READONLY:?set OWNER_APPROVED_READONLY=1 for ephemeral read-only D1 access}\" = 1; export D03_SAMPLE_COUNT=1; wrangler d1 execute corelink-prod --remote --command \"SELECT CASE WHEN t.tenant_id IS NULL THEN 'unevaluable' WHEN o.region=t.primary_region THEN 'satisfied' ELSE 'violated' END AS residency_state, o.region, COUNT(*) AS rows, COUNT(DISTINCT t.tenant_id) AS tenants, SUM(CASE WHEN o.region='weur' THEN 1 ELSE 0 END) AS weur_rows, SUM(COUNT(*)) OVER () AS total_rows FROM audit_outbox o LEFT JOIN tenant t ON t.tenant_id=o.tenant_id GROUP BY residency_state,o.region\" | tee artifacts/d03/B127-residency-census.json; test -s artifacts/d03/B127-residency-census.json; grep -Eiq 'satisfied|violated|unevaluable|weur|tenants|total_rows|denominator' artifacts/d03/B127-residency-census.json; grep -Fq 'LEFT JOIN' docs/campaigns/remediation/work-packages/B091-B130.md","verify_means":"parked","command_contract":{"owner_packet":"docs/campaigns/remediation/work-packages/B091-B130.md#WP-B127","profiles":["satisfied","violated","unevaluable","weur"],"sample_count":1,"required":["LEFT JOIN","audit_outbox","tenants","total_rows","denominator"],"safety":["--remote","SELECT","OWNER_APPROVED_READONLY=1"],"forbidden":["sqlite_master","DELETE ","UPDATE ","DROP "]}},
-    "B-128": {"disposition":"PARKED","owner":"tl","dependency":"real focal runner failures and a completed classified workflow","action":"Owner dispatches the wrapper on storage/linker, code, and mixed failures and archives exit/classification pairs.","artifact":"artifacts/d03/B128-runner-classification.json","command":"gh workflow run backlog-verify.yml --ref main && gh run list --workflow backlog-verify.yml --limit 1 --json databaseId,conclusion > artifacts/d03/B128-runner-classification.json","verify_means":"parked"},
-    "B-129": {"disposition":"PARKED","owner":"tl","dependency":"production Server-Timing window on deployed commit; residual must be <10%","action":"Owner collects authenticated diagnostic samples with SERVER_TIMING_WDB_DETAIL=on and proves the reconciled residual below 10%.","artifact":"artifacts/d03/B129-production-residual.json","command":"set -euo pipefail; test \"${OWNER_APPROVED_PROBE:?set OWNER_APPROVED_PROBE=1 for the approved diagnostic window}\" = 1; export D03_SAMPLE_COUNT=10 SERVER_TIMING_WDB_DETAIL=on; : > artifacts/d03/B129-production-residual.json; grep -Fq 'diagnostic' docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md; for ordinal in $(seq 1 10); do headers=\"$(mktemp)\"; curl --silent --show-error --output /dev/null --dump-header \"$headers\" --write-out \"sample=$ordinal status=%{http_code} wall_ms=%{time_total}\\n\" -H \"Authorization: Bearer ${CORELINK_DOGFOOD_PAT:?}\" -H 'X-Server-Timing-Wdb-Detail: on' \"$CORELINK_PROD_BASE/v1/customer/cas/probe?sample=$ordinal\" | tee -a artifacts/d03/B129-production-residual.json; tr -d '\\r' < \"$headers\" | grep -i '^server-timing:' | tee -a artifacts/d03/B129-production-residual.json; rm -f \"$headers\"; done; git log -1 --format='deployed commit %H' | tee -a artifacts/d03/B129-production-residual.json; python3 -c 'import re,sys; rows=[]; required={\"qtier\",\"qdo\",\"qbatch\",\"qresid\",\"qcontrol\",\"ohop\",\"wdb\",\"origin\",\"total\"};\nfor line in open(sys.argv[1], encoding=\"utf-8\"):\n values={k:float(v) for k,v in re.findall(r\"([a-z][a-z0-9_]*);dur=([0-9.]+)\", line.lower())};\n if not required.issubset(values): continue\n residual=max(0.0, values[\"total\"]-(values[\"wdb\"]+values[\"origin\"])); rows.append(100.0*residual/values[\"total\"] if values[\"total\"] else 100.0)\nif not rows or max(rows) >= 10.0: raise SystemExit(1)\nprint(f\"residual_max_pct=<10%:{max(rows):.2f}\")' artifacts/d03/B129-production-residual.json | tee -a artifacts/d03/B129-production-residual.json; grep -Eiq 'server-timing:.*qtier.*qdo.*qbatch.*qresid.*qcontrol.*ohop.*wdb.*origin|residual_max_pct=<10%' artifacts/d03/B129-production-residual.json","verify_means":"parked","evidence":"Production residual must be <10% of total time on the deployed commit.","command_contract":{"owner_packet":"docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md#B-129","profiles":["qtier","qdo","qbatch","qresid","qcontrol"],"sample_count":10,"required":["SERVER_TIMING_WDB_DETAIL=on","deployed commit","residual","<10%","ohop","wdb","origin"],"safety":["diagnostic","Authorization: Bearer","OWNER_APPROVED_PROBE=1"],"forbidden":["--fail","production config"]}},
-    "B-134":{"disposition":"PARKED","owner":"tl","dependency":"real GitHub workflow runs and backend/image/webhook evidence","action":"Owner dispatches both observability workflows and records run IDs, conclusions, logs, image verification, and webhook acceptance.","artifact":"artifacts/d03/B134-observability-runs.json","command":"set -euo pipefail; test \"${OWNER_APPROVED_B134:?set OWNER_APPROVED_B134=1 for protected owner dispatch}\" = 1; export D03_SAMPLE_COUNT=2; : > artifacts/d03/B134-observability-runs.json; RELEASE_TAG=\"${RELEASE_TAG:?vMAJOR.MINOR.PATCH tag}\"; grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+$' <<<\"$RELEASE_TAG\"; dispatch_and_wait() { workflow=\"$1\"; ref=\"$2\"; dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; expected_sha=\"$(gh api \"repos/HuGR-Labs/corelink-server/commits/$ref\" --jq .sha)\"; test -n \"$expected_sha\"; gh workflow run \"$workflow\" --ref \"$ref\"; run_id=\"\"; for attempt in $(seq 1 30); do run_id=\"$(gh run list --workflow \"$workflow\" --limit 20 --json databaseId,createdAt,event,headBranch,headSha --jq \"map(select(.event == \\\"workflow_dispatch\\\" and .headBranch == \\\"$ref\\\" and .headSha == \\\"$expected_sha\\\" and .createdAt >= \\\"$dispatch_started_at\\\")) | .[0].databaseId // empty\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; watch_rc=0; timeout 900s gh run watch \"$run_id\" || watch_rc=$?; run_json=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,event,headBranch,headSha,workflowName)\"; jq -c --arg workflow \"$workflow\" '. + {workflow:$workflow}' <<<\"$run_json\" >> artifacts/d03/B134-observability-runs.json; gh run view \"$run_id\" --log >> artifacts/d03/B134-observability-runs.json; jq -e --arg ref \"$ref\" --arg sha \"$expected_sha\" '.status == \"completed\" and .conclusion != null and .event == \"workflow_dispatch\" and .headBranch == $ref and .headSha == $sha' <<<\"$run_json\" >/dev/null; test \"$watch_rc\" -eq 0; }; dispatch_and_wait smoke-install.yml main; dispatch_and_wait cosign-sign.yml \"$RELEASE_TAG\"; python3 scripts/check_b134_observability.py --root . | tee -a artifacts/d03/B134-observability-runs.json; grep -Eiq 'docker info|image_digest|Rekor|webhook|UNMEASURED' artifacts/d03/B134-observability-runs.json; grep -Fq 'workflow_dispatch' .github/workflows/cosign-sign.yml; grep -Fq 'corelink' .github/workflows/smoke-install.yml","verify_means":"parked","command_contract":{"owner_packet":"docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-134","profiles":["smoke-install.yml","cosign-sign.yml"],"sample_count":2,"required":["docker info","image_digest","Rekor","webhook","UNMEASURED","headBranch","headSha","event","expected_sha"],"safety":["workflow_dispatch","corelink","OWNER_APPROVED_B134=1"],"forbidden":["codeql.yml","secrets-drift.yml","--force"]}},
-    "B-135": {"disposition":"PARKED","owner":"tl","dependency":"corelink-runners owner and cross-repository Actions access","action":"Owner runs the two workflow/label greps in corelink-runners and decides whether PR build triggers and label consumers are required.","artifact":"artifacts/d03/B135-runners-label-consumer.txt","command":"git -C ../corelink-runners grep -rn 'corelink.rust\\|corelink.gh.version' --include='*.yml' --include='*.sh' --include='*.py' . > artifacts/d03/B135-runners-label-consumer.txt","verify_means":"parked"},
-    "B-138": {"disposition":"PARKED","owner":"tl","dependency":"corelink-runners owner and repository-scoped token","action":"Owner completes the documented decision ladder in the sibling repository and attaches the selected evidence.","artifact":"artifacts/d03/B138-runners-decision.json","command":"git -C ../corelink-runners status --short --branch > artifacts/d03/B138-runners-decision.json","verify_means":"parked"},
-    "B-139": {"disposition":"PARKED","owner":"tl","dependency":"D03 Semgrep dispatch, ERROR triage, and Advanced Security upload availability","action":"Owner runs the bundle, retains both SARIF plus report, triages ERROR findings, and records uploaded or unavailable_or_unverified status.","artifact":"artifacts/d03/semgrep-b139-report.json","command":"gh workflow run semgrep.yml --ref main && gh run list --workflow semgrep.yml --limit 1 --json databaseId,conclusion > artifacts/d03/semgrep-b139-report.json","verify_means":"parked"},
-    "B-142": {"disposition":"PARKED","owner":"tl","dependency":"real CodeQL/secrets-drift workflow runs on the canonical runner","action":"Owner dispatches the two jobs and watchdogs, then archives their conclusions and runner labels.","artifact":"artifacts/d03/B142-security-workflows.json","command":"gh workflow run codeql.yml --ref main && gh workflow run secrets-drift.yml --ref main && gh run list --limit 2 --json databaseId,conclusion > artifacts/d03/B142-security-workflows.json","verify_means":"parked"},
-    "B-152": {"disposition":"PARKED","owner":"tl","dependency":"retained GitHub Actions job/step timing records","action":"Owner retrieves the recent failure-rate window, compares affected steps, and records the causal diagnosis.","artifact":"artifacts/d03/B152-actions-rate.json","command":"gh run list --limit 100 --json databaseId,name,conclusion,createdAt > artifacts/d03/B152-actions-rate.json","verify_means":"parked"},
-    "B-250": {"disposition":"PARKED","owner":"tl","dependency":"authorized GitHub API refresh and stale BuildFailed emitter identification","action":"Owner refreshes the closed 2026-09-04..06 deleted-run census, preserves IDs/timestamps, and records the emitter fix.","artifact":"docs/handoff/2026-09-06-b250-deleted-workflow-census.json","command":"gh api repos/HuGR-Labs/corelink-server/actions/runs --paginate > docs/handoff/2026-09-06-b250-deleted-workflow-census.json","verify_means":"parked"},
-    "B-251": {"disposition":"PARKED","owner":"tl","dependency":"production/opt-in 1,000-sample p99 probe and D02 seed/blob identity","action":"Owner runs the ignored real-latency probe, records p99 <=5 ms, and compares seed/failure/blob to D02.","artifact":"artifacts/d03/B251-latency-probe.json","command":"set -euo pipefail; export D03_SAMPLE_COUNT=1000 B251_ALLOW_IGNORED_PROBE=1; : \"${B251_ALLOW_IGNORED_PROBE:?opt-in required}\"; python3 scripts/verify_b251_quota_cas_budget.py | tee artifacts/d03/B251-latency-probe.json; grep -Eiq 'PASS|deterministic|seed|blob' artifacts/d03/B251-latency-probe.json; cargo test -p corelink-billing --test quota_cas_prop_quota_cas real_latency_probe_under_5ms_p99 -- --ignored --exact --nocapture 2>&1 | tee -a artifacts/d03/B251-latency-probe.json; grep -Eiq 'test result: ok|p99|5.?ms' artifacts/d03/B251-latency-probe.json; grep -Fq 'D02' docs/campaigns/remediation/work-packages/B131-B167.md","verify_means":"parked","command_contract":{"owner_packet":"docs/campaigns/remediation/work-packages/B131-B167.md#WP-B251","profiles":["deterministic","D02"],"sample_count":1000,"required":["verify_b251_quota_cas_budget.py","--ignored","--exact","p99","seed","blob"],"safety":["opt-in","--nocapture"],"forbidden":["--force","production quota redesign"]}},
-    "B-165": {"disposition":"PARKED","owner":"tl","dependency":"authenticated production latency and deployed-version identity","action":"Owner runs the cold/warm production measurement described in the item and records the deployed commit.","artifact":"artifacts/d03/B165-production-latency.json","command":"mkdir -p artifacts/d03 && curl --fail -D - -H \"Authorization: Bearer $CORELINK_DOGFOOD_PAT\" \"$CORELINK_PROD_BASE/v1/customer/keys\" > artifacts/d03/B165-production-latency.json 2>&1","verify_means":"parked"},
-    "B-253": {"disposition":"DONE","owner":"tl","dependency":"none; current source and canonical spec bytes are the acceptance surface","action":"No external action; retain the focal mutation suite as the inverted guard.","artifact":"tests/test_b253_openapi_version.py","command":"python3 -m pytest -q tests/test_b253_openapi_version.py","evidence":"Current Rust authorities keep SPEC_VERSION=v1 separate from env!(CARGO_PKG_VERSION); canonical YAML and JSON carry 0.1.0, and all four focal tests kill authority conflation, removal, and major mutations."}
+    "B-006": {
+      "disposition": "REOPENED",
+      "owner": "tl",
+      "dependency": "fleet demand; capability_claim_unserved must become nonzero",
+      "action": "Owner repairs the observability credential/deployment mismatch, then records a fresh authenticated aggregate production read.",
+      "artifact": "artifacts/d03/B006-capability-metrics.json",
+      "provider_artifact": "artifacts/d03/B006-provider-binding.json",
+      "command": "python3 scripts/collect_b006_metrics.py --url https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics --keychain-service 'CoreLink/METRICS_OBSERVABILITY_KEY' --keychain-account corelink-ops --auth-header X-Corelink-Internal-Auth --timeout 10 --max-bytes 1048576 --out artifacts/d03/B006-capability-metrics.json || test $? -eq 2; python3 scripts/collect_b006_provider_binding.py --out artifacts/d03/B006-provider-binding.json && python3 scripts/verify_b006_evidence.py --input artifacts/d03/B006-capability-metrics.json && python3 scripts/verify_b006_provider_binding.py --input artifacts/d03/B006-provider-binding.json",
+      "verify_means": "reopened",
+      "evidence": "HTTP 403 from the bounded dedicated-key probe; no counter was retained or inferred. A separate authenticated Wrangler binding is retained, but both fresh provider binding and authenticated aggregate-only zero metrics are required for DONE."
+    },
+    "B-044": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "production orphan classification and Cloudflare delete scope",
+      "action": "Owner enables teardown only after a real type-1 orphan is observed and captures the reconciler result.",
+      "artifact": "artifacts/d03/B044-orphan-teardown.json",
+      "command": "set -euo pipefail; export D03_SAMPLE_COUNT=1 RECONCILE_ORPHAN_BOXES=1 RECONCILE_ORPHAN_TEARDOWN=0 RECONCILE_ORPHAN_MODE=observe; tail_rc=0; timeout 30s wrangler tail corelink --format json --search orphan_reconcile_scan > artifacts/d03/B044-orphan-teardown.json || tail_rc=$?; case \"$tail_rc\" in 0|124) ;; *) exit \"$tail_rc\";; esac; test -s artifacts/d03/B044-orphan-teardown.json; grep -Eiq 'orphan|sboxKnown|orphan_count' artifacts/d03/B044-orphan-teardown.json; grep -Eiq 'type-1|type-2|unknown' artifacts/d03/B044-orphan-teardown.json",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-044",
+        "profiles": [],
+        "sample_count": 1,
+        "required": [
+          "orphan_reconcile_scan",
+          "sbox",
+          "observe",
+          "type-1",
+          "type-2",
+          "tail_rc",
+          "124"
+        ],
+        "safety": [
+          "RECONCILE_ORPHAN_TEARDOWN=0"
+        ],
+        "forbidden": [
+          "RECONCILE_ORPHAN_TEARDOWN=1",
+          "wrangler delete",
+          "wrangler destroy"
+        ]
+      }
+    },
+    "B-046": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "R2 Object-Lock support or a compliant replacement backend",
+      "action": "Owner reruns the Object-Lock capability probe and records a platform decision before changing retention policy.",
+      "artifact": "artifacts/d03/B046-object-lock-probe.txt",
+      "command": "set -euo pipefail; export D03_SAMPLE_COUNT=2 B046_PROBE_ALLOW_MUTATION=1; export B046_PROBE_BUCKET=\"${B046_PROBE_BUCKET:?use a corelink-b046-probe-* bucket}\"; python3 scripts/verify_b046_object_lock_probe.py --probe | tee artifacts/d03/B046-object-lock-probe.txt; jq -e '.verdict == \"SUPPORTED\" or .verdict == \"BLOCKED\" or .verdict == \"INDETERMINATE\"' artifacts/d03/B046-object-lock-probe.txt >/dev/null; grep -Fq 'COMPLIANCE' scripts/verify_b046_object_lock_probe.py",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-046",
+        "profiles": [],
+        "sample_count": 2,
+        "required": [
+          "--probe",
+          "object-lock",
+          "COMPLIANCE"
+        ],
+        "safety": [
+          "B046_PROBE_ALLOW_MUTATION=1",
+          "corelink-b046-probe-"
+        ],
+        "forbidden": [
+          "corelink-prod",
+          "0102_cas_retention",
+          "compliance database"
+        ]
+      }
+    },
+    "B-216": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "deployed DLQ consumer and on-call alert delivery",
+      "action": "Owner deploys the consumer, forces one exhausted DSR message, and captures consumer plus paging evidence.",
+      "artifact": "artifacts/d03/B216-dlq-incident.json",
+      "command": "set -euo pipefail; export D03_SAMPLE_COUNT=1; test \"${OWNER_APPROVED_B216:?set OWNER_APPROVED_B216=1 for a bounded owner probe}\" = 1; test -n \"${B216_EXPECTED_REVISION:?provide deployed revision}\"; test -n \"${B216_EVENT_ID:?provide exhausted event ID}\"; : > artifacts/d03/B216-dlq-incident.json; grep -Fq 'name = \"corelink-signup-worker\"' apps/signup-worker/wrangler.toml; grep -Fq 'queue = \"corelink-dsr-erasure-dlq\"' apps/signup-worker/wrangler.toml; grep -Fq 'event: \"dsr.erasure.dead_letter\"' apps/signup-worker/src/webhooks/dsr_consumer.ts; grep -Fq 'priorRequeues < MAX_DLQ_REQUEUES' apps/signup-worker/src/webhooks/dsr_consumer.ts; grep -Fq 'normalizedDlqRequeueCount' apps/signup-worker/src/webhooks/dsr_consumer.ts; grep -Fq 'return MAX_DLQ_REQUEUES;' apps/signup-worker/src/webhooks/dsr_consumer.ts; grep -Fq '_dlq_requeue' apps/signup-worker/src/webhooks/dsr_consumer.ts; test -s reports/owner-actions/b216-deployed-signup-worker.json; jq -e --arg worker \"corelink-signup-worker\" --arg queue \"corelink-dsr-erasure-dlq\" --arg revision \"$B216_EXPECTED_REVISION\" '(.worker == $worker and .queue == $queue and (.revision|type==\"string\") and .revision == $revision)' reports/owner-actions/b216-deployed-signup-worker.json >/dev/null; test -s reports/owner-actions/b216-alert-delivery.json; jq -e --arg event_id \"$B216_EVENT_ID\" --arg revision \"$B216_EXPECTED_REVISION\" '(.event_id == $event_id and .revision == $revision and .channel == \"paging\" and .delivery_status == \"delivered\" and (.receipt_id|type==\"string\" and length > 0))' reports/owner-actions/b216-alert-delivery.json >/dev/null; test -s reports/owner-actions/b216-exhausted-observation.md; grep -Fqx \"event_id=$B216_EVENT_ID revision=$B216_EXPECTED_REVISION exhausted=true action=requeue_once requeue_count=1 operator_disposition=manual_followup\" reports/owner-actions/b216-exhausted-observation.md; tail_rc=0; timeout 30s wrangler tail corelink-signup-worker --format json --search dsr.erasure.dead_letter > artifacts/d03/B216-dlq-incident.json || tail_rc=$?; case \"$tail_rc\" in 0|124) ;; *) exit \"$tail_rc\";; esac; test -s artifacts/d03/B216-dlq-incident.json; jq -e --arg worker \"corelink-signup-worker\" --arg revision \"$B216_EXPECTED_REVISION\" --arg event_id \"$B216_EVENT_ID\" '(.worker == $worker and .revision == $revision and .event == \"dsr.erasure.dead_letter\" and .event_id == $event_id and .exhausted == true and .action == \"requeue_once\" and .requeue_count == 1)' artifacts/d03/B216-dlq-incident.json >/dev/null; jq -e --arg event_id \"$B216_EVENT_ID\" --arg revision \"$B216_EXPECTED_REVISION\" '(.event_id == $event_id and .revision == $revision and .channel == \"paging\" and .delivery_status == \"delivered\" and (.receipt_id|type==\"string\" and length > 0))' reports/owner-actions/b216-alert-delivery.json >/dev/null",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/internal/b215-b230-runtime-owner-actions.md#B-216",
+        "profiles": [
+          "corelink-signup-worker",
+          "corelink-dsr-erasure-dlq"
+        ],
+        "sample_count": 1,
+        "required": [
+          "dsr.erasure.dead_letter",
+          "requeue_once",
+          "paging",
+          "revision",
+          "priorRequeues < MAX_DLQ_REQUEUES",
+          "normalizedDlqRequeueCount",
+          "return MAX_DLQ_REQUEUES;",
+          "B216_EXPECTED_REVISION",
+          "B216_EVENT_ID",
+          "event_id",
+          "exhausted",
+          "requeue_count",
+          "delivery_status",
+          "receipt_id"
+        ],
+        "safety": [
+          "OWNER_APPROVED_B216=1",
+          "timeout 30s"
+        ],
+        "forbidden": [
+          "wrangler queue send",
+          "wrangler queues delete",
+          "DELETE FROM",
+          "--force"
+        ]
+      }
+    },
+    "B-229": {
+      "disposition": "DONE",
+      "owner": "tl",
+      "dependency": "production secret binding and verified Clerk webhook",
+      "action": "Owner deploys with CLERK_WEBHOOK_SECRET bound and records one accepted signed webhook plus deploy-gate output.",
+      "artifact": "evidence/production/B-229-clerk-webhook-2026-09-08.md",
+      "command": "set -euo pipefail; python3 scripts/verify_b229_clerk_webhook.py --evidence evidence/production/B-229-clerk-webhook-2026-09-08.md; python3 scripts/verify_b229_clerk_webhook.py --evidence evidence/production/B-229-clerk-webhook-2026-09-08.md --self-test",
+      "evidence": "B-229 production receipt evidence/production/B-229-clerk-webhook-2026-09-08.md is verified by scripts/verify_b229_clerk_webhook.py: exact source SHA, Cloudflare version, 100% traffic, health 200, signed probe 200 ignored, and omitted payload/credential values."
+    },
+    "B-028": {
+      "disposition": "DONE",
+      "owner": "tl",
+      "dependency": "none; the authenticated post-merge census is complete",
+      "action": "Retain the redacted zero-open snapshot and rerun the fail-closed focal verifier on dependency changes.",
+      "artifact": "docs/security/b028-dependabot-census-2026-09-06.json",
+      "command": "python3 scripts/verify_b028_dependabot.py",
+      "evidence": "Authenticated GitHub API refresh on 2026-09-08 returned zero open alerts and 37 historical alerts, all fixed; the snapshot is anchored to delivered main@cdd6a6714."
+    },
+    "B-029": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "staging load environment and a re-enabled nightly schedule",
+      "action": "Owner provisions staging, uncomment the nightly cron, and records a complete comparator run.",
+      "artifact": "artifacts/d03/B029-load-gate-run.json",
+      "command": "gh workflow run load-test-nightly.yml --ref main && gh run list --workflow load-test-nightly.yml --limit 1 --json databaseId,conclusion > artifacts/d03/B029-load-gate-run.json",
+      "verify_means": "parked"
+    },
+    "B-054": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "external witness, v2 D1 transaction, key custody, and archive verification",
+      "action": "Owner provisions the witness/key custody path, executes E0/E1 archive tests, and links independent verification.",
+      "artifact": "artifacts/d03/B054-audit-chain-witness.json",
+      "command": "python3 scripts/verify_b054_audit_chain_contract.py > artifacts/d03/B054-audit-chain-witness.json",
+      "verify_means": "parked"
+    },
+    "B-112": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "expired release logs and external SLSA runner evidence",
+      "action": "Owner reruns the release workflow with preserved logs and names the remaining root cause.",
+      "artifact": "artifacts/d03/B112-release-root-cause.json",
+      "command": "set -euo pipefail; export D03_SAMPLE_COUNT=1; artifact=\"artifacts/d03/B112-release-root-cause.json\"; test \"${OWNER_APPROVED_RELEASE_RERUN:?set OWNER_APPROVED_RELEASE_RERUN=1 after owner approval}\" = 1; run_id=\"${B112_RUN_ID:?provide the prior release-cli run ID to rerun}\"; expected_ref=\"${B112_EXPECTED_REF:?provide refs/tags/cli-vMAJOR.MINOR.PATCH}\"; expected_sha=\"${B112_EXPECTED_SHA:?provide the expected release SHA}\"; expected_attempt=\"${B112_EXPECTED_ATTEMPT:?provide the selected release-cli run attempt}\"; case \"$run_id\" in \"\"|*[!0-9]*) echo \"::error::B112_RUN_ID must be numeric\" >&2; exit 1;; esac; case \"$expected_attempt\" in \"\"|*[!0-9]*) echo \"::error::B112_EXPECTED_ATTEMPT must be numeric\" >&2; exit 1;; esac; grep -Fq 'release-cli.yml' .github/workflows/release-cli.yml; grep -Fq 'workflow_call:' .github/workflows/release-slsa3.yml; grep -Fq 'name: publish verified signed release' .github/workflows/release-cli.yml; grep -Fq 'name: create release' .github/workflows/release-cli.yml; run_meta=\"$(gh run view \"$run_id\" --json databaseId,attempt,status,conclusion,event,headBranch,headSha,workflowName,jobs)\"; slsa_event=\"workflow_call\"; jq -e --arg ref \"$expected_ref\" --arg sha \"$expected_sha\" --argjson expected_attempt \"$expected_attempt\" --argjson expected_run_id \"$run_id\" '.databaseId == $expected_run_id and .attempt == $expected_attempt and .workflowName == \"release-cli\" and .event == \"push\" and .status == \"completed\" and .conclusion == \"failure\" and ($ref | test(\"^refs/tags/cli-v[0-9]+\\.[0-9]+\\.[0-9]+$\")) and .headBranch == ($ref | sub(\"^refs/tags/\";\"\")) and (.headBranch | test(\"^cli-v[0-9]+\\.[0-9]+\\.[0-9]+$\")) and .headSha == $sha and (all(.jobs[]; ((.name | ascii_downcase | startswith(\"create release\")) | not) or .conclusion == \"skipped\")) and (all(.jobs[]; ((.name | ascii_downcase | startswith(\"publish verified signed release\")) | not) or .conclusion == \"skipped\"))' <<<\"$run_meta\" >/dev/null; lock_dir=\"${artifact}.lock\"; if ! mkdir \"$lock_dir\" 2>/dev/null; then echo \"::error::another B-112 rerun is active for canonical artifact $artifact\" >&2; exit 1; fi; trap 'rmdir \"$lock_dir\"' EXIT; : > artifacts/d03/B112-release-root-cause.json; python3 scripts/verify_b112_release_root_cause.py --root . | tee -a artifacts/d03/B112-release-root-cause.json; grep -Fq 'PASS' artifacts/d03/B112-release-root-cause.json; jq -c . <<<\"$run_meta\" >> artifacts/d03/B112-release-root-cause.json; attempt_after=\"$((expected_attempt + 1))\"; gh run rerun \"$run_id\" --failed; saw_active=0; state=\"\"; for poll in $(seq 1 180); do state=\"$(gh run view \"$run_id\" --json databaseId,attempt,status,conclusion,event,headBranch,headSha,workflowName,jobs)\"; if jq -e --argjson expected_attempt \"$expected_attempt\" '.attempt == ($expected_attempt + 1) and .status != \"completed\"' <<<\"$state\" >/dev/null; then saw_active=1; fi; if test \"$saw_active\" -eq 1 && jq -e --arg workflow_name \"release-cli\" --arg ref \"$expected_ref\" --arg sha \"$expected_sha\" --argjson expected_attempt \"$expected_attempt\" --arg run_id \"$run_id\" '.databaseId == ($run_id | tonumber) and .attempt == ($expected_attempt + 1) and .status == \"completed\" and .conclusion != null and .workflowName == $workflow_name and .event == \"push\" and ($ref | test(\"^refs/tags/cli-v[0-9]+\\.[0-9]+\\.[0-9]+$\")) and .headBranch == ($ref | sub(\"^refs/tags/\";\"\")) and (.headBranch | test(\"^cli-v[0-9]+\\.[0-9]+\\.[0-9]+$\")) and .headSha == $sha and (all(.jobs[]; ((.name | ascii_downcase | startswith(\"create release\")) | not) or (.status == \"completed\" and .conclusion == \"skipped\"))) and (all(.jobs[]; ((.name | ascii_downcase | startswith(\"publish verified signed release\")) | not) or (.status == \"completed\" and .conclusion == \"skipped\")))' <<<\"$state\" >/dev/null; then break; fi; sleep 5; done; test \"$saw_active\" -eq 1; test -n \"$state\"; jq -e --arg workflow_name \"release-cli\" --arg ref \"$expected_ref\" --arg sha \"$expected_sha\" --argjson expected_attempt \"$expected_attempt\" --arg run_id \"$run_id\" '.databaseId == ($run_id | tonumber) and .attempt == ($expected_attempt + 1) and (.databaseId | type == \"number\") and .status == \"completed\" and .conclusion != null and .workflowName == $workflow_name and .event == \"push\" and ($ref | test(\"^refs/tags/cli-v[0-9]+\\.[0-9]+\\.[0-9]+$\")) and .headBranch == ($ref | sub(\"^refs/tags/\";\"\")) and (.headBranch | test(\"^cli-v[0-9]+\\.[0-9]+\\.[0-9]+$\")) and .headSha == $sha and (all(.jobs[]; ((.name | ascii_downcase | startswith(\"create release\")) | not) or (.status == \"completed\" and .conclusion == \"skipped\" and (.name | type == \"string\")))) and (all(.jobs[]; ((.name | ascii_downcase | startswith(\"publish verified signed release\")) | not) or (.status == \"completed\" and .conclusion == \"skipped\" and (.name | type == \"string\"))))' <<<\"$state\" >/dev/null; jq -c . <<<\"$state\" >> artifacts/d03/B112-release-root-cause.json; gh run view \"$run_id\" --attempt \"$attempt_after\" --log >> artifacts/d03/B112-release-root-cause.json; caller_attempt=\"$(gh api \"repos/{owner}/{repo}/actions/runs/${run_id}/attempts/${attempt_after}\")\"; slsa_meta=\"$(jq -c --arg ref \"$expected_ref\" --arg sha \"$expected_sha\" --arg run_id \"$run_id\" --argjson expected_attempt \"$attempt_after\" '.referenced_workflows = (.referenced_workflows // []) | .slsa_workflow = (.referenced_workflows | map(select((.path | endswith(\"/.github/workflows/release-slsa3.yml@\" + $ref)) or (.path | endswith(\"/.github/workflows/release-slsa3.yml@\" + $sha)))) | last // null) | select((.id == ($run_id | tonumber)) and ((.run_attempt | type) == \"number\") and (.run_attempt == $expected_attempt) and (.event == \"push\") and (.head_branch == ($ref | sub(\"^refs/tags/\";\"\"))) and (.head_sha == $sha) and (.slsa_workflow != null) and (.slsa_workflow.ref == $ref or ((.slsa_workflow.ref == null) and (.slsa_workflow.path | endswith(\"/.github/workflows/release-slsa3.yml@\" + $sha)))) and ((.slsa_workflow.sha | type) == \"string\") and (.slsa_workflow.sha == $sha)) | .slsa_ref = (.slsa_workflow.ref // $ref) | .slsa_event = \"workflow_call\" | .slsa_run_id = .id | .slsa_attempt = .run_attempt' <<<\"$caller_attempt\")\"; test -n \"$slsa_meta\"; jq -e --arg ref \"$expected_ref\" --arg sha \"$expected_sha\" --arg run_id \"$run_id\" --argjson expected_attempt \"$attempt_after\" '.slsa_run_id == ($run_id | tonumber) and (.id | type == \"number\") and ((.slsa_attempt | type) == \"number\") and .slsa_attempt == $expected_attempt and .event == \"push\" and .head_branch == ($ref | sub(\"^refs/tags/\";\"\")) and .head_sha == ($sha | tostring) and .slsa_event == \"workflow_call\" and ((.slsa_workflow.path | endswith(\"/.github/workflows/release-slsa3.yml@\" + $ref)) or (.slsa_workflow.path | endswith(\"/.github/workflows/release-slsa3.yml@\" + $sha))) and (.slsa_workflow.ref == ($ref | tostring) or ((.slsa_workflow.ref == null) and (.slsa_workflow.path | endswith(\"/.github/workflows/release-slsa3.yml@\" + $sha)))) and .slsa_ref == $ref and ((.slsa_workflow.sha | type) == \"string\") and .slsa_workflow.sha == ($sha | tostring)' <<<\"$slsa_meta\" >/dev/null; slsa_run_id=\"$(jq -r \".slsa_run_id\" <<<\"$slsa_meta\")\"; slsa_attempt=\"$(jq -r \".slsa_attempt\" <<<\"$slsa_meta\")\"; test \"$slsa_run_id\" = \"$run_id\"; test \"$slsa_attempt\" = \"$attempt_after\"; jq -c . <<<\"$slsa_meta\" >> artifacts/d03/B112-release-root-cause.json; grep -Fq 'cargo-zigbuild' artifacts/d03/B112-release-root-cause.json; grep -Eiq 'linux|windows' artifacts/d03/B112-release-root-cause.json; grep -Eiq 'checksums|checksum' artifacts/d03/B112-release-root-cause.json; grep -Fq 'SLSA' artifacts/d03/B112-release-root-cause.json; grep -Fq 'release-cli.yml' docs/campaigns/remediation/work-packages/B091-B130.md",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B112",
+        "profiles": [
+          "linux",
+          "windows"
+        ],
+        "sample_count": 1,
+        "required": [
+          "release-cli.yml",
+          "release-slsa3.yml",
+          "cargo-zigbuild",
+          "checksums",
+          "SLSA",
+          "gh run rerun",
+          "B112_RUN_ID",
+          "B112_EXPECTED_REF",
+          "B112_EXPECTED_SHA",
+          "B112_EXPECTED_ATTEMPT",
+          "workflowName",
+          "headBranch",
+          "headSha",
+          "head_sha",
+          "event",
+          "push",
+          "cli-v",
+          "cli-vMAJOR.MINOR.PATCH",
+          "status == \"completed\"",
+          "conclusion",
+          "--failed",
+          "--attempt",
+          "workflow_call",
+          "gh api",
+          "referenced_workflows",
+          "run_attempt",
+          "slsa_workflow",
+          "slsa_ref",
+          "slsa_event",
+          "slsa_meta",
+          "slsa_run_id",
+          "artifact"
+        ],
+        "safety": [
+          "--root",
+          "OWNER_APPROVED_RELEASE_RERUN=1"
+        ],
+        "forbidden": [
+          "git tag",
+          "cosign-sign.yml",
+          "--force",
+          "workflow_dispatch",
+          "--all",
+          "gh run list --workflow release-slsa3.yml"
+        ]
+      }
+    },
+    "B-113": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "runner/network provisioning for cargo-mutants, Buck2, SBOM, fuzz, and load lanes",
+      "action": "Owner executes each of the seven external probes and records result or named infrastructure blocker.",
+      "artifact": "artifacts/d03/B113-focal-lane-results.json",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_LANE_DISPATCH:?set OWNER_APPROVED_LANE_DISPATCH=1 for one protected run per lane}\" = 1; export D03_SAMPLE_COUNT=7; : > artifacts/d03/B113-focal-lane-results.json; dispatch_and_wait() { workflow=\"$1\"; dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; gh workflow run \"$workflow\" --ref main; run_id=\"\"; for attempt in $(seq 1 30); do run_id=\"$(gh run list --workflow \"$workflow\" --limit 20 --json databaseId,createdAt,event,headBranch --jq \"map(select(.event == \\\"workflow_dispatch\\\" and .headBranch == \\\"main\\\" and .createdAt >= \\\"$dispatch_started_at\\\")) | .[0].databaseId // empty\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; watch_rc=0; timeout 900s gh run watch \"$run_id\" || watch_rc=$?; run_json=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,headSha,workflowName)\"; jq -c --arg workflow \"$workflow\" '. + {workflow:$workflow}' <<<\"$run_json\" >> artifacts/d03/B113-focal-lane-results.json; gh run view \"$run_id\" --log >> artifacts/d03/B113-focal-lane-results.json; jq -e '.status == \"completed\" and .conclusion != null' <<<\"$run_json\" >/dev/null; test \"$watch_rc\" -eq 0; }; for workflow in nightly.yml sbom.yml buck2-starter-ci.yml fuzz-nightly.yml endurance-2h-nightly.yml load-test-nightly.yml billing-health-daily.yml; do dispatch_and_wait \"$workflow\"; done; grep -Eiq 'runner|conclusion' artifacts/d03/B113-focal-lane-results.json; grep -Eq 'terraform-drift.yml|B-111' BACKLOG.md; test \"$(git grep -l 'workflow_dispatch' -- .github/workflows/*.yml | wc -l)\" -gt 0",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-113",
+        "profiles": [
+          "nightly.yml",
+          "sbom.yml",
+          "buck2-starter-ci.yml",
+          "fuzz-nightly.yml",
+          "endurance-2h-nightly.yml",
+          "load-test-nightly.yml",
+          "billing-health-daily.yml"
+        ],
+        "sample_count": 7,
+        "required": [
+          "runner",
+          "conclusion",
+          "terraform-drift.yml"
+        ],
+        "safety": [
+          "--ref main",
+          "B-111",
+          "OWNER_APPROVED_LANE_DISPATCH=1"
+        ],
+        "forbidden": [
+          "terraform-drift.yml --dispatch"
+        ]
+      }
+    },
+    "B-063": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "production D1 access and PagerDuty state",
+      "action": "Owner queries non-archived production partition rows and PagerDuty alert status with approved credentials.",
+      "artifact": "artifacts/d03/B063-archive-lag-pagerduty.json",
+      "command": "set -euo pipefail; test \"${B063_REPAIR_APPROVED:?set B063_REPAIR_APPROVED=1 only after the authorized repair}\" = 1; export D03_SAMPLE_COUNT=3; : > artifacts/d03/B063-archive-lag-pagerduty.json; grep -Fq 'workflow_dispatch' .github/workflows/audit-archive-lag.yml; dispatch_and_wait() { dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; gh workflow run audit-archive-lag.yml --ref main -f lag_hours=3; run_id=\"\"; for attempt in $(seq 1 30); do run_id=\"$(gh run list --workflow audit-archive-lag.yml --limit 20 --json databaseId,createdAt,event,headBranch --jq \"map(select(.event == \\\"workflow_dispatch\\\" and .headBranch == \\\"main\\\" and .createdAt >= \\\"$dispatch_started_at\\\")) | .[0].databaseId // empty\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; watch_rc=0; timeout 900s gh run watch \"$run_id\" || watch_rc=$?; run_json=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,headSha,workflowName)\"; jq -c . <<<\"$run_json\" >> artifacts/d03/B063-archive-lag-pagerduty.json; jq -e '.status == \"completed\" and .conclusion == \"success\"' <<<\"$run_json\" >/dev/null; test \"$watch_rc\" -eq 0; }; for sample in 1 2 3; do wrangler d1 execute corelink-config-prod --remote --command \"SELECT o.tenant_id, o.region, COUNT(*) AS pending_old, MIN(o.enqueued_at) AS oldest_pending_ms, (SELECT MAX(o2.archived_at) FROM audit_outbox o2 WHERE o2.tenant_id=o.tenant_id AND o2.region=o.region) AS part_last_archived FROM audit_outbox o WHERE o.emitted_at IS NOT NULL AND o.archived_at IS NULL AND o.quarantined_at IS NULL AND o.enqueued_at < (strftime('%s','now') - 10800) * 1000 AND (o.tenant_id IN ('93da3f7a','enam') OR o.region IN ('93da3f7a','enam')) GROUP BY o.tenant_id, o.region HAVING part_last_archived IS NULL OR part_last_archived < (strftime('%s','now') - 10800) * 1000\" | tee -a artifacts/d03/B063-archive-lag-pagerduty.json; grep -Eiq 'pending_old|part_last_archived' artifacts/d03/B063-archive-lag-pagerduty.json; dispatch_and_wait; done; test -n \"${PAGERDUTY_REFERENCE:?redacted PagerDuty reference required}\"",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-063",
+        "profiles": [
+          "93da3f7a",
+          "enam"
+        ],
+        "sample_count": 3,
+        "required": [
+          "audit_outbox",
+          "GROUP BY",
+          "part_last_archived",
+          "audit-archive-lag",
+          "PagerDuty",
+          "workflow_dispatch",
+          "corelink-config-prod"
+        ],
+        "safety": [
+          "--remote",
+          "--ref main",
+          "SELECT",
+          "B063_REPAIR_APPROVED=1"
+        ],
+        "forbidden": [
+          "DELETE FROM",
+          "UPDATE ",
+          "INSERT INTO"
+        ]
+      }
+    },
+    "B-068": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "real-integration credentials for D1, R2, Stripe, and Neon",
+      "action": "Owner dispatches all four approved real-integration profiles and attaches logs/results.",
+      "artifact": "artifacts/d03/B068-real-integration-results.json",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_REAL_INTEGRATION:?set OWNER_APPROVED_REAL_INTEGRATION=1 after protected approval}\" = 1; export D03_SAMPLE_COUNT=4; : > artifacts/d03/B068-real-integration-results.json; dispatch_and_wait() { dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; profile=\"$1\"; gh workflow run real-ignored-harnesses.yml --ref main -f profile=\"$profile\"; run_id=\"\"; for attempt in $(seq 1 30); do run_id=\"$(gh run list --workflow real-ignored-harnesses.yml --limit 20 --json databaseId,createdAt,event,headBranch --jq \"map(select(.event == \\\"workflow_dispatch\\\" and .headBranch == \\\"main\\\" and .createdAt >= \\\"$dispatch_started_at\\\")) | .[0].databaseId // empty\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; watch_rc=0; timeout 900s gh run watch \"$run_id\" || watch_rc=$?; run_json=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,headSha,workflowName)\"; jq -c --arg profile \"$profile\" '. + {profile:$profile}' <<<\"$run_json\" >> artifacts/d03/B068-real-integration-results.json; jq -e '.status == \"completed\" and .conclusion != null' <<<\"$run_json\" >/dev/null; test \"$watch_rc\" -eq 0; }; for profile in d1 r2 stripe neon; do dispatch_and_wait \"$profile\"; done ; active_yaml=\"$(awk '!/^[[:space:]]*#/ { sub(/[[:space:]]+#.*/, \"\"); print }' .github/workflows/real-ignored-harnesses.yml)\"; ! grep -Eiq 'PAT[-_ ]?seed' <<<\"$active_yaml\"; grep -Eq 'profile:|REAL_HARNESS_PROFILE' <<<\"$active_yaml\"; test \"$(git grep -n 'workflow_dispatch' -- .github/workflows/real-ignored-harnesses.yml | wc -l)\" -gt 0",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-068",
+        "profiles": [
+          "d1",
+          "r2",
+          "stripe",
+          "neon"
+        ],
+        "sample_count": 4,
+        "required": [
+          "real-ignored-harnesses.yml",
+          "workflow_dispatch",
+          "seed",
+          "active_yaml",
+          "awk"
+        ],
+        "safety": [
+          "--ref main",
+          "profile=",
+          "OWNER_APPROVED_REAL_INTEGRATION=1"
+        ],
+        "forbidden": [
+          "emit_e2e_seed",
+          "PAT signing seed"
+        ]
+      }
+    },
+    "B-071": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "production GC execution with real delete/archive evidence",
+      "action": "Owner runs the scheduled sweep in observe mode, then captures one approved deletion and image evidence.",
+      "artifact": "artifacts/d03/B071-gc-sweep.json",
+      "command": "set -euo pipefail; export D03_SAMPLE_COUNT=1; test \"${OWNER_APPROVED_GC_OBSERVATION:?set OWNER_APPROVED_GC_OBSERVATION=1 for the protected observation window}\" = 1; grep -Fq 'credentialless' .github/workflows/gc-sweep-dry-run.yml; grep -Fq 'dry-run' .github/workflows/gc-sweep-dry-run.yml; grep -Fq 'GC_LIVE_DELETE: \"false\"' .github/workflows/gc-sweep-dry-run.yml; dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; gh workflow run gc-sweep-dry-run.yml --ref main; run_id=\"\"; for attempt in $(seq 1 30); do run_id=\"$(gh run list --workflow gc-sweep-dry-run.yml --limit 20 --json databaseId,createdAt,event,headBranch --jq \"map(select(.event == \\\"workflow_dispatch\\\" and .headBranch == \\\"main\\\" and .createdAt >= \\\"$dispatch_started_at\\\")) | .[0].databaseId // empty\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; watch_rc=0; timeout 900s gh run watch \"$run_id\" || watch_rc=$?; gh run view \"$run_id\" --log > artifacts/d03/B071-gc-sweep.json; jq -e '.status == \"completed\"' <(gh run view \"$run_id\" --json status,conclusion) >/dev/null; test \"$watch_rc\" -eq 0; grep -Eiq 'deleted_count[[:space:]=:]+0' artifacts/d03/B071-gc-sweep.json",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-071",
+        "profiles": [],
+        "sample_count": 1,
+        "required": [
+          "gc-sweep-dry-run.yml",
+          "GC_LIVE_DELETE=false",
+          "deleted_count",
+          "0"
+        ],
+        "safety": [
+          "credentialless",
+          "dry-run"
+        ],
+        "forbidden": [
+          "GC_LIVE_DELETE=true",
+          "container-build-push-prod.yml",
+          "DELETE "
+        ]
+      }
+    },
+    "B-072": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "PagerDuty receiver Worker and production Service Binding",
+      "action": "Owner deploys the receiver binding, runs each scheduled drill, and records 202/error behavior.",
+      "artifact": "artifacts/d03/B072-scheduled-drills.json",
+      "command": "set -euo pipefail; export D03_SAMPLE_COUNT=1; test \"${SCHEDULED_DRILL_RECEIVER_DEPLOYED:?deploy receiver via SCHEDULED_DRILL_DELIVERY before observing}\" = 1; python3 scripts/verify_b072_scheduled_drills.py | tee artifacts/d03/B072-scheduled-drills.json; grep -Fq 'B-072 PASS' artifacts/d03/B072-scheduled-drills.json; grep -Fq 'SCHEDULED_DRILL_DELIVERY' wrangler.toml; grep -Fq 'service = \"corelink-synthetic-pager-staging\"' wrangler.toml; tail_rc=0; timeout 30s wrangler tail corelink-synthetic-pager-staging --format json --search synthetic_page_drills >> artifacts/d03/B072-scheduled-drills.json || tail_rc=$?; test \"$tail_rc\" -eq 124; grep -Eiq 'correlation|PagerDuty|synthetic_page_drills|202' artifacts/d03/B072-scheduled-drills.json; grep -Fq '0 14 * * 1' wrangler.toml; grep -Fq '59 23 * * 0' apps/synthetic-pager-worker/wrangler.toml",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-072",
+        "profiles": [
+          "0 14 * * 1",
+          "59 23 * * 0"
+        ],
+        "sample_count": 1,
+        "required": [
+          "SCHEDULED_DRILL_DELIVERY",
+          "corelink-synthetic-pager-staging",
+          "correlation",
+          "PagerDuty",
+          "synthetic_page_drills"
+        ],
+        "safety": [
+          "receiver",
+          "202",
+          "SCHEDULED_DRILL_RECEIVER_DEPLOYED"
+        ],
+        "forbidden": [
+          "PAGERDUTY_ROUTING_KEY=",
+          "Authorization: Bearer"
+        ]
+      }
+    },
+    "B-074": {
+      "disposition": "DONE",
+      "owner": "tl",
+      "dependency": "none; repository bytes are the acceptance surface",
+      "action": "No external action; retain the focal self-test as the inverted guard.",
+      "artifact": "crates/corelink-container/tests/money_path_auth_wiring.rs",
+      "command": "python3 scripts/verify_b074_money_path_auth.py --self-test",
+      "evidence": "Dedicated money-path auth keys, fail-closed invalid values, Worker route selection, DO forwarding, and Rust/Worker behavior are present in current bytes; all adversarial mutations are red."
+    },
+    "B-083": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "signed production BYOK image and real provider execution",
+      "action": "Owner builds/publishes/verifies the pinned image, then executes the provider/no-provider focal against production config.",
+      "artifact": "artifacts/d03/B083-byok-production.json",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_BYOK_TEST:?set OWNER_APPROVED_BYOK_TEST=1 for a disposable test tenant}\" = 1; export D03_SAMPLE_COUNT=1; grep -Fq 'byok-aws-real' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; grep -Fq 'cas' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; python3 scripts/verify_b083_revocation_wiring.py | tee artifacts/d03/B083-byok-production.json; grep -Eiq 'PASS|fail-closed|fail.closed|check_access|run_loop' artifacts/d03/B083-byok-production.json; test \"${CORELINK_BYOK_TEST_TOKEN:?}\"; test \"${CORELINK_BYOK_TEST_BASE:?}\"; status_file=\"$(mktemp)\"; curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}' -H \"Authorization: Bearer ${CORELINK_BYOK_TEST_TOKEN}\" -H 'Content-Type: application/json' -X POST \"$CORELINK_BYOK_TEST_BASE/v1/admin/byok/activate\" --data-binary @byok-test-tenant.json > \"$status_file\"; activate_status=\"$(cat \"$status_file\")\"; test \"$activate_status\" -ge 200 -a \"$activate_status\" -lt 300; sed 's/^/activate_status=/' \"$status_file\" | tee -a artifacts/d03/B083-byok-production.json; curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}' -H \"Authorization: Bearer ${CORELINK_BYOK_TEST_TOKEN}\" -X POST \"$CORELINK_BYOK_TEST_BASE/v1/admin/byok/deactivate\" > \"$status_file\"; deactivate_status=\"$(cat \"$status_file\")\"; test \"$deactivate_status\" -ge 200 -a \"$deactivate_status\" -lt 300; sed 's/^/deactivate_status=/' \"$status_file\" | tee -a artifacts/d03/B083-byok-production.json; rm -f \"$status_file\"; grep -Eq 'activate_status=2[0-9][0-9]|deactivate_status=2[0-9][0-9]' artifacts/d03/B083-byok-production.json",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-083",
+        "profiles": [
+          "byok-aws-real"
+        ],
+        "sample_count": 1,
+        "required": [
+          "/v1/admin/byok/activate",
+          "/v1/admin/byok/deactivate",
+          "check_access",
+          "cas",
+          "run_loop"
+        ],
+        "safety": [
+          "test-tenant",
+          "fail-closed",
+          "OWNER_APPROVED_BYOK_TEST=1"
+        ],
+        "forbidden": [
+          "production tenant",
+          "plaintext Tcs",
+          "customer CMK"
+        ]
+      }
+    },
+    "B-098": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "annotated semver release tag and Cargo metadata execution",
+      "action": "Owner creates the signed semver tag, runs the hygiene verifier on that tag, and records the result.",
+      "artifact": "artifacts/d03/B098-release-hygiene.json",
+      "command": "set -euo pipefail; export D03_SAMPLE_COUNT=1; : \"${REVIEWED_MAIN_SHA:?}\"; { python3 scripts/verify_b098_repo_hygiene.py; bash scripts/cut-v1-0-0-ga-tag.sh --dry-run --expected-main-sha \"$REVIEWED_MAIN_SHA\"; } > artifacts/d03/B098-release-hygiene.json; grep -Eiq 'status|PASS|dry-run|no semver release tag' artifacts/d03/B098-release-hygiene.json; grep -Fq 'v1.0.0-GA' artifacts/d03/B098-release-hygiene.json; grep -Fq 'not create a tag' docs/handoff/2026-09-05-b098-owner-action-packet.md",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-b098-owner-action-packet.md",
+        "profiles": [],
+        "sample_count": 1,
+        "required": [
+          "verify_b098_repo_hygiene.py",
+          "--dry-run",
+          "--expected-main-sha"
+        ],
+        "safety": [
+          "no semver release tag",
+          "--dry-run"
+        ],
+        "forbidden": [
+          "git tag -a",
+          "git push",
+          "--force"
+        ]
+      }
+    },
+    "B-102": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "authenticated dogfood tenant and production Server-Timing",
+      "action": "Owner performs three sequential 1 KiB PUTs within 60 seconds and records the third timing on the deployed commit.",
+      "artifact": "artifacts/d03/B102-server-timing.json",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_PROBE:?set OWNER_APPROVED_PROBE=1 for the approved dogfood tenant}\" = 1; export D03_SAMPLE_COUNT=3; : > artifacts/d03/B102-server-timing.json; grep -Fq '1 KiB' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; start=\"$(date +%s)\"; for ordinal in 1 2 3; do headers=\"$(mktemp)\"; curl --silent --show-error --output /dev/null --dump-header \"$headers\" --write-out \"ordinal=$ordinal status=%{http_code} bytes=%{size_upload} wall_ms=%{time_total}\\n\" -H \"Authorization: Bearer ${CORELINK_PROD_TOKEN:?}\" -H 'Content-Type: application/octet-stream' -H 'X-Server-Timing-Wdb-Detail: on' -X PUT \"$CORELINK_PROD_BASE/cargo\" --data-binary @<(head -c 1024 /dev/zero) | tee -a artifacts/d03/B102-server-timing.json; tr -d '\\r' < \"$headers\" | grep -i '^server-timing:' | tee -a artifacts/d03/B102-server-timing.json; rm -f \"$headers\"; done; elapsed=$(( $(date +%s) - start )); test \"$elapsed\" -le 60; third_request_hot=\"$(grep -c '^ordinal=3 ' artifacts/d03/B102-server-timing.json)\"; test \"$third_request_hot\" -eq 1; hot_marker=\"$(mktemp)\"; awk '/^ordinal=3 /{print \"third_request_hot=true\"}' artifacts/d03/B102-server-timing.json > \"$hot_marker\"; cat \"$hot_marker\" >> artifacts/d03/B102-server-timing.json; rm -f \"$hot_marker\"; grep -Eiq 'ordinal=3 .*status=2[0-9][0-9].*bytes=1024|server-timing:.*' artifacts/d03/B102-server-timing.json; grep -Fq 'cas:rw' artifacts/d03/B102-server-timing.json; grep -Fq 'third_request_hot' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-102",
+        "profiles": [
+          "cas:rw"
+        ],
+        "sample_count": 3,
+        "required": [
+          "/cargo",
+          "1 KiB",
+          "Server-Timing",
+          "third_request_hot"
+        ],
+        "safety": [
+          "-le 60",
+          "cas:rw",
+          "OWNER_APPROVED_PROBE=1"
+        ],
+        "forbidden": [
+          "/v1/customer/cas/probe"
+        ]
+      }
+    },
+    "B-103": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "production logs during an authenticated concurrency burst",
+      "action": "Owner runs the burst and captures unfiltered server logs to identify the serializer.",
+      "artifact": "artifacts/d03/B103-concurrency-cause.json",
+      "command": "wrangler tail corelink --format json > artifacts/d03/B103-concurrency-cause.json",
+      "verify_means": "parked"
+    },
+    "B-104": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "authenticated production endpoint timing",
+      "action": "Owner executes at least ten authenticated missing-path GETs and records median and p90.",
+      "artifact": "artifacts/d03/B104-missing-path-timing.json",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_PROBE:?set OWNER_APPROVED_PROBE=1 for authenticated missing-path timing}\" = 1; export D03_SAMPLE_COUNT=10; : > artifacts/d03/B104-missing-path-timing.json; for ordinal in $(seq 1 10); do curl --silent --show-error --output /dev/null --write-out \"sample=$ordinal HTTP status=%{http_code} wall_ms=%{time_total} missing=true\\n\" -H \"Authorization: Bearer ${CORELINK_PROD_TOKEN:?}\" \"$CORELINK_PROD_BASE/v1/does-not-exist-$ordinal\" | tee -a artifacts/d03/B104-missing-path-timing.json; done; git --version | tee -a artifacts/d03/B104-missing-path-timing.json; stats_file=\"$(mktemp)\"; awk -F'wall_ms=' '/wall_ms=/{split($2,a,\" \"); print a[1]}' artifacts/d03/B104-missing-path-timing.json | sort -n | awk 'BEGIN {n=0} {v[++n]=$1} END {if (n < 10) exit 1; rank=0.9*(n-1)+1; lo=int(rank); frac=rank-lo; print \"median_ms=\" ((v[int((n+1)/2)] + v[int((n+2)/2)]) / 2) \" p90_ms=\" (v[lo] + frac*(v[lo+1]-v[lo]))}' > \"$stats_file\"; stats=\"$(cat \"$stats_file\")\"; test -n \"$stats\"; cat \"$stats_file\" >> artifacts/d03/B104-missing-path-timing.json; rm -f \"$stats_file\"; grep -Fq 'missing=true' artifacts/d03/B104-missing-path-timing.json; grep -Eq 'median_ms=[0-9.]+ p90_ms=[0-9.]+' <<<\"$stats\"; grep -Fq 'version' artifacts/d03/B104-missing-path-timing.json",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md#B-104",
+        "profiles": [
+          "authenticated"
+        ],
+        "sample_count": 10,
+        "required": [
+          "missing",
+          "median",
+          "p90",
+          "version"
+        ],
+        "safety": [
+          "Authorization: Bearer",
+          "HTTP status",
+          "OWNER_APPROVED_PROBE=1"
+        ],
+        "forbidden": [
+          "--fail",
+          "maximum"
+        ]
+      }
+    },
+    "B-105": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "paired GitHub runner executions with cache on and off",
+      "action": "Owner runs the same lane under both cache settings on the same runner and compares total duration.",
+      "artifact": "artifacts/d03/B105-cache-comparison.json",
+      "command": "set -euo pipefail; mkdir -p artifacts/d03; test \"${OWNER_APPROVED_LANE_DISPATCH:?set OWNER_APPROVED_LANE_DISPATCH=1 for the approved paired lane}\" = 1; export D03_SAMPLE_COUNT=6; workflow=\"perf-production-evidence.yml\"; test \"$workflow\" = \"perf-production-evidence.yml\"; grep -Fq 'python3 scripts/collect_b105_same_lane.py' \".github/workflows/$workflow\"; expected_sha=\"$(gh api repos/HuGR-Labs/corelink-server/commits/main --jq .sha)\"; [[ \"$expected_sha\" =~ ^[0-9a-f]{40}$ ]]; dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; gh workflow run perf-production-evidence.yml --ref main -f tenant_id=\"${CORELINK_PERF_TENANT:?}\" -f worker_script=\"${CORELINK_PROD_WORKER_SCRIPT:?}\" -f confirm=collect-production-evidence; run_id=\"\"; for attempt in $(seq 1 30); do run_candidates=\"$(gh run list --workflow \"$workflow\" --limit 20 --json databaseId,createdAt,event,headBranch,headSha --jq 'map(select(.event == \"workflow_dispatch\" and .headBranch == \"main\"))')\"; run_id=\"$(jq -r --arg started \"$dispatch_started_at\" --arg expected_sha \"$expected_sha\" 'map(select(.createdAt >= $started and .headSha == $expected_sha)) | .[0].databaseId // empty' <<<\"$run_candidates\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; timeout 900s gh run watch \"$run_id\"; run_meta=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,workflowName,headBranch,headSha,event,createdAt)\"; jq -e --arg workflow_name \"perf-production-evidence\" --arg started \"$dispatch_started_at\" --arg expected_sha \"$expected_sha\" '.status == \"completed\" and .conclusion == \"success\" and .workflowName == $workflow_name and .event == \"workflow_dispatch\" and .headBranch == \"main\" and .headSha == $expected_sha and .createdAt >= $started' <<<\"$run_meta\" >/dev/null; download_dir=\"$(mktemp -d)\"; gh run download \"$run_id\" --name \"b102-b108-owner-evidence-$run_id\" --dir \"$download_dir\"; artifact_source=\"$(find \"$download_dir\" -type f -name corelink-performance-evidence.v2.json -print -quit)\"; test -n \"$artifact_source\"; tee artifacts/d03/B105-cache-comparison.json < \"$artifact_source\" >/dev/null; test -s artifacts/d03/B105-cache-comparison.json; jq -e '.schema == \"corelink.performance-evidence.v2\" and (.items[\"B-105\"].pairs | length) == 6 and all(.items[\"B-105\"].pairs[]; .control.cache_mode == \"disabled\" and .treatment.cache_mode == \"enabled\")' artifacts/d03/B105-cache-comparison.json >/dev/null; python3 scripts/verify_b102_b108_evidence.py --packet artifacts/d03/B105-cache-comparison.json --expect open >/dev/null; rm -rf \"$download_dir\"",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B105",
+        "profiles": [],
+        "sample_count": 6,
+        "required": [
+          "perf-production-evidence.yml",
+          "collect_b105_same_lane.py",
+          "expected_sha",
+          "gh api repos/HuGR-Labs/corelink-server/commits/main",
+          "run_id",
+          "gh run view",
+          "gh run download",
+          "b102-b108-owner-evidence-",
+          "corelink-performance-evidence.v2.json",
+          "cache_mode",
+          "disabled",
+          "enabled",
+          "B105-cache-comparison.json",
+          "createdAt",
+          "dispatch_started_at",
+          "headSha",
+          ".headSha == $expected_sha",
+          "verify_b102_b108_evidence.py --packet",
+          "--expect open"
+        ],
+        "safety": [
+          "--ref main",
+          "OWNER_APPROVED_LANE_DISPATCH=1",
+          "status",
+          "completed"
+        ],
+        "forbidden": [
+          "release-slsa3.yml",
+          "--force"
+        ]
+      }
+    },
+    "B-106": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "cold production credential and 30-second KV cache expiry",
+      "action": "Owner sends authenticated cold requests after at least 61 seconds idle and records Server-Timing auth=d1.",
+      "artifact": "artifacts/d03/B106-cold-auth-timing.json",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_PROBE:?set OWNER_APPROVED_PROBE=1 for the approved cold PAT}\" = 1; export D03_SAMPLE_COUNT=2; : > artifacts/d03/B106-cold-auth-timing.json; grep -Fq '30-second KV revocation backstop' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; grep -Fq 'at least 61 seconds' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; grep -Fq 'minted_at_epoch' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; grep -Fq 'unused_since_epoch' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; grep -Fq 'observed_at_epoch' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; grep -Fq 'colo' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json; sleep_interval_seconds=61; test \"$sleep_interval_seconds\" -gt 60; for ordinal in 1 2; do sleep \"$sleep_interval_seconds\"; headers=\"$(mktemp)\"; curl --silent --show-error --output /dev/null --dump-header \"$headers\" --write-out \"sample=$ordinal status=%{http_code} wall_ms=%{time_total}\\n\" -H \"Authorization: Bearer ${CORELINK_COLD_PAT:?}\" -H 'X-Server-Timing-Wdb-Detail: on' \"$CORELINK_PROD_BASE/v1/customer/keys\" | tee -a artifacts/d03/B106-cold-auth-timing.json; tr -d '\\r' < \"$headers\" | grep -i '^server-timing:' | tee -a artifacts/d03/B106-cold-auth-timing.json; grep -Eiq 'server-timing:.*(d1|kv|l1)' \"$headers\"; rm -f \"$headers\"; done; awk -v interval=\"$sleep_interval_seconds\" 'BEGIN {print \"cold_interval_seconds=\" interval}' >> artifacts/d03/B106-cold-auth-timing.json; grep -Eiq 'sample=1|sample=2' artifacts/d03/B106-cold-auth-timing.json; grep -Fq 'revocation' docs/handoff/2026-09-05-owner-action-packets-b008-b154.json",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-106",
+        "profiles": [
+          "d1",
+          "kv",
+          "l1"
+        ],
+        "sample_count": 2,
+        "required": [
+          "cold",
+          "sleep 61",
+          "Server-Timing",
+          "30-second KV revocation backstop",
+          "at least 61 seconds",
+          "minted_at_epoch",
+          "unused_since_epoch",
+          "observed_at_epoch"
+        ],
+        "safety": [
+          "CORELINK_COLD_PAT",
+          "revocation",
+          "OWNER_APPROVED_PROBE=1"
+        ],
+        "forbidden": [
+          "TTL",
+          "KV_TTL",
+          "--fail"
+        ]
+      }
+    },
+    "B-107": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "dogfood PAT, approved tenant, and deployed production version",
+      "action": "Owner performs three sequential authenticated 1 KiB PUTs on /cargo/<tenant>/<key> within 60 seconds and records ostore, oaccounting, phase-sum/wall-clock checks, and deployed commit identity.",
+      "artifact": "artifacts/d03/B107-ostore-timing.json",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_PROBE:?set OWNER_APPROVED_PROBE=1 for the approved dogfood tenant}\" = 1; export D03_SAMPLE_COUNT=3; : > artifacts/d03/B107-ostore-timing.json; grep -Fq 'three sequential' docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md; grep -Fq '1 KiB' docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md; grep -Fq 'ostore' scripts/verify_d03_timing_artifact.py; grep -Fq 'oaccounting' scripts/verify_d03_timing_artifact.py; grep -Fq 'Server-Timing' scripts/verify_d03_timing_artifact.py; test -n \"${CORELINK_DEPLOYED_COMMIT:?set the deployed commit SHA}\"; echo \"deployed commit ${CORELINK_DEPLOYED_COMMIT}\" | tee -a artifacts/d03/B107-ostore-timing.json; start=\"$(date +%s)\"; deadline=$(( start + 75 )); for ordinal in 1 2 3; do test \"$(date +%s)\" -lt \"$deadline\"; headers=\"$(mktemp)\"; timeout 25s curl --connect-timeout 10 --max-time 20 --silent --show-error --output /dev/null --dump-header \"$headers\" --write-out \"ordinal=$ordinal status=%{http_code} bytes=%{size_upload} wall_s=%{time_total}\\n\" -H \"Authorization: Bearer ${CORELINK_DOGFOOD_PAT:?}\" -H 'Content-Type: application/octet-stream' -X PUT \"$CORELINK_PROD_BASE/cargo/${CORELINK_DOGFOOD_TENANT:?}/b107-${ordinal}\" --data-binary @<(head -c 1024 /dev/zero) | tee -a artifacts/d03/B107-ostore-timing.json; tr -d '\\r' < \"$headers\" | grep -i '^server-timing:' | tee -a artifacts/d03/B107-ostore-timing.json; rm -f \"$headers\"; done; elapsed=$(( $(date +%s) - start )); test \"$elapsed\" -le 60; test \"$(date +%s)\" -le \"$deadline\"; python3 scripts/verify_d03_timing_artifact.py --writes artifacts/d03/B107-ostore-timing.json | tee -a artifacts/d03/B107-ostore-timing.json; grep -Fq 'phase sum <= wall clock: PASS' artifacts/d03/B107-ostore-timing.json",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md#B-107",
+        "profiles": [
+          "ostore",
+          "oaccounting"
+        ],
+        "sample_count": 3,
+        "required": [
+          "/cargo/",
+          "1 KiB",
+          "Server-Timing",
+          "three sequential",
+          "phase sum",
+          "deployed commit"
+        ],
+        "safety": [
+          "-le 60",
+          "timeout 25s",
+          "--max-time 20",
+          "Authorization: Bearer",
+          "OWNER_APPROVED_PROBE=1",
+          "CORELINK_DEPLOYED_COMMIT"
+        ],
+        "forbidden": [
+          "/v1/customer/cas/probe",
+          "X-Server-Timing-Wdb-Detail",
+          "sqlite_master",
+          "DROP ",
+          "DELETE FROM"
+        ]
+      }
+    },
+    "B-114": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "cross-repository access to corelink-runners",
+      "action": "Owner runs the two documented grep checks in the corelink-runners clone and records both outputs.",
+      "artifact": "artifacts/d03/B114-runners-workflow-check.txt",
+      "command": "git -C ../corelink-runners grep -n 'workflow_dispatch\\|pull_request' .github/workflows/build-cf-container-images.yml > artifacts/d03/B114-runners-workflow-check.txt",
+      "verify_means": "parked"
+    },
+    "B-118": {
+      "disposition": "DONE",
+      "owner": "tl",
+      "dependency": "retired former OCI lane; independent release-SLSA and CAS signing paths",
+      "action": "Retain the local retirement gate and independent signer controls; do not restore the deleted workflow or infer an OCI signing run.",
+      "artifact": "scripts/verify_b118_retirement.py",
+      "command": "python3 scripts/verify_b118_retirement.py",
+      "verify_means": "done",
+      "evidence": "BACKLOG.md B-118 retirement record; changelog.d/1490-remove-cosign-sign.md; docs/campaigns/remediation/B-134-docker-shim-experiment.md RETIRED (B-118) row; release-slsa3.yml and cas_foundation.yml executable cosign sign-blob/verify-blob paths; .github/workflows/cosign-sign.yml absent"
+    },
+    "B-122": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "production remediated baseline and timing evidence",
+      "action": "Owner reruns the D-2 adapter/ledger timing queries against production and records the baseline delta.",
+      "artifact": "artifacts/d03/B122-adapter-timing.json",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_PROBE:?set OWNER_APPROVED_PROBE=1 for the approved deployed baseline}\" = 1; export D03_SAMPLE_COUNT=3; : > artifacts/d03/B122-adapter-timing.json; grep -Fq '1 KiB' docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md; grep -Fq 'B-102' docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md; grep -Fq 'B-107' docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md; grep -Fq 'ostore' scripts/verify_d03_timing_artifact.py; grep -Fq 'oaccounting' scripts/verify_d03_timing_artifact.py; grep -Fq 'phase sum' scripts/verify_d03_timing_artifact.py; test -n \"${CORELINK_DEPLOYED_COMMIT:?set the deployed commit SHA}\"; echo \"deployed commit ${CORELINK_DEPLOYED_COMMIT}\" | tee -a artifacts/d03/B122-adapter-timing.json; start=\"$(date +%s)\"; deadline=$(( start + 75 )); for ordinal in 1 2 3; do test \"$(date +%s)\" -lt \"$deadline\"; headers=\"$(mktemp)\"; timeout 25s curl --connect-timeout 10 --max-time 20 --silent --show-error --output /dev/null --dump-header \"$headers\" --write-out \"ordinal=$ordinal status=%{http_code} bytes=%{size_upload} wall_s=%{time_total}\\n\" -H \"Authorization: Bearer ${CORELINK_DOGFOOD_PAT:?}\" -H 'Content-Type: application/octet-stream' -X PUT \"$CORELINK_PROD_BASE/cargo/${CORELINK_DOGFOOD_TENANT:?}/b122-${ordinal}\" --data-binary @<(head -c 1024 /dev/zero) | tee -a artifacts/d03/B122-adapter-timing.json; tr -d '\\r' < \"$headers\" | grep -i '^server-timing:' | tee -a artifacts/d03/B122-adapter-timing.json; rm -f \"$headers\"; done; elapsed=$(( $(date +%s) - start )); test \"$elapsed\" -le 60; test \"$(date +%s)\" -le \"$deadline\"; python3 scripts/verify_d03_timing_artifact.py --writes artifacts/d03/B122-adapter-timing.json | tee -a artifacts/d03/B122-adapter-timing.json; grep -Fq 'phase sum <= wall clock: PASS' artifacts/d03/B122-adapter-timing.json",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md#B-122",
+        "profiles": [
+          "B-102",
+          "B-107"
+        ],
+        "sample_count": 3,
+        "required": [
+          "deployed commit",
+          "ostore",
+          "oaccounting",
+          "phase sum"
+        ],
+        "safety": [
+          "1 KiB",
+          "-le 60",
+          "timeout 25s",
+          "--max-time 20",
+          "Authorization: Bearer",
+          "OWNER_APPROVED_PROBE=1"
+        ],
+        "forbidden": [
+          "sqlite_master",
+          "DROP ",
+          "DELETE FROM",
+          "X-Server-Timing-Wdb-Detail",
+          "/v1/customer/cas/probe"
+        ]
+      }
+    },
+    "B-125": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "production audit-drain batch and archive witness",
+      "action": "Owner executes a production drain above one batch, records sealed row/head counts, and links archive verification.",
+      "artifact": "artifacts/d03/B125-audit-drain.json",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_READONLY:?set OWNER_APPROVED_READONLY=1 for ephemeral read-only D1 access}\" = 1; export D03_SAMPLE_COUNT=1; grep -Fq 'D-1-audit-trail' reports/go-live/D-1-audit-trail.md; wrangler d1 execute corelink-prod --remote --command \"SELECT COUNT(*) AS arrivals, SUM(CASE WHEN emitted_at IS NOT NULL THEN 1 ELSE 0 END) AS sealed_rows, MAX(CASE WHEN emitted_at IS NULL THEN (strftime('%s','now')*1000)-enqueued_at ELSE 0 END) AS oldest_unsealed_age_ms, AVG(CASE WHEN emitted_at IS NOT NULL THEN emitted_at-enqueued_at END) AS seal_latency_ms, 512 AS batch_limit FROM audit_outbox WHERE enqueued_at >= (strftime('%s','now')-21600)*1000\" | tee artifacts/d03/B125-audit-drain.json; test -s artifacts/d03/B125-audit-drain.json; grep -Eiq 'arrivals|sealed_rows|oldest_unsealed|seal_latency|batch_limit' artifacts/d03/B125-audit-drain.json",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-125",
+        "profiles": [
+          "audit_outbox"
+        ],
+        "sample_count": 1,
+        "required": [
+          "D-1-audit-trail",
+          "arrivals",
+          "sealed_rows",
+          "oldest_unsealed",
+          "seal_latency",
+          "512"
+        ],
+        "safety": [
+          "--remote",
+          "SELECT",
+          "OWNER_APPROVED_READONLY=1"
+        ],
+        "forbidden": [
+          "AUDIT_DRAIN",
+          "DELETE ",
+          "UPDATE ",
+          "drain --run"
+        ]
+      }
+    },
+    "B-127": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "production D1 residency census and legal decision",
+      "action": "Owner reruns the D-2 residency queries against production and records the decision for the migration constraint.",
+      "artifact": "artifacts/d03/B127-residency-census.json",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_READONLY:?set OWNER_APPROVED_READONLY=1 for ephemeral read-only D1 access}\" = 1; export D03_SAMPLE_COUNT=1; wrangler d1 execute corelink-config-prod --remote --command \"SELECT CASE WHEN t.tenant_id IS NULL THEN 'unevaluable' WHEN o.region=t.primary_region THEN 'satisfied' ELSE 'violated' END AS residency_state, o.region, COUNT(*) AS rows, COUNT(DISTINCT t.tenant_id) AS tenants, SUM(CASE WHEN o.region='weur' THEN 1 ELSE 0 END) AS weur_rows, SUM(COUNT(*)) OVER () AS total_rows FROM audit_outbox o LEFT JOIN tenant t ON t.tenant_id=o.tenant_id GROUP BY residency_state,o.region\" | tee artifacts/d03/B127-residency-census.json; test -s artifacts/d03/B127-residency-census.json; grep -Eiq 'satisfied|violated|unevaluable|weur|tenants|total_rows|denominator' artifacts/d03/B127-residency-census.json; grep -Fq 'LEFT JOIN' docs/campaigns/remediation/work-packages/B091-B130.md",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/campaigns/remediation/work-packages/B091-B130.md#WP-B127",
+        "profiles": [
+          "satisfied",
+          "violated",
+          "unevaluable",
+          "weur"
+        ],
+        "sample_count": 1,
+        "required": [
+          "LEFT JOIN",
+          "audit_outbox",
+          "tenants",
+          "total_rows",
+          "denominator",
+          "corelink-config-prod"
+        ],
+        "safety": [
+          "--remote",
+          "SELECT",
+          "OWNER_APPROVED_READONLY=1"
+        ],
+        "forbidden": [
+          "sqlite_master",
+          "DELETE ",
+          "UPDATE ",
+          "DROP "
+        ]
+      }
+    },
+    "B-128": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "real focal runner failures and a completed classified workflow",
+      "action": "Owner dispatches the wrapper on storage/linker, code, and mixed failures and archives exit/classification pairs.",
+      "artifact": "artifacts/d03/B128-runner-classification.json",
+      "command": "gh workflow run backlog-verify.yml --ref main && gh run list --workflow backlog-verify.yml --limit 1 --json databaseId,conclusion > artifacts/d03/B128-runner-classification.json",
+      "verify_means": "parked"
+    },
+    "B-129": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "approved production Server-Timing window and deployed commit; residual must be <10%",
+      "action": "Owner collects authenticated diagnostic cache reads with SERVER_TIMING_WDB_DETAIL=on supplied by the deployed Worker environment and proves the reconciled residual below 10%.",
+      "artifact": "artifacts/d03/B129-production-residual.json",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_PROBE:?set OWNER_APPROVED_PROBE=1 for the approved diagnostic window}\" = 1; test \"${DEPLOYED_SERVER_TIMING_WDB_DETAIL:?set from the approved deployed Worker environment}\" = on; test -n \"${CORELINK_DEPLOYED_COMMIT:?set the deployed commit SHA}\"; test -n \"${CORELINK_DEPLOYED_REGION:?set the deployed region}\"; export D03_SAMPLE_COUNT=10; : > artifacts/d03/B129-production-residual.json; grep -Fq 'diagnostic' docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md; grep -Fq 'qtier+qdo+qbatch+qresid+qcontrol' docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md; grep -Fq 'ohop' scripts/verify_d03_timing_artifact.py; grep -Fq 'wdb' scripts/verify_d03_timing_artifact.py; grep -Fq 'origin' scripts/verify_d03_timing_artifact.py; grep -Fq 'phase sum' scripts/verify_d03_timing_artifact.py; window_started=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; echo \"SERVER_TIMING_WDB_DETAIL=on deployed flag\" | tee -a artifacts/d03/B129-production-residual.json; echo \"deployed commit ${CORELINK_DEPLOYED_COMMIT}\" | tee -a artifacts/d03/B129-production-residual.json; echo \"timestamp=$window_started region=${CORELINK_DEPLOYED_REGION}\" | tee -a artifacts/d03/B129-production-residual.json; deadline=$(( $(date +%s) + 240 )); for ordinal in $(seq 1 10); do test \"$(date +%s)\" -lt \"$deadline\"; headers=\"$(mktemp)\"; timeout 25s curl --connect-timeout 10 --max-time 20 --silent --show-error --output /dev/null --dump-header \"$headers\" --write-out \"sample=$ordinal status=%{http_code} wall_s=%{time_total}\\n\" -H \"Authorization: Bearer ${CORELINK_DOGFOOD_PAT:?}\" \"$CORELINK_PROD_BASE/cargo/${CORELINK_DOGFOOD_TENANT:?}/${CORELINK_DOGFOOD_CARGO_KEY:?}\" | tee -a artifacts/d03/B129-production-residual.json; tr -d '\\r' < \"$headers\" | grep -i '^server-timing:' | tee -a artifacts/d03/B129-production-residual.json; rm -f \"$headers\"; done; test \"$(date +%s)\" -le \"$deadline\"; python3 scripts/verify_d03_timing_artifact.py --reads artifacts/d03/B129-production-residual.json | tee -a artifacts/d03/B129-production-residual.json; grep -Fq 'residual_max_pct=<10%' artifacts/d03/B129-production-residual.json",
+      "verify_means": "parked",
+      "evidence": "Production residual must be <10% of total time on the deployed commit.",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md#B-129",
+        "profiles": [
+          "qtier",
+          "qdo",
+          "qbatch",
+          "qresid",
+          "qcontrol"
+        ],
+        "sample_count": 10,
+        "required": [
+          "SERVER_TIMING_WDB_DETAIL=on",
+          "deployed commit",
+          "timestamp",
+          "region",
+          "sample",
+          "residual",
+          "<10%",
+          "phase sum",
+          "ohop",
+          "wdb",
+          "origin",
+          "/cargo/"
+        ],
+        "safety": [
+          "diagnostic",
+          "Authorization: Bearer",
+          "OWNER_APPROVED_PROBE=1",
+          "DEPLOYED_SERVER_TIMING_WDB_DETAIL",
+          "timeout 25s",
+          "--max-time 20",
+          "deadline"
+        ],
+        "forbidden": [
+          "--fail",
+          "production config",
+          "X-Server-Timing-Wdb-Detail",
+          "/v1/customer/cas/probe"
+        ]
+      }
+    },
+    "B-134": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "real GitHub workflow runs and backend/image/webhook evidence",
+      "action": "Owner dispatches both observability workflows and records run IDs, conclusions, logs, image verification, and webhook acceptance.",
+      "artifact": "artifacts/d03/B134-observability-runs.json",
+      "command": "set -euo pipefail; test \"${OWNER_APPROVED_B134:?set OWNER_APPROVED_B134=1 for protected owner dispatch}\" = 1; export D03_SAMPLE_COUNT=2; : > artifacts/d03/B134-observability-runs.json; RELEASE_TAG=\"${RELEASE_TAG:?vMAJOR.MINOR.PATCH tag}\"; grep -Eq '^v[0-9]+\\.[0-9]+\\.[0-9]+$' <<<\"$RELEASE_TAG\"; dispatch_and_wait() { workflow=\"$1\"; ref=\"$2\"; dispatch_started_at=\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"; expected_sha=\"$(gh api \"repos/HuGR-Labs/corelink-server/commits/$ref\" --jq .sha)\"; test -n \"$expected_sha\"; gh workflow run \"$workflow\" --ref \"$ref\"; run_id=\"\"; for attempt in $(seq 1 30); do run_id=\"$(gh run list --workflow \"$workflow\" --limit 20 --json databaseId,createdAt,event,headBranch,headSha --jq \"map(select(.event == \\\"workflow_dispatch\\\" and .headBranch == \\\"$ref\\\" and .headSha == \\\"$expected_sha\\\" and .createdAt >= \\\"$dispatch_started_at\\\")) | .[0].databaseId // empty\")\"; test -n \"$run_id\" && break; sleep 2; done; test -n \"$run_id\"; watch_rc=0; timeout 900s gh run watch \"$run_id\" || watch_rc=$?; run_json=\"$(gh run view \"$run_id\" --json databaseId,status,conclusion,event,headBranch,headSha,workflowName)\"; jq -c --arg workflow \"$workflow\" '. + {workflow:$workflow}' <<<\"$run_json\" >> artifacts/d03/B134-observability-runs.json; gh run view \"$run_id\" --log >> artifacts/d03/B134-observability-runs.json; jq -e --arg ref \"$ref\" --arg sha \"$expected_sha\" '.status == \"completed\" and .conclusion != null and .event == \"workflow_dispatch\" and .headBranch == $ref and .headSha == $sha' <<<\"$run_json\" >/dev/null; test \"$watch_rc\" -eq 0; }; dispatch_and_wait smoke-install.yml main; dispatch_and_wait cosign-sign.yml \"$RELEASE_TAG\"; python3 scripts/check_b134_observability.py --root . | tee -a artifacts/d03/B134-observability-runs.json; grep -Eiq 'docker info|image_digest|Rekor|webhook|UNMEASURED' artifacts/d03/B134-observability-runs.json; grep -Fq 'workflow_dispatch' .github/workflows/cosign-sign.yml; grep -Fq 'corelink' .github/workflows/smoke-install.yml",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json#B-134",
+        "profiles": [
+          "smoke-install.yml",
+          "cosign-sign.yml"
+        ],
+        "sample_count": 2,
+        "required": [
+          "docker info",
+          "image_digest",
+          "Rekor",
+          "webhook",
+          "UNMEASURED",
+          "headBranch",
+          "headSha",
+          "event",
+          "expected_sha"
+        ],
+        "safety": [
+          "workflow_dispatch",
+          "corelink",
+          "OWNER_APPROVED_B134=1"
+        ],
+        "forbidden": [
+          "codeql.yml",
+          "secrets-drift.yml",
+          "--force"
+        ]
+      }
+    },
+    "B-135": {
+      "disposition": "DONE",
+      "owner": "tl",
+      "dependency": "redacted exact receipt for the delivered corelink-runners PR #561 tree",
+      "action": "Retain the exact tested-head, tested-tree, merge-commit, and merge-tree receipt; do not infer image publication, repin, or rollout closure.",
+      "artifact": "docs/campaigns/remediation/B-135-corelink-runners-closure.md",
+      "command": "python3 scripts/check_b135_cross_repo.py && bash scripts/test_b135_cross_repo.sh",
+      "verify_means": "done",
+      "evidence": "docs/campaigns/remediation/B-135-corelink-runners-closure.md; tested_head=d8124b1ab89cf6afb08682442e94c4f4d18c6ba8; tested_tree=d9cadd3741c77bb58d7162922f1510ded41c844f; merge_commit=ec9b6d69dbb1f3bd64ef4f9a4ce7e9d9100e69c1; merge_tree=d9cadd3741c77bb58d7162922f1510ded41c844f; pull_request trigger, secretless build-only validation, and removed unconsumed labels are recorded."
+    },
+    "B-138": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "corelink-runners owner and repository-scoped token",
+      "action": "Owner completes the documented decision ladder in the sibling repository and attaches the selected evidence.",
+      "artifact": "artifacts/d03/B138-runners-decision.json",
+      "command": "git -C ../corelink-runners status --short --branch > artifacts/d03/B138-runners-decision.json",
+      "verify_means": "parked"
+    },
+    "B-139": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "D03 Semgrep dispatch, ERROR triage, and Advanced Security upload availability",
+      "action": "Owner runs the bundle, retains both SARIF plus report, triages ERROR findings, and records uploaded or unavailable_or_unverified status.",
+      "artifact": "artifacts/d03/semgrep-b139-report.json",
+      "command": "gh workflow run semgrep.yml --ref main && gh run list --workflow semgrep.yml --limit 1 --json databaseId,conclusion > artifacts/d03/semgrep-b139-report.json",
+      "verify_means": "parked"
+    },
+    "B-142": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "real CodeQL/secrets-drift workflow runs on the canonical runner",
+      "action": "Owner dispatches the two jobs and watchdogs, then archives their conclusions and runner labels.",
+      "artifact": "artifacts/d03/B142-security-workflows.json",
+      "command": "gh workflow run codeql.yml --ref main && gh workflow run secrets-drift.yml --ref main && gh run list --limit 2 --json databaseId,conclusion > artifacts/d03/B142-security-workflows.json",
+      "verify_means": "parked"
+    },
+    "B-152": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "retained GitHub Actions job/step timing records",
+      "action": "Owner retrieves the recent failure-rate window, compares affected steps, and records the causal diagnosis.",
+      "artifact": "artifacts/d03/B152-actions-rate.json",
+      "command": "gh run list --limit 100 --json databaseId,name,conclusion,createdAt > artifacts/d03/B152-actions-rate.json",
+      "verify_means": "parked"
+    },
+    "B-250": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "authorized GitHub API refresh and stale BuildFailed emitter identification",
+      "action": "Owner refreshes the closed 2026-09-04..06 deleted-run census, preserves IDs/timestamps, and records the emitter fix.",
+      "artifact": "docs/handoff/2026-09-06-b250-deleted-workflow-census.json",
+      "command": "gh api repos/HuGR-Labs/corelink-server/actions/runs --paginate > docs/handoff/2026-09-06-b250-deleted-workflow-census.json",
+      "verify_means": "parked"
+    },
+    "B-251": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "production/opt-in 1,000-sample p99 probe and D02 seed/blob identity",
+      "action": "Owner runs the ignored real-latency probe, records p99 <=5 ms, and compares seed/failure/blob to D02.",
+      "artifact": "artifacts/d03/B251-latency-probe.json",
+      "command": "set -euo pipefail; export D03_SAMPLE_COUNT=1000 B251_ALLOW_IGNORED_PROBE=1; : \"${B251_ALLOW_IGNORED_PROBE:?opt-in required}\"; test -n \"${B251_OBSERVED_SEED:?provide observed seed identity}\"; test -n \"${B251_OBSERVED_FAILURE:?provide observed failure identity}\"; test -n \"${B251_OBSERVED_BLOB:?provide observed blob identity}\"; test -s reports/owner-actions/b251-d02-identity.json; jq -e --arg seed \"$B251_OBSERVED_SEED\" --arg failure \"$B251_OBSERVED_FAILURE\" --arg blob \"$B251_OBSERVED_BLOB\" '(.source == \"D02\" and (.seed|type==\"string\") and (.failure|type==\"string\") and (.blob|type==\"string\") and .seed == $seed and .failure == $failure and .blob == $blob)' reports/owner-actions/b251-d02-identity.json >/dev/null; jq -n '{measurement_mode:\"fixture_only\", production_latency_measured:false}' > artifacts/d03/B251-latency-probe.json; jq -e '.measurement_mode == \"fixture_only\" and .production_latency_measured == false' artifacts/d03/B251-latency-probe.json >/dev/null; grep -Fq 'InMemoryAtomicQuotaChecker' crates/corelink-billing/tests/quota_cas_prop_quota_cas.rs; grep -Fq 'checker_fixture' crates/corelink-billing/tests/quota_cas_prop_quota_cas.rs; python3 scripts/verify_b251_quota_cas_budget.py | tee artifacts/d03/B251-latency-probe.log; grep -Fq 'PASS' artifacts/d03/B251-latency-probe.log; grep -Fq 'deterministic' artifacts/d03/B251-latency-probe.log; grep -Fq 'seed' artifacts/d03/B251-latency-probe.log; grep -Fq 'failure' artifacts/d03/B251-latency-probe.log; grep -Fq 'blob' artifacts/d03/B251-latency-probe.log; cargo test -p corelink-billing --test quota_cas_prop_quota_cas real_latency_probe_under_5ms_p99 -- --ignored --exact --nocapture 2>&1 | tee -a artifacts/d03/B251-latency-probe.log; grep -Fq 'test result: ok' artifacts/d03/B251-latency-probe.log; grep -Fq 'p99_us=' artifacts/d03/B251-latency-probe.log; jq -e '.measurement_mode == \"fixture_only\" and .production_latency_measured == false' artifacts/d03/B251-latency-probe.json >/dev/null; grep -Fq 'D02' docs/campaigns/remediation/work-packages/B131-B167.md",
+      "verify_means": "parked",
+      "command_contract": {
+        "owner_packet": "docs/campaigns/remediation/work-packages/B131-B167.md#WP-B251",
+        "profiles": [
+          "deterministic",
+          "D02",
+          "fixture"
+        ],
+        "sample_count": 1000,
+        "required": [
+          "verify_b251_quota_cas_budget.py",
+          "--ignored",
+          "--exact",
+          "p99",
+          "seed",
+          "failure",
+          "blob",
+          "OBSERVED_SEED",
+          "OBSERVED_FAILURE",
+          "OBSERVED_BLOB",
+          "b251-d02-identity.json",
+          "fixture_only",
+          "production_latency_measured",
+          "InMemoryAtomicQuotaChecker"
+        ],
+        "safety": [
+          "opt-in",
+          "--nocapture",
+          "B251_ALLOW_IGNORED_PROBE=1"
+        ],
+        "forbidden": [
+          "--force",
+          "production quota redesign"
+        ]
+      }
+    },
+    "B-165": {
+      "disposition": "PARKED",
+      "owner": "tl",
+      "dependency": "authenticated production latency and deployed-version identity",
+      "action": "Owner runs the cold/warm production measurement described in the item and records the deployed commit.",
+      "artifact": "artifacts/d03/B165-production-latency.json",
+      "command": "mkdir -p artifacts/d03 && curl --fail -D - -H \"Authorization: Bearer $CORELINK_DOGFOOD_PAT\" \"$CORELINK_PROD_BASE/v1/customer/keys\" > artifacts/d03/B165-production-latency.json 2>&1",
+      "verify_means": "parked"
+    },
+    "B-253": {
+      "disposition": "DONE",
+      "owner": "tl",
+      "dependency": "none; current source and canonical spec bytes are the acceptance surface",
+      "action": "No external action; retain the focal mutation suite as the inverted guard.",
+      "artifact": "tests/test_b253_openapi_version.py",
+      "command": "python3 -m pytest -q tests/test_b253_openapi_version.py",
+      "evidence": "Current Rust authorities keep SPEC_VERSION=v1 separate from env!(CARGO_PKG_VERSION); canonical YAML and JSON carry 0.1.0, and all four focal tests kill authority conflation, removal, and major mutations."
+    }
   }
 }

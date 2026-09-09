@@ -1,4 +1,4 @@
-name: load-test-nightly (R3-prep)
+name: load-test (operator dispatch, R3-prep)
 
 # Runner: `corelink` (the Cloudflare container fabric — Ubuntu 24.04, apt
 # available, a datacenter IP). Previously pinned to a self-hosted Linux/X64
@@ -9,17 +9,17 @@ name: load-test-nightly (R3-prep)
 # own CPU does not — which is also why it was never suitable for the residential
 # macOS builder fleet.
 #
-# STILL dispatch-only, and the reason is now the TRUE one (B-029): there is no
+# Dispatch-only, and the reason is now the TRUE one (B-029): there is no
 # staging environment to fire at. `staging.corelink.humangr.com` does not
 # resolve, and the `staging` GitHub environment carries none of the secrets this
 # suite reads (K6_TARGET_HOST, K6_STAGING_PAT, …). The pre-flight target-host
 # check below therefore fail-closes every run until staging exists. Standing up
 # a staging deployment (or retiring the staging-targeted suites) is an owner
-# cost decision — see docs/internal/2026-08-24-owner-decision-brief.md. Re-add
-# the nightly `schedule` in the SAME change that wires the staging secrets;
-# enabling it before then only manufactures a nightly red on missing infra.
+# cost decision — see docs/internal/2026-08-24-owner-decision-brief.md. Any
+# future automation requires that owner decision together with staging secrets;
+# enabling it before then only manufactures a red run on missing infrastructure.
 #
-# R3-prep load test suite — nightly run against staging.
+# R3-prep load test suite — operator-dispatched run against staging.
 #
 # Five k6 scenarios cover the critical paths:
 #   1. signup orchestration burst
@@ -28,7 +28,7 @@ name: load-test-nightly (R3-prep)
 #   4. CAS hot path (PUT/GET)
 #   5. BYOK kill-switch stampede
 #
-# Does not block merges (it is dispatch-only, not a PR check), but the run
+# Does not block merges (it is dispatch-only, not a PR check), but a dispatched run
 # itself DOES go red: the `baseline-regression` job fails when a scenario's
 # MEDIAN `http_req_duration` regresses more than REGRESSION_THRESHOLD versus
 # the stored baseline. That baseline is persisted across runs in the GitHub
@@ -52,14 +52,8 @@ name: load-test-nightly (R3-prep)
 # SHA-pinned per ADR-S12-045 §6 tooling-pin policy.
 
 on:
-  # schedule disabled: the runner is fixed (now `corelink`), but there is no
-  # staging environment to load-test against — the pre-flight check fail-closes
-  # on the missing K6_TARGET_HOST secret every run. Re-add this cron in the SAME
-  # change that stands up staging and wires its secrets, never before:
-  #   schedule:
-  #     # Sundays 02:00 UTC — out of normal business + after the weekly
-  #     # staging redeploy completes (Sat 22:00 UTC).
-  #     - cron: '0 2 * * 0'
+  # No unattended schedule: the pre-flight check fail-closes without a staging
+  # target, and this workflow remains operator-dispatched pending provisioning.
   workflow_dispatch:
     inputs:
       scenarios:
@@ -73,7 +67,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: load-test-nightly
+  group: load-test-operator
   cancel-in-progress: false
 
 env:
@@ -84,6 +78,7 @@ env:
   # deliberately discard every stored baseline (e.g. after a staging resize
   # makes the old numbers meaningless).
   BASELINE_CACHE_PREFIX: load-test-k6-baseline-v1
+  K6_ALL_SCENARIOS: signup,webhook,dsr,cas,byok
   K6_EXPECTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
 
 jobs:
@@ -142,6 +137,7 @@ jobs:
 
       - name: pre-flight target host check
         if: steps.filter.outputs.enabled == 'true'
+        id: target_host
         env:
           K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}
         run: |
@@ -150,12 +146,16 @@ jobs:
             echo "::error::K6_TARGET_HOST secret missing in staging environment"
             exit 1
           fi
-          # Refuse anything that doesn't look like staging.
-          if [[ "$K6_TARGET_HOST" != *"staging."* && "$K6_TARGET_HOST" != *"dev."* ]]; then
-            echo "::error::K6_TARGET_HOST=$K6_TARGET_HOST is not a staging hostname"
+          # Normalize one explicitly permitted trailing slash, then require the
+          # exact owner-approved endpoint. No dev, API-prefixed, or path variant.
+          CANONICAL_TARGET='https://staging.corelink.humangr.com'
+          TARGET_HOST="${K6_TARGET_HOST%/}"
+          if [[ "$TARGET_HOST" != "$CANONICAL_TARGET" ]]; then
+            echo "::error::K6_TARGET_HOST must equal $CANONICAL_TARGET (optional trailing slash only)"
             exit 1
           fi
-          echo "Target: $K6_TARGET_HOST"
+          echo "target_host=$TARGET_HOST" >> "$GITHUB_OUTPUT"
+          echo "Target: $TARGET_HOST"
 
       - name: prepare results dir
         if: steps.filter.outputs.enabled == 'true'
@@ -165,7 +165,7 @@ jobs:
         if: steps.filter.outputs.enabled == 'true'
         id: run_k6
         env:
-          K6_TARGET_HOST:        ${{ secrets.K6_TARGET_HOST }}
+          K6_TARGET_HOST:        ${{ steps.target_host.outputs.target_host }}
           K6_AUTH_BEARER:        ${{ secrets.K6_STAGING_PAT }}
           K6_STRIPE_WHSEC:       ${{ secrets.K6_STAGING_STRIPE_WHSEC }}
           K6_MFA_STUB_TOKEN:     ${{ secrets.K6_STAGING_MFA_STUB }}
@@ -216,7 +216,25 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: classify scenario population
+        id: population
+        run: |
+          set -euo pipefail
+          canonicalize() {
+            tr ',' '\n' <<<"$1" | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//; s/[[:space:]]*$//' | sort -u | paste -sd, -
+          }
+          REQUESTED="$(canonicalize "${K6_EXPECTED_SCENARIOS}")"
+          ALL="$(canonicalize "${K6_ALL_SCENARIOS}")"
+          if [[ "${REQUESTED}" == "${ALL}" ]]; then
+            echo 'full=true' >> "$GITHUB_OUTPUT"
+            echo "complete five-scenario population: ${REQUESTED}"
+          else
+            echo 'full=false' >> "$GITHUB_OUTPUT"
+            echo "subset dispatch (${REQUESTED}) is diagnostic-only: non-gating and non-publishing"
+          fi
+
       - name: download current run artifacts
+        if: steps.population.outputs.full == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: k6-*-${{ github.run_id }}
@@ -230,6 +248,7 @@ jobs:
       # most recently saved baseline, which is the point.
       - name: restore stored baseline
         id: baseline-restore
+        if: steps.population.outputs.full == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tests/load/baseline
@@ -238,6 +257,7 @@ jobs:
             ${{ env.BASELINE_CACHE_PREFIX }}-
 
       - name: report baseline provenance
+        if: steps.population.outputs.full == 'true'
         run: |
           set -euo pipefail
           if [[ -f tests/load/baseline/k6-baseline.json ]]; then
@@ -250,6 +270,7 @@ jobs:
 
       - name: compare median vs stored baseline
         id: compare
+        if: steps.population.outputs.full == 'true'
         env:
           EXPECTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
         run: |
@@ -264,13 +285,14 @@ jobs:
       # continue-on-error), so a regressing run never publishes a new
       # baseline — a regression cannot ratchet itself in by repeating.
       - name: save baseline for the next run
+        if: steps.population.outputs.full == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tests/load/baseline
           key: ${{ env.BASELINE_CACHE_PREFIX }}-${{ github.run_id }}
 
       - name: upload baseline artifact
-        if: always()
+        if: steps.population.outputs.full == 'true' && always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: k6-baseline-${{ github.run_id }}

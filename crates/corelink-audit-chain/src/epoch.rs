@@ -12,8 +12,11 @@
 //! from a write-only deployment secret/keyring.
 
 use core::fmt;
+use std::collections::{BTreeMap, BTreeSet};
 
 use blake3::Hasher;
+use serde::de::{self, MapAccess, Visitor};
+use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::chain::link_chain_hash_from_canonical;
@@ -96,6 +99,170 @@ impl Clone for LinkKey {
 impl fmt::Debug for LinkKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("LinkKey(<redacted>)")
+    }
+}
+
+/// Write-only deployment keyring indexed by the registered `link_key_id`.
+/// Key bytes never appear in serialized state or debug output and are wiped on
+/// drop. The signed epoch/registry runtime remains responsible for validating
+/// the selected id and commitment before cutover.
+#[derive(Clone, Default)]
+pub struct LinkKeyring(BTreeMap<u64, LinkKey>);
+
+/// Secret-bearing JSON string whose allocation is wiped when parsing exits.
+/// The custom visitor moves serde's owned string into [`Zeroizing`] before any
+/// validation or decoding can fail.
+struct RawLinkKey(Zeroizing<String>);
+
+impl<'de> Deserialize<'de> for RawLinkKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct RawLinkKeyVisitor;
+
+        impl<'de> Visitor<'de> for RawLinkKeyVisitor {
+            type Value = RawLinkKey;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a hexadecimal link key string")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(RawLinkKey(Zeroizing::new(value.to_owned())))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(RawLinkKey(Zeroizing::new(value)))
+            }
+        }
+
+        deserializer.deserialize_string(RawLinkKeyVisitor)
+    }
+}
+
+/// JSON object visitor that rejects duplicate member names after JSON escape
+/// decoding, before a map can silently overwrite the first value. This keeps
+/// `{"7": ..., "\\u0037": ...}` from becoming an ambiguous keyring.
+struct RawLinkKeyMap(BTreeMap<String, RawLinkKey>);
+
+impl<'de> Deserialize<'de> for RawLinkKeyMap {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct RawLinkKeyMapVisitor;
+
+        impl<'de> Visitor<'de> for RawLinkKeyMapVisitor {
+            type Value = RawLinkKeyMap;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a JSON object with unique link-key ids")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut seen = BTreeSet::new();
+                let mut entries = BTreeMap::new();
+                while let Some(id_text) = map.next_key::<String>()? {
+                    if !seen.insert(id_text.clone()) {
+                        return Err(de::Error::custom("duplicate link-key id"));
+                    }
+                    let raw_key = map.next_value::<RawLinkKey>()?;
+                    entries.insert(id_text, raw_key);
+                }
+                Ok(RawLinkKeyMap(entries))
+            }
+        }
+
+        deserializer.deserialize_map(RawLinkKeyMapVisitor)
+    }
+}
+
+/// Fail-closed errors for the JSON keyring boundary.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum LinkKeyringError {
+    /// The input is not a JSON object of string ids to string keys.
+    #[error("audit-chain keyring must be a JSON object of link-key-id to hex key")]
+    InvalidShape,
+    /// A key id is not a positive unsigned decimal integer.
+    #[error("audit-chain keyring contains invalid link-key id {0}")]
+    InvalidKeyId(String),
+    /// A key is not exactly 32 bytes represented as lower-case hexadecimal.
+    #[error("audit-chain keyring entry {0} is not 64 lower-case hex characters")]
+    InvalidKey(String),
+    /// No key entries were supplied.
+    #[error("audit-chain keyring must contain at least one key")]
+    Empty,
+}
+
+impl LinkKeyring {
+    /// Parse the write-only JSON representation atomically. Any malformed
+    /// entry rejects the whole keyring; a partial map must never fall back to
+    /// the legacy unkeyed epoch.
+    pub fn parse_json(raw: &str) -> Result<Self, LinkKeyringError> {
+        let entries = serde_json::from_str::<RawLinkKeyMap>(raw)
+            .map_err(|_| LinkKeyringError::InvalidShape)?;
+        if entries.0.is_empty() {
+            return Err(LinkKeyringError::Empty);
+        }
+        let mut keyring = Self::default();
+        for (id_text, raw_key) in entries.0 {
+            let hex_key = raw_key.0;
+            let id = id_text
+                .parse::<u64>()
+                .ok()
+                .filter(|id| *id > 0)
+                .ok_or_else(|| LinkKeyringError::InvalidKeyId(id_text.clone()))?;
+            if hex_key.len() != 64
+                || !hex_key
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            {
+                return Err(LinkKeyringError::InvalidKey(id_text));
+            }
+            let mut bytes = Zeroizing::new([0_u8; 32]);
+            hex::decode_to_slice(hex_key.as_bytes(), bytes.as_mut())
+                .map_err(|_| LinkKeyringError::InvalidKey(id_text.clone()))?;
+            if keyring.0.insert(id, LinkKey::from_bytes(*bytes)).is_some() {
+                return Err(LinkKeyringError::InvalidKey(id_text));
+            }
+        }
+        Ok(keyring)
+    }
+
+    #[must_use]
+    /// Look up write-only key material by its registered id.
+    pub fn get(&self, link_key_id: u64) -> Option<&LinkKey> {
+        self.0.get(&link_key_id)
+    }
+
+    #[must_use]
+    /// Return the number of registered keys without exposing key material.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[must_use]
+    /// Return whether the keyring contains no entries.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl fmt::Debug for LinkKeyring {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LinkKeyring")
+            .field("key_count", &self.len())
+            .finish()
     }
 }
 
@@ -482,5 +649,48 @@ mod tests {
         let debug = format!("{key:?}");
         assert!(debug.contains("redacted"));
         assert!(!debug.contains("42"));
+    }
+
+    #[test]
+    fn keyring_parsing_is_atomic_and_redacted() {
+        let keyring = LinkKeyring::parse_json(&format!(r#"{{"7":"{}"}}"#, "ab".repeat(32)))
+            .expect("valid link-key id map");
+        assert_eq!(keyring.len(), 1);
+        assert!(keyring.get(7).is_some());
+        assert!(format!("{keyring:?}").contains("key_count"));
+        assert!(!format!("{keyring:?}").contains("abab"));
+        assert!(matches!(
+            LinkKeyring::parse_json(r#"{"7":"not-hex"}"#),
+            Err(LinkKeyringError::InvalidKey(_))
+        ));
+        assert!(matches!(
+            LinkKeyring::parse_json(
+                r#"{"0":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#
+            ),
+            Err(LinkKeyringError::InvalidKeyId(_))
+        ));
+        assert!(matches!(
+            LinkKeyring::parse_json(
+                r#"{"7":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#
+            ),
+            Err(LinkKeyringError::InvalidKey(_))
+        ));
+    }
+
+    #[test]
+    fn keyring_rejects_duplicate_and_escaped_equivalent_members() {
+        let key_a = "ab".repeat(32);
+        let key_b = "cd".repeat(32);
+        let duplicate = format!(r#"{{"7":"{key_a}","7":"{key_b}"}}"#);
+        assert!(matches!(
+            LinkKeyring::parse_json(&duplicate),
+            Err(LinkKeyringError::InvalidShape)
+        ));
+
+        let escaped_equivalent = format!(r#"{{"7":"{key_a}","\u0037":"{key_b}"}}"#);
+        assert!(matches!(
+            LinkKeyring::parse_json(&escaped_equivalent),
+            Err(LinkKeyringError::InvalidShape)
+        ));
     }
 }

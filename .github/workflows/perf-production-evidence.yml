@@ -19,6 +19,9 @@ on:
 permissions:
   contents: read
   deployments: read
+  actions: read
+  id-token: write
+  attestations: write
 
 concurrency:
   group: perf-production-evidence-${{ inputs.tenant_id }}
@@ -41,14 +44,35 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Install pinned GitHub CLI verifier
+        run: |
+          set -euo pipefail
+          python3 scripts/install_pinned_gh.py --output "${RUNNER_TEMP}/corelink-gh/gh"
+
       - name: Fetch GitHub deployment identity
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_HOST: github.com
+          GH_CONFIG_DIR: ${{ runner.temp }}/corelink-gh-config
+          HOME: ${{ runner.temp }}/corelink-gh-home
+          CORELINK_GH_BIN: ${{ runner.temp }}/corelink-gh/gh
         run: |
           set -eu
-          gh api --paginate \
+          mkdir -p "${GH_CONFIG_DIR}" "${HOME}"
+          chmod 700 "${GH_CONFIG_DIR}" "${HOME}"
+          run_pinned_gh() {
+            /usr/bin/env -i \
+              "GH_TOKEN=${GH_TOKEN}" GH_HOST=github.com \
+              "GH_CONFIG_DIR=${GH_CONFIG_DIR}" "HOME=${HOME}" \
+              "XDG_CONFIG_HOME=${GH_CONFIG_DIR}" PATH=/usr/bin:/bin \
+              GITHUB_SERVER_URL=https://github.com GH_NO_UPDATE_NOTIFIER=1 \
+              GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 \
+              LANG=C LC_ALL=C NO_COLOR=1 "${CORELINK_GH_BIN}" "$@"
+          }
+          test "$(run_pinned_gh version | awk 'NR == 1 {print $3}')" = "2.79.0"
+          run_pinned_gh api --paginate \
             --slurp \
-            "repos/${GITHUB_REPOSITORY}/deployments?sha=${GITHUB_SHA}&environment=production&per_page=100" \
+            "repos/HuGR-Labs/corelink-server/deployments?sha=${GITHUB_SHA}&environment=production&per_page=100" \
             > "${RUNNER_TEMP}/github-deployments.json"
 
       - name: Fetch Cloudflare deployment identity (redacted output)
@@ -67,9 +91,40 @@ jobs:
           # The response is used only to bind commit/id and is never uploaded.
           chmod 600 "${RUNNER_TEMP}/cloudflare-deployments.json"
 
+      - name: Resolve GitHub run start timestamp
+        id: github-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_HOST: github.com
+          GH_CONFIG_DIR: ${{ runner.temp }}/corelink-gh-config
+          HOME: ${{ runner.temp }}/corelink-gh-home
+          CORELINK_GH_BIN: ${{ runner.temp }}/corelink-gh/gh
+        run: |
+          set -euo pipefail
+          mkdir -p "${GH_CONFIG_DIR}" "${HOME}"
+          chmod 700 "${GH_CONFIG_DIR}" "${HOME}"
+          run_pinned_gh() {
+            /usr/bin/env -i \
+              "GH_TOKEN=${GH_TOKEN}" GH_HOST=github.com \
+              "GH_CONFIG_DIR=${GH_CONFIG_DIR}" "HOME=${HOME}" \
+              "XDG_CONFIG_HOME=${GH_CONFIG_DIR}" PATH=/usr/bin:/bin \
+              GITHUB_SERVER_URL=https://github.com GH_NO_UPDATE_NOTIFIER=1 \
+              GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 \
+              LANG=C LC_ALL=C NO_COLOR=1 "${CORELINK_GH_BIN}" "$@"
+          }
+          test "$(run_pinned_gh version | awk 'NR == 1 {print $3}')" = "2.79.0"
+          run_started_at="$(run_pinned_gh api \
+            "repos/HuGR-Labs/corelink-server/actions/runs/${GITHUB_RUN_ID}" \
+            --jq '.run_started_at')"
+          test -n "${run_started_at}"
+          printf 'started_at=%s\n' "${run_started_at}" >> "${GITHUB_OUTPUT}"
+
       - name: Build immutable run context
         env:
           TENANT_ID: ${{ inputs.tenant_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_RUN_STARTED_AT: ${{ steps.github-run.outputs.started_at }}
+          GITHUB_REF: ${{ github.ref }}
         run: |
           set -eu
           python3 scripts/collect_b102_b108_context.py \
@@ -108,6 +163,57 @@ jobs:
           set -eu
           python3 scripts/collect_b105_same_lane.py "${RUNNER_TEMP}/b105-lane.json"
 
+      - name: Build exact B-106 attestation subject
+        run: |
+          set -euo pipefail
+          python3 scripts/build_b106_attestation_subject.py \
+            --context "${RUNNER_TEMP}/evidence-context.json" \
+            --measurements "${RUNNER_TEMP}/b102-b107-measurements.json" \
+            --output "${RUNNER_TEMP}/b106-cold-attestation.json"
+
+      - name: Attest exact B-106 evidence subject
+        id: attest-b106
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: ${{ runner.temp }}/b106-cold-attestation.json
+          github-token: ${{ github.token }}
+
+      - name: Verify B-106 attestation identity and subject
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_HOST: github.com
+          GH_CONFIG_DIR: ${{ runner.temp }}/corelink-gh-config
+          HOME: ${{ runner.temp }}/corelink-gh-home
+          CORELINK_GH_BIN: ${{ runner.temp }}/corelink-gh/gh
+          B106_SUBJECT: ${{ runner.temp }}/b106-cold-attestation.json
+          B106_BUNDLE: ${{ steps.attest-b106.outputs.bundle-path }}
+          B106_VERIFICATION: ${{ runner.temp }}/b106-attestation-verification.json
+        run: |
+          set -euo pipefail
+          mkdir -p "${GH_CONFIG_DIR}" "${HOME}"
+          chmod 700 "${GH_CONFIG_DIR}" "${HOME}"
+          run_pinned_gh() {
+            /usr/bin/env -i \
+              "GH_TOKEN=${GH_TOKEN}" GH_HOST=github.com \
+              "GH_CONFIG_DIR=${GH_CONFIG_DIR}" "HOME=${HOME}" \
+              "XDG_CONFIG_HOME=${GH_CONFIG_DIR}" PATH=/usr/bin:/bin \
+              GITHUB_SERVER_URL=https://github.com GH_NO_UPDATE_NOTIFIER=1 \
+              GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 \
+              LANG=C LC_ALL=C NO_COLOR=1 "${CORELINK_GH_BIN}" "$@"
+          }
+          test "$(run_pinned_gh version | awk 'NR == 1 {print $3}')" = "2.79.0"
+          test -s "${B106_BUNDLE}"
+          run_pinned_gh attestation verify "${B106_SUBJECT}" \
+            --repo HuGR-Labs/corelink-server \
+            --bundle "${B106_BUNDLE}" \
+            --predicate-type https://slsa.dev/provenance/v1 \
+            --cert-identity "https://github.com/HuGR-Labs/corelink-server/.github/workflows/perf-production-evidence.yml@${GITHUB_REF}" \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com \
+            --signer-digest "${GITHUB_SHA}" \
+            --source-digest "${GITHUB_SHA}" \
+            --source-ref "${GITHUB_REF}" \
+            --format json > "${B106_VERIFICATION}"
+
       - name: Join canonical v2 evidence packet
         run: |
           set -eu
@@ -115,12 +221,20 @@ jobs:
             --context "${RUNNER_TEMP}/evidence-context.json" \
             --measurements "${RUNNER_TEMP}/b102-b107-measurements.json" \
             --b105 "${RUNNER_TEMP}/b105-lane.json" \
+            --b106-attestation-subject "${RUNNER_TEMP}/b106-cold-attestation.json" \
+            --b106-attestation-bundle "${{ steps.attest-b106.outputs.bundle-path }}" \
+            --b106-attestation-verification "${RUNNER_TEMP}/b106-attestation-verification.json" \
             --root "${GITHUB_WORKSPACE}" \
             --output "${RUNNER_TEMP}/corelink-performance-evidence.v2.json"
 
       - name: Verify canonical packet (fail closed; B-102..B-107 remain open)
+        env:
+          CORELINK_GH_BIN: ${{ runner.temp }}/corelink-gh/gh
+          GH_TOKEN: ${{ github.token }}
+          GH_HOST: github.com
         run: |
           set -eu
+          unset GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GITHUB_TOKEN
           python3 scripts/verify_b102_b108_evidence.py \
             --packet "${RUNNER_TEMP}/corelink-performance-evidence.v2.json" \
             --expect open

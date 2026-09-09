@@ -50,7 +50,20 @@ jobs:
       - name: Prove BASE checker mutation teeth
         working-directory: _base
         run: python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py
+      - name: Prove BASE B-314 owner-gate mutation teeth
+        working-directory: _base
+        run: |
+          python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test
+          python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py
       - name: Execute trusted main semantic checks
         if: github.event_name == 'push' || github.event_name == 'schedule'
         working-directory: _base
         run: python3 scripts/backlog_verify.py --trusted-semantic
+      - name: Execute B-046 Object-Lock contract and mutation checks
+        if: github.event_name == 'push' || github.event_name == 'schedule'
+        working-directory: _base
+        run: |
+          python3 scripts/verify_b046_object_lock_probe.py
+          python3 -m unittest -q tests/test_verify_b046_object_lock_probe.py
+          test -f crates/corelink-container/src/routes/dsr/adapter_r2_cas_legalhold.rs
+          test -f migrations/d1/0102_cas_retention.sql

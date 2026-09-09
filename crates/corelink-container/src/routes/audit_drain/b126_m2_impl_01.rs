@@ -12,6 +12,10 @@ pub struct AuditDrainState {
     signing_seed: Option<Arc<Zeroizing<[u8; 32]>>>,
     /// The Ed25519 key id stamped into `audit_chain_head.signing_key_id`.
     signing_key_id: u64,
+    /// Forwarded write-only link keys retained in zeroizing memory. The
+    /// signed epoch/ledger runtime is intentionally parked until cutover;
+    /// legacy sealing below never consults this map.
+    link_keyring: Option<Arc<LinkKeyring>>,
     /// SECURE DEFAULT `false`: with a seed configured, a resumed head carrying a
     /// NULL signature or a foreign `signing_key_id` is UNVERIFIABLE and treated as
     /// TAMPER (fail-CLOSED) — an insider with D1 write (but no seed) cannot strip
@@ -48,6 +52,10 @@ impl std::fmt::Debug for AuditDrainState {
                 &self.signing_seed.as_ref().map(|_| "<redacted>"),
             )
             .field("signing_key_id", &self.signing_key_id)
+            .field(
+                "link_keyring",
+                &self.link_keyring.as_ref().map(|keyring| keyring.len()),
+            )
             .field("trust_unsigned_resume", &self.trust_unsigned_resume)
             .field("batch_limit", &self.batch_limit)
             .field("lease_enabled", &self.lease_enabled)
@@ -125,6 +133,25 @@ fn resolve_key_id(dedicated: Option<String>, reused: Option<String>) -> u64 {
         .find(|s| !s.is_empty())
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(1)
+}
+
+/// Parse the forwarded B-054 write-only keyring without ever retaining raw
+/// JSON or key bytes in ordinary `String`/`Vec` state. Empty is the deliberate
+/// pre-cutover value emitted for an unset Worker secret; any non-empty malformed
+/// value unmounts the route rather than silently falling back to E0.
+fn load_link_keyring() -> Result<Option<Arc<LinkKeyring>>, String> {
+    let raw = match std::env::var("AUDIT_CHAIN_LINK_KEYS_JSON") {
+        Ok(raw) => raw,
+        Err(std::env::VarError::NotPresent) => return Ok(None),
+        Err(error) => return Err(format!("read AUDIT_CHAIN_LINK_KEYS_JSON: {error}")),
+    };
+    let raw = Zeroizing::new(raw);
+    if raw.trim().is_empty() {
+        return Ok(None);
+    }
+    LinkKeyring::parse_json(&raw)
+        .map(|keyring| Some(Arc::new(keyring)))
+        .map_err(|error| format!("parse AUDIT_CHAIN_LINK_KEYS_JSON: {error}"))
 }
 
 /// Map a stored partition region string to the attestation [`Region`] enum used
@@ -390,6 +417,13 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
     // but the head is NOT tamper-evident until a seed is provisioned.
     let signing_seed = load_signing_seed().map(Arc::new);
     let signing_key_id = signing_key_id_from_env();
+    let link_keyring = match load_link_keyring() {
+        Ok(keyring) => keyring,
+        Err(error) => {
+            tracing::warn!(error = %error, "audit/drain: malformed link keyring; route NOT mounted (fail-CLOSED)");
+            return None;
+        }
+    };
     if signing_seed.is_none() {
         tracing::warn!(
             "audit/drain: no AUDIT_CHAIN_SIGNING_SEED_HEX / ERASURE_ATTESTATION_SEED_HEX \
@@ -437,6 +471,7 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
         d1,
         signing_seed,
         signing_key_id,
+        link_keyring,
         trust_unsigned_resume,
         batch_limit,
         lease_enabled,

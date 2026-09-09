@@ -41,7 +41,7 @@ const ACTIVE_SUB_PROCESSORS: readonly SubProcessor[] = [
     vendor: "Cloudflare, Inc.",
     service: "Workers / R2 / D1 / DO / KV / Pages / Email",
     dataClasses: ["metadata", "encrypted-blobs", "audit-logs", "telemetry"],
-    regions: "Multi-region (per tenant primary_region pin)",
+    regions: "R2/DO tenant-pinned; D1 control-plane metadata global under SCC/TIA safeguards",
     dpaHref: "https://www.cloudflare.com/cloudflare-customer-dpa/",
     dpaLabel: "Cloudflare DPA",
   },

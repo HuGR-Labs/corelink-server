@@ -17,6 +17,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_WORKFLOW_BYTES = 300_000
@@ -225,6 +226,46 @@ class VerificationError(RuntimeError):
     pass
 
 
+def parse_workflow(workflow: str, lane: str) -> dict:
+    """Parse workflow YAML so comments or free-form text cannot populate a lane."""
+    try:
+        parsed = yaml.safe_load(workflow)
+    except yaml.YAMLError as error:
+        raise VerificationError(f"{lane}: invalid workflow YAML: {error}") from error
+    if not isinstance(parsed, dict):
+        raise VerificationError(f"{lane}: workflow root is not a mapping")
+    jobs = parsed.get("jobs")
+    if not isinstance(jobs, dict):
+        raise VerificationError(f"{lane}: workflow has no jobs mapping")
+    return parsed
+
+
+def workflow_events(parsed: dict) -> dict:
+    """Read GitHub's `on` key (PyYAML 1.1 may decode it as boolean True)."""
+    events = parsed.get("on", parsed.get(True, {}))
+    if events is None:
+        return {}
+    if not isinstance(events, dict):
+        raise VerificationError("workflow trigger block is not a mapping")
+    return events
+
+
+def assert_yaml_lane_shape(parsed: dict, lane: Lane) -> None:
+    jobs = parsed["jobs"]
+    job = jobs.get(lane.job)
+    if not isinstance(job, dict):
+        raise VerificationError(f"{lane.name}: expected executable job {lane.job!r}")
+    for marker in lane.workflow_markers:
+        if marker == "schedule:" and not isinstance(workflow_events(parsed).get("schedule"), list):
+            raise VerificationError(f"{lane.name}: missing YAML schedule trigger")
+        if marker == "workflow_dispatch:" and "workflow_dispatch" not in workflow_events(parsed):
+            raise VerificationError(f"{lane.name}: missing YAML workflow_dispatch trigger")
+        if marker == "cancel-in-progress: false":
+            concurrency = parsed.get("concurrency") or {}
+            if not isinstance(concurrency, dict) or concurrency.get("cancel-in-progress") is not False:
+                raise VerificationError(f"{lane.name}: missing YAML cancel-in-progress false")
+
+
 def read_documentation() -> dict[str, str]:
     """Read the B-113 prose surfaces that must agree with the live census."""
     paths = (BACKLOG, INTERNAL_PACKET, OWNER_PACKET)
@@ -398,6 +439,8 @@ def replace_in_job(workflow: str, job: str, marker: str, replacement: str) -> tu
 def verify(
     sources: dict[str, str] | None = None,
     documents: dict[str, str] | None = None,
+    *,
+    validate_yaml: bool = True,
 ) -> None:
     if sources is None:
         texts = {workflow: read_workflow(workflow) for workflow in EXPECTED_WORKFLOWS}
@@ -417,10 +460,14 @@ def verify(
     # Establish every job boundary before checking any body.  Without this
     # preflight, deleting a later YAML job could make its text appear inside a
     # sibling's body and produce a misleading rejection for the wrong lane.
+    parsed: dict[str, dict] = {}
     for lane in LANES:
         workflow = texts[lane.workflow]
         if not workflow:
             raise VerificationError(f"{lane.name}: empty workflow population")
+        if validate_yaml:
+            parsed.setdefault(lane.workflow, parse_workflow(workflow, lane.name))
+            assert_yaml_lane_shape(parsed[lane.workflow], lane)
         job_body(workflow, lane.job, lane.name)
     for lane in LANES:
         workflow = texts[lane.workflow]
@@ -462,7 +509,7 @@ def mutation_checks(sources: dict[str, str] | None = None) -> None:
             raise VerificationError(f"{lane.name}: mutation fixture could not remove job boundary")
         mutated[lane.workflow] = replaced
         try:
-            verify(mutated)
+            verify(mutated, validate_yaml=False)
         except VerificationError:
             pass
         else:
@@ -475,7 +522,7 @@ def mutation_checks(sources: dict[str, str] | None = None) -> None:
             if not changed:
                 raise VerificationError(f"{lane.name}: marker mutation is ambiguous: {marker!r}")
             try:
-                verify(mutated)
+                verify(mutated, validate_yaml=False)
             except VerificationError:
                 pass
             else:
@@ -489,7 +536,7 @@ def mutation_checks(sources: dict[str, str] | None = None) -> None:
                 )
             mutated[lane.workflow] = workflow.replace(marker, "", 1)
             try:
-                verify(mutated)
+                verify(mutated, validate_yaml=False)
             except VerificationError:
                 pass
             else:
@@ -511,7 +558,7 @@ def mutation_checks(sources: dict[str, str] | None = None) -> None:
         if not changed:
             raise VerificationError(f"{lane_name}: active-command bait mutation is ambiguous")
         try:
-            verify(mutated)
+            verify(mutated, validate_yaml=False)
         except VerificationError:
             pass
         else:
@@ -523,7 +570,7 @@ def mutation_checks(sources: dict[str, str] | None = None) -> None:
         "    # Keep negative probes independent:", "    needs: build\n    # Keep negative probes independent:", 1
     )
     try:
-        verify(dependent_negative)
+        verify(dependent_negative, validate_yaml=False)
     except VerificationError:
         pass
     else:
@@ -564,7 +611,7 @@ def mutation_checks(sources: dict[str, str] | None = None) -> None:
             raise VerificationError(f"{name}: prose mutation fixture is ambiguous")
         mutated_documents[path] = mutated_documents[path].replace(marker, replacement, 1)
         try:
-            verify(base, mutated_documents)
+            verify(base, mutated_documents, validate_yaml=False)
         except VerificationError:
             pass
         else:

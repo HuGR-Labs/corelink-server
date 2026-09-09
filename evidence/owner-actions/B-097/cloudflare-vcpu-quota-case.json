@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09T04:19:00Z",
+  "account_id_redacted": "6a1f...f5cd",
+  "case_id": null,
+  "requested_total_vcpu": null,
+  "current_total_vcpu": 1500,
+  "declared_reservation_vcpu": 1250,
+  "active_tenants_concurrent": null,
+  "provider_decision": "pending",
+  "effective_at": null,
+  "operator": "codex-readonly-probe",
+  "read_only_capture": {
+    "cloudchamber_account_endpoint": "GET /accounts/{account}/containers/me",
+    "provider_limit_confirmed": true,
+    "provider_response": {
+      "http_success": true,
+      "total_vcpu": 1500,
+      "vcpu_per_deployment": 4,
+      "total_memory_mib": 6291456,
+      "usage": null
+    },
+    "active_tenant_metric": "unavailable: CONFIG_DB activity is stale relative to capture and is not a concurrent-active metric",
+    "activity_readback": {
+      "database": "CONFIG_DB/prod",
+      "access": "remote-read-only",
+      "customer_audit_rows": 71,
+      "distinct_tenants_all_time": 16,
+      "last_customer_audit_ts_ms": 1784669020765,
+      "distinct_tenants_last_15m": 0,
+      "distinct_tenants_last_1h": 0,
+      "distinct_tenants_last_24h": 0,
+      "interpretation": "retained audit activity is stale; these aggregates are not a concurrent-active-tenant measurement"
+    },
+    "support_case": "not submitted; owner Cloudflare support/account session is required"
+  }
+}

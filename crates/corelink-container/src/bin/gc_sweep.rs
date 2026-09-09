@@ -41,8 +41,9 @@ async fn main() -> ExitCode {
         }
     };
     println!(
-        "gc_sweep mode={} tenant={} region={} run={}",
+        "gc_sweep mode={} observation_only={} tenant={} region={} run={}",
         config.mode.as_str(),
+        config.observation_only,
         config.tenant_id,
         config.region.as_str(),
         config

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import operator
 import re
 import shlex
@@ -25,6 +26,20 @@ WORKFLOW = ".github/workflows/load-test-nightly.yml"
 COMPARATOR = "scripts/load-test-baseline-check.py"
 OPERATOR_README = "tests/load/README.md"
 COMPARE_STEP = "compare median vs stored baseline"
+CANONICAL_STAGING_HOST = "staging.corelink.humangr.com"
+CANONICAL_STAGING_URL = f"https://{CANONICAL_STAGING_HOST}"
+STALE_STAGING_HOST = "api-staging.corelink.humangr.com"
+STAGING_HOST_VARIANTS = (
+    STALE_STAGING_HOST,
+    "api.staging.corelink.humangr.com",
+    "dev.corelink.humangr.com",
+)
+HOSTNAME_SOURCES = (
+    ".github/workflows/load-test-nightly.yml",
+    "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json",
+    "evidence/owner-actions/B-029/staging-load-gate.json",
+    "docs/internal/secrets-checklist.md",
+)
 EXPECTED_COMPARATOR = (
     "python3",
     "scripts/load-test-baseline-check.py",
@@ -476,6 +491,90 @@ def _raises(function: ast.AST, name: str) -> bool:
     )
 
 
+def _hostname_gaps(root: Path) -> list[str]:
+    """Require exact agreement across the executable B-029 target sources.
+
+    This validates naming only. It deliberately does not assert that staging
+    is deployed or reachable; the receipt remains the parked/unresolved proof.
+    """
+
+    gaps: list[str] = []
+    paths = {relative: root / relative for relative in HOSTNAME_SOURCES}
+    texts: dict[str, str] = {}
+    for relative, path in paths.items():
+        try:
+            texts[relative] = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            gaps.append(f"B-029 hostname source unreadable ({relative}): {exc}")
+
+    workflow = texts.get(WORKFLOW)
+    if workflow is not None:
+        target_match = re.search(
+            r"CANONICAL_TARGET\s*=\s*(['\"])(?P<url>[^'\"]+)\1", workflow
+        )
+        if target_match is None or target_match.group("url") != CANONICAL_STAGING_URL:
+            observed = target_match.group("url") if target_match else "missing"
+            gaps.append(
+                f"B-029 workflow target must equal {CANONICAL_STAGING_URL}; "
+                f"observed {observed}"
+            )
+        if 'TARGET_HOST="${K6_TARGET_HOST%/}"' not in workflow:
+            gaps.append("B-029 workflow must explicitly normalize one trailing slash")
+        if 'K6_TARGET_HOST:        ${{ steps.target_host.outputs.target_host }}' not in workflow:
+            gaps.append("B-029 runtime must consume the exact pre-flight target output")
+
+    packet_relative = "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json"
+    packet = texts.get(packet_relative)
+    if packet is not None:
+        try:
+            packet_data = json.loads(packet)
+            b029 = next(item for item in packet_data["items"] if item.get("id") == "B-029")
+            procedure = b029["procedure"][0]
+            match = re.search(r"for ([^ ]+) and the staging environment", procedure)
+            observed = match.group(1) if match else "missing"
+            if observed != CANONICAL_STAGING_HOST:
+                gaps.append(
+                    f"B-029 packet target must equal {CANONICAL_STAGING_HOST}; "
+                    f"observed {observed}"
+                )
+        except (KeyError, IndexError, StopIteration, TypeError, json.JSONDecodeError) as exc:
+            gaps.append(f"B-029 packet target is not parseable: {exc}")
+
+    receipt_relative = "evidence/owner-actions/B-029/staging-load-gate.json"
+    receipt = texts.get(receipt_relative)
+    if receipt is not None:
+        try:
+            observed = json.loads(receipt).get("target_host")
+        except json.JSONDecodeError as exc:
+            observed = f"unparseable ({exc})"
+        if observed != CANONICAL_STAGING_HOST:
+            gaps.append(
+                f"B-029 receipt target must equal {CANONICAL_STAGING_HOST}; "
+                f"observed {observed}"
+            )
+
+    checklist_relative = "docs/internal/secrets-checklist.md"
+    checklist = texts.get(checklist_relative)
+    if checklist is not None:
+        row = next(
+            (line for line in checklist.splitlines() if line.startswith("| 101 |")),
+            "",
+        )
+        urls = re.findall(r"https://[A-Za-z0-9.-]+", row)
+        observed = urls[0] if urls else "missing"
+        if observed != CANONICAL_STAGING_URL:
+            gaps.append(
+                f"B-029 checklist target must equal {CANONICAL_STAGING_URL}; "
+                f"observed {observed}"
+            )
+
+    for relative, text in texts.items():
+        for variant in STAGING_HOST_VARIANTS:
+            if variant in text:
+                gaps.append(f"B-029 hostname drift in {relative}: {variant}")
+    return gaps
+
+
 def assess(root: Path, *, expect: str) -> list[str]:
     gaps: list[str] = []
     workflow_path = root / WORKFLOW
@@ -487,6 +586,8 @@ def assess(root: Path, *, expect: str) -> list[str]:
         readme = readme_path.read_text(encoding="utf-8")
     except OSError as exc:
         return [f"instrument error: {exc}"]
+
+    gaps.extend(_hostname_gaps(root))
 
     # The gate must compare the current run with a prior cached baseline and
     # publish only after a successful comparison.  These checks are intentionally

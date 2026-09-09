@@ -23,6 +23,9 @@ on:
     paths:
       - 'tests/*.py'
       - 'scripts/**'
+      - 'BACKLOG.md'
+      - '.github/workflows/release-cli.yml'
+      - '.github/workflows/cosign-sign.yml'
       - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
       - 'docs/campaigns/remediation/work-packages/**'
       - 'requirements-ci.txt'
@@ -45,6 +48,9 @@ on:
     paths:
       - 'tests/*.py'
       - 'scripts/**'
+      - 'BACKLOG.md'
+      - '.github/workflows/release-cli.yml'
+      - '.github/workflows/cosign-sign.yml'
       - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
       - 'docs/campaigns/remediation/work-packages/**'
       - 'requirements-ci.txt'

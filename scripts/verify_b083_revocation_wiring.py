@@ -21,6 +21,7 @@ RUNTIME = ROOT / "crates/corelink-container/src/byok_revocation_runtime.rs"
 DETECTOR = ROOT / "crates/corelink-byok/src/byok_revocation/detector.rs"
 FOCAL = ROOT / "crates/corelink-byok/tests/byok_revocation_wiring.rs"
 MIGRATION = ROOT / "migrations/d1/0114_byok_revocation_customer_audit_atomic.sql"
+TEST_INCLUDE_MARKER = 'include!("byok_revocation_runtime/part-01.rs");'
 
 
 def require(haystack: str, needle: str, label: str) -> None:
@@ -122,6 +123,89 @@ def _mask_rust_comments_and_strings(source: str) -> str:
             else:
                 i += 1
     return "".join(out)
+
+
+def _active_test_include_count(source: str) -> int:
+    """Count executable ``include!`` calls for the revocation test module.
+
+    The comment/string masker removes comments and string bodies, leaving the
+    macro token visible only when it is executable.  The original source is
+    then consulted at that token to validate the macro's actual string path;
+    this prevents both ``// include!(...)`` and string-literal bait from being
+    accepted as the include boundary.
+    """
+    masked = _mask_rust_comments_and_strings(source)
+    call = re.compile(r"\binclude!\s*\(\s*")
+    literal = re.compile(
+        r'include!\s*\(\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*\)\s*;'
+    )
+    count = 0
+    for match in call.finditer(masked):
+        candidate = literal.match(source[match.start() :])
+        if not candidate or candidate.group(1) != TEST_INCLUDE_MARKER.split('"', 2)[1]:
+            continue
+        if _has_cfg_attribute_on_include(masked, match.start()):
+            raise AssertionError(
+                "required revocation test include must not be cfg-gated"
+            )
+        count += 1
+    return count
+
+
+def _has_cfg_attribute_on_include(masked: str, include_start: int) -> bool:
+    """Return whether an active ``cfg``/``cfg_attr`` directly gates an include.
+
+    ``masked`` has comments and string bodies replaced with spaces, so only
+    executable attributes remain visible.  We reject *any* cfg attribute on
+    this required include: a condition that is currently true can become
+    false under another build profile, while ``cfg(any())`` and ``cfg(test)``
+    are unconditionally compile-disabled for the production adapter.
+    """
+    attribute = re.compile(r"#\s*\[\s*(?:cfg|cfg_attr)\b")
+
+    def matching_bracket(start: int) -> int | None:
+        depth = 0
+        for index in range(start, include_start):
+            if masked[index] == "[":
+                depth += 1
+            elif masked[index] == "]":
+                depth -= 1
+                if depth == 0:
+                    return index + 1
+        return None
+
+    def only_attributes(start: int) -> bool:
+        index = start
+        while index < include_start:
+            while index < include_start and masked[index].isspace():
+                index += 1
+            if index == include_start:
+                return True
+            if masked.startswith("#[", index):
+                end = matching_bracket(index + 1)
+                if end is None:
+                    return False
+                index = end
+                continue
+            return False
+        return True
+
+    for match in attribute.finditer(masked, 0, include_start):
+        open_bracket = masked.find("[", match.start(), match.end())
+        end = matching_bracket(open_bracket) if open_bracket >= 0 else None
+        if end is not None and only_attributes(end):
+            return True
+    return False
+
+
+def _require_active_test_include(source: str) -> None:
+    """Require exactly one executable runtime/test include, not comment bait."""
+    count = _active_test_include_count(source)
+    if count != 1:
+        raise AssertionError(
+            "production/test include boundary must contain exactly one active include "
+            f"(found {count})"
+        )
 
 
 def _rust_string_literals(source: str) -> str:
@@ -378,6 +462,7 @@ def _verify_sqlite_trigger_semantics(migration: str) -> None:
 
 def verify(main: str, runtime: str, detector: str, focal: str, migration: str) -> None:
     runtime_production = runtime.split("#[cfg(test)]", 1)[0]
+    _require_active_test_include(runtime_production)
     main_code = _mask_rust_comments_and_strings(main)
     runtime_code = _mask_rust_comments_and_strings(runtime_production)
     detector_code = _mask_rust_comments_and_strings(detector)
@@ -450,14 +535,74 @@ def verify(main: str, runtime: str, detector: str, focal: str, migration: str) -
 
 
 def mutation_self_test(main: str, runtime: str, detector: str, focal: str, migration: str) -> None:
-    def insert_before_tests(source: str, bait: str) -> str:
-        marker = "#[cfg(test)]"
+    def insert_before_test_include(source: str, bait: str) -> str:
+        """Insert bait at the production/test include boundary.
+
+        The runtime adapter's tests live in the separately included
+        ``byok_revocation_runtime/part-01.rs`` file.  Looking for a local
+        ``#[cfg(test)]`` marker worked only while those tests happened to be
+        in this file; after the split, the mutation fixture failed before it
+        could exercise the verifier.  Keep the boundary assertion fail-closed
+        by anchoring to the executable include itself.
+        """
+        marker = TEST_INCLUDE_MARKER
         if marker not in source:
-            raise AssertionError("B083 mutation fixture lost the test boundary")
+            raise AssertionError("B083 mutation fixture lost the production/test include boundary")
         return source.replace(marker, bait + "\n" + marker, 1)
 
     inactive_population = runtime.replace("state IN ('active', 'partial')", "state IN ('inactive')", 1)
     mutations = {
+        "test-include-commented": (
+            main,
+            runtime.replace(TEST_INCLUDE_MARKER, "// " + TEST_INCLUDE_MARKER, 1),
+            detector,
+            focal,
+            migration,
+        ),
+        "test-include-string-bait": (
+            main,
+            runtime.replace(
+                TEST_INCLUDE_MARKER,
+                'const INCLUDE_BAIT: &str = "include!(\\"byok_revocation_runtime/part-01.rs\\");";',
+                1,
+            ),
+            detector,
+            focal,
+            migration,
+        ),
+        "test-include-cfg-any": (
+            main,
+            runtime.replace(
+                TEST_INCLUDE_MARKER,
+                "#[cfg(any())]\n" + TEST_INCLUDE_MARKER,
+                1,
+            ),
+            detector,
+            focal,
+            migration,
+        ),
+        "test-include-cfg-test": (
+            main,
+            runtime.replace(
+                TEST_INCLUDE_MARKER,
+                "#[cfg(test)]\n" + TEST_INCLUDE_MARKER,
+                1,
+            ),
+            detector,
+            focal,
+            migration,
+        ),
+        "test-include-cfg-attr-all-test": (
+            main,
+            runtime.replace(
+                TEST_INCLUDE_MARKER,
+                "#[cfg_attr(all(), cfg(test))]\n" + TEST_INCLUDE_MARKER,
+                1,
+            ),
+            detector,
+            focal,
+            migration,
+        ),
         "spawn-empty-future": (main.replace("tokio::spawn(detector.run_loop())", "tokio::spawn(async {})", 1), runtime, detector, focal, migration),
         "population-empty-state": (main, inactive_population, detector, focal, migration),
         "focal-source-removed": (main, runtime, detector, focal.replace(".with_key_source(source)", "", 1), migration),
@@ -467,10 +612,10 @@ def mutation_self_test(main: str, runtime: str, detector: str, focal: str, migra
         "recovery-errors-swallowed": (main, runtime, detector.replace("self.handle_ok_status(provider, &key_id).await?", "self.handle_ok_status(provider, &key_id).await", 1), focal, migration),
         # A required query/guard copied into comments or a fixture string is
         # not executable evidence and must not make the verifier green.
-        "sql-comment-bait": (main, insert_before_tests(inactive_population, "// state IN ('active', 'partial')"), detector, focal, migration),
+        "sql-comment-bait": (main, insert_before_test_include(inactive_population, "// state IN ('active', 'partial')"), detector, focal, migration),
         "sql-string-bait": (
             main,
-            insert_before_tests(
+            insert_before_test_include(
                 inactive_population,
                 'const STRING_BAIT: &str = "state IN (\'active\', \'partial\')";',
             ),

@@ -45,6 +45,17 @@ head_sampling_rate = 1
 #                                  skips/fails closed and cannot drain the chain.
 #                                  Bind it before deploy; the deploy workflow checks
 #                                  its NAME with scripts/verify-signup-worker-secrets.sh.
+#   STRIPE_SECRET_KEY             — optional B-089 provider credential. Keep
+#                                  unbound while SLA_CREDITS_ENABLED is false;
+#                                  the code gate remains required even when set.
+#   SLA_OBSERVATION_INGEST_KEY    — dedicated ≥32-character key for the
+#                                  provider-operated monthly SLO observation
+#                                  hand-off; never reuse a Stripe or worker key.
+#   PAGERDUTY_ROUTING_KEY         — canonical PagerDuty Events API v2 key for
+#                                  exhausted DSR dead-letter pages. The DLQ
+#                                  handler fails closed on delivery errors and
+#                                  logs an explicit not_configured blocker if
+#                                  this key is absent at runtime.
 #
 # D1 bindings:
 #   CONFIG_DB  — corelink-prod-d1 (tenant, pat, tenant_billing tables).
@@ -88,6 +99,12 @@ CORELINK_API_BASE = "https://corelink-api.humangr.com"
 # predictable non-secret SHA-256 that would break GDPR/LGPD pseudonymization
 # unlinkability. This worker is the prod signup deployment, so it MUST be "prod".
 ENVIRONMENT = "prod"
+# B-089 remains parked until owner-approved provider test-mode proof and
+# reconciliation evidence exist. The same gate is enforced in code.
+SLA_CREDITS_ENABLED = "false"
+# Keep the canonical observation producer parked with settlement until the
+# owner supplies provider proof; the route also requires the credits gate.
+SLA_OBSERVATIONS_ENABLED = "false"
 
 # Service binding to the main CoreLink Worker. Required: a public custom-domain
 # fetch (`https://corelink-api.humangr.com`) from one Worker to another on the
@@ -140,16 +157,19 @@ max_batch_size = 10
 max_batch_timeout = 30
 max_retries = 3
 
-# Hourly Cron Trigger → src/index.ts `scheduled()`. Drives THREE sweeps:
+# Hourly Cron Trigger → src/index.ts `scheduled()`. Drives FOUR sweep families:
 #   1. DSR 24h verification sweep (WI-S11-008 incr 5) → runDsrVerifySweep →
 #      container POST /_internal/dsr/verify for every DSR past its 24h SLA
 #      deadline (idempotent; inert until CORELINK_INTERNAL_AUTH_KEY bound — #46).
 #   2. PAT-plaintext scrub (CTRL-CRED-001) → runPatScrubSweep → Clerk Backend
 #      API PATCH clearing private_metadata.pat_plaintext for any user whose
 #      reveal is older than the TTL (inert until CLERK_SECRET_KEY bound).
-#   3. S-09 audit-chain drain → runAuditDrainSweep → container POST
-#      /_internal/audit/drain, sealing pending audit_outbox rows into the
-#      tamper-evident hash chain (idempotent; reuses the erase/internal-auth
-#      key — no new secret; inert until that key is bound — #46).
+#   3. S-09 audit-chain maintenance → runAuditDrainSweep plus
+#      runAuditArchiveSweep, sealing and archiving audit rows with bounded,
+#      idempotent companion sweeps (inert until the erase/internal-auth key is
+#      bound — #46).
+#   4. B-089 closed-month SLA credit settlement → runSlaCreditSweep. The
+#      provider gate is checked inside both sweep and provider; default remains
+#      parked until owner-approved Stripe proof.
 [triggers]
 crons = ["0 * * * *"]

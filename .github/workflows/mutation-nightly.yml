@@ -1,5 +1,9 @@
 name: mutation-nightly (R2 baseline + 5-crate expansion + wave-24 large-crate lane)
 
+# B-110: the heavy matrix runs on CoreLink's ephemeral 4-vCPU Linux runner.
+# This preserves the 6-hour execution bound while removing the former hosted
+# larger-runner billing dependency.
+
 concurrency:
   # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
   # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
@@ -86,8 +90,8 @@ env:
 jobs:
   mutants:
     name: cargo-mutants kill-rate gate
-    runs-on: ubuntu-x64-4core  # 4-core: heavy crates (pat/clerk — Argon2id + RS256 proptests) are ~4.5h; 2-core would blow the 6h cap
-    timeout-minutes: 330  # under the 6h hosted cap so an over-budget crate fails cleanly instead of a silent runner-cancel
+    runs-on: corelink  # 4-vCPU/12.5-GB ephemeral Linux box; 2-core runs OOM
+    timeout-minutes: 330  # under the 6h runner cap; over-budget crates fail loudly
     strategy:
       fail-fast: false
       matrix:
@@ -284,7 +288,10 @@ jobs:
   aggregate:
     name: Aggregate per-crate JSON → reports/mutation/latest.json
     needs: mutants
-    if: always()
+    # This job owns contents/issues write. It may only run from the protected
+    # canonical main ref in the canonical repository; a fork or unprotected
+    # dispatch must never place write-capable credentials on corelink.
+    if: always() && github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: corelink
     permissions:
       contents: write       # least-privilege: write only on the aggregator
@@ -338,7 +345,7 @@ jobs:
           PY
 
       - name: Commit latest.json (signed) on delta
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && github.repository == 'HuGR-Labs/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

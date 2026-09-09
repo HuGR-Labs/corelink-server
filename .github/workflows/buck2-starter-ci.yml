@@ -345,6 +345,7 @@ jobs:
         working-directory: examples/buck2-starter
         run: |
           set -euo pipefail
+          echo "negative probes independent"
           unset CORELINK_PAT
           set +e
           OUTPUT="$(buck2 build :hello 2>&1)"

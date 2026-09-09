@@ -20,22 +20,55 @@ def expect_reject(path: str, marker: str, label: str, replacement: str = "MUTATE
     original = (ROOT / path).read_text(encoding="utf-8")
     mutated = original.replace(marker, replacement, 1)
     assert mutated != original, f"mutation marker absent: {path}: {marker}"
+    fetch = (ROOT / verify.FETCH).read_text(encoding="utf-8")
     if path == verify.CACHE:
         cache = mutated
         auth = (ROOT / verify.AUTH).read_text(encoding="utf-8")
+        auth_facade = (ROOT / verify.AUTH_FACADE).read_text(encoding="utf-8")
         quota = (ROOT / verify.QUOTA).read_text(encoding="utf-8")
+        quota_facade = (ROOT / verify.QUOTA_FACADE).read_text(encoding="utf-8")
+    elif path == verify.FETCH:
+        fetch = mutated
+        cache = (ROOT / verify.CACHE).read_text(encoding="utf-8")
+        auth = (ROOT / verify.AUTH).read_text(encoding="utf-8")
+        auth_facade = (ROOT / verify.AUTH_FACADE).read_text(encoding="utf-8")
+        quota = (ROOT / verify.QUOTA).read_text(encoding="utf-8")
+        quota_facade = (ROOT / verify.QUOTA_FACADE).read_text(encoding="utf-8")
     elif path == verify.AUTH:
         cache = (ROOT / verify.CACHE).read_text(encoding="utf-8")
         auth = mutated
+        auth_facade = (ROOT / verify.AUTH_FACADE).read_text(encoding="utf-8")
         quota = (ROOT / verify.QUOTA).read_text(encoding="utf-8")
+        quota_facade = (ROOT / verify.QUOTA_FACADE).read_text(encoding="utf-8")
+    elif path == verify.AUTH_FACADE:
+        cache = (ROOT / verify.CACHE).read_text(encoding="utf-8")
+        auth = (ROOT / verify.AUTH).read_text(encoding="utf-8")
+        auth_facade = mutated
+        quota = (ROOT / verify.QUOTA).read_text(encoding="utf-8")
+        quota_facade = (ROOT / verify.QUOTA_FACADE).read_text(encoding="utf-8")
+    elif path == verify.QUOTA:
+        cache = (ROOT / verify.CACHE).read_text(encoding="utf-8")
+        auth = (ROOT / verify.AUTH).read_text(encoding="utf-8")
+        auth_facade = (ROOT / verify.AUTH_FACADE).read_text(encoding="utf-8")
+        quota = mutated
+        quota_facade = (ROOT / verify.QUOTA_FACADE).read_text(encoding="utf-8")
     else:
         cache = (ROOT / verify.CACHE).read_text(encoding="utf-8")
         auth = (ROOT / verify.AUTH).read_text(encoding="utf-8")
-        quota = mutated
+        auth_facade = (ROOT / verify.AUTH_FACADE).read_text(encoding="utf-8")
+        quota = (ROOT / verify.QUOTA).read_text(encoding="utf-8")
+        quota_facade = mutated
 
     original_read = verify.read
     try:
-        verify.read = lambda candidate: {verify.CACHE: cache, verify.AUTH: auth, verify.QUOTA: quota}[candidate]
+        verify.read = lambda candidate: {
+            verify.CACHE: cache,
+            verify.FETCH: fetch,
+            verify.AUTH: auth,
+            verify.AUTH_FACADE: auth_facade,
+            verify.QUOTA: quota,
+            verify.QUOTA_FACADE: quota_facade,
+        }[candidate]
         verify.verify()
     except verify.VerificationError:
         return
@@ -51,15 +84,30 @@ def expect_comment_wrapped(path: str, marker: str, label: str) -> None:
 def main() -> int:
     verify.verify()
     expect_reject(verify.CACHE, "const inflight = new Map", "single-flight map removed")
+    expect_reject(
+        verify.FETCH,
+        'import { enforceQuota } from "./index_quota_stage.js";',
+        "fetch pipeline bypassed quota facade",
+    )
     expect_reject(verify.CACHE, "opts.waitUntil(putPromise);", "KV write-behind detached")
     expect_reject(
         verify.CACHE,
         "const KV_PAT_ROW_TTL_S = 30;",
-        "KV revocation TTL weakened",
-        "const KV_PAT_ROW_TTL_S = 61;",
+        "KV revocation TTL changed",
+        "const KV_PAT_ROW_TTL_S = 31;",
     )
     expect_reject(verify.AUTH, 'env.CONFIG_DB.withSession("first-unconstrained")', "replica routing removed")
     expect_reject(verify.AUTH, "verifyPatRowCached(readSession, parsed.tokenId, {", "cache call removed")
+    expect_reject(
+        verify.AUTH_FACADE,
+        'export { extractAuth } from "./index_auth_verify.js";',
+        "split auth facade export removed",
+    )
+    expect_reject(
+        verify.QUOTA_FACADE,
+        'export { enforceQuota } from "./index_quota_impl.js";',
+        "split quota facade export removed",
+    )
     expect_reject(verify.QUOTA, "meter && !isStorageMutating && !quotaTier.d1Error", "mutating async meter guard removed")
     expect_comment_wrapped(verify.CACHE, "opts.waitUntil(putPromise);", "KV write-behind comment-wrapped")
     expect_comment_wrapped(verify.AUTH, 'env.CONFIG_DB.withSession("first-unconstrained")', "replica session comment-wrapped")

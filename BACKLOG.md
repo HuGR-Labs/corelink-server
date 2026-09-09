@@ -2134,6 +2134,114 @@ verify-means: |
 last-verified: 2026-09-08
 ```
 
+### B-360 — B-155 CAS split-path census could silently read stale pre-split files
+
+The B-155 semantic adapters now lex active Rust `include!` calls, resolve the
+complete repository-bounded closure with cycle/escape checks, and bind the CAS
+foundation/single path populations to the live route entrypoint. Path-drift
+mutations and nested comment/string bait are rejected.
+
+```backlog
+id: B-360
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-155 verifier path census review"
+source-locator: "scripts/verify_b155_owned.py; tests/test_b155_owned.py"
+finding-title: "B-155 CAS split census could verify stale paths instead of the active include closure"
+problem: "After CAS source splitting, the verifier could open old monolithic paths and miss the compiled foundation/single fragments."
+evidence: "5b2dd5dea: comment/string-aware static include lexer, recursive path/cycle/escape census, exact CAS path populations, and path-drift mutations."
+acceptance: "The B-155 verifier follows only active static includes, binds expected CAS fragment sets to the route entrypoint, and fails closed on missing, replaced, escaped, cyclic, or baited includes."
+verify: python3 -m unittest -q tests/test_b155_owned.py
+verify-means: |
+  done — the B-155 recursive CAS include census and focused mutation suite are
+  green. This closes verifier path coverage only; it does not alter or assert
+  any runtime CAS performance or production claim.
+last-verified: 2026-09-08
+```
+
+### B-361 — B-125 audit drain sealed rows one request at a time without bounded JSON1 proof
+
+The audit drain now emits bounded 32-row JSON1 UPDATE chunks with an exact
+`RETURNING id` set check, duplicate-ID rejection, and lease-fence checks before
+and after each committed chunk. Head advancement remains fail-closed on any
+partial, unexpected, duplicate, extra-column, or non-text result.
+
+```backlog
+id: B-361
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-125 audit drain implementation review"
+source-locator: "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01_part2.rs; crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02.rs"
+finding-title: "B-125 audit drain used per-row writes without a bounded atomic JSON1 update contract"
+problem: "Per-row emitted_at writes left the drain bottlenecked and lacked an exact result-set proof before advancing the signed head."
+evidence: "2f26055ea: 32-row JSON1 chunk payload/UPDATE, exact RETURNING validation, duplicate/empty rejection, and lease-fence chunk tests."
+acceptance: "The implementation and focused tests prove bounded JSON1 chunks, exact all-or-nothing row identity, and prefix-only lease fencing; no production drain measurement is inferred."
+verify: cargo test -p corelink-container --lib audit_drain --locked
+verify-means: |
+  done — the B-125 source implementation and bounded mutation-focused tests are
+  integrated. B-125 itself remains open until its prescribed production audit
+  drain evidence exists; this record closes only the repository implementation
+  defect.
+last-verified: 2026-09-08
+```
+
+### B-362 — B-071 native GC observation wiring was absent from the runtime image
+
+The native production-capable GC sweep is now built under a distinct binary name,
+copied into the runtime image, and explicitly marked observation-only unless
+`GC_LIVE_DELETE=false` is supplied. The fence verifier follows the split source
+paths and keeps writer fencing, reconciliation, and idempotent retry mutations
+red.
+
+```backlog
+id: B-362
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-071 GC native observation wiring review"
+source-locator: "Dockerfile; crates/corelink-container/src/gc_sweep.rs; scripts/verify_b071_fence.py"
+finding-title: "B-071 native GC observation binary was not wired into the runtime image with an explicit delete fence"
+problem: "The production-capable sweep had no distinct image entrypoint and observation mode could be ambiguous about live deletion."
+evidence: "b0a8b45e5: distinct native production binary build/copy, explicit GC_OBSERVATION_ONLY plus GC_LIVE_DELETE=false contract, and split-path fence verification."
+acceptance: "The image contains the separately invoked native sweep, malformed or live observation flags fail closed, and writer/GC/reconciliation/idempotency mutations remain red; no live deletion is enabled by this record."
+verify: python3 scripts/verify_b071_fence.py && python3 -m pytest -q tests/test_b071_b073_comment_safe.py tests/test_verify_b323_gc_binary_identity.py
+verify-means: |
+  done — the B-071 native observation wiring and repository fence checks are
+  integrated and mutation-tested. B-071's production/live deletion acceptance
+  remains open; no observation wiring is treated as a live deletion witness.
+last-verified: 2026-09-08
+```
+
+### B-363 — B-072 deferred synthetic PagerDuty delivery lifecycle lacked a repository contract
+
+The synthetic drill receiver and scheduler now share a fail-closed lifecycle
+contract: production delivery is gated, accepted deferred deliveries are
+terminally marked and excluded from the Sunday retry sweep, and the scheduler
+uses the canonical scheduled-time correlation identifier. This is repository
+wiring and lifecycle correctness only; live PagerDuty delivery remains an
+operational claim requiring deployment and drill evidence.
+
+```backlog
+id: B-363
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-072 receiver/lifecycle implementation review"
+source-locator: "apps/synthetic-pager-worker/src/index.ts; apps/synthetic-pager-worker/tests/receiver.test.ts; worker/tests/scheduled_drills.test.ts; scripts/verify_b072_receiver.py"
+finding-title: "B-072 receiver lifecycle did not prove deferred delivery terminality and canonical correlation"
+problem: "The receiver/scheduler contract could leave accepted deferred rows eligible for duplicate paging or drift from the canonical scheduled-time delivery identifier without a repository-side guard."
+evidence: "1a84024d7: deferred delivery rows retain deferred mode while recording delivered_at_ms and terminal unacked outcome, the retry sweep filters undelivered rows, and receiver/scheduler lifecycle regressions are covered by the static guard and focused tests."
+acceptance: "The repository guard proves fail-closed production and activation gates, D1-before-PagerDuty ordering, signed/correlated webhook updates, terminal deferred-row filtering, and canonical scheduler IDs; no live PagerDuty delivery or human acknowledgement is inferred."
+verify: python3 scripts/verify_b072_receiver.py && python3 scripts/test_b072_migration.py
+verify-means: |
+  done — the integrated B-072 receiver/lifecycle source fix and focused
+  mutation-facing checks are recorded. The live PagerDuty deployment, delivery
+  and human-acknowledgement claim remains open until production drill evidence.
+last-verified: 2026-09-08
+```
+
 ### B-338 — untrusted pull requests could execute backlog verifiers on the persistent runner
 
 ```backlog
@@ -2748,18 +2856,37 @@ last-verified: 2026-08-25
 ### B-006 — F4 (the N-image menu) waits on demand, not on cost
 
 The cost premise that justified deferring this is measured false: a second
-container class costs nothing at zero idle. The criterion is now a number —
-`capability_claim_unserved`, live since `#485`, currently **0**. Nobody has yet
-asked for a machine shape the fleet does not serve.
+container class costs nothing at zero idle. The criterion is demand-gated by
+`capability_claim_unserved`, live since `#485`. The bounded authenticated
+probe attempted on 2026-09-08 was rejected with HTTP **403**, so no aggregate
+counter was established. B-006 is reopened until a fresh authenticated read
+proves the counter is zero or records a positive demand signal.
 
 ```backlog
 id: B-006
 repo: corelink-runners
 owner: tl
-status: parked
+status: open
 verify: manual
-verify-means: parked — until capability_claim_unserved leaves zero; read via /internal/v1/metrics
-last-verified: 2026-08-23
+verify-means: |
+  open — the retained redacted receipt records an attempted, bounded read
+  from the spawn-worker production surface, but HTTP 403 means no aggregate
+  counter was established:
+  `https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics`.
+  Authenticate with the dedicated `METRICS_OBSERVABILITY_KEY` in the
+  `X-Corelink-Internal-Auth` header. A CoreLink tenant PAT / `Authorization:
+  Bearer` (`CORELINK_PROD_TOKEN`) is the wrong credential class for this
+  operator-read route and must not be recorded as evidence. Omit all labels,
+  tenant identifiers, and customer identifiers from the retained artifact.
+  Redacted evidence: `docs/validation/evidence/b006-capability-claim-unserved-2026-09-08.json`.
+  Provider deployment/version and provider-returned script content digest are
+  retained in a separate authenticated binding receipt; no credential value, labels, tenant identifiers, or
+  customer identifiers are retained. A fresh authenticated aggregate plus
+  separately authenticated Wrangler deployment/source evidence
+  (`artifacts/d03/B006-provider-binding.json`) is required to
+  close this item at zero or reopen it on `capability_claim_unserved > 0`;
+  missing, stale, or unauthenticated evidence never closes it.
+last-verified: 2026-09-08
 ```
 
 ### B-007 — the near-ceiling warning goes nowhere
@@ -3597,36 +3724,16 @@ repo: corelink-server
 owner: owner
 status: open
 verify: |
-  python3 - <<'PY'
-  from pathlib import Path
-  import sys
-  packet = Path("docs/internal/b087-questionnaire-owner-actions.md")
-  if not packet.is_file():
-      print("INSTRUMENTO QUEBRADO: owner packet B-087 sumiu", file=sys.stderr); sys.exit(2)
-  text = packet.read_text(encoding="utf-8")
-  required = ("Object Lock", "PagerDuty", "superseded copy")
-  absent = [term for term in required if term not in text]
-  if absent:
-      print("INSTRUMENTO QUEBRADO: packet perdeu ações: " + ", ".join(absent), file=sys.stderr)
-      sys.exit(2)
-  evidence = (
-      Path("reports/owner-actions/b170-legal-contract-review.md"),
-      Path("reports/owner-actions/b170-pagerduty-export.json"),
-      Path("reports/owner-actions/b170-recipient-notification-decision.md"),
-  )
-  missing = [path.as_posix() for path in evidence if not path.is_file()]
-  if missing:
-      print("open: owner evidence pending: " + ", ".join(missing)); sys.exit(0)
-  print("DRIFTED: all three owner artifacts exist; validate their contents, close B-170, and invert this guard", file=sys.stderr)
-  sys.exit(1)
-  PY
+  python3 -S scripts/verify_b170_owner_actions.py
 verify-means: |
-  `open` — o pacote operacional precisa existir e nomear as três decisões externas; o
-  comando passa enquanto pelo menos um dos três artefatos canônicos ainda não existe.
-  Quando os três aparecerem, fica vermelho de propósito para forçar validação de conteúdo,
-  transição para `done` e inversão do guard. Arquivo de pacote ausente ou ambíguo é erro de
-  instrumento, nunca conclusão. Nenhuma assinatura, exportação ou notificação é alegada.
-last-verified: 2026-09-05
+  `open` — o pacote operacional precisa existir, ser um arquivo regular e nomear
+  exatamente as três decisões externas; o comando passa enquanto pelo menos um
+  dos três artefatos canônicos ainda não existe. Symlink, diretório, arquivo vazio
+  ou packet adulterado dá `INSTRUMENT BROKEN` (exit 2). Quando os três aparecerem,
+  fica vermelho de propósito para forçar validação de conteúdo, transição para
+  `done` e inversão do guard. Nenhuma assinatura, exportação ou notificação é
+  alegada pela presença dos arquivos.
+last-verified: 2026-09-08
 ```
 
 ### B-171 — Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace
@@ -4966,40 +5073,43 @@ Evidence: `docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW i
 Atualização canônica: a decisão B-119 aposentou a superfície não vinculada
 `/admin/ops*` e removeu suas páginas, cliente e exemplos. Portanto, o artefato
 descrito por este achado não existe mais para receber um reparo de ordenação;
-reintroduzi-lo publicaria novamente uma API fantasma. B-210 fica estacionado,
-subordinado à eventual reabertura de B-119, e não representa uma closure de
-código.
+reintroduzi-lo publicaria novamente uma API fantasma. B-210 está encerrado como
+retirado/superseded por B-119, e não é dívida estacionada.
 
 Dependencies: none declared by the B-101 finding; implementation must re-check adjacent controls before closure.
 
-Next action: Keep B-210 parked while B-119 retires `/admin/ops*`; if a durable,
-securely bound approval surface is restored, re-open DD-062 and re-audit SSR
-guard ordering before publishing any page.
+Next action: Keep B-210 done while B-119 remains done and the `/admin/ops*`
+surface remains absent. If a durable, securely bound approval surface is ever
+restored, re-open B-119 and B-210 together and re-audit SSR guard ordering
+before publishing any page.
 
-Acceptance/closure evidence: Evidence for DD-062: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item.
+Acceptance/closure evidence: B-210 is retired/superseded by the done B-119
+decision: the vulnerable `/admin/ops*` surface is absent, B-119's census remains
+done, and this retirement gate fails closed if either status regresses or the
+surface is reintroduced. A future approval surface reopens both items before
+publication; it does not revive this historical finding as parked debt.
 
 ```backlog
 id: B-210
 repo: corelink-server
 owner: tl
-status: parked
+status: done
 source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
 source-locator: "MEDIUM / LOW item 41"
 finding-title: "Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
 problem: "Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
 evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 41: Admin SSR pages fetch privileged data BEFORE RbacGuard evaluates (ordering only safe because the singleton adminClient sends no token)"
 dependencies: []
-next-action: "Keep B-210 parked while B-119 retires /admin/ops*; if a durable, securely bound approval surface is restored, re-open DD-062 and re-audit SSR guard ordering before publishing any page."
-acceptance: "Evidence for DD-062 is deferred until B-119 is re-opened; the retirement gate must continue to prove that the page is absent and the status is parked."
+next-action: "Keep B-210 done while B-119 remains done and /admin/ops* remains absent; if a durable, securely bound approval surface is restored, re-open B-119 and B-210 together and re-audit SSR guard ordering before publishing any page."
+acceptance: "B-210 is retired/superseded by done B-119: /admin/ops* is absent, the B-119 census remains done, and the retirement gate fails closed on status regression or surface reintroduction; restore of a durable bound surface reopens both items."
 verify: |
   python3 scripts/verify_b210_retirement.py --self-test
   python3 scripts/verify_b210_retirement.py
 verify-means: |
-  parked — B-119 retired the unbound `/admin/ops*` surface, so the B-210 page is
-  intentionally absent; the local retirement gate checks that absence, the
-  parked status, and the B-119 decision, with route/status mutations failing
-  closed.
-last-verified: 2026-09-06
+  done — B-210 is retired/superseded by B-119: the unbound `/admin/ops*` surface
+  is intentionally absent; the local retirement gate checks the full B-119
+  census, both done statuses, and fails closed on route/status mutations.
+last-verified: 2026-09-08
 ```
 
 ### B-211 — Customer audit-visualization page has NO server-side guard (only unguarded authenticated page)
@@ -5632,20 +5742,26 @@ Acceptance/closure evidence: Evidence for DD-085: a code or documented owner dec
 id: B-229
 repo: corelink-server
 owner: tl
-status: parked
+status: done
 source-document: "docs/security/2026-06-15-launch-due-diligence-audit.md"
 source-locator: "MEDIUM / LOW item 64"
 finding-title: "CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path"
 problem: "CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path"
 evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 64: CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path"
 dependencies: []
-next-action: "For DD-085: remediate the finding titled \"CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 64); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
-acceptance: "Evidence for DD-085: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
+next-action: "Completed: confirm the deployed secret-name gate, deploy the exact source SHA, and verify one signed production webhook without retaining credential or payload values."
+acceptance: "Redacted production evidence at evidence/production/B-229-clerk-webhook-2026-09-08.md records the exact source SHA, Cloudflare version, 100% traffic, health 200, and signed probe 200 ignored."
 verify: |
-  python3 scripts/verify_b101_proposals.py --id B-229
+  python3 scripts/verify_b229_clerk_webhook.py && \
+  python3 scripts/verify_b229_clerk_webhook.py --self-test && \
+  python3 -m unittest tests/test_verify_b229_clerk_webhook.py
 verify-means: |
-  parked — runtime/owner packet `docs/internal/b215-b230-runtime-owner-actions.md` remains: deploy with CLERK_WEBHOOK_SECRET bound, capture the deploy-gate result and one verified production webhook, and only then close the external secret-binding obligation; source/workflow wiring alone is not runtime evidence.
-last-verified: 2026-09-05
+  done — o verificador exige o pacote de evidência redigido e a polaridade `done`:
+  redigido, os campos operacionais do deploy e a declaração explícita de que
+  payloads/segredos foram omitidos. Ele rejeita qualquer shape de credencial,
+  assinatura ou payload; o self-test muta cada campo e exige falha fechado.
+  Artefato ausente ou incompleto falha como erro, nunca passa por vácuo.
+last-verified: 2026-09-08
 ```
 
 ### B-230 — prod env [vars] omits R2_CHUNK_BUCKET / R2_CHUNK_REGION that all 4 regional envs set — IAD multipart-chunk region config is implicit
@@ -6373,7 +6489,8 @@ must also be fail-closed: an empty or partial matrix, corrupt baseline,
 non-finite measurement, or duplicate scenario must be a red/invalid result,
 never a new green baseline.
 
-**Two of the three blockers are now cleared; the third is owner infra.**
+**Retired as an automated gate by decision; the dispatch-only harness remains
+parked until staging is provisioned.**
 - Comparison logic — REAL since PR #1263 (proven both ways: exit 2 at +73.9%
   over a stored baseline, exit 0 at +15.0%, failing run does not publish a new
   baseline).
@@ -6382,7 +6499,7 @@ never a new green baseline.
   this is a load GENERATOR firing k6 at a remote endpoint, so a datacenter uplink
   matters and host CPU does not — the very reason it never suited the residential
   Mac fleet.
-- **Remaining blocker — there is no staging environment to fire at.**
+- **Measured external fact — there is no staging environment to fire at.**
   `staging.corelink.humangr.com` does not resolve, and the `staging` GitHub
   environment carries none of the secrets the suite reads (`K6_TARGET_HOST`,
   `K6_STAGING_PAT`, …). So even on a live runner the pre-flight fail-closes every
@@ -6390,9 +6507,10 @@ never a new green baseline.
   cost decision, surfaced in `docs/internal/2026-08-24-owner-decision-brief.md`.
 
 The executable verifier checks both halves: the comparator/cache contract is
-real and the current operational status is honest. It keys on the disabled
-nightly `schedule` while staging is absent, so a future staging change must
-enable the schedule in the same change that wires the secrets.
+real and the current operational status is honest. Both workflows are
+operator-dispatched only; there is no automated performance-gate claim while
+staging is absent. A future funded staging deployment may enable automation as
+a separately reviewed owner decision.
 
 ```backlog
 id: B-029
@@ -6404,15 +6522,12 @@ verify: |
   python3 scripts/verify_owner_action_packets.py --id B-029 && \
     python3 scripts/verify_b029_load_gate.py --expect parked
 verify-means: |
-  parked — while the load suite's nightly `schedule` is disabled (the cron line
-  commented out) and the verifier confirms the real comparator, cache restore/
-  save ordering, exact scenario-set wiring, and fail-closed input handling.
-  This is correct while no staging environment exists to load-test against;
-  enabling the schedule sooner only manufactures a nightly red on missing
-  infra. Closes when the cron is re-enabled in the same change that stands up
-  staging and wires K6_TARGET_HOST + the K6_STAGING_* secrets. The residual is
-  owner infra, tracked in the owner decision brief. See B-037 for the sibling
-  dead-label sweep.
+  parked — both staging-targeted workflows are workflow_dispatch-only and the
+  verifier confirms the real comparator, cache restore/save ordering, exact
+  scenario-set wiring, and fail-closed input handling. This is correct while no
+  staging environment exists to load-test against; unattended automation is an
+  owner-funded cutover decision. The residual is owner infrastructure, tracked
+  in the owner decision brief. See B-037 for the sibling dead-label sweep.
 last-verified: 2026-09-05
 ```
 
@@ -7100,14 +7215,17 @@ agentes, e a ação é **deleção permanente** de chave privada — que eu não
 ```backlog
 id: B-013
 repo: corelink-server
-owner: owner
-status: open
+owner: tl
+status: done
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
-verify: python3 -S scripts/verify_owner_action_packets.py --id B-013
+verify: python3 -S scripts/verify_b013_key_deletion.py --self-test
 verify-means: |
-  packet guard validates the exact local deletion procedure and evidence schema;
-  the actual filesystem state is outside this repository and remains owner-only.
-last-verified: 2026-09-05
+  done — the owner-authorized redacted evidence artifact records exactly the three
+  private-key targets, their preflight sizes/dates and `rm -P` action, preserves the
+  public key, and proves all three private targets absent after deletion. The focal
+  verifier is schema-closed, rejects duplicate/extra fields and credential-shaped
+  values, and never inspects or claims to reproduce the owner machine's filesystem.
+last-verified: 2026-09-08
 ```
 
 ### B-014 — the leaked Stripe webhook secret was already verified harmless
@@ -7259,17 +7377,19 @@ it would make a security-path change large and rushed at the same time.
 ```backlog
 id: B-039
 repo: corelink-server
-owner: owner
-status: open
+owner: tl
+status: done
 action-packet: docs/handoff/2026-09-06-d03-graduation-packets.json
 verify: |
-  python3 scripts/verify_b155_owned.py --id B-039 --expect open --offline
+  python3 scripts/verify_b155_owned.py --id B-039 --expect done
 verify-means: |
-  open — the offline verifier proves that NO carrier fetches the jar from the
-  mutable upstream release URL, but deliberately does not claim that our copy
-  serves. The live mirror probe returned HTTP 403 on 2026-09-06; restore and
-  independently re-verify the pinned object before changing this item to done.
-last-verified: 2026-09-06
+  done — the live source verifier reads the controlled mirror with its explicit
+  WAF-compatible user agent, requires HTTP 2xx, exactly 4,487,757 bytes, and the
+  pinned SHA-256 `eabd140a70f49eb9305a3bd3f3df944eddf87e5a90d329789085f8953a80533a`;
+  active carriers remain free of the mutable upstream URL. This closes mirror
+  availability and source verification only; it makes no runtime or production
+  capability claim beyond the measured artifact response.
+last-verified: 2026-09-08
 ```
 
 ### B-040 — `| head` under pipefail is the same SIGPIPE defect, left open on purpose
@@ -8423,11 +8543,17 @@ hospedado (cartão dele), pagar um box Linux multi-core self-hosted (dinheiro de
 as lanes — e a terceira ele tem de autorizar, porque apaga cobertura (mutation, coverage,
 cas-foundation).
 
+**Resolution (2026-09-08).** The owner authorized the existing CoreLink ephemeral Linux
+substrate as the fourth option operationally equivalent to provisioning a self-hosted
+multi-core Linux box. The four named workflows now use `runs-on: corelink` throughout;
+the matrix coverage and the semgrep anti-regression clause remain present. This removes
+the GitHub-hosted billing dependency without deleting a gate or changing its assertions.
+
 ```backlog
 id: B-110
 repo: corelink-server
-owner: owner
-status: open
+owner: tl
+status: done
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
   python3 scripts/verify_b155_batch_g.py --id B-110
@@ -8435,11 +8561,11 @@ verify: |
   grep -q "^[^#]*B-110" scripts/verify_b155_batch_g.py
   grep -q "^[^#]*packet_item" scripts/verify_b155_batch_g.py
 verify-means: |
-  open — passa enquanto TODAS as quatro lanes nomeadas ainda apontam para um
-  runner hosted, que é o bloqueio. Vira vermelho assim que QUALQUER UMA for
-  migrada ou apagada, forçando a revisão do item em vez de deixá-lo cobrir uma
-  lane que já saiu do grupo. O laço é sobre as quatro de propósito: um verify que
-  olhasse só uma seria predicado mais fraco que quatro itens separados.
+  done — the four named workflows all run on the existing CoreLink ephemeral
+  Linux substrate (4 vCPU / 12.5 GB), so no job requests GitHub-hosted capacity;
+  the guard turns red if any hosted runner returns or any named workflow loses
+  its `corelink` job. The loop remains over all four lanes so one forgotten job
+  cannot make the aggregate look resolved.
 
   A quinta cláusula é uma catraca, não decoração: ela exige que a `semgrep`
   PERMANEÇA fora do runner GitHub-hosted. Sem ela, alguém poderia reverter a
@@ -8462,7 +8588,7 @@ verify-means: |
   julgar). As cinco leituras de `runs-on:` são ancoradas em `^` de propósito:
   `semgrep.yml` cita `runs-on:` dentro de comentários históricos, e confundir
   comentário com código é exatamente o defeito que [B-128] registra.
-last-verified: 2026-09-05
+last-verified: 2026-09-08
 ```
 
 ### B-111 — aquisição de certificados Apple/Windows (o resto dos "secrets ausentes" não era isso)
@@ -8545,14 +8671,13 @@ release publicado) e os logs já expiraram, então a causa histórica dela é a
 vez de suposta. Hoje a lane só aceita a chamada reutilizável tipada do
 `release-cli`; isso não é evidência de uma execução verde.
 
-`cosign-sign.yml` é o caso que NÃO é defeito e não deve ser "consertado":
-**0 execuções** porque dispara em push de tag `v*` e **não existe nenhuma tag
-`v*`** no repositório (só `cli-v*`). Ausência de execução não é execução
-vermelha. Ela também carrega um **waiver humano explícito**
-(`authorized-by: repo owner | 2026-08-11`) para permanecer GitHub-hosted, com
-razão técnica registrada — precisa de `docker` e da identidade OIDC hosted para
-assinatura keyless Cosign, e a frota Firecracker não tem daemon docker.
-**Não migrar, não apagar.**
+**`cosign-sign.yml` foi removido em 2026-09-08 (B-118).** A leitura anterior —
+"trigger-starved; não migrar, não apagar" — não sobrevivia à leitura do corpo:
+o workflow tinha namespace de imagem incorreto, sujeito OCI que não era o Worker,
+placeholder de deploy e atestação SLSA declarada como stub. O waiver humano de
+2026-08-11 era real, mas protegia uma lane que nunca poderia produzir evidência.
+O waiver não foi carregado para a árvore atual; recriar a lane exige uma nova
+análise e contrato, não restauração silenciosa.
 
 **A raiz NÃO é falta de secret** — correção de 2026-08-30. O `release-cli` usa
 um único secret, `CORELINK_CLI_RELEASE_TOKEN`, e ele já existe. A falha é
@@ -8571,9 +8696,10 @@ SHA-pinado, toolchain host sem provisionamento, `cargo-zigbuild` 0.19.8/Zig
 0.16.0 validados e estado Cargo/zig isolado por run/attempt/target. B-112
 continua `open` até existir uma execução de produção verde.
 
-O waiver do `cosign-sign` permanece humano e explícito
-(`authorized-by: repo owner | 2026-08-11`); a lane continua hosted e só aceita
-tag semver `v*`. Não migrar nem apagar.
+O waiver humano de 2026-08-11 não foi carregado para a árvore atual: a antiga
+`cosign-sign` foi removida sob B-118, após a inspeção encontrar uma lane
+inexecutável. Recriar a assinatura OCI exige nova análise e contrato; B-112 não
+trata a lane aposentada como evidência de release.
 
 **D03 bundle (focal, sem Cargo/CI):**
 
@@ -8606,11 +8732,11 @@ verify: |
 verify-means: |
   parked — o verificador fail-closed prova somente a correção de engenharia
   delimitada (sem `cargo install`/fetch manual, sem estado Cargo compartilhado,
-  pins e cache por run/attempt/target), a assinatura reproduzida e a preservação
-  do waiver/semântica de tags. Ele rejeita mutações reais e não lê histórico
+  pins e cache por run/attempt/target), a assinatura reproduzida e a fronteira
+  de aposentadoria da antiga lane OCI/semântica de tags. Ele rejeita mutações reais e não lê histórico
   como se fosse execução verde; a causa de `release-slsa3` permanece não
   diagnosticada por logs expirados.
-last-verified: 2026-09-05
+last-verified: 2026-09-08
 ```
 
 ### B-113 — sete workflows self-hosted sem sucesso, cada um por um motivo próprio
@@ -9867,6 +9993,222 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
+## Post-D03 verifier reconciliation — 2026-09-08
+
+The records below close repository instrumentation defects discovered while
+reviewing already-landed evidence contracts. They do not graduate the external
+or production-dependent items named by those verifiers.
+
+### B-352 — B-314 owner gate ran outside the trusted BASE workflow boundary
+
+The B-314 contract checker had local mutation coverage, but its workflow wiring
+did not prove that the candidate was treated as data from the immutable BASE
+checkout. The gate now uses `pull_request_target`, all-tree path coverage, and
+BASE-only self-test/focused-test steps; candidate verifier code remains inert.
+
+```backlog
+id: B-352
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-314 verifier review"
+source-locator: ".github/workflows/backlog-verify.yml; scripts/verify_b314_gdpr_sigstore.py"
+finding-title: "B-314 owner gate did not prove trusted BASE execution and complete path coverage"
+problem: "The workflow contract could lose all-tree coverage or run the B-314 checks outside the immutable BASE checkout without a focused mutation turning red."
+evidence: "4009f4211: BASE-only B-314 self-test/pytest wiring, pull_request_target rejection, all-tree coverage and path-removal/duplicate mutations."
+acceptance: "The workflow gate and verifier reject unsafe trigger, checkout, placement, coverage, command duplication, and candidate-execution mutations while preserving B-314's pending Legal/DPO decision."
+verify: python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test && python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py
+verify-means: |
+  done — the B-314 owner gate is now fail-closed at its trusted BASE workflow
+  boundary and the focused mutation suite is green. B-314 itself remains open
+  until the external Legal/DPO disposition is signed; this record closes only
+  the repository gate defect.
+last-verified: 2026-09-08
+```
+
+### B-353 — B-103/B-129 attribution verifier ignored nested Rust includes
+
+The deployed rate-limit scopes and split byte-accounting implementation live in
+nested Rust fragments. The verifier now traverses active `include!` closures,
+rejects cycles/escapes, and recognizes the compiled one-argument rate-limit
+scope form while retaining comment/string and removal mutations.
+
+```backlog
+id: B-353
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-103/B-129 attribution verifier review"
+source-locator: "scripts/verify_b103_b129_attribution.py; scripts/test_b103_b129_attribution.py"
+finding-title: "B-103/B-129 attribution gate missed nested includes and deployed one-argument rate scopes"
+problem: "The static attribution checker read only the first split fragment and required an obsolete two-argument scope spelling, so compiled symbols could drift without detection."
+evidence: "b713fd5ad: recursive include closure with repository-bound/cycle checks, one-argument RateLimit recognition, and nested-fragment mutation coverage."
+acceptance: "The checker follows the active include tree and recognizes the deployed scope form; missing child symbols, include removal/replacement, and phase mutations fail closed without asserting production timing."
+verify: python3 scripts/verify_b103_b129_attribution.py --self-test && python3 scripts/verify_b103_b129_attribution.py --b129-inline
+verify-means: |
+  done — the nested attribution verifier and its executable mutation checks are
+  green. B-103 and B-129 remain production-dependent parked items; no latency,
+  residual, or runtime closure is inferred from this repository contract.
+last-verified: 2026-09-08
+```
+
+### B-354 — B-039 mirror verifier was rejected by the live WAF and omitted byte binding
+
+The source verifier now sends an explicit WAF-compatible identity, streams the
+bounded object, requires the measured 4,487,757-byte response, and hashes the
+complete body. Hermetic success, forbidden-response, and hash/size mutations
+keep the source guard fail-closed.
+
+```backlog
+id: B-354
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-039 mirror verification review"
+source-locator: "scripts/verify_b155_owned.py; tests/test_b155_owned.py"
+finding-title: "B-039 source verifier did not survive the mirror WAF or bind the complete object size"
+problem: "The default urllib identity produced a false 403 and the live check did not bind the measured byte population before accepting the pinned hash."
+evidence: "aaf578bea: explicit CoreLink-B039-Verifier/1.0 user agent, bounded streaming SHA-256, exact byte-count guard, and hermetic WAF/hash mutations."
+acceptance: "The source verifier rejects mutable carriers, WAF-forbidden requests, wrong status, wrong size, and wrong digest while accepting the pinned live object; offline mode cannot satisfy done polarity."
+verify: python3 -m unittest -q tests/test_b155_owned.py
+verify-means: |
+  done — the B-039 verifier's WAF-compatible request and full-object byte/hash
+  contract pass their focused hermetic tests. The separate B-039 record carries
+  the live HTTP 200/4,487,757-byte/pinned-SHA witness; this record closes only
+  the verifier defect.
+last-verified: 2026-09-08
+```
+
+### B-355 — B-013 deletion evidence had no repository-side closure verifier
+
+The owner-authorized redacted deletion artifact is now checked by a strict
+stdlib verifier with duplicate-key rejection, exact three-target population,
+positive postconditions, and credential-shape rejection. It never reads the
+owner's filesystem or stores private-key material.
+
+```backlog
+id: B-355
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-013 deletion evidence review"
+source-locator: "evidence/owner-actions/B-013/downloads-private-key-deletion.json; scripts/verify_b013_key_deletion.py"
+finding-title: "B-013 owner deletion evidence lacked a fail-closed repository verifier"
+problem: "A redacted owner evidence record could be malformed, duplicated, polarity-flipped, or credential-bearing without a canonical repository check."
+evidence: "a07133333: exact schema/population verifier, mutation self-tests, and focused unit tests integrated with the real B-013 evidence artifact."
+acceptance: "The verifier accepts only the canonical three-target redacted closure record and rejects missing/extra/duplicate fields, changed target facts, false postconditions, duplicate JSON keys, and secret-shaped values."
+verify: python3 -S scripts/verify_b013_key_deletion.py --self-test && python3 -m unittest -q tests/test_verify_b013_key_deletion.py
+verify-means: |
+  done — the B-013 evidence verifier and focused mutation suite pass against the
+  integrated redacted artifact. The external deletion is evidenced, not replayed
+  by this repository check.
+last-verified: 2026-09-08
+```
+
+### B-356 — B-046 Object-Lock gate was not wired into trusted semantic verification
+
+The B-046 contract remains a parked platform blocker, but its repository gate now
+checks the parked status, no-Compliance claim, probe semantics, legal-hold safety,
+and trusted workflow placement. The explicit provider probe remains opt-in and
+does not convert local evidence into R2 capability evidence.
+
+```backlog
+id: B-356
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-046 Object-Lock contract review"
+source-locator: ".github/workflows/backlog-verify.yml; scripts/backlog_verify.py; scripts/verify_b046_object_lock_probe.py"
+finding-title: "B-046 repository gate did not bind parked/no-claim semantics to the trusted workflow"
+problem: "The Object-Lock contract gate could drift in status, command placement, or candidate/base boundaries without a load-bearing mutation failing."
+evidence: "14870c3fc and 8644eab50: trusted B-046 gate wiring, parked-record binding, conservative NotImplemented classification, and workflow-boundary mutation tests."
+acceptance: "The trusted workflow runs the B-046 contract and focused tests; status, verify command, no-Compliance claim, provider classification, legal-hold path, and gate placement mutations fail closed."
+verify: python3 scripts/verify_b046_object_lock_probe.py && python3 -m unittest -q tests/test_verify_b046_object_lock_probe.py tests/test_backlog_verify_trust_boundary.py
+verify-means: |
+  done — the B-046 repository gate and trusted-workflow boundary are integrated
+  and mutation-tested. B-046 remains parked because R2 capability evidence is an
+  external platform fact; no Compliance/Object-Lock production claim is closed.
+last-verified: 2026-09-08
+```
+
+### B-357 — B-083/B-154 verifier hardening accepted disabled includes and distant negation
+
+The revocation wiring guard now rejects commented, string-baited, `cfg`, and
+`cfg_attr`-gated required includes. The instrument-claim guard now scopes polarity
+to the complete sentence, including wrapped Markdown lines, without borrowing a
+negation from an unrelated sentence or table row.
+
+```backlog
+id: B-357
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B-083/B-154 verifier review"
+source-locator: "scripts/verify_b083_revocation_wiring.py; scripts/verify_b154_instrument_claims.py"
+finding-title: "B-083 and B-154 guards could be satisfied by disabled code or distant disclaimer text"
+problem: "Comment/string bait, disabled include attributes, and long/wrapped polarity context could make repository verifiers report a false closure."
+evidence: "2a3c910e1 through 86da5a835: active include lexer, cfg/cfg_attr rejection, sentence-scoped polarity, and adversarial mutation coverage."
+acceptance: "All required active include and legal-claim populations remain executable and polarity-correct; every disabled/bait/distant-negation mutation is red."
+verify: python3 scripts/verify_b083_revocation_wiring.py && python3 scripts/verify_b154_instrument_claims.py --self-test && python3 -m pytest -q tests/test_verify_b154_instrument_claims.py
+verify-means: |
+  done — the B-083/B-154 repository verifiers and adversarial mutation tests are
+  green. B-083's real-KMS and B-154's executed-instrument claims remain external
+  or owner-dependent and are not closed by this instrumentation record.
+last-verified: 2026-09-08
+```
+
+### B-358 — B-107/B-122/B-129 timing packet contracts lacked bounded phase reconciliation
+
+The D03 timing contract now has a bounded offline artifact verifier for sequential
+1 KiB writes, phase-sum/wall-clock checks, complete read phase populations, alias
+handling, q-to-WDB and origin reconciliation, and residual limits. It does not
+contact production or claim the parked timing items measured.
+
+```backlog
+id: B-358
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 timing packet review"
+source-locator: "scripts/verify_d03_timing_artifact.py; scripts/test_verify_d03_timing_artifact.py"
+finding-title: "B-107/B-122/B-129 timing packet contracts lacked a bounded offline phase verifier"
+problem: "Owner timing packets could omit required phases, over-count wall time, hide an alias conflict, or report unreconciled residuals without a focused artifact contract."
+evidence: "a98424827: bounded writes/reads artifact verifier, explicit phase populations, and mutation tests for malformed durations, missing phases, reconciliation, and aliases."
+acceptance: "The offline checker proves only packet shape and arithmetic invariants; malformed, incomplete, over-counted, or unreconciled timing artifacts fail closed."
+verify: python3 -m pytest -q scripts/test_verify_d03_timing_artifact.py
+verify-means: |
+  done — the bounded timing artifact contract and mutation suite are green. The
+  production measurements, deployed commit identity, and latency/residual claims
+  for B-107/B-122/B-129 remain parked and require their prescribed owner probes.
+last-verified: 2026-09-08
+```
+
+### B-359 — B-216/B-251 D03 packet predicates were syntactically present but semantically inert
+
+The graduation verifier now extracts bounded jq filters and executes positive and
+one-field-negative fixtures for B-216 correlations and B-251 identity/measurement
+envelopes. Comment, string, inert-filter, shell-escape, and truth-flip mutations
+are rejected without turning fixture evidence into production evidence.
+
+```backlog
+id: B-359
+repo: corelink-server
+owner: tl
+status: done
+source-document: "D03 graduation packet review"
+source-locator: "scripts/verify_d03_graduation.py; tests/test_verify_d03_graduation.py"
+finding-title: "B-216/B-251 jq predicates were not executed against negative fixtures"
+problem: "Required jq text could remain in comments or inert filters while the packet verifier still accepted the command shape."
+evidence: "edc5548d8 through 455b55cb4: bounded jq extraction/execution, positive and field-negative fixtures, and four exact inert-filter mutations."
+acceptance: "The packet verifier proves each required B-216/B-251 predicate changes verdict when its correlated field changes and preserves the explicit fixture-only/non-production boundary."
+verify: python3 -m pytest -q tests/test_verify_d03_graduation.py
+verify-means: |
+  done — the B-216/B-251 jq semantics and focused mutation suite are green. The
+  actual DLQ delivery, paging, and production latency evidence remain parked;
+  packet/verifier correctness is not runtime proof.
+last-verified: 2026-09-08
+```
+
 ### B-081 — seguir o runbook de rotação da chave de assinatura de PAT causa indisponibilidade
 
 O verificador do contêiner aceita chaves de transição: `adapter_pat.rs:1466` itera sobre
@@ -10499,10 +10841,12 @@ nos EUA. É base de transferência do Art. 46 — não é questão que se resolv
 lançamento.
 
 
-**Só ele (reconfirmado 2026-08-31) — o ato: assinar a emenda de residência
-(`legal/dpa-residency-amendment.md`).** É **instrumento assinado** — mesma classe que mantém
-[B-035], [B-089] e [B-154]. Eu entrego o texto da emenda e a medição da divergência; a
-assinatura é dele.
+**Só ele (reconfirmado 2026-08-31) — o ato: revisão jurídica e eventual execução da
+emenda de residência (`legal/dpa-residency-amendment.md`).** É um **rascunho não
+executado**, explicitamente marcado `PENDING_LEGAL_REVIEW`; nenhuma frase deste item
+transforma o rascunho em obrigação contratual efetiva. Eu entrego o texto e a medição
+da divergência; o Owner decide, com counsel, entre provisionar D1 por jurisdição ou
+emendar e executar o instrumento.
 
 ```backlog
 id: B-086
@@ -10727,13 +11071,16 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-089 — o SLA promete créditos automáticos como remédio exclusivo e não existe código que emita crédito
+### B-089 — o SLA promete créditos automáticos como remédio exclusivo; repo-owned path landed, provider proof remains
 
 `legal/sla/v1.0.0.md:74` promete créditos *"issued automatically against the next
 invoice"*, e a §4.5 declara isso o *"sole and exclusive remedy"* do cliente.
 
-Busquei `service_credit`, `sla_credit`, `credit_note` e `balance_transaction` em todo
-`crates/`, `worker/` e `apps/` — nada, exceto cupons de lançamento da Stripe no checkout.
+O caminho repo-owned agora está localizado em `apps/signup-worker/src/webhooks/
+sla_credit_cron.ts`: a observação canônica, cutoff UTC, elegibilidade, ledger,
+outbox transacional, reconciliação e gate de provider são implementados e
+testados. Isso não é prova de provider: a flag continua desligada até a operação
+Stripe em test mode e a reconciliação exigidas abaixo.
 
 Agravantes na mesma cláusula: o SLA define quatro tiers enquanto o produto vende seis, de
 modo que um cliente Solo ($15) ou Max ($149) não tem tier no instrumento assinado, embora
@@ -10744,16 +11091,23 @@ preços marca como `slaCredits: false`.
 Uma cláusula de remédio exclusivo que não pode ser cumprida é a primeira a cair, e sua
 queda expõe danos sem teto.
 
-**Reverificado 2026-08-31 (WP-C) — SEGUE ABERTO, e deliberadamente NÃO reparado.** As três
-afirmações do corpo continuam de pé, e uma quarta foi medida:
+**Reverificado 2026-09-08 — a engenharia repo-owned está implementada, mas o item
+SEGUE ABERTO por decisão legal/comercial e prova externa.** O SLA executado não foi
+alterado. O pacote de ação canônico mantém `status: open` até a decisão do owner;
+o gate de código e o resultado do guard podem dizer “parked until provider proof”
+sem mudar o estado do item ou os contadores do ledger:
 
 - `legal/sla/v1.0.0.md:74` ainda promete créditos *"issued automatically against the next
   invoice"*, e a §4 (linha 113) ainda os declara *"Customer's sole and exclusive remedy"*.
-- **Zero** arquivos de `crates/`, `worker/src/` e `apps/` implementam emissão de crédito
-  (`service_credit|sla_credit|credit_note|balance_transaction`). O **controle**: a mesma
-  varredura por `checkout.session|subscription` nos mesmos diretórios devolve **99**
-  arquivos — o instrumento enxerga a superfície Stripe, e o zero é leitura, não comando
-  quebrado.
+- O produtor canônico `recordCanonicalSlaObservation` →
+  `publishClosedSlaMeasurements` mede somente meses UTC fechados após o cutoff de
+  dez dias úteis. A ledger, outbox, reconciliação, retry de tenant mapping e Stripe
+  idempotency key estão em `migrations/d1/0117_sla_credit_ledger.sql` e no cron
+  `apps/signup-worker/src/webhooks/sla_credit_cron.ts`.
+- O guard `scripts/verify_b089_sla_credits.py` e os testes adversariais cobrem o
+  caminho repo-owned. O provider exige `SLA_CREDITS_ENABLED=true` em dois pontos e o
+  `wrangler.toml` mantém a flag em `false`; nenhum deploy ou teste local muta Stripe
+  por acidente.
 - O SLA define **quatro** tiers (`Free`, `Starter`, `Pro`, `Enterprise` — linha 30)
   enquanto o produto vende **seis**. Um cliente Solo ($15) ou Max ($149) não tem tier no
   instrumento assinado.
@@ -10787,17 +11141,14 @@ id: B-089
 repo: corelink-server
 owner: owner
 status: open
-action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  python3 -S scripts/verify_owner_action_packets.py --id B-089 && \
-  python3 scripts/verify_b089_credit_contract.py
+  python3 scripts/verify_b089_sla_credits.py
 verify-means: |
-  open — o SLA promete crédito automático E nenhum arquivo de código implementa emissão
-  de crédito.
-
-  Vira DRIFTED por qualquer um dos dois reparos: implementar a emissão (o que o contrato
-  exige), ou emendar a cláusula para um remédio que a organização consiga cumprir (o
-  honesto). A escolha é jurídica e comercial.
+  open — o caminho repo-owned de medição, elegibilidade, ledger limitado,
+  outbox transacional, provider idempotente e reconciliação está implementado, mas
+  o guard não alega uma mutação Stripe live. Depois do deploy, o owner precisa
+  aplicar 0117, executar uma operação Stripe em test mode com a flag habilitada,
+  replayar o mesmo sweep e reconciliar o provider id com a próxima invoice.
 
   O que NÃO decide, e admito: o descompasso de quatro tiers no SLA contra seis vendidos, e
   a contradição do `terms.tsx:333` com `slaCredits: false`. São três documentos que
@@ -10805,7 +11156,7 @@ verify-means: |
   de preços — vale escrever junto com o reparo, não antes dele. Ficam registrados na prosa.
 
   Owner: emenda de instrumento assinado.
-last-verified: 2026-09-05
+last-verified: 2026-09-08
 ```
 
 ### B-090 — o worker que processa Stripe, Clerk e DSR implanta a partir de `npm install` sem lockfile, e o portão de supply-chain é cego a ele
@@ -11658,11 +12009,14 @@ verify-means: |
   Fecha quando o PUT quente cair para a ordem de 30-50 ms. Enquanto estiver em segundos,
   os alvos são [B-107], [B-108] e [B-109], e o de maior alcance é [B-106].
 
-  **Caminho para automatizar:** `cargo-cache-latency-probe.yml` já é `workflow_dispatch`
-  com acesso ao `CORELINK_SCCACHE_TOKEN` e hoje só faz GETs. Estendê-lo com três PUTs
-  cronometrados e um teto sobre o terceiro transforma isto em portão de verdade, medido de
-  dentro da frota. Quem fizer deve substituir este `manual`.
-last-verified: 2026-09-05
+  **Caminho para automatizar (ainda não entregue):** a antiga
+  `cargo-cache-latency-probe.yml` foi arquivada e não existe no branch de integração atual;
+  o instrumento presente é apenas `scripts/probe-cargo-cache-latency.sh`, executável
+  manualmente com `PROBE_TOKEN`. Portanto este item continua `manual`: criar uma nova
+  workflow não é evidência de latência nem fecha o item. Se ela voltar, deverá acrescentar
+  três PUTs cronometrados e um teto sobre o terceiro, medidos de dentro da frota, antes de
+  substituir este `manual`.
+last-verified: 2026-09-08
 ```
 
 ### B-103 — o caminho de escrita do `/cargo` falha em 87% sob paralelismo e satura em ~2 req/s
@@ -11910,7 +12264,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-106 — um verify de PAT frio custa 711 ms e o TTL do KV é 60 s, então todo cliente paga isso continuamente
+### B-106 — um verify de PAT frio custa 711 ms e o TTL do KV é 30 s, então todo cliente paga isso continuamente
 
 Achado que só apareceu porque a causa do [B-102] foi refutada: ao provar que o `desc` era
 camada de cache e não caminho de código, o número que sobrou deixou de ser um artefato de
@@ -11920,8 +12274,7 @@ Um verify servido pelo D1 custa **711 ms**; servido pelo KV, **8 ms**; pela L1 d
 **0 ms**. Medido em produção, 2026-08-30.
 
 O alcance é o ponto. `worker/src/lib/pat_verify_cache.ts` documenta as camadas: L1 é
-per-isolate com TTL de ~5 s, e o L2 KV tem TTL de **60 s** — o comentário na linha 92 diz
-que 60 s é o **piso do KV**, não uma escolha. Então a cada 60 segundos, para cada token, em
+per-isolate com TTL de ~5 s, e o L2 KV tem TTL de **30 s**. Então a cada 30 segundos, para cada token, em
 cada colo, o primeiro request paga 711 ms. Isso não é caso excepcional: é o estado
 permanente de qualquer tráfego que não seja uma rajada contínua sobre o mesmo token no
 mesmo colo.
@@ -11950,9 +12303,9 @@ verify-means: |
   parked — exige credencial de produção e, pior, exige medir um estado FRIO, que é
   destrutivo de si mesmo: a primeira medição aquece o cache e a segunda mede outra coisa.
 
-  Procedimento: um request autenticado com um token que não seja usado há mais de 60 s (ou
-  recém-mintado), lendo o `Server-Timing`. Confirmar `auth;desc="d1"` e cronometrar. Repetir
-  em intervalos maiores que 60 s para amostrar — nunca em sequência, que é exatamente o erro
+  Procedimento: um request autenticado com um token recém-mintado que permaneça sem uso por
+  pelo menos 61 s, lendo o `Server-Timing`. Confirmar `auth;desc="d1"` e cronometrar. Repetir
+  em intervalos maiores que 61 s para amostrar — nunca em sequência, que é exatamente o erro
   que produziu a causa errada do [B-102].
 
   Fecha quando um verify frio cair para a ordem de dezenas de ms, que é o que o comentário
@@ -11963,7 +12316,7 @@ verify-means: |
   tomado sempre. São consertos diferentes e só uma medição as distingue — não escolha por
   intuição, que já custou uma causa errada neste pacote.
 
-  NÃO fechar aumentando o TTL do KV. 60 s é o piso do KV, e alongar a janela de cache
+  NÃO fechar aumentando o TTL do KV. O runtime usa TTL de 30 s; alongar a janela de cache
   alarga a janela de revogação — a ADR-0030 fixa 60 s de p99 para revogação, e trocar
   latência por janela de revogação é trocar performance por furo de segurança.
 last-verified: 2026-09-05
@@ -12354,32 +12707,22 @@ last-verified: 2026-08-30
 
 ---
 
-### B-118 — a única lane hosted protegida por waiver nunca executou
+### B-118 — a antiga lane OCI foi removida após nunca executar — RESOLVIDO
 
-`cosign-sign.yml` assina a imagem OCI do Worker com Cosign keyless e publica no Rekor. Ela
-é a **única** lane que o owner autorizou manter hospedada na GitHub, com waiver escrito no
-cabeçalho do arquivo (2026-08-11), sob o argumento de que o custo é desprezível porque só
-dispara em tag de release.
+**Fechado 2026-09-08: saída = remover.** `cosign-sign.yml` deveria assinar a
+imagem OCI do Worker, mas nunca produziu certificado, assinatura ou entrada
+Rekor. A revisão do corpo encontrou cinco paredes independentes: gatilho `v*`
+sem tags correspondentes; namespace de imagem incompatível com o repositório;
+sujeito OCI que não era o Worker; `ZONE_ID_PLACEHOLDER` no deploy; e atestação
+SLSA que era apenas um `echo` stub. O waiver do owner de 2026-08-11 era real,
+mas não transforma uma lane inexecutável em evidência.
 
-O argumento está certo. O efeito é que o waiver protege uma lane que **nunca assinou
-nada**:
-
-```
-gh run list --workflow=cosign-sign.yml --limit 5   →  zero linhas
-gh run list --workflow=nightly.yml     --limit 2   →  2 linhas
-```
-
-A segunda consulta existe para provar o mecanismo: a mesma chamada devolve linhas quando há
-linhas, então o vazio da primeira é ausência real e não consulta quebrada.
-
-Ela é, portanto, mais uma lane com zero sucessos — só que do lado protegido da fronteira,
-onde a varredura de lanes hosted não a procura porque o waiver a marca como resolvida.
-
-**Consequência que já chegou ao cliente.** O `apps/docs/docs/trust/index.mdx` prometia
-entradas de transparência Sigstore/Rekor para a imagem do Worker, "verificáveis com
-`cosign verify` contra o emissor `token.actions.githubusercontent.com`, sem chave nossa".
-Nada disso jamais foi emitido. O #1356 remove a promessa — e a remoção deixa de ser
-plausível e passa a ser provada por este item.
+A inspeção do Actions antes da remoção não encontrou execução concluída para
+esta lane; essa observação histórica fica apenas como contexto. Ela não é usada
+como evidência do estado atual agora que o workflow foi apagado. A afirmação
+pública sobre Sigstore/Rekor foi removida junto com a lane, enquanto os caminhos
+independentes de assinatura release-SLSA e CAS continuam separados, gated e
+verificados abaixo.
 
 O precedente que define o padrão de reparo é a `reproducible-build`: zero verdes por motivo
 **estrutural**, não por flake — ela hasheava um artefato wasm que o build não produz, e
@@ -12389,34 +12732,17 @@ ninguém tinha lido o que a lane fazia. Leia o corpo desta antes de classificar.
 id: B-118
 repo: corelink-server
 owner: tl
-status: parked
+status: done
 verify: |
-  bash -c 'test -f .github/workflows/cosign-sign.yml || { echo "FALHA: cosign-sign.yml nao existe mais — se foi apagada por decisao, feche o item registrando o motivo."; exit 1; }
-  ctrl=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/nightly.yml/runs?per_page=1" --jq ".total_count" 2>/dev/null || echo "")
-  case "$ctrl" in ""|0) echo "INDETERMINADO: a consulta de controle (nightly.yml) nao devolveu execucoes; sem gh/rede autenticada este predicado nao decide nada — nao interprete como ausencia."; exit 0 ;; esac
-  n=$(gh api "repos/HuGR-Labs/corelink-server/actions/workflows/cosign-sign.yml/runs?per_page=1" --jq ".total_count" 2>/dev/null || echo "")
-  case "$n" in "") echo "INDETERMINADO: a consulta da cosign-sign falhou enquanto a de controle funcionou; investigue em vez de concluir."; exit 0 ;; esac
-  [ "$n" = 0 ] || { echo "FALHA: cosign-sign.yml ja executou $n vez(es) — a lane saiu do zero, feche ou reescreva o item."; exit 1; }
-  echo "aberto: cosign-sign.yml tem 0 execucoes (controle nightly.yml: $ctrl) e segue com waiver de custo hosted"'
+  python3 scripts/verify_b118_retirement.py
 verify-means: |
-  parked — a lane existe, tem waiver, e nunca rodou.
-
-  A consulta de controle não é enfeite. Este predicado depende de rede autenticada, e a
-  classe de defeito dominante desta campanha é concluir ausência a partir de saída vazia.
-  Sem `gh`, sem rede ou sem permissão, a chamada devolve vazio — que se parece com "zero
-  execuções" e significa outra coisa. O controle separa as duas leituras, e o item sai
-  como INDETERMINADO em vez de mentir nos dois sentidos.
-
-  O que este comando NÃO decide: **por que** ela nunca rodou. Zero execuções é compatível
-  com "nunca houve tag de release" e com "o gatilho está quebrado", e o reparo é
-  completamente diferente nos dois casos. Quem fechar precisa dizer qual é, com o corpo do
-  workflow na mão.
-
-  Saídas aceitáveis, as mesmas três de qualquer lane sem sucesso: consertar na raiz e
-  fazê-la ficar verde; apagá-la, com o motivo no corpo do PR — e nesse caso **toda**
-  promessa de assinatura na doc do cliente sai junto; ou documentar o bloqueio. Nenhuma
-  fica no meio, e "flaky, deixa quieto" não é saída.
-last-verified: 2026-08-30
+  done — a antiga lane OCI permanece ausente, a linha RETIRED (B-118) do controle
+  de release permanece exata, as promessas públicas permanecem removidas e os
+  caminhos release-SLSA/CAS, que não são a antiga lane OCI, continuam com
+  assinatura e verificação. O gate local `scripts/verify_b118_retirement.py`
+  rejeita a reintrodução da workflow ou a promoção do ledger; a inspeção
+  histórica é contexto, não falso-green runtime proof.
+last-verified: 2026-09-08
 ```
 
 ---
@@ -13508,26 +13834,26 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-134 — "shim nao e daemon": ninguem observou `smoke-install` nem `cosign-sign` rodando na frota
+### B-134 — "shim nao e daemon": `smoke-install` segue sem observação de frota
 
 A imagem da frota ganhou um **drop-in** `docker` em corelink-runners#459 (2026-08-13):
 `docker-shim.sh` fazendo `exec nerdctl` sobre containerd + BuildKit. **Nao e um daemon
 Docker.**
 
-Dois workflows dependiam de docker e eram hosted; esta branch os roteia para a fila
+O único workflow candidato restante depende de Docker e é roteado para a fila
 `corelink` como experimento controlado:
 
 - `smoke-install.yml` — preflight `docker info`, build, install/version e `doctor`
-- `cosign-sign.yml` — preflight `docker info`, `docker/build-push-action`, assinatura
-  keyless e verificacao Rekor antes do webhook
+- `cosign-sign.yml` — **removido em 2026-09-08 (B-118)**; não é mais uma
+  observação pendente nem uma lane que possa ser promovida por evidência futura
 
 **O que se sabe:** build de imagem funciona na frota — `container-build-push-prod.yml`
 esta verde (2026-08-31T00:39). **Mas ele chama `buildctl` DIRETO**, nao passa pelo shim.
 Isso nao prova nada sobre os dois acima.
 
-**O experimento e barato e decide os dois:** a proxima execucao deve despachar cada um com
-`runs-on: corelink` e ler o resultado. Ate que exista essa execucao, a afirmacao "eles
-funcionam na frota" segue **nao medida** — o comentario em `cargo-deny.yml:102`
+**O experimento e barato e decide o smoke:** a proxima execucao deve despacha-lo com
+`runs-on: corelink` e ler o resultado. Ate que exista essa execucao, a afirmacao "ele
+funciona na frota" segue **nao medida** — o comentario em `cargo-deny.yml:102`
 ("the `corelink` box image ships no docker at all") ja esta desatualizado pelo mesmo
 motivo.
 
@@ -13552,15 +13878,14 @@ verify: |
   python3 scripts/check_b134_observability.py
   bash scripts/test_b134_observability.sh
 verify-means: |
-  parked — os dois workflows estao roteados para `corelink`, mas a ledger permanece
-  `UNMEASURED` ate haver um run real. O checker confirma preflight e passos observaveis;
-  a suite de mutacoes prova que rota, verificacao, placeholders e ledger falsa falham.
+  parked — o workflow `smoke-install` está roteado para `corelink`, mas a ledger permanece
+  `UNMEASURED` até haver um run real. O checker confirma preflight e passos observáveis;
+  a suite de mutações prova que rota, verificação, placeholders e ledger falsa falham.
 
-  Vira PASS somente com GitHub run IDs, conclusoes, logs do backend, evidencia de imagem
-  publicada/assinada/verificada e webhook aceito. Vira DRIFTED se a rota, verificacao ou
-  contrato de evidencia regredir, ou se o workflow for removido (`cosign-sign` pode
-  simplesmente morrer, ver B-118).
-last-verified: 2026-09-05
+  Vira PASS somente com GitHub run IDs, conclusões, logs do backend, evidência de imagem
+  publicada/verificada e webhook aceito. Vira DRIFTED se a rota, verificação ou contrato
+  de evidência regredir. A antiga `cosign-sign` foi removida em B-118 e permanece RETIRED.
+last-verified: 2026-09-08
 ```
 
 ### B-135 — a imagem do runner nao e construida por nenhum gatilho de PR, e carrega rotulos que ninguem le
@@ -13604,23 +13929,34 @@ instalacao. **Este item e sobre o padrao pre-existente, nao sobre os que eu acre
 basta um `hadolint`/dry-run barato que pegue erro de forma sem construir. E nao decide se
 os rotulos devem ganhar consumidor ou desaparecer.
 
+**Fechado em 2026-09-08 no PR #561 do `corelink-runners`.** A evidencia cross-repo foi
+registrada em `docs/campaigns/remediation/B-135-corelink-runners-closure.md` com valores
+sensitivos redigidos e tres amarras que nao podem ser substituidas por um numero de PR:
+o head testado `d8124b1ab89cf6afb08682442e94c4f4d18c6ba8`, a arvore testada e entregue
+`d9cadd3741c77bb58d7162922f1510ded41c844f`, e o merge em `main`
+`ec9b6d69dbb1f3bd64ef4f9a4ce7e9d9100e69c1`. O verificador local exige o receipt completo,
+o comportamento entregue (gatilho `pull_request`, build secretless sem publicacao e
+rotulos sem consumidor removidos) e o estado `done`; receipt ausente, SHA encurtado,
+comportamento ausente ou credencial deixam o portao vermelho. Isto fecha somente B-135:
+o build/publicacao/repin/rollout de imagens continua sendo B-114/B-138.
+
 ```backlog
 id: B-135
 repo: corelink-runners
 owner: tl
-status: parked
-verify: manual
+status: done
+verify: |
+  python3 scripts/check_b135_cross_repo.py
+  bash scripts/test_b135_cross_repo.sh
 verify-means: |
-  parked — vive em corelink-runners; o token do Actions nao le repo irmao, entao nao da para
-  automatizar ate [B-012] entregar credencial cross-repo.
-
-  Checagem manual, dois comandos no clone de corelink-runners:
-    grep -n "workflow_dispatch\|pull_request" .github/workflows/build-cf-container-images.yml
-      -> so workflow_dispatch  => item aberto
-    grep -rn "corelink.rust\|corelink.gh.version" --include=*.yml --include=*.sh --include=*.py .
-      | grep -v Dockerfile
-      -> vazio  => rotulos sem consumidor, item aberto
-last-verified: 2026-08-31
+  done — `scripts/check_b135_cross_repo.py` e fail-closed: ele exige o receipt redigido
+  completo, o tested head e a arvore que foram testados, o merge commit que entregou a mesma
+  arvore em `corelink-runners/main`, e as amarras de comportamento da lane `pull_request`
+  secretless e dos rotulos removidos. Nao consulta o token do Actions nem inventa acesso
+  ao repo irmao: a ausencia ou adulteracao da evidencia commitada sai nao-zero. A suite
+  `scripts/test_b135_cross_repo.sh` planta mutacoes no head, merge, estado do backlog,
+  comportamento e credencial e exige que todas fiquem vermelhas.
+last-verified: 2026-09-08
 ```
 
 ### B-136 — `github.ref` colapsa `push`, `schedule` e `workflow_dispatch` na `main`, e o cron do backlog pode morrer calado

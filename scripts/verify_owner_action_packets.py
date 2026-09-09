@@ -3,8 +3,12 @@
 
 This guard validates the packet's portable engineering contract only. It never
 contacts GitHub, PagerDuty, Stripe, Drata, Cloudflare, Apple, Windows, or a
-customer, and it never treats an owner action as completed. Missing, duplicate,
+customer, and it never independently treats an owner action as completed merely
+because a packet field is present. Missing, duplicate,
 ambiguous, or mutated packet fields are errors rather than an empty result.
+It does not perform or independently reproduce an owner action; a closed row is
+accepted only when its packet metadata and canonical BACKLOG contract record the
+corresponding repository/evidence closure.
 """
 
 from __future__ import annotations
@@ -26,7 +30,13 @@ EXPECTED_IDS = (
     "B-072", "B-083", "B-102", "B-106", "B-113", "B-125", "B-128",
     "B-134", "B-142", "B-165",
 )
-LEGACY_OWNER_IDS = frozenset(EXPECTED_IDS[:12])
+# B-013 was reconciled from an external owner action to a repository-side
+# closure record after its redacted deletion evidence received a strict focal
+# verifier.  It therefore no longer belongs to the legacy ``owner`` subset;
+# the other ten legacy rows remain owner-controlled until their actions are
+# evidenced and reclassified.
+LEGACY_OWNER_IDS = frozenset(EXPECTED_IDS[:12]) - {"B-013", "B-110"}
+CLOSED_PACKET_IDS = frozenset({"B-013", "B-110"})
 ITEM_FIELDS = {
     "id", "owner", "status", "action_type", "procedure",
     "inputs_and_credentials_boundary", "evidence", "expected_postcondition",
@@ -74,6 +84,111 @@ B111_RELEASE_CHAIN = {
     "sign-windows": {"sign-linux", "release"},
     "notarize-macos": {"sign-windows", "release"},
 }
+B110_EVIDENCE_PATH = "evidence/owner-actions/B-110/ci-capacity-decision.json"
+B110_EVIDENCE_REQUIRED_FIELDS = [
+    "schema_version",
+    "captured_at",
+    "selected_option",
+    "workflows",
+    "capacity_or_billing_reference",
+    "coverage_impact",
+    "runner_labels",
+    "rollback_owner",
+    "operator",
+]
+B110_EVIDENCE_ITEM_SCHEMA = (
+    "workflows[] contains workflow, current_runner, selected_runner, and action; "
+    "selected_option is hosted_billing, linux_self_hosted, or owner_authorized_park."
+)
+B110_EVIDENCE_WORKFLOWS = [
+    {
+        "workflow": ".github/workflows/cas_foundation.yml",
+        "current_runner": "ubuntu-latest / ubuntu-x64-4core",
+        "selected_runner": "corelink",
+        "action": "migrated",
+    },
+    {
+        "workflow": ".github/workflows/coverage.yml",
+        "current_runner": "ubuntu-x64-4core",
+        "selected_runner": "corelink",
+        "action": "migrated",
+    },
+    {
+        "workflow": ".github/workflows/ffi-matrix-ci.yml",
+        "current_runner": "ubuntu-latest",
+        "selected_runner": "corelink",
+        "action": "migrated",
+    },
+    {
+        "workflow": ".github/workflows/mutation-nightly.yml",
+        "current_runner": "ubuntu-x64-4core",
+        "selected_runner": "corelink",
+        "action": "migrated",
+    },
+]
+B110_EXPECTED_POSTCONDITION = (
+    "The owner-approved Linux self-hosted capacity decision is recorded and the four lanes use viable "
+    "CoreLink capacity without deletion; B-110 is closed only after the workflow and verifier changes are present."
+)
+B110_PROCEDURE = [
+    "UI: Choose one authorized capacity path for cas_foundation, coverage, ffi-matrix-ci, and mutation-nightly: restore hosted billing, provision an adequate Linux self-hosted box, or authorize deletion/parking of the named lanes.",
+    "RUN: For a self-hosted path, register a dedicated runner label with documented CPU/RAM/disk limits and verify the four workflows’ `runs-on` and toolchain assumptions before enabling it.",
+    "UI: For hosted billing, confirm the GitHub account spending limit and payment state; for deletion/parking, obtain explicit owner approval describing the coverage loss. Record the selected option before any workflow mutation.",
+]
+
+# These three receipts are repository-side observations of owner-gated work.
+# Their presence is deliberately required even when the external action was
+# NOT_EXECUTED/BLOCKED: an absent artifact is ambiguous, while a typed blocker
+# cannot be mistaken for a production success.
+B054_EVIDENCE_PATH = "evidence/owner-actions/B-054/keyed-audit-epoch-rollout.json"
+B054_EVIDENCE_REQUIRED_FIELDS = [
+    "schema_version", "captured_at", "legacy_epoch", "keyed_epoch",
+    "migration_receipts", "witness_receipt", "archive_verification",
+    "rotation_receipt", "rollback_plan", "operator", "repository_checks",
+]
+B083_EVIDENCE_PATH = "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json"
+B083_EVIDENCE_REQUIRED_FIELDS = [
+    "schema_version", "captured_at", "tenant_redacted", "image_digest",
+    "kms_provider", "check_access", "activation", "cas_ac_round_trip",
+    "revocation", "run_loop", "operator", "repository_checks",
+]
+B097_EVIDENCE_PATH = "evidence/owner-actions/B-097/cloudflare-vcpu-quota-case.json"
+B097_EVIDENCE_REQUIRED_FIELDS = [
+    "schema_version", "captured_at", "account_id_redacted", "case_id",
+    "requested_total_vcpu", "current_total_vcpu", "declared_reservation_vcpu",
+    "active_tenants_concurrent", "provider_decision", "effective_at", "operator",
+    "read_only_capture",
+]
+RECEIPT_STATUSES = frozenset({"PASS", "FAIL", "BLOCKED", "NOT_EXECUTED"})
+PACKET_BASE_SHA = "908d3bdc86f17a8b41a280baaea9352d7ed450ab"
+BASE_SHA_PROVENANCE_DISCLAIMER = (
+    "The base_sha is an immutable D03 packet reference for provenance, not a claim that the reference "
+    "is an ancestor of every checkout carrying this packet."
+)
+B054_REPOSITORY_CHECKS = [
+    {
+        "command": "python3 scripts/verify_b054_audit_chain_contract.py",
+        "status": "PASS",
+        "detail": "Unknown, partial, and downgrade epoch metadata fail closed; mutation fixtures are rejected.",
+    },
+    {
+        "command": "python3 scripts/test_audit_chain_epoch_schema.py",
+        "status": "PASS",
+        "detail": "Additive schema constraints and no-replace guards pass with recursive_triggers=OFF.",
+    },
+]
+B083_REPOSITORY_CHECKS = [
+    {
+        "command": "python3 scripts/verify_b083_revocation_wiring.py",
+        "status": "PASS",
+        "detail": "Durable source, pre-bind run_loop wiring, focal behavior, and mutation checks pass.",
+    },
+    {
+        "command": "python3 tests/test_verify_b083_byok.py",
+        "status": "PASS",
+        "detail": "B083 verifier mutation: green baseline and named red mutant.",
+    },
+]
 
 
 class PacketError(ValueError):
@@ -363,6 +478,240 @@ def _check_b111_workflow_contract(workflow_contracts: dict[str, object]) -> None
             )
 
 
+def _read_b110_evidence() -> dict[str, object]:
+    path = ROOT / B110_EVIDENCE_PATH
+    if not path.is_file() or path.is_symlink():
+        raise PacketError(f"B-110 evidence is missing/non-regular: {B110_EVIDENCE_PATH}")
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PacketError(f"B-110 evidence is not valid UTF-8 JSON: {exc}") from exc
+    if not isinstance(record, dict):
+        raise PacketError("B-110 evidence root must be an object")
+    return record
+
+
+def _check_b110_evidence(item: dict[str, object]) -> None:
+    evidence = item["evidence"]
+    assert isinstance(evidence, dict)
+    if evidence["path"] != B110_EVIDENCE_PATH:
+        raise PacketError("B-110 evidence path is not the canonical capacity decision")
+    if evidence["format"] != "json":
+        raise PacketError("B-110 evidence format is not JSON")
+    if evidence["required_fields"] != B110_EVIDENCE_REQUIRED_FIELDS:
+        raise PacketError("B-110 evidence required fields drifted")
+    if evidence["item_schema"] != B110_EVIDENCE_ITEM_SCHEMA:
+        raise PacketError("B-110 evidence item schema drifted")
+    if item["action_type"] != "ci_capacity_decision":
+        raise PacketError("B-110 action type drifted")
+    if item["procedure"] != B110_PROCEDURE:
+        raise PacketError("B-110 procedure drifted")
+    if item["expected_postcondition"] != B110_EXPECTED_POSTCONDITION:
+        raise PacketError("B-110 expected postcondition drifted")
+
+    record = _read_b110_evidence()
+    if set(record) != set(B110_EVIDENCE_REQUIRED_FIELDS):
+        raise PacketError("B-110 evidence fields drifted")
+    if record["schema_version"] != 1 or not isinstance(record["captured_at"], str) or not record["captured_at"].strip():
+        raise PacketError("B-110 evidence capture metadata drifted")
+    if record["selected_option"] != "linux_self_hosted":
+        raise PacketError("B-110 capacity decision is not linux_self_hosted")
+    if record["workflows"] != B110_EVIDENCE_WORKFLOWS:
+        raise PacketError("B-110 workflow evidence drifted")
+    if record["capacity_or_billing_reference"] != (
+        "CoreLink runner image documentation: Linux x86_64, 4 vCPU, 12.5 GB; migration commit 41c47f236"
+    ):
+        raise PacketError("B-110 capacity reference drifted")
+    if record["coverage_impact"] != (
+        "No lane was deleted or parked. The FFI Python/Go/Node matrices remain intact; cache guards remain "
+        "self-hosted-safe; workflow assertions are unchanged."
+    ):
+        raise PacketError("B-110 coverage impact drifted")
+    if record["runner_labels"] != ["corelink"]:
+        raise PacketError("B-110 runner labels drifted")
+    if record["rollback_owner"] != "owner" or record["operator"] != "owner-authorized automation":
+        raise PacketError("B-110 evidence ownership metadata drifted")
+
+
+def _read_json_evidence(path_text: str, expected_fields: list[str], label: str) -> dict[str, object]:
+    """Load one canonical receipt and reject missing/extra root fields and secrets."""
+    path = ROOT / path_text
+    if not path.is_file() or path.is_symlink():
+        raise PacketError(f"{label} evidence is missing/non-regular: {path_text}")
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PacketError(f"{label} evidence is not valid UTF-8 JSON: {exc}") from exc
+    if not isinstance(record, dict):
+        raise PacketError(f"{label} evidence root must be an object")
+    if set(record) != set(expected_fields):
+        raise PacketError(
+            f"{label} evidence fields drifted; expected={expected_fields}, got={sorted(record)}"
+        )
+    serialized = json.dumps(record, ensure_ascii=False)
+    if any(pattern.search(serialized) for pattern in SECRET_SHAPES):
+        raise PacketError(f"{label} evidence contains credential material")
+    return record
+
+
+def _exact_keys(value: object, expected: set[str], label: str) -> dict[str, object]:
+    if not isinstance(value, dict) or set(value) != expected:
+        got = sorted(value) if isinstance(value, dict) else type(value).__name__
+        raise PacketError(f"{label} fields drifted; expected={sorted(expected)}, got={got}")
+    return value
+
+
+def _receipt_status(value: object, label: str) -> str:
+    if value not in RECEIPT_STATUSES:
+        raise PacketError(f"{label} has invalid status: {value!r}")
+    return str(value)
+
+
+def _receipt_blocker(value: object, status: str, label: str) -> None:
+    if status != "PASS":
+        if not isinstance(value, str) or not value.strip():
+            raise PacketError(f"{label} must name an exact blocker for {status}")
+
+
+def _check_b054_evidence(item: dict[str, object]) -> None:
+    evidence = item["evidence"]
+    assert isinstance(evidence, dict)
+    if evidence["path"] != B054_EVIDENCE_PATH or evidence["format"] != "json":
+        raise PacketError("B-054 evidence binding drifted")
+    if evidence["required_fields"] != B054_EVIDENCE_REQUIRED_FIELDS:
+        raise PacketError("B-054 evidence required fields drifted")
+    record = _read_json_evidence(B054_EVIDENCE_PATH, B054_EVIDENCE_REQUIRED_FIELDS, "B-054")
+    if record["schema_version"] != 1 or not isinstance(record["captured_at"], str) or not record["captured_at"].strip():
+        raise PacketError("B-054 evidence capture metadata drifted")
+    expected_epochs = {
+        "legacy_epoch": ("E0/unkeyed", "NOT_EXECUTED"),
+        "keyed_epoch": ("E1/keyed", "BLOCKED"),
+    }
+    for name in ("legacy_epoch", "keyed_epoch"):
+        epoch = _exact_keys(record[name], {"algorithm_version", "row_count", "verification", "status", "blocker"}, f"B-054 {name}")
+        status = _receipt_status(epoch["status"], f"B-054 {name}")
+        expected_algorithm, expected_status = expected_epochs[name]
+        if epoch["algorithm_version"] != expected_algorithm:
+            raise PacketError(f"B-054 {name} algorithm version drifted")
+        if epoch["row_count"] is not None:
+            raise PacketError(f"B-054 {name} row count would overstate an unexecuted probe")
+        if epoch["verification"] != expected_status or status != expected_status or status != epoch["verification"]:
+            raise PacketError(f"B-054 {name} status/verification coherence drifted")
+        _receipt_blocker(epoch["blocker"], status, f"B-054 {name}")
+    migration = _exact_keys(record["migration_receipts"], {"status", "migrations", "references", "blocker"}, "B-054 migration_receipts")
+    migration_status = _receipt_status(migration["status"], "B-054 migration_receipts")
+    if migration_status != "NOT_EXECUTED":
+        raise PacketError("B-054 migration status would overstate an unexecuted rollout")
+    if migration["migrations"] != ["0109_audit_chain_epoch_contract.sql", "0110_audit_chain_epoch_row_metadata.sql"]:
+        raise PacketError("B-054 migration list drifted")
+    if migration["references"] != []:
+        raise PacketError("B-054 migration references would overstate an applied migration")
+    _receipt_blocker(migration["blocker"], migration_status, "B-054 migration_receipts")
+    expected_receipt_statuses = {
+        "witness_receipt": "BLOCKED",
+        "archive_verification": "NOT_EXECUTED",
+        "rotation_receipt": "BLOCKED",
+    }
+    for name, fields in {
+        "witness_receipt": {"status", "reference", "blocker"},
+        "archive_verification": {"status", "proof_reference", "blocker"},
+        "rotation_receipt": {"status", "reference", "blocker"},
+    }.items():
+        nested = _exact_keys(record[name], fields, f"B-054 {name}")
+        status = _receipt_status(nested["status"], f"B-054 {name}")
+        if status != expected_receipt_statuses[name]:
+            raise PacketError(f"B-054 {name} status would overstate the current rollout state")
+        reference_key = "proof_reference" if name == "archive_verification" else "reference"
+        if status != "PASS" and nested[reference_key] is not None:
+            raise PacketError(f"B-054 {name} has a reference despite status {status}")
+        _receipt_blocker(nested["blocker"], status, f"B-054 {name}")
+    rollback = _exact_keys(record["rollback_plan"], {"status", "decision", "blocker"}, "B-054 rollback_plan")
+    rollback_status = _receipt_status(rollback["status"], "B-054 rollback_plan")
+    if rollback_status != "NOT_EXECUTED" or rollback["decision"] != "preserve E0 and do not cut over":
+        raise PacketError("B-054 rollback decision/status drifted")
+    _receipt_blocker(rollback["blocker"], rollback_status, "B-054 rollback_plan")
+    if not isinstance(record["operator"], str) or not record["operator"].strip():
+        raise PacketError("B-054 operator missing")
+    _check_repository_checks(record["repository_checks"], "B-054", B054_REPOSITORY_CHECKS)
+
+
+def _check_repository_checks(value: object, label: str, expected: list[dict[str, str]] | None = None) -> None:
+    if not isinstance(value, list) or not value:
+        raise PacketError(f"{label} repository_checks must be a non-empty list")
+    for index, entry in enumerate(value):
+        check = _exact_keys(entry, {"command", "status", "detail"}, f"{label} repository_checks[{index}]")
+        if not isinstance(check["command"], str) or not check["command"].strip():
+            raise PacketError(f"{label} repository_checks[{index}] command missing")
+        if check["status"] not in {"PASS", "FAIL", "NOT_EXECUTED", "BLOCKED"}:
+            raise PacketError(f"{label} repository_checks[{index}] status invalid")
+        if not isinstance(check["detail"], str) or not check["detail"].strip():
+            raise PacketError(f"{label} repository_checks[{index}] detail missing")
+    if expected is not None and value != expected:
+        raise PacketError(f"{label} repository_checks commands/details drifted")
+
+
+def _check_b083_evidence(item: dict[str, object]) -> None:
+    evidence = item["evidence"]
+    assert isinstance(evidence, dict)
+    if evidence["path"] != B083_EVIDENCE_PATH or evidence["format"] != "json":
+        raise PacketError("B-083 evidence binding drifted")
+    if evidence["required_fields"] != B083_EVIDENCE_REQUIRED_FIELDS:
+        raise PacketError("B-083 evidence required fields drifted")
+    record = _read_json_evidence(B083_EVIDENCE_PATH, B083_EVIDENCE_REQUIRED_FIELDS, "B-083")
+    if record["schema_version"] != 1 or not isinstance(record["captured_at"], str) or not record["captured_at"].strip():
+        raise PacketError("B-083 evidence capture metadata drifted")
+    if record["tenant_redacted"] != "NOT_PROVISIONED" or record["image_digest"] is not None or record["kms_provider"] != "aws":
+        raise PacketError("B-083 evidence must identify the unprovisioned AWS runtime without a digest")
+    if record["check_access"] != "BLOCKED":
+        raise PacketError("B-083 check_access must be BLOCKED while the runtime is not provisioned")
+    for name in ("activation", "cas_ac_round_trip", "revocation", "run_loop"):
+        nested = _exact_keys(record[name], {"status", "audit_event_reference", "completed_at", "blocker"}, f"B-083 {name}")
+        status = _receipt_status(nested["status"], f"B-083 {name}")
+        if status != "PASS" and (nested["audit_event_reference"] is not None or nested["completed_at"] is not None):
+            raise PacketError(f"B-083 {name} has completion evidence despite status {status}")
+        if status != "NOT_EXECUTED":
+            raise PacketError(f"B-083 {name} cannot run without a provisioned runtime")
+        _receipt_blocker(nested["blocker"], status, f"B-083 {name}")
+    if not isinstance(record["operator"], str) or not record["operator"].strip():
+        raise PacketError("B-083 operator missing")
+    _check_repository_checks(record["repository_checks"], "B-083", B083_REPOSITORY_CHECKS)
+
+
+def _check_b097_evidence(item: dict[str, object]) -> None:
+    evidence = item["evidence"]
+    assert isinstance(evidence, dict)
+    if evidence["path"] != B097_EVIDENCE_PATH or evidence["format"] != "json":
+        raise PacketError("B-097 evidence binding drifted")
+    if evidence["required_fields"] != B097_EVIDENCE_REQUIRED_FIELDS:
+        raise PacketError("B-097 evidence required fields drifted")
+    record = _read_json_evidence(B097_EVIDENCE_PATH, B097_EVIDENCE_REQUIRED_FIELDS, "B-097")
+    if record["schema_version"] != 1 or not isinstance(record["captured_at"], str) or not record["captured_at"].strip():
+        raise PacketError("B-097 evidence capture metadata drifted")
+    if not isinstance(record["account_id_redacted"], str) or not re.fullmatch(r"[0-9a-f]{4}\.\.\.[0-9a-f]{4}", record["account_id_redacted"]):
+        raise PacketError("B-097 account identifier must remain redacted")
+    if record["case_id"] is not None or record["requested_total_vcpu"] is not None or record["effective_at"] is not None:
+        raise PacketError("B-097 receipt must not invent an owner support case or requested/effective quota")
+    if record["current_total_vcpu"] != 1500 or record["declared_reservation_vcpu"] != 1250 or record["active_tenants_concurrent"] is not None:
+        raise PacketError("B-097 quota/active-tenant capture is not the measured truthful state")
+    if record["provider_decision"] != "pending":
+        raise PacketError("B-097 provider decision must remain pending without an owner case")
+    capture = _exact_keys(record["read_only_capture"], {"cloudchamber_account_endpoint", "provider_limit_confirmed", "provider_response", "active_tenant_metric", "activity_readback", "support_case"}, "B-097 read_only_capture")
+    if capture["cloudchamber_account_endpoint"] != "GET /accounts/{account}/containers/me":
+        raise PacketError("B-097 read_only_capture endpoint drifted")
+    if capture["provider_limit_confirmed"] is not True or capture["support_case"] != "not submitted; owner Cloudflare support/account session is required":
+        raise PacketError("B-097 read_only_capture support/limit boundary drifted")
+    response = _exact_keys(capture["provider_response"], {"http_success", "total_vcpu", "vcpu_per_deployment", "total_memory_mib", "usage"}, "B-097 provider_response")
+    if response != {"http_success": True, "total_vcpu": 1500, "vcpu_per_deployment": 4, "total_memory_mib": 6291456, "usage": None}:
+        raise PacketError("B-097 provider response drifted")
+    if capture["active_tenant_metric"] != "unavailable: CONFIG_DB activity is stale relative to capture and is not a concurrent-active metric":
+        raise PacketError("B-097 active-tenant metric disclaimer drifted")
+    activity = _exact_keys(capture["activity_readback"], {"database", "access", "customer_audit_rows", "distinct_tenants_all_time", "last_customer_audit_ts_ms", "distinct_tenants_last_15m", "distinct_tenants_last_1h", "distinct_tenants_last_24h", "interpretation"}, "B-097 activity_readback")
+    if activity["database"] != "CONFIG_DB/prod" or activity["access"] != "remote-read-only" or any(activity[name] != expected for name, expected in {"customer_audit_rows": 71, "distinct_tenants_all_time": 16, "last_customer_audit_ts_ms": 1784669020765, "distinct_tenants_last_15m": 0, "distinct_tenants_last_1h": 0, "distinct_tenants_last_24h": 0}.items()):
+        raise PacketError("B-097 activity readback drifted")
+    if activity["interpretation"] != "retained audit activity is stale; these aggregates are not a concurrent-active-tenant measurement":
+        raise PacketError("B-097 activity readback disclaimer drifted")
+
+
 def _check_item(
     item: object,
     expected_id: str,
@@ -379,15 +728,20 @@ def _check_item(
         raise PacketError(f"item id mismatch: expected {expected_id!r}, got {item.get('id')!r}")
     canonical_owner, canonical_status = backlog_contracts[expected_id]
     expected_owner = "owner" if expected_id in LEGACY_OWNER_IDS else "tl"
-    if canonical_owner != expected_owner or canonical_status not in {"open", "parked"}:
+    allowed_statuses = {"open", "parked"}
+    # B-013 closes on its owner-authorized redacted deletion record, while
+    # B-110 closes after the owner selects the already-provisioned CoreLink
+    # Linux substrate and the four workflow migrations are evidenced. Other
+    # legacy owner items remain external-action pending by contract.
+    if expected_id in CLOSED_PACKET_IDS:
+        allowed_statuses.add("done")
+    if canonical_owner != expected_owner or canonical_status not in allowed_statuses:
         raise PacketError(
             f"{expected_id}: BACKLOG canonical contract drifted from "
-            f"{expected_owner}/open-or-parked ({canonical_owner}/{canonical_status})"
+            f"{expected_owner}/allowed-status ({canonical_owner}/{canonical_status})"
         )
-    # The acquisition packet is intentionally frozen at `open`; D03 may park
-    # the corresponding backlog item while the external action is still
-    # pending.  A parked item must therefore continue to match an open packet,
-    # but any other owner/status drift remains fatal.
+    # The packet remains status-aligned with BACKLOG; parked legacy items may
+    # retain an open packet while external action is pending.
     packet_status_ok = item.get("status") == canonical_status or (
         canonical_status == "parked" and item.get("status") == "open"
     )
@@ -426,6 +780,14 @@ def _check_item(
     references = _string_list(item["references"], f"{expected_id}.references", minimum=1)
     if not any(reference.startswith("BACKLOG.md#") for reference in references):
         raise PacketError(f"{expected_id}.references must include its BACKLOG anchor")
+    if expected_id == "B-110":
+        _check_b110_evidence(item)
+    if expected_id == "B-054":
+        _check_b054_evidence(item)
+    if expected_id == "B-083":
+        _check_b083_evidence(item)
+    if expected_id == "B-097":
+        _check_b097_evidence(item)
     if expected_id == "B-111":
         procedure_text = " ".join(item["procedure"])
         schema_text = item["evidence"]["item_schema"]
@@ -456,8 +818,13 @@ def check_data(
         raise PacketError(f"packet root fields mismatch; expected {sorted(required_root)}")
     if data["schema_version"] != 1 or data["repository"] != "HuGR-Labs/corelink-server":
         raise PacketError("packet schema or repository identity changed")
-    if data["base_sha"] != "908d3bdc86f17a8b41a280baaea9352d7ed450ab":
-        raise PacketError("packet base SHA is not the requested exact D03 ancestor")
+    # This packet was authored against the D03 reconciliation snapshot.  The
+    # field is a provenance reference, not a merge-base assertion: recovery
+    # restacks may legitimately carry the packet on a branch that does not
+    # descend from that snapshot.  Keep the exact immutable reference while
+    # avoiding the false claim that it is an ancestor of every checkout.
+    if data["base_sha"] != PACKET_BASE_SHA:
+        raise PacketError("packet base SHA is not the requested exact D03 provenance reference")
     if backlog_contracts is None:
         backlog_contracts = _read_backlog_contracts()
     if workflow_contracts is None:
@@ -466,7 +833,9 @@ def check_data(
         raise PacketError("BACKLOG owner/status reconciliation population is not closed")
     _text(data["packet_id"], "packet_id")
     _text(data["status"], "status")
-    _text(data["non_claim"], "non_claim")
+    non_claim = _text(data["non_claim"], "non_claim")
+    if BASE_SHA_PROVENANCE_DISCLAIMER not in non_claim:
+        raise PacketError("non_claim must include the base_sha provenance disclaimer")
 
     population = data["population"]
     if population != list(EXPECTED_IDS):

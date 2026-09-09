@@ -114,6 +114,13 @@ describe("B-081 PAT rotation siblings reach container.start", () => {
     expect(env.PAT_SIGNING_KEY_NEW).toBe("");
   });
 
+  it("forwards the B-054 link-key keyring byte-for-byte", async () => {
+    const keyring = JSON.stringify({ "7": "ab".repeat(32) });
+    const env = await capturedStartEnv({ AUDIT_CHAIN_LINK_KEYS_JSON: keyring });
+
+    expect(env.AUDIT_CHAIN_LINK_KEYS_JSON).toBe(keyring);
+  });
+
   it("maps whitespace siblings to a malformed marker so the container fails closed", async () => {
     const env = await capturedStartEnv({ PAT_SIGNING_KEY_PREV: " \t ", PAT_SIGNING_KEY_NEW: "\n" });
 

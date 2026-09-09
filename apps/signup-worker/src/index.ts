@@ -32,6 +32,8 @@ import { runDsrVerifySweep } from "./webhooks/dsr_verify_cron.js";
 import { runPatScrubSweep } from "./webhooks/pat_scrub_cron.js";
 import { runAuditDrainSweep } from "./webhooks/audit_drain_cron.js";
 import { runAuditArchiveSweep } from "./webhooks/audit_archive_cron.js";
+import { handleSlaObservationIngest, providerFromEnv, runSlaCreditSweep } from "./webhooks/sla_credit_cron.js";
+import type { SlaCreditCronEnv } from "./webhooks/sla_credit_cron.js";
 import { withSecurityHeaders } from "./security-headers.js";
 
 type WorkerEnv = AutoProvisionEnv &
@@ -50,6 +52,9 @@ async function route(request: Request, env: WorkerEnv, ctx: ExecutionContext): P
   }
   if (url.pathname === "/internal/v1/runner/provision-installation") {
     return handleInstallationProvision(request, env);
+  }
+  if (url.pathname === "/internal/sla/monthly-observation") {
+    return handleSlaObservationIngest(request, env as unknown as SlaCreditCronEnv);
   }
   if (url.pathname === "/install/github/app/new" && request.method === "GET") {
     return handleAppManifestForm(request, env);
@@ -121,7 +126,7 @@ const baseHandler: ExportedHandler<SignupEnv> = {
     }
   },
 
-  // Hourly Cron Trigger (`0 * * * *`). Drives three independent sweeps:
+  // Hourly Cron Trigger (`0 * * * *`). Drives four scheduled sweep families:
   //   1. DSR 24h verification sweep — re-fingerprints every DSR past its 24h
   //      SLA deadline via the container /_internal/dsr/verify endpoint (inert
   //      until CORELINK_INTERNAL_AUTH_KEY is bound, task #46).
@@ -129,12 +134,34 @@ const baseHandler: ExportedHandler<SignupEnv> = {
   //      pat_plaintext` for any Clerk user whose reveal is older than the TTL,
   //      so an un-visited /welcome cannot leave the secret resident (inert
   //      until CLERK_SECRET_KEY is bound).
-  //   3. S-09 audit-chain drain — seals pending audit_outbox rows into the
-  //      tamper-evident hash chain via the container /_internal/audit/drain
-  //      endpoint (idempotent; inert until the erase/internal-auth key is
-  //      bound, task #46).
+  //   3. S-09 audit-chain maintenance — drains pending audit_outbox rows and
+  //      archives sealed rows. Both are bounded, idempotent companions that
+  //      share the erase/internal-auth gate.
+  //   4. B-089 closed-month SLA credit settlement. The provider gate is
+  //      checked again inside the sweep/provider, so a manually supplied
+  //      provider cannot bypass the parked default.
+  //
+  // The drain half seals pending audit_outbox rows into the tamper-evident
+  // hash chain via /_internal/audit/drain; the archive half persists sealed
+  // chunks. Both are inert until the erase/internal-auth key is bound.
   async scheduled(_event, env: SignupEnv, ctx: ExecutionContext): Promise<void> {
     const nowMs = Date.now();
+
+    ctx.waitUntil(
+      runSlaCreditSweep(
+        env as unknown as SlaCreditCronEnv,
+        nowMs,
+        providerFromEnv(env as unknown as SlaCreditCronEnv),
+      )
+        .then((r) => {
+          console.log(
+            `[sla-credit-cron] skipped=${r.skipped} ok=${r.ok} produced=${r.produced} measured=${r.measured} created=${r.created} applied=${r.applied} failed=${r.failed} blocked=${r.blocked} reconciled=${r.reconciled}`,
+          );
+        })
+        .catch((err: unknown) => {
+          Sentry.captureException(err);
+        }),
+    );
 
     const db = env.CONFIG_DB;
     if (db) {

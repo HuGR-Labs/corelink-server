@@ -183,9 +183,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=corelink-cargo-regist
     # credentials remain owner-provided; missing credentials fail BYOK closed.
     cargo build --release --locked -p corelink-server --bin corelink-server \
         --features byok-aws-real; \
+    # Keep the fixture-only Gate 4 binary below, but ship the native
+    # production-capable sweep under a distinct name.  The two targets have
+    # intentionally different contracts and must not overwrite each other.
+    cargo build --release --locked -p corelink-server --bin corelink-gc-sweep-production \
+        --features byok-aws-real; \
     cargo build --release --locked -p corelink-gc --bin gc_sweep; \
     mkdir -p /out; \
     cp /build/target/release/corelink-server /out/corelink-server; \
+    cp /build/target/release/corelink-gc-sweep-production /out/corelink-gc-sweep-production; \
     cp /build/target/release/gc_sweep /out/gc_sweep
 
 # ---- Runtime stage ----
@@ -203,6 +209,9 @@ RUN groupadd --system --gid 1000 corelink \
 # Binary copied out of the builder's cache mount into /out/ (see build
 # RUN step above). The cache mount itself is not visible to this stage.
 COPY --from=builder /out/corelink-server /usr/local/bin/corelink-server
+# Native production-capable sweep. It is separately invoked and remains
+# fail-closed unless an owner explicitly supplies a tenant/region scope.
+COPY --from=builder /out/corelink-gc-sweep-production /usr/local/bin/corelink-gc-sweep-production
 # `gc_sweep` is deliberately a separately invoked utility: the server
 # entrypoint remains unchanged and the sweep defaults to non-destructive mode
 # unless its explicit gate is armed.

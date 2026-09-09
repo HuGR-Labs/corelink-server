@@ -4,7 +4,7 @@
   "repository": "HuGR-Labs/corelink-server",
   "base_sha": "908d3bdc86f17a8b41a280baaea9352d7ed450ab",
   "status": "engineering-packet-only",
-  "non_claim": "No credential was minted, external account changed, legal instrument signed, file deleted, deployment made, or production result asserted by this packet.",
+  "non_claim": "No credential was minted, external account changed, legal instrument signed, deployment made, or production result asserted by this packet; the owner-authorized B-013 deletion is evidenced separately by its redacted evidence, and the B-110 workflow migration is recorded separately by its code commit and redacted evidence. The base_sha is an immutable D03 packet reference for provenance, not a claim that the reference is an ancestor of every checkout carrying this packet.",
   "population": ["B-008", "B-012", "B-013", "B-032", "B-035", "B-065", "B-086", "B-089", "B-097", "B-110", "B-111", "B-154", "B-029", "B-044", "B-046", "B-054", "B-063", "B-068", "B-071", "B-072", "B-083", "B-102", "B-106", "B-113", "B-125", "B-128", "B-134", "B-142", "B-165"],
   "items": [
     {
@@ -57,8 +57,8 @@
     },
     {
       "id": "B-013",
-      "owner": "owner",
-      "status": "open",
+      "owner": "tl",
+      "status": "done",
       "action_type": "secure_local_private_key_deletion",
       "procedure": [
         "RUN: On the owner’s Mac, inspect only ~/Downloads/corelink-app.pk8.pem, ~/Downloads/corelink-runners-fleet.2026-06-15.private-key.pem, and ~/Downloads/corelink-runners.2026-07-13.private-key.pem; stop if any path is not a regular file or has changed unexpectedly.",
@@ -75,7 +75,7 @@
         "required_fields": ["schema_version", "captured_at", "machine", "targets", "public_key_preserved", "all_targets_absent_after", "operator"],
         "item_schema": "targets[] entries contain basename, size_before_bytes, mtime_before, deletion_command, and exists_after; no key bytes or hashes are stored."
       },
-      "expected_postcondition": "Exactly the three named private-key files are absent from ~/Downloads while the public key is preserved; B-013 remains open until the owner updates its status.",
+      "expected_postcondition": "Exactly the three named private-key files are absent from ~/Downloads while the public key is preserved; the owner-authorized redacted evidence records this closure and B-013 is closed in BACKLOG without this packet inspecting or reproducing the owner filesystem.",
       "retry_and_rollback": "If preflight is ambiguous, stop without deleting. After successful deletion, retry only the absence check. Secure deletion has no rollback; recoverable copies must be handled by the owner outside this repository before proceeding.",
       "references": ["BACKLOG.md#B-013"]
     },
@@ -216,8 +216,8 @@
       "evidence": {
         "path": "evidence/owner-actions/B-097/cloudflare-vcpu-quota-case.json",
         "format": "json",
-        "required_fields": ["schema_version", "captured_at", "account_id_redacted", "case_id", "requested_total_vcpu", "current_total_vcpu", "declared_reservation_vcpu", "active_tenants_concurrent", "provider_decision", "effective_at", "operator"],
-        "item_schema": "provider_decision is submitted, approved, denied, or pending; account identifiers are redacted and the artifact contains no API token."
+        "required_fields": ["schema_version", "captured_at", "account_id_redacted", "case_id", "requested_total_vcpu", "current_total_vcpu", "declared_reservation_vcpu", "active_tenants_concurrent", "provider_decision", "effective_at", "operator", "read_only_capture"],
+        "item_schema": "provider_decision is submitted, approved, denied, or pending; pending means no owner support case or provider decision was submitted. account identifiers are redacted and the artifact contains no API token. read_only_capture is a schema-validated aggregate-only preflight: it may confirm the provider limit, but must mark unavailable/stale active-tenant telemetry and an absent support case explicitly rather than inventing either."
       },
       "expected_postcondition": "A provider-approved quota or an owner-approved architecture change removes the measured growth dependency; B-097 remains open while the case is pending or denied.",
       "retry_and_rollback": "Retry by updating the same provider case with new measurements rather than opening duplicate cases. A rejected request has no configuration rollback; preserve the current safe limit and do not increase max_instances locally as a workaround.",
@@ -225,8 +225,8 @@
     },
     {
       "id": "B-110",
-      "owner": "owner",
-      "status": "open",
+      "owner": "tl",
+      "status": "done",
       "action_type": "ci_capacity_decision",
       "procedure": [
         "UI: Choose one authorized capacity path for cas_foundation, coverage, ffi-matrix-ci, and mutation-nightly: restore hosted billing, provision an adequate Linux self-hosted box, or authorize deletion/parking of the named lanes.",
@@ -243,7 +243,7 @@
         "required_fields": ["schema_version", "captured_at", "selected_option", "workflows", "capacity_or_billing_reference", "coverage_impact", "runner_labels", "rollback_owner", "operator"],
         "item_schema": "workflows[] contains workflow, current_runner, selected_runner, and action; selected_option is hosted_billing, linux_self_hosted, or owner_authorized_park."
       },
-      "expected_postcondition": "The owner-approved capacity decision is recorded and the four lanes either have viable capacity or are explicitly parked/deleted with coverage impact; B-110 remains open until the external action is complete.",
+      "expected_postcondition": "The owner-approved Linux self-hosted capacity decision is recorded and the four lanes use viable CoreLink capacity without deletion; B-110 is closed only after the workflow and verifier changes are present.",
       "retry_and_rollback": "Retry capacity checks before registering duplicate runners or changing billing. Roll back a new runner by disabling/unregistering only that runner; billing can be stopped by the owner. Do not restore deleted coverage without a new owner decision and workflow review.",
       "references": ["BACKLOG.md#B-110", ".github/workflows/cas_foundation.yml", ".github/workflows/coverage.yml", ".github/workflows/ffi-matrix-ci.yml", ".github/workflows/mutation-nightly.yml"]
     },
@@ -384,8 +384,8 @@
       "evidence": {
         "path": "evidence/owner-actions/B-054/keyed-audit-epoch-rollout.json",
         "format": "json",
-        "required_fields": ["schema_version", "captured_at", "legacy_epoch", "keyed_epoch", "migration_receipts", "witness_receipt", "archive_verification", "rotation_receipt", "rollback_plan", "operator"],
-        "item_schema": "legacy_epoch and keyed_epoch contain algorithm version, row count, and verification verdict; receipts are opaque references or public hashes and never secret material."
+        "required_fields": ["schema_version", "captured_at", "legacy_epoch", "keyed_epoch", "migration_receipts", "witness_receipt", "archive_verification", "rotation_receipt", "rollback_plan", "operator", "repository_checks"],
+        "item_schema": "legacy_epoch is exactly E0/unkeyed and keyed_epoch exactly E1/keyed; each epoch status equals its verification verdict and an unexecuted epoch has no row count. receipts are opaque references or public hashes and never secret material. repository_checks is the exact list of focused local commands and PASS details; NOT_EXECUTED/BLOCKED fields must carry an exact blocker and cannot be interpreted as rollout evidence."
       },
       "expected_postcondition": "Legacy segments verify as E0, new segments verify as E1, the witness and D1 binding are independently evidenced, and key custody is rotated; B-054 remains open until the rollout is real.",
       "retry_and_rollback": "Retry verification from the same immutable export before reapplying an additive migration. If rollout fails, stop new E1 writes and follow the approved epoch rollback or forward-fix plan; never rewrite legacy rows or downgrade a v2 checkpoint.",
@@ -504,8 +504,8 @@
       "evidence": {
         "path": "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json",
         "format": "json",
-        "required_fields": ["schema_version", "captured_at", "tenant_redacted", "image_digest", "kms_provider", "check_access", "activation", "cas_ac_round_trip", "revocation", "run_loop", "operator"],
-        "item_schema": "activation, cas_ac_round_trip, and revocation contain status, audit_event_reference, and completed_at; check_access is pass or fail; no key, token, plaintext Tcs, or ciphertext is stored."
+        "required_fields": ["schema_version", "captured_at", "tenant_redacted", "image_digest", "kms_provider", "check_access", "activation", "cas_ac_round_trip", "revocation", "run_loop", "operator", "repository_checks"],
+        "item_schema": "activation, cas_ac_round_trip, revocation, and run_loop contain status, audit_event_reference, completed_at, and an exact blocker when NOT_EXECUTED/BLOCKED; while tenant_redacted is NOT_PROVISIONED, check_access is BLOCKED, image_digest is null, and every lifecycle status is NOT_EXECUTED with null completion fields. image_digest is required before activation; no key, token, plaintext Tcs, or ciphertext is stored. repository_checks is the exact list of focused local commands and PASS details."
       },
       "expected_postcondition": "A test tenant proves real KMS access, encrypted CAS/AC behavior, and bounded revocation through the shipped image; B-083 remains open until owner evidence exists and no production claim is inferred.",
       "retry_and_rollback": "Retry only after checking CMK grants and preserving the first run. Deactivate the test tenant through the same route on cleanup; if activation is ambiguous, fail closed, do not retry with plaintext, and retain the audit record for investigation.",
@@ -533,7 +533,7 @@
       },
       "expected_postcondition": "The owner has a reproducible in-fleet hot PUT measurement that separates cold authentication from the steady path; B-102 remains open until the target or an explicit decision is evidenced.",
       "retry_and_rollback": "Retry with a fresh payload only after preserving the original three samples and confirming the same release. Revoke the probe PAT after measurement; the probe creates no durable product state beyond the test object and must not change production configuration.",
-      "references": ["BACKLOG.md#B-102", ".github/workflows/cargo-cache-latency-probe.yml", "worker/src/index.ts", "worker/src/lib/pat_verify_cache.ts"]
+      "references": ["BACKLOG.md#B-102", "historical, non-executable reference only: .github/workflows/cargo-cache-latency-probe.yml (archived; do not dispatch)", "worker/src/index.ts", "worker/src/lib/pat_verify_cache.ts"]
     },
     {
       "id": "B-106",
@@ -541,21 +541,21 @@
       "status": "open",
       "action_type": "cold_pat_verify_latency_measurement",
       "procedure": [
-        "RUN: Select a production PAT that has not been used for more than 60 seconds, or mint a dedicated test PAT through the approved owner process; send one authenticated request and capture Server-Timing without exposing the token.",
-        "RUN: Repeat the same cold measurement only after intervals longer than 60 seconds, recording auth desc, wall time, colo, and whether the source was d1, kv, or l1; never use consecutive requests as cold samples.",
+        "RUN: Mint a dedicated test PAT through the approved owner process; record the minted, unused-since, and observed timestamps and send one authenticated request after at least 61 seconds idle, capturing Server-Timing without exposing the token.",
+        "RUN: Repeat the same cold measurement only after intervals of at least 61 seconds, recording auth desc, wall time, colo, and whether the source was d1, kv, or l1; never use consecutive requests as cold samples.",
         "UI: Classify the result among replica inactive, no replica in serving region, or primary fallback always taken, and record the remediation decision without increasing the revocation window."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["production endpoint", "dedicated PAT", "cold interval over 60 seconds", "serving colo", "Server-Timing header"],
+        "inputs": ["production endpoint", "fresh dedicated PAT", "minted/unused/observed timestamps", "cold interval of at least 61 seconds", "serving colo", "Server-Timing header"],
         "credentials": "Owner mints or supplies the PAT through a protected channel; the token, signing key, and response body are excluded from logs and evidence."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-106/cold-pat-verify-latency.json",
         "format": "json",
-        "required_fields": ["schema_version", "captured_at", "sample_count", "cold_interval_seconds", "samples", "source_distribution", "hypothesis", "median_ms", "p90_ms", "operator"],
-        "item_schema": "samples[] contains captured_at, colo, auth_source, auth_ms, wall_ms, and status; cold_interval_seconds is over 60 for every pair and hypothesis is replica_inactive, no_replica, primary_fallback, or unresolved."
+        "required_fields": ["schema_version", "captured_at", "sample_count", "cold_interval_seconds", "minted_at_epoch", "unused_since_epoch", "observed_at_epoch", "samples", "source_distribution", "hypothesis", "median_ms", "p90_ms", "operator"],
+        "item_schema": "samples[] contains captured_at, colo, auth_source, auth_ms, wall_ms, and status; minted_at_epoch, unused_since_epoch, and observed_at_epoch bind a fresh token to each cold proof; cold_interval_seconds is at least 61 for every pair and hypothesis is replica_inactive, no_replica, primary_fallback, or unresolved."
       },
-      "expected_postcondition": "Cold verification cost and serving path are measured without weakening the 60-second revocation contract; B-106 remains open until the latency target or a documented safe remedy is evidenced.",
+      "expected_postcondition": "Cold verification cost and serving path are measured without weakening the 30-second KV revocation backstop or 60-second service-level target; B-106 remains open until the latency target or a documented safe remedy is evidenced.",
       "retry_and_rollback": "Retry after the declared cold interval and preserve each sample. Revoke the dedicated PAT after capture; do not increase KV TTL or alter auth cache policy as a probe workaround.",
       "references": ["BACKLOG.md#B-106", "worker/src/lib/pat_verify_cache.ts", "worker/src/index.ts", "specs/03_architecture/adrs/ADR-0030-pat-revocation-window.md"]
     },

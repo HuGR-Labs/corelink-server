@@ -217,43 +217,73 @@ def _check_locale(path: str, text: str) -> None:
 
 def _check_posture(trust: str, generator: str) -> None:
     for label, text in ((TRUST, trust), (GENERATOR, generator)):
+        # Markdown prose is routinely wrapped at a line boundary.  Compare a
+        # whitespace-folded view so a valid wrapped disclaimer is not rejected,
+        # while still requiring each complete marker and preserving the
+        # fail-closed mutation checks below.
+        folded = " ".join(text.split())
         for marker in ("Sigstore (Linux Foundation)", "never receives customer data", "not a customer-data sub-processor"):
-            if marker not in text:
+            if marker not in folded:
                 raise VerificationError(f"{label}: non-processor posture marker missing: {marker}")
-    if "publishes no records" not in trust:
+    folded_trust = " ".join(trust.split())
+    if not any(
+        marker in folded_trust
+        for marker in (
+            "publishes no records",
+            "no Fulcio certificate or Rekor entry was issued",
+        )
+    ):
         raise VerificationError(f"{TRUST}: proposed/non-live no-records marker missing")
-    if "own build artifacts" not in generator:
+    folded_generator = " ".join(generator.split())
+    if not any(
+        marker in folded_generator
+        for marker in ("own build artifacts", "release-SLSA and CAS signing paths")
+    ):
         raise VerificationError(f"{GENERATOR}: source scope no-customer-data marker missing")
 
 
 def _check_runtime(workflow: str) -> None:
-    # The path population must occur exactly once in each pull_request and push
-    # trigger block.  Counting the whole workflow would allow all paths to be
-    # moved into one event or duplicated there while still reporting green.
+    # The backlog workflow is deliberately pull_request_target: it checks the
+    # candidate BACKLOG as data with the immutable BASE checkout and never runs
+    # candidate-controlled verifier code.  The all-tree path keeps this guard
+    # live for every B-314 source; a narrower list would silently miss drift.
     blocks = {}
-    for event, boundary in (("pull_request", r"^  push:"), ("push", r"^  workflow_dispatch:")):
+    for event, boundary in (("pull_request_target", r"^  push:"), ("push", r"^  schedule:")):
         if len(re.findall(rf"^  {event}:", workflow, re.MULTILINE)) != 1:
             raise VerificationError(f"{WORKFLOW}: expected exactly one {event} trigger block")
         match = re.search(rf"^  {event}:\n(?P<body>.*?)(?={boundary})", workflow, re.MULTILINE | re.DOTALL)
         if match is None:
             raise VerificationError(f"{WORKFLOW}: missing {event} trigger block")
         blocks[event] = match.group("body")
-    for path in EXPECTED_WIRING:
-        entry = f'- "{path}"'
-        counts = {
-            event: sum(line.strip() == entry for line in body.splitlines())
-            for event, body in blocks.items()
-        }
-        total = sum(line.strip() == entry for line in workflow.splitlines())
-        if total != 2:
-            raise VerificationError(f"{WORKFLOW}: {path} appears {total} trigger entries, expected two")
-        if counts != {"pull_request": 1, "push": 1}:
-            raise VerificationError(f"{WORKFLOW}: {path} trigger counts drifted: {counts}")
+    if re.search(r"^  pull_request:", workflow, re.MULTILINE):
+        raise VerificationError(f"{WORKFLOW}: unsafe pull_request trigger must not be restored")
+    for event, body in blocks.items():
+        wildcard_count = sum(line.strip() == 'paths: ["**"]' for line in body.splitlines())
+        if wildcard_count == 1:
+            continue
+        if wildcard_count:
+            raise VerificationError(f"{WORKFLOW}: {event} has ambiguous all-tree path coverage")
+        for path in EXPECTED_WIRING:
+            entry = f'- "{path}"'
+            if sum(line.strip() == entry for line in body.splitlines()) != 1:
+                raise VerificationError(f"{WORKFLOW}: {event} is missing B-314 path coverage for {path}")
     command = "python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test"
     if sum(line.strip() == command for line in workflow.splitlines()) != 1:
         raise VerificationError(f"{WORKFLOW}: expected one B-314 self-test step")
-    if f"python3 -m pytest -q {TEST}" not in workflow:
+    pytest_command = f"python3 -m pytest -q {TEST}"
+    if sum(line.strip() == pytest_command for line in workflow.splitlines()) != 1:
         raise VerificationError(f"{WORKFLOW}: B-314 focused pytest is not wired")
+    for command_name, command_line in (("self-test", command), ("focused pytest", pytest_command)):
+        command_lines = workflow.splitlines()
+        indexes = [index for index, line in enumerate(command_lines) if line.strip() == command_line]
+        for index in indexes:
+            step_start = max(
+                (candidate for candidate in range(index, -1, -1) if command_lines[candidate].startswith("      - name:")),
+                default=-1,
+            )
+            step = command_lines[step_start : index + 1]
+            if not any(line.strip() == "working-directory: _base" for line in step):
+                raise VerificationError(f"{WORKFLOW}: B-314 {command_name} must run from immutable _base")
 
 
 def verify(root: Path = ROOT, *, overrides: dict[str, str] | None = None) -> None:
@@ -294,11 +324,24 @@ def mutation_checks(root: Path = ROOT) -> int:
         count += 1
     _must_reject("pending decision mutation", root, {PACKET: originals[PACKET].replace('"state": "pending"', '"state": "remove_sigstore_row"', 1)})
     count += 1
-    _must_reject("trust posture removal", root, {TRUST: originals[TRUST].replace("never receives customer data", "receives customer data", 1)})
+    trust_mutation = re.sub(
+        r"never\s+receives\s+customer\s+data",
+        "receives customer data",
+        originals[TRUST],
+        count=1,
+    )
+    _must_reject(
+        "trust posture removal",
+        root,
+        {TRUST: trust_mutation},
+    )
     count += 1
     _must_reject("generator posture restoration", root, {GENERATOR: originals[GENERATOR].replace("not a customer-data sub-processor", "a customer-data sub-processor", 1)})
     count += 1
-    _must_reject("runtime trigger removal", root, {WORKFLOW: originals[WORKFLOW].replace('      - "' + PACKET + '"', "", 1)})
+    _must_reject("runtime path coverage removal", root, {WORKFLOW: originals[WORKFLOW].replace('    paths: ["**"]', "", 1)})
+    count += 1
+    command = "python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test"
+    _must_reject("runtime self-test duplication", root, {WORKFLOW: originals[WORKFLOW].replace(command, command + "\n          " + command, 1)})
     count += 1
     return count
 

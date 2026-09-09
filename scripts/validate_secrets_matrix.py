@@ -63,6 +63,12 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MATRIX_FILE_REL = "docs/internal/secrets-checklist.md"
+REPO_ROOT_MATRIX = Path("docs/internal/secrets-checklist.md")
+REPO_ROOT_SENTINEL_ALTERNATIVES = (
+    (Path("Cargo.toml"),),
+    (Path("scripts/validate_secrets_matrix.py"), Path(".github/workflows")),
+    (Path("apps/docs/tests/fixtures/raw-curl-http-server.mjs"),),
+)
 
 # ---------------------------------------------------------------------------
 # Allowlist — env vars intentionally not in the matrix.
@@ -186,14 +192,20 @@ ALLOWLIST_REGEX = re.compile(
     r"|R2_CHUNK_BUCKET$"
     r"|R2_CHUNK_REGION$"
     r"|R2_TEST_BUCKET$"
-    # GC sweep runtime controls are non-secret configuration, not credentials:
-    # bucket/run identifiers, the dry-run selector, and the fixed destructive
-    # confirmation literal.  Keep these exact (rather than prefix-allowlisting
-    # GC_*) so a future GC credential cannot disappear from the matrix gate.
-    r"|GC_LIVE_DELETE_CONFIRM$"
-    r"|GC_R2_BUCKET$"
-    r"|GC_RUN_ID$"
-    r"|GC_VALIDATE_ONLY$"
+    # GC safety selectors are non-secret configuration, not credentials. Keep
+    # these exact rather than accepting a broad GC_* prefix so a future GC
+    # control or credential remains visible as matrix drift.
+    r"|GC_LIVE_DELETE$"
+    r"|GC_OBSERVATION_ONLY$"
+    # Synthetic PagerDuty receiver uses a canonical public endpoint and a
+    # service label; the routing key and webhook secret remain matrix entries.
+    r"|PAGERDUTY_EVENTS_URL$"
+    r"|PAGERDUTY_SERVICE$"
+    # Parked SLA settlement gates are boolean deployment controls, not secrets.
+    r"|SLA_CREDITS_ENABLED$"
+    r"|SLA_OBSERVATIONS_ENABLED$"
+    # Synthetic drill activation is a fail-closed boolean deployment control.
+    r"|SYNTHETIC_DRILL_ENABLED$"
     # WP-3 dashboard revival (2026-06-10) — Stripe billing-portal return_url
     # override (public dashboard URL; default hardcoded in source). No
     # credential material — STRIPE_SECRET_KEY (matrix row) is the actual
@@ -216,13 +228,6 @@ ALLOWLIST_REGEX = re.compile(
     # SMOKE_* smoke-harness vars above.
     r"|BASE_URL$"
     r"|PW_EXECUTABLE_PATH$"
-    # 2026-09-05 (B-163) — loopback HTTP fixture coordination for the raw-curl
-    # directory-upload test. These carry a temporary pathname, an ephemeral
-    # loopback port pathname and an HTTP status integer; none is credential
-    # material and none is read by production code.
-    r"|CORELINK_HTTP_PORT_FILE$"
-    r"|CORELINK_HTTP_REQUEST_FILE$"
-    r"|CORELINK_HTTP_STATUS$"
     # 2026-07-09 — client SDK log-level toggle (`CORELINK_LOG=debug` enables
     # verbose logging), NOT a credential. Same class as RUST_LOG / NODE_ENV.
     #   Consumer: sdks/js/src/client.ts (process.env.CORELINK_LOG === "debug")
@@ -518,6 +523,18 @@ def parse_matrix(path: Path) -> set[str]:
     return names
 
 
+def missing_repo_root_sentinels(root: Path) -> list[Path]:
+    """Return missing paths that prove ``root`` is not a repo checkout."""
+    if not (root / REPO_ROOT_MATRIX).is_file():
+        return [REPO_ROOT_MATRIX]
+    if any(
+        all((root / relative).exists() for relative in alternative)
+        for alternative in REPO_ROOT_SENTINEL_ALTERNATIVES
+    ):
+        return []
+    return [alternative[0] for alternative in REPO_ROOT_SENTINEL_ALTERNATIVES]
+
+
 # ---------------------------------------------------------------------------
 # Code scanning
 # ---------------------------------------------------------------------------
@@ -670,6 +687,15 @@ def main() -> int:
     args = ap.parse_args()
 
     root: Path = args.repo_root.resolve()
+    missing = missing_repo_root_sentinels(root)
+    if missing:
+        rendered = ", ".join(str(path) for path in missing)
+        print(
+            "ERROR: --repo-root is not a CoreLink repository root "
+            f"(missing canonical sentinels: {rendered})",
+            file=sys.stderr,
+        )
+        return 2
     matrix_path = root / MATRIX_FILE_REL
 
     try:

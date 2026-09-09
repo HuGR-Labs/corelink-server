@@ -29,6 +29,10 @@ tags: ["soc2", "cc9.2", "vendor-risk", "register", "gap-14", "drata"]
 > **Operational cycle:** see `specs/_runbooks/RB-VENDOR-RISK-QUARTERLY-REVIEW.md`.
 > **Per-Critical-vendor DD files:** see `specs/_compliance/vendor-dd/`.
 > **Public sub-processor disclosure (subset):** `legal/sub-processors.md`.
+>
+> **Cloudflare region disclosure:** R2 objects and jurisdictional Durable Object
+> state are tenant-pinned; shared D1 control-plane metadata is global and uses
+> SCC/TIA safeguards. The public-page generator preserves this distinction.
 
 ---
 
@@ -37,14 +41,14 @@ tags: ["soc2", "cc9.2", "vendor-risk", "register", "gap-14", "drata"]
 | Metric | Value |
 |---|---|
 | Total vendors registered | 22 |
-| Critical | 6 |
-| Important | 11 |
+| Critical | 7 |
+| Important | 10 |
 | Standard | 5 |
 | Vendors with signed DPA | 18 / 22 (Resend, Sentry, Plausible, Better Stack: DPA policy published, signed-copy evidence pending — VR-6, VR-7, VR-8, VR-9) |
 | Vendors with current SOC 2 Type II (≤ 12 mo) | 13 / 22 (Neon's SOC 2 left with its row-16 removal; Resend's, Sentry's, Plausible's and Better Stack's SOC 2 reports are not yet pulled into Drata — VR-6, VR-7, VR-8, VR-9) |
 | Vendors carrying residual score ≥ 8.0 | 0 |
 | Vendors flagged for ad-hoc re-review | 0 |
-| Vendors with critical-category second-vendor failover | 5 / 6 (Drata: monitoring-only, no failover required — see §4) |
+| Vendors with critical-category second-vendor failover | 6 / 7 (Drata: monitoring-only, no failover required — see §4) |
 | Registered vendors NOT currently active as public-facing (Art. 28) sub-processors | 5 / 22 — see §4b |
 
 > **2026-08-23 correction:** row 16 previously listed **Neon, Inc.** as an

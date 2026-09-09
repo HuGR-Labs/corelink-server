@@ -4,12 +4,11 @@
 #   1. Secrets-checklist drift verification (scripts/secrets-checklist-verify.sh).
 #      Fails the deploy if the matrix is out of sync with the codebase.
 #   2. CF secrets population sanity check (wrangler secret list), per env.
-#   3. D1 migrations applied to the shared prod D1 BEFORE any container deploy
-#      (brutal-audit H3): the container reads new tables/columns fail-closed
-#      (customer_d1.rs audit/team/legal-hold reads 500 if the migration lags the
-#      code). The migration step always runs first; it is idempotent
-#      (additive + IF-NOT-EXISTS + ledger-guarded), so running it every deploy is
-#      safe.
+#   3. The common container writer image is deployed and proven healthy on every
+#      selected production target before D1 migrations are allowed to run. This
+#      is the B-127 writer-first boundary: migration 0107 (and the contiguous
+#      0108–0117 range) must never activate a writer-side guard/schema change
+#      while any target still runs the pre-repair artifact.
 #
 # Triggered manually (workflow_dispatch) or by an upstream release pipeline.
 # This workflow is the canonical entry point for `wrangler deploy --env prod`;
@@ -112,57 +111,6 @@ jobs:
             echo "Deploy target: single env ${ENV_IN}."
           fi
 
-  # ---------------------------------------------------------------------------
-  # Migrate — apply D1 migrations to the SHARED prod D1 BEFORE any deploy (H3).
-  #
-  # All 5 prod envs bind the SAME D1 database (corelink-config-prod,
-  # d64742ea-…; see wrangler.toml [[env.*.d1_databases]]), so migrations are
-  # applied exactly ONCE here — a single, non-matrix job — rather than per
-  # deploy leg (5 concurrent `migrations apply` would race the d1_migrations
-  # ledger). scripts/apply-d1-migrations-prod.sh targets that prod D1 directly
-  # (DB_NAME=CONFIG_DB / --env prod, hardcoded; it takes only --apply) and is
-  # idempotent — wrangler skips already-applied migrations. Runs before deploy
-  # so code that reads a new table/column never lands ahead of its migration.
-  # ---------------------------------------------------------------------------
-  migrate-d1:
-    name: apply D1 migrations (shared prod D1)
-    needs: gate-secrets-checklist
-    runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
-    environment: production
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 1
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '22'
-
-      - name: Install wrangler (pinned; version from scripts/_wrangler-pin.sh)
-        run: |
-          # Single source of truth for the pin — the same file the deploy
-          # scripts read for their fallback, so the two cannot drift apart.
-          # Pinned exact (audit 2026-06-11); v3 cannot parse [[env.*.containers]]
-          # arrays (verified 2026-06-05).
-          . ./scripts/_wrangler-pin.sh
-          echo "installing wrangler@${WRANGLER_PINNED_VERSION}"
-          npm install -g "wrangler@${WRANGLER_PINNED_VERSION}"
-          wrangler --version
-
-      - name: Apply D1 migrations (idempotent; shared prod D1)
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          # Use the globally-installed wrangler (no local node_modules path on the
-          # ubuntu runner); the script honours the WRANGLER override.
-          WRANGLER: wrangler
-        run: |
-          chmod +x ./scripts/apply-d1-migrations-prod.sh
-          bash scripts/apply-d1-migrations-prod.sh --apply
-
-  # ---------------------------------------------------------------------------
   # Gate 2 — verify required CF secrets are populated (per env, via the matrix).
   # ---------------------------------------------------------------------------
   gate-cf-secrets-populated:
@@ -264,16 +212,17 @@ jobs:
           echo "All required prod secrets are populated."
 
   # ---------------------------------------------------------------------------
-  # Deploy — one matrix leg per target env. Runs only after both gates pass AND
-  # the D1 migrations have been applied (migrate-d1) so the container never ships
-  # ahead of its schema.
+  # Deploy — one matrix leg per target env. The deploy helper only exits zero
+  # after the running CF Container application reports the exact pinned image,
+  # zero failed instances, and healthy instances across its confirmation reads.
+  # The matrix job therefore acts as the writer-rollout proof consumed by the
+  # downstream, single migration job.
   # ---------------------------------------------------------------------------
   deploy:
     name: wrangler deploy --env ${{ matrix.env }}
     needs:
       - gate-secrets-checklist
       - gate-cf-secrets-populated
-      - migrate-d1
     runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
     environment: production
     strategy:
@@ -325,7 +274,7 @@ jobs:
         # apt egress is not configured; the tool is already on PATH.
         run: jq --version
 
-      - name: Deploy Worker + verify container rollout (prod)
+      - name: Deploy Worker + prove healthy new writer rollout (prod)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
@@ -366,3 +315,68 @@ jobs:
               -d "{\"kind\":\"deploy.prod\",\"actor\":\"${GITHUB_ACTOR}\",\"commit\":\"${GITHUB_SHA}\",\"workflow\":\"cf-deploy-prod\",\"env\":\"${WRANGLER_ENV}\"}" \
               || echo "::warning ::Audit sink unreachable; deploy proceeded but audit event not recorded."
           fi
+
+  # ---------------------------------------------------------------------------
+  # Migrate — apply D1 migrations to the SHARED prod D1 only after the complete
+  # writer matrix is green (B-127 writer-first boundary).
+  #
+  # All 5 prod envs bind the SAME D1 database (corelink-config-prod,
+  # d64742ea-…; see wrangler.toml [[env.*.d1_databases]]), so migrations are
+  # applied exactly ONCE here — a single, non-matrix job — rather than per
+  # deploy leg (5 concurrent `migrations apply` would race the d1_migrations
+  # ledger). `deploy` is an aggregate matrix dependency: GitHub skips this job
+  # if any writer leg fails, and deploy-container-prod.sh itself fail-closes
+  # unless the pinned image is running with a healthy instance set.
+  #
+  # A single-env dispatch, or a recycle/rollback dispatch, deliberately leaves
+  # the shared schema untouched. A single-env matrix proves only one writer;
+  # allowing it to migrate would leave the other four shared-D1 writers behind.
+  # The existing skip_pin_freshness input is a deployment exception for a
+  # pinned image; it is never a migration bypass and must not authorize 0107–0117.
+  # ---------------------------------------------------------------------------
+  migrate-d1:
+    name: apply D1 migrations (shared prod D1; writer rollout proven)
+    needs:
+      - gate-secrets-checklist
+      - gate-cf-secrets-populated
+      - deploy
+    if: >-
+      always()
+      && needs.gate-secrets-checklist.result == 'success'
+      && needs.deploy.result == 'success'
+      && inputs.env == ''
+      && !inputs.skip_pin_freshness
+    runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install wrangler (pinned; version from scripts/_wrangler-pin.sh)
+        run: |
+          # Single source of truth for the pin — the same file the deploy
+          # scripts read for their fallback, so the two cannot drift apart.
+          # Pinned exact (audit 2026-06-11); v3 cannot parse [[env.*.containers]]
+          # arrays (verified 2026-06-05).
+          . ./scripts/_wrangler-pin.sh
+          echo "installing wrangler@${WRANGLER_PINNED_VERSION}"
+          npm install -g "wrangler@${WRANGLER_PINNED_VERSION}"
+          wrangler --version
+
+      - name: Apply D1 migrations (idempotent; shared prod D1)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          # Use the globally-installed wrangler (no local node_modules path on the
+          # ubuntu runner); the script honours the WRANGLER override.
+          WRANGLER: wrangler
+        run: |
+          chmod +x ./scripts/apply-d1-migrations-prod.sh
+          bash scripts/apply-d1-migrations-prod.sh --apply

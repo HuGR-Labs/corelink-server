@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-08",
+  "machine": "owner Mac",
+  "targets": [
+    {
+      "basename": "corelink-app.pk8.pem",
+      "size_before_bytes": 1704,
+      "mtime_before": "2026-06-15",
+      "deletion_command": "rm -P",
+      "exists_after": false
+    },
+    {
+      "basename": "corelink-runners-fleet.2026-06-15.private-key.pem",
+      "size_before_bytes": 1675,
+      "mtime_before": "2026-06-15",
+      "deletion_command": "rm -P",
+      "exists_after": false
+    },
+    {
+      "basename": "corelink-runners.2026-07-13.private-key.pem",
+      "size_before_bytes": 1679,
+      "mtime_before": "2026-07-13",
+      "deletion_command": "rm -P",
+      "exists_after": false
+    }
+  ],
+  "public_key_preserved": true,
+  "all_targets_absent_after": true,
+  "operator": "Codex under explicit owner authorization"
+}

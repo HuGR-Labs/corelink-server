@@ -361,17 +361,30 @@ def check_b215(root: Path) -> None:
 def check_b216(root: Path) -> None:
     lane = "B-216"
     consumer = _code(_read(root, "apps/signup-worker/src/webhooks/dsr_consumer.ts"))
+    normalizer = _function(consumer, "function normalizedDlqRequeueCount(", lane)
+    _require(normalizer, "if (value === undefined) return 0;", lane)
+    _require(normalizer, "return MAX_DLQ_REQUEUES;", lane)
     body = _function(consumer, "export async function handleErasureDlqBatch(", lane)
     for marker in (
         "_dlq_requeue",
-        "const canRequeue = priorRequeues < 1 && !!env.DSR_QUEUE",
-        'event: "dsr.erasure.dead_letter"',
+        "const canRequeue = priorRequeues < MAX_DLQ_REQUEUES && !!env.DSR_QUEUE",
+        "normalizedDlqRequeueCount(body._dlq_requeue)",
+        "event_id: eventId",
+        "exhausted: true",
+        "requeue_count:",
+        "event: DLQ_EVENT_NAME",
         'severity: "critical"',
         "await env.DSR_QUEUE!.send",
         "m.ack();",
         "m.retry();",
     ):
         _require(body, marker, lane)
+    _require(consumer, "PAGERDUTY_ROUTING_KEY", lane)
+    _require(consumer, 'const DLQ_EVENT_NAME = "dsr.erasure.dead_letter"', lane)
+    _require(consumer, 'error: "http_rejected" | "transport_error"', lane)
+    _require(consumer, 'return { status: "failed", error: "transport_error" };', lane)
+    _require(body, 'paging.status === "not_configured"', lane)
+    _require(body, 'action: "retry_paging"', lane)
     index = _code(_read(root, "apps/signup-worker/src/index.ts"))
     _require(index, 'batch.queue === "corelink-dsr-erasure-dlq"', lane)
     _require(index, "await handleErasureDlqBatch(", lane)
@@ -537,7 +550,7 @@ def self_test(root: Path = ROOT) -> None:
     """Remove one load-bearing marker per lane, including bait variants."""
     mutations = {
         "B-215": ("if (AFR.has(c)) return \"afr\";", "if (AFR.has(c)) return \"enam\";", "apps/signup-worker/src/webhooks/clerk_identity.ts"),
-        "B-216": ('event: "dsr.erasure.dead_letter"', 'event: "dsr.erasure.removed"', "apps/signup-worker/src/webhooks/dsr_consumer.ts"),
+        "B-216": ('const DLQ_EVENT_NAME = "dsr.erasure.dead_letter"', 'const DLQ_EVENT_NAME = "dsr.erasure.removed"', "apps/signup-worker/src/webhooks/dsr_consumer.ts"),
         "B-217": ("!isValidClerkUserId(parsed.data?.id)", "false", "apps/signup-worker/src/webhooks/clerk.ts"),
         "B-218": ("export const MIN_INTERNAL_AUTH_KEY_LEN = 32;", "export const MIN_INTERNAL_AUTH_KEY_LEN = 16;", "apps/signup-worker/src/webhooks/clerk_erasure.ts"),
         "B-219": ("recomputed != attestation.canonical_payload_jcs", "recomputed == attestation.canonical_payload_jcs", "crates/corelink-erasure-attestation/src/verify.rs"),
@@ -667,6 +680,27 @@ def self_test(root: Path = ROOT) -> None:
                 ".prepare(",
                 ".noop(",
                 "apps/signup-worker/src/webhooks/clerk_erasure.ts",
+            ),
+            (
+                "B-216-normalizer-removal",
+                "B-216",
+                "function normalizedDlqRequeueCount(",
+                "function removedDlqRequeueCount(",
+                "apps/signup-worker/src/webhooks/dsr_consumer.ts",
+            ),
+            (
+                "B-216-malformed-marker-open",
+                "B-216",
+                "return MAX_DLQ_REQUEUES;",
+                "return 0;",
+                "apps/signup-worker/src/webhooks/dsr_consumer.ts",
+            ),
+            (
+                "B-216-paging-error-leak",
+                "B-216",
+                'return { status: "failed", error: "transport_error" };',
+                'return { status: "failed", error: String("upstream") };',
+                "apps/signup-worker/src/webhooks/dsr_consumer.ts",
             ),
         )
     )

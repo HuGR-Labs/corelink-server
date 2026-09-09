@@ -17,6 +17,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 VALIDATOR_PATH = ROOT / "scripts" / "validate_secrets_matrix.py"
 
+# The drift gates intentionally allowlist exactly these two GC safety flags.
+# Active GC inputs remain visible in the matrix; no GC_* prefix is safe.
+GC_SAFETY_FLAGS = frozenset({
+    "GC_LIVE_DELETE",
+    "GC_OBSERVATION_ONLY",
+})
+PUBLIC_NON_SECRET_CONFIG = frozenset({
+    "PAGERDUTY_EVENTS_URL",
+    "PAGERDUTY_SERVICE",
+    "SLA_CREDITS_ENABLED",
+    "SLA_OBSERVATIONS_ENABLED",
+    "SYNTHETIC_DRILL_ENABLED",
+})
+GC_MATRIX_NAMES = frozenset({
+    "GC_R2_BUCKET",
+    "GC_RUN_ID",
+    "GC_VALIDATE_ONLY",
+})
+GC_SENSITIVE_NAMES = frozenset({
+    "GC_LIVE_DELETE_CONFIRM",
+})
+GC_UNCLASSIFIED_NAMES = frozenset({
+    "GC_ADMIN_TOKEN",
+    "GC_OBSERVATION_ONLY_TOKEN",
+})
+
 
 def _load_validator():
     spec = importlib.util.spec_from_file_location("validate_secrets_matrix", VALIDATOR_PATH)
@@ -35,28 +61,30 @@ def _must_reject(validator, root: Path, manifest, label: str) -> None:
     raise AssertionError(f"mutation was accepted: {label}")
 
 
+def validate_gc_allowlist_contract(validator) -> None:
+    """Keep the two-name GC allowlist exact and fail closed elsewhere."""
+    for name in GC_SAFETY_FLAGS | PUBLIC_NON_SECRET_CONFIG:
+        if not validator.ALLOWLIST_REGEX.match(name):
+            raise AssertionError(f"non-secret config is not allowlisted: {name}")
+    for name in GC_MATRIX_NAMES | GC_SENSITIVE_NAMES | GC_UNCLASSIFIED_NAMES:
+        if validator.ALLOWLIST_REGEX.match(name):
+            raise AssertionError(f"sensitive/unclassified GC name was allowlisted: {name}")
+
+
 def main() -> int:
     validator = _load_validator()
     manifest = validator.B245_PERF_SECRET_MANIFEST
 
-    # GC sweep controls are non-secret configuration, not B-245 credentials.
-    # Keep this exact rather than accepting a broad GC_* allowlist, so a future
-    # GC credential remains visible as matrix drift.
-    gc_controls = {
-        "GC_LIVE_DELETE_CONFIRM",
-        "GC_R2_BUCKET",
-        "GC_RUN_ID",
-        "GC_VALIDATE_ONLY",
-    }
-    for name in gc_controls:
-        if not validator.ALLOWLIST_REGEX.match(name):
-            raise AssertionError(f"GC non-secret control is not allowlisted: {name}")
-    if validator.ALLOWLIST_REGEX.match("GC_ADMIN_TOKEN"):
-        raise AssertionError("broad GC_* allowlist mutation survived")
+    validate_gc_allowlist_contract(validator)
 
     # Confirm the real checkout's exact population and both canonical rows.
     validator.validate_b245_perf_scope(ROOT)
     matrix = validator.parse_matrix(ROOT / validator.MATRIX_FILE_REL)
+    for name in GC_MATRIX_NAMES | GC_SENSITIVE_NAMES:
+        if name not in matrix:
+            raise AssertionError(f"sensitive GC matrix row missing: {name}")
+        if validator.ALLOWLIST_REGEX.match(name):
+            raise AssertionError(f"sensitive GC name is globally allowlisted: {name}")
     for name in manifest:
         if name not in matrix:
             raise AssertionError(f"B-245 matrix row missing: {name}")

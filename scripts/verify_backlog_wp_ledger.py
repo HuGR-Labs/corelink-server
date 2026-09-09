@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 import sys
 import hashlib
+import json
 import subprocess
 from collections import defaultdict
 from dataclasses import dataclass
@@ -20,15 +21,16 @@ CATALOGS = {
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B001-B045.md": (1, 45),
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B046-B090.md": (46, 90),
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B091-B130.md": (91, 130),
-    REPO_ROOT / "docs/campaigns/remediation/work-packages/B131-B167.md": (131, 351),
+    REPO_ROOT / "docs/campaigns/remediation/work-packages/B131-B167.md": (131, 363),
 }
-# The D03 branch is squash-merged and is not a durable ancestry anchor. Keep
-# its head as documentary provenance in the ledger, but anchor verification to
-# delivered main, which remains an ancestor of both the D03 branch and its
-# eventual squash commit.
-LEDGER_BASE_REF = "main"
-LEDGER_BASE_SHA = "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+# The candidate snapshot is the immutable ancestry anchor for this ledger. Keep
+# the historical D03 checkpoint as documentary provenance in the ledger; the
+# candidate SHA remains resolvable while the integration ref is prepared.
+LEDGER_BASE_REF = "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73"
+LEDGER_BASE_SHA = "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73"
 LEDGER_PATH = REPO_ROOT / "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md"
+SNAPSHOT_PATH = REPO_ROOT / "docs/campaigns/remediation/backlog-ledger-snapshot.json"
+SNAPSHOT_SHA256 = "32dc6e806d44beebc4f003a649cb4d7e5cdffe70b86aabf15623fcfaa3053bbf"
 ENTRY_RE = re.compile(r"^(B-\d+)\s+(WP-[A-Z0-9][A-Z0-9./_-]*)$")
 WP_HEADING_RE = re.compile(r"^#{2,6}\s+(WP-[A-Z0-9][A-Z0-9./_-]*)(?:\s|—|$)", re.MULTILINE)
 FIELD_PATTERNS = {
@@ -52,8 +54,8 @@ FIELD_PATTERNS = {
         r"\breturn card\b|\breturn-card\b|\bretorno comum\b", re.IGNORECASE
     ),
 }
-WORKFLOW_MANIFEST_COUNT = 135
-WORKFLOW_MANIFEST_SHA256 = "b2d70d640061bea79d6f002281d9656033da3d6096754b7e97a1d7a7cb9b2468"
+WORKFLOW_MANIFEST_COUNT = 137
+WORKFLOW_MANIFEST_SHA256 = "f4a3f8a882299e403ad80e5975329fe310219760ca0cc4e7dc9d4f616e5e02ff"
 PREDECESSOR_TOKEN_RE = re.compile(r"\bB-\d{3}\b|\bWP-[A-Z0-9][A-Z0-9./_-]*\b|#\d+\b")
 WORKFLOW_OWNERSHIP_FENCE = "wp-workflow-ownership"
 LEDGER_STATE_FENCE = "ledger-state"
@@ -345,6 +347,91 @@ def backlog_status_counts(text: str) -> dict[str, int]:
             raise LedgerError(f"BACKLOG.md:{item.line}: heading {heading} != block {item_id}")
         counts[item.raw["status"]] += 1
     return dict(counts)
+
+
+def load_snapshot_manifest(path: Path = SNAPSHOT_PATH) -> dict[str, object]:
+    """Load the byte-pinned candidate snapshot used as the anti-tautology anchor."""
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise LedgerError(f"{path}: snapshot manifest is unreadable: {exc}") from exc
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != SNAPSHOT_SHA256:
+        raise LedgerError(
+            f"{path}: snapshot manifest digest drifted; expected {SNAPSHOT_SHA256}, found {digest}"
+        )
+    try:
+        manifest = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise LedgerError(f"{path}: snapshot manifest is not valid JSON: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise LedgerError(f"{path}: snapshot manifest root must be an object")
+    required = {
+        "schema_version",
+        "snapshot_commit",
+        "source",
+        "source_sha256",
+        "item_count",
+        "status_counts",
+        "open_ids",
+        "transition",
+    }
+    if set(manifest) != required:
+        raise LedgerError(f"{path}: snapshot manifest schema drifted")
+    if manifest["schema_version"] != 1:
+        raise LedgerError(f"{path}: unsupported snapshot manifest schema")
+    if manifest["snapshot_commit"] != LEDGER_BASE_SHA:
+        raise LedgerError(f"{path}: snapshot commit is not the canonical ledger base")
+    if manifest["source"] != "BACKLOG.md":
+        raise LedgerError(f"{path}: snapshot source is not BACKLOG.md")
+    if not isinstance(manifest["source_sha256"], str) or not re.fullmatch(
+        r"[0-9a-f]{64}", manifest["source_sha256"]
+    ):
+        raise LedgerError(f"{path}: snapshot source digest is malformed")
+    if not isinstance(manifest["item_count"], int) or manifest["item_count"] < 1:
+        raise LedgerError(f"{path}: snapshot item count is malformed")
+    counts = manifest["status_counts"]
+    if counts != {"done": 316, "open": 14, "parked": 33}:
+        raise LedgerError(f"{path}: snapshot status population drifted")
+    open_ids = manifest["open_ids"]
+    if not isinstance(open_ids, list) or open_ids != sorted(open_ids) or len(open_ids) != 14:
+        raise LedgerError(f"{path}: snapshot open population is malformed")
+    if any(not isinstance(item_id, str) or not re.fullmatch(r"B-\d{3}", item_id) for item_id in open_ids):
+        raise LedgerError(f"{path}: snapshot open population contains malformed IDs")
+    transition = manifest["transition"]
+    if transition != {"kind": "candidate-snapshot", "requires_snapshot_ancestor": True}:
+        raise LedgerError(f"{path}: snapshot transition evidence drifted")
+    return manifest
+
+
+def validate_snapshot_manifest(
+    manifest: dict[str, object],
+    backlog_text: str,
+    ledger_state: dict[str, str],
+    *,
+    source: str,
+) -> None:
+    """Reject coordinated BACKLOG/ledger rewrites against the pinned snapshot."""
+    source_digest = hashlib.sha256(backlog_text.encode()).hexdigest()
+    if source_digest != manifest["source_sha256"]:
+        raise LedgerError(
+            f"{source}: BACKLOG.md is outside the immutable snapshot; "
+            f"expected {manifest['source_sha256']}, found {source_digest}"
+        )
+    expected_counts = manifest["status_counts"]
+    if not isinstance(expected_counts, dict):
+        raise LedgerError(f"{source}: snapshot status population is malformed")
+    for key, value in expected_counts.items():
+        if ledger_state.get(f"{key}-count") != str(value):
+            raise LedgerError(
+                f"{source}: ledger {key}-count is outside the immutable snapshot"
+            )
+    current_open = sorted(open_backlog_ids(backlog_text))
+    if current_open != manifest["open_ids"]:
+        raise LedgerError(f"{source}: open population is outside the immutable snapshot")
+    current_counts = backlog_status_counts(backlog_text)
+    if current_counts != expected_counts or sum(current_counts.values()) != manifest["item_count"]:
+        raise LedgerError(f"{source}: status population is outside the immutable snapshot")
 
 
 def validate_predecessors(
@@ -764,6 +851,13 @@ def main() -> int:
         except ValueError:
             ledger_source = str(LEDGER_PATH)
         ledger_state = parse_ledger_state(ledger_text, ledger_source)
+        snapshot_manifest = load_snapshot_manifest()
+        validate_snapshot_manifest(
+            snapshot_manifest,
+            backlog_text,
+            ledger_state,
+            source=ledger_source,
+        )
         expected_base_sha = LEDGER_BASE_SHA
         validate_git_anchor(
             REPO_ROOT,

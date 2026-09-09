@@ -51,6 +51,18 @@ redacted output, bucket identity, provider/account, date, and cleanup decision
 as external evidence. A successful probe is still not a product guarantee until
 the owner provisions the backend and approves its tenant/data-residency use.
 
+### Re-probe record (2026-09-08)
+
+An operator opted into the probe against the production-account R2 S3 endpoint
+using the local AWS credential profile. `CreateBucket` was rejected with the
+provider response `InvalidArgument` (the supplied access-key shape was not a
+valid R2 key); the per-object operation was therefore not attempted. The
+aggregate result is **INDETERMINATE**, not `BLOCKED`: this was a credential
+boundary failure, not an Object-Lock capability response. No probe bucket or
+object was created, and no production retention state was touched. The
+2026-08-25 `NotImplemented` result remains the latest valid capability
+evidence; B-046 stays parked.
+
 ## Tenant and legal-hold safety
 
 The shipped B-009 path remains Governance-mode CAS legal hold. It stores a

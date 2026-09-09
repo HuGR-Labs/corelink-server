@@ -13,9 +13,9 @@
 
 ## Alternative — compliance-forward
 
-> Multi-tenant Bazel remote cache (REAPI v2 over HTTP/REST) built on Cloudflare. TLA+ verified isolation, customer-managed kill switch, 3 regions today, BYOK on AWS KMS (more providers roadmap), hash-chain audit trail. SOC 2 Type I roadmap. Three lighthouse customers.
+> Multi-tenant Bazel remote cache (REAPI v2 over HTTP/REST) built on Cloudflare. TLA+ verified isolation, customer-managed kill switch, 3 regions today, BYOK on AWS KMS (more providers roadmap), hash-chain audit trail. SOC 2 Type I roadmap. Lighthouse pending.
 
-**Character count: 250 / 260.**
+**Character count: 258 / 260.**
 
 ## Alternative — speed-forward
 

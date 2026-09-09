@@ -24,6 +24,54 @@ from urllib.request import Request, urlopen
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 PHASE = re.compile(r"(?:^|[, ])([a-z][a-z0-9_]*);dur=([0-9]+(?:\.[0-9]+)?)")
 AUTH_PHASE = re.compile(r'(?:^|[, ])auth;dur=[0-9]+(?:\.[0-9]+)?;desc="(l1|kv|d1)"(?:[, ]|$)')
+# Keep the evidence field bound to the deployed Worker contract.  The cold
+# proof intentionally remains stricter than this TTL: a token must be idle for
+# at least 61 seconds, even though the current L2 entry expires after 30 s.
+KV_PAT_ROW_TTL_SECONDS = 30
+COLD_IDLE_SECONDS = 61
+
+
+WIRE_DIGEST_FIELDS = (
+    "tenant_id", "operation_id", "request_key", "method", "status", "payload_bytes",
+    "payload_sha256", "elapsed_ms", "server_timing", "error", "authenticated",
+    "auth_source", "colo", "response_request_id",
+)
+
+
+def percentile(values: list[float], p: float) -> float:
+    """Inclusive linear interpolation over the sorted population."""
+    ordered = sorted(values)
+    position = p * (len(ordered) - 1)
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+
+def wire_output_sha256(row: dict[str, object]) -> str:
+    material = {key: row.get(key) for key in WIRE_DIGEST_FIELDS}
+    return "sha256:" + hashlib.sha256(json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def mint_binding_sha256(attestation: dict[str, object]) -> str:
+    material = json.dumps(
+        {
+            "expires_ms": attestation.get("expires_ms"),
+            "pat_id": attestation.get("pat_id"),
+            "tenant_id": attestation.get("tenant_id"),
+            "token_fingerprint": attestation.get("token_fingerprint"),
+            "token_id": attestation.get("token_id"),
+            "mint_operation_id": attestation.get("mint_operation_id"),
+            "mint_request_id": attestation.get("mint_request_id"),
+            "mint_response_sha256": attestation.get("mint_response_sha256"),
+            "minted_at_epoch": attestation.get("minted_at_epoch"),
+            "unused_since_epoch": attestation.get("unused_since_epoch"),
+            "observed_at_epoch": attestation.get("observed_at_epoch"),
+            "attestation_source": attestation.get("attestation_source"),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return "sha256:" + hashlib.sha256(material).hexdigest()
 
 
 def op(prefix: str) -> str:
@@ -67,12 +115,14 @@ def call(base: str, tenant: str, token: str, method: str, operation: str, key: s
     timing = next((value for key, value in headers.items() if key.lower() == "server-timing"), "")
     auth_source = wire_auth_source(timing)
     response_request_id = next((value for key, value in headers.items() if key.lower() == "x-request-id"), "")
-    return {"tenant_id": tenant, "operation_id": operation, "method": method, "status": status,
+    row = {"tenant_id": tenant, "operation_id": operation, "request_key": key, "method": method, "status": status,
             "payload_bytes": len(body),
             "elapsed_ms": round(elapsed, 3), "server_timing": timing,
-            "raw_output_sha256": "sha256:" + hashlib.sha256(payload + timing.encode()).hexdigest(), "error": error,
+            "payload_sha256": "sha256:" + hashlib.sha256(payload).hexdigest(), "error": error,
             "authenticated": auth_source is not None, "auth_source": auth_source,
             "colo": wire_colo(headers), "response_request_id": response_request_id}
+    row["raw_output_sha256"] = wire_output_sha256(row)
+    return row
 
 
 def mint_fresh(base: str, tenant: str, session: str, internal_auth: str, operation: str) -> dict:
@@ -121,19 +171,20 @@ def mint_fresh(base: str, tenant: str, session: str, internal_auth: str, operati
         raise RuntimeError("fresh PAT mint API omitted binding metadata")
     response_digest = "sha256:" + hashlib.sha256(payload).hexdigest()
     token_fingerprint = "sha256:" + hashlib.sha256(body["token_plaintext"].encode()).hexdigest()
-    binding_material = json.dumps({"expires_ms": expires_ms, "pat_id": pat_id, "tenant_id": tenant,
+    minted_at = time.time()
+    binding = mint_binding_sha256({"expires_ms": expires_ms, "pat_id": pat_id, "tenant_id": tenant,
                                    "token_fingerprint": token_fingerprint, "token_id": token_id,
                                    "mint_operation_id": operation, "mint_request_id": response_request_id,
-                                   "mint_response_sha256": response_digest}, sort_keys=True, separators=(",", ":")).encode()
-    binding = hashlib.sha256(binding_material).hexdigest()
+                                   "mint_response_sha256": response_digest, "minted_at_epoch": minted_at,
+                                   "unused_since_epoch": None, "observed_at_epoch": None})
     return {
         "token": body["token_plaintext"],
         "token_fingerprint": token_fingerprint,
         "mint_operation_id": operation,
         "mint_request_id": response_request_id,
         "mint_response_sha256": response_digest,
-        "mint_response_binding_sha256": "sha256:" + binding,
-        "minted_at_epoch": time.time(),
+        "mint_response_binding_sha256": binding,
+        "minted_at_epoch": minted_at,
         "mint_elapsed_ms": round((time.monotonic() - started) * 1000, 3),
         "pat_id": pat_id,
         "token_id": token_id,
@@ -190,11 +241,21 @@ def main() -> int:
                      "raw_output_sha256": "sha256:" + hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()})
     result["items"]["B-103"] = {"tenant_id": args.tenant, "runs": runs}
     # B-104: ten authenticated 404s on random keys.
-    result["items"]["B-104"] = {"tenant_id": args.tenant, "samples": [call(args.base, args.tenant, args.token, "GET", op("b104"), uuid.uuid4().hex) for _ in range(10)]}
+    b104_samples = [call(args.base, args.tenant, args.token, "GET", op("b104"), uuid.uuid4().hex) for _ in range(10)]
+    b104_times = [float(row["elapsed_ms"]) for row in b104_samples]
+    ordered_b104 = sorted(b104_times)
+    result["items"]["B-104"] = {
+        "tenant_id": args.tenant,
+        "samples": b104_samples,
+        "computed": {
+            "median_ms": (ordered_b104[4] + ordered_b104[5]) / 2,
+            "p90_ms": percentile(b104_times, 0.90),
+        },
+    }
     # B-106: the real minted token must remain idle for a full revocation-cache
     # window before the cold request and same-colo warm control are observed.
     idle_started = time.time()
-    time.sleep(60)
+    time.sleep(COLD_IDLE_SECONDS)
     observed = time.time()
     cold = call(args.base, args.tenant, mint["token"], "GET", op("b106-cold"), uuid.uuid4().hex)
     warm = call(args.base, args.tenant, mint["token"], "GET", op("b106-warm"), uuid.uuid4().hex)
@@ -205,7 +266,7 @@ def main() -> int:
     if not cold["colo"] or cold["colo"] != warm["colo"] or not cold["response_request_id"] or not warm["response_request_id"] or cold["response_request_id"] == warm["response_request_id"]:
         raise RuntimeError("B-106 requests did not prove same-colo wire request identities")
     cold["token_fingerprint"] = warm["token_fingerprint"] = token_fp
-    result["items"]["B-106"] = {"tenant_id": args.tenant, "kv_ttl_seconds": 60,
+    result["items"]["B-106"] = {"tenant_id": args.tenant, "kv_ttl_seconds": KV_PAT_ROW_TTL_SECONDS,
                                   "cold_attestation": {"tenant_id": args.tenant, "operation_id": mint["mint_operation_id"], "mint_operation_id": mint["mint_operation_id"], "minted_at_epoch": mint["minted_at_epoch"],
                                                         "unused_since_epoch": idle_started, "observed_at_epoch": observed,
                                                         "token_fingerprint": token_fp, "mint_request_id": mint["mint_request_id"],
@@ -214,6 +275,9 @@ def main() -> int:
                                                         "mint_response_binding_sha256": mint["mint_response_binding_sha256"],
                                                         "pat_id": mint["pat_id"], "token_id": mint["token_id"], "expires_ms": mint["expires_ms"]},
                                   "cold": cold, "warm_control": warm}
+    result["items"]["B-106"]["cold_attestation"]["mint_response_binding_sha256"] = mint_binding_sha256(
+        result["items"]["B-106"]["cold_attestation"]
+    )
     # B-107: `ostore` (R2) and `oaccounting` (D1) are distinct wire phases.
     # Never synthesize the old `or2`/`oaccounting` pair from one aggregate:
     # missing either phase means the deployed container is not the instrumented

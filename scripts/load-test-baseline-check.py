@@ -76,6 +76,7 @@ import pathlib
 import sys
 
 BASELINE_SCHEMA = 1
+REQUIRED_SCENARIOS = frozenset({"signup", "webhook", "dsr", "cas", "byok"})
 
 # Default regression threshold: a scenario fails when its current median is
 # more than 20% above the stored baseline median. Overridable by
@@ -322,6 +323,12 @@ def main(argv: list[str]) -> int:
         current = collect_current(results_dir, expected_set)
     except InputError as exc:
         print(f"::error::{exc}")
+        return EXIT_USAGE
+    if expected_set != REQUIRED_SCENARIOS:
+        print(
+            "::error::baseline publication requires all five scenarios: "
+            + ",".join(sorted(REQUIRED_SCENARIOS))
+        )
         return EXIT_USAGE
 
     try:

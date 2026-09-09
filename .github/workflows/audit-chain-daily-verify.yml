@@ -59,6 +59,8 @@ name: audit-chain-daily-verify (Wave 18)
 #                                       `corelink-audit-weur` ONLY
 #   - AUDIT_R2_BUCKET          (#118 var, optional override) — defaults
 #                                       to `corelink-audit-weur`
+#   - AUDIT_CHAIN_LINK_KEYS_JSON (#166) — write-only link-key keyring for
+#                                      post-cutover keyed archive verification
 #   - PAGERDUTY_ROUTING_KEY    (#11) — SEV-0 page on per-day chain break
 #
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin
@@ -230,6 +232,7 @@ jobs:
           R2_BUCKET: ${{ vars.AUDIT_R2_BUCKET }}
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          AUDIT_CHAIN_LINK_KEYS_JSON: ${{ secrets.AUDIT_CHAIN_LINK_KEYS_JSON }}
           PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         # Wave 18 cutover: paginated CF API v4 R2 list INSIDE each
@@ -252,7 +255,20 @@ jobs:
           set -euo pipefail
           : "${PAGERDUTY_ROUTING_KEY:?PAGERDUTY_ROUTING_KEY not set — cannot page on per-day chain break (fail-CLOSED)}"
           echo "::add-mask::${CF_API_TOKEN:-}"
+          echo "::add-mask::${AUDIT_CHAIN_LINK_KEYS_JSON:-}"
           echo "::add-mask::${PAGERDUTY_ROUTING_KEY}"
+
+          # Keep raw key material outside the uploaded staging tree and wipe it
+          # even when a malformed keyring aborts the verifier invocation.
+          KEYRING_PATH=""
+          trap 'rm -f "${KEYRING_PATH:-}"' EXIT
+          VERIFIER_ARGS=()
+          if [[ -n "${AUDIT_CHAIN_LINK_KEYS_JSON:-}" ]]; then
+            KEYRING_PATH="${RUNNER_TEMP}/audit-chain-keyring-${GITHUB_RUN_ID}.json"
+            printf '%s' "${AUDIT_CHAIN_LINK_KEYS_JSON}" > "${KEYRING_PATH}"
+            chmod 600 "${KEYRING_PATH}"
+            VERIFIER_ARGS=(--chain-keyring "${KEYRING_PATH}")
+          fi
 
           DATES="${{ steps.window.outputs.dates }}"
           BUCKET="${R2_BUCKET:-${AUDIT_R2_BUCKET_DEFAULT}}"
@@ -468,13 +484,13 @@ jobs:
             mapfile -t CHUNKS < <(find "${CHUNKS_DIR}" -type f -name '*.ndjson' | sort)
             if [ "${#CHUNKS[@]}" -eq 0 ]; then
               echo "  day=${D}: no chunks; cron no-op"
-              cargo run -p corelink-audit-chain --bin verifier --release -- 2>&1 | tee "${DAY_LOG}"
+              cargo run -p corelink-audit-chain --bin verifier --release -- "${VERIFIER_ARGS[@]}" 2>&1 | tee "${DAY_LOG}"
             else
               echo "  day=${D}: verifying ${#CHUNKS[@]} chunk(s)"
               # Per-day verifier MUST NOT fail the script — we want to
               # continue the matrix to surface ALL bad days as distinct
               # PD pages. Capture exit + grep for the marker below.
-              if ! cargo run -p corelink-audit-chain --bin verifier --release -- "${CHUNKS[@]}" 2>&1 | tee "${DAY_LOG}"; then
+              if ! cargo run -p corelink-audit-chain --bin verifier --release -- "${VERIFIER_ARGS[@]}" "${CHUNKS[@]}" 2>&1 | tee "${DAY_LOG}"; then
                 echo "  day=${D}: verifier exited non-zero (will surface below if marker present)"
               fi
             fi

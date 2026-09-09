@@ -49,12 +49,30 @@ def main() -> int:
     expect_reject("crates/corelink-container/src/origin_timing.rs", '"oaccounting"')
     expect_reject("crates/corelink-container/src/adapter_cache.rs", "PhaseScope::with_ledger")
     expect_reject(
-        "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs",
+        "crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs",
         "Phase::Accounting",
+    )
+    expect_reject(
+        "crates/corelink-container/src/routes/ratelimit_layer.rs",
+        "crate::origin_timing::Phase::RateLimit",
+    )
+    expect_reject(
+        "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs",
+        'include!("b126_m2_impl_01_part_02.rs");',
     )
     wrapper = (ROOT / "crates/corelink-container/src/byte_accounting.rs").read_text(encoding="utf-8")
     include = 'include!("byte_accounting/b126_m2_impl_01.rs");'
     assert wrapper.count(include) == 1, "expected one active B126-M2 implementation include"
+    accounting = verify._rust_include_closure(
+        ROOT,
+        "crates/corelink-container/src/byte_accounting.rs",
+        {},
+    )
+    assert accounting.count("Phase::Accounting") >= 1, "nested accounting include was not traversed"
+    rate_tokens = verify._rust_tokens(
+        (ROOT / "crates/corelink-container/src/routes/ratelimit_layer.rs").read_text(encoding="utf-8")
+    )
+    assert len(verify._rate_limit_scope_positions(rate_tokens)) == 2, "one-argument rate scopes were not recognized"
     expect_wrapper_reject(wrapper.replace(include, "", 1), "active include removed")
     expect_wrapper_reject(
         wrapper.replace(include, 'include!("byte_accounting/b126_m2_impl_02.rs");', 1),

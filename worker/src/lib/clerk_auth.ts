@@ -29,6 +29,8 @@
 import { verifyToken } from "@clerk/backend";
 import type { Env } from "../index.js";
 import { provisionOrLookupGithugrTenant } from "./githugr_provision.js";
+import { isProductionEnvironment } from "../../../config/production_environment.js";
+export { isProductionEnvironment } from "../../../config/production_environment.js";
 
 /**
  * Shared azp allowlist for Clerk session verification (M1).
@@ -56,27 +58,6 @@ export const CLERK_AZP_ALLOWLIST = ["https://humangr.com"] as const;
  * CoreLink's own dashboard/onboarding azp set. (rt — single-githugr-tenant / Option B.)
  */
 export const GITHUGR_AZP_ALLOWLIST = ["https://www.githugr.com"] as const;
-
-/** Wrangler's deployed production markers, including regional prod workers. */
-const PRODUCTION_ENVIRONMENTS = new Set([
-  "prod",
-  "production",
-  "prod-sam",
-  "prod-lhr",
-  "prod-nrt",
-  "prod-syd",
-]);
-
-/** Treat only the documented Wrangler production markers as production. */
-export function isProductionEnvironment(
-  env: Pick<Env, "ENVIRONMENT"> & { NODE_ENV?: string },
-): boolean {
-  const marker = env.ENVIRONMENT.trim().toLowerCase();
-  return (
-    PRODUCTION_ENVIRONMENTS.has(marker) ||
-    env.NODE_ENV?.trim().toLowerCase() === "production"
-  );
-}
 
 /** Result of the shared Clerk-session → tenant resolution pipeline. */
 export type ClerkAuthResult =

@@ -67,22 +67,27 @@
 >
 > "No cross-region leak" is an invariant (`INV-REGION-NO-CROSS-LEAK`), verified in the TLA+ tenant isolation spec.
 >
-> Schrems II TIA on file. DPA Legal-reviewed by external EU privacy counsel before any lighthouse customer signed.
+> Schrems II TIA on file. External-counsel DPA review and customer signature
+> remain gates before any lighthouse onboarding; no external lighthouse
+> customer has signed this draft.
 
 ## Tweet 8 — Engineering gate separated from launch
 
 > We split GA into two gates:
 >
-> 1. Engineering gate (binary, unappealable): PRR + 30d staging + 3 lighthouse customers + zero CRITICAL waivers + `CAP-GA-002` external-pentest report and retest with no outstanding HIGH/CRITICAL findings. No external pentest has been commissioned, so this draft does not authorize a GA claim.
+> 1. Engineering gate (binary, unappealable): PRR + 30d staging + external
+> lighthouse evidence + zero CRITICAL waivers + `CAP-GA-002` external-pentest
+> report and retest with no outstanding HIGH/CRITICAL findings. The customer
+> and pentest gates are unmet, so this draft does not authorize a GA claim.
 > 2. Launch orchestration (soft gate): this thread.
 >
 > Engineering gate decided whether we ship. Not the other way around.
 
-## Tweet 9 — Three lighthouse customers
+## Tweet 9 — Lighthouse customer slot not yet populated
 
-> Three lighthouse customers attested before GA: Forge (customer-zero, internal), one OSS Bazel/Buck2 maintainer team, one enterprise BYOK deployment.
->
-> Each ran 30 days under SLA observation with claims met every day.
+> No external lighthouse customer has attested before GA. Forge is an internal
+> customer-zero; the OSS and enterprise/BYOK slots remain unpopulated. No
+> external deployment or 30-day SLA observation may be presented as a result.
 
 ## Tweet 10 — Close + CTA
 

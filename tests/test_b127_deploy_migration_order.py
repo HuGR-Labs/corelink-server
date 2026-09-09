@@ -1,0 +1,195 @@
+"""Fail-closed guards for the B-127 writer-first production cutover."""
+
+from __future__ import annotations
+
+from pathlib import Path
+import re
+
+import pytest
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW = ROOT / ".github/workflows/cf-deploy-prod.yml"
+DEPLOY_SCRIPT = ROOT / "scripts/deploy-container-prod.sh"
+PIN_SCRIPT = ROOT / "scripts/check-container-pin-fresh.sh"
+EXPECTED_FLEET_MATRIX = 'matrix={"env":["prod","prod-sam","prod-lhr","prod-nrt","prod-syd"]}'
+EXPECTED_ENVS = ("prod", "prod-sam", "prod-lhr", "prod-nrt", "prod-syd")
+EXPECTED_MIGRATION_IF = (
+    "always() && needs.gate-secrets-checklist.result == 'success' "
+    "&& needs.deploy.result == 'success' && inputs.env == '' "
+    "&& !inputs.skip_pin_freshness"
+)
+
+
+def _workflow(text: str) -> dict:
+    parsed = yaml.safe_load(text)
+    assert isinstance(parsed, dict)
+    jobs = parsed.get("jobs")
+    assert isinstance(jobs, dict)
+    return jobs
+
+
+def _normalize_expression(value: object) -> str:
+    """Normalize YAML folded whitespace while preserving expression structure."""
+    return re.sub(r"\s+", " ", str(value)).strip()
+
+
+def _assert_writer_first(jobs: dict) -> None:
+    gate = jobs.get("gate-secrets-checklist")
+    deploy = jobs.get("deploy")
+    migrate = jobs.get("migrate-d1")
+    assert isinstance(gate, dict)
+    assert isinstance(deploy, dict)
+    assert isinstance(migrate, dict)
+
+    matrix_step = next(
+        (step for step in gate.get("steps", []) if step.get("id") == "set-matrix"),
+        None,
+    )
+    assert isinstance(matrix_step, dict)
+    # The empty-input path is the only path allowed to unlock shared-D1
+    # migrations, and it must always cover every production writer.
+    assert EXPECTED_FLEET_MATRIX in str(matrix_step.get("run", ""))
+
+    # The matrix aggregate is the proof boundary: a migration may not depend
+    # on a gate that can finish while one writer leg is still stale or failed.
+    assert deploy["needs"] == [
+        "gate-secrets-checklist",
+        "gate-cf-secrets-populated",
+    ]
+    assert migrate["needs"] == [
+        "gate-secrets-checklist",
+        "gate-cf-secrets-populated",
+        "deploy",
+    ]
+    # Compare the complete normalized expression. Substring assertions could
+    # let an unsafe `||` branch, env=prod widening, or omitted gate survive.
+    assert _normalize_expression(migrate.get("if", "")) == EXPECTED_MIGRATION_IF
+
+
+def test_migration_is_downstream_of_the_healthy_writer_matrix() -> None:
+    _assert_writer_first(_workflow(WORKFLOW.read_text(encoding="utf-8")))
+
+
+def test_dependency_mutation_reopens_writer_first_boundary() -> None:
+    original = WORKFLOW.read_text(encoding="utf-8")
+    mutated = original.replace(
+        "      - deploy\n", "      - gate-secrets-checklist\n", 1
+    )
+    assert mutated != original
+    with pytest.raises(AssertionError):
+        _assert_writer_first(_workflow(mutated))
+
+
+def test_rollback_and_single_env_mutations_reopen_schema_guard() -> None:
+    original = WORKFLOW.read_text(encoding="utf-8")
+    for marker in (
+        "inputs.env == ''",
+        "!inputs.skip_pin_freshness",
+    ):
+        mutated = original.replace(marker, "true", 1)
+        assert mutated != original
+        with pytest.raises(AssertionError):
+            _assert_writer_first(_workflow(mutated))
+
+
+def test_default_matrix_and_single_env_prod_migration_mutations_reopen() -> None:
+    original = WORKFLOW.read_text(encoding="utf-8")
+
+    mutated_matrix = original.replace(',"prod-syd"]', "]", 1)
+    assert mutated_matrix != original
+    with pytest.raises(AssertionError):
+        _assert_writer_first(_workflow(mutated_matrix))
+
+    # `env=prod` is still a single-target dispatch, not proof of the complete
+    # fleet. Widening this condition would allow a shared-D1 migration too soon.
+    mutated_env_guard = original.replace(
+        "inputs.env == ''", "inputs.env == 'prod'", 1
+    )
+    assert mutated_env_guard != original
+    with pytest.raises(AssertionError):
+        _assert_writer_first(_workflow(mutated_env_guard))
+
+
+def test_exact_reviewer_condition_mutations_reopen_migration_gate() -> None:
+    original = WORKFLOW.read_text(encoding="utf-8")
+    mutations = (
+        # Reviewer mutation 1: introduce an OR branch that can bypass a gate.
+        ("&& inputs.env == ''", "|| inputs.env == ''"),
+        # Reviewer mutation 2: widen the shared-D1 migration to a single env.
+        ("inputs.env == ''", "inputs.env == 'prod'"),
+    )
+    for old, new in mutations:
+        mutated = original.replace(old, new, 1)
+        assert mutated != original
+        with pytest.raises(AssertionError):
+            _assert_writer_first(_workflow(mutated))
+
+
+def test_boolean_rollback_mutations_reopen_migration_gate() -> None:
+    original = WORKFLOW.read_text(encoding="utf-8")
+    mutations = (
+        # A workflow boolean must not be compared to a quoted string.
+        ("!inputs.skip_pin_freshness", "inputs.skip_pin_freshness != 'true'"),
+        # A true rollback/recycle input must never authorize shared-D1 writes.
+        ("!inputs.skip_pin_freshness", "inputs.skip_pin_freshness == true"),
+    )
+    for old, new in mutations:
+        mutated = original.replace(old, new, 1)
+        assert mutated != original
+        with pytest.raises(AssertionError):
+            _assert_writer_first(_workflow(mutated))
+
+
+def test_deploy_helper_is_the_non_bypassable_image_and_health_proof() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'bash scripts/deploy-container-prod.sh --apply --env "${WRANGLER_ENV}"' in workflow
+    _assert_health_proof(script)
+
+
+def _assert_health_proof(script: str) -> None:
+    assert 'configuration.image' in script
+    assert '(.result.health.instances.healthy // null)' in script
+    assert '(.result.instances // null)' in script
+    assert 'if ! [[ "$healthy" =~ ^[0-9]+$ ]]' in script
+    assert 'if [ "$failed" -ne 0 ]; then' in script
+    assert 'if [ "$desired" -le 0 ] || [ "$healthy" -le 0 ]; then' in script
+    assert 'CONFIRM_POLLS=2' in script
+    assert 'check-container-pin-fresh.sh' in script
+
+
+def test_health_proof_mutation_reopens_contract() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    mutations = (
+        ('(.result.instances // null)', '(.result.instances // 0)'),
+        ('if [ "$desired" -le 0 ] || [ "$healthy" -le 0 ]; then', 'if false; then'),
+    )
+    for old, new in mutations:
+        mutated = script.replace(old, new, 1)
+        assert mutated != script
+        with pytest.raises(AssertionError):
+            _assert_health_proof(mutated)
+
+
+def _assert_all_writer_pins(script: str) -> None:
+    assert 'EXPECTED_ENVS=(prod prod-sam prod-lhr prod-nrt prod-syd)' in script
+    assert 'writer pin mismatch' in script
+    assert '[ "$tag" != "$EXPECTED_TAG" ]' in script
+    for env in EXPECTED_ENVS:
+        assert f'corelink-${{env_name}}-corelinkserver-prod' in script
+
+
+def test_pin_freshness_covers_all_five_writer_refs() -> None:
+    _assert_all_writer_pins(PIN_SCRIPT.read_text(encoding="utf-8"))
+
+
+def test_pin_freshness_missing_region_mutation_reopens_contract() -> None:
+    script = PIN_SCRIPT.read_text(encoding="utf-8")
+    mutated = script.replace('EXPECTED_ENVS=(prod prod-sam prod-lhr prod-nrt prod-syd)',
+                             'EXPECTED_ENVS=(prod prod-sam prod-lhr prod-nrt)', 1)
+    assert mutated != script
+    with pytest.raises(AssertionError):
+        _assert_all_writer_pins(mutated)

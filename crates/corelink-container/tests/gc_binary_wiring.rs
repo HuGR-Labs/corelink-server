@@ -14,12 +14,36 @@ const DRY_RUN_WORKFLOW: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../.github/workflows/gc-sweep-dry-run.yml"
 ));
+const PRODUCTION_SWEEP_BIN: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bin/gc_sweep.rs"));
+
+fn gate_4b_source(workflow: &str) -> Option<&str> {
+    let start_marker =
+        "      - name: Gate 4b — native production GC binary is present and fail-closed";
+    let end_marker = "      - name: ADR-0015 reproducibility attestation (reminder)";
+    let start = workflow.find(start_marker)?;
+    let body_start = start + start_marker.len();
+    let end = workflow[body_start..].find(end_marker)? + body_start;
+    Some(&workflow[start..end])
+}
+
+fn gate_4b_has_required_contract(gate: &str) -> bool {
+    gate.contains("GC_OBSERVATION_ONLY=true")
+        && gate.contains("GC_LIVE_DELETE=false")
+        && gate.contains("gc_sweep FAILED (fail-closed)")
+}
 
 #[test]
 fn runtime_image_contains_a_separately_invoked_gc_binary() {
     let build = "cargo build --release --locked -p corelink-gc --bin gc_sweep;";
     let stage = "cp /build/target/release/gc_sweep /out/gc_sweep";
     let runtime = "COPY --from=builder /out/gc_sweep /usr/local/bin/gc_sweep";
+    let production_build =
+        "cargo build --release --locked -p corelink-server --bin corelink-gc-sweep-production";
+    let production_stage =
+        "cp /build/target/release/corelink-gc-sweep-production /out/corelink-gc-sweep-production";
+    let production_runtime =
+        "COPY --from=builder /out/corelink-gc-sweep-production /usr/local/bin/corelink-gc-sweep-production";
 
     assert!(
         DOCKERFILE.contains(build),
@@ -34,12 +58,43 @@ fn runtime_image_contains_a_separately_invoked_gc_binary() {
         "gc_sweep must enter the runtime image"
     );
     assert!(
+        DOCKERFILE.contains(production_build),
+        "native production sweep must be built under its distinct name"
+    );
+    assert!(
+        DOCKERFILE.contains(production_stage),
+        "native production sweep must leave the cache mount"
+    );
+    assert!(
+        DOCKERFILE.contains(production_runtime),
+        "native production sweep must enter the runtime image"
+    );
+    assert!(
         !DOCKERFILE.contains("ENV GC_LIVE_DELETE=true"),
         "the image must never default to live deletion"
     );
     assert!(
         DOCKERFILE.contains("ENTRYPOINT [\"/usr/local/bin/corelink-server\"]"),
         "shipping gc_sweep must not replace the server entrypoint"
+    );
+}
+
+#[test]
+fn native_sweep_observation_requires_explicit_false_delete_gate() {
+    let source = include_str!("../src/gc_sweep.rs");
+    for required in [
+        "GC_OBSERVATION_ONLY",
+        "GC_OBSERVATION_ONLY=true requires GC_LIVE_DELETE=false",
+        "pub observation_only: bool",
+    ] {
+        assert!(
+            source.contains(required),
+            "observation contract must contain {required:?}"
+        );
+    }
+    assert!(
+        PRODUCTION_SWEEP_BIN.contains("observation_only={}"),
+        "the native sweep binary must report the observation-only contract"
     );
 }
 
@@ -59,6 +114,19 @@ fn image_inspection_runs_gc_as_a_measurable_dry_run() {
             "image inspection must contain {required:?}"
         );
     }
+}
+
+#[test]
+fn native_production_gate_scopes_explicit_false_delete_guard() {
+    let gate = gate_4b_source(BUILD_WORKFLOW);
+    assert!(gate.is_some(), "Gate 4b must be present");
+    let Some(gate) = gate else { return };
+    assert!(gate_4b_has_required_contract(gate));
+
+    // A mutation that removes the explicit false delete guard from Gate 4b
+    // must not be rescued by the identical dry-run setting in Gate 4.
+    let mutated = gate.replacen("GC_LIVE_DELETE=false", "GC_LIVE_DELETE", 1);
+    assert!(!gate_4b_has_required_contract(&mutated));
 }
 
 #[test]

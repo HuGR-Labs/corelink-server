@@ -11,6 +11,7 @@ comment bait, and missing workflow triggers.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import os
 import subprocess
@@ -33,12 +34,38 @@ REQUIRED_D1 = (
     "d1_audit_write_blocking_records_oaudit_phase",
 )
 REQUIRED_R2 = (
-    "r2_cas_list_concurrent_path_fails_closed_on_bad_audit_creds",
+    "r2_cas_list_durable_audit_failure_precedes_storage",
     "storage_r2_round_trip",
     "cas_idempotent_rewrite_reports_durable_false",
     "delete_if_present_credits_size_once_then_none",
     "r2_cas_exists_batch_fails_closed_on_bad_audit_creds",
 )
+
+REQUIRED_TARGET_SOURCES = {
+    **{target: "crates/corelink-container/src/routes/tier_select_store.rs" for target in REQUIRED_D1[:3]},
+    "d1_http_cas_meta_round_trip": "crates/corelink-container/src/storage/d1_http.rs",
+    "d1_http_tenant_admin_lookup_round_trip": "crates/corelink-container/src/storage/d1_http.rs",
+    "d1_audit_write_blocking_records_oaudit_phase": "crates/corelink-container/src/storage/d1_audit_sink/tests_phase_attribution.rs",
+    "r2_cas_list_durable_audit_failure_precedes_storage": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
+    "storage_r2_round_trip": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
+    "cas_idempotent_rewrite_reports_durable_false": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
+    "delete_if_present_credits_size_once_then_none": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
+    "r2_cas_exists_batch_fails_closed_on_bad_audit_creds": "crates/corelink-container/src/storage/r2_s3_parts/tests_2.rs",
+}
+
+# Byte-locked source manifest for the exact files containing the 11 selected
+# harnesses. This is intentionally reviewed data, not a generated claim: any
+# legitimate source edit (including cfg_attr/raw/unicode/macro changes) must
+# update this manifest in the same reviewed change before semantic checks can
+# run. The self-hosted runner's PATH/toolchain remains the infrastructure trust
+# boundary; this manifest binds the repository-owned selector/source inputs.
+SOURCE_SHA256 = {
+    "crates/corelink-container/src/routes/tier_select_store.rs": "ea65f1134e2055468226b8e62e8b319244c34e48fe08834b42b2a1df2581f712",
+    "crates/corelink-container/src/storage/d1_http.rs": "6c1932b0be0b578469c6710c06cbe16ca1b437b9248b085f4671e22822c3e81a",
+    "crates/corelink-container/src/storage/d1_audit_sink/tests_phase_attribution.rs": "474d45a030f333bfb73d7152bc2a802d9d29b8af2d559c5310f9a683bc74e717",
+    "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs": "9a946473e1f76d1af26958cdbefca8ac641dbfaeb2066af7e7a8a5d302df0f8d",
+    "crates/corelink-container/src/storage/r2_s3_parts/tests_2.rs": "3c46817aa4a3f758768297ad13baa7033088c27a25848531bcc3cda280451779",
+}
 
 
 def code_lines(text: str) -> list[str]:
@@ -127,7 +154,139 @@ def fail(message: str) -> None:
     raise AssertionError(message)
 
 
+def verify_source_digests(root: Path = ROOT, overrides: dict[str, bytes] | None = None) -> None:
+    """Fail before semantic parsing if any bound source byte changed."""
+    for relative, expected in SOURCE_SHA256.items():
+        target = root / relative
+        body = overrides[relative] if overrides and relative in overrides else target.read_bytes()
+        actual = hashlib.sha256(body).hexdigest()
+        if actual != expected:
+            fail(f"source digest mismatch (reviewed manifest required): {relative}")
+
+
+def verify_source_binding_manifest(
+    target_sources: dict[str, str] | None = None,
+) -> None:
+    """Require every selected source, and no unselected source, to be digest-bound."""
+    bound_sources = REQUIRED_TARGET_SOURCES if target_sources is None else target_sources
+    if set(bound_sources.values()) != set(SOURCE_SHA256):
+        fail("target/source binding is not closed over the reviewed digest manifest")
+
+
+def rust_code_without_comments_and_strings(body: str) -> str:
+    """Blank Rust comments/strings (including raw strings) but keep newlines."""
+    out: list[str] = []
+    state = "code"
+    block_depth = 0
+    raw_hashes = 0
+    escaped = False
+    i = 0
+    while i < len(body):
+        char = body[i]
+        nxt = body[i + 1] if i + 1 < len(body) else ""
+        if state == "code":
+            if char == "/" and nxt == "/":
+                out.extend("  "); i += 2; state = "line"; continue
+            if char == "/" and nxt == "*":
+                out.extend("  "); i += 2; block_depth = 1; state = "block"; continue
+            if char == "r":
+                marker = re.match(r'r(#{0,255})"', body[i:])
+                if marker:
+                    raw_hashes = len(marker.group(1)); out.extend(" " * len(marker.group(0)))
+                    i += len(marker.group(0)); state = "raw"; continue
+            if char in ('"', "'"):
+                out.append(" "); i += 1; state = char; escaped = False; continue
+            out.append(char); i += 1; continue
+        if state == "line":
+            out.append("\n" if char == "\n" else " "); i += 1
+            if char == "\n": state = "code"
+            continue
+        if state == "block":
+            if char == "/" and nxt == "*": out.extend("  "); i += 2; block_depth += 1; continue
+            if char == "*" and nxt == "/":
+                out.extend("  "); i += 2; block_depth -= 1
+                if block_depth == 0: state = "code"
+                continue
+            out.append("\n" if char == "\n" else " "); i += 1; continue
+        if state == "raw":
+            closing = '"' + ('#' * raw_hashes)
+            if body.startswith(closing, i):
+                out.extend(" " * len(closing)); i += len(closing); state = "code"; continue
+            out.append("\n" if char == "\n" else " "); i += 1; continue
+        out.append("\n" if char == "\n" else " "); i += 1
+        if escaped: escaped = False
+        elif char == "\\": escaped = True
+        elif char == state: state = "code"
+    return "".join(out)
+
+
+def exact_ignored_source(body: str, target: str) -> bool:
+    code = rust_code_without_comments_and_strings(body)
+    pattern = rf"(?m)^[ \t]*(?:(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+{re.escape(target)}\s*\()"
+    declarations = list(re.finditer(pattern, code))
+    if len(declarations) != 1:
+        return False
+    declaration = declarations[0]
+
+    def balanced_end(opening: int) -> int:
+        matching = {"{": "}", "(": ")", "[": "]"}
+        stack = [code[opening]]
+        cursor = opening + 1
+        while cursor < len(code) and stack:
+            char = code[cursor]
+            if char in matching:
+                stack.append(char)
+            elif char == matching[stack[-1]]:
+                stack.pop()
+            cursor += 1
+        return cursor
+
+    # A macro_rules! body is not an executable test declaration: Cargo can
+    # compile it successfully while never expanding/invoking it. Rust macro
+    # bodies may use any of {}, (), or [] as their outer delimiter.
+    for macro in re.finditer(r"macro_rules!\s*[A-Za-z_][A-Za-z0-9_]*\s*([\{\(\[])", code):
+        end = balanced_end(macro.start(1))
+        if macro.end() <= declaration.start() < end:
+            return False
+
+    # cfg on the crate/module containing this harness can silently remove the
+    # test from the compiled target. These real harnesses must always compile;
+    # reject every cfg attribute rather than trying to evaluate expressions.
+    if re.search(r"(?m)^\s*#!\[\s*cfg(?:\s*\(|\s*\])", code[:declaration.start()]):
+        return False
+
+    line_start = code.rfind("\n", 0, declaration.start()) + 1
+    prior = code[:line_start].splitlines()
+    attrs: list[str] = []
+    while prior and re.fullmatch(r"\s*#\[[^\n]*\]\s*", prior[-1]):
+        attrs.insert(0, prior.pop().strip())
+    if not attrs or not re.fullmatch(r"#\[ignore(?:\s*=\s*[^]]+)?\]", attrs[-1]):
+        return False
+    if not any(re.search(r"#\[\s*(?:tokio::)?test(?:\s*\(|\s*\])", attr, re.IGNORECASE) for attr in attrs):
+        return False
+    if any(re.match(r"#\[\s*cfg(?:\s*\(|\s*\])", attr, re.IGNORECASE) for attr in attrs):
+        return False
+
+    # Find enclosing module items and inspect only their contiguous attributes;
+    # unrelated cfg modules elsewhere in the source do not taint this target.
+    for module in re.finditer(r"(?m)^[ \t]*(?:(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+[A-Za-z_][A-Za-z0-9_]*\s*\{)", code):
+        end = balanced_end(code.find("{", module.start(), module.end()))
+        if module.end() <= declaration.start() < end:
+            module_line = code.rfind("\n", 0, module.start()) + 1
+            module_prior = code[:module_line].splitlines()
+            module_attrs: list[str] = []
+            while module_prior and re.fullmatch(r"\s*#\[[^\n]*\]\s*", module_prior[-1]):
+                module_attrs.insert(0, module_prior.pop().strip())
+            if any(re.match(r"#\[\s*cfg(?:\s*\(|\s*\])", attr, re.IGNORECASE) for attr in module_attrs):
+                return False
+    return True
+
+
 def assert_contract(workflow: str, runner: str) -> None:
+    # Digest binding is the first source gate; parser/attribute checks are
+    # defense in depth and must never silently bless a changed source file.
+    verify_source_binding_manifest()
+    verify_source_digests()
     wf = code_text(workflow)
     sh = code_text(runner)
     runs = workflow_run_lines(workflow)
@@ -257,6 +416,20 @@ def assert_contract(workflow: str, runner: str) -> None:
         fail("workflow invokes cargo ignored tests directly instead of the allow-list")
     if re.search(r"(?m)^\s*cargo\s+test\s+--ignored", sh):
         fail("runner contains an unscoped cargo --ignored invocation")
+    if "CARGO_BIN" in sh or "CARGO_BIN" in wf:
+        fail("executor must not honor a caller-controlled CARGO_BIN override")
+    if 'cargo test --locked "$@" -- --ignored --nocapture' not in sh:
+        fail("runner does not execute the trusted image Cargo through PATH")
+
+    for target, source_path in REQUIRED_TARGET_SOURCES.items():
+        source = ROOT / source_path
+        if not source.is_file():
+            fail(f"source for real target is missing: {target}: {source_path}")
+        body = source.read_text(encoding="utf-8")
+        if not exact_ignored_source(body, target):
+            fail(f"real target source declaration/ignore association is not exact: {target}")
+        if not re.search(rf"(?m)^\s*run_cargo\b[^\n]*\b{re.escape(target)}\b", sh):
+            fail(f"runner does not execute exact source target: {target}")
 
     # The PAT seed itself remains deliberately ignored and secret-shaped.  This
     # assertion prevents a future cleanup from deleting the safety boundary.
@@ -301,6 +474,72 @@ def mutation_checks(workflow: str, runner: str) -> None:
     expect_rejected("partial R2 executor", workflow, runner.replace(REQUIRED_R2[-1], "r2_target_removed", 1))
     # Wrong-test substitution must not look like proof of the intended path.
     expect_rejected("wrong test target", workflow, runner.replace("storage_r2_round_trip", "unrelated_unit_test", 1))
+    expect_rejected("caller Cargo override", workflow, runner.replace('cargo test --locked "$@" -- --ignored --nocapture', '"$CARGO_BIN" test --locked "$@" -- --ignored --nocapture', 1))
+    expect_rejected("missing R2 source target", workflow, runner.replace("r2_cas_list_durable_audit_failure_precedes_storage", "r2_cas_list_target_removed", 1))
+    expect_rejected("R2 wrong source target", workflow, runner.replace("r2_cas_list_durable_audit_failure_precedes_storage", "r2_cas_list_serial_fallback_attributes_the_r2_call_to_ostore", 1))
+
+    source_target = REQUIRED_R2[0]
+    source_path = ROOT / REQUIRED_TARGET_SOURCES[source_target]
+    source_bytes = source_path.read_bytes()
+    source_body = source_bytes.decode("utf-8")
+    # Every unique source file gets a byte mutation, proving the manifest is
+    # fail-closed independently of which harness file was edited.
+    for relative in SOURCE_SHA256:
+        original = (ROOT / relative).read_bytes()
+        try:
+            verify_source_digests(overrides={relative: original + b"\n// B-068 digest mutation\n"})
+        except AssertionError:
+            pass
+        else:
+            fail(f"byte mutation was accepted for source digest: {relative}")
+    cfg_attr_mutation = source_bytes.replace(b"#[ignore", b"#[cfg_attr(any(), ignore)]\n#[ignore", 1)
+    try:
+        verify_source_digests(overrides={REQUIRED_TARGET_SOURCES[source_target]: cfg_attr_mutation})
+    except AssertionError:
+        pass
+    else:
+        fail("cfg_attr source mutation was accepted by digest")
+    for label, mutation in (
+        ("raw", source_bytes + b'\nr##"#[cfg(any())]"##\n'),
+        ("unicode", source_bytes + "\n// B-068 \u2603\n".encode("utf-8")),
+    ):
+        try:
+            verify_source_digests(overrides={REQUIRED_TARGET_SOURCES[source_target]: mutation})
+        except AssertionError:
+            pass
+        else:
+            fail(f"{label} source mutation was accepted by digest")
+    declaration = re.search(rf"(?m)^(\s*)(async\s+fn\s+{re.escape(source_target)}\s*\()", source_body)
+    # A target may not be remapped to an extra source that lacks a reviewed
+    # digest. The closed-set check must catch both missing and extra entries.
+    remapped_sources = dict(REQUIRED_TARGET_SOURCES)
+    remapped_sources[REQUIRED_D1[0]] = "crates/corelink-container/src/storage/r2_s3_parts/tests_1.rs"
+    try:
+        verify_source_binding_manifest(remapped_sources)
+    except AssertionError:
+        pass
+    else:
+        fail("target remapped to a source without a digest was accepted")
+    if declaration is None:
+        fail("source mutation setup could not find declaration")
+    declaration_line_start = source_body.rfind("\n", 0, declaration.start()) + 1
+    ignore_line_start = source_body.rfind("\n", 0, declaration_line_start - 1) + 1
+    source_without_ignore = source_body[:ignore_line_start] + "// #[ignore]\n" + source_body[declaration_line_start:]
+    if exact_ignored_source(source_without_ignore, source_target):
+        fail("source comment bait mutation was accepted")
+    source_without_declaration = source_body[:declaration.start()] + "// " + source_body[declaration.start():]
+    if exact_ignored_source(source_without_declaration, source_target):
+        fail("commented source declaration mutation was accepted")
+    valid_attrs = "#[tokio::test]\n#[ignore]\nasync fn target() {}"
+    if exact_ignored_source(valid_attrs.replace("#[tokio::test]", "#[ignore]"), "target"):
+        fail("missing active test attribute mutation was accepted")
+    if exact_ignored_source("#[cfg(any())]\n" + valid_attrs, "target"):
+        fail("disabled cfg mutation was accepted")
+    if exact_ignored_source("#[cfg(feature = \"never\")]\nmod disabled {\n" + valid_attrs + "\n}", "target"):
+        fail("cfg module mutation was accepted")
+    for opening, closing in (("{", "}"), ("(", ")"), ("[", "]")):
+        if exact_ignored_source(f"macro_rules! unused {opening}\n" + valid_attrs + f"\n{closing}", "target"):
+            fail(f"uninvoked macro declaration mutation was accepted: {opening}")
     # Secret exposure: any PAT key-shaped input is forbidden, even if no seed
     # command is present.
     expect_rejected("PAT signing secret", workflow, runner + "\nexport CORELINK_PAT_SIGNING_KEY_HEX=unsafe\n")

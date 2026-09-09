@@ -62,10 +62,14 @@ def verify(*, overrides: dict[str, str] | None = None) -> None:
     if "Promotion into the image remains owner-gated." not in production:
         raise VerificationError("production binary promotion boundary drifted")
     docker = values[DOCKERFILE]
-    if "cargo build --release --locked -p corelink-gc --bin gc_sweep;" not in docker:
+    fixture_build = "cargo build --release --locked -p corelink-gc --bin gc_sweep;"
+    production_build = "cargo build --release --locked -p corelink-server --bin corelink-gc-sweep-production"
+    if docker.count(fixture_build) != 1:
         raise VerificationError("image no longer builds the reviewed fixture binary")
-    if "-p corelink-server --bin corelink-gc-sweep-production" in docker:
-        raise VerificationError("owner-gated production binary was promoted implicitly")
+    if docker.count(production_build) != 1:
+        raise VerificationError("image must build the distinct owner-gated production binary exactly once")
+    if docker.count("COPY --from=builder /out/corelink-gc-sweep-production /usr/local/bin/corelink-gc-sweep-production") != 1:
+        raise VerificationError("image must copy the distinct production binary exactly once")
 
 
 def self_test() -> None:

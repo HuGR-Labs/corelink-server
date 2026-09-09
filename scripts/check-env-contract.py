@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import re
 import sys
+import argparse
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -320,6 +321,29 @@ def collect_do_forwarded_keys() -> set[str]:
 # Step 3 — diff and report.
 # ---------------------------------------------------------------------------
 def main() -> int:
+    global REPO_ROOT, CONTAINER_SRC, DO_TS, DO_FORWARD_HELPERS
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
+    ap.add_argument(
+        "--repo-root",
+        type=Path,
+        default=REPO_ROOT,
+        help="Repository root to inspect (default: parent of scripts/).",
+    )
+    args = ap.parse_args()
+
+    # The workflow executes this trusted-base script against a pull-request
+    # checkout treated strictly as data.  Keep all path resolution in this
+    # trusted module; never import or execute code from the candidate tree.
+    REPO_ROOT = args.repo_root.resolve()
+    CONTAINER_SRC = REPO_ROOT / "crates" / "corelink-container" / "src"
+    DO_TS = REPO_ROOT / "worker" / "src" / "durable_object.ts"
+    DO_FORWARD_HELPERS = tuple(
+        REPO_ROOT / relative
+        for relative in (
+            Path("worker/src/lib/pat_rotation_env.ts"),
+        )
+    )
+
     container_vars = collect_container_env_vars()
     forwarded_keys = collect_do_forwarded_keys()
 
