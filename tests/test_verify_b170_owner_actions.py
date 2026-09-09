@@ -56,7 +56,19 @@ def test_symlink_evidence_cannot_satisfy_presence(tmp_path: Path) -> None:
     destination = tmp_path / verifier.EVIDENCE[0]
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.symlink_to(target)
-    with pytest.raises(verifier.PacketError, match="regular file"):
+    with pytest.raises(verifier.PacketError, match="symlink path component"):
+        verifier.verify(tmp_path)
+
+
+def test_symlink_evidence_parent_cannot_escape_root(tmp_path: Path) -> None:
+    _packet_fixture(tmp_path)
+    outside = tmp_path / "outside-reports"
+    for relative in verifier.EVIDENCE:
+        destination = outside / relative.relative_to("reports")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text("owner evidence\n", encoding="utf-8")
+    (tmp_path / "reports").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(verifier.PacketError, match="symlink path component"):
         verifier.verify(tmp_path)
 
 
@@ -77,5 +89,19 @@ def test_packet_symlink_cannot_satisfy_the_contract(tmp_path: Path) -> None:
     destination = tmp_path / verifier.PACKET
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.symlink_to(target)
-    with pytest.raises(verifier.PacketError, match="regular file"):
+    with pytest.raises(verifier.PacketError, match="symlink path component"):
+        verifier.verify(tmp_path)
+
+
+def test_packet_parent_symlink_cannot_escape_root(tmp_path: Path) -> None:
+    outside = tmp_path / "outside-internal"
+    outside.mkdir()
+    packet_copy = outside / "b087-questionnaire-owner-actions.md"
+    packet_copy.write_text(
+        (ROOT / verifier.PACKET).read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    internal = tmp_path / "docs" / "internal"
+    internal.parent.mkdir(parents=True, exist_ok=True)
+    internal.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(verifier.PacketError, match="symlink path component"):
         verifier.verify(tmp_path)

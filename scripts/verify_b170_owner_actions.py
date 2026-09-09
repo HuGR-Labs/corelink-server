@@ -38,14 +38,35 @@ class PacketError(RuntimeError):
     """The owner packet or an evidence path is absent or unsafe."""
 
 
+def _checked_path(
+    root: Path, relative: Path, label: str, *, allow_missing: bool
+) -> Path | None:
+    """Walk every component without following a repository path symlink."""
+
+    if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+        raise PacketError(f"{label}: unsafe relative path: {relative}")
+    current = root
+    for index, part in enumerate(relative.parts):
+        current /= part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            if allow_missing:
+                return None
+            raise PacketError(f"{label}: missing/non-regular artifact: {relative}") from None
+        except OSError as exc:
+            raise PacketError(f"{label}: cannot inspect path component {current}: {exc}") from exc
+        if stat.S_ISLNK(metadata.st_mode):
+            raise PacketError(f"{label}: symlink path component is not allowed: {current}")
+        if index < len(relative.parts) - 1 and not stat.S_ISDIR(metadata.st_mode):
+            raise PacketError(f"{label}: path component is not a directory: {current}")
+    return current
+
+
 def _regular_text(root: Path, relative: Path, label: str) -> str:
-    path = root / relative
-    try:
-        metadata = path.stat(follow_symlinks=False)
-    except FileNotFoundError:
-        raise PacketError(f"{label}: missing/non-regular artifact: {relative}") from None
-    except OSError as exc:
-        raise PacketError(f"{label}: cannot stat {relative}: {exc}") from exc
+    path = _checked_path(root, relative, label, allow_missing=False)
+    assert path is not None
+    metadata = path.lstat()
     if not stat.S_ISREG(metadata.st_mode):
         raise PacketError(f"{label}: artifact is not a regular file: {relative}")
     try:
@@ -74,14 +95,11 @@ def verify(root: Path = ROOT) -> dict[str, object]:
     _packet_text(root)
     missing: list[str] = []
     for relative in EVIDENCE:
-        path = root / relative
-        try:
-            metadata = path.stat(follow_symlinks=False)
-        except FileNotFoundError:
+        path = _checked_path(root, relative, "B-170 evidence", allow_missing=True)
+        if path is None:
             missing.append(relative.as_posix())
             continue
-        except OSError as exc:
-            raise PacketError(f"B-170 evidence cannot be inspected: {relative}: {exc}") from exc
+        metadata = path.lstat()
         if not stat.S_ISREG(metadata.st_mode):
             raise PacketError(f"B-170 evidence is not a regular file: {relative}")
         try:
