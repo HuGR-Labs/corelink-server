@@ -12,7 +12,7 @@ import pytest
 from scripts.collect_b006_metrics import KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE, RejectRedirect, SOURCE, collect
 from scripts import collect_b006_provider_binding as provider_collector
 from scripts.verify_b006_evidence import EvidenceError, validate_closure, validate_receipt
-from scripts.verify_b006_provider_binding import EXPECTED_DEPLOYMENT_ID, EXPECTED_SCRIPT_ETAG, EXPECTED_VERSION_ID, EXPECTED_VERSION_NUMBER, ProviderBindingError, validate_provider_binding
+from scripts.verify_b006_provider_binding import EXPECTED_ACCOUNT_ID, EXPECTED_AUTH_EMAIL, EXPECTED_AUTH_TYPE, EXPECTED_DEPLOYMENT_ID, EXPECTED_SCRIPT_ETAG, EXPECTED_VERSION_ID, EXPECTED_VERSION_NUMBER, ProviderBindingError, validate_provider_binding
 from scripts.verify_d03_graduation import GraduationError, _check_packets, _load_packets
 
 
@@ -150,6 +150,9 @@ def test_b006_closure_rejects_cross_binding_freshness_and_status_mutations() -> 
         (provider, {"metrics_source": "https://evil.example/metrics"}),
         (provider, {"rollout_percentage": 50}),
         (provider, {"secret": "must-never-be-retained"}),
+        (provider, {"auth_identity": {"account_id": "wrong", "email": EXPECTED_AUTH_EMAIL, "auth_type": EXPECTED_AUTH_TYPE, "logged_in": True}}),
+        (provider, {"wrangler_version": "4.130.0"}),
+        (provider, {"deployment_api_success": False}),
         (provider, {"captured_at": "2020-01-01T00:00:00Z"}),
         (provider, {"captured_at": "2999-01-01T00:00:00Z"}),
     )
@@ -172,9 +175,10 @@ def test_b006_closure_rejects_cross_binding_freshness_and_status_mutations() -> 
 
 
 def test_b006_provider_collector_uses_provider_digest_and_auth_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    identity = ({"loggedIn": True, "authType": EXPECTED_AUTH_TYPE, "email": EXPECTED_AUTH_EMAIL, "accounts": [{"id": EXPECTED_ACCOUNT_ID}]}, True)
     deployments = ([{"id": EXPECTED_DEPLOYMENT_ID, "versions": [{"version_id": EXPECTED_VERSION_ID, "percentage": 100}]}], True)
     version = ({"id": EXPECTED_VERSION_ID, "number": EXPECTED_VERSION_NUMBER, "resources": {"script": {"etag": EXPECTED_SCRIPT_ETAG}}}, True)
-    responses = iter((deployments, version))
+    responses = iter((identity, deployments, version))
     monkeypatch.setattr(provider_collector, "_wrangler_json", lambda *args: next(responses))
     receipt = provider_collector.collect()
     assert receipt["authenticated"] is True
@@ -185,10 +189,16 @@ def test_b006_provider_collector_uses_provider_digest_and_auth_response(monkeypa
         ({"id": EXPECTED_VERSION_ID, "number": EXPECTED_VERSION_NUMBER, "resources": {"script": {"etag": "0" * 64}}}, True),
         (version[0], False),
     ):
-        responses = iter((deployments, bad_response))
+        responses = iter((identity, deployments, bad_response))
         monkeypatch.setattr(provider_collector, "_wrangler_json", lambda *args: next(responses))
         with pytest.raises(ValueError):
             provider_collector.collect()
+
+    wrong_identity = ({"loggedIn": True, "authType": EXPECTED_AUTH_TYPE, "email": "other@example.invalid", "accounts": [{"id": EXPECTED_ACCOUNT_ID}]}, True)
+    responses = iter((wrong_identity, deployments, version))
+    monkeypatch.setattr(provider_collector, "_wrangler_json", lambda *args: next(responses))
+    with pytest.raises(ValueError):
+        provider_collector.collect()
 
 
 def test_b006_d03_packet_cannot_mutate_indeterminate_receipt_to_done() -> None:

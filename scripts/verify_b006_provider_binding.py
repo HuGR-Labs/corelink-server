@@ -18,11 +18,18 @@ EXPECTED_VERSION_ID = "122e166c-b7d4-421a-a66c-44b57690af00"
 EXPECTED_VERSION_NUMBER = 133
 EXPECTED_SCRIPT_ETAG = "3326c3a9dfdb6aa7a574635ef8bfaaeba4b9dee375ba81211501e9a771fa0ca9"
 EXPECTED_ROLLOUT_PERCENTAGE = 100
+EXPECTED_ACCOUNT_ID = "6a1fc1c626fc2628823e60b9db01f5cd"
+EXPECTED_AUTH_EMAIL = "gmhelmold@gmail.com"
+EXPECTED_AUTH_TYPE = "OAuth Token"
+EXPECTED_WRANGLER_VERSION = "4.111.0"
+EXPECTED_WRANGLER_INTEGRITY = "sha512-bffpI9EyrnpKkF/1S+RaIv8oRD93GtbsA7TlfWwOsGJGB7VO3jVbdGzpC9TU7Bqom3z7jUxcte4Z9MPhaQ4HoQ=="
 MAX_RECEIPT_AGE = timedelta(hours=24)
 MAX_RECEIPT_FUTURE = timedelta(minutes=5)
 PROVIDER_KEYS = frozenset(
     {
         "schema", "provider", "evidence_source", "authenticated", "credential_values_printed",
+        "auth_identity", "wrangler_version", "wrangler_package_integrity",
+        "deployment_api_success", "version_api_success",
         "worker", "metrics_source", "deployment_id", "version_id", "version_number",
         "script_etag", "rollout_percentage", "captured_at",
     }
@@ -46,12 +53,26 @@ def validate_provider_binding(binding: dict[str, Any]) -> None:
         missing = sorted(PROVIDER_KEYS - set(binding))
         extra = sorted(set(binding) - PROVIDER_KEYS)
         raise ProviderBindingError(f"provider schema drift: missing={missing}, extra={extra}")
-    if binding["schema"] != "corelink-b006-provider-binding-v2":
+    if binding["schema"] != "corelink-b006-provider-binding-v3":
         raise ProviderBindingError("unsupported B-006 provider-binding schema")
     if binding["provider"] != PROVIDER or binding["evidence_source"] != "Cloudflare Wrangler deployments/versions API":
         raise ProviderBindingError("provider evidence is not authenticated Wrangler/API evidence")
     if binding["authenticated"] is not True or binding["credential_values_printed"] is not False:
         raise ProviderBindingError("provider evidence must be authenticated and redacted")
+    identity = binding["auth_identity"]
+    if not isinstance(identity, dict) or set(identity) != {"account_id", "email", "auth_type", "logged_in"}:
+        raise ProviderBindingError("provider authentication identity is missing or ambiguous")
+    if identity != {
+        "account_id": EXPECTED_ACCOUNT_ID,
+        "email": EXPECTED_AUTH_EMAIL,
+        "auth_type": EXPECTED_AUTH_TYPE,
+        "logged_in": True,
+    }:
+        raise ProviderBindingError("provider authentication identity drifted")
+    if binding["wrangler_version"] != EXPECTED_WRANGLER_VERSION or binding["wrangler_package_integrity"] != EXPECTED_WRANGLER_INTEGRITY:
+        raise ProviderBindingError("Wrangler binary version/integrity is not pinned")
+    if binding["deployment_api_success"] is not True or binding["version_api_success"] is not True:
+        raise ProviderBindingError("provider deployment/version API result was not successful")
     if binding["worker"] != WORKER or binding["metrics_source"] != SOURCE:
         raise ProviderBindingError("provider binding is not for the pinned metrics Worker")
     if binding["deployment_id"] != EXPECTED_DEPLOYMENT_ID or binding["version_id"] != EXPECTED_VERSION_ID:

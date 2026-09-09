@@ -13,21 +13,28 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.verify_b006_provider_binding import (
+    EXPECTED_ACCOUNT_ID,
+    EXPECTED_AUTH_EMAIL,
+    EXPECTED_AUTH_TYPE,
     EXPECTED_DEPLOYMENT_ID,
     EXPECTED_SCRIPT_ETAG,
     EXPECTED_VERSION_ID,
     EXPECTED_VERSION_NUMBER,
     EXPECTED_ROLLOUT_PERCENTAGE,
+    EXPECTED_WRANGLER_INTEGRITY,
+    EXPECTED_WRANGLER_VERSION,
     PROVIDER,
     SOURCE,
     WORKER,
     validate_provider_binding,
 )
 
+WRANGLER_COMMAND = ("npx", "--yes", "--package", f"wrangler@{EXPECTED_WRANGLER_VERSION}", "wrangler")
+
 
 def _wrangler_json(*args: str) -> tuple[Any, bool]:
     result = subprocess.run(
-        ["npx", "wrangler", *args, "--json"],
+        [*WRANGLER_COMMAND, *args, "--json"],
         check=True,
         capture_output=True,
         text=True,
@@ -37,7 +44,27 @@ def _wrangler_json(*args: str) -> tuple[Any, bool]:
     return payload, result.returncode == 0 and payload is not None
 
 
+def _validate_whoami(identity: Any) -> dict[str, Any]:
+    if not isinstance(identity, dict) or identity.get("loggedIn") is not True or identity.get("authType") != EXPECTED_AUTH_TYPE:
+        raise ValueError("Wrangler whoami is not an authenticated expected identity")
+    if identity.get("email") != EXPECTED_AUTH_EMAIL:
+        raise ValueError("Wrangler whoami account email drifted")
+    accounts = identity.get("accounts")
+    if not isinstance(accounts, list) or len(accounts) != 1 or not isinstance(accounts[0], dict) or accounts[0].get("id") != EXPECTED_ACCOUNT_ID:
+        raise ValueError("Wrangler whoami account binding drifted")
+    return {
+        "account_id": EXPECTED_ACCOUNT_ID,
+        "email": EXPECTED_AUTH_EMAIL,
+        "auth_type": EXPECTED_AUTH_TYPE,
+        "logged_in": True,
+    }
+
+
 def collect() -> dict[str, Any]:
+    identity_response, identity_authenticated = _wrangler_json("whoami")
+    identity = _validate_whoami(identity_response)
+    if not identity_authenticated:
+        raise ValueError("Wrangler whoami authentication evidence is unavailable")
     deployments, deployments_authenticated = _wrangler_json("deployments", "list", "--name", WORKER)
     deployment = next((item for item in deployments if item.get("id") == EXPECTED_DEPLOYMENT_ID), None)
     if not isinstance(deployment, dict):
@@ -56,15 +83,20 @@ def collect() -> dict[str, Any]:
     script_etag = script.get("etag") if isinstance(script, dict) else None
     if script_etag != EXPECTED_SCRIPT_ETAG:
         raise ValueError("provider response lacks the pinned script content digest")
-    authenticated = deployments_authenticated and version_authenticated
+    authenticated = identity_authenticated and deployments_authenticated and version_authenticated
     if not authenticated:
         raise ValueError("Wrangler/API authentication evidence is unavailable")
     receipt = {
-        "schema": "corelink-b006-provider-binding-v2",
+        "schema": "corelink-b006-provider-binding-v3",
         "provider": PROVIDER,
         "evidence_source": "Cloudflare Wrangler deployments/versions API",
         "authenticated": authenticated,
         "credential_values_printed": False,
+        "auth_identity": identity,
+        "wrangler_version": EXPECTED_WRANGLER_VERSION,
+        "wrangler_package_integrity": EXPECTED_WRANGLER_INTEGRITY,
+        "deployment_api_success": deployments_authenticated,
+        "version_api_success": version_authenticated,
         "worker": WORKER,
         "metrics_source": SOURCE,
         "deployment_id": EXPECTED_DEPLOYMENT_ID,
