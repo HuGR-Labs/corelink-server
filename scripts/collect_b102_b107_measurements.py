@@ -14,7 +14,6 @@ import hashlib
 import json
 import os
 import re
-from statistics import quantiles
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -32,12 +31,25 @@ KV_PAT_ROW_TTL_SECONDS = 30
 COLD_IDLE_SECONDS = 61
 
 
+WIRE_DIGEST_FIELDS = (
+    "tenant_id", "operation_id", "request_key", "method", "status", "payload_bytes",
+    "payload_sha256", "elapsed_ms", "server_timing", "error", "authenticated",
+    "auth_source", "colo", "response_request_id",
+)
+
+
 def percentile(values: list[float], p: float) -> float:
-    """Return the same inclusive percentile used by the packet verifier."""
+    """Inclusive linear interpolation over the sorted population."""
     ordered = sorted(values)
-    if len(ordered) == 1:
-        return ordered[0]
-    return quantiles(ordered, n=100, method="inclusive")[int(p * 100) - 1]
+    position = p * (len(ordered) - 1)
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+
+def wire_output_sha256(row: dict[str, object]) -> str:
+    material = {key: row.get(key) for key in WIRE_DIGEST_FIELDS}
+    return "sha256:" + hashlib.sha256(json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def mint_binding_sha256(attestation: dict[str, object]) -> str:
@@ -103,12 +115,14 @@ def call(base: str, tenant: str, token: str, method: str, operation: str, key: s
     timing = next((value for key, value in headers.items() if key.lower() == "server-timing"), "")
     auth_source = wire_auth_source(timing)
     response_request_id = next((value for key, value in headers.items() if key.lower() == "x-request-id"), "")
-    return {"tenant_id": tenant, "operation_id": operation, "method": method, "status": status,
+    row = {"tenant_id": tenant, "operation_id": operation, "request_key": key, "method": method, "status": status,
             "payload_bytes": len(body),
             "elapsed_ms": round(elapsed, 3), "server_timing": timing,
-            "raw_output_sha256": "sha256:" + hashlib.sha256(payload + timing.encode()).hexdigest(), "error": error,
+            "payload_sha256": "sha256:" + hashlib.sha256(payload).hexdigest(), "error": error,
             "authenticated": auth_source is not None, "auth_source": auth_source,
             "colo": wire_colo(headers), "response_request_id": response_request_id}
+    row["raw_output_sha256"] = wire_output_sha256(row)
+    return row
 
 
 def mint_fresh(base: str, tenant: str, session: str, internal_auth: str, operation: str) -> dict:

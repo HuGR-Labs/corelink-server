@@ -71,7 +71,7 @@ def main() -> int:
         run_attempt = required("GITHUB_RUN_ATTEMPT")
         run_started_at = required("GITHUB_RUN_STARTED_AT")
         github_ref = required("GITHUB_REF")
-        if repo != "HuGR/corelink-server" or not SHA.fullmatch(sha) or not run_id.isdigit():
+        if repo != "HuGR-Labs/corelink-server" or not SHA.fullmatch(sha) or not run_id.isdigit():
             raise ValueError("invalid canonical GitHub context")
         if not run_attempt.isdigit() or int(run_attempt) < 1:
             raise ValueError("invalid GitHub run attempt")

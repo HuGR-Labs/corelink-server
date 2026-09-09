@@ -1,6 +1,7 @@
 """Mutation coverage for the frozen D03 graduation register."""
 
 import copy
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -392,10 +393,26 @@ def test_b229_packet_matches_redacted_production_receipt() -> None:
     )
     assert packet["packets"]["B-229"]["disposition"] == "DONE"
     assert "B-229 production" in packet["packets"]["B-229"]["evidence"]
+    subprocess.run(
+        ["python3", "scripts/verify_b229_clerk_webhook.py", "--evidence", packet["packets"]["B-229"]["artifact"], "--self-test"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     mutated = copy.deepcopy(packet)
     mutated["packets"]["B-229"]["disposition"] = "PARKED"
     with pytest.raises(GraduationError, match="B-229"):
         _check_packets(mutated, ROOT)
+    for field, replacement in (
+        ("artifact", "evidence/production/other.md"),
+        ("command", packet["packets"]["B-229"]["command"].replace("--self-test", "--expect done")),
+        ("evidence", "B-229 production receipt is elsewhere."),
+    ):
+        mutated = copy.deepcopy(packet)
+        mutated["packets"]["B-229"][field] = replacement
+        with pytest.raises(GraduationError, match="B-229"):
+            _check_packets(mutated, ROOT)
 
     bad_even_median = copy.deepcopy(packet)
     bad_even_median["packets"]["B-104"]["command"] = bad_even_median["packets"]["B-104"]["command"].replace(
@@ -403,3 +420,10 @@ def test_b229_packet_matches_redacted_production_receipt() -> None:
     )
     with pytest.raises(GraduationError, match="B-104"):
         _check_packets(bad_even_median, ROOT)
+
+    bad_p90 = copy.deepcopy(packet)
+    bad_p90["packets"]["B-104"]["command"] = bad_p90["packets"]["B-104"]["command"].replace(
+        "rank=0.9*(n-1)+1; lo=int(rank); frac=rank-lo", "rank=0.9*n; lo=int(rank); frac=0", 1
+    )
+    with pytest.raises(GraduationError, match="B-104"):
+        _check_packets(bad_p90, ROOT)

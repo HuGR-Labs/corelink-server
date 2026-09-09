@@ -919,6 +919,22 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
             even_median = "v[int((n+1)/2)] + v[int((n+2)/2)]"
             if even_median not in command:
                 raise GraduationError("B-104: median must average the two middle samples for even populations")
+            if "rank=0.9*(n-1)+1; lo=int(rank); frac=rank-lo" not in command:
+                raise GraduationError("B-104: p90 must use the inclusive linear interpolation formula")
+        if item == "B-229":
+            command = packet["command"]
+            artifact = "evidence/production/B-229-clerk-webhook-2026-09-08.md"
+            expected_command = (
+                "set -euo pipefail; python3 scripts/verify_b229_clerk_webhook.py --evidence "
+                f"{artifact}; python3 scripts/verify_b229_clerk_webhook.py --evidence {artifact} --self-test"
+            )
+            if packet["artifact"] != artifact or command != expected_command:
+                raise GraduationError("B-229: packet artifact and standalone verifier command are not exact")
+            evidence = str(packet.get("evidence", ""))
+            if artifact not in evidence or "verify_b229_clerk_webhook.py" not in evidence:
+                raise GraduationError("B-229: DONE evidence does not name the exact production receipt and verifier")
+            if not (root / "scripts/verify_b229_clerk_webhook.py").is_file():
+                raise GraduationError("B-229: standalone production receipt verifier is missing")
         if disposition == "PARKED":
             artifact = _require_string(packet, "artifact", item)
             command = _require_string(packet, "command", item)

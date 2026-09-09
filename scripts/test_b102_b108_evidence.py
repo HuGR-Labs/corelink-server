@@ -62,7 +62,7 @@ def github_attestation(attestation: dict, deployment_record: dict) -> dict:
             "externalParameters": {
                 "workflow": {
                     "ref": deployment_record["github_ref"],
-                    "repository": "https://github.com/HuGR/corelink-server",
+                    "repository": f"https://github.com/{verifier.REPO}",
                     "path": ".github/workflows/perf-production-evidence.yml",
                 }
             },
@@ -71,7 +71,7 @@ def github_attestation(attestation: dict, deployment_record: dict) -> dict:
         "runDetails": {
             "metadata": {
                 "invocationId": (
-                    f"https://github.com/HuGR/corelink-server/actions/runs/{deployment_record['github_run_id']}"
+                    f"https://github.com/{verifier.REPO}/actions/runs/{deployment_record['github_run_id']}"
                     f"/attempts/{deployment_record['github_run_attempt']}"
                 )
             }
@@ -84,17 +84,18 @@ def github_attestation(attestation: dict, deployment_record: dict) -> dict:
         "predicate": predicate,
     }
     payload = base64.b64encode(json.dumps(subject, sort_keys=True, separators=(",", ":")).encode()).decode()
+    valid_signature = base64.b64encode(b"\x30\x44\x02\x20" + b"\x01" * 32 + b"\x02\x20" + b"\x02" * 32).decode()
     bundle = {
         "mediaType": "application/vnd.dev.sigstore.bundle+json;version=0.3",
-        "dsseEnvelope": {"payloadType": "application/vnd.in-toto+json", "payload": payload, "signatures": [{"sig": "ZmFrZQ=="}]},
-        "verificationMaterial": {"fixture": True},
+        "dsseEnvelope": {"payloadType": "application/vnd.in-toto+json", "payload": payload, "signatures": [{"sig": valid_signature}]},
+        "verificationMaterial": {"certificate": {"rawBytes": base64.b64encode(b"fixture-certificate").decode()}, "timestampVerificationData": {"tlogEntries": [{"fixture": True}]}},
     }
     return {
         "subject_sha256": verifier.sha(verifier.b106_subject_bytes(attestation, deployment_record)),
         "subject_name": "b106-cold-attestation.json",
         "bundle_sha256": verifier.sha(verifier.canonical_json(bundle)),
         "bundle": bundle,
-        "verification": [{"attestation": copy.deepcopy(bundle), "verificationResult": {"signature": {"certificate": {"sourceRepository": verifier.REPO, "subjectAlternativeName": "https://github.com/HuGR/corelink-server/.github/workflows/perf-production-evidence.yml@refs/heads/main"}}, "verifiedTimestamps": [{"type": "tlog"}], "statement": subject}}],
+        "verification": [{"attestation": copy.deepcopy(bundle), "verificationResult": {"signature": {"certificate": {"sourceRepository": verifier.REPO, "subjectAlternativeName": f"https://github.com/{verifier.REPO}/.github/workflows/perf-production-evidence.yml@refs/heads/main"}}, "verifiedTimestamps": [{"type": "tlog"}], "statement": subject}}],
         "verification_policy": {
             "repository": verifier.REPO,
             "signer_workflow": f"{verifier.REPO}/.github/workflows/perf-production-evidence.yml",
@@ -109,7 +110,9 @@ def packet() -> dict:
     deployments = {item: deployment(f"op-deploy-{item.lower()}") for item in verifier.ITEMS}
     req = [row(f"op-b102-{i:02d}", method="PUT", status=200, payload_bytes=1024, server_timing="auth;dur=1", elapsed_ms=40, raw_output_sha256=RAW64) for i in range(3)]
     runs = [row(f"op-b103-{i:02d}", concurrency=c, requests=c, successes=c, failures={}, wall_ms=1000 / (c / 4), throughput_rps=c / (1000 / (c / 4) / 1000), raw_output_sha256=RAW64) for i, c in enumerate((4, 16, 64))]
-    samples104 = [row(f"op-b104-{i:02d}", method="GET", status=404, authenticated=True, auth_source="d1", colo="GRU", response_request_id=f"req-b104-{i:02d}", elapsed_ms=20 + i, raw_output_sha256=RAW64) for i in range(10)]
+    samples104 = [row(f"op-b104-{i:02d}", method="GET", status=404, authenticated=True, auth_source="d1", colo="GRU", response_request_id=f"req-b104-{i:02d}", request_key=f"missing-{i}", elapsed_ms=20 + i, payload_sha256=RAW64) for i in range(10)]
+    for sample in samples104:
+        sample["raw_output_sha256"] = verifier.wire_output_sha256(sample)
     pairs = []
     for i in range(6):
         pairs.append({"tenant_id": TENANT, "operation_id": f"op-b105-{i:02d}", "control_first": i % 2 == 0,
@@ -176,7 +179,8 @@ def collector_wire_and_join_round_trip() -> None:
         assert all(row["authenticated"] is True and row["auth_source"] == "d1" and row["colo"] == "GRU" for row in samples)
         values = sorted(row["elapsed_ms"] for row in samples)
         median = (values[4] + values[5]) / 2
-        p90 = verifier.percentile(values, .90)
+        p90 = collector.percentile(values, .90)
+        assert p90 == verifier.percentile(values, .90)
         evidence = packet()
         evidence["items"]["B-104"]["samples"] = samples
         evidence["items"]["B-104"]["computed"] = {"median_ms": median, "p90_ms": p90}
@@ -262,6 +266,7 @@ def main() -> int:
     assert all(result[item] == "open" for item in verifier.ITEMS[:-1])
     expect_error(lambda p: p.update(captured_at="1970-01-01T00:00:00Z"), "stale packet")
     expect_error(lambda p: p["items"]["B-102"]["requests"][0].update(tenant_id="223e4567-e89b-42d3-a456-426614174000"), "B102 tenant")
+    expect_error(lambda p: p["items"]["B-102"]["deployment"].update(github_repository="HuGR/corelink-server"), "canonical repository")
     expect_error(lambda p: p["items"]["B-103"]["runs"][-1].update(throughput_rps=1), "B103 math/scaling")
     expect_error(lambda p: p["items"]["B-103"]["runs"][0].update(failures={"429": 1}), "B103 low-level failure")
     expect_error(lambda p: p["items"]["B-103"]["runs"][0].update(raw_output_sha256=ZERO64), "raw hash prefix")
@@ -301,6 +306,7 @@ def main() -> int:
     expect_error(lambda p: p["items"]["B-104"]["samples"][0].update(operation_id=p["items"]["B-104"]["samples"][1]["operation_id"]), "duplicate operation")
     expect_error(lambda p: p["items"]["B-104"].pop("computed"), "B104 derived percentiles")
     expect_error(lambda p: p["items"]["B-104"]["computed"].update(p90_ms=999), "B104 p90 recomputation")
+    expect_error(lambda p: p["items"]["B-104"]["samples"][0].update(elapsed_ms=999), "B104 raw hash elapsed binding")
     def wrong_b105_revision(p: dict) -> None:
         for pair in p["items"]["B-105"]["pairs"]:
             pair["control"]["revision"] = pair["treatment"]["revision"] = "0" * 40
@@ -315,10 +321,10 @@ def main() -> int:
         p["items"]["B-108"]["source_binding"].update(commit=parent, blob_sha256="sha256:" + hashlib.sha256(source).hexdigest())
     expect_error(wrong_deployed_sha, "exact deployed SHA")
     def wrong_attestation_san(p: dict) -> None:
-        p["items"]["B-106"]["github_attestation"]["verification"][0]["verificationResult"]["signature"]["certificate"]["subjectAlternativeName"] = "https://github.com/HuGR/corelink-server/.github/workflows/perf-production-evidence.yml@refs/heads/evil"
+        p["items"]["B-106"]["github_attestation"]["verification"][0]["verificationResult"]["signature"]["certificate"]["subjectAlternativeName"] = f"https://github.com/{verifier.REPO}/.github/workflows/perf-production-evidence.yml@refs/heads/evil"
     expect_error(wrong_attestation_san, "exact signer workflow ref")
     def wrong_attestation_invocation(p: dict) -> None:
-        p["items"]["B-106"]["github_attestation"]["verification"][0]["verificationResult"]["statement"]["predicate"]["runDetails"]["metadata"]["invocationId"] = "https://github.com/HuGR/corelink-server/actions/runs/1/attempts/1"
+        p["items"]["B-106"]["github_attestation"]["verification"][0]["verificationResult"]["statement"]["predicate"]["runDetails"]["metadata"]["invocationId"] = f"https://github.com/{verifier.REPO}/actions/runs/1/attempts/1"
     expect_error(wrong_attestation_invocation, "exact attested run")
     def wrong_attestation_subject_name(p: dict) -> None:
         attestation = p["items"]["B-106"]["github_attestation"]
@@ -330,9 +336,14 @@ def main() -> int:
     expect_error(wrong_attestation_subject_name, "exact attested subject name")
     def forged_dsse_signature(p: dict) -> None:
         bundle = p["items"]["B-106"]["github_attestation"]["bundle"]
-        bundle["dsseEnvelope"]["signatures"][0]["sig"] = "Zm9yZ2Vk"
+        forged = bytearray(base64.b64decode(bundle["dsseEnvelope"]["signatures"][0]["sig"]))
+        forged[-1] ^= 1
+        bundle["dsseEnvelope"]["signatures"][0]["sig"] = base64.b64encode(forged).decode()
         p["items"]["B-106"]["github_attestation"]["bundle_sha256"] = verifier.sha(verifier.canonical_json(bundle))
     expect_error(forged_dsse_signature, "DSSE signature/bundle linkage")
+    def fake_base64_signature(p: dict) -> None:
+        p["items"]["B-106"]["github_attestation"]["bundle"]["dsseEnvelope"]["signatures"][0]["sig"] = "ZmFrZQ=="
+    expect_error(fake_base64_signature, "fake base64 is not a DSSE signature")
     expect_error(lambda p: p["items"]["B-105"].update(password="redacted"), "secret-shaped field")
     collector_wire_and_join_round_trip()
     mint_wire_binding_round_trip()

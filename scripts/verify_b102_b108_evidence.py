@@ -20,12 +20,11 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from statistics import quantiles
 from typing import Any
 
 SCHEMA = "corelink.performance-evidence.v2"
 ITEMS = tuple(f"B-{n:03d}" for n in range(102, 109))
-REPO = "HuGR/corelink-server"
+REPO = "HuGR-Labs/corelink-server"
 SOURCE = "worker/src/lib/quota.ts"
 WORKFLOW = ".github/workflows/perf-production-evidence.yml"
 SLSA_PREDICATE = "https://slsa.dev/provenance/v1"
@@ -85,6 +84,18 @@ def sha(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
+WIRE_DIGEST_FIELDS = (
+    "tenant_id", "operation_id", "request_key", "method", "status", "payload_bytes",
+    "payload_sha256", "elapsed_ms", "server_timing", "error", "authenticated",
+    "auth_source", "colo", "response_request_id",
+)
+
+
+def wire_output_sha256(row: dict[str, Any]) -> str:
+    material = {key: row.get(key) for key in WIRE_DIGEST_FIELDS}
+    return sha(json.dumps(material, sort_keys=True, separators=(",", ":")).encode())
+
+
 def raw_hash(v: Any, label: str) -> str:
     value = text(v, label)
     if not FINGERPRINT.fullmatch(value):
@@ -136,6 +147,27 @@ def b106_subject_bytes(att: dict[str, Any], deployment_record: dict[str, Any]) -
     )
 
 
+def _valid_ecdsa_der_signature(value: bytes) -> bool:
+    """Require the DER shape emitted by Sigstore's ECDSA P-256 signer."""
+    if len(value) < 68 or value[0] != 0x30 or value[1] != len(value) - 2:
+        return False
+    offset = 2
+    integers: list[bytes] = []
+    for _ in range(2):
+        if offset + 2 > len(value) or value[offset] != 0x02:
+            return False
+        length = value[offset + 1]
+        offset += 2
+        if length < 1 or offset + length > len(value):
+            return False
+        integer = value[offset : offset + length]
+        if integer[0] & 0x80 or (len(integer) > 1 and integer[0] == 0 and not integer[1] & 0x80):
+            return False
+        integers.append(integer)
+        offset += length
+    return offset == len(value) and all(32 <= len(integer) <= 33 for integer in integers)
+
+
 def _attested_statement(bundle: dict[str, Any], label: str) -> dict[str, Any]:
     envelope = obj(bundle.get("dsseEnvelope"), f"{label}.dsseEnvelope")
     if envelope.get("payloadType") != "application/vnd.in-toto+json":
@@ -150,8 +182,8 @@ def _attested_statement(bundle: dict[str, Any], label: str) -> dict[str, Any]:
             decoded_signature = base64.b64decode(encoded_signature, validate=True)
         except (ValueError, binascii.Error) as exc:
             raise EvidenceError(f"{label}.signatures[{index}] is not base64") from exc
-        if not decoded_signature:
-            raise EvidenceError(f"{label}.signatures[{index}] is empty")
+        if not _valid_ecdsa_der_signature(decoded_signature):
+            raise EvidenceError(f"{label}.signatures[{index}] is not a DER ECDSA signature")
     encoded = text(envelope.get("payload"), f"{label}.dsseEnvelope.payload")
     try:
         statement = obj(json.loads(base64.b64decode(encoded, validate=True)), f"{label}.statement")
@@ -162,8 +194,16 @@ def _attested_statement(bundle: dict[str, Any], label: str) -> dict[str, Any]:
     if statement.get("predicateType") != SLSA_PREDICATE:
         raise EvidenceError(f"{label} predicate type is not SLSA provenance v1")
     verification_material = obj(bundle.get("verificationMaterial"), f"{label}.verificationMaterial")
-    if not verification_material:
-        raise EvidenceError(f"{label} has no verification material")
+    certificate = obj(verification_material.get("certificate"), f"{label}.verificationMaterial.certificate")
+    encoded_certificate = text(certificate.get("rawBytes"), f"{label}.verificationMaterial.certificate.rawBytes")
+    try:
+        if not base64.b64decode(encoded_certificate, validate=True):
+            raise ValueError("empty certificate")
+    except (ValueError, binascii.Error) as exc:
+        raise EvidenceError(f"{label} has no retained signing certificate") from exc
+    timestamp_data = obj(verification_material.get("timestampVerificationData"), f"{label}.timestampVerificationData")
+    if not any(isinstance(timestamp_data.get(key), list) and timestamp_data[key] for key in ("tlogEntries", "rfc3161Timestamps")):
+        raise EvidenceError(f"{label} has no retained transparency/timestamp verification")
     return statement
 
 
@@ -355,7 +395,11 @@ def b103(item: dict[str, Any], root: Path, tenant: str) -> str:
 
 
 def percentile(values: list[float], p: float) -> float:
-    return values[0] if len(values) == 1 else quantiles(values, n=100, method="inclusive")[int(p * 100) - 1]
+    ordered = sorted(values)
+    position = p * (len(ordered) - 1)
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
 
 
 def b104(item: dict[str, Any], root: Path, tenant: str) -> str:
@@ -372,7 +416,10 @@ def b104(item: dict[str, Any], root: Path, tenant: str) -> str:
             raise EvidenceError("B-104 requires a wire-derived colo")
         if not text(row.get("response_request_id"), f"B-104.samples[{i}].response_request_id"):
             raise EvidenceError("B-104 requires a wire-derived response request id")
-        raw_hash(row.get("raw_output_sha256"), f"B-104.samples[{i}].raw_output_sha256")
+        text(row.get("request_key"), f"B-104.samples[{i}].request_key")
+        raw_hash(row.get("payload_sha256"), f"B-104.samples[{i}].payload_sha256")
+        if row.get("raw_output_sha256") != wire_output_sha256(row):
+            raise EvidenceError("B-104 raw output hash is not bound to the complete wire sample")
         times.append(num(row.get("elapsed_ms"), "B-104.elapsed_ms"))
     ordered = sorted(times)
     median = (ordered[(len(ordered)-1)//2] + ordered[len(ordered)//2]) / 2
