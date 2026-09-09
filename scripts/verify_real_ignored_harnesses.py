@@ -194,19 +194,32 @@ def exact_ignored_source(body: str, target: str) -> bool:
         return False
     declaration = declarations[0]
 
-    # A macro_rules! body is not an executable test declaration: Cargo can
-    # compile it successfully while never expanding/invoking it.
-    for macro in re.finditer(r"macro_rules!\s*[A-Za-z_][A-Za-z0-9_]*\s*\{", code):
-        depth = 1
-        cursor = macro.end()
-        while cursor < len(code) and depth:
-            if code[cursor] == "{":
-                depth += 1
-            elif code[cursor] == "}":
-                depth -= 1
+    def balanced_end(opening: int) -> int:
+        matching = {"{": "}", "(": ")", "[": "]"}
+        stack = [code[opening]]
+        cursor = opening + 1
+        while cursor < len(code) and stack:
+            char = code[cursor]
+            if char in matching:
+                stack.append(char)
+            elif char == matching[stack[-1]]:
+                stack.pop()
             cursor += 1
-        if macro.end() <= declaration.start() < cursor:
+        return cursor
+
+    # A macro_rules! body is not an executable test declaration: Cargo can
+    # compile it successfully while never expanding/invoking it. Rust macro
+    # bodies may use any of {}, (), or [] as their outer delimiter.
+    for macro in re.finditer(r"macro_rules!\s*[A-Za-z_][A-Za-z0-9_]*\s*([\{\(\[])", code):
+        end = balanced_end(macro.start(1))
+        if macro.end() <= declaration.start() < end:
             return False
+
+    # cfg on the crate/module containing this harness can silently remove the
+    # test from the compiled target. These real harnesses must always compile;
+    # reject every cfg attribute rather than trying to evaluate expressions.
+    if re.search(r"(?m)^\s*#!\[\s*cfg(?:\s*\(|\s*\])", code[:declaration.start()]):
+        return False
 
     line_start = code.rfind("\n", 0, declaration.start()) + 1
     prior = code[:line_start].splitlines()
@@ -217,11 +230,21 @@ def exact_ignored_source(body: str, target: str) -> bool:
         return False
     if not any(re.search(r"#\[\s*(?:tokio::)?test(?:\s*\(|\s*\])", attr, re.IGNORECASE) for attr in attrs):
         return False
-    # Disablement mutations such as cfg(any()) and cfg(false) must not turn a
-    # syntactic test into a zero-test selector while preserving #[ignore].
-    attrs_text = " ".join(attrs).lower().replace(" ", "")
-    if re.search(r"#\[cfg\((?:any\(\)|false|not\(any\(\)\))\)\]", attrs_text):
+    if any(re.match(r"#\[\s*cfg(?:\s*\(|\s*\])", attr, re.IGNORECASE) for attr in attrs):
         return False
+
+    # Find enclosing module items and inspect only their contiguous attributes;
+    # unrelated cfg modules elsewhere in the source do not taint this target.
+    for module in re.finditer(r"(?m)^[ \t]*(?:(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+[A-Za-z_][A-Za-z0-9_]*\s*\{)", code):
+        end = balanced_end(code.find("{", module.start(), module.end()))
+        if module.end() <= declaration.start() < end:
+            module_line = code.rfind("\n", 0, module.start()) + 1
+            module_prior = code[:module_line].splitlines()
+            module_attrs: list[str] = []
+            while module_prior and re.fullmatch(r"\s*#\[[^\n]*\]\s*", module_prior[-1]):
+                module_attrs.insert(0, module_prior.pop().strip())
+            if any(re.match(r"#\[\s*cfg(?:\s*\(|\s*\])", attr, re.IGNORECASE) for attr in module_attrs):
+                return False
     return True
 
 
@@ -436,8 +459,11 @@ def mutation_checks(workflow: str, runner: str) -> None:
         fail("missing active test attribute mutation was accepted")
     if exact_ignored_source("#[cfg(any())]\n" + valid_attrs, "target"):
         fail("disabled cfg mutation was accepted")
-    if exact_ignored_source("macro_rules! unused {\n" + valid_attrs + "\n}", "target"):
-        fail("uninvoked macro declaration mutation was accepted")
+    if exact_ignored_source("#[cfg(feature = \"never\")]\nmod disabled {\n" + valid_attrs + "\n}", "target"):
+        fail("cfg module mutation was accepted")
+    for opening, closing in (("{", "}"), ("(", ")"), ("[", "]")):
+        if exact_ignored_source(f"macro_rules! unused {opening}\n" + valid_attrs + f"\n{closing}", "target"):
+            fail(f"uninvoked macro declaration mutation was accepted: {opening}")
     # Secret exposure: any PAT key-shaped input is forbidden, even if no seed
     # command is present.
     expect_rejected("PAT signing secret", workflow, runner + "\nexport CORELINK_PAT_SIGNING_KEY_HEX=unsafe\n")
