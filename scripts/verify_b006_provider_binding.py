@@ -16,7 +16,7 @@ WORKER = "corelink-spawn-worker"
 EXPECTED_DEPLOYMENT_ID = "55a021ee-0530-4729-a9c9-a01e012d92f6"
 EXPECTED_VERSION_ID = "122e166c-b7d4-421a-a66c-44b57690af00"
 EXPECTED_VERSION_NUMBER = 133
-EXPECTED_SOURCE_SHA = "0ce4070989fe5d02e92c4acd5b0932fe58e4316d"
+EXPECTED_SCRIPT_ETAG = "3326c3a9dfdb6aa7a574635ef8bfaaeba4b9dee375ba81211501e9a771fa0ca9"
 EXPECTED_ROLLOUT_PERCENTAGE = 100
 MAX_RECEIPT_AGE = timedelta(hours=24)
 MAX_RECEIPT_FUTURE = timedelta(minutes=5)
@@ -24,12 +24,9 @@ PROVIDER_KEYS = frozenset(
     {
         "schema", "provider", "evidence_source", "authenticated", "credential_values_printed",
         "worker", "metrics_source", "deployment_id", "version_id", "version_number",
-        "source_sha", "rollout_percentage", "captured_at",
+        "script_etag", "rollout_percentage", "captured_at",
     }
 )
-SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-
-
 class ProviderBindingError(ValueError):
     """The receipt does not bind the metrics read to the deployed Worker."""
 
@@ -49,7 +46,7 @@ def validate_provider_binding(binding: dict[str, Any]) -> None:
         missing = sorted(PROVIDER_KEYS - set(binding))
         extra = sorted(set(binding) - PROVIDER_KEYS)
         raise ProviderBindingError(f"provider schema drift: missing={missing}, extra={extra}")
-    if binding["schema"] != "corelink-b006-provider-binding-v1":
+    if binding["schema"] != "corelink-b006-provider-binding-v2":
         raise ProviderBindingError("unsupported B-006 provider-binding schema")
     if binding["provider"] != PROVIDER or binding["evidence_source"] != "Cloudflare Wrangler deployments/versions API":
         raise ProviderBindingError("provider evidence is not authenticated Wrangler/API evidence")
@@ -61,10 +58,10 @@ def validate_provider_binding(binding: dict[str, Any]) -> None:
         raise ProviderBindingError("deployment/version binding drifted")
     if binding["version_number"] != EXPECTED_VERSION_NUMBER:
         raise ProviderBindingError("deployed version number drifted")
-    if not isinstance(binding["source_sha"], str) or not SHA_RE.fullmatch(binding["source_sha"]):
-        raise ProviderBindingError("provider source SHA is malformed")
-    if binding["source_sha"] != EXPECTED_SOURCE_SHA:
-        raise ProviderBindingError("provider source SHA drifted")
+    if not isinstance(binding["script_etag"], str) or not re.fullmatch(r"[0-9a-f]{64}", binding["script_etag"]):
+        raise ProviderBindingError("provider script content digest is malformed or absent")
+    if binding["script_etag"] != EXPECTED_SCRIPT_ETAG:
+        raise ProviderBindingError("provider script content digest drifted")
     if binding["rollout_percentage"] != EXPECTED_ROLLOUT_PERCENTAGE:
         raise ProviderBindingError("provider rollout is not the pinned 100% serving rollout")
     captured = binding["captured_at"]

@@ -849,7 +849,6 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
                 "scripts/verify_b006_evidence.py",
                 "scripts/verify_b006_provider_binding.py",
                 B006_PROVIDER_ARTIFACT,
-                "--source-sha 0ce4070989fe5d02e92c4acd5b0932fe58e4316d",
                 "--keychain-service 'CoreLink/METRICS_OBSERVABILITY_KEY'",
                 "--keychain-account corelink-ops",
                 "X-Corelink-Internal-Auth",
@@ -858,7 +857,7 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
             ):
                 if token not in command:
                     raise GraduationError(f"B-006: reopened command is missing {token!r}")
-            for forbidden in ("Authorization: Bearer", "CORELINK_PROD_TOKEN", "curl --fail"):
+            for forbidden in ("Authorization: Bearer", "CORELINK_PROD_TOKEN", "curl --fail", "--source-sha", "source_sha"):
                 if forbidden in command:
                     raise GraduationError(f"B-006: reopened command contains forbidden credential form {forbidden!r}")
             try:

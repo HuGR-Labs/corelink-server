@@ -14,7 +14,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.verify_b006_provider_binding import (
     EXPECTED_DEPLOYMENT_ID,
-    EXPECTED_SOURCE_SHA,
+    EXPECTED_SCRIPT_ETAG,
     EXPECTED_VERSION_ID,
     EXPECTED_VERSION_NUMBER,
     EXPECTED_ROLLOUT_PERCENTAGE,
@@ -25,7 +25,7 @@ from scripts.verify_b006_provider_binding import (
 )
 
 
-def _wrangler_json(*args: str) -> Any:
+def _wrangler_json(*args: str) -> tuple[Any, bool]:
     result = subprocess.run(
         ["npx", "wrangler", *args, "--json"],
         check=True,
@@ -33,13 +33,12 @@ def _wrangler_json(*args: str) -> Any:
         text=True,
         timeout=60,
     )
-    return json.loads(result.stdout)
+    payload = json.loads(result.stdout)
+    return payload, result.returncode == 0 and payload is not None
 
 
-def collect(source_sha: str) -> dict[str, Any]:
-    if source_sha != EXPECTED_SOURCE_SHA:
-        raise ValueError("source SHA is not the pinned deployment source")
-    deployments = _wrangler_json("deployments", "list", "--name", WORKER)
+def collect() -> dict[str, Any]:
+    deployments, deployments_authenticated = _wrangler_json("deployments", "list", "--name", WORKER)
     deployment = next((item for item in deployments if item.get("id") == EXPECTED_DEPLOYMENT_ID), None)
     if not isinstance(deployment, dict):
         raise ValueError("pinned deployment was not returned by Wrangler")
@@ -50,21 +49,28 @@ def collect(source_sha: str) -> dict[str, Any]:
         if isinstance(item, dict)
     ):
         raise ValueError("pinned deployment does not serve the pinned version at 100%")
-    version = _wrangler_json("versions", "view", EXPECTED_VERSION_ID, "--name", WORKER)
+    version, version_authenticated = _wrangler_json("versions", "view", EXPECTED_VERSION_ID, "--name", WORKER)
     if not isinstance(version, dict) or version.get("id") != EXPECTED_VERSION_ID or version.get("number") != EXPECTED_VERSION_NUMBER:
         raise ValueError("pinned version metadata drifted")
+    script = version.get("resources", {}).get("script", {})
+    script_etag = script.get("etag") if isinstance(script, dict) else None
+    if script_etag != EXPECTED_SCRIPT_ETAG:
+        raise ValueError("provider response lacks the pinned script content digest")
+    authenticated = deployments_authenticated and version_authenticated
+    if not authenticated:
+        raise ValueError("Wrangler/API authentication evidence is unavailable")
     receipt = {
-        "schema": "corelink-b006-provider-binding-v1",
+        "schema": "corelink-b006-provider-binding-v2",
         "provider": PROVIDER,
         "evidence_source": "Cloudflare Wrangler deployments/versions API",
-        "authenticated": True,
+        "authenticated": authenticated,
         "credential_values_printed": False,
         "worker": WORKER,
         "metrics_source": SOURCE,
         "deployment_id": EXPECTED_DEPLOYMENT_ID,
         "version_id": EXPECTED_VERSION_ID,
         "version_number": EXPECTED_VERSION_NUMBER,
-        "source_sha": source_sha,
+        "script_etag": script_etag,
         "rollout_percentage": EXPECTED_ROLLOUT_PERCENTAGE,
         "captured_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     }
@@ -74,11 +80,10 @@ def collect(source_sha: str) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-sha", required=True)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        receipt = collect(args.source_sha)
+        receipt = collect()
     except (OSError, subprocess.SubprocessError, ValueError, json.JSONDecodeError) as exc:
         print(f"B-006 provider collection FAIL: {exc}")
         return 2

@@ -10,8 +10,9 @@ from pathlib import Path
 import pytest
 
 from scripts.collect_b006_metrics import KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE, RejectRedirect, SOURCE, collect
+from scripts import collect_b006_provider_binding as provider_collector
 from scripts.verify_b006_evidence import EvidenceError, validate_closure, validate_receipt
-from scripts.verify_b006_provider_binding import ProviderBindingError, validate_provider_binding
+from scripts.verify_b006_provider_binding import EXPECTED_DEPLOYMENT_ID, EXPECTED_SCRIPT_ETAG, EXPECTED_VERSION_ID, EXPECTED_VERSION_NUMBER, ProviderBindingError, validate_provider_binding
 from scripts.verify_d03_graduation import GraduationError, _check_packets, _load_packets
 
 
@@ -120,6 +121,8 @@ def test_b006_positive_closure_requires_both_fresh_zero_and_provider_binding() -
         capability_claim_unserved=0,
     )
     provider = json.loads((ROOT / "artifacts/d03/B006-provider-binding.json").read_text(encoding="utf-8"))
+    assert "source_sha" not in provider
+    assert provider["script_etag"] == EXPECTED_SCRIPT_ETAG
     provider["captured_at"] = stamp
     validate_closure(metrics, provider)
 
@@ -143,7 +146,7 @@ def test_b006_closure_rejects_cross_binding_freshness_and_status_mutations() -> 
         (metrics, {"http_status": 403, "reason": "Keychain item unavailable; no production request was attempted", "request_attempted": False}),
         (metrics, {"request_attempted": False}),
         (provider, {"version_id": "1418af47-d71a-488f-89a6-cbb9173402bd"}),
-        (provider, {"source_sha": "1" * 40}),
+        (provider, {"script_etag": "0" * 64}),
         (provider, {"metrics_source": "https://evil.example/metrics"}),
         (provider, {"rollout_percentage": 50}),
         (provider, {"secret": "must-never-be-retained"}),
@@ -157,6 +160,35 @@ def test_b006_closure_rejects_cross_binding_freshness_and_status_mutations() -> 
                 validate_closure(candidate, provider)
             else:
                 validate_closure(metrics, candidate)
+
+    missing_digest = {**provider}
+    missing_digest.pop("script_etag")
+    with pytest.raises((EvidenceError, ProviderBindingError)):
+        validate_closure(metrics, missing_digest)
+
+    unauthenticated = {**provider, "authenticated": False}
+    with pytest.raises((EvidenceError, ProviderBindingError)):
+        validate_closure(metrics, unauthenticated)
+
+
+def test_b006_provider_collector_uses_provider_digest_and_auth_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployments = ([{"id": EXPECTED_DEPLOYMENT_ID, "versions": [{"version_id": EXPECTED_VERSION_ID, "percentage": 100}]}], True)
+    version = ({"id": EXPECTED_VERSION_ID, "number": EXPECTED_VERSION_NUMBER, "resources": {"script": {"etag": EXPECTED_SCRIPT_ETAG}}}, True)
+    responses = iter((deployments, version))
+    monkeypatch.setattr(provider_collector, "_wrangler_json", lambda *args: next(responses))
+    receipt = provider_collector.collect()
+    assert receipt["authenticated"] is True
+    assert receipt["script_etag"] == EXPECTED_SCRIPT_ETAG
+
+    for bad_response in (
+        ({"id": EXPECTED_VERSION_ID, "number": EXPECTED_VERSION_NUMBER, "resources": {"script": {}}}, True),
+        ({"id": EXPECTED_VERSION_ID, "number": EXPECTED_VERSION_NUMBER, "resources": {"script": {"etag": "0" * 64}}}, True),
+        (version[0], False),
+    ):
+        responses = iter((deployments, bad_response))
+        monkeypatch.setattr(provider_collector, "_wrangler_json", lambda *args: next(responses))
+        with pytest.raises(ValueError):
+            provider_collector.collect()
 
 
 def test_b006_d03_packet_cannot_mutate_indeterminate_receipt_to_done() -> None:

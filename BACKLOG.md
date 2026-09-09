@@ -2879,8 +2879,8 @@ verify-means: |
   operator-read route and must not be recorded as evidence. Omit all labels,
   tenant identifiers, and customer identifiers from the retained artifact.
   Redacted evidence: `docs/validation/evidence/b006-capability-claim-unserved-2026-09-08.json`.
-  Provider deployment/version and source-SHA metadata are not self-asserted in
-  the redacted receipt; no credential value, labels, tenant identifiers, or
+  Provider deployment/version and provider-returned script content digest are
+  retained in a separate authenticated binding receipt; no credential value, labels, tenant identifiers, or
   customer identifiers are retained. A fresh authenticated aggregate plus
   separately authenticated Wrangler deployment/source evidence
   (`artifacts/d03/B006-provider-binding.json`) is required to
