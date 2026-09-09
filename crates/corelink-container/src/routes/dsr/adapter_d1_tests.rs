@@ -178,6 +178,62 @@ fn tenant_linked_pii_tables_are_in_the_erase_set() {
     }
 }
 
+/// B-089 retention guard. These rows are keyed by `tenant_id`, but they are
+/// contractual billing evidence rather than operational tenant state:
+/// observations feed the published report, measurements freeze the
+/// eligibility decision, and the ledger records the credit/invoice settlement
+/// and Stripe idempotency boundary. A DSR must therefore not delete them or
+/// accidentally classify them as an erase-set child.
+#[test]
+fn sla_credit_pipeline_is_retained_and_not_deleted_by_dsr() {
+    for table in [
+        "sla_monthly_observations",
+        "sla_monthly_measurements",
+        "sla_credit_ledger",
+    ] {
+        assert!(ALL_TENANT_KEYED_TABLES.contains(&table));
+        assert!(RETAIN_SET.contains(&table), "{table} must be retained");
+        assert!(
+            !TENANT_ID_TABLES.contains(&table),
+            "{table} is contractual billing evidence and must not be deleted by the D1 DSR loop"
+        );
+        assert_eq!(classification_count(table), 1);
+    }
+}
+
+/// Pin the migration-to-registry edge for B-089 explicitly. The broad drift
+/// test below catches future omissions, while this adversarial check makes a
+/// removal of one of the three migration 0117 entries fail with the exact
+/// table name instead of relying on parser output from the whole directory.
+#[test]
+fn sla_credit_migration_tables_remain_classified() {
+    let migration = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../migrations/d1/0117_sla_credit_ledger.sql"
+    );
+    let sql = std::fs::read_to_string(migration).unwrap();
+    let found = extract_tenant_keyed_tables(&sql);
+    for table in [
+        "sla_monthly_observations",
+        "sla_monthly_measurements",
+        "sla_credit_ledger",
+    ] {
+        assert!(
+            found.iter().any(|candidate| candidate == table),
+            "migration 0117 must keep {table} tenant-scoped"
+        );
+        assert!(
+            ALL_TENANT_KEYED_TABLES.contains(&table),
+            "migration 0117 table {table} is missing from the production DSR registry"
+        );
+        assert_eq!(
+            classification_count(table),
+            1,
+            "migration 0117 table {table} must have one DSR classification"
+        );
+    }
+}
+
 /// CF-1 in-code completeness gate: every table in the hand-maintained
 /// registry is classified into EXACTLY ONE bucket (no unclassified, no
 /// ambiguous double-classification). This is the registry half of the

@@ -271,6 +271,20 @@ pub(super) const RETAIN_SET: &[&str] = &[
     // `tier_select_audit_events` — erasing it would defeat the guarantee it
     // exists for → RETAIN (Art.5(2)).
     "stripe_billing_audit_events",
+    // B-089 SLA-credit settlement evidence (migr. 0117). The observation is
+    // the provider's canonical monthly report input, the measurement is the
+    // immutable eligibility/decision record, and the credit ledger is the
+    // money-path record (including amount, currency, Stripe object and
+    // idempotency state). Together they substantiate the contractual service
+    // credit and any invoice or SLA dispute, so they have the same lawful
+    // fiscal/legal-retention basis as the other billing evidence above. They
+    // are retained, not hard-deleted, on an Art. 17 request. `tenant_id` and
+    // `stripe_customer_id` are opaque provider references; no raw account
+    // identity fields are stored. There are no foreign keys in migration
+    // 0117, so no erase ordering is needed.
+    "sla_monthly_observations",
+    "sla_monthly_measurements",
+    "sla_credit_ledger",
     // Legal-hold control record (migr. 0076): the durable signal that gates
     // erasure itself. A row = "destructive erasure refused"; it is a
     // legal-process / audit anchor (`placed_at`), `reason` is operator-internal
@@ -418,6 +432,9 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "audit_chain_archive_manifest",
     "tier_select_audit_events",
     "stripe_billing_audit_events",
+    "sla_monthly_observations",
+    "sla_monthly_measurements",
+    "sla_credit_ledger",
     "tenant_legal_hold",
     "cas_retention",
     "abuse_score_history",
