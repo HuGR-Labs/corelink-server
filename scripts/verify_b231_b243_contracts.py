@@ -28,68 +28,86 @@ def require(text: str, needle: str, label: str) -> None:
 
 
 def require_active(text: str, needle: str, label: str) -> None:
-    """Require a marker outside comments and all quoted string literals."""
-    i = 0
-    state = "code"
-    quote = ""
-    while i < len(text):
-        if state == "line_comment":
-            if text[i] == "\n":
-                state = "code"
-            i += 1
-            continue
-        if state == "block_comment":
-            if text.startswith("*/", i):
-                state = "code"
-                i += 2
+    """Require a marker in code, excluding Rust/TypeScript lexical literals."""
+
+    def raw_string_end(offset: int) -> int | None:
+        """Return the end of a Rust raw/byte-raw string beginning at offset."""
+        prefix_len = 0
+        if text.startswith("br", offset):
+            prefix_len = 2
+        elif text.startswith("r", offset):
+            prefix_len = 1
+        else:
+            return None
+        cursor = offset + prefix_len
+        while cursor < len(text) and text[cursor] == "#":
+            cursor += 1
+        hashes = cursor - (offset + prefix_len)
+        if cursor >= len(text) or text[cursor] != '"':
+            return None
+        terminator = '"' + ("#" * hashes)
+        end = text.find(terminator, cursor + 1)
+        return len(text) if end < 0 else end + len(terminator)
+
+    def quoted_end(offset: int, quote: str) -> int:
+        """Return the end of a normal escaped string/char/template literal."""
+        cursor = offset + 1
+        while cursor < len(text):
+            if text[cursor] == "\\":
+                cursor += 2
+            elif text[cursor] == quote:
+                return cursor + 1
             else:
-                i += 1
-            continue
-        if state == "string":
-            if text[i] == "\\":
+                cursor += 1
+        return len(text)
+
+    def is_lifetime(offset: int) -> bool:
+        """Distinguish Rust lifetimes from single-quoted TS/Rust literals."""
+        if offset + 1 >= len(text) or not (text[offset + 1].isalnum() or text[offset + 1] == "_"):
+            return False
+        previous = offset - 1
+        while previous >= 0 and text[previous].isspace():
+            previous -= 1
+        # Generic bounds (`<'a`) and type bounds (`T: 'a`) are Rust lifetimes.
+        # A quote after `=`/`(`/`,` is a normal literal in the mutation fixtures
+        # and in both source languages.
+        if previous >= 0 and text[previous] in "<:":
+            return True
+        line_end = text.find("\n", offset + 1)
+        if line_end < 0:
+            line_end = len(text)
+        return text.find("'", offset + 1, line_end) < 0
+
+    i = 0
+    block_comment_depth = 0
+    while i < len(text):
+        if block_comment_depth:
+            if text.startswith("/*", i):
+                block_comment_depth += 1
                 i += 2
-            elif text[i] == quote:
-                state = "code"
-                quote = ""
-                i += 1
+            elif text.startswith("*/", i):
+                block_comment_depth -= 1
+                i += 2
             else:
                 i += 1
             continue
         if text.startswith("//", i):
-            state = "line_comment"
-            i += 2
+            newline = text.find("\n", i + 2)
+            i = len(text) if newline < 0 else newline + 1
             continue
         if text.startswith("/*", i):
-            state = "block_comment"
+            block_comment_depth = 1
             i += 2
             continue
-        if text[i] == "'":
-            # Rust lifetimes (`'static`, `'a`) are not string literals. Treat
-            # a single quote as a literal only when a closing quote exists on
-            # this line; this still rejects single-quoted TypeScript bait and
-            # Rust char/string literals without hiding later executable code.
-            line_end = text.find("\n", i + 1)
-            if line_end == -1:
-                line_end = len(text)
-            j = i + 1
-            escaped = False
-            closes = False
-            while j < line_end:
-                if escaped:
-                    escaped = False
-                elif text[j] == "\\":
-                    escaped = True
-                elif text[j] == "'":
-                    closes = True
-                    break
-                j += 1
-            if not closes:
-                i += 1
-                continue
-        if text[i] in ('"', "'", "`"):
-            state = "string"
-            quote = text[i]
+        raw_end = raw_string_end(i)
+        if raw_end is not None:
+            i = raw_end
+            continue
+        if text[i] == "'" and is_lifetime(i):
             i += 1
+            continue
+        if text[i] in ('"', "'", "`"):
+            i = quoted_end(i, text[i])
             continue
         if text.startswith(needle, i):
             return
@@ -443,6 +461,27 @@ def mutation_checks() -> int:
                 rejected += 1
             else:
                 raise AssertionError(f"{bait_label} bait mutation was accepted for B242 owner {rel}")
+
+    # Rust has literal forms that contain quotes/comments verbatim. Exercise
+    # arbitrary raw-string hash counts, a byte raw string, and nested block
+    # comments so a future scanner cannot mistake their marker for code.
+    rust_bait_replacements = (
+        ("nested-block-comment", lambda marker: "/* outer /* nested " + marker + " */ outer */"),
+        ("raw-string-1-hash", lambda marker: 'r#"inner " quote ' + marker + '"#'),
+        ("raw-string-3-hash", lambda marker: 'r###"inner " quote ' + marker + '"###'),
+        ("raw-string-7-hash", lambda marker: 'r#######"inner " quote ' + marker + '"#######'),
+        ("byte-raw-string-4-hash", lambda marker: 'br####"inner " quote ' + marker + '"####'),
+    )
+    rust_rel, rust_guard = salt_guards[-1]
+    for bait_label, replacement in rust_bait_replacements:
+        mutant = dict(files)
+        mutant[rust_rel] = mutant[rust_rel].replace(rust_guard, replacement(rust_guard))
+        try:
+            verify(mutant)
+        except AssertionError:
+            rejected += 1
+        else:
+            raise AssertionError(f"{bait_label} bait mutation was accepted for B242 container")
 
     # A duplicate destination must not replace a missing regional identity.
     destination_duplicate = dict(files)
