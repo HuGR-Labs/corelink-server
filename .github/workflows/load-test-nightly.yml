@@ -137,6 +137,7 @@ jobs:
 
       - name: pre-flight target host check
         if: steps.filter.outputs.enabled == 'true'
+        id: target_host
         env:
           K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}
         run: |
@@ -145,12 +146,16 @@ jobs:
             echo "::error::K6_TARGET_HOST secret missing in staging environment"
             exit 1
           fi
-          # Refuse anything that doesn't look like staging.
-          if [[ "$K6_TARGET_HOST" != *"staging."* && "$K6_TARGET_HOST" != *"dev."* ]]; then
-            echo "::error::K6_TARGET_HOST=$K6_TARGET_HOST is not a staging hostname"
+          # Normalize one explicitly permitted trailing slash, then require the
+          # exact owner-approved endpoint. No dev, API-prefixed, or path variant.
+          CANONICAL_TARGET='https://staging.corelink.humangr.com'
+          TARGET_HOST="${K6_TARGET_HOST%/}"
+          if [[ "$TARGET_HOST" != "$CANONICAL_TARGET" ]]; then
+            echo "::error::K6_TARGET_HOST must equal $CANONICAL_TARGET (optional trailing slash only)"
             exit 1
           fi
-          echo "Target: $K6_TARGET_HOST"
+          echo "target_host=$TARGET_HOST" >> "$GITHUB_OUTPUT"
+          echo "Target: $TARGET_HOST"
 
       - name: prepare results dir
         if: steps.filter.outputs.enabled == 'true'
@@ -160,7 +165,7 @@ jobs:
         if: steps.filter.outputs.enabled == 'true'
         id: run_k6
         env:
-          K6_TARGET_HOST:        ${{ secrets.K6_TARGET_HOST }}
+          K6_TARGET_HOST:        ${{ steps.target_host.outputs.target_host }}
           K6_AUTH_BEARER:        ${{ secrets.K6_STAGING_PAT }}
           K6_STRIPE_WHSEC:       ${{ secrets.K6_STAGING_STRIPE_WHSEC }}
           K6_MFA_STUB_TOKEN:     ${{ secrets.K6_STAGING_MFA_STUB }}
