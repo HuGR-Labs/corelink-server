@@ -46,8 +46,9 @@ use tracing::{info, warn};
 #[path = "main_boot.rs"]
 mod boot;
 use boot::{
-    build_runners_resolver, build_tier_selector, cache_tier_price_ids_missing_in_prod,
-    email_hash_salt_missing_in_prod, should_fatal_on_missing_gate,
+    build_runners_resolver, build_tier_selector, byok_revocation_scheduler_enabled,
+    cache_tier_price_ids_missing_in_prod, email_hash_salt_missing_in_prod,
+    should_fatal_on_missing_gate,
 };
 #[cfg(test)]
 use boot::{build_runners_resolver_from, build_tier_selector_from};
@@ -913,7 +914,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         feature = "byok-azure-real",
         feature = "byok-vault-real"
     ))]
-    let _byok_revocation_task = {
+    let _byok_revocation_task = if byok_revocation_scheduler_enabled(
+        std::env::var("CORELINK_BYOK_REVOCATION_SCHEDULER_ENABLED")
+            .ok()
+            .as_deref(),
+    ) {
         let storage_env = corelink_server::storage::StorageEnv::from_env()
             .ok_or("BYOK revocation scheduler requires durable D1/R2 configuration")?;
         let client = corelink_server::storage::d1_http::D1HttpClient::new(&storage_env)
@@ -932,7 +937,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             provider = corelink_server::byok_orchestrator::active_provider().as_str(),
             "BYOK revocation run_loop wired before listener bind"
         );
-        tokio::spawn(detector.run_loop())
+        Some(tokio::spawn(detector.run_loop()))
+    } else {
+        info!(
+            event = "byok_revocation_scheduler_disabled",
+            "BYOK revocation scheduler disabled; set \
+             CORELINK_BYOK_REVOCATION_SCHEDULER_ENABLED=true only after durable \
+             provider credentials and notification wiring are provisioned"
+        );
+        None
     };
 
     #[cfg(not(any(

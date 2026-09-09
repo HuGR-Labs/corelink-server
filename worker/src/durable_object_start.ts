@@ -318,6 +318,11 @@ export async function startContainer(
           CORELINK_BYOK_AZURE_REGION: ctx.env.CORELINK_BYOK_AZURE_REGION ?? "",
           CORELINK_BYOK_AZURE_VAULT_URL: ctx.env.CORELINK_BYOK_AZURE_VAULT_URL ?? "",
           CORELINK_BYOK_VAULT_REGION: ctx.env.CORELINK_BYOK_VAULT_REGION ?? "",
+          // Explicit deploy-time gate for the enterprise scheduler. A binary
+          // compiled with a real provider must not make absent customer KMS
+          // credentials a fatal dependency of the cache plane.
+          CORELINK_BYOK_REVOCATION_SCHEDULER_ENABLED:
+            ctx.env.CORELINK_BYOK_REVOCATION_SCHEDULER_ENABLED ?? "",
           // ADR-MULTI-REGION-V1 — per-region R2 bucket overrides.
           // Absent/empty → container defaults to IAD (corelink-ac-iad / iad).
           // Set by [env.prod-<region>].vars in wrangler.toml.

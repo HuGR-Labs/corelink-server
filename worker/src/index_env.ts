@@ -270,6 +270,7 @@ export interface Env {
   CORELINK_BYOK_AZURE_REGION?: string;
   CORELINK_BYOK_AZURE_VAULT_URL?: string;
   CORELINK_BYOK_VAULT_REGION?: string;
+  CORELINK_BYOK_REVOCATION_SCHEDULER_ENABLED?: string;
   // WI-MULTI-REGION-V1 Service Bindings: prod env can fan-out to the 4
   // regional Workers. Set in [[env.prod.services]] blocks. Used by the
   // per-tenant routing logic: tenant.primary_region in D1 → dispatch via
