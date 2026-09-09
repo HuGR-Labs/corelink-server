@@ -81,11 +81,17 @@ class B029LoadGateTests(unittest.TestCase):
         *,
         cas_median: object = 100,
         cas_status: str | None = "success",
+        medians: dict[str, object] | None = None,
+        statuses: dict[str, str | None] | None = None,
     ) -> None:
         """Write the complete matrix required for baseline publication."""
+        selected_medians = {"cas": cas_median}
+        selected_medians.update(medians or {})
+        selected_statuses: dict[str, str | None] = {"cas": cas_status}
+        selected_statuses.update(statuses or {})
         for scenario in FULL_SCENARIOS:
-            median = cas_median if scenario == "cas" else 100
-            status = cas_status if scenario == "cas" else "success"
+            median = selected_medians.get(scenario, 100)
+            status = selected_statuses.get(scenario, "success")
             self.write_summary(scenario, median, status=status)
 
     def run_full_gate(self, *extra: str) -> int:
@@ -97,19 +103,6 @@ class B029LoadGateTests(unittest.TestCase):
                 str(self.baseline),
                 "--expected-scenarios",
                 FULL_EXPECTED_SCENARIOS,
-                *extra,
-            ]
-        )
-
-    def run_gate(self, *extra: str) -> int:
-        return comparator.main(
-            [
-                "--results-dir",
-                str(self.results),
-                "--baseline",
-                str(self.baseline),
-                "--expected-scenarios",
-                "cas",
                 *extra,
             ]
         )
@@ -133,8 +126,8 @@ class B029LoadGateTests(unittest.TestCase):
         return workflow, invocation
 
     def test_missing_baseline_is_unknown_and_never_seeds(self) -> None:
-        self.write_summary("cas", 100)
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.write_full_matrix()
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
         self.assertFalse(self.baseline.exists())
 
     def test_within_threshold_updates_baseline(self) -> None:
@@ -143,73 +136,79 @@ class B029LoadGateTests(unittest.TestCase):
         self.assertEqual(self.run_full_gate(), 0)
         self.assertEqual(comparator.load_baseline(self.baseline)["cas"]["median_ms"], 119)
 
-    def test_regression_fails_and_does_not_ratchet(self) -> None:
-        self.write_baseline(100)
-        self.write_full_matrix(cas_median=121)
-        before = self.baseline.read_bytes()
-        self.assertEqual(self.run_full_gate(), comparator.EXIT_REGRESSION)
-        self.assertEqual(self.baseline.read_bytes(), before)
+    def test_each_scenario_regression_fails_and_does_not_ratchet(self) -> None:
+        for scenario in FULL_SCENARIOS:
+            with self.subTest(scenario=scenario):
+                self.write_baseline(100)
+                self.write_full_matrix(medians={scenario: 121})
+                before = self.baseline.read_bytes()
+                self.assertEqual(self.run_full_gate(), comparator.EXIT_REGRESSION)
+                self.assertEqual(self.baseline.read_bytes(), before)
 
     def test_empty_or_partial_artifacts_fail_closed(self) -> None:
         self.write_baseline(100)
         before = self.baseline.read_bytes()
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
-        self.write_summary("other", 100, status=None)
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
+        self.write_full_matrix()
+        (self.results / "cas" / "summary.json").unlink()
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
         self.assertEqual(self.baseline.read_bytes(), before)
 
     def test_missing_or_failed_status_is_unknown(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", 100, status=None)
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
-        self.write_summary("cas", 100, status="failure")
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.write_full_matrix(cas_status=None)
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
+        self.write_full_matrix(cas_status="failure")
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
 
     def test_status_population_must_match_summaries_exactly(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", 100)
+        self.write_full_matrix()
         (self.results / "extra" / "status.json").parent.mkdir(parents=True)
         (self.results / "extra" / "status.json").write_text(
             json.dumps({"scenario": "extra", "outcome": "success"})
         )
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
 
     def test_corrupt_baseline_is_not_treated_as_first_run(self) -> None:
-        self.write_summary("cas", 100)
+        self.write_full_matrix()
         self.baseline.write_text("{not-json")
         before = self.baseline.read_bytes()
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
         self.assertEqual(self.baseline.read_bytes(), before)
 
     def test_baseline_metadata_is_required(self) -> None:
-        self.write_summary("cas", 100)
+        self.write_full_matrix()
         for missing in ("captured_at", "commit"):
             data = {
                 "schema": 1,
                 "captured_at": "2026-09-06T00:00:00Z",
                 "commit": "base-commit",
                 "metric": "http_req_duration.med (ms)",
-                "scenarios": {"cas": {"median_ms": 100, "p99_ms": 20}},
+                "scenarios": {
+                    scenario: {"median_ms": 100, "p99_ms": 20}
+                    for scenario in FULL_SCENARIOS
+                },
             }
             del data[missing]
             self.baseline.write_text(json.dumps(data))
             before = self.baseline.read_bytes()
-            self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+            self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
             self.assertEqual(self.baseline.read_bytes(), before)
 
     def test_non_finite_measurement_is_rejected(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", "NaN")
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.write_full_matrix(cas_median="NaN")
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
 
     def test_duplicate_summaries_are_ambiguous(self) -> None:
-        self.write_summary("cas", 100)
+        self.write_full_matrix()
         duplicate = self.results / "second" / "cas" / "summary.json"
         duplicate.parent.mkdir(parents=True)
         duplicate.write_text(
             json.dumps({"metrics": {"http_req_duration": {"med": 100, "p(99)": 20}}})
         )
-        self.assertEqual(self.run_gate(), comparator.EXIT_USAGE)
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
 
     def test_active_workflow_invocation_is_exact(self) -> None:
         workflow, invocation = self._workflow_and_invocation()
