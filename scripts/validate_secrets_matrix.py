@@ -197,6 +197,20 @@ ALLOWLIST_REGEX = re.compile(
     # control or credential remains visible as matrix drift.
     r"|GC_LIVE_DELETE$"
     r"|GC_OBSERVATION_ONLY$"
+    # Native GC scope/configuration values are non-secret, but remain exact so
+    # a future GC credential or operator token cannot hide behind a prefix.
+    r"|GC_R2_BUCKET$"
+    r"|GC_RUN_ID$"
+    r"|GC_VALIDATE_ONLY$"
+    # Synthetic PagerDuty receiver uses a canonical public endpoint and a
+    # service label; the routing key and webhook secret remain matrix entries.
+    r"|PAGERDUTY_EVENTS_URL$"
+    r"|PAGERDUTY_SERVICE$"
+    # Parked SLA settlement gates are boolean deployment controls, not secrets.
+    r"|SLA_CREDITS_ENABLED$"
+    r"|SLA_OBSERVATIONS_ENABLED$"
+    # Synthetic drill activation is a fail-closed boolean deployment control.
+    r"|SYNTHETIC_DRILL_ENABLED$"
     # WP-3 dashboard revival (2026-06-10) — Stripe billing-portal return_url
     # override (public dashboard URL; default hardcoded in source). No
     # credential material — STRIPE_SECRET_KEY (matrix row) is the actual
