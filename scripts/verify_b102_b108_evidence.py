@@ -30,6 +30,7 @@ SOURCE = "worker/src/lib/quota.ts"
 WORKFLOW = ".github/workflows/perf-production-evidence.yml"
 SLSA_PREDICATE = "https://slsa.dev/provenance/v1"
 GITHUB_WORKFLOW_BUILD_TYPE = "https://slsa-framework.github.io/github-actions-buildtypes/workflow/v1"
+GH_ATTESTATION_VERSION = "2.79.0"
 SUBJECT_NAME = "b106-cold-attestation.json"
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 SHA1 = re.compile(r"^[0-9a-f]{40}$")
@@ -227,6 +228,47 @@ def _validate_attestation_identity(
     )
     if metadata.get("invocationId") != expected_invocation:
         raise EvidenceError(f"{label} invocation does not bind the exact workflow run/attempt")
+
+
+def verify_attestation_with_gh(
+    bundle: dict[str, Any], subject_bytes: bytes, deployment_record: dict[str, Any], expected: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Run the pinned GitHub Sigstore verifier against the retained bundle.
+
+    The executable and version are deliberately not caller-overridable: an
+    environment-selected shim could claim a version while accepting forged
+    DSSE/tlog material.
+    """
+    verifier = "gh"
+    expected_version = GH_ATTESTATION_VERSION
+    try:
+        version = subprocess.run((verifier, "version"), capture_output=True, text=True, check=True, timeout=15).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise EvidenceError(f"B-106 pinned gh verifier is unavailable: {exc}") from exc
+    if not version.startswith(f"gh version {expected_version}"):
+        raise EvidenceError(f"B-106 gh verifier version is not pinned to {expected_version}")
+    with tempfile.TemporaryDirectory(prefix="corelink-b106-verify-") as directory:
+        root = Path(directory)
+        subject_path = root / SUBJECT_NAME
+        bundle_path = root / "attestation.bundle.json"
+        subject_path.write_bytes(subject_bytes)
+        bundle_path.write_text(json.dumps(bundle, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        san = f"https://github.com/{REPO}/{WORKFLOW}@{deployment_record['github_ref']}"
+        command = (
+            verifier, "attestation", "verify", str(subject_path), "--repo", REPO, "--bundle", str(bundle_path),
+            "--predicate-type", SLSA_PREDICATE, "--cert-identity", san,
+            "--cert-oidc-issuer", "https://token.actions.githubusercontent.com",
+            "--signer-digest", deployment_record["source_head"], "--source-digest", deployment_record["source_head"],
+            "--source-ref", deployment_record["github_ref"], "--format", "json",
+        )
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=True, timeout=60)
+            verified = json.loads(result.stdout)
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+            raise EvidenceError("B-106 pinned gh attestation verification failed") from exc
+    if not isinstance(verified, list) or not verified or verified != expected:
+        raise EvidenceError("B-106 gh verification result is not byte-for-byte bound to the retained result")
+    return verified
 
 
 def attested_subject_digest(bundle: dict[str, Any], label: str) -> str:
