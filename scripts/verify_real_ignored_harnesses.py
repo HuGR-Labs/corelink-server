@@ -11,6 +11,7 @@ comment bait, and missing workflow triggers.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import os
 import subprocess
@@ -50,6 +51,20 @@ REQUIRED_TARGET_SOURCES = {
     "cas_idempotent_rewrite_reports_durable_false": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
     "delete_if_present_credits_size_once_then_none": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
     "r2_cas_exists_batch_fails_closed_on_bad_audit_creds": "crates/corelink-container/src/storage/r2_s3_parts/tests_2.rs",
+}
+
+# Byte-locked source manifest for the exact files containing the 11 selected
+# harnesses. This is intentionally reviewed data, not a generated claim: any
+# legitimate source edit (including cfg_attr/raw/unicode/macro changes) must
+# update this manifest in the same reviewed change before semantic checks can
+# run. The self-hosted runner's PATH/toolchain remains the infrastructure trust
+# boundary; this manifest binds the repository-owned selector/source inputs.
+SOURCE_SHA256 = {
+    "crates/corelink-container/src/routes/tier_select_store.rs": "ea65f1134e2055468226b8e62e8b319244c34e48fe08834b42b2a1df2581f712",
+    "crates/corelink-container/src/storage/d1_http.rs": "6c1932b0be0b578469c6710c06cbe16ca1b437b9248b085f4671e22822c3e81a",
+    "crates/corelink-container/src/storage/d1_audit_sink/tests_phase_attribution.rs": "474d45a030f333bfb73d7152bc2a802d9d29b8af2d559c5310f9a683bc74e717",
+    "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs": "9a946473e1f76d1af26958cdbefca8ac641dbfaeb2066af7e7a8a5d302df0f8d",
+    "crates/corelink-container/src/storage/r2_s3_parts/tests_2.rs": "3c46817aa4a3f758768297ad13baa7033088c27a25848531bcc3cda280451779",
 }
 
 
@@ -137,6 +152,16 @@ def function_body(text: str, name: str) -> str:
 
 def fail(message: str) -> None:
     raise AssertionError(message)
+
+
+def verify_source_digests(root: Path = ROOT, overrides: dict[str, bytes] | None = None) -> None:
+    """Fail before semantic parsing if any bound source byte changed."""
+    for relative, expected in SOURCE_SHA256.items():
+        target = root / relative
+        body = overrides[relative] if overrides and relative in overrides else target.read_bytes()
+        actual = hashlib.sha256(body).hexdigest()
+        if actual != expected:
+            fail(f"source digest mismatch (reviewed manifest required): {relative}")
 
 
 def rust_code_without_comments_and_strings(body: str) -> str:
@@ -249,6 +274,9 @@ def exact_ignored_source(body: str, target: str) -> bool:
 
 
 def assert_contract(workflow: str, runner: str) -> None:
+    # Digest binding is the first source gate; parser/attribute checks are
+    # defense in depth and must never silently bless a changed source file.
+    verify_source_digests()
     wf = code_text(workflow)
     sh = code_text(runner)
     runs = workflow_run_lines(workflow)
@@ -442,7 +470,35 @@ def mutation_checks(workflow: str, runner: str) -> None:
 
     source_target = REQUIRED_R2[0]
     source_path = ROOT / REQUIRED_TARGET_SOURCES[source_target]
-    source_body = source_path.read_text(encoding="utf-8")
+    source_bytes = source_path.read_bytes()
+    source_body = source_bytes.decode("utf-8")
+    # Every unique source file gets a byte mutation, proving the manifest is
+    # fail-closed independently of which harness file was edited.
+    for relative in SOURCE_SHA256:
+        original = (ROOT / relative).read_bytes()
+        try:
+            verify_source_digests(overrides={relative: original + b"\n// B-068 digest mutation\n"})
+        except AssertionError:
+            pass
+        else:
+            fail(f"byte mutation was accepted for source digest: {relative}")
+    cfg_attr_mutation = source_bytes.replace(b"#[ignore", b"#[cfg_attr(any(), ignore)]\n#[ignore", 1)
+    try:
+        verify_source_digests(overrides={REQUIRED_TARGET_SOURCES[source_target]: cfg_attr_mutation})
+    except AssertionError:
+        pass
+    else:
+        fail("cfg_attr source mutation was accepted by digest")
+    for label, mutation in (
+        ("raw", source_bytes + b'\nr##"#[cfg(any())]"##\n'),
+        ("unicode", source_bytes + "\n// B-068 \u2603\n".encode("utf-8")),
+    ):
+        try:
+            verify_source_digests(overrides={REQUIRED_TARGET_SOURCES[source_target]: mutation})
+        except AssertionError:
+            pass
+        else:
+            fail(f"{label} source mutation was accepted by digest")
     declaration = re.search(rf"(?m)^(\s*)(async\s+fn\s+{re.escape(source_target)}\s*\()", source_body)
     if declaration is None:
         fail("source mutation setup could not find declaration")
