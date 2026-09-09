@@ -242,7 +242,9 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
   it("fails closed when PagerDuty rejects the page and retains the DLQ copy", async () => {
     const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
     const m = fakeDlq(msg("pager-fail"));
-    const pagerFetch = vi.fn<typeof fetch>(async () => new Response("bad", { status: 500 }));
+    const pagerFetch = vi.fn<typeof fetch>(async () => {
+      throw new Error("routing_key=secret-provider-detail");
+    });
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       await handleErasureDlqBatch(
@@ -260,7 +262,9 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
         requeue_count: 0,
         action: "retry_paging",
         paging_status: "failed",
+        paging_error: "transport_error",
       });
+      expect(String(error.mock.calls[0]?.[0])).not.toContain("secret-provider-detail");
     } finally {
       error.mockRestore();
     }

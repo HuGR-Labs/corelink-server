@@ -213,7 +213,7 @@ export interface DsrDlqEnv {
 type PagingResult =
   | { status: "delivered" }
   | { status: "not_configured" }
-  | { status: "failed"; error: string };
+  | { status: "failed"; error: "http_rejected" | "transport_error" };
 
 /** Deliver one critical DLQ page through the canonical PagerDuty procedure. */
 async function pageDlqEvent(
@@ -249,14 +249,15 @@ async function pageDlqEvent(
       }),
     });
     if (!response.ok) {
-      return { status: "failed", error: `pagerduty_http_${response.status}` };
+      // Do not copy provider response text/status into logs: the response can
+      // contain arbitrary data and must never become an operator-log sink.
+      return { status: "failed", error: "http_rejected" };
     }
     return { status: "delivered" };
-  } catch (err) {
-    return {
-      status: "failed",
-      error: `pagerduty_transport_${(err as Error).message.slice(0, 120)}`,
-    };
+  } catch {
+    // The provider/transport exception is intentionally not logged. It may
+    // include URLs, credentials, or arbitrary upstream response text.
+    return { status: "failed", error: "transport_error" };
   }
 }
 
