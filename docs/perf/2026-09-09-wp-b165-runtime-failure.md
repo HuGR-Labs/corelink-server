@@ -1,12 +1,12 @@
 # B-165 production probe — runtime failure, 2026-09-09
 
-Status: **runtime recovered/open; authenticated served paths remain unmeasured**
+Status: **historical runtime failure; recovered and superseded by the complete receipt**
 
-The read-only B-165 probe ran against production source SHA
+This file preserves the initial failure state. The read-only B-165 probe ran against production source SHA
 `64e57a2ccb218f475b44a260b64af95e0bc7df2c`. The v1, npm, and pip refusal
 populations returned the required HTTP 401, and `/health` returned HTTP 200.
 All ten OCI `/v2/x/manifests/latest` requests instead returned HTTP 503, so the
-probe correctly exited 3 and B-165 remains open. No customer object was read
+probe correctly exited 3 and B-165 remained open at this checkpoint. No customer object was read
 and no credential was retained.
 
 The response body classified the defect as `CONTAINER_UNAVAILABLE` /
@@ -36,8 +36,9 @@ maximum 239.544 ms). The exact sanitized recovery TSV is
 `d8d2f5cb4c5a8f7235ec5f0e667645b5f93acab8e63c2617c6c9e2b478eddc85`.
 
 This proves recovery of the OCI rejection path while preserving the earlier
-v1/npm/pip and health findings. B-165 remains open because no authenticated
-served population was run: closure still requires two distinct approved
-tenants, two distinct PATs, one known served object per tenant, and the padding
-decision. No source-only DO rename, deployment, mutation, or broader sweep was
-performed by this lane.
+v1/npm/pip and health findings. At this checkpoint no authenticated served
+population had run. The later bounded receipt
+`docs/perf/2026-09-09-wp-b165-complete.md` supplies the two tenants, two PAT
+fingerprints, two served objects, clock separation and padding decision, and
+closes B-165 without rewriting this historical failure. No source-only DO
+rename, deployment, mutation, or broader sweep was performed by this lane.

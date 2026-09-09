@@ -682,26 +682,26 @@
     {
       "id": "B-165",
       "owner": "tl",
-      "status": "open",
+      "status": "done",
       "action_type": "served_and_rejected_path_latency_measurement",
       "procedure": [
         "RUN: From the owner-approved probe origin, send ten unauthenticated requests each to /v1/cas/x/y, /npm/x, /pip/simple/x, and /v2/x/manifests/latest; discard the first sample and calculate median and p90 by route.",
-        "RUN: With a dedicated cas:read PAT supplied through a protected channel, repeat the served-path requests against known test objects and record status, Server-Timing, median, and p90 separately from rejection samples.",
-        "UI: Decide whether the low-tens-ms target is required or intentional timing padding is retained, and record the decision with the served-path evidence rather than closing on rejection latency alone."
+        "RUN: With two distinct customer PATs supplied through protected local files, repeat the served-path requests against one known object per tenant and record status, Server-Timing, median, and p90 separately from rejection samples.",
+        "RUN: Record the ratified boundary: keep ADR-0023 padding on authenticated 404 misses only; never pad pre-lookup 401 rejection, which cannot reveal object existence and would create an unauthenticated amplification primitive."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["production API hostname", "four rejection routes", "known served test objects", "dedicated cas:read PAT", "ten samples per route"],
-        "credentials": "Owner supplies the served-path PAT through stdin or a secret manager; no token, response body, or authorization header is retained in evidence."
+        "inputs": ["production API hostname", "four rejection routes", "two known served test objects in distinct tenants", "two distinct customer PATs", "ten samples per route"],
+        "credentials": "PATs are read only from protected local files or a secret manager; no token, response body, or authorization header is retained in evidence. Only SHA-256 fingerprints are durable."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-165/rejection-served-latency.json",
         "format": "json",
         "required_fields": ["schema_version", "captured_at", "rejection_samples", "served_samples", "route_statistics", "padding_decision", "pat_reference", "verdict", "operator"],
-        "item_schema": "route_statistics[] contains route, population, sample_count, discarded_first, median_ms, p90_ms, and status classes; rejection and served populations are disjoint and served samples require a redacted PAT reference."
+        "item_schema": "route_statistics[] contains route, population, sample_count, discarded_first, median_ms, p90_ms, and status classes; rejection and served populations are disjoint; served samples require distinct tenant-bound paths, redacted PAT fingerprints and one-to-one Server-Timing/curl clocks."
       },
-      "expected_postcondition": "Both unauthenticated rejection and authenticated served paths have honest route-level statistics, with any timing-padding decision documented; B-165 remains open until both halves are reviewed.",
+      "expected_postcondition": "Both unauthenticated rejection and two authenticated served paths have honest route-level statistics; service and transport clocks are separated; the 404-only/never-401 timing-padding decision is executable and mutation-backed; B-165 is done.",
       "retry_and_rollback": "Retry with a fresh test object and preserve prior samples; revoke the dedicated PAT after the served probe. Do not alter padding or auth behavior based on a single outlier, and do not delete the evidence artifact.",
-      "references": ["BACKLOG.md#B-165", "BACKLOG.md#B-160", "worker/src/index.ts"]
+      "references": ["BACKLOG.md#B-165", "BACKLOG.md#B-364", "docs/perf/2026-09-09-wp-b165-complete.md", "scripts/verify_b165_latency.py", "worker/src/index_auth_stage.ts", "worker/src/index_finish_stage.ts"]
     }
   ]
 }

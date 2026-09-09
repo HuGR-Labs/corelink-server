@@ -36,7 +36,7 @@ EXPECTED_IDS = (
 # the other ten legacy rows remain owner-controlled until their actions are
 # evidenced and reclassified.
 LEGACY_OWNER_IDS = frozenset(EXPECTED_IDS[:12]) - {"B-013", "B-110"}
-CLOSED_PACKET_IDS = frozenset({"B-013", "B-110"})
+CLOSED_PACKET_IDS = frozenset({"B-013", "B-110", "B-165"})
 ITEM_FIELDS = {
     "id", "owner", "status", "action_type", "procedure",
     "inputs_and_credentials_boundary", "evidence", "expected_postcondition",

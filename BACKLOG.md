@@ -210,6 +210,34 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
+### B-364 — o probe de latência comparava RTT remoto com budget interno — FECHADO
+
+Descoberto ao completar B-165: `curl time_total` mistura processamento do serviço,
+cliente↔colo, negociação e jitter da rede, mas era comparado diretamente a 15–30 ms como
+se fosse um relógio interno. A própria mediana do controle `/health` foi 47,877 ms nesta
+origem, tornando a comparação inválida antes de qualquer código CAS.
+
+O harness agora captura `Server-Timing total` por request como relógio primário do serviço e
+registra separadamente o residual `curl_total_ms - server_total_ms`; não subtrai medianas de
+populações independentes. O verificador exige correspondência 1:1 com a observação servida,
+recalcula o residual e falha em timing ausente, negativo, maior que o total ou inconsistente.
+O SLO canônico de CAS GET continua sendo o p99 de 30 dias medido no edge, conforme
+`specs/03_architecture/slo_catalog.md`; dez amostras p90 são diagnóstico, não veredito SLO.
+
+```backlog
+id: B-364
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 scripts/test_verify_b165_latency.py
+verify-means: |
+  inverted — a suíte exige o artefato Server-Timing completo, identidade 1:1 com os dois
+  tenants servidos e aritmética por request. Mutações de residual, amostra, tenant, PAT,
+  status e fronteira de padding falham fechado. O verifier de B-165 é a integração positiva
+  sobre o receipt real; não acessa rede nem usa segredo.
+last-verified: 2026-09-09
+```
+
 ### B-255 — customer cross-tenant audit-before-denial formally closed
 
 The independent handler refinement is now wired and verified: the
@@ -16837,7 +16865,7 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-165 — o caminho de RECUSA já custa 52–195 ms contra um alvo de 15–30 ms, e o caminho SERVIDO segue sem número
+### B-165 — latência de recusa e caminho servido medida em duas populações — FECHADO
 
 Medido do Mac ao edge GRU, frio e quente declarados, contêiner `ddd95560-r1`
 (`version=143` sam / `178` prod), por `GET` resolvido por `{id}`:
@@ -16852,56 +16880,34 @@ de **dizer não** — o pedido nem chega a tocar CAS, R2 ou D1 de dados. Que a r
 2× a 6,5× o alvo do caminho **completo** é o achado; e o OCI a 195 ms está quase 4× acima do
 próprio teto cross-region.
 
-**O caminho servido continua sem número**, e essa é a parte que não pode ser esquecida:
-medi-lo exige um PAT de cliente, que é o [B-160]. Os itens de latência que já existem medem
-outra população — [B-102] mede PUT quente no `/cargo` (1,38 s), [B-104] mede 404
-**autenticado** (0,32 s medianos), [B-106] mede verify de PAT frio (711 ms). Nenhum mede a
-recusa **não autenticada** na borda, que é o primeiro milissegundo que qualquer cliente novo
-experimenta — e o único que um atacante consegue medir de graça, em volume.
+O caminho servido foi medido em 2026-09-09 com dois tenants, dois PATs distintos e um objeto
+existente por tenant: medianas fim-a-fim 793,315 ms / 625,106 ms e medianas do relógio de
+serviço 696 ms / 564 ms. O receipt preserva os números sem corpo nem credencial; a amostra
+diagnóstica não é apresentada como o SLI p99 de 30 dias.
 
-**O que este item NÃO decide:** se 15–30 ms é o alvo certo para uma recusa. Pode ser que a
-recusa deva custar **mais** de propósito (padding contra oráculo de temporização, que este
-repositório já pratica em outros pontos). Se for esse o caso, o número tem de estar escrito
-como decisão em algum lugar — e não está, o que é um achado por si só.
+**Decisão fechada em 2026-09-09:** 401 não recebe padding. A recusa acontece antes do lookup
+de tenant/objeto e não revela existência; atrasá-la criaria apenas amplificação DoS não
+autenticada. O padding de ADR-0023 continua restrito ao 404 autenticado. A medição também
+separa agora o relógio do serviço (`Server-Timing total`) do transporte cliente↔colo; o alvo
+15–30 ms anterior não pode ser comparado ao RTT bruto de um Mac remoto.
 
 ```backlog
 id: B-165
 repo: corelink-server
 owner: tl
-status: parked
+status: done
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
-verify: python3 scripts/verify_owner_action_packets.py --id B-165
+verify: python3 scripts/verify_b165_latency.py evidence/owner-actions/B-165/complete-latency-2026-09-09.tsv --samples 10 --require-served --tenant-a 8a6b4e4e-5d66-4ab7-9388-85ea5ed45c4c --tenant-b ee30f7ba-fc25-4d71-939e-ebe130b4c6a3 --pat-fingerprint-a sha256:dbc983ada203f4ca87e023ea9dd40a6c3367c3843e49a774849bf8078799fac8 --pat-fingerprint-b sha256:25e409be70b0633d1f0a2179e23de7b254eef69cff253e105b36cde1f18176d1 --server-timing-tsv evidence/owner-actions/B-165/served-server-timing-2026-09-09.tsv
 verify-means: |
-  parked — manual, e a razão é estrutural — a mesma de [B-102], [B-103] e [B-104], e uma segunda que é
-  própria deste item.
-
-  **1. Exige rede até produção.** Nenhum arquivo desta árvore muda quando a latência muda. Um
-  `verify` que medisse latência acoplaria o portão do `BACKLOG.md` a produção e à rede da
-  máquina de CI, e transformaria queda de link em DRIFTED — falha de instrumento se
-  disfarçando de achado, que é a doença que este arquivo mais tenta evitar.
-
-  **2. Metade da alegação é INVERIFICÁVEL hoje, por bloqueio conhecido.** A segunda linha do
-  item é que o caminho **servido** não tem número, e ele não tem porque falta o PAT
-  ([B-160]). Um comando que medisse só a recusa daria verde sobre a metade fácil e esconderia
-  que a metade que importa segue sem instrumento.
-
-  **Procedimento de reverificação** (quinzenal, e é o que o `last-verified` cobra) — sem
-  credencial, porque a população é a recusa:
-
-      for p in /v1/cas/x/y /npm/x /pip/simple/x /v2/x/manifests/latest; do
-        curl -s -o /dev/null -w "$p %{time_total}\n" \
-          "https://corelink-api.humangr.com$p"
-      done
-
-  Rodar **dez vezes**, descartar a primeira (frio), e reportar **mediana e p90** — nunca o
-  máximo isolado, que foi o que produziu a primeira versão errada do [B-104].
-
-  **Fecha quando a mediana da recusa entrar na faixa de dezenas baixas de ms E o caminho
-  servido tiver número.** NÃO fecha por a cauda melhorar sozinha, e NÃO fecha medindo só a
-  recusa. Se a decisão for que a recusa deve custar mais por padding de temporização, o
-  fechamento é escrever essa decisão com o número escolhido — e aí este item vira `done` com
-  `verify` invertido apontando para onde a decisão está registrada.
-last-verified: 2026-09-05
+  inverted — exige 10 amostras de cada uma das quatro recusas, health e duas populações
+  servidas, tenants/PAT fingerprints distintos, status corretos, paths tenant-bound e
+  separação aritmética por request entre tempo do serviço e transporte. Também prova a
+  fronteira executável da decisão: 404 continua padded e o estágio que retorna 401 não pode
+  importar/invocar padding. Falha fechada em amostra ausente, identidade repetida, status
+  errado, clock impossível ou mutação de política. O artefato e a decisão completos estão em
+  `docs/perf/2026-09-09-wp-b165-complete.md`; B-364 fecha o defeito do instrumento descoberto
+  durante esta medição.
+last-verified: 2026-09-09
 ```
 
 ### B-166 — `corelink --version` imprimia ao cliente uma URL de atestação SLSA num hostname que não tem DNS — FECHADO

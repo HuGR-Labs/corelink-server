@@ -89,6 +89,7 @@ jobs:
       CANARY_TENANT: 93da3f7a-984d-4ef9-86e0-b0bd9fd0252e
       DOGFOOD_TENANT: ee30f7ba-fc25-4d71-939e-ebe130b4c6a3
       CANARY_DIGEST: 28cf8cf855dbf4f9a40949d44d4ba5ce2db8d0386e08105c52244f495ab0b441
+      DOGFOOD_DIGEST: 725ef6c9168c2409ddbe2ef07a8b3648712580398a281c7581d85c3595c44525
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -101,21 +102,7 @@ jobs:
           : "${DOGFOOD_PAT:?CORELINK_SCCACHE_TOKEN is not bound}"
           api=https://corelink-api.humangr.com
           served_a="/v1/cas/$CANARY_TENANT/$CANARY_DIGEST"
-
-          # These are keys from the already-approved B-107/B-122 production
-          # packets. Discovery is HEAD-only and bounded; this job never writes.
-          served_b=""
-          for key in b107-1 b107-2 b107-3 b122-1 b122-2 b122-3; do
-            status="$(curl --connect-timeout 10 --max-time 20 --silent --show-error \
-              --output /dev/null --write-out '%{http_code}' --head \
-              -H "Authorization: Bearer $DOGFOOD_PAT" \
-              "$api/cargo/$DOGFOOD_TENANT/$key")"
-            if [[ "$status" == 200 ]]; then
-              served_b="/cargo/$DOGFOOD_TENANT/$key"
-              break
-            fi
-          done
-          test -n "$served_b"
+          served_b="/v1/cas/$DOGFOOD_TENANT/$DOGFOOD_DIGEST"
 
           raw="$RUNNER_TEMP/b165-served-only.tsv"
           timing="$RUNNER_TEMP/b165-served-timing.tsv"
@@ -123,7 +110,7 @@ jobs:
           : > "$timing"
           sample_one() {
             local surface="$1" request_path="$2" token="$3" sample="$4"
-            local line headers server_timing
+            local line headers server_total_ms transport_ms
             headers="$RUNNER_TEMP/b165-$surface-$sample.headers"
             line="$(curl --connect-timeout 10 --max-time 20 --silent --show-error \
               --output /dev/null --dump-header "$headers" \
@@ -132,8 +119,15 @@ jobs:
             IFS=$'\t' read -r status seconds curl_rc <<<"$line"
             printf 'served\t%s\t%s\t%s\t%s\t%s\t%s\n' \
               "$surface" "$request_path" "$sample" "$status" "$curl_rc" "$seconds" >> "$raw"
-            server_timing="$(tr -d '\r' < "$headers" | awk 'BEGIN{IGNORECASE=1} /^server-timing:/ {sub(/^[^:]+:[[:space:]]*/, ""); print; exit}')"
-            printf '%s\t%s\t%s\n' "$surface" "$sample" "${server_timing:-absent}" >> "$timing"
+            server_total_ms="$(tr -d '\r' < "$headers" | awk 'BEGIN{IGNORECASE=1}
+              /^server-timing:/ { sub(/^[^:]+:[[:space:]]*/, ""); n=split($0,p,",");
+                for(i=1;i<=n;i++){gsub(/^[[:space:]]+|[[:space:]]+$/, "", p[i]);
+                  if(p[i] ~ /^total;dur=[0-9]+([.][0-9]+)?$/){sub(/^total;dur=/,"",p[i]); print p[i]; exit}}}')"
+            test -n "$server_total_ms"
+            transport_ms="$(awk -v curl_s="$seconds" -v server_ms="$server_total_ms" \
+              'BEGIN { printf "%.3f", curl_s * 1000 - server_ms }')"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+              "$surface" "$request_path" "$sample" "$seconds" "$server_total_ms" "$transport_ms" >> "$timing"
             rm -f "$headers"
           }
           for sample in {1..10}; do sample_one served_a "$served_a" "$CANARY_PAT" "$sample"; done
@@ -148,6 +142,7 @@ jobs:
           python3 scripts/verify_b165_latency.py "$composite" --samples 10 --require-served \
             --tenant-a "$CANARY_TENANT" --tenant-b "$DOGFOOD_TENANT" \
             --pat-fingerprint-a "$fp_a" --pat-fingerprint-b "$fp_b" \
+            --server-timing-tsv "$timing" \
             > "$RUNNER_TEMP/b165-served-verdict.json"
 
       - name: Upload sanitized served evidence

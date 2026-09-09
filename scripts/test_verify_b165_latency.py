@@ -30,6 +30,17 @@ def _rows(
     return "".join(rows)
 
 
+def _timing_rows() -> str:
+    rows = []
+    for surface, path in (
+        ("served_a", "/v1/cas/tenant-a/digest"),
+        ("served_b", "/v1/cas/tenant-b/digest"),
+    ):
+        for sample in range(1, 4):
+            rows.append(f"{surface}\t{path}\t{sample}\t0.010000\t8.000\t2.000\n")
+    return "".join(rows)
+
+
 class B165VerifierTests(unittest.TestCase):
     PAT_A = "sha256:" + "a" * 64
     PAT_B = "sha256:" + "b" * 64
@@ -59,12 +70,40 @@ class B165VerifierTests(unittest.TestCase):
             tenant_b="tenant-b",
             pat_fingerprint_a=self.PAT_A,
             pat_fingerprint_b=self.PAT_B,
+            server_timing_path=self.write(_timing_rows()),
         )
         self.assertEqual(report["status"], "complete")
         self.assertTrue(report["closure_allowed"])
         self.assertEqual(len(report["served"]), 2)
         self.assertEqual(report["served_credentials"]["served_a"]["pat_fingerprint"], self.PAT_A)
         self.assertEqual(report["served_credentials"]["served_b"]["pat_fingerprint"], self.PAT_B)
+        self.assertEqual(report["server_timing"][0]["server_median_ms"], 8.0)
+
+    def test_require_served_rejects_missing_server_timing(self):
+        with self.assertRaisesRegex(verifier.EvidenceError, "server-timing"):
+            verifier.verify(
+                self.write(_rows(served=True)),
+                3,
+                require_served=True,
+                tenant_a="tenant-a",
+                tenant_b="tenant-b",
+                pat_fingerprint_a=self.PAT_A,
+                pat_fingerprint_b=self.PAT_B,
+            )
+
+    def test_server_timing_rejects_inconsistent_transport_residual(self):
+        timing = _timing_rows().replace("\t8.000\t2.000", "\t8.000\t1.000", 1)
+        with self.assertRaisesRegex(verifier.EvidenceError, "transport residual"):
+            verifier.verify(
+                self.write(_rows(served=True)),
+                3,
+                require_served=True,
+                tenant_a="tenant-a",
+                tenant_b="tenant-b",
+                pat_fingerprint_a=self.PAT_A,
+                pat_fingerprint_b=self.PAT_B,
+                server_timing_path=self.write(timing),
+            )
 
     def test_require_served_rejects_missing_tenant_bindings(self):
         with self.assertRaises(verifier.EvidenceError):
@@ -183,6 +222,55 @@ class B165VerifierTests(unittest.TestCase):
         self.assertIn("retention-days: 30", workflow)
         self.assertIn("Exit 2 is the expected partial/open result", workflow)
         self.assertIn("Surface unexpected probe or verifier result", workflow)
+        self.assertIn("--server-timing-tsv", workflow)
+        harness = (pathlib.Path(__file__).resolve().parent / "probe-wp-b165-latency.sh").read_text(encoding="utf-8")
+        self.assertIn("B165_TIMING_OUT", harness)
+        self.assertIn("curl_s * 1000 - server_ms", harness)
+
+    def test_padding_policy_keeps_404_padded_and_401_unpadded(self):
+        report = verifier.verify_padding_policy(pathlib.Path(__file__).resolve().parent.parent)
+        self.assertEqual(report["401"], "not_padded")
+        self.assertEqual(report["404"], "padded")
+        self.assertEqual(report["decision"], verifier.PADDING_DECISION)
+
+    def test_padding_policy_rejects_401_padding_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            for relative in (
+                "worker/src/index_auth_stage.ts",
+                "worker/src/index_finish_stage.ts",
+                "worker/src/index_special_misc.ts",
+            ):
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = pathlib.Path(__file__).resolve().parent.parent / relative
+                target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            auth = root / "worker/src/index_auth_stage.ts"
+            auth.write_text(auth.read_text(encoding="utf-8") + "\napplyTimingPad();\n", encoding="utf-8")
+            with self.assertRaisesRegex(verifier.EvidenceError, "401 authentication stage"):
+                verifier.verify_padding_policy(root)
+
+    def test_padding_policy_rejects_removed_404_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            for relative in (
+                "worker/src/index_auth_stage.ts",
+                "worker/src/index_finish_stage.ts",
+                "worker/src/index_special_misc.ts",
+            ):
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = pathlib.Path(__file__).resolve().parent.parent / relative
+                target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            finish = root / "worker/src/index_finish_stage.ts"
+            finish.write_text(
+                finish.read_text(encoding="utf-8").replace(
+                    "if (doResponse.status === 404)", "if (doResponse.status === 418)"
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(verifier.EvidenceError, "404"):
+                verifier.verify_padding_policy(root)
 
 
 if __name__ == "__main__":

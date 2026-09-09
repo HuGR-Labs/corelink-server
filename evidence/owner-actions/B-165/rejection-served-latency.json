@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-09-09T09:22:25Z",
+  "captured_at": "2026-09-09T11:41:03Z",
   "production_source_sha": "64e57a2ccb218f475b44a260b64af95e0bc7df2c",
   "deployed_worker": {
     "name": "corelink-prod",
@@ -16,7 +16,42 @@
     "complete": false,
     "failure": "The OCI /v2 population returned HTTP 503 for every sample instead of the required authentication rejection HTTP 401."
   },
-  "served_samples": [],
+  "served_samples": {
+    "artifact": "evidence/owner-actions/B-165/served-raw-2026-09-09.tsv",
+    "sha256": "071e38a39322f554dc2d2b4e3b02e5bae83b85ad5977adcad93804e112c47028",
+    "complete_artifact": "evidence/owner-actions/B-165/complete-latency-2026-09-09.tsv",
+    "complete_sha256": "bb165d56c00e9fbcff1501dcfd5a967e330034b8c6ab186de8ad86a5ffb477c9",
+    "server_timing_artifact": "evidence/owner-actions/B-165/served-server-timing-2026-09-09.tsv",
+    "server_timing_sha256": "64843c1e9b854ae483dc5ccf142711f7def51fcd2fb50a28bb20a0d9b43bc19c",
+    "samples_per_route": 10,
+    "discarded_first": true,
+    "complete": true,
+    "privacy": "response_bodies_discarded;_credentials_never_logged;_only_sha256_fingerprints_retained",
+    "populations": [
+      {
+        "surface": "served_a",
+        "tenant": "8a6b4e4e-5d66-4ab7-9388-85ea5ed45c4c",
+        "route": "/v1/cas/8a6b4e4e-5d66-4ab7-9388-85ea5ed45c4c/af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+        "pat_fingerprint": "sha256:dbc983ada203f4ca87e023ea9dd40a6c3367c3843e49a774849bf8078799fac8",
+        "status_classes": {"200": 10},
+        "server_median_ms": 696.000,
+        "server_p90_ms": 834.000,
+        "transport_residual_median_ms": 82.307,
+        "transport_residual_p90_ms": 199.108
+      },
+      {
+        "surface": "served_b",
+        "tenant": "ee30f7ba-fc25-4d71-939e-ebe130b4c6a3",
+        "route": "/v1/cas/ee30f7ba-fc25-4d71-939e-ebe130b4c6a3/725ef6c9168c2409ddbe2ef07a8b3648712580398a281c7581d85c3595c44525",
+        "pat_fingerprint": "sha256:25e409be70b0633d1f0a2179e23de7b254eef69cff253e105b36cde1f18176d1",
+        "status_classes": {"200": 10},
+        "server_median_ms": 564.000,
+        "server_p90_ms": 731.000,
+        "transport_residual_median_ms": 61.615,
+        "transport_residual_p90_ms": 84.498
+      }
+    ]
+  },
   "route_statistics": [
     {
       "route": "/v1/cas/x/y",
@@ -26,7 +61,7 @@
       "median_ms": 50.405,
       "p90_ms": 58.614,
       "status_classes": {"401": 10},
-      "threshold_result": "status_pass"
+      "threshold_result": "above_15_30ms_end_to_end_target"
     },
     {
       "route": "/npm/x",
@@ -36,7 +71,7 @@
       "median_ms": 52.690,
       "p90_ms": 104.131,
       "status_classes": {"401": 10},
-      "threshold_result": "status_pass"
+      "threshold_result": "above_15_30ms_end_to_end_target"
     },
     {
       "route": "/pip/simple/x",
@@ -46,17 +81,17 @@
       "median_ms": 50.933,
       "p90_ms": 53.165,
       "status_classes": {"401": 10},
-      "threshold_result": "status_pass"
+      "threshold_result": "above_15_30ms_end_to_end_target"
     },
     {
       "route": "/v2/x/manifests/latest",
       "population": "rejection",
       "sample_count": 9,
       "discarded_first": true,
-      "median_ms": 4469.263,
-      "p90_ms": 6093.667,
-      "status_classes": {"503": 10},
-      "threshold_result": "fail_wrong_status"
+      "median_ms": 207.119,
+      "p90_ms": 239.544,
+      "status_classes": {"401": 10},
+      "threshold_result": "recovered_status_above_15_30ms_and_50ms_cross_region_targets"
     },
     {
       "route": "/health",
@@ -66,7 +101,27 @@
       "median_ms": 47.877,
       "p90_ms": 56.820,
       "status_classes": {"200": 10},
-      "threshold_result": "status_pass"
+      "threshold_result": "control_baseline"
+    },
+    {
+      "route": "/v1/cas/8a6b4e4e-5d66-4ab7-9388-85ea5ed45c4c/af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+      "population": "served_a",
+      "sample_count": 9,
+      "discarded_first": true,
+      "median_ms": 793.315,
+      "p90_ms": 916.307,
+      "status_classes": {"200": 10},
+      "threshold_result": "served_baseline_recorded_above_low_tens_target"
+    },
+    {
+      "route": "/v1/cas/ee30f7ba-fc25-4d71-939e-ebe130b4c6a3/725ef6c9168c2409ddbe2ef07a8b3648712580398a281c7581d85c3595c44525",
+      "population": "served_b",
+      "sample_count": 9,
+      "discarded_first": true,
+      "median_ms": 625.106,
+      "p90_ms": 815.498,
+      "status_classes": {"200": 10},
+      "threshold_result": "served_baseline_recorded_above_low_tens_target"
     }
   ],
   "runtime_diagnosis": {
@@ -124,8 +179,18 @@
     },
     "conclusion": "The bounded OCI rerun returned the required authentication rejection for all ten requests after the roll-forward. The prior 503 runtime failure is recovered; this receipt does not supply either authenticated served population."
   },
-  "padding_decision": "not_evaluated_missing_authenticated_served_populations",
-  "pat_reference": "unavailable_local_default_pat_returned_401;_no_ambiguous_rotation_artifact_read",
-  "verdict": "runtime_recovered_open_missing_two_authenticated_served_populations",
+  "padding_decision": {
+    "decision": "retain_padding_for_authenticated_404_misses_only;_never_pad_401",
+    "rationale": "An unauthenticated 401 occurs before tenant/object lookup and cannot reveal object existence. Padding it has no isolation benefit and would create an unauthenticated latency/DoS amplifier. ADR-0023 remains authoritative for authenticated 404 miss-classification only; 200, 401, 403, 413 and 503 are outside that padding boundary.",
+    "code_evidence": [
+      "worker/src/index_auth_stage.ts",
+      "worker/src/index_finish_stage.ts",
+      "worker/src/index_special_misc.ts",
+      "docs/knowledge/adr/adr-0023-constant-time-timing-padding.md"
+    ],
+    "verifier": "python3 scripts/verify_b165_latency.py evidence/owner-actions/B-165/complete-latency-2026-09-09.tsv --samples 10 --require-served --tenant-a 8a6b4e4e-5d66-4ab7-9388-85ea5ed45c4c --tenant-b ee30f7ba-fc25-4d71-939e-ebe130b4c6a3 --pat-fingerprint-a sha256:dbc983ada203f4ca87e023ea9dd40a6c3367c3843e49a774849bf8078799fac8 --pat-fingerprint-b sha256:25e409be70b0633d1f0a2179e23de7b254eef69cff253e105b36cde1f18176d1 --server-timing-tsv evidence/owner-actions/B-165/served-server-timing-2026-09-09.tsv"
+  },
+  "pat_reference": "two_distinct_active_local_customer_PATs;_values_never_logged;_sha256_fingerprints_only",
+  "verdict": "complete_two_tenant_measurement;_401_unpadded;_latency_followup_required",
   "operator": "codex-orchestrator"
 }
