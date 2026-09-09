@@ -56,7 +56,7 @@ describe("CoreLink a11y reporter", () => {
   it("renders the stable severity summary", () => {
     const summary = renderSummary([result]);
     expect(summary).toContain(
-      "**Audit status: FAILED — 0 runtime error(s), 1 blocking violation(s).**",
+      "**Audit status: FAILED — 0 runtime error(s); 1 blocking violation(s).**",
     );
     expect(summary).toContain("| `/corelink/docs/` | 1 | 0 | 1 | 0 | 0 |");
     expect(summary).toContain(
@@ -67,8 +67,9 @@ describe("CoreLink a11y reporter", () => {
   it("records runner failures instead of emitting empty evidence", () => {
     const directory = mkdtempSync(join(tmpdir(), "corelink-a11y-reporter-"));
     const outputFile = join(directory, "report.json");
+    const summaryFile = join(directory, "report.md");
     try {
-      const reporter = new CoreLinkA11yReporter({ outputFile });
+      const reporter = new CoreLinkA11yReporter({ outputFile, summaryFile });
       reporter.onTestEnd(
         { title: "a11y: /corelink/docs/" } as never,
         {
@@ -77,7 +78,7 @@ describe("CoreLink a11y reporter", () => {
           status: "failed",
         } as never,
       );
-      reporter.onEnd({} as never);
+      reporter.onEnd({ status: "failed" } as never);
 
       expect(JSON.parse(readFileSync(outputFile, "utf8"))).toEqual([
         expect.objectContaining({
@@ -87,10 +88,11 @@ describe("CoreLink a11y reporter", () => {
         }),
       ]);
       expect(statSync(outputFile).mode & 0o777).toBe(0o600);
-      const summary = renderSummary(JSON.parse(readFileSync(outputFile, "utf8")));
-      expect(summary).toContain(
-        "**Audit status: FAILED — 1 runtime error(s), 0 blocking violation(s).**",
-      );
+      const summary = readFileSync(summaryFile, "utf8");
+      expect(summary).toContain("**Audit status: FAILED");
+      expect(summary).toContain("run status=failed");
+      expect(summary).toContain("route coverage=1/15");
+      expect(summary).toContain("1 runtime error(s)");
       expect(summary).toContain("browser unavailable");
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -136,7 +138,12 @@ describe("CoreLink a11y reporter", () => {
         violations: [],
       }));
       expect(() => validateBaselineCandidate(complete, A11Y_ROUTES)).not.toThrow();
-      promoteBaselineAtomically(baseline, complete, A11Y_ROUTES);
+      const previousUmask = process.umask(0o077);
+      try {
+        promoteBaselineAtomically(baseline, complete, A11Y_ROUTES);
+      } finally {
+        process.umask(previousUmask);
+      }
       expect(JSON.parse(readFileSync(baseline, "utf8"))).toHaveLength(15);
       expect(statSync(baseline).mode & 0o777).toBe(0o644);
     } finally {
@@ -149,5 +156,81 @@ describe("CoreLink a11y reporter", () => {
     expect(() => validateBaselineCandidate(blocked, A11Y_ROUTES)).toThrow(
       "15 blocking violation(s)",
     );
+  });
+
+  it("marks empty, partial, and globally failed runs as FAILED", () => {
+    const empty = renderSummary([], {
+      runStatus: "passed",
+      expectedRoutes: A11Y_ROUTES,
+    });
+    expect(empty).toContain("Audit status: FAILED");
+    expect(empty).toContain("route coverage=0/15");
+
+    const partial = renderSummary(
+      [{ ...result, violations: [] }],
+      { runStatus: "passed", expectedRoutes: A11Y_ROUTES },
+    );
+    expect(partial).toContain("Audit status: FAILED");
+    expect(partial).toContain("route coverage=1/15");
+
+    const complete = A11Y_ROUTES.map((route) => ({
+      ...result,
+      route,
+      violations: [],
+    }));
+    const interrupted = renderSummary(complete, {
+      runStatus: "interrupted",
+      expectedRoutes: A11Y_ROUTES,
+    });
+    expect(interrupted).toContain("Audit status: FAILED");
+    expect(interrupted).toContain("run status=interrupted");
+  });
+
+  it("onEnd marks an empty passed run as incomplete", () => {
+    const directory = mkdtempSync(join(tmpdir(), "corelink-a11y-empty-"));
+    const outputFile = join(directory, "report.json");
+    const summaryFile = join(directory, "report.md");
+    try {
+      const reporter = new CoreLinkA11yReporter({ outputFile, summaryFile });
+      reporter.onEnd({ status: "passed" } as never);
+      const summary = readFileSync(summaryFile, "utf8");
+      expect(summary).toContain("Audit status: FAILED");
+      expect(summary).toContain("route coverage=0/15");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("onEnd honors a global failure for an otherwise complete run", () => {
+    const directory = mkdtempSync(join(tmpdir(), "corelink-a11y-global-"));
+    const outputFile = join(directory, "report.json");
+    const summaryFile = join(directory, "report.md");
+    try {
+      const reporter = new CoreLinkA11yReporter({ outputFile, summaryFile });
+      for (const route of A11Y_ROUTES) {
+        reporter.onTestEnd(
+          { title: `a11y: ${route}` } as never,
+          {
+            attachments: [
+              {
+                name: "corelink-a11y-result",
+                body: Buffer.from(
+                  JSON.stringify({ ...result, route, violations: [] }),
+                ),
+              },
+            ],
+            errors: [],
+            status: "passed",
+          } as never,
+        );
+      }
+      reporter.onEnd({ status: "interrupted" } as never);
+      const summary = readFileSync(summaryFile, "utf8");
+      expect(summary).toContain("Audit status: FAILED");
+      expect(summary).toContain("run status=interrupted");
+      expect(summary).not.toContain("route coverage=");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

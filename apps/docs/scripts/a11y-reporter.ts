@@ -1,7 +1,14 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 
 import type {
   FullConfig,
@@ -34,6 +41,27 @@ interface ReporterOptions {
 
 const IMPACTS = ["critical", "serious", "moderate", "minor"] as const;
 
+interface SummaryContext {
+  runStatus?: string;
+  expectedRoutes?: readonly string[];
+}
+
+function expectedA11yRoutes(): string[] {
+  const routePaths: unknown = JSON.parse(
+    readFileSync(join(__dirname, "a11y-routes.json"), "utf8"),
+  );
+  if (
+    !Array.isArray(routePaths) ||
+    !routePaths.every((route) => typeof route === "string")
+  ) {
+    throw new Error("invalid a11y route inventory");
+  }
+  const basePath = process.env.DOCS_BASE_PATH ?? "/corelink/docs";
+  return routePaths.map((route) =>
+    route === "/" ? `${basePath}/` : `${basePath}${route}`,
+  );
+}
+
 function oneLine(value: string): string {
   return value
     .replace(/\s+/g, " ")
@@ -42,7 +70,10 @@ function oneLine(value: string): string {
     .slice(0, 300);
 }
 
-export function renderSummary(results: AuditResult[]): string {
+export function renderSummary(
+  results: AuditResult[],
+  context: SummaryContext = {},
+): string {
   const totals = Object.fromEntries(IMPACTS.map((impact) => [impact, 0])) as Record<
     (typeof IMPACTS)[number],
     number
@@ -64,7 +95,41 @@ export function renderSummary(results: AuditResult[]): string {
       (violation) => violation.impact === "serious" || violation.impact === "critical",
     ),
   );
-  const complete = runtimeFailures.length === 0 && blockingViolations.length === 0;
+  const routes = new Set(results.map((result) => result.route));
+  const expectedRoutes = context.expectedRoutes;
+  const missingRoutes = expectedRoutes?.filter((route) => !routes.has(route)) ?? [];
+  const expected = new Set(expectedRoutes ?? []);
+  const unexpectedRoutes = expectedRoutes
+    ? [...routes].filter((route) => !expected.has(route))
+    : [];
+  const routeSetComplete =
+    expectedRoutes === undefined ||
+    (results.length === expectedRoutes.length &&
+      routes.size === expectedRoutes.length &&
+      missingRoutes.length === 0 &&
+      unexpectedRoutes.length === 0);
+  const runPassed = (context.runStatus ?? "passed") === "passed";
+  const complete =
+    runPassed &&
+    routeSetComplete &&
+    runtimeFailures.length === 0 &&
+    blockingViolations.length === 0;
+  const failureReasons = [
+    ...(runPassed ? [] : [`run status=${context.runStatus}`]),
+    ...(routeSetComplete
+      ? []
+      : [
+          `route coverage=${routes.size}/${expectedRoutes?.length ?? "unknown"}`,
+          ...(missingRoutes.length > 0
+            ? [`missing=${missingRoutes.join(",")}`]
+            : []),
+          ...(unexpectedRoutes.length > 0
+            ? [`unexpected=${unexpectedRoutes.join(",")}`]
+            : []),
+        ]),
+    `${runtimeFailures.length} runtime error(s)`,
+    `${blockingViolations.length} blocking violation(s)`,
+  ];
   return [
     "# WCAG 2.2 AA — axe-core audit",
     "",
@@ -72,7 +137,7 @@ export function renderSummary(results: AuditResult[]): string {
     "",
     complete
       ? "**Audit status: COMPLETE.**"
-      : `**Audit status: FAILED — ${runtimeFailures.length} runtime error(s), ${blockingViolations.length} blocking violation(s).**`,
+      : `**Audit status: FAILED — ${failureReasons.join("; ")}.**`,
     "",
     "| Route | Total | Critical | Serious | Moderate | Minor |",
     "| --- | ---: | ---: | ---: | ---: | ---: |",
@@ -137,6 +202,9 @@ function writeAtomically(path: string, contents: string, mode: number): void {
   const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
   try {
     writeFileSync(temporary, contents, { encoding: "utf8", mode, flag: "wx" });
+    // write(2)'s creation mode is filtered by umask. Evidence permissions are
+    // an invariant, so set the final mode explicitly before atomic exposure.
+    chmodSync(temporary, mode);
     renameSync(temporary, path);
   } catch (error) {
     try {
@@ -229,14 +297,21 @@ export default class CoreLinkA11yReporter implements Reporter {
     this.results.set(audit.route, audit);
   }
 
-  onEnd(_result: FullResult): void {
+  onEnd(result: FullResult): void {
     if (!this.outputFile) return;
     const results = [...this.results.values()].sort((left, right) =>
       left.route.localeCompare(right.route),
     );
     writeAtomically(this.outputFile, `${JSON.stringify(results, null, 2)}\n`, 0o600);
     if (this.summaryFile) {
-      writeAtomically(this.summaryFile, renderSummary(results), 0o600);
+      writeAtomically(
+        this.summaryFile,
+        renderSummary(results, {
+          runStatus: result.status,
+          expectedRoutes: expectedA11yRoutes(),
+        }),
+        0o600,
+      );
     }
   }
 }
