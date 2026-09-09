@@ -24,6 +24,10 @@ INPUTS = (
     Path("crates/corelink-container/src/byok_orchestrator.rs"),
     Path("crates/corelink-container/src/routes/byok_admin.rs"),
     Path("crates/corelink-container/tests/byok_orchestrator.rs"),
+    Path("evidence/owner-actions/B-110/ci-capacity-decision.json"),
+    Path("evidence/owner-actions/B-054/keyed-audit-epoch-rollout.json"),
+    Path("evidence/owner-actions/B-083/byok-real-kms-lifecycle.json"),
+    Path("evidence/owner-actions/B-097/cloudflare-vcpu-quota-case.json"),
 )
 
 OWNER_GATE = "python3 scripts/verify_owner_action_packets.py --id B-083"

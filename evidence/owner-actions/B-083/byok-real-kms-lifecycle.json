@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09T04:30:00Z",
+  "tenant_redacted": "NOT_PROVISIONED",
+  "image_digest": null,
+  "kms_provider": "aws",
+  "check_access": "BLOCKED",
+  "activation": {
+    "status": "NOT_EXECUTED",
+    "audit_event_reference": null,
+    "completed_at": null,
+    "blocker": "No protected test tenant, AWS CMK, least-privilege role, or operator credential was provisioned."
+  },
+  "cas_ac_round_trip": {
+    "status": "NOT_EXECUTED",
+    "audit_event_reference": null,
+    "completed_at": null,
+    "blocker": "Activation did not run, so encrypted CAS/AC round-trip evidence cannot be claimed."
+  },
+  "revocation": {
+    "status": "NOT_EXECUTED",
+    "audit_event_reference": null,
+    "completed_at": null,
+    "blocker": "The protected runtime and activated test tenant required for POST /v1/admin/byok/deactivate were absent."
+  },
+  "run_loop": {
+    "status": "NOT_EXECUTED",
+    "audit_event_reference": null,
+    "completed_at": null,
+    "blocker": "No real KMS lifecycle was started; the local revocation wiring check is not a runtime transition receipt."
+  },
+  "operator": "codex-focused-checks",
+  "repository_checks": [
+    {
+      "command": "python3 scripts/verify_b083_revocation_wiring.py",
+      "status": "PASS",
+      "detail": "Durable source, pre-bind run_loop wiring, focal behavior, and mutation checks pass."
+    },
+    {
+      "command": "backlog B-083 verification shell",
+      "status": "PASS",
+      "detail": "The shipped image selects byok-aws-real; activation remains fail-closed without runtime KMS evidence."
+    }
+  ]
+}
