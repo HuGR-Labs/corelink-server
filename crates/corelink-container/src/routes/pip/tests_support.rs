@@ -203,6 +203,8 @@ pub(super) fn router_with(
         map,
         PIP_SERVICE_PRINCIPAL,
     ));
+    // Hermetic fixtures intentionally have no D1 cap resolver. `None` is
+    // fail-closed: a fresh tenant's public write cannot seed an uncapped row.
     let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore {
         moat,
         cap_resolver: None,
@@ -256,6 +258,7 @@ pub(super) fn router_with_put_probe(
         map,
         PIP_SERVICE_PRINCIPAL,
     ));
+    // Keep the test-only path fail-closed when no cap resolver is supplied.
     let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore {
         moat,
         cap_resolver: None,
@@ -336,6 +339,8 @@ pub(super) fn router_with_quota_observable(
         map,
         PIP_SERVICE_PRINCIPAL,
     ));
+    // No D1 cap resolver in this hermetic fixture: public writes must not
+    // silently become unlimited.
     let cas: Arc<dyn CasStore> = Arc::new(PipMoatStore {
         moat,
         cap_resolver: None,

@@ -85,7 +85,7 @@ def _verify_impl() -> int:
     handler = read("crates/corelink-handler-cas/src/handler.rs")
     handler_tests = read("crates/corelink-handler-cas/src/tests.rs")
     accounting = read("crates/corelink-container/src/byte_accounting.rs")
-    accounting_impl = read("crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs")
+    accounting_impl = read("crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs")
     accounting_impl_02 = read("crates/corelink-container/src/byte_accounting/b126_m2_impl_02.rs")
     accounting_tests = read("crates/corelink-container/src/byte_accounting/b126_m2_test_3_1.rs")
     require(accounting, 'include!("byte_accounting/b126_m2_impl_01.rs")', "B232")
@@ -95,12 +95,16 @@ def _verify_impl() -> int:
     require(request, "pub fn is_authorized_for_caller", "B232")
     require_active(handler, "if !req.is_authorized_for_caller()", "B232")
     r2 = read("crates/corelink-container/src/storage/r2_s3.rs")
-    r2_cas_ops = read("crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs")
+    # The split R2 facade keeps read/exists helpers in cas_ops.rs, while the
+    # write authorization owner lives in cas_write.rs.  Keep this source gate
+    # pointed at the executable owner rather than accepting a stale sibling
+    # marker in the facade fragment.
+    r2_cas_write = read("crates/corelink-container/src/storage/r2_s3_parts/cas_write.rs")
     r2_tests_1 = read("crates/corelink-container/src/storage/r2_s3_parts/tests_1.rs")
     require(r2, 'include!("r2_s3_parts/cas_ops.rs")', "B232")
     # The R2 facade is split into include fragments. Authorization lives in
     # the CasWriteHandler implementation, not in the facade itself.
-    require_active(r2_cas_ops, "if !req.is_authorized_for_caller()", "B232")
+    require_active(r2_cas_write, "if !req.is_authorized_for_caller()", "B232")
     require(r2, 'include!("r2_s3_parts/tests_1.rs")', "B232")
     require(r2_tests_1, "r2_public_requests_share_physical_key_but_keep_accounting_tenant", "B232")
     put_body = cache[cache.index("pub async fn put_for_tenant"):]
@@ -268,10 +272,10 @@ def mutation_checks() -> int:
             "crates/corelink-handler-cas/src/handler.rs",
             "crates/corelink-handler-cas/src/tests.rs",
             "crates/corelink-container/src/storage/r2_s3.rs",
-            "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs",
+            "crates/corelink-container/src/storage/r2_s3_parts/cas_write.rs",
             "crates/corelink-container/src/storage/r2_s3_parts/tests_1.rs",
             "crates/corelink-container/src/byte_accounting.rs",
-            "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs",
+            "crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs",
             "crates/corelink-container/src/byte_accounting/b126_m2_impl_02.rs",
             "crates/corelink-container/src/byte_accounting/b126_m2_test_3_1.rs",
             "crates/corelink-stripe-real/src/webhook_dispatch.rs",
@@ -305,8 +309,8 @@ def mutation_checks() -> int:
     string_bait = dict(files)
     for rel in (
         "crates/corelink-handler-cas/src/handler.rs",
-        "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs",
-        "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs",
+        "crates/corelink-container/src/storage/r2_s3_parts/cas_write.rs",
+        "crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs",
     ):
         comment_bait[rel] = comment_bait[rel].replace(auth_marker, "// " + auth_marker)
         string_bait[rel] = string_bait[rel].replace(
@@ -335,9 +339,9 @@ def mutation_checks() -> int:
         ("crates/corelink-handler-cas/src/handler.rs", "if !req.is_authorized_for_caller()"),
         ("crates/corelink-handler-cas/src/tests.rs", "public_write_requires_explicit_accounting_identity"),
         ("crates/corelink-container/src/storage/r2_s3.rs", 'include!("r2_s3_parts/cas_ops.rs")'),
-        ("crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs", "if !req.is_authorized_for_caller()"),
+        ("crates/corelink-container/src/storage/r2_s3_parts/cas_write.rs", "if !req.is_authorized_for_caller()"),
         ("crates/corelink-container/src/storage/r2_s3_parts/tests_1.rs", "r2_public_requests_share_physical_key_but_keep_accounting_tenant"),
-        ("crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs", "let accounting_tenant = req.accounting_tenant.clone()"),
+        ("crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs", "let accounting_tenant = req.accounting_tenant.clone()"),
         ("crates/corelink-container/src/byte_accounting/b126_m2_impl_02.rs", 'include!("b126_m2_test_3_1.rs")'),
         ("crates/corelink-container/src/byte_accounting/b126_m2_test_3_1.rs", "public_namespace_write_uses_authenticated_tenant_quota"),
         ("crates/corelink-stripe-real/src/webhook_dispatch.rs", "on_charge_refunded"),
