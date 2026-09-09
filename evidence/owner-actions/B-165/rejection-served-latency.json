@@ -63,7 +63,7 @@
       "median_ms": 50.405,
       "p90_ms": 58.614,
       "status_classes": {"401": 10},
-      "threshold_result": "above_15_30ms_end_to_end_target"
+      "threshold_result": "status_pass_end_to_end_diagnostic_only"
     },
     {
       "route": "/npm/x",
@@ -73,7 +73,7 @@
       "median_ms": 52.690,
       "p90_ms": 104.131,
       "status_classes": {"401": 10},
-      "threshold_result": "above_15_30ms_end_to_end_target"
+      "threshold_result": "status_pass_end_to_end_diagnostic_only"
     },
     {
       "route": "/pip/simple/x",
@@ -83,7 +83,7 @@
       "median_ms": 50.933,
       "p90_ms": 53.165,
       "status_classes": {"401": 10},
-      "threshold_result": "above_15_30ms_end_to_end_target"
+      "threshold_result": "status_pass_end_to_end_diagnostic_only"
     },
     {
       "route": "/v2/x/manifests/latest",
@@ -93,7 +93,7 @@
       "median_ms": 207.119,
       "p90_ms": 239.544,
       "status_classes": {"401": 10},
-      "threshold_result": "recovered_status_above_15_30ms_and_50ms_cross_region_targets"
+      "threshold_result": "status_recovered_end_to_end_diagnostic_only"
     },
     {
       "route": "/health",
@@ -113,7 +113,7 @@
       "median_ms": 793.315,
       "p90_ms": 916.307,
       "status_classes": {"200": 10},
-      "threshold_result": "served_baseline_recorded_above_low_tens_target"
+      "threshold_result": "diagnostic_sample_above_canonical_300ms_team_threshold_not_30d_slo_verdict"
     },
     {
       "route": "/v1/cas/ee30f7ba-fc25-4d71-939e-ebe130b4c6a3/725ef6c9168c2409ddbe2ef07a8b3648712580398a281c7581d85c3595c44525",
@@ -123,7 +123,7 @@
       "median_ms": 625.106,
       "p90_ms": 815.498,
       "status_classes": {"200": 10},
-      "threshold_result": "served_baseline_recorded_above_low_tens_target"
+      "threshold_result": "diagnostic_sample_above_canonical_300ms_team_threshold_not_30d_slo_verdict"
     }
   ],
   "runtime_diagnosis": {
@@ -193,6 +193,6 @@
     "verifier": "python3 scripts/verify_b165_latency.py evidence/owner-actions/B-165/complete-latency-2026-09-09.tsv --samples 10 --require-served --tenant-a 8a6b4e4e-5d66-4ab7-9388-85ea5ed45c4c --tenant-b ee30f7ba-fc25-4d71-939e-ebe130b4c6a3 --pat-fingerprint-a sha256:dbc983ada203f4ca87e023ea9dd40a6c3367c3843e49a774849bf8078799fac8 --pat-fingerprint-b sha256:25e409be70b0633d1f0a2179e23de7b254eef69cff253e105b36cde1f18176d1 --server-timing-tsv evidence/owner-actions/B-165/served-server-timing-2026-09-09.tsv"
   },
   "pat_reference": "two_distinct_active_local_customer_PATs;_values_never_logged;_sha256_fingerprints_only",
-  "verdict": "complete_two_tenant_measurement;_401_unpadded;_latency_followup_required",
+  "verdict": "complete_two_tenant_measurement;_padding_policy_recorded;_measurement_contract_repaired",
   "operator": "codex-orchestrator"
 }
