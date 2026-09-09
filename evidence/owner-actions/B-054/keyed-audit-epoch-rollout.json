@@ -11,7 +11,7 @@
   "keyed_epoch": {
     "algorithm_version": "E1/keyed",
     "row_count": null,
-    "verification": "NOT_EXECUTED",
+    "verification": "BLOCKED",
     "status": "BLOCKED",
     "blocker": "The witnessed production cutover is not authorized until the external witness, D1 binding, archive proof, and key custody are provisioned."
   },

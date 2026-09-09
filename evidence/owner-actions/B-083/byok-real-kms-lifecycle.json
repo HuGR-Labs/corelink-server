@@ -37,9 +37,9 @@
       "detail": "Durable source, pre-bind run_loop wiring, focal behavior, and mutation checks pass."
     },
     {
-      "command": "backlog B-083 verification shell",
+      "command": "python3 tests/test_verify_b083_byok.py",
       "status": "PASS",
-      "detail": "The shipped image selects byok-aws-real; activation remains fail-closed without runtime KMS evidence."
+      "detail": "B083 verifier mutation: green baseline and named red mutant."
     }
   ]
 }
