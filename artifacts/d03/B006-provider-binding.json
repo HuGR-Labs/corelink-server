@@ -1,0 +1,15 @@
+{
+  "schema": "corelink-b006-provider-binding-v1",
+  "provider": "cloudflare-wrangler",
+  "evidence_source": "Cloudflare Wrangler deployments/versions API",
+  "authenticated": true,
+  "credential_values_printed": false,
+  "worker": "corelink-spawn-worker",
+  "metrics_source": "https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics",
+  "deployment_id": "55a021ee-0530-4729-a9c9-a01e012d92f6",
+  "version_id": "122e166c-b7d4-421a-a66c-44b57690af00",
+  "version_number": 133,
+  "source_sha": "0ce4070989fe5d02e92c4acd5b0932fe58e4316d",
+  "rollout_percentage": 100,
+  "captured_at": "2026-09-09T00:01:47Z"
+}

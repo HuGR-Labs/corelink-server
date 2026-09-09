@@ -109,9 +109,10 @@
       "dependency": "fleet demand; capability_claim_unserved must become nonzero",
       "action": "Owner repairs the observability credential/deployment mismatch, then records a fresh authenticated aggregate production read.",
       "artifact": "artifacts/d03/B006-capability-metrics.json",
-      "command": "python3 scripts/collect_b006_metrics.py --url https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics --keychain-service 'CoreLink/METRICS_OBSERVABILITY_KEY' --keychain-account corelink-ops --auth-header X-Corelink-Internal-Auth --timeout 10 --max-bytes 1048576 --out artifacts/d03/B006-capability-metrics.json && python3 scripts/verify_b006_evidence.py --input artifacts/d03/B006-capability-metrics.json",
+      "provider_artifact": "artifacts/d03/B006-provider-binding.json",
+      "command": "python3 scripts/collect_b006_metrics.py --url https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics --keychain-service 'CoreLink/METRICS_OBSERVABILITY_KEY' --keychain-account corelink-ops --auth-header X-Corelink-Internal-Auth --timeout 10 --max-bytes 1048576 --out artifacts/d03/B006-capability-metrics.json || test $? -eq 2; python3 scripts/collect_b006_provider_binding.py --source-sha 0ce4070989fe5d02e92c4acd5b0932fe58e4316d --out artifacts/d03/B006-provider-binding.json && python3 scripts/verify_b006_evidence.py --input artifacts/d03/B006-capability-metrics.json && python3 scripts/verify_b006_provider_binding.py --input artifacts/d03/B006-provider-binding.json",
       "verify_means": "reopened",
-      "evidence": "HTTP 403 from the bounded dedicated-key probe; no counter was retained or inferred. Provider deployment/source binding was not retained in the receipt, so B-006 remains reopened."
+      "evidence": "HTTP 403 from the bounded dedicated-key probe; no counter was retained or inferred. A separate authenticated Wrangler binding is retained, but both fresh provider binding and authenticated aggregate-only zero metrics are required for DONE."
     },
     "B-044": {
       "disposition": "PARKED",

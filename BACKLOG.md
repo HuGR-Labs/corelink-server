@@ -2882,7 +2882,8 @@ verify-means: |
   Provider deployment/version and source-SHA metadata are not self-asserted in
   the redacted receipt; no credential value, labels, tenant identifiers, or
   customer identifiers are retained. A fresh authenticated aggregate plus
-  separately authenticated Wrangler deployment/source evidence is required to
+  separately authenticated Wrangler deployment/source evidence
+  (`artifacts/d03/B006-provider-binding.json`) is required to
   close this item at zero or reopen it on `capability_claim_unserved > 0`;
   missing, stale, or unauthenticated evidence never closes it.
 last-verified: 2026-09-08

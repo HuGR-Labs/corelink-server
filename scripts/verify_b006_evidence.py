@@ -13,9 +13,13 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.verify_b006_provider_binding import ProviderBindingError, validate_provider_binding
 
 
 SOURCE = "https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics"
@@ -24,6 +28,7 @@ KEYCHAIN_ACCOUNT = "corelink-ops"
 COUNTER = "capability_claim_unserved"
 MAX_RECEIPT_AGE = timedelta(hours=24)
 MAX_RECEIPT_FUTURE = timedelta(minutes=5)
+MAX_CLOSURE_SKEW = timedelta(minutes=15)
 RECEIPT_KEYS = frozenset(
     {
         "schema", "verdict", "reason", "source", "captured_at", "http_status",
@@ -82,6 +87,8 @@ def validate_receipt(receipt: dict[str, Any]) -> None:
         raise EvidenceError("metrics request did not use the dedicated auth header")
     if receipt["reason"] not in ALLOWED_REASONS:
         raise EvidenceError("receipt reason is not an approved redacted reason")
+    if receipt["reason"].endswith("no production request was attempted"):
+        raise EvidenceError("an evidence receipt must not claim no request was attempted")
     if not isinstance(receipt["captured_at"], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", receipt["captured_at"]):
         raise EvidenceError("receipt timestamp must be whole-second UTC")
     try:
@@ -106,6 +113,10 @@ def validate_receipt(receipt: dict[str, Any]) -> None:
     counter = receipt[COUNTER]
     if not isinstance(status, int) or isinstance(status, bool) or not 100 <= status <= 599:
         raise EvidenceError("invalid HTTP status")
+    if status == 403 and receipt["reason"] != "dedicated observability credential was rejected; no counter can be inferred":
+        raise EvidenceError("HTTP 403 receipt has an inconsistent reason")
+    if status != 403 and receipt["reason"] == "dedicated observability credential was rejected; no counter can be inferred":
+        raise EvidenceError("credential-rejected reason requires HTTP 403")
     if status != 200 or authenticated is not True:
         # A failed/authentication-rejected response can never be interpreted as
         # a zero counter, even if a stale artifact or prose says otherwise.
@@ -123,6 +134,22 @@ def validate_receipt(receipt: dict[str, Any]) -> None:
         raise EvidenceError("authenticated counter does not match fail-closed receipt verdict")
     if counter == 0 and receipt["reason"] != "authenticated aggregate snapshot retained; separate Wrangler deployment evidence is required for closure":
         raise EvidenceError("zero receipt must remain indeterminate without Wrangler evidence")
+
+
+def validate_closure(metrics: dict[str, Any], provider: dict[str, Any]) -> None:
+    """Require a fresh authenticated zero and its separately authenticated binding."""
+
+    validate_receipt(metrics)
+    try:
+        validate_provider_binding(provider)
+    except ProviderBindingError as exc:
+        raise EvidenceError(f"provider binding is not valid: {exc}") from exc
+    if metrics["http_status"] != 200 or metrics["authenticated"] is not True or metrics[COUNTER] != 0:
+        raise EvidenceError("closure requires an authenticated HTTP 200 aggregate-only zero")
+    metrics_at = datetime.strptime(metrics["captured_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    provider_at = datetime.strptime(provider["captured_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    if abs(metrics_at - provider_at) > MAX_CLOSURE_SKEW:
+        raise EvidenceError("metrics and provider evidence are not from the same fresh observation window")
 
 
 def main(argv: list[str] | None = None) -> int:

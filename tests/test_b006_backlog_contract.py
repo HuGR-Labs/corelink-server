@@ -4,12 +4,14 @@ import json
 import re
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from scripts.collect_b006_metrics import KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE, RejectRedirect, SOURCE, collect
-from scripts.verify_b006_evidence import EvidenceError, validate_receipt
+from scripts.verify_b006_evidence import EvidenceError, validate_closure, validate_receipt
+from scripts.verify_b006_provider_binding import ProviderBindingError, validate_provider_binding
 from scripts.verify_d03_graduation import GraduationError, _check_packets, _load_packets
 
 
@@ -103,6 +105,58 @@ def test_b006_collector_pins_url_and_keychain_identity_without_requesting() -> N
     wrong_url = collect("https://evil.example/metrics", KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, 1, 1024)
     assert wrong_url["request_attempted"] is False
     assert wrong_url["http_status"] is None
+
+
+def test_b006_positive_closure_requires_both_fresh_zero_and_provider_binding() -> None:
+    stamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    metrics = json.loads(EVIDENCE.read_text(encoding="utf-8"))
+    metrics.update(
+        captured_at=stamp,
+        verdict="INDETERMINATE",
+        reason="authenticated aggregate snapshot retained; separate Wrangler deployment evidence is required for closure",
+        http_status=200,
+        authenticated=True,
+        aggregate_only=True,
+        capability_claim_unserved=0,
+    )
+    provider = json.loads((ROOT / "artifacts/d03/B006-provider-binding.json").read_text(encoding="utf-8"))
+    provider["captured_at"] = stamp
+    validate_closure(metrics, provider)
+
+
+def test_b006_closure_rejects_cross_binding_freshness_and_status_mutations() -> None:
+    stamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    metrics = json.loads(EVIDENCE.read_text(encoding="utf-8"))
+    metrics.update(
+        captured_at=stamp,
+        verdict="INDETERMINATE",
+        reason="authenticated aggregate snapshot retained; separate Wrangler deployment evidence is required for closure",
+        http_status=200,
+        authenticated=True,
+        aggregate_only=True,
+        capability_claim_unserved=0,
+    )
+    provider = json.loads((ROOT / "artifacts/d03/B006-provider-binding.json").read_text(encoding="utf-8"))
+    provider["captured_at"] = stamp
+    mutations = (
+        (metrics, {"http_status": 403, "reason": "authenticated aggregate snapshot retained; separate Wrangler deployment evidence is required for closure"}),
+        (metrics, {"http_status": 403, "reason": "Keychain item unavailable; no production request was attempted", "request_attempted": False}),
+        (metrics, {"request_attempted": False}),
+        (provider, {"version_id": "1418af47-d71a-488f-89a6-cbb9173402bd"}),
+        (provider, {"source_sha": "1" * 40}),
+        (provider, {"metrics_source": "https://evil.example/metrics"}),
+        (provider, {"rollout_percentage": 50}),
+        (provider, {"secret": "must-never-be-retained"}),
+        (provider, {"captured_at": "2020-01-01T00:00:00Z"}),
+        (provider, {"captured_at": "2999-01-01T00:00:00Z"}),
+    )
+    for original, mutation in mutations:
+        candidate = {**original, **mutation}
+        with pytest.raises((EvidenceError, ProviderBindingError)):
+            if original is metrics:
+                validate_closure(candidate, provider)
+            else:
+                validate_closure(metrics, candidate)
 
 
 def test_b006_d03_packet_cannot_mutate_indeterminate_receipt_to_done() -> None:

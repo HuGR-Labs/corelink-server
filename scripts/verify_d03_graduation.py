@@ -28,7 +28,9 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.backlog_verify import parse
 from scripts.verify_b006_evidence import EvidenceError as B006EvidenceError
+from scripts.verify_b006_evidence import validate_closure as validate_b006_closure
 from scripts.verify_b006_evidence import validate_receipt as validate_b006_receipt
+from scripts.verify_b006_provider_binding import ProviderBindingError, validate_provider_binding
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -290,6 +292,7 @@ GRADUATED_SET = frozenset(GRADUATED)
 ORIGINAL_SET = frozenset(ORIGINAL_TL_OPEN)
 DONE_SET = frozenset(("B-028", "B-074", "B-135", "B-253"))
 B006_ARTIFACT = "artifacts/d03/B006-capability-metrics.json"
+B006_PROVIDER_ARTIFACT = "artifacts/d03/B006-provider-binding.json"
 EXCLUDED_FINGERPRINTS = {
     "B-061": "d759a0591e6f867b4245f09512963f2ae10924c7b25cfad02754dc1b323657dc",
     "B-126": "88e2fe5082ad1ad9c393c633c862f947043b378c1fd36393a949b64eab34b089",
@@ -793,6 +796,8 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
         _require_string(packet, "owner", item)
         _require_string(packet, "dependency", item)
         _require_string(packet, "action", item)
+        if item == "B-006" and packet.get("provider_artifact") != B006_PROVIDER_ARTIFACT:
+            raise GraduationError("B-006: provider binding artifact must be declared")
         _check_command_contract(item, packet, root)
         if item == "B-105":
             command = packet["command"]
@@ -822,12 +827,11 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
             _require_string(packet, "evidence", item)
             if item == "B-006":
                 try:
-                    receipt = json.loads(_read(root / B006_ARTIFACT))
-                    validate_b006_receipt(receipt)
+                    metrics = json.loads(_read(root / B006_ARTIFACT))
+                    provider = json.loads(_read(root / B006_PROVIDER_ARTIFACT))
+                    validate_b006_closure(metrics, provider)
                 except (json.JSONDecodeError, B006EvidenceError) as exc:
-                    raise GraduationError(f"B-006: DONE disposition lacks valid authenticated evidence: {exc}") from exc
-                if receipt.get("verdict") != "DONE":
-                    raise GraduationError("B-006: DONE disposition requires fresh authenticated zero evidence plus separately authenticated Wrangler binding")
+                    raise GraduationError(f"B-006: DONE disposition lacks fresh zero metrics plus valid provider binding: {exc}") from exc
         elif disposition == "PARKED":
             if packet.get("verify_means") != "parked":
                 raise GraduationError(f"{item}: parked packet must declare verify_means=parked")
@@ -836,10 +840,16 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
                 raise GraduationError(f"{item}: reopened packet must declare verify_means=reopened")
             if packet.get("artifact") != B006_ARTIFACT:
                 raise GraduationError("B-006: reopened packet artifact drifted")
+            if packet.get("provider_artifact") != B006_PROVIDER_ARTIFACT:
+                raise GraduationError("B-006: provider binding artifact drifted")
             command = packet["command"]
             for token in (
                 "scripts/collect_b006_metrics.py",
+                "scripts/collect_b006_provider_binding.py",
                 "scripts/verify_b006_evidence.py",
+                "scripts/verify_b006_provider_binding.py",
+                B006_PROVIDER_ARTIFACT,
+                "--source-sha 0ce4070989fe5d02e92c4acd5b0932fe58e4316d",
                 "--keychain-service 'CoreLink/METRICS_OBSERVABILITY_KEY'",
                 "--keychain-account corelink-ops",
                 "X-Corelink-Internal-Auth",
@@ -853,7 +863,8 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
                     raise GraduationError(f"B-006: reopened command contains forbidden credential form {forbidden!r}")
             try:
                 validate_b006_receipt(json.loads(_read(root / B006_ARTIFACT)))
-            except (json.JSONDecodeError, B006EvidenceError) as exc:
+                validate_provider_binding(json.loads(_read(root / B006_PROVIDER_ARTIFACT)))
+            except (json.JSONDecodeError, B006EvidenceError, ProviderBindingError) as exc:
                 raise GraduationError(f"B-006: redacted evidence is not fail-closed: {exc}") from exc
     return entries
 
