@@ -130,7 +130,7 @@ def test_b216_worker_event_requeue_and_paging_mutations_are_red() -> None:
     mutations = {
         "corelink-signup-worker": "corelink",
         "dsr.erasure.dead_letter": "DSR_ERASURE_DLQ",
-        "priorRequeues < 1": "priorRequeues <= 1",
+        "priorRequeues < MAX_DLQ_REQUEUES": "priorRequeues <= MAX_DLQ_REQUEUES",
         "paging": "page_only",
         "b216-alert-delivery.json": "missing-alert-delivery.json",
     }

@@ -198,7 +198,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
     "B-216": {
         "owner_packet": "docs/internal/b215-b230-runtime-owner-actions.md#B-216",
         "profiles": ["corelink-signup-worker", "corelink-dsr-erasure-dlq"], "sample_count": 1,
-        "required": ["dsr.erasure.dead_letter", "requeue_once", "paging", "revision", "priorRequeues < 1", "B216_EXPECTED_REVISION", "B216_EVENT_ID", "event_id", "exhausted", "requeue_count", "delivery_status", "receipt_id"],
+        "required": ["dsr.erasure.dead_letter", "requeue_once", "paging", "revision", "priorRequeues < MAX_DLQ_REQUEUES", "normalizedDlqRequeueCount", "return MAX_DLQ_REQUEUES;", "B216_EXPECTED_REVISION", "B216_EVENT_ID", "event_id", "exhausted", "requeue_count", "delivery_status", "receipt_id"],
         "safety": ["OWNER_APPROVED_B216=1", "timeout 30s"],
         "forbidden": ["wrangler queue send", "wrangler queues delete", "DELETE FROM", "--force"],
     },
@@ -376,7 +376,7 @@ def _check_bounded_shell(item: str, command: str, artifact: str) -> None:
     if any(token in forbidden_operators for token in tokens):
         raise GraduationError(f"{item}: command contains an unapproved shell operator")
     expected_operators = {
-        "B-216": {";": 22, ">": 6, ";;": 2, "||": 1, "|": 1},
+        "B-216": {";": 24, ">": 6, ";;": 2, "||": 1, "|": 1},
         "B-251": {";": 22, ">": 4, "|": 2, ">&": 1},
     }[item]
     operators = Counter(
