@@ -155,6 +155,7 @@ jobs:
             --bundle "${B106_BUNDLE}" \
             --predicate-type https://slsa.dev/provenance/v1 \
             --cert-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/perf-production-evidence.yml@${GITHUB_REF}" \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com \
             --signer-digest "${GITHUB_SHA}" \
             --source-digest "${GITHUB_SHA}" \
             --source-ref "${GITHUB_REF}" \
