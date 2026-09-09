@@ -617,6 +617,12 @@ def b106(item: dict[str, Any], root: Path, tenant: str, now: float) -> str:
     verification = github_attestation.get("verification")
     if not isinstance(verification, list) or not verification:
         raise EvidenceError("B-106 GitHub attestation has no successful gh verification result")
+    verify_attestation_with_gh(
+        bundle,
+        b106_subject_bytes(att, deployment_record),
+        deployment_record,
+        verification,
+    )
     verified_subject = False
     for entry in verification:
         if not isinstance(entry, dict):
