@@ -22,16 +22,34 @@ cd "$(git rev-parse --show-toplevel)"
 # build. A change in any of these since the pinned SHA means the image is behind.
 PATHS=(crates/ Dockerfile Cargo.lock Cargo.toml)
 
-# Extract the pinned image SHA (the `<sha>` in `…corelinkserver-prod:<sha>-r<N>`)
-# from the prod container pin. All 5 envs are pinned to the same SHA by
-# push-container-multiregion.sh, so the first prod pin is representative.
-PIN="$(grep -m1 -oE 'corelink-prod-corelinkserver-prod:[0-9a-f]+-r[0-9]+' wrangler.toml \
-        | sed -E 's/.*:([0-9a-f]+)-r[0-9]+/\1/')"
-PIN=${PIN%%$'\n'*}
-if [ -z "${PIN:-}" ]; then
-    echo "::error::check-container-pin-fresh: could not parse a container image pin from wrangler.toml." >&2
-    exit 2
-fi
+# Extract and cross-check ALL five production image pins. A single fresh main
+# pin is not enough: the shared D1 migration is unsafe while any regional
+# writer still points at a different image SHA/tag (or is absent entirely).
+EXPECTED_ENVS=(prod prod-sam prod-lhr prod-nrt prod-syd)
+EXPECTED_TAG=""
+PIN=""
+for env_name in "${EXPECTED_ENVS[@]}"; do
+    image_name="corelink-${env_name}-corelinkserver-prod"
+    ref_line="$(grep -m1 -E '^image = "registry\.cloudflare\.com/[^/]+/'"${image_name}"':[0-9a-f]+-r[0-9]+"' wrangler.toml || true)"
+    ref="$(printf '%s\n' "$ref_line" | sed -n -E 's/^image = "([^"]+)".*/\1/p')"
+    if [ -z "$ref" ]; then
+        echo "::error::check-container-pin-fresh: missing or malformed image pin for env=${env_name} (${image_name})." >&2
+        exit 2
+    fi
+    tag="${ref##*:}"
+    sha="$(printf '%s\n' "$tag" | sed -n -E 's/^([0-9a-f]+)-r[0-9]+$/\1/p')"
+    if [ -z "$sha" ]; then
+        echo "::error::check-container-pin-fresh: image pin for env=${env_name} has an invalid SHA/tag: ${tag}." >&2
+        exit 2
+    fi
+    if [ -z "$EXPECTED_TAG" ]; then
+        EXPECTED_TAG="$tag"
+        PIN="$sha"
+    elif [ "$tag" != "$EXPECTED_TAG" ]; then
+        echo "::error::check-container-pin-fresh: writer pin mismatch: env=${env_name} has tag ${tag}, expected ${EXPECTED_TAG} on every production target." >&2
+        exit 2
+    fi
+done
 
 HEAD_SHA="$(git rev-parse --short HEAD)"
 
@@ -51,7 +69,7 @@ if ! git rev-parse -q --verify "${PIN}^{commit}" >/dev/null 2>&1; then
 fi
 
 if git diff --quiet "${PIN}" HEAD -- "${PATHS[@]}"; then
-    echo "check-container-pin-fresh: OK — pin ${PIN} reflects current container code (no ${PATHS[*]} change vs HEAD ${HEAD_SHA})."
+    echo "check-container-pin-fresh: OK — all five production writer pins use ${EXPECTED_TAG}; pin ${PIN} reflects current container code (no ${PATHS[*]} change vs HEAD ${HEAD_SHA})."
     exit 0
 fi
 
