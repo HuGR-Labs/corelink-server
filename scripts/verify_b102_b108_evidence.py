@@ -297,29 +297,25 @@ def verify_attestation_with_gh(
 
 
 def gh_environment(home: Path, config: Path) -> dict[str, str]:
-    """Run gh with isolated config and only the required GitHub token."""
-    inherited = dict(os.environ)
-    gh_token = inherited.get("GH_TOKEN")
+    """Run gh with a strict allowlist; no runner environment is inherited."""
     environment = {
-        key: value for key, value in inherited.items()
-        if not key.startswith("GH_")
-        and key not in {
-            "GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GITHUB_API_URL", "GITHUB_GRAPHQL_URL", "GITHUB_SERVER_URL",
-        }
+        "GH_HOST": "github.com",
+        "GH_CONFIG_DIR": str(config),
+        "GH_NO_UPDATE_NOTIFIER": "1",
+        "HOME": str(home),
+        "PATH": os.defpath,
+        "XDG_CONFIG_HOME": str(config),
+        "GITHUB_SERVER_URL": "https://github.com",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "NO_COLOR": "1",
     }
+    gh_token = os.environ.get("GH_TOKEN")
     if gh_token:
         environment["GH_TOKEN"] = gh_token
-    environment.update(
-        {
-            "GH_HOST": "github.com",
-            "GH_CONFIG_DIR": str(config),
-            "GH_NO_UPDATE_NOTIFIER": "1",
-            "HOME": str(home),
-            "PATH": os.defpath,
-            "XDG_CONFIG_HOME": str(config),
-            "GITHUB_SERVER_URL": "https://github.com",
-        }
-    )
     return environment
 
 

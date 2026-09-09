@@ -90,6 +90,15 @@ def main() -> int:
                 "GH_CONFIG_DIR": "/tmp/evil-config",
                 "GITHUB_API_URL": "https://evil.example/api/v3",
                 "GITHUB_GRAPHQL_URL": "https://evil.example/graphql",
+                "HTTP_PROXY": "http://evil-proxy",
+                "HTTPS_PROXY": "http://evil-proxy",
+                "ALL_PROXY": "http://evil-proxy",
+                "NO_PROXY": "github.com",
+                "SSL_CERT_FILE": "/tmp/evil-ca.pem",
+                "SSL_CERT_DIR": "/tmp/evil-ca",
+                "REQUESTS_CA_BUNDLE": "/tmp/evil-bundle.pem",
+                "GIT_CONFIG_GLOBAL": "/tmp/evil-gitconfig",
+                "GIT_SSH_COMMAND": "ssh -o ProxyCommand=evil",
             },
         ):
             environment = verifier.gh_environment(root / "home", root / "config")
@@ -100,9 +109,17 @@ def main() -> int:
         assert "GITHUB_API_URL" not in environment
         assert "GITHUB_GRAPHQL_URL" not in environment
         assert environment["GITHUB_SERVER_URL"] == "https://github.com"
+        for poisoned in (
+            "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR",
+            "REQUESTS_CA_BUNDLE", "GIT_SSH_COMMAND",
+        ):
+            assert poisoned not in environment
         assert environment["GH_CONFIG_DIR"] == str(root / "config")
         assert environment["HOME"] == str(root / "home")
         assert environment["PATH"] == os.defpath
+        assert environment["GIT_CONFIG_GLOBAL"] == os.devnull
+        assert environment["GIT_CONFIG_NOSYSTEM"] == "1"
+        assert environment["LC_ALL"] == "C"
     print("pinned gh supply-chain mutations: PASS")
     return 0
 

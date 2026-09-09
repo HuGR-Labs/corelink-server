@@ -58,10 +58,18 @@ jobs:
           CORELINK_GH_BIN: ${{ runner.temp }}/corelink-gh/gh
         run: |
           set -eu
-          unset GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GITHUB_TOKEN
           mkdir -p -m 700 "${GH_CONFIG_DIR}" "${HOME}"
-          test "$("${CORELINK_GH_BIN}" version | awk 'NR == 1 {print $3}')" = "2.79.0"
-          "${CORELINK_GH_BIN}" api --paginate \
+          run_pinned_gh() {
+            /usr/bin/env -i \
+              "GH_TOKEN=${GH_TOKEN}" GH_HOST=github.com \
+              "GH_CONFIG_DIR=${GH_CONFIG_DIR}" "HOME=${HOME}" \
+              "XDG_CONFIG_HOME=${GH_CONFIG_DIR}" PATH=/usr/bin:/bin \
+              GITHUB_SERVER_URL=https://github.com GH_NO_UPDATE_NOTIFIER=1 \
+              GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 \
+              LANG=C LC_ALL=C NO_COLOR=1 "${CORELINK_GH_BIN}" "$@"
+          }
+          test "$(run_pinned_gh version | awk 'NR == 1 {print $3}')" = "2.79.0"
+          run_pinned_gh api --paginate \
             --slurp \
             "repos/HuGR-Labs/corelink-server/deployments?sha=${GITHUB_SHA}&environment=production&per_page=100" \
             > "${RUNNER_TEMP}/github-deployments.json"
@@ -165,11 +173,19 @@ jobs:
           B106_VERIFICATION: ${{ runner.temp }}/b106-attestation-verification.json
         run: |
           set -euo pipefail
-          unset GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GITHUB_TOKEN
           mkdir -p -m 700 "${GH_CONFIG_DIR}" "${HOME}"
-          test "$("${CORELINK_GH_BIN}" version | awk 'NR == 1 {print $3}')" = "2.79.0"
+          run_pinned_gh() {
+            /usr/bin/env -i \
+              "GH_TOKEN=${GH_TOKEN}" GH_HOST=github.com \
+              "GH_CONFIG_DIR=${GH_CONFIG_DIR}" "HOME=${HOME}" \
+              "XDG_CONFIG_HOME=${GH_CONFIG_DIR}" PATH=/usr/bin:/bin \
+              GITHUB_SERVER_URL=https://github.com GH_NO_UPDATE_NOTIFIER=1 \
+              GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 \
+              LANG=C LC_ALL=C NO_COLOR=1 "${CORELINK_GH_BIN}" "$@"
+          }
+          test "$(run_pinned_gh version | awk 'NR == 1 {print $3}')" = "2.79.0"
           test -s "${B106_BUNDLE}"
-          "${CORELINK_GH_BIN}" attestation verify "${B106_SUBJECT}" \
+          run_pinned_gh attestation verify "${B106_SUBJECT}" \
             --repo HuGR-Labs/corelink-server \
             --bundle "${B106_BUNDLE}" \
             --predicate-type https://slsa.dev/provenance/v1 \
