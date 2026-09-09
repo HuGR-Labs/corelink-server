@@ -31,17 +31,7 @@ def require_active(text: str, needle: str, label: str, language: str | None = No
     """Require a marker in code, excluding language-specific literals."""
 
     if language is None:
-        # Keep the three-argument helper compatible for focused callers while
-        # making source owners explicit below. Rust syntax is distinctive
-        # enough to identify the old direct Rust fixtures safely.
-        language = (
-            "rust"
-            if re.search(
-                r"\b(?:fn|impl|trait|struct|enum|pub|use|where)\b|&'[A-Za-z_]|(?:^|[;{}])\s*'[A-Za-z_]\w*\s*:|\b(?:break|continue)\s+'",
-                text,
-            )
-            else "typescript"
-        )
+        raise ValueError("lexical language is required; pass 'rust' or 'typescript'")
     if language not in ("rust", "typescript"):
         raise ValueError(f"unsupported lexical language: {language!r}")
 
@@ -139,6 +129,14 @@ def require_active(text: str, needle: str, label: str, language: str | None = No
         while next_token < len(text) and text[next_token].isspace():
             next_token += 1
         if next_token < len(text) and text[next_token] == ":":
+            after_colon = next_token + 1
+            while after_colon < len(text) and text[after_colon].isspace():
+                after_colon += 1
+            # A labeled loop can be an expression (`let x = 'outer: loop`),
+            # so `=` is a valid boundary when the label is followed by a loop
+            # keyword. This remains Rust-only; TypeScript uses quoted strings.
+            if text.startswith(("loop", "while", "for"), after_colon):
+                return True
             line_start = text.rfind("\n", 0, offset) + 1
             at_statement_boundary = not text[line_start:offset].strip() or (
                 previous >= 0 and text[previous] in "{};"
@@ -196,6 +194,7 @@ def lexical_regressions() -> None:
         "// TARGET_GUARD()\nfn f<'a>(x: &'a str) { let c='x'; if TARGET_GUARD() {} }",
         'const bait = "TARGET_GUARD()"; /* TARGET_GUARD() */\nif (TARGET_GUARD()) {}',
         "'outer: loop { if TARGET_GUARD() {} }",
+        "let x = 'outer: loop { TARGET_GUARD(); };",
         "const typed: 'TARGET_GUARD()' = null as any; if (TARGET_GUARD()) {}",
     )
     for case in active_cases:
