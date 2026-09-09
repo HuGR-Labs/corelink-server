@@ -36,11 +36,22 @@ GC_SAFETY_FLAGS = {
     "GC_OBSERVATION_ONLY",
 }
 
-GC_UNCLASSIFIED_NAMES = {
-    "GC_LIVE_DELETE_CONFIRM",
+GC_NON_SECRET_CONFIG = {
     "GC_R2_BUCKET",
     "GC_RUN_ID",
     "GC_VALIDATE_ONLY",
+    "PAGERDUTY_EVENTS_URL",
+    "PAGERDUTY_SERVICE",
+    "SLA_CREDITS_ENABLED",
+    "SLA_OBSERVATIONS_ENABLED",
+    "SYNTHETIC_DRILL_ENABLED",
+}
+
+GC_SENSITIVE_NAMES = {
+    "GC_LIVE_DELETE_CONFIRM",
+}
+
+GC_UNCLASSIFIED_NAMES = {
     "GC_ADMIN_TOKEN",
     "GC_OBSERVATION_ONLY_TOKEN",
 }
@@ -98,6 +109,8 @@ def test_synthetic_names_in_production_paths_fail_closed(tmp_path: Path) -> None
 
 def test_gc_safety_flags_are_exact_non_secret_allowlist_entries() -> None:
     assert all(gate.ALLOWLIST_REGEX.match(name) for name in GC_SAFETY_FLAGS)
+    assert all(gate.ALLOWLIST_REGEX.match(name) for name in GC_NON_SECRET_CONFIG)
+    assert all(not gate.ALLOWLIST_REGEX.match(name) for name in GC_SENSITIVE_NAMES)
     assert all(not gate.ALLOWLIST_REGEX.match(name) for name in GC_UNCLASSIFIED_NAMES)
 
     shell_gate = (ROOT / "scripts/secrets-checklist-verify.sh").read_text(
@@ -105,7 +118,7 @@ def test_gc_safety_flags_are_exact_non_secret_allowlist_entries() -> None:
     )
     regex = re.search(r"^ALLOWLIST_REGEX='([^']+)'$", shell_gate, re.MULTILINE)
     assert regex, "Bash allowlist must have one canonical assignment"
-    for name in GC_SAFETY_FLAGS:
+    for name in GC_SAFETY_FLAGS | GC_NON_SECRET_CONFIG:
         assert subprocess.run(
             ["grep", "-E", regex.group(1)],
             input=f"{name}\n",
@@ -113,7 +126,7 @@ def test_gc_safety_flags_are_exact_non_secret_allowlist_entries() -> None:
             capture_output=True,
             check=False,
         ).returncode == 0
-    for name in GC_UNCLASSIFIED_NAMES:
+    for name in GC_SENSITIVE_NAMES | GC_UNCLASSIFIED_NAMES:
         assert subprocess.run(
             ["grep", "-E", regex.group(1)],
             input=f"{name}\n",

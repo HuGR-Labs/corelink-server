@@ -326,8 +326,10 @@ rotation owner → compromise response → storage location.
 - **GC safety selectors** (`GC_LIVE_DELETE` and `GC_OBSERVATION_ONLY`) are
   non-secret runtime controls, not credentials and not provisioned secrets.
   They are allowlisted by exact name in the Bash and Python drift gates; the
-  gates deliberately do **not** allowlist `GC_*` broadly, so any other GC
-  control or credential must still be added to this matrix.
+  gates deliberately do **not** allowlist `GC_*` broadly. The native sweep's
+  bucket name, run UUID, and validation-only flag are separately allowlisted
+  by exact name; the live-delete confirmation remains the sensitive matrix row
+  above.
 
 ## Forward-looking secrets
 
@@ -394,6 +396,8 @@ If a secret is removed from the codebase, remove the matrix row in the SAME PR.
 | 242 | Performance evidence PAT (test/perf only) | `CORELINK_PERF_PAT` | `.github/workflows/perf-production-evidence.yml` → `scripts/collect_b102_b107_measurements.py` and `scripts/collect_b105_same_lane.py` — authenticates the owner-triggered measurement lane only. Never a deployment binding or production-runtime credential. | self-generated | owner-provisioned GitHub Actions secret | Dedicated low-privilege PAT for the authenticated test tenant/worker; do not reuse a production deploy token. | 90d | SRE Lead | Revoke and provision a replacement in the reviewed owner workflow; never print or persist it in artifacts. | gha-secret |
 | 243 | Fresh Clerk session (test/perf only) | `CORELINK_FRESH_SESSION` | `.github/workflows/perf-production-evidence.yml` → `scripts/collect_b102_b107_measurements.py` — supplies the real-session mint fixture for the owner-triggered measurement lane only. Never a deployment binding or production-runtime credential. | Clerk | owner-provisioned GitHub Actions secret | Dedicated short-lived session for the authenticated test tenant; do not reuse a production deploy credential. | per run / 90d max | SRE Lead | Revoke the session and provision a replacement before the next reviewed measurement run; never print or persist it in artifacts. | gha-secret |
 | 244 | Buck2 quota-probe PAT (CI test only) | `CORELINK_QUOTA_PAT` | `.github/workflows/buck2-starter-ci.yml` → Scenario 4 “Dedicated quota PAT returns quota error” only; authenticates the dedicated negative quota/permission probe and is never a deployment binding or production-runtime credential. | self-generated | owner-provisioned GitHub Actions secret | Dedicated low-privilege PAT with no `cache:write` scope for the Buck2 quota assertion; do not reuse a canary or production deploy token. | 90d | SRE Lead | Revoke and provision a replacement in the reviewed Buck2 workflow; never print or persist it in artifacts. | gha-secret |
+| 245 | Audit-chain link-key keyring (JSON, 32-byte keys) | `AUDIT_CHAIN_LINK_KEYS_JSON` | `worker/src/durable_object_start.ts` forwards the write-only keyring to the native container; `crates/corelink-container` parses it for cross-region audit-link verification; `.github/workflows/audit-chain-daily-verify.yml` materializes it only in a mode-600 runner-temp file. | self-generated | n/a | JSON object mapping registered link-key ids to lower-case 32-byte hex keys; provision only on the audited worker/container path and never print or persist it in artifacts. | 180d / on compromise | SRE Lead | Rotate the keyring, retain only the reviewed overlap required for verification, and remove the old key after all links are migrated. | cf-wrangler + gha-secret |
+| 246 | GC live-delete confirmation token | `GC_LIVE_DELETE_CONFIRM` | `crates/corelink-container/src/gc_sweep.rs` → native production sweep; required only for the destructive branch and still blocked by the deployed fencing gate. | self-generated | n/a | Exact operator confirmation string (`I_UNDERSTAND`) is an explicit destructive-action control; never treat it as a broad `GC_*` allowlist entry. | per operation | SRE Lead | Do not provision until the fencing protocol is deployed and owner-approved; revoke/disable the live lane after any accidental exposure. | cf-wrangler |
 
 See also: `docs/internal/secrets-runbook.md` for operational procedures
 (initial population, rotation, compromise response).

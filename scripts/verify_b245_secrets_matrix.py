@@ -17,17 +17,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 VALIDATOR_PATH = ROOT / "scripts" / "validate_secrets_matrix.py"
 
-# The drift gates intentionally allowlist exactly these two GC safety flags.
-# Every other GC-shaped name remains visible as potential secret/config drift.
+# The drift gates intentionally allowlist only exact GC safety/config names.
+# Sensitive destructive inputs remain matrix entries; no GC_* prefix is safe.
 GC_SAFETY_FLAGS = frozenset({
     "GC_LIVE_DELETE",
     "GC_OBSERVATION_ONLY",
 })
-GC_UNCLASSIFIED_NAMES = frozenset({
-    "GC_LIVE_DELETE_CONFIRM",
+GC_NON_SECRET_CONFIG = frozenset({
     "GC_R2_BUCKET",
     "GC_RUN_ID",
     "GC_VALIDATE_ONLY",
+})
+GC_SENSITIVE_NAMES = frozenset({
+    "GC_LIVE_DELETE_CONFIRM",
+})
+GC_UNCLASSIFIED_NAMES = frozenset({
     "GC_ADMIN_TOKEN",
     "GC_OBSERVATION_ONLY_TOKEN",
 })
@@ -51,13 +55,13 @@ def _must_reject(validator, root: Path, manifest, label: str) -> None:
 
 
 def validate_gc_allowlist_contract(validator) -> None:
-    """Keep the GC non-secret allowlist exact and fail closed."""
-    for name in GC_SAFETY_FLAGS:
+    """Keep GC non-secret config exact and sensitive names fail closed."""
+    for name in GC_SAFETY_FLAGS | GC_NON_SECRET_CONFIG:
         if not validator.ALLOWLIST_REGEX.match(name):
-            raise AssertionError(f"GC safety flag is not allowlisted: {name}")
-    for name in GC_UNCLASSIFIED_NAMES:
+            raise AssertionError(f"GC non-secret config is not allowlisted: {name}")
+    for name in GC_SENSITIVE_NAMES | GC_UNCLASSIFIED_NAMES:
         if validator.ALLOWLIST_REGEX.match(name):
-            raise AssertionError(f"unclassified GC name was allowlisted: {name}")
+            raise AssertionError(f"sensitive/unclassified GC name was allowlisted: {name}")
 
 
 def main() -> int:
@@ -69,6 +73,11 @@ def main() -> int:
     # Confirm the real checkout's exact population and both canonical rows.
     validator.validate_b245_perf_scope(ROOT)
     matrix = validator.parse_matrix(ROOT / validator.MATRIX_FILE_REL)
+    for name in GC_SENSITIVE_NAMES:
+        if name not in matrix:
+            raise AssertionError(f"sensitive GC matrix row missing: {name}")
+        if validator.ALLOWLIST_REGEX.match(name):
+            raise AssertionError(f"sensitive GC name is globally allowlisted: {name}")
     for name in manifest:
         if name not in matrix:
             raise AssertionError(f"B-245 matrix row missing: {name}")
