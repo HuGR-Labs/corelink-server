@@ -6,7 +6,11 @@ import unittest
 import verify_b165_latency as verifier
 
 
-def _rows(served: bool = False) -> str:
+def _rows(
+    served: bool = False,
+    served_path_a: str = "/v1/cas/tenant-a/digest",
+    served_path_b: str = "/v1/cas/tenant-b/digest",
+) -> str:
     rows = []
     required = [
         ("refusal", "v1", "/v1/cas/x/y", "401"),
@@ -17,8 +21,8 @@ def _rows(served: bool = False) -> str:
     ]
     if served:
         required += [
-            ("served", "served_a", "/v1/cas/tenant-a/digest", "200"),
-            ("served", "served_b", "/v1/cas/tenant-b/digest", "200"),
+            ("served", "served_a", served_path_a, "200"),
+            ("served", "served_b", served_path_b, "200"),
         ]
     for population, surface, path, status in required:
         for sample in range(1, 4):
@@ -44,10 +48,46 @@ class B165VerifierTests(unittest.TestCase):
             verifier.verify(self.write(_rows()), 3, require_served=True)
 
     def test_complete_requires_both_served_populations(self):
-        report = verifier.verify(self.write(_rows(served=True)), 3, require_served=True)
+        report = verifier.verify(
+            self.write(_rows(served=True)),
+            3,
+            require_served=True,
+            tenant_a="tenant-a",
+            tenant_b="tenant-b",
+        )
         self.assertEqual(report["status"], "complete")
         self.assertTrue(report["closure_allowed"])
         self.assertEqual(len(report["served"]), 2)
+
+    def test_require_served_rejects_missing_tenant_bindings(self):
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(self.write(_rows(served=True)), 3, require_served=True)
+
+    def test_require_served_rejects_same_tenant(self):
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(
+                self.write(_rows(served=True)),
+                3,
+                require_served=True,
+                tenant_a="tenant-a",
+                tenant_b="tenant-a",
+            )
+
+    def test_require_served_rejects_reused_path(self):
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(
+                self.write(
+                    _rows(
+                        served=True,
+                        served_path_a="/v1/cas/tenant-a/tenant-b",
+                        served_path_b="/v1/cas/tenant-a/tenant-b",
+                    )
+                ),
+                3,
+                require_served=True,
+                tenant_a="tenant-a",
+                tenant_b="tenant-b",
+            )
 
     def test_missing_sample_fails_closed(self):
         content = _rows().replace("refusal\tv2\t/v2/x/manifests/latest\t3\t401\t0\t0.010\n", "")

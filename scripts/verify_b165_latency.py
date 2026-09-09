@@ -103,7 +103,31 @@ def _summarize(rows: list[dict[str, Any]], expected_path: str, expected_status: 
     }
 
 
-def verify(path: Path, samples: int, require_served: bool = False) -> dict[str, Any]:
+def _require_served_identity(
+    served_summaries: list[dict[str, Any]], tenant_a: str | None, tenant_b: str | None
+) -> None:
+    """Require served populations to be bound to two distinct tenant paths."""
+    if not tenant_a or not tenant_b:
+        raise EvidenceError(
+            "served-path acceptance requires --tenant-a and --tenant-b bindings"
+        )
+    if tenant_a == tenant_b:
+        raise EvidenceError("served-path acceptance requires distinct tenant bindings")
+    by_surface = {summary["surface"]: summary for summary in served_summaries}
+    path_a, path_b = by_surface["served_a"]["path"], by_surface["served_b"]["path"]
+    if path_a == path_b:
+        raise EvidenceError("served-path acceptance requires distinct served paths")
+    if tenant_a not in path_a or tenant_b not in path_b:
+        raise EvidenceError("served paths are not bound to their declared tenants")
+
+
+def verify(
+    path: Path,
+    samples: int,
+    require_served: bool = False,
+    tenant_a: str | None = None,
+    tenant_b: str | None = None,
+) -> dict[str, Any]:
     populations = _load(path, samples)
     summaries = []
     for surface, (request_path, status) in {**REFUSAL, **CONTROL}.items():
@@ -114,8 +138,10 @@ def verify(path: Path, samples: int, require_served: bool = False) -> dict[str, 
     served_summaries = []
     for surface in sorted(SERVING & populations.keys()):
         served_summaries.append(_summarize(populations[surface], populations[surface][0]["path"], "200", samples))
-    if require_served and {summary["surface"] for summary in served_summaries} != SERVING:
-        raise EvidenceError("served-path acceptance requires both distinct served_a and served_b populations")
+    if require_served:
+        if {summary["surface"] for summary in served_summaries} != SERVING:
+            raise EvidenceError("served-path acceptance requires both served_a and served_b populations")
+        _require_served_identity(served_summaries, tenant_a, tenant_b)
     return {
         "status": "complete" if len(served_summaries) == 2 else "partial/open",
         "closure_allowed": len(served_summaries) == 2,
@@ -130,9 +156,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("tsv", type=Path)
     parser.add_argument("--samples", type=int, default=10)
     parser.add_argument("--require-served", action="store_true")
+    parser.add_argument("--tenant-a")
+    parser.add_argument("--tenant-b")
     args = parser.parse_args(argv)
     try:
-        result = verify(args.tsv, args.samples, args.require_served)
+        result = verify(args.tsv, args.samples, args.require_served, args.tenant_a, args.tenant_b)
     except (OSError, EvidenceError) as exc:
         print(f"INDETERMINATE: {exc}", file=sys.stderr)
         return 2
