@@ -145,7 +145,7 @@ for app in "${APPS[@]}"; do
         continue
     fi
     tag_sha="${tag%-r*}"
-    pin_commit="$(git rev-parse "${tag_sha}^{commit}" 2>/dev/null || true)"
+    pin_commit="$(git rev-parse --verify "${tag_sha}^{commit}" 2>/dev/null || true)"
     if [ -z "$pin_commit" ]; then
         fail "${env_name}/${region} (${app_id}): pin ${tag_sha} is not in local git history"
         failures=$((failures + 1))
@@ -161,10 +161,15 @@ for app in "${APPS[@]}"; do
         failures=$((failures + 1))
     fi
 
-    if ! [[ "$healthy" =~ ^[0-9]+$ && "$active" =~ ^[0-9]+$ && "$failed" =~ ^[0-9]+$ && "$desired" =~ ^[0-9]+$ ]]; then
+    # `active` is an instantaneous activity gauge, not a boot/liveness gauge.
+    # It legitimately falls back to zero after a request completes even while
+    # the same pinned application remains healthy and its deep container route
+    # returns 200. Keep it in the receipt for diagnosis, but do not make rollout
+    # correctness depend on catching a request in flight.
+    if ! [[ "$healthy" =~ ^[0-9]+$ && "$failed" =~ ^[0-9]+$ && "$desired" =~ ^[0-9]+$ ]]; then
         fail "${env_name}/${region} (${app_id}): malformed health counts"
         failures=$((failures + 1))
-    elif [ "$failed" -ne 0 ] || [ "$healthy" -lt 1 ] || [ "$active" -lt 1 ]; then
+    elif [ "$failed" -ne 0 ] || [ "$healthy" -lt 1 ] || [ "$desired" -lt 1 ]; then
         fail "${env_name}/${region} (${app_id}): health healthy=${healthy} active=${active} failed=${failed} desired=${desired}"
         failures=$((failures + 1))
     fi

@@ -20,9 +20,9 @@ use corelink_gc::{
     BlobDigest, BlobMetaPurgeStore, CandidateStatus, CheckpointDeltas, GcAuditRecord, GcAuditSink,
     GcAuditSinkError, GcCandidate, GcCandidatesStore, GcEventType, GcMetricKind, GcMetricsObserver,
     GcMetricsObserverError, GcPhase, GcRegion, GcRun, GcRunStore, GcRunStoreError, GcStatus,
-    GcSweepMode, GcSweepReportError, GcSweepReportSink, GcSweepRunner, MarkError,
-    PhysicalDeleteClock, PhysicalDeleteError, PurgeStage, PurgeState, R2Delete, R2DeleteError,
-    R2DeleteOutcome, RunId, SweepReport,
+    GcSweepMode, GcSweepReportError, GcSweepReportSink, GcSweepRunner, InMemoryGcSweepReportSink,
+    MarkError, PhysicalDeleteClock, PhysicalDeleteError, PurgeStage, PurgeState, R2Delete,
+    R2DeleteError, R2DeleteOutcome, RunId, SweepReport,
 };
 use serde_json::{json, Value};
 use tracing::info;
@@ -31,7 +31,6 @@ use uuid::Uuid;
 use crate::storage::cas_write_fence::CAS_WRITE_LEASE_MS;
 use crate::storage::d1_http::{D1HttpClient, D1Row};
 use crate::storage::r2_s3::{validate_cas_bucket_for_region, R2S3Client};
-use crate::storage::StorageEnv;
 
 /// Runtime configuration for one tenant/region sweep.
 #[derive(Clone)]
@@ -47,6 +46,8 @@ pub struct GcProductionConfig {
     pub mode: GcSweepMode,
     /// Explicit read-only observation mode, requiring `GC_LIVE_DELETE=false`.
     pub observation_only: bool,
+    /// Hard ceiling for one observation; a larger population fails closed.
+    pub max_candidates: u32,
     /// R2 bucket containing CAS objects.
     pub bucket: String,
     /// Secret tenant-key derivation material used by the CAS key scheme.
@@ -61,6 +62,7 @@ impl core::fmt::Debug for GcProductionConfig {
             .field("run_id", &self.run_id)
             .field("mode", &self.mode)
             .field("observation_only", &self.observation_only)
+            .field("max_candidates", &self.max_candidates)
             .field("bucket", &self.bucket)
             .field("tdk", &"[REDACTED]")
             .finish()
@@ -80,6 +82,7 @@ impl GcProductionConfig {
         let region_raw = required_env("GC_REGION")?;
         let region =
             GcRegion::parse(&region_raw).map_err(|e| format!("GC_REGION is invalid: {e}"))?;
+        validate_observation_region(region)?;
         let run_id = match std::env::var("GC_RUN_ID") {
             Ok(raw) if !raw.trim().is_empty() => Some(RunId(
                 Uuid::parse_str(raw.trim()).map_err(|e| format!("GC_RUN_ID is not a UUID: {e}"))?,
@@ -121,16 +124,44 @@ impl GcProductionConfig {
                 "live GC is unavailable: R2/D1 deletion needs a deployed fencing transaction; run dry-run".to_owned(),
             );
         }
+        if !observation_only {
+            return Err(
+                "production GC requires GC_OBSERVATION_ONLY=true and GC_LIVE_DELETE=false"
+                    .to_owned(),
+            );
+        }
         Ok(Self {
             tenant_id,
             region,
             run_id,
             mode,
             observation_only,
+            max_candidates: DEFAULT_OBSERVATION_MAX_CANDIDATES,
             bucket,
             tdk,
         })
     }
+}
+
+const DEFAULT_OBSERVATION_MAX_CANDIDATES: u32 = 250;
+
+fn validate_observation_candidate_limit(max_candidates: u32) -> Result<(), String> {
+    if !(1..=DEFAULT_OBSERVATION_MAX_CANDIDATES).contains(&max_candidates) {
+        return Err(format!(
+            "GC observation candidate limit must be in 1..={DEFAULT_OBSERVATION_MAX_CANDIDATES}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_observation_region(region: GcRegion) -> Result<(), String> {
+    if region == GcRegion::Syd {
+        return Err(
+            "GC_REGION=syd has no provisioned macro-residency mapping; observation refused"
+                .to_owned(),
+        );
+    }
+    Ok(())
 }
 
 /// Resolve the opt-in observation contract without relying on the permissive
@@ -163,7 +194,11 @@ fn observation_only_from_env(
 
 #[cfg(test)]
 mod tests {
-    use super::observation_only_from_env;
+    use super::{
+        observation_only_from_env, validate_observation_candidate_limit,
+        validate_observation_region, GcAuditRecord, GcAuditSink, GcEventType, GcPhase, GcRegion,
+        GcStatus, ObservationOnlyAuditSink, ObservationOnlyR2Delete, R2Delete, RunId, Uuid,
+    };
 
     #[test]
     fn observation_requires_explicit_false_live_delete() {
@@ -185,34 +220,105 @@ mod tests {
         );
         assert!(observation_only_from_env(Some("maybe"), Some("false")).is_err());
     }
+
+    #[test]
+    fn observation_rejects_unmapped_syd_region() {
+        assert!(validate_observation_region(GcRegion::Syd).is_err());
+        for region in [GcRegion::Iad, GcRegion::Lhr, GcRegion::Nrt, GcRegion::Sam] {
+            assert_eq!(validate_observation_region(region), Ok(()));
+        }
+    }
+
+    #[test]
+    fn observation_candidate_limit_accepts_250_and_rejects_251() {
+        assert_eq!(validate_observation_candidate_limit(250), Ok(()));
+        assert!(validate_observation_candidate_limit(251).is_err());
+        assert!(validate_observation_candidate_limit(0).is_err());
+    }
+
+    #[test]
+    fn observation_mutation_boundaries_reject_r2_and_audit_calls() {
+        let r2_result = R2Delete::delete(
+            &ObservationOnlyR2Delete,
+            Uuid::nil(),
+            GcRegion::Iad,
+            "iad/tenant/digest",
+        );
+        assert!(
+            r2_result.is_err(),
+            "observation R2 adapter must reject delete"
+        );
+        let Some(r2_error) = r2_result.err() else {
+            unreachable!("observation R2 adapter unexpectedly accepted delete");
+        };
+        assert!(r2_error
+            .to_string()
+            .contains("disabled for production GC observation"));
+
+        let audit_result = GcAuditSink::emit(
+            &ObservationOnlyAuditSink,
+            GcAuditRecord {
+                event_type: GcEventType::PhysicalDeleted,
+                run_id: RunId(Uuid::nil()),
+                tenant_id: Uuid::nil(),
+                region: GcRegion::Iad,
+                status: GcStatus::Running,
+                from_phase: Some(GcPhase::PhysicalDelete),
+                to_phase: None,
+                created_by_request_id: "test-observation".to_owned(),
+                reason: "mutation_probe",
+                now_ms: 1,
+            },
+        );
+        assert!(
+            audit_result.is_err(),
+            "observation audit adapter must reject mutation event"
+        );
+        let Some(audit_error) = audit_result.err() else {
+            unreachable!("observation audit adapter unexpectedly accepted mutation event");
+        };
+        assert!(audit_error
+            .to_string()
+            .contains("disabled for production observation"));
+    }
 }
 
-/// Execute one real D1/R2 sweep using a validated scope.
-pub async fn run_production(
-    storage: &StorageEnv,
-    config: &GcProductionConfig,
-) -> Result<SweepReport, String> {
+/// Execute one real, read-only D1 observation using a validated scope.
+///
+/// This path reads the durable `gc_run`, `gc_candidates`, `blob_meta`, and
+/// tenant residency rows. It deliberately constructs neither an R2 client nor
+/// a durable report sink: the returned report/stdout is the evidence boundary,
+/// and the reject-only R2 adapter makes an accidental delete call fail closed.
+pub fn run_production(config: &GcProductionConfig) -> Result<SweepReport, String> {
     if config.mode.is_live() {
         return Err(
             "live GC is unavailable: R2/D1 deletion needs a deployed fencing transaction; run dry-run"
                 .to_owned(),
         );
     }
-    let d1 = Arc::new(D1HttpClient::new(storage)?);
+    if !config.observation_only {
+        return Err("production GC observation gate is not armed".to_owned());
+    }
+    validate_observation_region(config.region)?;
+    validate_observation_candidate_limit(config.max_candidates)?;
+    let d1 = Arc::new(D1HttpClient::from_d1_env()?);
     validate_cas_bucket_for_region(&config.bucket, config.region.as_str())?;
-    let r2 = Arc::new(R2S3Client::new(storage, config.bucket.clone()).await?);
     let runs = Arc::new(D1GcRunStore::new(Arc::clone(&d1)));
-    let candidates = Arc::new(D1GcCandidatesStore::new(Arc::clone(&d1), config.region));
+    let candidates = Arc::new(D1GcCandidatesStore::new(
+        Arc::clone(&d1),
+        config.region,
+        config.max_candidates,
+    )?);
     let blob_meta = Arc::new(D1BlobMetaPurgeStore::new(
         Arc::clone(&d1),
         config.region,
         config.tdk,
     ));
-    let r2_delete = Arc::new(R2GcDelete::new(r2, config.tdk));
-    let audit = Arc::new(D1GcAuditSink::new(Arc::clone(&d1)));
+    let r2_delete = Arc::new(ObservationOnlyR2Delete);
+    let audit = Arc::new(ObservationOnlyAuditSink);
     let metrics = Arc::new(TracingGcMetrics);
     let clock = Arc::new(SystemGcClock::default());
-    let report = Arc::new(D1GcReportSink::new(Arc::clone(&d1)));
+    let report = Arc::new(InMemoryGcSweepReportSink::new());
     let run_id = match config.run_id {
         Some(run_id) => run_id,
         None => {
@@ -260,6 +366,38 @@ pub async fn run_production(
     runner
         .run(run_id, config.tenant_id, config.region)
         .map_err(|e| e.to_string())
+}
+
+/// R2 boundary for a production observation. The runner's dry-run branch must
+/// never call it; retaining a rejecting implementation makes that invariant a
+/// runtime fence rather than an assumption.
+#[derive(Debug)]
+struct ObservationOnlyR2Delete;
+
+impl R2Delete for ObservationOnlyR2Delete {
+    fn delete(
+        &self,
+        _tenant_id: Uuid,
+        _region: GcRegion,
+        _key: &str,
+    ) -> Result<R2DeleteOutcome, R2DeleteError> {
+        Err(R2DeleteError::Backend(
+            "R2 delete is disabled for production GC observation".to_owned(),
+        ))
+    }
+}
+
+/// Audit boundary for a production observation. Dry-run emits no GC mutation
+/// events; any future regression that attempts one is rejected before D1.
+#[derive(Debug)]
+struct ObservationOnlyAuditSink;
+
+impl GcAuditSink for ObservationOnlyAuditSink {
+    fn emit(&self, _record: GcAuditRecord) -> Result<(), GcAuditSinkError> {
+        Err(GcAuditSinkError::Store(
+            "GC mutation audit is disabled for production observation".to_owned(),
+        ))
+    }
 }
 
 fn required_env(name: &str) -> Result<String, String> {

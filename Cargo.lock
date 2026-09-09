@@ -1309,10 +1309,12 @@ dependencies = [
 name = "corelink-audit-chain"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "blake3",
  "corelink-analytics",
  "criterion",
  "deadpool-postgres",
+ "ed25519-dalek 3.0.0",
  "hex",
  "parking_lot",
  "proptest",
@@ -2310,6 +2312,7 @@ dependencies = [
  "aws-sdk-s3",
  "axum",
  "base64",
+ "blake3",
  "bytes",
  "corelink-adapter-host",
  "corelink-analytics",

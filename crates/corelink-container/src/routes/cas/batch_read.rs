@@ -467,11 +467,13 @@ async fn handle_batch_exists(
             // (r2_s3.rs) — using `read()` here would fetch every present object's
             // full bytes (tens of GiB of R2 GET egress over a closure-sized probe
             // — the exact anti-pattern the trait's `exists` default warns about),
-            // defeating the whole point of a cheap dedup probe. `Ok(true)` ⇒
-            // present; `Ok(false)`/`Err` ⇒ false (conservative — never claim a
-            // blob is present on a storage fault; the caller re-uploads, which is
-            // idempotent).
-            matches!(state.read.exists(req), Ok(true))
+            // defeating the whole point of a cheap dedup probe. Storage/gate
+            // errors fail the whole batch closed: coercing them to `false`
+            // would invite a write while a BYOK transition is unresolved.
+            match state.read.exists(req) {
+                Ok(present) => present,
+                Err(error) => return map_err(error),
+            }
         };
         results.push(serde_json::json!({ "hash": hash, "present": present }));
     }

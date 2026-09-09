@@ -1,0 +1,27 @@
+name = "corelink-audit-head-witness"
+main = "src/index.ts"
+compatibility_date = "2026-07-17"
+workers_dev = false
+
+# The protected production workflow supplies the Security-account custom domain
+# explicitly with `wrangler deploy --domain`; no workers.dev fallback is allowed.
+
+# SECURITY BOUNDARY: deploy this Worker in the security-owned Cloudflare
+# account, never the account that owns CoreLink's production D1. The main
+# platform account receives only the HTTPS URL, append bearer token, receipt
+# key id, and pinned receipt PUBLIC key.
+[vars]
+WITNESS_ID = "corelink-security-witness-1"
+WITNESS_RECEIPT_KEY_ID = "1"
+
+[[durable_objects.bindings]]
+name = "HEAD_WITNESS"
+class_name = "AuditHeadWitness"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AuditHeadWitness"]
+
+# Write-only secrets, provisioned only in the security-owned account:
+#   wrangler secret put WITNESS_APPEND_TOKEN
+#   wrangler secret put WITNESS_RECEIPT_SIGNING_SEED_HEX

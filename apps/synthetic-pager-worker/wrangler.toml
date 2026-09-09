@@ -33,11 +33,12 @@ migrations_dir = "../../migrations/d1"
 [env.staging]
 name = "corelink-synthetic-pager-staging"
 vars = { ENVIRONMENT = "staging", SYNTHETIC_DRILL_ENABLED = "false", PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue", PAGERDUTY_SERVICE = "synthetic-drill" }
+routes = [{ pattern = "staging.corelink.humangr.com/v1/webhooks/pagerduty", zone_name = "humangr.com" }]
 
 [[env.staging.d1_databases]]
 binding = "CONFIG_DB"
 database_name = "corelink-config-staging"
-database_id = "PLACEHOLDER_CONFIG_DB_STAGING_ID"
+database_id = "d72a6b39-6a48-4338-bfda-1111dda98604"
 migrations_dir = "../../migrations/d1"
 
 [env.staging.triggers]
@@ -48,6 +49,7 @@ crons = ["59 23 * * 0"]
 [env.prod]
 name = "corelink-synthetic-pager-prod"
 vars = { ENVIRONMENT = "prod", SYNTHETIC_DRILL_ENABLED = "false", PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue", PAGERDUTY_SERVICE = "synthetic-drill" }
+routes = []
 
 [env.prod.triggers]
 crons = []

@@ -9,23 +9,44 @@ Garbage Collection surface. Per Lote 10.4bis lesson, gradual rollout
 
 ## B-071 artifact boundary (2026-09-02)
 
-The production container image includes `/usr/local/bin/gc_sweep`, but its
-`ENTRYPOINT` remains `/usr/local/bin/corelink-server`: shipping the executable
-does not schedule or enable collection. The binary fails closed to dry-run when
-`GC_LIVE_DELETE` is absent, false, or malformed.
+The production container image includes the fixture self-check at
+`/usr/local/bin/gc_sweep` and the real D1-backed observation binary at
+`/usr/local/bin/corelink-gc-sweep-production`. Its `ENTRYPOINT` remains
+`/usr/local/bin/corelink-server`: shipping either executable does not schedule
+or enable collection. The production observation requires both
+`GC_OBSERVATION_ONLY=true` and `GC_LIVE_DELETE=false`; absent, malformed, or
+live values fail closed before a D1 request.
 
 The scheduled `gc-sweep-dry-run` lane fixes `GC_LIVE_DELETE=false`, removes
 Cloudflare credential variables before invocation, and records the fixture's
 `reclaimable_count`, `reclaimable_bytes`, `deleted_count`, and `deleted_bytes`.
 Its accepted report has one reclaimable 4,096-byte candidate and zero deleted
-objects/bytes. This is artifact and dry-run evidence only: the executable still
-uses the crate's in-memory fixture because real R2/D1 adapters are not present
-in the container plane.
+objects/bytes. This is artifact self-check evidence only. A real observation is
+an explicitly tenant/region/run-scoped invocation of
+`corelink-gc-sweep-production`: it reads durable D1 rows, constructs no R2
+client, uses a reject-only R2 adapter, writes no D1 report row, and emits the
+measured report on stdout for external evidence capture. Its JSON distinguishes
+the number of rows scanned from the count and bytes positively classified as
+reclaimable; it never labels reclaimable bytes as bytes across all candidates.
+The unprovisioned `syd` physical region has no macro-residency mapping and is
+rejected before the first D1 request instead of producing a false zero report.
+The observation is hard-capped at 250 candidates: it reads at most one sentinel
+row beyond that ceiling and fails instead of emitting a misleading partial
+report.
 
-No production data may be deleted under this change. The owner must separately
-approve real binding implementation, review a real production-data dry-run, and
-authorize the first destructive execution before any `GC_LIVE_DELETE=true`
-deployment or schedule exists.
+The canonical multi-scope collector and evidence verifier are documented in
+[`docs/operator/gc-production-observation.md`](../operator/gc-production-observation.md).
+They require an immutable image digest and explicit tenant/region/run scopes,
+force the observation flags independently for every invocation, remove inherited
+delete confirmation and R2 credentials, validate balanced per-scope results,
+and atomically assemble the owner-review package. A generated package remains
+`PENDING_OWNER_REVIEW` and cannot itself authorize live deletion.
+
+No production data may be deleted under this change. The owner must review a
+real production-data observation and authorize a separately implemented first
+destructive execution before any `GC_LIVE_DELETE=true` deployment or schedule
+exists. The shipped production binary rejects live mode even when a confirmation
+token is present.
 
 ## 0. Pre-rollout gates
 

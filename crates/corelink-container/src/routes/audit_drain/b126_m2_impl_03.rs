@@ -49,6 +49,8 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
             state.trust_unsigned_resume,
             limit,
             state.lease_enabled,
+            state.witness.as_deref(),
+            state.link_keyring.as_deref(),
         )
         .await
         {
@@ -205,6 +207,44 @@ mod tests {
     #[test]
     fn b126_m2_test_fragments_are_wired() {
         let _ = [B126_M2_TEST_1_1_REANCHOR, B126_M2_TEST_1_2_REANCHOR];
+    }
+
+    #[test]
+    fn b054_epoch_admin_requires_two_distinct_named_headers() {
+        let executor = b"executor-secret-that-is-at-least-32-bytes";
+        let approver = b"approver-secret-that-is-at-least-32-bytes";
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            INTERNAL_AUTH_HEADER,
+            axum::http::HeaderValue::from_static("executor-secret-that-is-at-least-32-bytes"),
+        );
+        assert!(internal_auth_ok(executor, &headers));
+        assert!(!named_auth_ok(
+            approver,
+            &headers,
+            B054_SECURITY_APPROVAL_HEADER
+        ));
+
+        headers.insert(
+            B054_SECURITY_APPROVAL_HEADER,
+            axum::http::HeaderValue::from_static("approver-secret-that-is-at-least-32-bytes"),
+        );
+        assert!(internal_auth_ok(executor, &headers));
+        assert!(named_auth_ok(
+            approver,
+            &headers,
+            B054_SECURITY_APPROVAL_HEADER
+        ));
+
+        headers.insert(
+            B054_SECURITY_APPROVAL_HEADER,
+            axum::http::HeaderValue::from_static("executor-secret-that-is-at-least-32-bytes"),
+        );
+        assert!(!named_auth_ok(
+            approver,
+            &headers,
+            B054_SECURITY_APPROVAL_HEADER
+        ));
     }
 }
 

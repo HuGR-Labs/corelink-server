@@ -622,6 +622,75 @@ mod tests {
         );
     }
 
+    /// The read-side `spawn_blocking` seam must carry the ledger too. This is
+    /// deliberately separate from the write test: removing either capture
+    /// must make one focused test red while preserving the other one's signal.
+    #[tokio::test]
+    async fn get_records_the_store_phase_across_spawn_blocking() {
+        use corelink_handler_cas::{CasReadResponse, CasWriteResponse};
+
+        #[derive(Debug)]
+        struct TimedReadCas;
+        impl CasReadHandler for TimedReadCas {
+            fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
+                let _scope =
+                    crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+                std::thread::sleep(std::time::Duration::from_millis(30));
+                Ok(CasReadResponse::new(b"x".to_vec(), req.hash))
+            }
+        }
+        impl CasWriteHandler for TimedReadCas {
+            fn write(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+                Ok(CasWriteResponse::new(req.claimed_hash, true))
+            }
+        }
+
+        let map = Arc::new(FakeUrlMap::default());
+        map.rows
+            .lock()
+            .unwrap()
+            .insert(("ns".to_owned(), "k".to_owned()), (fake_hash(b"x"), 1));
+        let cas = Arc::new(TimedReadCas);
+        let m = MoatCache::new(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            map,
+            fake_hash,
+            "moat-test",
+        );
+        let ledger = std::sync::Arc::new(crate::origin_timing::PhaseLedger::new());
+        let started = std::time::Instant::now();
+        let got = crate::origin_timing::scope_for_test(std::sync::Arc::clone(&ledger), async {
+            m.get("ns", "k").await.unwrap()
+        })
+        .await;
+        let wall_us = i64::try_from(started.elapsed().as_micros()).unwrap_or(i64::MAX);
+
+        assert_eq!(got, Some(b"x".to_vec()));
+        let store_us = ledger
+            .micros(crate::origin_timing::Phase::Store)
+            .expect("the blocking read must emit ostore");
+        assert!(
+            store_us >= 25_000,
+            "ostore lost the blocking read: {store_us} us"
+        );
+        assert!(store_us <= wall_us, "ostore exceeded read wall clock");
+        assert_eq!(
+            ledger.recordings_for_test(crate::origin_timing::Phase::Store),
+            1,
+            "the read-side Store window must be recorded exactly once"
+        );
+        let header = ledger.server_timing_value_with(wall_us, true);
+        assert!(
+            header.contains("ostore;dur="),
+            "read header omitted ostore: {header}"
+        );
+        assert!(
+            header.contains("oaccounting;dur="),
+            "read header omitted the URL-map accounting phase: {header}"
+        );
+    }
+
     #[tokio::test]
     async fn put_then_get_round_trip() {
         let map = Arc::new(FakeUrlMap::default());

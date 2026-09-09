@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "receipt_type": "cloudflare_staging_provider_blocker",
+  "backlog_ids": ["B-029", "B-070"],
+  "captured_at": "2026-09-09T11:25:45Z",
+  "scope": "staging-only",
+  "account_id_redacted": "6a1f...f5cd",
+  "zone": {
+    "name": "humangr.com",
+    "id": "73f57f6d508beea67e2f78bea11d3c25",
+    "lookup": "success",
+    "account_match": "6a1fc1c626fc2628823e60b9db01f5cd"
+  },
+  "target": {
+    "hostname": "staging.corelink.humangr.com",
+    "canonical_origin": "https://staging.corelink.humangr.com",
+    "required_route": "staging.corelink.humangr.com/*",
+    "required_worker": "corelink-staging"
+  },
+  "authority_probes": {
+    "local_wrangler_profile": {
+      "path": "~/Library/Preferences/.wrangler/config/default.toml",
+      "identity": "OAuth profile; account/zone read and Workers/D1/R2/KV/Queues/route/script/secrets-store write scopes reported by wrangler whoami",
+      "dns_permission": "not evidenced",
+      "zone_settings_permission": "not evidenced"
+    },
+    "zone_read": {
+      "endpoint_class": "GET /zones?name=humangr.com&status=active",
+      "success": true
+    },
+    "dns_records_read": {
+      "endpoint_class": "GET /zones/{zone_id}/dns_records?name=staging.corelink.humangr.com",
+      "success": false,
+      "provider_error": {
+        "code": 10000,
+        "message": "Authentication error"
+      }
+    },
+    "zone_ssl_settings_read": {
+      "endpoint_class": "GET /zones/{zone_id}/settings/ssl",
+      "success": false,
+      "provider_error": {
+        "code": 9109,
+        "message": "Unauthorized to access requested resource"
+      }
+    },
+    "worker_routes_read": {
+      "endpoint_class": "GET /zones/{zone_id}/workers/routes",
+      "success": true,
+      "required_route_present": false,
+      "mutation_performed": false
+    },
+    "public_dns": {
+      "query": "A staging.corelink.humangr.com",
+      "result": "NXDOMAIN"
+    }
+  },
+  "resource_readback": {
+    "staging_workers": {
+      "corelink-staging": "absent (provider code 10007)",
+      "corelink-signup-staging": "absent (provider code 10007)",
+      "corelink-synthetic-pager-staging": "absent (provider code 10007)"
+    },
+    "cloudflare_secrets_store": {
+      "stores": 0,
+      "worker_secret_values_read": false
+    },
+    "github": {
+      "repository": "HuGR-Labs/corelink-server",
+      "staging_environment_exists": true,
+      "staging_environment_secret_count": 0,
+      "production_environment_secret_count": 0,
+      "organization_secret_count": 0,
+      "repository_secret_names_checked": true,
+      "required_staging_names_present": false
+    }
+  },
+  "credential_source_inventory": {
+    "current_local_sources": [
+      "Wrangler OAuth profile above (no DNS/settings permission evidenced)",
+      "repo root .env.local: absent",
+      "~/Documents/.env.hugr-toolkits.bak: CLOUDFLARE_API_TOKEN present but provider verification returned code 1000 Invalid API Token and zone lookup returned code 9109 Invalid access token",
+      "1Password op CLI: unavailable; no local 1Password CLI/store found",
+      "macOS Keychain probes for Cloudflare/Wrangler/CoreLink services: no matching item"
+    ],
+    "write_only_provider_sources": [
+      "GitHub repository secret metadata includes CF_API_TOKEN, but its value is write-only and cannot be sourced for a DNS probe",
+      "GitHub staging environment has no secret metadata for any required K6 input",
+      "Cloudflare Worker secret values are write-only and the three staging Workers do not exist"
+    ]
+  },
+  "required_secret_names_unavailable": {
+    "corelink-staging": [
+      "CF_API_TOKEN",
+      "CLERK_ISSUER_URL",
+      "CLERK_SECRET_KEY",
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CORELINK_ADMIN_AUTH_KEY",
+      "CORELINK_ERASE_AUTH_KEY",
+      "CORELINK_INTERNAL_AUTH_KEY",
+      "PAT_SIGNING_KEY",
+      "R2_S3_ACCESS_KEY_ID",
+      "R2_S3_SECRET_ACCESS_KEY"
+    ],
+    "corelink-signup-staging": [
+      "CLERK_SECRET_KEY",
+      "CLERK_WEBHOOK_SECRET",
+      "CORELINK_ERASE_AUTH_KEY",
+      "CORELINK_INTERNAL_AUTH_KEY",
+      "ERASURE_SALT_KEY",
+      "PAGERDUTY_ROUTING_KEY"
+    ],
+    "corelink-synthetic-pager-staging": [
+      "PAGERDUTY_SYNTHETIC_ROUTING_KEY",
+      "PAGERDUTY_WEBHOOK_SECRET"
+    ],
+    "github_environment_staging": [
+      "K6_STAGING_BYOK_CMK_ID",
+      "K6_STAGING_MFA_STUB",
+      "K6_STAGING_PAT",
+      "K6_STAGING_STRIPE_WHSEC",
+      "K6_TARGET_HOST"
+    ]
+  },
+  "required_permissions_missing_or_unproven": [
+    "Zone:DNS:Read/Edit for humangr.com (DNS API read is refused with code 10000)",
+    "Zone Settings:Read for humangr.com (SSL/settings API read is refused with code 9109)",
+    "A write-only source for every Worker secret listed above",
+    "A write-only source for every staging GitHub K6 secret listed above"
+  ],
+  "mutations": {
+    "dns_records_created_or_changed": false,
+    "worker_routes_created_or_changed": false,
+    "worker_deployments": false,
+    "worker_secrets_written": false,
+    "github_secrets_written": false,
+    "production_resources_modified": false
+  },
+  "disposition": "blocked",
+  "next_authority_needed": "Cloudflare authority with Zone DNS Edit plus Zone Settings Read for humangr.com, and secret values delivered through the documented secure stores; do not print or commit values"
+}

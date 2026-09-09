@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -140,6 +141,7 @@ def fail(message: str) -> int:
 
 def verify(root: Path) -> int:
     config = (root / "wrangler.toml").read_text(encoding="utf-8")
+    config_data = tomllib.loads(config)
     entry = (root / "worker/src/index.ts").read_text(encoding="utf-8")
     fetch = (root / "worker/src/index_fetch.ts").read_text(encoding="utf-8")
     schedule = (root / "worker/src/index_schedule.ts").read_text(encoding="utf-8")
@@ -150,6 +152,13 @@ def verify(root: Path) -> int:
         return fail("default/dev must declare exactly the synthetic-page cron")
     if '"0 6 * * 1"' in config:
         return fail("retired chaos cron must not be scheduled")
+    receivers = [
+        item
+        for item in config_data.get("services", [])
+        if item.get("binding") == "SCHEDULED_DRILL_DELIVERY"
+    ]
+    if receivers != [{"binding": "SCHEDULED_DRILL_DELIVERY", "service": "corelink-synthetic-pager"}]:
+        return fail("default/dev receiver service binding is missing or ambiguous")
 
     for environment in ("prod", "prod-sam", "prod-lhr", "prod-nrt", "prod-syd"):
         section = re.search(

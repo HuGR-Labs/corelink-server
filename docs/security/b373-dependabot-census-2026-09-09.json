@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09T08:41:49Z",
+  "repository": "HuGR-Labs/corelink-server",
+  "query": "gh api --paginate --slurp repos/HuGR-Labs/corelink-server/dependabot/alerts",
+  "candidate_base_commit": "b7c6a165de0d456b6679c9662a1ffc8babc6ace8",
+  "dependency_tree_sha256": "63e851ddb674d2d887d9c8aca148547e24cd369ab1961217b5d4b03a63d9e577",
+  "candidate_contained": true,
+  "post_merge_refresh_required": true,
+  "open_alert_count": 19,
+  "alerts": [
+    {"number":39,"package":"vitest","ghsa":"GHSA-82fw-gwwq-j7x9","severity":"medium","manifest":"apps/admin-ui/package.json","scope":"development"},
+    {"number":40,"package":"next","ghsa":"GHSA-p293-qw3h-jr36","severity":"critical","manifest":"apps/admin-ui/package.json","scope":"runtime"},
+    {"number":41,"package":"next","ghsa":"GHSA-2xp9-vwfh-vxw4","severity":"critical","manifest":"apps/admin-ui/package.json","scope":"runtime"},
+    {"number":42,"package":"vitest","ghsa":"GHSA-82fw-gwwq-j7x9","severity":"medium","manifest":"apps/signup-worker/package.json","scope":"development"},
+    {"number":43,"package":"baseline-browser-mapping","ghsa":"GHSA-w5vr-8v7q-w6rv","severity":"medium","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":44,"package":"@vitest/mocker","ghsa":"GHSA-82fw-gwwq-j7x9","severity":"medium","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":45,"package":"vitest","ghsa":"GHSA-82fw-gwwq-j7x9","severity":"medium","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":46,"package":"joi","ghsa":"GHSA-gg4h-3hg2-grpc","severity":"low","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":47,"package":"next","ghsa":"GHSA-p293-qw3h-jr36","severity":"critical","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":48,"package":"colord","ghsa":"GHSA-2wm5-q62r-hmrv","severity":"medium","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":49,"package":"joi","ghsa":"GHSA-6w3j-5fw6-r9vr","severity":"low","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":50,"package":"svgo","ghsa":"GHSA-4vpr-x523-8j87","severity":"medium","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":51,"package":"svgo","ghsa":"GHSA-w27v-7q3p-w38r","severity":"high","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":52,"package":"adm-zip","ghsa":"GHSA-vwc7-r8mq-g2x9","severity":"medium","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":53,"package":"next","ghsa":"GHSA-2xp9-vwfh-vxw4","severity":"critical","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":54,"package":"js-yaml","ghsa":"GHSA-2883-xcg3-v3hh","severity":"high","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":55,"package":"js-yaml","ghsa":"GHSA-2883-xcg3-v3hh","severity":"high","manifest":"pnpm-lock.yaml","scope":"runtime"},
+    {"number":56,"package":"sharp","ghsa":"GHSA-rgj7-g3m4-5g8c","severity":"high","manifest":"pnpm-lock.yaml","scope":"development"},
+    {"number":57,"package":"vitest","ghsa":"GHSA-82fw-gwwq-j7x9","severity":"medium","manifest":"sdks/js/package.json","scope":"development"}
+  ]
+}

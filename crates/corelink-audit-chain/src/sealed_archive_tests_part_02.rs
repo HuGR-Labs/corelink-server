@@ -117,6 +117,12 @@ fn reason_codes_are_stable_and_greppable() {
             "sequence_gap:expected=11,found=10",
         ),
         (
+            SealedArchiveError::SequenceOverflow {
+                sequence_number: u64::MAX,
+            },
+            "sequence_overflow:seq=18446744073709551615",
+        ),
+        (
             SealedArchiveError::ChainHeadDiscontinuity { sequence_number: 7 },
             "chain_head_discontinuity:seq=7",
         ),

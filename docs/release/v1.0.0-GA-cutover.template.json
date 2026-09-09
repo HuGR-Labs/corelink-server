@@ -1,0 +1,7 @@
+{
+  "generated_at": "<RFC3339 timestamp>",
+  "release_sha": "<40-hex-release-commit>",
+  "verdict": "GREEN",
+  "greenlights": {"passed": 6, "total": 6},
+  "steps": {"passed": 11, "total": 11}
+}

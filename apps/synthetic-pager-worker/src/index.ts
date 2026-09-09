@@ -64,7 +64,6 @@ async function pagerDutyFetch(
 async function persistDelivery(env: ReceiverEnv, envelope: SyntheticPageEnvelope): Promise<void> {
   const page = envelope.synthetic_page;
   const deliveryMode = page.delivery_mode;
-  const deliveredAt = deliveryMode === "immediate" ? page.emit_at_ms : null;
   await env.CONFIG_DB!.batch([
     env.CONFIG_DB!.prepare(
       `INSERT OR IGNORE INTO synthetic_page_drills_b072
@@ -79,7 +78,7 @@ async function persistDelivery(env: ReceiverEnv, envelope: SyntheticPageEnvelope
       page.correlation_id,
       deliveryMode,
       envelope.scheduled_at_ms,
-      deliveredAt,
+      null,
     ),
     env.CONFIG_DB!.prepare(
       `INSERT OR IGNORE INTO synthetic_page_audit_events
@@ -88,10 +87,34 @@ async function persistDelivery(env: ReceiverEnv, envelope: SyntheticPageEnvelope
     ).bind(
       `trigger:${page.dedup_key}`,
       page.dedup_key,
-      page.emit_at_ms,
+      envelope.scheduled_at_ms,
       page.correlation_id,
       page.dedup_key,
     ),
+  ]);
+}
+
+async function markDelivered(env: ReceiverEnv, drillId: string, correlationId: string, deliveredAtMs: number): Promise<void> {
+  // PagerDuty's canonical dedup key makes a retry safe if this transaction is
+  // lost after external acceptance. The durable receipt and row transition are
+  // committed together; no row claims delivery before PagerDuty accepts it.
+  await env.CONFIG_DB!.batch([
+    env.CONFIG_DB!.prepare(
+      `INSERT OR IGNORE INTO synthetic_page_audit_events
+         (event_id, drill_id, event_type, occurred_at_ms, correlation_id, source_event_id)
+       VALUES (?, ?, 'delivered', ?, ?, ?)`,
+    ).bind(
+      `delivered:${drillId}`,
+      drillId,
+      deliveredAtMs,
+      correlationId,
+      `delivered:${drillId}`,
+    ),
+    env.CONFIG_DB!.prepare(
+      `UPDATE synthetic_page_drills_b072
+          SET delivered_at_ms = ?
+        WHERE drill_id = ? AND delivered_at_ms IS NULL`,
+    ).bind(deliveredAtMs, drillId),
   ]);
 }
 
@@ -134,6 +157,13 @@ async function handleSyntheticPage(request: Request, env: ReceiverEnv): Promise<
     // Scheduler retry uses the same canonical SP-* dedup key and correlation.
     return json({ error: "pagerduty_delivery_failed" }, 502);
   }
+  try {
+    await markDelivered(env, deliveryId, envelope.synthetic_page.correlation_id, Date.now());
+  } catch {
+    // PagerDuty may already have accepted the canonical dedup key. A retry is
+    // required to repair the local receipt and cannot create a second incident.
+    return json({ error: "delivery_receipt_unavailable" }, 503);
+  }
   return json({ accepted: true, dedup_key: deliveryId }, 202);
 }
 
@@ -141,6 +171,7 @@ async function runDeferredDeliveries(
   controller: ScheduledController,
   env: ReceiverEnv,
   fetchImpl: typeof fetch,
+  nowImpl: () => number = Date.now,
 ): Promise<void> {
   const environmentError = validateReceiverEnvironment(env);
   if (environmentError !== null) throw new Error("receiver not ready");
@@ -154,24 +185,9 @@ async function runDeferredDeliveries(
   ).bind(controller.scheduledTime).all<DrillRow>();
   for (const row of result.results) {
     await pagerDutyFetch(env, pageForRow(row).synthetic_page, fetchImpl);
-    await env.CONFIG_DB!.batch([
-      env.CONFIG_DB!.prepare(
-        `INSERT OR IGNORE INTO synthetic_page_audit_events
-           (event_id, drill_id, event_type, occurred_at_ms, correlation_id, source_event_id)
-         VALUES (?, ?, 'delivered', ?, ?, ?)`,
-      ).bind(
-        `delivered:${row.drill_id}`,
-        row.drill_id,
-        controller.scheduledTime,
-        row.correlation_id,
-        `delivered:${row.drill_id}`,
-      ),
-      env.CONFIG_DB!.prepare(
-        `UPDATE synthetic_page_drills_b072
-            SET delivered_at_ms = ?, outcome = 'unacked'
-          WHERE drill_id = ? AND delivery_mode = 'deferred' AND delivered_at_ms IS NULL`,
-      ).bind(controller.scheduledTime, row.drill_id),
-    ]);
+    // Capture the receipt after the external acceptance. scheduledTime is the
+    // queue eligibility clock and may be stale on retry/backlog sweeps.
+    await markDelivered(env, row.drill_id, row.correlation_id, nowImpl());
   }
 }
 
@@ -192,10 +208,17 @@ async function handlePagerDutyWebhook(request: Request, env: ReceiverEnv): Promi
   const event = parsePagerDutyWebhook(parsed);
   if (event === null) return json({ error: "invalid_webhook_event" }, 400);
   const row = await env.CONFIG_DB!.prepare(
-    `SELECT drill_id, emit_ts_ms, outcome, correlation_id
+    `SELECT drill_id, emit_ts_ms, outcome, correlation_id, delivered_at_ms
        FROM synthetic_page_drills_b072 WHERE drill_id = ?`,
-  ).bind(event.drill_id).first<{ drill_id: string; emit_ts_ms: number; outcome: string; correlation_id: string }>();
+  ).bind(event.drill_id).first<{
+    drill_id: string;
+    emit_ts_ms: number;
+    outcome: string;
+    correlation_id: string;
+    delivered_at_ms: number | null;
+  }>();
   if (row === null) return json({ accepted: true, ignored: true }, 202);
+  if (row.delivered_at_ms === null) return json({ error: "delivery_not_recorded" }, 503);
   if (row.outcome !== "unacked") return json({ accepted: true, ignored: true, outcome: row.outcome }, 202);
   const outcome = event.kind === "acknowledged" ? "acked" : "escalated";
   const mtta = Math.max(0, event.occurred_at_ms - row.emit_ts_ms);
@@ -203,7 +226,11 @@ async function handlePagerDutyWebhook(request: Request, env: ReceiverEnv): Promi
     env.CONFIG_DB!.prepare(
       `INSERT OR IGNORE INTO synthetic_page_audit_events
          (event_id, drill_id, event_type, occurred_at_ms, correlation_id, source_event_id, engineer_slug)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       SELECT ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM synthetic_page_drills_b072
+           WHERE drill_id = ? AND outcome = 'unacked' AND delivered_at_ms IS NOT NULL
+        )`,
     ).bind(
       event.event_id,
       event.drill_id,
@@ -212,14 +239,19 @@ async function handlePagerDutyWebhook(request: Request, env: ReceiverEnv): Promi
       row.correlation_id,
       event.event_id,
       event.engineer_slug,
+      event.drill_id,
     ),
     env.CONFIG_DB!.prepare(
       `UPDATE synthetic_page_drills_b072
           SET outcome = ?, engineer_slug = ?, ack_ts_ms = ?, mtta_ms = ?, ack_vector = ?
-        WHERE drill_id = ? AND outcome = 'unacked'`,
+        WHERE drill_id = ? AND outcome = 'unacked' AND delivered_at_ms IS NOT NULL`,
     ).bind(outcome, event.engineer_slug, event.occurred_at_ms, mtta, event.ack_vector, event.drill_id),
   ]);
-  return json({ accepted: true, outcome, drill_id: event.drill_id }, 202);
+  const persisted = await env.CONFIG_DB!.prepare(
+    `SELECT outcome FROM synthetic_page_drills_b072 WHERE drill_id = ?`,
+  ).bind(event.drill_id).first<{ outcome: string }>();
+  if (persisted === null) return json({ error: "receiver_storage_unavailable" }, 503);
+  return json({ accepted: true, outcome: persisted.outcome, drill_id: event.drill_id }, 202);
 }
 
 const handler: ExportedHandler<ReceiverEnv> = {
@@ -231,9 +263,14 @@ const handler: ExportedHandler<ReceiverEnv> = {
     return json({ error: "not_found" }, 404);
   },
   async scheduled(controller, env) {
+    if (controller.cron !== "59 23 * * 0") {
+      console.error("[synthetic_pager] rejected reason=unknown_cron");
+      controller.noRetry();
+      throw new Error("unknown deferred delivery cron");
+    }
     await runDeferredDeliveries(controller, env, fetch);
   },
 };
 
-export { handlePagerDutyWebhook, handleSyntheticPage, runDeferredDeliveries };
+export { handlePagerDutyWebhook, handleSyntheticPage, markDelivered, runDeferredDeliveries };
 export default handler;

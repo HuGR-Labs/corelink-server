@@ -87,8 +87,14 @@ impl CasReadHandler for R2CasHandler {
                 CasHandlerError::AuditFailed(e)
             })?;
 
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Read)?;
         let resolved = match tokio::task::block_in_place(|| {
-            handle.block_on(self.resolve_byok(&req.tenant, &req.hash, req.algo))
+            handle.block_on(self.resolve_byok_with_guard(
+                &req.tenant,
+                &req.hash,
+                req.algo,
+                byok_guard.as_ref(),
+            ))
         }) {
             Ok(r) => r,
             Err(e) => {
@@ -96,7 +102,58 @@ impl CasReadHandler for R2CasHandler {
                 return Err(e);
             }
         };
-        let key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo) {
+        let logical_key = format!(
+            "{}:{}",
+            match req.algo {
+                DigestAlgo::Blake3 => "blake3",
+                DigestAlgo::Sha256 => "sha256",
+            },
+            req.hash
+        );
+        let catalog_key = if let Some(guard) = byok_guard.as_ref() {
+            if guard
+                .intent()
+                .map_err(CasHandlerError::Internal)?
+                .catalog_generation()
+                .is_some()
+            {
+                tokio::task::block_in_place(|| {
+                    handle.block_on(guard.gate().resolve_catalog(
+                        guard.intent()?,
+                        crate::storage::byok_generation_catalog::ByokObjectKind::Cas,
+                        &logical_key,
+                    ))
+                })
+                .map_err(CasHandlerError::Internal)?
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if byok_guard.as_ref().is_some_and(|guard| {
+            guard
+                .intent()
+                .is_ok_and(|intent| intent.catalog_generation().is_some())
+        }) && catalog_key.is_none()
+        {
+            self.validate_byok_return(byok_guard.as_mut())?;
+            emit(true);
+            return Err(CasHandlerError::NotFound {
+                tenant: req.tenant,
+                hash: req.hash,
+            });
+        }
+        let allocation_id = catalog_key
+            .as_ref()
+            .map(|published| published.allocation_id.as_str());
+        let key = match catalog_key
+            .as_ref()
+            .map(|published| published.physical_key.clone())
+            .map_or_else(
+                || self.r2_key(&req.tenant, &resolved.physical_digest, req.algo),
+                Ok,
+            ) {
             Ok(k) => k,
             Err(e) => {
                 emit(true);
@@ -105,8 +162,11 @@ impl CasReadHandler for R2CasHandler {
         };
         debug!(key = %key, "R2CasHandler::read");
         let stored_opt = {
-            let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
-            tokio::task::block_in_place(|| handle.block_on(self.get_capped_for_read(&key, max_bytes)))
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| {
+                handle.block_on(self.get_capped_for_read(&key, max_bytes))
+            })
         };
         let stored_opt = match stored_opt {
             Ok(ok) => ok,
@@ -126,7 +186,7 @@ impl CasReadHandler for R2CasHandler {
                 // active tenant. `Plaintext`-plan tenants get their bytes back
                 // unchanged (byte-identical to today).
                 let bytes = match tokio::task::block_in_place(|| {
-                    handle.block_on(self.decrypt_body(&resolved.plan, stored))
+                    handle.block_on(self.decrypt_body(&resolved.plan, stored, allocation_id))
                 }) {
                     Ok(pt) => pt,
                     Err(e) => {
@@ -171,10 +231,12 @@ impl CasReadHandler for R2CasHandler {
                     .map_err(CasHandlerError::AuditFailed)?;
                 self.sli
                     .observe(SliObservation::new(Sli::CorrectnessCas, false, 0));
+                self.validate_byok_return(byok_guard.as_mut())?;
                 emit(false);
                 Ok(CasReadResponse::new(bytes, req.hash))
             }
             None => {
+                self.validate_byok_return(byok_guard.as_mut())?;
                 emit(true);
                 Err(CasHandlerError::NotFound {
                     tenant: req.tenant,
@@ -251,15 +313,18 @@ impl CasReadHandler for R2CasHandler {
                 CasHandlerError::AuditFailed(e)
             })?;
 
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Read)?;
         let result = tokio::task::block_in_place(|| {
-            handle.block_on(self.probe_existence_unaudited(&req))
+            handle.block_on(self.probe_existence_unaudited(&req, byok_guard.as_ref()))
         });
         match result {
             Ok(Some(_)) => {
+                self.validate_byok_return(byok_guard.as_mut())?;
                 emit(false);
                 Ok(true)
             }
             Ok(None) => {
+                self.validate_byok_return(byok_guard.as_mut())?;
                 emit(false);
                 Ok(false)
             }

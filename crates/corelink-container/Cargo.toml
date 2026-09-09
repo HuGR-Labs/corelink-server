@@ -106,6 +106,7 @@ cf-r2-real = ["dep:corelink-cf-bindings"]
 cf-billing-real = ["corelink-billing-stripe-materializer/cf-billing-real"]
 
 [dependencies]
+blake3 = { workspace = true }
 # R-PREP-CF-R2-REAL — gated by the `cf-r2-real` feature (see [features]).
 corelink-cf-bindings = { workspace = true, optional = true }
 # WP-S1 Phase 1 — R2 S3-compatible API client (DECISION-GATE-1 Option A).

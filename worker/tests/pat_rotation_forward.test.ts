@@ -121,6 +121,30 @@ describe("B-081 PAT rotation siblings reach container.start", () => {
     expect(env.AUDIT_CHAIN_LINK_KEYS_JSON).toBe(keyring);
   });
 
+  it("forwards the complete B-054 witness client boundary byte-for-byte", async () => {
+    const values = {
+      AUDIT_WITNESS_URL: "https://witness.security.example",
+      AUDIT_WITNESS_APPEND_TOKEN: "a".repeat(64),
+      AUDIT_WITNESS_ID: "security-witness-1",
+      AUDIT_WITNESS_PUBLIC_KEYS_JSON: JSON.stringify({ "1": "A".repeat(44) }),
+      AUDIT_CHAIN_TRUST_ROOT_PUBLIC_KEYS_JSON: JSON.stringify({ root_1: "B".repeat(44) }),
+    };
+    const env = await capturedStartEnv(values);
+
+    for (const [name, value] of Object.entries(values)) expect(env[name]).toBe(value);
+  });
+
+  it("forwards absent B-054 witness values as empty for fail-closed all-or-none parsing", async () => {
+    const env = await capturedStartEnv({});
+    for (const name of [
+      "AUDIT_WITNESS_URL",
+      "AUDIT_WITNESS_APPEND_TOKEN",
+      "AUDIT_WITNESS_ID",
+      "AUDIT_WITNESS_PUBLIC_KEYS_JSON",
+      "AUDIT_CHAIN_TRUST_ROOT_PUBLIC_KEYS_JSON",
+    ]) expect(env[name]).toBe("");
+  });
+
   it("maps whitespace siblings to a malformed marker so the container fails closed", async () => {
     const env = await capturedStartEnv({ PAT_SIGNING_KEY_PREV: " \t ", PAT_SIGNING_KEY_NEW: "\n" });
 

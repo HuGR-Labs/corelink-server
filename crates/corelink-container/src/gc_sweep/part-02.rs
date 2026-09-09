@@ -27,11 +27,25 @@ fn candidate_from_row(row: &D1Row) -> Result<GcCandidate, String> {
 pub struct D1GcCandidatesStore {
     d1: Arc<D1HttpClient>,
     region: GcRegion,
+    max_candidates: u32,
 }
 impl D1GcCandidatesStore {
-    /// Construct over a shared D1 client.
-    pub fn new(d1: Arc<D1HttpClient>, region: GcRegion) -> Self {
-        Self { d1, region }
+    /// Construct a bounded observation store over a shared D1 client.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a zero limit or any limit above the production ceiling.
+    pub fn new(
+        d1: Arc<D1HttpClient>,
+        region: GcRegion,
+        max_candidates: u32,
+    ) -> Result<Self, String> {
+        validate_observation_candidate_limit(max_candidates)?;
+        Ok(Self {
+            d1,
+            region,
+            max_candidates,
+        })
     }
 }
 impl GcCandidatesStore for D1GcCandidatesStore {
@@ -43,7 +57,14 @@ impl GcCandidatesStore for D1GcCandidatesStore {
         tenant_id: Uuid,
         run_id: RunId,
     ) -> Result<Vec<GcCandidate>, MarkError> {
-        let rows = query_sync(&self.d1, "SELECT c.tenant_id, c.digest, c.mark_started_at_ms, c.mark_run_id, c.blob_size_bytes, c.blob_last_referenced_at_ms, c.status, c.created_at_ms, c.swept_at_ms, c.protected_at_ms, c.protected_reason FROM gc_candidates AS c WHERE c.tenant_id = ?1 AND c.mark_run_id = ?2 AND EXISTS (SELECT 1 FROM blob_meta AS bm JOIN tenant AS t ON t.tenant_id = bm.tenant_id WHERE bm.tenant_id = c.tenant_id AND bm.digest = c.digest AND bm.region = t.primary_region AND ((?3 = 'iad' AND bm.region IN ('wnam', 'enam')) OR (?3 = 'lhr' AND bm.region = 'weur') OR (?3 = 'nrt' AND bm.region = 'apac') OR (?3 = 'sam' AND bm.region = 'sam'))) ORDER BY c.digest", &[json!(tenant_id.to_string()), json!(run_id.as_text()), json!(self.region.as_str())]).map_err(MarkError::Backend)?;
+        let query_limit = self.max_candidates.saturating_add(1);
+        let rows = query_sync(&self.d1, "SELECT c.tenant_id, c.digest, c.mark_started_at_ms, c.mark_run_id, c.blob_size_bytes, c.blob_last_referenced_at_ms, c.status, c.created_at_ms, c.swept_at_ms, c.protected_at_ms, c.protected_reason FROM gc_candidates AS c WHERE c.tenant_id = ?1 AND c.mark_run_id = ?2 AND EXISTS (SELECT 1 FROM blob_meta AS bm JOIN tenant AS t ON t.tenant_id = bm.tenant_id WHERE bm.tenant_id = c.tenant_id AND bm.digest = c.digest AND bm.region = t.primary_region AND ((?3 = 'iad' AND bm.region IN ('wnam', 'enam')) OR (?3 = 'lhr' AND bm.region = 'weur') OR (?3 = 'nrt' AND bm.region = 'apac') OR (?3 = 'sam' AND bm.region = 'sam'))) ORDER BY c.digest LIMIT ?4", &[json!(tenant_id.to_string()), json!(run_id.as_text()), json!(self.region.as_str()), json!(query_limit)]).map_err(MarkError::Backend)?;
+        if rows.len() > self.max_candidates as usize {
+            return Err(MarkError::Backend(format!(
+                "GC observation candidate population exceeds configured limit {}",
+                self.max_candidates
+            )));
+        }
         rows.iter()
             .map(candidate_from_row)
             .collect::<Result<Vec<_>, _>>()

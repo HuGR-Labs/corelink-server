@@ -21,16 +21,16 @@ CATALOGS = {
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B001-B045.md": (1, 45),
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B046-B090.md": (46, 90),
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B091-B130.md": (91, 130),
-    REPO_ROOT / "docs/campaigns/remediation/work-packages/B131-B167.md": (131, 363),
+    REPO_ROOT / "docs/campaigns/remediation/work-packages/B131-B167.md": (131, 373),
 }
-# The candidate snapshot is the immutable ancestry anchor for this ledger. Keep
-# the historical D03 checkpoint as documentary provenance in the ledger; the
-# candidate SHA remains resolvable while the integration ref is prepared.
-LEDGER_BASE_REF = "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73"
-LEDGER_BASE_SHA = "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73"
+# The reanchored snapshot is based on the exact integrated head supplied for
+# this reconciliation. Keep the historical D03 checkpoint as provenance in
+# the ledger; all candidate ancestry checks use this immutable base object.
+LEDGER_BASE_REF = "8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94"
+LEDGER_BASE_SHA = "8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94"
 LEDGER_PATH = REPO_ROOT / "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md"
 SNAPSHOT_PATH = REPO_ROOT / "docs/campaigns/remediation/backlog-ledger-snapshot.json"
-SNAPSHOT_SHA256 = "32dc6e806d44beebc4f003a649cb4d7e5cdffe70b86aabf15623fcfaa3053bbf"
+SNAPSHOT_SHA256 = "3a4cbf652a1d4485ac9c8e03bd79343fb4619b5c2e8cb58af161263f83440f18"
 ENTRY_RE = re.compile(r"^(B-\d+)\s+(WP-[A-Z0-9][A-Z0-9./_-]*)$")
 WP_HEADING_RE = re.compile(r"^#{2,6}\s+(WP-[A-Z0-9][A-Z0-9./_-]*)(?:\s|—|$)", re.MULTILINE)
 FIELD_PATTERNS = {
@@ -54,8 +54,8 @@ FIELD_PATTERNS = {
         r"\breturn card\b|\breturn-card\b|\bretorno comum\b", re.IGNORECASE
     ),
 }
-WORKFLOW_MANIFEST_COUNT = 137
-WORKFLOW_MANIFEST_SHA256 = "f4a3f8a882299e403ad80e5975329fe310219760ca0cc4e7dc9d4f616e5e02ff"
+WORKFLOW_MANIFEST_COUNT = 138
+WORKFLOW_MANIFEST_SHA256 = "1616038ec0bb163a7ed436d7487a6255c9da037efaa1f54cbe5f4c3f70a67dc1"
 PREDECESSOR_TOKEN_RE = re.compile(r"\bB-\d{3}\b|\bWP-[A-Z0-9][A-Z0-9./_-]*\b|#\d+\b")
 WORKFLOW_OWNERSHIP_FENCE = "wp-workflow-ownership"
 LEDGER_STATE_FENCE = "ledger-state"
@@ -391,7 +391,7 @@ def load_snapshot_manifest(path: Path = SNAPSHOT_PATH) -> dict[str, object]:
     if not isinstance(manifest["item_count"], int) or manifest["item_count"] < 1:
         raise LedgerError(f"{path}: snapshot item count is malformed")
     counts = manifest["status_counts"]
-    if counts != {"done": 316, "open": 14, "parked": 33}:
+    if counts != {"done": 327, "open": 14, "parked": 32}:
         raise LedgerError(f"{path}: snapshot status population drifted")
     open_ids = manifest["open_ids"]
     if not isinstance(open_ids, list) or open_ids != sorted(open_ids) or len(open_ids) != 14:

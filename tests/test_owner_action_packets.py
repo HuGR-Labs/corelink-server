@@ -208,6 +208,90 @@ class OwnerActionPacketTests(unittest.TestCase):
             with self.assertRaises(MODULE.PacketError):
                 MODULE.check_data(self.data, "B-097")
 
+    def test_b086_unresolved_receipt_mutations_fail_closed(self) -> None:
+        original = MODULE._read_json_evidence
+        record = copy.deepcopy(original(MODULE.B086_EVIDENCE_PATH, MODULE.B086_EVIDENCE_REQUIRED_FIELDS, "B-086"))
+        record["decision"] = "jurisdictional_d1"
+
+        def read_decision(path, fields, label):
+            return record if path == MODULE.B086_EVIDENCE_PATH else original(path, fields, label)
+
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_decision):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-086")
+
+        record = copy.deepcopy(original(MODULE.B086_EVIDENCE_PATH, MODULE.B086_EVIDENCE_REQUIRED_FIELDS, "B-086"))
+        record["mutations_performed"] = ["created jurisdictional D1"]
+
+        def read_mutation(path, fields, label):
+            return record if path == MODULE.B086_EVIDENCE_PATH else original(path, fields, label)
+
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_mutation):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-086")
+
+        record = copy.deepcopy(original(MODULE.B086_EVIDENCE_PATH, MODULE.B086_EVIDENCE_REQUIRED_FIELDS, "B-086"))
+        record["source_sha256"]["wrangler.toml"] = "0" * 64
+
+        def read_source_hash(path, fields, label):
+            return record if path == MODULE.B086_EVIDENCE_PATH else original(path, fields, label)
+
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_source_hash):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-086")
+
+        record = copy.deepcopy(original(MODULE.B086_EVIDENCE_PATH, MODULE.B086_EVIDENCE_REQUIRED_FIELDS, "B-086"))
+        record["capture_commit"] = "0" * 40
+
+        def read_capture_commit(path, fields, label):
+            return record if path == MODULE.B086_EVIDENCE_PATH else original(path, fields, label)
+
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_capture_commit):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-086")
+
+    def test_b154_unresolved_receipt_mutations_fail_closed(self) -> None:
+        original = MODULE._read_json_evidence
+        record = copy.deepcopy(original(MODULE.B154_EVIDENCE_PATH, MODULE.B154_EVIDENCE_REQUIRED_FIELDS, "B-154"))
+        record["notices"][0]["status"] = "EXECUTED"
+
+        def read_notice(path, fields, label):
+            return record if path == MODULE.B154_EVIDENCE_PATH else original(path, fields, label)
+
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_notice):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-154")
+
+        record = copy.deepcopy(original(MODULE.B154_EVIDENCE_PATH, MODULE.B154_EVIDENCE_REQUIRED_FIELDS, "B-154"))
+        record["capability_evidence"]["byok_kill_switch"]["status"] = "PASS"
+
+        def read_capability(path, fields, label):
+            return record if path == MODULE.B154_EVIDENCE_PATH else original(path, fields, label)
+
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_capability):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-154")
+
+        record = copy.deepcopy(original(MODULE.B154_EVIDENCE_PATH, MODULE.B154_EVIDENCE_REQUIRED_FIELDS, "B-154"))
+        record["surfaces"][0]["evidence_reference"] = "legal/dpa/v1.0.0.en-US.md:110; sha256 " + "0" * 64
+
+        def read_reference(path, fields, label):
+            return record if path == MODULE.B154_EVIDENCE_PATH else original(path, fields, label)
+
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_reference):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-154")
+
+        record = copy.deepcopy(original(MODULE.B154_EVIDENCE_PATH, MODULE.B154_EVIDENCE_REQUIRED_FIELDS, "B-154"))
+        record["signed_documents"][0]["sha256"] = "0" * 64
+
+        def read_signed_hash(path, fields, label):
+            return record if path == MODULE.B154_EVIDENCE_PATH else original(path, fields, label)
+
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_signed_hash):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-154")
+
     def test_base_sha_provenance_disclaimer_is_mandatory(self) -> None:
         missing = copy.deepcopy(self.data)
         missing["non_claim"] = "No claims."

@@ -67,6 +67,8 @@ serde_jcs = "0.2"
 blake3 = { workspace = true }
 hex = { workspace = true }
 subtle = { workspace = true }
+base64 = { workspace = true }
+ed25519-dalek = { workspace = true }
 zeroize = { workspace = true }
 uuid = { workspace = true, features = ["v7", "serde"] }
 corelink-analytics = { workspace = true }

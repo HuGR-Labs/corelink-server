@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 import tomllib
@@ -16,6 +17,7 @@ def fail(message: str) -> None:
 
 def main(root: Path) -> None:
     root_config = root / "wrangler.toml"
+    staging_contract = root / "infra/staging/topology.json"
     receiver_config = root / "apps/synthetic-pager-worker/wrangler.toml"
     scheduler = root / "worker/src/index_schedule.ts"
     receiver = root / "apps/synthetic-pager-worker/src/index.ts"
@@ -23,7 +25,7 @@ def main(root: Path) -> None:
     migration = root / "migrations/d1/0116_synthetic_page_delivery_lifecycle.sql"
     workspace = root / "pnpm-workspace.yaml"
     deploy_workflow = root / ".github/workflows/synthetic-pager-worker-deploy.yml"
-    for path in (root_config, receiver_config, scheduler, receiver, contract, migration, workspace, deploy_workflow):
+    for path in (root_config, staging_contract, receiver_config, scheduler, receiver, contract, migration, workspace, deploy_workflow):
         if not path.is_file():
             fail(f"missing B-072 contract file: {path.relative_to(root)}")
 
@@ -31,17 +33,27 @@ def main(root: Path) -> None:
     triggers = root_data.get("triggers", {}).get("crons", [])
     if triggers != ["0 14 * * 1"]:
         fail(f"root schedule must contain only the synthetic cron, got {triggers!r}")
+    root_receivers = [
+        item
+        for item in root_data.get("services", [])
+        if item.get("binding") == "SCHEDULED_DRILL_DELIVERY"
+    ]
+    if root_receivers != [{"binding": "SCHEDULED_DRILL_DELIVERY", "service": "corelink-synthetic-pager"}]:
+        fail("default/dev receiver service binding is missing or ambiguous")
 
-    staging = root_data.get("env", {}).get("staging", {})
-    if staging.get("triggers", {}).get("crons") != []:
-        fail("root staging schedule is not explicitly disabled")
-    staging_bindings = staging.get("services", [])
+    if "staging" in root_data.get("env", {}):
+        fail("partial root staging environment is forbidden before provisioning")
+    desired = json.loads(staging_contract.read_text())
+    if desired.get("deployment_state") != "unprovisioned":
+        fail("staging contract must remain unprovisioned before apply evidence")
+    staging_bindings = desired.get("cloudflare", {}).get("service_bindings", [])
     if not any(
         item.get("binding") == "SCHEDULED_DRILL_DELIVERY"
+        and item.get("worker") == "corelink-staging"
         and item.get("service") == "corelink-synthetic-pager-staging"
         for item in staging_bindings
     ):
-        fail("staging receiver service binding is missing")
+        fail("staging receiver service binding is missing from desired-state contract")
 
     for environment in ("prod", "prod-sam", "prod-lhr", "prod-nrt", "prod-syd"):
         env_data = root_data.get("env", {}).get(environment, {})
@@ -57,6 +69,14 @@ def main(root: Path) -> None:
         env_data = receiver_data.get("env", {}).get(environment, {})
         if env_data.get("vars", {}).get("SYNTHETIC_DRILL_ENABLED") != "false":
             fail(f"receiver {environment} activation is not disabled")
+    staging_routes = receiver_data.get("env", {}).get("staging", {}).get("routes", [])
+    if staging_routes != [{
+        "pattern": "staging.corelink.humangr.com/v1/webhooks/pagerduty",
+        "zone_name": "humangr.com",
+    }]:
+        fail("staging signed-webhook route is missing or over-broad")
+    if receiver_data.get("env", {}).get("prod", {}).get("routes") != []:
+        fail("receiver production routes are not explicitly disabled")
     if receiver_data.get("triggers", {}).get("crons") != ["59 23 * * 0"]:
         fail("receiver deferred-delivery cron is missing")
     if receiver_data.get("env", {}).get("staging", {}).get("triggers", {}).get("crons") != ["59 23 * * 0"]:
@@ -76,15 +96,25 @@ def main(root: Path) -> None:
         "canonical endpoint gate": "env.PAGERDUTY_EVENTS_URL !== PAGERDUTY_EVENTS_URL",
         "routing-key gate": "PAGERDUTY_SYNTHETIC_ROUTING_KEY?.trim()",
         "header/payload correlation gate": "deliveryId !== envelope.synthetic_page.dedup_key",
+        "scheduled timestamp identity": "page.dedup_key !== scheduledDrillId",
+        "scheduled rotation identity": "page.rotation_week !== expectedRotation",
+        "scheduled emit identity": "page.emit_at_ms !== expectedEmitAt",
         "PagerDuty non-2xx guard": "response === null || !response.ok",
         "D1-before-PagerDuty path": "await persistDelivery(env, envelope)",
+        "no delivery claim before PagerDuty": "envelope.scheduled_at_ms,\n      null",
+        "durable delivery receipt": "await markDelivered(env, deliveryId, envelope.synthetic_page.correlation_id, Date.now())",
         "deferred durability path": "delivery_mode = 'deferred'",
         "deferred undelivered filter": "delivered_at_ms IS NULL",
-        "deferred terminal timestamp": "SET delivered_at_ms = ?, outcome = 'unacked'",
-        "deferred mode preserved": "WHERE drill_id = ? AND delivery_mode = 'deferred' AND delivered_at_ms IS NULL",
+        "deferred acceptance-time receipt": "await markDelivered(env, row.drill_id, row.correlation_id, nowImpl())",
+        "conditional delivery transition": "WHERE drill_id = ? AND delivered_at_ms IS NULL",
         "webhook signature gate": "verifyPagerDutySignature",
+        "webhook delivery receipt gate": "row.delivered_at_ms === null",
+        "webhook terminal race guard": "WHERE drill_id = ? AND outcome = 'unacked' AND delivered_at_ms IS NOT NULL",
         "webhook D1 outcome update": "SET outcome = ?, engineer_slug = ?, ack_ts_ms = ?, mtta_ms = ?, ack_vector = ?",
+        "webhook persisted outcome readback": "SELECT outcome FROM synthetic_page_drills_b072 WHERE drill_id = ?",
         "webhook production gate": "validateWebhookEnvironment",
+        "receiver unknown-cron gate": 'controller.cron !== "59 23 * * 0"',
+        "receiver unknown-cron no-retry": "controller.noRetry()",
     }
     for label, fragment in required_fragments.items():
         combined_source = receiver_source + contract_source
@@ -94,6 +124,8 @@ def main(root: Path) -> None:
             continue
         if fragment not in combined_source:
             fail(f"missing {label}")
+    if receiver_source.count("WHERE drill_id = ? AND outcome = 'unacked' AND delivered_at_ms IS NOT NULL") < 2:
+        fail("webhook event insert and outcome update must share the terminal race guard")
     for label, fragment in {
         "scheduler canonical delivery id": "const deliveryId = `SP-${controller.scheduledTime}`",
         "scheduler correlation id": "correlation_id: `PAT-CORRELATION-ID-001:${deliveryId}`",
@@ -105,6 +137,14 @@ def main(root: Path) -> None:
         fail("migration does not document canonical drill id/dedup format")
     if "apps/synthetic-pager-worker" not in workspace_source:
         fail("receiver package is not in the pnpm workspace")
+    desired_routes = desired.get("cloudflare", {}).get("routes", [])
+    if not any(
+        item.get("worker") == "corelink-synthetic-pager-staging"
+        and item.get("pattern") == "staging.corelink.humangr.com/v1/webhooks/pagerduty"
+        and item.get("zone_name") == "humangr.com"
+        for item in desired_routes
+    ):
+        fail("staging desired state is missing the exact signed-webhook route")
     if not re.search(r"(?m)^\s+workflow_dispatch:\s*$", deploy_source):
         fail("receiver deploy must be manually dispatched")
     if re.search(r"(?m)^\s+(push|pull_request|schedule):\s*$", deploy_source):
@@ -114,6 +154,8 @@ def main(root: Path) -> None:
         "staging environment": "environment: synthetic-drill-staging",
         "inert pre-deploy guard": "python3 scripts/verify_b072_receiver.py",
         "receiver typecheck": "pnpm run typecheck",
+        "receiver lifecycle test": "pnpm run test",
+        "terminal race test": "python3 scripts/test_b072_terminal_race.py",
         "staging deploy": 'pnpm exec wrangler deploy --env "${{ inputs.environment }}"',
     }.items():
         if fragment not in deploy_source:
@@ -128,6 +170,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     try:
         main(args.root.resolve())
-    except (AssertionError, OSError, tomllib.TOMLDecodeError) as error:
+    except (AssertionError, json.JSONDecodeError, OSError, tomllib.TOMLDecodeError) as error:
         print(f"B-072 receiver/schedule guard: FAIL: {error}", file=sys.stderr)
         raise SystemExit(1)

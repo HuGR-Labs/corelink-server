@@ -140,6 +140,10 @@ jobs:
 
       - name: Run Semgrep (separate bundled and CoreLink packs)
         id: semgrep
+        # The local runner always attempts both populations and writes the
+        # policy report before returning its blocking verdict. Defer the job
+        # verdict until upload truth has also been recorded and retained.
+        continue-on-error: true
         shell: bash
         # Semgrep 1.164.0 installed into a throwaway venv (no Docker, no
         # setup-python). Read off the `run:` block below, which is the only
@@ -159,7 +163,7 @@ jobs:
         # scanner/output failure. This preserves blocking semantics without
         # turning every finding into an implicit gate.
         run: |
-          set -uo pipefail
+          set -euo pipefail
           PYBIN="$(command -v python3)"
           echo "Using interpreter: ${PYBIN} ($(${PYBIN} --version 2>&1))"
           "${PYBIN}" -m venv .semgrep-venv
@@ -168,28 +172,11 @@ jobs:
           python -m pip install --quiet --upgrade pip
           python -m pip install --quiet "semgrep==1.164.0"
           semgrep --version
-          set +e
-          semgrep scan \
-            --config p/security-audit \
-            --config p/rust \
-            --config p/typescript \
-            --config p/python \
-            --config p/owasp-top-ten \
-            --config p/cwe-top-25 \
-            --sarif --output semgrep-bundled.sarif \
-            --metrics off
-          BUNDLED_RC=$?
-          semgrep scan \
-            --config ./semgrep.yml \
-            --sarif --output semgrep-custom.sarif \
-            --metrics off
-          CUSTOM_RC=$?
-          set -e
-          echo "bundled_rc=${BUNDLED_RC}" >> "$GITHUB_OUTPUT"
-          echo "custom_rc=${CUSTOM_RC}" >> "$GITHUB_OUTPUT"
-          test -f semgrep-bundled.sarif || echo "::error::bundled SARIF was not emitted"
-          test -f semgrep-custom.sarif || echo "::error::custom SARIF was not emitted"
-          exit 0
+          python scripts/run_b139_semgrep.py \
+            --semgrep-bin "$(command -v semgrep)" \
+            --lock semgrep-bundled-lock.json \
+            --output-dir . \
+            --target .
         env:
           # Consumed by `semgrep scan` for any GitHub-API interactions; granted
           # via the workflow `permissions` block above.
@@ -223,41 +210,17 @@ jobs:
           sarif_file: semgrep-custom.sarif
           category: semgrep-custom
 
-      - name: Evaluate explicit Semgrep ERROR policy
-        id: policy
-        if: always()
-        run: |
-          python3 scripts/verify_b139_semgrep.py --evaluate --bundled-sarif semgrep-bundled.sarif --custom-sarif semgrep-custom.sarif --bundled-rc "${{ steps.semgrep.outputs.bundled_rc }}" --custom-rc "${{ steps.semgrep.outputs.custom_rc }}" --report semgrep-b139-report.json
-
       - name: Record SARIF upload truth
         if: always()
         env:
           BUNDLED_UPLOAD_OUTCOME: ${{ steps.upload_bundled.outcome }}
           CUSTOM_UPLOAD_OUTCOME: ${{ steps.upload_custom.outcome }}
         run: |
-          python3 - <<'PYEOF'
-          import json
-          import os
-          from pathlib import Path
-
-          report_path = Path("semgrep-b139-report.json")
-          if report_path.is_file():
-              report = json.loads(report_path.read_text())
-          else:
-              report = {"schema_version": 1, "finding": "B-139", "status": "missing-policy-report"}
-          def truth(name):
-              return "uploaded" if os.environ.get(name) == "success" else "unavailable_or_unverified"
-          report["sarif_upload"] = {
-              "bundled": truth("BUNDLED_UPLOAD_OUTCOME"),
-              "custom": truth("CUSTOM_UPLOAD_OUTCOME"),
-              "advanced_security_claim": "verified" if (
-                  truth("BUNDLED_UPLOAD_OUTCOME") == "uploaded"
-                  and truth("CUSTOM_UPLOAD_OUTCOME") == "uploaded"
-              ) else "unverified-until-upload-step-succeeds",
-          }
-          report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
-          print(json.dumps(report["sarif_upload"], sort_keys=True))
-          PYEOF
+          python3 scripts/verify_b139_semgrep.py \
+            --classify-uploads \
+            --report semgrep-b139-report.json \
+            --bundled-upload-outcome "${BUNDLED_UPLOAD_OUTCOME}" \
+            --custom-upload-outcome "${CUSTOM_UPLOAD_OUTCOME}"
 
       - name: Retain Semgrep evidence
         if: always()
@@ -279,3 +242,7 @@ jobs:
           else
             echo "::error::No Semgrep policy report emitted — evidence gap."
           fi
+
+      - name: Enforce final Semgrep verdict
+        if: always()
+        run: python3 scripts/verify_b139_semgrep.py --enforce-report --report semgrep-b139-report.json

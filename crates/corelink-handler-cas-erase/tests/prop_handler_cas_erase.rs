@@ -27,10 +27,10 @@ proptest! {
     #[test]
     fn slash_digests_always_rejected(prefix in ".{0,40}", suffix in ".{0,40}") {
         let d = format!("{prefix}/{suffix}");
-        prop_assert!(
-            matches!(validate_digest(&d), Err(CasEraseError::InvalidDigest { .. })),
-            "slash digest must be rejected as InvalidDigest"
-        );
+        match validate_digest(&d) {
+            Err(CasEraseError::InvalidDigest { digest }) => prop_assert_eq!(digest, d),
+            other => prop_assert!(false, "slash digest must be rejected as InvalidDigest, got {other:?}"),
+        }
     }
 
     /// `prepare_erase` denies cross-tenant whenever the two tenants differ,
@@ -38,11 +38,14 @@ proptest! {
     #[test]
     fn cross_tenant_always_denied(a in "[a-z]{1,8}", b in "[a-z]{1,8}", d in ".{0,20}") {
         prop_assume!(a != b);
-        let req = CasEraseRequest::new(a, b, d);
-        prop_assert!(
-            matches!(prepare_erase(&req, "reason"), Err(CasEraseError::CrossTenantDenied { .. })),
-            "differing tenants must be CrossTenantDenied"
-        );
+        let req = CasEraseRequest::new(a.clone(), b.clone(), d);
+        match prepare_erase(&req, "reason") {
+            Err(CasEraseError::CrossTenantDenied { caller, requested_tenant }) => {
+                prop_assert_eq!(caller, a);
+                prop_assert_eq!(requested_tenant, b);
+            }
+            other => prop_assert!(false, "differing tenants must be CrossTenantDenied, got {other:?}"),
+        }
     }
 
     /// The read gate is `Gone` iff a tombstone is present — total + exact.

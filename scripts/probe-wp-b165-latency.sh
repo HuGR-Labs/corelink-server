@@ -28,24 +28,37 @@ case "$B165_BASE_URL" in
   */) B165_BASE_URL="${B165_BASE_URL%/}" ;;
 esac
 
-raw_owned=1
+cleanup_paths=()
 if [[ -n "${B165_RAW_OUT:-}" ]]; then
   raw="$B165_RAW_OUT"
-  raw_owned=0
 else
   raw="$(/usr/bin/mktemp /tmp/b165-latency.XXXXXX.tsv)"
+  cleanup_paths+=("$raw")
 fi
-trap 'if (( raw_owned )); then /bin/rm -f "$raw"; fi' EXIT
+if [[ -n "${B165_TIMING_OUT:-}" ]]; then
+  timing_raw="$B165_TIMING_OUT"
+else
+  timing_raw="$(/usr/bin/mktemp /tmp/b165-server-timing.XXXXXX.tsv)"
+  cleanup_paths+=("$timing_raw")
+fi
+cleanup() {
+  if (( ${#cleanup_paths[@]} > 0 )); then
+    /bin/rm -f -- "${cleanup_paths[@]}"
+  fi
+}
+trap cleanup EXIT
 : > "$raw"
+: > "$timing_raw"
 
 sample_numbers=()
 for ((i=1; i<=B165_SAMPLES; i++)); do sample_numbers+=("$i"); done
 
 request() {
   local population="$1" surface="$2" path="$3" sample="$4" token="${5:-}"
-  local line rc status seconds
+  local line rc status seconds headers server_total_ms transport_ms
+  headers="$(/usr/bin/mktemp /tmp/b165-headers.XXXXXX)"
   if [[ -n "$token" ]]; then
-    if line=$(/usr/bin/curl --connect-timeout 10 --max-time 20 -sS -o /dev/null \
+    if line=$(/usr/bin/curl --connect-timeout 10 --max-time 20 -sS -o /dev/null -D "$headers" \
       -H "Authorization: Bearer $token" \
       -w "%{http_code}\t%{time_total}" "$B165_BASE_URL$path" 2>/dev/null); then
       rc=0
@@ -53,7 +66,7 @@ request() {
       rc=$?
     fi
   else
-    if line=$(/usr/bin/curl --connect-timeout 10 --max-time 20 -sS -o /dev/null \
+    if line=$(/usr/bin/curl --connect-timeout 10 --max-time 20 -sS -o /dev/null -D "$headers" \
       -w "%{http_code}\t%{time_total}" "$B165_BASE_URL$path" 2>/dev/null); then
       rc=0
     else
@@ -67,10 +80,31 @@ request() {
     seconds="${BASH_REMATCH[2]}"
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$population" "$surface" "$path" "$sample" "$status" "$rc" "$seconds" >> "$raw"
+    # `Server-Timing: ... total;dur=N` is generated at the edge and excludes
+    # client↔colo transport. Keep it separate from curl's end-to-end clock;
+    # never infer service latency by comparing raw RTT against an internal SLO.
+    server_total_ms="$(/usr/bin/tr -d '\r' < "$headers" | /usr/bin/awk 'BEGIN{IGNORECASE=1}
+      /^server-timing:/ {
+        sub(/^[^:]+:[[:space:]]*/, "")
+        n=split($0, phases, ",")
+        for (i=1; i<=n; i++) {
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", phases[i])
+          if (phases[i] ~ /^total;dur=[0-9]+([.][0-9]+)?$/) {
+            sub(/^total;dur=/, "", phases[i]); print phases[i]; exit
+          }
+        }
+      }')"
+    if [[ "$population" == served && -n "$server_total_ms" ]]; then
+      transport_ms="$(/usr/bin/awk -v curl_s="$seconds" -v server_ms="$server_total_ms" \
+        'BEGIN { printf "%.3f", curl_s * 1000 - server_ms }')"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$surface" "$path" "$sample" "$seconds" "$server_total_ms" "$transport_ms" >> "$timing_raw"
+    fi
   else
     printf '%s\t%s\t%s\t%s\tCURL_FAILED\t%s\t-\n' \
       "$population" "$surface" "$path" "$sample" "$rc" >> "$raw"
   fi
+  /bin/rm -f "$headers"
 }
 
 stats() {
@@ -97,6 +131,7 @@ stats() {
 echo "B-165 read-only latency probe"
 echo "base=$B165_BASE_URL samples=$B165_SAMPLES mode=$B165_MODE"
 echo "raw=$raw"
+echo "server_timing_raw=$timing_raw"
 echo "Refusal population: unauthenticated GET; sample 1 is discarded as cold."
 
 declare -a refusal_paths=(
@@ -200,8 +235,15 @@ for sample in "${sample_numbers[@]}"; do request served served_a "$served_a" "$s
 for sample in "${sample_numbers[@]}"; do request served served_b "$served_b" "$sample" "$token_b"; done
 stats served served_a 200 || probe_failure=1
 stats served served_b 200 || probe_failure=1
+for surface in served_a served_b; do
+  timing_count="$(/usr/bin/awk -F '\t' -v surf="$surface" '$1 == surf { count++ } END { print count + 0 }' "$timing_raw")"
+  if (( timing_count != B165_SAMPLES )); then
+    echo "BLOCKED: $surface retained $timing_count of $B165_SAMPLES required Server-Timing totals." >&2
+    probe_failure=1
+  fi
+done
 if (( probe_failure )); then
-  echo "BLOCKED: served path did not return HTTP 200 for every retained sample." >&2
+  echo "BLOCKED: served path status or Server-Timing population is incomplete." >&2
   exit 3
 fi
 echo "PASS: both refusal and served populations were measured with the required controls."

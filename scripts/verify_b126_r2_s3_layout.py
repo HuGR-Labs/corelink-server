@@ -20,19 +20,39 @@ from pathlib import Path
 
 PARTS = (
     "client.rs",
+    "client_impl.rs",
+    "client_types.rs",
     "cas_core.rs",
+    "cas_helpers.rs",
     "cas_ops.rs",
+    "cas_batch.rs",
+    "cas_write.rs",
     "ac_core.rs",
+    "cas_builder.rs",
+    "ac_handler.rs",
     "ac_ops.rs",
+    "ac_update.rs",
+    "ac_delete.rs",
+    "ac_list.rs",
+    "ac_builder.rs",
     "tests_1.rs",
+    "tests_1_network.rs",
     "tests_2.rs",
+    "tests_2_byok.rs",
     "tests_3.rs",
+    "tests_4.rs",
 )
 EXPECTED_SYMBOLS = {
     "client.rs": ("R2S3Client", "CappedGet"),
-    "cas_core.rs": ("R2CasHandler", "public_namespace_prefix", "verify_content_hash"),
-    "ac_core.rs": ("R2AcHandler", "validate_cas_bucket_for_region", "build_r2_cas_handler_from_env"),
-    "ac_ops.rs": ("build_r2_ac_handler_from_env",),
+    "cas_core.rs": ("R2CasHandler",),
+    "cas_helpers.rs": ("public_namespace_prefix", "verify_content_hash"),
+    "ac_core.rs": ("CasDeleteHandler", "CasListHandler"),
+    "cas_builder.rs": (
+        "build_r2_cas_handler_from_env",
+        "validate_cas_bucket_for_region",
+    ),
+    "ac_handler.rs": ("R2AcHandler",),
+    "ac_builder.rs": ("build_r2_ac_handler_from_env",),
 }
 INCLUDE_PREFIX = "r2_s3_parts/"
 

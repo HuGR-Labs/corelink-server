@@ -23,6 +23,11 @@ SOURCE = "https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metric
 KEYCHAIN_SERVICE = "CoreLink/METRICS_OBSERVABILITY_KEY"
 KEYCHAIN_ACCOUNT = "corelink-ops"
 AUTH_HEADER = "X-Corelink-Internal-Auth"
+# Cloudflare Browser Integrity Check rejects urllib's default `Python-urllib/*`
+# signature with HTTP 403 / error 1010 before the Worker can authenticate the
+# dedicated key. Pin an explicit, non-secret probe identity so the canonical
+# collector reaches the Worker without changing the auth contract.
+USER_AGENT = "corelink-b006-probe/1.0"
 COUNTER = "capability_claim_unserved"
 
 
@@ -75,7 +80,11 @@ def collect(url: str, service: str, account: str, timeout: float, max_bytes: int
     if not key:
         return _base("Keychain item empty; no production request was attempted", attempted=False, status=None)
 
-    request = urllib.request.Request(url, headers={AUTH_HEADER: key}, method="GET")
+    request = urllib.request.Request(
+        url,
+        headers={AUTH_HEADER: key, "User-Agent": USER_AGENT, "Accept": "application/json"},
+        method="GET",
+    )
     try:
         with NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:
             status = response.status

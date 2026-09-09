@@ -166,8 +166,10 @@ jobs:
             exit 1
           fi
 
-          # Decompress with zstd
-          sudo apt-get install -y --no-install-recommends zstd
+          # Own every tool consumed below instead of depending on incidental
+          # packages in a particular ephemeral runner image.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends zstd jq
           zstd -d "${ARCHIVE}" -o "${BUCK2_INSTALL_DIR}/buck2"
           chmod +x "${BUCK2_INSTALL_DIR}/buck2"
 
@@ -330,6 +332,7 @@ jobs:
           [[ "${ACTUAL_SHA256}" == "${BUCK2_SHA256}" ]] || {
             echo "::error::Buck2 SHA-256 mismatch: expected ${BUCK2_SHA256}, got ${ACTUAL_SHA256}"; exit 1;
           }
+          sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends zstd
           zstd -d "${ARCHIVE}" -o ~/.local/bin/buck2
           chmod +x ~/.local/bin/buck2
@@ -406,6 +409,7 @@ jobs:
       # the canary PAT so this probe cannot turn a production credential into
       # a false quota assertion.
       - name: Scenario 4 — Dedicated quota PAT returns quota error
+        working-directory: examples/buck2-starter
         timeout-minutes: 2
         env:
           CORELINK_PAT: ${{ secrets.CORELINK_QUOTA_PAT }}
@@ -471,7 +475,8 @@ jobs:
           [[ "${ACTUAL_SHA256}" == "${BUCK2_SHA256}" ]] || {
             echo "::error::Buck2 SHA-256 mismatch: expected ${BUCK2_SHA256}, got ${ACTUAL_SHA256}"; exit 1;
           }
-          sudo apt-get install -y --no-install-recommends zstd jq
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends zstd jq bc
           zstd -d "${ARCHIVE}" -o ~/.local/bin/buck2
           chmod +x ~/.local/bin/buck2
           echo "$HOME/.local/bin" >> "${GITHUB_PATH}"

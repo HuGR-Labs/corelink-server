@@ -104,15 +104,18 @@
     ///   R2_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com \
     ///   CLOUDFLARE_ACCOUNT_ID=<acc> CF_API_TOKEN=<tok> \
     ///   D1_DATABASE_ID=<id> \
-    ///   R2_TEST_BUCKET=corelink-cas-prod \
+    ///   R2_TEST_BUCKET=corelink-cas-staging \
     ///   cargo test -p corelink-server storage_r2_round_trip -- --ignored
     /// ```
     #[tokio::test]
     #[ignore = "requires live R2 credentials (R2_S3_ACCESS_KEY_ID etc.)"]
     async fn storage_r2_round_trip() {
         let env = StorageEnv::from_env().expect("all R2 env vars must be set to run this test");
-        let bucket =
-            std::env::var("R2_TEST_BUCKET").unwrap_or_else(|_| "corelink-cas-prod".to_owned());
+        let bucket = std::env::var("R2_TEST_BUCKET").expect("R2_TEST_BUCKET must be set");
+        assert!(
+            bucket.ends_with("-staging"),
+            "live R2 probes require a dedicated *-staging bucket"
+        );
         let client = R2S3Client::new(&env, &bucket).await.expect("client");
 
         // Use a timestamped key so parallel test runs don't collide.
@@ -125,15 +128,22 @@
         );
         let payload = b"corelink-wp-s1-storage-round-trip".to_vec();
 
-        // PUT
-        client.put(&key, payload.clone()).await.expect("put");
+        // Collect every operation before asserting so a failed read or
+        // mismatch still reaches the exact-key cleanup below.
+        let put = client.put(&key, payload.clone()).await;
+        let got = if put.is_ok() {
+            client.get(&key).await
+        } else {
+            Err("put failed; get not attempted".to_owned())
+        };
+        let missing = client.get("__no_such_key__").await;
+        let cleanup = client.delete_if_present(&key).await;
 
-        // GET → must match
-        let got = client.get(&key).await.expect("get").expect("present");
+        cleanup.expect("round-trip exact-key cleanup");
+        put.expect("put");
+        let got = got.expect("get").expect("present");
         assert_eq!(got, payload, "round-trip bytes must match");
-
-        // GET missing key → None
-        let missing = client.get("__no_such_key__").await.expect("get");
+        let missing = missing.expect("get missing key");
         assert!(missing.is_none(), "missing key must return None");
     }
 
@@ -146,11 +156,17 @@
     #[ignore = "requires live R2 credentials (R2_S3_ACCESS_KEY_ID etc.)"]
     async fn cas_idempotent_rewrite_reports_durable_false() {
         let env = StorageEnv::from_env().expect("all R2 env vars must be set to run this test");
-        let bucket =
-            std::env::var("R2_TEST_BUCKET").unwrap_or_else(|_| "corelink-cas-prod".to_owned());
+        let bucket = std::env::var("R2_TEST_BUCKET").expect("R2_TEST_BUCKET must be set");
+        assert!(
+            bucket.ends_with("-staging"),
+            "live R2 probes require a dedicated *-staging bucket"
+        );
         let client = R2S3Client::new(&env, &bucket).await.expect("client");
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
+        let cleanup_client = R2S3Client::new(&env, &bucket)
+            .await
+            .expect("cleanup client");
         let handler = R2CasHandler::new(client, "iad", None, audit, sli);
 
         // Unique content per run so parallel runs / prior state don't collide.
@@ -173,15 +189,9 @@
                 "p",
                 tenant,
                 1,
-            ))
-            .expect("first write");
-        assert!(
-            first.durable,
-            "first write of a fresh hash must be durable=true"
-        );
-
-        let second = handler
-            .write(CasWriteRequest::new(
+            ));
+        let second = if first.is_ok() {
+            handler.write(CasWriteRequest::new(
                 tenant,
                 claimed.clone(),
                 payload,
@@ -189,7 +199,28 @@
                 tenant,
                 2,
             ))
-            .expect("second write");
+        } else {
+            Err(CasHandlerError::Internal(
+                "first write failed; second not attempted".to_owned(),
+            ))
+        };
+        let cleanup_key = R2S3Client::blob_key(
+            "iad",
+            &raw_padded_prefix(tenant),
+            &claimed,
+            DigestAlgo::Blake3,
+        );
+        cleanup_client
+            .delete_if_present(&cleanup_key)
+            .await
+            .expect("idempotent rewrite exact-key cleanup");
+        let first = first.expect("first write");
+        assert!(
+            first.durable,
+            "first write of a fresh hash must be durable=true"
+        );
+
+        let second = second.expect("second write");
         assert!(
             !second.durable,
             "an idempotent re-write must report durable=false (HEAD hit → no re-PUT, no re-charge)"
@@ -204,8 +235,11 @@
     #[ignore = "requires live R2 credentials (R2_S3_ACCESS_KEY_ID etc.)"]
     async fn delete_if_present_credits_size_once_then_none() {
         let env = StorageEnv::from_env().expect("all R2 env vars must be set to run this test");
-        let bucket =
-            std::env::var("R2_TEST_BUCKET").unwrap_or_else(|_| "corelink-cas-prod".to_owned());
+        let bucket = std::env::var("R2_TEST_BUCKET").expect("R2_TEST_BUCKET must be set");
+        assert!(
+            bucket.ends_with("-staging"),
+            "live R2 probes require a dedicated *-staging bucket"
+        );
         let client = R2S3Client::new(&env, &bucket).await.expect("client");
 
         let key = format!(
@@ -219,16 +253,19 @@
         let size = payload.len() as u64;
         client.put(&key, payload).await.expect("put");
 
-        // First delete observes-and-removes → Some(size).
-        let first = client.delete_if_present(&key).await.expect("first delete");
+        // Collect both delete results before asserting. If either request
+        // fails, the final exact-key cleanup still runs.
+        let first = client.delete_if_present(&key).await;
+        let second = client.delete_if_present(&key).await;
+        let cleanup = client.delete_if_present(&key).await;
+        cleanup.expect("delete-once exact-key cleanup");
+        let first = first.expect("first delete");
         assert_eq!(
             first,
             Some(size),
             "the first delete must credit the reclaimed size"
         );
-
-        // Second delete sees the key already gone → None (releases 0).
-        let second = client.delete_if_present(&key).await.expect("second delete");
+        let second = second.expect("second delete");
         assert_eq!(
             second, None,
             "a second delete must credit 0 (no double-release)"

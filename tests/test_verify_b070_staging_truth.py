@@ -116,7 +116,10 @@ class B070StagingTruthTests(unittest.TestCase):
             "kv_namespaces": ("56f8e99f36ad4ec2aa3b876562409ccc", "00000000000000000000000000000000"),
             "d1_databases": ("d64742ea-e102-40b2-a844-ff02e3f94562", "00000000-0000-0000-0000-000000000000"),
             "durable_objects": ("class_name = \"RolloutController\"", "class_name = \"MutatedController\""),
-            "containers": ("corelink-prod-corelinkserver-prod:ddd95560-r1", "corelink-prod-corelinkserver-prod:mutated"),
+            "containers": (
+                f"corelink-prod-corelinkserver-prod:{verifier.EXPECTED_PRODUCTION_CONTAINER_TAG}",
+                "corelink-prod-corelinkserver-prod:mutated",
+            ),
         }
         for family, (old, new) in mutations.items():
             with self.subTest(family=family):
@@ -144,6 +147,38 @@ class B070StagingTruthTests(unittest.TestCase):
                         f"production-topology:prod:{family}",
                         verifier.assess(Path(temp.name)),
                     )
+
+    def test_production_container_pin_is_independent_and_fails_closed(self) -> None:
+        current = verifier.EXPECTED_PRODUCTION_CONTAINER_TAG
+        mutations = {
+            "fleet-wide-stale": (current, "b90b245df-r1", 5),
+            "single-region-mismatch": (
+                f"corelink-prod-syd-corelinkserver-prod:{current}",
+                "corelink-prod-syd-corelinkserver-prod:deadbeef0-r1",
+                1,
+            ),
+            "malformed-tag": (
+                f"corelink-prod-corelinkserver-prod:{current}",
+                "corelink-prod-corelinkserver-prod:latest",
+                1,
+            ),
+        }
+        for reason, (old, new, expected_gaps) in mutations.items():
+            with self.subTest(reason=reason):
+                temp = self.copy_fixture()
+                with temp:
+                    path = Path(temp.name) / verifier.ROOT_WORKER_CONFIG
+                    text = path.read_text(encoding="utf-8")
+                    self.assertEqual(text.count(old), expected_gaps)
+                    path.write_text(text.replace(old, new), encoding="utf-8")
+                    gaps = verifier.assess(Path(temp.name))
+                    container_gaps = [
+                        gap
+                        for gap in gaps
+                        if gap.startswith("production-topology:")
+                        and gap.endswith(":containers")
+                    ]
+                    self.assertEqual(len(container_gaps), expected_gaps, gaps)
 
     def test_runbook_r2_inventory_matches_all_prod_bindings_and_population(self) -> None:
         temp = self.copy_fixture()

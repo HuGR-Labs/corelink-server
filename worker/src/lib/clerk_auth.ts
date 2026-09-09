@@ -166,8 +166,8 @@ export async function verifyClerkSessionAndResolveTenant(
   // than implicit from the JWKS endpoint.
   //
   // SECURITY FIX (M2 — issuer pin): When CLERK_ISSUER_URL is set, we re-assert
-  // exact equality post-verify.  Without the secret the shape-check fallback
-  // (https + "clerk") is preserved; set the secret to activate the exact pin.
+  // exact equality post-verify. Without the value the shape-check fallback is
+  // available only outside production; production fails closed below.
   const clerkIssuerUrl = env.CLERK_ISSUER_URL && env.CLERK_ISSUER_URL.length > 0
     ? env.CLERK_ISSUER_URL
     : undefined;
@@ -203,9 +203,9 @@ export async function verifyClerkSessionAndResolveTenant(
 
     // M2-FIX: Assert issuer.  When CLERK_ISSUER_URL is set (exact-pin mode),
     // require strict equality against the configured value.  Without it, fall
-    // back to the M1 shape-check (https scheme + hostname contains "clerk") so
-    // this is a safe no-op until the owner runs:
-    //   wrangler secret put CLERK_ISSUER_URL --env prod
+    // back to the M1 shape-check (https scheme + hostname contains "clerk")
+    // only outside production. Production's public pin is versioned in
+    // wrangler.toml [env.prod].vars.
     const iss = (claims as Record<string, unknown>)["iss"];
     if (clerkIssuerUrl) {
       // Exact-pin mode: CLERK_ISSUER_URL is set — require exact equality.
@@ -223,8 +223,8 @@ export async function verifyClerkSessionAndResolveTenant(
       // shape-check — otherwise a misconfigured prod deploy would accept tokens
       // from ANY https issuer whose host merely contains "clerk" (e.g. another
       // Clerk instance). Fail-closed forces the operator to provision the pin.
-      // OPERATOR (launch step): `wrangler secret put CLERK_ISSUER_URL --env prod`
-      // BEFORE deploying this Worker, or all Clerk session auth will 401.
+      // A production config missing wrangler.toml's versioned pin rejects every
+      // Clerk session rather than accepting an issuer by hostname shape.
       console.error(
         `[${requestId}] CLERK_ISSUER_URL unset in production — failing CLOSED (issuer pin required)`,
       );

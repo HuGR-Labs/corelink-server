@@ -71,8 +71,8 @@ mod structure_tests {
         "client.rs",
         "client_impl.rs",
         "client_types.rs",
-        "cas_helpers.rs",
         "cas_core.rs",
+        "cas_helpers.rs",
         "cas_ops.rs",
         "cas_batch.rs",
         "cas_write.rs",
@@ -114,34 +114,19 @@ mod structure_tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let facade = fs::read_to_string(root.join("src/storage/r2_s3.rs"))
             .expect("r2_s3 facade must be readable");
-        for name in [
-            "client.rs",
-            "client_impl.rs",
-            "client_types.rs",
-            "cas_helpers.rs",
-            "cas_core.rs",
-            "cas_ops.rs",
-            "cas_batch.rs",
-            "cas_write.rs",
-            "ac_core.rs",
-            "cas_builder.rs",
-            "ac_handler.rs",
-            "ac_ops.rs",
-            "ac_update.rs",
-            "ac_delete.rs",
-            "ac_list.rs",
-            "ac_builder.rs",
-            "tests_1.rs",
-            "tests_1_network.rs",
-            "tests_2.rs",
-            "tests_2_byok.rs",
-            "tests_3.rs",
-            "tests_4.rs",
-        ] {
+        let mut previous_include_end = 0;
+        for name in PARTS {
+            let include = format!("include!(\"r2_s3_parts/{name}\")");
+            let include_start = facade
+                .find(&include)
+                .unwrap_or_else(|| panic!("part {name} must be included"));
+            assert!(
+                include_start >= previous_include_end,
+                "part {name} is out of canonical facade order"
+            );
+            previous_include_end = include_start + include.len();
             assert_eq!(
-                facade
-                    .matches(&format!("include!(\"r2_s3_parts/{name}\")"))
-                    .count(),
+                facade.matches(&include).count(),
                 1,
                 "part {name} must be included exactly once"
             );

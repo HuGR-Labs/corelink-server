@@ -418,10 +418,12 @@ proptest! {
                 "pct={pct_f} < 0.95 MUST NOT fire (got {outcome:?})"
             );
         } else {
-            prop_assert!(
-                matches!(outcome, QuotaTriggerOutcome::Fire { .. }),
-                "pct={pct_f} >= 0.95 MUST fire (got {outcome:?})"
-            );
+            match outcome {
+                QuotaTriggerOutcome::Fire { target_bytes_to_reclaim } => {
+                    prop_assert!(target_bytes_to_reclaim > 0);
+                }
+                other => prop_assert!(false, "pct={pct_f} >= 0.95 MUST fire (got {other:?})"),
+            }
         }
     }
 
@@ -434,10 +436,13 @@ proptest! {
         if days <= 730 {
             prop_assert!(r.is_ok(), "days={days} <= 730 MUST accept (got {r:?})");
         } else {
-            prop_assert!(
-                matches!(r, Err(TierTtlOverrideError::ExceedsMaxTtl { .. })),
-                "days={days} > 730 MUST reject as ExceedsMaxTtl (got {r:?})"
-            );
+            match r {
+                Err(TierTtlOverrideError::ExceedsMaxTtl { requested_days, max_days }) => {
+                    prop_assert_eq!(requested_days, days);
+                    prop_assert_eq!(max_days, 730);
+                }
+                other => prop_assert!(false, "days={days} > 730 MUST reject as ExceedsMaxTtl (got {other:?})"),
+            }
         }
     }
 

@@ -66,7 +66,42 @@ mod tests {
             .await
             .expect("valid active key row");
         assert_eq!(keys, vec![key_id()]);
-        assert!(db.statements()[0].contains("state IN ('active', 'partial')"));
+        let statements = db.statements();
+        let sql = &statements[0];
+        assert!(sql.contains("c.state IN ('pending', 'active', 'partial')"));
+        assert!(sql.contains("a.source_cmk_provider"));
+        assert!(sql.contains("tenant_byok_secret_history"));
+    }
+
+    #[tokio::test]
+    async fn d1_population_checks_target_and_pinned_source_keys() {
+        let source = KmsKeyId {
+            provider: KmsProviderKind::AwsKms,
+            key_arn_or_id: "arn:aws:kms:test:key/source".to_owned(),
+            region: "us-east-1".to_owned(),
+        };
+        let target = KmsKeyId {
+            provider: KmsProviderKind::AwsKms,
+            key_arn_or_id: "arn:aws:kms:test:key/target".to_owned(),
+            region: "us-east-1".to_owned(),
+        };
+        let db = Arc::new(RecordingD1::with_responses(vec![vec![
+            RecordingD1::row(&[
+                ("cmk_provider", "aws"),
+                ("cmk_key_id", source.as_str()),
+                ("cmk_region", "us-east-1"),
+            ]),
+            RecordingD1::row(&[
+                ("cmk_provider", "aws"),
+                ("cmk_key_id", target.as_str()),
+                ("cmk_region", "us-east-1"),
+            ]),
+        ]]));
+        let keys = D1ActiveByokKeySource::new(db)
+            .list_active_byok_keys(KmsProviderKind::AwsKms)
+            .await
+            .expect("source and target identities are detector inputs");
+        assert_eq!(keys, vec![source, target]);
     }
 
     #[tokio::test]
@@ -141,8 +176,9 @@ mod tests {
 
     #[test]
     fn status_and_customer_audit_share_one_database_transaction() {
-        let sql =
-            include_str!("../../../../migrations/d1/0114_byok_revocation_customer_audit_atomic.sql");
+        let sql = include_str!(
+            "../../../../migrations/d1/0114_byok_revocation_customer_audit_atomic.sql"
+        );
         let mut connection = rusqlite::Connection::open_in_memory().expect("sqlite");
         connection
             .execute_batch(

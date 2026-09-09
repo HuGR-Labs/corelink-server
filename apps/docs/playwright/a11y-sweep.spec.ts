@@ -41,11 +41,10 @@ const FORBIDDEN_IMPACT = new Set(["serious", "critical"]);
 
 async function scan(page: Page, route: string) {
   const response = await page.goto(route, { waitUntil: "networkidle" });
-  // Allow 404s only for routes that have not landed yet (parallel WI build);
-  // CI sprint-close run must hit 200 across the board.
+  // A missing route is an availability failure, not an accessibility pass.
+  // Never skip a 4xx/5xx (or a navigation with no main response).
   if (!response || response.status() >= 400) {
-    test.skip(true, `route ${route} not yet available (status ${response?.status() ?? "no-response"})`);
-    return;
+    throw new Error(`route ${route} unavailable (status ${response?.status() ?? "no-response"})`);
   }
 
   const results = await new AxeBuilder({ page })

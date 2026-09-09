@@ -29,3 +29,11 @@ Before adding a root staging environment, provision its independent resources,
 secrets, workflow wiring, and promotion contract in a separately reviewed
 change. Until then, production deploys remain governed by the five-target
 matrix and the gates in `cf-deploy-prod.yml`.
+
+The exact unprovisioned desired state is tracked in
+`infra/staging/topology.json`. It names a dedicated Worker/container, D1, R2,
+KV, DSR queue/DLQ, and service bindings for
+`https://staging.corelink.humangr.com`; none may inherit or reuse dev/prod
+resources. The file intentionally contains no provider IDs or secret values.
+Only after provider creation returns the IDs and every listed secret name is
+bound may an `[env.staging]` block be rendered into `wrangler.toml`.

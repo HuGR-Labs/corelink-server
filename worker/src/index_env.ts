@@ -54,10 +54,10 @@ export interface Env {
   CONFIG_DB: D1Database;
   // Secrets (bound via `wrangler secret put`)
   CLERK_SECRET_KEY?: string;
-  // Activate exact-issuer pin: `wrangler secret put CLERK_ISSUER_URL --env prod`
-  // Value = Clerk Frontend API / issuer URL, e.g. https://<slug>.clerk.accounts.dev
-  // or the prod issuer shown in the Clerk dashboard → API Keys → Frontend API URL.
-  // Without this secret production auth fails closed; only non-production
+  // Exact-issuer pin. Production's public, non-secret value is versioned in
+  // wrangler.toml [env.prod].vars; do not copy it into regional Workers, which
+  // intentionally expose no Clerk auth surface.
+  // Without this value production auth fails closed; only non-production
   // development/test requests use the conservative shape-check fallback.
   CLERK_ISSUER_URL?: string;
   // ── githugr multi-issuer (exchange/token-exchange paths only) ────────────────
@@ -133,7 +133,7 @@ export interface Env {
   // the same names on its side.
   CORELINK_PAT_MINT_AUTH_KEY?: string; // gate for `/_internal/pat/mint`
   CORELINK_ADMIN_AUTH_KEY?: string;    // gate for admin `/_internal/*` routes
-  CORELINK_ADMIN_APPROVER_AUTH_KEY?: string; // H5 dual-approve gate for `POST /v1/admin/approve` (DISTINCT from the mutate/admin key → two-person control)
+  CORELINK_ADMIN_APPROVER_AUTH_KEY?: string; // H5 + B054 Security approval gate; DISTINCT from mutate and erase executor keys
   CORELINK_ERASE_AUTH_KEY?: string;    // gate for erase `/_internal/*` routes
   CORELINK_ERASE_AUTH_KEY_PREVIOUS?: string; // outgoing erase key during a rotation (dual-key; forwarded to the container)
   CORELINK_AUDIT_ATTEMPTED_AUTH_KEY?: string; // dedicated key for the container's /_internal/audit/cas-attempted (no shared fallback; forwarded to the container)
@@ -245,6 +245,16 @@ export interface Env {
   AUDIT_CHAIN_SIGNING_KEY_ID?: string;
   /** JSON object mapping registered link_key_id values to 32-byte lower-case hex keys. */
   AUDIT_CHAIN_LINK_KEYS_JSON?: string;
+  /** Pinned HTTPS origin for the independently administered B-054 witness. */
+  AUDIT_WITNESS_URL?: string;
+  /** Dedicated bearer token shared only with the independent witness. */
+  AUDIT_WITNESS_APPEND_TOKEN?: string;
+  /** Stable witness identity pinned beside the public-key registry. */
+  AUDIT_WITNESS_ID?: string;
+  /** Root-authorized JSON map of witness key id to Ed25519 public key. */
+  AUDIT_WITNESS_PUBLIC_KEYS_JSON?: string;
+  /** OOB-pinned root ids -> Ed25519 public keys for audit signing registries. */
+  AUDIT_CHAIN_TRUST_ROOT_PUBLIC_KEYS_JSON?: string;
   AUDIT_CHAIN_TRUST_UNSIGNED_RESUME?: string;
   AUDIT_DRAIN_BATCH_LIMIT?: string;
   AUDIT_DRAIN_LEASE_ENABLED?: string;
@@ -265,6 +275,12 @@ export interface Env {
   // `.or_else(...)` fallback. See durable_object.ts forward block.
   HUGR_OCI_TOKEN_KEY?: string;
   CORELINK_PORTAL_RETURN_URL?: string;
+  // B-083 native AWS KMS credentials. These are Worker secrets forwarded
+  // byte-for-byte into container.start; the Rust provider prefers these
+  // dedicated names over the generic AWS credential names used elsewhere.
+  CORELINK_BYOK_KMS_ACCESS_KEY_ID?: string;
+  CORELINK_BYOK_KMS_SECRET_ACCESS_KEY?: string;
+  CORELINK_BYOK_KMS_SESSION_TOKEN?: string;
   AWS_REGION?: string;
   GCP_REGION?: string;
   CORELINK_BYOK_AZURE_REGION?: string;

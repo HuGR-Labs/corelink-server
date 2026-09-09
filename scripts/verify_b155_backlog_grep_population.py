@@ -115,6 +115,24 @@ def mutation_self_test(backlog: str) -> None:
     else:
         raise InstrumentError("empty backlog mutation was accepted as a clean census")
 
+    # B-373 is the newest real record and must remain part of the closed
+    # population denominator. Removing its complete fence must fail closed,
+    # just like the established B-084 population mutation below.
+    b373_fence = next(
+        (match for match in _parser.FENCE.finditer(backlog)
+         if "id: B-373\n" in match.group(1)),
+        None,
+    )
+    if b373_fence is None:
+        raise InstrumentError("B-373 mutation target is missing")
+    without_b373 = backlog[: b373_fence.start()] + backlog[b373_fence.end() :]
+    try:
+        census(without_b373)
+    except InstrumentError:
+        pass
+    else:
+        raise InstrumentError("removing B-373 was accepted as a clean census")
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "roles": {
+    "owner": {
+      "principal": "gustavo@humangr.com",
+      "fingerprint": "SHA256:grBP7UAeYUlzeyv9oe6TDk1OMADK0QrMOVfaIm9Zbwo"
+    },
+    "ops": {
+      "principal": null,
+      "fingerprint": null
+    }
+  }
+}

@@ -131,6 +131,14 @@ ANALYTICS_STAGING_D1 = {
 
 EXPECTED_PRODUCTION_R2_POPULATION = 19
 
+# This is an independent desired-state pin, deliberately not inferred from
+# wrangler.toml.  Deriving the expected value from the configuration under test
+# would make a fleet-wide stale repin self-validating.  Keep this aligned with
+# the tag blessed by the production container build/repin change; the separate
+# check-container-pin-fresh.sh gate proves that its SHA still reflects the
+# container-affecting source at deploy time.
+EXPECTED_PRODUCTION_CONTAINER_TAG = "2cd609d25-r1"
+
 REQUIRED_PROD_ENVS = {
     "prod": "corelink-prod",
     "prod-sam": "corelink-prod-sam",
@@ -211,7 +219,7 @@ def _expected_topology() -> dict[str, dict[str, tuple]]:
     }
     lhr = {"binding": "AC_BUCKET_LHR", "bucket_name": "corelink-ac-eu", "jurisdiction": "eu"}
     images = {
-        name: f"registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/{worker}-corelinkserver-prod:ddd95560-r1"
+        name: f"registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/{worker}-corelinkserver-prod:{EXPECTED_PRODUCTION_CONTAINER_TAG}"
         for name, worker in REQUIRED_PROD_ENVS.items()
     }
     result = {}

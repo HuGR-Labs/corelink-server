@@ -76,7 +76,8 @@ impl R2CasHandler {
         // audit/storage boundary: a failed audit means zero R2 calls, not
         // merely zero flags returned to the caller.
         let audit_result = {
-            let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Audit);
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Audit);
             tokio::task::block_in_place(|| {
                 handle.block_on(audit_async.emit_cas_batch_async(&events))
             })
@@ -85,12 +86,20 @@ impl R2CasHandler {
             return Err(CasHandlerError::AuditFailed(e));
         }
 
+        let mut guards = reqs
+            .iter()
+            .map(|req| self.acquire_byok_data(&req.tenant, DataOperation::Read))
+            .collect::<Result<Vec<_>, _>>()?;
+
         // Probes may still overlap with each other, but only after the
         // durable audit has committed. The single store scope accounts for
         // their bounded concurrent window once.
         let probe_results = {
-            let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
-            tokio::task::block_in_place(|| handle.block_on(self.probe_existence_concurrently(reqs)))
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            tokio::task::block_in_place(|| {
+                handle.block_on(self.probe_existence_concurrently(reqs, &guards))
+            })
         };
 
         // Deterministic, request-ordered evaluation: FIRST error wins, and
@@ -109,6 +118,9 @@ impl R2CasHandler {
                 }
             }
         }
+        for guard in &mut guards {
+            self.validate_byok_return(guard.as_mut())?;
+        }
         Ok(flags)
     }
 
@@ -119,13 +131,14 @@ impl R2CasHandler {
     async fn probe_existence_concurrently(
         &self,
         reqs: &[CasReadRequest],
+        guards: &[Option<ByokDataGuard>],
     ) -> Vec<Result<bool, CasHandlerError>> {
         use futures::StreamExt as _;
 
-        futures::stream::iter(reqs.iter().map(|req| async move {
+        futures::stream::iter(reqs.iter().zip(guards).map(|(req, guard)| async move {
             // `Some(len)` present / `None` absent — the storage-layer
             // `NotFound` absorbed into `Ok(false)` exactly as `exists` does.
-            self.probe_existence_unaudited(req)
+            self.probe_existence_unaudited(req, guard.as_ref())
                 .await
                 .map(|found| found.is_some())
         }))
@@ -162,14 +175,59 @@ impl R2CasHandler {
     async fn probe_existence_unaudited(
         &self,
         req: &CasReadRequest,
+        guard: Option<&ByokDataGuard>,
     ) -> Result<Option<u64>, CasHandlerError> {
         // BYOK Wave 3c: probe the §4-hardened physical key for an active
         // tenant, so this hits the SAME key `read`/`write`/`exists` use.
-        let resolved = self.resolve_byok(&req.tenant, &req.hash, req.algo).await?;
+        let resolved = self
+            .resolve_byok_with_guard(&req.tenant, &req.hash, req.algo, guard)
+            .await?;
         // Fail CLOSED if the tenant prefix is not derivable: never touch R2
         // under a degraded/empty (SHARED) prefix.
-        let key = self
-            .r2_key(&req.tenant, &resolved.physical_digest, req.algo)
+        let logical_key = format!(
+            "{}:{}",
+            match req.algo {
+                DigestAlgo::Blake3 => "blake3",
+                DigestAlgo::Sha256 => "sha256",
+            },
+            req.hash
+        );
+        let catalog_key = if let Some(guard) = guard {
+            if guard
+                .intent()
+                .map_err(CasHandlerError::Internal)?
+                .catalog_generation()
+                .is_some()
+            {
+                guard
+                    .gate()
+                    .resolve_catalog(
+                        guard.intent().map_err(CasHandlerError::Internal)?,
+                        crate::storage::byok_generation_catalog::ByokObjectKind::Cas,
+                        &logical_key,
+                    )
+                    .await
+                    .map_err(CasHandlerError::Internal)?
+                    .map(|published| published.physical_key)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if guard.is_some_and(|value| {
+            value
+                .intent()
+                .is_ok_and(|intent| intent.catalog_generation().is_some())
+        }) && catalog_key.is_none()
+        {
+            return Ok(None);
+        }
+        let key = catalog_key
+            .map_or_else(
+                || self.r2_key(&req.tenant, &resolved.physical_digest, req.algo),
+                Ok,
+            )
             .map_err(CasHandlerError::Internal)?;
         debug!(key = %key, "R2CasHandler::exists");
 

@@ -8,16 +8,14 @@
 // It is consumed by [`crate::storage::r2_s3::R2CasHandler`] on the CAS
 // write/read path.
 //
-// # GATED-INERT (the safety envelope)
+// # FEATURE-GATED (the safety envelope)
 //
 // Per the audited plan `docs/design/2026-06-28-byok-encryption-at-rest-plan.md`
 // (§7.2, §11 C1/C2), encryption engages **only** for a tenant whose
-// `tenant_byok_config.state == 'active'`. Onboarding (the sole writer of those
-// rows — audit finding H5) is a later wave, so today **zero** tenants are
-// active and this code path is inert: every existing tenant keeps the exact
-// current plaintext behaviour. The handler also threads the BYOK
-// collaborators as `Option`s — when any is `None` the plaintext path runs
-// unchanged.
+// `tenant_byok_config.state == 'active'`. The shipped real-provider image
+// attaches every collaborator in the production CAS/AC builders; the default
+// no-provider build leaves them absent and its activation route returns 501.
+// This makes activation and data-plane engagement one compile-time boundary.
 //
 // # FAIL-CLOSED (plan §6 — mandatory)
 //
@@ -29,21 +27,17 @@
 // # Scope (Wave 3a) and deferrals
 //
 // - **In scope:** the native CAS single-shot write+read path, Mode A
-//   (convergent) only, state `active`.
-// - **Wave 3b (now wired here, GATED-INERT):** the AC (`R2AcHandler`) path —
+//   (convergent), state `active`.
+// - **Wave 3b (wired here):** the AC (`R2AcHandler`) path —
 //   the action cache encrypts its `result_payload` at rest under
 //   [`ac_crypto_context`] (surface `"ac"`, domain-separated from CAS; audit
 //   H1), and the ciphertext-size accounting reconciliation (audit C3) is
 //   single-sourced via [`BYOK_CLB1_OVERHEAD`].
-// - **Deferred to Wave 3c/4 (documented, never silently skipped):**
-//   - §4 HMAC'd-digest key hardening (confirmation-oracle) — the R2 key keeps
-//     the raw plaintext digest for 3a/3b; see [`cas_crypto_context`] /
-//     [`ac_crypto_context`] (Wave 3c).
-//   - Mode B (`crypto_mode = 'random'`) — fail-closed here, NOT plaintext
-//     (Wave 3c).
+// - **Wave 3c (wired here):** §4 HMAC'd-digest key hardening and Mode B
+//   (`crypto_mode = 'random'`) through the durable envelope store.
+// - **Deferred to Wave 4 (documented, never silently skipped):**
 //   - The `partial`/backfill dual-read state (audit H7) — fail-closed here
 //     (Wave 4).
-//   - The production `KmsProvider` wiring (Wave 4 onboarding).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -137,6 +131,20 @@ pub trait ByokConfigSource: Send + Sync + core::fmt::Debug {
         &self,
         tenant: &str,
     ) -> Result<Option<TenantByokConfig>, ByokConfigError>;
+
+    /// Load the immutable source policy snapshot for an exact config version.
+    /// The default is fail-closed so a current-row reader cannot serve a
+    /// rotated ciphertext under the wrong CMK/TCS policy.
+    async fn get_byok_config_at_version(
+        &self,
+        tenant: &str,
+        config_version: i64,
+    ) -> Result<Option<TenantByokConfig>, ByokConfigError> {
+        let _ = (tenant, config_version);
+        Err(ByokConfigError::Transport(
+            "versioned BYOK config history reader is unavailable".to_owned(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -147,11 +155,17 @@ impl<R: ByokConfigRows + core::fmt::Debug + 'static> ByokConfigSource for D1Byok
     ) -> Result<Option<TenantByokConfig>, ByokConfigError> {
         D1ByokConfigReader::get_byok_config(self, tenant).await
     }
+
+    async fn get_byok_config_at_version(
+        &self,
+        tenant: &str,
+        config_version: i64,
+    ) -> Result<Option<TenantByokConfig>, ByokConfigError> {
+        D1ByokConfigReader::get_byok_config_at_version(self, tenant, config_version).await
+    }
 }
 
-/// One config-cache entry (the answer + its expiry). The answer is cached even
-/// when it is `None` (not configured) / inactive, so non-BYOK tenants do not
-/// re-hit D1.
+/// One positive/security-relevant config-cache entry plus its expiry.
 #[derive(Debug, Clone)]
 struct ConfigEntry {
     cfg: Option<TenantByokConfig>,
@@ -160,9 +174,10 @@ struct ConfigEntry {
 
 /// In-memory, per-tenant cache over [`ByokConfigSource`] with a ~60 s TTL.
 ///
-/// A cache MISS does ONE D1 read; a HIT is in-memory. The cached answer
-/// includes the "not configured / inactive" result, so after warm-up the
-/// non-BYOK hot path adds no D1 hop (frozen policy §1).
+/// A cache MISS does ONE D1 read; a HIT is in-memory. Negative, `inactive`, and
+/// `pending` answers are deliberately not cached: otherwise ordinary traffic
+/// can prime a plaintext answer immediately before activation and keep writing
+/// plaintext for the cache TTL after the control plane reports success.
 #[non_exhaustive]
 pub struct ByokConfigCache {
     source: Arc<dyn ByokConfigSource>,
@@ -221,13 +236,21 @@ impl ByokConfigCache {
                 let cutoff = Instant::now();
                 guard.retain(|_, e| e.expires_at > cutoff);
             }
-            guard.insert(
-                tenant.to_owned(),
-                ConfigEntry {
-                    cfg: cfg.clone(),
-                    expires_at: now + self.ttl,
-                },
+            let cacheable = matches!(
+                cfg.as_ref().map(|value| value.state),
+                Some(ByokState::Active | ByokState::Partial | ByokState::Shredded)
             );
+            if cacheable {
+                guard.insert(
+                    tenant.to_owned(),
+                    ConfigEntry {
+                        cfg: cfg.clone(),
+                        expires_at: now + self.ttl,
+                    },
+                );
+            } else {
+                guard.remove(tenant);
+            }
         }
         Ok(cfg)
     }
@@ -257,6 +280,18 @@ pub trait ByokSecretSource: Send + Sync + core::fmt::Debug {
     ///
     /// Returns `Err(String)` on any D1 transport / decode failure.
     async fn get_wrapped_tcs(&self, tenant: &str) -> Result<Option<WrappedTcsRow>, String>;
+
+    /// Load an exact historical TCS version. Implementations MUST NOT fall
+    /// back to the current row: a missing history record is a hard rotation
+    /// failure because decrypting with the current TCS can yield ambiguity.
+    async fn get_wrapped_tcs_at_version(
+        &self,
+        tenant: &str,
+        tcs_version: i64,
+    ) -> Result<Option<WrappedTcsRow>, String> {
+        let _ = (tenant, tcs_version);
+        Err("versioned TCS history reader is unavailable".to_owned())
+    }
 }
 
 /// Production [`ByokSecretSource`] over the async D1 row seam (reuses
@@ -308,6 +343,51 @@ impl<R: ByokConfigRows + core::fmt::Debug + 'static> ByokSecretSource for D1Byok
             tcs_version,
         }))
     }
+
+    async fn get_wrapped_tcs_at_version(
+        &self,
+        tenant: &str,
+        tcs_version: i64,
+    ) -> Result<Option<WrappedTcsRow>, String> {
+        if tcs_version <= 0 {
+            return Err("TCS version must be positive".to_owned());
+        }
+        let rows = self
+            .rows
+            .query_rows(
+                "SELECT tcs_wrapped, cmk_key_id, tcs_version \
+                 FROM tenant_byok_secret_history \
+                 WHERE tenant_id = ?1 AND tcs_version = ?2 LIMIT 1",
+                vec![json!(tenant), json!(tcs_version)],
+            )
+            .await?;
+        let Some(row) = rows.first() else {
+            return Ok(None);
+        };
+        let wrapped = row
+            .get("tcs_wrapped")
+            .ok_or_else(|| "historical tcs_wrapped is missing".to_owned())?;
+        if wrapped.is_null() {
+            return Ok(None);
+        }
+        let tcs_wrapped = decode_blob(wrapped)?;
+        let cmk_key_id = row
+            .get("cmk_key_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let found_version = row
+            .get("tcs_version")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| "historical tcs_version is missing".to_owned())?;
+        if found_version != tcs_version {
+            return Err("historical TCS version identity mismatch".to_owned());
+        }
+        Ok(Some(WrappedTcsRow {
+            tcs_wrapped,
+            cmk_key_id,
+            tcs_version: found_version,
+        }))
+    }
 }
 
 /// Decode a D1-over-HTTP BLOB JSON value into raw bytes. D1 surfaces a BLOB as
@@ -334,6 +414,7 @@ fn decode_blob(v: &Value) -> Result<Vec<u8>, String> {
 /// One Tcs-cache entry — the unwrapped 32-byte secret + expiry. The bytes are
 /// held in [`Zeroizing`] so eviction / drop clears them.
 struct TcsEntry {
+    version: i64,
     bytes: Zeroizing<[u8; 32]>,
     expires_at: Instant,
 }
@@ -360,11 +441,11 @@ impl TcsCache {
         })
     }
 
-    fn get(&self, tenant: &str) -> Option<[u8; 32]> {
+    fn get(&self, tenant: &str, version: i64) -> Option<[u8; 32]> {
         let now = Instant::now();
         let mut guard = lock(&self.inner);
         match guard.get(tenant) {
-            Some(entry) if entry.expires_at > now => Some(*entry.bytes),
+            Some(entry) if entry.expires_at > now && entry.version == version => Some(*entry.bytes),
             Some(_) => {
                 guard.remove(tenant);
                 None
@@ -373,7 +454,7 @@ impl TcsCache {
         }
     }
 
-    fn put(&self, tenant: &str, bytes: [u8; 32]) {
+    fn put(&self, tenant: &str, version: i64, bytes: [u8; 32]) {
         let mut guard = lock(&self.inner);
         if guard.len() >= MAX_CACHE_ENTRIES {
             let cutoff = Instant::now();
@@ -382,6 +463,7 @@ impl TcsCache {
         guard.insert(
             tenant.to_owned(),
             TcsEntry {
+                version,
                 bytes: Zeroizing::new(bytes),
                 expires_at: Instant::now() + self.ttl,
             },
@@ -440,6 +522,13 @@ impl TcsResolver {
         Self::new(secrets, kms, BYOK_TCS_TTL_SECONDS)
     }
 
+    /// Rebind this resolver to an exact source-generation KMS provider while
+    /// retaining the same versioned secret reader. No current provider is
+    /// silently reused for a rotated source.
+    pub fn with_provider(&self, kms: Arc<dyn KmsProvider>) -> Result<Self, BYOKError> {
+        Self::with_default_ttl(Arc::clone(&self.secrets), kms)
+    }
+
     /// Resolve the tenant's plaintext Tcs (cached). On a miss: read the wrapped
     /// Tcs, unwrap it via the customer CMK, cache, and return.
     ///
@@ -449,20 +538,40 @@ impl TcsResolver {
     /// is a [`BYOKError`] — the caller turns this into a 5xx and never stores /
     /// serves plaintext for an active tenant.
     pub async fn resolve(&self, cfg: &TenantByokConfig) -> Result<Tcs, BYOKError> {
-        if let Some(bytes) = self.cache.get(&cfg.tenant_id) {
+        self.resolve_at_version(cfg, None).await
+    }
+
+    /// Resolve only the exact TCS version observed by the authoritative data
+    /// intent. A stale process-cache entry or rotated D1 row fails closed.
+    pub async fn resolve_at_version(
+        &self,
+        cfg: &TenantByokConfig,
+        expected_version: Option<i64>,
+    ) -> Result<Tcs, BYOKError> {
+        let version = expected_version.unwrap_or(1);
+        if let Some(bytes) = self.cache.get(&cfg.tenant_id, version) {
             return Ok(Tcs::from_bytes(bytes));
         }
-        let row = self
-            .secrets
-            .get_wrapped_tcs(&cfg.tenant_id)
-            .await
-            .map_err(BYOKError::Provider)?
-            .ok_or_else(|| {
-                BYOKError::Provider(format!(
-                    "tenant_byok_secret.tcs_wrapped missing for active tenant {}",
-                    cfg.tenant_id
-                ))
-            })?;
+        let row = if let Some(expected) = expected_version {
+            self.secrets
+                .get_wrapped_tcs_at_version(&cfg.tenant_id, expected)
+                .await
+        } else {
+            self.secrets.get_wrapped_tcs(&cfg.tenant_id).await
+        }
+        .map_err(BYOKError::Provider)?
+        .ok_or_else(|| {
+            BYOKError::Provider(format!(
+                "tenant_byok_secret.tcs_wrapped missing for active tenant {}",
+                cfg.tenant_id
+            ))
+        })?;
+        if expected_version.is_some_and(|expected| row.tcs_version != expected) {
+            return Err(BYOKError::Provider(format!(
+                "tenant TCS version changed: expected {version}, found {}",
+                row.tcs_version
+            )));
+        }
 
         // The injected KMS provider IS the custody authority — use its kind for
         // the wrapped-DEK envelope (the cfg.cmk_provider string was validated at
@@ -484,7 +593,7 @@ impl TcsResolver {
         };
         let dek = self.kms.unwrap_dek(&wrapped).await?;
         let bytes = dek.bytes;
-        self.cache.put(&cfg.tenant_id, bytes);
+        self.cache.put(&cfg.tenant_id, row.tcs_version, bytes);
         Ok(Tcs::from_bytes(bytes))
     }
 }

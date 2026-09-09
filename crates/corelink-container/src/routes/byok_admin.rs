@@ -32,6 +32,9 @@
 //! The wrapped Tcs travels as a base64 `tcs_wrapped_b64` field and is the
 //! CMK-WRAPPED ciphertext, never the plaintext Tcs. It is NEVER logged; the
 //! audit trail records tenant + provider + CMK identity + state only.
+//!
+//! `deactivate` requires an explicit non-destructive `cancel` or destructive
+//! `shred` action so retrying one can never be mistaken for the other.
 
 #![forbid(unsafe_code)]
 
@@ -47,9 +50,8 @@ use axum::{
 use corelink_byok::KmsProvider;
 use serde::Deserialize;
 
-use crate::customer_d1::{
-    ByokActivation, ByokCryptoMode, ByokMode, ByokWriteError, D1ByokConfigWriter,
-};
+use crate::byok_control_transition::D1ByokControl;
+use crate::customer_d1::{ByokActivation, ByokCryptoMode, ByokMode, ByokWriteError};
 use crate::routes::admin::internal_auth_ok;
 use crate::wall_clock::{SystemWallClock, WallClock};
 
@@ -57,7 +59,7 @@ use crate::wall_clock::{SystemWallClock, WallClock};
 /// matchit-0.8 form and would panic under the workspace-pinned axum/matchit).
 pub const BYOK_ACTIVATE_ROUTE: &str = "/v1/admin/byok/activate";
 
-/// Canonical deactivation (kill-switch) route path.
+/// Canonical activation-cancel / crypto-shred route path.
 pub const BYOK_DEACTIVATE_ROUTE: &str = "/v1/admin/byok/deactivate";
 
 /// Shared route state for the BYOK activation control plane.
@@ -65,7 +67,7 @@ pub const BYOK_DEACTIVATE_ROUTE: &str = "/v1/admin/byok/deactivate";
 pub struct ByokAdminRouteState {
     /// D1-backed writer; `None` in dev/CI (no storage creds) → both routes
     /// fail CLOSED (503) rather than silently no-op.
-    pub writer: Option<Arc<D1ByokConfigWriter>>,
+    pub writer: Option<Arc<D1ByokControl>>,
     /// Operator-only shared secret for the `x-corelink-internal-auth` gate.
     /// `None` when unset at boot → every route fails CLOSED (403).
     pub internal_auth_key: Option<Arc<str>>,
@@ -95,10 +97,10 @@ impl ByokAdminRouteState {
     }
 }
 
-/// Construct the D1-backed [`D1ByokConfigWriter`] when storage creds are
+/// Construct the D1-backed [`D1ByokControl`] when storage creds are
 /// present, else `None` (dev/CI). Mirrors `routes::admin::build_handlers`.
 #[must_use]
-fn build_writer_from_env() -> Option<Arc<D1ByokConfigWriter>> {
+fn build_writer_from_env() -> Option<Arc<D1ByokControl>> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         use crate::storage::{d1_http::D1HttpClient, StorageEnv};
@@ -112,7 +114,7 @@ fn build_writer_from_env() -> Option<Arc<D1ByokConfigWriter>> {
         match built {
             Ok(client) => {
                 tracing::info!("BYOK activation writer: D1 (real storage)");
-                Some(Arc::new(D1ByokConfigWriter::new(Arc::new(client))))
+                Some(Arc::new(D1ByokControl::new(Arc::new(client))))
             }
             Err(e) => {
                 tracing::error!(error = %e, "BYOK activation writer: D1 build failed → fail CLOSED (503)");
@@ -156,11 +158,27 @@ pub struct ByokActivateBody {
     pub tcs_wrapped_b64: String,
 }
 
-/// JSON body for `POST /v1/admin/byok/deactivate` (crypto-shred kill switch).
+/// Explicit action for `POST /v1/admin/byok/deactivate`.
+///
+/// This discriminator is intentionally required. A tenant-only request is
+/// ambiguous after a rotation cancellation restores the preceding active
+/// generation: interpreting its retry as a shred would destroy live data.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ByokDeactivateAction {
+    /// Cancel an unpublished (`pending` / copy-phase) activation.
+    Cancel,
+    /// Irreversibly shred a published/active BYOK generation.
+    Shred,
+}
+
+/// JSON body for `POST /v1/admin/byok/deactivate`.
 #[derive(Clone, Debug, Deserialize)]
 pub struct ByokDeactivateBody {
-    /// Target tenant id to crypto-shred.
+    /// Target tenant id.
     pub tenant: String,
+    /// Required operation intent; there is no destructive legacy default.
+    pub action: ByokDeactivateAction,
 }
 
 impl ByokActivateBody {
@@ -242,6 +260,26 @@ async fn handle_activate(
     ) {
         return (StatusCode::BAD_REQUEST, "invalid_cmk_provider").into_response();
     }
+    // Storage authority is required for both the idempotency preflight and
+    // the eventual preparation batch. Stop before constructing or contacting
+    // KMS when it is absent; there is no durable operation to authorize.
+    let Some(writer) = state.writer.as_ref() else {
+        tracing::error!("byok activate: D1 writer unwired → 503 (fail-CLOSED)");
+        return (StatusCode::SERVICE_UNAVAILABLE, "byok_write_unavailable").into_response();
+    };
+
+    // A byte-for-byte retry of durable live work (or of an activation that is
+    // still actively committed) does not need fresh KMS evidence: no custody
+    // material or state will be changed. Resolve that idempotency authority
+    // before constructing/contacting KMS. `prepare_activation` repeats this
+    // check later to close the race between this public-safe read and write.
+    match writer.activation_retry_preflight(&activation).await {
+        Ok(true) => {
+            return (StatusCode::ACCEPTED, "activation_pending_backfill").into_response();
+        }
+        Ok(false) => {}
+        Err(error) => return map_write_err(&error),
+    }
 
     // Provider construction is deliberately runtime-gated as well as
     // compile-time-selected. Missing credentials, an unavailable endpoint, or
@@ -293,18 +331,14 @@ async fn handle_activate(
         )
             .into_response();
     }
-    let Some(writer) = state.writer.as_ref() else {
-        tracing::error!("byok activate: D1 writer unwired → 503 (fail-CLOSED)");
-        return (StatusCode::SERVICE_UNAVAILABLE, "byok_write_unavailable").into_response();
-    };
     let now_ms = i64::try_from(SystemWallClock.now_ms()).unwrap_or(i64::MAX);
-    match writer.activate(&activation, now_ms).await {
-        Ok(()) => (StatusCode::OK, "activated").into_response(),
+    match writer.prepare_activation(&activation, now_ms).await {
+        Ok(()) => (StatusCode::ACCEPTED, "activation_pending_backfill").into_response(),
         Err(e) => map_write_err(&e),
     }
 }
 
-/// `POST /v1/admin/byok/deactivate` — crypto-shred kill switch.
+/// `POST /v1/admin/byok/deactivate` — explicit activation cancel or shred.
 async fn handle_deactivate(
     axum::extract::State(state): axum::extract::State<ByokAdminRouteState>,
     headers: HeaderMap,
@@ -317,10 +351,6 @@ async fn handle_deactivate(
         );
         return (StatusCode::FORBIDDEN, "forbidden").into_response();
     }
-    let Some(writer) = state.writer.as_ref() else {
-        tracing::error!("byok deactivate: D1 writer unwired → 503 (fail-CLOSED)");
-        return (StatusCode::SERVICE_UNAVAILABLE, "byok_write_unavailable").into_response();
-    };
     let parsed: ByokDeactivateBody = match serde_json::from_slice(&body) {
         Ok(b) => b,
         Err(e) => {
@@ -328,9 +358,20 @@ async fn handle_deactivate(
             return (StatusCode::BAD_REQUEST, "invalid_body").into_response();
         }
     };
+    let Some(writer) = state.writer.as_ref() else {
+        tracing::error!("byok deactivate: D1 writer unwired → 503 (fail-CLOSED)");
+        return (StatusCode::SERVICE_UNAVAILABLE, "byok_write_unavailable").into_response();
+    };
     let now_ms = i64::try_from(SystemWallClock.now_ms()).unwrap_or(i64::MAX);
-    match writer.deactivate(&parsed.tenant, now_ms).await {
-        Ok(()) => (StatusCode::OK, "deactivated").into_response(),
+    let result = match parsed.action {
+        ByokDeactivateAction::Cancel => writer.cancel_activation(&parsed.tenant, now_ms).await,
+        ByokDeactivateAction::Shred => writer.shred(&parsed.tenant, now_ms).await,
+    };
+    match result {
+        Ok(()) => match parsed.action {
+            ByokDeactivateAction::Cancel => (StatusCode::OK, "cancelled").into_response(),
+            ByokDeactivateAction::Shred => (StatusCode::OK, "shredded").into_response(),
+        },
         Err(e) => map_write_err(&e),
     }
 }
@@ -397,31 +438,11 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
-    /// C1 regression: with NO real `KmsProvider` linked (the default/prod
-    /// build — no `byok-*-real` feature), an AUTHENTICATED activate must fail
-    /// closed with `501 Not Implemented` and body `byok_not_available`, and
-    /// must NEVER reach the writer (state is never mutated to 'active').
-    ///
-    /// Before the gate, this exact request (authenticated, writer unwired,
-    /// unavailable provider) returned `503 SERVICE_UNAVAILABLE` after passing
-    /// the auth gate — proving the request DID flow into the write path. The
-    /// provider readiness check now short-circuits at 501 before the writer,
-    /// so activation without KMS evidence is impossible.
-    ///
-    /// Gated to the no-real-provider build (the default/prod build, and the
-    /// only one CI compiles — the `byok-*-real` features are prod-flavour, off
-    /// by default), mirroring the umbrella crate's
-    /// `no_provider_feature_default_build`.
-    #[cfg(not(any(
-        feature = "byok-aws-real",
-        feature = "byok-gcp-real",
-        feature = "byok-azure-real",
-        feature = "byok-vault-real",
-    )))]
+    /// A valid authenticated request with no D1 authority must stop at 503.
+    /// This assertion is provider-feature-independent: reaching provider
+    /// construction in the default build would instead produce the old 501.
     #[tokio::test]
-    async fn activate_fake_provider_is_501_not_available() {
-        // A writer is deliberately provided-as-absent; the 501 must fire
-        // regardless of writer wiring, proving it precedes the write path.
+    async fn activate_without_writer_is_503_before_kms() {
         let app = router(state_no_writer(Some(KEY)));
         let body = format!(
             "{{\"tenant\":\"{TENANT}\",\"mode\":\"byok\",\"cmk_provider\":\"aws\",\
@@ -436,17 +457,14 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(
             resp.status(),
-            StatusCode::NOT_IMPLEMENTED,
-            "authenticated activate without KMS must be 501, not a state flip"
+            StatusCode::SERVICE_UNAVAILABLE,
+            "missing D1 authority must stop before KMS construction"
         );
         let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
             .await
             .unwrap();
         let text = String::from_utf8(bytes.to_vec()).unwrap();
-        assert!(
-            text.contains("byok_not_available"),
-            "501 body must name the not-available reason; got {text:?}"
-        );
+        assert_eq!(text, "byok_write_unavailable");
     }
 
     /// Adversarial regression: an unknown provider is rejected before provider
@@ -485,6 +503,55 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn deactivate_rejects_ambiguous_tenant_only_body() {
+        let app = router(state_no_writer(Some(KEY)));
+        let req = Request::builder()
+            .method(http::Method::POST)
+            .uri(BYOK_DEACTIVATE_ROUTE)
+            .header("x-corelink-internal-auth", KEY)
+            .body(Body::from(format!("{{\"tenant\":\"{TENANT}\"}}")))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn deactivate_rejects_unknown_action() {
+        let app = router(state_no_writer(Some(KEY)));
+        let req = Request::builder()
+            .method(http::Method::POST)
+            .uri(BYOK_DEACTIVATE_ROUTE)
+            .header("x-corelink-internal-auth", KEY)
+            .body(Body::from(format!(
+                "{{\"tenant\":\"{TENANT}\",\"action\":\"deactivate\"}}"
+            )))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn deactivate_accepts_only_explicit_cancel_or_shred() {
+        for action in ["cancel", "shred"] {
+            let app = router(state_no_writer(Some(KEY)));
+            let req = Request::builder()
+                .method(http::Method::POST)
+                .uri(BYOK_DEACTIVATE_ROUTE)
+                .header("x-corelink-internal-auth", KEY)
+                .body(Body::from(format!(
+                    "{{\"tenant\":\"{TENANT}\",\"action\":\"{action}\"}}"
+                )))
+                .unwrap();
+            let resp = app.oneshot(req).await.unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "valid explicit action must pass parsing before fail-closed writer wiring"
+            );
+        }
     }
 
     /// Body parsing: `into_activation` decodes base64 + validates enums.

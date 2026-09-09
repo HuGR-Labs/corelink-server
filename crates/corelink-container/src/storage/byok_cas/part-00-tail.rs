@@ -186,6 +186,25 @@ fn envelope_blob_key(surface: &str, digest: &str) -> String {
     format!("{surface}:{digest}")
 }
 
+/// Allocation-qualified envelope identity for immutable generation-catalog
+/// objects.  `CryptoContext::plaintext_digest` deliberately remains the raw
+/// caller-visible digest: allocation qualification belongs only to the
+/// envelope-store primary key, never to KMS encryption context / AEAD AAD.
+///
+/// # Errors
+///
+/// Returns an error when `allocation_id` is empty.
+pub fn allocation_envelope_blob_key(
+    surface: &str,
+    digest: &str,
+    allocation_id: &str,
+) -> Result<String, String> {
+    if allocation_id.is_empty() {
+        return Err("mode-b allocation id must not be empty".to_owned());
+    }
+    Ok(format!("{surface}:{digest}:allocation:{allocation_id}"))
+}
+
 /// Unix-epoch-ms clock for `byok_envelope.created_at_ms`.
 fn now_ms() -> i64 {
     i64::try_from(

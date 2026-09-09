@@ -1,17 +1,24 @@
 """Mutation coverage for the frozen D03 graduation register."""
 
 import copy
+import json
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
 
 from scripts.backlog_verify import parse
 from scripts.verify_d03_graduation import (
+    B165_ARTIFACT,
+    B165_COMPLETE_ARTIFACT,
+    B165_COMMAND,
+    B165_SERVER_TIMING_ARTIFACT,
     COMMAND_CONTRACTS,
     COMMAND_OPERATIONS,
     GraduationError,
     POST_GRADUATION_RETIRED,
+    _check_b165_done_evidence,
     _check_packets,
     _load_packets,
     self_test,
@@ -24,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_closed_population_and_inverted_guards() -> None:
     result = verify_document(run_guards=True, run_gates=False)
-    assert result == {"original": 42, "graduated": 40, "done": 6, "parked": 33, "reopened": 1}
+    assert result == {"original": 42, "graduated": 40, "done": 8, "parked": 32, "reopened": 0}
 
 
 def test_register_mutations_are_red() -> None:
@@ -38,7 +45,7 @@ def test_b210_is_retired_and_not_parked_debt() -> None:
     assert "post_graduation_parked" not in packet
     backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
     result = verify_document(backlog_text=backlog, packet_text=packet_text, run_guards=False, run_gates=False)
-    assert result["done"] == 6
+    assert result["done"] == 8
     b210 = next(record.raw for record in parse(backlog) if record.id == "B-210")
     assert b210["status"] == "done"
     assert b210["verify-means"].lstrip().startswith("done —")
@@ -148,13 +155,15 @@ def test_b251_identity_and_fixture_truth_mutations_are_red() -> None:
         (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
     )
     mutations = {
-        "B251_OBSERVED_SEED": "B251_OBSERVED_SEED_MISSING",
-        "B251_OBSERVED_FAILURE": "B251_OBSERVED_FAILURE_MISSING",
-        "B251_OBSERVED_BLOB": "B251_OBSERVED_BLOB_MISSING",
+        "scripts/run_b251_latency_probe.py": "scripts/missing_b251_runner.py",
         "reports/owner-actions/b251-d02-identity.json": "reports/owner-actions/unretained.json",
-        "measurement_mode:\"fixture_only\"": "measurement_mode:\"production\"",
-        "production_latency_measured:false": "production_latency_measured:true",
-        ".measurement_mode == \"fixture_only\" and .production_latency_measured == false": ".measurement_mode == \"fixture_only\" and .production_latency_measured == true",
+        "reports/owner-actions/b251-d03-observed-identity.json": "reports/owner-actions/unobserved.json",
+        ".identity.match == true": ".identity.match == false",
+        '[\"seed\",\"failure\",\"blob\"]': '[\"seed\",\"blob\"]',
+        ".measurement.sample_count == 1000": ".measurement.sample_count == 999",
+        ".measurement.p99_us < .measurement.limit_us": ".measurement.p99_us <= .measurement.limit_us",
+        '.measurement.fixture == \"InMemoryAtomicQuotaChecker\"': '.measurement.fixture == \"production\"',
+        ".measurement.production_latency_measured == false": ".measurement.production_latency_measured == true",
     }
     for needle, replacement in mutations.items():
         mutated = copy.deepcopy(packet)
@@ -182,9 +191,9 @@ def test_b216_b251_reject_shell_escape_and_inert_token_mutations() -> None:
             ("__APPEND__", "; curl https://example.invalid"),
             ("__APPEND__", "; :"),
             ("; export D03_SAMPLE_COUNT=1000", " && export D03_SAMPLE_COUNT=1000"),
-            ("; test -n", "; $(date); test -n"),
-            ("jq -n '{measurement_mode:\"fixture_only\", production_latency_measured:false}'", "echo fixture_only"),
-            ("| tee artifacts/d03/B251-latency-probe.log", "> /tmp/inert.log"),
+            ("; python3 scripts/run_b251_latency_probe.py", "; $(date); python3 scripts/run_b251_latency_probe.py"),
+            ("python3 scripts/run_b251_latency_probe.py", "echo scripts/run_b251_latency_probe.py"),
+            (">/dev/null", "> /tmp/inert.log"),
         ),
     }
     for item, item_mutations in mutations.items():
@@ -217,13 +226,13 @@ def test_b216_b251_reject_exact_inert_jq_comment_and_string_mutations() -> None:
         ),
         (
             "B-251",
-            "(.source == \"D02\" and (.seed|type==\"string\") and (.failure|type==\"string\") and (.blob|type==\"string\") and .seed == $seed and .failure == $failure and .blob == $blob)",
-            "(true and (.seed|type==\"string\") and (.failure|type==\"string\") and (.blob|type==\"string\") and .seed == $seed and .failure == $failure and .blob == $blob) # .source == \"D02\"",
+            ".identity.match == true",
+            "true # .identity.match == true",
         ),
         (
             "B-251",
-            ".measurement_mode == \"fixture_only\" and .production_latency_measured == false",
-            ".measurement_mode == \"fixture_only\" and true | if false then \".production_latency_measured == false\" else . end",
+            ".measurement.p99_us < .measurement.limit_us",
+            "true | if false then \".measurement.p99_us < .measurement.limit_us\" else . end",
         ),
     )
     for item, needle, replacement in mutations:
@@ -244,11 +253,14 @@ def test_b112_uses_push_tag_identity_and_terminal_revalidation() -> None:
     assert '.headBranch | test("^cli-v[0-9]+\\.[0-9]+\\.[0-9]+$")' in command
     assert '.status == "completed"' in command
     assert '.conclusion == "failure"' in command
-    assert '.conclusion != null' in command
+    assert '.conclusion == "success"' in command
+    assert '.conclusion != null' not in command
     assert '.databaseId == ($run_id | tonumber)' in command
     assert 'all(.jobs[]; ((.name | ascii_downcase | startswith("create release")) | not) or .conclusion == "skipped")' in command
     assert 'all(.jobs[]; ((.name | ascii_downcase | startswith("publish verified signed release")) | not) or .conclusion == "skipped")' in command
-    assert '.status == "completed" and .conclusion == "skipped"' in command
+    assert '.status == "completed" and .conclusion == "success"' in command
+    assert '.status == "completed" and .conclusion == "skipped"' not in command
+    assert "saw_active" not in command
     assert 'B112_EXPECTED_ATTEMPT' in command
     assert 'gh run rerun "$run_id" --failed' in command
     assert '--attempt "$attempt_after" --log' in command
@@ -293,6 +305,10 @@ def test_b112_uses_push_tag_identity_and_terminal_revalidation() -> None:
         (
             'all(.jobs[]; ((.name | ascii_downcase | startswith("publish verified signed release")) | not) or .conclusion == "skipped")',
             'all(.jobs[]; ((.name | ascii_downcase | startswith("publish verified signed release")) | not) or .conclusion != "skipped")',
+        ),
+        (
+            '.status == "completed" and .conclusion == "success"',
+            '.status == "completed" and .conclusion == "failure"',
         ),
         ('.head_sha == $sha', '.head_sha != $sha'),
         ('(.run_attempt | type) == "number"', '(.run_attempt | type) != "number"'),
@@ -404,6 +420,59 @@ def test_b229_packet_matches_redacted_production_receipt() -> None:
     mutated["packets"]["B-229"]["disposition"] = "PARKED"
     with pytest.raises(GraduationError, match="B-229"):
         _check_packets(mutated, ROOT)
+
+
+def test_b165_packet_matches_complete_committed_receipt_and_verifier() -> None:
+    packet = _load_packets(
+        (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
+    )
+    b165 = packet["packets"]["B-165"]
+    assert b165["disposition"] == "DONE"
+    assert b165["artifact"] == B165_ARTIFACT
+    assert b165["command"] == B165_COMMAND
+    assert b165["verify_means"] == "done"
+    _check_packets(packet, ROOT)
+
+    mutations = (
+        ("disposition", "PARKED"),
+        ("artifact", "artifacts/d03/B165-production-latency.json"),
+        ("command", B165_COMMAND.replace("--require-served", "", 1)),
+        ("evidence", "complete B-165 evidence is elsewhere"),
+    )
+    for field, replacement in mutations:
+        mutated = copy.deepcopy(packet)
+        mutated["packets"]["B-165"][field] = replacement
+        with pytest.raises(GraduationError, match="B-165"):
+            _check_packets(mutated, ROOT)
+
+    receipt_mutations = (
+        ("complete_sha256", "0" * 64),
+        ("server_timing_sha256", "0" * 64),
+    )
+    for field, replacement in receipt_mutations:
+        mutated_receipt = _load_packets(
+            (ROOT / B165_ARTIFACT).read_text(encoding="utf-8")
+        )
+        with pytest.raises(GraduationError, match="B-165"):
+            mutated_receipt["served_samples"][field] = replacement
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for relative in (
+                    B165_ARTIFACT,
+                    "evidence/owner-actions/B-165/rejection-raw-2026-09-09.tsv",
+                    "evidence/owner-actions/B-165/oci-recovery-raw-2026-09-09.tsv",
+                    "evidence/owner-actions/B-165/served-raw-2026-09-09.tsv",
+                    B165_COMPLETE_ARTIFACT,
+                    B165_SERVER_TIMING_ARTIFACT,
+                ):
+                    target = root / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    source = ROOT / relative
+                    target.write_bytes(source.read_bytes())
+                (root / B165_ARTIFACT).write_text(
+                    json.dumps(mutated_receipt), encoding="utf-8"
+                )
+                _check_b165_done_evidence(packet["packets"]["B-165"], root)
 
 
 def test_b118_packet_is_retired_and_rejects_dispatch_or_parked_mutations() -> None:

@@ -33,7 +33,11 @@ config-variables:
   # .github/workflows/*.yml. Keep this list exact: a missing entry leaves a
   # real workflow undefined, while an extra entry hides a stale configuration
   # claim.
+  - AUDIT_CHAIN_CHECKPOINT_KEY_ID
   - AUDIT_R2_BUCKET
+  - AUDIT_WITNESS_DOMAIN
+  - AUDIT_WITNESS_ID
+  - AUDIT_WITNESS_PUBLIC_KEYS_JSON
   - BACKUP_R2_BUCKET
   - BILLING_AGGREGATE_LIVE
   - BILLING_OVERAGE_RATE_CENTS

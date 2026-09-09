@@ -146,7 +146,7 @@ build inside the upstream `node:22-bookworm` container.
 5. `pnpm build`
 6. Lighthouse-CI on the built site (Performance ≥ 95, A11y = 100,
    Best Practices ≥ 95, SEO ≥ 90)
-7. `@axe-core/cli` on the built site
+7. Playwright/Axe route sweep (`playwright/a11y-sweep.spec.ts`)
 8. `lychee` broken-link check against `build/`
 9. `vale` prose lint (Microsoft Writing Style Guide)
 

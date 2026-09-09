@@ -43,6 +43,7 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
                 self.emit_update_sli(true, elapsed_us(started));
                 AcHandlerError::AuditFailed(e)
             })?;
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Write)?;
 
         // CRITICAL — `block_in_place` rationale: see the matching
         // comment in `<R2AcHandler as AcLookupHandler>::lookup` above.
@@ -51,7 +52,11 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         // BYOK Wave 3c: resolve ONCE — §4-hardened physical key (audit H-4) + the
         // body crypto plan. Fail CLOSED for an active-but-unresolvable tenant.
         let resolved = match tokio::task::block_in_place(|| {
-            handle.block_on(self.resolve_byok(&req.tenant, &req.action_digest))
+            handle.block_on(self.resolve_byok_with_guard(
+                &req.tenant,
+                &req.action_digest,
+                byok_guard.as_ref(),
+            ))
         }) {
             Ok(r) => r,
             Err(e) => {
@@ -61,13 +66,57 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         };
         // Fail CLOSED if the tenant prefix is not derivable: never touch
         // R2 under a degraded/empty (SHARED) prefix.
-        let key = match self.r2_key(&req.tenant, &resolved.physical_digest) {
-            Ok(k) => k,
-            Err(e) => {
-                self.emit_update_sli(true, elapsed_us(started));
-                return Err(AcHandlerError::Internal(e));
-            }
-        };
+        let catalog_generation = byok_guard
+            .as_ref()
+            .and_then(|guard| guard.intent().ok())
+            .and_then(|intent| intent.catalog_generation());
+        let (key, staged, envelope_allocation_id) =
+            if let (Some(guard), Some(generation)) = (byok_guard.as_ref(), catalog_generation) {
+                match tokio::task::block_in_place(|| {
+                    handle.block_on(guard.gate().resolve_catalog(
+                        guard.intent()?,
+                        crate::storage::byok_generation_catalog::ByokObjectKind::Ac,
+                        &req.action_digest,
+                    ))
+                }) {
+                    Ok(Some(published)) => {
+                        (published.physical_key, None, Some(published.allocation_id))
+                    }
+                    Ok(None) => {
+                        let allocation_id = Uuid::new_v4().to_string();
+                        let physical_key = self
+                            .generation_r2_key(
+                                &req.tenant,
+                                generation,
+                                &allocation_id,
+                                &resolved.physical_digest,
+                            )
+                            .map_err(AcHandlerError::Internal)?;
+                        let staged = tokio::task::block_in_place(|| {
+                            handle.block_on(guard.gate().allocate_catalog(
+                                guard.intent()?,
+                                crate::storage::byok_generation_catalog::ByokObjectKind::Ac,
+                                &req.action_digest,
+                                &allocation_id,
+                                &physical_key,
+                                req.result_payload.len() as u64,
+                            ))
+                        })
+                        .map_err(AcHandlerError::Internal)?;
+                        (physical_key, Some(staged), Some(allocation_id))
+                    }
+                    Err(error) => return Err(AcHandlerError::Internal(error)),
+                }
+            } else {
+                let key = match self.r2_key(&req.tenant, &resolved.physical_digest) {
+                    Ok(k) => k,
+                    Err(e) => {
+                        self.emit_update_sli(true, elapsed_us(started));
+                        return Err(AcHandlerError::Internal(e));
+                    }
+                };
+                (key, None, None)
+            };
         debug!(
             key = %key,
             bytes = req.result_payload.len(),
@@ -88,7 +137,11 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         // non-BYOK path computes nothing (`None`) and stores `req.result_payload`
         // verbatim, byte-identical to today.
         let encrypted: Option<Vec<u8>> = match tokio::task::block_in_place(|| {
-            handle.block_on(self.encrypt_body(&resolved.plan, &req.result_payload))
+            handle.block_on(self.encrypt_body(
+                &resolved.plan,
+                &req.result_payload,
+                envelope_allocation_id.as_deref(),
+            ))
         }) {
             Ok(maybe_ct) => maybe_ct,
             Err(e) => {
@@ -151,6 +204,7 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
             PriorState::Identical => {
                 // Byte-identical re-PUT → idempotent no-op. The proven
                 // bytes are already durable; do not re-PUT.
+                self.finish_byok_mutation(byok_guard.as_mut())?;
                 self.emit_update_sli(false, elapsed_us(started));
                 return Ok(AcUpdateResponse::new(req.action_digest, false));
             }
@@ -175,6 +229,12 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         let created = {
             let _scope =
                 crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            if let (Some(guard), Some(_)) = (byok_guard.as_ref(), staged.as_ref()) {
+                tokio::task::block_in_place(|| {
+                    handle.block_on(guard.validate_for_storage_dispatch())
+                })
+                .map_err(AcHandlerError::Internal)?;
+            }
             tokio::task::block_in_place(|| {
                 handle.block_on(self.client.put_if_absent(&key, payload))
             })
@@ -182,6 +242,17 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
 
         match created {
             Ok(true) => {
+                if let (Some(guard), Some(staged)) = (byok_guard.as_ref(), staged.as_ref()) {
+                    let published = tokio::task::block_in_place(|| {
+                        handle.block_on(guard.gate().publish_catalog(guard.intent()?, staged))
+                    })
+                    .map_err(AcHandlerError::Internal)?;
+                    if !published {
+                        return Err(AcHandlerError::Internal(
+                            "BYOK catalog rejected stale PUT; object left unreachable".to_owned(),
+                        ));
+                    }
+                }
                 self.audit
                     .emit(AcAuditEvent::new(
                         AcAuditEventKind::UpdateCommitted,
@@ -194,11 +265,15 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
                         self.emit_update_sli(true, elapsed_us(started));
                         AcHandlerError::AuditFailed(e)
                     })?;
+                self.finish_byok_mutation(byok_guard.as_mut())?;
                 self.emit_update_sli(false, elapsed_us(started));
                 // This caller created the object → durable=true.
                 Ok(AcUpdateResponse::new(req.action_digest, true))
             }
             Ok(false) => {
+                if staged.is_some() {
+                    return Err(AcHandlerError::Internal("generation-qualified AC PUT unexpectedly collided; staged object remains unpublished".to_owned()));
+                }
                 // Lost the race: someone else's bytes are (or were being)
                 // stored under this digest. Re-GET and compare against OUR
                 // would-be-stored view.
@@ -219,6 +294,7 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
                 };
                 match lost_race_state {
                     PriorState::Identical => {
+                        self.finish_byok_mutation(byok_guard.as_mut())?;
                         self.emit_update_sli(false, elapsed_us(started));
                         Ok(AcUpdateResponse::new(req.action_digest, false))
                     }

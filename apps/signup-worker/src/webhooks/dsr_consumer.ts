@@ -248,7 +248,10 @@ async function pageDlqEvent(
         },
       }),
     });
-    if (!response.ok) {
+    // PagerDuty Events API v2 acknowledges an accepted trigger with 202.  A
+    // generic 2xx (for example a proxy-generated 200 page) is not delivery
+    // evidence and must not let us consume the DLQ copy.
+    if (response.status !== 202) {
       // Do not copy provider response text/status into logs: the response can
       // contain arbitrary data and must never become an operator-log sink.
       return { status: "failed", error: "http_rejected" };
@@ -294,12 +297,13 @@ export async function handleErasureDlqBatch(
     const eventId = dlqEventId(body, priorRequeues);
     const canRequeue = priorRequeues < MAX_DLQ_REQUEUES && !!env.DSR_QUEUE;
 
-    // A configured pager is part of the failure path: do not acknowledge or
-    // requeue the DLQ copy until PagerDuty accepted the page. Missing config is
-    // deliberately visible as a blocker, but preserves the existing bounded
-    // requeue/manual-follow-up behavior rather than inventing delivery proof.
+    // Paging is part of the disposition transaction: do not acknowledge or
+    // requeue the DLQ copy until PagerDuty accepted the page.  An absent route
+    // is a delivery failure, not permission to replace an on-call page with a
+    // console log.  The deploy lane also rejects the missing secret, while this
+    // runtime guard keeps drift/misconfiguration fail-closed.
     const paging = await pageDlqEvent(body, eventId, priorRequeues, env);
-    if (paging.status === "failed") {
+    if (paging.status !== "delivered") {
       logDlqEvent({
         level: "alert",
         severity: "critical",
@@ -313,8 +317,8 @@ export async function handleErasureDlqBatch(
         queued_at_ms: body.queued_at_ms,
         action: "retry_paging",
         paging_status: paging.status,
-        paging_error: paging.error,
-        note: "PagerDuty rejected the exhausted DSR alert; retaining the DLQ copy for delivery retry",
+        paging_error: paging.status === "failed" ? paging.error : "route_not_configured",
+        note: "PagerDuty did not accept the exhausted DSR alert; retaining the DLQ copy for delivery retry",
       });
       m.retry();
       continue;
@@ -336,10 +340,8 @@ export async function handleErasureDlqBatch(
         queued_at_ms: body.queued_at_ms,
         action: "left_dead",
         paging_status: paging.status,
-        paging_configured: paging.status !== "not_configured",
-        note: paging.status === "not_configured"
-          ? "PagerDuty routing key is not configured; no external page was claimed — MANUAL operator action required"
-          : "GDPR Art.17 erasure dead after bounded re-enqueue — MANUAL operator action required",
+        paging_configured: true,
+        note: "GDPR Art.17 erasure dead after bounded re-enqueue — MANUAL operator action required",
       });
       m.ack();
       continue;
@@ -360,13 +362,11 @@ export async function handleErasureDlqBatch(
         queued_at_ms: body.queued_at_ms,
         action: "requeue_once",
         paging_status: paging.status,
-        paging_configured: paging.status !== "not_configured",
-        note: paging.status === "not_configured"
-          ? "GDPR Art.17 erasure exhausted main-queue retries — re-enqueued once; PagerDuty routing key is not configured, MANUAL operator follow-up required"
-          : "GDPR Art.17 erasure exhausted main-queue retries — re-enqueued for ONE bounded final attempt",
+        paging_configured: true,
+        note: "GDPR Art.17 erasure exhausted main-queue retries — re-enqueued for ONE bounded final attempt",
       });
       m.ack(); // handed back to the main queue; consume the DLQ copy
-    } catch (err) {
+    } catch {
       logDlqEvent({
         level: "alert",
         severity: "critical",
@@ -380,8 +380,11 @@ export async function handleErasureDlqBatch(
         queued_at_ms: body.queued_at_ms,
         action: "retry_requeue",
         paging_status: paging.status,
-        paging_configured: paging.status !== "not_configured",
-        requeue_error: (err as Error).message.slice(0, 120),
+        paging_configured: true,
+        // Queue/provider exceptions can contain request material.  Preserve a
+        // categorical failure signal without turning Workers Logs into a
+        // secret-bearing sink.
+        requeue_error: "transport_error",
         note: "Bounded DSR re-enqueue failed; retaining the DLQ copy for delivery retry",
       });
       m.retry(); // keep the DLQ copy; attempt the re-enqueue again

@@ -50,10 +50,15 @@ jobs:
 
       - name: Verify receiver remains inert before deploy
         working-directory: .
-        run: python3 scripts/verify_b072_receiver.py
+        run: |
+          python3 scripts/verify_b072_receiver.py
+          python3 scripts/test_b072_terminal_race.py
 
       - name: Typecheck receiver
         run: pnpm run typecheck
+
+      - name: Test receiver lifecycle
+        run: pnpm run test
 
       - name: Deploy staging receiver
         run: pnpm exec wrangler deploy --env "${{ inputs.environment }}"

@@ -3,9 +3,9 @@ id: "ADR-0100"
 type: "adr"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-09-05"
-updated: "2026-09-05"
+updated: "2026-09-09"
 owner: "tl"
 final_approver: "pending"
 reviewers: []
@@ -18,9 +18,12 @@ tags: ["adr", "retention", "object-lock", "r2", "legal-hold", "deferred"]
 
 ## Status
 
-**DEFERRED / BLOCKED.** R2 does not currently implement the S3 Object-Lock
-operations required for storage-enforced Compliance retention. This ADR records
-the gate and the evidence procedure; it does not claim that a backend is live.
+**DEFERRED / BLOCKED.** R2 now documents native Bucket Locks, but they are
+administrator-removable and are not S3 Object Lock Compliance mode. R2 still
+has no current successful evidence for the two S3 Object-Lock operations
+required by this decision: the last valid probe returned `NotImplemented` on
+2026-08-25. This ADR records the gate and evidence procedure; it does not claim
+that a backend or a particular production lock rule is live.
 
 ## Context
 
@@ -34,6 +37,13 @@ in-memory fake do not provide that property.
 The last R2 probe returned `NotImplemented` for both bucket-level Object-Lock
 creation and per-object Compliance retention. A permission, credential,
 endpoint, or transport failure would not prove the same thing.
+
+Cloudflare's current native Bucket Lock documentation says a rule prevents
+overwrite/deletion while configured and takes precedence over lifecycle rules,
+but also documents removing the rule through dashboard, Wrangler, or API. That
+is useful accidental-deletion protection, not the adversarial-administrator
+property required here. Repository comments naming a seven-year rule are
+configuration intent, not current provider evidence.
 
 ## Decision
 
@@ -55,11 +65,13 @@ endpoint, or transport failure would not prove the same thing.
 
 ## Consequences
 
-The strongest shipped retention guarantee remains Governance mode, and customer
-or legal material must not call it WORM or storage-enforced immutable. A future
-provider can be evaluated without changing the truth of the current R2 path.
-Unknown probe failures stay visible instead of silently turning into either a
-false block or a false Compliance capability.
+The strongest evidenced repository guarantee remains the application-level,
+reversible Governance legal-hold path plus cryptographic tamper evidence.
+Customer or legal material must not call it WORM or storage-enforced immutable.
+Native Bucket Lock may be described only after live metadata proves the exact
+rule, and never as Compliance/WORM while the same administrative authority can
+remove it. Unknown probe/metadata failures stay visible instead of silently
+turning into either a false block or a false capability.
 
 ## Evidence
 
@@ -70,3 +82,5 @@ false block or a false Compliance capability.
 - `BACKLOG.md` B-046 — open status and dated R2 blocker.
 - `crates/corelink-container/src/routes/dsr/adapter_r2_cas_legalhold.rs` and
   `migrations/d1/0102_cas_retention.sql` — current Governance/legal-hold path.
+- Cloudflare R2 Bucket Locks: https://developers.cloudflare.com/r2/buckets/bucket-locks/
+- Cloudflare R2 Object Lifecycles: https://developers.cloudflare.com/r2/buckets/object-lifecycles/

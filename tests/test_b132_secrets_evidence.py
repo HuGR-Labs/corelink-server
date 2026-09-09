@@ -59,6 +59,7 @@ class B132WorkflowContractTest(unittest.TestCase):
             "scripts/secrets-checklist-verify.sh",
             "scripts/check-env-contract.py",
             "worker/src/durable_object.ts",
+            "worker/src/durable_object_start.ts",
             "crates/corelink-container/src/**",
         }
         for path in expected:

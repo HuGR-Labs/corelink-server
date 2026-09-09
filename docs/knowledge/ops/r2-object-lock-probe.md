@@ -19,11 +19,11 @@ timestamp: "2026-09-05T00:00:00Z"
 
 B-046 is a capability boundary, not a promise that can be manufactured in the
 repository. Cloudflare R2 returned `NotImplemented` for both required S3
-operations in the last recorded probe (2026-08-25): creating a bucket with
-Object Lock enabled and putting an object with `COMPLIANCE` retention. Until
-both operations succeed against a provisioned, owner-approved backend, CoreLink
-does not expose a Compliance mode and does not claim storage-enforced
-immutability.
+Object-Lock operations in the last valid probe (2026-08-25). Cloudflare now
+documents a different native **Bucket Lock** feature. It prevents overwrite and
+deletion while a rule is configured, but the same configuration authority can
+remove that rule through dashboard, Wrangler, or API. It therefore does not
+satisfy this backlog item's S3 Compliance/adversarial-administrator property.
 
 ## Operational procedure
 
@@ -62,6 +62,50 @@ boundary failure, not an Object-Lock capability response. No probe bucket or
 object was created, and no production retention state was touched. The
 2026-08-25 `NotImplemented` result remains the latest valid capability
 evidence; B-046 stays parked.
+
+### Provider/configuration reassessment (2026-09-09)
+
+Cloudflare's current provider documentation was re-read directly. Native
+Bucket Locks support age/date/indefinite rules, apply to existing and new
+objects, and take precedence over lifecycle deletion. The same documentation
+also gives explicit rule-removal procedures. Consequently:
+
+- native Bucket Lock is real retention protection, but is not S3 Object Lock
+  Compliance mode and does not resist the bucket-configuration administrator;
+- native Bucket Lock is therefore administrator-removable, not WORM;
+- the repository's named `corelink-audit-7y-retention` / `220924800` values are
+  desired configuration, not live provider metadata;
+- the `audit-witness-production` environment endpoint returned HTTP 404 under
+  the current GitHub principal, repository secret APIs exposed names only, and
+  the inspected local AWS profiles did not yield a validated R2 key. These
+  observations do not prove that no local credential or hidden environment
+  exists. They do mean no current bucket-lock rule, account separation, or
+  provider retention state was verified in this pass;
+- B-046 remains `BLOCKED` for Compliance capability and `INDETERMINATE` for the
+  current native lock configuration of `corelink-audit-weur`.
+
+Primary provider sources (observed 2026-09-09):
+
+- https://developers.cloudflare.com/r2/buckets/bucket-locks/
+- https://developers.cloudflare.com/r2/buckets/object-lifecycles/
+- https://developers.cloudflare.com/r2/reference/consistency/
+
+When a read-only Cloudflare token is available, capture the native rule without
+printing the token. This is metadata inspection, not the S3 mutation probe:
+
+```bash
+curl --fail-with-body --silent --show-error \
+  -H "Authorization: Bearer $CF_API_TOKEN" \
+  "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/r2/buckets/corelink-audit-weur/lock" \
+  | jq '{success,errors,result:{rules:[.result.rules[] | {id,enabled,prefix,condition}]}}'
+```
+
+Require exactly one enabled rule covering the archive prefix (or the whole
+bucket), id `corelink-audit-7y-retention`, age `220924800` seconds or a stricter
+date/indefinite condition. Preserve the redacted response and observation time.
+An absent/ambiguous rule, HTTP error, or unavailable token is `INDETERMINATE`.
+Even a matching response proves only the current native rule, not
+administrator-resistant Compliance/WORM.
 
 ## Tenant and legal-hold safety
 

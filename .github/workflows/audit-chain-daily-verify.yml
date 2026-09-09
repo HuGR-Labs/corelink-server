@@ -59,8 +59,14 @@ name: audit-chain-daily-verify (Wave 18)
 #                                       `corelink-audit-weur` ONLY
 #   - AUDIT_R2_BUCKET          (#118 var, optional override) — defaults
 #                                       to `corelink-audit-weur`
-#   - AUDIT_CHAIN_LINK_KEYS_JSON (#166) — write-only link-key keyring for
+#   - AUDIT_CHAIN_LINK_KEYS_JSON (#245) — write-only link-key keyring for
 #                                      post-cutover keyed archive verification
+#   - AUDIT_CHAIN_CHECKPOINT_KEY_ID (#262 var) — active checkpoint MAC key id
+#   - CF_AUDIT_CHECKPOINT_WRITE_TOKEN (#263) — write-only token scoped to the
+#                                      immutable audit-checkpoint prefix
+#   - AUDIT_WITNESS_{ID,PUBLIC_KEYS_JSON} (#255-256) — independent verifier roots
+#   - CF_AUDIT_RECEIPT_READ_TOKEN (#264) + D1_DATABASE_ID — read-only transport
+#                                      for historically signed witness receipts
 #   - PAGERDUTY_ROUTING_KEY    (#11) — SEV-0 page on per-day chain break
 #
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin
@@ -102,8 +108,9 @@ env:
   # chunks are actually written. It used to read `corelink-audit-archive` — a
   # bucket that never existed — so the verifier looked for an archive at an
   # address the (never-wired) producer would not have used either.
-  # `corelink-audit-weur` is real and already carries the 7-year Object Lock
-  # rule `corelink-audit-7y-retention` (maxAgeSeconds=220924800).
+  # `corelink-audit-weur` is the configured address. The intended native
+  # Bucket Lock rule `corelink-audit-7y-retention` (220924800s) requires fresh
+  # provider metadata evidence; it is not S3 Object Lock Compliance/WORM.
   AUDIT_R2_BUCKET_DEFAULT: "corelink-audit-weur"
 
 jobs:
@@ -211,13 +218,13 @@ jobs:
           # available on the BSD `date` shipped on the macOS self-hosted
           # fleet (BSD uses `-v-Nd`). Compute the window in system python3
           # (>=3.14 on every runner) so the math is identical on GNU/BSD.
-          # Emits the same space-separated YYYY-MM-DD set, descending from
-          # today (UTC) to today-(WINDOW_DAYS-1).
+          # Emit oldest-to-newest: authenticated checkpoints are a serial
+          # continuation even though chunk downloads remain bounded per day.
           DATES=$(WINDOW_DAYS="$WINDOW_DAYS" python3 -c '
           import os, datetime
           n = int(os.environ["WINDOW_DAYS"])
           today = datetime.datetime.now(datetime.timezone.utc).date()
-          print(" ".join((today - datetime.timedelta(days=i)).isoformat() for i in range(n)))
+          print(" ".join((today - datetime.timedelta(days=i)).isoformat() for i in reversed(range(n))))
           ')
           # Preserve the old accumulator's leading-space convention
           # (harmless — unquoted `for D in $DATES` word-splits it away)
@@ -233,6 +240,12 @@ jobs:
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           AUDIT_CHAIN_LINK_KEYS_JSON: ${{ secrets.AUDIT_CHAIN_LINK_KEYS_JSON }}
+          AUDIT_CHAIN_CHECKPOINT_KEY_ID: ${{ vars.AUDIT_CHAIN_CHECKPOINT_KEY_ID }}
+          CF_AUDIT_CHECKPOINT_WRITE_TOKEN: ${{ secrets.CF_AUDIT_CHECKPOINT_WRITE_TOKEN }}
+          AUDIT_WITNESS_ID: ${{ vars.AUDIT_WITNESS_ID }}
+          AUDIT_WITNESS_PUBLIC_KEYS_JSON: ${{ vars.AUDIT_WITNESS_PUBLIC_KEYS_JSON }}
+          CF_AUDIT_RECEIPT_READ_TOKEN: ${{ secrets.CF_AUDIT_RECEIPT_READ_TOKEN }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
           PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         # Wave 18 cutover: paginated CF API v4 R2 list INSIDE each
@@ -256,6 +269,8 @@ jobs:
           : "${PAGERDUTY_ROUTING_KEY:?PAGERDUTY_ROUTING_KEY not set — cannot page on per-day chain break (fail-CLOSED)}"
           echo "::add-mask::${CF_API_TOKEN:-}"
           echo "::add-mask::${AUDIT_CHAIN_LINK_KEYS_JSON:-}"
+          echo "::add-mask::${CF_AUDIT_CHECKPOINT_WRITE_TOKEN:-}"
+          echo "::add-mask::${CF_AUDIT_RECEIPT_READ_TOKEN:-}"
           echo "::add-mask::${PAGERDUTY_ROUTING_KEY}"
 
           # Keep raw key material outside the uploaded staging tree and wipe it
@@ -275,6 +290,9 @@ jobs:
           mkdir -p ./.audit-verify-staging
           BREAK_FOUND=0
           BREAK_MARKERS=""
+          PREVIOUS_LOCAL_CHECKPOINT=""
+          BOOTSTRAP_ARGS=()
+          NEEDS_WITNESS_BOOTSTRAP=0
 
           # Emit a PD SEV-0 page for a single day's chain break / list
           # failure. Continues the outer loop on completion (the matrix
@@ -386,6 +404,46 @@ jobs:
             mkdir -p "${CHUNKS_DIR}"
             : > "${DAY_DIR}/chunk-keys.txt"
             : > "${DAY_DIR}/chunk-paths.txt"
+            CHECKPOINT_IN="${DAY_DIR}/previous-checkpoint.ndjson"
+            CHECKPOINT_OUT="${DAY_DIR}/checkpoint.ndjson"
+            CHECKPOINT_ARGS=()
+            NEEDS_WITNESS_BOOTSTRAP=0
+
+            # An exact, immutable previous-day checkpoint authenticates the
+            # first row when a rolling window begins after E0. Absence is only
+            # legal when the verifier can bootstrap from validated E0 genesis.
+            if [ -n "${CF_API_TOKEN:-}" ] && [ -n "${CF_ACCOUNT_ID:-}" ] && [ -n "${BUCKET:-}" ]; then
+              : "${AUDIT_CHAIN_CHECKPOINT_KEY_ID:?AUDIT_CHAIN_CHECKPOINT_KEY_ID not set — cannot authenticate daily continuity}"
+              : "${CF_AUDIT_CHECKPOINT_WRITE_TOKEN:?CF_AUDIT_CHECKPOINT_WRITE_TOKEN not set — cannot publish immutable checkpoint}"
+              PREV_D=$(VERIFY_DAY="$D" python3 -c 'import datetime,os; print((datetime.date.fromisoformat(os.environ["VERIFY_DAY"])-datetime.timedelta(days=1)).isoformat())')
+              PREV_KEY="audit-checkpoints/${PREV_D//-//}/partitions.ndjson"
+              prev_code=$(curl --silent --show-error -o "${CHECKPOINT_IN}" -w "%{http_code}" \
+                -H "Authorization: Bearer ${CF_API_TOKEN}" \
+                "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${BUCKET}/objects/${PREV_KEY}" || echo "000")
+              if [[ "${prev_code}" == "404" ]]; then
+                rm -f "${CHECKPOINT_IN}"
+                NEEDS_WITNESS_BOOTSTRAP=1
+              elif [[ "${prev_code}" != "200" ]]; then
+                BREAK_FOUND=1
+                page_pd_sev0 "${D}" "${PREV_KEY}" "checkpoint_get_failure"
+                BREAK_MARKERS="${BREAK_MARKERS}AUDIT_CHAIN_7DAY_BREAK_DETECTED::${D}::${PREV_KEY}\n"
+                continue
+              fi
+              if [[ -n "${PREVIOUS_LOCAL_CHECKPOINT}" ]]; then
+                if [[ -f "${CHECKPOINT_IN}" ]] && ! cmp -s "${PREVIOUS_LOCAL_CHECKPOINT}" "${CHECKPOINT_IN}"; then
+                  BREAK_FOUND=1
+                  page_pd_sev0 "${D}" "${PREV_KEY}" "checkpoint_stale_or_forked"
+                  BREAK_MARKERS="${BREAK_MARKERS}AUDIT_CHAIN_7DAY_BREAK_DETECTED::${D}::${PREV_KEY}\n"
+                  continue
+                fi
+                cp "${PREVIOUS_LOCAL_CHECKPOINT}" "${CHECKPOINT_IN}"
+                NEEDS_WITNESS_BOOTSTRAP=0
+              fi
+              CHECKPOINT_ARGS=(--verify-day "${D}" --checkpoint-key-id "${AUDIT_CHAIN_CHECKPOINT_KEY_ID}" --checkpoint-out "${CHECKPOINT_OUT}")
+              if [[ -f "${CHECKPOINT_IN}" ]]; then
+                CHECKPOINT_ARGS+=(--checkpoint-in "${CHECKPOINT_IN}")
+              fi
+            fi
 
             # ---------------- LIST (production / public-CI fork) ----------------
             if [ -n "${CF_API_TOKEN:-}" ] && [ -n "${CF_ACCOUNT_ID:-}" ] && [ -n "${BUCKET:-}" ]; then
@@ -479,24 +537,77 @@ jobs:
               echo "Public CI lane (no CF_API_TOKEN / CF_ACCOUNT_ID / bucket): emitting empty day directory."
             fi
 
+            # If the immutable prior checkpoint is absent, D1 is used only as
+            # an untrusted transport for historical independent-witness
+            # receipts. The verifier revalidates every byte and selects exactly
+            # one receipt whose signed head immediately precedes the first row.
+            if [[ "${NEEDS_WITNESS_BOOTSTRAP}" == "1" ]] && [[ -s "${DAY_DIR}/chunk-paths.txt" ]]; then
+              : "${AUDIT_WITNESS_ID:?witness identity unavailable for checkpoint bootstrap}"
+              : "${AUDIT_WITNESS_PUBLIC_KEYS_JSON:?witness public keys unavailable for checkpoint bootstrap}"
+              : "${CF_AUDIT_RECEIPT_READ_TOKEN:?read-only witness receipt token unavailable}"
+              : "${D1_DATABASE_ID:?D1 database id unavailable for receipt bootstrap}"
+              WITNESS_KEYS_PATH="${RUNNER_TEMP}/audit-witness-keys-${GITHUB_RUN_ID}.json"
+              WITNESS_RECEIPTS_DIR="${RUNNER_TEMP}/audit-witness-receipts-${GITHUB_RUN_ID}"
+              printf '%s' "${AUDIT_WITNESS_PUBLIC_KEYS_JSON}" > "${WITNESS_KEYS_PATH}"
+              mkdir -p "${WITNESS_RECEIPTS_DIR}"
+              while read -r tenant region first_sequence; do
+                query="${DAY_DIR}/receipt-query-${tenant}-${region}.json"
+                TENANT="$tenant" REGION="$region" FIRST_SEQUENCE="$first_sequence" python3 -c '
+                import json,os
+                sql="SELECT lower(hex(r.witness_jcs)) witness_jcs_hex,lower(hex(r.receipt_jcs)) receipt_jcs_hex,r.receipt_signature_b64,r.witness_key_id,r.witness_record_hash,r.witness_sequence,r.tenant_id,r.region FROM audit_chain_archive_manifest m JOIN audit_chain_witness_receipt r ON r.tenant_id=m.tenant_id AND r.region=m.region AND r.witness_sequence=m.end_head_witness_sequence WHERE m.tenant_id=?1 AND m.region=?2 AND m.end_sequence_exclusive=?3 AND m.is_empty=0 ORDER BY r.witness_sequence LIMIT 2"
+                print(json.dumps({"sql":sql,"params":[os.environ["TENANT"],os.environ["REGION"],int(os.environ["FIRST_SEQUENCE"])]},separators=(",",":")))
+                ' > "${query}"
+                response="${DAY_DIR}/receipt-response-${tenant}-${region}.json"
+                receipt_code=$(curl --silent --show-error -o "${response}" -w "%{http_code}" \
+                  -X POST -H "Authorization: Bearer ${CF_AUDIT_RECEIPT_READ_TOKEN}" \
+                  -H "Content-Type: application/json" --data-binary @"${query}" \
+                  "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query" || echo "000")
+                if [[ "${receipt_code}" != "200" ]]; then
+                  echo "::error::read-only historical witness receipt query failed HTTP ${receipt_code}"
+                  exit 1
+                fi
+                RESPONSE="$response" OUT_DIR="${WITNESS_RECEIPTS_DIR}" python3 -c '
+                import base64,json,os
+                payload=json.load(open(os.environ["RESPONSE"])); assert payload.get("success") is True
+                rows=(payload.get("result") or [{}])[0].get("results") or []
+                for row in rows:
+                    stored={"receipt_jcs_b64":base64.b64encode(bytes.fromhex(row.pop("receipt_jcs_hex"))).decode(),"witness_jcs_b64":base64.b64encode(bytes.fromhex(row.pop("witness_jcs_hex"))).decode(),**row}
+                    path=os.path.join(os.environ["OUT_DIR"],"{}--{}--{}.json".format(stored["tenant_id"],stored["region"],stored["witness_sequence"]))
+                    with open(path,"w") as out: json.dump(stored,out,sort_keys=True,separators=(",",":"))
+                '
+              done < <(CHUNK_PATHS="${DAY_DIR}/chunk-paths.txt" python3 -c '
+              import json,os
+              parts={}
+              for path in open(os.environ["CHUNK_PATHS"]):
+                  with open(path.strip()) as rows:
+                      for line in rows:
+                          if line.strip():
+                              row=json.loads(line); key=(row["tenant_id"],row["region"]); parts[key]=min(parts.get(key,row["sequence_number"]),row["sequence_number"])
+              for (tenant,region),first in sorted(parts.items()): print(tenant,region,first)
+              ')
+              BOOTSTRAP_ARGS=(--witness-id "${AUDIT_WITNESS_ID}" --witness-public-keys "${WITNESS_KEYS_PATH}" --witness-receipts-dir "${WITNESS_RECEIPTS_DIR}")
+            fi
+
             # ---------------- VERIFY (per-day, on argv) ----------------
             DAY_LOG="${DAY_DIR}/verify.log"
-            mapfile -t CHUNKS < <(find "${CHUNKS_DIR}" -type f -name '*.ndjson' | sort)
+            mapfile -t CHUNKS < <(find "${CHUNKS_DIR}" -type f \( -name '*.ndjson' -o -name '*.ndjson.epoch-*.*' \) | sort)
+            set +e
             if [ "${#CHUNKS[@]}" -eq 0 ]; then
               echo "  day=${D}: no chunks; cron no-op"
-              cargo run -p corelink-audit-chain --bin verifier --release -- "${VERIFIER_ARGS[@]}" 2>&1 | tee "${DAY_LOG}"
+              cargo run -p corelink-audit-chain --bin verifier --release -- "${VERIFIER_ARGS[@]}" "${CHECKPOINT_ARGS[@]}" "${BOOTSTRAP_ARGS[@]}" 2>&1 | tee "${DAY_LOG}"
+              VERIFIER_RC=${PIPESTATUS[0]}
             else
               echo "  day=${D}: verifying ${#CHUNKS[@]} chunk(s)"
               # Per-day verifier MUST NOT fail the script — we want to
               # continue the matrix to surface ALL bad days as distinct
               # PD pages. Capture exit + grep for the marker below.
-              if ! cargo run -p corelink-audit-chain --bin verifier --release -- "${VERIFIER_ARGS[@]}" "${CHUNKS[@]}" 2>&1 | tee "${DAY_LOG}"; then
-                echo "  day=${D}: verifier exited non-zero (will surface below if marker present)"
-              fi
+              cargo run -p corelink-audit-chain --bin verifier --release -- "${VERIFIER_ARGS[@]}" "${CHECKPOINT_ARGS[@]}" "${BOOTSTRAP_ARGS[@]}" "${CHUNKS[@]}" 2>&1 | tee "${DAY_LOG}"
+              VERIFIER_RC=${PIPESTATUS[0]}
             fi
+            set -e
 
             # ---------------- DETECT + PAGE (per day) ----------------
-            if grep -q "AUDIT_CHAIN_BREAK_DETECTED" "${DAY_LOG}"; then
+            if [[ "${VERIFIER_RC}" -ne 0 ]] || grep -q "AUDIT_CHAIN_BREAK_DETECTED" "${DAY_LOG}"; then
               BREAK_FOUND=1
               # Pull the offending chunk key from the verifier diagnostic.
               CHUNK=$(grep -m1 -oE 'chunks/audit/[0-9/]+/[0-9]+\.ndjson' "${DAY_LOG}" || true)
@@ -511,6 +622,31 @@ jobs:
               echo "::error::${MARKER_7D}"
               page_pd_sev0 "${D}" "${CHUNK}" "chain_break"
               # Continue matrix — do NOT exit here.
+            elif [[ -s "${CHECKPOINT_OUT}" ]]; then
+              CHECKPOINT_KEY="audit-checkpoints/${D//-//}/partitions.ndjson"
+              publish_code=$(curl --silent --show-error -o "${DAY_DIR}/checkpoint-put-response.json" -w "%{http_code}" \
+                -X PUT -H "Authorization: Bearer ${CF_AUDIT_CHECKPOINT_WRITE_TOKEN}" \
+                -H "Content-Type: application/x-ndjson" -H "If-None-Match: *" \
+                --data-binary @"${CHECKPOINT_OUT}" \
+                "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${BUCKET}/objects/${CHECKPOINT_KEY}" || echo "000")
+              if [[ "${publish_code}" == "412" || "${publish_code}" == "409" ]]; then
+                existing="${DAY_DIR}/existing-checkpoint.ndjson"
+                get_code=$(curl --silent --show-error -o "${existing}" -w "%{http_code}" \
+                  -H "Authorization: Bearer ${CF_API_TOKEN}" \
+                  "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${BUCKET}/objects/${CHECKPOINT_KEY}" || echo "000")
+                if [[ "${get_code}" != "200" ]] || ! cmp -s "${CHECKPOINT_OUT}" "${existing}"; then
+                  BREAK_FOUND=1
+                  page_pd_sev0 "${D}" "${CHECKPOINT_KEY}" "checkpoint_stale_or_forked"
+                  BREAK_MARKERS="${BREAK_MARKERS}AUDIT_CHAIN_7DAY_BREAK_DETECTED::${D}::${CHECKPOINT_KEY}\n"
+                  continue
+                fi
+              elif [[ ! "${publish_code}" =~ ^2[0-9][0-9]$ ]]; then
+                BREAK_FOUND=1
+                page_pd_sev0 "${D}" "${CHECKPOINT_KEY}" "checkpoint_put_failure"
+                BREAK_MARKERS="${BREAK_MARKERS}AUDIT_CHAIN_7DAY_BREAK_DETECTED::${D}::${CHECKPOINT_KEY}\n"
+                continue
+              fi
+              PREVIOUS_LOCAL_CHECKPOINT="${CHECKPOINT_OUT}"
             fi
           done
 

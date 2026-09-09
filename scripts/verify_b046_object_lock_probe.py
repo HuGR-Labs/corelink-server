@@ -255,6 +255,8 @@ def _required_markers() -> Mapping[str, tuple[str, ...]]:
             "NotImplemented",
             "legal hold",
             "Governance",
+            "Bucket Lock",
+            "administrator-removable",
         ),
         ADR_PATH.as_posix(): (
             "ADR-0100",
@@ -262,6 +264,7 @@ def _required_markers() -> Mapping[str, tuple[str, ...]]:
             "NotImplemented",
             "fail-closed",
             "legal-hold",
+            "administrator-removable",
         ),
         CHANGELOG_PATH.as_posix(): (
             "B-046",

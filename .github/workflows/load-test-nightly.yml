@@ -60,6 +60,11 @@ on:
         description: 'Comma-sep list of scenarios to run (default: all)'
         required: false
         default: 'signup,webhook,dsr,cas,byok'
+      bootstrap_baseline:
+        description: 'Seed a missing baseline from one complete successful full-population run; the bootstrap run remains red and is not regression proof'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -257,7 +262,7 @@ jobs:
             ${{ env.BASELINE_CACHE_PREFIX }}-
 
       - name: report baseline provenance
-        if: steps.population.outputs.full == 'true'
+        if: steps.population.outputs.full == 'true' && inputs.bootstrap_baseline != true
         run: |
           set -euo pipefail
           if [[ -f tests/load/baseline/k6-baseline.json ]]; then
@@ -270,7 +275,7 @@ jobs:
 
       - name: compare median vs stored baseline
         id: compare
-        if: steps.population.outputs.full == 'true'
+        if: steps.population.outputs.full == 'true' && inputs.bootstrap_baseline != true
         env:
           EXPECTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
         run: |
@@ -281,11 +286,22 @@ jobs:
             --threshold "${REGRESSION_THRESHOLD}" \
             --expected-scenarios "${EXPECTED_SCENARIOS}"
 
+      - name: seed missing baseline from a complete successful population
+        id: bootstrap
+        if: steps.population.outputs.full == 'true' && inputs.bootstrap_baseline == true
+        run: |
+          set -euo pipefail
+          python3 scripts/load-test-baseline-check.py \
+            --results-dir tests/load/results/current \
+            --baseline tests/load/baseline/k6-baseline.json \
+            --threshold "${REGRESSION_THRESHOLD}" \
+            --bootstrap
+
       # Only reached when the comparison passed (the step above is NOT
       # continue-on-error), so a regressing run never publishes a new
       # baseline — a regression cannot ratchet itself in by repeating.
       - name: save baseline for the next run
-        if: steps.population.outputs.full == 'true'
+        if: steps.population.outputs.full == 'true' && (steps.compare.outcome == 'success' || steps.bootstrap.outcome == 'success')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tests/load/baseline
@@ -299,3 +315,9 @@ jobs:
           path: tests/load/baseline
           retention-days: 90
           if-no-files-found: error
+
+      - name: keep bootstrap distinct from regression proof
+        if: steps.population.outputs.full == 'true' && inputs.bootstrap_baseline == true
+        run: |
+          echo "::error::baseline bootstrap was persisted, but this run made no prior-baseline comparison; dispatch again without bootstrap for proof" >&2
+          exit 1

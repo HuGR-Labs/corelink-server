@@ -52,9 +52,14 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
             self.emit_lookup_sli(true, elapsed_us(started));
             return Err(AcHandlerError::AuditFailed(e));
         }
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Read)?;
 
         let resolved = match tokio::task::block_in_place(|| {
-            handle.block_on(self.resolve_byok(&req.tenant, &req.action_digest))
+            handle.block_on(self.resolve_byok_with_guard(
+                &req.tenant,
+                &req.action_digest,
+                byok_guard.as_ref(),
+            ))
         }) {
             Ok(r) => r,
             Err(e) => {
@@ -62,7 +67,47 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
                 return Err(e);
             }
         };
-        let key = match self.r2_key(&req.tenant, &resolved.physical_digest) {
+        let catalog_key = if let Some(guard) = byok_guard.as_ref() {
+            if guard
+                .intent()
+                .map_err(AcHandlerError::Internal)?
+                .catalog_generation()
+                .is_some()
+            {
+                tokio::task::block_in_place(|| {
+                    handle.block_on(guard.gate().resolve_catalog(
+                        guard.intent()?,
+                        crate::storage::byok_generation_catalog::ByokObjectKind::Ac,
+                        &req.action_digest,
+                    ))
+                })
+                .map_err(AcHandlerError::Internal)?
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if byok_guard.as_ref().is_some_and(|guard| {
+            guard
+                .intent()
+                .is_ok_and(|intent| intent.catalog_generation().is_some())
+        }) && catalog_key.is_none()
+        {
+            self.validate_byok_return(byok_guard.as_mut())?;
+            return Err(AcHandlerError::Miss {
+                tenant: req.tenant,
+                action_digest: req.action_digest,
+            });
+        }
+        let allocation_id = catalog_key
+            .as_ref()
+            .map(|published| published.allocation_id.as_str());
+        let key = match catalog_key
+            .as_ref()
+            .map(|published| Ok(published.physical_key.clone()))
+            .unwrap_or_else(|| self.r2_key(&req.tenant, &resolved.physical_digest))
+        {
             Ok(k) => k,
             Err(e) => {
                 self.emit_lookup_sli(true, elapsed_us(started));
@@ -71,9 +116,8 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
         };
         debug!(key = %key, "R2AcHandler::lookup");
         let stored_opt = {
-            let _scope = crate::origin_timing::PhaseScope::enter(
-                crate::origin_timing::Phase::Store,
-            );
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
             tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)))
         };
         let stored_opt = match stored_opt {
@@ -93,7 +137,7 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
                 // stored bytes are NEVER served. `Plaintext`-plan tenants get
                 // their bytes back unchanged (byte-identical to today).
                 let bytes = match tokio::task::block_in_place(|| {
-                    handle.block_on(self.decrypt_body(&resolved.plan, bytes))
+                    handle.block_on(self.decrypt_body(&resolved.plan, bytes, allocation_id))
                 }) {
                     Ok(pt) => pt,
                     Err(e) => {
@@ -113,6 +157,7 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
                         self.emit_lookup_sli(true, elapsed_us(started));
                         AcHandlerError::AuditFailed(e)
                     })?;
+                self.validate_byok_return(byok_guard.as_mut())?;
                 self.emit_lookup_sli(false, elapsed_us(started));
                 Ok(AcLookupResponse::new(req.action_digest, bytes))
             }
@@ -129,6 +174,7 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
                         self.emit_lookup_sli(true, elapsed_us(started));
                         AcHandlerError::AuditFailed(e)
                     })?;
+                self.validate_byok_return(byok_guard.as_mut())?;
                 // Miss is NOT an availability error — handler served
                 // correctly (mirrors `InMemoryAcHandler::lookup`).
                 self.emit_lookup_sli(false, elapsed_us(started));

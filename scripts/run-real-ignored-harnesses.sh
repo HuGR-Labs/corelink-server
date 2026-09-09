@@ -58,6 +58,8 @@ preflight_r2() {
     R2_S3_ENDPOINT R2_S3_ACCESS_KEY_ID R2_S3_SECRET_ACCESS_KEY \
     R2_TEST_BUCKET
   require_https R2_S3_ENDPOINT
+  [[ "$R2_TEST_BUCKET" == *-staging ]] || \
+    die "R2_TEST_BUCKET must be a dedicated *-staging bucket"
 }
 
 preflight_stripe() {
@@ -86,7 +88,7 @@ run_d1() {
   run_cargo --package corelink-server --lib d1_acquire_lock_then_held_then_release
   run_cargo --package corelink-server --lib d1_dpa_and_active_subscription_reads
   run_cargo --package corelink-server --lib d1_persist_free_active_does_not_count_as_a_subscription
-  run_cargo --package corelink-server --lib d1_http_cas_meta_round_trip
+  run_cargo --package corelink-server --lib d1_http_blob_meta_round_trip
   run_cargo --package corelink-server --lib d1_http_tenant_admin_lookup_round_trip
   run_cargo --package corelink-server --lib d1_audit_write_blocking_records_oaudit_phase
 }

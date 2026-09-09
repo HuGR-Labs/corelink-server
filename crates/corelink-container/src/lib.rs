@@ -97,10 +97,14 @@ pub mod auth_tenant;
 /// native Stripe-webhook materializer writes DURABLY to D1 instead of the
 /// in-memory mirror. See module docs.
 pub mod billing_d1_http;
+pub mod byok_control_transition;
 pub mod byok_orchestrator;
 /// Native D1 collaborators and complete production wiring for the BYOK
 /// revocation detector scheduler.
 pub mod byok_revocation_runtime;
+/// Tenant-wide D1 lease protocol excluding CAS/AC work from BYOK state and
+/// revocation transitions.
+pub mod byok_transition_fence;
 /// Per-tenant **storage byte accounting** (red-team finding #1): the
 /// [`byte_accounting::ByteAccountant`] that atomically check-and-accrues
 /// `tenant_storage_state.bytes_used` after a store write (closing the

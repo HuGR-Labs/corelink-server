@@ -139,6 +139,41 @@ describe("runAuditDrainSweep", () => {
     expect(r).toMatchObject({ calls: 3, sealed: 440, partitions: 5, incomplete: false, ok: true });
   });
 
+  it("replays the smallest above-budget B-125 burst as 512 + 1 without loss", async () => {
+    // 513 is the smallest population that proves the production 512-row call
+    // budget is a bound rather than a truncation point.  This stays entirely
+    // behind the service-binding stub: production audit_outbox is append-only
+    // and has no honest cleanup contract for synthetic rows.
+    const svc = svcSeq([
+      {
+        status: 200,
+        body: drainResponse({
+          rows_sealed: 512,
+          partitions_drained: 1,
+          incomplete: true,
+        }),
+      },
+      {
+        status: 200,
+        body: drainResponse({
+          rows_sealed: 1,
+          partitions_drained: 1,
+          incomplete: false,
+        }),
+      },
+    ]);
+
+    const r = await runAuditDrainSweep(env({ CORELINK_API_SVC: svc }), 0);
+    expect(r).toMatchObject({
+      calls: 2,
+      sealed: 513,
+      partitions: 2,
+      incomplete: false,
+      ok: true,
+    });
+    expect(svc.calls()).toBe(2);
+  });
+
   it("stops at MAX_DRAIN_CALLS and leaves an honestly incomplete success visible", async () => {
     const svc = svcSeq([
       { status: 200, body: drainResponse({ rows_sealed: 200, partitions_drained: 1, incomplete: true }) },

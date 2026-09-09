@@ -174,6 +174,11 @@ pub enum SealedArchiveError {
         /// What it actually carried.
         found: u64,
     },
+    /// A non-final row used `u64::MAX`, so no exact successor can exist.
+    SequenceOverflow {
+        /// Sequence number that cannot have a successor.
+        sequence_number: u64,
+    },
     /// A line's `prev_hash` did not equal the preceding line's `chain_hash`.
     ChainHeadDiscontinuity {
         /// Sequence number of the offending line.
@@ -242,6 +247,10 @@ impl core::fmt::Display for SealedArchiveError {
             Self::SequenceGap { expected, found } => write!(
                 f,
                 "sealed archive chunk sequence gap: expected {expected}, found {found}"
+            ),
+            Self::SequenceOverflow { sequence_number } => write!(
+                f,
+                "sealed archive line seq={sequence_number}: sequence successor overflows u64"
             ),
             Self::ChainHeadDiscontinuity { sequence_number } => write!(
                 f,
@@ -357,6 +366,9 @@ impl PrefixBreak {
             }
             SealedArchiveError::SequenceGap { expected, found } => {
                 format!("sequence_gap:expected={expected},found={found}")
+            }
+            SealedArchiveError::SequenceOverflow { sequence_number } => {
+                format!("sequence_overflow:seq={sequence_number}")
             }
             SealedArchiveError::ChainHeadDiscontinuity { sequence_number } => {
                 format!("chain_head_discontinuity:seq={sequence_number}")
@@ -504,8 +516,19 @@ pub fn split_verifying_prefix_for_epoch<'a>(
                         })
                     } else {
                         running_head = Some(claimed);
-                        expected_seq = expected_seq.saturating_add(1);
-                        None
+                        if lines.get(index.saturating_add(1)).is_some() {
+                            match expected_seq.checked_add(1) {
+                                Some(next) => {
+                                    expected_seq = next;
+                                    None
+                                }
+                                None => Some(SealedArchiveError::SequenceOverflow {
+                                    sequence_number: line.sequence_number,
+                                }),
+                            }
+                        } else {
+                            None
+                        }
                     }
                 }
             }

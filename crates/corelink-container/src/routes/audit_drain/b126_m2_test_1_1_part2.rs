@@ -292,6 +292,351 @@ fn distinct_sealed_tail_sequences_are_not_rejected() {
     assert!(reject_duplicate_sealed_tail(&[first, second]).is_ok());
 }
 
+fn sealed_tail_candidate(
+    id: &str,
+    sequence: u64,
+    prev_byte: u8,
+    canonical_jcs: &str,
+    quarantined: bool,
+    sequence_count: u64,
+) -> crate::storage::d1_http::D1Row {
+    let prev = ChainHash([prev_byte; 32]);
+    let hash =
+        link_for_epoch(&ChainEpoch::legacy(), &prev, canonical_jcs.as_bytes(), None).unwrap();
+    let mut row = serde_json::Map::new();
+    row.insert("id".to_owned(), json!(id));
+    row.insert("sequence_number".to_owned(), json!(sequence));
+    row.insert("prev_hash".to_owned(), json!(prev.to_hex()));
+    row.insert("chain_hash".to_owned(), json!(hash.to_hex()));
+    row.insert("canonical_jcs".to_owned(), json!(canonical_jcs));
+    row.insert("sequence_count".to_owned(), json!(sequence_count));
+    row.insert(
+        "quarantined_at".to_owned(),
+        if quarantined {
+            json!(1_700_000_000_000i64)
+        } else {
+            Value::Null
+        },
+    );
+    row.insert(
+        "quarantine_reason".to_owned(),
+        if quarantined {
+            json!("sequence_fork:legacy")
+        } else {
+            Value::Null
+        },
+    );
+    row.insert(
+        "archived_at".to_owned(),
+        if quarantined {
+            Value::Null
+        } else {
+            json!(1_700_000_000_001i64)
+        },
+    );
+    row.insert("algorithm_id".to_owned(), Value::Null);
+    row.insert("epoch_id".to_owned(), Value::Null);
+    row.insert("link_key_id".to_owned(), Value::Null);
+    row
+}
+
+fn candidate_hash(row: &crate::storage::d1_http::D1Row) -> String {
+    row.get("chain_hash").unwrap().as_str().unwrap().to_owned()
+}
+
+fn signed_tail_resolution(
+    rows: &[crate::storage::d1_http::D1Row],
+    selected: usize,
+    checkpoint: &HeadCheckpoint,
+) -> LegacyTailResolution {
+    let mut resolution = LegacyTailResolution {
+        candidate_count: rows.len() as u64,
+        candidate_set_hash: legacy_tail_candidate_set_hash(rows).unwrap(),
+        checkpoint_head_hash: checkpoint.head_hex.clone(),
+        checkpoint_head_signature: checkpoint.head_signature.clone().unwrap(),
+        checkpoint_next_sequence: checkpoint.next_sequence,
+        created_at_ms: 1_700_000_000_000,
+        resolution_signature: String::new(),
+        resolution_version: 1,
+        selected_chain_hash: candidate_hash(&rows[selected]),
+        selected_row_id: rows[selected]["id"].as_str().unwrap().to_owned(),
+        signing_key_id: KID,
+        tail_sequence: rows[selected]["sequence_number"].as_u64().unwrap(),
+    };
+    let canonical = resolution.canonical_bytes(TENANT, REGION).unwrap();
+    let key = ErasureSigningKey::from_seed(KID, region_for_key(REGION), 0, 0, SEED_A);
+    resolution.resolution_signature = base64::engine::general_purpose::STANDARD
+        .encode(key.signing_key.sign(&canonical).to_bytes());
+    resolution
+}
+
+fn tail_resume_context<'a>(
+    checkpoint: Option<&'a HeadCheckpoint>,
+    head_check: HeadResumeCheck,
+    signing_seed: Option<&'a [u8; 32]>,
+    trust_unsigned_resume: bool,
+) -> LegacyTailResumeContext<'a> {
+    LegacyTailResumeContext {
+        checkpoint,
+        head_check,
+        signing_seed,
+        signing_key_id: KID,
+        trust_unsigned_resume,
+        tenant_id: TENANT,
+        region: REGION,
+    }
+}
+
+#[test]
+fn unique_sealed_tail_needs_no_checkpoint_selection() {
+    let row = sealed_tail_candidate("selected", 7, 0, "{}", false, 1);
+    let expected = chain_hash_from_hex(row["chain_hash"].as_str().unwrap()).unwrap();
+    let resolved = resolve_sealed_tail_rows(
+        &[row],
+        None,
+        &tail_resume_context(None, HeadResumeCheck::Proceed, None, false),
+    )
+    .unwrap();
+    assert_eq!(resolved, Some((expected, 7)));
+}
+
+#[test]
+fn duplicate_tail_requires_exact_verified_signed_branch() {
+    let rows = vec![
+        sealed_tail_candidate("selected", 0, 0, "{}", false, 2),
+        sealed_tail_candidate("loser", 0, 1, "{\"fork\":true}", true, 2),
+    ];
+    let selected_hash = candidate_hash(&rows[0]);
+    let checkpoint = signed_checkpoint(&SEED_A, KID, &selected_hash, 1);
+    let resolution = signed_tail_resolution(&rows, 0, &checkpoint);
+    let resolved = resolve_sealed_tail_rows(
+        &rows,
+        Some(&resolution),
+        &tail_resume_context(
+            Some(&checkpoint),
+            HeadResumeCheck::Verified,
+            Some(&SEED_A),
+            false,
+        ),
+    )
+    .unwrap();
+    assert_eq!(resolved, Some((checkpoint.head, 0)));
+
+    let err = resolve_sealed_tail_rows(
+        &rows,
+        None,
+        &tail_resume_context(
+            Some(&checkpoint),
+            HeadResumeCheck::Verified,
+            Some(&SEED_A),
+            false,
+        ),
+    )
+    .unwrap_err();
+    assert!(err.contains("without an explicit signed resolution"));
+
+    let err = resolve_sealed_tail_rows(
+        &rows,
+        Some(&resolution),
+        &tail_resume_context(
+            Some(&checkpoint),
+            HeadResumeCheck::Proceed,
+            Some(&SEED_A),
+            false,
+        ),
+    )
+    .unwrap_err();
+    assert!(err.contains("without an exact verified checkpoint"));
+
+    let err = resolve_sealed_tail_rows(
+        &rows,
+        Some(&resolution),
+        &tail_resume_context(
+            Some(&checkpoint),
+            HeadResumeCheck::Verified,
+            Some(&SEED_A),
+            true,
+        ),
+    )
+    .unwrap_err();
+    assert!(err.contains("without an exact verified checkpoint"));
+}
+
+#[test]
+fn duplicate_tail_rejects_candidate_set_or_signature_tamper() {
+    let rows = vec![
+        sealed_tail_candidate("selected", 0, 0, "{}", false, 2),
+        sealed_tail_candidate("loser", 0, 1, "{\"fork\":true}", true, 2),
+    ];
+    let checkpoint = signed_checkpoint(&SEED_A, KID, &candidate_hash(&rows[0]), 1);
+    let mut resolution = signed_tail_resolution(&rows, 0, &checkpoint);
+    resolution.candidate_set_hash = "00".repeat(32);
+    let err = resolve_sealed_tail_rows(
+        &rows,
+        Some(&resolution),
+        &tail_resume_context(
+            Some(&checkpoint),
+            HeadResumeCheck::Verified,
+            Some(&SEED_A),
+            false,
+        ),
+    )
+    .unwrap_err();
+    assert!(err.contains("commitment/signature does not verify"));
+}
+
+#[test]
+fn duplicate_tail_rejects_two_rows_matching_signed_hash() {
+    let rows = vec![
+        sealed_tail_candidate("selected", 0, 0, "{}", false, 2),
+        sealed_tail_candidate("same-hash-loser", 0, 0, "{}", true, 2),
+    ];
+    let checkpoint = signed_checkpoint(&SEED_A, KID, &candidate_hash(&rows[0]), 1);
+    let resolution = signed_tail_resolution(&rows, 0, &checkpoint);
+    let err = resolve_sealed_tail_rows(
+        &rows,
+        Some(&resolution),
+        &tail_resume_context(
+            Some(&checkpoint),
+            HeadResumeCheck::Verified,
+            Some(&SEED_A),
+            false,
+        ),
+    )
+    .unwrap_err();
+    assert!(err.contains("2 candidates matching"));
+}
+
+#[test]
+fn duplicate_tail_rejects_loser_that_was_also_archived() {
+    let mut rows = vec![
+        sealed_tail_candidate("selected", 0, 0, "{}", false, 2),
+        sealed_tail_candidate("loser", 0, 1, "{\"fork\":true}", true, 2),
+    ];
+    rows[1].insert("archived_at".to_owned(), json!(1_700_000_000_002i64));
+    let checkpoint = signed_checkpoint(&SEED_A, KID, &candidate_hash(&rows[0]), 1);
+    let resolution = signed_tail_resolution(&rows, 0, &checkpoint);
+    let err = resolve_sealed_tail_rows(
+        &rows,
+        Some(&resolution),
+        &tail_resume_context(
+            Some(&checkpoint),
+            HeadResumeCheck::Verified,
+            Some(&SEED_A),
+            false,
+        ),
+    )
+    .unwrap_err();
+    assert!(err.contains("not exclusively quarantined"));
+}
+
+#[test]
+fn duplicate_tail_rejects_ahead_head_and_unquarantined_loser() {
+    let rows = vec![
+        sealed_tail_candidate("selected", 0, 0, "{}", false, 2),
+        sealed_tail_candidate("loser", 0, 1, "{\"fork\":true}", true, 2),
+    ];
+    let selected_hash = candidate_hash(&rows[0]);
+    let ahead = signed_checkpoint(&SEED_A, KID, &selected_hash, 2);
+    let resolution = signed_tail_resolution(&rows, 0, &ahead);
+    let err = resolve_sealed_tail_rows(
+        &rows,
+        Some(&resolution),
+        &tail_resume_context(
+            Some(&ahead),
+            HeadResumeCheck::Verified,
+            Some(&SEED_A),
+            false,
+        ),
+    )
+    .unwrap_err();
+    assert!(err.contains("without an exact verified checkpoint"));
+
+    let active_loser = vec![
+        sealed_tail_candidate("selected", 0, 0, "{}", false, 2),
+        sealed_tail_candidate("loser", 0, 1, "{\"fork\":true}", false, 2),
+    ];
+    let exact = signed_checkpoint(&SEED_A, KID, &candidate_hash(&active_loser[0]), 1);
+    let active_resolution = signed_tail_resolution(&active_loser, 0, &exact);
+    let err = resolve_sealed_tail_rows(
+        &active_loser,
+        Some(&active_resolution),
+        &tail_resume_context(
+            Some(&exact),
+            HeadResumeCheck::Verified,
+            Some(&SEED_A),
+            false,
+        ),
+    )
+    .unwrap_err();
+    assert!(err.contains("not exclusively quarantined"));
+}
+
+#[test]
+fn duplicate_tail_rejects_missing_signed_branch_and_hidden_third_candidate() {
+    let rows = vec![
+        sealed_tail_candidate("fork-a", 0, 1, "{}", true, 2),
+        sealed_tail_candidate("fork-b", 0, 2, "{}", true, 2),
+    ];
+    let checkpoint = signed_checkpoint(&SEED_A, KID, &head_hex(), 1);
+    let mut resolution = signed_tail_resolution(&rows, 0, &checkpoint);
+    resolution.selected_chain_hash = checkpoint.head_hex.clone();
+    resolution.selected_row_id = "absent".to_owned();
+    let canonical = resolution.canonical_bytes(TENANT, REGION).unwrap();
+    let key = ErasureSigningKey::from_seed(KID, region_for_key(REGION), 0, 0, SEED_A);
+    resolution.resolution_signature = base64::engine::general_purpose::STANDARD
+        .encode(key.signing_key.sign(&canonical).to_bytes());
+    let err = resolve_sealed_tail_rows(
+        &rows,
+        Some(&resolution),
+        &tail_resume_context(
+            Some(&checkpoint),
+            HeadResumeCheck::Verified,
+            Some(&SEED_A),
+            false,
+        ),
+    )
+    .unwrap_err();
+    assert!(err.contains("0 candidates matching"));
+
+    let hidden = vec![sealed_tail_candidate("selected", 0, 0, "{}", false, 3)];
+    let err = resolve_sealed_tail_rows(
+        &hidden,
+        Some(&resolution),
+        &tail_resume_context(
+            Some(&checkpoint),
+            HeadResumeCheck::Verified,
+            Some(&SEED_A),
+            false,
+        ),
+    )
+    .unwrap_err();
+    assert!(err.contains("has 3 candidates"));
+}
+
+#[test]
+fn head_advance_cas_binds_the_verified_checkpoint_snapshot() {
+    let source = include_str!("b126_m2_impl_02.rs");
+    for guard in [
+        "head_signature IS ?11",
+        "signing_key_id IS ?12",
+        "epoch_id IS ?13",
+        "head_message_version IS ?14",
+        "epoch_ledger_sequence IS ?15",
+        "epoch_ledger_hash IS ?16",
+        "head_witness_sequence IS ?17",
+        "head_witness_hash IS ?18",
+        "json!(cp.head_signature.as_deref())",
+        "json!(cp.epoch_ledger_hash.as_deref())",
+        "json!(cp.head_witness_hash.as_deref())",
+    ] {
+        assert!(
+            source.contains(guard),
+            "missing CAS snapshot guard/bind: {guard}"
+        );
+    }
+}
+
 #[test]
 fn seal_chunk_payload_rejects_empty_and_duplicate_mutations() {
     assert!(seal_chunk_payload(&[], 1_700_000_000_000).is_err());
@@ -325,6 +670,31 @@ fn seal_chunk_payload_preserves_exact_seal_fields() {
     assert_eq!(values[0]["sealed_at"], json!(1_700_000_000_000i64));
 }
 
+#[test]
+fn v2_prefix_is_bounded_before_the_external_witness_moves() {
+    assert_eq!(
+        AUDIT_V2_MAX_ROWS_PER_TRANSACTION.div_ceil(AUDIT_SEAL_ROWS_PER_STATEMENT) + 4,
+        AUDIT_V2_MAX_BATCH_STATEMENTS
+    );
+
+    let mut candidates = sealed_rows(2);
+    for row in &mut candidates {
+        row.canonical_jcs = "x".repeat(400 * 1024);
+    }
+    let (prefix, head, next_sequence) =
+        bounded_v2_sealed_prefix(&candidates, 1_700_000_000_000).unwrap();
+    assert_eq!(
+        prefix.len(),
+        1,
+        "aggregate assertion value must shrink the prefix"
+    );
+    assert_eq!(head.to_hex(), prefix[0].chain_hash_hex);
+    assert_eq!(next_sequence, prefix[0].sequence_number + 1);
+
+    candidates[0].canonical_jcs = "\"\\".repeat(AUDIT_V2_MAX_SERIALIZED_ROW_BYTES / 2);
+    assert!(bounded_v2_sealed_prefix(&candidates[..1], 1_700_000_000_000).is_err());
+}
+
 fn returning_id(id: &str) -> crate::storage::d1_http::D1Row {
     let mut row = serde_json::Map::new();
     row.insert("id".to_owned(), json!(id));
@@ -356,6 +726,100 @@ fn seal_chunk_result_requires_exact_returning_id_set() {
     let mut non_text = serde_json::Map::new();
     non_text.insert("id".to_owned(), json!(42));
     assert!(validate_seal_chunk_result(&[non_text, returning_id(&rows[1].id)], &rows).is_err());
+}
+
+#[test]
+fn b125_smallest_above_budget_burst_is_bounded_complete_and_idempotent() {
+    use std::time::Instant;
+
+    // 513 is the smallest burst above the production per-call budget of 512.
+    // Exercise the real JSON1 UPDATE in an isolated in-memory database: a live
+    // production injection cannot be cleaned up once these append-only rows are
+    // sealed, so it is deliberately forbidden by the B-125 owner packet.
+    const BURST_ROWS: usize = 513;
+    let conn = rusqlite::Connection::open_in_memory().expect("sqlite");
+    conn.execute_batch(
+        "CREATE TABLE audit_outbox (
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            region TEXT NOT NULL,
+            sequence_number INTEGER,
+            prev_hash TEXT,
+            chain_hash TEXT,
+            canonical_jcs TEXT,
+            chained_at INTEGER,
+            emitted_at INTEGER,
+            algorithm_id INTEGER,
+            epoch_id INTEGER,
+            link_key_id INTEGER,
+            enqueued_at INTEGER NOT NULL
+        );",
+    )
+    .expect("schema");
+
+    let sealed = sealed_rows(BURST_ROWS);
+    for row in &sealed {
+        conn.execute(
+            "INSERT INTO audit_outbox (id,tenant_id,region,enqueued_at) VALUES (?1,'b125-synthetic','enam',100)",
+            rusqlite::params![row.id],
+        )
+        .expect("synthetic row");
+    }
+
+    let started = Instant::now();
+    let mut statement_sizes = Vec::new();
+    for chunk in sealed.chunks(AUDIT_SEAL_ROWS_PER_STATEMENT) {
+        let payload = seal_chunk_payload(chunk, 200).expect("chunk payload");
+        let payload = payload.as_str().expect("encoded JSON1 string");
+        let mut statement = conn
+            .prepare(AUDIT_SEAL_CHUNK_SQL)
+            .expect("prepare chunk SQL");
+        let returned: Vec<crate::storage::d1_http::D1Row> = statement
+            .query_map(rusqlite::params![payload], |row| {
+                let mut out = serde_json::Map::new();
+                out.insert("id".to_owned(), json!(row.get::<_, String>(0)?));
+                Ok(out)
+            })
+            .expect("execute chunk SQL")
+            .collect::<Result<_, _>>()
+            .expect("returning rows");
+        validate_seal_chunk_result(&returned, chunk).expect("exact returned id set");
+        statement_sizes.push(returned.len());
+    }
+    let elapsed = started.elapsed();
+
+    assert_eq!(statement_sizes.len(), 17, "sixteen full chunks plus one row");
+    assert_eq!(&statement_sizes[..16], &[32; 16]);
+    assert_eq!(statement_sizes[16], 1);
+    assert_eq!(statement_sizes.iter().sum::<usize>(), BURST_ROWS);
+    let (sealed_count, distinct_sequences, pending): (usize, usize, usize) = conn
+        .query_row(
+            "SELECT COUNT(*), COUNT(DISTINCT sequence_number), SUM(emitted_at IS NULL) FROM audit_outbox",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("population readback");
+    assert_eq!((sealed_count, distinct_sequences, pending), (513, 513, 0));
+
+    // Replay control: an already-sealed chunk updates zero rows. The route's
+    // pending scan therefore has no work and cannot duplicate the chain.
+    let replay_payload = seal_chunk_payload(&sealed[..32], 300).expect("replay payload");
+    let replay_payload = replay_payload.as_str().expect("encoded replay JSON1 string");
+    let replayed = conn
+        .prepare(AUDIT_SEAL_CHUNK_SQL)
+        .expect("prepare replay")
+        .query_map(rusqlite::params![replay_payload], |row| row.get::<_, String>(0))
+        .expect("execute replay")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("replay rows");
+    assert!(replayed.is_empty(), "replay must mutate zero sealed rows");
+
+    tracing::info!(
+        "B125 isolated burst: rows={BURST_ROWS} statements={} elapsed_us={} rows_per_second={:.2}",
+        statement_sizes.len(),
+        elapsed.as_micros(),
+        BURST_ROWS as f64 / elapsed.as_secs_f64()
+    );
 }
 
 #[tokio::test]

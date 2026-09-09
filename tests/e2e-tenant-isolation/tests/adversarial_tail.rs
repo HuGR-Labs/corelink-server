@@ -12,7 +12,7 @@
     reason = "test module — assertions panic by design"
 )]
 
-use e2e_tenant_isolation::*;
+use super::*;
 
 /// Scenario 18 — Audit chain leaf forge: Tenant A constructs a forged
 /// leaf claiming it belongs to Tenant B's chain. Chain verify under

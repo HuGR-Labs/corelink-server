@@ -53,9 +53,10 @@ head_sampling_rate = 1
 #                                  hand-off; never reuse a Stripe or worker key.
 #   PAGERDUTY_ROUTING_KEY         — canonical PagerDuty Events API v2 key for
 #                                  exhausted DSR dead-letter pages. The DLQ
-#                                  handler fails closed on delivery errors and
-#                                  logs an explicit not_configured blocker if
-#                                  this key is absent at runtime.
+#                                  handler fails closed on delivery errors or
+#                                  missing runtime configuration: it retains the
+#                                  DLQ delivery for retry and never substitutes
+#                                  a console log for an accepted on-call page.
 #
 # D1 bindings:
 #   CONFIG_DB  — corelink-prod-d1 (tenant, pat, tenant_billing tables).

@@ -13,7 +13,9 @@
 
 use std::process::ExitCode;
 
+use corelink_gc::CANONICAL_PHYSICAL_DELETE_PHASE_BUDGET_MS;
 use corelink_server::gc_sweep::{run_production, GcProductionConfig};
+use serde_json::json;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -26,22 +28,16 @@ async fn main() -> ExitCode {
     };
     if std::env::var("GC_VALIDATE_ONLY").ok().as_deref() == Some("true") {
         println!(
-            "gc_sweep configuration valid (dry-run; no D1/R2 operation) tenant={} region={} bucket={}",
+            "gc_sweep configuration valid (dry-run; no D1/R2 operation) tenant={} region={} bucket={} max_candidates={}",
             config.tenant_id,
             config.region.as_str(),
-            config.bucket
+            config.bucket,
+            config.max_candidates
         );
         return ExitCode::SUCCESS;
     }
-    let storage = match corelink_server::storage::StorageEnv::from_env() {
-        Some(storage) => storage,
-        None => {
-            eprintln!("gc_sweep FAILED (fail-closed): durable D1/R2 StorageEnv is incomplete");
-            return ExitCode::FAILURE;
-        }
-    };
     println!(
-        "gc_sweep mode={} observation_only={} tenant={} region={} run={}",
+        "gc_sweep mode={} observation_only={} tenant={} region={} run={} max_candidates={}",
         config.mode.as_str(),
         config.observation_only,
         config.tenant_id,
@@ -49,18 +45,32 @@ async fn main() -> ExitCode {
         config
             .run_id
             .map(|run| run.to_string())
-            .unwrap_or_else(|| "current-running".to_owned())
+            .unwrap_or_else(|| "current-running".to_owned()),
+        config.max_candidates
     );
-    match run_production(&storage, &config).await {
+    match run_production(&config) {
         Ok(report) => {
-            println!(
-                "gc_sweep report scanned={} reclaimable={} reclaimable_bytes={} deleted={} deleted_bytes={}",
-                report.candidates_scanned,
-                report.reclaimable_count,
-                report.reclaimable_bytes,
-                report.deleted_count,
-                report.deleted_bytes
-            );
+            let evidence = json!({
+                "schema_version": 1,
+                "mode": report.mode.as_str(),
+                "observation_only": true,
+                "run_id": report.run_id.as_text(),
+                "tenant_id": report.tenant_id.to_string(),
+                "region": report.region.as_str(),
+                "candidates_scanned": report.candidates_scanned,
+                "reclaimable_count": report.reclaimable_count,
+                "reclaimable_bytes": report.reclaimable_bytes,
+                "delete_count": report.deleted_count,
+                "deleted_bytes": report.deleted_bytes,
+                "skipped_grace_pending": report.skipped_grace_pending,
+                "skipped_refcount_non_zero": report.skipped_refcount_non_zero,
+                "already_resolved": report.already_resolved,
+                "duration_ms": report.duration_ms,
+                "observed_at_ms": report.now_ms,
+                "phase_budget_ms": CANONICAL_PHYSICAL_DELETE_PHASE_BUDGET_MS,
+                "max_candidates": config.max_candidates,
+            });
+            println!("gc_sweep report {evidence}");
             ExitCode::SUCCESS
         }
         Err(error) => {

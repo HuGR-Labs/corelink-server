@@ -43,6 +43,39 @@ impl corelink_handler_ac::AcListHandler for R2AcHandler {
             self.emit_list_sli(true, elapsed_us(started));
             return Err(AcHandlerError::AuditFailed(e));
         }
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Read)?;
+
+        if let Some(guard) = byok_guard.as_ref().filter(|guard| {
+            guard
+                .intent()
+                .is_ok_and(|intent| intent.catalog_generation().is_some())
+        }) {
+            let rows = tokio::task::block_in_place(|| {
+                handle.block_on(guard.gate().list_catalog(
+                    guard.intent()?,
+                    crate::storage::byok_generation_catalog::ByokObjectKind::Ac,
+                    req.limit,
+                    req.cursor.as_deref(),
+                ))
+            })
+            .map_err(AcHandlerError::Internal)?;
+            self.validate_byok_return(byok_guard.as_mut())?;
+            let next_cursor = (rows.len() == req.limit as usize)
+                .then(|| rows.last().map(|row| row.logical_key.clone()))
+                .flatten();
+            let refs = rows
+                .into_iter()
+                .map(|row| {
+                    AcRefEntry::new(
+                        row.logical_key,
+                        row.published_at_ms.to_string(),
+                        row.size_bytes,
+                    )
+                })
+                .collect();
+            self.emit_list_sli(false, elapsed_us(started));
+            return Ok(AcListResponse::new(refs, next_cursor));
+        }
 
         let prefix = match self.r2_list_prefix(&req.tenant) {
             Ok(p) => p,
@@ -53,9 +86,8 @@ impl corelink_handler_ac::AcListHandler for R2AcHandler {
         };
         debug!(prefix = %prefix, "R2AcHandler::list");
         let result = {
-            let _scope = crate::origin_timing::PhaseScope::enter(
-                crate::origin_timing::Phase::Store,
-            );
+            let _scope =
+                crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
             tokio::task::block_in_place(|| {
                 handle.block_on(self.client.list_objects_page(
                     &prefix,
@@ -79,6 +111,7 @@ impl corelink_handler_ac::AcListHandler for R2AcHandler {
                 AcRefEntry::new(ref_key, last_modified, size)
             })
             .collect();
+        self.validate_byok_return(byok_guard.as_mut())?;
         self.emit_list_sli(false, elapsed_us(started));
         Ok(AcListResponse::new(refs, next_cursor))
     }
