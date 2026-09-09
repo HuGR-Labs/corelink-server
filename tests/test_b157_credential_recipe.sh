@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PAGE="$ROOT/apps/docs/docs/integrations/bazel.md"
 HELPER="$ROOT/examples/bazel-starter/.bazel/corelink-credential-helper.sh"
+PUBLISHED_HELPER="$ROOT/apps/docs/static/downloads/corelink-credential-helper.sh"
 BAZELRC="$ROOT/examples/bazel-starter/.bazelrc"
 
 assert_all_helpers_scoped() {
@@ -24,8 +25,8 @@ assert_all_helpers_scoped() {
 assert_helper_link() {
   local page="$1" href target
   href="$(sed -nE 's#.*\[Bazel starter example\]\(([^)]*)\).*#\1#p' "$page")"
-  test "$href" = '../../../../examples/bazel-starter/.bazel/corelink-credential-helper.sh' || return 1
-  target="$ROOT/apps/docs/docs/integrations/$href"
+  test "$href" = 'pathname:///downloads/corelink-credential-helper.sh' || return 1
+  target="$PUBLISHED_HELPER"
   test -f "$target" || return 1
 }
 
@@ -42,6 +43,7 @@ assert_safe() {
 assert_safe "$PAGE"
 assert_helper_link "$PAGE"
 test -f "$HELPER"
+cmp --silent "$HELPER" "$PUBLISHED_HELPER"
 assert_all_helpers_scoped "$BAZELRC"
 grep -qE '^build --credential_helper=corelink-api\.humangr\.com=' "$BAZELRC"
 sentinel='corelink_pat_SENTINEL.behavior-test'
@@ -75,7 +77,7 @@ fi
 
 tmp="$(mktemp)"
 trap 'rm -f "$tmp" "$helper_stderr" "$missing_stderr" "$helper_xtrace_stderr"' EXIT
-awk '{gsub(/\.\.\/\.\.\/\.\.\/\.\.\/examples\/bazel-starter/, "../../../../examples/buck2-starter"); print}' "$PAGE" >"$tmp"
+awk '{gsub(/pathname:\/\/\/downloads\/corelink-credential-helper\.sh/, "pathname:///downloads/missing-helper.sh"); print}' "$PAGE" >"$tmp"
 if assert_helper_link "$tmp"; then
   echo 'B-157 link mutation unexpectedly passed' >&2
   exit 1
