@@ -165,6 +165,65 @@ class B110WorkflowVerifierTests(unittest.TestCase):
                     with self.assertRaises(verifier.CheckError):
                         verifier.verify_b110()
 
+    def test_yaml_tag_and_anchor_encoded_or_variants_are_red(self) -> None:
+        target = ".github/workflows/semgrep.yml"
+        old = "if: github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected"
+        encoded = r"\x7c\x7c"
+        expression = (
+            '"github.repository == \'HuGR-Labs/corelink-server\' && '
+            "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && "
+            f"github.ref_protected {encoded} github.event_name == 'workflow_dispatch'\""
+        )
+        # !!str is actionlint-valid; anchors and aliases are rejected by the
+        # actionlint version used for this repository but must fail closed here
+        # as well if a parser accepts them in a future version.
+        for prefix in ("!!str ", "&guard ", "!!str &guard "):
+            with self.subTest(prefix=prefix):
+                mutation = self._mutated_text(target, old, f"if: {prefix}{expression}")
+                with mutation:
+                    with self.assertRaises(verifier.CheckError):
+                        verifier.verify_b110()
+
+    def test_yaml_block_scalar_tag_and_anchor_variants_are_red(self) -> None:
+        target = ".github/workflows/semgrep.yml"
+        old = "if: github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected"
+        encoded = r"\x7c\x7c"
+        expression = (
+            '"github.repository == \'HuGR-Labs/corelink-server\' && '
+            "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && "
+            f"github.ref_protected {encoded} github.event_name == 'workflow_dispatch'\""
+        )
+        for prefix in ("!!str ", "&guard ", "!!str &guard "):
+            with self.subTest(prefix=prefix):
+                folded = f"if: >-\n      {prefix}{expression}"
+                mutation = self._mutated_text(target, old, folded)
+                with mutation:
+                    with self.assertRaises(verifier.CheckError):
+                        verifier.verify_b110()
+
+    def test_yaml_actionlint_valid_anchor_alias_variants_are_red(self) -> None:
+        target = ".github/workflows/semgrep.yml"
+        old = "if: github.repository == 'HuGR-Labs/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected"
+        encoded = r"\x7c\x7c"
+        expression = (
+            '"github.repository == \'HuGR-Labs/corelink-server\' && '
+            "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && "
+            f"github.ref_protected {encoded} github.event_name == 'workflow_dispatch'\""
+        )
+        # Anchoring a tagged scalar and consuming it through an alias is valid
+        # YAML/actionlint syntax; the semantic if value is still untrusted.
+        for declaration in ("&guard !!str", "!!str &guard"):
+            with self.subTest(declaration=declaration):
+                replacement = (
+                    "env:\n"
+                    f"      TRUST_GUARD: {declaration} {expression}\n"
+                    "    if: *guard"
+                )
+                mutation = self._mutated_text(target, old, replacement)
+                with mutation:
+                    with self.assertRaises(verifier.CheckError):
+                        verifier.verify_b110()
+
     def test_ref_split_or_cancelling_heavy_build_is_red(self) -> None:
         mutation = self._mutated_text(
             ".github/workflows/cas_foundation.yml",
@@ -222,11 +281,27 @@ class B110WorkflowVerifierTests(unittest.TestCase):
 
     def test_packet_load_bearing_fields_are_authoritative(self) -> None:
         fields = (
+            ("owner", "owner"),
+            ("status", "open"),
             ("action_type", "other_action"),
             ("procedure", ["RUN: noop", "RUN: noop"]),
             ("expected_postcondition", "B-110 is parked"),
             ("retry_and_rollback", "no rollback"),
             ("references", ["BACKLOG.md#B-110"]),
+            (
+                "inputs_and_credentials_boundary",
+                {
+                    "inputs": ["wrong input"],
+                    "credentials": verifier.B110_INPUTS_AND_CREDENTIALS_BOUNDARY["credentials"],
+                },
+            ),
+            (
+                "inputs_and_credentials_boundary",
+                {
+                    "inputs": verifier.B110_INPUTS_AND_CREDENTIALS_BOUNDARY["inputs"],
+                    "credentials": "wrong credential boundary",
+                },
+            ),
         )
         for field, value in fields:
             with self.subTest(field=field):

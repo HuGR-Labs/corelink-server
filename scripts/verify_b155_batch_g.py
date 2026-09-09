@@ -80,6 +80,20 @@ B110_REFERENCES = (
     ".github/workflows/ffi-matrix-ci.yml",
     ".github/workflows/mutation-nightly.yml",
 )
+B110_OWNER = "tl"
+B110_STATUS = "done"
+B110_INPUTS_AND_CREDENTIALS_BOUNDARY = {
+    "inputs": [
+        "four blocked workflow files",
+        "required 4-core Linux capacity",
+        "GitHub billing/account state",
+        "coverage trade-off decision",
+    ],
+    "credentials": (
+        "Owner controls GitHub billing, runner registration, and destructive workflow authorization; "
+        "no payment, runner registration, workflow dispatch, or deletion is performed here."
+    ),
+}
 IDS = {
     "B-100": "verify_b100",
     "B-109": "verify_b109",
@@ -448,11 +462,34 @@ def _decode_yaml_double_quoted(value: str, label: str) -> str:
 
 
 def _semantic_if_expression(value: str, label: str) -> str:
-    """Inspect the scalar after YAML quoting/escape decoding."""
+    """Inspect the scalar after YAML quoting/escape decoding.
+
+    The verifier intentionally accepts only scalar forms whose YAML meaning it
+    can establish locally.  Tags, anchors, and aliases change the node
+    semantics before GitHub evaluates the expression, so accepting their text
+    would make an encoded ``||`` invisible to this check.  A safe YAML parser
+    is not available in the hermetic verifier environment; reject these node
+    prefixes rather than attempting to emulate their resolution.
+    """
     value = value.strip()
+    if value.startswith((">", "|")):
+        # `workflow_job_if_expressions` has already joined continuation lines,
+        # so remove only the YAML block header and inspect its scalar body.
+        block = re.match(r"^[>|](?:[1-9])?(?:[+-])?(?:\s+|$)(.*)$", value)
+        if block is None:
+            raise CheckError(f"ambiguous YAML block scalar in {label}")
+        value = block.group(1).strip()
+        if not value:
+            raise CheckError(f"empty YAML block scalar in {label}")
+    if value.startswith(("!", "&", "*")):
+        raise CheckError(f"YAML tag, anchor, or alias is not allowed in {label}")
     if value.startswith('"'):
+        if not value.endswith('"'):
+            raise CheckError(f"unterminated YAML double-quoted scalar in {label}")
         return _decode_yaml_double_quoted(value, label)
-    if value.startswith("'") and value.endswith("'"):
+    if value.startswith("'"):
+        if not value.endswith("'"):
+            raise CheckError(f"unterminated YAML single-quoted scalar in {label}")
         return value[1:-1].replace("''", "'")
     return value
 
@@ -589,11 +626,17 @@ def packet_item(item_id: str) -> dict[str, object]:
 
 def _verify_b110_packet(item: dict[str, object]) -> None:
     """Bind the closed B-110 row to the exact redacted decision evidence."""
+    assert_true(item.get("owner") == B110_OWNER, "B-110 owner drifted")
+    assert_true(item.get("status") == B110_STATUS, "B-110 status drifted")
     assert_true(item.get("action_type") == B110_ACTION_TYPE, "B-110 action type drifted")
     assert_true(item.get("procedure") == list(B110_PROCEDURE), "B-110 procedure drifted")
     assert_true(item.get("expected_postcondition") == B110_EXPECTED_POSTCONDITION, "B-110 postcondition drifted")
     assert_true(item.get("retry_and_rollback") == B110_RETRY_AND_ROLLBACK, "B-110 rollback contract drifted")
     assert_true(item.get("references") == list(B110_REFERENCES), "B-110 references drifted")
+    assert_true(
+        item.get("inputs_and_credentials_boundary") == B110_INPUTS_AND_CREDENTIALS_BOUNDARY,
+        "B-110 inputs and credentials boundary drifted",
+    )
     evidence = item.get("evidence")
     assert_true(isinstance(evidence, dict), "B-110 owner packet evidence is not an object")
     assert_true(evidence.get("path") == B110_EVIDENCE_PATH, "B-110 evidence path drifted")
