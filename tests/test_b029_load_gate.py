@@ -355,6 +355,29 @@ class B029LoadGateTests(unittest.TestCase):
             )
         )
 
+    def test_target_source_mutations_are_rejected(self) -> None:
+        workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
+        self.assertEqual(self._assess_workflow(workflow), [])
+        contract = self.root / "workflow-contract"
+        for relative in verifier.HOSTNAME_SOURCES:
+            path = contract / relative
+            original = path.read_text()
+            for variant in verifier.STAGING_HOST_VARIANTS:
+                with self.subTest(source=relative, variant=variant):
+                    mutated = original.replace(
+                        verifier.CANONICAL_STAGING_HOST,
+                        variant,
+                        1,
+                    )
+                    self.assertNotEqual(mutated, original)
+                    path.write_text(mutated)
+                    gaps = verifier.assess(contract, expect="open")
+                    self.assertTrue(
+                        any("B-029" in gap for gap in gaps),
+                        f"{relative} mutation {variant} was not rejected: {gaps}",
+                    )
+            path.write_text(original)
+
     def test_mutation_disabling_comparison_is_killed(self) -> None:
         self.write_baseline(100)
         self.write_full_matrix(cas_median=121)
