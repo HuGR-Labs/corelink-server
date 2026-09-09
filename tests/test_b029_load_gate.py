@@ -13,6 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/load-test-baseline-check.py"
 VERIFIER = ROOT / "scripts/verify_b029_load_gate.py"
+FULL_SCENARIOS = ("signup", "webhook", "dsr", "cas", "byok")
+FULL_EXPECTED_SCENARIOS = ",".join(FULL_SCENARIOS)
 
 
 def load_module(path: Path, name: str):
@@ -67,10 +69,36 @@ class B029LoadGateTests(unittest.TestCase):
                     "commit": "base-commit",
                     "metric": "http_req_duration.med (ms)",
                     "scenarios": {
-                        "cas": {"median_ms": median, "p99_ms": 20}
+                        scenario: {"median_ms": median, "p99_ms": 20}
+                        for scenario in FULL_SCENARIOS
                     },
                 }
             )
+        )
+
+    def write_full_matrix(
+        self,
+        *,
+        cas_median: object = 100,
+        cas_status: str | None = "success",
+    ) -> None:
+        """Write the complete matrix required for baseline publication."""
+        for scenario in FULL_SCENARIOS:
+            median = cas_median if scenario == "cas" else 100
+            status = cas_status if scenario == "cas" else "success"
+            self.write_summary(scenario, median, status=status)
+
+    def run_full_gate(self, *extra: str) -> int:
+        return comparator.main(
+            [
+                "--results-dir",
+                str(self.results),
+                "--baseline",
+                str(self.baseline),
+                "--expected-scenarios",
+                FULL_EXPECTED_SCENARIOS,
+                *extra,
+            ]
         )
 
     def run_gate(self, *extra: str) -> int:
@@ -111,15 +139,15 @@ class B029LoadGateTests(unittest.TestCase):
 
     def test_within_threshold_updates_baseline(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", 119)
-        self.assertEqual(self.run_gate(), 0)
+        self.write_full_matrix(cas_median=119)
+        self.assertEqual(self.run_full_gate(), 0)
         self.assertEqual(comparator.load_baseline(self.baseline)["cas"]["median_ms"], 119)
 
     def test_regression_fails_and_does_not_ratchet(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", 121)
+        self.write_full_matrix(cas_median=121)
         before = self.baseline.read_bytes()
-        self.assertEqual(self.run_gate(), comparator.EXIT_REGRESSION)
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_REGRESSION)
         self.assertEqual(self.baseline.read_bytes(), before)
 
     def test_empty_or_partial_artifacts_fail_closed(self) -> None:
@@ -301,7 +329,7 @@ class B029LoadGateTests(unittest.TestCase):
 
     def test_mutation_disabling_comparison_is_killed(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", 121)
+        self.write_full_matrix(cas_median=121)
         before = self.baseline.read_bytes()
         mutated = self.root / "mutated.py"
         source = SCRIPT.read_text()
@@ -315,7 +343,7 @@ class B029LoadGateTests(unittest.TestCase):
                 "--baseline",
                 str(self.baseline),
                 "--expected-scenarios",
-                "cas",
+                FULL_EXPECTED_SCENARIOS,
             ],
             text=True,
             capture_output=True,
@@ -326,7 +354,7 @@ class B029LoadGateTests(unittest.TestCase):
 
     def test_mutation_removing_status_gate_is_killed(self) -> None:
         self.write_baseline(100)
-        self.write_summary("cas", 100, status=None)
+        self.write_full_matrix(cas_status=None)
         mutated = self.root / "mutated-status.py"
         source = SCRIPT.read_text()
         needle = "        collect_statuses(results_dir, expected_set)\n"
@@ -341,7 +369,7 @@ class B029LoadGateTests(unittest.TestCase):
                 "--baseline",
                 str(self.baseline),
                 "--expected-scenarios",
-                "cas",
+                FULL_EXPECTED_SCENARIOS,
             ],
             text=True,
             capture_output=True,
