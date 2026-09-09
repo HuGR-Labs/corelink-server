@@ -1210,16 +1210,22 @@ def _run_retired_gates(root: Path, records: dict[str, Any]) -> None:
 def self_test(root: Path = ROOT) -> None:
     backlog = _read(root / "BACKLOG.md")
     packets = _read(root / PACKET_PATH.relative_to(ROOT))
+    command_removed = packets.replace('"command": "', '"command_removed": "', 1)
+    if command_removed == packets:
+        raise GraduationError("self-test fixture failed to locate a packet command field")
+    retired_population = '  "post_graduation_retired": [\n    "B-210"\n  ],\n'
+    if retired_population not in packets:
+        raise GraduationError("self-test fixture failed to locate the retired population")
     cases = (
         ("status-open", backlog.replace("id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: parked", "id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: open", 1), packets),
         ("stale-means", backlog.replace("verify-means: |\n  parked —", "verify-means: |\n  open —", 1), packets),
-        ("packet-command-removed", backlog, packets.replace('"command":"', '"command_removed":"', 1)),
-        ("packet-unclassified", backlog, packets.replace('"disposition":"PARKED"', '"disposition":"UNKNOWN"', 1)),
-        ("post-graduation-omitted", backlog, packets.replace('  "post_graduation_retired": ["B-210"],\n', "", 1)),
+        ("packet-command-removed", backlog, command_removed),
+        ("packet-unclassified", backlog, packets.replace('"disposition": "PARKED"', '"disposition": "UNKNOWN"', 1)),
+        ("post-graduation-omitted", backlog, packets.replace(retired_population, "", 1)),
         (
             "post-graduation-parked",
             backlog,
-            packets.replace('  "post_graduation_retired": ["B-210"],\n', '  "post_graduation_parked": ["B-210"],\n', 1),
+            packets.replace(retired_population, '  "post_graduation_parked": [\n    "B-210"\n  ],\n', 1),
         ),
         (
             "retired-status-parked",
@@ -1245,7 +1251,15 @@ def self_test(root: Path = ROOT) -> None:
             backlog,
             packets.replace(B118_COMMAND, "gh run list --workflow cosign-sign.yml", 1),
         ),
-        ("fake-done", backlog.replace("id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: parked", "id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: done", 1), packets.replace('"B-044": {"disposition":"PARKED"', '"B-044": {"disposition":"DONE"', 1)),
+        (
+            "fake-done",
+            backlog.replace("id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: parked", "id: B-044\nrepo: corelink-runners\nowner: tl\nstatus: done", 1),
+            packets.replace(
+                '"B-044": {\n      "disposition": "PARKED"',
+                '"B-044": {\n      "disposition": "DONE"',
+                1,
+            ),
+        ),
         (
             "artifact-capture-removed",
             backlog,

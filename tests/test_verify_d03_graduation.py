@@ -38,7 +38,7 @@ def test_b210_is_retired_and_not_parked_debt() -> None:
     assert "post_graduation_parked" not in packet
     backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
     result = verify_document(backlog_text=backlog, packet_text=packet_text, run_guards=False, run_gates=False)
-    assert result["done"] == 5
+    assert result["done"] == 6
     b210 = next(record.raw for record in parse(backlog) if record.id == "B-210")
     assert b210["status"] == "done"
     assert b210["verify-means"].lstrip().startswith("done —")
