@@ -4,7 +4,8 @@ Date: 2026-09-09 (UTC). Base: `79d5d55ada1c851707c6afaae8f6af777302bb7e`.
 Operator: `codex-live-readback`. All Cloudflare operations used the local
 Wrangler OAuth session and were remote `SELECT` statements. No credentials,
 payloads, full tenant IDs, endpoint calls, workflows, migrations, or rows were
-written.
+written. The canonical binding is `corelink-config-prod`, targeting D1 UUID
+`d64742ea-e102-40b2-a844-ff02e3f94562`.
 
 ## B-063 — archive partition
 
@@ -13,20 +14,26 @@ cutoffs. Every read returned the same one failing partition:
 
 | sample | captured (UTC) | cutoff ms | partition | pending old | oldest pending ms | partition watermark ms | writes |
 |---:|---|---:|---|---:|---:|---:|---:|
-| 1 | 01:50:26 | 1788907826000 | `93da3f7a/enam` | 188 | 1787824088488 | 1787799644403 | 0 |
-| 2 | 01:50:50 | 1788907850000 | `93da3f7a/enam` | 188 | 1787824088488 | 1787799644403 | 0 |
-| 3 | 01:51:17 | 1788907877000 | `93da3f7a/enam` | 188 | 1787824088488 | 1787799644403 | 0 |
+| 1 | 02:07:05 | 1788908825000 | `93da3f7a/enam` | 188 | 1787824088488 | 1787799644403 | 0 |
+| 2 | 02:07:20 | 1788908840000 | `93da3f7a/enam` | 188 | 1787824088488 | 1787799644403 | 0 |
+| 3 | 02:07:26 | 1788908846000 | `93da3f7a/enam` | 188 | 1787824088488 | 1787799644403 | 0 |
 
 The redacted owner-action artifact is
 `evidence/owner-actions/B-063/audit-archive-partition-recovery.json`.
-The three latest read-only workflow records remain failures with
-`partitions_failed=1` (runs `33544312348`, `33522527135`, `33495959736`). No
+The watermark-based idle ages are 1,109,180 s, 1,109,195 s, and 1,109,201 s;
+the receipt records `query_hash` and runbook source per partition read. The
+current GitHub listing captured at 02:07:41Z has no newer run; the three cited
+runs are explicitly historical and retain their URLs and head SHAs. No
 authorized repair approval (`B063_REPAIR_APPROVED=1`) was present, so the
 workflow was not dispatched and PagerDuty was not touched. B-063 remains open.
 
 ## B-125 — audit seal throughput
 
-The owner-packet aggregate query was rerun against the same production D1:
+The owner-packet aggregate query was rerun at 02:08:06Z against the canonical
+`corelink-config-prod` binding and D1 UUID above. The six-hour window was
+`2026-09-08T20:08:06Z/2026-09-09T02:08:06Z`; query hash
+`5117b7b83376ee57bef83bfda0f70c34d211412920a2d058fd24cbdd8c041aad`.
+The redacted response was:
 
 ```text
 arrivals=0
@@ -42,7 +49,8 @@ readback in `evidence/owner-actions/B-125/audit-throughput-readback.json`
 already records the non-empty historical burst/replay controls and their
 failures (repeated sequence groups, sequence gaps, head/tail mismatches, and
 negative seal latencies). A fresh empty-window aggregate cannot satisfy the
-owner threshold, so B-125 remains open; no batch limit was changed.
+owner threshold, so B-125 remains open; no batch limit was changed. The fresh
+receipt is retained in the follow-up commit alongside this report.
 
 ## B-127 — residency three-state census
 

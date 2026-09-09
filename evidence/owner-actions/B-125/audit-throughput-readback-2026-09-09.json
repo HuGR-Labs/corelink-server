@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09T02:08:06Z",
+  "operator": "codex-live-b125-readback",
+  "database_binding": "corelink-config-prod",
+  "database_id": "d64742ea-e102-40b2-a844-ff02e3f94562",
+  "database_access": "remote-read-only",
+  "window": {
+    "start": "2026-09-08T20:08:06Z",
+    "end": "2026-09-09T02:08:06Z",
+    "duration_seconds": 21600
+  },
+  "query": {
+    "query_hash": "5117b7b83376ee57bef83bfda0f70c34d211412920a2d058fd24cbdd8c041aad",
+    "source": "docs/handoff/2026-09-06-d03-graduation-packets.json#B-125; reports/go-live/D-1-audit-trail.md",
+    "shape": "six-hour audit_outbox arrivals/sealed/oldest-unsealed/seal-latency aggregate with explicit 512 batch-limit literal"
+  },
+  "response": {
+    "success": true,
+    "results": [{
+      "arrivals": 0,
+      "sealed_rows": null,
+      "oldest_unsealed_age_ms": null,
+      "seal_latency_ms": null,
+      "batch_limit": 512
+    }],
+    "changes": 0,
+    "rows_written": 0,
+    "served_by": "v3-prod",
+    "served_by_region": "ENAM",
+    "served_by_colo": "MIA",
+    "served_by_primary": true
+  },
+  "controls": {"population_query_rows_read": 84932, "non_empty_control": false, "production_batch_limit_proven": false},
+  "verdict": "fail",
+  "verdict_reason": "The six-hour production window is empty, so no current throughput, latency percentile, or post-deploy capacity claim is possible. The 512 value is a configuration literal only.",
+  "safety": {"query_type": "SELECT-only", "mutations": false, "drain_invoked": false},
+  "redaction": {"tenant_ids": "omitted", "payloads": "omitted", "request_ids": "omitted", "credentials": "omitted"}
+}
