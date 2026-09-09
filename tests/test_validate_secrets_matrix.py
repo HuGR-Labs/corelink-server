@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import importlib.util
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -24,6 +26,15 @@ SYNTHETIC_NAMES = {
 GC_SAFETY_FLAGS = {
     "GC_LIVE_DELETE",
     "GC_OBSERVATION_ONLY",
+}
+
+GC_UNCLASSIFIED_NAMES = {
+    "GC_LIVE_DELETE_CONFIRM",
+    "GC_R2_BUCKET",
+    "GC_RUN_ID",
+    "GC_VALIDATE_ONLY",
+    "GC_ADMIN_TOKEN",
+    "GC_OBSERVATION_ONLY_TOKEN",
 }
 
 NON_SECRET_CONFIG_NAMES = {
@@ -79,11 +90,85 @@ def test_synthetic_names_in_production_paths_fail_closed(tmp_path: Path) -> None
 
 def test_gc_safety_flags_are_exact_non_secret_allowlist_entries() -> None:
     assert all(gate.ALLOWLIST_REGEX.match(name) for name in GC_SAFETY_FLAGS)
-    # A future GC credential must not be hidden by a broad prefix rule.
-    assert not gate.ALLOWLIST_REGEX.match("GC_ADMIN_TOKEN")
-    assert not gate.ALLOWLIST_REGEX.match("GC_OBSERVATION_ONLY_TOKEN")
-    shell_gate = (ROOT / "scripts/secrets-checklist-verify.sh").read_text(encoding="utf-8")
-    assert all(f"|{name}$" in shell_gate for name in GC_SAFETY_FLAGS)
+    assert all(not gate.ALLOWLIST_REGEX.match(name) for name in GC_UNCLASSIFIED_NAMES)
+
+    shell_gate = (ROOT / "scripts/secrets-checklist-verify.sh").read_text(
+        encoding="utf-8"
+    )
+    regex = re.search(r"^ALLOWLIST_REGEX='([^']+)'$", shell_gate, re.MULTILINE)
+    assert regex, "Bash allowlist must have one canonical assignment"
+    for name in GC_SAFETY_FLAGS:
+        assert subprocess.run(
+            ["grep", "-E", regex.group(1)],
+            input=f"{name}\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        ).returncode == 0
+    for name in GC_UNCLASSIFIED_NAMES:
+        assert subprocess.run(
+            ["grep", "-E", regex.group(1)],
+            input=f"{name}\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        ).returncode != 0
+
+
+def test_bash_repo_root_override_requires_canonical_sentinels(tmp_path: Path) -> None:
+    """A matrix-shaped arbitrary directory cannot become a trusted root."""
+    matrix = tmp_path / "docs/internal/secrets-checklist.md"
+    matrix.parent.mkdir(parents=True)
+    matrix.write_text(
+        "\n".join(
+            f"| {i} | Fixture {i} | `FIXTURE_{i}` |" for i in range(1, 21)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/secrets-checklist-verify.sh"), "--repo-root", str(tmp_path)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "canonical sentinels" in result.stderr
+
+
+def test_bash_repo_root_override_accepts_isolated_canonical_fixture(tmp_path: Path) -> None:
+    """The verifier remains testable against an isolated, complete fixture root."""
+    for relative in (
+        "Cargo.toml",
+        "scripts/validate_secrets_matrix.py",
+    ):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+    (tmp_path / ".github/workflows").mkdir(parents=True)
+    matrix = tmp_path / "docs/internal/secrets-checklist.md"
+    matrix.parent.mkdir(parents=True, exist_ok=True)
+    matrix.write_text(
+        "\n".join(
+            f"| {i} | Fixture {i} | `FIXTURE_{i}` |" for i in range(1, 21)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    source = tmp_path / "crates/fixture/src/lib.rs"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        'std::env::var("GC_LIVE_DELETE");\n'
+        'std::env::var("GC_OBSERVATION_ONLY");\n',
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/secrets-checklist-verify.sh"), "--repo-root", str(tmp_path)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_non_secret_config_names_are_allowlisted_by_both_validators() -> None:
@@ -93,7 +178,6 @@ def test_non_secret_config_names_are_allowlisted_by_both_validators() -> None:
     shell_gate = (ROOT / "scripts/secrets-checklist-verify.sh").read_text(encoding="utf-8")
     assert all(f"|{name}$" in shell_gate for name in NON_SECRET_CONFIG_NAMES)
 
-    # The allowlist must stay exact: nearby credentials remain visible as drift.
     assert not gate.ALLOWLIST_REGEX.match("D1_DATABASE_TOKEN")
     assert not gate.ALLOWLIST_REGEX.match("R2_S3_SECRET_ACCESS_KEY")
     assert not gate.ALLOWLIST_REGEX.match("CORELINK_HTTP_SECRET_FILE")

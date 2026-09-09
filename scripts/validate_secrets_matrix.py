@@ -63,6 +63,12 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MATRIX_FILE_REL = "docs/internal/secrets-checklist.md"
+REPO_ROOT_SENTINELS = (
+    Path("Cargo.toml"),
+    Path("docs/internal/secrets-checklist.md"),
+    Path("scripts/validate_secrets_matrix.py"),
+    Path(".github/workflows"),
+)
 
 # ---------------------------------------------------------------------------
 # Allowlist — env vars intentionally not in the matrix.
@@ -188,7 +194,7 @@ ALLOWLIST_REGEX = re.compile(
     r"|R2_TEST_BUCKET$"
     # GC safety selectors are non-secret configuration, not credentials. Keep
     # these exact rather than accepting a broad GC_* prefix so a future GC
-    # credential remains visible as matrix drift.
+    # control or credential remains visible as matrix drift.
     r"|GC_LIVE_DELETE$"
     r"|GC_OBSERVATION_ONLY$"
     # WP-3 dashboard revival (2026-06-10) — Stripe billing-portal return_url
@@ -508,6 +514,15 @@ def parse_matrix(path: Path) -> set[str]:
     return names
 
 
+def missing_repo_root_sentinels(root: Path) -> list[Path]:
+    """Return missing paths that prove ``root`` is not a repo checkout."""
+    return [
+        relative
+        for relative in REPO_ROOT_SENTINELS
+        if not (root / relative).exists()
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Code scanning
 # ---------------------------------------------------------------------------
@@ -660,6 +675,15 @@ def main() -> int:
     args = ap.parse_args()
 
     root: Path = args.repo_root.resolve()
+    missing = missing_repo_root_sentinels(root)
+    if missing:
+        rendered = ", ".join(str(path) for path in missing)
+        print(
+            "ERROR: --repo-root is not a CoreLink repository root "
+            f"(missing canonical sentinels: {rendered})",
+            file=sys.stderr,
+        )
+        return 2
     matrix_path = root / MATRIX_FILE_REL
 
     try:

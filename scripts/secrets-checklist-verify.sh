@@ -113,11 +113,27 @@ EOF
 fi
 
 if [ -n "${REPO_ROOT_OVERRIDE}" ]; then
+    if [ ! -d "${REPO_ROOT_OVERRIDE}" ]; then
+        echo "ERROR: --repo-root must name an existing directory" >&2
+        exit 2
+    fi
     REPO_ROOT="$(cd "${REPO_ROOT_OVERRIDE}" && pwd)"
 else
     REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 fi
 cd "${REPO_ROOT}"
+
+# An override is used by the trusted workflow to scan a checked-out candidate,
+# so do not silently accept an arbitrary directory containing a lookalike
+# matrix. These sentinels identify the canonical CoreLink repository root;
+# isolated extractor fixtures belong in --self-test instead.
+if [ ! -f "Cargo.toml" ] || \
+   [ ! -f "docs/internal/secrets-checklist.md" ] || \
+   [ ! -f "scripts/validate_secrets_matrix.py" ] || \
+   [ ! -d ".github/workflows" ]; then
+    echo "ERROR: --repo-root is not a CoreLink repository root (missing canonical sentinels)" >&2
+    exit 2
+fi
 
 MATRIX_FILE="docs/internal/secrets-checklist.md"
 
