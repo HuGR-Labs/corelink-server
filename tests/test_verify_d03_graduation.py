@@ -70,6 +70,48 @@ def test_flagged_commands_have_load_bearing_semantic_mutations() -> None:
                 _check_packets(mutated, ROOT)
 
 
+def test_b063_b127_reject_worker_name_instead_of_declared_d1_target() -> None:
+    packet = _load_packets(
+        (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
+    )
+    for item in ("B-063", "B-127"):
+        mutated = copy.deepcopy(packet)
+        command = mutated["packets"][item]["command"]
+        assert command.count("corelink-config-prod") == 1
+        mutated["packets"][item]["command"] = command.replace("corelink-config-prod", "corelink-prod", 1)
+        with pytest.raises(GraduationError, match=item):
+            _check_packets(mutated, ROOT)
+
+
+def test_b063_b127_reject_d1_shell_injection_mutations() -> None:
+    packet = _load_packets(
+        (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")
+    )
+    mutations = {
+        "semicolon in query": lambda command: command.replace('--command "SELECT', '--command "SELECT; ', 1),
+        "and operator in invocation": lambda command: command.replace(
+            "corelink-config-prod --remote", "corelink-config-prod && echo injected --remote", 1
+        ),
+        "or operator in query": lambda command: command.replace('--command "SELECT', '--command "SELECT || ', 1),
+        "pipe in query": lambda command: command.replace('--command "SELECT', '--command "SELECT | cat ', 1),
+        "substitution in query": lambda command: command.replace(
+            '--command "SELECT', '--command "$(touch /tmp/injected) SELECT', 1
+        ),
+        "redirect after query": lambda command: command.replace(
+            '" | tee', '" > /tmp/injected | tee', 1
+        ),
+        "duplicate invocation": lambda command: command + (
+            '; wrangler d1 execute corelink-config-prod --remote --command "SELECT 1" '
+            "| tee artifacts/d03/injected.json"
+        ),
+    }
+    for item in ("B-063", "B-127"):
+        for _label, mutate in mutations.items():
+            mutated = copy.deepcopy(packet)
+            mutated["packets"][item]["command"] = mutate(mutated["packets"][item]["command"])
+            with pytest.raises(GraduationError, match=item):
+                _check_packets(mutated, ROOT)
+
 def test_b216_worker_event_requeue_and_paging_mutations_are_red() -> None:
     packet = _load_packets(
         (ROOT / "docs/handoff/2026-09-06-d03-graduation-packets.json").read_text(encoding="utf-8")

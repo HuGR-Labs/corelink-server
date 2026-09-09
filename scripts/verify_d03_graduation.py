@@ -652,6 +652,56 @@ def _active_shell_segments(command: str) -> list[list[str]]:
     return segments
 
 
+def _check_d1_read_command(item: str, packet: dict[str, Any], command: str) -> None:
+    """Require the packet's D1 read to use one closed-world shell invocation.
+
+    The surrounding owner procedures intentionally use shell control flow, but
+    the remote D1 operation itself is a narrow grammar boundary.  Parse that
+    boundary instead of accepting a substring: this keeps command injection
+    operators, substitutions, redirects, duplicate invocations, and the old
+    Worker name out of the load-bearing read.
+    """
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>\n")
+    lexer.whitespace_split = True
+    lexer.commenters = "#"
+    try:
+        tokens = list(lexer)
+    except ValueError as exc:
+        raise GraduationError(f"{item}: D1 command has invalid shell quoting") from exc
+
+    invocation = ("wrangler", "d1", "execute")
+    starts = [
+        index
+        for index in range(len(tokens) - len(invocation) + 1)
+        if tuple(tokens[index : index + len(invocation)]) == invocation
+    ]
+    if len(starts) != 1:
+        raise GraduationError(f"{item}: D1 command must contain exactly one wrangler d1 execute invocation")
+
+    start = starts[0]
+    prefix = tokens[start : start + 7]
+    if len(prefix) != 7 or prefix[3] != "corelink-config-prod" or prefix[4:6] != ["--remote", "--command"]:
+        raise GraduationError(f"{item}: D1 command target/options are outside the closed-world grammar")
+    query = prefix[6]
+    # ``<`` is a legitimate SQL comparison in the B-063 read.  Redirects are
+    # shell tokens outside this quoted argument and are rejected by the exact
+    # pipeline grammar below.
+    if any(marker in query for marker in (";", "&&", "||", "|", "$(", "${", "`")):
+        raise GraduationError(f"{item}: D1 query contains a shell operator or substitution")
+
+    artifact = packet["artifact"]
+    if item == "B-063":
+        tail = ["|", "tee", "-a", artifact]
+    else:
+        tail = ["|", "tee", artifact]
+    tail_start = start + len(prefix)
+    if tokens[tail_start : tail_start + len(tail)] != tail:
+        raise GraduationError(f"{item}: D1 command pipeline is outside the closed-world grammar")
+    after_tail = tail_start + len(tail)
+    if after_tail < len(tokens) and tokens[after_tail] != ";":
+        raise GraduationError(f"{item}: D1 command has an unexpected trailing shell operator/token")
+
+
 def _require_b105_active_commands(command: str) -> None:
     """Require B-105's load-bearing operations as executable shell commands."""
     segments = _active_shell_segments(command)
@@ -697,6 +747,8 @@ def _check_command_contract(item: str, packet: dict[str, Any], root: Path) -> No
     if contract != expected:
         raise GraduationError(f"{item}: command_contract disagrees with the authoritative owner packet")
     command = packet["command"]
+    if item in {"B-063", "B-127"}:
+        _check_d1_read_command(item, packet, command)
     if item in {"B-216", "B-251"}:
         _check_bounded_shell(item, command, packet["artifact"])
         if item == "B-216":
