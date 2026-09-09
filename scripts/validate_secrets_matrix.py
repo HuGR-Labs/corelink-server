@@ -197,11 +197,6 @@ ALLOWLIST_REGEX = re.compile(
     # control or credential remains visible as matrix drift.
     r"|GC_LIVE_DELETE$"
     r"|GC_OBSERVATION_ONLY$"
-    # Native GC scope/configuration values are non-secret, but remain exact so
-    # a future GC credential or operator token cannot hide behind a prefix.
-    r"|GC_R2_BUCKET$"
-    r"|GC_RUN_ID$"
-    r"|GC_VALIDATE_ONLY$"
     # Synthetic PagerDuty receiver uses a canonical public endpoint and a
     # service label; the routing key and webhook secret remain matrix entries.
     r"|PAGERDUTY_EVENTS_URL$"

@@ -17,13 +17,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 VALIDATOR_PATH = ROOT / "scripts" / "validate_secrets_matrix.py"
 
-# The drift gates intentionally allowlist only exact GC safety/config names.
-# Sensitive destructive inputs remain matrix entries; no GC_* prefix is safe.
+# The drift gates intentionally allowlist exactly these two GC safety flags.
+# Active GC inputs remain visible in the matrix; no GC_* prefix is safe.
 GC_SAFETY_FLAGS = frozenset({
     "GC_LIVE_DELETE",
     "GC_OBSERVATION_ONLY",
 })
-GC_NON_SECRET_CONFIG = frozenset({
+PUBLIC_NON_SECRET_CONFIG = frozenset({
+    "PAGERDUTY_EVENTS_URL",
+    "PAGERDUTY_SERVICE",
+    "SLA_CREDITS_ENABLED",
+    "SLA_OBSERVATIONS_ENABLED",
+    "SYNTHETIC_DRILL_ENABLED",
+})
+GC_MATRIX_NAMES = frozenset({
     "GC_R2_BUCKET",
     "GC_RUN_ID",
     "GC_VALIDATE_ONLY",
@@ -55,11 +62,11 @@ def _must_reject(validator, root: Path, manifest, label: str) -> None:
 
 
 def validate_gc_allowlist_contract(validator) -> None:
-    """Keep GC non-secret config exact and sensitive names fail closed."""
-    for name in GC_SAFETY_FLAGS | GC_NON_SECRET_CONFIG:
+    """Keep the two-name GC allowlist exact and fail closed elsewhere."""
+    for name in GC_SAFETY_FLAGS | PUBLIC_NON_SECRET_CONFIG:
         if not validator.ALLOWLIST_REGEX.match(name):
-            raise AssertionError(f"GC non-secret config is not allowlisted: {name}")
-    for name in GC_SENSITIVE_NAMES | GC_UNCLASSIFIED_NAMES:
+            raise AssertionError(f"non-secret config is not allowlisted: {name}")
+    for name in GC_MATRIX_NAMES | GC_SENSITIVE_NAMES | GC_UNCLASSIFIED_NAMES:
         if validator.ALLOWLIST_REGEX.match(name):
             raise AssertionError(f"sensitive/unclassified GC name was allowlisted: {name}")
 
@@ -73,7 +80,7 @@ def main() -> int:
     # Confirm the real checkout's exact population and both canonical rows.
     validator.validate_b245_perf_scope(ROOT)
     matrix = validator.parse_matrix(ROOT / validator.MATRIX_FILE_REL)
-    for name in GC_SENSITIVE_NAMES:
+    for name in GC_MATRIX_NAMES | GC_SENSITIVE_NAMES:
         if name not in matrix:
             raise AssertionError(f"sensitive GC matrix row missing: {name}")
         if validator.ALLOWLIST_REGEX.match(name):
