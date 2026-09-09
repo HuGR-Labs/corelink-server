@@ -33,12 +33,24 @@ REQUIRED_D1 = (
     "d1_audit_write_blocking_records_oaudit_phase",
 )
 REQUIRED_R2 = (
-    "r2_cas_list_concurrent_path_fails_closed_on_bad_audit_creds",
+    "r2_cas_list_durable_audit_failure_precedes_storage",
     "storage_r2_round_trip",
     "cas_idempotent_rewrite_reports_durable_false",
     "delete_if_present_credits_size_once_then_none",
     "r2_cas_exists_batch_fails_closed_on_bad_audit_creds",
 )
+
+REQUIRED_TARGET_SOURCES = {
+    **{target: "crates/corelink-container/src/routes/tier_select_store.rs" for target in REQUIRED_D1[:3]},
+    "d1_http_cas_meta_round_trip": "crates/corelink-container/src/storage/d1_http.rs",
+    "d1_http_tenant_admin_lookup_round_trip": "crates/corelink-container/src/storage/d1_http.rs",
+    "d1_audit_write_blocking_records_oaudit_phase": "crates/corelink-container/src/storage/d1_audit_sink/tests_phase_attribution.rs",
+    "r2_cas_list_durable_audit_failure_precedes_storage": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
+    "storage_r2_round_trip": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
+    "cas_idempotent_rewrite_reports_durable_false": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
+    "delete_if_present_credits_size_once_then_none": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
+    "r2_cas_exists_batch_fails_closed_on_bad_audit_creds": "crates/corelink-container/src/storage/r2_s3_parts/tests_2.rs",
+}
 
 
 def code_lines(text: str) -> list[str]:
@@ -125,6 +137,64 @@ def function_body(text: str, name: str) -> str:
 
 def fail(message: str) -> None:
     raise AssertionError(message)
+
+
+def rust_code_without_comments_and_strings(body: str) -> str:
+    """Blank Rust comments/strings (including raw strings) but keep newlines."""
+    out: list[str] = []
+    state = "code"
+    block_depth = 0
+    raw_hashes = 0
+    escaped = False
+    i = 0
+    while i < len(body):
+        char = body[i]
+        nxt = body[i + 1] if i + 1 < len(body) else ""
+        if state == "code":
+            if char == "/" and nxt == "/":
+                out.extend("  "); i += 2; state = "line"; continue
+            if char == "/" and nxt == "*":
+                out.extend("  "); i += 2; block_depth = 1; state = "block"; continue
+            if char == "r":
+                marker = re.match(r'r(#{0,255})"', body[i:])
+                if marker:
+                    raw_hashes = len(marker.group(1)); out.extend(" " * len(marker.group(0)))
+                    i += len(marker.group(0)); state = "raw"; continue
+            if char in ('"', "'"):
+                out.append(" "); i += 1; state = char; escaped = False; continue
+            out.append(char); i += 1; continue
+        if state == "line":
+            out.append("\n" if char == "\n" else " "); i += 1
+            if char == "\n": state = "code"
+            continue
+        if state == "block":
+            if char == "/" and nxt == "*": out.extend("  "); i += 2; block_depth += 1; continue
+            if char == "*" and nxt == "/":
+                out.extend("  "); i += 2; block_depth -= 1
+                if block_depth == 0: state = "code"
+                continue
+            out.append("\n" if char == "\n" else " "); i += 1; continue
+        if state == "raw":
+            closing = '"' + ('#' * raw_hashes)
+            if body.startswith(closing, i):
+                out.extend(" " * len(closing)); i += len(closing); state = "code"; continue
+            out.append("\n" if char == "\n" else " "); i += 1; continue
+        out.append("\n" if char == "\n" else " "); i += 1
+        if escaped: escaped = False
+        elif char == "\\": escaped = True
+        elif char == state: state = "code"
+    return "".join(out)
+
+
+def exact_ignored_source(body: str, target: str) -> bool:
+    code = rust_code_without_comments_and_strings(body)
+    pattern = rf"(?m)^[ \t]*(?:(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+{re.escape(target)}\s*\()"
+    declarations = list(re.finditer(pattern, code))
+    if len(declarations) != 1:
+        return False
+    line_start = code.rfind("\n", 0, declarations[0].start()) + 1
+    prior = code[:line_start].splitlines()
+    return bool(prior and re.fullmatch(r"\s*#\[ignore(?:\s*=\s*[^]]+)?\]\s*", prior[-1]))
 
 
 def assert_contract(workflow: str, runner: str) -> None:
@@ -257,6 +327,20 @@ def assert_contract(workflow: str, runner: str) -> None:
         fail("workflow invokes cargo ignored tests directly instead of the allow-list")
     if re.search(r"(?m)^\s*cargo\s+test\s+--ignored", sh):
         fail("runner contains an unscoped cargo --ignored invocation")
+    if "CARGO_BIN" in sh or "CARGO_BIN" in wf:
+        fail("executor must not honor a caller-controlled CARGO_BIN override")
+    if 'cargo test --locked "$@" -- --ignored --nocapture' not in sh:
+        fail("runner does not execute the trusted image Cargo through PATH")
+
+    for target, source_path in REQUIRED_TARGET_SOURCES.items():
+        source = ROOT / source_path
+        if not source.is_file():
+            fail(f"source for real target is missing: {target}: {source_path}")
+        body = source.read_text(encoding="utf-8")
+        if not exact_ignored_source(body, target):
+            fail(f"real target source declaration/ignore association is not exact: {target}")
+        if not re.search(rf"(?m)^\s*run_cargo\b[^\n]*\b{re.escape(target)}\b", sh):
+            fail(f"runner does not execute exact source target: {target}")
 
     # The PAT seed itself remains deliberately ignored and secret-shaped.  This
     # assertion prevents a future cleanup from deleting the safety boundary.
@@ -301,6 +385,24 @@ def mutation_checks(workflow: str, runner: str) -> None:
     expect_rejected("partial R2 executor", workflow, runner.replace(REQUIRED_R2[-1], "r2_target_removed", 1))
     # Wrong-test substitution must not look like proof of the intended path.
     expect_rejected("wrong test target", workflow, runner.replace("storage_r2_round_trip", "unrelated_unit_test", 1))
+    expect_rejected("caller Cargo override", workflow, runner.replace('cargo test --locked "$@" -- --ignored --nocapture', '"$CARGO_BIN" test --locked "$@" -- --ignored --nocapture', 1))
+    expect_rejected("missing R2 source target", workflow, runner.replace("r2_cas_list_durable_audit_failure_precedes_storage", "r2_cas_list_target_removed", 1))
+    expect_rejected("R2 wrong source target", workflow, runner.replace("r2_cas_list_durable_audit_failure_precedes_storage", "r2_cas_list_serial_fallback_attributes_the_r2_call_to_ostore", 1))
+
+    source_target = REQUIRED_R2[0]
+    source_path = ROOT / REQUIRED_TARGET_SOURCES[source_target]
+    source_body = source_path.read_text(encoding="utf-8")
+    declaration = re.search(rf"(?m)^(\s*)(async\s+fn\s+{re.escape(source_target)}\s*\()", source_body)
+    if declaration is None:
+        fail("source mutation setup could not find declaration")
+    declaration_line_start = source_body.rfind("\n", 0, declaration.start()) + 1
+    ignore_line_start = source_body.rfind("\n", 0, declaration_line_start - 1) + 1
+    source_without_ignore = source_body[:ignore_line_start] + "// #[ignore]\n" + source_body[declaration_line_start:]
+    if exact_ignored_source(source_without_ignore, source_target):
+        fail("source comment bait mutation was accepted")
+    source_without_declaration = source_body[:declaration.start()] + "// " + source_body[declaration.start():]
+    if exact_ignored_source(source_without_declaration, source_target):
+        fail("commented source declaration mutation was accepted")
     # Secret exposure: any PAT key-shaped input is forbidden, even if no seed
     # command is present.
     expect_rejected("PAT signing secret", workflow, runner + "\nexport CORELINK_PAT_SIGNING_KEY_HEX=unsafe\n")
