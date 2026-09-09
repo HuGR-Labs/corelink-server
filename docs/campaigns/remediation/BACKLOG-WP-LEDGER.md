@@ -1,37 +1,37 @@
 # Backlog work-package ledger
 
 > Historical D03 source checkpoint: `codex/d03-delivery-20260906@7b992e9db123abeb76381b1c1337011692f2e834`.
-> Immutable ancestry base: `main@ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266`,
-> observed 2026-09-08 in `America/Sao_Paulo`.
+> Canonical candidate snapshot: `14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73`,
+> observed 2026-09-09 in `America/Sao_Paulo`.
 
 This is the execution ledger for the open CoreLink backlog. `BACKLOG.md` remains
 the single source of truth for item status. This ledger derives work ownership,
 dependency order and completion contracts from that source; it never overrides
 the backlog.
 
-The current population is 363 items: 13 open, 316 done and 34 parked. The 13
+The current population is 363 items: 14 open, 316 done and 33 parked. The 14
 open items are partitioned exactly once across four contract catalogs:
 
 ```ledger-state
-base-ref: main
-base-sha: ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266
-observed-at: 2026-09-08
+base-ref: 14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73
+base-sha: 14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73
+observed-at: 2026-09-09
 item-count: 363
-open-count: 13
+open-count: 14
 done-count: 316
-parked-count: 34
-catalog-counts: B001-B045=4,B046-B090=3,B091-B130=2,B131-B363=4
+parked-count: 33
+catalog-counts: B001-B045=5,B046-B090=3,B091-B130=2,B131-B363=4
 ```
 
 | Catalog | Numeric range | Open IDs |
 |---|---:|---:|
-| [`work-packages/B001-B045.md`](work-packages/B001-B045.md) | B-001..B-045 | 4 |
+| [`work-packages/B001-B045.md`](work-packages/B001-B045.md) | B-001..B-045 | 5 |
 | [`work-packages/B046-B090.md`](work-packages/B046-B090.md) | B-046..B-090 | 3 |
 | [`work-packages/B091-B130.md`](work-packages/B091-B130.md) | B-091..B-130 | 2 |
 | [`work-packages/B131-B167.md`](work-packages/B131-B167.md) | B-131..B-363 | 4 |
-| **Total** | | **13** |
+| **Total** | | **14** |
 
-The logical base includes the current B-008/B-012/B-032/B-035,
+The logical base includes the current B-006/B-008/B-012/B-032/B-035,
 B-065/B-086/B-089, B-097/B-111 and B-154/B-170/B-314/B-316 open
 population.
 Terminal items remain in BACKLOG.md as historical authority and are excluded

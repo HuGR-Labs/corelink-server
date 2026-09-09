@@ -22,12 +22,11 @@ CATALOGS = {
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B091-B130.md": (91, 130),
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B131-B167.md": (131, 363),
 }
-# The D03 branch is squash-merged and is not a durable ancestry anchor. Keep
-# its head as documentary provenance in the ledger, but anchor verification to
-# delivered main, which remains an ancestor of both the D03 branch and its
-# eventual squash commit.
-LEDGER_BASE_REF = "main"
-LEDGER_BASE_SHA = "ba51b02dc823cae9dbcb6ec3b5d4cc339bfa7266"
+# The candidate snapshot is the immutable ancestry anchor for this ledger. Keep
+# the historical D03 checkpoint as documentary provenance in the ledger; the
+# candidate SHA remains resolvable while the integration ref is prepared.
+LEDGER_BASE_REF = "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73"
+LEDGER_BASE_SHA = "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73"
 LEDGER_PATH = REPO_ROOT / "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md"
 ENTRY_RE = re.compile(r"^(B-\d+)\s+(WP-[A-Z0-9][A-Z0-9./_-]*)$")
 WP_HEADING_RE = re.compile(r"^#{2,6}\s+(WP-[A-Z0-9][A-Z0-9./_-]*)(?:\s|—|$)", re.MULTILINE)
@@ -52,8 +51,8 @@ FIELD_PATTERNS = {
         r"\breturn card\b|\breturn-card\b|\bretorno comum\b", re.IGNORECASE
     ),
 }
-WORKFLOW_MANIFEST_COUNT = 135
-WORKFLOW_MANIFEST_SHA256 = "b2d70d640061bea79d6f002281d9656033da3d6096754b7e97a1d7a7cb9b2468"
+WORKFLOW_MANIFEST_COUNT = 137
+WORKFLOW_MANIFEST_SHA256 = "f4a3f8a882299e403ad80e5975329fe310219760ca0cc4e7dc9d4f616e5e02ff"
 PREDECESSOR_TOKEN_RE = re.compile(r"\bB-\d{3}\b|\bWP-[A-Z0-9][A-Z0-9./_-]*\b|#\d+\b")
 WORKFLOW_OWNERSHIP_FENCE = "wp-workflow-ownership"
 LEDGER_STATE_FENCE = "ledger-state"
