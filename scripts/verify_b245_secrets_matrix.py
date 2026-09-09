@@ -17,6 +17,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 VALIDATOR_PATH = ROOT / "scripts" / "validate_secrets_matrix.py"
 
+# The drift gates intentionally allowlist exactly these two GC safety flags.
+# Every other GC-shaped name remains visible as potential secret/config drift.
+GC_SAFETY_FLAGS = frozenset({
+    "GC_LIVE_DELETE",
+    "GC_OBSERVATION_ONLY",
+})
+GC_UNCLASSIFIED_NAMES = frozenset({
+    "GC_LIVE_DELETE_CONFIRM",
+    "GC_R2_BUCKET",
+    "GC_RUN_ID",
+    "GC_VALIDATE_ONLY",
+    "GC_ADMIN_TOKEN",
+    "GC_OBSERVATION_ONLY_TOKEN",
+})
+
 
 def _load_validator():
     spec = importlib.util.spec_from_file_location("validate_secrets_matrix", VALIDATOR_PATH)
@@ -35,24 +50,21 @@ def _must_reject(validator, root: Path, manifest, label: str) -> None:
     raise AssertionError(f"mutation was accepted: {label}")
 
 
+def validate_gc_allowlist_contract(validator) -> None:
+    """Keep the GC non-secret allowlist exact and fail closed."""
+    for name in GC_SAFETY_FLAGS:
+        if not validator.ALLOWLIST_REGEX.match(name):
+            raise AssertionError(f"GC safety flag is not allowlisted: {name}")
+    for name in GC_UNCLASSIFIED_NAMES:
+        if validator.ALLOWLIST_REGEX.match(name):
+            raise AssertionError(f"unclassified GC name was allowlisted: {name}")
+
+
 def main() -> int:
     validator = _load_validator()
     manifest = validator.B245_PERF_SECRET_MANIFEST
 
-    # GC sweep controls are non-secret configuration, not B-245 credentials.
-    # Keep this exact rather than accepting a broad GC_* allowlist, so a future
-    # GC credential remains visible as matrix drift.
-    gc_controls = {
-        "GC_LIVE_DELETE_CONFIRM",
-        "GC_R2_BUCKET",
-        "GC_RUN_ID",
-        "GC_VALIDATE_ONLY",
-    }
-    for name in gc_controls:
-        if not validator.ALLOWLIST_REGEX.match(name):
-            raise AssertionError(f"GC non-secret control is not allowlisted: {name}")
-    if validator.ALLOWLIST_REGEX.match("GC_ADMIN_TOKEN"):
-        raise AssertionError("broad GC_* allowlist mutation survived")
+    validate_gc_allowlist_contract(validator)
 
     # Confirm the real checkout's exact population and both canonical rows.
     validator.validate_b245_perf_scope(ROOT)
