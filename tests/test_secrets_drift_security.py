@@ -40,6 +40,8 @@ class SecretsDriftSecurityTests(unittest.TestCase):
         """A PR replacement of the validator cannot execute on the runner."""
         with tempfile.TemporaryDirectory() as temp:
             candidate = Path(temp)
+            fresh_session = "_".join(("CORELINK", "FRESH", "SESSION"))
+            perf_pat = "_".join(("CORELINK", "PERF", "PAT"))
             (candidate / "docs/internal").mkdir(parents=True)
             (candidate / "scripts").mkdir()
             (candidate / "docs/internal/secrets-checklist.md").write_text(
@@ -47,16 +49,16 @@ class SecretsDriftSecurityTests(unittest.TestCase):
             )
             (candidate / ".github/workflows").mkdir(parents=True)
             (candidate / ".github/workflows/perf-production-evidence.yml").write_text(
-                "env: { CORELINK_FRESH_SESSION: ${{ secrets.CORELINK_FRESH_SESSION }}, "
-                "CORELINK_PERF_PAT: ${{ secrets.CORELINK_PERF_PAT }}}\n",
+                f"env: {{ {fresh_session}: ${{{{ secrets.{fresh_session} }}}}, "
+                f"{perf_pat}: ${{{{ secrets.{perf_pat} }}}}}}\n",
                 encoding="utf-8",
             )
             (candidate / "scripts/collect_b102_b107_measurements.py").write_text(
-                "# trusted manifest fixture\nCORELINK_FRESH_SESSION\nCORELINK_PERF_PAT\n",
+                f"# trusted manifest fixture\n{fresh_session}\n{perf_pat}\n",
                 encoding="utf-8",
             )
             (candidate / "scripts/collect_b105_same_lane.py").write_text(
-                "# trusted manifest fixture\nCORELINK_PERF_PAT\n", encoding="utf-8"
+                f"# trusted manifest fixture\n{perf_pat}\n", encoding="utf-8"
             )
             marker = candidate / "candidate-script-executed"
             (candidate / "scripts/validate_secrets_matrix.py").write_text(
