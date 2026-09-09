@@ -63,7 +63,7 @@
 use std::sync::Arc;
 
 use corelink_byok::{BYOKError, KmsProvider};
-use tracing::{info, warn};
+use tracing::info;
 
 // ── Multi-flag guard ─────────────────────────────────────────────────
 //
@@ -235,7 +235,7 @@ async fn build_active() -> Result<Arc<dyn KmsProvider>, BYOKError> {
     #[cfg(feature = "byok-azure-real")]
     {
         let vault_url = std::env::var("CORELINK_BYOK_AZURE_VAULT_URL").map_err(|_| {
-            warn!(
+            tracing::warn!(
                 target: "corelink.byok.orchestrator.audit",
                 audit = true,
                 op = "boot",
@@ -266,7 +266,7 @@ async fn build_active() -> Result<Arc<dyn KmsProvider>, BYOKError> {
         feature = "byok-vault-real",
     )))]
     {
-        warn!(
+        tracing::warn!(
             target: "corelink.byok.orchestrator.audit",
             audit = true,
             op = "boot",
