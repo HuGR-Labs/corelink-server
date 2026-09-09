@@ -45,6 +45,7 @@ import {
   UnprovisionedRegionError,
 } from "./clerk_identity.js";
 import type { AnalyticsEmitter, ApiClient, MacroRegion } from "./clerk_identity.js";
+import { isProductionEnvironment } from "../../../../config/production_environment.js";
 export {
   d1AnalyticsEmitter,
   emailHashCandidates,
@@ -479,7 +480,7 @@ export async function handleClerkWebhook(
   // separate deployment writes the same pseudonym. Refuse production writes
   // when the shared salt is absent so the six targets cannot silently drift
   // back to reversible unsalted hashes.
-  if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim()) {
+  if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim()) {
     return new Response("email_hash_salt_unconfigured", { status: 500 });
   }
 

@@ -769,8 +769,17 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
   });
 
   it("M2: recognizes only documented prod markers for the issuer fail-closed gate", () => {
-    expect(isProductionEnvironment({ ENVIRONMENT: "prod" })).toBe(true);
-    expect(isProductionEnvironment({ ENVIRONMENT: "prod-lhr" })).toBe(true);
+    for (const environment of [
+      "prod",
+      "production",
+      "prod-sam",
+      "prod-lhr",
+      "prod-nrt",
+      "prod-syd",
+    ]) {
+      expect(isProductionEnvironment({ ENVIRONMENT: environment })).toBe(true);
+    }
+    expect(isProductionEnvironment({ NODE_ENV: "production" })).toBe(true);
     expect(isProductionEnvironment({ ENVIRONMENT: "staging" })).toBe(false);
     expect(isProductionEnvironment({ ENVIRONMENT: "production-like" })).toBe(false);
   });

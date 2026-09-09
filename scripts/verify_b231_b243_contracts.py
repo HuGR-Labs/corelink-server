@@ -28,24 +28,72 @@ def require(text: str, needle: str, label: str) -> None:
 
 
 def require_active(text: str, needle: str, label: str) -> None:
-    """Require a marker outside comments and quoted string literals."""
-    scrubbed = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
-    scrubbed = "\n".join(line.split("//", 1)[0] for line in scrubbed.splitlines())
-    for match in re.finditer(re.escape(needle), scrubbed):
-        in_string = False
-        escaped = False
-        for char in scrubbed[: match.start()]:
-            if in_string:
+    """Require a marker outside comments and all quoted string literals."""
+    i = 0
+    state = "code"
+    quote = ""
+    while i < len(text):
+        if state == "line_comment":
+            if text[i] == "\n":
+                state = "code"
+            i += 1
+            continue
+        if state == "block_comment":
+            if text.startswith("*/", i):
+                state = "code"
+                i += 2
+            else:
+                i += 1
+            continue
+        if state == "string":
+            if text[i] == "\\":
+                i += 2
+            elif text[i] == quote:
+                state = "code"
+                quote = ""
+                i += 1
+            else:
+                i += 1
+            continue
+        if text.startswith("//", i):
+            state = "line_comment"
+            i += 2
+            continue
+        if text.startswith("/*", i):
+            state = "block_comment"
+            i += 2
+            continue
+        if text[i] == "'":
+            # Rust lifetimes (`'static`, `'a`) are not string literals. Treat
+            # a single quote as a literal only when a closing quote exists on
+            # this line; this still rejects single-quoted TypeScript bait and
+            # Rust char/string literals without hiding later executable code.
+            line_end = text.find("\n", i + 1)
+            if line_end == -1:
+                line_end = len(text)
+            j = i + 1
+            escaped = False
+            closes = False
+            while j < line_end:
                 if escaped:
                     escaped = False
-                elif char == "\\":
+                elif text[j] == "\\":
                     escaped = True
-                elif char == '"':
-                    in_string = False
-            elif char == '"':
-                in_string = True
-        if not in_string:
+                elif text[j] == "'":
+                    closes = True
+                    break
+                j += 1
+            if not closes:
+                i += 1
+                continue
+        if text[i] in ('"', "'", "`"):
+            state = "string"
+            quote = text[i]
+            i += 1
+            continue
+        if text.startswith(needle, i):
             return
+        i += 1
     raise AssertionError(f"{label}: missing active {needle!r}")
 
 
@@ -239,26 +287,46 @@ def _verify_impl() -> int:
     signup_secrets = read("scripts/verify-signup-worker-secrets.sh")
     if signup_secrets.count("EMAIL_HASH_SALT") < 2 or signup_secrets.count("DESTINATIONS=(") != 1:
         raise AssertionError("B242: signup secret verifier does not require the salt across all destinations")
-    if signup_secrets.count("|wrangler.toml|") != 5 or "apps/signup-worker/wrangler.toml|" not in signup_secrets:
-        raise AssertionError("B242: verifier must enumerate exactly five root/regional plus signup destinations")
+    destination_match = re.search(r"(?ms)^DESTINATIONS=\(\n(?P<body>.*?)^\)", signup_secrets)
+    if destination_match is None:
+        raise AssertionError("B242: verifier must define the six explicit salt destinations")
+    destinations = tuple(re.findall(r'^\s*"([^"]+)"\s*$', destination_match.group("body"), re.MULTILINE))
+    expected_destinations = (
+        "corelink-prod|wrangler.toml|prod",
+        "corelink-prod-sam|wrangler.toml|prod-sam",
+        "corelink-prod-lhr|wrangler.toml|prod-lhr",
+        "corelink-prod-nrt|wrangler.toml|prod-nrt",
+        "corelink-prod-syd|wrangler.toml|prod-syd",
+        "corelink-signup-worker|apps/signup-worker/wrangler.toml|",
+    )
+    if destinations != expected_destinations:
+        raise AssertionError(
+            "B242: verifier must enumerate the exact six unique root/regional plus signup destinations"
+        )
+    production_env = read("config/production_environment.ts")
+    for marker in ("prod", "production", "prod-sam", "prod-lhr", "prod-nrt", "prod-syd"):
+        require(production_env, f'"{marker}"', "B242")
     worker_special_customer = read("worker/src/index_special_customer.ts")
+    signup_clerk = read("apps/signup-worker/src/webhooks/clerk.ts")
     worker_fetch = read("worker/src/index_fetch.ts")
     require(worker_fetch, 'from "./index_special_routes.js"', "B242")
-    require(
+    require(worker_special_customer, 'from "../../config/production_environment.js"', "B242")
+    require(signup_clerk, 'from "../../../../config/production_environment.js"', "B242")
+    require_active(
         read("crates/corelink-container/src/main.rs"),
         "if email_hash_salt_missing_in_prod(prod_by_independent_signal, email_hash_salt_present)",
         "B242",
     )
     require_active(
-        read("apps/signup-worker/src/webhooks/clerk.ts"),
-        'if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim())',
+        signup_clerk,
+        'if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim())',
         "B242",
     )
     # The Worker source is split: index_special_routes.ts is only a dispatcher;
     # the customer fragment owns the executable invitation acceptance guard.
     require_active(
         worker_special_customer,
-        'if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim())',
+        'if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim())',
         "B242",
     )
 
@@ -297,6 +365,7 @@ def mutation_checks() -> int:
             "crates/corelink-container/src/main.rs",
             ".github/workflows/cf-deploy-prod.yml",
             "scripts/verify-signup-worker-secrets.sh",
+            "config/production_environment.ts",
             "docs/internal/secrets-checklist.md",
             "worker/src/lib/pat_verify_cache.ts",
             "crates/corelink-region/src/region.rs",
@@ -343,24 +412,53 @@ def mutation_checks() -> int:
     # B242's split Worker and signup-worker guards must be executable code, not
     # a comment/string marker in either owner.  Mutating one owner at a time
     # proves the aggregate gate cannot be satisfied by a stale sibling anchor.
-    salt_guard = 'if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim())'
-    for rel in (
-        "worker/src/index_special_customer.ts",
-        "apps/signup-worker/src/webhooks/clerk.ts",
-    ):
-        comment_bait = dict(files)
-        string_bait = dict(files)
-        comment_bait[rel] = comment_bait[rel].replace(salt_guard, "// " + salt_guard)
-        string_bait[rel] = string_bait[rel].replace(
-            salt_guard, 'const _BAIT: string = "' + salt_guard + '";'
-        )
-        for label, mutant in (("comment", comment_bait), ("string", string_bait)):
+    salt_guards = (
+        (
+            "worker/src/index_special_customer.ts",
+            'if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim())',
+        ),
+        (
+            "apps/signup-worker/src/webhooks/clerk.ts",
+            'if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim())',
+        ),
+        (
+            "crates/corelink-container/src/main.rs",
+            "if email_hash_salt_missing_in_prod(prod_by_independent_signal, email_hash_salt_present)",
+        ),
+    )
+    bait_replacements = (
+        ("comment", lambda marker: "// " + marker),
+        ("block-comment", lambda marker: "/* " + marker + " */"),
+        ("double-string", lambda marker: 'const _BAIT: string = "' + marker + '";'),
+        ("single-string", lambda marker: "const _BAIT: string = '" + marker + "';"),
+        ("template-string", lambda marker: "const _BAIT: string = `" + marker + "`;"),
+    )
+    for rel, salt_guard in salt_guards:
+        for bait_label, replacement in bait_replacements:
+            mutant = dict(files)
+            mutant[rel] = mutant[rel].replace(salt_guard, replacement(salt_guard))
             try:
                 verify(mutant)
             except AssertionError:
                 rejected += 1
             else:
-                raise AssertionError(f"{label} bait mutation was accepted for B242 owner {rel}")
+                raise AssertionError(f"{bait_label} bait mutation was accepted for B242 owner {rel}")
+
+    # A duplicate destination must not replace a missing regional identity.
+    destination_duplicate = dict(files)
+    destination_duplicate["scripts/verify-signup-worker-secrets.sh"] = destination_duplicate[
+        "scripts/verify-signup-worker-secrets.sh"
+    ].replace(
+        '"corelink-prod-syd|wrangler.toml|prod-syd"',
+        '"corelink-prod-sam|wrangler.toml|prod-sam"',
+        1,
+    )
+    try:
+        verify(destination_duplicate)
+    except AssertionError:
+        rejected += 1
+    else:
+        raise AssertionError("B242 duplicate destination mutation was accepted")
 
     noop = files["crates/corelink-handler-cas/src/handler.rs"].replace(
         "B232_NONEXISTENT_MARKER", ""
@@ -392,6 +490,7 @@ def mutation_checks() -> int:
         ),
         (".github/workflows/cf-deploy-prod.yml", "EMAIL_HASH_SALT"),
         ("scripts/verify-signup-worker-secrets.sh", "DESTINATIONS=("),
+        ("config/production_environment.ts", '"prod-syd"'),
         ("docs/internal/secrets-checklist.md", "APPLE_DEVELOPER_ID_FINGERPRINT"),
         ("worker/src/lib/pat_verify_cache.ts", "PAT_VERIFY_CACHE_TTL_MS = 5_000"),
         ("crates/corelink-region/src/region.rs", "Region::Apac"),
@@ -408,12 +507,14 @@ def mutation_checks() -> int:
         ("worker/src/index_fetch.ts", 'from "./index_special_routes.js"'),
         (
             "worker/src/index_special_customer.ts",
-            'if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim())',
+            'if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim())',
         ),
+        ("worker/src/index_special_customer.ts", 'from "../../config/production_environment.js"'),
         (
             "apps/signup-worker/src/webhooks/clerk.ts",
-            'if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim())',
+            'if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim())',
         ),
+        ("apps/signup-worker/src/webhooks/clerk.ts", 'from "../../../../config/production_environment.js"'),
         ("worker/src/index_finish_stage.ts", "finalHeaders.delete(\"x-corelink-pat-cache-invalidate\")"),
     )
     for rel, marker in mutations:

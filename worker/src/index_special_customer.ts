@@ -6,6 +6,7 @@ import type { RouteMatch } from "./route_match.js";
 import { reapiError, serverGetOpts } from "./index_common.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 import { emailHashCandidates, redeemTeamInvitation, verifiedPrimaryEmail } from "./lib/team_invitation.js";
+import { isProductionEnvironment } from "../../config/production_environment.js";
 
 export async function handleSpecialCustomerRoute(
   request: Request,
@@ -140,7 +141,7 @@ export async function handleSpecialCustomerRoute(
           // Signup-worker and the container share EMAIL_HASH_SALT. A
           // production acceptance without it would compute a different (or
           // reversible) pseudonym, so fail closed before consuming the token.
-          if (env.ENVIRONMENT === "prod" && !env.EMAIL_HASH_SALT?.trim()) {
+          if (isProductionEnvironment(env) && !env.EMAIL_HASH_SALT?.trim()) {
             return applyCors(reapiError("SERVICE_UNAVAILABLE", "invitation service unavailable", 503, requestId), request);
           }
           const contentLength = Number(request.headers.get("content-length") ?? "0");
