@@ -206,6 +206,9 @@ ALLOWLIST_REGEX = re.compile(
     r"|SLA_OBSERVATIONS_ENABLED$"
     # Synthetic drill activation is a fail-closed boolean deployment control.
     r"|SYNTHETIC_DRILL_ENABLED$"
+    # BYOK revocation scheduling is an explicit fail-closed boolean deployment
+    # control; KMS credentials remain separate matrix entries.
+    r"|CORELINK_BYOK_REVOCATION_SCHEDULER_ENABLED$"
     # WP-3 dashboard revival (2026-06-10) — Stripe billing-portal return_url
     # override (public dashboard URL; default hardcoded in source). No
     # credential material — STRIPE_SECRET_KEY (matrix row) is the actual
