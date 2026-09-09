@@ -20,6 +20,8 @@ from verify_backlog_wp_ledger import (
     parse_workflow_ownership,
     validate_workflow_ownership,
     parse_ledger_state,
+    load_snapshot_manifest,
+    validate_snapshot_manifest,
     validate_ledger_state,
     parse_wp_dependency_order,
     validate_wp_dependency_order,
@@ -333,6 +335,41 @@ def test_main_rejects_tampered_base_sha_end_to_end(monkeypatch, tmp_path):
     path.write_text(tampered)
     monkeypatch.setattr(ledger, "LEDGER_PATH", path)
     assert ledger.main() == 1
+
+
+def test_snapshot_rejects_coordinated_b006_closure_and_count_rewrite():
+    backlog = ledger.REPO_ROOT.joinpath("BACKLOG.md").read_text()
+    start = backlog.index("### B-006")
+    end = backlog.index("### B-007", start)
+    mutated_backlog = (
+        backlog[:start]
+        + backlog[start:end].replace("status: open", "status: done", 1)
+        + backlog[end:]
+    )
+    ledger_text = ledger.LEDGER_PATH.read_text()
+    mutated_ledger = ledger_text.replace("open-count: 14", "open-count: 13", 1)
+    mutated_ledger = mutated_ledger.replace("done-count: 316", "done-count: 317", 1)
+    mutated_ledger = mutated_ledger.replace("B001-B045=5", "B001-B045=4", 1)
+    state = parse_ledger_state(mutated_ledger, "mutated-ledger.md")
+    with pytest.raises(LedgerError, match="outside the immutable snapshot"):
+        validate_snapshot_manifest(
+            load_snapshot_manifest(),
+            mutated_backlog,
+            state,
+            source="mutated-ledger.md",
+        )
+
+
+def test_snapshot_rejects_ledger_count_rewrite_without_backlog_change():
+    ledger_text = ledger.LEDGER_PATH.read_text().replace("open-count: 14", "open-count: 13", 1)
+    state = parse_ledger_state(ledger_text, "mutated-ledger.md")
+    with pytest.raises(LedgerError, match="ledger open-count is outside"):
+        validate_snapshot_manifest(
+            load_snapshot_manifest(),
+            ledger.REPO_ROOT.joinpath("BACKLOG.md").read_text(),
+            state,
+            source="mutated-ledger.md",
+        )
 
 
 @pytest.mark.parametrize("missing", ["WP-140", "WP-146"])

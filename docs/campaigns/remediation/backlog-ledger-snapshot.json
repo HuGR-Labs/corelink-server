@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "snapshot_commit": "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73",
+  "source": "BACKLOG.md",
+  "source_sha256": "6ba91e17cca499966ac9c6aab516454ddeb37c7766f72c59a64aac911757396f",
+  "item_count": 363,
+  "status_counts": {
+    "done": 316,
+    "open": 14,
+    "parked": 33
+  },
+  "open_ids": [
+    "B-006",
+    "B-008",
+    "B-012",
+    "B-032",
+    "B-035",
+    "B-065",
+    "B-086",
+    "B-089",
+    "B-097",
+    "B-111",
+    "B-154",
+    "B-170",
+    "B-314",
+    "B-316"
+  ],
+  "transition": {
+    "kind": "candidate-snapshot",
+    "requires_snapshot_ancestor": true
+  }
+}

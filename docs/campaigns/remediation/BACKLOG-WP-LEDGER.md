@@ -12,6 +12,15 @@ the backlog.
 The current population is 363 items: 14 open, 316 done and 33 parked. The 14
 open items are partitioned exactly once across four contract catalogs:
 
+The candidate snapshot is pinned in
+[`backlog-ledger-snapshot.json`](backlog-ledger-snapshot.json), whose SHA-256 is
+`32dc6e806d44beebc4f003a649cb4d7e5cdffe70b86aabf15623fcfaa3053bbf`. The
+verifier checks that immutable manifest, its candidate ancestry, and the live
+`BACKLOG.md` bytes before accepting any status/count claim; a coordinated status
+and ledger rewrite therefore remains indeterminate rather than becoming a false
+closure. A legitimate new observation must version a new manifest and transition
+the ledger base in the same reviewed change.
+
 ```ledger-state
 base-ref: 14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73
 base-sha: 14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73
