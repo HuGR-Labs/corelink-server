@@ -78,6 +78,13 @@ const RETAIN_DISCLOSABLE_TABLES: &[&str] = &[
     "audit_chain_head",
     "tenant_legal_hold",
     "abuse_score_history",
+    // B-089 contractual SLA evidence. These rows survive Art.17 under the
+    // retained billing/legal basis and remain part of the subject's Art.15/20
+    // export (the fields are provider references and measurement evidence,
+    // not credentials, so redact_row must not mask them).
+    "sla_monthly_observations",
+    "sla_monthly_measurements",
+    "sla_credit_ledger",
 ];
 
 /// Lower-snake column-name tokens that mark a column as secret/credential
@@ -703,6 +710,53 @@ mod tests {
             .collect();
         let want: HashSet<&str> = RETAIN_DISCLOSABLE_TABLES.iter().copied().collect();
         assert_eq!(plan_retained, want);
+    }
+
+    #[test]
+    fn sla_credit_retained_rows_are_exported_without_masking_evidence() {
+        let expected = [
+            "sla_monthly_observations",
+            "sla_monthly_measurements",
+            "sla_credit_ledger",
+        ];
+        let export = gather_subject_data(TID, 1_700_000_000_000, |sql, _params| {
+            let table = expected
+                .iter()
+                .find(|table| sql.starts_with(&format!("SELECT * FROM {table} ")))
+                .copied();
+            let Some(table) = table else {
+                return Ok(vec![]);
+            };
+            let mut row = D1Row::new();
+            row.insert("tenant_id".into(), json!(TID));
+            row.insert("service_period".into(), json!("2026-08"));
+            row.insert("table_marker".into(), json!(table));
+            row.insert("stripe_customer_id".into(), json!("cus_sla_evidence"));
+            row.insert("idempotency_key".into(), json!("sla-credit:stable"));
+            row.insert("amount_minor".into(), json!(250));
+            Ok(vec![row])
+        })
+        .unwrap();
+
+        for table in expected {
+            let exported = export
+                .tables
+                .iter()
+                .find(|slice| slice.table == table)
+                .expect("SLA retained table must be in the access export");
+            assert!(exported.retained, "{table} must be marked retained");
+            assert_eq!(exported.row_count, 1);
+            assert_eq!(exported.rows[0]["table_marker"], json!(table));
+            assert_eq!(
+                exported.rows[0]["stripe_customer_id"],
+                json!("cus_sla_evidence")
+            );
+            assert_eq!(
+                exported.rows[0]["idempotency_key"],
+                json!("sla-credit:stable")
+            );
+            assert_eq!(exported.rows[0]["amount_minor"], json!(250));
+        }
     }
 
     /// gather assembles rows across multiple tables for a seeded tenant, and
