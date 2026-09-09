@@ -44,14 +44,26 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Install pinned GitHub CLI verifier
+        run: |
+          set -euo pipefail
+          python3 scripts/install_pinned_gh.py --output "${RUNNER_TEMP}/corelink-gh/gh"
+
       - name: Fetch GitHub deployment identity
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_HOST: github.com
+          GH_CONFIG_DIR: ${{ runner.temp }}/corelink-gh-config
+          HOME: ${{ runner.temp }}/corelink-gh-home
+          CORELINK_GH_BIN: ${{ runner.temp }}/corelink-gh/gh
         run: |
           set -eu
-          gh api --paginate \
+          unset GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GITHUB_TOKEN
+          mkdir -p -m 700 "${GH_CONFIG_DIR}" "${HOME}"
+          test "$("${CORELINK_GH_BIN}" version | awk 'NR == 1 {print $3}')" = "2.79.0"
+          "${CORELINK_GH_BIN}" api --paginate \
             --slurp \
-            "repos/${GITHUB_REPOSITORY}/deployments?sha=${GITHUB_SHA}&environment=production&per_page=100" \
+            "repos/HuGR-Labs/corelink-server/deployments?sha=${GITHUB_SHA}&environment=production&per_page=100" \
             > "${RUNNER_TEMP}/github-deployments.json"
 
       - name: Fetch Cloudflare deployment identity (redacted output)
@@ -144,17 +156,24 @@ jobs:
       - name: Verify B-106 attestation identity and subject
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_HOST: github.com
+          GH_CONFIG_DIR: ${{ runner.temp }}/corelink-gh-config
+          HOME: ${{ runner.temp }}/corelink-gh-home
+          CORELINK_GH_BIN: ${{ runner.temp }}/corelink-gh/gh
           B106_SUBJECT: ${{ runner.temp }}/b106-cold-attestation.json
           B106_BUNDLE: ${{ steps.attest-b106.outputs.bundle-path }}
           B106_VERIFICATION: ${{ runner.temp }}/b106-attestation-verification.json
         run: |
           set -euo pipefail
+          unset GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GITHUB_TOKEN
+          mkdir -p -m 700 "${GH_CONFIG_DIR}" "${HOME}"
+          test "$("${CORELINK_GH_BIN}" version | awk 'NR == 1 {print $3}')" = "2.79.0"
           test -s "${B106_BUNDLE}"
-          gh attestation verify "${B106_SUBJECT}" \
-            --repo "${GITHUB_REPOSITORY}" \
+          "${CORELINK_GH_BIN}" attestation verify "${B106_SUBJECT}" \
+            --repo HuGR-Labs/corelink-server \
             --bundle "${B106_BUNDLE}" \
             --predicate-type https://slsa.dev/provenance/v1 \
-            --cert-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/perf-production-evidence.yml@${GITHUB_REF}" \
+            --cert-identity "https://github.com/HuGR-Labs/corelink-server/.github/workflows/perf-production-evidence.yml@${GITHUB_REF}" \
             --cert-oidc-issuer https://token.actions.githubusercontent.com \
             --signer-digest "${GITHUB_SHA}" \
             --source-digest "${GITHUB_SHA}" \
@@ -175,8 +194,13 @@ jobs:
             --output "${RUNNER_TEMP}/corelink-performance-evidence.v2.json"
 
       - name: Verify canonical packet (fail closed; B-102..B-107 remain open)
+        env:
+          CORELINK_GH_BIN: ${{ runner.temp }}/corelink-gh/gh
+          GH_TOKEN: ${{ github.token }}
+          GH_HOST: github.com
         run: |
           set -eu
+          unset GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GITHUB_TOKEN
           python3 scripts/verify_b102_b108_evidence.py \
             --packet "${RUNNER_TEMP}/corelink-performance-evidence.v2.json" \
             --expect open

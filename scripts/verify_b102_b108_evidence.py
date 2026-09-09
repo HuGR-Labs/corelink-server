@@ -16,12 +16,22 @@ import datetime as dt
 import hashlib
 import json
 import math
+import os
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+try:
+    from install_pinned_gh import InstallError as PinnedGhError
+    from install_pinned_gh import install as install_pinned_gh
+    from install_pinned_gh import verify_binary as verify_pinned_gh_binary
+except ModuleNotFoundError:  # imported as scripts.verify_b102_b108_evidence
+    from scripts.install_pinned_gh import InstallError as PinnedGhError
+    from scripts.install_pinned_gh import install as install_pinned_gh
+    from scripts.install_pinned_gh import verify_binary as verify_pinned_gh_binary
 
 SCHEMA = "corelink.performance-evidence.v2"
 ITEMS = tuple(f"B-{n:03d}" for n in range(102, 109))
@@ -239,16 +249,31 @@ def verify_attestation_with_gh(
     environment-selected shim could claim a version while accepting forged
     DSSE/tlog material.
     """
-    verifier = "gh"
-    expected_version = GH_ATTESTATION_VERSION
-    try:
-        version = subprocess.run((verifier, "version"), capture_output=True, text=True, check=True, timeout=15).stdout
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise EvidenceError(f"B-106 pinned gh verifier is unavailable: {exc}") from exc
-    if not version.startswith(f"gh version {expected_version}"):
-        raise EvidenceError(f"B-106 gh verifier version is not pinned to {expected_version}")
     with tempfile.TemporaryDirectory(prefix="corelink-b106-verify-") as directory:
         root = Path(directory)
+        configured_binary = os.environ.get("CORELINK_GH_BIN")
+        try:
+            verifier_path = (
+                verify_pinned_gh_binary(Path(configured_binary))
+                if configured_binary is not None
+                else install_pinned_gh(root / "gh")
+            )
+        except (OSError, PinnedGhError) as exc:
+            raise EvidenceError(f"B-106 pinned gh verifier is unavailable: {exc}") from exc
+        verifier = str(verifier_path)
+        gh_home = root / "home"
+        gh_config = root / "config"
+        gh_home.mkdir(mode=0o700)
+        gh_config.mkdir(mode=0o700)
+        environment = gh_environment(gh_home, gh_config)
+        try:
+            version = subprocess.run(
+                (str(verifier_path), "version"), capture_output=True, text=True, check=True, timeout=15, env=environment
+            ).stdout
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise EvidenceError(f"B-106 pinned gh verifier is unavailable: {exc}") from exc
+        if not version.startswith(f"gh version {GH_ATTESTATION_VERSION}"):
+            raise EvidenceError(f"B-106 gh verifier version is not pinned to {GH_ATTESTATION_VERSION}")
         subject_path = root / SUBJECT_NAME
         bundle_path = root / "attestation.bundle.json"
         subject_path.write_bytes(subject_bytes)
@@ -262,13 +287,40 @@ def verify_attestation_with_gh(
             "--source-ref", deployment_record["github_ref"], "--format", "json",
         )
         try:
-            result = subprocess.run(command, capture_output=True, text=True, check=True, timeout=60)
+            result = subprocess.run(command, capture_output=True, text=True, check=True, timeout=60, env=environment)
             verified = json.loads(result.stdout)
         except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
             raise EvidenceError("B-106 pinned gh attestation verification failed") from exc
     if not isinstance(verified, list) or not verified or verified != expected:
         raise EvidenceError("B-106 gh verification result is not byte-for-byte bound to the retained result")
     return verified
+
+
+def gh_environment(home: Path, config: Path) -> dict[str, str]:
+    """Run gh with isolated config and only the required GitHub token."""
+    inherited = dict(os.environ)
+    gh_token = inherited.get("GH_TOKEN")
+    environment = {
+        key: value for key, value in inherited.items()
+        if not key.startswith("GH_")
+        and key not in {
+            "GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GITHUB_API_URL", "GITHUB_GRAPHQL_URL", "GITHUB_SERVER_URL",
+        }
+    }
+    if gh_token:
+        environment["GH_TOKEN"] = gh_token
+    environment.update(
+        {
+            "GH_HOST": "github.com",
+            "GH_CONFIG_DIR": str(config),
+            "GH_NO_UPDATE_NOTIFIER": "1",
+            "HOME": str(home),
+            "PATH": os.defpath,
+            "XDG_CONFIG_HOME": str(config),
+            "GITHUB_SERVER_URL": "https://github.com",
+        }
+    )
+    return environment
 
 
 def attested_subject_digest(bundle: dict[str, Any], label: str) -> str:
