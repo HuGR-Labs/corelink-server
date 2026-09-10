@@ -53,7 +53,9 @@ build --remote_timeout=60
 ```
 
 Download the helper from the [Bazel starter example](pathname:///downloads/corelink-credential-helper.sh)
-into your workspace (or point the setting above at your equivalent helper). Export
+to `.bazel/corelink-credential-helper.sh`, then run
+`chmod 0755 .bazel/corelink-credential-helper.sh` (or point the setting above at
+your equivalent executable helper). Export
 both values before building; in CI pass the PAT from a secret so it never appears
 in `.bazelrc`, process arguments, or build logs:
 
