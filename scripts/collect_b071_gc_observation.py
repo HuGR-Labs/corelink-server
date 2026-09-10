@@ -33,6 +33,18 @@ REQUIRED_SECRET_ENV = (
     "R2_TDK_HEX",
 )
 PASSTHROUGH_ENV = ("PATH", "SSL_CERT_FILE", "SSL_CERT_DIR")
+LIVE_DELETE_ENV = "GC_LIVE_DELETE"
+OBSERVATION_ONLY_ENV = "GC_OBSERVATION_ONLY"
+LIVE_DELETE_CONFIRM_ENV = "GC_LIVE_DELETE_CONFIRM"
+# Observation is a read-only boundary.  Keep destructive controls explicitly
+# named here so a future expansion of the allowlist cannot accidentally pass a
+# live-delete confirmation or an R2 write credential into the child process.
+FORBIDDEN_OBSERVATION_ENV = frozenset(
+    {
+        LIVE_DELETE_CONFIRM_ENV,
+        "R2_S3_SECRET_ACCESS_KEY",
+    }
+)
 IMAGE_DIGEST = re.compile(r"^(?:[^\s@]+@)?sha256:[0-9a-f]{64}$")
 APPROVAL_STATES = frozenset({"PENDING_OWNER_REVIEW", "APPROVED", "REJECTED"})
 ROOT_FIELDS = frozenset(
@@ -310,7 +322,37 @@ def _child_env(scope: dict[str, str]) -> dict[str, str]:
             "GC_R2_BUCKET": scope["bucket"],
         }
     )
+    # Keep the destructive confirmation and R2 write credential out of the
+    # observation child even if either one is later added to an inherited or
+    # passthrough environment allowlist.  The native binary independently
+    # requires GC_LIVE_DELETE=false for observation and requires this exact
+    # confirmation only on its destructive branch.
+    for name in FORBIDDEN_OBSERVATION_ENV:
+        env.pop(name, None)
     return env
+
+
+def _validate_child_env(env: dict[str, str]) -> None:
+    """Enforce the native binary's read-only contract at the process boundary.
+
+    ``GcProductionConfig::from_env`` is the final authority, but the collector
+    must not rely on that check alone: an accidental allowlist change could
+    otherwise hand a live-delete confirmation to the child.  Validate the
+    exact values and reject any destructive control that crosses this boundary.
+    """
+    if env.get(OBSERVATION_ONLY_ENV) != "true":
+        raise ObservationError(
+            "native observation requires GC_OBSERVATION_ONLY=true"
+        )
+    if env.get(LIVE_DELETE_ENV) != "false":
+        raise ObservationError("native observation requires GC_LIVE_DELETE=false")
+    leaked = sorted(FORBIDDEN_OBSERVATION_ENV.intersection(env))
+    if leaked or LIVE_DELETE_CONFIRM_ENV in env:
+        names = sorted(set(leaked) | {LIVE_DELETE_CONFIRM_ENV}.intersection(env))
+        raise ObservationError(
+            "destructive environment crossed observation boundary: "
+            + ", ".join(names)
+        )
 
 
 def collect(
@@ -331,9 +373,11 @@ def collect(
     for scope in scopes:
         started_at_ms = int(time.time() * 1000)
         try:
+            child_env = _child_env(scope)
+            _validate_child_env(child_env)
             process = subprocess.run(
                 [str(binary)],
-                env=_child_env(scope),
+                env=child_env,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

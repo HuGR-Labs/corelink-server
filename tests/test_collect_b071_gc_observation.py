@@ -132,6 +132,63 @@ class CollectionTests(unittest.TestCase):
             "D1_DATABASE_ID": "database",
             "CF_API_TOKEN": "read-token",
             "R2_TDK_HEX": "00" * 32,
+            "GC_LIVE_DELETE_CONFIRM": "I_UNDERSTAND",
+            "R2_S3_SECRET_ACCESS_KEY": "must-not-cross-boundary",
+        },
+        clear=True,
+    )
+    def test_child_env_strips_destructive_controls_if_allowlist_expands(self) -> None:
+        mutated_passthrough = collector.PASSTHROUGH_ENV + (
+            "GC_LIVE_DELETE_CONFIRM",
+            "R2_S3_SECRET_ACCESS_KEY",
+        )
+        with mock.patch.object(collector, "PASSTHROUGH_ENV", mutated_passthrough):
+            child_env = collector._child_env(SCOPE)
+        collector._validate_child_env(child_env)
+        self.assertNotIn("GC_LIVE_DELETE_CONFIRM", child_env)
+        self.assertNotIn("R2_S3_SECRET_ACCESS_KEY", child_env)
+
+    @mock.patch.dict(
+        os.environ,
+        {
+            "CLOUDFLARE_ACCOUNT_ID": "account",
+            "D1_DATABASE_ID": "database",
+            "CF_API_TOKEN": "read-token",
+            "R2_TDK_HEX": "00" * 32,
+        },
+        clear=True,
+    )
+    @mock.patch.object(collector.subprocess, "run")
+    def test_collect_rejects_confirmation_reintroduced_at_child_boundary(
+        self, run: mock.Mock
+    ) -> None:
+        original = collector._child_env
+
+        def compromised(scope: dict[str, str]) -> dict[str, str]:
+            child_env = original(scope)
+            child_env["GC_LIVE_DELETE_CONFIRM"] = "I_UNDERSTAND"
+            return child_env
+
+        with mock.patch.object(collector, "_child_env", side_effect=compromised):
+            with self.assertRaisesRegex(
+                collector.ObservationError, "destructive environment crossed"
+            ):
+                collector.collect(
+                    scopes=[SCOPE],
+                    binary=Path("/usr/bin/true"),
+                    image_digest="sha256:" + "a" * 64,
+                    operator="operator@example.com",
+                    timeout=30,
+                )
+        run.assert_not_called()
+
+    @mock.patch.dict(
+        os.environ,
+        {
+            "CLOUDFLARE_ACCOUNT_ID": "account",
+            "D1_DATABASE_ID": "database",
+            "CF_API_TOKEN": "read-token",
+            "R2_TDK_HEX": "00" * 32,
             "GC_LIVE_DELETE": "true",
             "GC_LIVE_DELETE_CONFIRM": "I_UNDERSTAND",
             "R2_S3_SECRET_ACCESS_KEY": "must-not-cross-boundary",
