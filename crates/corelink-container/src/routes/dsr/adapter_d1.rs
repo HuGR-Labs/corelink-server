@@ -402,8 +402,6 @@ const BYOK_ACTIVATION_POSTCONDITION_TABLE: &str = "byok_activation_postcondition
 const BYOK_ACTIVATION_SUSPENSION_POSTCONDITION_TABLE: &str =
     "byok_activation_suspension_postcondition";
 const BYOK_ACTIVATION_TRANSITION_ASSERTION_TABLE: &str = "byok_activation_transition_assertion";
-const BYOK_ACTIVATION_INTENT_TABLE: &str = "byok_activation_intent";
-const BYOK_ACTIVATION_GUARD_TABLE: &str = "byok_activation_guard";
 const BYOK_PURGE_CAUSE_ORPHAN_SQL: &str =
     "SELECT COUNT(*) AS n FROM byok_object_purge_cause c LEFT JOIN byok_object_purge_item p ON p.purge_id=c.purge_id WHERE p.purge_id IS NULL";
 /// Global orphan preflight for all 0121 tables whose ownership is indirect.
@@ -759,8 +757,8 @@ impl D1EraseAdapter {
             BYOK_ACTIVATION_SUSPENSION_POSTCONDITION_TABLE,
         ];
         let mut counts = [0u64; 5];
-        for (index, table) in tables.iter().enumerate() {
-            counts[index] = self.count_byok_activation_indirect(table, tid)?;
+        for (count, table) in counts.iter_mut().zip(tables.iter().copied()) {
+            *count = self.count_byok_activation_indirect(table, tid)?;
         }
         if counts.iter().all(|count| *count == 0) {
             return Ok(0);
@@ -781,8 +779,8 @@ impl D1EraseAdapter {
         d1_batch_blocking(&self.d1, statements).map_err(ErasureBackendError::Transport)?;
 
         let mut remaining = [0u64; 5];
-        for (index, table) in tables.iter().enumerate() {
-            remaining[index] = self.count_byok_activation_indirect(table, tid)?;
+        for (count, table) in remaining.iter_mut().zip(tables.iter().copied()) {
+            *count = self.count_byok_activation_indirect(table, tid)?;
         }
         if remaining.iter().any(|count| *count != 0) {
             return Err(ErasureBackendError::Transport(format!(

@@ -174,11 +174,11 @@ fn byok_activation_indirect_children_are_special_and_fk_scoped() {
     assert!(sql.contains("FOREIGN KEY (guard_id) REFERENCES byok_activation_guard"));
     let intent = TENANT_ID_TABLES
         .iter()
-        .position(|&table| table == BYOK_ACTIVATION_INTENT_TABLE)
+        .position(|&table| table == "byok_activation_intent")
         .unwrap();
     let guard = TENANT_ID_TABLES
         .iter()
-        .position(|&table| table == BYOK_ACTIVATION_GUARD_TABLE)
+        .position(|&table| table == "byok_activation_guard")
         .unwrap();
     assert!(
         intent < guard,
