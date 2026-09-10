@@ -616,7 +616,14 @@ fn duplicate_tail_rejects_missing_signed_branch_and_hidden_third_candidate() {
 
 #[test]
 fn head_advance_cas_binds_the_verified_checkpoint_snapshot() {
-    let source = include_str!("b126_m2_impl_02.rs");
+    // `advance_head_cas` lives in the nested part3 shard included by impl_02.
+    // `include_str!` does not expand Rust `include!` directives, so inspect both
+    // source shards to keep this anti-TOCTOU contract test coupled to the code
+    // that is actually compiled.
+    let source = concat!(
+        include_str!("b126_m2_impl_02.rs"),
+        include_str!("b126_m2_impl_02_part3.rs")
+    );
     for guard in [
         "head_signature IS ?11",
         "signing_key_id IS ?12",
