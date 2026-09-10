@@ -235,10 +235,12 @@ pub(super) fn build_gather_plan(tenant_id: &str) -> Vec<GatherQuery> {
     let byok_activation_indirect = [
         (
             "byok_activation_worker_assertion",
-            "SELECT * FROM byok_activation_worker_assertion w WHERE \
-             w.intent_id IN (SELECT intent_id FROM byok_activation_intent WHERE tenant_id = ?1) \
-             OR w.operation_token IN (SELECT operation_token FROM byok_activation_operation_guard og \
-                 WHERE og.intent_id IN (SELECT intent_id FROM byok_activation_intent WHERE tenant_id = ?1))",
+            "SELECT * FROM byok_activation_worker_assertion w \
+             JOIN byok_activation_operation_guard og \
+               ON og.operation_token = w.operation_token \
+              AND og.intent_id = w.intent_id \
+             JOIN byok_activation_intent i ON i.intent_id = w.intent_id \
+            WHERE i.tenant_id = ?1",
         ),
         (
             "byok_activation_operation_guard",
@@ -674,6 +676,7 @@ pub(super) fn run_rectification(
 )]
 mod tests {
     use super::*;
+    use rusqlite::{params, Connection};
     use std::collections::HashSet;
 
     const TID: &str = "00000000-0000-7000-8000-000000000002";
@@ -749,6 +752,48 @@ mod tests {
             .expect("worker assertion query");
         assert!(worker.sql.contains("operation_token"));
         assert!(worker.sql.contains("intent_id"));
+    }
+
+    #[test]
+    fn byok_activation_worker_access_is_exactly_owned_and_isolated_between_tenants() {
+        let plan = build_gather_plan(TID);
+        let worker = plan
+            .iter()
+            .find(|query| query.table == "byok_activation_worker_assertion")
+            .expect("worker assertion query");
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE byok_activation_intent (intent_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL);
+             CREATE TABLE byok_activation_operation_guard (operation_token TEXT PRIMARY KEY, intent_id TEXT NOT NULL);
+             CREATE TABLE byok_activation_worker_assertion (assertion_token TEXT PRIMARY KEY, operation_token TEXT NOT NULL, intent_id TEXT NOT NULL);
+             INSERT INTO byok_activation_intent VALUES ('ia', 'tenant-a'), ('ib', 'tenant-b');
+             INSERT INTO byok_activation_operation_guard VALUES ('opa', 'ia'), ('opb', 'ib'), ('op-mismatch', 'ib');
+             INSERT INTO byok_activation_worker_assertion VALUES
+                 ('wa', 'opa', 'ia'), ('wb', 'opb', 'ib'), ('wm', 'op-mismatch', 'ia');",
+        )
+        .unwrap();
+
+        let count_for = |tenant: &str| -> i64 {
+            let mut statement = db.prepare(&worker.sql).unwrap();
+            let mut rows = statement.query(params![tenant]).unwrap();
+            let mut count = 0;
+            while rows.next().unwrap().is_some() {
+                count += 1;
+            }
+            count
+        };
+        // The valid A/B rows are each visible only to their own tenant.
+        assert_eq!(count_for("tenant-a"), 1);
+        assert_eq!(count_for("tenant-b"), 1);
+        // The mismatched worker is not exported for either side: exact
+        // operation_guard.intent_id = worker.intent_id is mandatory.
+        db.execute(
+            "DELETE FROM byok_activation_worker_assertion WHERE assertion_token IN ('wa', 'wb')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(count_for("tenant-a"), 0);
+        assert_eq!(count_for("tenant-b"), 0);
     }
 
     /// The retained disclosable subset is a real subset of RETAIN_SET and never

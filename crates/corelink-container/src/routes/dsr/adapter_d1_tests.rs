@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+use rusqlite::Connection;
 use serde_json::json;
 
 use super::*;
@@ -193,6 +194,52 @@ fn byok_activation_indirect_children_are_special_and_fk_scoped() {
     assert!(BYOK_ACTIVATION_ORPHAN_SQL.matches("UNION ALL").count() >= 4);
     assert!(BYOK_ACTIVATION_ORPHAN_SQL.matches("LEFT JOIN").count() >= 6);
     assert!(BYOK_ACTIVATION_ORPHAN_SQL.matches("IS NULL").count() >= 6);
+}
+
+#[test]
+fn byok_activation_orphan_sql_is_valid_and_global_in_sqlite() {
+    let db = Connection::open_in_memory().unwrap();
+    db.execute_batch(
+        "CREATE TABLE byok_activation_intent (intent_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL);
+         CREATE TABLE byok_activation_guard (guard_id TEXT PRIMARY KEY);
+         CREATE TABLE byok_activation_operation_guard (operation_token TEXT PRIMARY KEY, intent_id TEXT NOT NULL);
+         CREATE TABLE byok_activation_worker_assertion (assertion_token TEXT PRIMARY KEY, operation_token TEXT NOT NULL, intent_id TEXT NOT NULL);
+         CREATE TABLE byok_activation_postcondition (operation_token TEXT PRIMARY KEY, intent_id TEXT NOT NULL);
+         CREATE TABLE byok_activation_suspension_postcondition (operation_token TEXT PRIMARY KEY, intent_id TEXT NOT NULL);
+         CREATE TABLE byok_activation_transition_assertion (assertion_token TEXT PRIMARY KEY, guard_id TEXT NOT NULL);",
+    )
+    .unwrap();
+    db.execute_batch(
+        "INSERT INTO byok_activation_intent VALUES ('ia', 'tenant-a'), ('ib', 'tenant-b');
+         INSERT INTO byok_activation_guard VALUES ('ga'), ('gb');
+         INSERT INTO byok_activation_operation_guard VALUES ('opa', 'ia'), ('opb', 'ib');
+         INSERT INTO byok_activation_worker_assertion VALUES ('wa', 'opa', 'ia'), ('wb', 'opb', 'ib');
+         INSERT INTO byok_activation_transition_assertion VALUES ('ta', 'ga'), ('tb', 'gb');",
+    )
+    .unwrap();
+    let count: i64 = db
+        .query_row(BYOK_ACTIVATION_ORPHAN_SQL, [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 0, "valid A/B fixture must have no indirect orphans");
+
+    // One adversarial row per indirect relation: the worker mismatch has both
+    // parents present but belongs to different intents, proving the global
+    // query catches inconsistent ownership rather than only missing rows.
+    db.execute_batch(
+        "INSERT INTO byok_activation_operation_guard VALUES ('op-orphan', 'missing-intent');
+         INSERT INTO byok_activation_worker_assertion VALUES ('w-mismatch', 'opb', 'ia');
+         INSERT INTO byok_activation_postcondition VALUES ('p-orphan', 'missing-intent');
+         INSERT INTO byok_activation_suspension_postcondition VALUES ('sp-orphan', 'missing-intent');
+         INSERT INTO byok_activation_transition_assertion VALUES ('t-orphan', 'missing-guard');",
+    )
+    .unwrap();
+    let count: i64 = db
+        .query_row(BYOK_ACTIVATION_ORPHAN_SQL, [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        count, 5,
+        "all five indirect orphan relations must fail closed"
+    );
 }
 
 #[test]

@@ -406,34 +406,38 @@ const BYOK_PURGE_CAUSE_ORPHAN_SQL: &str =
 /// FK enforcement was historically disabled on some D1 paths, so a tenant
 /// join alone can hide a row whose parent has already disappeared. Count every
 /// missing parent relation before erase and verification and fail closed.
-const BYOK_ACTIVATION_ORPHAN_SQL: &str = "SELECT COUNT(*) AS n FROM (\
-    SELECT w.assertion_token AS row_id\
-      FROM byok_activation_worker_assertion w\
-      LEFT JOIN byok_activation_operation_guard og\
-        ON og.operation_token = w.operation_token\
-      LEFT JOIN byok_activation_intent i ON i.intent_id = w.intent_id\
-     WHERE og.operation_token IS NULL OR i.intent_id IS NULL\
-    UNION ALL\
-    SELECT og.operation_token AS row_id\
-      FROM byok_activation_operation_guard og\
-      LEFT JOIN byok_activation_intent i ON i.intent_id = og.intent_id\
-     WHERE i.intent_id IS NULL\
-    UNION ALL\
-    SELECT p.operation_token AS row_id\
-      FROM byok_activation_postcondition p\
-      LEFT JOIN byok_activation_intent i ON i.intent_id = p.intent_id\
-     WHERE i.intent_id IS NULL\
-    UNION ALL\
-    SELECT p.operation_token AS row_id\
-      FROM byok_activation_suspension_postcondition p\
-      LEFT JOIN byok_activation_intent i ON i.intent_id = p.intent_id\
-     WHERE i.intent_id IS NULL\
-    UNION ALL\
-    SELECT a.assertion_token AS row_id\
-      FROM byok_activation_transition_assertion a\
-      LEFT JOIN byok_activation_guard g ON g.guard_id = a.guard_id\
-     WHERE g.guard_id IS NULL\
-) orphan";
+const BYOK_ACTIVATION_ORPHAN_SQL: &str = r#"
+SELECT COUNT(*) AS n FROM (
+    SELECT w.assertion_token AS row_id
+      FROM byok_activation_worker_assertion w
+      LEFT JOIN byok_activation_operation_guard og
+        ON og.operation_token = w.operation_token
+      LEFT JOIN byok_activation_intent i ON i.intent_id = w.intent_id
+     WHERE og.operation_token IS NULL
+        OR i.intent_id IS NULL
+        OR og.intent_id <> w.intent_id
+    UNION ALL
+    SELECT og.operation_token AS row_id
+      FROM byok_activation_operation_guard og
+      LEFT JOIN byok_activation_intent i ON i.intent_id = og.intent_id
+     WHERE i.intent_id IS NULL
+    UNION ALL
+    SELECT p.operation_token AS row_id
+      FROM byok_activation_postcondition p
+      LEFT JOIN byok_activation_intent i ON i.intent_id = p.intent_id
+     WHERE i.intent_id IS NULL
+    UNION ALL
+    SELECT p.operation_token AS row_id
+      FROM byok_activation_suspension_postcondition p
+      LEFT JOIN byok_activation_intent i ON i.intent_id = p.intent_id
+     WHERE i.intent_id IS NULL
+    UNION ALL
+    SELECT a.assertion_token AS row_id
+      FROM byok_activation_transition_assertion a
+      LEFT JOIN byok_activation_guard g ON g.guard_id = a.guard_id
+     WHERE g.guard_id IS NULL
+) orphan
+"#;
 
 /// **Every** live, tenant-scoped D1 table (keyed by `tenant_id`, `namespace`,
 /// or an opaque principal id), derived from `migrations/d1/*.sql`. Transient
@@ -888,20 +892,18 @@ impl D1EraseAdapter {
             return Ok(0);
         }
 
-        let statements = tables
-            .iter()
-            .map(|table| {
-                let scope = Self::byok_activation_indirect_scope(table).ok_or_else(|| {
-                    ErasureBackendError::Transport(format!(
-                        "unknown indirect BYOK activation table {table}; refusing DSR cleanup"
-                    ))
-                })?;
-                D1BatchStatement::new(
-                    format!("DELETE FROM {table} WHERE {scope}"),
-                    vec![json!(tid)],
-                )
-            })
-            .collect();
+        let mut statements = Vec::with_capacity(tables.len());
+        for table in tables {
+            let scope = Self::byok_activation_indirect_scope(table).ok_or_else(|| {
+                ErasureBackendError::Transport(format!(
+                    "unknown indirect BYOK activation table {table}; refusing DSR cleanup"
+                ))
+            })?;
+            statements.push(D1BatchStatement::new(
+                format!("DELETE FROM {table} WHERE {scope}"),
+                vec![json!(tid)],
+            ));
+        }
         d1_batch_blocking(&self.d1, statements).map_err(ErasureBackendError::Transport)?;
 
         let mut remaining = [0u64; 5];
