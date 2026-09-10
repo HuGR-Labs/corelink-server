@@ -119,7 +119,6 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     "byok_backfill_run",
     "byok_logical_object_generation",
     "byok_logical_object_publication",
-    "byok_activation_guard",
     "byok_purge_identity_quarantine",
     // B-083 purge ledger. Both the identity quarantine and
     // `byok_object_purge_cause` are FK children of the purge item. The former
@@ -127,6 +126,7 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // child+parent batch below.
     "byok_object_purge_item",
     "byok_activation_intent",
+    "byok_activation_guard",
     "byok_tenant_gate",
     "byok_data_intent",
     "byok_transition_fence",
@@ -369,6 +369,14 @@ const CAS_PLANE_OWNED: &[&str] = &[
 /// by `tenant.clerk_user_id` and is deleted before the root; `tenant` is
 /// deleted LAST.
 pub(super) const SPECIAL_ERASE_TABLES: &[&str] = &[
+    // These 0121 assertion/guard rows have no tenant_id. Their ownership is
+    // resolved through activation_intent/activation_guard and is cleaned by
+    // delete_byok_activation_indirect_children before those parents.
+    "byok_activation_worker_assertion",
+    "byok_activation_operation_guard",
+    "byok_activation_postcondition",
+    "byok_activation_suspension_postcondition",
+    "byok_activation_transition_assertion",
     "signup_orchestration",
     "signup_attempts",
     "clerk_provisioning_lock",
@@ -384,6 +392,16 @@ pub(super) const SPECIAL_ERASE_TABLES: &[&str] = &[
 const BYOK_PURGE_CAUSE_TABLE: &str = "byok_object_purge_cause";
 const BYOK_PURGE_CAUSE_PARENT_KEY: &str = "purge_id";
 const BYOK_PURGE_PARENT_TABLE: &str = "byok_object_purge_item";
+const BYOK_ACTIVATION_WORKER_ASSERTION_TABLE: &str = "byok_activation_worker_assertion";
+const BYOK_ACTIVATION_OPERATION_GUARD_TABLE: &str = "byok_activation_operation_guard";
+const BYOK_ACTIVATION_POSTCONDITION_TABLE: &str = "byok_activation_postcondition";
+const BYOK_ACTIVATION_SUSPENSION_POSTCONDITION_TABLE: &str =
+    "byok_activation_suspension_postcondition";
+const BYOK_ACTIVATION_TRANSITION_ASSERTION_TABLE: &str = "byok_activation_transition_assertion";
+const BYOK_ACTIVATION_INTENT_TABLE: &str = "byok_activation_intent";
+const BYOK_ACTIVATION_GUARD_TABLE: &str = "byok_activation_guard";
+const BYOK_PURGE_CAUSE_ORPHAN_SQL: &str =
+    "SELECT COUNT(*) AS n FROM byok_object_purge_cause c LEFT JOIN byok_object_purge_item p ON p.purge_id=c.purge_id WHERE p.purge_id IS NULL";
 
 /// **Every** live, tenant-scoped D1 table (keyed by `tenant_id`, `namespace`,
 /// or an opaque principal id), derived from `migrations/d1/*.sql`. Transient
@@ -428,10 +446,10 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "byok_backfill_run",
     "byok_logical_object_generation",
     "byok_logical_object_publication",
-    "byok_activation_guard",
     "byok_purge_identity_quarantine",
     "byok_object_purge_item",
     "byok_activation_intent",
+    "byok_activation_guard",
     "byok_tenant_gate",
     "byok_data_intent",
     "byok_transition_fence",
@@ -504,6 +522,11 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "manifest_chunks",
     "multipart_sessions",
     // special
+    "byok_activation_worker_assertion",
+    "byok_activation_operation_guard",
+    "byok_activation_postcondition",
+    "byok_activation_suspension_postcondition",
+    "byok_activation_transition_assertion",
     "clerk_provisioning_lock",
     "signup_orchestration",
     "signup_attempts",
@@ -714,6 +737,15 @@ impl D1EraseAdapter {
         Ok(scalar_count(&rows, "n"))
     }
 
+    /// D1 historically ran with FK enforcement off, so old/manual writes may
+    /// have left a cause row with no purge-item parent. It has no tenant scope
+    /// left to resolve; proceeding would silently attest an incomplete ledger.
+    fn count_orphan_byok_purge_causes(&self) -> Result<u64, ErasureBackendError> {
+        let rows = d1_query_blocking(&self.d1, BYOK_PURGE_CAUSE_ORPHAN_SQL, vec![])
+            .map_err(ErasureBackendError::Transport)?;
+        Ok(scalar_count(&rows, "n"))
+    }
+
     /// Delete purge-cause children and their `byok_object_purge_item` parent
     /// in one D1 transaction. The child FK has no cascade, and D1/SQLite may
     /// enforce FKs on the production REST path; deleting the parent first
@@ -752,6 +784,95 @@ impl D1EraseAdapter {
             )));
         }
         Ok(causes.saturating_add(items))
+    }
+
+    /// Return the tenant-ownership predicate for one 0121 table that lacks a
+    /// `tenant_id` column. Every identifier here is a compile-time constant;
+    /// the only request-derived value remains the bound tenant parameter.
+    fn byok_activation_indirect_scope(table: &str) -> Option<&'static str> {
+        match table {
+            BYOK_ACTIVATION_WORKER_ASSERTION_TABLE => Some(
+                "intent_id IN (SELECT intent_id FROM byok_activation_intent WHERE tenant_id = ?1) OR operation_token IN (SELECT operation_token FROM byok_activation_operation_guard WHERE intent_id IN (SELECT intent_id FROM byok_activation_intent WHERE tenant_id = ?1))",
+            ),
+            BYOK_ACTIVATION_OPERATION_GUARD_TABLE
+            | BYOK_ACTIVATION_POSTCONDITION_TABLE
+            | BYOK_ACTIVATION_SUSPENSION_POSTCONDITION_TABLE => Some(
+                "intent_id IN (SELECT intent_id FROM byok_activation_intent WHERE tenant_id = ?1)",
+            ),
+            BYOK_ACTIVATION_TRANSITION_ASSERTION_TABLE => Some(
+                "guard_id IN (SELECT guard_id FROM byok_activation_guard WHERE tenant_id = ?1)",
+            ),
+            _ => None,
+        }
+    }
+
+    fn count_byok_activation_indirect(
+        &self,
+        table: &str,
+        tid: &str,
+    ) -> Result<u64, ErasureBackendError> {
+        let scope = Self::byok_activation_indirect_scope(table).ok_or_else(|| {
+            ErasureBackendError::Transport(format!(
+                "unknown indirect BYOK activation table {table}; refusing DSR cleanup"
+            ))
+        })?;
+        let sql = format!("SELECT COUNT(*) AS n FROM {table} WHERE {scope}");
+        let rows = d1_query_blocking(&self.d1, &sql, vec![json!(tid)])
+            .map_err(ErasureBackendError::Transport)?;
+        Ok(scalar_count(&rows, "n"))
+    }
+
+    /// Delete all 0121 assertion/guard rows whose ownership is indirect via
+    /// this tenant's activation intent/guard. They are FK children of those
+    /// parents, so the complete child set is sent in one transaction before
+    /// the direct tenant registry reaches `byok_activation_intent` or
+    /// `byok_activation_guard`. Post-delete counts fail closed if a row is
+    /// still attributable to the tenant.
+    fn delete_byok_activation_indirect_children(
+        &self,
+        tid: &str,
+    ) -> Result<u64, ErasureBackendError> {
+        let tables = [
+            BYOK_ACTIVATION_WORKER_ASSERTION_TABLE,
+            BYOK_ACTIVATION_TRANSITION_ASSERTION_TABLE,
+            BYOK_ACTIVATION_OPERATION_GUARD_TABLE,
+            BYOK_ACTIVATION_POSTCONDITION_TABLE,
+            BYOK_ACTIVATION_SUSPENSION_POSTCONDITION_TABLE,
+        ];
+        let mut counts = [0u64; 5];
+        for (index, table) in tables.iter().enumerate() {
+            counts[index] = self.count_byok_activation_indirect(table, tid)?;
+        }
+        if counts.iter().all(|count| *count == 0) {
+            return Ok(0);
+        }
+
+        let statements = tables
+            .iter()
+            .map(|table| {
+                let scope = Self::byok_activation_indirect_scope(table).ok_or_else(|| {
+                    ErasureBackendError::Transport(format!(
+                        "unknown indirect BYOK activation table {table}; refusing DSR cleanup"
+                    ))
+                })?;
+                D1BatchStatement::new(
+                    format!("DELETE FROM {table} WHERE {scope}"),
+                    vec![json!(tid)],
+                )
+            })
+            .collect();
+        d1_batch_blocking(&self.d1, statements).map_err(ErasureBackendError::Transport)?;
+
+        let mut remaining = [0u64; 5];
+        for (index, table) in tables.iter().enumerate() {
+            remaining[index] = self.count_byok_activation_indirect(table, tid)?;
+        }
+        if remaining.iter().any(|count| *count != 0) {
+            return Err(ErasureBackendError::Transport(format!(
+                "indirect BYOK activation cleanup incomplete for tenant; refusing parent delete ({remaining:?} rows remain)"
+            )));
+        }
+        Ok(counts.iter().copied().sum())
     }
 
     /// `clerk_provisioning_lock` is keyed by `tenant.clerk_user_id`, not by
@@ -837,6 +958,12 @@ impl BackendErasureAdapter for D1EraseAdapter {
                 "{BYOK_PURGE_PARENT_TABLE} missing from DSR erase registry; refusing bespoke {BYOK_PURGE_CAUSE_TABLE} cleanup"
             )));
         }
+        let orphan_causes = self.count_orphan_byok_purge_causes()?;
+        if orphan_causes != 0 {
+            return Err(ErasureBackendError::Transport(format!(
+                "{BYOK_PURGE_CAUSE_TABLE} has {orphan_causes} orphan rows; refusing DSR deletion"
+            )));
+        }
         let tid = tenant_id.to_string();
         // MUST precede every mutation, including child cleanup. A missing or
         // malformed residency pin fails closed and leaves the tenant intact.
@@ -846,6 +973,12 @@ impl BackendErasureAdapter for D1EraseAdapter {
         // safely deferred until after the tenant root is gone.
         let clerk_user_id = self.clerk_user_id_before_delete(&tid)?;
         let mut total = 0u64;
+
+        // 0121 assertion/guard tables have no tenant_id. Resolve their
+        // ownership through the activation intent/guard and remove them in a
+        // single FK-safe transaction before the direct registry lane reaches
+        // those parents.
+        total = total.saturating_add(self.delete_byok_activation_indirect_children(&tid)?);
 
         // Group A — tenant_id-keyed child tables.
         for t in TENANT_ID_TABLES {
@@ -887,6 +1020,12 @@ impl BackendErasureAdapter for D1EraseAdapter {
         // Keep verification fail-closed too. A partial registry must never
         // produce the canonical empty hash and over-attest a tenant.
         ensure_tenant_keyed_tables_classified().map_err(ErasureBackendError::Transport)?;
+        let orphan_causes = self.count_orphan_byok_purge_causes()?;
+        if orphan_causes != 0 {
+            return Err(ErasureBackendError::Transport(format!(
+                "{BYOK_PURGE_CAUSE_TABLE} has {orphan_causes} orphan rows; refusing verification"
+            )));
+        }
         let remaining = self.remaining_rows(&ctx.tenant_id.to_string())?;
         if remaining == 0 {
             // Canonical "no rows for tenant" sentinel (effective backend).

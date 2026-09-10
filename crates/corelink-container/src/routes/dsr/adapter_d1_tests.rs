@@ -147,6 +147,47 @@ fn byok_purge_parent_is_deleted_by_the_atomic_bespoke_lane() {
 }
 
 #[test]
+fn byok_activation_indirect_children_are_special_and_fk_scoped() {
+    let tables = [
+        BYOK_ACTIVATION_WORKER_ASSERTION_TABLE,
+        BYOK_ACTIVATION_OPERATION_GUARD_TABLE,
+        BYOK_ACTIVATION_POSTCONDITION_TABLE,
+        BYOK_ACTIVATION_SUSPENSION_POSTCONDITION_TABLE,
+        BYOK_ACTIVATION_TRANSITION_ASSERTION_TABLE,
+    ];
+    for table in tables {
+        assert!(SPECIAL_ERASE_TABLES.contains(&table));
+        assert!(!TENANT_ID_TABLES.contains(&table));
+        assert_eq!(classification_count(table), 1);
+    }
+
+    let migration = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../migrations/d1/0121_byok_activation_pipeline.sql"
+    );
+    let sql = std::fs::read_to_string(migration).unwrap();
+    assert!(
+        sql.contains("FOREIGN KEY (operation_token) REFERENCES byok_activation_operation_guard")
+    );
+    assert!(sql.contains("FOREIGN KEY (intent_id) REFERENCES byok_activation_intent"));
+    assert!(sql.contains("FOREIGN KEY (guard_id) REFERENCES byok_activation_guard"));
+    let intent = TENANT_ID_TABLES
+        .iter()
+        .position(|&table| table == BYOK_ACTIVATION_INTENT_TABLE)
+        .unwrap();
+    let guard = TENANT_ID_TABLES
+        .iter()
+        .position(|&table| table == BYOK_ACTIVATION_GUARD_TABLE)
+        .unwrap();
+    assert!(
+        intent < guard,
+        "activation intent must be deleted before its activation-guard parent"
+    );
+    assert!(BYOK_PURGE_CAUSE_ORPHAN_SQL.contains("LEFT JOIN"));
+    assert!(BYOK_PURGE_CAUSE_ORPHAN_SQL.contains("IS NULL"));
+}
+
+#[test]
 fn classification_gate_rejects_unknown_table_fail_closed() {
     let err = ensure_classification(&["tenant", "future_unclassified_table"]).unwrap_err();
     assert!(err.contains("future_unclassified_table"));
