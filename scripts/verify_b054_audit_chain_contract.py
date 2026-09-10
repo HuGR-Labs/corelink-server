@@ -151,12 +151,16 @@ def assess(files: dict[str, str]) -> None:
         "daily verifier rejects link-key id reuse": "audit link-key rotation reused an earlier key id",
         "daily verifier requires external bootstrap": "authenticated external bootstrap anchor is absent or ambiguous",
         "daily verifier authenticates historical witness receipt": "witness receipt fields do not bind historical record",
-        "daily verifier executes Ed25519 verification": "receipt_key,\n            RECEIPT_DOMAIN,",
+        "daily verifier executes Ed25519 verification": "receipt_key,\n        RECEIPT_DOMAIN,",
         "daily verifier selects exact predecessor": "authenticated external bootstrap anchor is absent or ambiguous",
         "daily verifier rejects duplicate sequence": "duplicate sequence number",
         "daily verifier rejects duplicate row": "duplicate row id",
         "daily verifier rejects witness replay": "duplicate/replayed sequence",
         "daily verifier preserves object key boundaries": "real key boundary",
+        "daily verifier challenges witness latest": "challenge_latest(args",
+        "daily verifier verifies head signature": "verify_head_signature(head_keys",
+        "daily verifier binds epoch ledger key": "epoch ledger hash does not bind link_key_id",
+        "daily verifier rejects mixed object partitions": '            "archive object {path} mixes tenant/region partitions"',
         "daily verifier binds every row to day": "contains a cross-day row",
         "daily verifier binds source object key": "archive object path does not match authenticated row key",
         "daily verifier authenticates keyed object suffix": "domain_hash(&[], object_bytes)",
@@ -264,12 +268,20 @@ def mutation_self_test(files: dict[str, str]) -> None:
         ),
         (
             "bootstrap signature",
-            "receipt_key,\n            RECEIPT_DOMAIN,",
+            "receipt_key,\n        RECEIPT_DOMAIN,",
             "Ok::<(), String>(()) // receipt signature bypass",
         ),
         ("duplicate sequence", "duplicate sequence number", "duplicate sequence accepted"),
         ("witness replay", "duplicate/replayed sequence", "witness replay accepted"),
         ("object key boundary", "real key boundary", "object key suffix accepted"),
+        ("witness latest challenge", "challenge_latest(args", "historical receipt accepted"),
+        ("head signature", "verify_head_signature(head_keys", "head signature trusted"),
+        ("epoch ledger binding", "epoch ledger hash does not bind link_key_id", "ledger key omitted"),
+        (
+            "mixed object partition",
+            '            "archive object {path} mixes tenant/region partitions"',
+            '            "archive object {path} mixed partition accepted"',
+        ),
         ("cross-day copy", "contains a cross-day row", "cross-day row accepted"),
         ("keyed object suffix", "domain_hash(&[], object_bytes)", "\"00\".repeat(32)"),
         ("empty checkpoint publish", "elif [[ -s \"${CHECKPOINT_OUT}\" ]]", "elif [[ -f \"${CHECKPOINT_OUT}\" ]]"),
@@ -278,7 +290,7 @@ def mutation_self_test(files: dict[str, str]) -> None:
     for label, old, new in mutations:
         if label in {"empty checkpoint publish", "silent verifier nonzero"}:
             target = "daily_workflow"
-        elif label in {"daily mixed epochs", "external bootstrap", "bootstrap signature", "duplicate sequence", "witness replay", "object key boundary", "cross-day copy", "keyed object suffix", "checkpoint MAC", "checkpoint replay", "checkpoint immutable local publish"}:
+        elif label in {"daily mixed epochs", "external bootstrap", "bootstrap signature", "duplicate sequence", "witness replay", "object key boundary", "witness latest challenge", "head signature", "epoch ledger binding", "mixed object partition", "cross-day copy", "keyed object suffix", "checkpoint MAC", "checkpoint replay", "checkpoint immutable local publish"}:
             target = "daily_verifier"
         elif label == "historical key custody":
             target = "secret_custody"

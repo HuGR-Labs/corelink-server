@@ -71,6 +71,8 @@ const CHECKPOINT_MAC_DOMAIN: &[u8] = b"corelink/audit-chain/daily-checkpoint/v1\
 const WITNESS_DOMAIN: &[u8] = b"corelink/audit-chain/head-witness/v1\0";
 const HEAD_RECORD_DOMAIN: &[u8] = b"corelink/audit-chain/head-record/v1\0";
 const RECEIPT_DOMAIN: &[u8] = b"corelink/audit-chain/head-witness-receipt/v1\0";
+const LATEST_DOMAIN: &[u8] = b"corelink/audit-chain/head-witness-latest/v1\0";
+const EPOCH_LEDGER_DOMAIN: &[u8] = b"corelink/audit-chain/epoch-ledger/v1\0";
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
@@ -119,6 +121,9 @@ struct CliArgs {
     witness_id: Option<String>,
     witness_public_keys: Option<PathBuf>,
     witness_receipts_dir: Option<PathBuf>,
+    witness_url: Option<String>,
+    witness_head_public_keys: Option<PathBuf>,
+    witness_epoch_ledger_dir: Option<PathBuf>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -176,6 +181,48 @@ struct WitnessHeadV2 {
     tenant_id: String,
 }
 
+#[derive(serde::Serialize)]
+struct WitnessLatestRequest<'a> {
+    challenge_b64: &'a str,
+    latest_request_version: u8,
+    region: &'a str,
+    tenant_id: &'a str,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WitnessLatestEnvelope {
+    latest_jcs_b64: String,
+    latest_signature_b64: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WitnessLatestJcs {
+    challenge_b64: String,
+    latest: Option<StoredWitnessReceipt>,
+    latest_version: u8,
+    observed_at_ms: u64,
+    witness_key_id: u64,
+    region: String,
+    tenant_id: String,
+    witness_id: String,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredEpochLedger {
+    entry_jcs_b64: String,
+    entry_signature_b64: String,
+    tenant_id: String,
+    region: String,
+    epoch_id: u64,
+    ledger_sequence: u64,
+    epoch_ledger_hash: String,
+    link_key_id: Option<u64>,
+    signing_key_id: u64,
+}
+
 #[derive(Clone)]
 struct PartitionAnchor {
     tenant_id: String,
@@ -184,6 +231,7 @@ struct PartitionAnchor {
     next_prev_hash: String,
     current_epoch_id: u64,
     current_link_key_id: Option<u64>,
+    allow_epoch_transition: bool,
 }
 
 fn main() -> ExitCode {
@@ -262,6 +310,15 @@ fn run(args: &CliArgs) -> Result<String, String> {
         return Ok("no events in input (clean)".to_string());
     }
 
+    // A receipt directory is mutable transport, not freshness evidence. When
+    // bootstrap is requested, challenge the independently administered witness
+    // and require its signed latest snapshot to equal the sole supplied
+    // receipt for every partition. Older or omitted receipts therefore cannot
+    // select an anchor even if their historical signature remains valid.
+    if !bootstrap_anchors.is_empty() && !by_partition.is_empty() {
+        verify_latest_bootstrap(args, &bootstrap_anchors)?;
+    }
+
     let mut chains_verified: u64 = 0;
     let mut events_verified: u64 = 0;
 
@@ -287,6 +344,7 @@ fn run(args: &CliArgs) -> Result<String, String> {
             next_prev_hash: value.next_prev_hash.clone(),
             current_epoch_id: value.current_epoch_id,
             current_link_key_id: value.current_link_key_id,
+            allow_epoch_transition: true,
         });
         let first = lines.first().ok_or("sealed partition empty")?;
         let witness_matches: Vec<&PartitionAnchor> = bootstrap_anchors
@@ -361,6 +419,14 @@ fn verify_archive_object_binding(
             "archive object {path} is not in strict sequence order"
         ));
     }
+    if lines
+        .iter()
+        .any(|line| line.tenant_id != first.tenant_id || line.region != first.region)
+    {
+        return Err(format!(
+            "archive object {path} mixes tenant/region partitions"
+        ));
+    }
     if lines.iter().any(|line| {
         u64::try_from(line.enqueued_at_ms)
             .ok()
@@ -419,10 +485,12 @@ fn reject_duplicate_lines(lines: &[SealedArchiveLine]) -> Result<(), String> {
 }
 
 fn anchor_matches_first(anchor: &PartitionAnchor, first: &SealedArchiveLine) -> bool {
-    let same_link_key =
-        anchor.current_link_key_id.is_none() || anchor.current_link_key_id == first.link_key_id;
-    let same_epoch = anchor.current_epoch_id == first.epoch_id && same_link_key;
-    let rotated_epoch = anchor.current_epoch_id.checked_add(1) == Some(first.epoch_id)
+    let same_epoch = anchor.current_epoch_id == first.epoch_id
+        && anchor
+            .current_link_key_id
+            .is_none_or(|key_id| Some(key_id) == first.link_key_id);
+    let rotated_epoch = anchor.allow_epoch_transition
+        && anchor.current_epoch_id.checked_add(1) == Some(first.epoch_id)
         && anchor.current_link_key_id != first.link_key_id;
     anchor.tenant_id == first.tenant_id
         && anchor.region == first.region
@@ -458,6 +526,9 @@ fn parse_args(args: &[String]) -> Result<CliArgs, String> {
                 | "--witness-id"
                 | "--witness-public-keys"
                 | "--witness-receipts-dir"
+                | "--witness-url"
+                | "--witness-head-public-keys"
+                | "--witness-epoch-ledger-dir"
         ) {
             index = index
                 .checked_add(1)
@@ -479,6 +550,13 @@ fn parse_args(args: &[String]) -> Result<CliArgs, String> {
                 "--witness-public-keys" => parsed.witness_public_keys = Some(PathBuf::from(value)),
                 "--witness-receipts-dir" => {
                     parsed.witness_receipts_dir = Some(PathBuf::from(value))
+                }
+                "--witness-url" => parsed.witness_url = Some(value.clone()),
+                "--witness-head-public-keys" => {
+                    parsed.witness_head_public_keys = Some(PathBuf::from(value))
+                }
+                "--witness-epoch-ledger-dir" => {
+                    parsed.witness_epoch_ledger_dir = Some(PathBuf::from(value))
                 }
                 _ => unreachable!(),
             }
@@ -506,7 +584,10 @@ fn parse_args(args: &[String]) -> Result<CliArgs, String> {
         || parsed.checkpoint_key_id.is_some()
         || parsed.witness_id.is_some()
         || parsed.witness_public_keys.is_some()
-        || parsed.witness_receipts_dir.is_some();
+        || parsed.witness_receipts_dir.is_some()
+        || parsed.witness_url.is_some()
+        || parsed.witness_head_public_keys.is_some()
+        || parsed.witness_epoch_ledger_dir.is_some();
     if checkpoint_mode
         && (parsed.verify_day.is_none()
             || parsed.checkpoint_key_id.is_none()
@@ -519,9 +600,12 @@ fn parse_args(args: &[String]) -> Result<CliArgs, String> {
     }
     let witness_options = usize::from(parsed.witness_id.is_some())
         + usize::from(parsed.witness_public_keys.is_some())
-        + usize::from(parsed.witness_receipts_dir.is_some());
-    if witness_options != 0 && witness_options != 3 {
-        return Err("witness bootstrap requires id, public keys, and receipt directory".to_owned());
+        + usize::from(parsed.witness_receipts_dir.is_some())
+        + usize::from(parsed.witness_url.is_some())
+        + usize::from(parsed.witness_head_public_keys.is_some())
+        + usize::from(parsed.witness_epoch_ledger_dir.is_some());
+    if witness_options != 0 && witness_options != 6 {
+        return Err("witness bootstrap requires id, receipt keys, receipt directory, witness URL, head keys, and epoch ledger evidence".to_owned());
     }
     if let Some(id) = parsed.checkpoint_key_id {
         if id == 0 || parsed.keyring.get(id).is_none() {
@@ -692,6 +776,18 @@ fn verify_domain_signature(
         .map_err(|_| "witness signature verification failed".to_owned())
 }
 
+fn verify_direct_signature(
+    key: &ed25519_dalek::VerifyingKey,
+    payload: &[u8],
+    encoded: &str,
+    label: &str,
+) -> Result<(), String> {
+    let signature =
+        ed25519_dalek::Signature::from_bytes(&decode_canonical_base64::<64>(encoded, label)?);
+    key.verify(payload, &signature)
+        .map_err(|_| format!("{label} verification failed"))
+}
+
 fn parse_witness_keys(path: &Path) -> Result<BTreeMap<u64, ed25519_dalek::VerifyingKey>, String> {
     let raw = std::fs::read_to_string(path).map_err(|e| format!("read witness keys: {e}"))?;
     let entries: BTreeMap<String, String> =
@@ -716,17 +812,349 @@ fn parse_witness_keys(path: &Path) -> Result<BTreeMap<u64, ed25519_dalek::Verify
     Ok(keys)
 }
 
+fn verify_head_signature(
+    keys: &BTreeMap<u64, ed25519_dalek::VerifyingKey>,
+    head: &WitnessHeadV2,
+    head_bytes: &[u8],
+    encoded: &str,
+) -> Result<(), String> {
+    let key = keys
+        .get(&head.signing_key_id)
+        .ok_or("witness head signing key id absent from registry")?;
+    let signature = ed25519_dalek::Signature::from_bytes(&decode_canonical_base64::<64>(
+        encoded,
+        "witness head signature",
+    )?);
+    key.verify(head_bytes, &signature)
+        .map_err(|_| "witness head signature verification failed".to_owned())
+}
+
+fn json_u64(value: &serde_json::Value, field: &str) -> Result<u64, String> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| format!("epoch ledger {field} missing/non-integer"))
+}
+
+fn json_text<'a>(value: &'a serde_json::Value, field: &str) -> Result<&'a str, String> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| format!("epoch ledger {field} missing/non-text"))
+}
+
+fn load_epoch_ledger_binding(
+    args: &CliArgs,
+    head: &WitnessHeadV2,
+    head_keys: &BTreeMap<u64, ed25519_dalek::VerifyingKey>,
+) -> Result<Option<u64>, String> {
+    let Some(dir) = &args.witness_epoch_ledger_dir else {
+        return Err("witness bootstrap requires authenticated epoch ledger evidence".to_owned());
+    };
+    let mut selected: Option<StoredEpochLedger> = None;
+    for item in
+        std::fs::read_dir(dir).map_err(|e| format!("read witness epoch ledger directory: {e}"))?
+    {
+        let path = item
+            .map_err(|e| format!("read witness epoch ledger entry: {e}"))?
+            .path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let stored: StoredEpochLedger = serde_json::from_slice(
+            &std::fs::read(&path).map_err(|e| format!("read witness epoch ledger: {e}"))?,
+        )
+        .map_err(|_| "stored witness epoch ledger malformed")?;
+        if stored.tenant_id != head.tenant_id
+            || stored.region != head.region
+            || stored.epoch_id != head.epoch_id
+        {
+            continue;
+        }
+        if selected.is_some() {
+            return Err("witness epoch ledger contains duplicate/conflicting binding".to_owned());
+        }
+        selected = Some(stored);
+    }
+    let stored = selected.ok_or("witness epoch ledger omits the witnessed epoch")?;
+    if stored.epoch_ledger_hash.len() != 64
+        || !stored
+            .epoch_ledger_hash
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("witness epoch ledger hash is not lower-case hex".to_owned());
+    }
+    let entry_bytes = decode_canonical_base64_vec(&stored.entry_jcs_b64, "epoch ledger JCS")?;
+    let entry: serde_json::Value =
+        serde_json::from_slice(&entry_bytes).map_err(|_| "epoch ledger entry malformed")?;
+    if serde_jcs::to_vec(&entry).map_err(|_| "epoch ledger canonicalization failed")? != entry_bytes
+    {
+        return Err("epoch ledger entry is not exact RFC-8785 JCS".to_owned());
+    }
+    if stored.epoch_ledger_hash != head.epoch_ledger_hash
+        || domain_hash(EPOCH_LEDGER_DOMAIN, &entry_bytes) != stored.epoch_ledger_hash
+        || json_text(&entry, "tenant_id")? != head.tenant_id
+        || json_text(&entry, "region")? != head.region
+        || json_u64(&entry, "epoch_id")? != head.epoch_id
+        || json_u64(&entry, "ledger_sequence")? != head.epoch_ledger_sequence
+        || json_u64(&entry, "signing_key_id")? != head.signing_key_id
+        || stored.ledger_sequence != head.epoch_ledger_sequence
+        || stored.signing_key_id != head.signing_key_id
+    {
+        return Err("witness head does not bind the authenticated epoch ledger".to_owned());
+    }
+    let entry_link_key_id = entry.get("link_key_id").and_then(serde_json::Value::as_u64);
+    if entry_link_key_id != stored.link_key_id
+        || (head.epoch_id == 0 && entry_link_key_id.is_some())
+        || (head.epoch_id > 0 && entry_link_key_id.is_none())
+    {
+        return Err("epoch ledger hash does not bind link_key_id".to_owned());
+    }
+    let key = head_keys
+        .get(&stored.signing_key_id)
+        .ok_or("epoch ledger signing key id absent from registry")?;
+    verify_direct_signature(
+        key,
+        &entry_bytes,
+        &stored.entry_signature_b64,
+        "epoch ledger signature",
+    )?;
+    Ok(entry_link_key_id)
+}
+
+fn validate_stored_receipt(
+    stored: &StoredWitnessReceipt,
+    witness_id: &str,
+    keys: &BTreeMap<u64, ed25519_dalek::VerifyingKey>,
+    args: &CliArgs,
+    head_keys: &BTreeMap<u64, ed25519_dalek::VerifyingKey>,
+) -> Result<PartitionAnchor, String> {
+    let witness_bytes = decode_canonical_base64_vec(&stored.witness_jcs_b64, "witness record JCS")?;
+    let record: WitnessRecord =
+        serde_json::from_slice(&witness_bytes).map_err(|_| "witness record malformed")?;
+    if serde_jcs::to_vec(&record).map_err(|_| "witness record canonicalization failed")?
+        != witness_bytes
+        || record.witness_version != 1
+        || record.tenant_id != stored.tenant_id
+        || record.region != stored.region
+        || record.witness_sequence != stored.witness_sequence
+        || domain_hash(WITNESS_DOMAIN, &witness_bytes) != stored.witness_record_hash
+    {
+        return Err("witness record/hash/sequence binding failed".to_owned());
+    }
+    let receipt_bytes =
+        decode_canonical_base64_vec(&stored.receipt_jcs_b64, "witness receipt JCS")?;
+    let receipt: WitnessReceiptJcs =
+        serde_json::from_slice(&receipt_bytes).map_err(|_| "witness receipt malformed")?;
+    if serde_jcs::to_vec(&receipt).map_err(|_| "witness receipt canonicalization failed")?
+        != receipt_bytes
+        || receipt.receipt_version != 1
+        || receipt.witness_id != witness_id
+        || receipt.witness_key_id != stored.witness_key_id
+        || receipt.witness_sequence != stored.witness_sequence
+        || receipt.witness_record_hash != stored.witness_record_hash
+        || receipt.tenant_id != stored.tenant_id
+        || receipt.region != stored.region
+        || receipt.head_record_hash != record.head_record_hash
+        || receipt.previous_witness_hash != record.previous_witness_hash
+    {
+        return Err("witness receipt fields do not bind historical record".to_owned());
+    }
+    let receipt_key = keys
+        .get(&stored.witness_key_id)
+        .ok_or("witness receipt key id absent from registry")?;
+    verify_domain_signature(
+        receipt_key,
+        RECEIPT_DOMAIN,
+        &receipt_bytes,
+        &stored.receipt_signature_b64,
+    )?;
+    let head_bytes = decode_canonical_base64_vec(&record.head_message_b64, "witness head JCS")?;
+    let head: WitnessHeadV2 =
+        serde_json::from_slice(&head_bytes).map_err(|_| "witness head malformed")?;
+    let head_signature =
+        decode_canonical_base64::<64>(&record.head_signature_b64, "head signature")?;
+    if serde_jcs::to_vec(&head).map_err(|_| "witness head canonicalization failed")? != head_bytes
+        || head.head_message_version != 2
+        || head.tenant_id != record.tenant_id
+        || head.region != record.region
+        || domain_hash(
+            &[],
+            &[
+                HEAD_RECORD_DOMAIN,
+                &(u64::try_from(head_bytes.len())
+                    .map_err(|_| "head too large")?
+                    .to_be_bytes()),
+                &head_bytes,
+                &head_signature,
+            ]
+            .concat(),
+        ) != record.head_record_hash
+    {
+        return Err("witness head record binding failed".to_owned());
+    }
+    verify_head_signature(head_keys, &head, &head_bytes, &record.head_signature_b64)?;
+    let current_link_key_id = load_epoch_ledger_binding(args, &head, head_keys)?;
+    Ok(PartitionAnchor {
+        tenant_id: head.tenant_id,
+        region: head.region,
+        next_sequence: head.next_sequence,
+        next_prev_hash: head.head_hash,
+        current_epoch_id: head.epoch_id,
+        current_link_key_id,
+        allow_epoch_transition: false,
+    })
+}
+
+fn challenge_latest(
+    args: &CliArgs,
+    tenant_id: &str,
+    region: &str,
+    keys: &BTreeMap<u64, ed25519_dalek::VerifyingKey>,
+    head_keys: &BTreeMap<u64, ed25519_dalek::VerifyingKey>,
+) -> Result<PartitionAnchor, String> {
+    let origin = args
+        .witness_url
+        .as_deref()
+        .ok_or("witness latest challenge URL is missing")?;
+    let token = std::env::var("AUDIT_WITNESS_APPEND_TOKEN")
+        .map_err(|_| "witness latest challenge token is missing")?;
+    let origin = url::Url::parse(origin).map_err(|_| "witness latest URL is malformed")?;
+    if origin.scheme() != "https"
+        || origin.host_str().is_none()
+        || origin.port().is_some()
+        || origin.path() != "/"
+        || origin.query().is_some()
+        || origin.fragment().is_some()
+    {
+        return Err("witness latest URL must be a pinned HTTPS origin".to_owned());
+    }
+    let mut challenge = [0_u8; 32];
+    getrandom::fill(&mut challenge).map_err(|_| "witness latest challenge unavailable")?;
+    let challenge_b64 = base64::engine::general_purpose::STANDARD.encode(challenge);
+    let request = WitnessLatestRequest {
+        challenge_b64: &challenge_b64,
+        latest_request_version: 1,
+        region,
+        tenant_id,
+    };
+    let request_bytes =
+        serde_jcs::to_vec(&request).map_err(|_| "canonicalize witness latest request")?;
+    let endpoint = origin
+        .join("v1/audit-chain/head-witness/latest")
+        .map_err(|_| "join witness latest URL")?;
+    let client = reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|_| "build witness latest client")?;
+    let response = client
+        .post(endpoint)
+        .bearer_auth(token)
+        .header(reqwest::header::CONTENT_TYPE, "application/jcs+json")
+        .body(request_bytes)
+        .send()
+        .map_err(|_| "witness latest transport failed")?;
+    if response.status() != reqwest::StatusCode::OK {
+        return Err(format!(
+            "witness latest returned HTTP {}",
+            response.status()
+        ));
+    }
+    let body = response
+        .bytes()
+        .map_err(|_| "read witness latest response")?;
+    if body.len() > 32 * 1024 {
+        return Err("witness latest response exceeds size limit".to_owned());
+    }
+    let envelope: WitnessLatestEnvelope =
+        serde_json::from_slice(&body).map_err(|_| "witness latest envelope malformed")?;
+    let latest_bytes = decode_canonical_base64_vec(&envelope.latest_jcs_b64, "witness latest JCS")?;
+    let latest: WitnessLatestJcs =
+        serde_json::from_slice(&latest_bytes).map_err(|_| "witness latest JCS malformed")?;
+    if serde_jcs::to_vec(&latest).map_err(|_| "witness latest canonicalization failed")?
+        != latest_bytes
+        || latest.latest_version != 1
+        || latest.observed_at_ms > 9_007_199_254_740_991
+        || latest.witness_key_id == 0
+        || latest.challenge_b64 != challenge_b64
+        || latest.witness_id != args.witness_id.as_deref().unwrap_or_default()
+        || latest.tenant_id != tenant_id
+        || latest.region != region
+    {
+        return Err("witness latest does not bind the fresh challenge".to_owned());
+    }
+    let latest_key = keys
+        .get(&latest.witness_key_id)
+        .ok_or("witness latest signing key id absent from registry")?;
+    verify_domain_signature(
+        latest_key,
+        LATEST_DOMAIN,
+        &latest_bytes,
+        &envelope.latest_signature_b64,
+    )?;
+    let stored = latest
+        .latest
+        .ok_or("witness latest omitted the current receipt")?;
+    validate_stored_receipt(
+        &stored,
+        args.witness_id.as_deref().unwrap_or_default(),
+        keys,
+        args,
+        head_keys,
+    )
+}
+
+fn verify_latest_bootstrap(
+    args: &CliArgs,
+    anchors: &BTreeMap<(String, String), Vec<PartitionAnchor>>,
+) -> Result<(), String> {
+    let (Some(keys_path), Some(head_keys_path)) =
+        (&args.witness_public_keys, &args.witness_head_public_keys)
+    else {
+        return Err("witness latest challenge requires both public-key registries".to_owned());
+    };
+    let keys = parse_witness_keys(keys_path)?;
+    let head_keys = parse_witness_keys(head_keys_path)?;
+    for ((tenant_id, region), candidates) in anchors {
+        if candidates.len() != 1 {
+            return Err(format!(
+                "witness receipt set omits latest or contains extra receipts for {tenant_id}/{region}"
+            ));
+        }
+        let latest = challenge_latest(args, tenant_id, region, &keys, &head_keys)?;
+        let candidate = candidates
+            .first()
+            .ok_or("witness bootstrap candidate disappeared")?;
+        if latest.tenant_id != candidate.tenant_id
+            || latest.region != candidate.region
+            || latest.next_sequence != candidate.next_sequence
+            || latest.next_prev_hash != candidate.next_prev_hash
+            || latest.current_epoch_id != candidate.current_epoch_id
+            || latest.current_link_key_id != candidate.current_link_key_id
+        {
+            return Err(format!(
+                "witness latest is ahead, stale, omitted, or divergent for {tenant_id}/{region}"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn load_bootstrap_anchors(
     args: &CliArgs,
 ) -> Result<BTreeMap<(String, String), Vec<PartitionAnchor>>, String> {
-    let (Some(witness_id), Some(keys_path), Some(receipts_dir)) = (
+    let (Some(witness_id), Some(keys_path), Some(receipts_dir), Some(head_keys_path)) = (
         &args.witness_id,
         &args.witness_public_keys,
         &args.witness_receipts_dir,
+        &args.witness_head_public_keys,
     ) else {
         return Ok(BTreeMap::new());
     };
     let keys = parse_witness_keys(keys_path)?;
+    let head_keys = parse_witness_keys(head_keys_path)?;
     let mut anchors = BTreeMap::new();
     let mut seen_receipts = std::collections::BTreeSet::new();
     for item in std::fs::read_dir(receipts_dir)
@@ -741,70 +1169,7 @@ fn load_bootstrap_anchors(
         let bytes = std::fs::read(&path).map_err(|e| format!("read witness receipt: {e}"))?;
         let stored: StoredWitnessReceipt =
             serde_json::from_slice(&bytes).map_err(|_| "stored witness receipt malformed")?;
-        let witness_bytes =
-            decode_canonical_base64_vec(&stored.witness_jcs_b64, "witness record JCS")?;
-        let record: WitnessRecord =
-            serde_json::from_slice(&witness_bytes).map_err(|_| "witness record malformed")?;
-        if serde_jcs::to_vec(&record).map_err(|_| "witness record canonicalization failed")?
-            != witness_bytes
-            || record.witness_version != 1
-            || record.tenant_id != stored.tenant_id
-            || record.region != stored.region
-            || record.witness_sequence != stored.witness_sequence
-            || domain_hash(WITNESS_DOMAIN, &witness_bytes) != stored.witness_record_hash
-        {
-            return Err("witness record/hash/sequence binding failed".to_owned());
-        }
-        let receipt_bytes =
-            decode_canonical_base64_vec(&stored.receipt_jcs_b64, "witness receipt JCS")?;
-        let receipt: WitnessReceiptJcs =
-            serde_json::from_slice(&receipt_bytes).map_err(|_| "witness receipt malformed")?;
-        if serde_jcs::to_vec(&receipt).map_err(|_| "witness receipt canonicalization failed")?
-            != receipt_bytes
-            || receipt.receipt_version != 1
-            || receipt.witness_id != *witness_id
-            || receipt.witness_key_id != stored.witness_key_id
-            || receipt.witness_sequence != stored.witness_sequence
-            || receipt.witness_record_hash != stored.witness_record_hash
-            || receipt.tenant_id != stored.tenant_id
-            || receipt.region != stored.region
-            || receipt.head_record_hash != record.head_record_hash
-            || receipt.previous_witness_hash != record.previous_witness_hash
-        {
-            return Err("witness receipt fields do not bind historical record".to_owned());
-        }
-        let receipt_key = keys
-            .get(&stored.witness_key_id)
-            .ok_or("witness receipt key id absent from registry")?;
-        verify_domain_signature(
-            receipt_key,
-            RECEIPT_DOMAIN,
-            &receipt_bytes,
-            &stored.receipt_signature_b64,
-        )?;
-        let head_bytes = decode_canonical_base64_vec(&record.head_message_b64, "witness head JCS")?;
-        let head: WitnessHeadV2 =
-            serde_json::from_slice(&head_bytes).map_err(|_| "witness head malformed")?;
-        let head_signature =
-            decode_canonical_base64::<64>(&record.head_signature_b64, "head signature")?;
-        let mut head_material = Vec::new();
-        head_material.extend_from_slice(HEAD_RECORD_DOMAIN);
-        head_material.extend_from_slice(
-            &u64::try_from(head_bytes.len())
-                .map_err(|_| "head too large")?
-                .to_be_bytes(),
-        );
-        head_material.extend_from_slice(&head_bytes);
-        head_material.extend_from_slice(&head_signature);
-        if serde_jcs::to_vec(&head).map_err(|_| "witness head canonicalization failed")?
-            != head_bytes
-            || head.head_message_version != 2
-            || head.tenant_id != record.tenant_id
-            || head.region != record.region
-            || domain_hash(&[], &head_material) != record.head_record_hash
-        {
-            return Err("witness head record binding failed".to_owned());
-        }
+        let anchor = validate_stored_receipt(&stored, witness_id, &keys, args, &head_keys)?;
         let receipt_identity = (
             stored.tenant_id.clone(),
             stored.region.clone(),
@@ -815,16 +1180,8 @@ fn load_bootstrap_anchors(
                 "witness receipt directory contains a duplicate/replayed sequence".to_owned(),
             );
         }
-        let anchor = PartitionAnchor {
-            tenant_id: head.tenant_id.clone(),
-            region: head.region.clone(),
-            next_sequence: head.next_sequence,
-            next_prev_hash: head.head_hash,
-            current_epoch_id: head.epoch_id,
-            current_link_key_id: None,
-        };
         anchors
-            .entry((head.tenant_id, head.region))
+            .entry((anchor.tenant_id.clone(), anchor.region.clone()))
             .or_insert_with(Vec::new)
             .push(anchor);
     }
@@ -1177,6 +1534,7 @@ mod tests {
             next_prev_hash: ChainHash::genesis().to_hex(),
             current_epoch_id: 0,
             current_link_key_id: None,
+            allow_epoch_transition: true,
         }
     }
 
@@ -1188,6 +1546,7 @@ mod tests {
             next_prev_hash: value.next_prev_hash.clone(),
             current_epoch_id: value.current_epoch_id,
             current_link_key_id: value.current_link_key_id,
+            allow_epoch_transition: true,
         }
     }
 
@@ -1452,6 +1811,16 @@ mod tests {
             b"legacy-object",
         )
         .is_err_and(|e| e.contains("authenticated row key")));
+        let mut mixed_partition = first.clone();
+        mixed_partition.sequence_number = 1;
+        mixed_partition.tenant_id = "other-tenant".to_owned();
+        assert!(verify_archive_object_binding(
+            &correct,
+            &[first.clone(), mixed_partition],
+            "1970-01-01",
+            b"legacy-object",
+        )
+        .is_err_and(|e| e.contains("mixes tenant/region partitions")));
 
         let keyring = LinkKeyring::parse_json(&format!(r#"{{"7":"{}"}}"#, "ab".repeat(32)))
             .map_err(|e| e.to_string())?;
@@ -1485,9 +1854,30 @@ mod tests {
         use ed25519_dalek::{Signer, SigningKey};
 
         let signing = SigningKey::from_bytes(&[9_u8; 32]);
+        let head_signing = SigningKey::from_bytes(&[10_u8; 32]);
+        let ledger_entry = serde_json::json!({
+            "algorithm_id": 1,
+            "checkpoint_type": "epoch-transition",
+            "checkpoint_version": 1,
+            "epoch_id": 1,
+            "from_epoch_id": 0,
+            "from_head_hash": "03".repeat(32),
+            "from_next_sequence": 4,
+            "ledger_sequence": 1,
+            "ledger_version": 1,
+            "link_key_id": 7,
+            "previous_ledger_hash": "04".repeat(32),
+            "region": "weur",
+            "signing_key_id": 9,
+            "tenant_id": "tenant-test",
+            "to_start_prev_hash": "03".repeat(32),
+            "to_start_sequence": 4
+        });
+        let ledger_jcs = serde_jcs::to_vec(&ledger_entry).map_err(|e| e.to_string())?;
+        let ledger_hash = domain_hash(EPOCH_LEDGER_DOMAIN, &ledger_jcs);
         let head = WitnessHeadV2 {
             epoch_id: 1,
-            epoch_ledger_hash: "05".repeat(32),
+            epoch_ledger_hash: ledger_hash.clone(),
             epoch_ledger_sequence: 1,
             head_hash: "03".repeat(32),
             head_message_version: 2,
@@ -1497,7 +1887,16 @@ mod tests {
             tenant_id: "tenant-test".to_owned(),
         };
         let head_jcs = serde_jcs::to_vec(&head).map_err(|e| e.to_string())?;
-        let head_signature = [8_u8; 64];
+        let head_signature = head_signing.sign(&head_jcs).to_bytes();
+        let mut head_keys = BTreeMap::new();
+        head_keys.insert(9, head_signing.verifying_key());
+        assert!(verify_head_signature(
+            &head_keys,
+            &head,
+            &head_jcs,
+            &base64::engine::general_purpose::STANDARD.encode([0_u8; 64]),
+        )
+        .is_err());
         let mut head_material = Vec::new();
         head_material.extend_from_slice(HEAD_RECORD_DOMAIN);
         head_material.extend_from_slice(&(head_jcs.len() as u64).to_be_bytes());
@@ -1563,10 +1962,42 @@ mod tests {
             ),
         )
         .map_err(|e| e.to_string())?;
+        let head_keys_path = dir.join("head-keys.json");
+        std::fs::write(
+            &head_keys_path,
+            format!(
+                r#"{{"9":"{}"}}"#,
+                base64::engine::general_purpose::STANDARD
+                    .encode(head_signing.verifying_key().to_bytes())
+            ),
+        )
+        .map_err(|e| e.to_string())?;
+        let ledger_dir = dir.join("ledger");
+        std::fs::create_dir_all(&ledger_dir).map_err(|e| e.to_string())?;
+        let stored_ledger = StoredEpochLedger {
+            entry_jcs_b64: base64::engine::general_purpose::STANDARD.encode(&ledger_jcs),
+            entry_signature_b64: base64::engine::general_purpose::STANDARD
+                .encode(head_signing.sign(&ledger_jcs).to_bytes()),
+            tenant_id: "tenant-test".to_owned(),
+            region: "weur".to_owned(),
+            epoch_id: 1,
+            ledger_sequence: 1,
+            epoch_ledger_hash: ledger_hash,
+            link_key_id: Some(7),
+            signing_key_id: 9,
+        };
+        let ledger_path = ledger_dir.join("epoch.json");
+        std::fs::write(
+            &ledger_path,
+            serde_jcs::to_vec(&stored_ledger).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
         let args = CliArgs {
             witness_id: Some("security-witness".to_owned()),
             witness_public_keys: Some(keys_path),
             witness_receipts_dir: Some(receipts),
+            witness_head_public_keys: Some(head_keys_path),
+            witness_epoch_ledger_dir: Some(ledger_dir),
             ..CliArgs::default()
         };
         let anchors = load_bootstrap_anchors(&args)?;
@@ -1587,6 +2018,21 @@ mod tests {
         assert!(load_bootstrap_anchors(&args)
             .is_err_and(|e| e.contains("duplicate/") && e.contains("replayed sequence")));
         std::fs::remove_file(receipts.join("replayed.json")).map_err(|e| e.to_string())?;
+        let mut missing_link_binding = stored_ledger.clone();
+        missing_link_binding.link_key_id = None;
+        std::fs::write(
+            &ledger_path,
+            serde_jcs::to_vec(&missing_link_binding).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        assert!(
+            load_bootstrap_anchors(&args).is_err_and(|e| e.contains("does not bind link_key_id"))
+        );
+        std::fs::write(
+            &ledger_path,
+            serde_jcs::to_vec(&stored_ledger).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
         let mut tampered = std::fs::read(&receipt_path).map_err(|e| e.to_string())?;
         let last = tampered.last_mut().ok_or("empty receipt")?;
         *last ^= 1;
