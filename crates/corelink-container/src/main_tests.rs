@@ -296,6 +296,7 @@ fn b126_t1_files_remain_below_the_1000_line_ceiling() {
         ),
         ("main.rs", include_str!("main.rs")),
         ("main_boot.rs", include_str!("main_boot.rs")),
+        ("main_byok.rs", include_str!("main_byok.rs")),
         ("main_tests.rs", include_str!("main_tests.rs")),
         (
             "routes/signup_support.rs",
@@ -342,6 +343,7 @@ fn b126_t1_files_remain_below_the_1000_line_ceiling() {
 fn b126_t1_submodule_wiring_is_explicit_and_load_bearing() {
     let main = include_str!("main.rs");
     assert!(main.contains("#[path = \"main_boot.rs\"]\nmod boot;"));
+    assert!(main.contains("#[path = \"main_byok.rs\"]\nmod byok;"));
     assert!(main.contains("#[path = \"main_tests.rs\"]\nmod tests;"));
     for (owner, path) in [
         (
