@@ -155,6 +155,8 @@ def assess(files: dict[str, str]) -> None:
         "daily verifier selects exact predecessor": "authenticated external bootstrap anchor is absent or ambiguous",
         "daily verifier rejects duplicate sequence": "duplicate sequence number",
         "daily verifier rejects duplicate row": "duplicate row id",
+        "daily verifier rejects witness replay": "duplicate/replayed sequence",
+        "daily verifier preserves object key boundaries": "real key boundary",
         "daily verifier binds every row to day": "contains a cross-day row",
         "daily verifier binds source object key": "archive object path does not match authenticated row key",
         "daily verifier authenticates keyed object suffix": "domain_hash(&[], object_bytes)",
@@ -266,6 +268,8 @@ def mutation_self_test(files: dict[str, str]) -> None:
             "Ok::<(), String>(()) // receipt signature bypass",
         ),
         ("duplicate sequence", "duplicate sequence number", "duplicate sequence accepted"),
+        ("witness replay", "duplicate/replayed sequence", "witness replay accepted"),
+        ("object key boundary", "real key boundary", "object key suffix accepted"),
         ("cross-day copy", "contains a cross-day row", "cross-day row accepted"),
         ("keyed object suffix", "domain_hash(&[], object_bytes)", "\"00\".repeat(32)"),
         ("empty checkpoint publish", "elif [[ -s \"${CHECKPOINT_OUT}\" ]]", "elif [[ -f \"${CHECKPOINT_OUT}\" ]]"),
@@ -274,7 +278,7 @@ def mutation_self_test(files: dict[str, str]) -> None:
     for label, old, new in mutations:
         if label in {"empty checkpoint publish", "silent verifier nonzero"}:
             target = "daily_workflow"
-        elif label in {"daily mixed epochs", "external bootstrap", "bootstrap signature", "duplicate sequence", "cross-day copy", "keyed object suffix", "checkpoint MAC", "checkpoint replay", "checkpoint immutable local publish"}:
+        elif label in {"daily mixed epochs", "external bootstrap", "bootstrap signature", "duplicate sequence", "witness replay", "object key boundary", "cross-day copy", "keyed object suffix", "checkpoint MAC", "checkpoint replay", "checkpoint immutable local publish"}:
             target = "daily_verifier"
         elif label == "historical key custody":
             target = "secret_custody"

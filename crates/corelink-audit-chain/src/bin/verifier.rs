@@ -350,6 +350,17 @@ fn verify_archive_object_binding(
     let first = lines
         .first()
         .ok_or_else(|| "archive object is empty".to_owned())?;
+    // The object producer emits chain order.  Keep this check here, before
+    // partition-wide sorting, so the first row used to derive the immutable
+    // object key cannot be selected by reordering hostile NDJSON lines.
+    if lines
+        .windows(2)
+        .any(|pair| pair[0].sequence_number >= pair[1].sequence_number)
+    {
+        return Err(format!(
+            "archive object {path} is not in strict sequence order"
+        ));
+    }
     if lines.iter().any(|line| {
         u64::try_from(line.enqueued_at_ms)
             .ok()
@@ -376,7 +387,14 @@ fn verify_archive_object_binding(
     } else {
         base_key
     };
-    if !path.replace('\\', "/").ends_with(&expected_key) {
+    // The verifier is handed a local staging path (`.../chunks/<R2 key>`), so
+    // compare the final key component rather than requiring an absolute path.
+    // `ends_with(expected_key)` alone is insufficient: a path such as
+    // `copiedaudit/...` would pass without containing a real key boundary.
+    let normalized_path = path.replace('\\', "/");
+    let key_matches =
+        normalized_path == expected_key || normalized_path.ends_with(&format!("/{expected_key}"));
+    if !key_matches {
         return Err(format!(
             "archive object path does not match authenticated row key: {path}"
         ));
@@ -710,6 +728,7 @@ fn load_bootstrap_anchors(
     };
     let keys = parse_witness_keys(keys_path)?;
     let mut anchors = BTreeMap::new();
+    let mut seen_receipts = std::collections::BTreeSet::new();
     for item in std::fs::read_dir(receipts_dir)
         .map_err(|e| format!("read witness receipt directory: {e}"))?
     {
@@ -785,6 +804,16 @@ fn load_bootstrap_anchors(
             || domain_hash(&[], &head_material) != record.head_record_hash
         {
             return Err("witness head record binding failed".to_owned());
+        }
+        let receipt_identity = (
+            stored.tenant_id.clone(),
+            stored.region.clone(),
+            stored.witness_sequence,
+        );
+        if !seen_receipts.insert(receipt_identity) {
+            return Err(
+                "witness receipt directory contains a duplicate/replayed sequence".to_owned(),
+            );
         }
         let anchor = PartitionAnchor {
             tenant_id: head.tenant_id.clone(),
@@ -1416,6 +1445,13 @@ mod tests {
             b"legacy-object",
         )
         .is_err_and(|e| e.contains("authenticated row key")));
+        assert!(verify_archive_object_binding(
+            &format!("copied{correct}"),
+            std::slice::from_ref(&first),
+            "1970-01-01",
+            b"legacy-object",
+        )
+        .is_err_and(|e| e.contains("authenticated row key")));
 
         let keyring = LinkKeyring::parse_json(&format!(r#"{{"7":"{}"}}"#, "ab".repeat(32)))
             .map_err(|e| e.to_string())?;
@@ -1547,6 +1583,10 @@ mod tests {
         assert!(!anchor_matches_first(anchor, &first));
         first.sequence_number = 5;
         assert!(!anchor_matches_first(anchor, &first));
+        std::fs::copy(&receipt_path, receipts.join("replayed.json")).map_err(|e| e.to_string())?;
+        assert!(load_bootstrap_anchors(&args)
+            .is_err_and(|e| e.contains("duplicate/") && e.contains("replayed sequence")));
+        std::fs::remove_file(receipts.join("replayed.json")).map_err(|e| e.to_string())?;
         let mut tampered = std::fs::read(&receipt_path).map_err(|e| e.to_string())?;
         let last = tampered.last_mut().ok_or("empty receipt")?;
         *last ^= 1;
