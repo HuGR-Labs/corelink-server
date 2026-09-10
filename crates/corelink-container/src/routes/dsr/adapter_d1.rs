@@ -45,8 +45,8 @@ use corelink_privacy_erasure_worker::backends::{
 use corelink_privacy_erasure_worker::error::ErasureBackendError;
 use corelink_privacy_erasure_worker::event::{BackendErasureOutcome, BackendKind};
 
-use super::d1util::{col_str, d1_query_blocking, scalar_count};
-use crate::storage::d1_http::{D1HttpClient, D1Row};
+use super::d1util::{col_str, d1_batch_blocking, d1_query_blocking, scalar_count};
+use crate::storage::d1_http::{D1BatchStatement, D1HttpClient, D1Row};
 
 /// Erase-set tables keyed directly by a `tenant_id` column (incl.
 /// tenant-leftmost composite PKs, where `WHERE tenant_id = ?` is exact).
@@ -105,6 +105,31 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     "byok_envelope",
     "tenant_byok_config",
     "tenant_byok_secret",
+    // BYOK transition/activation ledgers (migrations 0118-0121). These are
+    // operational tenant state, not retained evidence, and must be erased.
+    // FK children precede their guards/intents/fences when D1 FK enforcement
+    // is enabled by a test or a future production path.
+    "tenant_byok_config_history",
+    "tenant_byok_secret_history",
+    "byok_activation_key_health",
+    "byok_activation_source_object",
+    "byok_activation_source_capture",
+    "byok_transition_commit_guard",
+    "byok_control_outcome",
+    "byok_backfill_run",
+    "byok_logical_object_generation",
+    "byok_logical_object_publication",
+    "byok_activation_guard",
+    "byok_purge_identity_quarantine",
+    // B-083 purge ledger. Both the identity quarantine and
+    // `byok_object_purge_cause` are FK children of the purge item. The former
+    // uses the direct tenant lane; the latter is deleted in the bespoke
+    // child+parent batch below.
+    "byok_object_purge_item",
+    "byok_activation_intent",
+    "byok_tenant_gate",
+    "byok_data_intent",
+    "byok_transition_fence",
     "adapter_oci_kv",
     // CAA-360 #4: tenant-linked NPS/CSAT PII (recipient_hash); `tenant_id`-keyed
     // (migration 0046). Not a legal-retention category, so it IS erased on a DSR
@@ -256,6 +281,10 @@ pub(super) const RETAIN_SET: &[&str] = &[
     "audit_chain_epoch_ledger",
     "audit_chain_epoch",
     "audit_chain_archive_manifest",
+    // Audit-chain repair/witness receipts (migrations 0123/0124) are
+    // integrity evidence and remain under the lawful audit-retention basis.
+    "audit_chain_legacy_tail_resolution",
+    "audit_chain_witness_receipt",
     // Durable money-path audit-before-mutation record (migr. 0092): the
     // tier-select orchestration's `tier_select_attempted` / `dpa_first_violation`
     // / `stripe_checkout_session_created` / `tier_activated_free` events. Holds
@@ -346,6 +375,16 @@ pub(super) const SPECIAL_ERASE_TABLES: &[&str] = &[
     "tenant",
 ];
 
+/// `byok_object_purge_cause` is durable provenance for a purge item, but it
+/// deliberately has no `tenant_id` of its own. Its `purge_id` foreign key is
+/// also not `ON DELETE CASCADE`, so it must be removed through the tenant-
+/// keyed parent before `byok_object_purge_item` is deleted. Keep this alias
+/// outside `TENANT_ID_TABLES`: putting it in that slice would generate an
+/// invalid `WHERE tenant_id = ?1` query and leave the FK child in place.
+const BYOK_PURGE_CAUSE_TABLE: &str = "byok_object_purge_cause";
+const BYOK_PURGE_CAUSE_PARENT_KEY: &str = "purge_id";
+const BYOK_PURGE_PARENT_TABLE: &str = "byok_object_purge_item";
+
 /// **Every** live, tenant-scoped D1 table (keyed by `tenant_id`, `namespace`,
 /// or an opaque principal id), derived from `migrations/d1/*.sql`. Transient
 /// table-rebuild artifacts (`*_new`, immediately `DROP`+`RENAME`'d away by
@@ -379,6 +418,23 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "byok_envelope",
     "tenant_byok_config",
     "tenant_byok_secret",
+    "tenant_byok_config_history",
+    "tenant_byok_secret_history",
+    "byok_activation_key_health",
+    "byok_activation_source_object",
+    "byok_activation_source_capture",
+    "byok_transition_commit_guard",
+    "byok_control_outcome",
+    "byok_backfill_run",
+    "byok_logical_object_generation",
+    "byok_logical_object_publication",
+    "byok_activation_guard",
+    "byok_purge_identity_quarantine",
+    "byok_object_purge_item",
+    "byok_activation_intent",
+    "byok_tenant_gate",
+    "byok_data_intent",
+    "byok_transition_fence",
     "adapter_oci_kv",
     "survey_responses",
     "tenant_quota",
@@ -430,6 +486,8 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "audit_chain_epoch_ledger",
     "audit_chain_epoch",
     "audit_chain_archive_manifest",
+    "audit_chain_legacy_tail_resolution",
+    "audit_chain_witness_receipt",
     "tier_select_audit_events",
     "stripe_billing_audit_events",
     "sla_monthly_observations",
@@ -640,6 +698,62 @@ impl D1EraseAdapter {
         Ok(n)
     }
 
+    /// Count durable purge-cause rows through their tenant-keyed parent.
+    ///
+    /// `byok_object_purge_cause` cannot be placed in [`TENANT_ID_TABLES`]: it
+    /// has no `tenant_id` column. The join is the only safe tenant scope and
+    /// also doubles as a schema/FK preflight before any parent delete.
+    fn count_byok_purge_causes(&self, tid: &str) -> Result<u64, ErasureBackendError> {
+        let sql = format!(
+            "SELECT COUNT(*) AS n FROM {BYOK_PURGE_CAUSE_TABLE} c \
+             JOIN {BYOK_PURGE_PARENT_TABLE} p ON p.purge_id=c.{BYOK_PURGE_CAUSE_PARENT_KEY} \
+             WHERE p.tenant_id = ?1"
+        );
+        let rows = d1_query_blocking(&self.d1, &sql, vec![json!(tid)])
+            .map_err(ErasureBackendError::Transport)?;
+        Ok(scalar_count(&rows, "n"))
+    }
+
+    /// Delete purge-cause children and their `byok_object_purge_item` parent
+    /// in one D1 transaction. The child FK has no cascade, and D1/SQLite may
+    /// enforce FKs on the production REST path; deleting the parent first
+    /// would therefore fail. Keeping both DELETEs in one batch also prevents
+    /// a transport error between them from leaving a half-erased purge ledger.
+    /// The post-delete counts are intentional: a successful transport response
+    /// is not accepted as proof that the mutation removed every row, so the
+    /// adapter fails closed if either side remains.
+    fn delete_byok_purge_causes_and_items(&self, tid: &str) -> Result<u64, ErasureBackendError> {
+        let causes = self.count_byok_purge_causes(tid)?;
+        let items = self.count(BYOK_PURGE_PARENT_TABLE, "tenant_id", tid)?;
+        if causes == 0 && items == 0 {
+            return Ok(0);
+        }
+
+        let child_sql = format!(
+            "DELETE FROM {BYOK_PURGE_CAUSE_TABLE} \
+             WHERE {BYOK_PURGE_CAUSE_PARENT_KEY} IN \
+                 (SELECT purge_id FROM {BYOK_PURGE_PARENT_TABLE} WHERE tenant_id = ?1)"
+        );
+        let parent_sql = format!("DELETE FROM {BYOK_PURGE_PARENT_TABLE} WHERE tenant_id = ?1");
+        d1_batch_blocking(
+            &self.d1,
+            vec![
+                D1BatchStatement::new(child_sql, vec![json!(tid)]),
+                D1BatchStatement::new(parent_sql, vec![json!(tid)]),
+            ],
+        )
+        .map_err(ErasureBackendError::Transport)?;
+
+        let remaining = self.count_byok_purge_causes(tid)?;
+        let remaining_items = self.count(BYOK_PURGE_PARENT_TABLE, "tenant_id", tid)?;
+        if remaining != 0 || remaining_items != 0 {
+            return Err(ErasureBackendError::Transport(format!(
+                "{BYOK_PURGE_CAUSE_TABLE}/{BYOK_PURGE_PARENT_TABLE} cleanup incomplete for tenant; refusing DSR completion ({remaining} causes, {remaining_items} items remain)"
+            )));
+        }
+        Ok(causes.saturating_add(items))
+    }
+
     /// `clerk_provisioning_lock` is keyed by `tenant.clerk_user_id`, not by
     /// `tenant_id`; the caller must obtain the principal before deleting the
     /// tenant root. The lock is transient provisioning state and is erased
@@ -714,6 +828,15 @@ impl BackendErasureAdapter for D1EraseAdapter {
         // This is an always-on Result path, not a debug assertion: release
         // builds must fail closed before the first mutation as well.
         ensure_tenant_keyed_tables_classified().map_err(ErasureBackendError::Transport)?;
+        // The cause ledger is scoped through this tenant-keyed parent. If a
+        // future registry edit drops the parent, the bespoke child cleanup
+        // below would otherwise be unreachable and the erasure could falsely
+        // proceed while leaving durable provenance behind.
+        if !TENANT_ID_TABLES.contains(&BYOK_PURGE_PARENT_TABLE) {
+            return Err(ErasureBackendError::Transport(format!(
+                "{BYOK_PURGE_PARENT_TABLE} missing from DSR erase registry; refusing bespoke {BYOK_PURGE_CAUSE_TABLE} cleanup"
+            )));
+        }
         let tid = tenant_id.to_string();
         // MUST precede every mutation, including child cleanup. A missing or
         // malformed residency pin fails closed and leaves the tenant intact.
@@ -726,6 +849,14 @@ impl BackendErasureAdapter for D1EraseAdapter {
 
         // Group A — tenant_id-keyed child tables.
         for t in TENANT_ID_TABLES {
+            // `byok_object_purge_cause` has no tenant_id. Remove this FK child
+            // immediately before its tenant-keyed parent reaches the loop;
+            // the batch also deletes that parent, so do not issue a second
+            // non-transactional parent DELETE below.
+            if *t == BYOK_PURGE_PARENT_TABLE {
+                total = total.saturating_add(self.delete_byok_purge_causes_and_items(&tid)?);
+                continue;
+            }
             total = total.saturating_add(self.count_then_delete(t, "tenant_id", &tid)?);
         }
         // Group B — namespace-keyed (tenant UUID; never '_public').

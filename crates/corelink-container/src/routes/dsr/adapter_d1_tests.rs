@@ -93,6 +93,59 @@ fn clerk_lookup_fails_closed_for_missing_or_blank_key() {
     );
 }
 
+/// The purge-cause ledger is an FK child whose tenant scope is an alias
+/// through `byok_object_purge_item`, not a direct `tenant_id` predicate. This
+/// guard is deliberately mutation-sensitive: moving the child into the
+/// direct tenant loop would emit `WHERE tenant_id = ?1` against a table that
+/// has no such column, while dropping the bespoke constants would permit a
+/// parent-first delete and a production FK failure.
+#[test]
+fn byok_purge_cause_is_a_bespoke_parent_joined_child() {
+    assert_eq!(BYOK_PURGE_CAUSE_TABLE, "byok_object_purge_cause");
+    assert_eq!(BYOK_PURGE_CAUSE_PARENT_KEY, "purge_id");
+    assert_eq!(BYOK_PURGE_PARENT_TABLE, "byok_object_purge_item");
+    assert!(!TENANT_ID_TABLES.contains(&BYOK_PURGE_CAUSE_TABLE));
+    assert!(!SPECIAL_ERASE_TABLES.contains(&BYOK_PURGE_CAUSE_TABLE));
+    let parent = TENANT_ID_TABLES
+        .iter()
+        .position(|&t| t == BYOK_PURGE_PARENT_TABLE)
+        .unwrap();
+    assert_eq!(classification_count(BYOK_PURGE_PARENT_TABLE), 1);
+    assert!(
+        TENANT_ID_TABLES
+            .get(parent)
+            .is_some_and(|table| *table == BYOK_PURGE_PARENT_TABLE),
+        "purge item parent must remain in the direct tenant_id registry lane"
+    );
+}
+
+#[test]
+fn byok_purge_parent_is_deleted_by_the_atomic_bespoke_lane() {
+    let quarantine = TENANT_ID_TABLES
+        .iter()
+        .position(|&t| t == "byok_purge_identity_quarantine")
+        .unwrap();
+    let parent = TENANT_ID_TABLES
+        .iter()
+        .position(|&t| t == BYOK_PURGE_PARENT_TABLE)
+        .unwrap();
+    assert!(
+        quarantine < parent,
+        "purge identity quarantine FK child must precede the purge parent"
+    );
+    assert_eq!(
+        TENANT_ID_TABLES.get(parent),
+        Some(&BYOK_PURGE_PARENT_TABLE),
+        "the bespoke batch is anchored at the tenant-keyed purge parent"
+    );
+    assert!(
+        TENANT_ID_TABLES
+            .iter()
+            .all(|table| *table != BYOK_PURGE_CAUSE_TABLE),
+        "the FK child must never be routed through WHERE tenant_id = ?1"
+    );
+}
+
 #[test]
 fn classification_gate_rejects_unknown_table_fail_closed() {
     let err = ensure_classification(&["tenant", "future_unclassified_table"]).unwrap_err();
