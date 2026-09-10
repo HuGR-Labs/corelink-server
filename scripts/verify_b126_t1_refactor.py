@@ -36,6 +36,7 @@ SUPPORT_UNITS = (
     "crates/corelink-container/src/routes/public_mirror_tests.rs",
     "crates/corelink-container/src/routes/signup_tests.rs",
     "crates/corelink-container/src/routes/ratelimit_layer_tests.rs",
+    "crates/corelink-container/src/routes/dsr/adapter_d1_registry.rs",
     "crates/corelink-container/src/routes/dsr/adapter_d1_tests.rs",
 )
 
@@ -193,6 +194,17 @@ def verify(root: Path, overrides: Mapping[str, str] | None = None) -> list[str]:
     if signup.get("support") != "signup_support.rs":
         errors.append("missing signup support wiring: expected support -> signup_support.rs")
 
+    adapter_d1 = {
+        module: path
+        for path, module in parse_path_modules(
+            sources["crates/corelink-container/src/routes/dsr/adapter_d1.rs"]
+        )
+    }
+    if adapter_d1.get("registry") != "adapter_d1_registry.rs":
+        errors.append(
+            "missing D1 registry wiring: expected registry -> adapter_d1_registry.rs"
+        )
+
     main = {
         module: path
         for path, module in parse_path_modules(sources["crates/corelink-container/src/main.rs"])
@@ -226,6 +238,16 @@ def self_test(root: Path) -> None:
     renamed = signup.replace('#[path = "signup_support.rs"]', '#[path = "signup_support_renamed.rs"]', 1)
     diagnostics = verify(root, {signup_path: renamed})
     assert any("missing signup support wiring" in error for error in diagnostics)
+
+    adapter_path = "crates/corelink-container/src/routes/dsr/adapter_d1.rs"
+    adapter = (root / adapter_path).read_text(encoding="utf-8")
+    renamed = adapter.replace(
+        '#[path = "adapter_d1_registry.rs"]',
+        '#[path = "adapter_d1_registry_renamed.rs"]',
+        1,
+    )
+    diagnostics = verify(root, {adapter_path: renamed})
+    assert any("missing D1 registry wiring" in error for error in diagnostics)
 
     # The external gate remains executable and green if the Rust test module
     # is removed; it does not consume the circular main_tests guard.
