@@ -154,8 +154,8 @@ async fn activate_then_read_engages_encryption() {
 }
 
 /// Kill switch: deactivate() flips active → shredded, and a subsequent read
-/// observes encryption DISENGAGED (engagement_for → Plaintext,
-/// is_encryption_active false).
+/// observes encryption DISENGAGED while storage access remains fail-CLOSED
+/// (never downgraded to plaintext).
 #[tokio::test]
 async fn deactivate_kill_switch_disengages_encryption() {
     use crate::storage::byok_cas::{engagement_for, ByokEngagement};
@@ -180,7 +180,12 @@ async fn deactivate_kill_switch_disengages_encryption() {
         .expect("row still present");
     assert_eq!(cfg.state, ByokState::Shredded);
     assert!(!is_encryption_active(&cfg));
-    assert!(matches!(engagement_for(&cfg), ByokEngagement::Plaintext));
+    assert!(matches!(
+        engagement_for(&cfg),
+        ByokEngagement::FailClosed(
+            "BYOK tenant is crypto-shredded; storage access is permanently disabled"
+        )
+    ));
 
     // Idempotent: a second kill switch on an already-shredded tenant is Ok.
     writer
