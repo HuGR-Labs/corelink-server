@@ -227,9 +227,51 @@ pub(super) fn build_gather_plan(tenant_id: &str) -> Vec<GatherQuery> {
             params: tid(),
         });
     }
-    // Specials (kept exactly aligned with SPECIAL_ERASE_TABLES): identity
-    // rows by tenant_id, signup_attempts via the join, and the Clerk lock via
-    // tenant.clerk_user_id.
+    // Indirect 0121 specials (kept exactly aligned with SPECIAL_ERASE_TABLES):
+    // these tables have no tenant_id, so ACCESS must use the same intent/guard
+    // ownership relations as erase rather than generating an invalid direct
+    // tenant predicate. The worker assertion has both FK paths represented so
+    // a valid-but-mismatched legacy row cannot disappear from the export.
+    let byok_activation_indirect = [
+        (
+            "byok_activation_worker_assertion",
+            "SELECT * FROM byok_activation_worker_assertion w WHERE \
+             w.intent_id IN (SELECT intent_id FROM byok_activation_intent WHERE tenant_id = ?1) \
+             OR w.operation_token IN (SELECT operation_token FROM byok_activation_operation_guard og \
+                 WHERE og.intent_id IN (SELECT intent_id FROM byok_activation_intent WHERE tenant_id = ?1))",
+        ),
+        (
+            "byok_activation_operation_guard",
+            "SELECT * FROM byok_activation_operation_guard WHERE \
+             intent_id IN (SELECT intent_id FROM byok_activation_intent WHERE tenant_id = ?1)",
+        ),
+        (
+            "byok_activation_postcondition",
+            "SELECT * FROM byok_activation_postcondition WHERE \
+             intent_id IN (SELECT intent_id FROM byok_activation_intent WHERE tenant_id = ?1)",
+        ),
+        (
+            "byok_activation_suspension_postcondition",
+            "SELECT * FROM byok_activation_suspension_postcondition WHERE \
+             intent_id IN (SELECT intent_id FROM byok_activation_intent WHERE tenant_id = ?1)",
+        ),
+        (
+            "byok_activation_transition_assertion",
+            "SELECT * FROM byok_activation_transition_assertion WHERE \
+             guard_id IN (SELECT guard_id FROM byok_activation_guard WHERE tenant_id = ?1)",
+        ),
+    ];
+    for (table, sql) in byok_activation_indirect {
+        plan.push(GatherQuery {
+            table,
+            retained: false,
+            sql: sql.to_owned(),
+            params: tid(),
+        });
+    }
+
+    // Remaining specials: identity rows by tenant_id, signup_attempts via the
+    // join, and the Clerk lock via tenant.clerk_user_id.
     plan.push(GatherQuery {
         table: "signup_orchestration",
         retained: false,
@@ -673,6 +715,40 @@ mod tests {
         assert!(lock.sql.contains("clerk_user_id"));
         assert!(lock.sql.contains("FROM tenant WHERE tenant_id = ?1"));
         assert_eq!(lock.params, vec![json!(TID)]);
+    }
+
+    #[test]
+    fn byok_activation_indirect_access_uses_fk_ownership_not_direct_tenant_id() {
+        let plan = build_gather_plan(TID);
+        let tables = [
+            "byok_activation_worker_assertion",
+            "byok_activation_operation_guard",
+            "byok_activation_postcondition",
+            "byok_activation_suspension_postcondition",
+            "byok_activation_transition_assertion",
+        ];
+        for table in tables {
+            let query = plan
+                .iter()
+                .find(|query| query.table == table)
+                .expect("indirect 0121 table must be exported");
+            assert!(!query.retained);
+            assert!(!query
+                .sql
+                .starts_with(&format!("SELECT * FROM {table} WHERE tenant_id = ?1")));
+            assert_eq!(query.params, vec![json!(TID)]);
+            assert!(
+                query.sql.contains("byok_activation_intent")
+                    || query.sql.contains("byok_activation_guard"),
+                "{table} must be scoped through an ownership parent"
+            );
+        }
+        let worker = plan
+            .iter()
+            .find(|query| query.table == "byok_activation_worker_assertion")
+            .expect("worker assertion query");
+        assert!(worker.sql.contains("operation_token"));
+        assert!(worker.sql.contains("intent_id"));
     }
 
     /// The retained disclosable subset is a real subset of RETAIN_SET and never

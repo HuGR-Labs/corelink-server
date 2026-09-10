@@ -402,6 +402,38 @@ const BYOK_ACTIVATION_INTENT_TABLE: &str = "byok_activation_intent";
 const BYOK_ACTIVATION_GUARD_TABLE: &str = "byok_activation_guard";
 const BYOK_PURGE_CAUSE_ORPHAN_SQL: &str =
     "SELECT COUNT(*) AS n FROM byok_object_purge_cause c LEFT JOIN byok_object_purge_item p ON p.purge_id=c.purge_id WHERE p.purge_id IS NULL";
+/// Global orphan preflight for all 0121 tables whose ownership is indirect.
+/// FK enforcement was historically disabled on some D1 paths, so a tenant
+/// join alone can hide a row whose parent has already disappeared. Count every
+/// missing parent relation before erase and verification and fail closed.
+const BYOK_ACTIVATION_ORPHAN_SQL: &str = "SELECT COUNT(*) AS n FROM (\
+    SELECT w.assertion_token AS row_id\
+      FROM byok_activation_worker_assertion w\
+      LEFT JOIN byok_activation_operation_guard og\
+        ON og.operation_token = w.operation_token\
+      LEFT JOIN byok_activation_intent i ON i.intent_id = w.intent_id\
+     WHERE og.operation_token IS NULL OR i.intent_id IS NULL\
+    UNION ALL\
+    SELECT og.operation_token AS row_id\
+      FROM byok_activation_operation_guard og\
+      LEFT JOIN byok_activation_intent i ON i.intent_id = og.intent_id\
+     WHERE i.intent_id IS NULL\
+    UNION ALL\
+    SELECT p.operation_token AS row_id\
+      FROM byok_activation_postcondition p\
+      LEFT JOIN byok_activation_intent i ON i.intent_id = p.intent_id\
+     WHERE i.intent_id IS NULL\
+    UNION ALL\
+    SELECT p.operation_token AS row_id\
+      FROM byok_activation_suspension_postcondition p\
+      LEFT JOIN byok_activation_intent i ON i.intent_id = p.intent_id\
+     WHERE i.intent_id IS NULL\
+    UNION ALL\
+    SELECT a.assertion_token AS row_id\
+      FROM byok_activation_transition_assertion a\
+      LEFT JOIN byok_activation_guard g ON g.guard_id = a.guard_id\
+     WHERE g.guard_id IS NULL\
+) orphan";
 
 /// **Every** live, tenant-scoped D1 table (keyed by `tenant_id`, `namespace`,
 /// or an opaque principal id), derived from `migrations/d1/*.sql`. Transient
@@ -746,6 +778,15 @@ impl D1EraseAdapter {
         Ok(scalar_count(&rows, "n"))
     }
 
+    /// Count every orphan in the five 0121 indirect-ownership relations. This
+    /// query is deliberately tenant-global: a missing parent has no safe
+    /// tenant scope left, so silently ignoring it would over-attest erasure.
+    fn count_orphan_byok_activation_rows(&self) -> Result<u64, ErasureBackendError> {
+        let rows = d1_query_blocking(&self.d1, BYOK_ACTIVATION_ORPHAN_SQL, vec![])
+            .map_err(ErasureBackendError::Transport)?;
+        Ok(scalar_count(&rows, "n"))
+    }
+
     /// Delete purge-cause children and their `byok_object_purge_item` parent
     /// in one D1 transaction. The child FK has no cascade, and D1/SQLite may
     /// enforce FKs on the production REST path; deleting the parent first
@@ -895,7 +936,22 @@ impl D1EraseAdapter {
 
     /// Count all remaining erase-set rows for a tenant (verification sweep).
     fn remaining_rows(&self, tid: &str) -> Result<u64, ErasureBackendError> {
+        let orphan_activation_rows = self.count_orphan_byok_activation_rows()?;
+        if orphan_activation_rows != 0 {
+            return Err(ErasureBackendError::Transport(format!(
+                "0121 indirect BYOK activation tables have {orphan_activation_rows} orphan rows; refusing remaining-row verification"
+            )));
+        }
         let mut remaining = 0u64;
+        for table in [
+            BYOK_ACTIVATION_WORKER_ASSERTION_TABLE,
+            BYOK_ACTIVATION_OPERATION_GUARD_TABLE,
+            BYOK_ACTIVATION_POSTCONDITION_TABLE,
+            BYOK_ACTIVATION_SUSPENSION_POSTCONDITION_TABLE,
+            BYOK_ACTIVATION_TRANSITION_ASSERTION_TABLE,
+        ] {
+            remaining = remaining.saturating_add(self.count_byok_activation_indirect(table, tid)?);
+        }
         for t in TENANT_ID_TABLES {
             remaining = remaining.saturating_add(self.count(t, "tenant_id", tid)?);
         }
@@ -964,6 +1020,12 @@ impl BackendErasureAdapter for D1EraseAdapter {
                 "{BYOK_PURGE_CAUSE_TABLE} has {orphan_causes} orphan rows; refusing DSR deletion"
             )));
         }
+        let orphan_activation_rows = self.count_orphan_byok_activation_rows()?;
+        if orphan_activation_rows != 0 {
+            return Err(ErasureBackendError::Transport(format!(
+                "0121 indirect BYOK activation tables have {orphan_activation_rows} orphan rows; refusing DSR deletion"
+            )));
+        }
         let tid = tenant_id.to_string();
         // MUST precede every mutation, including child cleanup. A missing or
         // malformed residency pin fails closed and leaves the tenant intact.
@@ -1024,6 +1086,12 @@ impl BackendErasureAdapter for D1EraseAdapter {
         if orphan_causes != 0 {
             return Err(ErasureBackendError::Transport(format!(
                 "{BYOK_PURGE_CAUSE_TABLE} has {orphan_causes} orphan rows; refusing verification"
+            )));
+        }
+        let orphan_activation_rows = self.count_orphan_byok_activation_rows()?;
+        if orphan_activation_rows != 0 {
+            return Err(ErasureBackendError::Transport(format!(
+                "0121 indirect BYOK activation tables have {orphan_activation_rows} orphan rows; refusing verification"
             )));
         }
         let remaining = self.remaining_rows(&ctx.tenant_id.to_string())?;

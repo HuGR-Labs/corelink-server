@@ -185,6 +185,14 @@ fn byok_activation_indirect_children_are_special_and_fk_scoped() {
     );
     assert!(BYOK_PURGE_CAUSE_ORPHAN_SQL.contains("LEFT JOIN"));
     assert!(BYOK_PURGE_CAUSE_ORPHAN_SQL.contains("IS NULL"));
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.contains("byok_activation_worker_assertion"));
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.contains("byok_activation_operation_guard"));
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.contains("byok_activation_postcondition"));
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.contains("byok_activation_suspension_postcondition"));
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.contains("byok_activation_transition_assertion"));
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.matches("UNION ALL").count() >= 4);
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.matches("LEFT JOIN").count() >= 6);
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.matches("IS NULL").count() >= 6);
 }
 
 #[test]
