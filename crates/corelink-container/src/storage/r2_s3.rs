@@ -16,6 +16,7 @@ mod implementation {
     include!("r2_s3_parts/client_impl.rs");
     include!("r2_s3_parts/client_types.rs");
     include!("r2_s3_parts/cas_core.rs");
+    include!("r2_s3_parts/cas_byok_body.rs");
     include!("r2_s3_parts/cas_helpers.rs");
     include!("r2_s3_parts/cas_ops.rs");
     include!("r2_s3_parts/cas_batch.rs");
@@ -72,6 +73,7 @@ mod structure_tests {
         "client_impl.rs",
         "client_types.rs",
         "cas_core.rs",
+        "cas_byok_body.rs",
         "cas_helpers.rs",
         "cas_ops.rs",
         "cas_batch.rs",
@@ -99,7 +101,7 @@ mod structure_tests {
     #[test]
     fn every_extracted_part_is_bounded_and_present() {
         let dir = parts_dir();
-        assert_eq!(PARTS.len(), 22, "part population must not silently shrink");
+        assert_eq!(PARTS.len(), 23, "part population must not silently shrink");
         for name in PARTS {
             let path = dir.join(name);
             let text = fs::read_to_string(&path)

@@ -23,6 +23,7 @@ PARTS = (
     "client_impl.rs",
     "client_types.rs",
     "cas_core.rs",
+    "cas_byok_body.rs",
     "cas_helpers.rs",
     "cas_ops.rs",
     "cas_batch.rs",
