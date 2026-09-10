@@ -243,6 +243,8 @@ jobs:
           AUDIT_CHAIN_CHECKPOINT_KEY_ID: ${{ vars.AUDIT_CHAIN_CHECKPOINT_KEY_ID }}
           CF_AUDIT_CHECKPOINT_WRITE_TOKEN: ${{ secrets.CF_AUDIT_CHECKPOINT_WRITE_TOKEN }}
           AUDIT_WITNESS_ID: ${{ vars.AUDIT_WITNESS_ID }}
+          AUDIT_WITNESS_URL: ${{ vars.AUDIT_WITNESS_URL }}
+          AUDIT_WITNESS_APPEND_TOKEN: ${{ secrets.AUDIT_WITNESS_APPEND_TOKEN }}
           AUDIT_WITNESS_PUBLIC_KEYS_JSON: ${{ vars.AUDIT_WITNESS_PUBLIC_KEYS_JSON }}
           CF_AUDIT_RECEIPT_READ_TOKEN: ${{ secrets.CF_AUDIT_RECEIPT_READ_TOKEN }}
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
@@ -271,12 +273,18 @@ jobs:
           echo "::add-mask::${AUDIT_CHAIN_LINK_KEYS_JSON:-}"
           echo "::add-mask::${CF_AUDIT_CHECKPOINT_WRITE_TOKEN:-}"
           echo "::add-mask::${CF_AUDIT_RECEIPT_READ_TOKEN:-}"
+          echo "::add-mask::${AUDIT_WITNESS_APPEND_TOKEN:-}"
           echo "::add-mask::${PAGERDUTY_ROUTING_KEY}"
 
           # Keep raw key material outside the uploaded staging tree and wipe it
           # even when a malformed keyring aborts the verifier invocation.
           KEYRING_PATH=""
-          trap 'rm -f "${KEYRING_PATH:-}"' EXIT
+          WITNESS_EVIDENCE_ROOT=""
+          WITNESS_KEYS_PATH=""
+          WITNESS_HEAD_KEYS_PATH=""
+          WITNESS_RECEIPTS_DIR=""
+          WITNESS_EPOCH_LEDGER_DIR=""
+          trap 'rm -f "${KEYRING_PATH:-}" "${WITNESS_KEYS_PATH:-}" "${WITNESS_HEAD_KEYS_PATH:-}"; if [[ -n "${WITNESS_EVIDENCE_ROOT:-}" ]]; then rm -rf -- "${WITNESS_EVIDENCE_ROOT}"; fi' EXIT
           VERIFIER_ARGS=()
           if [[ -n "${AUDIT_CHAIN_LINK_KEYS_JSON:-}" ]]; then
             KEYRING_PATH="${RUNNER_TEMP}/audit-chain-keyring-${GITHUB_RUN_ID}.json"
@@ -543,19 +551,65 @@ jobs:
             # one receipt whose signed head immediately precedes the first row.
             if [[ "${NEEDS_WITNESS_BOOTSTRAP}" == "1" ]] && [[ -s "${DAY_DIR}/chunk-paths.txt" ]]; then
               : "${AUDIT_WITNESS_ID:?witness identity unavailable for checkpoint bootstrap}"
+              : "${AUDIT_WITNESS_URL:?witness URL unavailable for checkpoint bootstrap}"
+              : "${AUDIT_WITNESS_APPEND_TOKEN:?witness append token unavailable for checkpoint bootstrap}"
               : "${AUDIT_WITNESS_PUBLIC_KEYS_JSON:?witness public keys unavailable for checkpoint bootstrap}"
               : "${CF_AUDIT_RECEIPT_READ_TOKEN:?read-only witness receipt token unavailable}"
               : "${D1_DATABASE_ID:?D1 database id unavailable for receipt bootstrap}"
-              WITNESS_KEYS_PATH="${RUNNER_TEMP}/audit-witness-keys-${GITHUB_RUN_ID}.json"
-              WITNESS_RECEIPTS_DIR="${RUNNER_TEMP}/audit-witness-receipts-${GITHUB_RUN_ID}"
+              if [[ -z "${WITNESS_EVIDENCE_ROOT}" ]]; then
+                WITNESS_EVIDENCE_ROOT=$(mktemp -d "${RUNNER_TEMP}/audit-witness-evidence-${GITHUB_RUN_ID}.XXXXXX")
+                chmod 700 "${WITNESS_EVIDENCE_ROOT}"
+                WITNESS_KEYS_PATH="${WITNESS_EVIDENCE_ROOT}/receipt-keys.json"
+                WITNESS_HEAD_KEYS_PATH="${WITNESS_EVIDENCE_ROOT}/head-keys.json"
+                WITNESS_RECEIPTS_DIR="${WITNESS_EVIDENCE_ROOT}/receipts"
+                WITNESS_EPOCH_LEDGER_DIR="${WITNESS_EVIDENCE_ROOT}/epoch-ledger"
+                mkdir -p "${WITNESS_RECEIPTS_DIR}" "${WITNESS_EPOCH_LEDGER_DIR}"
+                chmod 700 "${WITNESS_RECEIPTS_DIR}" "${WITNESS_EPOCH_LEDGER_DIR}"
+              fi
               printf '%s' "${AUDIT_WITNESS_PUBLIC_KEYS_JSON}" > "${WITNESS_KEYS_PATH}"
-              mkdir -p "${WITNESS_RECEIPTS_DIR}"
+              chmod 600 "${WITNESS_KEYS_PATH}"
+              registry_query="${DAY_DIR}/signing-registry-query.json"
+              python3 - <<'PY' > "${registry_query}"
+          import json
+          print(json.dumps({"sql": "SELECT signing_key_id,public_key_b64 FROM audit_chain_signing_key_registry ORDER BY signing_key_id", "params": []}, separators=(",", ":")))
+          PY
+              registry_response="${DAY_DIR}/signing-registry-response.json"
+              registry_code=$(curl --silent --show-error -o "${registry_response}" -w "%{http_code}" \
+                -X POST -H "Authorization: Bearer ${CF_AUDIT_RECEIPT_READ_TOKEN}" \
+                -H "Content-Type: application/json" --data-binary @"${registry_query}" \
+                "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query" || echo "000")
+              if [[ "${registry_code}" != "200" ]]; then
+                echo "::error::read-only signing-key registry query failed HTTP ${registry_code}"
+                exit 1
+              fi
+              RESPONSE="${registry_response}" OUT="${WITNESS_HEAD_KEYS_PATH}" python3 - <<'PY'
+          import base64, json, os
+          payload = json.load(open(os.environ["RESPONSE"], encoding="utf-8"))
+          if payload.get("success") is not True:
+              raise SystemExit("signing-key registry query success != true")
+          rows = (payload.get("result") or [{}])[0].get("results") or []
+          if not rows:
+              raise SystemExit("signing-key registry is empty")
+          keys = {}
+          for row in rows:
+              key_id = int(row["signing_key_id"])
+              encoded = row["public_key_b64"]
+              if key_id <= 0 or key_id in keys:
+                  raise SystemExit("signing-key registry has duplicate/invalid id")
+              raw = base64.b64decode(encoded, validate=True)
+              if len(raw) != 32 or base64.b64encode(raw).decode() != encoded:
+                  raise SystemExit("signing-key registry public key is not canonical")
+              keys[str(key_id)] = encoded
+          with open(os.environ["OUT"], "w", encoding="utf-8") as out:
+              json.dump(keys, out, sort_keys=True, separators=(",", ":"))
+          os.chmod(os.environ["OUT"], 0o600)
+          PY
               while read -r tenant region first_sequence; do
                 query="${DAY_DIR}/receipt-query-${tenant}-${region}.json"
-                TENANT="$tenant" REGION="$region" FIRST_SEQUENCE="$first_sequence" python3 -c '
+                TENANT="$tenant" REGION="$region" python3 -c '
                 import json,os
-                sql="SELECT lower(hex(r.witness_jcs)) witness_jcs_hex,lower(hex(r.receipt_jcs)) receipt_jcs_hex,r.receipt_signature_b64,r.witness_key_id,r.witness_record_hash,r.witness_sequence,r.tenant_id,r.region FROM audit_chain_archive_manifest m JOIN audit_chain_witness_receipt r ON r.tenant_id=m.tenant_id AND r.region=m.region AND r.witness_sequence=m.end_head_witness_sequence WHERE m.tenant_id=?1 AND m.region=?2 AND m.end_sequence_exclusive=?3 AND m.is_empty=0 ORDER BY r.witness_sequence LIMIT 2"
-                print(json.dumps({"sql":sql,"params":[os.environ["TENANT"],os.environ["REGION"],int(os.environ["FIRST_SEQUENCE"])]},separators=(",",":")))
+                sql="SELECT lower(hex(witness_jcs)) witness_jcs_hex,lower(hex(receipt_jcs)) receipt_jcs_hex,receipt_signature_b64,witness_key_id,witness_record_hash,witness_sequence,tenant_id,region FROM audit_chain_witness_receipt WHERE tenant_id=?1 AND region=?2 ORDER BY witness_sequence"
+                print(json.dumps({"sql":sql,"params":[os.environ["TENANT"],os.environ["REGION"]]},separators=(",",":")))
                 ' > "${query}"
                 response="${DAY_DIR}/receipt-response-${tenant}-${region}.json"
                 receipt_code=$(curl --silent --show-error -o "${response}" -w "%{http_code}" \
@@ -567,14 +621,62 @@ jobs:
                   exit 1
                 fi
                 RESPONSE="$response" OUT_DIR="${WITNESS_RECEIPTS_DIR}" python3 -c '
-                import base64,json,os
+                import base64,hashlib,json,os
                 payload=json.load(open(os.environ["RESPONSE"])); assert payload.get("success") is True
                 rows=(payload.get("result") or [{}])[0].get("results") or []
                 for row in rows:
-                    stored={"receipt_jcs_b64":base64.b64encode(bytes.fromhex(row.pop("receipt_jcs_hex"))).decode(),"witness_jcs_b64":base64.b64encode(bytes.fromhex(row.pop("witness_jcs_hex"))).decode(),**row}
-                    path=os.path.join(os.environ["OUT_DIR"],"{}--{}--{}.json".format(stored["tenant_id"],stored["region"],stored["witness_sequence"]))
+                    receipt_hex=row.pop("receipt_jcs_hex")
+                    witness_hex=row.pop("witness_jcs_hex")
+                    stored={"receipt_jcs_b64":base64.b64encode(bytes.fromhex(receipt_hex)).decode(),"witness_jcs_b64":base64.b64encode(bytes.fromhex(witness_hex)).decode(),**row}
+                    ident=hashlib.sha256((stored["tenant_id"]+"\0"+stored["region"]).encode()).hexdigest()[:32]
+                    path=os.path.join(os.environ["OUT_DIR"],"{}-{}.json".format(ident,stored["witness_sequence"]))
                     with open(path,"w") as out: json.dump(stored,out,sort_keys=True,separators=(",",":"))
+                    os.chmod(path,0o600)
                 '
+                ledger_query="${DAY_DIR}/ledger-query-${tenant}-${region}.json"
+                TENANT="$tenant" REGION="$region" python3 -c '
+                import json,os
+                sql="SELECT tenant_id,region,epoch_id,ledger_sequence,lower(hex(entry_jcs)) entry_jcs_hex,signature_b64,ledger_hash,signing_key_id FROM audit_chain_epoch_ledger WHERE tenant_id=?1 AND region=?2 ORDER BY ledger_sequence"
+                print(json.dumps({"sql":sql,"params":[os.environ["TENANT"],os.environ["REGION"]]},separators=(",",":")))
+                ' > "${ledger_query}"
+                ledger_response="${DAY_DIR}/ledger-response-${tenant}-${region}.json"
+                ledger_code=$(curl --silent --show-error -o "${ledger_response}" -w "%{http_code}" \
+                  -X POST -H "Authorization: Bearer ${CF_AUDIT_RECEIPT_READ_TOKEN}" \
+                  -H "Content-Type: application/json" --data-binary @"${ledger_query}" \
+                  "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query" || echo "000")
+                if [[ "${ledger_code}" != "200" ]]; then
+                  echo "::error::read-only epoch-ledger query failed HTTP ${ledger_code}"
+                  exit 1
+                fi
+                RESPONSE="${ledger_response}" OUT_DIR="${WITNESS_EPOCH_LEDGER_DIR}" python3 - <<'PY'
+          import base64, hashlib, json, os
+          payload = json.load(open(os.environ["RESPONSE"], encoding="utf-8"))
+          if payload.get("success") is not True:
+              raise SystemExit("epoch-ledger query success != true")
+          rows = (payload.get("result") or [{}])[0].get("results") or []
+          for row in rows:
+              entry = bytes.fromhex(row["entry_jcs_hex"])
+              parsed = json.loads(entry)
+              tenant, region = row["tenant_id"], row["region"]
+              ident = hashlib.sha256((tenant + "\0" + region).encode()).hexdigest()[:32]
+              stored = {
+                  "entry_jcs_b64": base64.b64encode(entry).decode(),
+                  "entry_signature_b64": row["signature_b64"],
+                  "tenant_id": tenant,
+                  "region": region,
+                  "epoch_id": int(row["epoch_id"]),
+                  "ledger_sequence": int(row["ledger_sequence"]),
+                  "epoch_ledger_hash": row["ledger_hash"],
+                  "link_key_id": parsed.get("link_key_id"),
+                  "signing_key_id": int(row["signing_key_id"]),
+              }
+              path = os.path.join(os.environ["OUT_DIR"], "{}-{}.json".format(ident, row["ledger_sequence"]))
+              with open(path, "w", encoding="utf-8") as out:
+                  json.dump(stored, out, sort_keys=True, separators=(",", ":"))
+              os.chmod(path, 0o600)
+          if not rows:
+              raise SystemExit("epoch-ledger evidence is empty")
+          PY
               done < <(CHUNK_PATHS="${DAY_DIR}/chunk-paths.txt" python3 -c '
               import json,os
               parts={}
@@ -585,7 +687,7 @@ jobs:
                               row=json.loads(line); key=(row["tenant_id"],row["region"]); parts[key]=min(parts.get(key,row["sequence_number"]),row["sequence_number"])
               for (tenant,region),first in sorted(parts.items()): print(tenant,region,first)
               ')
-              BOOTSTRAP_ARGS=(--witness-id "${AUDIT_WITNESS_ID}" --witness-public-keys "${WITNESS_KEYS_PATH}" --witness-receipts-dir "${WITNESS_RECEIPTS_DIR}")
+              BOOTSTRAP_ARGS=(--witness-id "${AUDIT_WITNESS_ID}" --witness-public-keys "${WITNESS_KEYS_PATH}" --witness-receipts-dir "${WITNESS_RECEIPTS_DIR}" --witness-url "${AUDIT_WITNESS_URL}" --witness-head-public-keys "${WITNESS_HEAD_KEYS_PATH}" --witness-epoch-ledger-dir "${WITNESS_EPOCH_LEDGER_DIR}")
             fi
 
             # ---------------- VERIFY (per-day, on argv) ----------------

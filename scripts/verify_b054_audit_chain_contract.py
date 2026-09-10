@@ -156,7 +156,7 @@ def assess(files: dict[str, str]) -> None:
         "daily verifier rejects duplicate sequence": "duplicate sequence number",
         "daily verifier rejects duplicate row": "duplicate row id",
         "daily verifier rejects witness replay": "duplicate/replayed sequence",
-        "daily verifier preserves object key boundaries": "real key boundary",
+        "daily verifier preserves object key boundaries": 'prefix == "staging"',
         "daily verifier challenges witness latest": "challenge_latest(args",
         "daily verifier verifies head signature": "verify_head_signature(head_keys",
         "daily verifier binds epoch ledger key": "epoch ledger hash does not bind link_key_id",
@@ -172,11 +172,16 @@ def assess(files: dict[str, str]) -> None:
         "daily workflow fetches exact prior checkpoint": "PREV_KEY=\"audit-checkpoints/${PREV_D//-//}/partitions.ndjson\"",
         "daily workflow publishes only nonempty checkpoint after PASS": "elif [[ -s \"${CHECKPOINT_OUT}\" ]]",
         "daily workflow uses immutable conditional create": "-H \"If-None-Match: *\"",
-        "daily workflow fetches exact predecessor receipt": "m.end_sequence_exclusive=?3 AND m.is_empty=0",
+        "daily workflow fetches complete receipt history": "FROM audit_chain_witness_receipt WHERE tenant_id=?1 AND region=?2 ORDER BY witness_sequence",
         "daily workflow discovers keyed objects": "-name '*.ndjson.epoch-*.*'",
         "daily workflow never publishes empty checkpoint": "elif [[ -s \"${CHECKPOINT_OUT}\" ]]",
         "daily workflow captures real verifier status": "VERIFIER_RC=${PIPESTATUS[0]}",
         "daily workflow rejects silent verifier failure": "[[ \"${VERIFIER_RC}\" -ne 0 ]]",
+        "daily workflow passes witness latest URL": "--witness-url \"${AUDIT_WITNESS_URL}\"",
+        "daily workflow passes head registry": "--witness-head-public-keys \"${WITNESS_HEAD_KEYS_PATH}\"",
+        "daily workflow passes epoch evidence": "--witness-epoch-ledger-dir \"${WITNESS_EPOCH_LEDGER_DIR}\"",
+        "daily workflow masks witness append token": "add-mask::${AUDIT_WITNESS_APPEND_TOKEN:-}",
+        "daily workflow cleans witness evidence": "WITNESS_EVIDENCE_ROOT:-}",
         "archive verifier rejects sequence overflow": "expected_seq.checked_add(1)",
         "key custody retains historical link keys": "retain historical keys for the full audit-retention lifetime",
         "key custody makes historic loss indeterminate": "loss of a historical key is `INDETERMINATE`",
@@ -273,7 +278,11 @@ def mutation_self_test(files: dict[str, str]) -> None:
         ),
         ("duplicate sequence", "duplicate sequence number", "duplicate sequence accepted"),
         ("witness replay", "duplicate/replayed sequence", "witness replay accepted"),
-        ("object key boundary", "real key boundary", "object key suffix accepted"),
+        (
+            "object key boundary",
+            'prefix == "staging"',
+            'prefix == "copiedstaging"',
+        ),
         ("witness latest challenge", "challenge_latest(args", "historical receipt accepted"),
         ("head signature", "verify_head_signature(head_keys", "head signature trusted"),
         ("epoch ledger binding", "epoch ledger hash does not bind link_key_id", "ledger key omitted"),
@@ -284,11 +293,21 @@ def mutation_self_test(files: dict[str, str]) -> None:
         ),
         ("cross-day copy", "contains a cross-day row", "cross-day row accepted"),
         ("keyed object suffix", "domain_hash(&[], object_bytes)", "\"00\".repeat(32)"),
+        (
+            "witness latest URL wiring",
+            "--witness-url \"${AUDIT_WITNESS_URL}\"",
+            "--witness-url \"\"",
+        ),
+        (
+            "witness evidence cleanup",
+            "WITNESS_EVIDENCE_ROOT:-}",
+            "WITNESS_EVIDENCE_ROOT_MISSING:-}",
+        ),
         ("empty checkpoint publish", "elif [[ -s \"${CHECKPOINT_OUT}\" ]]", "elif [[ -f \"${CHECKPOINT_OUT}\" ]]"),
         ("silent verifier nonzero", "VERIFIER_RC=${PIPESTATUS[0]}", "VERIFIER_RC=0"),
     )
     for label, old, new in mutations:
-        if label in {"empty checkpoint publish", "silent verifier nonzero"}:
+        if label in {"empty checkpoint publish", "silent verifier nonzero", "witness latest URL wiring", "witness evidence cleanup"}:
             target = "daily_workflow"
         elif label in {"daily mixed epochs", "external bootstrap", "bootstrap signature", "duplicate sequence", "witness replay", "object key boundary", "witness latest challenge", "head signature", "epoch ledger binding", "mixed object partition", "cross-day copy", "keyed object suffix", "checkpoint MAC", "checkpoint replay", "checkpoint immutable local publish"}:
             target = "daily_verifier"

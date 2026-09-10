@@ -196,7 +196,7 @@ struct WitnessLatestEnvelope {
     latest_signature_b64: String,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WitnessLatestJcs {
     challenge_b64: String,
@@ -232,6 +232,17 @@ struct PartitionAnchor {
     current_epoch_id: u64,
     current_link_key_id: Option<u64>,
     allow_epoch_transition: bool,
+}
+
+#[derive(Clone)]
+struct BootstrapReceipt {
+    anchor: PartitionAnchor,
+    witness_sequence: u64,
+    witness_record_hash: String,
+    previous_witness_hash: String,
+    receipt_jcs_b64: String,
+    receipt_signature_b64: String,
+    witness_jcs_b64: String,
 }
 
 fn main() -> ExitCode {
@@ -351,6 +362,7 @@ fn run(args: &CliArgs) -> Result<String, String> {
             .get(&partition)
             .into_iter()
             .flatten()
+            .map(|receipt| &receipt.anchor)
             .filter(|anchor| anchor_matches_first(anchor, first))
             .collect();
         let anchor = if let Some(checkpoint) = checkpoint_anchor.as_ref() {
@@ -454,12 +466,22 @@ fn verify_archive_object_binding(
         base_key
     };
     // The verifier is handed a local staging path (`.../chunks/<R2 key>`), so
-    // compare the final key component rather than requiring an absolute path.
-    // `ends_with(expected_key)` alone is insufficient: a path such as
-    // `copiedaudit/...` would pass without containing a real key boundary.
+    // Compare the canonical object key at the verifier's staging boundary.
+    // A bare suffix is insufficient: `copiedstaging/chunks/<key>` would pass
+    // while naming a different local object.
     let normalized_path = path.replace('\\', "/");
-    let key_matches =
-        normalized_path == expected_key || normalized_path.ends_with(&format!("/{expected_key}"));
+    let key_matches = if normalized_path == expected_key {
+        true
+    } else if let Some((prefix, suffix)) = normalized_path.rsplit_once("/chunks/") {
+        suffix == expected_key
+            && (prefix == "staging"
+                || prefix.ends_with("/staging")
+                || prefix
+                    .split('/')
+                    .any(|component| component == ".audit-verify-staging"))
+    } else {
+        false
+    };
     if !key_matches {
         return Err(format!(
             "archive object path does not match authenticated row key: {path}"
@@ -929,7 +951,7 @@ fn validate_stored_receipt(
     keys: &BTreeMap<u64, ed25519_dalek::VerifyingKey>,
     args: &CliArgs,
     head_keys: &BTreeMap<u64, ed25519_dalek::VerifyingKey>,
-) -> Result<PartitionAnchor, String> {
+) -> Result<BootstrapReceipt, String> {
     let witness_bytes = decode_canonical_base64_vec(&stored.witness_jcs_b64, "witness record JCS")?;
     let record: WitnessRecord =
         serde_json::from_slice(&witness_bytes).map_err(|_| "witness record malformed")?;
@@ -996,14 +1018,22 @@ fn validate_stored_receipt(
     }
     verify_head_signature(head_keys, &head, &head_bytes, &record.head_signature_b64)?;
     let current_link_key_id = load_epoch_ledger_binding(args, &head, head_keys)?;
-    Ok(PartitionAnchor {
-        tenant_id: head.tenant_id,
-        region: head.region,
-        next_sequence: head.next_sequence,
-        next_prev_hash: head.head_hash,
-        current_epoch_id: head.epoch_id,
-        current_link_key_id,
-        allow_epoch_transition: false,
+    Ok(BootstrapReceipt {
+        anchor: PartitionAnchor {
+            tenant_id: head.tenant_id,
+            region: head.region,
+            next_sequence: head.next_sequence,
+            next_prev_hash: head.head_hash,
+            current_epoch_id: head.epoch_id,
+            current_link_key_id,
+            allow_epoch_transition: false,
+        },
+        witness_sequence: stored.witness_sequence,
+        witness_record_hash: stored.witness_record_hash.clone(),
+        previous_witness_hash: record.previous_witness_hash,
+        receipt_jcs_b64: stored.receipt_jcs_b64.clone(),
+        receipt_signature_b64: stored.receipt_signature_b64.clone(),
+        witness_jcs_b64: stored.witness_jcs_b64.clone(),
     })
 }
 
@@ -1013,7 +1043,7 @@ fn challenge_latest(
     region: &str,
     keys: &BTreeMap<u64, ed25519_dalek::VerifyingKey>,
     head_keys: &BTreeMap<u64, ed25519_dalek::VerifyingKey>,
-) -> Result<PartitionAnchor, String> {
+) -> Result<BootstrapReceipt, String> {
     let origin = args
         .witness_url
         .as_deref()
@@ -1106,9 +1136,46 @@ fn challenge_latest(
     )
 }
 
+fn verify_receipt_chain(
+    candidates: &[BootstrapReceipt],
+    latest: &BootstrapReceipt,
+) -> Result<(), String> {
+    let mut ordered = candidates.to_vec();
+    ordered.sort_by_key(|receipt| receipt.witness_sequence);
+    let first = ordered
+        .first()
+        .ok_or("witness receipt set omits the predecessor")?;
+    if first.witness_sequence != 0 || first.previous_witness_hash != "0".repeat(64) {
+        return Err("witness receipt chain does not start at genesis".to_owned());
+    }
+    for pair in ordered.windows(2) {
+        let prior = &pair[0];
+        let current = &pair[1];
+        if prior.witness_sequence.checked_add(1) != Some(current.witness_sequence)
+            || current.previous_witness_hash != prior.witness_record_hash
+        {
+            return Err("witness receipt chain has a gap or fork".to_owned());
+        }
+    }
+    let current = ordered.last().ok_or("witness receipt chain disappeared")?;
+    if latest.witness_sequence != current.witness_sequence
+        || latest.witness_record_hash != current.witness_record_hash
+        || latest.previous_witness_hash != current.previous_witness_hash
+        || latest.receipt_jcs_b64 != current.receipt_jcs_b64
+        || latest.receipt_signature_b64 != current.receipt_signature_b64
+        || latest.witness_jcs_b64 != current.witness_jcs_b64
+    {
+        return Err(
+            "witness latest is stale, omitted, or divergent from the complete receipt chain"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
 fn verify_latest_bootstrap(
     args: &CliArgs,
-    anchors: &BTreeMap<(String, String), Vec<PartitionAnchor>>,
+    anchors: &BTreeMap<(String, String), Vec<BootstrapReceipt>>,
 ) -> Result<(), String> {
     let (Some(keys_path), Some(head_keys_path)) =
         (&args.witness_public_keys, &args.witness_head_public_keys)
@@ -1118,33 +1185,21 @@ fn verify_latest_bootstrap(
     let keys = parse_witness_keys(keys_path)?;
     let head_keys = parse_witness_keys(head_keys_path)?;
     for ((tenant_id, region), candidates) in anchors {
-        if candidates.len() != 1 {
+        if candidates.is_empty() {
             return Err(format!(
-                "witness receipt set omits latest or contains extra receipts for {tenant_id}/{region}"
+                "witness receipt set omits the predecessor for {tenant_id}/{region}"
             ));
         }
         let latest = challenge_latest(args, tenant_id, region, &keys, &head_keys)?;
-        let candidate = candidates
-            .first()
-            .ok_or("witness bootstrap candidate disappeared")?;
-        if latest.tenant_id != candidate.tenant_id
-            || latest.region != candidate.region
-            || latest.next_sequence != candidate.next_sequence
-            || latest.next_prev_hash != candidate.next_prev_hash
-            || latest.current_epoch_id != candidate.current_epoch_id
-            || latest.current_link_key_id != candidate.current_link_key_id
-        {
-            return Err(format!(
-                "witness latest is ahead, stale, omitted, or divergent for {tenant_id}/{region}"
-            ));
-        }
+        verify_receipt_chain(candidates, &latest)
+            .map_err(|error| format!("{error} for {tenant_id}/{region}"))?;
     }
     Ok(())
 }
 
 fn load_bootstrap_anchors(
     args: &CliArgs,
-) -> Result<BTreeMap<(String, String), Vec<PartitionAnchor>>, String> {
+) -> Result<BTreeMap<(String, String), Vec<BootstrapReceipt>>, String> {
     let (Some(witness_id), Some(keys_path), Some(receipts_dir), Some(head_keys_path)) = (
         &args.witness_id,
         &args.witness_public_keys,
@@ -1169,7 +1224,7 @@ fn load_bootstrap_anchors(
         let bytes = std::fs::read(&path).map_err(|e| format!("read witness receipt: {e}"))?;
         let stored: StoredWitnessReceipt =
             serde_json::from_slice(&bytes).map_err(|_| "stored witness receipt malformed")?;
-        let anchor = validate_stored_receipt(&stored, witness_id, &keys, args, &head_keys)?;
+        let evidence = validate_stored_receipt(&stored, witness_id, &keys, args, &head_keys)?;
         let receipt_identity = (
             stored.tenant_id.clone(),
             stored.region.clone(),
@@ -1181,9 +1236,12 @@ fn load_bootstrap_anchors(
             );
         }
         anchors
-            .entry((anchor.tenant_id.clone(), anchor.region.clone()))
+            .entry((
+                evidence.anchor.tenant_id.clone(),
+                evidence.anchor.region.clone(),
+            ))
             .or_insert_with(Vec::new)
-            .push(anchor);
+            .push(evidence);
     }
     if anchors.is_empty() {
         return Err("witness receipt directory contains no anchors".to_owned());
@@ -1995,7 +2053,7 @@ mod tests {
         let args = CliArgs {
             witness_id: Some("security-witness".to_owned()),
             witness_public_keys: Some(keys_path),
-            witness_receipts_dir: Some(receipts),
+            witness_receipts_dir: Some(receipts.clone()),
             witness_head_public_keys: Some(head_keys_path),
             witness_epoch_ledger_dir: Some(ledger_dir),
             ..CliArgs::default()
@@ -2003,7 +2061,8 @@ mod tests {
         let anchors = load_bootstrap_anchors(&args)?;
         let anchor = &anchors
             .get(&("tenant-test".to_owned(), "weur".to_owned()))
-            .ok_or("anchor absent")?[0];
+            .ok_or("anchor absent")?[0]
+            .anchor;
         let mut first = line(&ChainEpoch::legacy(), None, 4, ChainHash([3; 32]));
         first.schema = SEALED_LINE_SCHEMA_V2.to_owned();
         first.algorithm_id = 1;
@@ -2014,6 +2073,27 @@ mod tests {
         assert!(!anchor_matches_first(anchor, &first));
         first.sequence_number = 5;
         assert!(!anchor_matches_first(anchor, &first));
+        let mut genesis = anchors
+            .get(&("tenant-test".to_owned(), "weur".to_owned()))
+            .ok_or("anchor absent")?[0]
+            .clone();
+        genesis.witness_sequence = 0;
+        genesis.witness_record_hash = "aa".repeat(32);
+        genesis.previous_witness_hash = "00".repeat(32);
+        let mut advanced = genesis.clone();
+        advanced.witness_sequence = 1;
+        advanced.witness_record_hash = "bb".repeat(32);
+        advanced.previous_witness_hash = genesis.witness_record_hash.clone();
+        assert!(verify_receipt_chain(&[genesis.clone(), advanced.clone()], &advanced).is_ok());
+        let mut fork = advanced.clone();
+        fork.previous_witness_hash = "cc".repeat(32);
+        assert!(verify_receipt_chain(&[genesis.clone(), fork], &advanced)
+            .is_err_and(|e| e.contains("fork")));
+        let mut omitted = advanced.clone();
+        omitted.witness_sequence = 2;
+        omitted.previous_witness_hash = advanced.witness_record_hash.clone();
+        assert!(verify_receipt_chain(&[genesis, advanced], &omitted)
+            .is_err_and(|e| e.contains("stale") || e.contains("omitted")));
         std::fs::copy(&receipt_path, receipts.join("replayed.json")).map_err(|e| e.to_string())?;
         assert!(load_bootstrap_anchors(&args)
             .is_err_and(|e| e.contains("duplicate/") && e.contains("replayed sequence")));
