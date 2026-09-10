@@ -423,10 +423,9 @@ fn verify_archive_object_binding(
     // The object producer emits chain order.  Keep this check here, before
     // partition-wide sorting, so the first row used to derive the immutable
     // object key cannot be selected by reordering hostile NDJSON lines.
-    if lines
-        .windows(2)
-        .any(|pair| pair[0].sequence_number >= pair[1].sequence_number)
-    {
+    if lines.windows(2).any(
+        |pair| matches!(pair, [first, second] if first.sequence_number >= second.sequence_number),
+    ) {
         return Err(format!(
             "archive object {path} is not in strict sequence order"
         ));
@@ -510,7 +509,7 @@ fn anchor_matches_first(anchor: &PartitionAnchor, first: &SealedArchiveLine) -> 
     let same_epoch = anchor.current_epoch_id == first.epoch_id
         && anchor
             .current_link_key_id
-            .is_none_or(|key_id| Some(key_id) == first.link_key_id);
+            .map_or(true, |key_id| Some(key_id) == first.link_key_id);
     let rotated_epoch = anchor.allow_epoch_transition
         && anchor.current_epoch_id.checked_add(1) == Some(first.epoch_id)
         && anchor.current_link_key_id != first.link_key_id;
@@ -1149,11 +1148,12 @@ fn verify_receipt_chain(
         return Err("witness receipt chain does not start at genesis".to_owned());
     }
     for pair in ordered.windows(2) {
-        let prior = &pair[0];
-        let current = &pair[1];
-        if prior.witness_sequence.checked_add(1) != Some(current.witness_sequence)
-            || current.previous_witness_hash != prior.witness_record_hash
-        {
+        if !matches!(
+            pair,
+            [prior, current]
+                if prior.witness_sequence.checked_add(1) == Some(current.witness_sequence)
+                    && current.previous_witness_hash == prior.witness_record_hash
+        ) {
             return Err("witness receipt chain has a gap or fork".to_owned());
         }
     }
