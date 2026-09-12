@@ -1,35 +1,38 @@
 # Backlog work-package ledger
 
 > Historical D03 source checkpoint: `codex/d03-delivery-20260906@7b992e9db123abeb76381b1c1337011692f2e834`.
-> Canonical integrated snapshot: `8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94`,
-> observed 2026-09-09 in `America/Sao_Paulo`.
+> Canonical post-merge base: `6be19a2e525dad045ad8404d722905afde7ad7bd`,
+> observed 2026-09-12 in `America/Sao_Paulo`.
 
 This is the execution ledger for the open CoreLink backlog. `BACKLOG.md` remains
 the single source of truth for item status. This ledger derives work ownership,
 dependency order and completion contracts from that source; it never overrides
 the backlog.
 
-The current population is 373 items: 14 open, 327 done and 32 parked. The 14
+The current population is 373 items: 13 open, 328 done and 32 parked. The 13
 open items are partitioned exactly once across four contract catalogs:
 
-The candidate snapshot is pinned in
-[`backlog-ledger-snapshot.json`](backlog-ledger-snapshot.json), whose SHA-256 is
-`3a4cbf652a1d4485ac9c8e03bd79343fb4619b5c2e8cb58af161263f83440f18`. The
-verifier checks that immutable manifest, its candidate ancestry, and the live
+The historical candidate snapshot remains pinned in
+[`backlog-ledger-snapshot.json`](backlog-ledger-snapshot.json), SHA-256
+`3a4cbf652a1d4485ac9c8e03bd79343fb4619b5c2e8cb58af161263f83440f18`.
+The post-merge transition is versioned in
+[`backlog-ledger-snapshot-b373-postmerge.json`](backlog-ledger-snapshot-b373-postmerge.json),
+whose SHA-256 is pinned in the verifier. It checks both manifests, the exact
+delivered merge ancestry and the live
 `BACKLOG.md` bytes before accepting any status/count claim; a coordinated status
 and ledger rewrite therefore remains indeterminate rather than becoming a false
 closure. A legitimate new observation must version a new manifest and transition
 the ledger base in the same reviewed change.
 
 ```ledger-state
-base-ref: 8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94
-base-sha: 8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94
-observed-at: 2026-09-09
+base-ref: 6be19a2e525dad045ad8404d722905afde7ad7bd
+base-sha: 6be19a2e525dad045ad8404d722905afde7ad7bd
+observed-at: 2026-09-12
 item-count: 373
-open-count: 14
-done-count: 327
+open-count: 13
+done-count: 328
 parked-count: 32
-catalog-counts: B001-B045=4,B046-B090=3,B091-B130=2,B131-B373=5
+catalog-counts: B001-B045=4,B046-B090=3,B091-B130=2,B131-B373=4
 ```
 
 | Catalog | Numeric range | Open IDs |
@@ -37,20 +40,21 @@ catalog-counts: B001-B045=4,B046-B090=3,B091-B130=2,B131-B373=5
 | [`work-packages/B001-B045.md`](work-packages/B001-B045.md) | B-001..B-045 | 4 |
 | [`work-packages/B046-B090.md`](work-packages/B046-B090.md) | B-046..B-090 | 3 |
 | [`work-packages/B091-B130.md`](work-packages/B091-B130.md) | B-091..B-130 | 2 |
-| [`work-packages/B131-B167.md`](work-packages/B131-B167.md) | B-131..B-373 | 5 |
-| **Total** | | **14** |
+| [`work-packages/B131-B167.md`](work-packages/B131-B167.md) | B-131..B-373 | 4 |
+| **Total** | | **13** |
 
 The logical base includes the current B-008/B-012/B-032/B-035,
 B-065/B-086/B-089, B-097/B-111 and B-154/B-170/B-314/B-316 open
-population, plus B-373's retained 19-alert candidate census.
+population. B-373's retained 19-alert candidate census is historical; the
+authenticated 2026-09-12 post-merge census found zero open alerts.
 Terminal items remain in BACKLOG.md as historical authority and are excluded
 from executable coverage.
 
 B-372 was assigned to `WP-B372-ISSUER-PIN` and completed by integrated commit
 `cdd37097f5e8973a680c4b48ef9b99fdee06267d`. Its bounded completion contract
 remains in the final catalog, but it is deliberately absent from `wp-coverage`:
-terminal work is not redispatched. B-373 remains executable coverage because its
-candidate containment is not a post-merge live-zero proof.
+terminal work is not redispatched. B-373 is also absent from `wp-coverage` after
+its exact-SHA post-merge live-zero proof.
 
 The CI-grammar lane has one executable order, checked mechanically below; the
 order deliberately breaks the former WP-148/WP-150 cycle:
