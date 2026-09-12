@@ -114,6 +114,28 @@ def git(root: Path, *arguments: str) -> str:
     return result.stdout.strip()
 
 
+def api_json(endpoint: str) -> dict[str, Any]:
+    """Read GitHub control-plane facts without writing a git credential to disk."""
+    result = subprocess.run(["gh", "api", endpoint], capture_output=True, text=True, check=False)
+    if result.returncode:
+        raise CensusError(f"authenticated GitHub API failed for {endpoint}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise CensusError(f"GitHub API returned invalid JSON for {endpoint}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise CensusError(f"GitHub API returned non-object response for {endpoint}")
+    return payload
+
+
+def live_main_sha() -> str:
+    payload = api_json(f"/repos/{REPO}/git/ref/heads/main")
+    sha = (payload.get("object") or {}).get("sha")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", sha):
+        raise CensusError("GitHub main ref has no valid commit SHA")
+    return sha.lower()
+
+
 def verify_post_merge_ref(root: Path, merged_sha: str | None) -> None:
     """Require a clean checkout whose commit and tree are the delivered ref."""
     if merged_sha:
@@ -121,13 +143,7 @@ def verify_post_merge_ref(root: Path, merged_sha: str | None) -> None:
             raise CensusError("--merged-sha must be a full 40-character commit SHA")
         expected_ref = merged_sha
     else:
-        result = subprocess.run(
-            ["git", "fetch", "--no-tags", "origin", "main"],
-            cwd=root, capture_output=True, text=True, check=False,
-        )
-        if result.returncode:
-            raise CensusError("could not fetch origin/main for post-merge verification")
-        expected_ref = "origin/main"
+        expected_ref = live_main_sha()
     expected_commit = git(root, "rev-parse", "--verify", f"{expected_ref}^{{commit}}")
     expected_tree = git(root, "rev-parse", "--verify", f"{expected_ref}^{{tree}}")
     head = git(root, "rev-parse", "--verify", "HEAD^{commit}")
@@ -144,39 +160,25 @@ def verify_delivered_main_for_candidate(root: Path) -> None:
     """A done declaration may be checked on a descendant before it is merged.
 
     The exact-tree requirement above belongs only to ``--post-merge``. Here the
-    delivered merge must be an ancestor of both the live remote main and the
-    candidate. Main can advance after this reconciliation; a stale tracking ref
-    or the candidate's not-yet-delivered HEAD is never substituted for main.
+    delivered merge must be an ancestor of both live main and the checked-out
+    candidate. The live ref and comparison come from the authenticated API;
+    private-repository git fetch would require persisting checkout credentials.
     """
+    main_sha = live_main_sha()
+    shallow = git(root, "rev-parse", "--is-shallow-repository")
+    if shallow != "false":
+        raise CensusError("B-373 closure requires a full-history trusted checkout")
+    comparison = api_json(f"/repos/{REPO}/compare/{DELIVERED_MERGE_SHA}...{main_sha}")
+    if comparison.get("status") not in {"ahead", "identical"}:
+        raise CensusError("live main is not descended from the B-373 delivered merge")
+    if live_main_sha() != main_sha:
+        raise CensusError("main moved during B-373 closure check")
     result = subprocess.run(
-        ["git", "fetch", "--no-tags", "origin", "main"],
+        ["git", "merge-base", "--is-ancestor", DELIVERED_MERGE_SHA, "HEAD"],
         cwd=root, capture_output=True, text=True, check=False,
     )
     if result.returncode:
-        raise CensusError("could not fetch live origin/main for B-373 closure")
-    shallow = git(root, "rev-parse", "--is-shallow-repository")
-    if shallow not in {"true", "false"}:
-        raise CensusError("could not determine repository history depth for B-373 closure")
-    if shallow == "true":
-        # Actions checks out trusted main with fetch-depth: 1. A shallow
-        # boundary makes merge-base return false even for a real ancestor.
-        result = subprocess.run(
-            ["git", "fetch", "--no-tags", "--unshallow", "origin", "main"],
-            cwd=root, capture_output=True, text=True, check=False,
-        )
-        if result.returncode or git(root, "rev-parse", "--is-shallow-repository") != "false":
-            raise CensusError("could not complete main history for B-373 closure")
-    fetched_main = git(root, "rev-parse", "--verify", "FETCH_HEAD^{commit}")
-    remote = git(root, "ls-remote", "origin", "refs/heads/main")
-    if remote != f"{fetched_main}\trefs/heads/main":
-        raise CensusError("origin/main moved or disappeared during B-373 closure check")
-    for ref in (fetched_main, "HEAD"):
-        result = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", DELIVERED_MERGE_SHA, ref],
-            cwd=root, capture_output=True, text=True, check=False,
-        )
-        if result.returncode:
-            raise CensusError(f"{ref} is not descended from the B-373 delivered merge")
+        raise CensusError("trusted HEAD is not descended from the B-373 delivered merge")
 
 
 def flatten(payload: Any) -> list[dict[str, Any]]:
