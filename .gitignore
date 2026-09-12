@@ -57,6 +57,7 @@ node_modules/
 # Python venv para scripts de validação
 .venv-specs/
 .venv/
+.semgrep-venv/
 __pycache__/
 *.pyc
 

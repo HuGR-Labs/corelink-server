@@ -95,6 +95,12 @@ def _load(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def test_ci_semgrep_venv_is_excluded_from_scan() -> None:
+    """The workflow creates this venv before scanning the repository root."""
+    for ignore_file in (ROOT / ".gitignore", ROOT / ".semgrepignore"):
+        assert ".semgrep-venv/" in ignore_file.read_text(encoding="utf-8").splitlines()
+
+
 def test_complete_bundle_is_deterministic(fake_semgrep: Path, tmp_path: Path) -> None:
     output = tmp_path / "evidence"
     assert run_bundle(fake_semgrep, output, ROOT) == 0
