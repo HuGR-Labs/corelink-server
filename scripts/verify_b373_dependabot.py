@@ -154,6 +154,18 @@ def verify_delivered_main_for_candidate(root: Path) -> None:
     )
     if result.returncode:
         raise CensusError("could not fetch live origin/main for B-373 closure")
+    shallow = git(root, "rev-parse", "--is-shallow-repository")
+    if shallow not in {"true", "false"}:
+        raise CensusError("could not determine repository history depth for B-373 closure")
+    if shallow == "true":
+        # Actions checks out trusted main with fetch-depth: 1. A shallow
+        # boundary makes merge-base return false even for a real ancestor.
+        result = subprocess.run(
+            ["git", "fetch", "--no-tags", "--unshallow", "origin", "main"],
+            cwd=root, capture_output=True, text=True, check=False,
+        )
+        if result.returncode or git(root, "rev-parse", "--is-shallow-repository") != "false":
+            raise CensusError("could not complete main history for B-373 closure")
     fetched_main = git(root, "rev-parse", "--verify", "FETCH_HEAD^{commit}")
     remote = git(root, "ls-remote", "origin", "refs/heads/main")
     if remote != f"{fetched_main}\trefs/heads/main":

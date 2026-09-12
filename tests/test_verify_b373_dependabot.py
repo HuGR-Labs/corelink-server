@@ -69,7 +69,7 @@ class B373SourceBoundaryTests(unittest.TestCase):
         main_sha = "1" * 40
         ok = subprocess.CompletedProcess([], 0, "", "")
         with patch.object(VERIFY.subprocess, "run", side_effect=[ok, ok, ok]) as run, patch.object(
-            VERIFY, "git", side_effect=[main_sha, f"{main_sha}\trefs/heads/main"]
+            VERIFY, "git", side_effect=["false", main_sha, f"{main_sha}\trefs/heads/main"]
         ) as git:
             VERIFY.verify_delivered_main_for_candidate(ROOT)
             self.assertEqual(run.call_count, 3)
@@ -81,7 +81,7 @@ class B373SourceBoundaryTests(unittest.TestCase):
             self.assertEqual(run.call_args_list[2].args[0],
                              ["git", "merge-base", "--is-ancestor",
                               VERIFY.DELIVERED_MERGE_SHA, "HEAD"])
-            self.assertEqual(git.call_count, 2)
+            self.assertEqual(git.call_count, 3)
 
     def test_done_candidate_rejects_stale_or_wrong_main_before_live_api(self):
         arguments = ["--alerts-file", str(ROOT / VERIFY.SNAPSHOT)]
@@ -99,7 +99,7 @@ class B373SourceBoundaryTests(unittest.TestCase):
         with patch.object(VERIFY, "backlog_b373_done", return_value=True), patch.object(
             VERIFY.subprocess, "run", return_value=ok
         ) as run, patch.object(
-            VERIFY, "git", side_effect=[main_sha, f"{'0' * 40}\trefs/heads/main"]
+            VERIFY, "git", side_effect=["false", main_sha, f"{'0' * 40}\trefs/heads/main"]
         ), patch.object(VERIFY, "read_alerts") as live:
             self.assertEqual(VERIFY.main(arguments), 2)
             run.assert_called_once()
@@ -116,10 +116,51 @@ class B373SourceBoundaryTests(unittest.TestCase):
             ), patch.object(
                 VERIFY.subprocess, "run", side_effect=results
             ), patch.object(
-                VERIFY, "git", side_effect=[main_sha, f"{main_sha}\trefs/heads/main"]
+                VERIFY, "git", side_effect=["false", main_sha, f"{main_sha}\trefs/heads/main"]
             ), patch.object(VERIFY, "read_alerts") as live:
                 self.assertEqual(VERIFY.main(arguments), 2)
                 live.assert_not_called()
+
+    def test_real_shallow_trusted_checkout_recovers_delivered_ancestry(self):
+        def run(*args: str) -> str:
+            result = subprocess.run(args, check=True, capture_output=True, text=True)
+            return result.stdout.strip()
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            remote = base / "remote.git"
+            source = base / "source"
+            shallow = base / "shallow"
+            run("git", "init", "--bare", str(remote))
+            run("git", "init", str(source))
+            run("git", "-C", str(source), "config", "user.name", "B373 Test")
+            run("git", "-C", str(source), "config", "user.email", "b373@example.test")
+            for message in ("root", "delivered", "later"):
+                run("git", "-C", str(source), "-c", "commit.gpgsign=false",
+                    "commit", "--allow-empty", "-m", message)
+                if message == "delivered":
+                    delivered = run("git", "-C", str(source), "rev-parse", "HEAD")
+            run("git", "-C", str(source), "branch", "-M", "main")
+            run("git", "-C", str(source), "remote", "add", "origin", str(remote))
+            run("git", "-C", str(source), "push", "origin", "main")
+            run("git", "--git-dir", str(remote), "symbolic-ref", "HEAD", "refs/heads/main")
+            run("git", "clone", "--depth=1", remote.as_uri(), str(shallow))
+            self.assertEqual(run("git", "-C", str(shallow), "rev-parse",
+                                 "--is-shallow-repository"), "true")
+            with patch.object(VERIFY, "DELIVERED_MERGE_SHA", delivered):
+                VERIFY.verify_delivered_main_for_candidate(shallow)
+            self.assertEqual(run("git", "-C", str(shallow), "rev-parse",
+                                 "--is-shallow-repository"), "false")
+
+    def test_shallow_history_fetch_failure_is_not_zero(self):
+        ok = subprocess.CompletedProcess([], 0, "", "")
+        failed = subprocess.CompletedProcess([], 1, "", "fetch denied")
+        with patch.object(VERIFY.subprocess, "run", side_effect=[ok, failed]) as fetch, patch.object(
+            VERIFY, "git", return_value="true"
+        ):
+            with self.assertRaisesRegex(VERIFY.CensusError, "could not complete main history"):
+                VERIFY.verify_delivered_main_for_candidate(ROOT)
+            self.assertEqual(fetch.call_count, 2)
 
     def test_done_fixture_rejects_live_open_alerts(self):
         arguments = ["--alerts-file", str(ROOT / VERIFY.SNAPSHOT)]
