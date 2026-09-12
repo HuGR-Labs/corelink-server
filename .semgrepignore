@@ -18,7 +18,7 @@ bazel-*/
 buck-out/
 node_modules/
 **/node_modules/
-.semgrep-venv/
+/.semgrep-venv/
 dist/
 build/
 .next/

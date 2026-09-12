@@ -46,9 +46,10 @@ bytes, SHA-256 `0584599936627b43956fc93e49112669a480bd0fb787195af96645756d7835e4
 the file remains outside Git in a private temporary directory. This standalone
 scan is not a substitute for the two-population bundle or its report.
 
-The workflow creates `.semgrep-venv/` inside the scan target. This change adds
-that generated directory to both ignore files so bundled Python rules do not
-scan the scanner's own dependencies; a focused regression test enforces it.
+The workflow creates `.semgrep-venv/` at the repository root. This change adds
+the root-anchored `/.semgrep-venv/` pattern to both ignore files so bundled
+Python rules do not scan the scanner's own dependencies, while nested source
+paths named `.semgrep-venv/` remain visible; a focused regression test enforces it.
 
 ## Closure boundary
 
