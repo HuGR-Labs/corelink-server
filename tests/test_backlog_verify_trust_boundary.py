@@ -84,6 +84,24 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(any("owner may change" in error for error in errors))
 
+    def test_verify_means_can_change_only_with_status_transition(self) -> None:
+        base = self.item("B-373", status="open")
+        changed = self.item("B-373", status="done")
+        changed.raw["verify-means"] = "done — authenticated post-merge live zero"
+        self.assertEqual(
+            backlog_verify.validate_candidate_transitions([changed], [base], dt.date(2026, 9, 12)),
+            [],
+        )
+        unchanged_status = self.item("B-373", status="open")
+        unchanged_status.raw["verify-means"] = changed.raw["verify-means"]
+        errors = backlog_verify.validate_candidate_transitions(
+            [unchanged_status], [base], dt.date(2026, 9, 12)
+        )
+        self.assertTrue(any("verify-means may change only with a status transition" in error for error in errors))
+        changed.raw["verify"] = "true"
+        errors = backlog_verify.validate_candidate_transitions([changed], [base], dt.date(2026, 9, 12))
+        self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
+
     def test_deleting_highest_base_id_is_rejected(self) -> None:
         errors = backlog_verify.validate_candidate_transitions(
             [self.item("B-001")],
@@ -129,6 +147,54 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         }
         for label, mutated in mutations.items():
             with self.subTest(label=label):
+                workflow.write_text(mutated, encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
+                    backlog_verify.validate_candidate_workflow(self.candidate)
+        workflow.write_text(baseline, encoding="utf-8")
+
+    def test_workflow_rejects_inherited_and_step_environment_execution(self) -> None:
+        workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
+        baseline = workflow.read_text(encoding="utf-8")
+        backlog_verify.validate_candidate_workflow(self.candidate)
+        b314_marker = "      - name: Prove BASE B-314 owner-gate mutation teeth"
+        mutations = {
+            "root-env-bash-env": baseline.replace(
+                "name: backlog-verify\n",
+                "name: backlog-verify\nenv:\n  BASH_ENV: ${{ github.workspace }}/_candidate/evil.sh\n", 1,
+            ),
+            "root-default-shell": baseline.replace(
+                "name: backlog-verify\n",
+                "name: backlog-verify\ndefaults:\n  run:\n    shell: bash\n", 1,
+            ),
+            "job-env-bash-env": baseline.replace(
+                "    timeout-minutes: 10\n",
+                "    timeout-minutes: 10\n    env:\n      BASH_ENV: ${{ github.workspace }}/_candidate/evil.sh\n", 1,
+            ),
+            "job-defaults": baseline.replace(
+                "    timeout-minutes: 10\n",
+                "    timeout-minutes: 10\n    defaults:\n      run:\n        working-directory: _candidate\n", 1,
+            ),
+            "job-container": baseline.replace(
+                "    timeout-minutes: 10\n",
+                "    timeout-minutes: 10\n    container: attacker-controlled-image\n", 1,
+            ),
+            "base-gate-env-bash-env": baseline.replace(
+                "          TRUSTED_ROOT: ${{ github.workspace }}/_base\n",
+                "          TRUSTED_ROOT: ${{ github.workspace }}/_base\n"
+                "          BASH_ENV: ${{ github.workspace }}/_candidate/evil.sh\n", 1,
+            ),
+            "b314-step-env": baseline.replace(
+                b314_marker + "\n",
+                b314_marker + "\n        env:\n          BASH_ENV: ${{ github.workspace }}/_candidate/evil.sh\n", 1,
+            ),
+            "extra-pr-trigger": baseline.replace(
+                "    paths: [\"**\"]\n  push:\n",
+                "    paths: [\"**\"]\n    branches: [main]\n  push:\n", 1,
+            ),
+        }
+        for label, mutated in mutations.items():
+            with self.subTest(label=label):
+                self.assertNotEqual(mutated, baseline)
                 workflow.write_text(mutated, encoding="utf-8")
                 with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
                     backlog_verify.validate_candidate_workflow(self.candidate)

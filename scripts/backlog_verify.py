@@ -76,10 +76,10 @@ DEFAULT_MAX_AGE_DAYS = 14
 MAX_BACKLOG_BYTES = 2_000_000
 VERIFY_TIMEOUT_S = 120
 IMMUTABLE_ITEM_FIELDS = frozenset({
-    "id", "repo", "verify", "verify-means", "action-packet", "source-document",
+    "id", "repo", "verify", "action-packet", "source-document",
     "source-locator", "finding-title", "problem", "evidence", "acceptance",
 })
-ALLOWED_TRANSITION_FIELDS = frozenset({"status", "owner", "last-verified"})
+ALLOWED_TRANSITION_FIELDS = frozenset({"status", "owner", "last-verified", "verify-means"})
 
 # A command's polarity cannot be inferred from arbitrary shell.  We can still
 # reject the known dangerous declaration: a `done` item whose human explanation
@@ -564,30 +564,65 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         raise RuntimeError("candidate workflow contains mutable/credentialed execution policy: " + ", ".join(found))
 
     # The workflow is not executed for this PR, but it becomes the BASE control
-    # plane after merge. Keep its executable shape closed while allowing harmless
-    # comments/concurrency edits. A candidate cannot add a shell step, swap the
-    # checkout action, or redirect the BASE checker without this data check going
-    # red first.
-    trigger = document.get(True, document.get("on")) or {}
+    # plane after merge. All YAML keys that can alter runner execution are
+    # closed-world, including inherited env/defaults and per-step overrides.
+    # Otherwise a job-level BASH_ENV can source candidate bytes before the
+    # pinned BASE gate runs despite every named step appearing unchanged.
+    trigger_keys = {key for key in (True, "on") if key in document}
+    if len(trigger_keys) != 1 or set(document) != {
+        "name", *trigger_keys, "permissions", "concurrency", "jobs"
+    } or document.get("name") != "backlog-verify":
+        raise RuntimeError("candidate workflow policy has unexpected top-level keys")
+    trigger = document[next(iter(trigger_keys))]
+    if not isinstance(trigger, dict) or set(trigger) != {
+        "pull_request_target", "push", "schedule", "workflow_dispatch"
+    }:
+        raise RuntimeError("candidate workflow policy has unexpected triggers")
     pr_trigger = trigger.get("pull_request_target") if isinstance(trigger, dict) else None
     push_trigger = trigger.get("push") if isinstance(trigger, dict) else None
-    if not isinstance(pr_trigger, dict) or pr_trigger.get("types") != ["opened", "synchronize", "reopened"]:
+    if not isinstance(pr_trigger, dict) or pr_trigger != {
+        "types": ["opened", "synchronize", "reopened"], "paths": ["**"]
+    }:
         raise RuntimeError("candidate workflow policy has unexpected pull_request_target types")
-    if pr_trigger.get("paths") != ["**"]:
-        raise RuntimeError("candidate workflow policy must cover the complete PR tree")
-    if not isinstance(push_trigger, dict) or push_trigger.get("branches") != ["main"] or push_trigger.get("paths") != ["**"]:
+    if not isinstance(push_trigger, dict) or push_trigger != {"branches": ["main"], "paths": ["**"]}:
         raise RuntimeError("candidate workflow policy has unexpected main push trigger")
+    if trigger["schedule"] != [{"cron": "17 6 * * *"}] or trigger["workflow_dispatch"] != {}:
+        raise RuntimeError("candidate workflow policy has unexpected schedule or dispatch trigger")
     if document.get("permissions") != {"contents": "read"}:
         raise RuntimeError("candidate workflow policy must grant contents: read only")
+    if document.get("concurrency") != {
+        "group": "ci-backlog-verify-${{ github.event_name }}-${{ github.ref }}",
+        "cancel-in-progress": True,
+    }:
+        raise RuntimeError("candidate workflow policy has unexpected concurrency settings")
     jobs = document.get("jobs")
     if not isinstance(jobs, dict) or set(jobs) != {"verify"}:
         raise RuntimeError("candidate workflow policy must contain only the verify job")
     job = jobs["verify"]
     steps = job.get("steps") if isinstance(job, dict) else None
-    if not isinstance(job, dict) or job.get("runs-on") != "corelink" or not isinstance(steps, list) or len(steps) != 7:
+    if (
+        not isinstance(job, dict) or set(job) != {"runs-on", "timeout-minutes", "steps"}
+        or job.get("runs-on") != "corelink" or job.get("timeout-minutes") != 10
+        or not isinstance(steps, list) or len(steps) != 7
+    ):
         raise RuntimeError("candidate workflow policy has unexpected verify job shape")
     if not all(isinstance(step, dict) for step in steps):
         raise RuntimeError("candidate workflow policy has a malformed verify step")
+    expected_step_keys = (
+        {"name", "uses", "with"}, {"name", "uses", "with"},
+        {"name", "working-directory", "env", "run"},
+        {"name", "working-directory", "run"},
+        {"name", "working-directory", "run"},
+        {"name", "if", "working-directory", "run"},
+        {"name", "if", "working-directory", "run"},
+    )
+    if any(set(step) != expected for step, expected in zip(steps, expected_step_keys)):
+        raise RuntimeError("candidate workflow policy has unexpected step keys")
+    if steps[2]["env"] != {
+        "CANDIDATE_ROOT": "${{ github.workspace }}/_candidate",
+        "TRUSTED_ROOT": "${{ github.workspace }}/_base",
+    }:
+        raise RuntimeError("candidate workflow policy has unexpected BASE gate environment")
     checkout_ref = "9f698171ed81b15d1823a05fc7211befd50c8ae0"
     expected_checkouts = (
         ("${{ github.event.pull_request.head.sha || github.sha }}", "_candidate"),
