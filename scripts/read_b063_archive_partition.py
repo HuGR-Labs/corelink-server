@@ -39,6 +39,11 @@ def query(sql: str, account: str, token: str) -> list[dict]:
     block = blocks[0]
     if not isinstance(block, dict) or block.get("success") is not True:
         raise ValueError("D1 result block did not report success")
+    meta = block.get("meta")
+    if not isinstance(meta, dict) or meta.get("changed_db") is not False or (
+        type(meta.get("rows_written")) is not int or meta["rows_written"] != 0
+    ) or meta.get("served_by_primary") is not True:
+        raise ValueError("D1 read-only primary provenance is missing or invalid")
     rows = block.get("results")
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise ValueError("D1 results missing or malformed")

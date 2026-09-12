@@ -20,7 +20,8 @@ def test_query_posts_select_only_to_canonical_d1(monkeypatch):
             return False
 
         def read(self, *_):
-            return b'{"success":true,"result":[{"success":true,"results":[]}]}'
+            return (b'{"success":true,"result":[{"success":true,"results":[],"meta":'
+                    b'{"changed_db":false,"rows_written":0,"served_by_primary":true}}]}')
 
     def fake_open(request, timeout):
         seen.append((request, timeout))
@@ -34,6 +35,51 @@ def test_query_posts_select_only_to_canonical_d1(monkeypatch):
     assert json.loads(request.data)["sql"] == "SELECT 1"
     assert timeout == 60
     assert "pagerduty" not in request.full_url
+
+
+@pytest.mark.parametrize("meta", [
+    None,
+    {},
+    {"rows_written": 0, "served_by_primary": True},
+    {"changed_db": False, "served_by_primary": True},
+    {"changed_db": False, "rows_written": 0},
+    {"changed_db": False, "rows_written": 0, "served_by_primary": False},
+    {"changed_db": False, "rows_written": 0, "served_by_primary": None},
+    {"changed_db": True, "rows_written": 0, "served_by_primary": True},
+    {"changed_db": False, "rows_written": 1, "served_by_primary": True},
+    {"changed_db": False, "rows_written": False, "served_by_primary": True},
+])
+def test_query_rejects_missing_or_unsafe_d1_meta(monkeypatch, meta):
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self, *_):
+            return json.dumps({
+                "success": True,
+                "result": [{"success": True, "results": [], "meta": meta}],
+            }).encode()
+
+    monkeypatch.setattr(readback.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
+    with pytest.raises(ValueError, match="provenance"):
+        readback.query("SELECT 1", "account", "secret")
+
+
+def test_indeterminate_read_exits_two_without_green_output(monkeypatch, capsys):
+    monkeypatch.setenv("OWNER_APPROVED_READONLY", "1")
+    monkeypatch.setenv("CF_ACCOUNT_ID", "account")
+    monkeypatch.setenv("CF_API_TOKEN", "do-not-print-this")
+    monkeypatch.setattr(readback, "sample", lambda *_: (_ for _ in ()).throw(ValueError("unsafe")))
+    assert readback.main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "indeterminate" in captured.err
+    assert "do-not-print-this" not in captured.err
 
 
 def test_full_population_zero_with_exact_canary_control(monkeypatch):
