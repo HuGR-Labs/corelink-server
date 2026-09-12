@@ -212,9 +212,28 @@ describe("CustomerClient wire-shape contract", () => {
   });
 
   it.each([
-    ["missing", { pat: { pat_id: "pat_missing" } }],
-    ["blank live token", { pat: { pat_id: "pat_blank" }, token: "" }],
-    ["blank compatibility alias", { pat: { pat_id: "pat_blank_alias" }, token_plaintext: "   " }],
+    ["missing PAT row", undefined],
+    ["empty PAT row", {}],
+    ["array PAT row", []],
+    ["blank PAT ID", { pat_id: " ", name: "ci", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" }],
+    ["missing name", { pat_id: "pat_1", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" }],
+    ["missing created_at", { pat_id: "pat_1", name: "ci", scopes: ["cache:r"] }],
+    ["non-array scopes", { pat_id: "pat_1", name: "ci", scopes: "cache:r", created_at: "2026-08-01T00:00:00Z" }],
+    ["non-string scope", { pat_id: "pat_1", name: "ci", scopes: [7], created_at: "2026-08-01T00:00:00Z" }],
+  ])("createPat rejects %s despite a valid plaintext token", async (_caseName, pat) => {
+    const client = new CustomerClient({
+      baseUrl: "https://api.test",
+      fetchImpl: respondWith({ pat, token: "crl_pat_shown_once_secret" }, 201),
+    });
+
+    await expect(client.createPat({ name: "ci", scopes: ["cache:r"] }))
+      .rejects.toMatchObject({ status: 502, message: "customer api response has invalid PAT metadata" });
+  });
+
+  it.each([
+    ["missing", { pat: { pat_id: "pat_missing", name: "ci", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" } }],
+    ["blank live token", { pat: { pat_id: "pat_blank", name: "ci", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" }, token: "" }],
+    ["blank compatibility alias", { pat: { pat_id: "pat_blank_alias", name: "ci", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" }, token_plaintext: "   " }],
   ])("createPat fails closed when PAT plaintext is %s", async (_caseName, body) => {
     const client = new CustomerClient({
       baseUrl: "https://api.test",

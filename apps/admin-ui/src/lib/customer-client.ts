@@ -59,13 +59,35 @@ export class CustomerClientError extends Error {
 }
 
 interface CustomerPatCreateResponse {
-  pat?: CustomerPat;
+  pat?: unknown;
   token_plaintext?: unknown;
   token?: unknown;
 }
 
 function hasOwn(value: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function isNonblankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function normalizePatMetadata(value: unknown): CustomerPat {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) {
+    throw new CustomerClientError(502, "customer api response has invalid PAT metadata");
+  }
+  const pat = value as Record<string, unknown>;
+  const scopes = pat.scopes;
+  if (
+    !isNonblankString(pat.pat_id) ||
+    !isNonblankString(pat.name) ||
+    !isNonblankString(pat.created_at) ||
+    !Array.isArray(scopes) ||
+    !scopes.every((scope: unknown) => typeof scope === "string")
+  ) {
+    throw new CustomerClientError(502, "customer api response has invalid PAT metadata");
+  }
+  return value as CustomerPat;
 }
 
 /**
@@ -222,17 +244,14 @@ export class CustomerClient {
       "/v1/customer/keys",
       { method: "POST", body: JSON.stringify(input) },
     );
-    if (
-      response == null ||
-      typeof response !== "object" ||
-      response.pat == null
-    ) {
+    if (response == null || typeof response !== "object" || Array.isArray(response)) {
       throw new CustomerClientError(
         502,
         "customer api response missing PAT metadata",
       );
     }
-    return { ...response.pat, token: normalizePatPlaintext(response) };
+    const pat = normalizePatMetadata(response.pat);
+    return { ...pat, token: normalizePatPlaintext(response) };
   }
 
   /**

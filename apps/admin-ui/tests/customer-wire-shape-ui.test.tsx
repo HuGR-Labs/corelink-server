@@ -145,6 +145,22 @@ describe("KeysClient against the real POST /v1/customer/keys wire", { timeout: W
     expect(screen.getByTestId("pat-value")).toHaveTextContent("crl_pat_shown_once_secret");
   });
 
+  it("does not reveal or celebrate a malformed create response", async () => {
+    wireFetch.mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method === "POST"
+        ? json({ pat: {}, token: "crl_pat_shown_once_secret" }, 201)
+        : json(KEYS_LIST_WIRE),
+    );
+
+    render(<KeysClient />);
+    await waitFor(() => expect(screen.getByTestId("keys-create")).toBeInTheDocument());
+    fireEvent.change(screen.getByTestId("keys-create-name"), { target: { value: "ci-github" } });
+    fireEvent.click(screen.getByTestId("keys-create-submit"));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Couldn't create token");
+    expect(screen.queryByTestId("pat-value")).not.toBeInTheDocument();
+  });
+
   it("reveals the live token after rotate", async () => {
     const rotatedPat = {
       ...KEYS_CREATE_WIRE.pat,
@@ -166,6 +182,24 @@ describe("KeysClient against the real POST /v1/customer/keys wire", { timeout: W
 
     expect(await screen.findByTestId("pat-value")).toHaveTextContent("crl_pat_rotated_secret");
     expect(screen.getByTestId("pat-value")).not.toHaveTextContent("undefined");
+  });
+
+  it("does not reveal or celebrate a malformed rotate response", async () => {
+    wireFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && url.endsWith("/pat_001/revoke")) {
+        return json({ pat: { ...KEYS_LIST_WIRE.pats[0], revoked_at: "2026-08-02T00:00:00Z" } });
+      }
+      if (init?.method === "POST") return json({ pat: {}, token: "crl_pat_rotated_secret" }, 201);
+      return json(KEYS_LIST_WIRE);
+    });
+
+    render(<KeysClient />);
+    await waitFor(() => expect(screen.getByTestId("keys-rotate-pat_001")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("keys-rotate-pat_001"));
+    fireEvent.click(await screen.findByRole("button", { name: "Rotate token" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Couldn't rotate token");
+    expect(screen.queryByTestId("pat-value")).not.toBeInTheDocument();
   });
 
   it("reveals the optional token_plaintext alias after rotate", async () => {
