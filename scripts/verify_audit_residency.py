@@ -3,7 +3,10 @@
 
 The old ``INNER JOIN`` check answered only for rows that still had a tenant.
 This tool instead reads one aggregate over the *full* ``audit_outbox``
-population and partitions every row as satisfied, violated, or unevaluable.
+population. Customer rows partition as satisfied, violated, or unevaluable;
+the canonical ``_public`` namespace is accounted for separately, never
+silently removed from the denominator. Public rows with an unexpected region
+or event type are unevaluable, not an automatic exception.
 An unevaluable row (including a retained DSR-erasure orphan) is evidence that
 the predicate cannot be proven; it is a failing result, never a clean result.
 
@@ -29,6 +32,17 @@ from typing import Any, NoReturn
 
 CANONICAL_REGIONS = ("wnam", "enam", "weur", "sam", "apac", "afr")
 _REGIONS_SQL = ", ".join(f"'{region}'" for region in CANONICAL_REGIONS)
+PUBLIC_EVENTS = (
+    "corelink.cas.read.attempted",
+    "corelink.cas.read.served",
+    "corelink.cas.write.attempted",
+    "corelink.cas.write.committed",
+    "public.revoke",
+    "corelink.signup.pilot_reserved.v1",
+    "corelink.signup.pilot_token_rejected.v1",
+    "corelink.signup.pilot_rate_limited.v1",
+)
+_PUBLIC_EVENTS_SQL = ", ".join(f"'{event}'" for event in PUBLIC_EVENTS)
 
 # ``EXISTS`` is intentional: an erased tenant can have one row per erased
 # backend, and joining that table would multiply audit rows and corrupt the
@@ -40,6 +54,11 @@ WITH classified AS (
         a.region AS audit_region,
         t.tenant_id AS joined_tenant_id,
         CASE
+            WHEN a.tenant_id = '_public'
+              AND a.region = 'wnam'
+              AND a.event_type IN ({_PUBLIC_EVENTS_SQL})
+                THEN 'reserved_public'
+            WHEN a.tenant_id = '_public' THEN 'unevaluable'
             WHEN t.tenant_id IS NULL
               OR a.region IS NULL
               OR t.primary_region IS NULL
@@ -49,7 +68,7 @@ WITH classified AS (
             WHEN a.region = t.primary_region THEN 'satisfied'
             ELSE 'violated'
         END AS residency_state,
-        CASE WHEN t.tenant_id IS NULL
+        CASE WHEN a.tenant_id != '_public' AND t.tenant_id IS NULL
                   AND EXISTS (
                       SELECT 1 FROM dsr_erasure_log AS d
                       WHERE d.tenant_id = a.tenant_id
@@ -60,21 +79,29 @@ WITH classified AS (
 )
 SELECT
     COUNT(*) AS total_rows,
+    SUM(tenant_id != '_public') AS customer_rows,
+    SUM(tenant_id = '_public') AS public_rows,
+    SUM(residency_state = 'reserved_public') AS reserved_public_rows,
+    SUM(tenant_id = '_public' AND residency_state = 'unevaluable')
+        AS invalid_public_rows,
     SUM(residency_state = 'satisfied') AS satisfied_rows,
     SUM(residency_state = 'violated') AS violated_rows,
     SUM(residency_state = 'unevaluable') AS unevaluable_rows,
-    SUM(joined_tenant_id IS NULL) AS orphan_rows,
-    COUNT(DISTINCT CASE WHEN joined_tenant_id IS NULL THEN tenant_id END)
+    SUM(tenant_id != '_public' AND residency_state = 'unevaluable')
+        AS customer_unevaluable_rows,
+    SUM(tenant_id != '_public' AND joined_tenant_id IS NULL) AS orphan_rows,
+    COUNT(DISTINCT CASE WHEN tenant_id != '_public' AND joined_tenant_id IS NULL THEN tenant_id END)
         AS orphan_tenants,
     SUM(erased_orphan) AS erased_orphan_rows,
     COUNT(DISTINCT CASE WHEN erased_orphan = 1 THEN tenant_id END)
         AS erased_orphan_tenants,
-    SUM(joined_tenant_id IS NULL) - SUM(erased_orphan)
+    SUM(tenant_id != '_public' AND joined_tenant_id IS NULL) - SUM(erased_orphan)
         AS unexplained_orphan_rows,
-    COUNT(DISTINCT CASE WHEN joined_tenant_id IS NULL AND erased_orphan = 0
+    COUNT(DISTINCT CASE WHEN tenant_id != '_public' AND joined_tenant_id IS NULL AND erased_orphan = 0
                         THEN tenant_id END) AS unexplained_orphan_tenants,
     SUM(audit_region = 'weur') AS weur_audit_rows,
-    SUM(audit_region = 'weur' AND joined_tenant_id IS NULL) AS weur_orphan_rows,
+    SUM(audit_region = 'weur' AND tenant_id != '_public' AND joined_tenant_id IS NULL)
+        AS weur_orphan_rows,
     (SELECT COUNT(*) FROM tenant WHERE primary_region = 'weur') AS weur_tenants,
     (SELECT COUNT(*) FROM dsr_erasure_log) AS erasure_log_rows
 FROM classified
@@ -82,9 +109,14 @@ FROM classified
 
 COUNT_FIELDS = (
     "total_rows",
+    "customer_rows",
+    "public_rows",
+    "reserved_public_rows",
+    "invalid_public_rows",
     "satisfied_rows",
     "violated_rows",
     "unevaluable_rows",
+    "customer_unevaluable_rows",
     "orphan_rows",
     "orphan_tenants",
     "erased_orphan_rows",
@@ -105,9 +137,14 @@ class Indeterminate(ValueError):
 @dataclass(frozen=True)
 class Counts:
     total_rows: int
+    customer_rows: int
+    public_rows: int
+    reserved_public_rows: int
+    invalid_public_rows: int
     satisfied_rows: int
     violated_rows: int
     unevaluable_rows: int
+    customer_unevaluable_rows: int
     orphan_rows: int
     orphan_tenants: int
     erased_orphan_rows: int
@@ -148,9 +185,17 @@ def assess(counts: Counts, *, environment: str) -> tuple[str, str]:
     """Return the explicit state and reason after checking partition invariants."""
     if counts.total_rows == 0:
         raise Indeterminate("audit_outbox population is empty; no residency claim is proven")
-    if counts.satisfied_rows + counts.violated_rows + counts.unevaluable_rows != counts.total_rows:
-        raise Indeterminate("three-state partition does not equal the full audit_outbox population")
-    if counts.orphan_rows > counts.unevaluable_rows:
+    if counts.customer_rows + counts.public_rows != counts.total_rows:
+        raise Indeterminate("customer and public populations do not equal the full audit_outbox population")
+    if counts.reserved_public_rows + counts.invalid_public_rows != counts.public_rows:
+        raise Indeterminate("valid and invalid public rows do not partition the public namespace")
+    if counts.satisfied_rows + counts.violated_rows + counts.customer_unevaluable_rows != counts.customer_rows:
+        raise Indeterminate("three-state customer partition does not equal its population")
+    if counts.customer_unevaluable_rows + counts.invalid_public_rows != counts.unevaluable_rows:
+        raise Indeterminate("public and customer unevaluable rows do not equal the failing bucket")
+    if counts.satisfied_rows + counts.violated_rows + counts.unevaluable_rows + counts.reserved_public_rows != counts.total_rows:
+        raise Indeterminate("all residency states do not equal the full audit_outbox population")
+    if counts.orphan_rows > counts.customer_unevaluable_rows:
         raise Indeterminate("orphan rows escaped the unevaluable bucket")
     if counts.erased_orphan_rows > counts.orphan_rows:
         raise Indeterminate("erased-orphan rows exceed the orphan denominator")
@@ -169,7 +214,7 @@ def assess(counts: Counts, *, environment: str) -> tuple[str, str]:
             "FAILED",
             "known violations or unevaluable rows exist; neither may be reported compliant",
         )
-    return ("COMPLIANT", "all rows are in the satisfied bucket")
+    return ("COMPLIANT", "all customer rows are satisfied and all public rows meet the reserved-namespace contract")
 
 
 def _live_payload(account_id: str, token: str, database_id: str, timeout: int) -> object:
