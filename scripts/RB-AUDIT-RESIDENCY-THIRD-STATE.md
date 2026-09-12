@@ -22,23 +22,25 @@ store and use `--input /restricted/path/d1-residency.json`; do not commit it.
 | `FAILED` | 1 | At least one known mismatch (`violated`) or unprovable row (`unevaluable`) exists. | Do not attest compliance. Preserve evidence and investigate the named buckets. |
 | `INDETERMINATE` | 2 | Credentials, timeout, response shape, control, or full-population partition cannot be trusted. | Restore read access/query health and rerun; never interpret this as zero violations. |
 
-The full denominator is exactly customer rows plus reserved `_public` rows.
-Customer rows partition into three disjoint, exhaustive buckets. A customer
-row is `satisfied` only when a joined tenant and both canonical
-regions exist and are equal. A known unequal pair is `violated`. A missing
+The full denominator is exactly `customer_rows + public_rows`, where
+`public_rows = reserved_public_rows + invalid_public_rows`. Customer rows
+partition into three disjoint, exhaustive buckets. A customer row is
+`satisfied` only when a joined tenant and both canonical regions exist and
+are equal. A known unequal pair is `violated`. A missing
 tenant, missing region, or malformed/unknown region is `unevaluable`.
 Valid `_public` rows are reported separately as `reserved_public_rows`, never
 as customer rows or as unexplained customer orphans. An unexpected `_public`
 region or event type enters `invalid_public_rows` and `unevaluable_rows`, so it
-fails the attestation. `total_rows` must equal the sum of the three customer
-buckets and `reserved_public_rows`.
+fails the attestation. `total_rows` equals the three customer buckets plus
+`reserved_public_rows` and `invalid_public_rows`; the full `unevaluable_rows`
+includes both customer and invalid public rows.
 
 ## Mandatory controls
 
 Inspect the JSON `counts` object. It includes the full denominator and each
 partition, public-namespace checks, DSR-erasure evidence, unexplained customer
-orphan denominator, and `weur`
-evidence. In production `erasure_log_rows=0` is indeterminate: without the
+orphan denominator, and `weur` evidence. In production `erasure_log_rows=0`
+is indeterminate: without the
 control, the tool cannot distinguish retained Art. 5(2) DSR evidence from an
 unexplained orphan. `weur_audit_rows > 0` with `weur_tenants=0` must remain
 visible through `weur_orphan_rows`; it cannot become a green result.

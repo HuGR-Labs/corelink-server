@@ -20,6 +20,34 @@ verifier = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = verifier
 SPEC.loader.exec_module(verifier)
 
+# Independently frozen from the producer slugs below, not derived from the
+# verifier's allowlist (otherwise removing an event from both SQL and the test
+# parameter population would silently pass).
+EXPECTED_PUBLIC_EVENTS = (
+    "corelink.cas.read.attempted",
+    "corelink.cas.read.served",
+    "corelink.cas.write.attempted",
+    "corelink.cas.write.committed",
+    "public.revoke",
+    "corelink.signup.pilot_reserved.v1",
+    "corelink.signup.pilot_token_rejected.v1",
+    "corelink.signup.pilot_rate_limited.v1",
+)
+
+
+def test_public_allowlist_matches_independent_writer_slugs() -> None:
+    assert set(verifier.PUBLIC_EVENTS) == set(EXPECTED_PUBLIC_EVENTS)
+    source_root = Path(__file__).parents[1] / "crates" / "corelink-container" / "src"
+    writer_sources = {
+        source_root.parents[1] / "corelink-handler-cas" / "src" / "audit.rs": EXPECTED_PUBLIC_EVENTS[:4],
+        source_root / "routes" / "public_revoke.rs": (EXPECTED_PUBLIC_EVENTS[4],),
+        source_root / "routes" / "signup.rs": EXPECTED_PUBLIC_EVENTS[5:],
+    }
+    for path, slugs in writer_sources.items():
+        source = path.read_text(encoding="utf-8")
+        for slug in slugs:
+            assert f'"{slug}"' in source, f"producer slug {slug} missing from {path}"
+
 
 def response(**overrides: int) -> dict:
     row = {
@@ -129,7 +157,7 @@ def test_sql_accounts_for_reserved_public_without_laundering_customer_orphans() 
     assert counts["customer_unevaluable_rows"] == counts["unevaluable_rows"] == 1
 
 
-@pytest.mark.parametrize("event", verifier.PUBLIC_EVENTS)
+@pytest.mark.parametrize("event", EXPECTED_PUBLIC_EVENTS)
 def test_canonical_public_event_in_wnam_is_reserved(event: str) -> None:
     counts = sql_counts(public_region="wnam", public_event=event)
     assert counts["total_rows"] == 2
