@@ -44,6 +44,15 @@ The one failing partition in every response was `93da3f7a/enam`; there were
 no other failing partitions. Each read reported `rows_read=255316` and the
 zero-write metadata above. These are **red**, not recovery, samples. No
 post-repair `audit-archive-lag` runs or PagerDuty confirmation were obtained.
+
+A later single, bounded production `SELECT` grouped the exact canary partition's
+sealed, unarchived, non-quarantined rows by archive metadata class: **188
+`legacy-null`**, zero E0, zero E1, and zero partial/invalid. D1 reported
+`success=true`, `changed_db=false`, `changes=0`, `rows_written=0`, and
+`rows_read=376`. The B-054 keyed-epoch guard is therefore not the direct
+block for these rows; the archive failure itself remains undiagnosed. No
+archive endpoint or paging action was called.
+
 The closure rule still requires three distinct **zero-failure** population
 reads including this canary, plus three completed detector runs with
 `partitions_failed=0` and `verdict: OK` after an authorized repair.
