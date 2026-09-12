@@ -262,6 +262,77 @@ catalog-counts: B001-B045=8,B046-B090=31,B091-B130=36,B131-B167=32
 def test_live_ledger_uses_immutable_candidate_anchor():
     assert ledger.LEDGER_BASE_REF == "8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94"
     assert ledger.LEDGER_BASE_SHA == "8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94"
+    assert ledger.POSTMERGE_BASE_SHA == "6be19a2e525dad045ad8404d722905afde7ad7bd"
+
+
+def _postmerge_file(path: str) -> bytes:
+    return subprocess.run(
+        ["git", "show", f"d9dac6969:{path}"], cwd=ledger.REPO_ROOT,
+        check=True, capture_output=True,
+    ).stdout
+
+
+def test_postmerge_snapshot_accepts_versioned_b373_only_transition(monkeypatch, tmp_path):
+    path = tmp_path / "backlog-ledger-snapshot-b373-postmerge.json"
+    path.write_bytes(_postmerge_file("docs/campaigns/remediation/backlog-ledger-snapshot-b373-postmerge.json"))
+    monkeypatch.setattr(ledger, "POSTMERGE_SNAPSHOT_PATH", path)
+    manifest = ledger.load_postmerge_snapshot_manifest()
+    backlog = _postmerge_file("BACKLOG.md").decode()
+    state = parse_ledger_state(
+        _postmerge_file("docs/campaigns/remediation/BACKLOG-WP-LEDGER.md").decode(),
+        "postmerge-ledger.md",
+    )
+    validate_snapshot_manifest(manifest, backlog, state, source="postmerge-ledger.md")
+    validate_ledger_state(
+        state, source="postmerge-ledger.md", item_count=373,
+        status_counts={"done": 328, "open": 13, "parked": 32},
+        catalog_counts={"B001-B045": 4, "B046-B090": 3, "B091-B130": 2, "B131-B373": 4},
+        expected_base_sha=ledger.POSTMERGE_BASE_SHA,
+    )
+    ledger.validate_git_anchor(
+        ledger.REPO_ROOT, source="postmerge-ledger.md",
+        base_ref=ledger.POSTMERGE_BASE_SHA, base_sha=ledger.POSTMERGE_BASE_SHA,
+        head_ref="d9dac6969",
+    )
+
+
+def test_postmerge_snapshot_rejects_modified_preimage_and_manifest(monkeypatch, tmp_path):
+    altered_prior = tmp_path / "prior.json"
+    altered_prior.write_bytes(ledger.SNAPSHOT_PATH.read_bytes() + b"\n")
+    monkeypatch.setattr(ledger, "SNAPSHOT_PATH", altered_prior)
+    with pytest.raises(LedgerError, match="snapshot manifest digest drifted"):
+        ledger.load_postmerge_snapshot_manifest()
+    monkeypatch.undo()
+    altered_post = tmp_path / "post.json"
+    altered_post.write_bytes(
+        _postmerge_file("docs/campaigns/remediation/backlog-ledger-snapshot-b373-postmerge.json") + b"\n"
+    )
+    monkeypatch.setattr(ledger, "POSTMERGE_SNAPSHOT_PATH", altered_post)
+    with pytest.raises(LedgerError, match="snapshot manifest digest drifted"):
+        ledger.load_postmerge_snapshot_manifest()
+
+
+def test_snapshot_rejects_crossed_pre_and_postmerge_states(monkeypatch, tmp_path):
+    path = tmp_path / "post.json"
+    path.write_bytes(_postmerge_file("docs/campaigns/remediation/backlog-ledger-snapshot-b373-postmerge.json"))
+    monkeypatch.setattr(ledger, "POSTMERGE_SNAPSHOT_PATH", path)
+    post = ledger.load_postmerge_snapshot_manifest()
+    old = load_snapshot_manifest()
+    old_backlog = ledger.REPO_ROOT.joinpath("BACKLOG.md").read_text()
+    old_state = parse_ledger_state(ledger.LEDGER_PATH.read_text(), "old-ledger.md")
+    post_backlog = _postmerge_file("BACKLOG.md").decode()
+    post_state = parse_ledger_state(
+        _postmerge_file("docs/campaigns/remediation/BACKLOG-WP-LEDGER.md").decode(),
+        "post-ledger.md",
+    )
+    with pytest.raises(LedgerError, match="outside the immutable snapshot"):
+        validate_snapshot_manifest(old, post_backlog, post_state, source="crossed")
+    with pytest.raises(LedgerError, match="outside the immutable snapshot"):
+        validate_snapshot_manifest(post, old_backlog, old_state, source="crossed")
+
+
+def test_current_candidate_main_still_passes():
+    assert ledger.main() == 0
 
 
 def test_current_candidate_tree_has_ancestry_anchor():
