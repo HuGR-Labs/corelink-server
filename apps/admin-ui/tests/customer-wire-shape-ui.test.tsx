@@ -74,7 +74,7 @@ const KEYS_LIST_WIRE = {
   byok: { status: "inactive", cmk_id: null },
 };
 
-/** `POST /v1/customer/keys` → 201 `{ pat: {…}, token_plaintext }` (canonical live wire). */
+/** `POST /v1/customer/keys` → 201 `{ pat: {…}, token }` (container's current wire). */
 const KEYS_CREATE_WIRE = {
   pat: {
     pat_id: "pat_new",
@@ -84,11 +84,11 @@ const KEYS_CREATE_WIRE = {
     last_used_at: null,
     revoked_at: null,
   },
-  token_plaintext: "crl_pat_shown_once_secret",
+  token: "crl_pat_shown_once_secret",
 };
-const KEYS_CREATE_TRANSITION_WIRE = {
+const KEYS_CREATE_ALIAS_WIRE = {
   pat: KEYS_CREATE_WIRE.pat,
-  token: "crl_pat_transition_secret",
+  token_plaintext: "crl_pat_alias_secret",
 };
 
 /** `GET /v1/customer/team` → `{ members }` (routes/customer.rs:894-902). */
@@ -145,7 +145,7 @@ describe("KeysClient against the real POST /v1/customer/keys wire", { timeout: W
     expect(screen.getByTestId("pat-value")).toHaveTextContent("crl_pat_shown_once_secret");
   });
 
-  it("reveals the canonical plaintext after rotate", async () => {
+  it("reveals the live token after rotate", async () => {
     const rotatedPat = {
       ...KEYS_CREATE_WIRE.pat,
       pat_id: "pat_rotated",
@@ -155,7 +155,7 @@ describe("KeysClient against the real POST /v1/customer/keys wire", { timeout: W
       if (init?.method === "POST" && url.endsWith("/pat_001/revoke")) {
         return json({ pat: { ...KEYS_LIST_WIRE.pats[0], revoked_at: "2026-08-02T00:00:00Z" } });
       }
-      if (init?.method === "POST") return json({ pat: rotatedPat, token_plaintext: "crl_pat_rotated_secret" }, 201);
+      if (init?.method === "POST") return json({ pat: rotatedPat, token: "crl_pat_rotated_secret" }, 201);
       return json(KEYS_LIST_WIRE);
     });
 
@@ -168,12 +168,12 @@ describe("KeysClient against the real POST /v1/customer/keys wire", { timeout: W
     expect(screen.getByTestId("pat-value")).not.toHaveTextContent("undefined");
   });
 
-  it("reveals the transition token field after rotate", async () => {
+  it("reveals the optional token_plaintext alias after rotate", async () => {
     wireFetch.mockImplementation(async (url: string, init?: RequestInit) => {
       if (init?.method === "POST" && url.endsWith("/pat_001/revoke")) {
         return json({ pat: { ...KEYS_LIST_WIRE.pats[0], revoked_at: "2026-08-02T00:00:00Z" } });
       }
-      if (init?.method === "POST") return json(KEYS_CREATE_TRANSITION_WIRE, 201);
+      if (init?.method === "POST") return json(KEYS_CREATE_ALIAS_WIRE, 201);
       return json(KEYS_LIST_WIRE);
     });
 
@@ -182,7 +182,7 @@ describe("KeysClient against the real POST /v1/customer/keys wire", { timeout: W
     fireEvent.click(screen.getByTestId("keys-rotate-pat_001"));
     fireEvent.click(await screen.findByRole("button", { name: "Rotate token" }));
 
-    expect(await screen.findByTestId("pat-value")).toHaveTextContent("crl_pat_transition_secret");
+    expect(await screen.findByTestId("pat-value")).toHaveTextContent("crl_pat_alias_secret");
   });
 });
 

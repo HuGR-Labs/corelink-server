@@ -54,7 +54,7 @@ describe("CustomerClient auth token", () => {
           scopes: ["cache:r"],
           created_at: "2026-08-01T00:00:00Z",
         },
-        token_plaintext: "crl_pat_post_secret",
+        token: "crl_pat_post_secret",
       }),
       getToken: async () => "sess_jwt_post",
     });
@@ -175,12 +175,12 @@ describe("CustomerClient wire-shape contract", () => {
     expect(member.invitation_token).toHaveLength(64);
   });
 
-  // `POST /v1/customer/keys` → 201 `{ "pat": { … }, "token_plaintext": "…" }`
-  // (the canonical live response envelope).
+  // `POST /v1/customer/keys` → 201 `{ "pat": { … }, "token": "…" }`
+  // (routes/customer/part-01.rs, the current container response envelope).
   // Regression: the client declared `CustomerPat & { token? }` and bare-cast the
-  // envelope. The old field name left the plaintext undefined, so the create
-  // and rotate paths opened an empty shown-once reveal.
-  it("createPat maps the canonical token_plaintext envelope to the reveal shape", async () => {
+  // envelope. PAT metadata became undefined even though the token survived.
+  // The optional alias must also reach the shown-once reveal if received.
+  it("createPat unwraps the live token envelope for the reveal shape", async () => {
     const client = new CustomerClient({
       baseUrl: "https://api.test",
       fetchImpl: respondWith(
@@ -193,7 +193,7 @@ describe("CustomerClient wire-shape contract", () => {
             last_used_at: null,
             revoked_at: null,
           },
-          token_plaintext: "crl_pat_shown_once_secret",
+          token: "crl_pat_shown_once_secret",
         },
         201,
       ),
@@ -213,8 +213,8 @@ describe("CustomerClient wire-shape contract", () => {
 
   it.each([
     ["missing", { pat: { pat_id: "pat_missing" } }],
-    ["blank canonical", { pat: { pat_id: "pat_blank" }, token_plaintext: "   " }],
-    ["blank transition", { pat: { pat_id: "pat_blank_legacy" }, token: "" }],
+    ["blank live token", { pat: { pat_id: "pat_blank" }, token: "" }],
+    ["blank compatibility alias", { pat: { pat_id: "pat_blank_alias" }, token_plaintext: "   " }],
   ])("createPat fails closed when PAT plaintext is %s", async (_caseName, body) => {
     const client = new CustomerClient({
       baseUrl: "https://api.test",
@@ -224,11 +224,11 @@ describe("CustomerClient wire-shape contract", () => {
     await expect(client.createPat({ name: "ci-github", scopes: ["cache:r"] }))
       .rejects.toMatchObject({
         status: 502,
-        message: "customer api response missing nonblank token_plaintext or token",
+        message: "customer api response missing nonblank token or token_plaintext",
       });
   });
 
-  it("createPat accepts the origin/main token transition field", async () => {
+  it("createPat accepts the optional token_plaintext compatibility alias", async () => {
     const client = new CustomerClient({
       baseUrl: "https://api.test",
       fetchImpl: respondWith({
@@ -238,12 +238,26 @@ describe("CustomerClient wire-shape contract", () => {
           scopes: ["cache:r"],
           created_at: "2026-08-01T00:00:00Z",
         },
-        token: "crl_pat_transition_secret",
+        token_plaintext: "crl_pat_alias_secret",
       }, 201),
     });
 
     await expect(client.createPat({ name: "ci-github", scopes: ["cache:r"] }))
-      .resolves.toMatchObject({ token: "crl_pat_transition_secret" });
+      .resolves.toMatchObject({ token: "crl_pat_alias_secret" });
+  });
+
+  it("createPat accepts both token fields when they agree", async () => {
+    const client = new CustomerClient({
+      baseUrl: "https://api.test",
+      fetchImpl: respondWith({
+        pat: { pat_id: "pat_agree", name: "ci-github", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" },
+        token: "crl_pat_same_secret",
+        token_plaintext: "crl_pat_same_secret",
+      }, 201),
+    });
+
+    await expect(client.createPat({ name: "ci-github", scopes: ["cache:r"] }))
+      .resolves.toMatchObject({ pat_id: "pat_agree", token: "crl_pat_same_secret" });
   });
 
   it("createPat fails closed when both token fields conflict", async () => {
@@ -251,8 +265,8 @@ describe("CustomerClient wire-shape contract", () => {
       baseUrl: "https://api.test",
       fetchImpl: respondWith({
         pat: { pat_id: "pat_conflict", name: "ci-github", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" },
-        token_plaintext: "crl_pat_canonical",
-        token: "crl_pat_transition",
+        token: "crl_pat_live",
+        token_plaintext: "crl_pat_conflicting_alias",
       }, 201),
     });
 

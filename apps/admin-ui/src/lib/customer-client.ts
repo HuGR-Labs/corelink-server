@@ -69,37 +69,37 @@ function hasOwn(value: object, key: string): boolean {
 }
 
 /**
- * Normalize the live `token_plaintext` field and the origin/main `token`
- * transition field. Both are accepted only when nonblank; if an envelope
- * carries both fields they must agree exactly.
+ * Normalize the live container's `token` field and an optional
+ * `token_plaintext` compatibility alias. Both are accepted only when nonblank;
+ * if an envelope carries both fields they must agree exactly.
  */
 function normalizePatPlaintext(response: CustomerPatCreateResponse): string {
-  const hasCanonical = hasOwn(response, "token_plaintext");
-  const hasLegacy = hasOwn(response, "token");
-  const canonical = typeof response.token_plaintext === "string" ? response.token_plaintext : null;
-  const legacy = typeof response.token === "string" ? response.token : null;
+  const hasLive = hasOwn(response, "token");
+  const hasAlias = hasOwn(response, "token_plaintext");
+  const live = typeof response.token === "string" ? response.token : null;
+  const alias = typeof response.token_plaintext === "string" ? response.token_plaintext : null;
 
-  if (hasCanonical && hasLegacy) {
+  if (hasLive && hasAlias) {
     if (
-      canonical == null ||
-      canonical.trim() === "" ||
-      legacy == null ||
-      legacy.trim() === "" ||
-      canonical !== legacy
+      live == null ||
+      live.trim() === "" ||
+      alias == null ||
+      alias.trim() === "" ||
+      live !== alias
     ) {
       throw new CustomerClientError(
         502,
         "customer api response has conflicting token_plaintext and token fields",
       );
     }
-    return canonical;
+    return live;
   }
 
-  const candidate = hasCanonical ? canonical : hasLegacy ? legacy : null;
+  const candidate = hasLive ? live : hasAlias ? alias : null;
   if (candidate == null || candidate.trim() === "") {
     throw new CustomerClientError(
       502,
-      "customer api response missing nonblank token_plaintext or token",
+      "customer api response missing nonblank token or token_plaintext",
     );
   }
   return candidate;
@@ -209,9 +209,10 @@ export class CustomerClient {
   }
 
   /**
-   * [live] Mint a PAT. The API replies `201 { "pat": { … },
-   * "token_plaintext": "…" }`; origin/main emits the transition field
-   * `token`. The row is enveloped and the shown-once secret rides alongside it.
+   * [live] Mint a PAT. The container replies `201 { "pat": { … },
+   * "token": "…" }` (`crates/corelink-container/src/routes/customer/part-01.rs`).
+   * `token_plaintext` is accepted only as a compatibility alias, not asserted
+   * to be the live wire. The shown-once secret rides alongside the PAT row.
    * `request<T>()` only casts the parsed JSON, so normalize and validate the
    * plaintext before re-flattening it as `token` for the existing reveal path.
    * A malformed success response must never open an empty modal.
