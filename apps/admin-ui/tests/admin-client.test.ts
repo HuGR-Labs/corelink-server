@@ -59,4 +59,34 @@ describe("AdminClient", () => {
     });
     expect(res.signed_url).toContain("signed.example");
   });
+
+  it("reports the effective GET method on a failed default-method request", async () => {
+    let actualMethod = "";
+    const fetchImpl = makeFetch(async (_url, init) => {
+      actualMethod = init?.method ?? "GET";
+      return new Response("unavailable", { status: 503 });
+    });
+    const client = new AdminClient({ baseUrl: "https://api.test", fetchImpl });
+
+    await expect(client.listAuditEvents({})).rejects.toMatchObject({
+      status: 503,
+      message: "GET /v1/admin/audit -> 503 unavailable",
+    });
+    expect(actualMethod).toBe("GET");
+  });
+
+  it("reports the explicit POST method on a failed mutation", async () => {
+    let actualMethod = "";
+    const fetchImpl = makeFetch(async (_url, init) => {
+      actualMethod = init?.method ?? "GET";
+      return new Response("unavailable", { status: 503 });
+    });
+    const client = new AdminClient({ baseUrl: "https://api.test", fetchImpl });
+
+    await expect(client.exportAudit({}, "csv")).rejects.toMatchObject({
+      status: 503,
+      message: "POST /v1/admin/audit/export -> 503 unavailable",
+    });
+    expect(actualMethod).toBe("POST");
+  });
 });
