@@ -1,8 +1,9 @@
 # B-063 / B-125 production readback — 2026-09-12
 
-Status: **both remain open**. This is a versioned, redacted observation, not a
-repair, deployment, workflow run, or backlog transition. Base:
-`cdd6a671484a378e443bd8b4c4b7b5e0948dcb8b` (`main`).
+Status: **both remain unresolved and `parked` in `BACKLOG.md`**. This is a
+versioned, redacted observation, not a repair, deployment, workflow run, or
+backlog transition. Commit parent: `cdd6a671484a378e443bd8b4c4b7b5e0948dcb8b`
+(the local `main` snapshot at branch creation, not `origin/main`).
 
 ## Method and safety
 
@@ -72,7 +73,7 @@ pin, a burst above one 512-row call, or new replay/sequence/head-tail controls;
 the 512-row source literal alone is not production proof. The earlier
 [`B-125` readback](../../evidence/owner-actions/B-125/audit-throughput-readback.json)
 records historical integrity anomalies, which this quiet-window measurement
-does not resolve. B-125 remains open pending a non-empty, post-deploy
+does not resolve. B-125 remains `parked` pending a non-empty, post-deploy
 six-hour readback with hourly arrivals/seals, oldest-unsealed age,
 median/p90 valid latency, and burst/replay/integrity controls against the
 owner's agreed numeric threshold.
