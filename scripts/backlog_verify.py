@@ -584,7 +584,7 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         raise RuntimeError("candidate workflow policy must contain only the verify job")
     job = jobs["verify"]
     steps = job.get("steps") if isinstance(job, dict) else None
-    if not isinstance(job, dict) or job.get("runs-on") != "corelink" or not isinstance(steps, list) or len(steps) != 6:
+    if not isinstance(job, dict) or job.get("runs-on") != "corelink" or not isinstance(steps, list) or len(steps) != 7:
         raise RuntimeError("candidate workflow policy has unexpected verify job shape")
     if not all(isinstance(step, dict) for step in steps):
         raise RuntimeError("candidate workflow policy has a malformed verify step")
@@ -623,12 +623,23 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         or steps[3].get("run") != "python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py"
     ):
         raise RuntimeError("candidate workflow policy has an unexpected BASE test command")
+    expected_b314_gate = (
+        "python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test\n"
+        "python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py\n"
+    )
     if (
-        steps[4].get("name") != "Execute trusted main semantic checks"
-        or
-        steps[4].get("if") != "github.event_name == 'push' || github.event_name == 'schedule'"
+        steps[4].get("name") != "Prove BASE B-314 owner-gate mutation teeth"
         or steps[4].get("working-directory") != "_base"
-        or steps[4].get("run") != "python3 scripts/backlog_verify.py --trusted-semantic"
+        or steps[4].get("run") != expected_b314_gate
+        or set(steps[4]) != {"name", "working-directory", "run"}
+    ):
+        raise RuntimeError("candidate workflow policy has an unexpected B-314 trusted gate")
+    if (
+        steps[5].get("name") != "Execute trusted main semantic checks"
+        or
+        steps[5].get("if") != "github.event_name == 'push' || github.event_name == 'schedule'"
+        or steps[5].get("working-directory") != "_base"
+        or steps[5].get("run") != "python3 scripts/backlog_verify.py --trusted-semantic"
     ):
         raise RuntimeError("candidate workflow policy has an unexpected trusted semantic command")
     expected_b046_gate = (
@@ -638,11 +649,11 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         "test -f migrations/d1/0102_cas_retention.sql\n"
     )
     if (
-        steps[5].get("name") != "Execute B-046 Object-Lock contract and mutation checks"
+        steps[6].get("name") != "Execute B-046 Object-Lock contract and mutation checks"
         or
-        steps[5].get("if") != "github.event_name == 'push' || github.event_name == 'schedule'"
-        or steps[5].get("working-directory") != "_base"
-        or steps[5].get("run") != expected_b046_gate
+        steps[6].get("if") != "github.event_name == 'push' || github.event_name == 'schedule'"
+        or steps[6].get("working-directory") != "_base"
+        or steps[6].get("run") != expected_b046_gate
     ):
         raise RuntimeError("candidate workflow policy has an unexpected B-046 trusted gate")
 

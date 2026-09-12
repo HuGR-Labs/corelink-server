@@ -102,6 +102,38 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
             backlog_verify.validate_candidate_workflow(self.candidate)
 
+    def test_b314_trusted_step_shape_and_placement_are_fail_closed(self) -> None:
+        workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
+        baseline = workflow.read_text(encoding="utf-8")
+        backlog_verify.validate_candidate_workflow(self.candidate)
+        b314_marker = "      - name: Prove BASE B-314 owner-gate mutation teeth"
+        semantic_marker = "      - name: Execute trusted main semantic checks"
+        start = baseline.index(b314_marker)
+        end = baseline.index(semantic_marker, start)
+        prefix, b314_step, suffix = baseline[:start], baseline[start:end], baseline[end:]
+        mutations = {
+            "removed": prefix + suffix,
+            "wrong-working-directory": prefix + b314_step.replace(
+                "working-directory: _base", "working-directory: _candidate", 1
+            ) + suffix,
+            "weakened-self-test": prefix + b314_step.replace(
+                "python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test",
+                "python3 -S scripts/verify_b314_gdpr_sigstore.py",
+                1,
+            ) + suffix,
+            "weakened-mutation-test": prefix + b314_step.replace(
+                "python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py", "true", 1
+            ) + suffix,
+            "extra-shell-key": prefix + b314_step + "        shell: bash\n" + suffix,
+            "reordered": prefix + suffix + b314_step,
+        }
+        for label, mutated in mutations.items():
+            with self.subTest(label=label):
+                workflow.write_text(mutated, encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
+                    backlog_verify.validate_candidate_workflow(self.candidate)
+        workflow.write_text(baseline, encoding="utf-8")
+
     def test_b046_trusted_step_shape_and_placement_are_fail_closed(self) -> None:
         workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
         baseline = workflow.read_text(encoding="utf-8")
