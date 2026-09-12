@@ -56,11 +56,17 @@ class Lane:
 # their own active-line validators below.
 ACTIVE_SHELL_MARKERS = frozenset(
     {
+        "cargo mutants --workspace --no-shuffle --minimum-test-timeout=600",
+        "time buck2 build :hello \\",
+        "./scripts/benchmark.sh --iterations 10",
         '"${BUCK2_INSTALL_DIR}/buck2" --version',
         "test -s /tmp/cold-report.json",
         "jq -e 'type == \"object\"' /tmp/cold-report.json",
         "test -s /tmp/warm-report.json",
         "RATIO < 80",
+        "sudo apt-get install -y --no-install-recommends zstd jq",
+        "sudo apt-get install -y --no-install-recommends zstd",
+        "sudo apt-get install -y --no-install-recommends zstd jq bc",
         '"${ACTUAL_SHA256}" == "${BUCK2_SHA256}"',
         "unset CORELINK_PAT",
         'export CORELINK_PAT="invalid_pat_b113"',
@@ -69,6 +75,7 @@ ACTIVE_SHELL_MARKERS = frozenset(
         "cp .sbom/cyclonedx-rust.json sbom.cdx.json",
         "-max_total_time=${{ env.FUZZ_DURATION }}",
         "python3 scripts/check_billing_health.py",
+        "python3 scripts/rolling-7d-p99.py",
         "timeout 30s gh run list",
         '--expected-scenarios "${EXPECTED_SCENARIOS}"',
         'printf \'{"scenario":"%s","outcome":"%s"}',
@@ -95,6 +102,7 @@ LANES = (
             "tool: cargo-mutants@27.0.0",
             "fallback: none",
             "timeout-minutes: 225",
+            "cargo mutants --workspace --no-shuffle --minimum-test-timeout=600",
         ),
     ),
     Lane(
@@ -107,6 +115,8 @@ LANES = (
             'SBOM_VENV="${RUNNER_TEMP}/corelink-sbom-venv"',
             '"$SBOM_PYTHON" tests/verify_rust_sbom.py --check',
             "cp .sbom/cyclonedx-rust.json sbom.cdx.json",
+            "name: sbom-cdx-json",
+            "if-no-files-found: error",
         ),
     ),
     Lane(
@@ -121,9 +131,11 @@ LANES = (
             "test -s /tmp/cold-report.json",
             "jq -e 'type == \"object\"' /tmp/cold-report.json",
             "test -s /tmp/warm-report.json",
+            "time buck2 build :hello \\",
             ".cache_hits | type == \"number\"",
             ".total_actions > 0",
             "RATIO < 80",
+            "sudo apt-get install -y --no-install-recommends zstd jq",
         ),
         ('BUCK2_SHA256: "aa304d471a79f69233b09767d4ba9add769049b7a37f78a3a71a72983372f511"',),
     ),
@@ -140,6 +152,7 @@ LANES = (
             "unset CORELINK_PAT",
             'export CORELINK_PAT="invalid_pat_b113"',
             "192.0.2.1/bad-cache",
+            "sudo apt-get install -y --no-install-recommends zstd",
         ),
     ),
     Lane(
@@ -152,6 +165,8 @@ LANES = (
             "name: Install Buck2",
             "--max-time 120",
             '"${ACTUAL_SHA256}" == "${BUCK2_SHA256}"',
+            "./scripts/benchmark.sh --iterations 10",
+            "sudo apt-get install -y --no-install-recommends zstd jq bc",
         ),
     ),
     Lane(
@@ -161,6 +176,9 @@ LANES = (
         (
             "runs-on: [self-hosted, mac, corelink-builder]",
             "timeout-minutes: 40",
+            "RUSTUP_TOOLCHAIN: nightly-x86_64-apple-darwin",
+            'CARGO_HOME="${RUNNER_TEMP}/corelink-fuzz-cargo/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${FUZZ_CRATE}/${FUZZ_TARGET}"',
+            'CARGO_TARGET_DIR="${RUNNER_TEMP}/corelink-fuzz-target/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${FUZZ_CRATE}/${FUZZ_TARGET}"',
             "-max_total_time=${{ env.FUZZ_DURATION }}",
             "timeout-minutes: 35",
         ),
@@ -178,9 +196,10 @@ LANES = (
         (
             "workflow_dispatch:",
             "timeout 30s gh run list",
-            "expected exactly one current endurance summary",
-            "rolling-7d p99 baseline is missing",
-            "baseline p99 is missing or invalid",
+            "--status=completed",
+            "python3 scripts/rolling-7d-p99.py",
+            "--downloads-dir tests/load/results/endurance-2h-baseline/history",
+            "--output tests/load/results/endurance-2h-baseline/rolling-7d-p99.json",
         ),
     ),
     Lane(
@@ -201,6 +220,7 @@ LANES = (
         (
             "workflow_dispatch:",
             '--expected-scenarios "${EXPECTED_SCENARIOS}"',
+            "--bootstrap",
         ),
     ),
     Lane(
@@ -255,6 +275,58 @@ def assert_yaml_lane_shape(parsed: dict, lane: Lane) -> None:
     job = jobs.get(lane.job)
     if not isinstance(job, dict):
         raise VerificationError(f"{lane.name}: expected executable job {lane.job!r}")
+    if lane.name == "fuzz-nightly":
+        env = job.get("env")
+        if not isinstance(env, dict) or env.get("RUSTUP_TOOLCHAIN") != "nightly-x86_64-apple-darwin":
+            raise VerificationError("fuzz-nightly: nightly toolchain selection is not executable job env")
+        if env.get("FUZZ_CRATE") != "${{ matrix.crate }}" or env.get("FUZZ_TARGET") != "${{ matrix.target }}":
+            raise VerificationError("fuzz-nightly: matrix identity is not bound into isolated Cargo paths")
+        steps = job.get("steps")
+        if not isinstance(steps, list):
+            raise VerificationError("fuzz-nightly: steps are missing")
+        by_name = {
+            step.get("name"): (index, step)
+            for index, step in enumerate(steps)
+            if isinstance(step, dict) and isinstance(step.get("name"), str)
+        }
+        required_steps = (
+            "Isolate fuzz Cargo and target state per matrix leg",
+            "Install cargo-fuzz (isolated CARGO_HOME — never the shared one)",
+            "Run fuzz target (${{ env.FUZZ_DURATION }}s)",
+        )
+        if any(name not in by_name for name in required_steps):
+            raise VerificationError("fuzz-nightly: isolation/install/run step boundary is incomplete")
+        isolate_index, isolate = by_name[required_steps[0]]
+        install_index, _install = by_name[required_steps[1]]
+        run_index, run_step = by_name[required_steps[2]]
+        if not isolate_index < install_index < run_index:
+            raise VerificationError("fuzz-nightly: Cargo isolation must precede install and execution")
+        isolate_run = isolate.get("run")
+        required_exports = (
+            'CARGO_HOME="${RUNNER_TEMP}/corelink-fuzz-cargo/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${FUZZ_CRATE}/${FUZZ_TARGET}"',
+            'CARGO_TARGET_DIR="${RUNNER_TEMP}/corelink-fuzz-target/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${FUZZ_CRATE}/${FUZZ_TARGET}"',
+            'echo "CARGO_HOME=${CARGO_HOME}" >> "${GITHUB_ENV}"',
+            'echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR}" >> "${GITHUB_ENV}"',
+        )
+        if not isinstance(isolate_run, str) or any(value not in isolate_run for value in required_exports):
+            raise VerificationError("fuzz-nightly: per-leg Cargo isolation/export is incomplete")
+        run_env = run_step.get("env")
+        if isinstance(run_env, dict) and ({"CARGO_HOME", "CARGO_TARGET_DIR"} & set(run_env)):
+            raise VerificationError("fuzz-nightly: execution overrides isolated Cargo state")
+    if lane.name == "buck2-negative":
+        # Job-population errors are reported by the preflight loop below with
+        # the missing lane's own name. Defer this cross-step semantic check
+        # until all three Buck2 job boundaries are present.
+        buck2_jobs = {item.job for item in LANES if item.workflow == lane.workflow}
+        if any(not isinstance(jobs.get(name), dict) for name in buck2_jobs):
+            return
+        steps = job.get("steps")
+        quota = [
+            step for step in steps or []
+            if isinstance(step, dict) and step.get("name") == "Scenario 4 — Dedicated quota PAT returns quota error"
+        ]
+        if len(quota) != 1 or quota[0].get("working-directory") != "examples/buck2-starter":
+            raise VerificationError("buck2-negative: quota probe is not rooted in the starter project")
     for marker in lane.workflow_markers:
         if marker == "schedule:" and not isinstance(workflow_events(parsed).get("schedule"), list):
             raise VerificationError(f"{lane.name}: missing YAML schedule trigger")
@@ -575,6 +647,43 @@ def mutation_checks(sources: dict[str, str] | None = None) -> None:
         pass
     else:
         raise VerificationError("buck2-negative: build dependency mutation was accepted")
+
+    quota_cwd = dict(base)
+    quota_lane = next(item for item in LANES if item.name == "buck2-negative")
+    quota_marker = (
+        "      - name: Scenario 4 — Dedicated quota PAT returns quota error\n"
+        "        working-directory: examples/buck2-starter\n"
+    )
+    if quota_cwd[quota_lane.workflow].count(quota_marker) != 1:
+        raise VerificationError("buck2-negative: quota cwd mutation fixture is ambiguous")
+    quota_cwd[quota_lane.workflow] = quota_cwd[quota_lane.workflow].replace(
+        quota_marker,
+        "      - name: Scenario 4 — Dedicated quota PAT returns quota error\n",
+        1,
+    )
+    try:
+        verify(quota_cwd)
+    except VerificationError:
+        pass
+    else:
+        raise VerificationError("buck2-negative: quota probe outside starter project was accepted")
+
+    fuzz_exports = dict(base)
+    fuzz_lane = next(item for item in LANES if item.name == "fuzz-nightly")
+    for export in (
+        'echo "CARGO_HOME=${CARGO_HOME}" >> "${GITHUB_ENV}"',
+        'echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR}" >> "${GITHUB_ENV}"',
+    ):
+        mutated = dict(fuzz_exports)
+        if mutated[fuzz_lane.workflow].count(export) != 1:
+            raise VerificationError("fuzz-nightly: export mutation fixture is ambiguous")
+        mutated[fuzz_lane.workflow] = mutated[fuzz_lane.workflow].replace(export, ":", 1)
+        try:
+            verify(mutated)
+        except VerificationError:
+            pass
+        else:
+            raise VerificationError(f"fuzz-nightly: missing runtime export was accepted: {export}")
 
     # Human-facing count and ownership prose is part of the evidence boundary:
     # a correct workflow census must not coexist with a stale B-113 narrative.

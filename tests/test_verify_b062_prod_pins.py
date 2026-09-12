@@ -41,14 +41,21 @@ apps = {
 }
 app_id = url.rsplit("/", 1)[-1]
 name, image_name = apps[app_id]
-health = {"healthy": 1, "active": int(os.environ.get("B062_TEST_ACTIVE", "1")), "failed": 0}
+tag = os.environ.get("B062_TEST_TAG", "b90b245df-r1")
+if app_id == "a033417c-db96-467b-a65c-83951d1fa5d1":
+    tag = os.environ.get("B062_TEST_NRT_TAG", tag)
+health = {
+    "healthy": 1,
+    "active": int(os.environ.get("B062_TEST_ACTIVE", "1")),
+    "failed": int(os.environ.get("B062_TEST_FAILED", "0")),
+}
 if os.environ.get("B062_TEST_MISSING_ACTIVE") == "1":
     health.pop("active")
 print(json.dumps({
     "success": True,
     "result": {
         "name": name,
-        "configuration": {"image": "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/" + image_name + ":b90b245df-r1"},
+        "configuration": {"image": "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/" + image_name + ":" + tag},
         "health": {"instances": health},
         "instances": 1,
         "version": 1,
@@ -92,20 +99,30 @@ class B062ProdPinsTests(unittest.TestCase):
         self.assertEqual(sum(url.endswith("/_health/container") for url in calls), 5)
         self.assertEqual(len(calls), 10)
 
-    def test_reserved_pool_healthy_but_zero_active_fails(self) -> None:
+    def test_zero_active_with_deep_healthy_and_capacity_passes(self) -> None:
         result, _ = self.run_gate(B062_TEST_ACTIVE="0")
-        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("healthy=1 active=0 failed=0 desired=1", result.stdout)
 
-    def test_missing_active_fails_closed(self) -> None:
+    def test_missing_active_is_observational_only(self) -> None:
         result, _ = self.run_gate(B062_TEST_MISSING_ACTIVE="1")
-        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("active=0", result.stdout)
 
-    def test_deep_health_503_fails(self) -> None:
-        result, _ = self.run_gate(B062_TEST_DEEP_STATUS="503")
+    def test_old_outage_zero_active_and_deep_503_fails(self) -> None:
+        result, _ = self.run_gate(B062_TEST_ACTIVE="0", B062_TEST_DEEP_STATUS="503")
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("deep health returned HTTP 503", result.stdout)
+
+    def test_failed_instance_fails(self) -> None:
+        result, _ = self.run_gate(B062_TEST_FAILED="1")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("healthy=1 active=1 failed=1 desired=1", result.stdout)
+
+    def test_pin_mismatch_fails(self) -> None:
+        result, _ = self.run_gate(B062_TEST_NRT_TAG="cba0e596-r1")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("pin cba0e596-r1 differs from b90b245df-r1", result.stdout)
 
     def test_deep_health_transport_failure_fails(self) -> None:
         result, _ = self.run_gate(B062_TEST_DEEP_TRANSPORT="1")

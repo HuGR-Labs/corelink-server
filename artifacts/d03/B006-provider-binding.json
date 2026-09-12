@@ -17,10 +17,10 @@
   "version_api_success": true,
   "worker": "corelink-spawn-worker",
   "metrics_source": "https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics",
-  "deployment_id": "55a021ee-0530-4729-a9c9-a01e012d92f6",
-  "version_id": "122e166c-b7d4-421a-a66c-44b57690af00",
-  "version_number": 133,
-  "script_etag": "3326c3a9dfdb6aa7a574635ef8bfaaeba4b9dee375ba81211501e9a771fa0ca9",
+  "deployment_id": "e95c9cf1-e3d7-46d8-b84f-c245f6ed6628",
+  "version_id": "f712de57-997c-4f4a-9fbf-03f8d0b25b86",
+  "version_number": 171,
+  "script_etag": "0c1146f115c4a99d0a8b3bb4d1842130dad63c950a01880218f07c77ed4690e0",
   "rollout_percentage": 100,
-  "captured_at": "2026-09-09T00:32:02Z"
+  "captured_at": "2026-09-09T16:22:40Z"
 }

@@ -47,6 +47,10 @@ SHA1 = re.compile(r"^[0-9a-f]{40}$")
 OP = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
 SECRET = re.compile(r"(?i)(bearer\s+|pat[_-]?token|api[_-]?key|password|secret|private[_-]?key|authorization)")
 FINGERPRINT = re.compile(r"^sha256:[0-9a-f]{64}$")
+SERVER_TIMING_ENTRY = re.compile(
+    r"\s*(?P<name>[a-z][a-z0-9_-]*);dur=(?P<duration>[0-9]+(?:\.[0-9]+)?)"
+    r'(?:;[a-z][a-z0-9_-]*=(?:"(?:[^"\\]|\\.)*"|[^,;\s]+))*\s*'
+)
 MAX_AGE = 15 * 60
 FRESH_MINT_MAX_AGE_SECONDS = 15 * 60
 COLD_MIN_IDLE_SECONDS = 61
@@ -106,6 +110,57 @@ WIRE_DIGEST_FIELDS = (
 def wire_output_sha256(row: dict[str, Any]) -> str:
     material = {key: row.get(key) for key in WIRE_DIGEST_FIELDS}
     return sha(json.dumps(material, sort_keys=True, separators=(",", ":")).encode())
+
+
+def server_timing_entries(value: str, label: str) -> list[str]:
+    """Split Server-Timing entries without treating commas in quotes as seams."""
+    entries: list[str] = []
+    start = 0
+    quoted = False
+    escaped = False
+    for index, char in enumerate(value):
+        if escaped:
+            escaped = False
+        elif quoted and char == "\\":
+            escaped = True
+        elif char == '"':
+            quoted = not quoted
+        elif char == "," and not quoted:
+            entries.append(value[start:index])
+            start = index + 1
+    if quoted or escaped:
+        raise EvidenceError(f"{label} contains an unterminated quoted value")
+    entries.append(value[start:])
+    return entries
+
+
+def blocking_phase_pair(row: dict[str, Any], label: str) -> tuple[float, float]:
+    """Read the disjoint R2/D1 phases and reject missing or duplicate names."""
+    timing = text(row.get("server_timing"), f"{label}.server_timing")
+    matches: dict[str, list[float]] = {}
+    for entry in server_timing_entries(timing, f"{label}.server_timing"):
+        match = SERVER_TIMING_ENTRY.fullmatch(entry)
+        if match is None:
+            continue
+        matches.setdefault(match.group("name"), []).append(float(match.group("duration")))
+    pair = []
+    for name in ("ostore", "oaccounting"):
+        values = matches.get(name, [])
+        if len(values) != 1:
+            raise EvidenceError(f"{label} requires exactly one {name} wire phase")
+        pair.append(values[0])
+    return pair[0], pair[1]
+
+
+def phase_pair_fits_wire_clock(row: dict[str, Any], label: str) -> tuple[float, float]:
+    store, accounting = blocking_phase_pair(row, label)
+    elapsed = num(row.get("elapsed_ms"), f"{label}.elapsed_ms", 0.001)
+    # Server-Timing phases are truncated independently to milliseconds. The
+    # client wall clock includes the server window plus transport, so the pair
+    # cannot legitimately exceed it; 1 ms covers local rounding only.
+    if store + accounting > elapsed + 1.0:
+        raise EvidenceError(f"{label} storage/accounting phase sum exceeds client wall clock")
+    return store, accounting
 
 
 def raw_hash(v: Any, label: str) -> str:
@@ -426,8 +481,9 @@ def b102(item: dict[str, Any], root: Path, tenant: str) -> str:
         common(row, f"B-102.requests[{i}]", tenant)
         if row.get("method") != "PUT" or row.get("status") != 200 or num(row.get("payload_bytes"), "B-102.payload_bytes") != 1024:
             raise EvidenceError("B-102 requires three successful 1 KiB PUTs")
-        raw_hash(row.get("raw_output_sha256"), f"B-102.requests[{i}].raw_output_sha256")
-        text(row.get("server_timing"), "B-102.server_timing")
+        if row.get("raw_output_sha256") != wire_output_sha256(row):
+            raise EvidenceError("B-102 raw output hash is not bound to the complete wire sample")
+        phase_pair_fits_wire_clock(row, f"B-102.requests[{i}]")
     if num(item.get("sequence_window_seconds"), "B-102.sequence_window_seconds") > 60:
         raise EvidenceError("B-102 PUTs are not a bounded warm sequence")
     if not FINGERPRINT.fullmatch(text(item.get("token_fingerprint"), "B-102.token_fingerprint")):
@@ -685,10 +741,16 @@ def b107(item: dict[str, Any], root: Path, tenant: str) -> str:
             num(row.get(k), f"B-107.{k}")
             for k in ("r2_ms", "accounting_ms", "ostore_ms", "storage_total_ms")
         )
+        wire_store, wire_accounting = phase_pair_fits_wire_clock(row, f"B-107.samples[{i}]")
+        if abs(r2 - wire_store) > .001 or abs(accounting - wire_accounting) > .001:
+            raise EvidenceError("B-107 derived phases do not match Server-Timing")
         if abs(phase_store - r2) > .001 or abs(total - r2 - accounting) > .001:
             raise EvidenceError("B-107 R2/accounting phases do not reconcile exactly")
-        raw_hash(row.get("r2_raw_output_sha256"), "B-107.r2_raw_output_sha256")
-        raw_hash(row.get("accounting_raw_output_sha256"), "B-107.accounting_raw_output_sha256")
+        wire_digest = wire_output_sha256(row)
+        if row.get("raw_output_sha256") != wire_digest:
+            raise EvidenceError("B-107 raw output hash is not bound to the complete wire sample")
+        if row.get("r2_raw_output_sha256") != wire_digest or row.get("accounting_raw_output_sha256") != wire_digest:
+            raise EvidenceError("B-107 separated phases are not bound to their wire sample")
         totals.append(total)
     computed = obj(item.get("computed"), "B-107.computed")
     values = sorted(totals)

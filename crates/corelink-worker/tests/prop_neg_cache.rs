@@ -297,10 +297,13 @@ proptest! {
                     _ => cache.invalidate_on_write(&ctx, &digest).await,
                 };
                 let err = res.expect_err("region mismatch must reject all ops");
-                prop_assert!(
-                    matches!(err, NegativeCacheError::RegionMismatch { .. }),
-                    "expected RegionMismatch on op {}: {:?}", op, err,
-                );
+                match err {
+                    NegativeCacheError::RegionMismatch { cache: got_cache, ctx: got_ctx } => {
+                        prop_assert_eq!(got_cache, cache_region);
+                        prop_assert_eq!(got_ctx, ctx_region);
+                    }
+                    other => prop_assert!(false, "expected RegionMismatch on op {op}: {other:?}"),
+                }
             }
             Ok(())
         })?;

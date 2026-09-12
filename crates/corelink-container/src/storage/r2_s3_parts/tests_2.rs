@@ -293,6 +293,22 @@
         assert!(!is_canonical_ac_digest("../poison"));
     }
 
+    #[tokio::test]
+    async fn ac_generation_key_validates_components_and_preserves_namespace() {
+        let handler = make_test_ac_handler("iad").await;
+        let digest = "a".repeat(64);
+        let key = handler
+            .generation_r2_key("tenant-abc", 7, "allocation-1", &digest)
+            .expect("valid generation key");
+        assert!(key.ends_with(&format!("generation/7/allocation-1/{digest}")));
+        assert!(handler
+            .generation_r2_key("tenant-abc", 7, "../escape", &digest)
+            .is_err());
+        assert!(handler
+            .generation_r2_key("tenant-abc", 7, "allocation-1", "not-a-digest")
+            .is_err());
+    }
+
     /// On an AMBIGUOUS pre-PUT GET (the stub endpoint is unreachable, so
     /// GET errors), `R2AcHandler::update` MUST fail closed with
     /// `Internal` and NEVER fall through to a blind PUT that could

@@ -26,6 +26,32 @@
         assert_eq!(key, "iad/abcdef1234567890/deadbeef00000001");
     }
 
+    #[test]
+    fn cas_catalog_cursor_preserves_sha256_logical_identity() {
+        use crate::storage::byok_generation_catalog::PublishedObject;
+
+        let row = |logical_key: &str| PublishedObject {
+            logical_key: logical_key.to_owned(),
+            generation: 7,
+            physical_key: format!("physical/{logical_key}"),
+            allocation_id: format!("allocation-{logical_key}"),
+            gate_epoch: 3,
+            size_bytes: 1,
+            published_at_ms: 1,
+        };
+        let ordered = [row("blake3:aaa"), row("sha256:bbb"), row("sha256:ccc")];
+        let first_page = &ordered[..2];
+        let cursor = cas_catalog_next_cursor(first_page, 2).expect("full page cursor");
+        assert_eq!(cursor, "sha256:bbb");
+
+        let second_page = ordered
+            .iter()
+            .filter(|candidate| candidate.logical_key.as_str() > cursor.as_str())
+            .map(|candidate| candidate.logical_key.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(second_page, vec!["sha256:ccc"]);
+    }
+
     #[tokio::test]
     async fn r2_cas_handler_key_uses_region_and_prefix() {
         let handler = make_test_handler("iad").await;
@@ -352,7 +378,7 @@
         let parsed = parse_server_timing(&header);
         assert!(
             parsed.contains_key("ostore"),
-            "R2CasHandler::read's block_in_place R2 GET must be attributed \
+             "R2CasHandler::read's block_in_place R2 GET must be attributed \
              to Phase::Store (ostore) even when the call errors. Header: {header}"
         );
     }
@@ -404,7 +430,7 @@
         let parsed = parse_server_timing(&header);
         assert!(
             parsed.contains_key("ostore"),
-            "R2AcHandler::lookup's block_in_place R2 GET must be attributed \
+             "R2AcHandler::lookup's block_in_place R2 GET must be attributed \
              to Phase::Store (ostore) even when the call errors. Header: {header}"
         );
     }
@@ -463,7 +489,7 @@
         let parsed = parse_server_timing(&header);
         assert!(
             parsed.contains_key("ostore"),
-            "R2CasHandler::list's serial-fallback R2 call must be attributed \
+             "R2CasHandler::list's serial-fallback R2 call must be attributed \
              to Phase::Store (ostore). Header: {header}"
         );
     }

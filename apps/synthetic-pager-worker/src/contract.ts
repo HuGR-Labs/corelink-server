@@ -121,9 +121,40 @@ export function parseSyntheticPageEnvelope(value: unknown): SyntheticPageEnvelop
   ) {
     return null;
   }
+  const scheduled = new Date(value.scheduled_at_ms);
+  if (
+    scheduled.getUTCDay() !== 1 ||
+    scheduled.getUTCHours() !== 14 ||
+    scheduled.getUTCMinutes() !== 0 ||
+    scheduled.getUTCSeconds() !== 0 ||
+    scheduled.getUTCMilliseconds() !== 0
+  ) {
+    return null;
+  }
+  const scheduledWeek = Math.floor((value.scheduled_at_ms - Date.UTC(1970, 0, 5)) / (7 * 24 * 60 * 60 * 1_000));
+  const expectedRotation = ((scheduledWeek % 4) + 4) % 4;
+  const scheduledDrillId = `SP-${value.scheduled_at_ms}`;
+  const expectedRegion = (["americas", "emea", "apac", "boundary_handoff"] as const)[expectedRotation];
+  const expectedEmitAt = page.delivery_mode === "immediate"
+    ? value.scheduled_at_ms
+    : Date.UTC(
+        scheduled.getUTCFullYear(),
+        scheduled.getUTCMonth(),
+        scheduled.getUTCDate() + 6,
+        23,
+        59,
+        0,
+        0,
+      );
+  if (
+    page.dedup_key !== scheduledDrillId ||
+    page.rotation_week !== expectedRotation ||
+    page.region !== expectedRegion
+  ) return null;
   if (
     (page.delivery_mode === "deferred" && page.region !== "boundary_handoff") ||
-    (page.delivery_mode === "immediate" && page.region === "boundary_handoff")
+    (page.delivery_mode === "immediate" && page.region === "boundary_handoff") ||
+    page.emit_at_ms !== expectedEmitAt
   ) {
     return null;
   }

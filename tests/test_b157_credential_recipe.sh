@@ -4,7 +4,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PAGE="$ROOT/apps/docs/docs/integrations/bazel.md"
 HELPER="$ROOT/examples/bazel-starter/.bazel/corelink-credential-helper.sh"
+PUBLISHED_HELPER="$ROOT/apps/docs/static/downloads/corelink-credential-helper.sh"
 BAZELRC="$ROOT/examples/bazel-starter/.bazelrc"
+HELPER_HREF='pathname:///downloads/corelink-credential-helper.sh'
+PAGES=(
+  "$PAGE"
+  "$ROOT"/apps/docs/i18n/*/docusaurus-plugin-content-docs/current/integrations/bazel.md
+)
 
 assert_all_helpers_scoped() {
   local file="$1" line value
@@ -22,11 +28,18 @@ assert_all_helpers_scoped() {
 }
 
 assert_helper_link() {
-  local page="$1" href target
-  href="$(sed -nE 's#.*\[Bazel starter example\]\(([^)]*)\).*#\1#p' "$page")"
-  test "$href" = '../../../../examples/bazel-starter/.bazel/corelink-credential-helper.sh' || return 1
-  target="$ROOT/apps/docs/docs/integrations/$href"
-  test -f "$target" || return 1
+  local page="$1" count
+  count="$(grep -oF "]($HELPER_HREF)" "$page" | wc -l | tr -d '[:space:]')"
+  test "$count" = 1 || return 1
+  grep -qF '`chmod 0755 .bazel/corelink-credential-helper.sh`' "$page"
+}
+
+assert_published_helper() {
+  local published="$1"
+  test -f "$published" || return 1
+  test ! -L "$published" || return 1
+  test -x "$published" || return 1
+  cmp -s "$HELPER" "$published"
 }
 
 assert_safe() {
@@ -40,8 +53,13 @@ assert_safe() {
 }
 
 assert_safe "$PAGE"
-assert_helper_link "$PAGE"
 test -f "$HELPER"
+test "${#PAGES[@]}" -eq 4
+for page in "${PAGES[@]}"; do
+  test -f "$page"
+  assert_helper_link "$page"
+done
+assert_published_helper "$PUBLISHED_HELPER"
 assert_all_helpers_scoped "$BAZELRC"
 grep -qE '^build --credential_helper=corelink-api\.humangr\.com=' "$BAZELRC"
 sentinel='corelink_pat_SENTINEL.behavior-test'
@@ -74,10 +92,33 @@ if grep -q "$sentinel" "$helper_xtrace_stderr"; then
 fi
 
 tmp="$(mktemp)"
-trap 'rm -f "$tmp" "$helper_stderr" "$missing_stderr" "$helper_xtrace_stderr"' EXIT
-awk '{gsub(/\.\.\/\.\.\/\.\.\/\.\.\/examples\/bazel-starter/, "../../../../examples/buck2-starter"); print}' "$PAGE" >"$tmp"
-if assert_helper_link "$tmp"; then
-  echo 'B-157 link mutation unexpectedly passed' >&2
+tmp_helper="$(mktemp)"
+tmp_symlink="$(mktemp)"
+rm -f "$tmp_symlink"
+trap 'rm -f "$tmp" "$tmp_helper" "$tmp_symlink" "$helper_stderr" "$missing_stderr" "$helper_xtrace_stderr"' EXIT
+for page in "${PAGES[@]}"; do
+  awk '{gsub(/pathname:\/\/\/downloads\/corelink-credential-helper\.sh/, "pathname:///downloads/missing-helper.sh"); print}' "$page" >"$tmp"
+  if assert_helper_link "$tmp"; then
+    echo "B-157 locale link mutation unexpectedly passed: $page" >&2
+    exit 1
+  fi
+done
+cp "$PUBLISHED_HELPER" "$tmp_helper"
+chmod 0644 "$tmp_helper"
+if assert_published_helper "$tmp_helper"; then
+  echo 'B-157 published-helper mode mutation unexpectedly passed' >&2
+  exit 1
+fi
+cp "$PUBLISHED_HELPER" "$tmp_helper"
+chmod 0755 "$tmp_helper"
+printf '\n# content mutation\n' >>"$tmp_helper"
+if assert_published_helper "$tmp_helper"; then
+  echo 'B-157 published-helper content mutation unexpectedly passed' >&2
+  exit 1
+fi
+ln -s "$PUBLISHED_HELPER" "$tmp_symlink"
+if assert_published_helper "$tmp_symlink"; then
+  echo 'B-157 published-helper symlink mutation unexpectedly passed' >&2
   exit 1
 fi
 cp "$BAZELRC" "$tmp"

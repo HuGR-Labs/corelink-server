@@ -357,6 +357,12 @@ jobs:
     name: fuzz 1h (${{ matrix.crate }}::${{ matrix.target }})
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 75
+    # rust-toolchain.toml pins stable 1.91.1 for normal builds, but
+    # cargo-fuzz injects nightly-only sanitizer flags.  PATH alone does not
+    # override rustup's directory pin, so select the pre-installed host
+    # nightly explicitly without mutating the shared rustup installation.
+    env:
+      RUSTUP_TOOLCHAIN: nightly-x86_64-apple-darwin
     strategy:
       fail-fast: false
       matrix:

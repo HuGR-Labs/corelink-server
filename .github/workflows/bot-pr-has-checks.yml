@@ -1,25 +1,27 @@
-# A bot PR with NO checks must never be mistaken for a bot PR that PASSED.
+# An automation PR with NO checks must never be mistaken for one that PASSED.
 #
 # ROOT CAUSE (GitHub, documented behaviour — not a bug in this repo):
 #   "When you use the repository's GITHUB_TOKEN to perform tasks, events
 #   triggered by the GITHUB_TOKEN will not create a new workflow run."
 #   `workflow_dispatch` and `repository_dispatch` are the only exceptions.
-#   Six workflows here open pull requests automatically — subprocessors-sync,
-#   okf-autoreconcile, compliance-weekly, api-reference-sync,
-#   pre-cutover-weekly-cron, release-notes — and at least
-#   subprocessors-sync.yml:96 and api-reference-sync.yml:72 pass
-#   `token: ${{ secrets.GITHUB_TOKEN }}` to the PR-creating action. Every PR
-#   they open is therefore born with ZERO check runs. A PR with no checks does
-#   not render as failing; it renders as nothing-wrong, and it can be merged
-#   straight past gates that never executed. That has already happened in this
-#   repo.
+#   The five active Actions workflows here open pull requests automatically —
+#   subprocessors-sync, okf-autoreconcile, compliance-weekly,
+#   api-reference-sync and release-notes. (The historical
+#   pre-cutover-weekly-cron workflow was retired.) Before B-012, they used the
+#   Actions token and every PR they opened was therefore born with ZERO check
+#   runs. A PR with no checks does not render as failing; it renders as
+#   nothing-wrong, and it can be merged straight past gates that never
+#   executed. That has already happened in this repo.
 #
-# THE DURABLE FIX IS NOT THIS FILE. It is a GitHub App installation token —
-#   mint it with `actions/create-github-app-token` and hand THAT token to the
-#   PR-creating step instead of GITHUB_TOKEN. Events from an App token are not
-#   suppressed, so the bot's PR gets its normal check suite. That requires a
-#   one-time owner action (create the App, install it, store the App id +
-#   private key), which is why it is not done here.
+#   Candidate selection is actor-independent: these workflows use stable head
+#   branch markers, so a PR remains covered even when its author is typed as a
+#   User, an App, or a renamed machine account.
+#
+# THE DURABLE FIX is the dedicated `BOT_PR_TOKEN` wired into every active
+#   creator. It may hold a fine-grained PAT or a GitHub App installation token;
+#   the one-time owner action is to mint/install it and store it as the repo
+#   secret. Events from that credential are not suppressed, so automation PRs get
+#   their normal check suite.
 #
 # THIS FILE IS THE COMPENSATING CONTROL until that lands: it makes the
 #   zero-checks condition loud instead of invisible. It does not prevent the
@@ -38,7 +40,7 @@
 #   Hourly. The job is a handful of read-only API calls and finishes in
 #   seconds, but every tick spawns a container on our own fabric, so the
 #   cadence is a COGS decision as much as a detection one. The failure this
-#   catches needs a HUMAN to complete it — an ungated bot PR is only dangerous
+#   catches needs a HUMAN to complete it — an ungated automation PR is only dangerous
 #   once someone merges it — and nobody merges within the hour at 03:00. Half-
 #   hourly would double the spawn count to buy a detection window narrower than
 #   the human latency it is racing.
@@ -67,12 +69,12 @@ concurrency:
 
 jobs:
   audit:
-    name: every bot PR has at least one check
+    name: every automation PR has at least one check
     # Self-hosted fleet — zero GitHub-hosted spend, per the standing mandate.
     runs-on: corelink
     timeout-minutes: 10
     steps:
-      - name: bot-authored open PRs are actually gated
+      - name: automation-created open PRs are actually gated
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -90,17 +92,30 @@ jobs:
           # runs are still being created. Only PRs older than this are judged.
           GRACE_MINUTES = 15
 
-          # Belt and braces. The PRIMARY signal is the API's own
-          # `user.type == "Bot"`, which is authoritative and needs no string
-          # matching. This allowlist catches accounts that open PRs on behalf of
-          # automation but are typed as `User` (a machine account, an App acting
-          # through a PAT). Add to it; never remove `github-actions[bot]`.
-          BOT_LOGIN_ALLOWLIST = {
-              "github-actions[bot]",
-              "dependabot[bot]",
-              "renovate[bot]",
-              "corelink-bot",
-          }
+          # These markers are produced by the five active PR creators.  Do not
+          # key this gate on `user.login` or `user.type`: a PAT/App identity can
+          # legitimately be typed as User and may be renamed.
+          AUTO_PR_HEAD_MARKERS = (
+              "bot/subprocessors-sync-",
+              "auto/okf-reconcile-",
+              "auto/compliance-digest-",
+              "bot/api-reference-sync-",
+              "releases/v",
+          )
+
+
+          def is_auto_pr(pr):
+              head = pr.get("head") or {}
+              ref = head.get("ref") or ""
+              return any(ref.startswith(marker) for marker in AUTO_PR_HEAD_MARKERS)
+
+
+          def marker_for(pr):
+              ref = ((pr.get("head") or {}).get("ref")) or ""
+              for marker in AUTO_PR_HEAD_MARKERS:
+                  if ref.startswith(marker):
+                      return marker
+              return "?"
 
 
           def gh_api(path, paginate=False):
@@ -149,13 +164,6 @@ jobs:
               return prs
 
 
-          def is_bot(pr):
-              user = pr.get("user") or {}
-              if (user.get("type") or "") == "Bot":
-                  return True
-              return (user.get("login") or "") in BOT_LOGIN_ALLOWLIST
-
-
           def gate_counts(sha):
               """(check_runs, commit_statuses) on this SHA.
 
@@ -191,16 +199,17 @@ jobs:
               print("::error::could not list open PRs: %s" % exc)
               sys.exit(1)
 
-          bot_prs = [pr for pr in open_prs if is_bot(pr)]
+          auto_prs = [pr for pr in open_prs if is_auto_pr(pr)]
 
           rows = []
           offenders = []
           errors = []
 
-          for pr in sorted(bot_prs, key=lambda p: p["number"]):
+          for pr in sorted(auto_prs, key=lambda p: p["number"]):
               number = pr["number"]
               title = (pr.get("title") or "").replace("|", "\\|")
               login = ((pr.get("user") or {}).get("login")) or "?"
+              marker = marker_for(pr)
               sha = ((pr.get("head") or {}).get("sha")) or ""
               created = datetime.strptime(
                   pr["created_at"], "%Y-%m-%dT%H:%M:%SZ"
@@ -212,8 +221,8 @@ jobs:
               except RuntimeError as exc:
                   errors.append("#%d: %s" % (number, exc))
                   rows.append(
-                      "| #%d | %s | %s | %d | ERROR | ERROR | could not query |"
-                      % (number, title, login, age_min)
+                      "| #%d | %s | %s | `%s` | %d | ERROR | ERROR | could not query |"
+                      % (number, title, login, marker, age_min)
                   )
                   continue
 
@@ -227,31 +236,31 @@ jobs:
                   verdict = "gated"
 
               rows.append(
-                  "| #%d | %s | %s | %d | %d | %d | %s |"
-                  % (number, title, login, age_min, checks, statuses, verdict)
+                  "| #%d | %s | %s | `%s` | %d | %d | %d | %s |"
+                  % (number, title, login, marker, age_min, checks, statuses, verdict)
               )
 
           # The healthy state is printed too. A gate that only speaks when angry
           # is indistinguishable from a gate that is broken and silent.
-          out = ["## bot-authored open PRs in `%s`" % REPO, ""]
-          if not bot_prs:
+          out = ["## automation-created open PRs in `%s`" % REPO, ""]
+          if not auto_prs:
               out.append(
-                  "No open bot-authored PRs. (%d open PRs scanned.)" % len(open_prs)
+                  "No open automation-created PRs. (%d open PRs scanned.)" % len(open_prs)
               )
           else:
               out.append(
-                  "| PR | title | author | age (min) | check runs | statuses | verdict |"
+                  "| PR | title | author | marker | age (min) | check runs | statuses | verdict |"
               )
-              out.append("| --- | --- | --- | ---: | ---: | ---: | --- |")
+              out.append("| --- | --- | --- | --- | ---: | ---: | ---: | --- |")
               out.extend(rows)
               out.append("")
               out.append(
-                  "%d bot PR(s) of %d open PRs scanned." % (len(bot_prs), len(open_prs))
+                  "%d automation PR(s) of %d open PRs scanned." % (len(auto_prs), len(open_prs))
               )
 
           if offenders:
               out.append("")
-              out.append("### FAIL — bot PRs with zero checks AND zero statuses")
+              out.append("### FAIL — automation PRs with zero checks AND zero statuses")
               out.append("")
               for number, title, login, age_min in offenders:
                   out.append(
@@ -273,7 +282,7 @@ jobs:
               print("::error::check-count query failed for %s" % message)
           for number, title, login, age_min in offenders:
               print(
-                  "::error::bot PR #%d has ZERO checks and ZERO statuses after %d "
+                  "::error::automation PR #%d has ZERO checks and ZERO statuses after %d "
                   "minutes (author %s): %s" % (number, age_min, login, title)
               )
 

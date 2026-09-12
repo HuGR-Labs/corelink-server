@@ -1,0 +1,158 @@
+{
+  "schema": "b152-actions-check-annotations/v1",
+  "observed_at": "2026-09-09T09:08:20Z",
+  "repository": "HuGR-Labs/corelink-server",
+  "read_only": true,
+  "base_sha": "64e57a2ccb218f475b44a260b64af95e0bc7df2c",
+  "historical_window": {
+    "start": "2026-08-31T03:50:00Z",
+    "end_exclusive": "2026-08-31T07:20:00Z",
+    "run_count": 1621,
+    "failed_run_count": 33,
+    "failed_job_count": 33,
+    "duration_window_seconds": {
+      "low": 594,
+      "high": 615,
+      "matching_job_count": 3
+    },
+    "snapshot": "reports/perf/b152-actions-2026-09-06.json",
+    "snapshot_sha256": "6eab5821a3f010aff008cb99ebd4bcbe528b4479a01ad5e649d1a26c11aae38f",
+    "refresh_was_byte_identical": true
+  },
+  "github_annotation": {
+    "annotation_count_per_job": 1,
+    "annotation_level": "failure",
+    "message": "The self-hosted runner lost communication with the server. Verify the machine is running and has a healthy network connection. Anything in your workflow that terminates the runner process, starves it for CPU/Memory, or blocks its network access can cause this error.",
+    "message_sha256": "bddbee89083419f76cff9f653d44c424b86403a4d59179cbfc141c22bf52549d",
+    "message_sha256_with_trailing_newline": "e6be15863f4a31186b54c689dc0530dabe9fdc955550f7f842f87e83389c7a93",
+    "identical_across_matching_jobs": true
+  },
+  "pr_1492_reconciliation": {
+    "pull_request": 1492,
+    "branch": "claude/wp-a-b080-scopes",
+    "run_query": {
+      "branch": "claude/wp-a-b080-scopes",
+      "event": "pull_request",
+      "created": "2026-08-31T03:50:00Z..2026-08-31T07:20:00Z",
+      "per_page": 100,
+      "paginated": true
+    },
+    "run_count": 207,
+    "jobs_with_594_to_615_second_duration_in_non_success_runs": 3,
+    "same_push_head_sha": "72a7908f5abca61f6ff0bc236f7769a83b087a9e",
+    "jobs": [
+      {
+        "run_id": 33359740581,
+        "job_id": 99388657822,
+        "workflow": "dco-check",
+        "lane": "dco",
+        "conclusion": "cancelled",
+        "duration_seconds": 600,
+        "declared_timeout_minutes_at_head_sha": 5,
+        "annotation_count": 1,
+        "annotation_level": "failure",
+        "annotation_message_sha256": "aa6cde1b5f3330052ff6d498ec600f6f14981f4575c8120323d7bfc3eb227350",
+        "annotations_http_status": 200,
+        "job_log_http_status": 404,
+        "github_annotation": "The job has exceeded the maximum execution time of 5m0s"
+      },
+      {
+        "run_id": 33359740663,
+        "job_id": 99388658702,
+        "workflow": "admin-ui e2e",
+        "lane": "playwright critical-flows (chromium)",
+        "conclusion": "failure",
+        "duration_seconds": 600,
+        "declared_timeout_minutes_at_head_sha": 30,
+        "annotation_count": 1,
+        "annotation_level": "failure",
+        "annotation_message_sha256": "bddbee89083419f76cff9f653d44c424b86403a4d59179cbfc141c22bf52549d",
+        "annotations_http_status": 200,
+        "job_log_http_status": 404,
+        "github_annotation": "The self-hosted runner lost communication with the server. Verify the machine is running and has a healthy network connection. Anything in your workflow that terminates the runner process, starves it for CPU/Memory, or blocks its network access can cause this error."
+      },
+      {
+        "run_id": 33359740716,
+        "job_id": 99388658533,
+        "workflow": "proptest-density-gate",
+        "lane": "proptest density gate",
+        "conclusion": "cancelled",
+        "duration_seconds": 600,
+        "declared_timeout_minutes_at_head_sha": 5,
+        "annotation_count": 1,
+        "annotation_level": "failure",
+        "annotation_message_sha256": "aa6cde1b5f3330052ff6d498ec600f6f14981f4575c8120323d7bfc3eb227350",
+        "annotations_http_status": 200,
+        "job_log_http_status": 404,
+        "github_annotation": "The job has exceeded the maximum execution time of 5m0s"
+      }
+    ]
+  },
+  "jobs": [
+    {
+      "run_id": 33355619309,
+      "job_id": 99377079175,
+      "workflow": "docs CI",
+      "lane": "typecheck + lint + test + build",
+      "runner_name": "cf-runner-ad7db4f0",
+      "queue_duration_seconds": 184,
+      "run_duration_seconds": 600,
+      "steps_retained": 0,
+      "artifacts_retained": 0,
+      "annotation_count": 1,
+      "annotation_level": "failure",
+      "annotation_message_sha256": "bddbee89083419f76cff9f653d44c424b86403a4d59179cbfc141c22bf52549d",
+      "check_run_http_status": 200,
+      "annotations_http_status": 200,
+      "job_log_http_status": 404
+    },
+    {
+      "run_id": 33356199472,
+      "job_id": 99378740877,
+      "workflow": "OKF-CoreLink Wiki Validation",
+      "lane": "okf-wiki-validation",
+      "runner_name": "cf-runner-8bf42fee",
+      "queue_duration_seconds": 141,
+      "run_duration_seconds": 600,
+      "steps_retained": 0,
+      "artifacts_retained": 0,
+      "annotation_count": 1,
+      "annotation_level": "failure",
+      "annotation_message_sha256": "bddbee89083419f76cff9f653d44c424b86403a4d59179cbfc141c22bf52549d",
+      "check_run_http_status": 200,
+      "annotations_http_status": 200,
+      "job_log_http_status": 404
+    },
+    {
+      "run_id": 33359740663,
+      "job_id": 99388658702,
+      "workflow": "admin-ui e2e",
+      "lane": "playwright critical-flows (chromium)",
+      "runner_name": "cf-runner-9debaeaa",
+      "queue_duration_seconds": 1,
+      "run_duration_seconds": 600,
+      "steps_retained": 0,
+      "artifacts_retained": 0,
+      "annotation_count": 1,
+      "annotation_level": "failure",
+      "annotation_message_sha256": "bddbee89083419f76cff9f653d44c424b86403a4d59179cbfc141c22bf52549d",
+      "check_run_http_status": 200,
+      "annotations_http_status": 200,
+      "job_log_http_status": 404
+    }
+  ],
+  "classification": {
+    "common_cause": false,
+    "global_failed_duration_window_common_immediate_failure": "self_hosted_runner_lost_communication",
+    "suite_or_declared_timeout_is_common_cause": false,
+    "pr_1492_has_one_common_cause": false,
+    "pr_1492_causes": {
+      "declared_five_minute_job_timeout": 2,
+      "self_hosted_runner_lost_communication": 1
+    },
+    "underlying_runner_loss_mechanism": "indeterminate",
+    "underlying_runner_loss_removed": false,
+    "status": "open",
+    "reason": "The retained annotations disprove a single common cause for PR #1492: two 600-second records are delayed terminalization of explicit five-minute job timeouts and one is runner communication loss. Across the closed global window, three distinct failed jobs share runner communication loss, but GitHub retained neither logs, steps, nor artifacts that distinguish process termination, resource starvation, or network loss."
+  }
+}

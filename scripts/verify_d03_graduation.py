@@ -204,10 +204,10 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "B-251": {
         "owner_packet": "docs/campaigns/remediation/work-packages/B131-B167.md#WP-B251",
-        "profiles": ["deterministic", "D02", "fixture"], "sample_count": 1000,
-        "required": ["verify_b251_quota_cas_budget.py", "--ignored", "--exact", "p99", "seed", "failure", "blob", "OBSERVED_SEED", "OBSERVED_FAILURE", "OBSERVED_BLOB", "b251-d02-identity.json", "fixture_only", "production_latency_measured", "InMemoryAtomicQuotaChecker"],
-        "safety": ["opt-in", "--nocapture", "B251_ALLOW_IGNORED_PROBE=1"],
-        "forbidden": ["--force", "production quota redesign"],
+        "profiles": ["b251-d02", "b251-d03-observed", "InMemoryAtomicQuotaChecker"], "sample_count": 1000,
+        "required": ["verify_b251_quota_cas_budget.py", "run_b251_latency_probe.py", "--allow-run", "--d02-identity", "--observed-identity", "--output", "b251-d02-identity.json", "b251-d03-observed-identity.json", "corelink.b251.latency-probe.v1", "identity.match", "fields_compared", "seed", "failure", "blob", "measurement.sample_count", "measurement.p99_us", "measurement.limit_us", "production_latency_measured", "InMemoryAtomicQuotaChecker"],
+        "safety": ["set -euo pipefail", "p99_us < .measurement.limit_us", "production_latency_measured == false"],
+        "forbidden": ["--force", "production quota redesign", "B251_OBSERVED_", "jq -n", "cargo test -p corelink-billing", "B251-latency-probe.log"],
     },
 }
 SEMANTIC_PACKET_FIELDS = {"owner_packet", "profiles", "sample_count", "required", "safety", "forbidden"}
@@ -247,8 +247,8 @@ COMMAND_OPERATIONS: dict[str, tuple[str, ...]] = {
         "lock_dir=\"${artifact}.lock\"",
         ".databaseId == $expected_run_id",
         ".attempt == ($expected_attempt + 1) and (.databaseId | type == \"number\") and .status == \"completed\"",
-        "all(.jobs[]; ((.name | ascii_downcase | startswith(\"create release\")) | not) or (.status == \"completed\" and .conclusion == \"skipped\"))",
-        "all(.jobs[]; ((.name | ascii_downcase | startswith(\"publish verified signed release\")) | not) or (.status == \"completed\" and .conclusion == \"skipped\"))",
+        "all(.jobs[]; ((.name | ascii_downcase | startswith(\"create release\")) | not) or (.status == \"completed\" and .conclusion == \"success\"))",
+        "all(.jobs[]; ((.name | ascii_downcase | startswith(\"publish verified signed release\")) | not) or (.status == \"completed\" and .conclusion == \"success\"))",
         "gh run view \"$run_id\" --attempt \"$attempt_after\" --log",
         "caller_attempt=\"$(gh api",
         ".referenced_workflows = (.referenced_workflows // [])",
@@ -276,7 +276,11 @@ COMMAND_OPERATIONS: dict[str, tuple[str, ...]] = {
     "B-129": ("$CORELINK_PROD_BASE/cargo/${CORELINK_DOGFOOD_TENANT:?}/${CORELINK_DOGFOOD_CARGO_KEY:?}",),
     "B-134": ("check_b134_observability.py", "expected_sha=\"$(gh api", ".headSha == $sha"),
     "B-216": ("wrangler tail corelink-signup-worker", "jq -e --arg worker \"corelink-signup-worker\" --arg queue \"corelink-dsr-erasure-dlq\"", "jq -e --arg worker \"corelink-signup-worker\" --arg revision \"$B216_EXPECTED_REVISION\" --arg event_id \"$B216_EVENT_ID\"", "test -s reports/owner-actions/b216-alert-delivery.json", "test -s reports/owner-actions/b216-exhausted-observation.md"),
-    "B-251": ("cargo test -p corelink-billing", "jq -e --arg seed", "jq -n '{measurement_mode:\"fixture_only\", production_latency_measured:false}'", "jq -e '.measurement_mode == \"fixture_only\"", "test -s reports/owner-actions/b251-d02-identity.json"),
+    "B-251": (
+        "python3 scripts/verify_b251_quota_cas_budget.py",
+        "python3 scripts/run_b251_latency_probe.py --allow-run",
+        "jq -e",
+    ),
 }
 
 # Frozen from the 42 TL/open records at the D03 starting head.  Do not derive
@@ -293,7 +297,7 @@ EXCLUDED = frozenset(("B-061", "B-126", "B-155"))
 GRADUATED = tuple(item for item in ORIGINAL_TL_OPEN if item not in EXCLUDED) + ("B-006",)
 GRADUATED_SET = frozenset(GRADUATED)
 ORIGINAL_SET = frozenset(ORIGINAL_TL_OPEN)
-DONE_SET = frozenset(("B-028", "B-074", "B-118", "B-135", "B-229", "B-253"))
+DONE_SET = frozenset(("B-006", "B-028", "B-074", "B-118", "B-135", "B-165", "B-229", "B-253"))
 B118_ARTIFACT = "scripts/verify_b118_retirement.py"
 B118_COMMAND = "python3 scripts/verify_b118_retirement.py"
 B118_EVIDENCE = (
@@ -304,6 +308,29 @@ B118_EVIDENCE = (
 )
 B006_ARTIFACT = "artifacts/d03/B006-capability-metrics.json"
 B006_PROVIDER_ARTIFACT = "artifacts/d03/B006-provider-binding.json"
+B165_ARTIFACT = "evidence/owner-actions/B-165/rejection-served-latency.json"
+B165_COMPLETE_ARTIFACT = "evidence/owner-actions/B-165/complete-latency-2026-09-09.tsv"
+B165_SERVER_TIMING_ARTIFACT = "evidence/owner-actions/B-165/served-server-timing-2026-09-09.tsv"
+B165_TENANT_A = "8a6b4e4e-5d66-4ab7-9388-85ea5ed45c4c"
+B165_TENANT_B = "ee30f7ba-fc25-4d71-939e-ebe130b4c6a3"
+B165_PAT_FINGERPRINT_A = "sha256:dbc983ada203f4ca87e023ea9dd40a6c3367c3843e49a774849bf8078799fac8"
+B165_PAT_FINGERPRINT_B = "sha256:25e409be70b0633d1f0a2179e23de7b254eef69cff253e105b36cde1f18176d1"
+B165_COMMAND = (
+    "python3 scripts/verify_b165_latency.py "
+    f"{B165_COMPLETE_ARTIFACT} --samples 10 --require-served "
+    f"--tenant-a {B165_TENANT_A} --tenant-b {B165_TENANT_B} "
+    f"--pat-fingerprint-a {B165_PAT_FINGERPRINT_A} "
+    f"--pat-fingerprint-b {B165_PAT_FINGERPRINT_B} "
+    f"--server-timing-tsv {B165_SERVER_TIMING_ARTIFACT}"
+)
+B165_EVIDENCE = (
+    f"{B165_ARTIFACT} and docs/perf/2026-09-09-wp-b165-complete.md preserve the complete "
+    "four-route 401 refusal, health 200 control, and two distinct tenant-bound served "
+    "200 populations. The canonical B-165 verifier requires ten samples, redacted "
+    "distinct PAT fingerprints, and one-to-one Server-Timing/transport residual checks; "
+    "its source guard proves 404-only/never-401 padding. This is diagnostic evidence "
+    "only; no deployment was performed."
+)
 EXCLUDED_FINGERPRINTS = {
     "B-061": "d759a0591e6f867b4245f09512963f2ae10924c7b25cfad02754dc1b323657dc",
     "B-126": "88e2fe5082ad1ad9c393c633c862f947043b378c1fd36393a949b64eab34b089",
@@ -377,7 +404,7 @@ def _check_bounded_shell(item: str, command: str, artifact: str) -> None:
         raise GraduationError(f"{item}: command contains an unapproved shell operator")
     expected_operators = {
         "B-216": {";": 24, ">": 6, ";;": 2, "||": 1, "|": 1},
-        "B-251": {";": 22, ">": 4, "|": 2, ">&": 1},
+        "B-251": {";": 4, ">": 1},
     }[item]
     operators = Counter(
         token for token in tokens if token in {";", ";;", "||", "|", ">", "<", ">>", ">&", "&&", "&"}
@@ -385,23 +412,23 @@ def _check_bounded_shell(item: str, command: str, artifact: str) -> None:
     if dict(operators) != expected_operators:
         raise GraduationError(f"{item}: command separator/redirect shape is not the reviewed bounded form")
     if item == "B-251" and ">" in tokens:
-        # B-251 emits its structured envelope exactly once.  Probe output is
-        # tee'd into a separate log, so a second redirect cannot hide evidence.
+        # The runner owns atomic evidence creation. The shell only discards
+        # jq's boolean output after validating the completed artifact.
         redirect_targets = [tokens[index + 1] for index, token in enumerate(tokens[:-1]) if token == ">"]
-        if redirect_targets != ["/dev/null", artifact, "/dev/null", "/dev/null"]:
-            raise GraduationError(f"{item}: redirect is not the declared evidence artifact")
+        if redirect_targets != ["/dev/null"]:
+            raise GraduationError(f"{item}: redirect is outside the reviewed validation sink")
     if item == "B-216" and ">" in tokens:
         redirect_targets = [tokens[index + 1] for index, token in enumerate(tokens[:-1]) if token == ">"]
         if redirect_targets != [artifact, "/dev/null", "/dev/null", artifact, "/dev/null", "/dev/null"]:
             raise GraduationError(f"{item}: redirects must only capture the declared event artifact")
-    if item == "B-251" and tokens.count(">&") != 1:
-        raise GraduationError(f"{item}: probe stderr must have exactly one bounded 2>&1 capture")
+    if item == "B-251" and tokens.count(">&") != 0:
+        raise GraduationError(f"{item}: runner output must not be redirected into side evidence")
     if item == "B-216" and tokens.count(";;") != 2:
         raise GraduationError(f"{item}: timeout status case must remain structurally bounded")
 
     allowed = {
         "B-216": {"set", "export", "test", ":", "grep", "tail_rc=0", "timeout", "wrangler", "jq", "case", "exit"},
-        "B-251": {"set", "export", "test", ":", "grep", "jq", "tee", "python3", "cargo"},
+        "B-251": {"set", "export", "jq", "python3"},
     }[item]
     control = {";", "||", "|", ")", "(", ";;", "in", "esac", "*"}
     at_command_start = True
@@ -524,18 +551,6 @@ def _assert_jq_filter_active(
             raise GraduationError(f"{label}: jq predicate is inert for field {key!r}")
 
 
-def _assert_jq_envelope(filter_text: str) -> None:
-    status, output = _run_jq_filter(filter_text, None, {}, null_input=True)
-    if status != 0:
-        raise GraduationError("B-251 envelope jq filter did not execute")
-    try:
-        value = json.loads(output)
-    except json.JSONDecodeError as exc:
-        raise GraduationError("B-251 envelope jq filter did not emit JSON") from exc
-    if value != {"measurement_mode": "fixture_only", "production_latency_measured": False}:
-        raise GraduationError("B-251 envelope jq filter is not the declared fixture envelope")
-
-
 def _check_b216_semantics(command: str) -> None:
     required_fragments = (
         "test -n \"${B216_EXPECTED_REVISION:?provide deployed revision}\"",
@@ -596,50 +611,74 @@ def _check_b216_semantics(command: str) -> None:
 
 def _check_b251_semantics(command: str, artifact: str) -> None:
     required_fragments = (
-        "test -s reports/owner-actions/b251-d02-identity.json",
-        "jq -e --arg seed \"$B251_OBSERVED_SEED\" --arg failure \"$B251_OBSERVED_FAILURE\" --arg blob \"$B251_OBSERVED_BLOB\"",
-        ".source == \"D02\"",
-        ".seed == $seed",
-        ".failure == $failure",
-        ".blob == $blob",
-        "jq -n '{measurement_mode:\"fixture_only\", production_latency_measured:false}' > " + artifact,
-        "jq -e '.measurement_mode == \"fixture_only\" and .production_latency_measured == false' " + artifact,
-        "artifacts/d03/B251-latency-probe.log",
+        "python3 scripts/verify_b251_quota_cas_budget.py",
+        "python3 scripts/run_b251_latency_probe.py --allow-run",
+        "--d02-identity reports/owner-actions/b251-d02-identity.json",
+        "--observed-identity reports/owner-actions/b251-d03-observed-identity.json",
+        "--output " + artifact,
+        '.schema == "corelink.b251.latency-probe.v1"',
+        ".identity.match == true",
+        '.identity.fields_compared == ["seed","failure","blob"]',
+        ".measurement.sample_count == 1000",
+        ".measurement.limit_us == 5000",
+        ".measurement.p99_us < .measurement.limit_us",
+        '.measurement.fixture == "InMemoryAtomicQuotaChecker"',
+        ".measurement.production_latency_measured == false",
+        artifact + " >/dev/null",
     )
     for fragment in required_fragments:
         if fragment not in command:
             raise GraduationError(f"B-251: command lacks structural identity/measurement assertion {fragment!r}")
-    if "B251_D02_" in command:
-        raise GraduationError("B-251: D02 identity must come from the retained artifact, not environment fields")
-    if "echo" in command or "grep -Eiq" in command:
-        raise GraduationError("B-251: fixture/production truth must be a structured jq assertion")
+    forbidden_old_path = (
+        "B251_OBSERVED_",
+        "B251_ALLOW_IGNORED_PROBE",
+        "jq -n",
+        "measurement_mode",
+        "cargo test -p corelink-billing",
+        "B251-latency-probe.log",
+    )
+    if any(fragment in command for fragment in forbidden_old_path):
+        raise GraduationError("B-251: obsolete split evidence path remains")
+    if command.count("python3 scripts/run_b251_latency_probe.py") != 1:
+        raise GraduationError("B-251: canonical runner must execute exactly once")
 
     filters = _extract_jq_filters(command)
-    if len(filters) != 4:
-        raise GraduationError("B-251: expected identity, envelope, and repeated truth jq filters")
-    identity = next((entry for entry in filters if ".source == \"D02\"" in entry[0]), None)
-    envelope = next((entry for entry in filters if entry[1]), None)
-    truth = [entry for entry in filters if ".measurement_mode" in entry[0]]
-    if identity is None or envelope is None or len(truth) != 2:
-        raise GraduationError("B-251: jq filter roles are not structurally present")
-    _assert_jq_filter_active(
-        "B-251 D02 identity correlation",
-        identity[0],
-        {"source": "D02", "seed": "seed-251", "failure": "failure-251", "blob": "blob-251"},
-        {"source": "wrong-source", "seed": "wrong-seed", "failure": "wrong-failure", "blob": "wrong-blob"},
-        {"seed": "seed-251", "failure": "failure-251", "blob": "blob-251"},
+    if len(filters) != 1 or filters[0][1] or filters[0][2]:
+        raise GraduationError("B-251: expected one input-backed evidence jq filter")
+    filter_text = filters[0][0]
+    positive = {
+        "schema": "corelink.b251.latency-probe.v1",
+        "revision": "a" * 40,
+        "test_blob": "b" * 40,
+        "identity": {"match": True, "fields_compared": ["seed", "failure", "blob"]},
+        "measurement": {
+            "sample_count": 1000,
+            "p99_us": 4999,
+            "limit_us": 5000,
+            "fixture": "InMemoryAtomicQuotaChecker",
+            "production_latency_measured": False,
+        },
+    }
+    status, _ = _run_jq_filter(filter_text, positive, {})
+    if status != 0:
+        raise GraduationError("B-251: canonical evidence fixture did not match")
+    negatives = (
+        {**positive, "schema": "fixture-only"},
+        {**positive, "identity": {"match": False, "fields_compared": ["seed", "failure", "blob"]}},
+        {**positive, "identity": {"match": True, "fields_compared": ["seed", "blob"]}},
+        {**positive, "measurement": {**positive["measurement"], "sample_count": 999}},
+        {**positive, "measurement": {**positive["measurement"], "p99_us": 5000}},
+        {**positive, "measurement": {**positive["measurement"], "limit_us": 5001}},
+        {**positive, "measurement": {**positive["measurement"], "fixture": "production"}},
+        {
+            **positive,
+            "measurement": {**positive["measurement"], "production_latency_measured": True},
+        },
     )
-    _assert_jq_envelope(envelope[0])
-    for index, (filter_text, null_input, _args) in enumerate(truth):
-        if null_input:
-            raise GraduationError(f"B-251 truth filter {index} unexpectedly uses -n")
-        _assert_jq_filter_active(
-            f"B-251 fixture/production truth {index}",
-            filter_text,
-            {"measurement_mode": "fixture_only", "production_latency_measured": False},
-            {"measurement_mode": "production", "production_latency_measured": True},
-            {},
-        )
+    for index, negative in enumerate(negatives):
+        status, _ = _run_jq_filter(filter_text, negative, {})
+        if status == 0:
+            raise GraduationError(f"B-251: evidence predicate is inert for negative {index}")
 
 
 
@@ -825,8 +864,10 @@ def _check_command_contract(item: str, packet: dict[str, Any], root: Path) -> No
             raise GraduationError("B-112 terminal release headSha predicates must occur exactly twice")
         if '.headSha == $sha and (all(.jobs[]; ((.name | ascii_downcase | startswith("create release")) | not) or .conclusion == "skipped"))' not in initial:
             raise GraduationError("B-112 initial headSha predicate is not bound to skipped-release guard")
-        if terminal.count('.status == "completed" and .conclusion == "skipped"') != 4:
-            raise GraduationError("B-112 terminal headSha predicates are not bound to skipped-release guards")
+        if terminal.count('.status == "completed" and .conclusion == "success"') != 6:
+            raise GraduationError("B-112 terminal predicates do not require a successful rerun and release jobs")
+        if "saw_active" in terminal:
+            raise GraduationError("B-112 must accept an attempt that completed before its first poll")
     if item == "B-105":
         expected_sha_assignment = 'expected_sha="$(gh api repos/HuGR-Labs/corelink-server/commits/main --jq .sha)"'
         if command.count(expected_sha_assignment) != 1:
@@ -880,6 +921,87 @@ def _check_command_contract(item: str, packet: dict[str, Any], root: Path) -> No
     source_text = source.read_text(encoding="utf-8")
     if item not in source_text:
         raise GraduationError(f"{item}: authoritative owner packet does not mention the item")
+
+
+def _check_b165_done_evidence(packet: dict[str, Any], root: Path) -> None:
+    """Bind the DONE packet to the committed, complete B-165 receipt.
+
+    B-165's acceptance is a local verifier over retained production evidence;
+    the D03 packet must not silently fall back to the older parked curl probe or
+    to a self-described JSON receipt. Check the receipt's hashes and then run
+    the same verifier arguments recorded in the packet.
+    """
+    if packet.get("artifact") != B165_ARTIFACT:
+        raise GraduationError("B-165: DONE packet must name the committed receipt artifact")
+    if packet.get("command") != B165_COMMAND:
+        raise GraduationError("B-165: DONE packet must use the canonical complete verifier command")
+    if packet.get("verify_means") != "done":
+        raise GraduationError("B-165: DONE packet must declare verify_means=done")
+    if packet.get("evidence") != B165_EVIDENCE:
+        raise GraduationError("B-165: DONE evidence description is not the closed-world receipt statement")
+
+    receipt_path = root / B165_ARTIFACT
+    try:
+        receipt = json.loads(_read(receipt_path))
+    except json.JSONDecodeError as exc:
+        raise GraduationError(f"B-165: receipt is not valid JSON: {exc}") from exc
+    if receipt.get("schema_version") != 1:
+        raise GraduationError("B-165: receipt schema_version is not 1")
+    if receipt.get("verdict") != "complete_two_tenant_measurement;_padding_policy_recorded;_measurement_contract_repaired":
+        raise GraduationError("B-165: receipt does not declare the complete two-tenant verdict")
+    if receipt.get("padding_decision", {}).get("decision") != "retain_padding_for_404_misses_including_unmatched_routes;_never_pad_401":
+        raise GraduationError("B-165: receipt padding decision is not the ratified 404-only boundary")
+
+    try:
+        served = receipt["served_samples"]
+        populations = served["populations"]
+        if served["complete_artifact"] != B165_COMPLETE_ARTIFACT:
+            raise GraduationError("B-165: receipt complete artifact path drifted")
+        if served["server_timing_artifact"] != B165_SERVER_TIMING_ARTIFACT:
+            raise GraduationError("B-165: receipt Server-Timing artifact path drifted")
+        by_surface = {entry["surface"]: entry for entry in populations}
+        if set(by_surface) != {"served_a", "served_b"}:
+            raise GraduationError("B-165: receipt served population set is incomplete")
+        expected_identity = {
+            "served_a": (B165_TENANT_A, B165_PAT_FINGERPRINT_A),
+            "served_b": (B165_TENANT_B, B165_PAT_FINGERPRINT_B),
+        }
+        for surface, (tenant, fingerprint) in expected_identity.items():
+            if by_surface[surface].get("tenant") != tenant or by_surface[surface].get("pat_fingerprint") != fingerprint:
+                raise GraduationError(f"B-165: receipt {surface} identity is not bound to the canonical population")
+        references = (
+            (receipt["rejection_samples"], "artifact", "sha256"),
+            (receipt["rejection_samples"], "recovery_artifact", "recovery_sha256"),
+            (receipt["served_samples"], "artifact", "sha256"),
+            (receipt["served_samples"], "complete_artifact", "complete_sha256"),
+            (receipt["served_samples"], "server_timing_artifact", "server_timing_sha256"),
+        )
+        for section, path_key, hash_key in references:
+            referenced = section[path_key]
+            target = root / referenced
+            if target.is_symlink() or not target.is_file():
+                raise GraduationError(f"B-165: receipt artifact is missing/non-regular: {referenced}")
+            digest = hashlib.sha256(target.read_bytes()).hexdigest()
+            if digest != section[hash_key]:
+                raise GraduationError(f"B-165: receipt hash disagrees with {referenced}")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise GraduationError(f"B-165: receipt is missing a required committed-evidence field: {exc}") from exc
+
+    verify_args = (
+        sys.executable,
+        "scripts/verify_b165_latency.py",
+        B165_COMPLETE_ARTIFACT,
+        "--samples", "10",
+        "--require-served",
+        "--tenant-a", B165_TENANT_A,
+        "--tenant-b", B165_TENANT_B,
+        "--pat-fingerprint-a", B165_PAT_FINGERPRINT_A,
+        "--pat-fingerprint-b", B165_PAT_FINGERPRINT_B,
+        "--server-timing-tsv", B165_SERVER_TIMING_ARTIFACT,
+    )
+    result = subprocess.run(verify_args, cwd=root, capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        raise GraduationError(f"B-165: canonical verifier did not establish complete evidence: {result.stdout}{result.stderr}")
 
 
 def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict[str, Any]]:
@@ -963,12 +1085,17 @@ def _check_packets(packets: dict[str, Any], root: Path = ROOT) -> dict[str, dict
             gate = root / B118_ARTIFACT
             if gate.is_symlink() or not gate.is_file():
                 raise GraduationError("B-118: local retirement gate is missing/non-regular")
+        if item == "B-165" and disposition == "DONE":
+            _check_b165_done_evidence(packet, root)
         if disposition == "PARKED":
             artifact = _require_string(packet, "artifact", item)
             command = _require_string(packet, "command", item)
             if artifact not in command:
                 raise GraduationError(f"{item}: gate command does not create declared artifact {artifact}")
-            if not re.search(r"(?:>|tee)\s*[^\n;]*" + re.escape(artifact), command):
+            if item == "B-251":
+                if command.count(f"--output {artifact}") != 1:
+                    raise GraduationError(f"{item}: canonical runner must own declared artifact output")
+            elif not re.search(r"(?:>|tee)\s*[^\n;]*" + re.escape(artifact), command):
                 raise GraduationError(f"{item}: gate command has no stdout/tee capture for {artifact}")
         if disposition == "DONE":
             _require_string(packet, "evidence", item)
@@ -1116,7 +1243,8 @@ def verify_document(
             raise GraduationError(f"{item}: BACKLOG status {status!r} disagrees with packet {expected!r}")
         means = str(data.get("verify-means", ""))
         if expected == "done":
-            if not means.lstrip().lower().startswith("done —"):
+            done_prefixes = ("done —", "inverted —") if item == "B-165" else ("done —",)
+            if not means.lstrip().lower().startswith(done_prefixes):
                 raise GraduationError(f"{item}: DONE verify-means is not inverted to done")
             if re.search(r"(?im)^\s*(?:open|manual|parked)\b", means):
                 raise GraduationError(f"{item}: DONE verify-means contains stale status language")
@@ -1147,6 +1275,13 @@ def verify_document(
             ("B-028", (sys.executable, "scripts/verify_b028_dependabot.py")),
             ("B-074", (sys.executable, "scripts/verify_b074_money_path_auth.py", "--self-test")),
             ("B-118", (sys.executable, B118_ARTIFACT)),
+            ("B-165", (
+                sys.executable, "scripts/verify_b165_latency.py", B165_COMPLETE_ARTIFACT,
+                "--samples", "10", "--require-served", "--tenant-a", B165_TENANT_A,
+                "--tenant-b", B165_TENANT_B, "--pat-fingerprint-a", B165_PAT_FINGERPRINT_A,
+                "--pat-fingerprint-b", B165_PAT_FINGERPRINT_B,
+                "--server-timing-tsv", B165_SERVER_TIMING_ARTIFACT,
+            )),
             ("B-253", (sys.executable, "-m", "pytest", "-q", "tests/test_b253_openapi_version.py")),
         )
         for item, command in commands:

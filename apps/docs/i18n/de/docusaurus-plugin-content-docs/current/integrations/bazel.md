@@ -60,8 +60,10 @@ build --remote_upload_local_results=true
 build --remote_timeout=60
 ```
 
-Helper-Quelle: [Bazel-Starter-Beispiel](../../../../examples/bazel-starter/.bazel/corelink-credential-helper.sh).
-Der host-spezifische Helper liest `CORELINK_PAT` aus der Umgebung und setzt ihn nicht in Argumente oder Logs.
+Laden Sie den Helper aus dem [Bazel-Starter-Beispiel](pathname:///downloads/corelink-credential-helper.sh) herunter.
+Speichern Sie ihn als `.bazel/corelink-credential-helper.sh` und führen Sie
+`chmod 0755 .bazel/corelink-credential-helper.sh` aus. Der host-spezifische Helper
+liest `CORELINK_PAT` aus der Umgebung und setzt ihn nicht in Argumente oder Logs.
 
 Exportieren Sie beide Werte vor dem Kompilieren; in der CI übergeben Sie den PAT aus einem Secret, damit er
 nie im Klartext erscheint:

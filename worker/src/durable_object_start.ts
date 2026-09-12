@@ -135,12 +135,14 @@ export async function startContainer(
           // provisions — the edge findMissingBlobs path would silently keep taking the
           // slow container route with no way to tell why.
           CORELINK_AUDIT_ATTEMPTED_AUTH_KEY: ctx.env.CORELINK_AUDIT_ATTEMPTED_AUTH_KEY ?? "",
-          // H5 dual-approval: the container's `POST /v1/admin/approve` gate reads
+          // H5/B054 dual-approval: the container's `POST /v1/admin/approve` and
+          // `POST /_internal/audit/epoch-admin` Security-principal gates read
           // a DEDICATED `CORELINK_ADMIN_APPROVER_AUTH_KEY` (distinct from the
           // mutate/admin key so approve+mutate need different keys — real
           // two-person control). Forward it or the container 401s every approve
           // call the moment the dedicated key is bound (the CP-1 self-inflicted
-          // outage this block guards against). Empty when unset ⇒ shared fallback.
+          // outage this block guards against). Empty when unset ⇒ dedicated-only
+          // runtime stays unmounted/fails closed; there is no shared fallback.
           CORELINK_ADMIN_APPROVER_AUTH_KEY: ctx.env.CORELINK_ADMIN_APPROVER_AUTH_KEY ?? "",
           // #634: the per-user DSR legitimacy-anchor route (`/_internal/dsr/anchor`)
           // reads a dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY`; forward it too or the
@@ -220,6 +222,15 @@ export async function startContainer(
           // the Worker→DO→container boundary; the parked epoch runtime parses
           // it atomically into zeroizing memory and refuses malformed input.
           AUDIT_CHAIN_LINK_KEYS_JSON: ctx.env.AUDIT_CHAIN_LINK_KEYS_JSON ?? "",
+          // B-054 independent witness client. Forward all four values; the
+          // container refuses partial/malformed configuration and every v2
+          // partition remains frozen when the complete set is absent.
+          AUDIT_WITNESS_URL: ctx.env.AUDIT_WITNESS_URL ?? "",
+          AUDIT_WITNESS_APPEND_TOKEN: ctx.env.AUDIT_WITNESS_APPEND_TOKEN ?? "",
+          AUDIT_WITNESS_ID: ctx.env.AUDIT_WITNESS_ID ?? "",
+          AUDIT_WITNESS_PUBLIC_KEYS_JSON: ctx.env.AUDIT_WITNESS_PUBLIC_KEYS_JSON ?? "",
+          AUDIT_CHAIN_TRUST_ROOT_PUBLIC_KEYS_JSON:
+            ctx.env.AUDIT_CHAIN_TRUST_ROOT_PUBLIC_KEYS_JSON ?? "",
           AUDIT_CHAIN_TRUST_UNSIGNED_RESUME: ctx.env.AUDIT_CHAIN_TRUST_UNSIGNED_RESUME ?? "",
           // Non-secret tuning knob (secrets-matrix #189): per-call row budget for
           // the audit/drain sweep. "" ⇒ container default (200). Forwarded so a
@@ -239,8 +250,9 @@ export async function startContainer(
           FAILOVER_MIN_SAMPLES: ctx.env.FAILOVER_MIN_SAMPLES ?? "",
           // S-09 offsite archive (`POST /_internal/audit/archive`). Both are
           // non-secret tuning knobs; "" ⇒ container defaults (bucket
-          // `corelink-audit-weur`, which already carries the 7-year Object
-          // Lock, and a 2000-row per-partition budget). Forwarded because the
+          // `corelink-audit-weur`; its intended 7-year native Bucket Lock is
+          // not current provider evidence and is not S3 Compliance/WORM; plus
+          // a 2000-row per-partition budget). Forwarded because the
           // container reads them at boot — an operator override that is not on
           // this list silently no-ops (the ERASURE_SALT_KEY-class bug).
           R2_AUDIT_BUCKET: ctx.env.R2_AUDIT_BUCKET ?? "",
@@ -312,7 +324,17 @@ export async function startContainer(
           // (OCI_TOKEN_KEY_ENV_LEGACY).
           HUGR_OCI_TOKEN_KEY: ctx.env.HUGR_OCI_TOKEN_KEY ?? "",
           CORELINK_PORTAL_RETURN_URL: ctx.env.CORELINK_PORTAL_RETURN_URL ?? "",
-          // BYOK (enterprise) provider regions/vault — off for the SMB launch.
+          // B-083 BYOK AWS credentials are dedicated Worker secrets. Forward
+          // them byte-for-byte to the native provider; absent values remain
+          // empty and make provider construction fail closed before listener
+          // bind in the byok-aws-real image.
+          CORELINK_BYOK_KMS_ACCESS_KEY_ID:
+            ctx.env.CORELINK_BYOK_KMS_ACCESS_KEY_ID ?? "",
+          CORELINK_BYOK_KMS_SECRET_ACCESS_KEY:
+            ctx.env.CORELINK_BYOK_KMS_SECRET_ACCESS_KEY ?? "",
+          CORELINK_BYOK_KMS_SESSION_TOKEN:
+            ctx.env.CORELINK_BYOK_KMS_SESSION_TOKEN ?? "",
+          // BYOK (enterprise) provider regions/vault — off until explicitly provisioned.
           AWS_REGION: ctx.env.AWS_REGION ?? "",
           GCP_REGION: ctx.env.GCP_REGION ?? "",
           CORELINK_BYOK_AZURE_REGION: ctx.env.CORELINK_BYOK_AZURE_REGION ?? "",

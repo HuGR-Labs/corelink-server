@@ -11,7 +11,7 @@
 #   4. Inspect Clerk metadata split: tenant_id/region in public_metadata,
 #      pat_plaintext in private_metadata ONLY (NOT public) — CTRL-CRED-001
 #   5. Exercise /v1/users/me with the minted PAT (read from private_metadata)
-#   6. DELETE the test user from Clerk (trap-guarded cleanup)
+#   6. DELETE the test user from Clerk and prove the durable DSR cleanup anchor
 #
 # Usage:
 #   bash scripts/e2e-clerk-signup.sh
@@ -74,8 +74,26 @@ cleanup() {
       "${CLERK_API}/users/${TEST_USER_ID}" 2>&1) || delete_resp="curl_error"
     if [[ "${delete_resp}" == "200" ]]; then
       pass "Clerk DELETE returned 200 — test user removed"
+      if [[ -n "${TENANT_ID}" ]]; then
+        local dsr_deadline=$(( $(date +%s) + POLL_MAX ))
+        local dsr_rows="0"
+        while [[ "$(date +%s)" -le "${dsr_deadline}" ]]; do
+          local dsr_json
+          dsr_json=$(d1_query "SELECT COUNT(*) AS rows FROM dsr_requested WHERE tenant_id = '${TENANT_ID}'") || true
+          dsr_rows=$(printf '%s' "${dsr_json}" | jq -r '.[0].results[0].rows // 0' 2>/dev/null || printf '0')
+          [[ "${dsr_rows}" =~ ^[0-9]+$ ]] && [[ "${dsr_rows}" -gt 0 ]] && break
+          sleep "${POLL_INTERVAL}"
+        done
+        if [[ "${dsr_rows}" =~ ^[0-9]+$ ]] && [[ "${dsr_rows}" -gt 0 ]]; then
+          pass "Durable DSR cleanup anchor observed — tenant removal is asynchronous"
+        else
+          fail "Clerk DELETE produced no dsr_requested anchor within ${POLL_MAX}s"
+          exit_code=1
+        fi
+      fi
     else
-      warn "Clerk DELETE returned ${delete_resp} (non-200) — manual cleanup may be needed for ${TEST_USER_ID}"
+      fail "Clerk DELETE returned ${delete_resp} (non-200) — cleanup is unproven for ${TEST_USER_ID}"
+      exit_code=1
     fi
   fi
 
@@ -406,19 +424,15 @@ fi
 pass "/v1/users/me returned 200 with correct tenant_id=${ME_TENANT}"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STAGE 6 — D1 final cleanup: delete tenant row to avoid orphan test data
-# (Clerk DELETE in trap handles the user; we also remove the D1 rows)
+# STAGE 6 — hand cleanup to the audited Clerk → DSR lifecycle.
+#
+# Never DELETE the tenant or its child rows directly. Audit evidence is
+# retained by design, and a direct tenant delete would make its residency
+# predicate unevaluable. The EXIT trap deletes the Clerk user and requires
+# the user.deleted webhook to persist `dsr_requested` before reporting PASS.
 # ─────────────────────────────────────────────────────────────────────────────
-step "6 — D1 cleanup: remove test tenant rows"
-
-# Delete PAT rows first (FK constraint)
-d1_query "DELETE FROM pat WHERE tenant_id = '${TENANT_ID}'" >/dev/null 2>&1 || warn "PAT DELETE failed or row already gone"
-d1_query "DELETE FROM dpa_acceptance_pending WHERE tenant_id = '${TENANT_ID}'" >/dev/null 2>&1 || warn "dpa_acceptance_pending DELETE skipped"
-d1_query "DELETE FROM usage_counter WHERE tenant_id = '${TENANT_ID}'" >/dev/null 2>&1 || warn "usage_counter DELETE skipped"
-d1_query "DELETE FROM signup_orchestration WHERE tenant_id = '${TENANT_ID}'" >/dev/null 2>&1 || warn "signup_orchestration DELETE skipped"
-d1_query "DELETE FROM tenant WHERE tenant_id = '${TENANT_ID}'" >/dev/null 2>&1 || warn "tenant DELETE failed"
-
-pass "D1 test rows cleaned up for tenant_id=${TENANT_ID}"
+step "6 — Arm audited asynchronous cleanup"
+pass "Direct D1 deletion skipped; Clerk user.deleted → DSR owns cleanup"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # All stages passed
@@ -432,7 +446,7 @@ echo "  Stage 2 — tenant row in D1:             PASS  (${TENANT_ID})"
 echo "  Stage 3 — pat row in D1:                PASS  (${PAT_ID})"
 echo "  Stage 4 — Clerk publicMetadata:         PASS  (metadata_published=true)"
 echo "  Stage 5 — /v1/users/me with PAT:        PASS  (HTTP 200, tenant_id matches)"
-echo "  Stage 6 — D1 cleanup:                   PASS"
+echo "  Stage 6 — Audited cleanup armed:        PASS"
 echo "  Cleanup — Clerk DELETE:                 (see above)"
 echo "════════════════════════════════════════════════════════════════"
 echo ""

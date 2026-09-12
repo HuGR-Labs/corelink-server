@@ -153,13 +153,21 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     return { body, ack: vi.fn<() => void>(), retry: vi.fn<() => void>() };
   }
 
+  function pagedEnv(send: (message: unknown) => Promise<void>) {
+    return {
+      DSR_QUEUE: { send },
+      PAGERDUTY_ROUTING_KEY: "routing-key",
+      PAGERDUTY_FETCH: vi.fn<typeof fetch>(async () => new Response("accepted", { status: 202 })),
+    };
+  }
+
   it("emits a critical alert and requeues exactly once", async () => {
     const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
     const m = fakeDlq(msg("dlq-1"));
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     let errorCalls: unknown[][] = [];
     try {
-      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send } });
+      await handleErasureDlqBatch({ messages: [m] }, pagedEnv(send));
     } finally {
       errorCalls = error.mock.calls;
       error.mockRestore();
@@ -176,8 +184,8 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       exhausted: true,
       action: "requeue_once",
       requeue_count: 1,
-      paging_status: "not_configured",
-      paging_configured: false,
+      paging_status: "delivered",
+      paging_configured: true,
     });
   });
 
@@ -187,7 +195,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     let errorCalls: unknown[][] = [];
     try {
-      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send } });
+      await handleErasureDlqBatch({ messages: [m] }, pagedEnv(send));
     } finally {
       errorCalls = error.mock.calls;
       error.mockRestore();
@@ -204,17 +212,22 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       exhausted: true,
       requeue_count: 1,
       action: "left_dead",
-      paging_status: "not_configured",
-      paging_configured: false,
+      paging_status: "delivered",
+      paging_configured: true,
     });
   });
 
   it("retains the DLQ copy when the bounded requeue fails", async () => {
-    const send = vi.fn<(message: unknown) => Promise<void>>(async () => { throw new Error("queue down"); });
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => { throw new Error("routing_key=secret-provider-detail"); });
     const m = fakeDlq(msg("dlq-3"));
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send } });
+      await handleErasureDlqBatch({ messages: [m] }, pagedEnv(send));
+      expect(String(error.mock.calls[0]?.[0])).not.toContain("secret-provider-detail");
+      expect(JSON.parse(String(error.mock.calls[0]?.[0]))).toMatchObject({
+        action: "retry_requeue",
+        requeue_error: "transport_error",
+      });
     } finally {
       error.mockRestore();
     }
@@ -229,8 +242,8 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     const second = fakeDlq(msg("stable-id"));
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      await handleErasureDlqBatch({ messages: [first] }, { DSR_QUEUE: { send } });
-      await handleErasureDlqBatch({ messages: [second] }, { DSR_QUEUE: { send } });
+      await handleErasureDlqBatch({ messages: [first] }, pagedEnv(send));
+      await handleErasureDlqBatch({ messages: [second] }, pagedEnv(send));
     } finally {
       const alerts = error.mock.calls.map((call) => JSON.parse(String(call[0])) as Record<string, unknown>);
       error.mockRestore();
@@ -269,6 +282,52 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       error.mockRestore();
     }
     expect(pagerFetch).toHaveBeenCalledOnce();
+    expect(send).not.toHaveBeenCalled();
+    expect(m.retry).toHaveBeenCalledOnce();
+    expect(m.ack).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the PagerDuty route is absent", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const m = fakeDlq(msg("pager-unconfigured"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send } });
+      expect(JSON.parse(String(error.mock.calls[0]?.[0]))).toMatchObject({
+        event_id: "dsr-erasure-dlq:pager-unconfigured:0",
+        action: "retry_paging",
+        paging_status: "not_configured",
+        paging_error: "route_not_configured",
+      });
+    } finally {
+      error.mockRestore();
+    }
+    expect(send).not.toHaveBeenCalled();
+    expect(m.retry).toHaveBeenCalledOnce();
+    expect(m.ack).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a generic HTTP 200 as PagerDuty delivery evidence", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const m = fakeDlq(msg("pager-false-2xx"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await handleErasureDlqBatch(
+        { messages: [m] },
+        {
+          DSR_QUEUE: { send },
+          PAGERDUTY_ROUTING_KEY: "routing-key",
+          PAGERDUTY_FETCH: vi.fn<typeof fetch>(async () => new Response("proxy page", { status: 200 })),
+        },
+      );
+      expect(JSON.parse(String(error.mock.calls[0]?.[0]))).toMatchObject({
+        action: "retry_paging",
+        paging_status: "failed",
+        paging_error: "http_rejected",
+      });
+    } finally {
+      error.mockRestore();
+    }
     expect(send).not.toHaveBeenCalled();
     expect(m.retry).toHaveBeenCalledOnce();
     expect(m.ack).not.toHaveBeenCalled();
@@ -321,7 +380,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     const m = fakeDlq({ ...msg("poison-marker"), _dlq_requeue: Number.NaN });
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send } });
+      await handleErasureDlqBatch({ messages: [m] }, pagedEnv(send));
       const alert = JSON.parse(String(error.mock.calls[0]?.[0])) as Record<string, unknown>;
       expect(alert).toMatchObject({
         event_id: "dsr-erasure-dlq:poison-marker:1",
@@ -334,7 +393,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     }
     expect(send).not.toHaveBeenCalled();
     const alreadyCapped = fakeDlq({ ...msg("oversized-marker"), _dlq_requeue: 99 });
-    await handleErasureDlqBatch({ messages: [alreadyCapped] }, { DSR_QUEUE: { send } });
+    await handleErasureDlqBatch({ messages: [alreadyCapped] }, pagedEnv(send));
     expect(alreadyCapped.ack).toHaveBeenCalledOnce();
   });
 });

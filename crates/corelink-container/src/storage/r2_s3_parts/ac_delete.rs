@@ -79,6 +79,7 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
                 self.emit_update_sli(true, elapsed_us(started));
                 AcHandlerError::AuditFailed(e)
             })?;
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Delete)?;
 
         // Byte-accounting (finding #1 / cluster-C) + concurrent double-DELETE
         // over-release (rt-nuclear #6/#10/#14): `delete_if_present` serializes the
@@ -93,7 +94,11 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
         // resolved plan also drives the Mode-B `byok_envelope` reclaim performed
         // AFTER the R2 object is removed (see below).
         let resolved = match tokio::task::block_in_place(|| {
-            handle.block_on(self.resolve_byok(&req.tenant, &req.action_digest))
+            handle.block_on(self.resolve_byok_with_guard(
+                &req.tenant,
+                &req.action_digest,
+                byok_guard.as_ref(),
+            ))
         }) {
             Ok(r) => r,
             Err(e) => {
@@ -103,7 +108,44 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
         };
         // Fail CLOSED if the tenant prefix is not derivable: never touch
         // R2 under a degraded/empty (SHARED) prefix.
-        let key = match self.r2_key(&req.tenant, &resolved.physical_digest) {
+        let mut purge_plan = if let Some(guard) = byok_guard.as_ref() {
+            if guard
+                .intent()
+                .map_err(AcHandlerError::Internal)?
+                .catalog_generation()
+                .is_some()
+            {
+                tokio::task::block_in_place(|| {
+                    handle.block_on(guard.gate().tombstone_catalog(
+                        guard.intent()?,
+                        crate::storage::byok_generation_catalog::ByokObjectKind::Ac,
+                        &req.action_digest,
+                    ))
+                })
+                .map_err(AcHandlerError::Internal)?
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if byok_guard.as_ref().is_some_and(|guard| {
+            guard
+                .intent()
+                .is_ok_and(|intent| intent.catalog_generation().is_some())
+        }) && purge_plan.is_none()
+        {
+            self.finish_byok_mutation(byok_guard.as_mut())?;
+            return Ok(AcDeleteResponse::with_reclaimed(false, 0));
+        }
+        let allocation_id = purge_plan
+            .as_ref()
+            .map(|plan| plan.object.allocation_id.clone());
+        let key = match purge_plan
+            .as_ref()
+            .map(|plan| Ok(plan.object.physical_key.clone()))
+            .unwrap_or_else(|| self.r2_key(&req.tenant, &resolved.physical_digest))
+        {
             Ok(k) => k,
             Err(e) => {
                 self.emit_update_sli(true, elapsed_us(started));
@@ -112,48 +154,123 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
         };
         debug!(key = %key, "R2AcHandler::delete");
 
-        let result = {
+        if let Some(plan) = purge_plan.as_mut() {
+            tokio::task::block_in_place(|| {
+                handle.block_on(
+                    byok_guard
+                        .as_ref()
+                        .ok_or_else(|| "BYOK purge plan exists without data guard".to_owned())?
+                        .gate()
+                        .begin_purge_attempt(plan),
+                )
+            })
+            .map_err(AcHandlerError::Internal)?;
+        }
+
+        let already_absent = purge_plan.as_ref().is_some_and(|plan| plan.r2_absent);
+        let result = if already_absent {
+            Ok(None)
+        } else {
             let _scope =
                 crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
             tokio::task::block_in_place(|| handle.block_on(self.client.delete_if_present(&key)))
         };
 
-        match result {
-            Ok(prior) => {
-                let reclaimed = prior.unwrap_or(0);
-                // BYOK Wave 4a: the R2 object is gone — reclaim the Mode-B
-                // `byok_envelope` row (surface = `ac`) so a deleted AC entry does
-                // not leave an orphan wrapped-DEK row. WARN + continue on failure
-                // (safe-fail direction); the delete still SUCCEEDS.
-                if let Err(e) = tokio::task::block_in_place(|| {
-                    handle.block_on(self.reclaim_byok_envelope(&resolved.plan))
-                }) {
-                    warn!(
-                        error = %e, key = %key, tenant = %req.tenant,
-                        "R2AcHandler::delete byok_envelope reclaim failed (orphan wrapped-DEK row; entry already deleted)"
-                    );
+        let delete_error = result.as_ref().err().cloned();
+        let head_result = if already_absent {
+            Ok(None)
+        } else {
+            tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)))
+        };
+        let head_absent = matches!(&head_result, Ok(None));
+        if let Some(plan) = purge_plan.as_ref() {
+            let ledger_error = head_result
+                .as_ref()
+                .err()
+                .map(String::as_str)
+                .or_else(|| (!head_absent).then_some("R2 object remains after delete"));
+            tokio::task::block_in_place(|| {
+                handle.block_on(
+                    byok_guard
+                        .as_ref()
+                        .ok_or_else(|| "BYOK purge plan exists without data guard".to_owned())?
+                        .gate()
+                        .finish_purge_attempt(plan, head_absent, ledger_error, false),
+                )
+            })
+            .map_err(AcHandlerError::Internal)?;
+        }
+
+        if head_absent {
+            let reclaimed = result.ok().flatten().unwrap_or(0);
+            // BYOK Wave 4a: the R2 object is gone — reclaim the Mode-B
+            // `byok_envelope` row (surface = `ac`) so a deleted AC entry does
+            // not leave an orphan wrapped-DEK row. A durable purge plan keeps
+            // the row at r2_absent and returns an error for retry when reclaim
+            // fails; legacy non-catalog deletes retain warn-and-continue.
+            let reclaim_error = tokio::task::block_in_place(|| {
+                handle.block_on(
+                    self.reclaim_byok_envelope(&resolved.plan, allocation_id.as_deref()),
+                )
+            })
+            .err();
+            if let Some(e) = reclaim_error {
+                if let Some(plan) = purge_plan.as_ref() {
+                    let _ = tokio::task::block_in_place(|| {
+                        handle.block_on(
+                            byok_guard
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    "BYOK purge plan exists without data guard".to_owned()
+                                })?
+                                .gate()
+                                .finish_purge_attempt(plan, true, Some(&e), false),
+                        )
+                    });
+                    self.emit_update_sli(true, elapsed_us(started));
+                    return Err(AcHandlerError::Internal(format!(
+                        "BYOK envelope reclaim: {e}"
+                    )));
                 }
-                self.audit
-                    .emit(AcAuditEvent::new(
-                        AcAuditEventKind::DeleteCommitted,
-                        req.tenant.clone(),
-                        req.action_digest.clone(),
-                        req.principal.clone(),
-                        req.at_unix_ms,
-                    ))
-                    .map_err(|e| {
-                        self.emit_update_sli(true, elapsed_us(started));
-                        AcHandlerError::AuditFailed(e)
-                    })?;
-                self.emit_update_sli(false, elapsed_us(started));
-                Ok(AcDeleteResponse::with_reclaimed(reclaimed > 0, reclaimed))
+                warn!(
+                    error = %e, key = %key, tenant = %req.tenant,
+                    "R2AcHandler::delete byok_envelope reclaim failed (orphan wrapped-DEK row; entry already deleted)"
+                );
             }
-            Err(e) => {
-                // Fail CLOSED on a storage fault: never a silent success.
-                warn!(error = %e, key = %key, "R2AcHandler::delete error");
-                self.emit_update_sli(true, elapsed_us(started));
-                Err(AcHandlerError::Internal(e))
+            if let Some(plan) = purge_plan.as_ref() {
+                tokio::task::block_in_place(|| {
+                    handle.block_on(
+                        byok_guard
+                            .as_ref()
+                            .ok_or_else(|| "BYOK purge plan exists without data guard".to_owned())?
+                            .gate()
+                            .finish_purge_attempt(plan, true, None, true),
+                    )
+                })
+                .map_err(AcHandlerError::Internal)?;
             }
+            self.audit
+                .emit(AcAuditEvent::new(
+                    AcAuditEventKind::DeleteCommitted,
+                    req.tenant.clone(),
+                    req.action_digest.clone(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ))
+                .map_err(|e| {
+                    self.emit_update_sli(true, elapsed_us(started));
+                    AcHandlerError::AuditFailed(e)
+                })?;
+            self.finish_byok_mutation(byok_guard.as_mut())?;
+            self.emit_update_sli(false, elapsed_us(started));
+            Ok(AcDeleteResponse::with_reclaimed(reclaimed > 0, reclaimed))
+        } else {
+            // Fail CLOSED on a storage fault: never a silent success.
+            warn!(key = %key, "R2AcHandler::delete did not verify R2 absence");
+            self.emit_update_sli(true, elapsed_us(started));
+            Err(AcHandlerError::Internal(delete_error.unwrap_or_else(
+                || "R2 delete HEAD verification failed".to_owned(),
+            )))
         }
     }
 }

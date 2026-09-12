@@ -214,10 +214,12 @@ proptest! {
         if consumed > 1.0 {
             // Freeze enforced: start must return BudgetExceeded
             let err = ctrl.start(&signed_artifact(), &actor).unwrap_err();
-            prop_assert!(
-                matches!(err, RolloutError::BudgetExceeded { .. }),
-                "expected BudgetExceeded got {err:?}"
-            );
+            match err {
+                RolloutError::BudgetExceeded { consumed: got } => {
+                    prop_assert!((got - consumed).abs() < 1e-12);
+                }
+                other => prop_assert!(false, "expected BudgetExceeded got {other:?}"),
+            }
         } else {
             // Under cap: start should succeed
             let result = ctrl.start(&signed_artifact(), &actor);

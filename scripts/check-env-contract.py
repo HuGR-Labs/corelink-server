@@ -5,7 +5,7 @@ check-env-contract.py — Container env-contract drift detector (CAA-360 F8).
 Greps every env::var("X"), non_empty_env("X"), and env_or("X", ...) call
 across crates/corelink-container/src (the `corelink-server` binary + its
 storage sub-crates) and asserts that each name appears in the
-worker/src/durable_object.ts container.start({ env: { ... } }) forward-list.
+worker/src/durable_object_start.ts container.start({ env: { ... } }) forward-list.
 
 The class of bug this closes: an operator sets a Cloudflare Worker secret
 (e.g. ERASURE_SALT_KEY, FABRIC_INTROSPECT_AUTH_KEY), the deploy succeeds,
@@ -17,7 +17,7 @@ audit (F8) found.
 References:
   - docs/security/2026-06-13-CAA-360-followups.md  §CI mechanization (F8)
   - docs/security/2026-06-13-CAA-360-audit-report.md  [MEDIUM] F8
-  - worker/src/durable_object.ts  container.start({ env: { ... } })
+  - worker/src/durable_object_start.ts  container.start({ env: { ... } })
   - crates/corelink-container/src/storage.rs  env_or / non_empty_env
 
 Style idiom: matches scripts/check_migrations_additive.py (regex-based,
@@ -48,8 +48,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # The corelink-server binary (Cargo package name) lives here.
 CONTAINER_SRC = REPO_ROOT / "crates" / "corelink-container" / "src"
 
-# The Durable Object TypeScript that boots the container.
-DO_TS = REPO_ROOT / "worker" / "src" / "durable_object.ts"
+# The cohesive lifecycle module that owns the executable container.start call.
+# This moved out of durable_object.ts during the B-126 decomposition; pointing
+# at the old facade made this guard fail before checking any forwarding entry.
+DO_TS = REPO_ROOT / "worker" / "src" / "durable_object_start.ts"
 # Small cohesive forwarding helpers are part of the same executable env
 # contract.  Keep the helper list explicit so a moved key cannot silently
 # disappear from this static gate.
@@ -85,6 +87,14 @@ EXCLUSIONS: set[str] = {
     "R2_TEST_BUCKET",
     # Test-only: proptest configuration knob (routes/audit_export/tests_proptest.rs).
     "PROPTEST_CASES",
+    # Standalone `corelink-gc-sweep` binary contract, not the
+    # `/usr/local/bin/corelink-server` process started by this Durable Object.
+    "GC_LIVE_DELETE",
+    "GC_LIVE_DELETE_CONFIRM",
+    "GC_OBSERVATION_ONLY",
+    "GC_R2_BUCKET",
+    "GC_RUN_ID",
+    "GC_VALIDATE_ONLY",
 }
 
 # ---------------------------------------------------------------------------
@@ -142,7 +152,7 @@ RUST_CONST_STR_RE = re.compile(
 )
 
 # ---------------------------------------------------------------------------
-# Pattern for extracting forwarded keys from the durable_object.ts env block.
+# Pattern for extracting forwarded keys from the durable_object_start.ts env block.
 #
 # We look for lines of the form:
 #   SOME_VAR: this.env.SOME_VAR ?? "",
@@ -250,15 +260,15 @@ def collect_container_env_vars() -> dict[str, list[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — collect forwarded keys from durable_object.ts.
+# Step 2 — collect forwarded keys from durable_object_start.ts.
 # ---------------------------------------------------------------------------
 def collect_do_forwarded_keys() -> set[str]:
     """
-    Parse the  container.start({ env: { ... } })  call in durable_object.ts
+    Parse the container.start({ env: { ... } }) call in durable_object_start.ts
     and return the set of env var keys forwarded to the container.
     """
     if not DO_TS.is_file():
-        print(f"ERROR: durable_object.ts not found: {DO_TS}", file=sys.stderr)
+        print(f"ERROR: durable_object_start.ts not found: {DO_TS}", file=sys.stderr)
         sys.exit(1)
 
     text = DO_TS.read_text(encoding="utf-8")
@@ -268,7 +278,7 @@ def collect_do_forwarded_keys() -> set[str]:
     env_block_start = text.find("container.start({")
     if env_block_start == -1:
         print(
-            "ERROR: could not find 'container.start({' in durable_object.ts",
+            "ERROR: could not find 'container.start({' in durable_object_start.ts",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -336,7 +346,7 @@ def main() -> int:
     # trusted module; never import or execute code from the candidate tree.
     REPO_ROOT = args.repo_root.resolve()
     CONTAINER_SRC = REPO_ROOT / "crates" / "corelink-container" / "src"
-    DO_TS = REPO_ROOT / "worker" / "src" / "durable_object.ts"
+    DO_TS = REPO_ROOT / "worker" / "src" / "durable_object_start.ts"
     DO_FORWARD_HELPERS = tuple(
         REPO_ROOT / relative
         for relative in (
@@ -367,7 +377,7 @@ def main() -> int:
     print(
         "FAIL: container-env-contract drift detected — "
         f"{len(missing)} var(s) read by the container but NOT in the "
-        "durable_object.ts container.start({env: {...}}) forward-list.\n"
+        "durable_object_start.ts container.start({env: {...}}) forward-list.\n"
     )
     print(
         "  Impact: setting these as Cloudflare Worker secrets will silently\n"
@@ -386,7 +396,7 @@ def main() -> int:
 
     print(
         "\n  Fix: add each missing key to the env: { ... } block inside\n"
-        "  container.start() in worker/src/durable_object.ts, e.g.:\n"
+        "  container.start() in worker/src/durable_object_start.ts, e.g.:\n"
         "    SOME_VAR: this.env.SOME_VAR ?? \"\","
     )
     print(

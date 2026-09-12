@@ -29,21 +29,30 @@ ROOT_INCLUDES: dict[str, tuple[str, ...]] = {
         "byte_accounting/b126_m2_impl_02.rs",
     ),
     "crates/corelink-container/src/routes/audit_drain.rs": (
+        "audit_drain/b054_witness.rs",
+        "audit_drain/b054_epoch_admin.rs",
         "audit_drain/b126_m2_impl_01.rs",
+        "audit_drain/b126_m2_impl_01_part2.rs",
         "audit_drain/b126_m2_impl_02.rs",
+        "audit_drain/b126_m2_impl_02_part2.rs",
         "audit_drain/b126_m2_impl_03.rs",
     ),
     "crates/corelink-container/src/routes/cas_erase.rs": (
         "cas_erase/b126_m2_impl_01.rs",
+        "cas_erase/b126_m2_impl_01_part2.rs",
         "cas_erase/b126_m2_impl_02.rs",
+        "cas_erase/b126_m2_impl_02_part2.rs",
     ),
     "crates/corelink-container/src/routes/oci.rs": (
         "oci/b126_m2_impl_01.rs",
+        "oci/b126_m2_impl_01_part2.rs",
         "oci/b126_m2_impl_02.rs",
     ),
     "crates/corelink-container/src/routes/turbo_v8.rs": (
         "turbo_v8/b126_m2_impl_01.rs",
+        "turbo_v8/b126_m2_impl_01_part2.rs",
         "turbo_v8/b126_m2_impl_02.rs",
+        "turbo_v8/b126_m2_impl_02_part2.rs",
     ),
     "crates/corelink-container/src/tenant_quota.rs": (
         "tenant_quota/b126_m2_impl_01.rs",
@@ -56,42 +65,67 @@ ROOT_INCLUDES: dict[str, tuple[str, ...]] = {
 ROOT_FRAGMENTS: dict[str, tuple[str, ...]] = {
     "crates/corelink-container/src/byte_accounting.rs": (
         "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs",
+        "crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs",
         "crates/corelink-container/src/byte_accounting/b126_m2_impl_02.rs",
         "crates/corelink-container/src/byte_accounting/b126_m2_test_1_1.rs",
         "crates/corelink-container/src/byte_accounting/b126_m2_test_2_1.rs",
         "crates/corelink-container/src/byte_accounting/b126_m2_test_3_1.rs",
+        "crates/corelink-container/src/byte_accounting/b126_m2_test_3_1_part_02.rs",
         "crates/corelink-container/src/byte_accounting/b126_m2_test_4_1.rs",
     ),
     "crates/corelink-container/src/routes/audit_drain.rs": (
+        "crates/corelink-container/src/routes/audit_drain/b054_witness.rs",
+        "crates/corelink-container/src/routes/audit_drain/b054_witness_runtime.rs",
+        "crates/corelink-container/src/routes/audit_drain/b054_witness_tests.rs",
+        "crates/corelink-container/src/routes/audit_drain/b054_epoch_admin.rs",
+        "crates/corelink-container/src/routes/audit_drain/b054_epoch_admin_authorities.rs",
+        "crates/corelink-container/src/routes/audit_drain/b054_epoch_admin_part2.rs",
         "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs",
+        "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01_part2.rs",
         "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02.rs",
+        "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02_part3.rs",
+        "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02_part2.rs",
         "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_03.rs",
         "crates/corelink-container/src/routes/audit_drain/b126_m2_test_1_1.rs",
+        "crates/corelink-container/src/routes/audit_drain/b126_m2_test_1_1_part2.rs",
         "crates/corelink-container/src/routes/audit_drain/b126_m2_test_1_2.rs",
     ),
     "crates/corelink-container/src/routes/cas_erase.rs": (
         "crates/corelink-container/src/routes/cas_erase/b126_m2_impl_01.rs",
+        "crates/corelink-container/src/routes/cas_erase/b126_m2_impl_01_part2.rs",
         "crates/corelink-container/src/routes/cas_erase/b126_m2_impl_02.rs",
+        "crates/corelink-container/src/routes/cas_erase/b126_m2_impl_02_part2.rs",
         "crates/corelink-container/src/routes/cas_erase/b126_m2_test_1_1.rs",
+        "crates/corelink-container/src/routes/cas_erase/b126_m2_test_1_1_part2.rs",
         "crates/corelink-container/src/routes/cas_erase/b126_m2_test_1_2.rs",
     ),
     "crates/corelink-container/src/routes/oci.rs": (
         "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs",
+        "crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs",
         "crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs",
         "crates/corelink-container/src/routes/oci/b126_m2_test_1_1.rs",
+        "crates/corelink-container/src/routes/oci/b126_m2_test_1_1_part2.rs",
         "crates/corelink-container/src/routes/oci/b126_m2_test_1_2.rs",
+        "crates/corelink-container/src/routes/oci/b126_m2_test_1_2_part2.rs",
         "crates/corelink-container/src/routes/oci/b126_m2_test_1_3.rs",
     ),
     "crates/corelink-container/src/routes/turbo_v8.rs": (
         "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs",
+        "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01_part2.rs",
         "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs",
+        "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02_part2.rs",
         "crates/corelink-container/src/routes/turbo_v8/b126_m2_test_1_1.rs",
+        "crates/corelink-container/src/routes/turbo_v8/b126_m2_test_1_1_part2.rs",
         "crates/corelink-container/src/routes/turbo_v8/b126_m2_test_1_2.rs",
+        "crates/corelink-container/src/routes/turbo_v8/b126_m2_test_1_2_part2.rs",
     ),
     "crates/corelink-container/src/tenant_quota.rs": (
         "crates/corelink-container/src/tenant_quota/b126_m2_impl_01.rs",
+        "crates/corelink-container/src/tenant_quota/b126_m2_impl_01_part_02.rs",
         "crates/corelink-container/src/tenant_quota/b126_m2_impl_02.rs",
+        "crates/corelink-container/src/tenant_quota/b126_m2_impl_02_part_02.rs",
         "crates/corelink-container/src/tenant_quota/b126_m2_test_1_1.rs",
+        "crates/corelink-container/src/tenant_quota/b126_m2_test_1_1_part_02.rs",
         "crates/corelink-container/src/tenant_quota/b126_m2_test_1_2.rs",
     ),
 }
@@ -112,14 +146,15 @@ API_SYMBOLS: dict[str, tuple[str, ...]] = {
         "signing_key_id_from_env", "resolve_key_id", "region_for_key", "CanonicalAuditHead",
         "CanonicalAuditHeadV2", "canonical_head_bytes", "canonical_head_v2_bytes", "sign_head",
         "sign_head_v2", "verify_head", "verify_head_v2", "internal_auth_ok",
-        "build_state_from_env", "router", "now_ms", "AUDIT_DRAIN_LEASE_TTL_MS",
-        "new_lease_holder", "should_fence", "FencedSeal", "run_fenced_seal_loop",
+        "B054EpochAdminRequest", "handle_epoch_admin", "build_state_from_env", "router",
+        "now_ms", "AUDIT_DRAIN_LEASE_TTL_MS",
+        "new_lease_holder", "should_fence", "FencedSeal", "run_chunked_fenced_seal_loop",
         "acquire_lease", "release_lease", "chain_hash_from_hex", "checkpoint_nullable_u64",
         "checkpoint_nullable_text", "parse_sealed_epoch_metadata", "HeadCheckpoint", "SealedRow",
         "PartitionOutcome", "seal_rows", "seal_rows_for_epoch", "resolve_resume", "HeadResumeCheck",
         "check_head_on_resume", "reject_unwired_epoch_checkpoint", "read_pending_partitions",
         "read_unsigned_head_partitions", "read_checkpoint", "read_sealed_tail", "read_pending_rows",
-        "write_seal", "advance_head_cas", "resign_unsigned_head", "converge_unsigned_heads",
+        "write_seal_chunk", "advance_head_cas", "resign_unsigned_head", "converge_unsigned_heads",
         "drain_partition", "drain_partition_inner", "handle_drain", "DrainOutcome",
         "build_drain_response_body",
     ),
@@ -166,6 +201,10 @@ API_SYMBOLS: dict[str, tuple[str, ...]] = {
 
 G4B_FRAGMENT = "crates/corelink-container/src/routes/oci/b126_m2_test_1_3.rs"
 G4B_FIXTURE = "crates/corelink-container/src/routes/oci/tests/oci_g4b_tests.rs"
+AUDIT_DRAIN_ROOT = "crates/corelink-container/src/routes/audit_drain.rs"
+AUDIT_DUPLICATE_TAIL_DEFINITION = "fn reject_duplicate_sealed_tail("
+AUDIT_DUPLICATE_TAIL_CALL = "reject_duplicate_sealed_tail(&rows)?;"
+AUDIT_SEALED_TAIL_READER = "async fn read_any_sealed_tail("
 G4B_TESTS = (
     "g4b_suspended_tenant_token_leg_denies_no_bearer",
     "g4b_suspended_tenant_v2_leg_is_403",
@@ -410,18 +449,106 @@ def _expand(
     return "".join(pieces), descendants
 
 
-def _fragment_reanchor(path: Path, code: str, root: Path = ROOT) -> str:
+def _fragment_reanchor(
+    path: Path,
+    root: Path = ROOT,
+) -> str:
     name = path.stem
-    match = re.fullmatch(r"b126_m2_(impl|test)_(\d+)(?:_(\d+))?", name)
-    if not match:
-        raise BoundaryError(f"unexpected M2 fragment name: {_relative(path, root)}")
-    if match.group(1) == "impl":
-        expected = f"B126_M2_IMPL_{int(match.group(2))}_REANCHOR"
+    impl = re.fullmatch(r"b126_m2_impl_(\d+)(?:_part_?\d+)?", name)
+    test = re.fullmatch(r"b126_m2_test_(\d+)_(\d+)(?:_part_?\d+)?", name)
+    if impl:
+        expected = f"B126_M2_IMPL_{int(impl.group(1))}_REANCHOR"
+    elif test:
+        expected = f"B126_M2_TEST_{test.group(1)}_{test.group(2)}_REANCHOR"
     else:
-        expected = f"B126_M2_TEST_{match.group(2)}_{match.group(3)}_REANCHOR"
-    if not re.search(rf"\bconst\s+{re.escape(expected)}\s*:\s*\(\)\s*=\s*\(\)\s*;", code):
-        raise BoundaryError(f"{_relative(path, root)}: missing reanchor {expected}")
+        raise BoundaryError(f"unexpected M2 fragment name: {_relative(path, root)}")
     return expected
+
+
+def _rust_function_body_span(code: str, marker: str) -> tuple[int, int]:
+    """Return the code span for one simple Rust function in masked source."""
+    start = code.find(marker)
+    if start < 0:
+        raise BoundaryError(f"Rust function marker missing: {marker}")
+    opening = code.find("{", start + len(marker))
+    if opening < 0:
+        raise BoundaryError(f"Rust function body missing: {marker}")
+    depth = 0
+    for position in range(opening, len(code)):
+        if code[position] == "{":
+            depth += 1
+        elif code[position] == "}":
+            depth -= 1
+            if depth == 0:
+                return start, position + 1
+    raise BoundaryError(f"Rust function body is unterminated: {marker}")
+
+
+def audit_drain_duplicate_tail_guard_report(
+    root: Path = ROOT, overrides: dict[Path, str] | None = None
+) -> dict[str, tuple[str, ...]]:
+    """Check the duplicate-tail guard against the declared include chain.
+
+    The guard is allowed to move between declared B126 fragments as the
+    implementation is split, but it cannot disappear into a comment/string,
+    move into the root/non-B126 source, or be duplicated.  The call must remain
+    inside the actual ``read_any_sealed_tail`` body in the expanded composition.
+    """
+    expected = ROOT_FRAGMENTS[AUDIT_DRAIN_ROOT]
+    if len(expected) != len(set(expected)):
+        raise BoundaryError("audit-drain fragment manifest contains duplicates")
+    root_path = root / AUDIT_DRAIN_ROOT
+    root_paths = frozenset(root / item for item in ROOT_INCLUDES)
+    expanded, included = _expand(
+        root_path,
+        overrides or {},
+        root_paths=root_paths,
+        display_root=root,
+    )
+    actual = tuple(_relative(path, root) for path in included)
+    if actual != expected:
+        raise BoundaryError("audit-drain duplicate-tail guard composition changed")
+
+    definition_fragments: list[str] = []
+    for relative in expected:
+        path = root / relative
+        fragment = _mask_non_code(_read(path, overrides))
+        count = fragment.count(AUDIT_DUPLICATE_TAIL_DEFINITION)
+        definition_fragments.extend([relative] * count)
+    expanded_code = _mask_non_code(expanded)
+    if expanded_code.count(AUDIT_DUPLICATE_TAIL_DEFINITION) != 1:
+        raise BoundaryError("audit-drain duplicate-tail guard definition is not unique")
+    if len(definition_fragments) != 1 or not definition_fragments[0].startswith(
+        "crates/corelink-container/src/routes/audit_drain/b126_m2_"
+    ):
+        raise BoundaryError("audit-drain duplicate-tail guard is outside the B126 manifest")
+
+    call_count = expanded_code.count(AUDIT_DUPLICATE_TAIL_CALL)
+    if call_count != 1:
+        raise BoundaryError("audit-drain duplicate-tail guard call is not unique")
+    reader_count = expanded_code.count(AUDIT_SEALED_TAIL_READER)
+    if reader_count != 1:
+        raise BoundaryError(
+            "audit-drain v2 sealed-tail reader is not unique"
+        )
+    reader_start = expanded_code.find(AUDIT_SEALED_TAIL_READER)
+    if reader_start < 0:
+        raise BoundaryError("audit-drain v2 sealed-tail reader is missing")
+    _, reader_end = _rust_function_body_span(
+        expanded_code, AUDIT_SEALED_TAIL_READER
+    )
+    call_position = expanded_code.find(AUDIT_DUPLICATE_TAIL_CALL)
+    if not reader_start < call_position < reader_end:
+        raise BoundaryError("audit-drain duplicate-tail guard is not wired in v2 reader")
+    return {
+        "definition_fragments": tuple(definition_fragments),
+        "call_fragments": tuple(
+            relative
+            for relative in expected
+            if AUDIT_DUPLICATE_TAIL_CALL
+            in _mask_non_code(_read(root / relative, overrides))
+        ),
+    }
 
 
 def _validate_g4b(fixture: str, wiring_fragment: str) -> None:
@@ -469,25 +596,42 @@ def verify(root: Path = ROOT, overrides: dict[Path, str] | None = None) -> dict[
         for symbol in API_SYMBOLS[relative]:
             if re.search(rf"(?<![A-Za-z0-9_]){re.escape(symbol)}(?![A-Za-z0-9_])", code) is None:
                 raise BoundaryError(f"{relative}: API symbol missing: {symbol}")
+        expected_reanchors: set[str] = set()
         for path in included:
             _regular(path, root)
             fragment = _read(path, overrides)
             if len(fragment.splitlines()) > MAX_LINES:
                 raise BoundaryError(f"{_relative(path, root)}: exceeds {MAX_LINES} lines")
-            _fragment_reanchor(path, _mask_non_code(fragment), root)
+            if path.name.startswith("b126_m2_"):
+                expected_reanchors.add(_fragment_reanchor(path, root))
+        for expected in sorted(expected_reanchors):
+            declarations = re.findall(
+                rf"\bconst\s+{re.escape(expected)}\s*:\s*\(\)\s*=\s*\(\)\s*;",
+                code,
+            )
+            if len(declarations) != 1:
+                raise BoundaryError(
+                    f"{relative}: expected exactly one reanchor {expected}, "
+                    f"found {len(declarations)}"
+                )
         expected_global.extend(included)
         checked_roots += 1
 
-    if len(expected_global) != 28 or len(set(expected_global)) != 28:
-        raise BoundaryError("M2 fragment population is not exactly 28 unique files")
+    if len(expected_global) != 53 or len(set(expected_global)) != 53:
+        raise BoundaryError("B126 source population is not exactly 53 unique files")
     discovered = sorted(
         (root / "crates/corelink-container/src").rglob("b126_m2_*.rs")
     )
     for path in discovered:
         _regular(path, root)
     actual_files = sorted(_relative(path, root) for path in discovered)
-    if actual_files != sorted(_relative(path, root) for path in expected_global):
+    expected_m2_files = sorted(
+        _relative(path, root) for path in expected_global if path.name.startswith("b126_m2_")
+    )
+    if actual_files != expected_m2_files:
         raise BoundaryError("on-disk b126_m2_*.rs inventory differs from closed manifest")
+
+    audit_drain_duplicate_tail_guard_report(root, overrides)
 
     fixture_path = root / G4B_FIXTURE
     wiring_path = root / G4B_FRAGMENT
@@ -576,6 +720,181 @@ def self_test(root: Path = ROOT) -> None:
     impl2 = _read(impl2_path)
     include_removed = impl2.replace('include!("b126_m2_test_1_3.rs");\n', "", 1)
     _must_red(root, {impl2_path: include_removed}, "remove fixture include")
+
+    audit_impl2_path = root / "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02.rs"
+    audit_impl2 = _read(audit_impl2_path)
+    part3 = 'include!("b126_m2_impl_02_part3.rs");\n'
+    _must_red(
+        root,
+        {audit_impl2_path: audit_impl2.replace(part3, "", 1)},
+        "remove audit implementation continuation",
+    )
+
+    audit_report = audit_drain_duplicate_tail_guard_report(root)
+    owner_relative = audit_report["definition_fragments"][0]
+    owner_path = root / owner_relative
+    owner_source = _read(owner_path)
+    owner_code = _mask_non_code(owner_source)
+    function_start, function_end = _rust_function_body_span(
+        owner_code, AUDIT_DUPLICATE_TAIL_DEFINITION
+    )
+    function_source = owner_source[function_start:function_end]
+    owner_without_function = owner_source[:function_start] + owner_source[function_end:]
+    _must_red(
+        root,
+        {owner_path: owner_without_function},
+        "remove duplicate-tail guard definition",
+    )
+
+    audit_root_path = root / AUDIT_DRAIN_ROOT
+    audit_root_source = _read(audit_root_path)
+    _must_red(
+        root,
+        {
+            owner_path: owner_without_function,
+            audit_root_path: audit_root_source + "\n" + function_source + "\n",
+        },
+        "relocate duplicate-tail guard outside B126 fragment chain",
+    )
+
+    duplicate_target_relative = next(
+        relative
+        for relative in ROOT_FRAGMENTS[AUDIT_DRAIN_ROOT]
+        if relative.startswith(
+            "crates/corelink-container/src/routes/audit_drain/b126_m2_"
+        )
+        and relative != owner_relative
+    )
+    duplicate_target_path = root / duplicate_target_relative
+    duplicate_target_source = _read(duplicate_target_path)
+    _must_red(
+        root,
+        {
+            duplicate_target_path: duplicate_target_source + "\n" + function_source + "\n"
+        },
+        "duplicate duplicate-tail guard definition",
+    )
+
+    _must_red(
+        root,
+        {
+            owner_path: owner_without_function
+            + "\n// "
+            + AUDIT_DUPLICATE_TAIL_DEFINITION
+            + "\n"
+        },
+        "comment bait for duplicate-tail guard definition",
+    )
+
+    reader_relative = next(
+        relative
+        for relative in ROOT_FRAGMENTS[AUDIT_DRAIN_ROOT]
+        if AUDIT_SEALED_TAIL_READER
+        in _mask_non_code(_read(root / relative))
+    )
+    reader_path = root / reader_relative
+    reader_source = _read(reader_path)
+    reader_code = _mask_non_code(reader_source)
+    reader_start, reader_end = _rust_function_body_span(
+        reader_code, AUDIT_SEALED_TAIL_READER
+    )
+    reader_without_function = reader_source[:reader_start] + reader_source[reader_end:]
+    real_call_removed = reader_source.replace(AUDIT_DUPLICATE_TAIL_CALL, "", 1)
+    decoy_reader = (
+        "\nasync fn read_any_sealed_tail() {\n    "
+        + AUDIT_DUPLICATE_TAIL_CALL
+        + "\n}\n"
+    )
+    _must_red(
+        root,
+        {
+            reader_path: real_call_removed,
+            audit_root_path: audit_root_source + decoy_reader,
+        },
+        "decoy reader before real reader with real call removed",
+    )
+
+    _must_red(
+        root,
+        {audit_root_path: audit_root_source + "\nasync fn read_any_sealed_tail() {}\n"},
+        "duplicate sealed-tail reader",
+    )
+
+    _must_red(
+        root,
+        {
+            reader_path: reader_without_function
+            + "\n// "
+            + AUDIT_SEALED_TAIL_READER
+            + "\n"
+        },
+        "sealed-tail reader name bait",
+    )
+
+    audit_impl2_tail_path = (
+        root / "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02_part2.rs"
+    )
+    audit_impl2_tail = _read(audit_impl2_tail_path)
+    duplicate_reanchor = audit_impl2_tail + "\nconst B126_M2_IMPL_2_REANCHOR: () = ();\n"
+    _must_red(
+        root,
+        {audit_impl2_tail_path: duplicate_reanchor},
+        "duplicate audit implementation reanchor",
+    )
+
+    audit_root = root / "crates/corelink-container/src/routes/audit_drain.rs"
+    audit_source = _read(audit_root)
+    witness = 'include!("audit_drain/b054_witness.rs");\n'
+    epoch_admin = 'include!("audit_drain/b054_epoch_admin.rs");\n'
+    _must_red(
+        root,
+        {audit_root: audit_source.replace(witness, "", 1)},
+        "remove B054 witness include",
+    )
+    _must_red(
+        root,
+        {audit_root: audit_source.replace(witness, witness + witness, 1)},
+        "duplicate B054 witness include",
+    )
+    _must_red(
+        root,
+        {audit_root: audit_source.replace(witness + epoch_admin, epoch_admin + witness, 1)},
+        "reorder B054 witness include",
+    )
+    _must_red(
+        root,
+        {audit_root: audit_source.replace(epoch_admin, "", 1)},
+        "remove B054 epoch admin include",
+    )
+    _must_red(
+        root,
+        {audit_root: audit_source.replace(epoch_admin, epoch_admin + epoch_admin, 1)},
+        "duplicate B054 epoch admin include",
+    )
+
+    epoch_admin_path = root / "crates/corelink-container/src/routes/audit_drain/b054_epoch_admin.rs"
+    epoch_admin_source = _read(epoch_admin_path)
+    epoch_admin_part = '    include!("b054_epoch_admin_part2.rs");\n'
+    _must_red(
+        root,
+        {epoch_admin_path: epoch_admin_source.replace(epoch_admin_part, "", 1)},
+        "remove B054 epoch admin continuation",
+    )
+    _must_red(
+        root,
+        {
+            epoch_admin_path: epoch_admin_source.replace(
+                epoch_admin_part, epoch_admin_part + epoch_admin_part, 1
+            )
+        },
+        "duplicate B054 epoch admin continuation",
+    )
+
+    witness_path = root / "crates/corelink-container/src/routes/audit_drain/b054_witness.rs"
+    witness_source = _read(witness_path)
+    added_lines = MAX_LINES - len(witness_source.splitlines()) + 1
+    over_cap = witness_source + ("// B054 over-cap mutation\n" * added_lines)
+    _must_red(root, {witness_path: over_cap}, "B054 witness exceeds fragment cap")
 
 
 def main(argv: list[str] | None = None) -> int:

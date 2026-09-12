@@ -1,10 +1,15 @@
 const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
+const B054_SECURITY_APPROVAL_HEADER: &str = "x-corelink-security-approval";
 
 /// Shared state for the audit-chain drain route.
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct AuditDrainState {
     internal_auth_key: String,
+    /// Dedicated Security approval credential for B-054 epoch administration.
+    /// It is deliberately absent from the ordinary drain path and must differ
+    /// from the SRE-held erase/executor credential.
+    epoch_admin_approver_auth_key: Option<Arc<str>>,
     d1: Arc<D1HttpClient>,
     /// 32-byte Ed25519 seed for the CF-6 keyed chain head. `None` ⇒ heads are
     /// advanced UNSIGNED (legacy/tolerated). Held in [`Zeroizing`] (wiped on drop)
@@ -16,6 +21,12 @@ pub struct AuditDrainState {
     /// signed epoch/ledger runtime is intentionally parked until cutover;
     /// legacy sealing below never consults this map.
     link_keyring: Option<Arc<LinkKeyring>>,
+    /// Independently administered B-054 witness. `None` preserves the legacy
+    /// v1 drain only; any v2 checkpoint fails closed until this is complete.
+    witness: Option<Arc<WitnessClient>>,
+    /// Operator-pinned audit signing trust roots. D1 registry rows can never
+    /// populate this map or authenticate themselves.
+    trust_roots: Option<Arc<std::collections::BTreeMap<String, ed25519_dalek::VerifyingKey>>>,
     /// SECURE DEFAULT `false`: with a seed configured, a resumed head carrying a
     /// NULL signature or a foreign `signing_key_id` is UNVERIFIABLE and treated as
     /// TAMPER (fail-CLOSED) — an insider with D1 write (but no seed) cannot strip
@@ -46,6 +57,13 @@ impl std::fmt::Debug for AuditDrainState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AuditDrainState")
             .field("internal_auth_key", &"<redacted>")
+            .field(
+                "epoch_admin_approver_auth_key",
+                &self
+                    .epoch_admin_approver_auth_key
+                    .as_ref()
+                    .map(|_| "<redacted>"),
+            )
             .field("d1", &"[D1HttpClient]")
             .field(
                 "signing_seed",
@@ -55,6 +73,11 @@ impl std::fmt::Debug for AuditDrainState {
             .field(
                 "link_keyring",
                 &self.link_keyring.as_ref().map(|keyring| keyring.len()),
+            )
+            .field("witness", &self.witness)
+            .field(
+                "trust_root_count",
+                &self.trust_roots.as_ref().map(|roots| roots.len()),
             )
             .field("trust_unsigned_resume", &self.trust_unsigned_resume)
             .field("batch_limit", &self.batch_limit)
@@ -178,6 +201,96 @@ struct CanonicalAuditHead<'a> {
     next_sequence: u64,
     region: &'a str,
     tenant_id: &'a str,
+}
+
+/// Domain-separated operator authorization for the one exceptional legacy-tail
+/// continuation path. The signature covers the complete candidate-set digest,
+/// the selected row, and the exact already-signed checkpoint. It cannot be
+/// replayed across partitions or against a changed fork population.
+#[derive(Serialize)]
+struct CanonicalLegacyTailResolution<'a> {
+    candidate_count: u64,
+    candidate_set_hash: &'a str,
+    checkpoint_head_hash: &'a str,
+    checkpoint_head_signature: &'a str,
+    checkpoint_next_sequence: u64,
+    created_at_ms: u64,
+    record_type: &'static str,
+    region: &'a str,
+    resolution_version: u8,
+    selected_chain_hash: &'a str,
+    selected_row_id: &'a str,
+    signing_key_id: u64,
+    tail_sequence: u64,
+    tenant_id: &'a str,
+}
+
+#[derive(Clone, Debug)]
+struct LegacyTailResolution {
+    candidate_count: u64,
+    candidate_set_hash: String,
+    checkpoint_head_hash: String,
+    checkpoint_head_signature: String,
+    checkpoint_next_sequence: u64,
+    created_at_ms: u64,
+    resolution_signature: String,
+    resolution_version: u8,
+    selected_chain_hash: String,
+    selected_row_id: String,
+    signing_key_id: u64,
+    tail_sequence: u64,
+}
+
+impl LegacyTailResolution {
+    fn canonical_bytes(&self, tenant_id: &str, region: &str) -> Result<Vec<u8>, String> {
+        serde_jcs::to_vec(&CanonicalLegacyTailResolution {
+            candidate_count: self.candidate_count,
+            candidate_set_hash: &self.candidate_set_hash,
+            checkpoint_head_hash: &self.checkpoint_head_hash,
+            checkpoint_head_signature: &self.checkpoint_head_signature,
+            checkpoint_next_sequence: self.checkpoint_next_sequence,
+            created_at_ms: self.created_at_ms,
+            record_type: "corelink.audit.legacy_tail_resolution.v1",
+            region,
+            resolution_version: self.resolution_version,
+            selected_chain_hash: &self.selected_chain_hash,
+            selected_row_id: &self.selected_row_id,
+            signing_key_id: self.signing_key_id,
+            tail_sequence: self.tail_sequence,
+            tenant_id,
+        })
+        .map_err(|error| format!("JCS canonicalize legacy-tail resolution: {error}"))
+    }
+}
+
+fn verify_legacy_tail_resolution(
+    resolution: &LegacyTailResolution,
+    tenant_id: &str,
+    region: &str,
+    seed: &[u8; 32],
+) -> bool {
+    let Ok(canonical) = resolution.canonical_bytes(tenant_id, region) else {
+        return false;
+    };
+    let key = ErasureSigningKey::from_seed(
+        resolution.signing_key_id,
+        region_for_key(region),
+        0,
+        0,
+        *seed,
+    );
+    let Ok(signature_bytes) =
+        base64::engine::general_purpose::STANDARD.decode(&resolution.resolution_signature)
+    else {
+        return false;
+    };
+    let Ok(signature): Result<[u8; 64], _> = signature_bytes.try_into() else {
+        return false;
+    };
+    key.public_key()
+        .verifying_key
+        .verify(&canonical, &Signature::from_bytes(&signature))
+        .is_ok()
 }
 
 /// B-054 version-2 signed-head tuple.  Epoch and witness-ledger facts are
@@ -374,9 +487,9 @@ fn verify_head_v2(
 /// gates stay consistent (pad provided to the secret length, run `ct_eq`, fold in
 /// the real length-equality so a longer/shorter value can never match).
 #[must_use]
-fn internal_auth_ok(expected: &[u8], headers: &HeaderMap) -> bool {
+fn named_auth_ok(expected: &[u8], headers: &HeaderMap, header: &'static str) -> bool {
     let provided = headers
-        .get(INTERNAL_AUTH_HEADER)
+        .get(header)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     let provided_bytes = provided.as_bytes();
@@ -390,6 +503,11 @@ fn internal_auth_ok(expected: &[u8], headers: &HeaderMap) -> bool {
     let content_ok = expected.ct_eq(&provided_padded).unwrap_u8();
     let len_ok = u8::from(expected.len() == provided_bytes.len());
     (content_ok & len_ok) == 1
+}
+
+#[must_use]
+fn internal_auth_ok(expected: &[u8], headers: &HeaderMap) -> bool {
+    named_auth_ok(expected, headers, INTERNAL_AUTH_HEADER)
 }
 
 /// Build the route state from env. `None` when the dedicated erase key is
@@ -412,6 +530,21 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
     };
     let storage_env = crate::storage::StorageEnv::from_env()?;
     let d1 = Arc::new(crate::storage::d1_http::D1HttpClient::new(&storage_env).ok()?);
+    let epoch_admin_approver_auth_key =
+        crate::routes::admin::approver_auth_key_from_env().filter(|approver| {
+            approver.len() != internal_auth_key.len()
+                || approver
+                    .as_bytes()
+                    .ct_eq(internal_auth_key.as_bytes())
+                    .unwrap_u8()
+                    == 0
+        });
+    if epoch_admin_approver_auth_key.is_none() {
+        tracing::warn!(
+            "audit/epoch-admin: CORELINK_ADMIN_APPROVER_AUTH_KEY is absent, short, or equal to \
+             CORELINK_ERASE_AUTH_KEY; epoch administration fails closed"
+        );
+    }
     // CF-6: the seed-derived Ed25519 key for the keyed chain head. `None` ⇒ heads
     // are advanced UNSIGNED (legacy/tolerated) — the route still mounts (dev/CI),
     // but the head is NOT tamper-evident until a seed is provisioned.
@@ -423,6 +556,25 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
             tracing::warn!(error = %error, "audit/drain: malformed link keyring; route NOT mounted (fail-CLOSED)");
             return None;
         }
+    };
+    let witness = match load_witness_client() {
+        Ok(witness) => witness,
+        Err(error) => {
+            tracing::warn!(error = %error, "audit/drain: invalid witness config; route NOT mounted (fail-CLOSED)");
+            return None;
+        }
+    };
+    let trust_roots = match std::env::var("AUDIT_CHAIN_TRUST_ROOT_PUBLIC_KEYS_JSON") {
+        Ok(raw) if !raw.trim().is_empty() => {
+            match b054_epoch_admin::b054_parse_trust_root_public_keys(&raw) {
+                Ok(roots) => Some(Arc::new(roots)),
+                Err(error) => {
+                    tracing::warn!(error = %error, "audit/drain: invalid OOB trust-root registry; route NOT mounted (fail-CLOSED)");
+                    return None;
+                }
+            }
+        }
+        _ => None,
     };
     if signing_seed.is_none() {
         tracing::warn!(
@@ -448,11 +600,14 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
     // Global per-call row budget. Default 200 keeps a call ~60s at ~0.3s/row —
     // well under the edge subrequest timeout — so a cold backlog drains over
     // repeated calls (hourly cron or a manual loop) instead of hanging + sealing
-    // ZERO. Clamped to >= 1 (a non-positive value would seal nothing forever).
+    // ZERO. Clamp both ends: a non-positive value would seal nothing forever,
+    // while more than AUDIT_V2_MAX_ROWS_PER_TRANSACTION could exceed D1's 250
+    // statements after the witness has already linearized the successor.
     let batch_limit = std::env::var("AUDIT_DRAIN_BATCH_LIMIT")
         .ok()
         .and_then(|s| s.trim().parse::<i64>().ok())
         .filter(|n| *n >= 1)
+        .map(|n| n.min(AUDIT_V2_MAX_ROWS_PER_TRANSACTION as i64))
         .unwrap_or(200);
     // B-038 partition lease + seal-loop fence. SECURE-INERT DEFAULT OFF: absent /
     // forwarded-`""` / anything but an explicit truthy value ⇒ the drain behaves
@@ -468,10 +623,13 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
     }
     Some(AuditDrainState {
         internal_auth_key,
+        epoch_admin_approver_auth_key,
         d1,
         signing_seed,
         signing_key_id,
         link_keyring,
+        witness,
+        trust_roots,
         trust_unsigned_resume,
         batch_limit,
         lease_enabled,
@@ -482,6 +640,10 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
 pub fn router(state: AuditDrainState) -> Router {
     Router::new()
         .route("/_internal/audit/drain", post(handle_drain))
+        .route(
+            "/_internal/audit/epoch-admin",
+            post(b054_epoch_admin::handle_epoch_admin),
+        )
         .with_state(state)
 }
 

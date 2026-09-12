@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "receipt_type": "cloudflare_staging_base_resources",
+  "backlog_ids": ["B-029", "B-070"],
+  "captured_at": "2026-09-09T09:08:55Z",
+  "account_id_redacted": "6a1f...f5cd",
+  "scope": "staging-only",
+  "deployment_state": "unprovisioned",
+  "resources": {
+    "d1": [
+      {
+        "name": "corelink-config-staging",
+        "id": "d72a6b39-6a48-4338-bfda-1111dda98604",
+        "location": "ENAM",
+        "jurisdiction": null,
+        "user_table_count": 0,
+        "readback_state": "empty"
+      }
+    ],
+    "r2": [
+      {
+        "name": "corelink-ac-iad-staging",
+        "location": "ENAM",
+        "storage_class": "Standard",
+        "object_count": 0,
+        "bucket_size_bytes": 0,
+        "readback_state": "empty"
+      },
+      {
+        "name": "corelink-cas-staging",
+        "location": "ENAM",
+        "storage_class": "Standard",
+        "object_count": 0,
+        "bucket_size_bytes": 0,
+        "readback_state": "empty"
+      },
+      {
+        "name": "corelink-chunk-iad-staging",
+        "location": "ENAM",
+        "storage_class": "Standard",
+        "object_count": 0,
+        "bucket_size_bytes": 0,
+        "readback_state": "empty"
+      },
+      {
+        "name": "corelink-manifest-iad-staging",
+        "location": "ENAM",
+        "storage_class": "Standard",
+        "object_count": 0,
+        "bucket_size_bytes": 0,
+        "readback_state": "empty"
+      }
+    ],
+    "kv": [
+      {
+        "name": "corelink-clerk-jwks-staging",
+        "id": "77f2ddcfe36d42c5a7c5eb1d7bba1e82",
+        "key_count": 0,
+        "readback_state": "empty"
+      },
+      {
+        "name": "corelink-metadata-staging",
+        "id": "558e939750fa4e09a7aeca8bebcf9777",
+        "key_count": 0,
+        "readback_state": "empty"
+      },
+      {
+        "name": "corelink-negative-cache-staging",
+        "id": "cdc815918f0642e8bfb393048879bbe3",
+        "key_count": 0,
+        "readback_state": "empty"
+      }
+    ],
+    "queues": [
+      {
+        "name": "corelink-dsr-erasure-dlq-staging",
+        "id": "51565488711a404d9395512b2442157d",
+        "producer_count": 0,
+        "consumer_count": 0,
+        "readback_state": "created_unbound"
+      },
+      {
+        "name": "corelink-dsr-erasure-staging",
+        "id": "18fb0837cecd4dddacf2c0ddea196910",
+        "producer_count": 0,
+        "consumer_count": 0,
+        "readback_state": "created_unbound"
+      }
+    ]
+  },
+  "workers": {
+    "corelink-staging": "absent_10007",
+    "corelink-signup-staging": "absent_10007",
+    "corelink-synthetic-pager-staging": "absent_10007"
+  },
+  "dns": {
+    "checked_at": "2026-09-09T09:05:19Z",
+    "hostname": "staging.corelink.humangr.com",
+    "public_dns_result": "NXDOMAIN",
+    "dns_records_read_error_code": 10000,
+    "zone_settings_read_error_code": 9109,
+    "state": "permission_blocked"
+  },
+  "secrets": {
+    "worker_secret_values_recorded": false,
+    "github_environment_secret_values_recorded": false,
+    "bindings_claimed": false
+  },
+  "readback": {
+    "normalized_only": true,
+    "production_resources_modified": false,
+    "workers_deployed": false,
+    "migrations_applied": false
+  }
+}

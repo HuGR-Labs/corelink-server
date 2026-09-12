@@ -11,7 +11,7 @@ import type { ScheduledController } from "@cloudflare/workers-types";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
 
-const TEST_SCHEDULED_AT_MS = 1_785_844_800_000;
+const TEST_SCHEDULED_AT_MS = 1_785_765_600_000;
 const TEST_DRILL_ID = `SP-${TEST_SCHEDULED_AT_MS}`;
 const WORKTREE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -47,6 +47,9 @@ describe("scheduled drill configuration", () => {
 
     expect(config.split(expectedRows)).toHaveLength(2);
     expect(config).not.toContain('"0 6 * * 1"');
+    expect(config).toContain(
+      '[[services]]\nbinding = "SCHEDULED_DRILL_DELIVERY"\nservice = "corelink-synthetic-pager"',
+    );
     for (const environment of ["prod", "prod-sam", "prod-lhr", "prod-nrt", "prod-syd"]) {
       expect(config).toContain(`[env.${environment}.triggers]\ncrons = []`);
     }

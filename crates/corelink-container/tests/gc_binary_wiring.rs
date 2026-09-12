@@ -16,6 +16,10 @@ const DRY_RUN_WORKFLOW: &str = include_str!(concat!(
 ));
 const PRODUCTION_SWEEP_BIN: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bin/gc_sweep.rs"));
+const OWNER_PACKETS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/handoff/2026-09-05-owner-action-packets-b008-b154.json"
+));
 
 fn gate_4b_source(workflow: &str) -> Option<&str> {
     let start_marker =
@@ -96,6 +100,70 @@ fn native_sweep_observation_requires_explicit_false_delete_gate() {
         PRODUCTION_SWEEP_BIN.contains("observation_only={}"),
         "the native sweep binary must report the observation-only contract"
     );
+    for evidence_field in [
+        "\"schema_version\": 1",
+        "\"candidates_scanned\"",
+        "\"reclaimable_count\"",
+        "\"reclaimable_bytes\"",
+        "\"delete_count\"",
+        "\"phase_budget_ms\"",
+        "\"max_candidates\"",
+    ] {
+        assert!(
+            PRODUCTION_SWEEP_BIN.contains(evidence_field),
+            "native observation output must contain {evidence_field:?}"
+        );
+    }
+    let adapter = include_str!("../src/gc_sweep.rs");
+    for required in [
+        "D1HttpClient::from_d1_env()",
+        "config.max_candidates",
+        "validate_observation_region(config.region)?",
+        "GC_REGION=syd has no provisioned macro-residency mapping",
+        "ObservationOnlyR2Delete",
+        "R2 delete is disabled for production GC observation",
+        "ObservationOnlyAuditSink",
+        "GC mutation audit is disabled for production observation",
+        "InMemoryGcSweepReportSink::new()",
+    ] {
+        assert!(
+            adapter.contains(required),
+            "the native observation path must contain {required:?}"
+        );
+    }
+    assert!(
+        !PRODUCTION_SWEEP_BIN.contains("StorageEnv::from_env"),
+        "read-only GC observation must not require R2 credentials"
+    );
+    let d1 = include_str!("../src/storage/d1_http.rs");
+    assert!(d1.contains("self.read_only && !is_select_statement(sql)"));
+    assert!(d1.contains("D1 read-only client rejected a batch request"));
+    assert!(d1.contains("parsed.result.len() != 1"));
+    assert!(d1.contains("result.success != Some(true)"));
+}
+
+#[test]
+fn b071_owner_packet_names_truthful_observation_metrics() {
+    let b071 = OWNER_PACKETS
+        .split("\"id\": \"B-071\"")
+        .nth(1)
+        .and_then(|tail| tail.split("\"id\": \"B-072\"").next());
+    assert!(b071.is_some(), "B-071 packet must precede B-072");
+    let b071 = b071.unwrap_or("");
+    for required in [
+        "\"candidates_scanned\"",
+        "\"reclaimable_count\"",
+        "\"reclaimable_bytes\"",
+    ] {
+        assert!(
+            b071.contains(required),
+            "B-071 packet must contain {required}"
+        );
+    }
+    assert!(
+        !b071.contains("\"candidate_bytes\""),
+        "B-071 packet must not retain the ambiguous candidate_bytes field"
+    );
 }
 
 #[test]
@@ -145,4 +213,27 @@ fn scheduled_sweep_is_credentialless_and_cannot_arm_delete() {
         !DRY_RUN_WORKFLOW.contains("live_delete:"),
         "the scheduled dry-run workflow must not expose a live-delete input"
     );
+}
+
+#[test]
+fn owner_package_has_a_fail_closed_collector_and_verifier() {
+    let collector = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scripts/collect_b071_gc_observation.py"
+    ));
+    for required in [
+        "GC_OBSERVATION_ONLY\": \"true\"",
+        "GC_LIVE_DELETE\": \"false\"",
+        "GC_LIVE_DELETE_CONFIRM",
+        "R2_S3_SECRET_ACCESS_KEY",
+        "tenant_region_population",
+        "PENDING_OWNER_REVIEW",
+        "live_delete_authorized",
+        "native dry-run reported a deletion",
+    ] {
+        assert!(
+            collector.contains(required),
+            "B-071 collector must retain {required:?}"
+        );
+    }
 }

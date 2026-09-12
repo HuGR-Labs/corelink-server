@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -10,6 +11,13 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+GIT_DIR = subprocess.run(
+    ["git", "rev-parse", "--absolute-git-dir"],
+    cwd=ROOT,
+    text=True,
+    capture_output=True,
+    check=True,
+).stdout.strip()
 INPUTS = (
     Path("BACKLOG.md"),
     Path("Dockerfile"),
@@ -27,7 +35,12 @@ INPUTS = (
     Path("evidence/owner-actions/B-110/ci-capacity-decision.json"),
     Path("evidence/owner-actions/B-054/keyed-audit-epoch-rollout.json"),
     Path("evidence/owner-actions/B-083/byok-real-kms-lifecycle.json"),
+    Path("evidence/owner-actions/B-086/d1-residency-resolution.json"),
     Path("evidence/owner-actions/B-097/cloudflare-vcpu-quota-case.json"),
+    Path("evidence/owner-actions/B-154/executed-instrument-resolution.json"),
+    Path("legal/dpa/v1.0.0.en-US.md"),
+    Path("legal/sla/v1.0.0.md"),
+    Path("marketing/launch/CASE-STUDIES/enterprise-byok.md"),
 )
 
 OWNER_GATE = "python3 scripts/verify_owner_action_packets.py --id B-083"
@@ -69,6 +82,7 @@ def _run(script: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["/bin/sh", "-c", script],
         cwd=cwd,
+        env={**os.environ, "GIT_DIR": GIT_DIR},
         text=True,
         capture_output=True,
         check=False,

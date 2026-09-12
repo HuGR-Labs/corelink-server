@@ -30,9 +30,9 @@ class B155VerifierTests(unittest.TestCase):
 
     def test_census_is_complete_and_population_is_exact(self) -> None:
         result = verifier.census(self.backlog)
-        self.assertEqual(result.records, 363)
-        self.assertEqual(result.command_records, 343)
-        self.assertEqual(result.manual_records, 20)
+        self.assertEqual(result.records, 373)
+        self.assertEqual(result.command_records, 354)
+        self.assertEqual(result.manual_records, 19)
         self.assertEqual(result.command_records + result.manual_records, result.records)
         self.assertEqual(result.grep_invocations, 194)
         self.assertEqual(len(result.assertions), 191)
@@ -175,6 +175,17 @@ class B155VerifierTests(unittest.TestCase):
         without_b084 = self.backlog[: fence.start()] + self.backlog[fence.end() :]
         with self.assertRaises(verifier.InstrumentError):
             verifier.census(without_b084)
+
+        # B-373: the newest real record is equally load-bearing. Removing its
+        # fence must not be accepted as a green, smaller population.
+        fence = next(
+            match
+            for match in verifier.FENCE.finditer(self.backlog)
+            if "id: B-373\n" in match.group(1)
+        )
+        without_b373 = self.backlog[: fence.start()] + self.backlog[fence.end() :]
+        with self.assertRaises(verifier.InstrumentError):
+            verifier.census(without_b373)
 
         # B164 still contains executable positive greps. Deleting one must
         # change the closed assertion population even though all records parse.

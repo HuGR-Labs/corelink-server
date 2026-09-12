@@ -44,10 +44,22 @@ def current_summary(path: Path, value: object = 11) -> None:
     summary(path / "endurance-2h-summary-current.json", value)
 
 
-def fake_gh(monkeypatch: pytest.MonkeyPatch, bad_run: str | None = None) -> None:
+def fake_gh(
+    monkeypatch: pytest.MonkeyPatch,
+    bad_run: str | None = None,
+    failed_job_run: str | None = None,
+) -> None:
     def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         if command[1:2] == ["api"]:
             run_id = command[2].rsplit("/", 2)[1]
+            if command[2].endswith("/jobs?per_page=100"):
+                run_id = command[2].split("/runs/", 1)[1].split("/", 1)[0]
+                body = {"jobs": [{
+                    "name": MODULE.MEASUREMENT_JOB_NAME,
+                    "status": "completed",
+                    "conclusion": "failure" if run_id == failed_job_run else "success",
+                }]}
+                return subprocess.CompletedProcess(command, 0, json.dumps(body), "")
             body = {"artifacts": [{"name": f"endurance-2h-results-{run_id}", "expired": False, "size_in_bytes": 1}]}
             return subprocess.CompletedProcess(command, 0, json.dumps(body), "")
         if command[1:3] == ["run", "download"]:
@@ -125,6 +137,15 @@ def test_download_timeout_fails_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_gh(monkeypatch, bad_run="1003")
+    output = tmp_path / "rolling.json"
+    assert invoke(tmp_path, history_file(tmp_path), tmp_path / "downloads", output) == 1
+    assert not output.exists()
+
+
+def test_failed_measurement_job_is_never_admitted_to_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_gh(monkeypatch, failed_job_run="1003")
     output = tmp_path / "rolling.json"
     assert invoke(tmp_path, history_file(tmp_path), tmp_path / "downloads", output) == 1
     assert not output.exists()

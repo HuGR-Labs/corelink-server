@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09T11:39:26Z",
+  "lane": "B-216",
+  "worker": "corelink-signup-worker",
+  "verdict": "OWNER_BLOCKED",
+  "done_claim": false,
+  "repository_head_under_review": "e113e10cd14e097799c3da9c772e177c6ee28d96",
+  "deployment_performed_by_this_investigation": false,
+  "scope": "bounded read-only operational closure; no deploy, CI, provider mutation, or production message injection",
+  "required_secret_name_readback": {
+    "method": "wrangler secret list against the deployed worker; names and presence only",
+    "present": [
+      "CLERK_WEBHOOK_SECRET",
+      "CLERK_SECRET_KEY",
+      "CORELINK_INTERNAL_AUTH_KEY",
+      "CORELINK_ERASE_AUTH_KEY",
+      "STRIPE_WEBHOOK_SECRET",
+      "EMAIL_HASH_SALT"
+    ],
+    "missing": [
+      "STRIPE_PRICE_ID_TEAM",
+      "STRIPE_PRICE_ID_PRO",
+      "STRIPE_PRICE_ID_STARTER",
+      "PAGERDUTY_ROUTING_KEY"
+    ],
+    "secret_values_read": false,
+    "secret_values_printed": false
+  },
+  "pagerduty_credential_search": {
+    "sources": [
+      "documented repository runbooks and owner packets",
+      "local macOS Keychain service metadata for PagerDuty candidates",
+      "local shell/config profile names",
+      "GitHub repository secret-name listing"
+    ],
+    "administrative_credential_found": false,
+    "routing_key_found_locally": false,
+    "github_repository_secret_name": "PAGERDUTY_ROUTING_KEY",
+    "github_secret_value_readable": false,
+    "integration_created_or_rotated": false,
+    "destination_secret_written": false,
+    "values_read_or_printed": false
+  },
+  "stripe_price_metadata_lookup": {
+    "source": "local Stripe CLI profile",
+    "mode": "live",
+    "read_only_price_listing_attempted": true,
+    "result": "blocked",
+    "error_class": "expired_api_key",
+    "provider_refusal": "The API key provided has expired. Obtain a new key from Dashboard or run stripe login.",
+    "configured_live_key_expiry": "2026-07-05",
+    "candidate_keychain_record_present": true,
+    "candidate_keychain_value_read": false,
+    "noninteractive_oauth_or_refresh_authorization_valid": false,
+    "interactive_login_attempted": false,
+    "price_ids_derived": [],
+    "billing_objects_created": false
+  },
+  "github_actions_transport": {
+    "repository": "HuGR-Labs/corelink-server",
+    "workflow": "signup-worker — CF Worker deploy",
+    "run_id": 34265430453,
+    "run_status": "completed",
+    "run_conclusion": "startup_failure",
+    "head_sha": "cba0e59655131c09bd5255ac783cac977a206da8",
+    "deployment_transport_observed": false,
+    "secret_values_readable": false,
+    "interpretation": "The write-only repository secret cannot be transported through this failed Actions startup; no deployment was inferred from this run."
+  },
+  "live_read_only_checks": {
+    "health": {
+      "url": "https://corelink-signup.humangr.com/health",
+      "http_status": 200,
+      "body": {
+        "ok": true,
+        "worker": "signup-worker"
+      }
+    },
+    "deployed_revision": "64282952-57bf-49d5-832c-b4cc4723b8b3",
+    "deployed_at": "2026-09-08T18:58:57.510Z",
+    "queue_topology": {
+      "corelink-dsr-erasure": {
+        "producers": 2,
+        "consumers": 1,
+        "consumer_worker": "corelink-signup-worker"
+      },
+      "corelink-dsr-erasure-dlq": {
+        "producers": 0,
+        "consumers": 1,
+        "consumer_worker": "corelink-signup-worker"
+      }
+    },
+    "synthetic_production_message_injected": false,
+    "bounded_exhausted_observation_performed": false
+  },
+  "exact_blockers": [
+    "PAGERDUTY_ROUTING_KEY is missing from the deployed signup-worker",
+    "STRIPE_PRICE_ID_TEAM is missing from the deployed signup-worker",
+    "STRIPE_PRICE_ID_PRO is missing from the deployed signup-worker",
+    "STRIPE_PRICE_ID_STARTER is missing from the deployed signup-worker",
+    "No usable PagerDuty administrative/routing credential was found for the authorized provider action",
+    "Stripe live price metadata is unavailable because the local CLI authorization is expired",
+    "GitHub Actions startup_failure prevented secret transport/deploy evidence",
+    "Owner-supplied alert-delivery and exhausted-observation records remain absent"
+  ],
+  "non_claims": [
+    "This receipt does not claim that PagerDuty delivery works.",
+    "This receipt does not claim that Stripe price IDs exist or that billing objects were created.",
+    "This receipt does not claim a new signup-worker deployment.",
+    "This receipt does not claim a production DLQ message was processed."
+  ]
+}

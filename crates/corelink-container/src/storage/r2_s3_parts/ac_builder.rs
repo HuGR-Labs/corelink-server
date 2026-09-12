@@ -55,14 +55,76 @@ pub async fn build_r2_ac_handler_from_env(
     // B-057, AC twin of the CAS builder above: constant-memory aggregate
     // instead of a Vec that grew for the life of the container.
     let sli = crate::sli_aggregate::shared();
-    Some(Ok(R2AcHandler::new(
-        client,
-        ac_region,
-        Some(tdk_bytes),
-        audit,
-        sli,
-    )
-    .with_async_audit(audit_concrete)))
+    let rollout_d1 = match D1HttpClient::new(&env) {
+        Ok(d1) => Arc::new(d1),
+        Err(error) => return Some(Err(format!("AC BYOK rollout probe unavailable: {error}"))),
+    };
+    let runtime_gate =
+        match crate::storage::byok_generation_catalog::runtime_gate_after_rollout_probe(rollout_d1)
+            .await
+        {
+            Ok(gate) => gate,
+            Err(error) => return Some(Err(format!("AC BYOK runtime gate unavailable: {error}"))),
+        };
+    let mut handler = R2AcHandler::new(client, ac_region, Some(tdk_bytes), audit, sli)
+        .with_async_audit(audit_concrete);
+    if let Some(gate) = runtime_gate {
+        handler = handler.with_byok_runtime_gate(gate);
+    }
+
+    // B-083: mirror the CAS fail-closed real-provider wiring.  An activated
+    // tenant must never reach AC's plaintext branch merely because the
+    // production builder omitted its BYOK collaborators.
+    #[cfg(any(
+        feature = "byok-aws-real",
+        feature = "byok-gcp-real",
+        feature = "byok-azure-real",
+        feature = "byok-vault-real"
+    ))]
+    {
+        return Some(
+            async {
+                let byok_d1 = Arc::new(D1HttpClient::new(&env).map_err(|error| {
+                    format!("AC BYOK D1 client unavailable (fail-closed): {error}")
+                })?);
+                let provider =
+                    crate::byok_orchestrator::make_provider()
+                        .await
+                        .map_err(|error| {
+                            format!("AC BYOK provider unavailable (fail-closed): {error}")
+                        })?;
+                let config = Arc::new(ByokConfigCache::with_default_ttl(Arc::new(
+                    crate::customer_d1::D1ByokConfigReader::new(Arc::clone(&byok_d1)),
+                )));
+                let tcs = Arc::new(
+                    TcsResolver::with_default_ttl(
+                        Arc::new(super::byok_cas::D1ByokSecretReader::new(Arc::clone(
+                            &byok_d1,
+                        ))),
+                        Arc::clone(&provider),
+                    )
+                    .map_err(|error| format!("AC BYOK Tcs resolver unavailable: {error}"))?,
+                );
+                let mode_b = Arc::new(
+                    ModeBEncryptor::with_default_ttl(
+                        provider,
+                        Arc::new(super::byok_cas::D1ByokEnvelopeStore::new(byok_d1)),
+                    )
+                    .map_err(|error| format!("AC BYOK Mode-B unavailable: {error}"))?,
+                );
+                Ok(handler.with_byok(config, tcs).with_byok_random(mode_b))
+            }
+            .await,
+        );
+    }
+
+    #[cfg(not(any(
+        feature = "byok-aws-real",
+        feature = "byok-gcp-real",
+        feature = "byok-azure-real",
+        feature = "byok-vault-real"
+    )))]
+    Some(Ok(handler))
 }
 
 /// Load the tenant derivation key from `R2_TDK_HEX` env var (64 hex chars =

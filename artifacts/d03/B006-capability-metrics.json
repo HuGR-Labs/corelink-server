@@ -1,14 +1,14 @@
 {
   "schema": "corelink-b006-capability-metrics-v2",
   "verdict": "INDETERMINATE",
-  "reason": "dedicated observability credential was rejected; no counter can be inferred",
+  "reason": "authenticated aggregate snapshot retained; separate Wrangler deployment evidence is required for closure",
   "source": "https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics",
-  "captured_at": "2026-09-08T23:48:14Z",
-  "http_status": 403,
-  "authenticated": false,
-  "aggregate_only": false,
+  "captured_at": "2026-09-09T16:20:54Z",
+  "http_status": 200,
+  "authenticated": true,
+  "aggregate_only": true,
   "labels_included": false,
-  "capability_claim_unserved": null,
+  "capability_claim_unserved": 0,
   "reopen_threshold": {
     "counter": "capability_claim_unserved",
     "condition": ">0"

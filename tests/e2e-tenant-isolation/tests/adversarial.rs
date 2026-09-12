@@ -39,8 +39,10 @@ use corelink_byok::{
     KmsProviderKind, WrappedDek,
 };
 use e2e_tenant_isolation::{
-    AuditCapture, CasStore, CmkRotationLedger, ConstantTimeAuthProbe, DenyKind, IdempotencyStore,
-    PatRevokeLedger, PatStore, QuotaStore, RateLimiter, StripeWebhookLedger, TenantCtx,
+    AuditCapture, AuditChain, AuditQueryEngine, CasStore, CmkRotationLedger, ConstantTimeAuthProbe,
+    DenyKind, DsrIntake, HierarchicalQuotaStore, IdempotencyStore, KvReplicatedPatStore,
+    MultipartBroker, PatRevokeLedger, PatStore, QuotaStore, RateLimiter, RegionRouter,
+    StripeWebhookLedger, TenantCtx,
 };
 use uuid::Uuid;
 

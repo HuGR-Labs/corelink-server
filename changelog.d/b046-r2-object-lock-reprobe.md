@@ -10,3 +10,7 @@
   so the result is `INDETERMINATE` and no probe resource was created.
 - B-046 remains open: this does not claim a Compliance guarantee, add a
   `compliance` database mode, or change the existing Governance legal-hold path.
+- Reassessed Cloudflare's documented native Bucket Lock on 2026-09-09. It is
+  removable by the bucket-configuration administrator and therefore is not S3
+  Compliance/WORM. The named seven-year production rule remains
+  `INDETERMINATE` until fresh provider metadata is captured.

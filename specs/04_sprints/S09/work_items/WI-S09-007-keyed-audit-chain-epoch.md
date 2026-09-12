@@ -3,9 +3,9 @@ id: "B-054-keyed-audit-chain-epoch"
 type: "architecture"
 doc_status: "DRAFT"
 audit_status: "AUDIT_PENDING"
-version: "0.3.0"
+version: "0.4.0"
 created: "2026-09-01"
-updated: "2026-09-02"
+updated: "2026-09-09"
 owner: "Security + platform operator"
 final_approver: "Security + platform operator"
 reviewers: []
@@ -21,10 +21,20 @@ tags: ["b-054", "audit-chain", "keyed-hash", "epoch", "fail-closed"]
 This is the implementation contract for B-054. The pure runtime now exposes
 the versioned algorithms/forward-only epoch state machine, and archive lines
 carry explicit algorithm/epoch/key-id metadata with a fail-closed verifier
-(`crates/corelink-audit-chain/src/epoch.rs`, `sealed_archive.rs`). The deployed
-legacy drain remains compatible with `Hasher::new()` and refuses to process a
-v2 checkpoint until the witnessed transactional runtime is present. B-054
-remains **open** until that production binding and its proofs land.
+(`crates/corelink-audit-chain/src/epoch.rs`, `sealed_archive.rs`). The legacy
+drain remains compatible with `Hasher::new()`. A v2 checkpoint is routed
+exclusively through the witnessed transactional runtime and never falls back
+to that legacy path.
+
+The repository now also contains the ADR-0073 independent witness service and
+Rust client/verifier, migration `0124`, the fail-closed witnessed D1 v2
+in-epoch transaction, and the authenticated administrative boundary that
+provisions immutable signing/link registries, verifies the complete legacy
+prefix, bootstraps signed E0, and transitions a non-empty E0 to E1. Witness
+commit-unknown retries are recovered by exact historical sequence/hash rather
+than appending a new record. Keyed archives still remain unavailable unless
+their complete authenticated manifest evidence verifies. B-054 therefore
+remains **open** only for the bounded residual work listed below.
 
 The historical, sealed `S09/WI-S09-007` is a synthetic-canary work item. This
 addendum must not be read as a rewrite, completion, or replacement of that
@@ -41,11 +51,14 @@ is authenticated by a **versioned signed head**, not inferred from a row shape,
 key availability, a D1 default, or the largest epoch number.
 
 The additive schema foundation is in `0109_audit_chain_epoch_contract.sql` and
-`0110_audit_chain_epoch_row_metadata.sql`; no historical row is rewritten. The
-current D1 drain writes explicit E0 metadata for new legacy seals and fails
-closed on a v2 head until the external witness/ledger transaction is deployed.
-B-054 remains **open** until the drain, archive writer, verifier, deployment
-custody, and required proofs implement this document.
+`0110_audit_chain_epoch_row_metadata.sql`; no historical row is rewritten.
+Migration `0124_audit_chain_witness_receipts.sql` adds append-only witness
+receipts, complete-v2-head constraints, and the transaction assertion used to
+roll back a D1 batch unless every expected seal, receipt, and head mutation is
+present. The legacy drain continues to write explicit E0 metadata. An already
+bootstrapped v2 partition uses the external witness before the atomic D1 batch
+and fails closed on missing, stale, malformed, or unverifiable witness/ledger
+state.
 
 ## Algorithms and identifiers
 
@@ -152,6 +165,26 @@ unequal; resume MUST fail closed and require incident-reviewed recovery, not
 automatically replay/reconcile the candidate.  This deliberate availability
 cost prevents a stale worker or D1 writer from completing a fork.
 
+ADR-0073 selects the production boundary: a dedicated Security-administered
+Cloudflare account runs one Durable Object per exact partition. The append API
+wraps the exact `witness_jcs` bytes in this RFC-8785 request:
+
+```text
+{"append_request_version":1,"expected_latest":null|{"witness_record_hash":"<64 lower-case hex>","witness_sequence":<integer>},"witness_jcs_b64":"<standard padded base64>"}
+```
+
+Genesis alone uses `expected_latest:null`. The `Idempotency-Key` header is the
+recomputed candidate witness hash. The signed receipt JCS contains
+`committed_at_ms`, `head_record_hash`, `previous_witness_hash`,
+`receipt_version:1`, partition, stable `witness_id`, positive `witness_key_id`,
+and the committed witness sequence/hash. Its Ed25519 signature covers the
+domain-separated, length-prefixed exact receipt bytes defined by ADR-0073.
+
+Latest is a POST carrying a fresh 32-byte challenge, request version and exact
+partition. Its signed response binds that challenge, observation time, witness
+identity/key and either `latest:null` or the full stored record/receipt. A bare
+GET, TLS success or 404 is never genesis/freshness evidence.
+
 On every v2 resume and verification, the external **latest** witness record for
 the partition MUST equal the D1 head's exact `head_jcs`, signature, partition,
 and indexed witness sequence/hash.  “Found an old matching record” is
@@ -193,8 +226,10 @@ inserts the successor ledger and projection rows, closes the predecessor
 projection, and stores the newly signed v2 head. A zero-row CAS leaves the
 external state ahead and is an incident, not a retry against a newer head. The
 per-head witness makes an old ledger root or a within-epoch old head equally
-unacceptable. This required witness is not implemented by this change and is
-not implied by B-046/Object Lock.
+unacceptable. ADR-0073 and the repository witness/client now implement this
+boundary for already bootstrapped v2 in-epoch advances. It is not implied by
+B-046/Object Lock, and it is not operational evidence until the independent
+deployment and disposable-partition proof have completed.
 
 ## Canonical E0 checkpoint
 
@@ -454,9 +489,23 @@ and any fallback of unknown evidence to unkeyed or `VERIFY_OK`. The daily fixtur
 must contain a mixed-epoch positive, malformed E0, rolled-back head,
 within-epoch replay, missing witness, and missing-manifest negative.
 
-This change does **not** implement those tests or runtime paths.  Remaining
-blockers are: implementing the v2 signing/verification and transactional drain;
-an operator-approved root/signing/link-key custody and retention procedure; a
-linearizable independently administered witness; archive writer/verifier;
-B-046's factual storage assessment before an immutability assertion; and the
-non-vacuous proof/mutation suite.  B-054 is therefore open.
+The repository now implements strict witness wire verification, witnessed
+atomic D1 advancement, signed E0 bootstrap, the E0→E1 administrative
+transition, and the live keyed archive boundary. The archive authenticates the
+complete signed epoch ledger and witness history with each artifact's
+root-authorized historical signing key, publishes epoch/content-addressed data
+objects and a signed content-addressed manifest last, reads every publication
+back exactly, and only then performs an exact-row D1 transaction. Because
+migration 0109 makes `(tenant_id, region, start_sequence)` unique, the current
+boundary rejects an empty E0 transition before witnessing; at least one
+witnessed E0 event must exist first. Remaining blockers are bounded: compile
+and exercise the boundary in real workerd; deploy the witness under ADR-0073's
+independent administration and record disposable-partition bootstrap,
+transition, restart, archive, mutation and historical-key-rotation evidence;
+exercise root/signing/link/witness-key custody and retention; complete B-046's
+factual storage assessment; and provision two distinct human custodians for the
+runtime-enforced SRE-executor plus Security-approver credentials. The current
+GitHub principal's membership/collaborator queries returned one visible account;
+they do not establish eligibility or custody, so the second distinct custodian
+remains unverified. Distinct secret values alone are not accepted as two-person
+control. B-054 is therefore open.

@@ -171,10 +171,10 @@ proptest! {
 
         let stale_ts = now.saturating_sub(31 * 60 * 1_000 + stale_extra_min as u64 * 60 * 1_000);
         let err = fixture.gate.verify(&req, stale_ts, now).unwrap_err();
-        prop_assert!(
-            matches!(err, DualApprovalError::MfaStale { .. }),
-            "SecretRotationStart: expected MfaStale, got {err:?}"
-        );
+        match err {
+            DualApprovalError::MfaStale { age_min } => prop_assert!(age_min > 30),
+            other => prop_assert!(false, "SecretRotationStart: expected MfaStale, got {other:?}"),
+        }
     }
 
     /// INV-ADMIN-DUAL-APPROVAL: caller==approver always rejects FeatureFlagDisable.

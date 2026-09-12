@@ -287,4 +287,30 @@ impl<R: ByokConfigRows> D1ByokConfigReader<R> {
             Some(row) => parse_byok_config_row(row).map(Some),
         }
     }
+
+    /// Load the immutable configuration snapshot for an exact historical
+    /// version. Rotation readers must use this seam rather than current config.
+    pub async fn get_byok_config_at_version(
+        &self,
+        tenant_id: &str,
+        config_version: i64,
+    ) -> Result<Option<TenantByokConfig>, ByokConfigError> {
+        if config_version <= 0 {
+            return Err(ByokConfigError::Parse(
+                "config_version must be positive".to_owned(),
+            ));
+        }
+        let rows = self
+            .rows
+            .query_rows(
+                "SELECT tenant_id, mode, crypto_mode, cmk_provider, cmk_key_id, \
+                        cmk_region, state \
+                 FROM tenant_byok_config_history \
+                 WHERE tenant_id = ?1 AND config_version = ?2 LIMIT 1",
+                vec![json!(tenant_id), json!(config_version)],
+            )
+            .await
+            .map_err(ByokConfigError::Transport)?;
+        rows.first().map(parse_byok_config_row).transpose()
+    }
 }

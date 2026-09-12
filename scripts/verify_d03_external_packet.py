@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Semantic owner/runtime guards for D03 B-216 and B-229.
 
-B-216 checks parsed Wrangler queue topology and the active TypeScript Worker
-queue method. B-229 checks parsed deploy workflow structure and the active
+B-216 checks parsed Wrangler queue topology, the active TypeScript Worker
+queue method, and the fail-closed PagerDuty secret synchronization. B-229
+checks parsed deploy workflow structure and the active
 shell ``REQUIRED`` array. Comments, string decoys, and unrelated YAML steps do
 not satisfy these checks. Production evidence remains external, so a valid
 repository contract reports ``OWNER_BLOCKED`` until owners attach evidence.
@@ -26,6 +27,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
+B216_BLOCKER_RECEIPT = "reports/owner-actions/b216-operational-blocker.json"
 
 
 class PacketError(ValueError):
@@ -67,6 +69,20 @@ def _evidence_status(root: Path, paths: tuple[str, ...]) -> dict[str, object]:
             missing.append(relative)
     blocked = missing + empty
     return {"status": "OWNER_BLOCKED" if blocked else "READY_FOR_BUNDLE", "missing": missing, "empty": empty}
+
+
+def _b216_blocker_receipt(root: Path) -> dict[str, str]:
+    """Point at the bounded operations receipt without satisfying closure evidence."""
+    path = root / B216_BLOCKER_RECEIPT
+    if path.is_symlink() or not path.is_file():
+        return {"path": B216_BLOCKER_RECEIPT, "status": "missing"}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {"path": B216_BLOCKER_RECEIPT, "status": "invalid"}
+    if not isinstance(payload, dict) or payload.get("verdict") != "OWNER_BLOCKED" or payload.get("done_claim") is not False:
+        return {"path": B216_BLOCKER_RECEIPT, "status": "invalid"}
+    return {"path": B216_BLOCKER_RECEIPT, "status": "captured"}
 
 
 def _strip_ts_comments(text: str) -> str:
@@ -196,13 +212,76 @@ def _check_b216_wrangler(root: Path, lane: str) -> None:
         raise PacketError(f"{lane}: active DLQ consumer binding missing or duplicated")
 
 
+def _deploy_steps(root: Path, lane: str) -> list[dict]:
+    workflow_text = _read(root, ".github/workflows/signup-worker-deploy.yml", lane)
+    try:
+        workflow = yaml.safe_load(workflow_text)
+    except yaml.YAMLError as exc:
+        raise PacketError(f"{lane}: malformed workflow YAML: {exc}") from exc
+    jobs = workflow.get("jobs") if isinstance(workflow, dict) else None
+    deploy = jobs.get("deploy") if isinstance(jobs, dict) else None
+    steps = deploy.get("steps") if isinstance(deploy, dict) else None
+    if not isinstance(steps, list) or not all(isinstance(step, dict) for step in steps):
+        raise PacketError(f"{lane}: deploy steps missing or malformed")
+    return steps
+
+
+def _check_b216_secret_sync(root: Path, lane: str) -> None:
+    steps = _deploy_steps(root, lane)
+    named: dict[str, list[tuple[int, dict]]] = {}
+    for index, step in enumerate(steps):
+        if isinstance(step.get("name"), str):
+            named.setdefault(step["name"], []).append((index, step))
+
+    sync_entries = named.get("Synchronize PagerDuty routing key", [])
+    verify_entries = named.get("Verify required runtime secrets", [])
+    deploy_entries = named.get("Deploy Worker", [])
+    if len(sync_entries) != 1 or len(verify_entries) != 1 or len(deploy_entries) != 1:
+        raise PacketError(f"{lane}: unique PagerDuty sync/readback/deploy steps are required")
+    sync_index, sync = sync_entries[0]
+    verify_index, _ = verify_entries[0]
+    deploy_index, _ = deploy_entries[0]
+    if not sync_index < verify_index < deploy_index:
+        raise PacketError(f"{lane}: PagerDuty sync must precede secret readback and deploy")
+
+    env = sync.get("env")
+    if sync.get("shell") != "bash":
+        raise PacketError(f"{lane}: PagerDuty sync must use the audited bash program")
+    if not isinstance(env, dict) or env.get("PAGERDUTY_ROUTING_KEY") != "${{ secrets.PAGERDUTY_ROUTING_KEY }}":
+        raise PacketError(f"{lane}: PagerDuty sync must use the identically named repository secret")
+    if env.get("CLOUDFLARE_API_TOKEN") != "${{ secrets.CF_API_TOKEN }}" or env.get(
+        "CLOUDFLARE_ACCOUNT_ID"
+    ) != "${{ secrets.CF_ACCOUNT_ID }}":
+        raise PacketError(f"{lane}: PagerDuty sync lacks the scoped Cloudflare credentials")
+
+    run = sync.get("run")
+    if not isinstance(run, str):
+        raise PacketError(f"{lane}: PagerDuty sync command is missing")
+    required = (
+        "set -euo pipefail",
+        '[[ ! "$PAGERDUTY_ROUTING_KEY" =~ ^[[:alnum:]]{32}$ ]]',
+        "printf '%s' \"$PAGERDUTY_ROUTING_KEY\" | wrangler secret put PAGERDUTY_ROUTING_KEY --config wrangler.toml",
+        "unset PAGERDUTY_ROUTING_KEY",
+    )
+    _require(run, required, lane, "PagerDuty secret sync")
+    if (
+        "set -x" in run
+        or run.count("$PAGERDUTY_ROUTING_KEY") != 2
+        or re.search(r"wrangler\s+secret\s+put[^\n]*\$PAGERDUTY_ROUTING_KEY", run)
+    ):
+        raise PacketError(f"{lane}: PagerDuty secret may be exposed through tracing or argv")
+
+
 def check_b216(root: Path) -> dict[str, object]:
     lane = "B-216"
     packet = _read(root, "docs/internal/b215-b230-runtime-owner-actions.md", lane)
     _require(packet, ("deployed signup-worker revision", "corelink-dsr-erasure-dlq", "on-call destination", "redacted delivery receipt", "controlled exhausted-message observation", "bounded requeue", "final operator disposition"), lane, "runtime owner packet")
     _check_b216_wrangler(root, lane)
     _check_active_worker_wiring(root, lane)
-    return _evidence_status(root, ("reports/owner-actions/b216-deployed-signup-worker.json", "reports/owner-actions/b216-alert-delivery.json", "reports/owner-actions/b216-exhausted-observation.md"))
+    _check_b216_secret_sync(root, lane)
+    result = _evidence_status(root, ("reports/owner-actions/b216-deployed-signup-worker.json", "reports/owner-actions/b216-alert-delivery.json", "reports/owner-actions/b216-exhausted-observation.md"))
+    result["blocker_receipt"] = _b216_blocker_receipt(root)
+    return result
 
 
 def _required_secret_array(script: str, lane: str) -> None:

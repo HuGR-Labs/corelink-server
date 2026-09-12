@@ -14,6 +14,10 @@ def test_external_packet_is_structurally_valid_and_reports_owner_blockers() -> N
     result = packet.verify(ROOT)
     assert set(result) == {"B-216", "B-229"}
     assert {item["status"] for item in result.values()} == {"OWNER_BLOCKED"}
+    assert result["B-216"]["blocker_receipt"] == {
+        "path": packet.B216_BLOCKER_RECEIPT,
+        "status": "captured",
+    }
 
 
 @pytest.mark.parametrize("lane", tuple(packet.CHECKS))
@@ -29,6 +33,7 @@ def test_b216_rejects_removed_dlq_dispatch(tmp_path: Path) -> None:
         "apps/signup-worker/src/webhooks/dsr_consumer.ts",
         "apps/signup-worker/src/index.ts",
         "apps/signup-worker/wrangler.toml",
+        ".github/workflows/signup-worker-deploy.yml",
         "docs/internal/b215-b230-runtime-owner-actions.md",
     ):
         destination = tmp_path / relative
@@ -75,6 +80,7 @@ def test_b216_ignores_comment_decoys(tmp_path: Path) -> None:
         "apps/signup-worker/src/webhooks/dsr_consumer.ts",
         "apps/signup-worker/src/index.ts",
         "apps/signup-worker/wrangler.toml",
+        ".github/workflows/signup-worker-deploy.yml",
         "docs/internal/b215-b230-runtime-owner-actions.md",
     ):
         destination = tmp_path / relative
@@ -86,6 +92,53 @@ def test_b216_ignores_comment_decoys(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert packet.check_b216(tmp_path)["status"] == "OWNER_BLOCKED"
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    (
+        (
+            "printf '%s' \"$PAGERDUTY_ROUTING_KEY\" | wrangler secret put",
+            "wrangler secret put",
+            "PagerDuty secret sync",
+        ),
+        (
+            "Synchronize PagerDuty routing key",
+            "Synchronize disabled routing key",
+            "unique PagerDuty sync",
+        ),
+        (
+            "PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}",
+            "PAGERDUTY_ROUTING_KEY: ${{ secrets.UNRELATED_SECRET }}",
+            "identically named repository secret",
+        ),
+        (
+            "set -euo pipefail",
+            'set -euo pipefail\n          echo "$PAGERDUTY_ROUTING_KEY"',
+            "may be exposed",
+        ),
+    ),
+)
+def test_b216_rejects_weakened_pagerduty_secret_sync(
+    tmp_path: Path, old: str, new: str, message: str
+) -> None:
+    import shutil
+
+    for relative in (
+        "apps/signup-worker/src/index.ts",
+        "apps/signup-worker/wrangler.toml",
+        ".github/workflows/signup-worker-deploy.yml",
+        "docs/internal/b215-b230-runtime-owner-actions.md",
+    ):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / relative, destination)
+    workflow = tmp_path / ".github/workflows/signup-worker-deploy.yml"
+    original = workflow.read_text(encoding="utf-8")
+    assert old in original
+    workflow.write_text(original.replace(old, new, 1), encoding="utf-8")
+    with pytest.raises(packet.PacketError, match=message):
+        packet.check_b216(tmp_path)
 
 
 def test_b229_rejects_removed_secret_and_reordered_gate(tmp_path: Path) -> None:

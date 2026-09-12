@@ -634,6 +634,30 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
             errors.append(f"release-cli must not delete packages from shared $HOME/.cargo (line {line})")
     if re.search(r"(?m)^\s*[^#\n]*--repo\s+HumanGuardrail/corelink-cli", release_code):
         errors.append("release-cli contains the forbidden stale release repository")
+    if not any(
+        name == "API_HEADERS"
+        and "gh api --include --silent" in value
+        and "repos/HuGR-Labs/corelink-cli/releases/tags/" in value
+        for _line, name, value in _active_assignments(release)
+    ):
+        errors.append("release-cli must classify an existing draft before create/retry")
+    if not any(
+        args[:2] == ["release", "create"]
+        and "--draft" in args
+        and "HuGR-Labs/corelink-cli" in args
+        for _line, args in _active_commands(release, "gh")
+    ):
+        errors.append("release-cli is missing its exact draft creation command")
+    require(
+        release_code,
+        'release.get("tag_name") != sys.argv[2] or release.get("draft") is not True',
+        "idempotent exact-draft validation",
+    )
+    require(
+        release_code,
+        'release.get("published_at") is not None',
+        "published-release retry refusal",
+    )
 
     # B-118 retired the former OCI signing workflow.  Keep this negative
     # control in the B-112 gate so a stale/reintroduced file cannot make the
@@ -746,6 +770,8 @@ def mutation_self_test(release: str, cosign: str, backlog: str) -> None:
         "Cargo target comment bait": (release.replace(CARGO_TARGET_BINDING, '# CARGO_TARGET_DIR="$HOME/target"', 1), cosign, backlog),
         "shared registry deletion": (_inject_run_command(release, 'rm -rf "$HOME/.cargo"'), cosign, backlog),
         "manual Cargo fetch": (_inject_run_command(release, 'cargo fetch --target "${TARGET_TRIPLE}"'), cosign, backlog),
+        "draft retry classification": (release.replace("gh api --include --silent", "gh api --silent", 1), cosign, backlog),
+        "published release refusal": (release.replace('release.get("published_at") is not None', 'False', 1), cosign, backlog),
         "wrapped Cargo fetch": (_inject_run_command(release, 'sudo -n cargo fetch --target "${TARGET_TRIPLE}"'), cosign, backlog),
         "wrapped Cargo install": (_inject_run_command(release, "env CARGO_NET_OFFLINE=false cargo install cargo-zigbuild"), cosign, backlog),
         "env separator Cargo fetch": (_inject_run_command(release, "env -- CARGO_NET_OFFLINE=false cargo fetch --locked"), cosign, backlog),

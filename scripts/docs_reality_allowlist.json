@@ -185,7 +185,7 @@
       "tracked": true,
       "grounding": {
         "okf_concept": "docs/knowledge/storage/byok-envelope-encryption.md",
-        "marker": "gated-inert"
+        "marker": "owner-runtime gated"
       },
       "scope_globs": [
         "marketing/",
@@ -208,7 +208,7 @@
         "planned",
         "gap"
       ],
-      "reason": "BYOK across 4 KMS providers is asserted as an AVAILABLE capability, but the OKF byok concept records the prod KmsProvider wiring as DEFERRED / still gated-inert (zero active tenants). State it as a GA/roadmap item, not present-tense available."
+      "reason": "BYOK across 4 KMS providers is asserted as an AVAILABLE capability, but each build can select only one provider, the shipped image selects AWS, and the OKF concept records owner credentials, CMK provisioning, and live KMS evidence as still pending (zero active tenants). Do not claim present-tense four-provider availability without that runtime evidence."
     },
     {
       "id": "cas-digest-is-blake3-not-sha256",

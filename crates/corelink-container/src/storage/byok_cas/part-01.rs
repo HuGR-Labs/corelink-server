@@ -276,6 +276,12 @@ impl ModeBEncryptor {
         Self::new(kms, store, BYOK_TCS_TTL_SECONDS)
     }
 
+    /// Rebind a decoder to the exact source-generation KMS provider while
+    /// preserving the authoritative envelope store.
+    pub fn with_provider(&self, kms: Arc<dyn KmsProvider>) -> Result<Self, BYOKError> {
+        Self::with_default_ttl(kms, Arc::clone(&self.store))
+    }
+
     /// The CMK identity for a context — the injected KMS provider is the custody
     /// authority (its kind + region), keyed by the context's CMK ARN.
     fn key_id(&self, ctx: &CryptoContext) -> KmsKeyId {
@@ -296,12 +302,37 @@ impl ModeBEncryptor {
     /// Fail-CLOSED: any envelope read/write or KMS wrap/unwrap failure is
     /// `Err(String)` — the caller refuses the write (never stores plaintext).
     pub async fn encrypt(&self, plaintext: &[u8], ctx: &CryptoContext) -> Result<Vec<u8>, String> {
-        let tenant = ctx.tenant_id.as_str();
         let blob_key = envelope_blob_key(&ctx.surface, &ctx.plaintext_digest);
+        self.encrypt_with_blob_key(plaintext, ctx, &blob_key).await
+    }
+
+    /// Encrypt a generation-catalog allocation under its own envelope row.
+    ///
+    /// The allocation only qualifies the envelope-store identity. `ctx` is
+    /// passed unchanged to KMS and AES-GCM, preserving the raw plaintext
+    /// digest in the encryption context and AAD.
+    pub async fn encrypt_for_allocation(
+        &self,
+        plaintext: &[u8],
+        ctx: &CryptoContext,
+        allocation_id: &str,
+    ) -> Result<Vec<u8>, String> {
+        let blob_key =
+            allocation_envelope_blob_key(&ctx.surface, &ctx.plaintext_digest, allocation_id)?;
+        self.encrypt_with_blob_key(plaintext, ctx, &blob_key).await
+    }
+
+    async fn encrypt_with_blob_key(
+        &self,
+        plaintext: &[u8],
+        ctx: &CryptoContext,
+        blob_key: &str,
+    ) -> Result<Vec<u8>, String> {
+        let tenant = ctx.tenant_id.as_str();
 
         // The authoritative envelope row (a pre-existing one, OR one we mint +
         // persist + re-read so every racer converges on the same DEK).
-        let row = match self.store.get_envelope(tenant, &blob_key).await? {
+        let row = match self.store.get_envelope(tenant, blob_key).await? {
             Some(existing) => existing,
             None => {
                 let key_id = self.key_id(ctx);
@@ -323,10 +354,10 @@ impl ModeBEncryptor {
                     nonce: blob.nonce,
                 };
                 self.store
-                    .put_envelope_if_absent(tenant, &blob_key, &new_row, now_ms())
+                    .put_envelope_if_absent(tenant, blob_key, &new_row, now_ms())
                     .await?;
                 self.store
-                    .get_envelope(tenant, &blob_key)
+                    .get_envelope(tenant, blob_key)
                     .await?
                     .ok_or_else(|| {
                         "mode-b envelope row vanished after insert (fail-closed)".to_owned()
@@ -355,6 +386,58 @@ impl ModeBEncryptor {
     /// Fail-CLOSED: a non-magic object, a missing envelope row, or any KMS /
     /// AEAD failure is `Err(String)` — the raw stored bytes are NEVER served.
     pub async fn decrypt(&self, stored: &[u8], ctx: &CryptoContext) -> Result<Vec<u8>, String> {
+        let blob_key = envelope_blob_key(&ctx.surface, &ctx.plaintext_digest);
+        self.decrypt_with_blob_key(stored, ctx, &blob_key).await
+    }
+
+    /// Decrypt bytes published by [`Self::encrypt_for_allocation`].
+    pub async fn decrypt_for_allocation(
+        &self,
+        stored: &[u8],
+        ctx: &CryptoContext,
+        allocation_id: &str,
+    ) -> Result<Vec<u8>, String> {
+        let blob_key =
+            allocation_envelope_blob_key(&ctx.surface, &ctx.plaintext_digest, allocation_id)?;
+        self.decrypt_with_blob_key(stored, ctx, &blob_key).await
+    }
+
+    /// Decrypt a published allocation while asserting the source envelope's
+    /// immutable KMS identity. Rotation callers must use this boundary rather
+    /// than the current tenant policy: a missing or mismatched provider, key,
+    /// or region is a hard error.
+    pub async fn decrypt_for_allocation_with_identity(
+        &self,
+        stored: &[u8],
+        ctx: &CryptoContext,
+        allocation_id: &str,
+        provider: KmsProviderKind,
+        key_id: &str,
+        region: &str,
+    ) -> Result<Vec<u8>, String> {
+        let blob_key =
+            allocation_envelope_blob_key(&ctx.surface, &ctx.plaintext_digest, allocation_id)?;
+        self.decrypt_with_blob_key_checked(stored, ctx, &blob_key, Some((provider, key_id, region)))
+            .await
+    }
+
+    async fn decrypt_with_blob_key(
+        &self,
+        stored: &[u8],
+        ctx: &CryptoContext,
+        blob_key: &str,
+    ) -> Result<Vec<u8>, String> {
+        self.decrypt_with_blob_key_checked(stored, ctx, blob_key, None)
+            .await
+    }
+
+    async fn decrypt_with_blob_key_checked(
+        &self,
+        stored: &[u8],
+        ctx: &CryptoContext,
+        blob_key: &str,
+        expected_identity: Option<(KmsProviderKind, &str, &str)>,
+    ) -> Result<Vec<u8>, String> {
         let magic = stored
             .get(..MODE_B_MAGIC.len())
             .ok_or_else(|| "stored Mode-B blob too short for magic".to_owned())?;
@@ -365,12 +448,20 @@ impl ModeBEncryptor {
             .get(MODE_B_MAGIC.len()..)
             .ok_or_else(|| "stored Mode-B blob missing ciphertext".to_owned())?
             .to_vec();
-        let blob_key = envelope_blob_key(&ctx.surface, &ctx.plaintext_digest);
         let row = self
             .store
-            .get_envelope(&ctx.tenant_id, &blob_key)
+            .get_envelope(&ctx.tenant_id, blob_key)
             .await?
             .ok_or_else(|| "mode-b envelope row missing (fail-closed)".to_owned())?;
+        if let Some((provider, key_id, region)) = expected_identity {
+            if row.kms_provider != provider || row.kms_key_id != key_id || row.kms_region != region
+            {
+                return Err(
+                    "mode-b envelope KMS identity differs from published source identity"
+                        .to_owned(),
+                );
+            }
+        }
         let blob = EncryptedBlob {
             wrapped_dek: row.to_wrapped_dek(),
             ciphertext,
@@ -399,9 +490,23 @@ impl ModeBEncryptor {
     /// `Err(String)`. The caller treats this as a reclaim failure (warn +
     /// continue), NOT a delete failure — the R2 object is already gone.
     pub async fn reclaim(&self, ctx: &CryptoContext) -> Result<(), String> {
-        let tenant = ctx.tenant_id.as_str();
         let blob_key = envelope_blob_key(&ctx.surface, &ctx.plaintext_digest);
-        self.store.delete_envelope(tenant, &blob_key).await
+        self.store
+            .delete_envelope(ctx.tenant_id.as_str(), &blob_key)
+            .await
+    }
+
+    /// Reclaim the exact envelope selected by a catalog publication.
+    pub async fn reclaim_for_allocation(
+        &self,
+        ctx: &CryptoContext,
+        allocation_id: &str,
+    ) -> Result<(), String> {
+        let blob_key =
+            allocation_envelope_blob_key(&ctx.surface, &ctx.plaintext_digest, allocation_id)?;
+        self.store
+            .delete_envelope(ctx.tenant_id.as_str(), &blob_key)
+            .await
     }
 
     /// Persist a Mode-B orphan/reconciliation intent after an R2 PUT succeeds
@@ -431,9 +536,10 @@ impl ModeBEncryptor {
 ///
 /// `active` engages encryption in the tenant's configured [`ByokCryptoMode`]
 /// (Mode A convergent OR Mode B random — both wired as of Wave 3c). `partial`
-/// (backfill dual-read — audit H7) is deferred to Wave 4 and fail-closed here
-/// (refuse rather than risk plaintext for an encrypting tenant). Every other
-/// state is the plaintext path.
+/// (backfill dual-read — audit H7) is deferred to Wave 4 and fail-closed here.
+/// `shredded` is terminal and also fail-closed: treating it as plaintext would
+/// let a crypto-shredded tenant create new unencrypted objects. Only tenants
+/// with no BYOK lifecycle underway (`inactive`/`pending`) use plaintext.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ByokEngagement {
@@ -457,6 +563,9 @@ pub fn engagement_for(cfg: &TenantByokConfig) -> ByokEngagement {
         ByokState::Partial => ByokEngagement::FailClosed(
             "BYOK partial/backfill dual-read not wired (deferred to Wave 4)",
         ),
-        ByokState::Inactive | ByokState::Pending | ByokState::Shredded => ByokEngagement::Plaintext,
+        ByokState::Shredded => ByokEngagement::FailClosed(
+            "BYOK tenant is crypto-shredded; storage access is permanently disabled",
+        ),
+        ByokState::Inactive | ByokState::Pending => ByokEngagement::Plaintext,
     }
 }

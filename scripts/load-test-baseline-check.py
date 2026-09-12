@@ -304,6 +304,14 @@ def main(argv: list[str]) -> int:
             "the current artifact set must match it exactly"
         ),
     )
+    ap.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help=(
+            "seed a missing baseline from one complete successful five-scenario "
+            "population; callers must not treat this as regression proof"
+        ),
+    )
     args = ap.parse_args(argv)
 
     threshold = args.threshold
@@ -330,6 +338,20 @@ def main(argv: list[str]) -> int:
             + ",".join(sorted(REQUIRED_SCENARIOS))
         )
         return EXIT_USAGE
+
+    if args.bootstrap:
+        if baseline_path.exists():
+            print(
+                f"::error::baseline {baseline_path} already exists; refusing to "
+                "overwrite established evidence in bootstrap mode"
+            )
+            return EXIT_USAGE
+        write_baseline(baseline_path, current, args.commit)
+        print(
+            "BOOTSTRAP ONLY — complete successful five-scenario baseline seeded; "
+            "this is not a regression comparison"
+        )
+        return EXIT_OK
 
     try:
         baseline = load_baseline(baseline_path)

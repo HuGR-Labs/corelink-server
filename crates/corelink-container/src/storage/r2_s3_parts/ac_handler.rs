@@ -28,6 +28,7 @@ impl R2AcHandler {
             byok_config_cache: None,
             tcs_resolver: None,
             byok_mode_b: None,
+            byok_runtime_gate: None,
         }
     }
 
@@ -50,9 +51,9 @@ impl R2AcHandler {
     /// GATED-INERT: encryption engages ONLY for a tenant whose
     /// `tenant_byok_config.state == 'active'`; every other tenant (and the
     /// `_public` namespace) keeps the exact plaintext path. The production
-    /// builder ([`build_r2_ac_handler_from_env`]) does NOT call this yet —
-    /// onboarding (the sole writer of the `active` state, and the prod
-    /// `KmsProvider` wiring) is a later wave.
+    /// builder ([`build_r2_ac_handler_from_env`]) calls this when exactly one
+    /// real KMS feature is compiled. The default no-provider build remains on
+    /// the unchanged plaintext path and activation itself returns 501.
     #[must_use]
     pub fn with_byok(
         mut self,
@@ -72,14 +73,68 @@ impl R2AcHandler {
         self
     }
 
+    /// Attach the mandatory production data-plane gate/catalog pair.
+    #[must_use]
+    pub fn with_byok_runtime_gate(mut self, gate: Arc<dyn ByokRuntimeGate>) -> Self {
+        self.byok_runtime_gate = Some(gate);
+        self
+    }
+
+    fn acquire_byok_data(
+        &self,
+        tenant: &str,
+        operation: DataOperation,
+    ) -> Result<Option<ByokDataGuard>, corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::AcHandlerError;
+        if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
+            return Ok(None);
+        }
+        let Some(gate) = self.byok_runtime_gate.as_ref() else {
+            return Ok(None);
+        };
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| {
+            handle.block_on(ByokDataGuard::acquire(Arc::clone(gate), tenant, operation))
+        })
+        .map(Some)
+        .map_err(|error| AcHandlerError::Internal(format!("BYOK data gate: {error}")))
+    }
+
+    fn validate_byok_return(
+        &self,
+        guard: Option<&mut ByokDataGuard>,
+    ) -> Result<(), corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::AcHandlerError;
+        let Some(guard) = guard else {
+            return Ok(());
+        };
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| handle.block_on(guard.finish(true)))
+            .map_err(|error| AcHandlerError::Internal(format!("BYOK return validation: {error}")))
+    }
+
+    fn finish_byok_mutation(
+        &self,
+        guard: Option<&mut ByokDataGuard>,
+    ) -> Result<(), corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::AcHandlerError;
+        let Some(guard) = guard else {
+            return Ok(());
+        };
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| handle.block_on(guard.finish(false)))
+            .map_err(|error| AcHandlerError::Internal(format!("BYOK data release: {error}")))
+    }
+
     /// Resolve the BYOK plan for an AC `(tenant, action_digest)`: the §4-hardened
     /// physical key digest (audit H-4) + the body crypto plan, binding the
     /// `"ac"` surface ([`ac_crypto_context`]) so an AC blob is domain-separated
     /// from CAS. Mirrors [`R2CasHandler::resolve_byok`].
-    async fn resolve_byok(
+    async fn resolve_byok_with_guard(
         &self,
         tenant: &str,
         action_digest: &str,
+        guard: Option<&ByokDataGuard>,
     ) -> Result<ByokResolved, corelink_handler_ac::AcHandlerError> {
         use corelink_handler_ac::AcHandlerError;
         let plaintext = || ByokResolved {
@@ -95,11 +150,18 @@ impl R2AcHandler {
         if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
             return Ok(plaintext());
         }
-        let Some(cfg) = cache
-            .get(tenant)
-            .await
-            .map_err(|e| AcHandlerError::Internal(format!("byok config read: {e}")))?
-        else {
+        let authoritative = match guard {
+            Some(guard) => Some(guard.intent().map_err(AcHandlerError::Internal)?),
+            None => None,
+        };
+        let cfg = match authoritative {
+            Some(intent) => intent.config.clone(),
+            None => cache
+                .get(tenant)
+                .await
+                .map_err(|e| AcHandlerError::Internal(format!("byok config read: {e}")))?,
+        };
+        let Some(cfg) = cfg else {
             return Ok(plaintext());
         };
         match engagement_for(&cfg) {
@@ -110,7 +172,7 @@ impl R2AcHandler {
             ByokEngagement::Encrypt(mode) => {
                 let key_id = cfg.cmk_key_id.clone().unwrap_or_default();
                 let tcs = resolver
-                    .resolve(&cfg)
+                    .resolve_at_version(&cfg, authoritative.and_then(|intent| intent.tcs_version))
                     .await
                     .map_err(|e| AcHandlerError::Internal(format!("byok tcs resolve: {e}")))?;
                 let physical_digest = harden_digest(&tcs, action_digest);
@@ -145,12 +207,23 @@ impl R2AcHandler {
         }
     }
 
+    #[cfg(test)]
+    async fn resolve_byok(
+        &self,
+        tenant: &str,
+        action_digest: &str,
+    ) -> Result<ByokResolved, corelink_handler_ac::AcHandlerError> {
+        self.resolve_byok_with_guard(tenant, action_digest, None)
+            .await
+    }
+
     /// Encrypt the AC body for a resolved plan (`None` ⇒ store plaintext). See
     /// [`R2CasHandler::encrypt_body`].
     async fn encrypt_body(
         &self,
         plan: &ByokBodyPlan,
         payload: &[u8],
+        allocation_id: Option<&str>,
     ) -> Result<Option<Vec<u8>>, corelink_handler_ac::AcHandlerError> {
         use corelink_handler_ac::AcHandlerError;
         match plan {
@@ -164,9 +237,15 @@ impl R2AcHandler {
                 let mode_b = self.byok_mode_b.as_ref().ok_or_else(|| {
                     AcHandlerError::Internal("byok mode-b encryptor missing".to_owned())
                 })?;
-                let stored = mode_b.encrypt(payload, ctx).await.map_err(|e| {
-                    AcHandlerError::Internal(format!("byok ac mode-b encrypt: {e}"))
-                })?;
+                let stored = match allocation_id {
+                    Some(allocation_id) => {
+                        mode_b
+                            .encrypt_for_allocation(payload, ctx, allocation_id)
+                            .await
+                    }
+                    None => mode_b.encrypt(payload, ctx).await,
+                }
+                .map_err(|e| AcHandlerError::Internal(format!("byok ac mode-b encrypt: {e}")))?;
                 Ok(Some(stored))
             }
         }
@@ -178,6 +257,7 @@ impl R2AcHandler {
         &self,
         plan: &ByokBodyPlan,
         stored: Vec<u8>,
+        allocation_id: Option<&str>,
     ) -> Result<Vec<u8>, corelink_handler_ac::AcHandlerError> {
         use corelink_handler_ac::AcHandlerError;
         match plan {
@@ -188,10 +268,15 @@ impl R2AcHandler {
                 let mode_b = self.byok_mode_b.as_ref().ok_or_else(|| {
                     AcHandlerError::Internal("byok mode-b encryptor missing".to_owned())
                 })?;
-                mode_b
-                    .decrypt(&stored, ctx)
-                    .await
-                    .map_err(|e| AcHandlerError::Internal(format!("byok ac mode-b decrypt: {e}")))
+                match allocation_id {
+                    Some(allocation_id) => {
+                        mode_b
+                            .decrypt_for_allocation(&stored, ctx, allocation_id)
+                            .await
+                    }
+                    None => mode_b.decrypt(&stored, ctx).await,
+                }
+                .map_err(|e| AcHandlerError::Internal(format!("byok ac mode-b decrypt: {e}")))
             }
         }
     }
@@ -201,10 +286,17 @@ impl R2AcHandler {
     /// (only `Random` writes a row; same R2-first ordering + warn-on-failure
     /// safe-fail rationale). The plan's `ctx` carries `AC_SURFACE`, so the
     /// reclaimed key is `ac:<digest>` (surface-correct).
-    async fn reclaim_byok_envelope(&self, plan: &ByokBodyPlan) -> Result<(), String> {
+    async fn reclaim_byok_envelope(
+        &self,
+        plan: &ByokBodyPlan,
+        allocation_id: Option<&str>,
+    ) -> Result<(), String> {
         if let ByokBodyPlan::Random { ctx } = plan {
             if let Some(mode_b) = self.byok_mode_b.as_ref() {
-                return mode_b.reclaim(ctx).await;
+                return match allocation_id {
+                    Some(allocation_id) => mode_b.reclaim_for_allocation(ctx, allocation_id).await,
+                    None => mode_b.reclaim(ctx).await,
+                };
             }
         }
         Ok(())
@@ -218,7 +310,8 @@ impl R2AcHandler {
         req: &corelink_handler_ac::AcUpdateRequest,
     ) -> Result<Option<Vec<u8>>, corelink_handler_ac::AcHandlerError> {
         let resolved = self.resolve_byok(&req.tenant, &req.action_digest).await?;
-        self.encrypt_body(&resolved.plan, &req.result_payload).await
+        self.encrypt_body(&resolved.plan, &req.result_payload, None)
+            .await
     }
 
     /// BYOK AC read hook (test-facing): resolve + decrypt the stored body. The
@@ -231,7 +324,7 @@ impl R2AcHandler {
         stored: Vec<u8>,
     ) -> Result<Vec<u8>, corelink_handler_ac::AcHandlerError> {
         let resolved = self.resolve_byok(tenant, action_digest).await?;
-        self.decrypt_body(&resolved.plan, stored).await
+        self.decrypt_body(&resolved.plan, stored, None).await
     }
 
     /// BYOK AC delete-reclaim hook (test-facing): resolve + reclaim the Mode-B
@@ -247,7 +340,7 @@ impl R2AcHandler {
             .resolve_byok(tenant, action_digest)
             .await
             .map_err(|e| format!("resolve: {e}"))?;
-        self.reclaim_byok_envelope(&resolved.plan).await
+        self.reclaim_byok_envelope(&resolved.plan, None).await
     }
 
     /// Derive the R2 key for a (tenant, action_digest) pair. Mirrors
@@ -266,6 +359,32 @@ impl R2AcHandler {
             &self.ac_region,
             &prefix,
             action_digest,
+            DigestAlgo::Blake3,
+        ))
+    }
+
+    /// Derive an immutable generation-qualified AC key while validating each
+    /// caller-controlled component before joining path segments.
+    fn generation_r2_key(
+        &self,
+        tenant: &str,
+        generation: i64,
+        allocation_id: &str,
+        action_digest: &str,
+    ) -> Result<String, String> {
+        if !is_canonical_ac_digest(action_digest) {
+            return Err("non-canonical AC action digest (lowercase 64-hex required)".to_owned());
+        }
+        let qualified = crate::storage::byok_generation_catalog::generation_qualified_digest(
+            generation,
+            allocation_id,
+            action_digest,
+        )?;
+        let prefix = tenant_prefix(self.tdk.as_ref(), tenant)?;
+        Ok(R2S3Client::blob_key(
+            &self.ac_region,
+            &prefix,
+            &qualified,
             DigestAlgo::Blake3,
         ))
     }

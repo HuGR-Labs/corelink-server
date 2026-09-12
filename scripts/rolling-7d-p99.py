@@ -38,6 +38,7 @@ WINDOW_RUNS = 7
 REGRESSION_THRESHOLD = 1.20
 COMMAND_TIMEOUT_SECONDS = 30
 ARTIFACT_PREFIX = "endurance-2h-results-"
+MEASUREMENT_JOB_NAME = "k6 endurance 2h (staging)"
 SCHEMA = 1
 
 
@@ -159,6 +160,42 @@ def find_artifact(repo: str, run_id: str) -> str:
     return candidates[0]
 
 
+def validate_measurement_job(repo: str, run_id: str) -> None:
+    """Require the historical measurement job itself to have completed green.
+
+    The aggregate workflow may be red while the seven-run baseline is being
+    accumulated, because its downstream comparison cannot pass yet.  The
+    measurement job is the correct trust boundary: its successful conclusion
+    proves k6 completed before its artifact is admitted to the baseline.
+    """
+    result = _run([
+        "gh",
+        "api",
+        f"repos/{repo}/actions/runs/{run_id}/jobs?per_page=100",
+    ])
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise InputError(f"job listing for run {run_id} is malformed") from exc
+    jobs = payload.get("jobs") if isinstance(payload, dict) else None
+    if not isinstance(jobs, list):
+        raise InputError(f"job listing for run {run_id} has no jobs array")
+    matches = [
+        job for job in jobs
+        if isinstance(job, dict) and job.get("name") == MEASUREMENT_JOB_NAME
+    ]
+    if len(matches) != 1:
+        raise InputError(
+            f"run {run_id} has {len(matches)} {MEASUREMENT_JOB_NAME!r} jobs; exactly one required"
+        )
+    job = matches[0]
+    if job.get("status") != "completed" or job.get("conclusion") != "success":
+        raise InputError(
+            f"run {run_id} measurement job is not completed/success: "
+            f"status={job.get('status')!r} conclusion={job.get('conclusion')!r}"
+        )
+
+
 def download_history(
     repo: str,
     runs: list[dict[str, str]],
@@ -171,6 +208,7 @@ def download_history(
     names: dict[str, str] = {}
     for run in runs:
         run_id = run["run_id"]
+        validate_measurement_job(repo, run_id)
         artifact = find_artifact(repo, run_id)
         target = destination / run_id
         target.mkdir()

@@ -424,8 +424,11 @@ def _check_spec(spec: SplitSpec, parent: str, fragment: str) -> list[str]:
             if len(re.findall(r"\buse\s+adapters_auth\s*::\s*oci_basic_header\s*;", code)) != 1:
                 errors.append(f"{spec.parent}: OCI auth helper import is not unique")
         else:
-            if "use super::*;" not in mask_rust(fragment):
-                errors.append(f"{spec.fragment}: missing real use-super wiring")
+            wiring_count = len(re.findall(r"(?m)^\s*use\s+super\s*::\s*\*\s*;\s*$", mask_rust(fragment)))
+            if wiring_count != 1:
+                errors.append(
+                    f"{spec.fragment}: expected exactly one real use-super wiring, found {wiring_count}"
+                )
         if spec.language == "rust-tests":
             actual = {f"test:{name}" for name in _rust_test_functions(fragment)}
             parent_actual = {f"test:{name}" for name in _rust_test_functions(parent)}

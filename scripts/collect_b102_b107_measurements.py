@@ -47,6 +47,18 @@ def percentile(values: list[float], p: float) -> float:
     return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
 
 
+def storage_percentiles(samples: list[dict[str, object]]) -> dict[str, float]:
+    """Derive the B-107 summary from the separated wire-phase population."""
+    totals = [float(row["storage_total_ms"]) for row in samples]
+    if not totals:
+        raise ValueError("B-107 requires a non-empty phase population")
+    return {
+        "p50_ms": percentile(totals, 0.50),
+        "p90_ms": percentile(totals, 0.90),
+        "p99_ms": percentile(totals, 0.99),
+    }
+
+
 def wire_output_sha256(row: dict[str, object]) -> str:
     material = {key: row.get(key) for key in WIRE_DIGEST_FIELDS}
     return "sha256:" + hashlib.sha256(json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -293,7 +305,11 @@ def main() -> int:
         row["r2_raw_output_sha256"] = row["raw_output_sha256"]
         row["accounting_raw_output_sha256"] = row["raw_output_sha256"]
         samples.append(row)
-    result["items"]["B-107"] = {"tenant_id": args.tenant, "samples": samples}
+    result["items"]["B-107"] = {
+        "tenant_id": args.tenant,
+        "samples": samples,
+        "computed": storage_percentiles(samples),
+    }
     args.output.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     return 0
 

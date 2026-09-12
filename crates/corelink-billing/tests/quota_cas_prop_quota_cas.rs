@@ -568,9 +568,10 @@ proptest! {
 
 // ---- isolated real latency measurement ---------------------------
 
-/// Real wall-clock probe for the production WI §22 SLO. It is ignored so a
-/// loaded developer host or shared CI runner cannot turn an informational
-/// measurement into a false general-CI failure. Run explicitly with:
+/// Real wall-clock probe of the isolated in-memory fixture against the WI §22
+/// budget. It does not claim production latency. It is ignored so a loaded
+/// developer host or shared CI runner cannot turn an opt-in measurement into
+/// a false general-CI failure. Run explicitly with:
 /// `cargo test -p corelink-billing --test quota_cas_prop_quota_cas
 /// real_latency_probe_under_5ms_p99 -- --ignored --nocapture`.
 #[test]
@@ -589,10 +590,16 @@ fn real_latency_probe_under_5ms_p99() {
     let p99 = samples[(samples.len() * 99 / 100).min(samples.len() - 1)];
     writeln!(
         std::io::stderr().lock(),
-        "quota CAS real latency probe: samples=1000 p99_us={p99}"
+        concat!(
+            "B251_LATENCY_PROBE_JSON=",
+            "{{\"sample_count\":1000,\"p99_us\":{},\"limit_us\":5000,",
+            "\"fixture\":\"InMemoryAtomicQuotaChecker\",",
+            "\"production_latency_measured\":false}}"
+        ),
+        p99
     )
     .expect("latency probe result must be writable");
-    assert!(p99 <= 5_000, "quota CAS p99 exceeded 5ms: {p99}us");
+    assert!(p99 < 5_000, "quota CAS p99 was not below 5ms: {p99}us");
 }
 
 // ---- prop_retry_after_canonical_at_boundary -----------------------

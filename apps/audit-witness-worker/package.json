@@ -1,0 +1,23 @@
+{
+  "name": "@corelink/audit-witness-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --exclude '**/*.miniflare.test.ts'",
+    "test:workerd": "vitest run --config vitest.miniflare.config.mts"
+  },
+  "dependencies": {
+    "@noble/hashes": "1.8.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260619.1",
+    "@types/node": "^26.1.1",
+    "miniflare": "^4.20260710.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.111.0"
+  }
+}

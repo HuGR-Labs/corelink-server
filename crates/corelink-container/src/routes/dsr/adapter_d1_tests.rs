@@ -4,6 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+use rusqlite::Connection;
 use serde_json::json;
 
 use super::*;
@@ -90,6 +91,154 @@ fn clerk_lookup_fails_closed_for_missing_or_blank_key() {
     assert_eq!(
         D1EraseAdapter::clerk_user_id_from_rows(&[valid]).unwrap(),
         "user_123"
+    );
+}
+
+/// The purge-cause ledger is an FK child whose tenant scope is an alias
+/// through `byok_object_purge_item`, not a direct `tenant_id` predicate. This
+/// guard is deliberately mutation-sensitive: moving the child into the
+/// direct tenant loop would emit `WHERE tenant_id = ?1` against a table that
+/// has no such column, while dropping the bespoke constants would permit a
+/// parent-first delete and a production FK failure.
+#[test]
+fn byok_purge_cause_is_a_bespoke_parent_joined_child() {
+    assert_eq!(BYOK_PURGE_CAUSE_TABLE, "byok_object_purge_cause");
+    assert_eq!(BYOK_PURGE_CAUSE_PARENT_KEY, "purge_id");
+    assert_eq!(BYOK_PURGE_PARENT_TABLE, "byok_object_purge_item");
+    assert!(!TENANT_ID_TABLES.contains(&BYOK_PURGE_CAUSE_TABLE));
+    assert!(!SPECIAL_ERASE_TABLES.contains(&BYOK_PURGE_CAUSE_TABLE));
+    let parent = TENANT_ID_TABLES
+        .iter()
+        .position(|&t| t == BYOK_PURGE_PARENT_TABLE)
+        .unwrap();
+    assert_eq!(classification_count(BYOK_PURGE_PARENT_TABLE), 1);
+    assert!(
+        TENANT_ID_TABLES
+            .get(parent)
+            .is_some_and(|table| *table == BYOK_PURGE_PARENT_TABLE),
+        "purge item parent must remain in the direct tenant_id registry lane"
+    );
+}
+
+#[test]
+fn byok_purge_parent_is_deleted_by_the_atomic_bespoke_lane() {
+    let quarantine = TENANT_ID_TABLES
+        .iter()
+        .position(|&t| t == "byok_purge_identity_quarantine")
+        .unwrap();
+    let parent = TENANT_ID_TABLES
+        .iter()
+        .position(|&t| t == BYOK_PURGE_PARENT_TABLE)
+        .unwrap();
+    assert!(
+        quarantine < parent,
+        "purge identity quarantine FK child must precede the purge parent"
+    );
+    assert_eq!(
+        TENANT_ID_TABLES.get(parent),
+        Some(&BYOK_PURGE_PARENT_TABLE),
+        "the bespoke batch is anchored at the tenant-keyed purge parent"
+    );
+    assert!(
+        TENANT_ID_TABLES
+            .iter()
+            .all(|table| *table != BYOK_PURGE_CAUSE_TABLE),
+        "the FK child must never be routed through WHERE tenant_id = ?1"
+    );
+}
+
+#[test]
+fn byok_activation_indirect_children_are_special_and_fk_scoped() {
+    let tables = [
+        BYOK_ACTIVATION_WORKER_ASSERTION_TABLE,
+        BYOK_ACTIVATION_OPERATION_GUARD_TABLE,
+        BYOK_ACTIVATION_POSTCONDITION_TABLE,
+        BYOK_ACTIVATION_SUSPENSION_POSTCONDITION_TABLE,
+        BYOK_ACTIVATION_TRANSITION_ASSERTION_TABLE,
+    ];
+    for table in tables {
+        assert!(SPECIAL_ERASE_TABLES.contains(&table));
+        assert!(!TENANT_ID_TABLES.contains(&table));
+        assert_eq!(classification_count(table), 1);
+    }
+
+    let migration = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../migrations/d1/0121_byok_activation_pipeline.sql"
+    );
+    let sql = std::fs::read_to_string(migration).unwrap();
+    assert!(
+        sql.contains("FOREIGN KEY (operation_token) REFERENCES byok_activation_operation_guard")
+    );
+    assert!(sql.contains("FOREIGN KEY (intent_id) REFERENCES byok_activation_intent"));
+    assert!(sql.contains("FOREIGN KEY (guard_id) REFERENCES byok_activation_guard"));
+    let intent = TENANT_ID_TABLES
+        .iter()
+        .position(|&table| table == "byok_activation_intent")
+        .unwrap();
+    let guard = TENANT_ID_TABLES
+        .iter()
+        .position(|&table| table == "byok_activation_guard")
+        .unwrap();
+    assert!(
+        intent < guard,
+        "activation intent must be deleted before its activation-guard parent"
+    );
+    assert!(BYOK_PURGE_CAUSE_ORPHAN_SQL.contains("LEFT JOIN"));
+    assert!(BYOK_PURGE_CAUSE_ORPHAN_SQL.contains("IS NULL"));
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.contains("byok_activation_worker_assertion"));
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.contains("byok_activation_operation_guard"));
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.contains("byok_activation_postcondition"));
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.contains("byok_activation_suspension_postcondition"));
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.contains("byok_activation_transition_assertion"));
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.matches("UNION ALL").count() >= 4);
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.matches("LEFT JOIN").count() >= 6);
+    assert!(BYOK_ACTIVATION_ORPHAN_SQL.matches("IS NULL").count() >= 6);
+}
+
+#[test]
+fn byok_activation_orphan_sql_is_valid_and_global_in_sqlite() {
+    let db = Connection::open_in_memory().unwrap();
+    db.execute_batch(
+        "CREATE TABLE byok_activation_intent (intent_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL);
+         CREATE TABLE byok_activation_guard (guard_id TEXT PRIMARY KEY);
+         CREATE TABLE byok_activation_operation_guard (operation_token TEXT PRIMARY KEY, intent_id TEXT NOT NULL);
+         CREATE TABLE byok_activation_worker_assertion (assertion_token TEXT PRIMARY KEY, operation_token TEXT NOT NULL, intent_id TEXT NOT NULL);
+         CREATE TABLE byok_activation_postcondition (operation_token TEXT PRIMARY KEY, intent_id TEXT NOT NULL);
+         CREATE TABLE byok_activation_suspension_postcondition (operation_token TEXT PRIMARY KEY, intent_id TEXT NOT NULL);
+         CREATE TABLE byok_activation_transition_assertion (assertion_token TEXT PRIMARY KEY, guard_id TEXT NOT NULL);",
+    )
+    .unwrap();
+    db.execute_batch(
+        "INSERT INTO byok_activation_intent VALUES ('ia', 'tenant-a'), ('ib', 'tenant-b');
+         INSERT INTO byok_activation_guard VALUES ('ga'), ('gb');
+         INSERT INTO byok_activation_operation_guard VALUES ('opa', 'ia'), ('opb', 'ib');
+         INSERT INTO byok_activation_worker_assertion VALUES ('wa', 'opa', 'ia'), ('wb', 'opb', 'ib');
+         INSERT INTO byok_activation_transition_assertion VALUES ('ta', 'ga'), ('tb', 'gb');",
+    )
+    .unwrap();
+    let count: i64 = db
+        .query_row(BYOK_ACTIVATION_ORPHAN_SQL, [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 0, "valid A/B fixture must have no indirect orphans");
+
+    // One adversarial row per indirect relation: the worker mismatch has both
+    // parents present but belongs to different intents, proving the global
+    // query catches inconsistent ownership rather than only missing rows.
+    db.execute_batch(
+        "INSERT INTO byok_activation_operation_guard VALUES ('op-orphan', 'missing-intent');
+         INSERT INTO byok_activation_worker_assertion VALUES ('w-mismatch', 'opb', 'ia');
+         INSERT INTO byok_activation_postcondition VALUES ('p-orphan', 'missing-intent');
+         INSERT INTO byok_activation_suspension_postcondition VALUES ('sp-orphan', 'missing-intent');
+         INSERT INTO byok_activation_transition_assertion VALUES ('t-orphan', 'missing-guard');",
+    )
+    .unwrap();
+    let count: i64 = db
+        .query_row(BYOK_ACTIVATION_ORPHAN_SQL, [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        count, 5,
+        "all five indirect orphan relations must fail closed"
     );
 }
 

@@ -18,7 +18,7 @@
 //!
 //! ```ignore
 //! let client = D1HttpClient::new(&env);
-//! let rows = client.query("SELECT * FROM cas_meta WHERE digest = ?1",
+//! let rows = client.query("SELECT * FROM blob_meta WHERE digest = ?1",
 //!                         &[serde_json::json!("abc123")]).await?;
 //! ```
 
@@ -40,6 +40,8 @@ pub struct D1HttpClient {
     /// Bearer token for the `Authorization` header (CF API token).
     /// Never logged — stored as a plain `String` but treated as a secret.
     api_token: String,
+    /// Reject every non-SELECT statement before it reaches D1.
+    read_only: bool,
 }
 
 impl core::fmt::Debug for D1HttpClient {
@@ -47,6 +49,7 @@ impl core::fmt::Debug for D1HttpClient {
         f.debug_struct("D1HttpClient")
             .field("query_url", &self.query_url)
             .field("api_token", &"[REDACTED]")
+            .field("read_only", &self.read_only)
             .finish_non_exhaustive()
     }
 }
@@ -112,6 +115,26 @@ pub(crate) struct D1BatchError {
 }
 
 impl D1HttpClient {
+    /// Construct a D1-only client from the native process environment.
+    ///
+    /// This intentionally does not require the R2 S3 credentials carried by
+    /// [`StorageEnv`]. Read-only operators such as the production GC
+    /// observation path must not receive an unused object-delete credential.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when any D1 scope/credential is absent or the HTTP
+    /// client cannot be built.
+    pub fn from_d1_env() -> Result<Self, String> {
+        let account_id = super::non_empty_env("CLOUDFLARE_ACCOUNT_ID")
+            .ok_or_else(|| "CLOUDFLARE_ACCOUNT_ID is required".to_owned())?;
+        let database_id = super::non_empty_env("D1_DATABASE_ID")
+            .ok_or_else(|| "D1_DATABASE_ID is required".to_owned())?;
+        let api_token = super::non_empty_env("CF_API_TOKEN")
+            .ok_or_else(|| "CF_API_TOKEN is required".to_owned())?;
+        Self::from_d1_parts(account_id, database_id, api_token, true)
+    }
+
     /// Construct a new [`D1HttpClient`] from a validated [`StorageEnv`].
     ///
     /// # Errors
@@ -119,9 +142,23 @@ impl D1HttpClient {
     /// Returns `Err(String)` if `reqwest::Client` cannot be built (in
     /// practice this only fails on platforms that lack TLS support).
     pub fn new(env: &StorageEnv) -> Result<Self, String> {
+        Self::from_d1_parts(
+            env.cloudflare_account_id.clone(),
+            env.d1_database_id.clone(),
+            env.cf_api_token.clone(),
+            false,
+        )
+    }
+
+    fn from_d1_parts(
+        account_id: String,
+        database_id: String,
+        api_token: String,
+        read_only: bool,
+    ) -> Result<Self, String> {
         let query_url = format!(
             "https://api.cloudflare.com/client/v4/accounts/{}/d1/database/{}/query",
-            env.cloudflare_account_id, env.d1_database_id,
+            account_id, database_id,
         );
         // Bound EVERY D1-over-HTTP call. A single erase drives ~15 serial D1
         // round-trips (legitimacy + idempotency ledger + audit envelope + the
@@ -139,7 +176,8 @@ impl D1HttpClient {
         Ok(Self {
             http,
             query_url,
-            api_token: env.cf_api_token.clone(),
+            api_token,
+            read_only,
         })
     }
 
@@ -155,6 +193,7 @@ impl D1HttpClient {
             http,
             query_url,
             api_token: env.cf_api_token.clone(),
+            read_only: false,
         })
     }
 
@@ -173,6 +212,9 @@ impl D1HttpClient {
         sql: &str,
         params: &[serde_json::Value],
     ) -> Result<Vec<D1Row>, String> {
+        if self.read_only && !is_select_statement(sql) {
+            return Err("D1 read-only client rejected a non-SELECT statement".to_owned());
+        }
         debug!(sql = %sql, params = params.len(), "D1HttpClient::query");
 
         let body = D1QueryRequest {
@@ -202,21 +244,7 @@ impl D1HttpClient {
             .json()
             .await
             .map_err(|e| format!("D1 response JSON parse failed: {e}"))?;
-
-        if !parsed.success {
-            let msgs: Vec<&str> = parsed.errors.iter().map(|e| e.message.as_str()).collect();
-            let msg = msgs.join("; ");
-            warn!(sql = %sql, errors = %msg, "D1 query returned errors");
-            return Err(format!("D1 query errors: {msg}"));
-        }
-
-        // We send a single statement per request; take the first result set.
-        Ok(parsed
-            .result
-            .into_iter()
-            .next()
-            .map(|r| r.results)
-            .unwrap_or_default())
+        validate_query_response(parsed, sql)
     }
 
     /// Execute a parameterised D1 REST batch. Cloudflare runs statements
@@ -227,6 +255,12 @@ impl D1HttpClient {
         &self,
         statements: Vec<D1BatchStatement>,
     ) -> Result<Vec<Vec<D1Row>>, D1BatchError> {
+        if self.read_only {
+            return Err(D1BatchError {
+                statement: None,
+                message: "D1 read-only client rejected a batch request".to_owned(),
+            });
+        }
         let expected = statements.len();
         if expected == 0 {
             return Err(D1BatchError {
@@ -267,6 +301,72 @@ impl D1HttpClient {
     }
 }
 
+fn is_select_statement(sql: &str) -> bool {
+    let sql = sql.trim();
+    let statement = sql.strip_suffix(';').unwrap_or(sql).trim_end();
+    if statement.contains(';') {
+        return false;
+    }
+    statement
+        .get(..6)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("select"))
+        && statement
+            .as_bytes()
+            .get(6)
+            .is_some_and(u8::is_ascii_whitespace)
+}
+
+/// Validate the complete response for the single-statement query endpoint.
+/// Top-level success alone is insufficient: a missing, duplicate, or
+/// indeterminate nested result would make an empty row set indistinguishable
+/// from a transport/schema failure.
+fn validate_query_response(parsed: D1Response, sql: &str) -> Result<Vec<D1Row>, String> {
+    let message = parsed
+        .errors
+        .iter()
+        .map(|error| error.message.as_str())
+        .collect::<Vec<_>>()
+        .join("; ");
+    if !parsed.success {
+        warn!(sql = %sql, errors = %message, "D1 query returned errors");
+        return Err(format!("D1 query errors: {message}"));
+    }
+    if !parsed.errors.is_empty() {
+        warn!(
+            sql = %sql,
+            errors = %message,
+            "D1 query response reported success with errors"
+        );
+        return Err(format!(
+            "D1 query response reported success with errors: {message}"
+        ));
+    }
+    if parsed.result.len() != 1 {
+        return Err(format!(
+            "D1 query response result count {} != submitted statement count 1",
+            parsed.result.len()
+        ));
+    }
+    let mut results = parsed.result.into_iter();
+    let result = results
+        .next()
+        .ok_or_else(|| "D1 query response omitted its result".to_owned())?;
+    if result.success != Some(true) {
+        return Err("D1 query response nested success was not explicitly true".to_owned());
+    }
+    Ok(result.results)
+}
+
+/// Validate a single response without a caller-provided SQL label.
+///
+/// The focused response-shape tests use this helper directly; production
+/// queries retain the real SQL in their fail-closed warning context through
+/// [`validate_query_response`].
+#[cfg(test)]
+fn validate_single_response(parsed: D1Response) -> Result<Vec<D1Row>, String> {
+    validate_query_response(parsed, "<single-statement>")
+}
+
 /// Validate the complete D1 REST batch response before exposing any rows to a
 /// caller. A top-level `success: true` is insufficient: a malformed response,
 /// missing/extra statement result, or omitted/false nested success flag must
@@ -285,6 +385,18 @@ fn validate_batch_response(
         return Err(D1BatchError {
             statement: parsed.result.iter().position(|r| r.success != Some(true)),
             message: format!("D1 batch errors: {message}"),
+        });
+    }
+    if !parsed.errors.is_empty() {
+        let message = parsed
+            .errors
+            .iter()
+            .map(|error| error.message.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(D1BatchError {
+            statement: None,
+            message: format!("D1 batch response reported success with errors: {message}"),
         });
     }
     if parsed.result.len() != expected {
@@ -357,7 +469,7 @@ fn validate_loopback_query_url(query_url: &str) -> Result<String, String> {
 
 /// Metadata record for a CAS blob, sourced from D1.
 ///
-/// Mirrors the `cas_meta` D1 table shape. Fields are `#[non_exhaustive]`
+/// Mirrors the `blob_meta` D1 table shape. Fields are `#[non_exhaustive]`
 /// so new columns can be added without breaking existing code.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
@@ -386,7 +498,7 @@ impl D1HttpClient {
     ) -> Result<Option<CasMetaRecord>, String> {
         let rows = self
             .query(
-                "SELECT digest, tenant_id, size_bytes FROM cas_meta WHERE tenant_id = ?1 AND digest = ?2 LIMIT 1",
+                "SELECT digest, tenant_id, size_bytes FROM blob_meta WHERE tenant_id = ?1 AND digest = ?2 LIMIT 1",
                 &[
                     serde_json::Value::String(tenant_id.to_owned()),
                     serde_json::Value::String(digest.to_owned()),
@@ -403,19 +515,19 @@ impl D1HttpClient {
         let record_digest = row
             .get("digest")
             .and_then(|v| v.as_str())
-            .ok_or("D1 cas_meta: missing `digest` column")?
+            .ok_or("D1 blob_meta: missing `digest` column")?
             .to_owned();
 
         let record_tenant = row
             .get("tenant_id")
             .and_then(|v| v.as_str())
-            .ok_or("D1 cas_meta: missing `tenant_id` column")?
+            .ok_or("D1 blob_meta: missing `tenant_id` column")?
             .to_owned();
 
         let size_bytes = row
             .get("size_bytes")
             .and_then(|v| v.as_i64())
-            .ok_or("D1 cas_meta: missing or non-integer `size_bytes` column")?;
+            .ok_or("D1 blob_meta: missing or non-integer `size_bytes` column")?;
 
         Ok(Some(CasMetaRecord {
             digest: record_digest,
@@ -843,6 +955,82 @@ mod tests {
     use crate::storage::StorageEnv;
 
     #[test]
+    fn read_only_sql_gate_accepts_one_select_and_rejects_mutation_or_stacking() {
+        assert!(is_select_statement("SELECT 1"));
+        assert!(is_select_statement("  select value FROM rows;  "));
+        assert!(!is_select_statement("UPDATE rows SET value = 1"));
+        assert!(!is_select_statement("SELECT 1; DELETE FROM rows"));
+        assert!(!is_select_statement("/* hidden */ SELECT 1"));
+        assert!(!is_select_statement("SELECTED value FROM rows"));
+    }
+
+    #[tokio::test]
+    async fn read_only_client_rejects_mutations_before_network_io() {
+        let client = D1HttpClient::from_d1_parts(
+            "account".to_owned(),
+            "database".to_owned(),
+            "token".to_owned(),
+            true,
+        )
+        .expect("build read-only client");
+        let err = client
+            .query("DELETE FROM gc_candidates", &[])
+            .await
+            .expect_err("mutation must be rejected locally");
+        assert!(err.contains("read-only client rejected"));
+        let err = client
+            .batch(vec![D1BatchStatement::new("SELECT 1", vec![])])
+            .await
+            .expect_err("batch must be rejected locally");
+        assert!(err.message.contains("read-only client rejected"));
+    }
+
+    fn query_response(result: Vec<D1QueryResult>) -> D1Response {
+        D1Response {
+            result,
+            success: true,
+            errors: vec![],
+        }
+    }
+
+    #[test]
+    fn single_query_response_requires_one_explicitly_successful_result() {
+        let valid = query_response(vec![D1QueryResult {
+            results: vec![D1Row::new()],
+            success: Some(true),
+        }]);
+        assert_eq!(
+            validate_query_response(valid, "SELECT 1")
+                .expect("one successful result")
+                .len(),
+            1
+        );
+
+        assert!(validate_query_response(query_response(vec![]), "SELECT 1").is_err());
+        assert!(validate_query_response(
+            query_response(vec![
+                D1QueryResult {
+                    results: vec![],
+                    success: Some(true),
+                },
+                D1QueryResult {
+                    results: vec![],
+                    success: Some(true),
+                },
+            ]),
+            "SELECT 1"
+        )
+        .is_err());
+        for success in [None, Some(false)] {
+            let response = query_response(vec![D1QueryResult {
+                results: vec![],
+                success,
+            }]);
+            assert!(validate_query_response(response, "SELECT 1").is_err());
+        }
+    }
+
+    #[test]
     fn d1_http_client_new_fails_gracefully_without_env() {
         // Simulate the env not being set — StorageEnv::from_env()
         // returns None so this path never constructs D1HttpClient;
@@ -964,6 +1152,39 @@ mod tests {
         assert!(err.message.contains("result count"));
     }
 
+    #[test]
+    fn single_response_requires_one_explicit_success_and_no_errors() {
+        assert!(validate_single_response(batch_response(true, vec![successful_result()])).is_ok());
+
+        for parsed in [
+            batch_response(true, Vec::new()),
+            batch_response(true, vec![successful_result(), successful_result()]),
+            batch_response(
+                true,
+                vec![D1QueryResult {
+                    results: Vec::new(),
+                    success: None,
+                }],
+            ),
+            batch_response(
+                true,
+                vec![D1QueryResult {
+                    results: Vec::new(),
+                    success: Some(false),
+                }],
+            ),
+            D1Response {
+                result: vec![successful_result()],
+                success: true,
+                errors: vec![D1Error {
+                    message: "contradictory error".to_owned(),
+                }],
+            },
+        ] {
+            assert!(validate_single_response(parsed).is_err());
+        }
+    }
+
     /// Live D1 query test — requires real credentials.
     ///
     /// Run manually:
@@ -971,11 +1192,11 @@ mod tests {
     /// ```bash
     /// CLOUDFLARE_ACCOUNT_ID=<acc> CF_API_TOKEN=<tok> D1_DATABASE_ID=<id> \
     ///   ... other vars ...
-    ///   cargo test -p corelink-server d1_http_cas_meta_round_trip -- --ignored
+    ///   cargo test -p corelink-server d1_http_blob_meta_round_trip -- --ignored
     /// ```
     #[tokio::test]
     #[ignore = "requires live CF D1 credentials"]
-    async fn d1_http_cas_meta_round_trip() {
+    async fn d1_http_blob_meta_round_trip() {
         let env = StorageEnv::from_env().expect("all env vars must be set");
         let client = D1HttpClient::new(&env).expect("client");
         // Query a definitely-absent record — should return Ok(None).

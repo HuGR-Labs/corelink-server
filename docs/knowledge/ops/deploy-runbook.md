@@ -44,6 +44,13 @@ operator can execute Phases D→H deterministically and roll back at any point.
 
 - The customer "Manage billing" portal is a STUB returning a fake Stripe URL at launch — checkout + webhook provisioning are unaffected, but the self-service portal must be wired post-launch `docs/operator/launch-day-sequence-2026-06-09.md:73-75`.
 - The Clerk CSP host is an AUTH-critical owner flag: if the Clerk Frontend-API host in the `admin-ui` CSP does not resolve, the sign-in widget is CSP-blocked `docs/operator/launch-day-sequence-2026-06-09.md:57-60`. **The live host is `clerk.corelink-app.humangr.com`** — it is baked into the `pk_live_` publishable key and hardcoded in `apps/admin-ui/src/lib/csp.ts:137,166,169` (`script-src` / `connect-src` / `frame-src`). Check THAT host when auth breaks. The launch-day flag named `clerk.corelink.humangr.com`, which is NXDOMAIN and was never the CSP host; that name is a launch-day-era error, corrected 2026-08-22. Note that `clerk.corelink-app.humangr.com` shares a parent name with the deliberately-retired `corelink-app.humangr.com` app subdomain but is a SEPARATE, auth-critical DNS record — never remove it.
+- The Worker JWT issuer pin is the same Clerk Frontend API origin, exactly
+  `https://clerk.corelink-app.humangr.com`, versioned as the non-secret
+  `CLERK_ISSUER_URL` in root `wrangler.toml` `[env.prod].vars`. It is neither the
+  path-mounted application URL (`https://humangr.com/corelink`) nor the retired
+  app subdomain (`https://corelink-app.humangr.com`). Production compares `iss`
+  by strict equality and fails closed when the pin is missing or wrong; regional
+  Workers have no Clerk surface and intentionally do not carry the var.
 
 # Citations
 

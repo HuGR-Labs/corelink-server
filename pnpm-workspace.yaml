@@ -5,6 +5,7 @@ packages:
   - "apps/get-corelink-worker"
   - "apps/signup-worker"
   - "apps/synthetic-pager-worker"
+  - "apps/audit-witness-worker"
   - "worker"
   # The published JS SDK. Adopted into the workspace 2026-08-03: it had been an
   # ORPHAN — absent here, referenced by no workflow, so its dependencies were never

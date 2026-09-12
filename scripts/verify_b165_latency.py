@@ -32,10 +32,96 @@ REFUSAL = {
 CONTROL = {"health": ("/health", "200")}
 SERVING = {"served_a", "served_b"}
 PAT_FINGERPRINT = re.compile(r"^sha256:[0-9a-f]{64}$")
+PADDING_DECISION = "retain_padding_for_404_misses_including_unmatched_routes;_never_pad_401"
 
 
 class EvidenceError(ValueError):
     """The TSV cannot establish a complete population."""
+
+
+def verify_padding_policy(repo_root: Path) -> dict[str, Any]:
+    """Prove the ratified 404-only padding boundary from executable sources.
+
+    Authentication failures return before the finish stage.  Keeping the auth
+    stage free of ``applyTimingPad`` prevents unauthenticated 401 traffic from
+    becoming a deliberate CPU/latency amplification primitive, while the two
+    supported 404 paths retain the cross-tenant enumeration defence.
+    """
+    def strip_ts_comments(source: str) -> str:
+        output: list[str] = []
+        index = 0
+        quote: str | None = None
+        while index < len(source):
+            char = source[index]
+            following = source[index + 1] if index + 1 < len(source) else ""
+            if quote is not None:
+                output.append(char)
+                if char == "\\" and following:
+                    output.append(following)
+                    index += 2
+                    continue
+                if char == quote:
+                    quote = None
+                index += 1
+                continue
+            if char in {'"', "'", "`"}:
+                quote = char
+                output.append(char)
+                index += 1
+                continue
+            if char == "/" and following == "/":
+                newline = source.find("\n", index + 2)
+                if newline < 0:
+                    break
+                output.append("\n")
+                index = newline + 1
+                continue
+            if char == "/" and following == "*":
+                closing = source.find("*/", index + 2)
+                if closing < 0:
+                    raise EvidenceError("unterminated TypeScript block comment")
+                output.append("\n" * source[index:closing + 2].count("\n"))
+                index = closing + 2
+                continue
+            output.append(char)
+            index += 1
+        return "".join(output)
+
+    auth = strip_ts_comments((repo_root / "worker/src/index_auth_stage.ts").read_text(encoding="utf-8"))
+    finish = strip_ts_comments((repo_root / "worker/src/index_finish_stage.ts").read_text(encoding="utf-8"))
+    misc = strip_ts_comments((repo_root / "worker/src/index_special_misc.ts").read_text(encoding="utf-8"))
+    def guarded_block(source: str, guard: str) -> str:
+        start = source.find(guard)
+        if start < 0:
+            raise EvidenceError(f"padding guard is missing: {guard}")
+        opening = source.find("{", start + len(guard))
+        if opening < 0:
+            raise EvidenceError(f"padding guard has no block: {guard}")
+        depth = 0
+        for offset in range(opening, len(source)):
+            if source[offset] == "{":
+                depth += 1
+            elif source[offset] == "}":
+                depth -= 1
+                if depth == 0:
+                    return source[opening + 1:offset]
+        raise EvidenceError(f"padding guard block is unterminated: {guard}")
+
+    if 'reapiError("UNAUTHORIZED", "authentication required", 401' not in auth:
+        raise EvidenceError("401 authentication rejection anchor is missing")
+    if any(marker in auth for marker in ("applyTimingPad", "index_auth_timing", "setTimeout(", "sleep(", "delay(")):
+        raise EvidenceError("401 authentication stage must not invoke timing padding")
+    forwarded_404 = guarded_block(finish, "if (doResponse.status === 404)")
+    unmatched_404 = guarded_block(misc, 'if (route.routeKind === "not_found")')
+    if "await applyTimingPad(" not in forwarded_404 or finish.count("applyTimingPad(") != 1:
+        raise EvidenceError("forwarded 404 timing-padding boundary is missing")
+    if "await applyTimingPad(" not in unmatched_404 or misc.count("applyTimingPad(") != 1:
+        raise EvidenceError("unmatched-route 404 timing-padding boundary is missing")
+    return {
+        "decision": PADDING_DECISION,
+        "401": "not_padded",
+        "404": "padded",
+    }
 
 
 def _percentile(values: list[float], percentile: float) -> float:
@@ -120,6 +206,54 @@ def _canonical_tenant(path: str) -> str:
     raise EvidenceError(f"served path has no canonical tenant segment: {path}")
 
 
+def _load_server_timing(path: Path, populations: dict[str, list[dict[str, Any]]], samples: int) -> list[dict[str, Any]]:
+    """Validate server-side timing and its separation from transport time."""
+    by_surface: dict[str, list[tuple[int, float, float]]] = {}
+    for line_number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        fields = raw.split("\t")
+        if len(fields) != 6:
+            raise EvidenceError(f"server-timing line {line_number} does not have six TSV fields")
+        surface, request_path, sample, curl_seconds, server_ms, transport_ms = fields
+        if surface not in SERVING:
+            raise EvidenceError(f"server-timing line {line_number} is not a served population")
+        try:
+            sample_number = int(sample)
+            curl_value = float(curl_seconds)
+            server_value = float(server_ms)
+            transport_value = float(transport_ms)
+        except ValueError as exc:
+            raise EvidenceError(f"server-timing line {line_number} has malformed numeric evidence") from exc
+        if not all(math.isfinite(value) for value in (curl_value, server_value, transport_value)):
+            raise EvidenceError(f"server-timing line {line_number} has non-finite numeric evidence")
+        matching = [row for row in populations.get(surface, []) if row["sample"] == sample_number]
+        if len(matching) != 1 or matching[0]["path"] != request_path:
+            raise EvidenceError(f"server-timing line {line_number} has no matching served sample")
+        if abs((matching[0]["seconds"] or 0.0) - curl_value) > 0.000001:
+            raise EvidenceError(f"server-timing line {line_number} curl total disagrees with raw evidence")
+        if not (0 < server_value <= curl_value * 1000):
+            raise EvidenceError(f"server-timing line {line_number} has impossible server total")
+        if abs((curl_value * 1000 - server_value) - transport_value) > 0.0015:
+            raise EvidenceError(f"server-timing line {line_number} has inconsistent transport residual")
+        by_surface.setdefault(surface, []).append((sample_number, server_value, transport_value))
+    summaries = []
+    for surface in sorted(SERVING):
+        rows = by_surface.get(surface, [])
+        if len(rows) != samples or {row[0] for row in rows} != set(range(1, samples + 1)):
+            raise EvidenceError(f"{surface}: incomplete server-timing population")
+        retained_server = sorted(row[1] for row in rows if row[0] > 1)
+        retained_transport = sorted(row[2] for row in rows if row[0] > 1)
+        summaries.append({
+            "surface": surface,
+            "samples": samples,
+            "retained_samples": samples - 1,
+            "server_median_ms": statistics.median(retained_server),
+            "server_p90_ms": _percentile(retained_server, 0.9),
+            "transport_median_ms": statistics.median(retained_transport),
+            "transport_p90_ms": _percentile(retained_transport, 0.9),
+        })
+    return summaries
+
+
 def _require_served_identity(
     served_summaries: list[dict[str, Any]],
     tenant_a: str | None,
@@ -160,7 +294,9 @@ def verify(
     tenant_b: str | None = None,
     pat_fingerprint_a: str | None = None,
     pat_fingerprint_b: str | None = None,
+    server_timing_path: Path | None = None,
 ) -> dict[str, Any]:
+    padding_policy = verify_padding_policy(Path(__file__).resolve().parent.parent)
     populations = _load(path, samples)
     summaries = []
     for surface, (request_path, status) in {**REFUSAL, **CONTROL}.items():
@@ -178,6 +314,13 @@ def verify(
         served_credentials = _require_served_identity(
             served_summaries, tenant_a, tenant_b, pat_fingerprint_a, pat_fingerprint_b
         )
+        if server_timing_path is None:
+            raise EvidenceError("served-path acceptance requires --server-timing-tsv")
+    server_timing = (
+        _load_server_timing(server_timing_path, populations, samples)
+        if server_timing_path is not None
+        else None
+    )
     closure_allowed = require_served and len(served_summaries) == 2
     return {
         "status": "complete" if closure_allowed else "partial/open",
@@ -185,6 +328,8 @@ def verify(
         "refusal": summaries[:-1],
         "control": summaries[-1],
         "served": served_summaries,
+        "padding_policy": padding_policy,
+        **({"server_timing": server_timing} if server_timing is not None else {}),
         **({"served_credentials": served_credentials} if served_credentials else {}),
     }
 
@@ -198,6 +343,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tenant-b")
     parser.add_argument("--pat-fingerprint-a")
     parser.add_argument("--pat-fingerprint-b")
+    parser.add_argument("--server-timing-tsv", type=Path)
     args = parser.parse_args(argv)
     try:
         result = verify(
@@ -208,6 +354,7 @@ def main(argv: list[str] | None = None) -> int:
             args.tenant_b,
             args.pat_fingerprint_a,
             args.pat_fingerprint_b,
+            args.server_timing_tsv,
         )
     except (OSError, EvidenceError) as exc:
         print(f"INDETERMINATE: {exc}", file=sys.stderr)

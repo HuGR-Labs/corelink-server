@@ -177,6 +177,20 @@ struct HeadCheckpoint {
     head_witness_hash: Option<String>,
 }
 
+/// Authenticated-by-the-current-v2-head active epoch projection. The head
+/// binds `ledger_sequence/hash`; the runtime separately checks that the D1
+/// projection and configured link-key commitment agree before sealing.
+#[derive(Clone, Debug)]
+struct ActiveEpoch {
+    epoch: ChainEpoch,
+    ledger_sequence: u64,
+    ledger_hash: String,
+    key_commitment: Option<ChainHash>,
+    ledger_jcs: Vec<u8>,
+    ledger_signature_b64: String,
+    ledger_signing_key_id: u64,
+}
+
 /// One `audit_outbox` row sealed into the BLAKE3 chain. Pure value — the seal is
 /// computed in memory, then written.
 #[derive(Clone, Debug, PartialEq, Eq)]

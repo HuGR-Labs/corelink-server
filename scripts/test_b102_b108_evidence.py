@@ -111,7 +111,9 @@ def github_attestation(attestation: dict, deployment_record: dict) -> dict:
 def packet() -> dict:
     stamp = datetime.fromtimestamp(NOW - 10, timezone.utc).isoformat().replace("+00:00", "Z")
     deployments = {item: deployment(f"op-deploy-{item.lower()}") for item in verifier.ITEMS}
-    req = [row(f"op-b102-{i:02d}", method="PUT", status=200, payload_bytes=1024, server_timing="auth;dur=1", elapsed_ms=40, raw_output_sha256=RAW64) for i in range(3)]
+    req = [row(f"op-b102-{i:02d}", method="PUT", status=200, payload_bytes=1024, server_timing="auth;dur=1, ostore;dur=20, oaccounting;dur=10", elapsed_ms=40) for i in range(3)]
+    for sample in req:
+        sample["raw_output_sha256"] = verifier.wire_output_sha256(sample)
     runs = [row(f"op-b103-{i:02d}", concurrency=c, requests=c, successes=c, failures={}, wall_ms=1000 / (c / 4), throughput_rps=c / (1000 / (c / 4) / 1000), raw_output_sha256=RAW64) for i, c in enumerate((4, 16, 64))]
     samples104 = [row(f"op-b104-{i:02d}", method="GET", status=404, authenticated=True, auth_source="d1", colo="GRU", response_request_id=f"req-b104-{i:02d}", request_key=f"missing-{i}", elapsed_ms=20 + i, payload_sha256=RAW64) for i in range(10)]
     for sample in samples104:
@@ -121,7 +123,11 @@ def packet() -> dict:
         pairs.append({"tenant_id": TENANT, "operation_id": f"op-b105-{i:02d}", "control_first": i % 2 == 0,
                       "control": row(f"op-b105-c-{i:02d}", cache_mode="disabled", status="complete", revision=SHA, runner="corelink", machine="m1", toolchain="t1", command=["cargo", "test"], raw_output_sha256=RAW64, sccache_stats_raw_sha256=RAW64, duration_seconds=10, sccache={"hits": 0, "misses": 0, "read_errors": 0, "write_errors": 0}),
                       "treatment": row(f"op-b105-t-{i:02d}", cache_mode="enabled", status="complete", revision=SHA, runner="corelink", machine="m1", toolchain="t1", command=["cargo", "test"], raw_output_sha256=RAW64, sccache_stats_raw_sha256=RAW64, duration_seconds=5, sccache={"hits": 1, "misses": 0, "read_errors": 0, "write_errors": 0})})
-    samples107 = [row(f"op-b107-{i:02d}", r2_ms=20, accounting_ms=10, ostore_ms=20, storage_total_ms=30, r2_raw_output_sha256=RAW64, accounting_raw_output_sha256=RAW64) for i in range(10)]
+    samples107 = [row(f"op-b107-{i:02d}", method="PUT", status=200, payload_bytes=1024, elapsed_ms=40, server_timing="ostore;dur=20, oaccounting;dur=10", r2_ms=20, accounting_ms=10, ostore_ms=20, storage_total_ms=30) for i in range(10)]
+    for sample in samples107:
+        sample["raw_output_sha256"] = verifier.wire_output_sha256(sample)
+        sample["r2_raw_output_sha256"] = sample["raw_output_sha256"]
+        sample["accounting_raw_output_sha256"] = sample["raw_output_sha256"]
     source = subprocess.run(("git", "show", f"{SHA}:{verifier.SOURCE}"), cwd=ROOT, capture_output=True, check=True).stdout
     blob = "sha256:" + hashlib.sha256(source).hexdigest()
     b108 = {"tenant_id": TENANT, "deployment": deployments["B-108"], "source_binding": {"path": verifier.SOURCE, "commit": SHA, "blob_sha256": blob}, "counter_statement": verifier.COUNTER_SQL, "counter_statement_sha256": "sha256:" + hashlib.sha256(verifier.COUNTER_SQL.encode()).hexdigest()}
@@ -132,7 +138,7 @@ def packet() -> dict:
                 "B-104": {"tenant_id": TENANT, "deployment": deployments["B-104"], "samples": samples104, "computed": {"median_ms": 24.5, "p90_ms": 28.1}},
                 "B-105": {"tenant_id": TENANT, "deployment": deployments["B-105"], "pairs": pairs},
                 "B-106": {"tenant_id": TENANT, "deployment": deployments["B-106"], "kv_ttl_seconds": verifier.KV_PAT_ROW_TTL_SECONDS, "cold_attestation": row("op-b106-mint", mint_operation_id="op-b106-mint", minted_at_epoch=NOW - 130, unused_since_epoch=NOW - 120, observed_at_epoch=NOW - 59, mint_raw_output_sha256=RAW64, mint_response_sha256=RAW64, mint_response_binding_sha256=RAW64, mint_request_id="req-b106-mint", pat_id="pat-b106", token_id="tok-b106", expires_ms=(NOW + 300) * 1000, token_fingerprint="sha256:" + ZERO64, attestation_source={"kind": "github_actions_run", "workflow": "perf-production-evidence", "repository": verifier.REPO, "run_id": "123456789", "attempt": "1", "event": "workflow_dispatch", "ref": "refs/heads/main", "head_sha": SHA, "started_at": deployments["B-106"]["github_run_started_at"]}), "cold": row("op-b106-cold", status=404, authenticated=True, auth_source="d1", colo="GRU", response_request_id="req-b106-cold", auth_ms=40, raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64), "warm_control": row("op-b106-warm", status=404, authenticated=True, auth_source="kv", colo="GRU", response_request_id="req-b106-warm", auth_ms=40, raw_output_sha256=RAW64, token_fingerprint="sha256:" + ZERO64)},
-                "B-107": {"tenant_id": TENANT, "deployment": deployments["B-107"], "samples": [dict(s, method="PUT", status=200, payload_bytes=1024) for s in samples107], "computed": {"p50_ms": 30, "p90_ms": 30, "p99_ms": 30}},
+                "B-107": {"tenant_id": TENANT, "deployment": deployments["B-107"], "samples": samples107, "computed": {"p50_ms": 30, "p90_ms": 30, "p99_ms": 30}},
                 "B-108": b108,
             }}
     # Keep the fixture bound to the deployed runtime contract rather than a
@@ -300,6 +306,9 @@ def main() -> int:
     result = verifier.assess(packet(), ROOT, NOW)
     assert result["B-108"] == "closed"
     assert all(result[item] == "open" for item in verifier.ITEMS[:-1])
+    assert collector.storage_percentiles([
+        {"storage_total_ms": value} for value in (10, 20, 30, 40, 50)
+    ]) == {"p50_ms": 30.0, "p90_ms": 46.0, "p99_ms": 49.6}
     expect_error(lambda p: p.update(captured_at="1970-01-01T00:00:00Z"), "stale packet")
     expect_error(lambda p: p["items"]["B-102"]["requests"][0].update(tenant_id="223e4567-e89b-42d3-a456-426614174000"), "B102 tenant")
     expect_error(lambda p: p["items"]["B-102"]["deployment"].update(github_repository="HuGR/corelink-server"), "canonical repository")
@@ -338,6 +347,34 @@ def main() -> int:
     expect_error(lambda p: p["items"]["B-105"]["pairs"].pop(), "B105 six pairs")
     expect_error(lambda p: p["items"]["B-107"]["samples"][0].update(status=500), "B107 status")
     expect_error(lambda p: p["items"]["B-107"]["samples"][0].update(storage_total_ms=31), "B107 phase math")
+    def forged_b107_phase(p: dict) -> None:
+        sample = p["items"]["B-107"]["samples"][0]
+        sample["server_timing"] = "ostore;dur=21, oaccounting;dur=10"
+        sample["raw_output_sha256"] = verifier.wire_output_sha256(sample)
+        sample["r2_raw_output_sha256"] = sample["raw_output_sha256"]
+        sample["accounting_raw_output_sha256"] = sample["raw_output_sha256"]
+    expect_error(forged_b107_phase, "B107 wire phase binding")
+    def overcounted_b107_wall(p: dict) -> None:
+        sample = p["items"]["B-107"]["samples"][0]
+        sample["elapsed_ms"] = 1
+        sample["raw_output_sha256"] = verifier.wire_output_sha256(sample)
+        sample["r2_raw_output_sha256"] = sample["raw_output_sha256"]
+        sample["accounting_raw_output_sha256"] = sample["raw_output_sha256"]
+    expect_error(overcounted_b107_wall, "B107 phase sum versus wall")
+    def phases_hidden_inside_description(p: dict) -> None:
+        sample = p["items"]["B-107"]["samples"][0]
+        sample["server_timing"] = (
+            'auth;dur=1;desc="ostore;dur=20, oaccounting;dur=10"'
+        )
+        sample["raw_output_sha256"] = verifier.wire_output_sha256(sample)
+        sample["r2_raw_output_sha256"] = sample["raw_output_sha256"]
+        sample["accounting_raw_output_sha256"] = sample["raw_output_sha256"]
+    expect_error(phases_hidden_inside_description, "B107 description phase injection")
+    def missing_b102_blocking_phases(p: dict) -> None:
+        sample = p["items"]["B-102"]["requests"][0]
+        sample["server_timing"] = "auth;dur=1"
+        sample["raw_output_sha256"] = verifier.wire_output_sha256(sample)
+    expect_error(missing_b102_blocking_phases, "B102 remediated phase population")
     expect_error(lambda p: p["items"]["B-108"]["source_binding"].update(blob_sha256="b" * 64), "B108 deployed blob")
     expect_error(lambda p: p["items"]["B-104"]["samples"][0].update(operation_id=p["items"]["B-104"]["samples"][1]["operation_id"]), "duplicate operation")
     expect_error(lambda p: p["items"]["B-104"].pop("computed"), "B104 derived percentiles")

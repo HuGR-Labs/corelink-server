@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "receipt_type": "b098_ga_release_governance_blocker",
+  "backlog_id": "B-098",
+  "captured_at": "2026-09-09T15:13:33Z",
+  "checkpoint_sha": "404e17ef1dc7d205da97e65c6dc18f1225452405",
+  "status": "BLOCKED",
+  "release_tag": "v1.0.0-GA",
+  "repository_hygiene": {
+    "status": "PASS",
+    "rust_packages": 95,
+    "crate_directories": 75,
+    "okf_concepts": 170,
+    "specs_full_schema": 481,
+    "specs_yaml_only": 11,
+    "specs_total": 492,
+    "lint_policy": "workspace-inherited"
+  },
+  "release_state": {
+    "local_semver_tags": [],
+    "remote_release_tag_present": false,
+    "remote_framework_tag_present": false,
+    "remote_evidence_anchor_present": false,
+    "remote_owner_signoff_anchor_present": false,
+    "remote_ops_signoff_anchor_present": false
+  },
+  "owner_decisions": [
+    {
+      "decision": "dual_hat_release_path",
+      "status": "NOT_INVOKED",
+      "reference": "specs/03_architecture/adrs/ADR-0034b-framework-reviewer-dual-hat-fallback.md",
+      "sha256": "0441b8e98f412225d682a36b4f93696a27a980da543d24b6637da373af26da24",
+      "reason": "ADR-0034b is PROPOSED/DRAFT and only authorizes the framework reviewer freeze path after an explicit framework §42 invocation; no such invocation or two-advisor staffing evidence exists here."
+    },
+    {
+      "decision": "release_mutation",
+      "status": "NOT_AUTHORIZED",
+      "reference": "docs/handoff/2026-09-05-b098-owner-action-packet.md",
+      "sha256": null,
+      "reason": "The owner packet forbids creating a release tag until prerequisites are complete; this repair creates no tag, deploy, or remote ref."
+    }
+  ],
+  "blockers": [
+    {
+      "id": "ops-authority",
+      "status": "BLOCKED",
+      "required": "An independently controlled Ops principal and policy-pinned signing key",
+      "evidence": "docs/handoff/2026-09-09-b098-ops-authority-census.md"
+    },
+    {
+      "id": "framework-promotion",
+      "status": "BLOCKED",
+      "required": "A trusted signed framework-v1-0-0-ga tag targeting FROZEN v1.0.0",
+      "evidence": "docs/knowledge/ops/release-process.md"
+    },
+    {
+      "id": "cutover-attestation",
+      "status": "BLOCKED",
+      "required": "Executed GREEN cutover evidence bound to the exact release SHA",
+      "evidence": "docs/release/v1.0.0-GA-cutover.template.json"
+    },
+    {
+      "id": "deployment-readback",
+      "status": "BLOCKED",
+      "required": "Production readback for all five environments and one OCI digest",
+      "evidence": "docs/release/v1.0.0-GA-deployment.template.json"
+    },
+    {
+      "id": "bundled-ci",
+      "status": "BLOCKED",
+      "required": "19-pass CI evidence with release-tree identity",
+      "evidence": "docs/release/v1.0.0-GA-ci.template.json"
+    },
+    {
+      "id": "two-key-signoff",
+      "status": "BLOCKED",
+      "required": "Distinct trusted Owner and Ops signed commits bound to the release and evidence digests",
+      "evidence": "docs/release/v1.0.0-GA-signoffs.template.json"
+    }
+  ],
+  "census_binding": {
+    "path": "docs/handoff/2026-09-09-b098-ops-authority-census.md",
+    "sha256": "32c4ec73090d306f5c3b40a378f88571dc0a2c55d63c9929ad62902f29e42e47",
+    "checkpoint_sha": "404e17ef1dc7d205da97e65c6dc18f1225452405",
+    "provenance": "AUTHORED",
+    "capture_scope": "current-tree",
+    "remote_status": "ABSENT",
+    "timestamp": "2026-09-09T15:13:33Z"
+  },
+  "non_claims": [
+    "No independent Ops signoff exists.",
+    "The GA draft remains a template with unresolved placeholders.",
+    "No release tag, deployment, provider action, or remote evidence anchor was created.",
+    "A rehearsal or repository census is not production cutover evidence."
+  ],
+  "references": [
+    "BACKLOG.md#B-098",
+    "scripts/verify_b098_repo_hygiene.py",
+    "docs/handoff/2026-09-09-b098-ops-authority-census.md",
+    "docs/knowledge/ops/release-process.md",
+    "scripts/cut-v1-0-0-ga-tag.sh"
+  ]
+}

@@ -30,6 +30,14 @@ Attach the three redacted records below to the evidence bundle:
 - `reports/owner-actions/b216-exhausted-observation.md` — controlled exhausted
   message, alert, bounded requeue, and final operator disposition.
 
+The bounded operational investigation captured in
+`reports/owner-actions/b216-operational-blocker.json` is diagnostic only. It
+records the exact secret-name readback, the unavailable PagerDuty credential,
+the expired Stripe CLI authorization, and the read-only health/queue topology.
+It does not satisfy any of the three closure records above. The verifier
+reports this receipt as a pointer while keeping B-216 `OWNER_BLOCKED` until
+the alert-delivery and exhausted-observation records are attached.
+
 ## B-226 — implementation contract closed; optional runtime evidence
 
 Owner: `tl` / operations. B-226 is `done` for the repository implementation:

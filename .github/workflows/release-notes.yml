@@ -72,6 +72,9 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
+          # The branch push must use a non-Actions credential; otherwise the
+          # subsequent pull_request event is suppressed and no checks appear.
+          token: ${{ secrets.BOT_PR_TOKEN }}
 
       - name: Resolve refs
         id: refs
@@ -145,11 +148,13 @@ jobs:
         if: github.event_name == 'push'
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BOT_PR_TOKEN: ${{ secrets.BOT_PR_TOKEN }}
           NOTES_PATH: ${{ steps.gen.outputs.outpath }}
           VERSION: ${{ steps.refs.outputs.version }}
         run: |
           set -euo pipefail
+          : "${BOT_PR_TOKEN:?BOT_PR_TOKEN must be configured before opening an auto-PR}"
+          export GH_TOKEN="${BOT_PR_TOKEN}"
           # Use a per-tag branch so editorial PRs don't collide.
           BRANCH="releases/v${VERSION}"
           git config user.name  "corelink-release-bot"
@@ -162,6 +167,8 @@ jobs:
           From/To:    ${{ steps.refs.outputs.from }}..${{ steps.refs.outputs.to }}
           Generator:  scripts/generate-release-notes.py
           Editorial:  marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md
+
+          Signed-off-by: corelink-release-bot <release-bot@humangr.com>
           "
           git push -u origin "$BRANCH"
 
@@ -169,10 +176,12 @@ jobs:
         if: github.event_name == 'push'
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BOT_PR_TOKEN: ${{ secrets.BOT_PR_TOKEN }}
           VERSION: ${{ steps.refs.outputs.version }}
         run: |
           set -euo pipefail
+          : "${BOT_PR_TOKEN:?BOT_PR_TOKEN must be configured before opening an auto-PR}"
+          export GH_TOKEN="${BOT_PR_TOKEN}"
           gh pr create \
             --base main \
             --head "releases/v${VERSION}" \
@@ -188,6 +197,7 @@ jobs:
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@f3cad8bcbf209fe591aa1823e372c5d96b7fc800 # v2.3.1
         with:
+          token: ${{ secrets.BOT_PR_TOKEN }}
           tag_name: ${{ github.ref_name }}
           name: "CoreLink ${{ steps.refs.outputs.version }}"
           body_path: ${{ steps.gen.outputs.outpath }}

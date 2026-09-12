@@ -24,6 +24,10 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Owner-action evidence binding.** B-086 receipts now identify and verify their
+  immutable capture commit; B-154 surface references and signed-document hashes
+  are checked against source bytes, with mutation coverage for both boundaries.
+
 - **CAS batch-read cancellation and R2 timeout safety.** Batch-read tasks now
   retain the tenant/global capacity envelope until synchronous reads unwind;
   queued work is aborted and terminal paths drain it. R2 operations have

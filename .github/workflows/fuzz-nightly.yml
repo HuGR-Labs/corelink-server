@@ -73,6 +73,14 @@ jobs:
     name: fuzz 30m (${{ matrix.crate }}::${{ matrix.target }})
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 40
+    # rust-toolchain.toml pins stable for normal workspace commands. Merely
+    # prepending the nightly bin directory is insufficient when rustup applies
+    # that directory override, so select the already-installed nightly without
+    # installing or mutating the shared toolchain.
+    env:
+      RUSTUP_TOOLCHAIN: nightly-x86_64-apple-darwin
+      FUZZ_CRATE: ${{ matrix.crate }}
+      FUZZ_TARGET: ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
@@ -99,6 +107,19 @@ jobs:
       - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly; no rustup mutation)
         run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
 
+      # The installer binary is kept in its runner-local tools directory, but
+      # the Cargo registry/git checkout and build output used by `cargo fuzz`
+      # must not fall back to the shared ~/.cargo or a shared fuzz target.
+      # Every matrix leg gets a fresh run/attempt/crate/target namespace.
+      - name: Isolate fuzz Cargo and target state per matrix leg
+        run: |
+          set -euo pipefail
+          CARGO_HOME="${RUNNER_TEMP}/corelink-fuzz-cargo/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${FUZZ_CRATE}/${FUZZ_TARGET}"
+          CARGO_TARGET_DIR="${RUNNER_TEMP}/corelink-fuzz-target/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${FUZZ_CRATE}/${FUZZ_TARGET}"
+          mkdir -p "${CARGO_HOME}" "${CARGO_TARGET_DIR}"
+          echo "CARGO_HOME=${CARGO_HOME}" >> "${GITHUB_ENV}"
+          echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR}" >> "${GITHUB_ENV}"
+
       # `cargo install` compiles cargo-fuzz's OWN dependency tree (aws-lc-sys, syn,
       # tokio, ctutils, parking_lot …) into whatever CARGO_HOME points at. Pointed at
       # the SHARED `~/.cargo`, it mutates the registry that every other concurrent
@@ -112,8 +133,8 @@ jobs:
       # taiki-e/install-action at the SHA this repo pins, so it would silently fall
       # back to this same from-source install.
       #
-      # Fix: build it into a PER-RUNNER CARGO_HOME. Isolated, so the shared registry
-      # is never written; persistent, so each runner pays the compile at most once.
+      # Fix: build the tool itself into a PER-RUNNER CARGO_HOME. The preceding
+      # step separately isolates the Cargo state used by the actual fuzz run.
       - name: Install cargo-fuzz (isolated CARGO_HOME — never the shared one)
         timeout-minutes: 20
         run: |

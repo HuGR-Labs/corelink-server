@@ -400,7 +400,7 @@ impl PhaseLedger {
     }
 
     #[cfg(test)]
-    fn recordings_for_test(&self, phase: Phase) -> usize {
+    pub(crate) fn recordings_for_test(&self, phase: Phase) -> usize {
         self.recording_counter(phase).load(Ordering::Relaxed)
     }
 

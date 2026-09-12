@@ -1,0 +1,3 @@
+# Canonical SSH trust root for CoreLink server release tags and approvals.
+# The Ops key is intentionally absent until an independent authority is nominated.
+gustavo@humangr.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDU+CAIqds9gkCXziD6G/5WKWZOFNBQewpo/hDbj/t7B

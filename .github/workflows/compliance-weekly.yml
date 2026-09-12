@@ -68,6 +68,9 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          # The branch push must use a non-Actions credential; otherwise the
+          # resulting pull_request event is suppressed and no checks appear.
+          token: ${{ secrets.BOT_PR_TOKEN }}
 
       - name: Compute digest date
         id: date
@@ -138,18 +141,11 @@ jobs:
         if: github.event.inputs.dry_run != 'true'
         id: pr
         env:
-          # ⚠️ KNOWN GAP — the PR this step opens gets ZERO checks. GitHub
-          # deliberately does not trigger workflows for events created with
-          # `GITHUB_TOKEN` (recursion guard), so the digest PR arrives with no
-          # dco / gitleaks / vale run at all and `scripts/pre-merge-gate-check.sh`
-          # correctly refuses it. Closing this needs a non-Actions credential
-          # (a fine-grained PAT or GitHub App token with contents:write +
-          # pull_requests:write) swapped in here — owner-gated, tracked.
-          # Until then the digest PR must be re-opened by a human/agent
-          # credential to be gate-able.
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BOT_PR_TOKEN: ${{ secrets.BOT_PR_TOKEN }}
         run: |
           set -euo pipefail
+          : "${BOT_PR_TOKEN:?BOT_PR_TOKEN must be configured before opening an auto-PR}"
+          export GH_TOKEN="${BOT_PR_TOKEN}"
           BRANCH="auto/compliance-digest-${{ steps.date.outputs.digest_date }}"
           git checkout -b "${BRANCH}"
           git add specs/_compliance/weekly-digests/${{ steps.date.outputs.digest_date }}.md
@@ -188,7 +184,7 @@ jobs:
           steps.pr.outputs.pr_created == 'true' &&
           github.event.inputs.dry_run != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.BOT_PR_TOKEN }}
           PR_URL: ${{ steps.pr.outputs.pr_url }}
           REASONS: ${{ steps.digest.outputs.reasons }}
         run: |

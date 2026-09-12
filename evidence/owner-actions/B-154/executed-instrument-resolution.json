@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09",
+  "surfaces": [
+    {
+      "surface": "legal/dpa/v1.0.0.en-US.md",
+      "original_claim": "Audit events are retained in immutable R2 with Object Lock for 7 years.",
+      "decision": "unresolved",
+      "effective_at": null,
+      "evidence_reference": "legal/dpa/v1.0.0.en-US.md:110; sha256 86b365e73e7da6405ae2b64126bbdfcff6c1e709666d7162827a179a313a73c3"
+    },
+    {
+      "surface": "legal/sla/v1.0.0.md",
+      "original_claim": "The Enterprise tier promises BYOK kill-switch p99 <= 5 min.",
+      "decision": "unresolved",
+      "effective_at": null,
+      "evidence_reference": "legal/sla/v1.0.0.md:46; sha256 4b6e39a0891eecf32640e9815386436e155e3334cd655ea180ca6f3bc1af6d09"
+    },
+    {
+      "surface": "marketing/launch/CASE-STUDIES/enterprise-byok.md",
+      "original_claim": "The former Enterprise BYOK testimonial claimed a completed kill-switch drill and compliance artifact.",
+      "decision": "unresolved",
+      "effective_at": null,
+      "evidence_reference": "marketing/launch/CASE-STUDIES/enterprise-byok.md:65-70; sha256 699eb7cab5ab3795990a2a79e90ac97e43fda8234f549dd8315900a7a8e9ca03"
+    }
+  ],
+  "decisions": {
+    "dpa_object_lock": "unresolved: owner/counsel must choose amendment, notice, or delivered Object Lock capability",
+    "sla_byok_kill_switch": "unresolved: owner/counsel must choose amendment, notice, or delivered BYOK capability",
+    "case_study_attribution": "unresolved: source is restricted to a draft with no customer attribution until evidence and approval exist"
+  },
+  "signed_documents": [
+    {
+      "path": "legal/dpa/v1.0.0.en-US.md",
+      "version": "1.0.0",
+      "sha256": "86b365e73e7da6405ae2b64126bbdfcff6c1e709666d7162827a179a313a73c3"
+    },
+    {
+      "path": "legal/sla/v1.0.0.md",
+      "version": "1.0.0",
+      "sha256": "4b6e39a0891eecf32640e9815386436e155e3334cd655ea180ca6f3bc1af6d09"
+    }
+  ],
+  "notices": [
+    {
+      "surface": "legal/dpa/v1.0.0.en-US.md",
+      "status": "NOT_EXECUTED",
+      "effective_at": null,
+      "reference": null,
+      "blocker": "Owner/counsel signature and counterparty notice authority are absent from this repository-only run."
+    },
+    {
+      "surface": "legal/sla/v1.0.0.md",
+      "status": "NOT_EXECUTED",
+      "effective_at": null,
+      "reference": null,
+      "blocker": "Owner/counsel signature and counterparty notice authority are absent from this repository-only run."
+    },
+    {
+      "surface": "marketing/launch/CASE-STUDIES/enterprise-byok.md",
+      "status": "NOT_EXECUTED",
+      "effective_at": null,
+      "reference": null,
+      "blocker": "No customer attribution, drill evidence, or customer approval exists; the source remains a restricted draft."
+    }
+  ],
+  "capability_evidence": {
+    "object_lock": {
+      "status": "NOT_IMPLEMENTED",
+      "reference": "evidence/owner-actions/B-046/object-lock-probe.json"
+    },
+    "byok_kill_switch": {
+      "status": "NOT_IMPLEMENTED",
+      "reference": "crates/corelink-container/src/routes/byok_admin.rs:261-292; scripts/verify_b154_instrument_claims.py"
+    },
+    "case_study": {
+      "status": "NOT_PUBLISHED",
+      "reference": "marketing/launch/CASE-STUDIES/enterprise-byok.md:5,65-75"
+    }
+  },
+  "operator": "read-only repository executor; owner/counsel action not performed"
+}

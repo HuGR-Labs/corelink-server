@@ -383,8 +383,12 @@ def check_b216(root: Path) -> None:
     _require(consumer, 'const DLQ_EVENT_NAME = "dsr.erasure.dead_letter"', lane)
     _require(consumer, 'error: "http_rejected" | "transport_error"', lane)
     _require(consumer, 'return { status: "failed", error: "transport_error" };', lane)
-    _require(body, 'paging.status === "not_configured"', lane)
+    paging = _function(consumer, "async function pageDlqEvent(", lane)
+    _require(paging, "response.status !== 202", lane)
+    _require(body, 'paging.status !== "delivered"', lane)
+    _require(body, 'paging.status === "failed" ? paging.error : "route_not_configured"', lane)
     _require(body, 'action: "retry_paging"', lane)
+    _require(body, 'requeue_error: "transport_error"', lane)
     index = _code(_read(root, "apps/signup-worker/src/index.ts"))
     _require(index, 'batch.queue === "corelink-dsr-erasure-dlq"', lane)
     _require(index, "await handleErasureDlqBatch(", lane)
@@ -700,6 +704,27 @@ def self_test(root: Path = ROOT) -> None:
                 "B-216",
                 'return { status: "failed", error: "transport_error" };',
                 'return { status: "failed", error: String("upstream") };',
+                "apps/signup-worker/src/webhooks/dsr_consumer.ts",
+            ),
+            (
+                "B-216-accept-any-2xx",
+                "B-216",
+                "response.status !== 202",
+                "!response.ok",
+                "apps/signup-worker/src/webhooks/dsr_consumer.ts",
+            ),
+            (
+                "B-216-missing-route-open",
+                "B-216",
+                'paging.status !== "delivered"',
+                'paging.status === "failed"',
+                "apps/signup-worker/src/webhooks/dsr_consumer.ts",
+            ),
+            (
+                "B-216-requeue-error-leak",
+                "B-216",
+                'requeue_error: "transport_error"',
+                "requeue_error: String(err)",
                 "apps/signup-worker/src/webhooks/dsr_consumer.ts",
             ),
         )

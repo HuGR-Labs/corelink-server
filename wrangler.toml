@@ -193,6 +193,14 @@ database_id = "PLACEHOLDER_D1_CONFIG_DB_ID"
 preview_database_id = "PLACEHOLDER_D1_CONFIG_DB_PREVIEW_ID"
 migrations_dir = "migrations/d1"
 
+# B-072 — the default/dev synthetic cron has a concrete, same-account receiver.
+# Service bindings are non-inheritable in Wrangler, so the explicit service
+# lists under every production environment below remain authoritative and do
+# not inherit this drill-only dependency.
+[[services]]
+binding = "SCHEDULED_DRILL_DELIVERY"
+service = "corelink-synthetic-pager"
+
 # R2-10 — Rollout-controller Durable Object namespace (WI-S13-*),
 # consumed by `corelink-cf-bindings::CfDurableObjectAdapter`. Single
 # DO instance per rollout_id; CF hashes id_from_name into a 256-bit
@@ -276,26 +284,13 @@ crons = [
     "0 14 * * 1",
 ]
 
-# Staging-only receiver binding. The environment is intentionally triggerless
-# until the synthetic-drill activation review enables its cron explicitly.
-[env.staging]
-name = "corelink-staging"
-workers_dev = false
-
-[env.staging.triggers]
-crons = []
-
-[[env.staging.services]]
-binding = "SCHEDULED_DRILL_DELIVERY"
-service = "corelink-synthetic-pager-staging"
+# The root staging desired state is closed in infra/staging/topology.json.
+# It is deliberately NOT rendered here until Cloudflare has returned the
+# independent D1/KV resource IDs and all named secrets exist. A partial
+# [env.staging] inherits top-level development resources and is forbidden.
 
 # Secrets: `wrangler secret put STRIPE_KEY` etc
 # - CLERK_SECRET_KEY
-# - CLERK_ISSUER_URL  — Clerk JWT issuer URL pin; read by worker/src/index.ts to
-#   validate the `iss` claim on inbound Clerk JWTs (prevents cross-instance token
-#   replay). Value is the Clerk instance issuer URL (e.g.
-#   `https://<instance>.clerk.accounts.dev`). Rotate on instance change or compromise.
-#   Set via: wrangler secret put CLERK_ISSUER_URL --env prod
 # - STRIPE_SECRET_KEY
 # - DATABASE_URL (Neon Postgres)
 # - PAT_SIGNING_KEY  — hex-encoded HMAC-SHA256 signing key (≥ 32 bytes decoded).
@@ -321,7 +316,11 @@ name = "corelink-prod"
 # budget explicit at 512; the container writes bounded JSON1 chunks (32 rows)
 # and the signup-worker caller still caps calls + wall time, so this raises
 # burst capacity without an unbounded D1 write storm.
-vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad", R2_CAS_REGION = "iad", R2_CHUNK_BUCKET = "corelink-chunk-iad", R2_CHUNK_REGION = "iad", EDGE_PUBLIC_READ = "serve", EDGE_ASYNC_METER = "on", EDGE_DO_METER = "serve", OCI_PUBLIC_DEDUP_ENABLED = "1", OCI_UPSTREAM_ON_MISS = "1", AUDIT_DRAIN_BATCH_LIMIT = "512", AUDIT_DRAIN_LEASE_ENABLED = "1", EDGE_FIND_MISSING = "on" }
+# B-372: this exact public issuer is security configuration, not credential
+# material. Keep it versioned so a deploy cannot retain/recreate the retired app
+# hostname pin and reject otherwise-valid production sessions. Regional Workers
+# intentionally have no Clerk surface; do not copy this var into prod-*/vars.
+vars = { ENVIRONMENT = "prod", CLERK_ISSUER_URL = "https://clerk.corelink-app.humangr.com", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad", R2_CAS_REGION = "iad", R2_CHUNK_BUCKET = "corelink-chunk-iad", R2_CHUNK_REGION = "iad", EDGE_PUBLIC_READ = "serve", EDGE_ASYNC_METER = "on", EDGE_DO_METER = "serve", OCI_PUBLIC_DEDUP_ENABLED = "1", OCI_UPSTREAM_ON_MISS = "1", AUDIT_DRAIN_BATCH_LIMIT = "512", AUDIT_DRAIN_LEASE_ENABLED = "1", EDGE_FIND_MISSING = "on" }
 
 [env.prod.triggers]
 crons = []
@@ -413,8 +412,8 @@ service = "corelink-prod-syd"
 # entrypoint the target Worker does not export is rejected at deploy time.
 #
 # Scope note: this is the ONLY ANALYTICS_SVC binding in the root Worker config.
-# The staging environment above is reserved for the separately reviewed
-# synthetic-drill binding; the regional envs (prod-sam/lhr/nrt/syd) declare no
+# The unprovisioned staging desired-state contract reserves its own synthetic
+# receiver binding; the regional envs (prod-sam/lhr/nrt/syd) declare no
 # ANALYTICS_SVC binding, so this emit stays a silent no-op there.
 [[env.prod.services]]
 binding = "ANALYTICS_SVC"
@@ -513,7 +512,7 @@ class_name = "CoreLinkServer"
 # WP-S1.2 real AC R2 handler + WP-S1.2 real D1 Admin handler + cas.rs
 # block_in_place fix. Once 2aa2be6f's Dockerfile cache invalidation fix proves
 # itself end-to-end in CI, revert to "./Dockerfile".
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-corelinkserver-prod:2cd609d25-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-corelinkserver-prod:a518a9839-r1"
 # Cap 20→200 (2026-08-19). 1 `basic` container (0.25 vCPU) per active tenant; idle
 # scales to zero so a high ceiling is free when idle. The BINDING account limit is
 # vCPU, NOT instance count: CF RESERVES max_instances × per-instance-vCPU against
@@ -781,7 +780,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-sam.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:2cd609d25-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:a518a9839-r1"
 # Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
 max_instances = 200
 instance_type = "basic"
@@ -957,7 +956,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-lhr.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:2cd609d25-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:a518a9839-r1"
 # Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
 max_instances = 200
 instance_type = "basic"
@@ -1127,7 +1126,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-nrt.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:2cd609d25-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:a518a9839-r1"
 # Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
 max_instances = 200
 instance_type = "basic"
@@ -1293,7 +1292,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-syd.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:2cd609d25-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:a518a9839-r1"
 # Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
 max_instances = 200
 instance_type = "basic"

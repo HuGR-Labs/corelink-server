@@ -50,9 +50,10 @@ def baseline_for(*scenarios: str) -> dict[str, dict[str, object]]:
     return {scenario: {"median_ms": 10, "p99_ms": 20} for scenario in scenarios}
 
 
-def run_gate(tmp_path: Path, expected: str = ",".join(SCENARIOS)) -> int:
-    return MODULE.main(
-        [
+def run_gate(
+    tmp_path: Path, expected: str = ",".join(SCENARIOS), *, bootstrap: bool = False
+) -> int:
+    args = [
             "--results-dir",
             str(tmp_path / "current"),
             "--baseline",
@@ -60,7 +61,9 @@ def run_gate(tmp_path: Path, expected: str = ",".join(SCENARIOS)) -> int:
             "--expected-scenarios",
             expected,
         ]
-    )
+    if bootstrap:
+        args.append("--bootstrap")
+    return MODULE.main(args)
 
 
 def test_complete_population_compares_and_updates(tmp_path: Path) -> None:
@@ -70,6 +73,34 @@ def test_complete_population_compares_and_updates(tmp_path: Path) -> None:
     write_baseline(tmp_path / "baseline.json", baseline_for(*SCENARIOS))
 
     assert run_gate(tmp_path) == MODULE.EXIT_OK
+
+
+def test_bootstrap_seeds_only_a_missing_complete_successful_population(tmp_path: Path) -> None:
+    current = tmp_path / "current"
+    for scenario in SCENARIOS:
+        write_summary(current, scenario)
+
+    assert run_gate(tmp_path, bootstrap=True) == MODULE.EXIT_OK
+    seeded = MODULE.load_baseline(tmp_path / "baseline.json")
+    assert set(seeded) == set(SCENARIOS)
+
+    # Bootstrap is one-shot: it cannot overwrite established evidence.
+    assert run_gate(tmp_path, bootstrap=True) == MODULE.EXIT_USAGE
+
+
+def test_bootstrap_rejects_partial_or_failed_population(tmp_path: Path) -> None:
+    current = tmp_path / "current"
+    for scenario in SCENARIOS[:-1]:
+        write_summary(current, scenario)
+    assert run_gate(tmp_path, bootstrap=True) == MODULE.EXIT_USAGE
+    assert not (tmp_path / "baseline.json").exists()
+
+    write_summary(current, SCENARIOS[-1])
+    (current / "webhook" / "status.json").write_text(
+        json.dumps({"scenario": "webhook", "outcome": "failure"})
+    )
+    assert run_gate(tmp_path, bootstrap=True) == MODULE.EXIT_USAGE
+    assert not (tmp_path / "baseline.json").exists()
 
 
 @pytest.mark.parametrize("mutation", ["missing-baseline", "malformed-baseline", "partial-baseline"])

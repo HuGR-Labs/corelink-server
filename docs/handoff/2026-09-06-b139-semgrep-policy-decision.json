@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "finding": "B-139",
-  "status": "engineering-complete-evidence-pending",
-  "non_claim": "This artifact records policy and executable evidence boundaries only. It does not claim a successful full scan, dispatch, SARIF upload, or Advanced Security availability.",
+  "status": "repo-calibrated-bundled-evidence-pending",
+  "non_claim": "This artifact records a real local custom-pack scan and executable policy boundaries. It does not claim a bundled-pack scan, dispatch, SARIF upload, or Advanced Security availability.",
   "scan_population": {
     "bundled_rulesets": [
       "p/security-audit",
@@ -12,14 +12,22 @@
       "p/owasp-top-ten",
       "p/cwe-top-25"
     ],
+    "bundled_lock": "./semgrep-bundled-lock.json",
+    "bundled_lock_policy": "Each canonical registry response is accepted only when its SHA-256 matches the checked-in lock; mutable p/* aliases are never passed directly to Semgrep.",
     "custom_config": "./semgrep.yml",
     "custom_rule_count": 4,
-    "custom_rule_prefix": "corelink."
+    "custom_rule_prefix": "corelink.",
+    "custom_rule_severities": {
+      "corelink.rust.no-unwrap-in-src": "WARNING",
+      "corelink.rust.no-tokio-in-lib-crates": "ERROR",
+      "corelink.rust.prop-assert-matches-struct-variant": "ERROR",
+      "corelink.rust.no-expect-in-byok-src": "WARNING"
+    }
   },
   "policy": {
     "blocking_condition": "A finding blocks only when its SARIF level is error, or when the Semgrep process exits nonzero for an execution or output error.",
     "bundled_findings": "Bundled findings are counted separately by SARIF level; warning, note, and none are retained and reported but do not block.",
-    "custom_findings": "CoreLink rules declare metadata policy explicit-error and severity ERROR; an unsuppressed custom finding at level error blocks.",
+    "custom_findings": "High-precision CoreLink rules R2/R3 declare explicit-error and block. R1/R4 are advisory duplicates of blocking Clippy lints because Semgrep OSS cannot reliably distinguish Rust code enclosed by colocated cfg(test) modules; their warnings remain retained and counted.",
     "suppression": "Custom suppressions remain subject to the runbook nosemgrep reason and ADR convention; this policy does not broaden exclusions.",
     "fail_closed": true,
     "semgrep_error_flag": "not used; the evaluator applies the explicit SARIF ERROR policy and preserves nonzero scanner failures"
@@ -40,7 +48,21 @@
     "findings": 4228,
     "scope": "historical Semgrep run 31365335113",
     "is_current_scan": false,
-    "requires_bundle_rerun": true
+    "requires_bundle_rerun": true,
+    "custom_calibration_2026_09_09": {
+      "semgrep_version": "1.164.0",
+      "before": {
+        "total": 3966,
+        "corelink.rust.no-unwrap-in-src": 3935,
+        "corelink.rust.no-expect-in-byok-src": 31,
+        "blocking": 3966
+      },
+      "decision": "R1/R4 WARNING because measured findings are dominated by cfg(test) code and precise blocking is already enforced by Clippy; R2/R3 remain ERROR. R3 was converted from a non-matching Rust macro AST pattern to tokenized generic-mode patterns that distinguish strings/comments from Rust's struct-rest operator; it exposed 11 real test weaknesses, all repaired by payload assertions.",
+      "expected_after_repairs": {
+        "blocking": 0,
+        "advisory_baseline": 2615
+      }
+    }
   },
   "closure": {
     "requires": [
@@ -48,6 +70,6 @@
       "No explicit ERROR findings, or remediation/approved suppression for every ERROR",
       "Truthful upload outcome or retained artifact evidence when Advanced Security is unavailable"
     ],
-    "owner_action": "Dispatch and Advanced Security account state remain external owner actions."
+    "owner_action": "GitHub Advanced Security upload is a separate unavailable provider capability; retained local SARIF remains the evidence path and does not block repository calibration."
   }
 }

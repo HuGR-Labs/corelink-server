@@ -34,6 +34,8 @@ pub struct R2CasHandler {
     /// `None` → a tenant configured for `crypto_mode='random'` fails CLOSED on
     /// the data plane (never plaintext); Mode A (convergent) is unaffected.
     byok_mode_b: Option<Arc<ModeBEncryptor>>,
+    /// Tenant-wide transition exclusion plus authoritative generation catalog.
+    byok_runtime_gate: Option<Arc<dyn ByokRuntimeGate>>,
     #[cfg(test)]
     test_post_header_body_timeout: bool,
 }
@@ -71,6 +73,7 @@ impl R2CasHandler {
             byok_config_cache: None,
             tcs_resolver: None,
             byok_mode_b: None,
+            byok_runtime_gate: None,
             #[cfg(test)]
             test_post_header_body_timeout: false,
         }
@@ -125,10 +128,9 @@ impl R2CasHandler {
     /// GATED-INERT: encryption engages ONLY for a tenant whose
     /// `tenant_byok_config.state == 'active'`; every other tenant (and the
     /// `_public` namespace) keeps the exact plaintext path. The production
-    /// builder ([`build_r2_cas_handler_from_env`]) does NOT call this yet —
-    /// onboarding (the sole writer of the `active` state) is a later wave, and
-    /// the default build links no real `KmsProvider` — so production stays on
-    /// the unchanged plaintext path until that wave wires a provider here.
+    /// builder ([`build_r2_cas_handler_from_env`]) calls this when exactly one
+    /// real KMS feature is compiled. The default no-provider build remains on
+    /// the unchanged plaintext path and activation itself returns 501.
     #[must_use]
     pub fn with_byok(
         mut self,
@@ -150,6 +152,56 @@ impl R2CasHandler {
         self
     }
 
+    /// Attach the mandatory production data-plane gate/catalog pair.
+    #[must_use]
+    pub fn with_byok_runtime_gate(mut self, gate: Arc<dyn ByokRuntimeGate>) -> Self {
+        self.byok_runtime_gate = Some(gate);
+        self
+    }
+
+    fn acquire_byok_data(
+        &self,
+        tenant: &str,
+        operation: DataOperation,
+    ) -> Result<Option<ByokDataGuard>, CasHandlerError> {
+        if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
+            return Ok(None);
+        }
+        let Some(gate) = self.byok_runtime_gate.as_ref() else {
+            return Ok(None);
+        };
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| {
+            handle.block_on(ByokDataGuard::acquire(Arc::clone(gate), tenant, operation))
+        })
+        .map(Some)
+        .map_err(|error| CasHandlerError::Internal(format!("BYOK data gate: {error}")))
+    }
+
+    fn validate_byok_return(
+        &self,
+        guard: Option<&mut ByokDataGuard>,
+    ) -> Result<(), CasHandlerError> {
+        let Some(guard) = guard else {
+            return Ok(());
+        };
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| handle.block_on(guard.finish(true)))
+            .map_err(|error| CasHandlerError::Internal(format!("BYOK return validation: {error}")))
+    }
+
+    fn finish_byok_mutation(
+        &self,
+        guard: Option<&mut ByokDataGuard>,
+    ) -> Result<(), CasHandlerError> {
+        let Some(guard) = guard else {
+            return Ok(());
+        };
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| handle.block_on(guard.finish(false)))
+            .map_err(|error| CasHandlerError::Internal(format!("BYOK data release: {error}")))
+    }
+
     /// Resolve the BYOK plan for a (tenant, digest, algo): the **physical R2 key
     /// digest** (§4-hardened for an active tenant — audit H-4) plus the body
     /// crypto plan. Single source of truth for the read/write/exists/delete
@@ -162,11 +214,12 @@ impl R2CasHandler {
     ///   [`CryptoContext`].
     /// - `Err(..)` — active-but-unresolvable (KMS/Tcs down, Mode-B unwired,
     ///   partial): FAIL CLOSED (5xx); NEVER plaintext.
-    async fn resolve_byok(
+    async fn resolve_byok_with_guard(
         &self,
         tenant: &str,
         digest: &str,
         algo: DigestAlgo,
+        guard: Option<&ByokDataGuard>,
     ) -> Result<ByokResolved, CasHandlerError> {
         let plaintext = || ByokResolved {
             physical_digest: digest.to_owned(),
@@ -186,11 +239,18 @@ impl R2CasHandler {
         }
         // ONE D1 read on a cache miss; cached (incl. the not-configured answer).
         // A config error fails closed — never a silent plaintext downgrade.
-        let Some(cfg) = cache
-            .get(tenant)
-            .await
-            .map_err(|e| CasHandlerError::Internal(format!("byok config read: {e}")))?
-        else {
+        let authoritative = match guard {
+            Some(guard) => Some(guard.intent().map_err(CasHandlerError::Internal)?),
+            None => None,
+        };
+        let cfg = match authoritative {
+            Some(intent) => intent.config.clone(),
+            None => cache
+                .get(tenant)
+                .await
+                .map_err(|e| CasHandlerError::Internal(format!("byok config read: {e}")))?,
+        };
+        let Some(cfg) = cfg else {
             return Ok(plaintext());
         };
         match engagement_for(&cfg) {
@@ -204,7 +264,7 @@ impl R2CasHandler {
                 // convergent DEK, and BOTH modes use it to §4-harden the physical
                 // R2 key (audit H-4: the on-disk key reveals nothing without it).
                 let tcs = resolver
-                    .resolve(&cfg)
+                    .resolve_at_version(&cfg, authoritative.and_then(|intent| intent.tcs_version))
                     .await
                     .map_err(|e| CasHandlerError::Internal(format!("byok tcs resolve: {e}")))?;
                 let physical_digest = harden_digest(&tcs, digest);
@@ -240,120 +300,15 @@ impl R2CasHandler {
         }
     }
 
-    /// Encrypt the body for a resolved plan. `Ok(None)` ⇒ store the plaintext
-    /// unchanged; `Ok(Some(ct))` ⇒ store the ciphertext blob; `Err` ⇒ fail closed
-    /// (the caller returns before any PUT — plaintext is NEVER stored).
-    async fn encrypt_body(
-        &self,
-        plan: &ByokBodyPlan,
-        plaintext: &[u8],
-    ) -> Result<Option<Vec<u8>>, CasHandlerError> {
-        match plan {
-            ByokBodyPlan::Plaintext => Ok(None),
-            ByokBodyPlan::Convergent { tcs, ctx } => {
-                let stored = encrypt_cas_blob(plaintext, tcs, ctx)
-                    .map_err(|e| CasHandlerError::Internal(format!("byok encrypt: {e}")))?;
-                Ok(Some(stored))
-            }
-            ByokBodyPlan::Random { ctx } => {
-                let mode_b = self.byok_mode_b.as_ref().ok_or_else(|| {
-                    CasHandlerError::Internal("byok mode-b encryptor missing".to_owned())
-                })?;
-                let stored = mode_b
-                    .encrypt(plaintext, ctx)
-                    .await
-                    .map_err(|e| CasHandlerError::Internal(format!("byok mode-b encrypt: {e}")))?;
-                Ok(Some(stored))
-            }
-        }
-    }
-
-    /// Decrypt the stored body for a resolved plan. `Plaintext` ⇒ return the
-    /// stored bytes unchanged; otherwise decrypt (fail closed on any failure —
-    /// raw stored bytes are NEVER served). The post-decrypt content-hash
-    /// re-verify (audit C1) runs on the returned PLAINTEXT, in the caller.
-    async fn decrypt_body(
-        &self,
-        plan: &ByokBodyPlan,
-        stored: Vec<u8>,
-    ) -> Result<Vec<u8>, CasHandlerError> {
-        match plan {
-            ByokBodyPlan::Plaintext => Ok(stored),
-            ByokBodyPlan::Convergent { tcs, ctx } => decrypt_cas_blob(&stored, tcs, ctx)
-                .map_err(|e| CasHandlerError::Internal(format!("byok decrypt: {e}"))),
-            ByokBodyPlan::Random { ctx } => {
-                let mode_b = self.byok_mode_b.as_ref().ok_or_else(|| {
-                    CasHandlerError::Internal("byok mode-b encryptor missing".to_owned())
-                })?;
-                mode_b
-                    .decrypt(&stored, ctx)
-                    .await
-                    .map_err(|e| CasHandlerError::Internal(format!("byok mode-b decrypt: {e}")))
-            }
-        }
-    }
-
-    /// BYOK Wave 4a — reclaim the Mode-B `byok_envelope` row for a resolved plan
-    /// AFTER the R2 object has been deleted. ONLY Mode B (`Random`) writes an
-    /// envelope row, so `Plaintext` / `Convergent` (Mode A) are no-ops.
-    ///
-    /// Ordering + fail-safety (frozen policy §3): the caller deletes the R2
-    /// object FIRST, then calls this. A failed reclaim leaves an orphan
-    /// wrapped-DEK row that now wraps NOTHING (the blob is already gone) — the
-    /// SAFE-fail direction — so the caller WARNS and continues rather than fail
-    /// the whole delete (which could leave a readable blob whose key was
-    /// destroyed). `Ok(())` ⇒ nothing to reclaim or reclaim succeeded.
-    async fn reclaim_byok_envelope(&self, plan: &ByokBodyPlan) -> Result<(), String> {
-        if let ByokBodyPlan::Random { ctx } = plan {
-            if let Some(mode_b) = self.byok_mode_b.as_ref() {
-                return mode_b.reclaim(ctx).await;
-            }
-        }
-        Ok(())
-    }
-
-    /// BYOK write hook (test-facing): resolve + encrypt the body. The production
-    /// `write` path resolves ONCE and calls [`Self::encrypt_body`] directly.
     #[cfg(test)]
-    async fn byok_encrypt_for_write(
-        &self,
-        req: &CasWriteRequest,
-    ) -> Result<Option<Vec<u8>>, CasHandlerError> {
-        let resolved = self
-            .resolve_byok(&req.tenant, &req.claimed_hash, req.algo)
-            .await?;
-        self.encrypt_body(&resolved.plan, &req.bytes).await
-    }
-
-    /// BYOK read hook (test-facing): resolve + decrypt the stored body. The
-    /// production `read` path resolves ONCE and calls [`Self::decrypt_body`].
-    #[cfg(test)]
-    async fn byok_decrypt_for_read(
-        &self,
-        req: &CasReadRequest,
-        stored: Vec<u8>,
-    ) -> Result<Vec<u8>, CasHandlerError> {
-        let resolved = self.resolve_byok(&req.tenant, &req.hash, req.algo).await?;
-        self.decrypt_body(&resolved.plan, stored).await
-    }
-
-    /// BYOK delete-reclaim hook (test-facing): resolve + reclaim the Mode-B
-    /// `byok_envelope` row, mirroring the post-R2-delete step in the production
-    /// `delete` path (which WARNS on the returned `Err` and never fails the
-    /// delete). Returns the reclaim `Result` so a test can assert the safe-fail
-    /// direction.
-    #[cfg(test)]
-    async fn byok_reclaim_for_delete(
+    async fn resolve_byok(
         &self,
         tenant: &str,
         digest: &str,
         algo: DigestAlgo,
-    ) -> Result<(), String> {
-        let resolved = self
-            .resolve_byok(tenant, digest, algo)
+    ) -> Result<ByokResolved, CasHandlerError> {
+        self.resolve_byok_with_guard(tenant, digest, algo, None)
             .await
-            .map_err(|e| format!("resolve: {e}"))?;
-        self.reclaim_byok_envelope(&resolved.plan).await
     }
 
     /// Derive the R2 key for a (tenant, digest) pair.

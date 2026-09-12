@@ -745,11 +745,13 @@ proptest! {
         let snap = breaker.snapshot().unwrap();
         // Must still be Open — dwell_ms < HALFOPEN_DWELL_MS so no
         // transition allowed.
-        prop_assert!(
-            matches!(snap.state, CircuitState::Open { .. }),
-            "hysteresis breached: state={:?}",
-            snap.state
-        );
+        match snap.state {
+            CircuitState::Open { tripped_at_ms, reason } => {
+                prop_assert!(tripped_at_ms < recovery_now);
+                prop_assert!(!reason.as_label().is_empty());
+            }
+            other => prop_assert!(false, "hysteresis breached: state={other:?}"),
+        }
     }
 }
 

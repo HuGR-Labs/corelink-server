@@ -10,6 +10,15 @@ impl R2CasHandler {
     }
 }
 
+fn cas_catalog_next_cursor(
+    rows: &[crate::storage::byok_generation_catalog::PublishedObject],
+    limit: u32,
+) -> Option<String> {
+    (rows.len() == limit as usize)
+        .then(|| rows.last().map(|row| row.logical_key.clone()))
+        .flatten()
+}
+
 impl CasDeleteHandler for R2CasHandler {
     fn delete(
         &self,
@@ -60,6 +69,8 @@ impl CasDeleteHandler for R2CasHandler {
             ))
             .map_err(CasHandlerError::AuditFailed)?;
 
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Delete)?;
+
         // CRITICAL — `block_in_place`: see `read` above.
         let handle = tokio::runtime::Handle::current();
 
@@ -70,7 +81,12 @@ impl CasDeleteHandler for R2CasHandler {
         // 4a: the resolved plan also drives the Mode-B `byok_envelope` reclaim
         // performed AFTER the R2 object is removed (see below).
         let resolved = match tokio::task::block_in_place(|| {
-            handle.block_on(self.resolve_byok(&req.tenant, &req.hash, DigestAlgo::Blake3))
+            handle.block_on(self.resolve_byok_with_guard(
+                &req.tenant,
+                &req.hash,
+                DigestAlgo::Blake3,
+                byok_guard.as_ref(),
+            ))
         }) {
             Ok(r) => r,
             Err(e) => {
@@ -82,7 +98,54 @@ impl CasDeleteHandler for R2CasHandler {
         // R2 under a degraded/empty (SHARED) prefix. DELETE is native-only
         // (the Bazel REAPI bridge exposes no delete surface), so the BLAKE3
         // keyspace applies.
-        let key = match self.r2_key(&req.tenant, &resolved.physical_digest, DigestAlgo::Blake3) {
+        let mut purge_plan = if let Some(guard) = byok_guard.as_ref() {
+            if guard
+                .intent()
+                .map_err(CasHandlerError::Internal)?
+                .catalog_generation()
+                .is_some()
+            {
+                tokio::task::block_in_place(|| {
+                    handle.block_on(guard.gate().tombstone_catalog(
+                        guard.intent()?,
+                        crate::storage::byok_generation_catalog::ByokObjectKind::Cas,
+                        &format!("blake3:{}", req.hash),
+                    ))
+                })
+                .map_err(CasHandlerError::Internal)?
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if byok_guard.as_ref().is_some_and(|guard| {
+            guard
+                .intent()
+                .is_ok_and(|intent| intent.catalog_generation().is_some())
+        }) && purge_plan.is_none()
+        {
+            self.audit
+                .emit(AuditEvent::new(
+                    AuditEventKind::DeleteCommitted,
+                    req.tenant.clone(),
+                    req.hash.clone(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ))
+                .map_err(CasHandlerError::AuditFailed)?;
+            self.finish_byok_mutation(byok_guard.as_mut())?;
+            return Ok(CasDeleteResponse::with_reclaimed(false, 0));
+        }
+        let allocation_id = purge_plan
+            .as_ref()
+            .map(|plan| plan.object.allocation_id.clone());
+        let key = match purge_plan
+            .as_ref()
+            .map(|plan| Ok(plan.object.physical_key.clone()))
+            .unwrap_or_else(|| {
+                self.r2_key(&req.tenant, &resolved.physical_digest, DigestAlgo::Blake3)
+            }) {
             Ok(k) => k,
             Err(e) => {
                 emit(true);
@@ -90,6 +153,19 @@ impl CasDeleteHandler for R2CasHandler {
             }
         };
         debug!(key = %key, "R2CasHandler::delete");
+
+        if let Some(plan) = purge_plan.as_mut() {
+            tokio::task::block_in_place(|| {
+                handle.block_on(
+                    byok_guard
+                        .as_ref()
+                        .ok_or_else(|| "BYOK purge plan exists without data guard".to_owned())?
+                        .gate()
+                        .begin_purge_attempt(plan),
+                )
+            })
+            .map_err(CasHandlerError::Internal)?;
+        }
 
         // S3 DeleteObject is idempotent: deleting an absent key succeeds.
         // `existed` is best-effort (S3 does not report prior presence on a
@@ -105,46 +181,108 @@ impl CasDeleteHandler for R2CasHandler {
         // release reflect what THIS request actually removed, so two racing
         // deletes can never both credit the same bytes. CRITICAL — `block_in_place`:
         // see `read` above.
-        let result = {
+        let already_absent = purge_plan.as_ref().is_some_and(|plan| plan.r2_absent);
+        let result = if already_absent {
+            Ok(None)
+        } else {
             let _scope =
                 crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
             tokio::task::block_in_place(|| handle.block_on(self.client.delete_if_present(&key)))
         };
 
-        match result {
-            Ok(prior) => {
-                let reclaimed = prior.unwrap_or(0);
-                // BYOK Wave 4a: the R2 object is now gone — reclaim the Mode-B
-                // `byok_envelope` row so the deleted blob's wrapped DEK does not
-                // linger (orphan key-material). A reclaim failure is the SAFE-fail
-                // direction (the DEK wraps nothing now), so WARN + continue — the
-                // delete still SUCCEEDS and the R2 delete is NOT rolled back.
-                if let Err(e) = tokio::task::block_in_place(|| {
-                    handle.block_on(self.reclaim_byok_envelope(&resolved.plan))
-                }) {
-                    warn!(
-                        error = %e, key = %key, tenant = %req.tenant,
-                        "R2CasHandler::delete byok_envelope reclaim failed (orphan wrapped-DEK row; blob already deleted)"
-                    );
+        let delete_error = result.as_ref().err().cloned();
+        let head_result = if already_absent {
+            Ok(None)
+        } else {
+            tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)))
+        };
+        let head_absent = matches!(&head_result, Ok(None));
+        if let Some(plan) = purge_plan.as_ref() {
+            let ledger_error = head_result
+                .as_ref()
+                .err()
+                .map(String::as_str)
+                .or_else(|| (!head_absent).then_some("R2 object remains after delete"));
+            tokio::task::block_in_place(|| {
+                handle.block_on(
+                    byok_guard
+                        .as_ref()
+                        .ok_or_else(|| "BYOK purge plan exists without data guard".to_owned())?
+                        .gate()
+                        .finish_purge_attempt(plan, head_absent, ledger_error, false),
+                )
+            })
+            .map_err(CasHandlerError::Internal)?;
+        }
+
+        if head_absent {
+            let reclaimed = result.ok().flatten().unwrap_or(0);
+            // BYOK Wave 4a: the R2 object is now gone — reclaim the Mode-B
+            // `byok_envelope` row so the deleted blob's wrapped DEK does not
+            // linger (orphan key-material). A durable purge plan keeps the
+            // row at r2_absent and returns an error for retry when reclaim
+            // fails; legacy non-catalog deletes retain the warn-and-continue
+            // safe-fail behavior.
+            let reclaim_error = tokio::task::block_in_place(|| {
+                handle.block_on(
+                    self.reclaim_byok_envelope(&resolved.plan, allocation_id.as_deref()),
+                )
+            })
+            .err();
+            if let Some(e) = reclaim_error {
+                if let Some(plan) = purge_plan.as_ref() {
+                    let _ = tokio::task::block_in_place(|| {
+                        handle.block_on(
+                            byok_guard
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    "BYOK purge plan exists without data guard".to_owned()
+                                })?
+                                .gate()
+                                .finish_purge_attempt(plan, true, Some(&e), false),
+                        )
+                    });
+                    emit(true);
+                    return Err(CasHandlerError::Internal(format!(
+                        "BYOK envelope reclaim: {e}"
+                    )));
                 }
-                self.audit
-                    .emit(AuditEvent::new(
-                        AuditEventKind::DeleteCommitted,
-                        req.tenant.clone(),
-                        req.hash.clone(),
-                        req.principal.clone(),
-                        req.at_unix_ms,
-                    ))
-                    .map_err(CasHandlerError::AuditFailed)?;
-                emit(false);
-                Ok(CasDeleteResponse::with_reclaimed(reclaimed > 0, reclaimed))
+                warn!(
+                    error = %e, key = %key, tenant = %req.tenant,
+                    "R2CasHandler::delete byok_envelope reclaim failed (orphan wrapped-DEK row; blob already deleted)"
+                );
             }
-            Err(e) => {
-                // Fail CLOSED on a storage fault: never a silent success.
-                warn!(error = %e, key = %key, "R2CasHandler::delete error");
-                emit(true);
-                Err(CasHandlerError::Internal(e))
+            if let Some(plan) = purge_plan.as_ref() {
+                tokio::task::block_in_place(|| {
+                    handle.block_on(
+                        byok_guard
+                            .as_ref()
+                            .ok_or_else(|| "BYOK purge plan exists without data guard".to_owned())?
+                            .gate()
+                            .finish_purge_attempt(plan, true, None, true),
+                    )
+                })
+                .map_err(CasHandlerError::Internal)?;
             }
+            self.audit
+                .emit(AuditEvent::new(
+                    AuditEventKind::DeleteCommitted,
+                    req.tenant.clone(),
+                    req.hash.clone(),
+                    req.principal.clone(),
+                    req.at_unix_ms,
+                ))
+                .map_err(CasHandlerError::AuditFailed)?;
+            self.finish_byok_mutation(byok_guard.as_mut())?;
+            emit(false);
+            Ok(CasDeleteResponse::with_reclaimed(reclaimed > 0, reclaimed))
+        } else {
+            // Fail CLOSED on a storage fault: never a silent success.
+            warn!(key = %key, "R2CasHandler::delete did not verify R2 absence");
+            emit(true);
+            Err(CasHandlerError::Internal(delete_error.unwrap_or_else(
+                || "R2 delete HEAD verification failed".to_owned(),
+            )))
         }
     }
 }
@@ -203,8 +341,47 @@ impl CasListHandler for R2CasHandler {
             req.principal.clone(),
             req.at_unix_ms,
         ));
+        let mut byok_guard = if audit_result.is_ok() {
+            self.acquire_byok_data(&req.tenant, DataOperation::Read)?
+        } else {
+            None
+        };
         let store_result = if audit_result.is_err() {
             Ok((Vec::new(), None))
+        } else if let Some(guard) = byok_guard.as_ref().filter(|guard| {
+            guard
+                .intent()
+                .is_ok_and(|intent| intent.catalog_generation().is_some())
+        }) {
+            // Catalog cursors are opaque full logical identities. Keeping the
+            // algorithm prefix is required to resume correctly after SHA-256
+            // rows in the shared CAS catalog ordering.
+            let after = req.cursor.as_deref();
+            let rows = tokio::task::block_in_place(|| {
+                handle.block_on(guard.gate().list_catalog(
+                    guard.intent()?,
+                    crate::storage::byok_generation_catalog::ByokObjectKind::Cas,
+                    req.limit,
+                    after,
+                ))
+            })
+            .map_err(CasHandlerError::Internal)?;
+            let next_cursor = cas_catalog_next_cursor(&rows, req.limit);
+            Ok((
+                rows.into_iter()
+                    .map(|row| {
+                        (
+                            row.logical_key
+                                .split_once(':')
+                                .map_or(row.logical_key.as_str(), |(_, hash)| hash)
+                                .to_owned(),
+                            row.size_bytes,
+                            row.published_at_ms.to_string(),
+                        )
+                    })
+                    .collect(),
+                next_cursor,
+            ))
         } else {
             let prefix = match self.r2_list_prefix(&req.tenant) {
                 Ok(p) => p,
@@ -215,9 +392,8 @@ impl CasListHandler for R2CasHandler {
             };
             debug!(prefix = %prefix, "R2CasHandler::list");
             let result = {
-                let _scope = crate::origin_timing::PhaseScope::enter(
-                    crate::origin_timing::Phase::Store,
-                );
+                let _scope =
+                    crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
                 tokio::task::block_in_place(|| {
                     handle.block_on(self.client.list_objects_page(
                         &prefix,
@@ -243,6 +419,7 @@ impl CasListHandler for R2CasHandler {
 
         match store_result {
             Ok((rows, next_cursor)) => {
+                self.validate_byok_return(byok_guard.as_mut())?;
                 let blobs = rows
                     .into_iter()
                     .map(|(key, size, last_modified)| {

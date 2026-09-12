@@ -34,9 +34,11 @@ def mutate_and_require_failure(name: str, relative: str, old: str, new: str) -> 
             "pnpm-workspace.yaml",
             "worker/src/index_schedule.ts",
             "apps/synthetic-pager-worker/wrangler.toml",
+            "infra/staging/topology.json",
             "apps/synthetic-pager-worker/src/index.ts",
             "apps/synthetic-pager-worker/src/contract.ts",
             "migrations/d1/0116_synthetic_page_delivery_lifecycle.sql",
+            "scripts/test_b072_terminal_race.py",
             "scripts/verify_b072_receiver.py",
             ".github/workflows/synthetic-pager-worker-deploy.yml",
         ):
@@ -77,6 +79,66 @@ def main() -> None:
             'if (envelope === null) {',
         ),
         (
+            "accept-noncanonical-scheduled-id",
+            "apps/synthetic-pager-worker/src/contract.ts",
+            "page.dedup_key !== scheduledDrillId ||",
+            "false ||",
+        ),
+        (
+            "accept-wrong-rotation",
+            "apps/synthetic-pager-worker/src/contract.ts",
+            "page.rotation_week !== expectedRotation ||",
+            "false ||",
+        ),
+        (
+            "accept-wrong-emit-time",
+            "apps/synthetic-pager-worker/src/contract.ts",
+            "page.emit_at_ms !== expectedEmitAt",
+            "false",
+        ),
+        (
+            "remove-default-service-binding",
+            "wrangler.toml",
+            'binding = "SCHEDULED_DRILL_DELIVERY"\nservice = "corelink-synthetic-pager"',
+            'binding = "REMOVED_DRILL_DELIVERY"\nservice = "corelink-synthetic-pager"',
+        ),
+        (
+            "claim-immediate-delivery-before-acceptance",
+            "apps/synthetic-pager-worker/src/index.ts",
+            "envelope.scheduled_at_ms,\n      null",
+            "envelope.scheduled_at_ms,\n      page.emit_at_ms",
+        ),
+        (
+            "drop-terminal-race-guard",
+            "apps/synthetic-pager-worker/src/index.ts",
+            "WHERE drill_id = ? AND outcome = 'unacked' AND delivered_at_ms IS NOT NULL",
+            "WHERE drill_id = ?",
+        ),
+        (
+            "ack-without-delivery-receipt",
+            "apps/synthetic-pager-worker/src/index.ts",
+            'if (row.delivered_at_ms === null) return json({ error: "delivery_not_recorded" }, 503);',
+            "",
+        ),
+        (
+            "broaden-staging-webhook-route",
+            "apps/synthetic-pager-worker/wrangler.toml",
+            'staging.corelink.humangr.com/v1/webhooks/pagerduty',
+            'staging.corelink.humangr.com/*',
+        ),
+        (
+            "drop-receiver-cron-gate",
+            "apps/synthetic-pager-worker/src/index.ts",
+            'if (controller.cron !== "59 23 * * 0") {',
+            'if (false) {',
+        ),
+        (
+            "backdate-deferred-receipt",
+            "apps/synthetic-pager-worker/src/index.ts",
+            "await markDelivered(env, row.drill_id, row.correlation_id, nowImpl())",
+            "await markDelivered(env, row.drill_id, row.correlation_id, controller.scheduledTime)",
+        ),
+        (
             "enable-by-default",
             "apps/synthetic-pager-worker/wrangler.toml",
             'SYNTHETIC_DRILL_ENABLED = "false"',
@@ -99,6 +161,12 @@ def main() -> None:
             ".github/workflows/synthetic-pager-worker-deploy.yml",
             "options: [staging]",
             "options: [staging, prod]",
+        ),
+        (
+            "drop-deploy-lifecycle-test",
+            ".github/workflows/synthetic-pager-worker-deploy.yml",
+            "run: pnpm run test",
+            "run: pnpm run skipped-test",
         ),
     ]
     for mutation in mutations:

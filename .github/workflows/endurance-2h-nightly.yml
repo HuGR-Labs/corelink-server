@@ -82,6 +82,7 @@ jobs:
             tests/load/k6/scenarios/endurance-24h.js
 
       - name: pre-flight target host check
+        id: target_host
         env:
           K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}
         run: |
@@ -90,11 +91,14 @@ jobs:
             echo "::error::K6_TARGET_HOST secret missing in staging environment"
             exit 1
           fi
-          if [[ "$K6_TARGET_HOST" != *"staging."* && "$K6_TARGET_HOST" != *"dev."* ]]; then
-            echo "::error::K6_TARGET_HOST=$K6_TARGET_HOST is not a staging hostname"
+          CANONICAL_TARGET='https://staging.corelink.humangr.com'
+          TARGET_HOST="${K6_TARGET_HOST%/}"
+          if [[ "$TARGET_HOST" != "$CANONICAL_TARGET" ]]; then
+            echo "::error::K6_TARGET_HOST must equal $CANONICAL_TARGET (optional trailing slash only)"
             exit 1
           fi
-          echo "Target: $K6_TARGET_HOST"
+          echo "target_host=$TARGET_HOST" >> "$GITHUB_OUTPUT"
+          echo "Target: $TARGET_HOST"
 
       - name: prepare results dir
         run: |
@@ -103,7 +107,7 @@ jobs:
 
       - name: run k6 endurance 2h
         env:
-          K6_TARGET_HOST:             ${{ secrets.K6_TARGET_HOST }}
+          K6_TARGET_HOST:             ${{ steps.target_host.outputs.target_host }}
           K6_AUTH_BEARER:             ${{ secrets.K6_STAGING_PAT }}
           K6_PROMETHEUS_RW_SERVER_URL: ${{ secrets.K6_PROMETHEUS_RW_SERVER_URL }}
           DURATION:                   ${{ github.event.inputs.duration || '2h' }}
@@ -164,98 +168,39 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Fetch the last 7 successful operator-dispatched runs. History and
-          # the rolling baseline are inputs
-          # to a gate: absent or malformed data must fail closed.
+          # Fetch a bounded candidate population. The workflow-level result can
+          # be red solely because an earlier baseline was unavailable, so the
+          # artifact validator below — not the aggregate workflow conclusion —
+          # decides whether each prior endurance measurement is usable.
           mkdir -p tests/load/results/endurance-2h-baseline
-          # Use the GitHub REST API via gh CLI to enumerate prior runs.
-          # Pinned action elsewhere; gh is preinstalled on ubuntu-22.04.
           timeout 30s gh run list \
             --workflow=endurance-2h-nightly.yml \
             --branch=main \
-            --status=success \
+            --status=completed \
             --json databaseId,createdAt \
             --limit 7 \
             > tests/load/results/endurance-2h-baseline/runs.json
           cat tests/load/results/endurance-2h-baseline/runs.json
           echo "history_path=tests/load/results/endurance-2h-baseline/runs.json" >> "$GITHUB_OUTPUT"
 
-      - name: compare current p99 vs 7-day rolling baseline
+      - name: build and compare the complete rolling seven-run p99 baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json, math, pathlib, sys
+          python3 scripts/rolling-7d-p99.py \
+            --history tests/load/results/endurance-2h-baseline/runs.json \
+            --current-dir tests/load/results/endurance-2h-download \
+            --downloads-dir tests/load/results/endurance-2h-baseline/history \
+            --output tests/load/results/endurance-2h-baseline/rolling-7d-p99.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --current-run-id "${GITHUB_RUN_ID}"
 
-          REGRESSION_THRESHOLD = 1.20  # 20% over baseline → FAIL
-
-          # SLO keys we track (per endurance scenario op tags).
-          OPS = ["cas_read", "cas_write", "audit_query", "byok_op", "admin_op", "webhook"]
-
-          curr_dir = pathlib.Path("tests/load/results/endurance-2h-download")
-          summaries = sorted(curr_dir.rglob("endurance-2h-summary-*.json"))
-          if len(summaries) != 1:
-              print(f"::error::expected exactly one current endurance summary, found {len(summaries)}")
-              sys.exit(1)
-          try:
-              curr = json.loads(summaries[0].read_text())
-          except (OSError, ValueError) as exc:
-              print(f"::error::current endurance summary is malformed: {exc}")
-              sys.exit(1)
-          curr_metrics = curr.get("metrics") if isinstance(curr, dict) else None
-          if not isinstance(curr_metrics, dict):
-              print("::error::current endurance summary has no metrics object")
-              sys.exit(1)
-
-          def extract_p99(metrics, op):
-              # k6 tag-filtered submetrics surface as e.g.
-              # "endurance_op_latency_ms{op:cas_read}" in the summary export.
-              key = f"endurance_op_latency_ms{{op:{op}}}"
-              m = metrics.get(key)
-              if not isinstance(m, dict):
-                  return None
-              value = m.get("p(99)", m.get("p99"))
-              if isinstance(value, bool) or not isinstance(value, (int, float)):
-                  return None
-              return float(value) if math.isfinite(float(value)) and value > 0 else None
-
-          # Baseline = mean of last 7 successful runs' p99 per op.
-          baseline_file = pathlib.Path("tests/load/results/endurance-2h-baseline/rolling-7d-p99.json")
-          if not baseline_file.exists():
-              print("::error::rolling-7d p99 baseline is missing; cannot prove endurance health")
-              sys.exit(1)
-          try:
-              baseline = json.loads(baseline_file.read_text())
-          except (OSError, ValueError) as exc:
-              print(f"::error::rolling-7d p99 baseline is malformed: {exc}")
-              sys.exit(1)
-          if not isinstance(baseline, dict):
-              print("::error::rolling-7d p99 baseline must be an object")
-              sys.exit(1)
-          missing = [op for op in OPS if op not in baseline]
-          if missing:
-              print(f"::error::rolling-7d p99 baseline is partial; missing: {', '.join(missing)}")
-              sys.exit(1)
-          failed = []
-          for op in OPS:
-              curr_p99 = extract_p99(curr_metrics, op)
-              base_p99 = baseline.get(op)
-              if curr_p99 is None:
-                  print(f"::error::current p99 is missing or invalid for op={op}")
-                  sys.exit(1)
-              if isinstance(base_p99, bool) or not isinstance(base_p99, (int, float)) or not math.isfinite(float(base_p99)) or base_p99 <= 0:
-                  print(f"::error::baseline p99 is missing or invalid for op={op}: {base_p99!r}")
-                  sys.exit(1)
-              base_p99 = float(base_p99)
-              ratio = curr_p99 / base_p99
-              status = "OK" if ratio <= REGRESSION_THRESHOLD else "FAIL"
-              print(f"op={op} curr_p99={curr_p99:.2f}ms baseline_p99={base_p99:.2f}ms ratio={ratio:.3f} -> {status}")
-              if ratio > REGRESSION_THRESHOLD:
-                  failed.append((op, ratio, curr_p99, base_p99))
-
-          if failed:
-              for op, ratio, curr_p99, base_p99 in failed:
-                  print(f"::error::p99 drift >20% on op={op}: curr={curr_p99:.2f}ms vs 7d_baseline={base_p99:.2f}ms ({ratio:.2%})")
-              sys.exit(1)
-
-          print("baseline drift check: PASS")
-          PY
+      - name: upload rolling baseline evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: endurance-rolling-7d-p99-${{ github.run_id }}
+          path: tests/load/results/endurance-2h-baseline/
+          retention-days: 30
+          if-no-files-found: error

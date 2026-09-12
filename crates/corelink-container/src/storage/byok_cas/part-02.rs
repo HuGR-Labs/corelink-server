@@ -171,16 +171,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn config_cache_caches_the_none_answer() {
-        // Non-BYOK tenants must not re-hit D1.
+    async fn config_cache_does_not_cache_plaintext_none_across_activation() {
+        // A negative result may become active at any time. Caching it would
+        // allow a successful activation to leave a plaintext window.
         let src = Arc::new(MockConfigSource::ok(None));
         let cache = ByokConfigCache::new(src.clone(), 60);
         assert!(cache.get(TENANT).await.unwrap().is_none());
         assert!(cache.get(TENANT).await.unwrap().is_none());
         assert_eq!(
             src.call_count(),
-            1,
-            "the not-configured answer must be cached"
+            2,
+            "not-configured answers must be re-read before choosing plaintext"
         );
     }
 
@@ -283,12 +284,19 @@ mod tests {
             engagement_for(&active_cfg(ByokCryptoMode::Random, ByokState::Partial)),
             ByokEngagement::FailClosed(_)
         ));
-        for s in [ByokState::Inactive, ByokState::Pending, ByokState::Shredded] {
+        for s in [ByokState::Inactive, ByokState::Pending] {
             assert_eq!(
                 engagement_for(&active_cfg(ByokCryptoMode::Convergent, s)),
                 ByokEngagement::Plaintext
             );
         }
+        assert!(matches!(
+            engagement_for(&active_cfg(
+                ByokCryptoMode::Convergent,
+                ByokState::Shredded
+            )),
+            ByokEngagement::FailClosed(_)
+        ));
     }
 
     // ── §4 key-hardening (audit H-4) ──────────────────────────────────────────

@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-09T09:11:16Z",
+  "code_sha": "64e57a2ccb218f475b44a260b64af95e0bc7df2c",
+  "profiles": ["d1", "r2", "stripe", "neon"],
+  "runs": [
+    {
+      "profile": "d1",
+      "run_id": "local-production-safe-20260909T0909Z",
+      "workflow": "scripts/run-real-ignored-harnesses.sh (safe target subset)",
+      "ref": "64e57a2ccb218f475b44a260b64af95e0bc7df2c",
+      "conclusion": "failure",
+      "preflight": "authenticated Cloudflare production D1; billing mutation target excluded",
+      "log_url": "reports/go-live/2026-09-09-b068-real-harness-readback.md",
+      "passed": [
+        "d1_http_tenant_admin_lookup_round_trip",
+        "d1_dpa_and_active_subscription_reads",
+        "d1_acquire_lock_then_held_then_release",
+        "d1_audit_write_blocking_records_oaudit_phase"
+      ],
+      "failed": [
+        {
+          "target": "d1_http_cas_meta_round_trip",
+          "diagnosis": "production CONFIG_DB correctly rejects the stale harness query because cas_meta is not part of the migration-owned schema; the method has no production caller"
+        }
+      ],
+      "excluded": [
+        {
+          "target": "d1_persist_free_active_does_not_count_as_a_subscription",
+          "reason": "explicit no-billing-mutation boundary; the harness writes tier_selections and leaves the synthetic row behind"
+        }
+      ],
+      "cleanup": "tier_selection_locks residual count for the synthetic lock correlation was 0"
+    },
+    {
+      "profile": "r2",
+      "run_id": "local-network-safety-20260909T0911Z",
+      "workflow": "scripts/run-real-ignored-harnesses.sh (credential-independent safety targets)",
+      "ref": "64e57a2ccb218f475b44a260b64af95e0bc7df2c",
+      "conclusion": "blocked",
+      "preflight": "Cloudflare account, OAuth token, D1 id and endpoint available; R2 S3 access key, secret and dedicated test bucket unavailable",
+      "log_url": "reports/go-live/2026-09-09-b068-real-harness-readback.md",
+      "passed": [
+        "r2_cas_list_durable_audit_failure_precedes_storage",
+        "r2_cas_exists_batch_fails_closed_on_bad_audit_creds"
+      ],
+      "blocked": [
+        "storage_r2_round_trip",
+        "cas_idempotent_rewrite_reports_durable_false",
+        "delete_if_present_credits_size_once_then_none"
+      ]
+    },
+    {
+      "profile": "stripe",
+      "run_id": "not-run",
+      "workflow": "real-ignored-harnesses.yml",
+      "ref": "64e57a2ccb218f475b44a260b64af95e0bc7df2c",
+      "conclusion": "excluded",
+      "preflight": "not executed by explicit no-billing-mutation scope",
+      "log_url": "reports/go-live/2026-09-09-b068-real-harness-readback.md"
+    },
+    {
+      "profile": "neon",
+      "run_id": "local-preflight-20260909T0911Z",
+      "workflow": "scripts/run-real-ignored-harnesses.sh neon",
+      "ref": "64e57a2ccb218f475b44a260b64af95e0bc7df2c",
+      "conclusion": "blocked",
+      "preflight": "exit 2 before Cargo: NEON_TEST_DSN missing; repository has no real-integration environment",
+      "log_url": "reports/go-live/2026-09-09-b068-real-harness-readback.md"
+    }
+  ],
+  "artifacts": [
+    "reports/go-live/2026-09-09-b068-real-harness-readback.md",
+    "https://github.com/HuGR-Labs/corelink-server/actions/runs/34265159776"
+  ],
+  "blocked_profiles": [
+    {
+      "profile": "d1",
+      "blocker": "stale cas_meta target and prohibited non-cleaning billing mutation make the complete profile invalid against production",
+      "repair": "remove or replace the dead cas_meta target and make any mutable D1 harness use a dedicated disposable database with verified cleanup"
+    },
+    {
+      "profile": "r2",
+      "blocker": "no dedicated R2 test credentials/bucket; two write harnesses lack cleanup",
+      "repair": "provision an isolated test bucket and add fail-safe exact-key cleanup before enabling the full profile"
+    },
+    {
+      "profile": "stripe",
+      "blocker": "billing mutation explicitly excluded from this production-safe execution",
+      "repair": "execute only through the test wallet reference in a separately approved billing window"
+    },
+    {
+      "profile": "neon",
+      "blocker": "NEON_TEST_DSN and the referenced real-integration GitHub environment are absent",
+      "repair": "provision a disposable Neon branch and protected environment before dispatch"
+    }
+  ],
+  "seed_excluded": true,
+  "operator": "Codex backlog recovery orchestrator"
+}

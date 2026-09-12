@@ -58,6 +58,8 @@ use corelink_handler_cas::InMemorySliObserver;
 use corelink_hash::Digest;
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
 
+use crate::byok_transition_fence::DataOperation;
+use crate::storage::byok_generation_catalog::{ByokDataGuard, ByokRuntimeGate};
 use crate::storage::d1_audit_sink::{
     ac_audit_sink_from_d1_concrete, cas_audit_sink_from_d1_concrete,
 };
@@ -227,17 +229,14 @@ impl R2S3Client {
     /// timeout is deliberately longer than the per-read timeout because a
     /// large object may legitimately need several read windows, while still
     /// giving cancellation a finite unwind point.
-    pub(crate) const R2_CONNECT_TIMEOUT: std::time::Duration =
-        std::time::Duration::from_secs(2);
+    pub(crate) const R2_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
     pub(crate) const R2_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
     pub(crate) const R2_OPERATION_ATTEMPT_TIMEOUT: std::time::Duration =
         std::time::Duration::from_secs(30);
-    pub(crate) const R2_OPERATION_TIMEOUT: std::time::Duration =
-        std::time::Duration::from_secs(60);
+    pub(crate) const R2_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
     /// Body-level deadlines remain necessary after `GetObject` headers arrive:
     /// the SDK operation timeout does not reliably cover a stalled stream.
-    pub(crate) const R2_BODY_IDLE_TIMEOUT: std::time::Duration =
-        std::time::Duration::from_secs(30);
+    pub(crate) const R2_BODY_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
     pub(crate) const R2_BODY_TOTAL_TIMEOUT: std::time::Duration =
         std::time::Duration::from_secs(60);
 
@@ -287,8 +286,8 @@ impl R2S3Client {
                 let Some(chunk) = next else {
                     return Ok(CappedGet::Found(bytes));
                 };
-                let chunk = chunk
-                    .map_err(|error| format!("R2 body read failed for key {key}: {error}"))?;
+                let chunk =
+                    chunk.map_err(|error| format!("R2 body read failed for key {key}: {error}"))?;
                 actual_bytes = actual_bytes.saturating_add(chunk.len() as u64);
                 if actual_bytes > max_bytes {
                     return Ok(CappedGet::TooLarge {

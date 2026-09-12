@@ -31,17 +31,18 @@ def b006_block() -> str:
 
 def test_b006_uses_dedicated_observability_header_and_redacts_labels() -> None:
     block = b006_block()
-    assert "status: open" in block
+    assert "status: done" in block
     assert "https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics" in block
     assert "METRICS_OBSERVABILITY_KEY" in block
     assert "X-Corelink-Internal-Auth" in block
+    assert "corelink-b006-probe/1.0" in block
     assert "wrong credential class" in block
-    assert "Omit all labels" in block
+    assert "All labels" in block
     assert "tenant identifiers" in block
     assert "customer identifiers" in block
     assert "capability_claim_unserved > 0" in block
-    assert "HTTP 403" in block
-    assert "no aggregate\n  counter" in block
+    assert "HTTP 200" in block
+    assert "capability_claim_unserved = 0" in block
 
 
 def test_b006_does_not_publish_a_bearer_probe_command() -> None:
@@ -50,7 +51,7 @@ def test_b006_does_not_publish_a_bearer_probe_command() -> None:
     assert "CORELINK_PROD_TOKEN" in block
     packet = json.loads(PACKET.read_text(encoding="utf-8"))["packets"]["B-006"]
     command = packet["command"]
-    assert packet["disposition"] == "REOPENED"
+    assert packet["disposition"] == "DONE"
     assert "scripts/collect_b006_metrics.py" in command
     assert "scripts/verify_b006_evidence.py" in command
     assert "--auth-header X-Corelink-Internal-Auth" in command
@@ -220,8 +221,8 @@ def test_b006_provider_collector_rejects_substituted_tarball_before_execution(mo
             raise AssertionError("substituted package must never execute")
 
 
-def test_b006_d03_packet_cannot_mutate_indeterminate_receipt_to_done() -> None:
+def test_b006_d03_packet_cannot_reopen_after_authenticated_zero_closure() -> None:
     packet = _load_packets(PACKET.read_text(encoding="utf-8"))
-    packet["packets"]["B-006"]["disposition"] = "DONE"
+    packet["packets"]["B-006"]["disposition"] = "REOPENED"
     with pytest.raises(GraduationError, match="B-006"):
         _check_packets(packet, ROOT)

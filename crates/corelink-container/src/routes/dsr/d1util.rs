@@ -17,7 +17,7 @@ use zeroize::Zeroizing;
 
 use corelink_tenant_path::TenantDerivationKey;
 
-use crate::storage::d1_http::{D1HttpClient, D1Row};
+use crate::storage::d1_http::{D1BatchStatement, D1HttpClient, D1Row};
 
 /// Run a single parameterised D1 statement to completion from a sync
 /// context. MUST be called on a multi-thread tokio runtime worker thread
@@ -32,6 +32,27 @@ pub(super) fn d1_query_blocking(
     let sql = sql.to_owned();
     tokio::task::block_in_place(move || {
         tokio::runtime::Handle::current().block_on(async move { client.query(&sql, &params).await })
+    })
+}
+
+/// Run a parameterised D1 REST batch to completion from a synchronous adapter.
+/// D1 executes the complete batch as one transaction and rolls it back when
+/// any statement fails; callers therefore must not split FK-ordered mutations
+/// across separate [`d1_query_blocking`] calls.
+pub(super) fn d1_batch_blocking(
+    client: &Arc<D1HttpClient>,
+    statements: Vec<D1BatchStatement>,
+) -> Result<Vec<Vec<D1Row>>, String> {
+    let client = Arc::clone(client);
+    tokio::task::block_in_place(move || {
+        tokio::runtime::Handle::current().block_on(async move {
+            client.batch(statements).await.map_err(|error| {
+                format!(
+                    "D1 batch statement {:?}: {}",
+                    error.statement, error.message
+                )
+            })
+        })
     })
 }
 

@@ -99,10 +99,12 @@ proptest! {
             &make_image_ref(&format!("v{tag}")),
             &CosignIdentityPattern::corelink_release(),
         );
-        prop_assert!(
-            matches!(result, Err(DeployVerifyError::RekorMissing { .. })),
-            "expected RekorMissing, got {result:?}"
-        );
+        match result {
+            Err(DeployVerifyError::RekorMissing { image }) => {
+                prop_assert_eq!(image, make_image_ref(&format!("v{tag}")).image);
+            }
+            other => prop_assert!(false, "expected RekorMissing, got {other:?}"),
+        }
         prop_assert_eq!(sink.len(), 1);
     }
 }
@@ -125,19 +127,23 @@ proptest! {
             Arc::clone(&sink),
             &attacker_san,
         );
+        let expected_identity = CosignIdentityPattern::corelink_release();
         let result = verifier.verify_and_propagate(
             &make_webhook("v0.1.0"),
             &make_image_ref("v0.1.0"),
-            &CosignIdentityPattern::corelink_release(),
+            &expected_identity,
         );
         if is_legit {
             // Could pass or fail depending on exact match — just check no panic
             let _ = result;
         } else {
-            prop_assert!(
-                matches!(result, Err(DeployVerifyError::IdentityMismatch { .. })),
-                "expected IdentityMismatch for attacker SAN, got {result:?}"
-            );
+            match result {
+                Err(DeployVerifyError::IdentityMismatch { got, expected }) => {
+                    prop_assert_eq!(got, attacker_san);
+                    prop_assert_eq!(expected, expected_identity.pattern);
+                }
+                other => prop_assert!(false, "expected IdentityMismatch for attacker SAN, got {other:?}"),
+            }
         }
     }
 }
@@ -171,10 +177,13 @@ proptest! {
             &make_image_ref("v0.5.0"),
             &CosignIdentityPattern::corelink_release(),
         );
-        prop_assert!(
-            matches!(result, Err(DeployVerifyError::DigestMismatch { .. })),
-            "expected DigestMismatch, got {result:?}"
-        );
+        match result {
+            Err(DeployVerifyError::DigestMismatch { signed_digest: got_signed, resolved_digest: got_resolved }) => {
+                prop_assert_eq!(got_signed, signed_digest);
+                prop_assert_eq!(got_resolved, resolved_digest);
+            }
+            other => prop_assert!(false, "expected DigestMismatch, got {other:?}"),
+        }
     }
 }
 

@@ -21,6 +21,8 @@ RUNTIME = ROOT / "crates/corelink-container/src/byok_revocation_runtime.rs"
 DETECTOR = ROOT / "crates/corelink-byok/src/byok_revocation/detector.rs"
 FOCAL = ROOT / "crates/corelink-byok/tests/byok_revocation_wiring.rs"
 MIGRATION = ROOT / "migrations/d1/0114_byok_revocation_customer_audit_atomic.sql"
+CONTROL = ROOT / "crates/corelink-container/src/byok_control_transition.rs"
+ADMIN = ROOT / "crates/corelink-container/src/routes/byok_admin.rs"
 TEST_INCLUDE_MARKER = 'include!("byok_revocation_runtime/part-01.rs");'
 
 
@@ -461,8 +463,8 @@ def _verify_sqlite_trigger_semantics(migration: str) -> None:
 
 
 def verify(main: str, runtime: str, detector: str, focal: str, migration: str) -> None:
-    runtime_production = runtime.split("#[cfg(test)]", 1)[0]
-    _require_active_test_include(runtime_production)
+    _require_active_test_include(runtime)
+    runtime_production = runtime
     main_code = _mask_rust_comments_and_strings(main)
     runtime_code = _mask_rust_comments_and_strings(runtime_production)
     detector_code = _mask_rust_comments_and_strings(detector)
@@ -481,18 +483,24 @@ def verify(main: str, runtime: str, detector: str, focal: str, migration: str) -
     if main_code.index("tokio::spawn(detector.run_loop())") > main_code.index("TcpListener::bind"):
         raise AssertionError("scheduler must be spawned before listener bind")
 
-    # Population: no static empty query; active and partial are the only
-    # encryption-live states and malformed rows are rejected.
+    # Population: pending activation already depends on its exact CMK; active
+    # and partial remain encryption-live. Malformed rows are rejected.
     population_query = _first_query_argument(
         runtime_production,
         "async fn list_active_byok_keys(",
     )
     population_sql = _rust_string_literals(population_query)
     require(population_sql, "tenant_byok_config", "authoritative population table")
-    require(population_sql, "state IN ('active', 'partial')", "closed active population")
+    require(
+        population_sql,
+        "state IN ('pending', 'active', 'partial')",
+        "closed dependent-CMK population",
+    )
     require(runtime_code, "required_text(&row", "row identity validation")
     require(population_sql, "cmk_key_id", "key identity validation")
     require(population_sql, "cmk_region", "key region validation")
+    require(population_sql, "a.source_cmk_provider", "pinned source CMK census")
+    require(population_sql, "tenant_byok_secret_history", "pinned source TCS authority")
     require(runtime_code, "provider_from_db", "provider parse guard")
     require(runtime_code, "parsed_provider != provider", "returned provider mismatch guard")
     require(runtime_code, "if rows.is_empty()", "zero-row guards")
@@ -534,6 +542,92 @@ def verify(main: str, runtime: str, detector: str, focal: str, migration: str) -
         raise AssertionError("focal must remain hermetic; it must not call D1/provider network")
 
 
+def verify_fenced_control(control: str, admin: str, runtime: str) -> None:
+    """Pin the production fence and pending-only activation architecture."""
+    control_code = _mask_rust_comments_and_strings(control)
+    control_sql = _rust_string_literals(control)
+    admin_code = _mask_rust_comments_and_strings(admin)
+    runtime_code = _mask_rust_comments_and_strings(runtime)
+    require(control_sql, "byok_transition_commit_guard", "atomic transition assertion")
+    require(control_code, "prepare_activation", "pending activation entrypoint")
+    require(control_sql, "'pending'", "pending activation state")
+    require(control_code, "D1BatchStatement::new", "atomic D1 batch")
+    require(control_code, "resolve_active_tenants", "tenant-granular key resolution")
+    require(control_code, "cmk_region", "full CMK identity")
+    require(control_code, "validate_rotation_boundary", "provider/region rotation boundary")
+    require(control_code, "commit_activation_status_transition", "live activation control path")
+    require(control_sql, "UPDATE byok_data_intent SET outcome='expired'", "priority data-intent expiry")
+    require(control_sql, "byok_activation_suspension_postcondition", "atomic suspension assertion")
+    require(control_sql, "publication_gate_epoch=CASE WHEN phase<>'copy'", "partial/purge restore resnapshot")
+    require(control_sql, "transition_token=?1", "fresh activation fence rebind")
+    require(control_code, "active_config_identity", "legacy active config authority")
+    require(control_sql, "s.tcs_version=?12", "in-batch current TCS CAS")
+    require(control_sql, "a.source_cmk_provider=?13", "source-key priority authorization")
+    require(control_sql, "byok_activation_key_health", "dual-key recovery health")
+    require(runtime_code, "D1FencedTenantStatusStore", "fenced production status adapter")
+    factory = _function_source(runtime, "pub fn detector_for_client(")
+    require(factory, "D1FencedTenantStatusStore::new", "production fenced detector")
+    if "D1TenantStatusStore::new" in factory:
+        raise AssertionError("legacy bulk status adapter is wired in production")
+    require(admin_code, "writer.prepare_activation", "admin pending-only activation")
+    require(admin_code, "StatusCode::ACCEPTED", "pending activation response")
+    if "writer.activate(" in admin_code:
+        raise AssertionError("admin route publishes activation directly")
+
+
+def verify_rotation_dependency_resolution(control: str) -> None:
+    """Execute the production tenant-resolution SQL for target and source keys."""
+    sql = _rust_string_literals(
+        _first_query_argument(control, "pub async fn resolve_active_tenants(")
+    ).replace("\\", " ")
+    db = sqlite3.connect(":memory:")
+    db.executescript(
+        """
+        CREATE TABLE tenant(tenant_id TEXT PRIMARY KEY, byok_status TEXT);
+        CREATE TABLE tenant_byok_config(tenant_id TEXT, state TEXT, cmk_provider TEXT,
+          cmk_key_id TEXT, cmk_region TEXT, config_version INTEGER);
+        CREATE TABLE tenant_byok_secret(tenant_id TEXT, tcs_version INTEGER,
+          cmk_key_id TEXT, tcs_wrapped BLOB);
+        CREATE TABLE byok_activation_intent(tenant_id TEXT, phase TEXT,
+          source_generation INTEGER, source_cmk_provider TEXT,
+          source_cmk_key_id TEXT, source_cmk_region TEXT);
+        INSERT INTO tenant VALUES('tenant-rotation','active');
+        INSERT INTO tenant_byok_config VALUES
+          ('tenant-rotation','pending','aws','target-key','us-east-1',2),
+          ('tenant-legacy','active','aws','legacy-key','us-east-1',9);
+        INSERT INTO tenant_byok_secret VALUES
+          ('tenant-legacy',4,'legacy-key',X'01');
+        INSERT INTO byok_activation_intent VALUES
+          ('tenant-rotation','copy',7,'aws','source-key','us-east-1');
+        """
+    )
+    for key in ("source-key", "target-key"):
+        rows = db.execute(sql, ("aws", key, "us-east-1")).fetchall()
+        if rows != [("tenant-rotation",)]:
+            raise AssertionError(f"{key} did not resolve the live rotation tenant: {rows}")
+
+    active_sql = _rust_string_literals(
+        _first_query_argument(control, "async fn active_config_identity(")
+    ).replace("\\", " ")
+    legacy = db.execute(active_sql, ("tenant-legacy",)).fetchone()
+    if legacy != (9, "aws", "legacy-key", "us-east-1", 4):
+        raise AssertionError(f"legacy active tenant bypassed current custody authority: {legacy}")
+
+    db.executescript(
+        """
+        CREATE TABLE byok_activation_key_health(
+          intent_id TEXT, dependency_role TEXT, access_state TEXT);
+        INSERT INTO byok_activation_key_health VALUES
+          ('intent-a','source','unavailable'),('intent-a','target','healthy');
+        """
+    )
+    if db.execute("SELECT NOT EXISTS(SELECT 1 FROM byok_activation_key_health WHERE intent_id='intent-a' AND access_state='unavailable')").fetchone()[0] != 0:
+        raise AssertionError("restore admitted while the pinned source key was unavailable")
+    db.execute("UPDATE byok_activation_key_health SET access_state='healthy'")
+    if db.execute("SELECT NOT EXISTS(SELECT 1 FROM byok_activation_key_health WHERE intent_id='intent-a' AND access_state='unavailable')").fetchone()[0] != 1:
+        raise AssertionError("restore remained blocked after both dependencies recovered")
+
+
 def mutation_self_test(main: str, runtime: str, detector: str, focal: str, migration: str) -> None:
     def insert_before_test_include(source: str, bait: str) -> str:
         """Insert bait at the production/test include boundary.
@@ -550,7 +644,9 @@ def mutation_self_test(main: str, runtime: str, detector: str, focal: str, migra
             raise AssertionError("B083 mutation fixture lost the production/test include boundary")
         return source.replace(marker, bait + "\n" + marker, 1)
 
-    inactive_population = runtime.replace("state IN ('active', 'partial')", "state IN ('inactive')", 1)
+    inactive_population = runtime.replace(
+        "state IN ('pending', 'active', 'partial')", "state IN ('inactive')", 1
+    )
     mutations = {
         "test-include-commented": (
             main,
@@ -637,6 +733,21 @@ def main() -> None:
     texts = [path.read_text(encoding="utf-8") for path in (MAIN, RUNTIME, DETECTOR, FOCAL, MIGRATION)]
     verify(*texts)
     mutation_self_test(*texts)
+    control = CONTROL.read_text(encoding="utf-8")
+    admin = ADMIN.read_text(encoding="utf-8")
+    runtime = RUNTIME.read_text(encoding="utf-8")
+    verify_fenced_control(control, admin, runtime)
+    verify_rotation_dependency_resolution(control)
+    for label, mutated_control, mutated_admin, mutated_runtime in (
+        ("fenced-adapter", control, admin, runtime.replace("D1FencedTenantStatusStore::new", "D1TenantStatusStore::new", 1)),
+        ("pending-state", control.replace("'pending'", "'active'"), admin, runtime),
+        ("pending-route", control, admin.replace("writer.prepare_activation", "writer.activate", 1), runtime),
+    ):
+        try:
+            verify_fenced_control(mutated_control, mutated_admin, mutated_runtime)
+        except AssertionError:
+            continue
+        raise AssertionError(f"fenced-control mutation was accepted as green: {label}")
     print("B083 revocation wiring PASS: durable source, pre-bind run_loop, focal behavior, mutations")
 
 

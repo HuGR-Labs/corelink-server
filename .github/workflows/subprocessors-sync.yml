@@ -93,7 +93,10 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # A GITHUB_TOKEN push suppresses the pull_request event.  This
+          # dedicated owner-provisioned credential makes the auto-PR a normal
+          # external event, so its required checks are created.
+          token: ${{ secrets.BOT_PR_TOKEN }}
 
       - name: Regenerate public MDX
         run: |
@@ -160,9 +163,11 @@ jobs:
       - name: Open auto-sync PR with legal-review-required label
         if: steps.diff.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BOT_PR_TOKEN: ${{ secrets.BOT_PR_TOKEN }}
         run: |
           set -euo pipefail
+          : "${BOT_PR_TOKEN:?BOT_PR_TOKEN must be configured before opening an auto-PR}"
+          export GH_TOKEN="${BOT_PR_TOKEN}"
           BRANCH="bot/subprocessors-sync-${GITHUB_SHA::7}"
           git checkout -b "$BRANCH"
           git add apps/docs/docs/trust/subprocessors.mdx
@@ -173,6 +178,8 @@ jobs:
             echo "Triggered by ${GITHUB_SHA} on ${GITHUB_REF}."
             echo "Source: specs/_compliance/VENDOR-RISK-REGISTER.md"
             echo "Generator: scripts/gen-public-subprocessors.py"
+            echo ""
+            echo "Signed-off-by: corelink-bot <bot@humangr.com>"
           } > "$MSG_FILE"
           git commit -F "$MSG_FILE"
           git push -u origin "$BRANCH"
@@ -206,7 +213,7 @@ jobs:
             --head "$BRANCH" \
             --title "chore(trust): auto-regen public sub-processors page (drift from VENDOR-RISK-REGISTER.md)" \
             --label "legal-review-required" \
-            --body-file "$BODY_FILE" || true
+            --body-file "$BODY_FILE"
           # Best-effort assign to legal team; ignore failure when the team
           # slug is unavailable in fork-context runs.
           gh pr edit "$BRANCH" --add-reviewer "HumanGuardrail/legal" || true

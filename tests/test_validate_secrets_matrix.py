@@ -65,6 +65,17 @@ NON_SECRET_CONFIG_NAMES = {
     "R2_S3_ENDPOINT",
 }
 
+A11Y_REPORT_DESTINATIONS = {
+    "A11Y_AUDIT_REPORT",
+    "A11Y_AUDIT_SUMMARY",
+}
+
+A11Y_SENSITIVE_OR_UNCLASSIFIED = {
+    "A11Y_AUDIT_TOKEN",
+    "A11Y_AUDIT_REPORT_TOKEN",
+    "A11Y_AUDIT_SUMMARY_SECRET",
+}
+
 def _source(names: set[str]) -> str:
     return "\n".join(f"const value = process.env.{name};" for name in sorted(names))
 
@@ -217,6 +228,32 @@ def test_non_secret_config_names_are_allowlisted_by_both_validators() -> None:
     assert not gate.ALLOWLIST_REGEX.match("D1_DATABASE_TOKEN")
     assert not gate.ALLOWLIST_REGEX.match("R2_S3_SECRET_ACCESS_KEY")
     assert not gate.ALLOWLIST_REGEX.match("CORELINK_HTTP_SECRET_FILE")
+
+
+def test_a11y_report_destinations_are_exact_non_secret_entries() -> None:
+    """The docs audit writes local files; similarly named secrets stay visible."""
+    shell_gate = (ROOT / "scripts/secrets-checklist-verify.sh").read_text(encoding="utf-8")
+    regex = re.search(r"^ALLOWLIST_REGEX='([^']+)'$", shell_gate, re.MULTILINE)
+    assert regex
+
+    for name in A11Y_REPORT_DESTINATIONS:
+        assert gate.ALLOWLIST_REGEX.fullmatch(name)
+        assert subprocess.run(
+            ["grep", "-E", regex.group(1)],
+            input=f"{name}\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        ).returncode == 0
+    for name in A11Y_SENSITIVE_OR_UNCLASSIFIED:
+        assert not gate.ALLOWLIST_REGEX.fullmatch(name)
+        assert subprocess.run(
+            ["grep", "-E", regex.group(1)],
+            input=f"{name}\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        ).returncode != 0
 
 
 def test_synthetic_names_are_not_global_allowlist_entries() -> None:

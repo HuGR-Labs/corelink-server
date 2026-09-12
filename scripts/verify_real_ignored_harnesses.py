@@ -29,7 +29,7 @@ REQUIRED_D1 = (
     "d1_acquire_lock_then_held_then_release",
     "d1_dpa_and_active_subscription_reads",
     "d1_persist_free_active_does_not_count_as_a_subscription",
-    "d1_http_cas_meta_round_trip",
+    "d1_http_blob_meta_round_trip",
     "d1_http_tenant_admin_lookup_round_trip",
     "d1_audit_write_blocking_records_oaudit_phase",
 )
@@ -43,7 +43,7 @@ REQUIRED_R2 = (
 
 REQUIRED_TARGET_SOURCES = {
     **{target: "crates/corelink-container/src/routes/tier_select_store.rs" for target in REQUIRED_D1[:3]},
-    "d1_http_cas_meta_round_trip": "crates/corelink-container/src/storage/d1_http.rs",
+    "d1_http_blob_meta_round_trip": "crates/corelink-container/src/storage/d1_http.rs",
     "d1_http_tenant_admin_lookup_round_trip": "crates/corelink-container/src/storage/d1_http.rs",
     "d1_audit_write_blocking_records_oaudit_phase": "crates/corelink-container/src/storage/d1_audit_sink/tests_phase_attribution.rs",
     "r2_cas_list_durable_audit_failure_precedes_storage": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
@@ -61,9 +61,9 @@ REQUIRED_TARGET_SOURCES = {
 # boundary; this manifest binds the repository-owned selector/source inputs.
 SOURCE_SHA256 = {
     "crates/corelink-container/src/routes/tier_select_store.rs": "ea65f1134e2055468226b8e62e8b319244c34e48fe08834b42b2a1df2581f712",
-    "crates/corelink-container/src/storage/d1_http.rs": "6c1932b0be0b578469c6710c06cbe16ca1b437b9248b085f4671e22822c3e81a",
+    "crates/corelink-container/src/storage/d1_http.rs": "dc988d4ba32eba9a7ef46cd2c63b9389981842911d8b01e5761dc4d37f0c7cfc",
     "crates/corelink-container/src/storage/d1_audit_sink/tests_phase_attribution.rs": "474d45a030f333bfb73d7152bc2a802d9d29b8af2d559c5310f9a683bc74e717",
-    "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs": "9a946473e1f76d1af26958cdbefca8ac641dbfaeb2066af7e7a8a5d302df0f8d",
+    "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs": "2148abe19ae9b119dc17eca0f242e983b47f8f6100d8d6fbba0536aafcc88af7",
     "crates/corelink-container/src/storage/r2_s3_parts/tests_2.rs": "3c46817aa4a3f758768297ad13baa7033088c27a25848531bcc3cda280451779",
 }
 

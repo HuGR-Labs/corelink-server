@@ -224,7 +224,7 @@ WP-150 | WP-148
 def test_ledger_state_rejects_stale_base_and_population():
     state = parse_ledger_state(
         """```ledger-state
-base-ref: 14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73
+base-ref: 8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94
 base-sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 observed-at: 2026-09-06
 item-count: 168
@@ -260,8 +260,8 @@ catalog-counts: B001-B045=8,B046-B090=31,B091-B130=36,B131-B167=32
 
 
 def test_live_ledger_uses_immutable_candidate_anchor():
-    assert ledger.LEDGER_BASE_REF == "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73"
-    assert ledger.LEDGER_BASE_SHA == "14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73"
+    assert ledger.LEDGER_BASE_REF == "8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94"
+    assert ledger.LEDGER_BASE_SHA == "8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94"
 
 
 def test_current_candidate_tree_has_ancestry_anchor():
@@ -328,7 +328,7 @@ def test_git_anchor_rejects_wrong_ref_and_unrelated_head(tmp_path):
 def test_main_rejects_tampered_base_sha_end_to_end(monkeypatch, tmp_path):
     source = ledger.LEDGER_PATH.read_text()
     tampered = source.replace(
-        "base-sha: 14cd6f355b1f2e961c5ba3e6fce6ca8d1905fa73",
+        "base-sha: 8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94",
         "base-sha: 0000000000000000000000000000000000000000",
     )
     path = tmp_path / "BACKLOG-WP-LEDGER.md"
@@ -337,10 +337,10 @@ def test_main_rejects_tampered_base_sha_end_to_end(monkeypatch, tmp_path):
     assert ledger.main() == 1
 
 
-def test_snapshot_rejects_coordinated_b006_closure_and_count_rewrite():
+def test_snapshot_rejects_coordinated_open_item_closure_and_count_rewrite():
     backlog = ledger.REPO_ROOT.joinpath("BACKLOG.md").read_text()
-    start = backlog.index("### B-006")
-    end = backlog.index("### B-007", start)
+    start = backlog.index("### B-008")
+    end = backlog.index("### B-009", start)
     mutated_backlog = (
         backlog[:start]
         + backlog[start:end].replace("status: open", "status: done", 1)
@@ -348,8 +348,8 @@ def test_snapshot_rejects_coordinated_b006_closure_and_count_rewrite():
     )
     ledger_text = ledger.LEDGER_PATH.read_text()
     mutated_ledger = ledger_text.replace("open-count: 14", "open-count: 13", 1)
-    mutated_ledger = mutated_ledger.replace("done-count: 316", "done-count: 317", 1)
-    mutated_ledger = mutated_ledger.replace("B001-B045=5", "B001-B045=4", 1)
+    mutated_ledger = mutated_ledger.replace("done-count: 327", "done-count: 328", 1)
+    mutated_ledger = mutated_ledger.replace("B001-B045=4", "B001-B045=3", 1)
     state = parse_ledger_state(mutated_ledger, "mutated-ledger.md")
     with pytest.raises(LedgerError, match="outside the immutable snapshot"):
         validate_snapshot_manifest(

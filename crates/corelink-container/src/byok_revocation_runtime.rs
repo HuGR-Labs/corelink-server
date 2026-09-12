@@ -17,6 +17,7 @@ use corelink_byok::{KmsKeyId, KmsProviderKind};
 use serde_json::{json, Value};
 use tracing::warn;
 
+use crate::byok_control_transition::{CmkIdentity, D1ByokControl};
 use crate::storage::d1_http::{D1HttpClient, D1Row};
 
 /// Minimal D1 query seam used by the native revocation adapters.
@@ -79,9 +80,26 @@ impl<C: RevocationD1Client> ActiveByokKeySource for D1ActiveByokKeySource<C> {
         let rows = self
             .client
             .query(
-                "SELECT DISTINCT cmk_provider, cmk_key_id, cmk_region \
-                 FROM tenant_byok_config \
-                 WHERE state IN ('active', 'partial') AND cmk_provider = ?1",
+                "SELECT DISTINCT cmk_provider,cmk_key_id,cmk_region FROM ( \
+                   SELECT c.cmk_provider,c.cmk_key_id,c.cmk_region \
+                   FROM tenant_byok_config c \
+                   WHERE c.state IN ('pending', 'active', 'partial') AND c.cmk_provider=?1 \
+                   UNION \
+                   SELECT a.source_cmk_provider,a.source_cmk_key_id,a.source_cmk_region \
+                   FROM byok_activation_intent a \
+                   JOIN tenant_byok_config c ON c.tenant_id=a.tenant_id \
+                   JOIN tenant_byok_config_history h ON h.tenant_id=a.tenant_id \
+                    AND h.config_version=a.source_config_version \
+                    AND h.cmk_provider=a.source_cmk_provider \
+                    AND h.cmk_key_id=a.source_cmk_key_id AND h.cmk_region=a.source_cmk_region \
+                   JOIN tenant_byok_secret_history s ON s.tenant_id=a.tenant_id \
+                    AND s.tcs_version=a.source_tcs_version \
+                    AND s.cmk_provider=a.source_cmk_provider \
+                    AND s.cmk_key_id=a.source_cmk_key_id AND s.cmk_region=a.source_cmk_region \
+                   WHERE a.phase IN ('copy','published_partial','purging','ready_finalize') \
+                    AND a.source_generation>0 AND a.source_cmk_provider=?1 \
+                    AND c.state IN ('pending','partial') AND s.tcs_wrapped IS NOT NULL) \
+                 ORDER BY cmk_provider,cmk_key_id,cmk_region",
                 &[json!(provider.as_str())],
             )
             .await
@@ -117,16 +135,19 @@ impl<C: RevocationD1Client> ActiveByokKeySource for D1ActiveByokKeySource<C> {
 /// `RETURNING` makes the updated-row count authoritative instead of claiming
 /// that a write happened when D1 returned no matching tenant.
 #[derive(Debug)]
+#[cfg(test)]
 pub struct D1TenantStatusStore<C = D1HttpClient> {
     client: Arc<C>,
 }
 
+#[cfg(test)]
 const MARK_DEGRADED_SQL: &str = "UPDATE tenant SET byok_status = 'degraded_read_only', \
                     byok_revoked_at_ms = ?1, byok_revoked_provider = ?2, \
                     byok_revoked_kms_key_id = ?3 \
                  WHERE tenant_id IN (SELECT tenant_id FROM tenant_byok_config \
                     WHERE cmk_provider = ?2 AND cmk_key_id = ?3) \
                  RETURNING tenant_id";
+#[cfg(test)]
 const RESTORE_ACTIVE_SQL: &str = "UPDATE tenant SET byok_status = 'active', \
                     byok_revoked_at_ms = NULL, byok_revoked_provider = NULL, \
                     byok_revoked_kms_key_id = NULL \
@@ -135,6 +156,7 @@ const RESTORE_ACTIVE_SQL: &str = "UPDATE tenant SET byok_status = 'active', \
                     WHERE cmk_provider = ?1 AND cmk_key_id = ?2) \
                  RETURNING tenant_id";
 
+#[cfg(test)]
 impl<C: RevocationD1Client> D1TenantStatusStore<C> {
     /// Construct the store over the shared boot-time D1 client.
     #[must_use]
@@ -173,6 +195,7 @@ impl<C: RevocationD1Client> D1TenantStatusStore<C> {
 }
 
 #[async_trait]
+#[cfg(test)]
 impl<C: RevocationD1Client> TenantStatusStore for D1TenantStatusStore<C> {
     async fn mark_degraded(
         &self,
@@ -235,6 +258,139 @@ impl<C: RevocationD1Client> TenantStatusStore for D1TenantStatusStore<C> {
     }
 }
 
+/// Production status store using tenant-wide transition fences. The legacy
+/// generic adapter above remains only as a narrow SQL seam for existing unit
+/// fixtures; production never performs key-wide UPDATEs or `LIMIT 1` recovery.
+#[derive(Debug)]
+struct D1FencedTenantStatusStore {
+    control: Arc<D1ByokControl>,
+}
+
+impl D1FencedTenantStatusStore {
+    fn new(control: Arc<D1ByokControl>) -> Self {
+        Self { control }
+    }
+}
+
+fn complete_identity(key_id: &KmsKeyId) -> Result<CmkIdentity, RevocationError> {
+    if key_id.as_str().trim().is_empty() || key_id.region.trim().is_empty() {
+        return Err(RevocationError::Internal(
+            "revocation requires complete provider/key/region identity".to_owned(),
+        ));
+    }
+    Ok(CmkIdentity {
+        provider: key_id.provider.as_str().to_owned(),
+        key_id: key_id.as_str().to_owned(),
+        region: key_id.region.clone(),
+    })
+}
+
+#[async_trait]
+impl TenantStatusStore for D1FencedTenantStatusStore {
+    async fn mark_degraded(
+        &self,
+        key_id: &KmsKeyId,
+        provider: &str,
+        revoked_at_ms: u64,
+    ) -> Result<usize, RevocationError> {
+        let identity = complete_identity(key_id)?;
+        if provider != identity.provider {
+            return Err(RevocationError::Internal(
+                "revocation provider disagrees with complete key identity".to_owned(),
+            ));
+        }
+        let at = i64::try_from(revoked_at_ms).map_err(|_| {
+            RevocationError::Internal("revocation timestamp exceeds D1 INTEGER".to_owned())
+        })?;
+        let bindings = self
+            .control
+            .resolve_active_tenants(&identity)
+            .await
+            .map_err(|detail| RevocationError::TenantDegradeFailed {
+                kms_key_id: key_id.to_string(),
+                detail,
+            })?;
+        let mut updated = 0_usize;
+        for binding in bindings {
+            if self
+                .control
+                .degrade_tenant(&binding, at)
+                .await
+                .map_err(|detail| RevocationError::TenantDegradeFailed {
+                    kms_key_id: key_id.to_string(),
+                    detail,
+                })?
+            {
+                updated += 1;
+            }
+        }
+        if updated == 0
+            && self
+                .control
+                .has_degraded_tenant(&identity)
+                .await
+                .map_err(|detail| RevocationError::TenantDegradeFailed {
+                    kms_key_id: key_id.to_string(),
+                    detail,
+                })?
+        {
+            return Ok(1);
+        }
+        if updated == 0 {
+            return Err(RevocationError::TenantDegradeFailed {
+                kms_key_id: key_id.to_string(),
+                detail: "zero exact tenant bindings transitioned".to_owned(),
+            });
+        }
+        Ok(updated)
+    }
+
+    async fn restore_active(
+        &self,
+        key_id: &KmsKeyId,
+        restored_at_ms: u64,
+    ) -> Result<usize, RevocationError> {
+        let identity = complete_identity(key_id)?;
+        let at = i64::try_from(restored_at_ms).map_err(|_| {
+            RevocationError::Internal("restore timestamp exceeds D1 INTEGER".to_owned())
+        })?;
+        let bindings = self
+            .control
+            .resolve_active_tenants(&identity)
+            .await
+            .map_err(RevocationError::Internal)?;
+        let mut updated = 0_usize;
+        for binding in bindings {
+            if self
+                .control
+                .restore_tenant(&binding, at)
+                .await
+                .map_err(RevocationError::Internal)?
+            {
+                updated += 1;
+            }
+        }
+        if updated == 0 {
+            return Err(RevocationError::Internal(
+                "zero exact degraded tenant bindings restored".to_owned(),
+            ));
+        }
+        Ok(updated)
+    }
+
+    async fn current_status(
+        &self,
+        key_id: &KmsKeyId,
+    ) -> Result<Option<TenantByokStatus>, RevocationError> {
+        let identity = complete_identity(key_id)?;
+        self.control
+            .has_degraded_tenant(&identity)
+            .await
+            .map(|present| present.then_some(TenantByokStatus::DegradedReadOnly))
+            .map_err(RevocationError::Internal)
+    }
+}
+
 /// D1-backed customer notification adapter.
 ///
 /// The customer-safe activity row is written by the tenant status trigger in
@@ -261,11 +417,19 @@ impl<C: RevocationD1Client> D1RevocationAlerter<C> {
         let tenants = self
             .client
             .query(
-                "SELECT tenant_id FROM tenant_byok_config \
-                 WHERE cmk_provider = ?1 AND cmk_key_id = ?2",
+                "SELECT DISTINCT o.alert_recipient AS tenant_id FROM byok_control_outcome o \
+                 WHERE o.cmk_provider = ?1 AND o.cmk_key_id = ?2 AND o.cmk_region = ?3 \
+                 AND o.action = ?4 AND o.outcome = 'completed' \
+                 AND o.alert_outcome = 'customer_activity_recorded'",
                 &[
                     json!(payload.kms_key_id.provider.as_str()),
                     json!(payload.kms_key_id.as_str()),
+                    json!(payload.kms_key_id.region),
+                    json!(if event_type == "byok.cmk_revoked" {
+                        "degrade"
+                    } else {
+                        "restore"
+                    }),
                 ],
             )
             .await
@@ -332,10 +496,11 @@ pub fn detector_for_client(
         corelink_byok::DekCache::new(300)
             .map_err(|error| format!("BYOK revocation cache configuration failed: {error}"))?,
     );
+    let control = Arc::new(D1ByokControl::new(Arc::clone(&client)));
     Ok(corelink_byok::revocation::RevocationDetector::new(
         vec![provider],
         cache,
-        Arc::new(D1TenantStatusStore::new(Arc::clone(&client))),
+        Arc::new(D1FencedTenantStatusStore::new(control)),
         Arc::new(D1RevocationAlerter::new(Arc::clone(&client))),
         corelink_byok::revocation::RevocationConfig::default(),
     )

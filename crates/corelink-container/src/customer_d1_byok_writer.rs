@@ -92,7 +92,7 @@ pub struct ByokActivation {
 impl ByokActivation {
     /// Validate fail-CLOSED. Rejects `managed` custody, unknown providers,
     /// empty CMK identity, and an empty wrapped-Tcs BEFORE any D1 write.
-    fn validate(&self) -> Result<(), ByokWriteError> {
+    pub(crate) fn validate_for_control(&self) -> Result<(), ByokWriteError> {
         if self.tenant_id.trim().is_empty() {
             return Err(ByokWriteError::Invalid("tenant_id is empty".to_owned()));
         }
@@ -131,6 +131,7 @@ impl ByokActivation {
 pub struct D1ByokConfigWriter<R = D1HttpClient> {
     /// Async row source (production: [`D1HttpClient`]). `query_rows` carries
     /// both reads and writes (a write returns an empty result set).
+    #[cfg_attr(not(test), allow(dead_code, reason = "legacy writer is test-only; production uses D1ByokControl"))]
     rows: Arc<R>,
 }
 
@@ -143,6 +144,7 @@ impl<R: ByokConfigRows> D1ByokConfigWriter<R> {
 
     /// Read the tenant's current `state` (fail-CLOSED on an unparseable value).
     /// `Ok(None)` ⇒ no config row yet.
+    #[cfg(test)]
     async fn current_state(&self, tenant_id: &str) -> Result<Option<ByokState>, ByokWriteError> {
         let rows = self
             .rows
@@ -177,8 +179,9 @@ impl<R: ByokConfigRows> D1ByokConfigWriter<R> {
     /// - [`ByokWriteError::Invalid`] when the parameters fail validation.
     /// - [`ByokWriteError::IllegalTransition`] when the tenant is `shredded`.
     /// - [`ByokWriteError::Transport`] on any D1 write failure.
+    #[cfg(test)]
     pub async fn activate(&self, act: &ByokActivation, now_ms: i64) -> Result<(), ByokWriteError> {
-        act.validate()?;
+        act.validate_for_control()?;
         // Monotonic guard: crypto-shred is terminal — a shredded tenant's
         // ciphertext is unrecoverable, so re-activation would be a lie.
         if let Some(ByokState::Shredded) = self.current_state(&act.tenant_id).await? {
@@ -275,6 +278,7 @@ impl<R: ByokConfigRows> D1ByokConfigWriter<R> {
     /// - [`ByokWriteError::IllegalTransition`] when the tenant is not
     ///   active/partial/shredded (i.e. no active BYOK config to kill).
     /// - [`ByokWriteError::Transport`] on any D1 read/write failure.
+    #[cfg(test)]
     pub async fn deactivate(&self, tenant_id: &str, now_ms: i64) -> Result<(), ByokWriteError> {
         match self.current_state(tenant_id).await? {
             // Nothing active to kill — refuse rather than write a spurious

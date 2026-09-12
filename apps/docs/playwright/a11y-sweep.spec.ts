@@ -11,46 +11,73 @@
  * evidence pack); this spec is the automated gate.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
-// The docs are served under the canonical product path (Docusaurus
-// `baseUrl: /corelink/docs/`), so every route is prefixed. Kept as a constant
-// (overridable) so a future base-path change is a one-line edit.
+// Read the shared JSON directly: Playwright 1.61's Node loader cannot resolve
+// local TypeScript imports on every supported Node 22 patch release.
+const ROUTE_PATHS: string[] = JSON.parse(
+  readFileSync(join(__dirname, "../scripts/a11y-routes.json"), "utf8"),
+);
 const BASE_PATH = process.env.DOCS_BASE_PATH ?? "/corelink/docs";
-
-const ROUTES = [
-  "/",
-  "/tutorial/",
-  "/tutorial/getting-started/",
-  "/how-to/",
-  "/reference/",
-  "/reference/reapi/",
-  "/reference/cli/",
-  "/reference/sdk/python/",
-  "/reference/sdk/go/",
-  "/reference/sdk/javascript/",
-  "/explanation/",
-  "/explanation/security/",
-  "/compliance/",
-  "/security/",
-  "/pricing/",
-].map((r) => (r === "/" ? `${BASE_PATH}/` : `${BASE_PATH}${r}`));
+const A11Y_ROUTES = ROUTE_PATHS.map((route) =>
+  route === "/" ? `${BASE_PATH}/` : `${BASE_PATH}${route}`,
+);
 
 const FORBIDDEN_IMPACT = new Set(["serious", "critical"]);
 
-async function scan(page: Page, route: string) {
+async function scan(page: Page, route: string, testInfo: TestInfo) {
   const response = await page.goto(route, { waitUntil: "networkidle" });
-  // Allow 404s only for routes that have not landed yet (parallel WI build);
-  // CI sprint-close run must hit 200 across the board.
+  const audit = {
+    route,
+    url: new URL(route, process.env.DOCS_BASE_URL ?? "http://localhost:3000")
+      .href,
+    violations: [] as Array<{
+      id: string;
+      impact: string | null;
+      help: string;
+      helpUrl: string;
+      nodes: number;
+      tags: string[];
+    }>,
+    ...(response ? {} : { error: "navigation returned no main response" }),
+  };
+
+  // A missing route is an availability failure, not an accessibility pass.
+  // Never skip a 4xx/5xx (or a navigation with no main response).
   if (!response || response.status() >= 400) {
-    test.skip(true, `route ${route} not yet available (status ${response?.status() ?? "no-response"})`);
-    return;
+    if (response) {
+      Object.assign(audit, { error: `navigation returned HTTP ${response.status()}` });
+    }
+    await testInfo.attach("corelink-a11y-result", {
+      body: Buffer.from(JSON.stringify(audit)),
+      contentType: "application/json",
+    });
+    throw new Error(
+      `route ${route} unavailable (status ${response?.status() ?? "no-response"})`,
+    );
   }
 
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"])
     .analyze();
+
+  audit.violations = results.violations.map((violation) => ({
+    id: violation.id,
+    impact: violation.impact,
+    help: violation.help,
+    helpUrl: violation.helpUrl,
+    nodes: violation.nodes.length,
+    tags: violation.tags,
+  }));
+  await testInfo.attach("corelink-a11y-result", {
+    body: Buffer.from(JSON.stringify(audit)),
+    contentType: "application/json",
+  });
 
   const blocking = results.violations.filter((v) =>
     FORBIDDEN_IMPACT.has(v.impact ?? ""),
@@ -83,8 +110,8 @@ async function scan(page: Page, route: string) {
   ).toEqual([]);
 }
 
-for (const route of ROUTES) {
-  test(`a11y: ${route}`, async ({ page }) => {
-    await scan(page, route);
+for (const route of A11Y_ROUTES) {
+  test(`a11y: ${route}`, async ({ page }, testInfo) => {
+    await scan(page, route, testInfo);
   });
 }

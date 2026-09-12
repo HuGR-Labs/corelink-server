@@ -29,8 +29,30 @@
 //!   `corelink_handler_cas::{CasReadHandler, CasWriteHandler}`.
 //! - [`d1_http`] — async D1 HTTP API client for metadata reads.
 
+/// Typed durable state machine for the purge-before-active activation pipeline.
+pub mod byok_activation;
+/// Concrete D1 lifecycle adapter for the purge-before-active pipeline.
+pub mod byok_activation_d1;
+/// Bounded, supervised runtime driver for durable activation intents.
+pub mod byok_activation_runtime;
+/// Concrete bounded R2/D1 copy and purge worker for activation intents.
+pub mod byok_activation_worker;
+pub mod byok_backfill;
+/// Production crypto implementation used by BYOK backfill jobs.
+pub mod byok_backfill_crypto;
+/// Retired generic 0120 adapter retained only as a hermetic compatibility
+/// fixture. Production activation uses the allocation-first activation worker;
+/// compiling this PUT-before-checkpoint path into a release would reintroduce
+/// an unledgered crash orphan window.
+#[cfg(test)]
+#[allow(dead_code, clippy::indexing_slicing)]
+pub(crate) mod byok_backfill_d1;
 /// BYOK convergent-encryption helpers for native CAS storage.
 pub mod byok_cas;
+/// Durable generation catalog and tenant-wide data-plane gate for BYOK.
+pub mod byok_generation_catalog;
+/// Concrete CAS/AC R2 I/O driver for durable BYOK purge claims.
+pub mod byok_purge_io;
 pub mod cas_write_fence;
 pub mod d1_audit_sink;
 pub mod d1_http;

@@ -69,6 +69,7 @@ impl CasWriteHandler for R2CasHandler {
                 actual,
             });
         }
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Write)?;
 
         // B071: claim the D1 writer lease before resolving keys or touching
         // R2. GC acquisition excludes this lease, and the metadata commit
@@ -111,7 +112,12 @@ impl CasWriteHandler for R2CasHandler {
         // (byte-identical to today); an active-but-unresolvable tenant fails
         // CLOSED here (never PUTs plaintext).
         let resolved = match tokio::task::block_in_place(|| {
-            handle.block_on(self.resolve_byok(&req.tenant, &req.claimed_hash, req.algo))
+            handle.block_on(self.resolve_byok_with_guard(
+                &req.tenant,
+                &req.claimed_hash,
+                req.algo,
+                byok_guard.as_ref(),
+            ))
         }) {
             Ok(r) => r,
             Err(e) => {
@@ -122,13 +128,69 @@ impl CasWriteHandler for R2CasHandler {
         };
         // Fail CLOSED if the tenant prefix is not derivable: never touch
         // R2 under a degraded/empty (SHARED) prefix.
-        let key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo) {
-            Ok(k) => k,
-            Err(e) => {
-                abort_fence(&fence_lease);
-                emit(true);
-                return Err(CasHandlerError::Internal(e));
+        let logical_key = format!(
+            "{}:{}",
+            match req.algo {
+                DigestAlgo::Blake3 => "blake3",
+                DigestAlgo::Sha256 => "sha256",
+            },
+            req.claimed_hash
+        );
+        let catalog_generation = byok_guard
+            .as_ref()
+            .and_then(|guard| guard.intent().ok())
+            .and_then(|intent| intent.catalog_generation());
+        let (key, staged, envelope_allocation_id) = if let (Some(guard), Some(generation)) =
+            (byok_guard.as_ref(), catalog_generation)
+        {
+            let catalog_result = tokio::task::block_in_place(|| {
+                handle.block_on(guard.gate().resolve_catalog(
+                    guard.intent()?,
+                    crate::storage::byok_generation_catalog::ByokObjectKind::Cas,
+                    &logical_key,
+                ))
+            });
+            match catalog_result {
+                Ok(Some(published)) => {
+                    (published.physical_key, None, Some(published.allocation_id))
+                }
+                Ok(None) => {
+                    let allocation_id = Uuid::new_v4().to_string();
+                    let physical_digest =
+                        crate::storage::byok_generation_catalog::generation_qualified_digest(
+                            generation,
+                            &allocation_id,
+                            &resolved.physical_digest,
+                        )
+                        .map_err(CasHandlerError::Internal)?;
+                    let physical_key = self
+                        .r2_key(&req.tenant, &physical_digest, req.algo)
+                        .map_err(CasHandlerError::Internal)?;
+                    let staged = tokio::task::block_in_place(|| {
+                        handle.block_on(guard.gate().allocate_catalog(
+                            guard.intent()?,
+                            crate::storage::byok_generation_catalog::ByokObjectKind::Cas,
+                            &logical_key,
+                            &allocation_id,
+                            &physical_key,
+                            req.bytes.len() as u64,
+                        ))
+                    })
+                    .map_err(CasHandlerError::Internal)?;
+                    (physical_key, Some(staged), Some(allocation_id))
+                }
+                Err(error) => return Err(CasHandlerError::Internal(error)),
             }
+        } else {
+            let legacy_key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo) {
+                Ok(k) => k,
+                Err(e) => {
+                    abort_fence(&fence_lease);
+                    emit(true);
+                    return Err(CasHandlerError::Internal(e));
+                }
+            };
+            (legacy_key, None, None)
         };
         debug!(key = %key, bytes = req.bytes.len(), "R2CasHandler::write");
         let request_bytes_len = req.bytes.len() as u64;
@@ -184,6 +246,7 @@ impl CasWriteHandler for R2CasHandler {
                         .map_err(CasHandlerError::AuditFailed)?;
                     self.sli
                         .observe(SliObservation::new(Sli::CorrectnessCas, false, 0));
+                    self.finish_byok_mutation(byok_guard.as_mut())?;
                     emit(false);
                     return Ok(CasWriteResponse::new(req.claimed_hash, false));
                 }
@@ -204,7 +267,11 @@ impl CasWriteHandler for R2CasHandler {
         // for an active tenant. `None` ⇒ the plaintext path (req.bytes),
         // byte-identical to today for every non-BYOK tenant.
         let payload = match tokio::task::block_in_place(|| {
-            handle.block_on(self.encrypt_body(&resolved.plan, &req.bytes))
+            handle.block_on(self.encrypt_body(
+                &resolved.plan,
+                &req.bytes,
+                envelope_allocation_id.as_deref(),
+            ))
         }) {
             Ok(Some(ciphertext)) => ciphertext,
             Ok(None) => req.bytes,
@@ -218,6 +285,12 @@ impl CasWriteHandler for R2CasHandler {
         let result = {
             let _scope =
                 crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Store);
+            if let (Some(guard), Some(_)) = (byok_guard.as_ref(), staged.as_ref()) {
+                tokio::task::block_in_place(|| {
+                    handle.block_on(guard.validate_for_storage_dispatch())
+                })
+                .map_err(CasHandlerError::Internal)?;
+            }
             tokio::task::block_in_place(|| {
                 if dedup_eligible {
                     handle
@@ -233,6 +306,17 @@ impl CasWriteHandler for R2CasHandler {
 
         match result {
             Ok((r2_fresh, ())) => {
+                if let (Some(guard), Some(staged)) = (byok_guard.as_ref(), staged.as_ref()) {
+                    let published = tokio::task::block_in_place(|| {
+                        handle.block_on(guard.gate().publish_catalog(guard.intent()?, staged))
+                    })
+                    .map_err(CasHandlerError::Internal)?;
+                    if !published {
+                        return Err(CasHandlerError::Internal(
+                            "BYOK catalog rejected stale PUT; object left unreachable".to_owned(),
+                        ));
+                    }
+                }
                 let metadata_result = if let (Some(fence), Some(lease)) =
                     (self.cas_write_fence.as_ref(), fence_lease.as_ref())
                 {
@@ -297,6 +381,7 @@ impl CasWriteHandler for R2CasHandler {
                     .map_err(CasHandlerError::AuditFailed)?;
                 self.sli
                     .observe(SliObservation::new(Sli::CorrectnessCas, false, 0));
+                self.finish_byok_mutation(byok_guard.as_mut())?;
                 emit(false);
                 Ok(CasWriteResponse::new(req.claimed_hash, r2_fresh))
             }

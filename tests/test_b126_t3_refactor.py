@@ -51,6 +51,28 @@ class B126T3RefactorTests(unittest.TestCase):
                 self.assertTrue(gate.verify(ROOT, {spec.parent: fake}))
                 self.assertTrue(gate.verify(ROOT, {spec.fragment: None}))
 
+    def test_use_super_wiring_is_unique_real_and_not_bait(self) -> None:
+        for spec in gate.T3_SPECS:
+            if not spec.language.startswith("rust") or spec.parent.endswith("adapters.rs"):
+                continue
+            fragment = (ROOT / spec.fragment).read_text(encoding="utf-8")
+            with self.subTest(relative=spec.fragment):
+                mutations = {
+                    "removed": fragment.replace("use super::*;\n", "", 1),
+                    "duplicated": fragment.replace(
+                        "use super::*;", "use super::*;\nuse super::*;", 1
+                    ),
+                    "comment": fragment.replace("use super::*;", "// use super::*;", 1),
+                    "string": fragment.replace(
+                        "use super::*;",
+                        'const _B126_WIRING_BAIT: &str = "use super::*;";',
+                        1,
+                    ),
+                }
+                for kind, mutated in mutations.items():
+                    with self.subTest(kind=kind):
+                        self.assertTrue(gate.verify(ROOT, {spec.fragment: mutated}))
+
     def test_monolith_growth_and_population_mutations_are_red(self) -> None:
         spec = gate.T3_SPECS[0]
         text = (ROOT / spec.parent).read_text(encoding="utf-8")

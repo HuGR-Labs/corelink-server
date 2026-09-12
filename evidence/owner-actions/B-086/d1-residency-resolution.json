@@ -1,5 +1,6 @@
 {
   "schema_version": "1.0",
+  "capture_commit": "09e253a3699098a1aa18b77c4760befc45f8a324",
   "captured_at": "2026-09-09T06:10:15Z",
   "decision": "unresolved",
   "production_bindings": [

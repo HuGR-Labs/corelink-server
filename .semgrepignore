@@ -38,6 +38,9 @@ proto/generated/
 **/fuzz/artifacts/
 **/testdata/
 **/fixtures/
+# Executable Semgrep rule controls contain intentional positive findings and
+# are evaluated only via `semgrep --test --no-git-ignore`.
+tests/semgrep/
 
 # Editor / OS clutter
 .vscode/

@@ -7,12 +7,14 @@ import {
   type ReceiverEnv,
 } from "../src/contract.js";
 
-const drillId = "SP-1785844800000";
+const drillId = "SP-1785765600000";
 const correlation = `PAT-CORRELATION-ID-001:${drillId}`;
+const deferredDrillId = "SP-1787580000000";
+const deferredCorrelation = `PAT-CORRELATION-ID-001:${deferredDrillId}`;
 const immediateEnvelope = {
   drill: "synthetic_page",
   cron: "0 14 * * 1",
-  scheduled_at_ms: 1_785_844_800_000,
+  scheduled_at_ms: 1_785_765_600_000,
   synthetic_page: {
     service: "synthetic-drill",
     event_action: "trigger",
@@ -20,7 +22,7 @@ const immediateEnvelope = {
     synthetic_severity: "sev2_synthetic",
     region: "americas",
     rotation_week: 0,
-    emit_at_ms: 1_785_844_800_000,
+    emit_at_ms: 1_785_765_600_000,
     delivery_mode: "immediate",
     dedup_key: drillId,
     correlation_id: correlation,
@@ -28,24 +30,29 @@ const immediateEnvelope = {
 } as const;
 const deferredEnvelope = {
   ...immediateEnvelope,
+  scheduled_at_ms: 1_787_580_000_000,
   synthetic_page: {
     ...immediateEnvelope.synthetic_page,
     region: "boundary_handoff",
     rotation_week: 3,
-    emit_at_ms: 1_785_905_940_000,
+    emit_at_ms: 1_788_134_340_000,
     delivery_mode: "deferred",
+    dedup_key: deferredDrillId,
+    correlation_id: deferredCorrelation,
   },
 } as const;
 
-function fakeDb(options: { row?: unknown; rows?: unknown[]; failBatch?: boolean } = {}) {
+function fakeDb(options: { row?: unknown; persistedOutcome?: string; rows?: unknown[]; failBatch?: boolean; failBatchAt?: number } = {}) {
   const calls: string[] = [];
+  let batchNumber = 0;
   const run = vi.fn().mockResolvedValue({ success: true });
   const batch = vi.fn().mockImplementation(async () => {
+    batchNumber += 1;
     calls.push("batch");
-    if (options.failBatch) throw new Error("storage unavailable");
+    if (options.failBatch || options.failBatchAt === batchNumber) throw new Error("storage unavailable");
     for (const row of options.rows ?? []) {
       if (typeof row === "object" && row !== null && "delivery_mode" in row && "delivered_at_ms" in row) {
-        (row as { delivered_at_ms: number | null }).delivered_at_ms = 1_785_905_940_000;
+        (row as { delivered_at_ms: number | null }).delivered_at_ms = 1_788_134_340_000;
       }
     }
     return [];
@@ -62,7 +69,10 @@ function fakeDb(options: { row?: unknown; rows?: unknown[]; failBatch?: boolean 
               : true,
           ),
         }),
-        first: vi.fn().mockResolvedValue(options.row ?? null),
+        first: vi.fn().mockImplementation(async () =>
+          sql.includes("SELECT outcome FROM synthetic_page_drills_b072")
+            ? options.persistedOutcome === undefined ? null : { outcome: options.persistedOutcome }
+            : options.row ?? null),
         run,
       })),
     };
@@ -100,6 +110,7 @@ function request(body: unknown, path = "/v1/drills/synthetic_page"): Request {
 }
 
 const workerFetch = handler.fetch!;
+const workerScheduled = handler.scheduled!;
 async function invoke(requestValue: Request, environment: ReceiverEnv): Promise<Response> {
   return workerFetch(requestValue as Parameters<typeof workerFetch>[0], environment, {} as ExecutionContext);
 }
@@ -125,6 +136,18 @@ describe("synthetic receiver contract", () => {
       ...immediateEnvelope,
       synthetic_page: { ...immediateEnvelope.synthetic_page, correlation_id: "wrong" },
     })).toBeNull();
+    expect(parseSyntheticPageEnvelope({
+      ...immediateEnvelope,
+      scheduled_at_ms: immediateEnvelope.scheduled_at_ms + 1,
+    })).toBeNull();
+    expect(parseSyntheticPageEnvelope({
+      ...immediateEnvelope,
+      synthetic_page: { ...immediateEnvelope.synthetic_page, region: "emea" },
+    })).toBeNull();
+    expect(parseSyntheticPageEnvelope({
+      ...deferredEnvelope,
+      synthetic_page: { ...deferredEnvelope.synthetic_page, emit_at_ms: deferredEnvelope.synthetic_page.emit_at_ms + 1 },
+    })).toBeNull();
   });
 
   it.each(["prod", "prod-sam", "prod-lhr", "prod-nrt", "prod-syd"])(
@@ -141,13 +164,30 @@ describe("synthetic receiver contract", () => {
       order.push("pagerduty");
       return new Response(null, { status: 202 });
     });
-    receiver.database.batch.mockImplementationOnce(async () => {
+    receiver.database.batch.mockImplementation(async () => {
       order.push("d1");
       return [];
     });
     vi.stubGlobal("fetch", pagerDutyFetch);
     expect((await invoke(request(immediateEnvelope), receiver.value)).status).toBe(202);
-    expect(order).toEqual(["d1", "pagerduty"]);
+    expect(order).toEqual(["d1", "pagerduty", "d1"]);
+    expect(receiver.database.batch).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not record a delivery receipt when PagerDuty rejects the event", async () => {
+    const receiver = env();
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 503 })));
+    expect((await invoke(request(immediateEnvelope), receiver.value)).status).toBe(502);
+    expect(receiver.database.batch).toHaveBeenCalledOnce();
+  });
+
+  it("returns retryable 503 when PagerDuty accepted but its durable receipt failed", async () => {
+    const receiver = env({}, { failBatchAt: 2 });
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 202 })));
+    const response = await invoke(request(immediateEnvelope), receiver.value);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: "delivery_receipt_unavailable" });
+    expect(receiver.database.batch).toHaveBeenCalledTimes(2);
   });
 
   it("suppresses PagerDuty when D1 storage fails", async () => {
@@ -164,7 +204,7 @@ describe("synthetic receiver contract", () => {
     vi.stubGlobal("fetch", pagerDutyFetch);
     const response = await invoke(request(deferredEnvelope), receiver.value);
     expect(response.status).toBe(202);
-    expect(JSON.parse(await response.text())).toMatchObject({ deferred: true, dedup_key: drillId });
+    expect(JSON.parse(await response.text())).toMatchObject({ deferred: true, dedup_key: deferredDrillId });
     expect(receiver.database.batch).toHaveBeenCalledOnce();
     expect(pagerDutyFetch).not.toHaveBeenCalled();
   });
@@ -172,11 +212,11 @@ describe("synthetic receiver contract", () => {
   it("executes deferred delivery and retries with identical dedup/correlation", async () => {
     const receiver = env({}, {
       rows: [{
-        drill_id: drillId,
+        drill_id: deferredDrillId,
         region: "boundary_handoff",
-        emit_ts_ms: 1_785_905_940_000,
-        scheduled_at_ms: 1_785_844_800_000,
-        correlation_id: correlation,
+        emit_ts_ms: 1_788_134_340_000,
+        scheduled_at_ms: 1_787_580_000_000,
+        correlation_id: deferredCorrelation,
         delivery_mode: "deferred",
         delivered_at_ms: null,
       }],
@@ -184,13 +224,25 @@ describe("synthetic receiver contract", () => {
     const pagerDutyFetch = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(null, { status: 503 }))
       .mockResolvedValueOnce(new Response(null, { status: 202 }));
-    const controller = { cron: "59 23 * * 0", scheduledTime: 1_785_905_940_000, noRetry: vi.fn() } as ScheduledController;
+    const controller = { cron: "59 23 * * 0", scheduledTime: 1_788_134_340_000, noRetry: vi.fn() } as ScheduledController;
+    const acceptedAt = 1_788_134_345_000;
     await expect(runDeferredDeliveries(controller, receiver.value, pagerDutyFetch)).rejects.toThrow("PagerDuty delivery failed");
-    await expect(runDeferredDeliveries(controller, receiver.value, pagerDutyFetch)).resolves.toBeUndefined();
-    await expect(runDeferredDeliveries(controller, receiver.value, pagerDutyFetch)).resolves.toBeUndefined();
+    await expect(runDeferredDeliveries(controller, receiver.value, pagerDutyFetch, () => acceptedAt)).resolves.toBeUndefined();
+    await expect(runDeferredDeliveries(controller, receiver.value, pagerDutyFetch, () => acceptedAt + 1)).resolves.toBeUndefined();
     expect(pagerDutyFetch).toHaveBeenCalledTimes(2);
     expect(pagerDutyFetch.mock.calls[0]?.[1]?.body).toBe(pagerDutyFetch.mock.calls[1]?.[1]?.body);
     expect(receiver.database.batch).toHaveBeenCalledOnce();
+    expect(receiver.database.calls).toContain("batch");
+  });
+
+  it("rejects an unknown receiver cron without enumerating durable rows", async () => {
+    const receiver = env();
+    const controller = { cron: "0 0 * * *", scheduledTime: 1_788_134_340_000, noRetry: vi.fn() } as ScheduledController;
+    await expect(workerScheduled(controller, receiver.value, {} as ExecutionContext)).rejects.toThrow(
+      "unknown deferred delivery cron",
+    );
+    expect(controller.noRetry).toHaveBeenCalledOnce();
+    expect(receiver.database.prepare).not.toHaveBeenCalled();
   });
 
   it("requires an authenticated PagerDuty acknowledgment and records MTTA", async () => {
@@ -201,7 +253,8 @@ describe("synthetic receiver contract", () => {
       data: { incident: { incident_key: drillId, assignments: [{ assignee: { summary: "eng-001" } }] } },
     });
     const receiver = env({}, {
-      row: { drill_id: drillId, emit_ts_ms: 1_785_844_800_000, outcome: "unacked", correlation_id: correlation },
+      row: { drill_id: drillId, emit_ts_ms: 1_785_765_600_000, outcome: "unacked", correlation_id: correlation, delivered_at_ms: 1_785_765_600_100 },
+      persistedOutcome: "acked",
     });
     const bad = await invoke(new Request("https://synthetic.example/v1/webhooks/pagerduty", { method: "POST", body }), receiver.value);
     expect(bad.status).toBe(401);
@@ -212,7 +265,7 @@ describe("synthetic receiver contract", () => {
     }), receiver.value);
     expect(good.status).toBe(202);
     expect(receiver.database.batch).toHaveBeenCalledOnce();
-    expect(receiver.database.prepare).toHaveBeenCalledTimes(3);
+    expect(receiver.database.prepare).toHaveBeenCalledTimes(4);
   });
 
   it("records an authenticated escalation as terminal escalation, not an ack", async () => {
@@ -223,7 +276,8 @@ describe("synthetic receiver contract", () => {
       data: { incident: { incident_key: drillId, service: { summary: "synthetic-drill" } } },
     });
     const receiver = env({}, {
-      row: { drill_id: drillId, emit_ts_ms: 1_785_844_800_000, outcome: "unacked", correlation_id: correlation },
+      row: { drill_id: drillId, emit_ts_ms: 1_785_765_600_000, outcome: "unacked", correlation_id: correlation, delivered_at_ms: 1_785_765_600_100 },
+      persistedOutcome: "escalated",
     });
     const response = await invoke(new Request("https://synthetic.example/v1/webhooks/pagerduty", {
       method: "POST",
@@ -233,5 +287,46 @@ describe("synthetic receiver contract", () => {
     expect(response.status).toBe(202);
     expect(JSON.parse(await response.text())).toMatchObject({ outcome: "escalated", drill_id: drillId });
     expect(receiver.database.batch).toHaveBeenCalledOnce();
+  });
+
+  it("returns the persisted terminal outcome when competing webhook events race", async () => {
+    const body = JSON.stringify({
+      id: "pd-ack-lost-race",
+      event_type: "incident.acknowledged",
+      occurred_at: "2026-09-08T14:01:00.000Z",
+      data: { incident: { incident_key: drillId } },
+    });
+    const receiver = env({}, {
+      row: { drill_id: drillId, emit_ts_ms: 1_785_765_600_000, outcome: "unacked", correlation_id: correlation, delivered_at_ms: 1_785_765_600_100 },
+      persistedOutcome: "escalated",
+    });
+    const response = await invoke(new Request("https://synthetic.example/v1/webhooks/pagerduty", {
+      method: "POST",
+      headers: { "x-pagerduty-signature": await signature(body, "webhook-secret") },
+      body,
+    }), receiver.value);
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ outcome: "escalated", drill_id: drillId });
+    const batchStatements = receiver.database.batch.mock.calls[0]?.[0] as unknown[];
+    expect(batchStatements).toHaveLength(2);
+  });
+
+  it("retries a signed outcome until the delivery receipt is durable", async () => {
+    const body = JSON.stringify({
+      id: "pd-ack-before-receipt",
+      event_type: "incident.acknowledged",
+      occurred_at: "2026-09-08T14:01:00.000Z",
+      data: { incident: { incident_key: drillId } },
+    });
+    const receiver = env({}, {
+      row: { drill_id: drillId, emit_ts_ms: 1_785_765_600_000, outcome: "unacked", correlation_id: correlation, delivered_at_ms: null },
+    });
+    const response = await invoke(new Request("https://synthetic.example/v1/webhooks/pagerduty", {
+      method: "POST",
+      headers: { "x-pagerduty-signature": await signature(body, "webhook-secret") },
+      body,
+    }), receiver.value);
+    expect(response.status).toBe(503);
+    expect(receiver.database.batch).not.toHaveBeenCalled();
   });
 });

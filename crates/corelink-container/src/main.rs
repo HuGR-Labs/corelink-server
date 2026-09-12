@@ -45,6 +45,8 @@ use tracing::{info, warn};
 
 #[path = "main_boot.rs"]
 mod boot;
+#[path = "main_byok.rs"]
+mod byok;
 #[cfg(any(
     test,
     feature = "byok-aws-real",
@@ -59,6 +61,7 @@ use boot::{
 };
 #[cfg(test)]
 use boot::{build_runners_resolver_from, build_tier_selector_from};
+use byok::start_byok_background_tasks;
 
 /// Storage backing kind captured once at boot by `main()`.
 ///
@@ -962,6 +965,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         feature = "byok-vault-real"
     )))]
     let _byok_revocation_task: Option<tokio::task::JoinHandle<()>> = None;
+
+    // B-083 activation and physical cleanup are explicitly enabled by the
+    // operator and remain nonfatal to listener boot. Each child job is finite;
+    // durable D1 claims make restart and multi-container overlap safe.
+    let _byok_background_tasks = start_byok_background_tasks(d1_client.as_ref());
 
     // Single HTTP/1.1 listener on PORT (50051) — the DO's getTcpPort target.
     let listener = tokio::net::TcpListener::bind(serve_addr).await?;

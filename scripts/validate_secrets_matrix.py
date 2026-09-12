@@ -92,6 +92,9 @@ ALLOWLIST_REGEX = re.compile(
     r"|RUST_"
     r"|TODO_"
     r"|DOCS_BASE_URL$|DOCS_BASE_PATH$"
+    # Local Playwright/Axe report destinations, set by apps/docs/scripts/a11y-audit.sh.
+    # Exact names only: an A11Y_AUDIT_* credential must remain visible as drift.
+    r"|A11Y_AUDIT_REPORT$|A11Y_AUDIT_SUMMARY$"
     r"|LH_BASE_URL$|LH_START_COMMAND$"
     r"|E2E_BASE_URL$|NEXT_PUBLIC_E2E_TEST_MODE$"
     r"|PROJECTS$|SKIP_WEBSERVER$"

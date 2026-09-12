@@ -1,0 +1,10 @@
+{
+  "generated_at": "<RFC3339 timestamp>",
+  "tested_sha": "0227d446d251137fd8abc7507161735873d80152",
+  "tested_tree": "<40-hex-tree>",
+  "release_sha": "<40-hex-release-commit>",
+  "release_tree": "<same-40-hex-tree>",
+  "pass": 19,
+  "fail": 0,
+  "infra": 0
+}

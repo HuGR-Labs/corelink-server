@@ -210,6 +210,241 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
+### B-364 — o probe de latência comparava RTT remoto com budget interno — FECHADO
+
+Descoberto ao completar B-165: `curl time_total` mistura processamento do serviço,
+cliente↔colo, negociação e jitter da rede, mas era comparado diretamente a 15–30 ms como
+se fosse um relógio interno. A própria mediana do controle `/health` foi 47,877 ms nesta
+origem, tornando a comparação inválida antes de qualquer código CAS.
+
+O harness agora captura `Server-Timing total` por request como relógio primário do serviço e
+registra separadamente o residual `curl_total_ms - server_total_ms`; não subtrai medianas de
+populações independentes. O verificador exige correspondência 1:1 com a observação servida,
+recalcula o residual e falha em timing ausente, negativo, maior que o total ou inconsistente.
+O SLO canônico de CAS GET continua sendo o p99 de 30 dias medido no edge, conforme
+`specs/03_architecture/slo_catalog.md`; dez amostras p90 são diagnóstico, não veredito SLO.
+
+```backlog
+id: B-364
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 scripts/test_verify_b165_latency.py
+verify-means: |
+  inverted — a suíte exige o artefato Server-Timing completo, identidade 1:1 com os dois
+  tenants servidos e aritmética por request. Mutações de residual, amostra, tenant, PAT,
+  status e fronteira de padding falham fechado. O verifier de B-165 é a integração positiva
+  sobre o receipt real; não acessa rede nem usa segredo.
+last-verified: 2026-09-09
+```
+
+### B-365 — B126-M2 perdeu a composição autenticada de epoch em seus fixtures
+
+O refactor do audit archive precisava continuar exercitando serialização e
+classificação com a identidade de tenant e a epoch autenticada. A composição
+revisada preserva esses campos e usa o serializer de epoch também nos casos de
+idempotência e conflito.
+
+```backlog
+id: B-365
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B126-M2 audit archive composition review"
+source-locator: "crates/corelink-container/src/routes/audit_archive.rs:1552,1821-1880"
+finding-title: "audit archive fixtures could bypass authenticated epoch composition"
+problem: "B126-M2 regression fixtures serialized candidate chunks through the legacy helper and used a noncanonical tenant, leaving the epoch-authenticated composition untested."
+evidence: "cc9dd66fd preserves the canonical tenant identity and routes idempotency/conflict fixtures through serialize_chunk_for_epoch with the legacy epoch."
+acceptance: "The integrated archive fixtures retain authenticated tenant/epoch inputs and continue proving idempotent prefix and divergent-conflict classification; no live archive drain claim is inferred."
+verify: cargo test -p corelink-server --lib audit_archive --locked
+verify-means: |
+  done — the repository composition repair and focused archive tests are integrated;
+  production drain/retention evidence remains governed by the existing open or parked
+  audit items and is not closed by this record.
+last-verified: 2026-09-09
+```
+
+### B-366 — B126-T3 deixou o tail adversarial fora da árvore realmente compilada
+
+O tail adversarial precisava ser alcançável pela unidade pai para que a população
+de testes não fosse apenas um arquivo órfão. A inclusão e o guard foram alinhados
+e a suíte mutation-backed cobre a remoção dessa ligação.
+
+```backlog
+id: B-366
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B126-T3 adversarial-tail wiring review"
+source-locator: "tests/e2e-tenant-isolation/tests/adversarial.rs; tests/e2e-tenant-isolation/tests/adversarial_tail.rs; scripts/verify_b126_t3_refactor.py"
+finding-title: "B126-T3 adversarial tail was not wired through its parent module"
+problem: "The adversarial tail could drift as an uncompiled fragment, so the tenant-isolation population did not prove the real parent include."
+evidence: "847754d4d wires the tail through the parent and the B126-T3 verifier rejects missing, duplicate, oversized and semantic fragment mutations."
+acceptance: "The parent module owns the adversarial tail exactly once and the focused guard proves its executable population; no production tenant-isolation or live-e2e claim is inferred."
+verify: python3 scripts/verify_b126_t3_refactor.py --self-test
+verify-means: |
+  done — the parent wiring and mutation-backed source guard are integrated;
+  live tenant-isolation execution remains a separate operational proof and stays
+  open or parked under its owning contract.
+last-verified: 2026-09-09
+```
+
+### B-367 — B126 bundle deixou resíduos de Clippy no conjunto corelink
+
+O bundle final ainda tinha diagnósticos estritos em módulos de audit/GC e seus
+fixtures. O patch integrado remove os resíduos sem suprimir o lint e mantém as
+asserções e fences de runtime.
+
+```backlog
+id: B-367
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B126 bundled Rust Clippy review"
+source-locator: "crates/corelink-container/src/gc_sweep.rs; crates/corelink-container/src/routes/audit_archive.rs; crates/corelink-container/src/routes/audit_drain; crates/corelink-container/tests/gc_binary_wiring.rs"
+finding-title: "strict Clippy residuals remained in the integrated B126 bundle"
+problem: "The extracted audit/GC bundle retained preexisting strict-lint failures, preventing a clean reviewed integration without targeted suppression."
+evidence: "d4f47bcca clears the affected diagnostics, keeps production fences and preserves the GC binary wiring tests without adding allow attributes."
+acceptance: "The reviewed Rust bundle has no targeted lint suppression for these residuals and its focused static/fixture guard remains load-bearing; no claim of a live GC run is inferred."
+verify: python3 scripts/verify_b318_clippy_residuals.py --self-test
+verify-means: |
+  done — the repository lint residual repair is integrated and mutation-tested;
+  live GC observation/deletion evidence remains explicitly open or parked in B071
+  and related owner contracts.
+last-verified: 2026-09-09
+```
+
+### B-368 — B126-H2 não fechava a população bounded do adapter PAT
+
+O censo H2 precisava seguir os fragmentos extraídos e a pipeline real até lookup,
+cache e verificação, sem aceitar comentário ou arquivo solto como prova. O guard
+agora fecha a população e suas reancoragens.
+
+```backlog
+id: B-368
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B126-H2 adapter PAT extraction review"
+source-locator: "scripts/verify_b126_h2_adapter_pat.py; crates/corelink-container/src/adapter_pat*"
+finding-title: "B126-H2 adapter PAT census could accept bounded fragments without live pipeline wiring"
+problem: "The adapter PAT extraction guard did not fully bind production/test fragments and the lookup/cache verifier pipeline, allowing stale or comment-only markers."
+evidence: "404e17ef1 closes the adapter PAT census bypasses; the guard checks the closed manifest, size caps, executable pipeline and negative mutations."
+acceptance: "All declared adapter PAT fragments are regular, bounded and wired exactly once through the production verifier pipeline; no credential or live-auth claim is inferred."
+verify: python3 scripts/verify_b126_h2_adapter_pat.py
+verify-means: |
+  done — the bounded adapter-PAT census and mutation suite are integrated;
+  real credential rotation and production-auth evidence remain separate open/parked
+  obligations under their existing contracts.
+last-verified: 2026-09-09
+```
+
+### B-369 — B126-M1 aceitou fronteiras de módulo sem reexport visível
+
+O verificador de fronteiras precisava provar os reexports e includes reais dos
+módulos extraídos, inclusive a árvore aninhada de testes. A população e a
+visibilidade agora estão fixadas e mutações de caminho/documentação ficam vermelhas.
+
+```backlog
+id: B-369
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B126-M1 module-boundary census review"
+source-locator: "scripts/verify_b126_module_boundaries.py; crates/corelink-container/src/routes/ac; crates/corelink-container/src/routes/customer"
+finding-title: "B126-M1 module-boundary census could drift from compiled reexports"
+problem: "The module-boundary census could verify stale paths or miss re-export visibility and nested test includes after source splitting."
+evidence: "9d627fa58 pins the reviewed re-export visibility; the M1 guard now reports 12 modules/40 fragments and kills path, visibility, documentation and nested-include mutations."
+acceptance: "The active module boundary and nested include population is closed and mutation-backed; runtime route behavior and live traffic remain outside this repository-only record."
+verify: python3 scripts/verify_b126_module_boundaries.py --self-test
+verify-means: |
+  done — the active boundary census and its negative controls are integrated;
+  live route and deployment proofs remain governed by their existing open or parked
+  contracts.
+last-verified: 2026-09-09
+```
+
+### B-370 — B126 R2-S3 podia aceitar include fora da ordem canônica
+
+O layout R2-S3 precisa preservar a ordem de includes e a população completa de
+parts, não apenas encontrar os símbolos em algum arquivo. O censo foi reancorado
+na fachada atual e a ordem é agora load-bearing.
+
+```backlog
+id: B-370
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B126 R2-S3 layout census review"
+source-locator: "scripts/verify_b126_r2_s3_layout.py; crates/corelink-container/src/storage/r2_s3.rs; crates/corelink-container/src/storage/r2_s3_parts"
+finding-title: "B126 R2-S3 layout census was not anchored to canonical include order"
+problem: "The R2-S3 guard could accept a present-but-reordered or escaped include map while the compiled storage facade had drifted."
+evidence: "10a7b386f reanchors the layout census and 474afba78 adds the order mutation; the focused guard passes its complete map and size checks."
+acceptance: "The storage facade includes the reviewed R2-S3 parts in canonical order, with regular bounded files and mutation rejection; no object-lock or live R2 proof is inferred."
+verify: python3 scripts/verify_b126_r2_s3_layout.py
+verify-means: |
+  done — the canonical R2-S3 include census and order mutation are integrated;
+  provider/object-lock live evidence remains an independent open or parked obligation.
+last-verified: 2026-09-09
+```
+
+### B-371 — B126-M2 guard liaison ignorava o manifesto de includes do audit drain
+
+O wiring guard precisava seguir o manifesto de includes, em vez de validar somente
+nomes parecidos ou um reader duplicado. O manifest é agora a fonte da população e
+o teste rejeita decoys duplicados.
+
+```backlog
+id: B-371
+repo: corelink-server
+owner: tl
+status: done
+source-document: "B126-M2 audit-drain include-manifest review"
+source-locator: "scripts/verify_b126_m2_wiring.py; tests/test_verify_b125_chain_integrity.py; crates/corelink-container/src/routes/audit_drain"
+finding-title: "B126-M2 wiring guard did not follow the audit-drain include manifest"
+problem: "The guard could read a decoy audit reader or fail to bind the manifest-driven include population used by the compiled drain."
+evidence: "837b97aa3 follows the audit-drain guard include manifest and 3be37301c rejects duplicate audit-reader decoys; the M2 self-test reports six roots and 53 fragments."
+acceptance: "The audit-drain roots and continuation includes are manifest-bound, duplicate decoys fail closed, and the focused guard is mutation-tested; no sealed production-read claim is inferred."
+verify: python3 scripts/verify_b126_m2_wiring.py --self-test
+verify-means: |
+  done — the include-manifest wiring and duplicate-reader negative control are integrated;
+  production sealing/retention proof remains under B125 and related live contracts,
+  which stay open or parked as applicable.
+last-verified: 2026-09-09
+```
+
+### B-372 — produção pinava o issuer Clerk fora do estado versionado
+
+O aplicativo público vive em `https://humangr.com/corelink`, mas essa URL não é
+o issuer do JWT. O `iss` canônico da instância Clerk continua sendo a origem
+Frontend API distinta `https://clerk.corelink-app.humangr.com`; já o subdomínio
+de aplicativo `https://corelink-app.humangr.com` está aposentado. Como o pin
+público era provisionado como segredo write-only, um deploy podia preservar ou
+recriar um valor antigo e rejeitar sessões válidas com `401 clerk session issuer
+invalid`, sem qualquer drift visível no repositório.
+
+```backlog
+id: B-372
+repo: corelink-server
+owner: tl
+status: done
+source-document: "production Clerk session and hostname reconciliation, 2026-09-09"
+source-locator: "wrangler.toml [env.prod].vars; worker/src/lib/clerk_auth.ts; scripts/verify_b372_clerk_issuer_pin.py"
+finding-title: "Production Clerk issuer pin was hidden mutable state and could retain the retired app hostname"
+problem: "CLERK_ISSUER_URL is public security configuration, but it was classified as a write-only Worker secret and absent from versioned desired state; a stale value rejected otherwise-valid production sessions."
+evidence: "The current tree versions the exact canonical issuer only in the IAD production Worker, preserves strict post-verification issuer equality, keeps regional Workers free of a Clerk surface, and adds a bounded TOML/source/checklist/runbook verifier whose mutations reject a missing pin, arbitrary wrong issuer, retired app host, obsolete Clerk host, regional copy and weakened equality."
+acceptance: "[env.prod].vars contains exactly https://clerk.corelink-app.humangr.com; no prod-* regional vars contain CLERK_ISSUER_URL; verified JWT iss remains exact-equality pinned; operator docs distinguish the path-mounted app URL, retired app hostname and live Clerk issuer; the pin is classified as versioned non-secret config."
+verify: python3 scripts/verify_b372_clerk_issuer_pin.py --self-test && python3 -m pytest -q tests/test_verify_b372_clerk_issuer_pin.py
+verify-means: |
+  done — exits 0 only when the canonical public issuer is present exactly in
+  `[env.prod].vars`, absent from all four regional var tables, the runtime still
+  rejects `iss !== clerkIssuerUrl`, and the checklist/runbook retain the correct
+  non-secret classification and hostname distinctions. Focused mutations must
+  turn missing, wrong, retired/obsolete, regional-copy and weakened-equality
+  variants red; malformed or missing inputs fail rather than pass vacuously.
+last-verified: 2026-09-09
+```
+
 ### B-255 — customer cross-tenant audit-before-denial formally closed
 
 The independent handler refinement is now wired and verified: the
@@ -2857,36 +3092,42 @@ last-verified: 2026-08-25
 
 The cost premise that justified deferring this is measured false: a second
 container class costs nothing at zero idle. The criterion is demand-gated by
-`capability_claim_unserved`, live since `#485`. The bounded authenticated
-probe attempted on 2026-09-08 was rejected with HTTP **403**, so no aggregate
-counter was established. B-006 is reopened until a fresh authenticated read
-proves the counter is zero or records a positive demand signal.
+`capability_claim_unserved`, live since `#485`. The earlier bounded probe was
+rejected by Cloudflare Browser Integrity Check (`403`, error 1010) because
+Python's default `Python-urllib/*` identity was not WAF-compatible; it was not
+an application credential mismatch. The collector now pins the explicit,
+non-secret `corelink-b006-probe/1.0` identity. A fresh authenticated read with
+the dedicated key returned HTTP **200** and aggregate
+`capability_claim_unserved = 0`, bound to the separately authenticated
+100%-rolled-out Worker deployment/version receipt.
 
 ```backlog
 id: B-006
 repo: corelink-runners
 owner: tl
-status: open
+status: done
 verify: manual
 verify-means: |
-  open — the retained redacted receipt records an attempted, bounded read
-  from the spawn-worker production surface, but HTTP 403 means no aggregate
-  counter was established:
+  done — a bounded, aggregate-only read from the spawn-worker production
+  surface returned HTTP 200 with `capability_claim_unserved = 0` using the
+  dedicated `METRICS_OBSERVABILITY_KEY` in the
+  `X-Corelink-Internal-Auth` header. The prior 403 was Cloudflare Browser
+  Integrity Check error 1010 from Python's default user-agent, not an
+  application auth rejection; the collector pins `corelink-b006-probe/1.0`.
+  A future `capability_claim_unserved > 0` signal reopens the demand decision.
   `https://corelink-spawn-worker.gmhelmold.workers.dev/internal/v1/metrics`.
-  Authenticate with the dedicated `METRICS_OBSERVABILITY_KEY` in the
-  `X-Corelink-Internal-Auth` header. A CoreLink tenant PAT / `Authorization:
-  Bearer` (`CORELINK_PROD_TOKEN`) is the wrong credential class for this
-  operator-read route and must not be recorded as evidence. Omit all labels,
-  tenant identifiers, and customer identifiers from the retained artifact.
-  Redacted evidence: `docs/validation/evidence/b006-capability-claim-unserved-2026-09-08.json`.
+  A CoreLink tenant PAT / `Authorization: Bearer` (`CORELINK_PROD_TOKEN`) is
+  the wrong credential class for this operator-read route and is not recorded
+  as evidence. All labels, tenant identifiers, and customer identifiers are
+  omitted from the retained artifact. Redacted evidence:
+  `artifacts/d03/B006-capability-metrics.json`.
   Provider deployment/version and provider-returned script content digest are
   retained in a separate authenticated binding receipt; no credential value, labels, tenant identifiers, or
-  customer identifiers are retained. A fresh authenticated aggregate plus
-  separately authenticated Wrangler deployment/source evidence
-  (`artifacts/d03/B006-provider-binding.json`) is required to
-  close this item at zero or reopen it on `capability_claim_unserved > 0`;
-  missing, stale, or unauthenticated evidence never closes it.
-last-verified: 2026-09-08
+  customer identifiers are retained. The fresh aggregate and separately
+  authenticated Wrangler deployment/source evidence
+  (`artifacts/d03/B006-provider-binding.json`) are from the same observation
+  window. Missing, stale, or unauthenticated evidence never closes this item.
+last-verified: 2026-09-09
 ```
 
 ### B-007 — the near-ceiling warning goes nowhere
@@ -5312,8 +5553,14 @@ acceptance: "Evidence for DD-068: a code or documented owner decision at the cit
 verify: |
   python3 scripts/verify_b101_proposals.py --id B-216
 verify-means: |
-  parked — runtime/owner packet `docs/internal/b215-b230-runtime-owner-actions.md` remains: verify the deployed DLQ consumer, alert delivery into the on-call channel, and one observed exhausted-message incident; structured log plus bounded requeue are implementation evidence only, not proof that an operator was paged.
-last-verified: 2026-09-05
+  parked — focused source tests and mutation gates prove the DLQ consumer accepts
+  only PagerDuty HTTP 202 as delivery, retains the DLQ delivery when paging is
+  missing/rejected, redacts transport errors, and permits only one main-queue
+  re-enqueue. Runtime/owner packet
+  `docs/internal/b215-b230-runtime-owner-actions.md` remains: verify the deployed
+  consumer, an accepted on-call delivery, and one controlled exhausted-message
+  observation. Local source evidence is not production delivery evidence.
+last-verified: 2026-09-09
 ```
 
 ### B-217 — user.created handler never validates event.data.id before using it as tenant owner / idempotency key
@@ -6423,6 +6670,38 @@ verify-means: |
 last-verified: 2026-09-08
 ```
 
+### B-373 — Dependabot opened a new 19-alert census after B-028 closure
+
+The authenticated Dependabot refresh on 2026-09-09 opened alerts #39–#57 for
+Vitest/@vitest-mocker, Next.js, baseline-browser-mapping, joi, colord, svgo,
+adm-zip, js-yaml, and sharp. The candidate contains every affected graph path:
+published patched versions are locked for all advisories with a release, and
+the chromedriver-only `adm-zip` path uses a local extractor that rejects archive
+escape and symlink-mediated writes. This is a new census after B-028; it is not
+an advisory dismissal.
+
+The candidate must not claim a live zero before merge. The committed snapshot
+retains the 19 open alerts and records `candidate_contained: true` plus
+`post_merge_refresh_required: true`. After this candidate lands on the default
+branch, run the same verifier with `--post-merge`; only that authenticated
+refresh may establish the empty live census.
+
+```backlog
+id: B-373
+repo: corelink-server
+owner: tl
+status: open
+verify: python3 scripts/verify_b373_dependabot.py --alerts-file docs/security/b373-dependabot-census-2026-09-09.json
+verify-means: |
+  candidate polarity — exits 0 only when the retained authenticated #39–#57
+  census is complete, the lockfile contains every published fix, the local
+  adm-zip containment is present, and the snapshot explicitly says that a
+  post-merge refresh is still required. It never treats pre-merge API state as
+  zero. After merge, `python3 scripts/verify_b373_dependabot.py --post-merge`
+  is the separate fail-closed live-zero check; API failure is not zero.
+last-verified: 2026-09-09
+```
+
 ### B-033 — the workspace lint gate runs nowhere, and its stated compensation does not hold
 
 `cargo clippy --workspace --all-targets -- -D warnings` appears in exactly one
@@ -6520,7 +6799,8 @@ status: parked
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
   python3 scripts/verify_owner_action_packets.py --id B-029 && \
-    python3 scripts/verify_b029_load_gate.py --expect parked
+    python3 scripts/verify_b029_load_gate.py --expect parked && \
+    python3 scripts/verify_staging_topology_contract.py --expect ready
 verify-means: |
   parked — both staging-targeted workflows are workflow_dispatch-only and the
   verifier confirms the real comparator, cache restore/save ordering, exact
@@ -9361,7 +9641,9 @@ owner: tl
 status: done
 verify: |
   python3 scripts/verify_b070_staging_truth.py --expect done && \
-  python3 -m unittest tests/test_verify_b070_staging_truth.py
+  python3 scripts/verify_staging_topology_contract.py --expect ready && \
+  python3 -m unittest tests/test_verify_b070_staging_truth.py \
+    tests/test_verify_staging_topology_contract.py
 verify-means: |
   done — o caminho honesto foi escolhido porque o root Worker nunca teve consumidor
   shipped para staging: a declaração `[env.staging]` e a alegação staging→prod foram
@@ -9404,6 +9686,7 @@ status: parked
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
   python3 scripts/verify_owner_action_packets.py --id B-071 && \
+  python3 -m unittest tests/test_collect_b071_gc_observation.py && \
   bash -c '
   set -eu
   test -d crates/corelink-gc
@@ -9432,7 +9715,15 @@ verify-means: |
   sem substituir o entrypoint do servidor; as lanes automatizadas forçam
   `GC_LIVE_DELETE=false`, removem credenciais Cloudflare, impõem timeout e exigem relatório
   auditável com zero deletes; o runner valida tenant/run e região e aplica o orçamento de
-  fase. O binário continua usando fixture in-memory, portanto não há claim de produção.
+  fase. `/usr/local/bin/gc_sweep` continua sendo apenas o self-check por fixture; o caminho
+  real é o binário separado `corelink-gc-sweep-production`, que exige escopo explícito,
+  consulta somente D1 por um cliente que rejeita SQL mutante/batches, limita a população a
+  250 candidatos e usa adapters de R2/audit que rejeitam qualquer mutação. Ainda não há
+  claim de execução em produção sem o recibo externo nomeado acima. O coletor multi-scope
+  agora exige digest imutável e tenant/região/run explícitos, remove confirmação e credenciais
+  R2, força os dois flags de observação, valida balanço/orçamento/zero deletes e gera pacote
+  atômico `0600` ainda marcado `PENDING_OWNER_REVIEW`; seus testes adversariais pertencem ao
+  gate focado deste item.
 last-verified: 2026-09-05
 ```
 
@@ -9444,12 +9735,13 @@ same-account. Binding ausente, exceção ou resposta non-2xx falha o tick e pres
 cron desconhecido chama `noRetry()` e falha. O cron de chaos foi removido: não existe
 ambiente válido provisionado para agendá-lo com segurança.
 
-O Worker não finge entrega externa. Ele não contém URL nem routing key PagerDuty. Para o
+O Worker agendador não finge entrega externa. Ele não contém URL nem routing key PagerDuty. Para o
 drill sintético, o payload leva apenas o contrato não-secreto do runbook
 (`synthetic-drill`, `trigger`, `sev2_synthetic`, dedup id determinístico e rotação de
-região); o Worker receptor é responsável pelo POST real ao PagerDuty, pelo D1
-`synthetic_page_drills` e pelo ack/escalation. A presença do handler continua não sendo
-prova de que uma pessoa recebeu a página.
+região). O repositório agora contém o Worker receptor e o binding default/dev:
+ele persiste o trigger antes do POST, só grava `delivered_at_ms` depois do aceite
+PagerDuty e terminaliza ack/escalation assinados com guards de retry/concorrência.
+A presença desse código continua não sendo prova de deploy ou recebimento humano.
 
 ```backlog
 id: B-072
@@ -9459,16 +9751,20 @@ status: parked
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
   python3 scripts/verify_owner_action_packets.py --id B-072 && \
-    python3 scripts/verify_b072_scheduled_drills.py
+    python3 scripts/verify_b072_scheduled_drills.py && \
+    python3 scripts/verify_b072_receiver.py && \
+    python3 scripts/test_b072_receiver_mutations.py && \
+    python3 scripts/test_b072_migration.py && \
+    python3 scripts/test_b072_terminal_race.py
 verify-means: |
   parked — o verificador confirma exatamente o cron sintético no Worker default/dev, overrides
-  vazios nos cinco ambientes de produção, a tabela cron→drill, o destino Service Binding e os guards de erro. Testes
-  comportamentais cobrem sucesso 202/erro non-2xx/exceção/binding ausente, cron desconhecido
-  e a rotação de quatro semanas. O repositório não contém o Worker receptor nem uma
-  declaração `SCHEDULED_DRILL_DELIVERY` em `wrangler.toml`, portanto não há prova de POST
-  real ao PagerDuty. O owner packet `docs/internal/b072-scheduled-drills-owner-packet.md`
-  registra a ação operacional necessária antes de fechar este item.
-last-verified: 2026-09-05
+  vazios nos cinco ambientes de produção, a tabela cron→drill, o Service Binding default/dev
+  e os guards de erro. O receiver local cobre persistência antes do POST, receipt somente
+  após aceite, dedup/correlação canônicos e ack/escalation assinados e terminalizados sem
+  corrida. Ainda não há prova de deploy, POST real ao PagerDuty ou recebimento humano; o
+  owner packet `docs/internal/b072-scheduled-drills-owner-packet.md` registra essa prova
+  operacional restante.
+last-verified: 2026-09-09
 ```
 
 ### B-073 — convite de assento exige token criptográfico, tenant vinculado e e-mail Clerk verificado
@@ -10872,7 +11168,7 @@ verify-means: |
   tenant; a localização do primário exigiria a API da Cloudflare e não muda a conclusão.
 
   Owner: base de transferência internacional é decisão jurídica.
-last-verified: 2026-09-05
+last-verified: 2026-09-09
 ```
 
 ### B-087 — o CAIQ v4 entregue a compradores atesta "Y" para três controles que nunca executaram com sucesso
@@ -11621,7 +11917,7 @@ verify-means: |
   de ser um contêiner por tenant ativo.
 
   Owner: pedir aumento de limite à Cloudflare é relação comercial com fornecedor.
-last-verified: 2026-09-05
+last-verified: 2026-09-09
 ```
 
 ### B-098 — dezoito worktrees vivem num diretório que o sistema operacional apaga, e uma delas tem trabalho não enviado
@@ -11653,10 +11949,16 @@ verify-means: |
 
   `scripts/verify_b098_repo_hygiene.py` usa `cargo metadata` para a população de
   pacotes, replica as exclusões dos validadores para contar OKF/specs e reconhece
-  somente tags `vMAJOR.MINOR.PATCH` (não `cli-v0.1.0`). Qualquer fonte ausente,
-  saída do Cargo malformada, count ambíguo, lint local, drift ou evidência de tag
-  sem anotação/sign-off falha fechado. A ausência esperada da tag mantém o item
-  aberto e retorna exit 0, para que o backlog continue verificável.
+  somente tags `vMAJOR.MINOR.PATCH` (não `cli-v0.1.0`). Apenas a tag canônica
+  `v1.0.0-GA` pode mudar o estado para `ready-to-close`; ela precisa ser um objeto
+  assinado e confiável, apontar para o commit declarado no corpo, existir em
+  `origin` no mesmo alvo e carregar os vínculos de provenance/evidência sem
+  placeholders. O cut script exige SHA completo, framework FROZEN assinado,
+  execução real do cutover, readback de deploy e dois commits de sign-off com
+  identidades e chaves distintas. Qualquer fonte ausente, saída malformada,
+  drift, tag local/lightweight/unsigned ou evidência stale falha fechado. A
+  ausência esperada da tag mantém o item aberto e retorna exit 0, para que o
+  backlog continue verificável.
 
   Deliberadamente NÃO gateia as worktrees em `/private/tmp` nem a contagem de branches: são
   estado da máquina do desenvolvedor, não do repositório, e um `verify` que os medisse
@@ -11665,7 +11967,7 @@ verify-means: |
 
   O que este comando decide é a parte que vive no repositório e é verificável em qualquer
   clone. A parte das worktrees exige ação humana na máquina e está registrada acima.
-last-verified: 2026-08-30
+last-verified: 2026-09-09
 ```
 
 ### B-099 — o `CODEOWNERS` atribuía revisão a dez times que o próprio arquivo admitia não existirem — FECHADO, e a reverificação CONFIRMOU zero times
@@ -14390,9 +14692,15 @@ O que decidir, e são decisões separadas:
 **Não fechar este item porque o #1505 mergeou.** O #1505 mudou onde a lane roda; esta lane
 segue reprovando no primeiro dispatch, e o WP-CI não pode fechar declarando-a consertada.
 
-**Calibração executável entregue em 2026-09-06.** O workflow agora executa os seis rulepacks
-bundled e o pack CoreLink em scans SARIF separados. As quatro regras locais declaram
-`severity: ERROR` e `metadata.policy: explicit-error`; o avaliador
+**Calibração executável entregue em 2026-09-06 e remedida em 2026-09-09.** O workflow executa
+os seis rulepacks bundled e o pack CoreLink em scans SARIF separados. Um scan local real com
+Semgrep 1.164.0 mediu 3.966 achados custom antes da calibração: R1=3.935, R4=31, R2/R3=0.
+R1/R4 são duplicatas de baixa precisão dos lints bloqueantes do Clippy porque Semgrep OSS não
+separa corretamente módulos Rust `cfg(test)` colocados sob `src/`; ficaram `WARNING`, retidos
+para observabilidade. R2/R3 permanecem `ERROR`. A antiga forma AST de R3 era um falso-negativo;
+ela foi substituída por padrões tokenizados em modo generic, que distinguem strings/comentários
+do operador Rust `..`. A regra revelou 11 properties que só verificavam a variante, agora
+corrigidas para validar também o payload. O avaliador
 `scripts/verify_b139_semgrep.py` reprova somente findings SARIF no nível `error` ou um erro
 de execução/saída do scanner. Warnings, notes e findings `none` continuam contabilizados e
 retidos, mas não viram bloqueio implícito. Isso substitui o `--error` por uma decisão
@@ -14413,10 +14721,11 @@ status: parked
 verify: python3 scripts/verify_b139_semgrep.py --self-test
 verify-means: |
   parked — `scripts/verify_b139_semgrep.py --self-test` valida a população fechada dos seis
-  bundled rulepacks, quatro regras CoreLink, separação dos dois SARIF, avaliador explícito
-  por severidade ERROR, fail-closed em erro de scanner/saída, retenção do artefato e a
-  classificação honesta de upload. As mutações de regra, avaliador, política e upload
-  precisam falhar.
+  bundled rulepacks, quatro regras CoreLink, severidades calibradas, separação dos dois SARIF,
+  avaliador explícito por severidade ERROR, fail-closed em erro de scanner/saída, retenção do
+  artefato e classificação honesta de upload. As mutações de regra, padrão, severidade,
+  avaliador, política e upload precisam falhar. Com `--semgrep-bin <path>`, valida também os
+  quatro controles positivos/negativos reais em `tests/semgrep/b139/rust.rs`.
 
   O gate local não executa Semgrep completo nem consulta GitHub. A closure exige um run do
   bundle D03 com `semgrep-bundled.sarif`, `semgrep-custom.sarif` e
@@ -15492,70 +15801,48 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-152 — cinco jobs mortos aos ~10m00s no MESMO PR, em lanes independentes: é padrão, e o vermelho parece defeito de código
+### B-152 — jobs de 600 s misturavam timeout declarado e perda de comunicação do runner
 
-Medido em 2026-08-31 sobre o PR #1492: **cinco** ocorrências num único PR, em jobs que não
-compartilham suíte nem linguagem — `typecheck + lint + test + build`, `playwright
-critical-flows`, `axe-core` e outros dois. Assinatura idêntica: morte aos **~10m00s–10m01s**
-com um passo ainda `in_progress`. Em um dos casos o `actions/checkout` **nem havia
-terminado** — o job morreu antes de chegar ao trabalho, o que exclui de saída qualquer
-explicação baseada no conteúdo da suíte.
+A reverificação fechada de 2026-09-09 corrigiu a população histórica. A janela global
+`2026-08-31T03:50:00Z..07:20:00Z` contém 1.621 runs, 33 jobs falhos e exatamente três
+jobs **falhos** entre 594 e 615 segundos. Eles pertencem a três branches/workflows
+distintos; os três Check Runs retêm a mesma anotação do GitHub: o self-hosted runner
+perdeu comunicação com o servidor.
 
-**Duas hipóteses refutadas, e cada refutação vale o item.**
+O recorte específico do PR #1492 usa `branch=claude/wp-a-b080-scopes`,
+`event=pull_request`, a mesma janela `created`, `per_page=100` e paginação. São 207
+runs e somente três jobs não-verdes na faixa: `dco` e `proptest density gate` tinham
+`timeout-minutes: 5` e a anotação “maximum execution time of 5m0s”; apenas
+`playwright critical-flows` tinha timeout de 30 min e anotação de perda do runner.
+Logo, não houve cinco instâncias de uma causa comum no mesmo PR. A contagem antiga
+misturou dois jobs de outras branches com três do PR e também misturou timeout com
+runner-loss.
 
-- **Não é o [B-128]** (disco cheio no Mac): nenhum `ENOSPC`, `os error 28` ou `Bus error` nos
-  logs. A assinatura do B-128 é outra e aparece nos logs; esta não aparece em lugar nenhum.
-- **Não é `timeout-minutes` do job**: um dos workflows declara **30 min** e morreu aos 10. A
-  parada vem de fora da declaração — de dentro da suíte, do `webServer` do Playwright, ou do
-  runner.
-
-**Por que isto custa caro e não é ruído.** O vermelho chega com cara de defeito de código, e
-cada ocorrência consome uma investigação honesta — a cara. Numa delas, um agente teve de
-conferir que `CustomerPat.scopes` é `string[]` (logo literais diferentes não podem quebrar o
-typecheck) e que o spec afere token e status e nunca escopos, **só então** re-rodou e passou.
-O trabalho de refutar o falso positivo é maior que o de consertá-lo.
-
-**O que o item precisa medir para fechar** — e nada disso está feito: a **taxa** (quantos jobs
-por dia morrem em ~10m00s), a distribuição por lane, e a causa comum. **Não fecha por "rerun
-passou".** Rerun passar é o sintoma da intermitência, não a cura; fechar por aí é o que
-mantém o defeito vivo há semanas.
+O artefato canônico
+`reports/perf/b152-actions-check-annotations-2026-09-09.json` preserva IDs, filtros,
+durações, contagens/níveis/digests das anotações e status HTTP. Os logs estão expirados
+(HTTP 404), os steps dos três runner-loss não foram retidos e não há artifacts. Assim,
+a causa imediata dos três é conhecida, mas o mecanismo abaixo de runner-loss — processo,
+recurso ou rede — e sua remoção continuam sem prova. Janela limpa ou rerun verde não fecha
+essa pendência.
 
 ```backlog
 id: B-152
 repo: corelink-server
 owner: tl
 status: parked
-verify: manual
+verify: python3 scripts/verify_b152_check_annotations.py reports/perf/b152-actions-check-annotations-2026-09-09.json
 verify-means: |
-  parked — manual, e a razão é estrutural, não preguiça — são duas razões e as duas seguram sozinhas.
+  parked — a população e as duas classes imediatas estão provadas no artefato de
+  2026-09-09. O que resta não pode ser reconstruído do histórico: para os três
+  runner-loss, logs retornam 404, steps estão vazios e artifacts inexistem.
 
-  **1. O registro não está na árvore, e expira.** O que decide a alegação são os tempos de
-  job e os `steps` da Actions API. Nenhum arquivo deste repositório muda quando o defeito
-  ocorre nem quando ele for consertado, e os logs de job têm janela de retenção: passada
-  ela, o comando não pode mais decidir nem para um lado nem para o outro.
-
-  **2. Um portão sobre janela recente fecharia o item pelo motivo errado.** A alegação é uma
-  **taxa**. Se a intermitência sumir por uma semana sem nada ter sido consertado, um `verify`
-  que consultasse os últimos N runs ficaria verde e o item seria fechado por "rerun passou" —
-  exatamente o desfecho que o item proíbe no corpo. Um portão assim mede a janela, e finge
-  medir a causa.
-
-  **Procedimento de reverificação** (quinzenal, e é o que o `last-verified` cobra):
-
-      gh api "repos/HuGR-Labs/corelink-server/actions/runs?per_page=50" --jq \
-        '.workflow_runs[] | select(.conclusion=="failure") | .id' \
-      | while read -r r; do
-          gh api "repos/HuGR-Labs/corelink-server/actions/runs/$r/jobs" --jq \
-            '.jobs[] | select(.conclusion=="failure")
-             | [.name, ((.completed_at|fromdate) - (.started_at|fromdate))] | @tsv'
-        done | awk -F'\t' '$2 >= 594 && $2 <= 615'
-
-  Cada linha de saída é uma ocorrência: job falho cuja duração cai na janela de 10 minutos.
-  **Zero linhas NÃO fecha o item** — fecha quando a causa comum for nomeada e removida.
-
-  Fronteira com [B-128]: se aparecer `ENOSPC` / `os error 28` / `Bus error` no log, é aquele
-  item e não este. A ausência dessas três strings foi o que separou os dois na medição.
-last-verified: 2026-08-31
+  Reabrir a investigação no primeiro runner-loss fresco, reter log/telemetria do runner
+  pelo job ID, distinguir terminação de processo, exaustão e rede, remover o mecanismo e
+  observar uma janela capaz de detectar recorrência. Zero ocorrências recentes ou rerun
+  verde não provam remoção. [B-128] só se aplica se a evidência trouxer `ENOSPC`,
+  `os error 28` ou `Bus error`; nada retido permite afirmar isso aqui.
+last-verified: 2026-09-09
 ```
 
 ### B-250 — workflow `BuildFailed` deletado ainda emite falhas de inicialização
@@ -15872,7 +16159,7 @@ verify-means: |
   Este item é `owner:` pelo critério estrito: o próximo passo é um aditivo contratual, uma
   notificação formal a quem já assinou, ou a construção da capacidade. Nenhum é executável
   sem a assinatura ou o dinheiro do owner.
-last-verified: 2026-09-05
+last-verified: 2026-09-09
 ```
 
 ### B-155 — 93 de 134 `verify` fazem `grep` de padrão não-ancorado: o comentário do arquivo alvo satisfaz o portão
@@ -16837,7 +17124,7 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-165 — o caminho de RECUSA já custa 52–195 ms contra um alvo de 15–30 ms, e o caminho SERVIDO segue sem número
+### B-165 — latência de recusa e caminho servido medida em duas populações — FECHADO
 
 Medido do Mac ao edge GRU, frio e quente declarados, contêiner `ddd95560-r1`
 (`version=143` sam / `178` prod), por `GET` resolvido por `{id}`:
@@ -16852,56 +17139,35 @@ de **dizer não** — o pedido nem chega a tocar CAS, R2 ou D1 de dados. Que a r
 2× a 6,5× o alvo do caminho **completo** é o achado; e o OCI a 195 ms está quase 4× acima do
 próprio teto cross-region.
 
-**O caminho servido continua sem número**, e essa é a parte que não pode ser esquecida:
-medi-lo exige um PAT de cliente, que é o [B-160]. Os itens de latência que já existem medem
-outra população — [B-102] mede PUT quente no `/cargo` (1,38 s), [B-104] mede 404
-**autenticado** (0,32 s medianos), [B-106] mede verify de PAT frio (711 ms). Nenhum mede a
-recusa **não autenticada** na borda, que é o primeiro milissegundo que qualquer cliente novo
-experimenta — e o único que um atacante consegue medir de graça, em volume.
+O caminho servido foi medido em 2026-09-09 com dois tenants, dois PATs distintos e um objeto
+existente por tenant: medianas fim-a-fim 793,315 ms / 625,106 ms e medianas do relógio de
+serviço 696 ms / 564 ms. O receipt preserva os números sem corpo nem credencial; a amostra
+diagnóstica não é apresentada como o SLI p99 de 30 dias.
 
-**O que este item NÃO decide:** se 15–30 ms é o alvo certo para uma recusa. Pode ser que a
-recusa deva custar **mais** de propósito (padding contra oráculo de temporização, que este
-repositório já pratica em outros pontos). Se for esse o caso, o número tem de estar escrito
-como decisão em algum lugar — e não está, o que é um achado por si só.
+**Decisão fechada em 2026-09-09:** 401 não recebe padding. A recusa acontece antes do lookup
+de tenant/objeto e não revela existência; atrasá-la criaria apenas amplificação DoS não
+autenticada. O padding de ADR-0023 continua restrito a respostas 404 de miss — incluindo a
+rota não reconhecida pré-auth e o 404 autenticado vindo do DO. A medição também
+separa agora o relógio do serviço (`Server-Timing total`) do transporte cliente↔colo; o alvo
+15–30 ms anterior não pode ser comparado ao RTT bruto de um Mac remoto.
 
 ```backlog
 id: B-165
 repo: corelink-server
 owner: tl
-status: parked
+status: done
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
-verify: python3 scripts/verify_owner_action_packets.py --id B-165
+verify: python3 scripts/verify_b165_latency.py evidence/owner-actions/B-165/complete-latency-2026-09-09.tsv --samples 10 --require-served --tenant-a 8a6b4e4e-5d66-4ab7-9388-85ea5ed45c4c --tenant-b ee30f7ba-fc25-4d71-939e-ebe130b4c6a3 --pat-fingerprint-a sha256:dbc983ada203f4ca87e023ea9dd40a6c3367c3843e49a774849bf8078799fac8 --pat-fingerprint-b sha256:25e409be70b0633d1f0a2179e23de7b254eef69cff253e105b36cde1f18176d1 --server-timing-tsv evidence/owner-actions/B-165/served-server-timing-2026-09-09.tsv
 verify-means: |
-  parked — manual, e a razão é estrutural — a mesma de [B-102], [B-103] e [B-104], e uma segunda que é
-  própria deste item.
-
-  **1. Exige rede até produção.** Nenhum arquivo desta árvore muda quando a latência muda. Um
-  `verify` que medisse latência acoplaria o portão do `BACKLOG.md` a produção e à rede da
-  máquina de CI, e transformaria queda de link em DRIFTED — falha de instrumento se
-  disfarçando de achado, que é a doença que este arquivo mais tenta evitar.
-
-  **2. Metade da alegação é INVERIFICÁVEL hoje, por bloqueio conhecido.** A segunda linha do
-  item é que o caminho **servido** não tem número, e ele não tem porque falta o PAT
-  ([B-160]). Um comando que medisse só a recusa daria verde sobre a metade fácil e esconderia
-  que a metade que importa segue sem instrumento.
-
-  **Procedimento de reverificação** (quinzenal, e é o que o `last-verified` cobra) — sem
-  credencial, porque a população é a recusa:
-
-      for p in /v1/cas/x/y /npm/x /pip/simple/x /v2/x/manifests/latest; do
-        curl -s -o /dev/null -w "$p %{time_total}\n" \
-          "https://corelink-api.humangr.com$p"
-      done
-
-  Rodar **dez vezes**, descartar a primeira (frio), e reportar **mediana e p90** — nunca o
-  máximo isolado, que foi o que produziu a primeira versão errada do [B-104].
-
-  **Fecha quando a mediana da recusa entrar na faixa de dezenas baixas de ms E o caminho
-  servido tiver número.** NÃO fecha por a cauda melhorar sozinha, e NÃO fecha medindo só a
-  recusa. Se a decisão for que a recusa deve custar mais por padding de temporização, o
-  fechamento é escrever essa decisão com o número escolhido — e aí este item vira `done` com
-  `verify` invertido apontando para onde a decisão está registrada.
-last-verified: 2026-09-05
+  inverted — exige 10 amostras de cada uma das quatro recusas, health e duas populações
+  servidas, tenants/PAT fingerprints distintos, status corretos, paths tenant-bound e
+  separação aritmética por request entre tempo do serviço e transporte. Também prova a
+  fronteira executável da decisão: 404 continua padded e o estágio que retorna 401 não pode
+  importar/invocar padding. Falha fechada em amostra ausente, identidade repetida, status
+  errado, clock impossível ou mutação de política. O artefato e a decisão completos estão em
+  `docs/perf/2026-09-09-wp-b165-complete.md`; B-364 fecha o defeito do instrumento descoberto
+  durante esta medição.
+last-verified: 2026-09-09
 ```
 
 ### B-166 — `corelink --version` imprimia ao cliente uma URL de atestação SLSA num hostname que não tem DNS — FECHADO

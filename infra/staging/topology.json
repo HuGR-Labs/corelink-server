@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "deployment_state": "unprovisioned",
+  "provider_resource_state": "base_resources_provisioned",
+  "provider_receipt": "evidence/owner-actions/B-029/staging-base-resources.json",
+  "canonical_origin": "https://staging.corelink.humangr.com",
+  "cloudflare": {
+    "zone_name": "humangr.com",
+    "root_worker": "corelink-staging",
+    "signup_worker": "corelink-signup-staging",
+    "synthetic_receiver_worker": "corelink-synthetic-pager-staging",
+    "root_worker_settings": {
+      "main": "worker/src/index.ts",
+      "workers_dev": false,
+      "compatibility_date": "2026-04-01",
+      "compatibility_flags": ["nodejs_compat"],
+      "crons": [],
+      "observability": { "enabled": true, "head_sampling_rate": 1 },
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "R2_S3_ENDPOINT": { "source": "provider_output", "name": "r2_s3_endpoint" },
+        "D1_DATABASE_ID": "d72a6b39-6a48-4338-bfda-1111dda98604",
+        "R2_AC_BUCKET": "corelink-ac-iad-staging",
+        "R2_AC_REGION": "iad",
+        "R2_CAS_BUCKET": "corelink-cas-staging",
+        "R2_CAS_REGION": "iad",
+        "R2_CHUNK_BUCKET": "corelink-chunk-iad-staging",
+        "R2_CHUNK_REGION": "iad",
+        "EDGE_PUBLIC_READ": "shadow",
+        "EDGE_ASYNC_METER": "off",
+        "EDGE_DO_METER": "off",
+        "OCI_PUBLIC_DEDUP_ENABLED": "0",
+        "OCI_UPSTREAM_ON_MISS": "0",
+        "AUDIT_DRAIN_BATCH_LIMIT": "512",
+        "AUDIT_DRAIN_LEASE_ENABLED": "1",
+        "EDGE_FIND_MISSING": "off"
+      }
+    },
+    "signup_worker_settings": {
+      "main": "apps/signup-worker/src/index.ts",
+      "workers_dev": false,
+      "compatibility_date": "2026-05-01",
+      "compatibility_flags": ["nodejs_compat"],
+      "crons": ["0 * * * *"],
+      "vars": {
+        "CORELINK_API_BASE": "https://staging.corelink.humangr.com",
+        "ENVIRONMENT": "staging",
+        "SLA_CREDITS_ENABLED": "false",
+        "SLA_OBSERVATIONS_ENABLED": "false"
+      }
+    },
+    "synthetic_receiver_worker_settings": {
+      "main": "apps/synthetic-pager-worker/src/index.ts",
+      "workers_dev": false,
+      "compatibility_date": "2026-04-01",
+      "compatibility_flags": [],
+      "crons": ["59 23 * * 0"],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "SYNTHETIC_DRILL_ENABLED": "false",
+        "PAGERDUTY_EVENTS_URL": "https://events.pagerduty.com/v2/enqueue",
+        "PAGERDUTY_SERVICE": "synthetic-drill"
+      }
+    },
+    "routes": [
+      { "worker": "corelink-staging", "pattern": "staging.corelink.humangr.com/*", "zone_name": "humangr.com" },
+      { "worker": "corelink-synthetic-pager-staging", "pattern": "staging.corelink.humangr.com/v1/webhooks/pagerduty", "zone_name": "humangr.com" }
+    ],
+    "container": {
+      "worker": "corelink-staging",
+      "class_name": "CoreLinkServer",
+      "source": "./Dockerfile",
+      "instance_type": "basic",
+      "max_instances": 5
+    },
+    "d1": [
+      {
+        "database_name": "corelink-config-staging",
+        "database_id": "d72a6b39-6a48-4338-bfda-1111dda98604",
+        "location": "ENAM",
+        "migrations_dir": "migrations/d1",
+        "bindings": [
+          { "worker": "corelink-staging", "binding": "CONFIG_DB" },
+          { "worker": "corelink-signup-staging", "binding": "CONFIG_DB" },
+          { "worker": "corelink-signup-staging", "binding": "BILLING_DB" },
+          { "worker": "corelink-synthetic-pager-staging", "binding": "CONFIG_DB" }
+        ]
+      }
+    ],
+    "r2": [
+      { "worker": "corelink-staging", "binding": "CAS_BUCKET", "bucket_name": "corelink-cas-staging", "location": "ENAM" },
+      { "worker": "corelink-staging", "binding": "AC_BUCKET_IAD", "bucket_name": "corelink-ac-iad-staging", "location": "ENAM" },
+      { "worker": "corelink-staging", "binding": "CHUNK_BUCKET_IAD", "bucket_name": "corelink-chunk-iad-staging", "location": "ENAM" },
+      { "worker": "corelink-staging", "binding": "MANIFEST_BUCKET_IAD", "bucket_name": "corelink-manifest-iad-staging", "location": "ENAM" }
+    ],
+    "kv": [
+      { "worker": "corelink-staging", "binding": "METADATA_KV", "namespace_title": "corelink-metadata-staging", "namespace_id": "558e939750fa4e09a7aeca8bebcf9777" },
+      { "worker": "corelink-staging", "binding": "CLERK_JWKS_KV", "namespace_title": "corelink-clerk-jwks-staging", "namespace_id": "77f2ddcfe36d42c5a7c5eb1d7bba1e82" },
+      { "worker": "corelink-staging", "binding": "NEGATIVE_CACHE_KV", "namespace_title": "corelink-negative-cache-staging", "namespace_id": "cdc815918f0642e8bfb393048879bbe3" }
+    ],
+    "durable_objects": [
+      { "worker": "corelink-staging", "binding": "CORELINK_SERVER", "class_name": "CoreLinkServer" },
+      { "worker": "corelink-staging", "binding": "ROLLOUT_DO", "class_name": "RolloutController" },
+      { "worker": "corelink-staging", "binding": "EVENT_LOG_DO", "class_name": "EventLogDO" },
+      { "worker": "corelink-staging", "binding": "REPLICATION_COORDINATOR_DO", "class_name": "ReplicationCoordinatorDO" },
+      { "worker": "corelink-staging", "binding": "REQUEST_METER_COORDINATOR_DO", "class_name": "RequestMeterCoordinatorDO" },
+      { "worker": "corelink-staging", "binding": "REQUEST_METER_SHARD_DO", "class_name": "RequestMeterShardDO" }
+    ],
+    "queues": [
+      {
+        "producer_binding": "DSR_QUEUE",
+        "queue_name": "corelink-dsr-erasure-staging",
+        "queue_id": "18fb0837cecd4dddacf2c0ddea196910",
+        "dead_letter_queue": "corelink-dsr-erasure-dlq-staging",
+        "dead_letter_queue_id": "51565488711a404d9395512b2442157d",
+        "consumer_worker": "corelink-signup-staging"
+      }
+    ],
+    "service_bindings": [
+      {
+        "worker": "corelink-staging",
+        "binding": "SCHEDULED_DRILL_DELIVERY",
+        "service": "corelink-synthetic-pager-staging"
+      },
+      {
+        "worker": "corelink-signup-staging",
+        "binding": "CORELINK_API_SVC",
+        "service": "corelink-staging"
+      }
+    ]
+  },
+  "provider_readback": {
+    "resources_captured_at": "2026-09-09T08:57:51Z",
+    "dns_checked_at": "2026-09-09T09:05:19Z",
+    "account_resource_scope": "staging-only",
+    "dns": {
+      "hostname": "staging.corelink.humangr.com",
+      "state": "permission_blocked",
+      "public_dns_result": "NXDOMAIN",
+      "dns_records_read_error_code": 10000,
+      "zone_settings_read_error_code": 9109
+    }
+  },
+  "required_secret_names": {
+    "corelink-staging": [
+      "CF_API_TOKEN",
+      "CLERK_ISSUER_URL",
+      "CLERK_SECRET_KEY",
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CORELINK_ADMIN_AUTH_KEY",
+      "CORELINK_ERASE_AUTH_KEY",
+      "CORELINK_INTERNAL_AUTH_KEY",
+      "PAT_SIGNING_KEY",
+      "R2_S3_ACCESS_KEY_ID",
+      "R2_S3_SECRET_ACCESS_KEY"
+    ],
+    "corelink-signup-staging": [
+      "CLERK_SECRET_KEY",
+      "CLERK_WEBHOOK_SECRET",
+      "CORELINK_ERASE_AUTH_KEY",
+      "CORELINK_INTERNAL_AUTH_KEY",
+      "ERASURE_SALT_KEY",
+      "PAGERDUTY_ROUTING_KEY"
+    ],
+    "corelink-synthetic-pager-staging": [
+      "PAGERDUTY_SYNTHETIC_ROUTING_KEY",
+      "PAGERDUTY_WEBHOOK_SECRET"
+    ],
+    "github_environment_staging": [
+      "K6_STAGING_BYOK_CMK_ID",
+      "K6_STAGING_MFA_STUB",
+      "K6_STAGING_PAT",
+      "K6_STAGING_STRIPE_WHSEC",
+      "K6_TARGET_HOST"
+    ]
+  }
+}

@@ -79,6 +79,8 @@ async fn drain_partition(
     trust_unsigned_resume: bool,
     batch_limit: i64,
     lease_enabled: bool,
+    witness: Option<&WitnessClient>,
+    link_keyring: Option<&LinkKeyring>,
 ) -> Result<PartitionOutcome, String> {
     if !lease_enabled {
         // Lease regime OFF: no lease, no fence — the drain runs exactly as it did
@@ -94,6 +96,8 @@ async fn drain_partition(
             batch_limit,
             false,
             i64::MAX,
+            witness,
+            link_keyring,
         )
         .await;
     }
@@ -136,6 +140,8 @@ async fn drain_partition(
         batch_limit,
         true,
         my_lease_expires_ms,
+        witness,
+        link_keyring,
     )
     .await;
     if let Err(e) = release_lease(d1, tenant_id, region, &holder).await {
@@ -167,8 +173,29 @@ async fn drain_partition_inner(
     batch_limit: i64,
     lease_enabled: bool,
     my_lease_expires_ms: i64,
+    witness: Option<&WitnessClient>,
+    link_keyring: Option<&LinkKeyring>,
 ) -> Result<PartitionOutcome, String> {
     let checkpoint = read_checkpoint(d1, tenant_id, region).await?;
+
+    if checkpoint
+        .as_ref()
+        .is_some_and(|head| head.head_message_version.is_some())
+    {
+        return drain_partition_v2(
+            d1,
+            tenant_id,
+            region,
+            now,
+            signing_seed,
+            signing_key_id,
+            batch_limit,
+            checkpoint.as_ref().ok_or("v2 checkpoint disappeared")?,
+            witness,
+            link_keyring,
+        )
+        .await;
+    }
 
     // B-054: this route still owns only the proven legacy/v1 drain.  Once a
     // partition has a versioned epoch head, the witnessed runtime must own the
@@ -179,14 +206,15 @@ async fn drain_partition_inner(
     // non-NULL signature signed under the current key id that does NOT verify (or
     // a signed head with no seed to verify it) is tampering — refuse to extend the
     // chain from a forged head (fail-CLOSED, SEV-1).
-    match check_head_on_resume(
+    let head_check = check_head_on_resume(
         checkpoint.as_ref(),
         signing_seed,
         signing_key_id,
         tenant_id,
         region,
         trust_unsigned_resume,
-    ) {
+    );
+    match head_check {
         HeadResumeCheck::FailClosed => {
             tracing::error!(
                 tenant_id = %tenant_id,
@@ -213,7 +241,16 @@ async fn drain_partition_inner(
         HeadResumeCheck::Proceed => {}
     }
 
-    let sealed_tail = read_sealed_tail(d1, tenant_id, region).await?;
+    let tail_resume_context = LegacyTailResumeContext {
+        checkpoint: checkpoint.as_ref(),
+        head_check,
+        signing_seed,
+        signing_key_id,
+        trust_unsigned_resume,
+        tenant_id,
+        region,
+    };
+    let sealed_tail = read_sealed_tail(d1, &tail_resume_context).await?;
 
     // Resume the builder honestly via resume()/new() (GENESIS when there is no
     // prior state at all). The resume point is crash-safe (sealed-tail authoritative).
@@ -306,6 +343,130 @@ async fn drain_partition_inner(
         // precondition this no-op always needed; we simply do not double-advance.
         Ok(PartitionOutcome::Drift)
     }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "explicit v2 trust-boundary inputs"
+)]
+async fn drain_partition_v2(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    region: &str,
+    now: i64,
+    signing_seed: Option<&[u8; 32]>,
+    current_signing_key_id: u64,
+    batch_limit: i64,
+    checkpoint: &HeadCheckpoint,
+    witness_client: Option<&WitnessClient>,
+    link_keyring: Option<&LinkKeyring>,
+) -> Result<PartitionOutcome, String> {
+    let signing_seed = signing_seed.ok_or("v2 drain requires configured head signing seed")?;
+    let witness_client =
+        witness_client.ok_or("v2 drain requires complete independent witness config")?;
+    if checkpoint.signing_key_id != Some(current_signing_key_id) {
+        return Err(
+            "v2 head signing key differs from configured key; explicit rotation required"
+                .to_owned(),
+        );
+    }
+    let latest = witness_client
+        .latest(tenant_id, region)
+        .await?
+        .ok_or("external witness latest is null for existing v2 D1 head")?;
+    verify_v2_checkpoint_witness(checkpoint, &latest, signing_seed, tenant_id, region)?;
+
+    let active = read_active_epoch(d1, tenant_id, region).await?;
+    authenticate_active_epoch(
+        &active,
+        signing_seed,
+        current_signing_key_id,
+        tenant_id,
+        region,
+    )?;
+    if checkpoint.epoch_id != Some(active.epoch.epoch_id())
+        || checkpoint.epoch_ledger_sequence != Some(active.ledger_sequence)
+        || checkpoint.epoch_ledger_hash.as_deref() != Some(active.ledger_hash.as_str())
+    {
+        return Err("active epoch projection differs from signed v2 head".to_owned());
+    }
+    let tail = read_any_sealed_tail(d1, tenant_id, region).await?;
+    match (checkpoint.next_sequence, tail) {
+        (0, None) => {}
+        (next, Some((tail_hash, tail_sequence)))
+            if tail_sequence.checked_add(1) == Some(next) && tail_hash == checkpoint.head => {}
+        _ => return Err("sealed D1 tail differs from signed v2 checkpoint".to_owned()),
+    }
+    let key = match active.epoch.link_key_id() {
+        None => None,
+        Some(key_id) => {
+            let key = link_keyring
+                .and_then(|keys| keys.get(key_id))
+                .ok_or("active keyed epoch key is unavailable")?;
+            let commitment = active
+                .key_commitment
+                .as_ref()
+                .ok_or("active keyed epoch commitment is unavailable")?;
+            if !key_matches_commitment(key, commitment) {
+                return Err("configured link key does not match registered commitment".to_owned());
+            }
+            Some(key)
+        }
+    };
+    let rows = read_pending_rows(d1, tenant_id, region, batch_limit).await?;
+    if rows.is_empty() {
+        return Ok(PartitionOutcome::Empty);
+    }
+    let (sealed, _, _) = seal_rows_for_epoch(
+        checkpoint.head,
+        checkpoint.next_sequence,
+        &rows,
+        &active.epoch,
+        key,
+    )?;
+    let (sealed, new_head, new_sequence) = bounded_v2_sealed_prefix(&sealed, now)?;
+    let new_head_hex = new_head.to_hex();
+    let head_signature = sign_head_v2(
+        signing_seed,
+        current_signing_key_id,
+        tenant_id,
+        region,
+        &new_head_hex,
+        new_sequence,
+        active.epoch.epoch_id(),
+        active.ledger_sequence,
+        &active.ledger_hash,
+    )?;
+    let head_jcs = canonical_head_v2_bytes(
+        tenant_id,
+        region,
+        &new_head_hex,
+        new_sequence,
+        active.epoch.epoch_id(),
+        active.ledger_sequence,
+        &active.ledger_hash,
+        current_signing_key_id,
+    )?;
+
+    // Linearization point occurs outside D1. A timeout/conflict is commit
+    // unknown and freezes this partition; ordinary drain never auto-recovers.
+    let witnessed = witness_client
+        .append(&head_jcs, &head_signature, tenant_id, region, &latest)
+        .await?;
+    commit_v2_head_transaction(
+        d1,
+        tenant_id,
+        region,
+        checkpoint,
+        sealed,
+        &new_head_hex,
+        new_sequence,
+        now,
+        &head_signature,
+        &witnessed,
+    )
+    .await?;
+    Ok(PartitionOutcome::Sealed(sealed.len() as u64))
 }
 
 #[allow(dead_code)]

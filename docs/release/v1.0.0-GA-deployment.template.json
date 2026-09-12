@@ -1,0 +1,12 @@
+{
+  "generated_at": "<RFC3339 timestamp>",
+  "release_sha": "<40-hex-release-commit>",
+  "oci_digest": "sha256:<64-hex-digest>",
+  "environments": [
+    {"environment": "prod", "oci_digest": "sha256:<64-hex-digest>", "desired": 1, "healthy": 1, "failed": 0},
+    {"environment": "prod-sam", "oci_digest": "sha256:<64-hex-digest>", "desired": 1, "healthy": 1, "failed": 0},
+    {"environment": "prod-lhr", "oci_digest": "sha256:<64-hex-digest>", "desired": 1, "healthy": 1, "failed": 0},
+    {"environment": "prod-nrt", "oci_digest": "sha256:<64-hex-digest>", "desired": 1, "healthy": 1, "failed": 0},
+    {"environment": "prod-syd", "oci_digest": "sha256:<64-hex-digest>", "desired": 1, "healthy": 1, "failed": 0}
+  ]
+}
