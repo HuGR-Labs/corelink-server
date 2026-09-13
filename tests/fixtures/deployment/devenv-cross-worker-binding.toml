@@ -1,0 +1,36 @@
+# Desired Server-side Wrangler fragment. This fixture is deliberately not merged
+# into `wrangler.toml`: it becomes deployable only after the Runners release
+# named in docs/operator/devenv-production-readiness.md has shipped and passed
+# its ABI, verifier, and immutable-image preflight.
+
+[[durable_objects.bindings]]
+name = "RUNNER_DEVENV_DO"
+class_name = "RunnerDevEnvDO"
+script_name = "corelink-spawn-worker"
+
+[[env.prod.durable_objects.bindings]]
+name = "RUNNER_DEVENV_DO"
+class_name = "RunnerDevEnvDO"
+script_name = "corelink-spawn-worker"
+
+# Each regional production environment has a non-inherited DO list, so the
+# same binding must be present in the generated release config for every one.
+[[env.prod-sam.durable_objects.bindings]]
+name = "RUNNER_DEVENV_DO"
+class_name = "RunnerDevEnvDO"
+script_name = "corelink-spawn-worker"
+
+[[env.prod-lhr.durable_objects.bindings]]
+name = "RUNNER_DEVENV_DO"
+class_name = "RunnerDevEnvDO"
+script_name = "corelink-spawn-worker"
+
+[[env.prod-nrt.durable_objects.bindings]]
+name = "RUNNER_DEVENV_DO"
+class_name = "RunnerDevEnvDO"
+script_name = "corelink-spawn-worker"
+
+[[env.prod-syd.durable_objects.bindings]]
+name = "RUNNER_DEVENV_DO"
+class_name = "RunnerDevEnvDO"
+script_name = "corelink-spawn-worker"
