@@ -799,7 +799,7 @@ def _check_b097_evidence(item: dict[str, object]) -> None:
         raise PacketError("B-097 quota/active-tenant capture is not the measured truthful state")
     if record["provider_decision"] != "pending":
         raise PacketError("B-097 provider decision must remain pending without a case/decision receipt")
-    capture = _exact_keys(record["read_only_capture"], {"cloudchamber_account_endpoint", "provider_limit_confirmed", "provider_response", "application_readback", "active_tenant_metric", "tenant_population_readback", "activity_readback", "support_case"}, "B-097 read_only_capture")
+    capture = _exact_keys(record["read_only_capture"], {"cloudchamber_account_endpoint", "provider_limit_confirmed", "provider_response", "application_readback", "instance_census", "active_tenant_metric", "tenant_population_readback", "activity_readback", "support_case"}, "B-097 read_only_capture")
     if capture["cloudchamber_account_endpoint"] != "GET /accounts/{account}/containers/me":
         raise PacketError("B-097 read_only_capture endpoint drifted")
     if capture["provider_limit_confirmed"] is not True or capture["support_case"] != "not evidenced in this capture; no case ID or provider decision was supplied":
@@ -841,6 +841,28 @@ def _check_b097_evidence(item: dict[str, object]) -> None:
         raise PacketError("B-097 declared reservation arithmetic drifted")
     if apps["interpretation"] != "max_instances times vCPU is declared application ceiling, not provider usage, billable CPU, or tenant concurrency; application instances include healthy/prewarmed capacity":
         raise PacketError("B-097 application ceiling disclaimer drifted")
+    census = _exact_keys(capture["instance_census"], {"source", "window_start_utc", "captured_at", "by_region", "listed_named_instances", "inactive", "running_tenant_named", "running_reserved_system", "interpretation"}, "B-097 instance_census")
+    if census["source"] != "Cloudflare Containers instances API via Wrangler OAuth, read-only":
+        raise PacketError("B-097 instance census source drifted")
+    if (census["window_start_utc"], census["captured_at"]) != ("2026-09-13T14:28:08Z", "2026-09-13T14:28:56Z"):
+        raise PacketError("B-097 instance census capture window drifted")
+    expected_regions = {
+        "prod": {"listed": 4, "inactive": 3, "running_tenant_named": 0, "running_reserved_system": 1},
+        "prod-sam": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+        "prod-lhr": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+        "prod-nrt": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+        "prod-syd": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+    }
+    if census["by_region"] != expected_regions:
+        raise PacketError("B-097 instance census regional state drifted")
+    for region, observed_region in census["by_region"].items():
+        if any(type(observed_region[field]) is not int for field in expected_regions[region]):
+            raise PacketError("B-097 instance census regional count must be an integer")
+    for field, row_field in (("listed_named_instances", "listed"), ("inactive", "inactive"), ("running_tenant_named", "running_tenant_named"), ("running_reserved_system", "running_reserved_system")):
+        if type(census[field]) is not int or census[field] != sum(row[row_field] for row in expected_regions.values()):
+            raise PacketError(f"B-097 instance census {field} arithmetic drifted")
+    if census["interpretation"] != "point-in-time named-instance state across five cache applications; zero running tenant-named containers is not peak tenant concurrency, customer activity, or account vCPU usage":
+        raise PacketError("B-097 instance census point-in-time disclaimer drifted")
     if capture["active_tenant_metric"] != "unavailable: tenant registration/state, stale audit activity, and application instance health are not a concurrent-active-tenant metric":
         raise PacketError("B-097 active-tenant metric disclaimer drifted")
     tenants = _exact_keys(capture["tenant_population_readback"], {"database", "access", "query", "rows", "total_registered_tenants", "changed_db", "rows_written", "interpretation"}, "B-097 tenant_population_readback")

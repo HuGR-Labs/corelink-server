@@ -361,6 +361,27 @@ class OwnerActionPacketTests(unittest.TestCase):
                 with self.assertRaises(MODULE.PacketError):
                     MODULE.check_data(self.data, "B-097")
 
+    def test_b097_instance_census_mutations_fail_closed(self) -> None:
+        original = MODULE._read_json_evidence
+        baseline = original(MODULE.B097_EVIDENCE_PATH, MODULE.B097_EVIDENCE_REQUIRED_FIELDS, "B-097")
+        mutations = {
+            "missing_region": lambda c: c["by_region"].pop("prod-syd"),
+            "system_as_tenant": lambda c: c["by_region"]["prod"].update(running_tenant_named=1, running_reserved_system=0),
+            "wrong_total": lambda c: c.update(listed_named_instances=11),
+            "boolean_count": lambda c: c["by_region"]["prod"].update(running_reserved_system=True),
+            "wrong_capture_time": lambda c: c.update(captured_at="2026-09-13T00:44:49Z"),
+            "peak_claim": lambda c: c.update(interpretation="peak tenant concurrency measured"),
+            "extra_field": lambda c: c.update(tenant_id="should-not-appear"),
+        }
+        for label, mutate in mutations.items():
+            record = copy.deepcopy(baseline)
+            mutate(record["read_only_capture"]["instance_census"])
+            def read_candidate(path, fields, receipt_label, candidate=record):
+                return candidate if path == MODULE.B097_EVIDENCE_PATH else original(path, fields, receipt_label)
+            with self.subTest(mutation=label), mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_candidate):
+                with self.assertRaises(MODULE.PacketError):
+                    MODULE.check_data(self.data, "B-097")
+
     def test_b086_unresolved_receipt_mutations_fail_closed(self) -> None:
         original = MODULE._read_json_evidence
         record = copy.deepcopy(original(MODULE.B086_EVIDENCE_PATH, MODULE.B086_EVIDENCE_REQUIRED_FIELDS, "B-086"))

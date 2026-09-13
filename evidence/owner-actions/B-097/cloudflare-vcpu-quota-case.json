@@ -40,6 +40,23 @@
       ],
       "interpretation": "max_instances times vCPU is declared application ceiling, not provider usage, billable CPU, or tenant concurrency; application instances include healthy/prewarmed capacity"
     },
+    "instance_census": {
+      "source": "Cloudflare Containers instances API via Wrangler OAuth, read-only",
+      "window_start_utc": "2026-09-13T14:28:08Z",
+      "captured_at": "2026-09-13T14:28:56Z",
+      "by_region": {
+        "prod": {"listed": 4, "inactive": 3, "running_tenant_named": 0, "running_reserved_system": 1},
+        "prod-sam": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+        "prod-lhr": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+        "prod-nrt": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+        "prod-syd": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0}
+      },
+      "listed_named_instances": 12,
+      "inactive": 11,
+      "running_tenant_named": 0,
+      "running_reserved_system": 1,
+      "interpretation": "point-in-time named-instance state across five cache applications; zero running tenant-named containers is not peak tenant concurrency, customer activity, or account vCPU usage"
+    },
     "active_tenant_metric": "unavailable: tenant registration/state, stale audit activity, and application instance health are not a concurrent-active-tenant metric",
     "tenant_population_readback": {
       "database": "CONFIG_DB/prod",
