@@ -1,37 +1,40 @@
 # An automation PR with NO checks must never be mistaken for one that PASSED.
 #
-# ROOT CAUSE (GitHub, documented behaviour — not a bug in this repo):
-#   "When you use the repository's GITHUB_TOKEN to perform tasks, events
-#   triggered by the GITHUB_TOKEN will not create a new workflow run."
-#   `workflow_dispatch` and `repository_dispatch` are the only exceptions.
+# TOKEN RULE (GitHub's current documented behaviour):
+#   GITHUB_TOKEN-triggered events are normally suppressed, but pull_request
+#   opened/synchronize/reopened events created by that token can create
+#   approval-required workflow runs. A write-authorized human may approve them.
+#   Dependabot PRs can also trigger Actions; neither actor type alone proves
+#   that a check is absent or that a run was suppressed.
 #   The five active Actions workflows here open pull requests automatically —
 #   subprocessors-sync, okf-autoreconcile, compliance-weekly,
 #   api-reference-sync and release-notes. (The historical
-#   pre-cutover-weekly-cron workflow was retired.) Before B-012, they used the
-#   Actions token and every PR they opened was therefore born with ZERO check
-#   runs. A PR with no checks does not render as failing; it renders as
-#   nothing-wrong, and it can be merged straight past gates that never
-#   executed. That has already happened in this repo.
+#   pre-cutover-weekly-cron workflow was retired.) Earlier Actions-token PRs
+#   may have approval-pending runs, missing checks, failed startup, or failed
+#   jobs. These are distinct from one another; a run with zero jobs does not
+#   prove token suppression. A PR with no checks must not be treated as passed.
 #
 #   Candidate selection is actor-independent: these workflows use stable head
 #   branch markers, so a PR remains covered even when its author is typed as a
 #   User, an App, or a renamed machine account.
 #
-# THE DURABLE FIX is the dedicated `BOT_PR_TOKEN` wired into every active
-#   creator. It may hold a fine-grained PAT or a GitHub App installation token;
-#   the one-time owner action is to mint/install it and store it as the repo
-#   secret. Events from that credential are not suppressed, so automation PRs get
-#   their normal check suite.
+# THE DURABLE FIX is a dedicated non-Actions token wired into every active
+#   creator. The existing `BOT_PR_TOKEN` wiring accepts a fine-grained PAT;
+#   the one-time owner action for that path is to provision it. A GitHub App
+#   path needs per-job minting; its installation token expires
+#   in one hour and must not be parked in BOT_PR_TOKEN as a durable secret.
+#   Neither token path repairs Actions startup failure or absent corelink runner
+#   capacity. A check is proven only by actual job-level execution evidence.
 #
-# THIS FILE IS THE COMPENSATING CONTROL until that lands: it makes the
-#   zero-checks condition loud instead of invisible. It does not prevent the
-#   condition; it refuses to let the condition look healthy.
+# THIS FILE IS A BOUNDED COMPENSATING CONTROL: it makes absence of check runs
+#   and commit statuses on a known automation PR head SHA loud. Presence is
+#   not success: this count-only watchdog does not inspect approval state,
+#   job count, runner assignment, or conclusions.
 #
-# WHY A SCHEDULE, AND WHY NOT `pull_request`:
-#   `pull_request` is precisely the event GitHub suppresses on these PRs. A gate
-#   wired to the event that cannot fire is the disease, not the cure — it would
-#   itself be a check that never runs, on exactly the PRs it is meant to catch.
-#   So it polls.
+# WHY A SCHEDULE: it observes automation PRs independently of whether their
+#   pull_request events were approval-pending, suppressed, or failed before
+#   jobs were created. A PR-event-only monitor cannot provide that independent
+#   observation. This poll still needs an online corelink runner to execute.
 #   The cron also EARNS its keep under this repo's own rule (CLAUDE.md: "a cron
 #   earns its keep ONLY when something can change WITHOUT a commit"). A bot can
 #   open a PR here on its own schedule with no commit to this repo at all — a
@@ -233,7 +236,7 @@ jobs:
                   else:
                       verdict = "none yet (within %d-min grace)" % GRACE_MINUTES
               else:
-                  verdict = "gated"
+                  verdict = "present (not proof of success)"
 
               rows.append(
                   "| #%d | %s | %s | `%s` | %d | %d | %d | %s |"
@@ -269,11 +272,12 @@ jobs:
                   )
               out.append("")
               out.append(
-                  "These PRs are ungated. They will LOOK green because nothing ran. "
-                  "Do not merge them on the strength of an empty check list — "
-                  "re-run their gates via `workflow_dispatch` (the one event "
-                  "GITHUB_TOKEN does not suppress), or close and reopen the PR "
-                  "under a human account."
+                  "No check run or status is attached to these PR head SHAs. "
+                  "Do not merge on an empty list. Inspect the PR approval banner "
+                  "and Actions run records; approve pending pull_request runs "
+                  "only under repository policy, and separately resolve failed "
+                  "workflow startup or unavailable corelink runner capacity. "
+                  "A token change or a present but zero-job run is not CI proof."
               )
 
           emit(out)

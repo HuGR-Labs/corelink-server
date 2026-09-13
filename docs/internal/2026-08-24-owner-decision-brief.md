@@ -33,24 +33,42 @@ hour.
 
 ## 2. B-012 — a non-Actions credential so bot PRs get CI
 
-**Today.** A PR opened by `GITHUB_TOKEN` does not trigger workflows. That is
-GitHub's loop-prevention rule and cannot be configured away. Consequences already
-observed: Dependabot PRs arrive with **zero checks**, which is indistinguishable
-from "all checks passed" at a glance, and the fleet-health census in
-`scripts/check_runner_fleet.py` runs with its slot check **explicitly disabled**
-because listing self-hosted runners needs repository admin that `GITHUB_TOKEN`
-cannot hold.
+**Current correction (2026-09-13).** [GitHub's `GITHUB_TOKEN`
+documentation](https://docs.github.com/en/actions/concepts/security/github_token)
+describes an approval-required exception for `pull_request`
+opened/synchronize/reopened events created with that token;
+[Dependabot can trigger workflows](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-on-actions)
+too.
+Neither a bot author nor an empty check list alone establishes token
+suppression. A run can instead be pending human approval, fail before creating
+jobs, fail on billing, or lack a matching runner. The five active auto-PR
+creators now require `BOT_PR_TOKEN`; the dedicated secret is still absent in
+the 2026-09-13 read-only inventory. The separate fleet-health slot census
+remains explicitly disabled because `GITHUB_TOKEN` cannot request the required
+repository administration permission.
 
 **Options.**
-- **A fine-grained PAT** (or GitHub App installation token) with `administration:
-  read` + `actions: read` + `contents: write`, stored as a repo secret. Cost: one
-  token, 90-day rotation. Unblocks bot-PR CI *and* the fleet slot census with a
-  one-line change each.
-- Leave it: keep reading Dependabot PRs by eye and keep the census off.
+- **Automatic, unapproved bot-PR CI:** owner mints a dedicated fine-grained PAT
+  scoped to this repository with `contents: write` and `pull-requests: write`,
+  then stores it as `BOT_PR_TOKEN`. The five creators are already wired and
+  fail closed when it is absent. An App alternative requires per-job token
+  minting from its ID/private key; [an installation token expires after one
+  hour](https://docs.github.com/en/rest/apps/apps#create-an-installation-access-token-for-an-app)
+  and cannot be stored once for durable use.
+- **Human-approved CI:** a write-authorized owner can approve pending
+  `GITHUB_TOKEN`-created PR workflow runs under repository policy. This is
+  not unattended automation and cannot rescue runs that fail before jobs exist.
+- **Fleet slot census:** separately authorize `administration: read` and
+  `actions: read` for the repository runner API and wire that credential to
+  `runner-fleet-health.yml`; the bot-PR PAT's smaller scope does not provide
+  it. Neither credential restores the missing `corelink` runner fleet or
+  changes GitHub-hosted billing.
 
-**If deferred:** the missing slot that ran undetected for ~14 days
-(`corelink-builder-1`, B-030) stays undetectable by CI; only a human noticing the
-count catches the next one.
+**If deferred:** creator workflows continue to fail closed without
+`BOT_PR_TOKEN`; the slot census remains unavailable in CI. Before any test PR,
+the owner must separately establish Actions job startup and online `corelink`
+runner capacity, then inspect job-level conclusions rather than treating a
+present workflow run or check count as success.
 
 ---
 

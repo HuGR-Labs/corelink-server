@@ -66,12 +66,18 @@
   ],
   "capability_evidence": {
     "object_lock": {
-      "status": "NOT_IMPLEMENTED",
-      "reference": "evidence/owner-actions/B-046/object-lock-probe.json"
+      "status": "INDETERMINATE",
+      "reference": "evidence/owner-actions/B-046/object-lock-probe.json",
+      "historical_report": {
+        "date": "2026-08-25",
+        "classification": "REPORTED_NOT_IMPLEMENTED",
+        "reference": "BACKLOG.md#B-046",
+        "raw_probe_artifact": "NOT_LINKED_IN_B046"
+      }
     },
     "byok_kill_switch": {
-      "status": "NOT_IMPLEMENTED",
-      "reference": "crates/corelink-container/src/routes/byok_admin.rs:261-292; scripts/verify_b154_instrument_claims.py"
+      "status": "UNVERIFIED_RUNTIME_P99",
+      "reference": "Dockerfile:184-185; crates/corelink-container/src/routes/byok_admin.rs:261-292; evidence/owner-actions/B-083/byok-real-kms-lifecycle.json"
     },
     "case_study": {
       "status": "NOT_PUBLISHED",

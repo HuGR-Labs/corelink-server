@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-09-09T04:19:00Z",
+  "captured_at": "2026-09-13T00:44:49Z",
   "account_id_redacted": "6a1f...f5cd",
   "case_id": null,
   "requested_total_vcpu": null,
   "current_total_vcpu": 1500,
-  "declared_reservation_vcpu": 1250,
+  "declared_reservation_vcpu": 1295,
   "active_tenants_concurrent": null,
   "provider_decision": "pending",
   "effective_at": null,
-  "operator": "codex-readonly-probe",
+  "operator": "codex-readonly-capacity-readback",
   "read_only_capture": {
     "cloudchamber_account_endpoint": "GET /accounts/{account}/containers/me",
     "provider_limit_confirmed": true,
@@ -20,7 +20,59 @@
       "total_memory_mib": 6291456,
       "usage": null
     },
-    "active_tenant_metric": "unavailable: CONFIG_DB activity is stale relative to capture and is not a concurrent-active metric",
+    "application_readback": {
+      "source": "Cloudflare Containers application info API via Wrangler OAuth, read-only",
+      "listed_applications": 11,
+      "cache_main_runner_subtotal_vcpu": 1250,
+      "other_applications_reservation_vcpu": 45,
+      "applications": [
+        {"name": "corelink-prod-corelinkserver-prod", "max_instances": 200, "vcpu": 0.25, "instances": 16, "active_instances": 1},
+        {"name": "corelink-prod-sam-corelinkserver-prod-sam", "max_instances": 200, "vcpu": 0.25, "instances": 15, "active_instances": 0},
+        {"name": "corelink-prod-lhr-corelinkserver-prod-lhr", "max_instances": 200, "vcpu": 0.25, "instances": 15, "active_instances": 0},
+        {"name": "corelink-prod-nrt-corelinkserver-prod-nrt", "max_instances": 200, "vcpu": 0.25, "instances": 15, "active_instances": 0},
+        {"name": "corelink-prod-syd-corelinkserver-prod-syd", "max_instances": 200, "vcpu": 0.25, "instances": 15, "active_instances": 0},
+        {"name": "corelink-spawn-worker-runnercontainer", "max_instances": 250, "vcpu": 4, "instances": 18, "active_instances": 0},
+        {"name": "corelink-spawn-worker-runnerdevenvdo", "max_instances": 10, "vcpu": 4, "instances": 7, "active_instances": 0},
+        {"name": "corelink-spawn-worker-checkhostcontainer", "max_instances": 1, "vcpu": 4, "instances": 1, "active_instances": 0},
+        {"name": "corelink-fabricd-fabricdcontainer", "max_instances": 1, "vcpu": 1, "instances": 1, "active_instances": 0},
+        {"name": "githugr-engine-enginecontainer", "max_instances": 0, "vcpu": 0.25, "instances": 0, "active_instances": 0},
+        {"name": "githugr-githugrcontainer", "max_instances": 0, "vcpu": 0.25, "instances": 0, "active_instances": 0}
+      ],
+      "interpretation": "max_instances times vCPU is declared application ceiling, not provider usage, billable CPU, or tenant concurrency; application instances include healthy/prewarmed capacity"
+    },
+    "instance_census": {
+      "source": "Cloudflare Containers instances API via Wrangler OAuth, read-only",
+      "window_start_utc": "2026-09-13T14:28:08Z",
+      "captured_at": "2026-09-13T14:28:56Z",
+      "by_region": {
+        "prod": {"listed": 4, "inactive": 3, "running_tenant_named": 0, "running_reserved_system": 1},
+        "prod-sam": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+        "prod-lhr": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+        "prod-nrt": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+        "prod-syd": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0}
+      },
+      "listed_named_instances": 12,
+      "inactive": 11,
+      "running_tenant_named": 0,
+      "running_reserved_system": 1,
+      "interpretation": "later point-in-time named-instance supplement (2026-09-13T14:28:08Z..14:28:56Z) to the top-level 2026-09-13T00:44:49Z quota/application-cap/D1 capture, not one simultaneous snapshot; zero running tenant-named containers is not peak tenant concurrency, customer activity, or account vCPU usage"
+    },
+    "active_tenant_metric": "unavailable: tenant registration/state, stale audit activity, and application instance health are not a concurrent-active-tenant metric",
+    "tenant_population_readback": {
+      "database": "CONFIG_DB/prod",
+      "access": "remote-read-only",
+      "query": "SELECT primary_region, COALESCE(tenant_state,'NULL') AS tenant_state, COUNT(*) AS tenant_count FROM tenant GROUP BY primary_region,tenant_state ORDER BY primary_region,tenant_state",
+      "rows": [
+        {"primary_region": "apac", "tenant_state": "active", "tenant_count": 1},
+        {"primary_region": "enam", "tenant_state": "active", "tenant_count": 62},
+        {"primary_region": "enam", "tenant_state": "dpa_pending", "tenant_count": 93},
+        {"primary_region": "wnam", "tenant_state": "dpa_pending", "tenant_count": 108}
+      ],
+      "total_registered_tenants": 264,
+      "changed_db": false,
+      "rows_written": 0,
+      "interpretation": "tenant_state=active means registered state, not a concurrent workload or container assignment"
+    },
     "activity_readback": {
       "database": "CONFIG_DB/prod",
       "access": "remote-read-only",
@@ -32,6 +84,6 @@
       "distinct_tenants_last_24h": 0,
       "interpretation": "retained audit activity is stale; these aggregates are not a concurrent-active-tenant measurement"
     },
-    "support_case": "not submitted; owner Cloudflare support/account session is required"
+    "support_case": "not evidenced in this capture; no case ID or provider decision was supplied"
   }
 }

@@ -22,29 +22,38 @@ ROOT = Path(__file__).resolve().parents[1]
 CAIQ = Path("marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md")
 SIG = Path("marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md")
 OWNER_ACTIONS = Path("docs/internal/b087-questionnaire-owner-actions.md")
-FALSE_BYOK_PROVIDER_CLAIM = "InMemoryFake"
+FALSE_BYOK_PROVIDER_CLAIMS = (
+    "InMemoryFake",
+    "ActiveProvider::Unavailable",
+    "no real provider is compiled in",
+    "no real provider is compiled",
+)
 
 # This is a bounded, named population.  Adding or removing a row requires a
 # deliberate update here and in the mutation suite; a missing row is never a
 # successful "clean" result.
 CAIQ_ROWS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
     "AIS-04.1": ("P", ("CodeQL", "workflow_dispatch", "cargo-fuzz", "not daily"), ("CodeQL + Semgrep (custom rules) on every PR", "cargo-fuzz daily")),
-    "BCR-04.1": ("Y", ("provider-managed keys", "BYOK is NOT shipped"), ("BYOK if enabled", "optional BYOK")),
-    "CEK-02.1": ("Y", ("provider-managed keys", "BYOK is NOT shipped"), ("Optional BYOK envelope.",)),
-    "CEK-04.1": ("P", ("501 byok_not_available", "ActiveProvider::Unavailable", "No FIPS-validated-module claim is made"), ()),
+    "BCR-04.1": ("Y", ("provider-managed keys", "BYOK has no verified customer rollout"), ("BYOK if enabled", "optional BYOK")),
+    "CEK-02.1": ("Y", ("provider-managed keys", "BYOK has no verified customer rollout"), ("Optional BYOK envelope.",)),
+    "CEK-04.1": ("P", ("501 byok_not_available", "byok-aws-real", "No FIPS-validated-module claim is made"), ()),
     "CEK-05.1": ("P", ("Documented, not served", "501 byok_not_available"), ()),
     "CEK-06.1": ("P", ("Customer-key rotation: no", "501 byok_not_available"), ("DEK rotation on customer trigger",)),
-    "CEK-07.1": ("P", ("CoreLink genuinely never holds CMK material", "501 byok_not_available"), ()),
-    "CEK-09.1": ("N", ("No — BYOK is not shipped", "501 Not Implemented", "ActiveProvider::Unavailable"), ("BYOK available",)),
-    "CEK-10.1": ("N", ("BYOK is NOT shipped", "byok_not_available", "shell simulation"), ("| Y |", "drilled weekly")),
-    "CEK-11.1": ("N", ("BYOK is NOT shipped", "ActiveProvider::Unavailable"), ("| Y |", "HSM-backed key material")),
+    "CEK-07.1": ("P", ("no evidenced customer CMK custody", "501 byok_not_available"), ()),
+    "CEK-08.1": ("P", ("shipped native container compiles the AWS BYOK path", "no customer CMK activation or CAS/AC round-trip"), ("V8 isolate memory", "Wrapped DEKs at rest only")),
+    "CEK-09.1": ("N", ("No verified customer BYOK rollout", "byok-aws-real", "if provider construction or CMK access fails"), ("BYOK available",)),
+    "CEK-10.1": ("N", ("/deactivate` Shred route is implemented", "no verified customer rollout", "shell simulation"), ("| Y |", "drilled weekly", "Not available —")),
+    "CEK-11.1": ("N", ("No HSM protection for customer CMK material is evidenced", "byok-aws-real"), ("| Y |", "HSM-backed key material", "holds no customer key material at all")),
     "CEK-16.1": ("P", ("EVT-KMS-*` events are BYOK events", "501 byok_not_available"), ()),
-    "CEK-17.1": ("P", ("Customer-controlled crypto-shredding is not available", "501 byok_not_available"), ()),
+    "CEK-17.1": ("P", ("/deactivate` Shred route is implemented", "not runtime-verified", "501 byok_not_available"), ("crypto-shredding is not available",)),
     "CEK-18.1": ("P", ("documents a **design**, not a served boundary", "501 Not Implemented"), ("apps/docs/docs/security/byok",)),
-    "CEK-19.1": ("P", ("there is no CMK", "501 byok_not_available"), ()),
+    "CEK-19.1": ("P", ("staff cannot access customer CMK material is **unverified**", "501 byok_not_available"), ("vacuously true",)),
+    "DCS-01.1 .. DCS-15.1": ("CC", ("served product's compute and storage are hosted by Cloudflare", "prospective customer-side KMS providers"), ("compute / storage hosted by Cloudflare / AWS / GCP / Azure",)),
+    "IVS-04.1": ("CSP-inherited", ("Worker layer, not the native CoreLink container",), ("per-request memory isolation.",)),
+    "IVS-05.1": ("P", ("native CoreLink container", "pins the runtime base image digest", "non-root `corelink`"), ("Workers run as V8 isolates, not containers", "| N/A |")),
     "CCC-07.1": ("Y", ("signed commits", "DCO", "CODEOWNERS"), ()),
-    "DSP-09.1": ("P", ("region pinning is a real supplementary measure", "BYOK is NOT shipped", "501 Not Implemented` / `byok_not_available"), ("supplementary measures (BYOK",)),
-    "LOG-03.1": ("P", ("Tamper-EVIDENT, not immutable", "does not implement Object Lock", "NotImplemented"), ("immutable R2 with Object Lock",)),
+    "DSP-09.1": ("P", ("region pinning is a real supplementary measure", "BYOK has no verified customer rollout", "501 Not Implemented` / `byok_not_available"), ("supplementary measures (BYOK",)),
+    "LOG-03.1": ("P", ("Tamper-EVIDENT, not immutable", "2026-08-25", "NotImplemented", "INDETERMINATE", "2026-09-09"), ("immutable R2 with Object Lock",)),
     "SEF-03.1": ("P", ("does not fire in production", "not verifiable from this repository", "PIN_AT_RELEASE"), ()),
     "STA-08.1": ("P", ("No Cosign signatures", "no Rekor entries", "no SLSA attestation"), ("SLSA Level 3",)),
     "STA-11.1": ("N", ("no transparency-log entry", "SHA-256 checksums"), ("Rekor public transparency log entries",)),
@@ -55,6 +64,8 @@ CAIQ_ROWS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
 SIG_ROWS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
     "A.4": ("P", ("No external pentest has been contracted or completed", "only scoped as future"), ("Pentest scheduled pre-GA",)),
     "D.7": ("P", ("**not** signed", "no Cosign signatures", "no Rekor entries", "no SLSA attestation"), ()),
+    "F.1": ("CC", ("served product's compute and storage are hosted by Cloudflare", "prospective customer-side BYOK KMS providers"), ("compute / storage hosted by Cloudflare / AWS / GCP / Azure",)),
+    "F.3": ("CC", ("Cloudflare hosting provider", "not asserted as current data hosts"), ("Inherited from Cloudflare / AWS / GCP / Azure",)),
     "G.2": ("Y", ("branch protection", "paths-scoped clippy/test", "neither is claimed as an every-PR gate"), ("static-analysis gate (CodeQL + Semgrep custom rules)",)),
     "G.9": ("Y", ("daily `cargo-deny`", "not operating as a live daily scanner"), ("Dependency-Track + cargo-deny daily",)),
     "G.10": ("P", ("Partial cadence", "no PR trigger", "workflow-dispatch-only", "not a daily all-tool claim"), ("CodeQL + Semgrep custom rules on every PR",)),
@@ -64,16 +75,19 @@ SIG_ROWS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
     "I.8": ("P", ("no Cosign signatures / Rekor entries today",), ("production deployments signed / attested? | Y",)),
     "I.9": ("N", ("No SLSA attestation today", "SHA-256"), ("| Y |",)),
     "J.4": ("P", ("does **not** fire in production", "lives outside this repository", "PIN_AT_RELEASE"), ()),
-    "K.10": ("Y", ("**one** supplementary measure", "BYOK is not shipped", "501 byok_not_available"), ("supplementary measures (BYOK envelope encryption",)),
-    "N.2": ("Y", ("BYOK is not shipped", "no CoreLink tenant reaches any of them"), ("customer-side BYOK KMS providers",)),
-    "N.4": ("Y", ("provider-managed keys", "not shipped", "501 byok_not_available"), ("The \"optional BYOK envelope encryption per blob\"",)),
-    "N.6": ("N", ("No — BYOK is not shipped", "501 Not Implemented", "ActiveProvider::Unavailable", "shell simulation"), ("| Y |", "across 4 providers … drilled weekly")),
+    "K.10": ("Y", ("**one** supplementary measure", "BYOK has no verified customer rollout", "501 byok_not_available"), ("supplementary measures (BYOK envelope encryption",)),
+    "N.2": ("Y", ("BYOK has no verified customer rollout", "no tenant-to-KMS use has been verified"), ("customer-side BYOK KMS providers",)),
+    "N.4": ("Y", ("provider-managed keys", "no verified customer rollout", "501 byok_not_available"), ("The \"optional BYOK envelope encryption per blob\"", "not shipped")),
+    "N.6": ("N", ("No — BYOK has no verified customer rollout", "501 Not Implemented", "byok-aws-real", "shell simulation"), ("| Y |", "across 4 providers … drilled weekly")),
 }
 
 SOURCE_CHECKS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    # These are code-level witnesses, not historical prose markers.  The
-    # production binary now has no fake provider at all: the no-feature branch
-    # returns an error and the admin route maps it to 501 before D1.
+    # The Dockerfile selects AWS KMS in the production build; the no-feature
+    # Unavailable branch is only a fail-closed fallback, not the shipped binary.
+    ("Dockerfile", ()),
+    ("evidence/owner-actions/B-083/byok-real-kms-lifecycle.json", ()),
+    ("evidence/owner-actions/B-046/object-lock-probe.json", ()),
+    ("legal/dpa-residency-amendment.md", ()),
     (
         "crates/corelink-container/src/routes/byok_admin.rs",
         (
@@ -232,6 +246,61 @@ def _source_failures(root: Path, relative: str, needles: tuple[str, ...]) -> lis
     except (OSError, UnicodeDecodeError) as exc:
         return [f"source control unreadable: {relative}: {exc}"]
 
+    if relative == "Dockerfile":
+        # Read the active cargo command, not the historical command in the
+        # Dockerfile header or a comment-only `--features` bait.
+        active = "\n".join(
+            line.split("#", 1)[0]
+            for line in text.splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        commands = re.findall(r"(?m)^\s*cargo build\b[^;]*;", active)
+        shipped = [
+            command for command in commands
+            if re.search(r"(?:^|\s)-p\s+corelink-server\b", command)
+            and re.search(r"(?:^|\s)--bin\s+corelink-server\b", command)
+        ]
+        if len(shipped) != 1 or re.findall(r"--features\s+([\w-]+)", shipped[0]) != ["byok-aws-real"]:
+            return ["source control changed or missing: Dockerfile: production corelink-server must select only byok-aws-real"]
+        return []
+
+    if relative.endswith("byok-real-kms-lifecycle.json"):
+        try:
+            receipt = json.loads(text)
+            unresolved = (
+                receipt["tenant_redacted"] == "NOT_PROVISIONED"
+                and receipt["image_digest"] is None
+                and receipt["check_access"] == "BLOCKED"
+                and all(receipt[name]["status"] == "NOT_EXECUTED" for name in (
+                    "activation", "cas_ac_round_trip", "revocation", "run_loop"
+                ))
+            )
+        except (ValueError, KeyError, TypeError):
+            unresolved = False
+        return [] if unresolved else [f"source control changed or missing: {relative}: runtime BYOK proof changed; re-review questionnaire"]
+
+    if relative.endswith("object-lock-probe.json"):
+        try:
+            probe = json.loads(text)
+            latest_indeterminate = (
+                probe["classification"] == "INDETERMINATE"
+                and probe["bucket_operation"]["status"] == "INDETERMINATE"
+                and probe["object_operation"]["status"] == "SKIPPED"
+            )
+        except (ValueError, KeyError, TypeError):
+            latest_indeterminate = False
+        return [] if latest_indeterminate else [f"source control changed or missing: {relative}: Object Lock probe result changed; re-review questionnaire"]
+
+    if relative == "legal/dpa-residency-amendment.md":
+        front_matter = text.split("---", 2)
+        if (
+            len(front_matter) < 3
+            or 'doc_status: "PENDING_LEGAL_REVIEW"' not in front_matter[1]
+            or "NOT a finalised legal instrument" not in text
+        ):
+            return ["source control changed or missing: residency amendment no longer proven a pending template"]
+        return []
+
     if relative == "wrangler.toml":
         try:
             config = tomllib.loads(text)
@@ -336,14 +405,13 @@ def _check_rows(path: Path, specs: dict[str, tuple[str, tuple[str, ...], tuple[s
 
 
 def _check_no_false_byok_provider_claims(root: Path) -> list[str]:
-    """Keep procurement documents aligned with the shipped no-provider build.
+    """Keep procurement documents aligned with the AWS-enabled build boundary.
 
     ``InMemoryFake`` is a test-only implementation elsewhere in the tree.  It
-    must not appear in the bounded customer-facing documents or owner packet,
-    where it would falsely describe the default runtime.  The positive marker
-    checks above prove the affected rows carry the executable ``Unavailable``
-    and 501 reality; this closed-world scan prevents a stale claim in any
-    unlisted row (or owner handoff) from silently returning the guard to green.
+    must not appear in customer-facing material.  The no-feature
+    ``ActiveProvider::Unavailable`` branch exists in source, but cannot be used
+    to describe the Dockerfile's AWS-enabled production build.  Conditional
+    501 is checked in the named rows and the route source check above.
     """
 
     failures: list[str] = []
@@ -357,15 +425,21 @@ def _check_no_false_byok_provider_claims(root: Path) -> list[str]:
         except (OSError, UnicodeDecodeError) as exc:
             failures.append(f"questionnaire reality packet unreadable: {relative}: {exc}")
             continue
-        if FALSE_BYOK_PROVIDER_CLAIM in text:
-            failures.append(
-                f"false default BYOK provider claim in {relative}: "
-                f"{FALSE_BYOK_PROVIDER_CLAIM}"
-            )
+        for marker in FALSE_BYOK_PROVIDER_CLAIMS:
+            if marker in text:
+                failures.append(f"false default BYOK provider claim in {relative}: {marker}")
+        if relative in (CAIQ, SIG):
+            for line in text.splitlines():
+                if (
+                    "`501 byok_not_available`" in line
+                    or "`501 Not Implemented` / `byok_not_available`" in line
+                ) and ("activation returns" in line or "activate` fails closed" in line):
+                    if "if provider construction or CMK access fails" not in line:
+                        failures.append(f"unconditional 501 claim in {relative}")
         if relative == OWNER_ACTIONS:
             for marker in (
-                "ActiveProvider::Unavailable",
-                "no real provider is compiled in",
+                "byok-aws-real",
+                "pending legal-review template",
                 "501 byok_not_available",
             ):
                 if marker not in text:
@@ -384,7 +458,7 @@ def verify(root: Path = ROOT) -> dict[str, object]:
     # live promises are owner/legal residue and must remain visible in output.
     owner_actions = [
         "owner/legal: review executed DPA Object Lock/WORM language; no amendment made by this guard",
-        "owner/legal: review executed SLA and residency-amendment BYOK five-minute promises; no amendment made by this guard",
+        "owner/legal: review executed SLA BYOK five-minute promise and pending residency template; no amendment made by this guard",
         "owner/ops: obtain PagerDuty 24/7 rotation export; it is not repository-verifiable",
         "owner/sales: determine whether recipients of superseded questionnaire copies require notice",
     ]

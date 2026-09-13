@@ -16,6 +16,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import backlog_verify  # noqa: E402
+import backlog_ledger_successor  # noqa: E402
+import backlog_ledger_contracts  # noqa: E402
 
 CATALOGS = {
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B001-B045.md": (1, 45),
@@ -34,6 +36,16 @@ SNAPSHOT_SHA256 = "3a4cbf652a1d4485ac9c8e03bd79343fb4619b5c2e8cb58af161263f83440
 POSTMERGE_BASE_SHA = "6be19a2e525dad045ad8404d722905afde7ad7bd"
 POSTMERGE_SNAPSHOT_PATH = REPO_ROOT / "docs/campaigns/remediation/backlog-ledger-snapshot-b373-postmerge.json"
 POSTMERGE_SNAPSHOT_SHA256 = "4c6f81def4554196ac784e3300a2e478588e0586b058ca5d0d328df5167d397f"
+SNAPSHOT_DIRECTORY = Path("docs/campaigns/remediation")
+LEDGER_RELATIVE = SNAPSHOT_DIRECTORY / "BACKLOG-WP-LEDGER.md"
+GENESIS_SNAPSHOT_RELATIVE = SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-b373-postmerge.json"
+SUCCESSOR_NAME_RE = re.compile(r"backlog-ledger-snapshot-v([0-9]{4})\.json\Z")
+RECEIPT_FIELDS = frozenset({
+    "schema_version", "sequence", "transition", "base_commit",
+    "prior_snapshot_sha256", "prior_source_sha256", "source_sha256",
+    "prior_ledger_sha256", "ledger_sha256", "prior_catalog_sha256",
+    "catalog_sha256", "item_count", "status_counts", "open_ids", "changed_ids",
+})
 ENTRY_RE = re.compile(r"^(B-\d+)\s+(WP-[A-Z0-9][A-Z0-9./_-]*)$")
 WP_HEADING_RE = re.compile(r"^#{2,6}\s+(WP-[A-Z0-9][A-Z0-9./_-]*)(?:\s|—|$)", re.MULTILINE)
 FIELD_PATTERNS = {
@@ -463,6 +475,53 @@ def load_postmerge_snapshot_manifest() -> dict[str, object]:
     return manifest
 
 
+def _successor_policy():
+    return backlog_ledger_successor.install(sys.modules[__name__])
+
+
+def _sha256(raw: bytes) -> str:
+    return _successor_policy()._sha256(raw)
+
+
+def _catalog_relatives() -> tuple[Path, ...]:
+    return _successor_policy()._catalog_relatives()
+
+
+def _state_bytes(root: Path) -> dict[str, bytes]:
+    return _successor_policy()._state_bytes(root)
+
+
+def _successor_paths(root: Path) -> list[Path]:
+    return _successor_policy()._successor_paths(root)
+
+
+def load_successor_chain(root: Path = REPO_ROOT) -> dict[str, object]:
+    return _successor_policy().load_successor_chain(root)
+
+
+def validate_candidate_successor(
+    base_root: Path, candidate_root: Path, *, base_sha: str | None = None,
+    today: backlog_verify.dt.date | None = None,
+) -> dict[str, object]:
+    return _successor_policy().validate_candidate_successor(
+        base_root, candidate_root, base_sha=base_sha, today=today,
+    )
+
+
+def successor_required(base_root: Path, candidate_root: Path) -> bool:
+    return _successor_policy().successor_required(base_root, candidate_root)
+
+
+def validate_complete_catalog_state(
+    backlog_text: str, ledger_text: str, catalog_bytes: dict[str, bytes],
+    repo_root: Path, expected_base_sha: str,
+) -> int:
+    return backlog_ledger_contracts.validate(
+        sys.modules[__name__], backlog_text, ledger_text, catalog_bytes,
+        repo_root, expected_base_sha,
+    )
+
+
 def validate_snapshot_manifest(
     manifest: dict[str, object],
     backlog_text: str,
@@ -689,9 +748,11 @@ def parse_ledger_state(text: str, source: str) -> dict[str, str]:
     missing = sorted(required - state.keys())
     if missing:
         raise LedgerError(f"{source}: ledger state missing keys: {', '.join(missing)}")
-    if state["base-ref"] not in {LEDGER_BASE_REF, POSTMERGE_BASE_SHA}:
+    if state["base-ref"] not in {LEDGER_BASE_REF, POSTMERGE_BASE_SHA} and not re.fullmatch(
+        r"[0-9a-f]{40}", state["base-ref"]
+    ):
         raise LedgerError(
-            f"{source}: ledger base-ref must be {LEDGER_BASE_REF} or {POSTMERGE_BASE_SHA}"
+            f"{source}: ledger base-ref must be an immutable 40-digit hex SHA"
         )
     if not re.fullmatch(r"[0-9a-f]{40}", state["base-sha"]):
         raise LedgerError(f"{source}: ledger base-sha is not a 40-digit hex SHA")
@@ -915,8 +976,6 @@ def main() -> int:
     try:
         backlog_text = (REPO_ROOT / "BACKLOG.md").read_text()
         open_ids = open_backlog_ids(backlog_text)
-        backlog_ids = all_backlog_ids(backlog_text)
-        status_counts = backlog_status_counts(backlog_text)
         ledger_text = LEDGER_PATH.read_text()
         try:
             ledger_source = str(LEDGER_PATH.relative_to(REPO_ROOT))
@@ -924,10 +983,16 @@ def main() -> int:
             ledger_source = str(LEDGER_PATH)
         ledger_state = parse_ledger_state(ledger_text, ledger_source)
         expected_base_sha = ledger_state["base-ref"]
-        snapshot_manifest = (
-            load_snapshot_manifest() if expected_base_sha == LEDGER_BASE_SHA
-            else load_postmerge_snapshot_manifest()
-        )
+        if _successor_paths(REPO_ROOT):
+            snapshot_manifest = load_successor_chain(REPO_ROOT)
+            if expected_base_sha != snapshot_manifest["base_commit"]:
+                raise LedgerError(f"{ledger_source}: ledger base is not the latest successor base")
+        elif expected_base_sha == LEDGER_BASE_SHA:
+            snapshot_manifest = load_snapshot_manifest()
+        elif expected_base_sha == POSTMERGE_BASE_SHA:
+            snapshot_manifest = load_postmerge_snapshot_manifest()
+        else:
+            raise LedgerError(f"{ledger_source}: unversioned ledger base")
         validate_snapshot_manifest(
             snapshot_manifest,
             backlog_text,
@@ -940,78 +1005,19 @@ def main() -> int:
             base_ref=expected_base_sha,
             base_sha=expected_base_sha,
         )
-        catalog_counts: dict[str, int] = {}
-        assignments: list[tuple[str, str, str]] = []
-        valid_wps: set[str] = set()
-        sections: dict[str, str] = {}
-        source_by_wp: dict[str, str] = {}
-        ownership_rows: list[tuple[str, str, str]] = []
-        ownership_fence_count = 0
-        workflow_rows: list[tuple[str, str, str]] = []
-        workflow_fence_count = 0
-        for path, (lower, upper) in CATALOGS.items():
+        catalog_data: dict[str, bytes] = {}
+        for path in CATALOGS:
             if not path.is_file():
                 raise LedgerError(f"missing catalog: {path.relative_to(REPO_ROOT)}")
-            text = path.read_text()
-            source = str(path.relative_to(REPO_ROOT))
-            if strict_fence(text, "wp-editable-allowlist", source) is not None:
-                ownership_fence_count += 1
-            ownership_rows.extend(parse_structured_allowlist(text, source))
-            if strict_fence(text, WORKFLOW_OWNERSHIP_FENCE, source) is not None:
-                workflow_fence_count += 1
-            workflow_rows.extend(parse_workflow_ownership(text, source))
-            names = declared_wp_names(text, source)
-            valid_wps.update(names)
-            catalog_entries = parse_catalog(text, source, lower, upper)
-            catalog_counts[f"B{lower:03d}-B{upper:03d}"] = len(catalog_entries)
-            for item_id, wp in catalog_entries:
-                section = contract_section(text, wp, source)
-                validate_contract_section(section, wp, source)
-                sections.setdefault(wp, section)
-                source_by_wp.setdefault(wp, source)
-                assignments.append((item_id, wp, str(path.relative_to(REPO_ROOT))))
-        compare(open_ids, assignments, valid_wps)
-        validate_ledger_state(
-            ledger_state,
-            source=ledger_source,
-            item_count=sum(status_counts.values()),
-            status_counts=status_counts,
-            catalog_counts=catalog_counts,
-            expected_base_sha=expected_base_sha,
-        )
-        dependency_order = parse_wp_dependency_order(
-            ledger_text, ledger_source
-        )
-        validate_wp_dependency_order(
-            dependency_order,
-            valid_wps,
-            ledger_source,
-            required={
-                "WP-140": (),
-                "WP-146": (),
-                "WP-148": ("WP-140", "WP-146"),
-                "WP-150": ("WP-148",),
-            },
-        )
-        for wp, section in sections.items():
-            validate_predecessors(section, wp, source_by_wp[wp], backlog_ids, valid_wps)
-        if ownership_fence_count != 1:
-            raise LedgerError(
-                f"expected exactly one editable allowlist fence, found {ownership_fence_count}"
-            )
-        validate_structured_allowlist(ownership_rows, valid_wps)
-        if workflow_fence_count != 1:
-            raise LedgerError(
-                f"expected exactly one workflow ownership fence, found {workflow_fence_count}"
-            )
-        validate_workflow_ownership(
-            workflow_rows, valid_wps, validate_workflow_population(REPO_ROOT)
+            catalog_data[path.relative_to(REPO_ROOT).as_posix()] = path.read_bytes()
+        assignment_count = validate_complete_catalog_state(
+            backlog_text, ledger_text, catalog_data, REPO_ROOT, expected_base_sha,
         )
     except LedgerError as error:
         print(f"BROKEN: {error}", file=sys.stderr)
         return 1
     print(
-        f"CONFIRMED: {len(open_ids)} open backlog IDs, {len(assignments)} unique WP assignments, "
+        f"CONFIRMED: {len(open_ids)} open backlog IDs, {assignment_count} unique WP assignments, "
         f"{len(CATALOGS)} catalogs"
     )
     return 0

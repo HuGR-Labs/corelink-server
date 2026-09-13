@@ -74,9 +74,10 @@ jobs:
         with:
           fetch-depth: 0
           # Need a writable token for the auto-PR branch push.
-          # A GITHUB_TOKEN push suppresses the pull_request event.  Use the
-          # dedicated owner-provisioned credential so generated PRs receive
-          # the repository's normal checks.
+          # A GITHUB_TOKEN branch push suppresses push workflows; the PR
+          # opened/synchronize/reopened event can yield approval-required
+          # runs. Once provisioned, the dedicated token supports unattended
+          # CI; actual completed jobs, not check presence, prove execution.
           token: ${{ secrets.BOT_PR_TOKEN }}
 
       - name: Regenerate reference set

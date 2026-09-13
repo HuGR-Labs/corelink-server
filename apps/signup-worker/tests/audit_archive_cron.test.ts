@@ -111,6 +111,7 @@ describe("runAuditArchiveSweep", () => {
           chunks_already_present: 0,
           partitions_archived: 1,
           partitions_failed: 2,
+          failure_codes: ["r2_read", "d1_query"],
           rows_quarantined: 0,
           partitions_quarantined: 0,
           incomplete: false,
@@ -121,10 +122,78 @@ describe("runAuditArchiveSweep", () => {
     expect(r.ok).toBe(false);
     expect(r.status).toBe(500);
     expect(r.partitionsFailed).toBe(2);
+    expect(r.failureCodes).toEqual(["r2_read", "d1_query"]);
     expect(r.incomplete).toBe(true);
     // Rows that DID archive are still reported — a failure elsewhere must not
     // erase the work that landed.
     expect(r.rowsArchived).toBe(40);
+  });
+
+  it("marks old failed responses as unreported, never as a clean diagnosis", async () => {
+    const r = await runAuditArchiveSweep(
+      env({
+        CORELINK_API_SVC: svc(500, {
+          rows_archived: 0,
+          chunks_created: 0,
+          chunks_already_present: 0,
+          partitions_archived: 0,
+          partitions_failed: 1,
+          rows_quarantined: 0,
+          partitions_quarantined: 0,
+          incomplete: false,
+        }),
+      }),
+      0,
+    );
+    expect(r.failureCodes).toEqual(["unreported"]);
+    expect(r.ok).toBe(false);
+  });
+
+  it("fails closed when a legacy 200 body admits failed partitions", async () => {
+    const r = await runAuditArchiveSweep(
+      env({
+        CORELINK_API_SVC: svc(200, {
+          rows_archived: 0,
+          chunks_created: 0,
+          chunks_already_present: 0,
+          partitions_archived: 0,
+          partitions_failed: 1,
+          rows_quarantined: 0,
+          partitions_quarantined: 0,
+          incomplete: false,
+        }),
+      }),
+      0,
+    );
+    expect(r).toMatchObject({
+      ok: false,
+      status: 200,
+      partitionsFailed: 1,
+      failureCodes: ["unreported"],
+      incomplete: true,
+    });
+  });
+
+  it("rejects arbitrary failure text instead of reflecting it into cron logs", async () => {
+    const r = await runAuditArchiveSweep(
+      env({
+        CORELINK_API_SVC: svc(500, {
+          rows_archived: 0,
+          chunks_created: 0,
+          chunks_already_present: 0,
+          partitions_archived: 0,
+          partitions_failed: 1,
+          failure_codes: ["r2_read key=secret"],
+          rows_quarantined: 0,
+          partitions_quarantined: 0,
+          incomplete: false,
+        }),
+      }),
+      0,
+    );
+    expect(r.failureCodes).toEqual([]);
+    expect(r.ok).toBe(false);
+    expect(r.incomplete).toBe(true);
   });
 
   it("skips (does not call) when no internal-auth key is bound", async () => {

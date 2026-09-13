@@ -39,7 +39,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
           path: _base
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
       - name: Validate candidate as data with BASE checker
         working-directory: _base
