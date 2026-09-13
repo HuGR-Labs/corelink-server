@@ -20,6 +20,7 @@
  */
 
 import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-types";
+import type { KvReader } from "./lib/pat_verify_cache.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -52,6 +53,8 @@ export interface Env {
   // D1 CONFIG_DB — control-plane database. Holds the `pat` table queried
   // during PAT validation (WP-A1). Bound in wrangler.toml `[[d1_databases]]`.
   CONFIG_DB: D1Database;
+  // Optional cache binding used to invalidate credential-generation read state.
+  METADATA_KV?: KvReader & { delete(key: string): Promise<void> };
   // Secrets (bound via `wrangler secret put`)
   CLERK_SECRET_KEY?: string;
   // Exact-issuer pin. Production's public, non-secret value is versioned in
@@ -145,6 +148,9 @@ export interface Env {
   DSR_RECEIPT_SIGNING_KEY?: string; // HMAC signer for DSR customer-portal receipt JWTs (union #717; read by dsr/portal.rs, forwarded to the container)
   DPA_RECEIPT_SIGNING_KEY?: string; // RS256 (RSA PKCS#8/PKCS#1 PEM) signer for DPA-acceptance receipt JWTs (read by routes/dpa_accept.rs, forwarded to the container; route unmounts fail-CLOSED when absent)
   CORELINK_RUNNER_MINT_AUTH_KEY?: string; // gate for `/internal/v1/runner/{mint,revoke}` (runner dispatcher; scoped away from signup's pat_mint)
+  /** Dedicated Fabric issuer snapshot authority for runner and DevEnv credentials. */
+  FABRIC_CREDENTIAL_AUTHORITY_URL?: string;
+  FABRIC_CREDENTIAL_ISSUER_AUTH_KEY?: string;
   CORELINK_QUOTA_READ_AUTH_KEY?: string; // gate for `/_internal/tenant/{tenant_id}/quota` (read-only tenant-quota lookup; low-privilege read consumer, distinct from mint/erase/admin)
   // Per-tier quota enforcement (worker/src/lib/quota.ts).
   // Storage quota is always enforced for finite-quota tiers.

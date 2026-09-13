@@ -14,7 +14,8 @@ export type RouteKind =
   | "reapi_v2" | "customer_v1" | "devenv_v1" | "openapi" | "openapi_devenv"
   | "public_attestation" | "reapi_v1" | "bazel_v2" | "turbo_v8" | "signup"
   | "onboarding" | "session_exchange" | "tenant_lookup" | "token_exchange"
-  | "runner_mint" | "runner_revoke" | "auth_rotate" | "internal"
+  | "runner_mint" | "runner_close_generation" | "runner_revoke"
+  | "auth_rotate" | "internal"
   | "health_container" | "health_container_authed" | "not_found";
 
 /**
@@ -361,6 +362,13 @@ export function matchRoute(url: URL): RouteMatch {
   // distinct from the /_internal/* (underscore) family.
   if (path === "/internal/v1/runner/mint") {
     return { tenantId: "_system", pathSuffix: path, routeKind: "runner_mint" };
+  }
+
+  // Dedicated runner lifecycle closure route. This exact match must remain
+  // before generic internal and v1 routes so it reaches its runner-only
+  // authority, never a shared-auth path.
+  if (path === "/internal/v1/runner/credentials/close-generation") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "runner_close_generation" };
   }
 
   // corelink-runners D-9 — runner PAT revoke by pat_id. EXACT
