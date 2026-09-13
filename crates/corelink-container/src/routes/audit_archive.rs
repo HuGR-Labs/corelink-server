@@ -2453,14 +2453,18 @@ async fn archive_partition(
                         "archive key {key} existing prefix has invalid line count {rows}"
                     ));
                 };
-                mark_archived(&state.d1, existing_prefix, now).await?;
+                mark_archived(&state.d1, existing_prefix, now)
+                    .await
+                    .map_err(|e| format!("ARCHIVE_D1_MARK: {e}"))?;
                 outcome.rows = outcome.rows.saturating_add(rows as u64);
                 offset = offset.saturating_add(rows);
                 continue;
             }
         }
         // R2 first, D1 second — see the module docs.
-        mark_archived(&state.d1, chunk, now).await?;
+        mark_archived(&state.d1, chunk, now)
+            .await
+            .map_err(|e| format!("ARCHIVE_D1_MARK: {e}"))?;
         outcome.rows = outcome.rows.saturating_add(chunk.len() as u64);
         offset = offset.saturating_add(chunk.len());
     }
@@ -2491,6 +2495,38 @@ async fn archive_partition(
     Ok(outcome)
 }
 
+/// Only these fixed labels cross the container/Worker boundary. The detailed
+/// error may contain an immutable object key or provider response, so it stays
+/// in the container log and must never be copied into the cron response.
+fn archive_failure_code(error: &str) -> &'static str {
+    if error.starts_with("ARCHIVE_D1_MARK: ") {
+        "d1_mark"
+    } else if error.starts_with("AUDIT_ARCHIVE_KEY_CONFLICT") {
+        "immutable_key_conflict"
+    } else if error.starts_with("R2 conditional put failed") {
+        "r2_conditional_put"
+    } else if error.starts_with("R2 get failed")
+        || error.starts_with("R2 body read failed")
+        || error.starts_with("R2 head failed")
+    {
+        "r2_read"
+    } else if error.starts_with("archive key ") {
+        "r2_consistency"
+    } else if error.starts_with("archive watermark") {
+        "d1_mark"
+    } else if error.starts_with("D1 ") {
+        "d1_query"
+    } else if error.starts_with("audit_outbox.") {
+        "row_decode"
+    } else if error.starts_with("B054 ") {
+        "epoch_evidence"
+    } else if error.starts_with("archive candidate") {
+        "candidate_invalid"
+    } else {
+        "unclassified"
+    }
+}
+
 async fn handle_archive(State(state): State<AuditArchiveState>, headers: HeaderMap) -> Response {
     if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
@@ -2508,6 +2544,7 @@ async fn handle_archive(State(state): State<AuditArchiveState>, headers: HeaderM
     let mut chunks_already_present: u64 = 0;
     let mut partitions_archived: u64 = 0;
     let mut partitions_failed: u64 = 0;
+    let mut failure_codes = BTreeSet::new();
     let mut rows_quarantined: u64 = 0;
     let mut partitions_quarantined: u64 = 0;
     let mut incomplete = false;
@@ -2536,8 +2573,11 @@ async fn handle_archive(State(state): State<AuditArchiveState>, headers: HeaderM
                 // would let a single bad partition hold the whole estate's
                 // compliance copy hostage. The call still reports failure.
                 partitions_failed = partitions_failed.saturating_add(1);
+                let failure_code = archive_failure_code(&e);
+                failure_codes.insert(failure_code);
                 tracing::error!(
                     error = %e,
+                    failure_code,
                     region = %region,
                     "audit/archive: partition failed — rows left UNARCHIVED"
                 );
@@ -2552,6 +2592,7 @@ async fn handle_archive(State(state): State<AuditArchiveState>, headers: HeaderM
         "chunks_already_present": chunks_already_present,
         "partitions_archived": partitions_archived,
         "partitions_failed": partitions_failed,
+        "failure_codes": failure_codes,
         // Quarantine is reported, never merely logged. A row that is
         // unarchivable BY DESIGN still has to be counted somewhere an operator
         // reads, or it becomes the silent backlog this endpoint replaced.
@@ -2581,6 +2622,43 @@ mod tests {
     use super::*;
     use axum::http::HeaderValue;
     use ed25519_dalek::Signer as _;
+
+    #[test]
+    fn archive_failure_codes_are_fixed_and_never_reflect_keys_or_provider_text() {
+        let cases = [
+            (
+                "AUDIT_ARCHIVE_KEY_CONFLICT key=secret",
+                "immutable_key_conflict",
+            ),
+            (
+                "R2 conditional put failed for key secret: 403",
+                "r2_conditional_put",
+            ),
+            ("R2 get failed for key secret: 403", "r2_read"),
+            (
+                "archive key secret rejected create-if-absent",
+                "r2_consistency",
+            ),
+            (
+                "archive watermark returned 0 rows for 4 requested rows",
+                "d1_mark",
+            ),
+            ("ARCHIVE_D1_MARK: D1 HTTP 403: secret", "d1_mark"),
+            ("D1 HTTP 403: secret", "d1_query"),
+            ("audit_outbox.id missing/non-text", "row_decode"),
+            ("B054 archive witness unavailable", "epoch_evidence"),
+            (
+                "archive candidate for key=secret failed self-parse",
+                "candidate_invalid",
+            ),
+            ("secret-without-known-prefix", "unclassified"),
+        ];
+        for (detail, expected) in cases {
+            let code = archive_failure_code(detail);
+            assert_eq!(code, expected);
+            assert!(!code.contains("secret"));
+        }
+    }
 
     fn verifying_lines(count: u64) -> Vec<SealedArchiveLine> {
         let mut head = corelink_audit_chain::ChainHash::genesis();
