@@ -39,6 +39,11 @@ import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-typ
 import type { Env } from "../index.js";
 import { verifyClerkSessionAndResolveTenant } from "./clerk_auth.js";
 import { requireInternalAuth } from "./internal_auth.js";
+import { activateDevenvPat } from "./devenv_cleanup.js";
+import {
+  activateRunnerPat,
+  type RunnerCredentialOperation,
+} from "./runner_credential_obligation.js";
 
 /**
  * Default lifetime of the exchanged PAT, in seconds. Short-lived by design:
@@ -230,6 +235,8 @@ export class MintGrant {
     readonly principalSource: string,
     /** The HIGHEST scope this grant authorizes; a request above it fails CLOSED. */
     readonly maxScope: CanonScope,
+    /** Lifecycle fence carried from the issuer's accepted operation, if any. */
+    readonly lifecycleGeneration?: string,
   ) {}
 
   /**
@@ -263,8 +270,21 @@ export class MintGrant {
    * A D-9 runner mint (server-DERIVED tenant). Ceiling = `read-write` — a
    * disposable runner must never carry an admin bit (least privilege).
    */
-  static fromRunnerDerivation(tenantId: string, principalSource: string): MintGrant {
-    return new MintGrant(tenantId, principalSource, "read-write");
+  static fromRunnerDerivation(
+    tenantId: string,
+    principalSource: string,
+    lifecycleGeneration?: string,
+  ): MintGrant {
+    return new MintGrant(tenantId, principalSource, "read-write", lifecycleGeneration);
+  }
+
+  /** A verified DevEnv session, fenced by its accepted lifecycle generation. */
+  static fromDevenvSession(
+    tenantId: string,
+    principalSource: string,
+    lifecycleGeneration?: string,
+  ): MintGrant {
+    return new MintGrant(tenantId, principalSource, "read-write", lifecycleGeneration);
   }
 }
 
@@ -623,7 +643,27 @@ export async function mintScopedPat(
   internalAuthKey: string,
   extraFields?: Readonly<Record<string, string | number | boolean>>,
   runnerJobAcKey?: string,
+  devenvOperationId?: string,
+  runnerOperation?: RunnerCredentialOperation,
 ): Promise<Response> {
+  // A credential obligation is the only authority allowed to persist a runner
+  // or DevEnv PAT. Its generation is bound into the grant, so a stale accepted
+  // operation cannot be used to issue after the lifecycle advances.
+  if (runnerOperation !== undefined && devenvOperationId !== undefined) {
+    return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
+  }
+  if (
+    runnerOperation !== undefined &&
+    (runnerJobAcKey === undefined || runnerJobAcKey.length === 0 ||
+      runnerOperation.tenantId !== grant.tenantId ||
+      grant.principalSource !== `runner-job:${runnerOperation.jobId}` ||
+      grant.lifecycleGeneration !== runnerOperation.lifecycleGeneration)
+  ) {
+    return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
+  }
+  if (devenvOperationId !== undefined && grant.lifecycleGeneration === undefined) {
+    return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
+  }
   // L12(b): the tenant is sourced FROM the branded capability — a loose string is
   // no longer accepted, so a caller can only mint for the tenant its proven grant
   // binds. `principalSource` (the SHA-256 preimage for the per-principal UUID) is
@@ -812,7 +852,36 @@ export async function mintScopedPat(
             Date.now(),
             runnerJobAcKey,
           );
-    const insertResult = await stmt.run();
+    const insertResult =
+      runnerOperation !== undefined
+        ? {
+            meta: {
+              changes: await activateRunnerPat(
+                env.CONFIG_DB,
+                runnerOperation,
+                { ...minted, hash: minted.hash },
+                canonicalScope,
+                runnerJobAcKey ?? "",
+              )
+                ? 1
+                : 0,
+            },
+          }
+        : devenvOperationId !== undefined
+          ? {
+              meta: {
+                changes: await activateDevenvPat(
+                  env.CONFIG_DB,
+                  devenvOperationId,
+                  tenantId,
+                  { ...minted, hash: minted.hash },
+                  canonicalScope,
+                )
+                  ? 1
+                  : 0,
+              },
+            }
+          : await stmt.run();
     // A plain INSERT (not OR IGNORE) surfaces FK / UNIQUE / CHECK violations as a
     // throw (the primary signal, caught below). As a belt-and-braces guard against
     // a silent no-op, fail CLOSED if D1 explicitly reports zero rows changed — a

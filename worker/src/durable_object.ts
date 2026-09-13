@@ -56,6 +56,14 @@ import {
   PAT_ISSUE_AUTHORIZED_HEADER,
 } from "./pat_issue_rate_limit.js";
 import { isPilotSignupPath } from "./route_match.js";
+import { requireConsumerAuth } from "./lib/internal_auth.js";
+import {
+  bounded,
+  drainDevenvOperations,
+  prepareDevenvOperation,
+} from "./lib/devenv_cleanup.js";
+import { handleRunnerPrepare } from "./lib/runner_credential_routes.js";
+import { drainRunnerOperations } from "./lib/runner_credential_obligation.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -258,6 +266,58 @@ export class CoreLinkServer implements DurableObject {
   async fetch(request: Request): Promise<Response> {
     const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
     const url = new URL(request.url);
+
+    // Private issuer handoff routes. They run on the `_system` DO only and do
+    // not start a container: durable cleanup must be prepared before an issuer
+    // can mint a credential that becomes authenticatable.
+    if (url.pathname === "/_do/devenv-cleanup/prepare") {
+      // Credential lifecycle preparation is runner-issuer authority. It is
+      // deliberately dedicated-only: a shared internal key must never gain
+      // the ability to create an obligation for an arbitrary tenant.
+      if (
+        typeof this.env.CORELINK_RUNNER_MINT_AUTH_KEY !== "string" ||
+        this.env.CORELINK_RUNNER_MINT_AUTH_KEY.length < 32
+      ) {
+        return new Response(null, { status: 503 });
+      }
+      const denied = requireConsumerAuth(request, this.env, "runner_mint", requestId);
+      if (denied) return denied;
+      if (
+        request.method !== "POST" ||
+        !this.state.id.equals(this.env.CORELINK_SERVER.idFromName("_system"))
+      ) {
+        return new Response(null, { status: 403 });
+      }
+      try {
+        const input: unknown = await bounded(request.json());
+        if (input === null || typeof input !== "object" || Array.isArray(input)) {
+          return new Response(null, { status: 400 });
+        }
+        const { operationId, tenantId, lifecycleGeneration } = input as Record<string, unknown>;
+        if (
+          typeof operationId !== "string" ||
+          typeof tenantId !== "string" ||
+          typeof lifecycleGeneration !== "string"
+        ) {
+          return new Response(null, { status: 400 });
+        }
+        const ok = await prepareDevenvOperation(
+          this.storage,
+          this.env.CONFIG_DB,
+          operationId,
+          tenantId,
+          Date.now(),
+          lifecycleGeneration,
+        );
+        return new Response(null, { status: ok ? 204 : 503 });
+      } catch {
+        return new Response(null, { status: 503 });
+      }
+    }
+
+    if (url.pathname === "/_do/runner-cleanup/prepare") {
+      return handleRunnerPrepare(request, this.env, this.state, this.storage, requestId);
+    }
 
     // Internal DO management paths
     if (url.pathname === "/_do/health") {
@@ -802,10 +862,20 @@ export class CoreLinkServer implements DurableObject {
     // of ReplicationCoordinatorDO.alarm(): re-arm in `finally` UNLESS this
     // tick deliberately ended the chain (`chainEnded`).
     let chainEnded = false;
+    // Cleanup work can exist while the container is stopped, so retain the
+    // alarm until both durable obligation queues are drained.
+    let cleanupPending = true;
     try {
+      const drains = await Promise.allSettled([
+        drainDevenvOperations(this.storage, this.env.CONFIG_DB, this.env.METADATA_KV, Date.now()),
+        drainRunnerOperations(this.storage, this.env.CONFIG_DB, this.env.METADATA_KV, Date.now()),
+      ]);
+      cleanupPending = drains.some(
+        (result) => result.status === "rejected" || (result.status === "fulfilled" && result.value),
+      );
       chainEnded = await this.alarmTick();
     } finally {
-      if (!chainEnded) {
+      if (!chainEnded || cleanupPending) {
         await this.storage.setAlarm(Date.now() + HEALTH_CHECK_INTERVAL_MS);
       }
     }

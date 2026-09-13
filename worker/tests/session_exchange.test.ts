@@ -842,6 +842,7 @@ describe("L12(b) — MintGrant capability + mintScopedPat scope ceiling", () => 
     expect(MintGrant.fromVerifiedSession("t", "p").maxScope).toBe("read-write");
     expect(MintGrant.fromTokenExchange("t", "p").maxScope).toBe("read-write");
     expect(MintGrant.fromRunnerDerivation("t", "p").maxScope).toBe("read-write");
+    expect(MintGrant.fromDevenvSession("t", "p", "7").lifecycleGeneration).toBe("7");
     // Rotation's ceiling = the OLD row's scope — the ONLY factory that can reach admin.
     expect(MintGrant.fromRotation("t", "p", "admin").maxScope).toBe("admin");
     expect(MintGrant.fromRotation("t", "p", "read-only").maxScope).toBe("read-only");
@@ -850,6 +851,31 @@ describe("L12(b) — MintGrant capability + mintScopedPat scope ceiling", () => 
     const g = MintGrant.fromVerifiedSession("acme", "user_x");
     expect(g.tenantId).toBe("acme");
     expect(g.principalSource).toBe("user_x");
+  });
+
+  it("fails before minting when an obligation generation is not bound to its grant", async () => {
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map() });
+    const resp = await mintScopedPat(
+      env,
+      `${REQ}-runner-generation`,
+      MintGrant.fromRunnerDerivation("acme-default", "runner-job:job-1", "6"),
+      3600,
+      "cas:rw",
+      INTERNAL_KEY,
+      undefined,
+      "*",
+      undefined,
+      {
+        operationId: "11111111-2222-4333-8444-555555555555",
+        tenantId: "acme-default",
+        jobId: "job-1",
+        repo: "acme/repo",
+        lifecycleGeneration: "7",
+      },
+    );
+    expect(resp.status).toBe(500);
+    expect(captured.req).toBeUndefined();
   });
 
   it("(2) fail-CLOSED: a scope ABOVE the grant ceiling → 500, NO token, NO pat row, NO container mint", async () => {
