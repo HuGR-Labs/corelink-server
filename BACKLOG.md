@@ -11452,8 +11452,10 @@ verify-means: |
 
   O pacote de ação exige que as referências ao SLA, aos Termos e ao pricing
   resolvam para arquivos reais. Seu gate fixa o conflito ainda aberto: quatro
-  tiers no SLA versus seis vendidos, promessa automática ao Pro nos Termos
-  versus `slaCredits: false` no pricing. Qualquer mudança unilateral exige
+  tiers no SLA versus seis vendidos, créditos Starter/Pro no SLA versus
+  `slaCredits: false` no pricing e promessa automática ao Pro nos Termos.
+  O gate confere a postura de créditos de cada um dos seis tiers vendidos e
+  a cobertura de cada linha do SLA. Qualquer mudança unilateral exige
   atualizar a decisão e o censo; esse PASS não prova acordo nem provider.
 
   O que NÃO decide, e admito: o descompasso de quatro tiers no SLA contra seis vendidos, e

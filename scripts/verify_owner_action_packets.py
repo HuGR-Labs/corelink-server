@@ -589,9 +589,16 @@ def _check_b089_surface_contract(item: dict[str, object], root: Path = ROOT) -> 
     if len(slo_section) != 2:
         raise PacketError("B-089 SLA tier section missing")
     slo_rows = slo_section[1].split("\n## ", 1)[0]
-    sla_tiers = re.findall(r"^\| \*\*(\w+)\*\* \|", slo_rows, flags=re.M)
+    tier_rows = re.findall(r"^\| \*\*\w+\*\* \|.*$", slo_rows, flags=re.M)
+    sla_tiers = [row.split("**", 2)[1] for row in tier_rows]
     if sla_tiers != ["Free", "Starter", "Pro", "Enterprise"]:
         raise PacketError(f"B-089 executed SLA tier census drifted: {sla_tiers}")
+    for row, credit_expected in zip(tier_rows, (False, True, True, True), strict=True):
+        coverage = row.rsplit("|", 2)[1].strip().lower()
+        positive = "service credits per §4" in coverage
+        negative = "no service credits" in coverage
+        if positive != credit_expected or negative == credit_expected:
+            raise PacketError(f"B-089 executed SLA tier credit coverage drifted: {row.split('**', 2)[1]}")
     if "issued automatically against the next invoice" not in sla or "sole and exclusive remedy" not in sla:
         raise PacketError("B-089 executed SLA credit/remedy claim drifted")
 
@@ -602,14 +609,13 @@ def _check_b089_surface_contract(item: dict[str, object], root: Path = ROOT) -> 
     sold_tiers = re.findall(r'"([a-z]+)"', canonical.group(1))
     if sold_tiers != ["free", "solo", "starter", "pro", "max", "enterprise"]:
         raise PacketError(f"B-089 sold-tier census drifted: {sold_tiers}")
-    pro = re.search(r"(?ms)^  pro: \{(.*?)^  \},", pricing)
-    enterprise = re.search(r"(?ms)^  enterprise: \{(.*?)^  \},", pricing)
-    if (
-        pro is None or enterprise is None
-        or re.findall(r"\bslaCredits:\s*(true|false)\b", pro.group(1)) != ["false"]
-        or re.findall(r"\bslaCredits:\s*(true|false)\b", enterprise.group(1)) != ["true"]
-    ):
-        raise PacketError("B-089 published pricing credit posture drifted")
+    # The two live contradictions are Starter/Pro (SLA promises credit, price
+    # card denies it). Solo/Max are sold but absent from the executed SLA.
+    expected_flags = ("false", "false", "false", "false", "false", "true")
+    for tier, expected_flag in zip(sold_tiers, expected_flags, strict=True):
+        blocks = re.findall(rf"(?ms)^  {tier}: \{{(.*?)^  \}},", pricing)
+        if len(blocks) != 1 or re.findall(r"\bslaCredits:\s*(true|false)\b", blocks[0]) != [expected_flag]:
+            raise PacketError(f"B-089 published pricing credit posture drifted: {tier}")
 
     terms = sources[B089_SURFACES[1]]
     section = terms.split("14. Service availability and credits", 1)

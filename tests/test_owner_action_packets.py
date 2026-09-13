@@ -117,9 +117,13 @@ class OwnerActionPacketTests(unittest.TestCase):
 
             mutations = (
                 (MODULE.B089_SURFACES[0], "| **Starter** |", "| **Solo** |"),
+                (MODULE.B089_SURFACES[0], "Service credits per §4.", "No service credits."),
                 (MODULE.B089_SURFACES[1], "Pro-tier customers are entitled to a", "Pro-tier customers are not entitled to a"),
                 (MODULE.B089_SURFACES[2], '"solo",', '"business",'),
+                (MODULE.B089_SURFACES[2], '  solo: {\n    id: "solo",', '  solo: {\n    slaCredits: true,\n    id: "solo",'),
+                (MODULE.B089_SURFACES[2], '  starter: {\n    id: "starter",', '  starter: {\n    slaCredits: true,\n    id: "starter",'),
                 (MODULE.B089_SURFACES[2], '  pro: {\n    id: "pro",', '  pro: {\n    slaCredits: true,\n    id: "pro",'),
+                (MODULE.B089_SURFACES[2], '  max: {\n    id: "max",', '  max: {\n    slaCredits: true,\n    id: "max",'),
             )
             for name, old, new in mutations:
                 with self.subTest(source=name, mutation=old):
