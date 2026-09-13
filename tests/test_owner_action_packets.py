@@ -371,6 +371,7 @@ class OwnerActionPacketTests(unittest.TestCase):
             "boolean_count": lambda c: c["by_region"]["prod"].update(running_reserved_system=True),
             "wrong_capture_time": lambda c: c.update(captured_at="2026-09-13T00:44:49Z"),
             "peak_claim": lambda c: c.update(interpretation="peak tenant concurrency measured"),
+            "simultaneous_claim": lambda c: c.update(interpretation=c["interpretation"].replace("not one simultaneous snapshot", "one simultaneous snapshot")),
             "extra_field": lambda c: c.update(tenant_id="should-not-appear"),
         }
         for label, mutate in mutations.items():
@@ -381,6 +382,14 @@ class OwnerActionPacketTests(unittest.TestCase):
             with self.subTest(mutation=label), mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_candidate):
                 with self.assertRaises(MODULE.PacketError):
                     MODULE.check_data(self.data, "B-097")
+
+        record = copy.deepcopy(baseline)
+        record["captured_at"] = "2026-09-13T14:28:56Z"
+        def read_wrong_outer_time(path, fields, receipt_label):
+            return record if path == MODULE.B097_EVIDENCE_PATH else original(path, fields, receipt_label)
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_wrong_outer_time):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-097")
 
     def test_b086_unresolved_receipt_mutations_fail_closed(self) -> None:
         original = MODULE._read_json_evidence

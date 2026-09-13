@@ -55,7 +55,7 @@
       "inactive": 11,
       "running_tenant_named": 0,
       "running_reserved_system": 1,
-      "interpretation": "point-in-time named-instance state across five cache applications; zero running tenant-named containers is not peak tenant concurrency, customer activity, or account vCPU usage"
+      "interpretation": "later point-in-time named-instance supplement (2026-09-13T14:28:08Z..14:28:56Z) to the top-level 2026-09-13T00:44:49Z quota/application-cap/D1 capture, not one simultaneous snapshot; zero running tenant-named containers is not peak tenant concurrency, customer activity, or account vCPU usage"
     },
     "active_tenant_metric": "unavailable: tenant registration/state, stale audit activity, and application instance health are not a concurrent-active-tenant metric",
     "tenant_population_readback": {

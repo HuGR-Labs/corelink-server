@@ -789,7 +789,7 @@ def _check_b097_evidence(item: dict[str, object]) -> None:
     if evidence["required_fields"] != B097_EVIDENCE_REQUIRED_FIELDS:
         raise PacketError("B-097 evidence required fields drifted")
     record = _read_json_evidence(B097_EVIDENCE_PATH, B097_EVIDENCE_REQUIRED_FIELDS, "B-097")
-    if record["schema_version"] != 1 or not isinstance(record["captured_at"], str) or not record["captured_at"].strip():
+    if record["schema_version"] != 1 or record["captured_at"] != "2026-09-13T00:44:49Z":
         raise PacketError("B-097 evidence capture metadata drifted")
     if not isinstance(record["account_id_redacted"], str) or not re.fullmatch(r"[0-9a-f]{4}\.\.\.[0-9a-f]{4}", record["account_id_redacted"]):
         raise PacketError("B-097 account identifier must remain redacted")
@@ -861,7 +861,7 @@ def _check_b097_evidence(item: dict[str, object]) -> None:
     for field, row_field in (("listed_named_instances", "listed"), ("inactive", "inactive"), ("running_tenant_named", "running_tenant_named"), ("running_reserved_system", "running_reserved_system")):
         if type(census[field]) is not int or census[field] != sum(row[row_field] for row in expected_regions.values()):
             raise PacketError(f"B-097 instance census {field} arithmetic drifted")
-    if census["interpretation"] != "point-in-time named-instance state across five cache applications; zero running tenant-named containers is not peak tenant concurrency, customer activity, or account vCPU usage":
+    if census["interpretation"] != "later point-in-time named-instance supplement (2026-09-13T14:28:08Z..14:28:56Z) to the top-level 2026-09-13T00:44:49Z quota/application-cap/D1 capture, not one simultaneous snapshot; zero running tenant-named containers is not peak tenant concurrency, customer activity, or account vCPU usage":
         raise PacketError("B-097 instance census point-in-time disclaimer drifted")
     if capture["active_tenant_metric"] != "unavailable: tenant registration/state, stale audit activity, and application instance health are not a concurrent-active-tenant metric":
         raise PacketError("B-097 active-tenant metric disclaimer drifted")
