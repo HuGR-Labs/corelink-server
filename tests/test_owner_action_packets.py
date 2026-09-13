@@ -302,6 +302,7 @@ class OwnerActionPacketTests(unittest.TestCase):
             "registered_as_concurrent": lambda r: r.update(active_tenants_concurrent=264),
             "missing_tenant_region": lambda r: r["read_only_capture"]["tenant_population_readback"]["rows"].pop(),
             "d1_write_claim": lambda r: r["read_only_capture"]["tenant_population_readback"].update(rows_written=1),
+            "d1_write_bool": lambda r: r["read_only_capture"]["tenant_population_readback"].update(rows_written=False),
         }
         for label, mutate in mutations.items():
             record = copy.deepcopy(baseline)

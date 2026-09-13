@@ -3,8 +3,8 @@
 **Historical decision (2026-08-09, owner): run ONE region — `corelink-prod` (iad).**
 This is **not current deployed state**. Read-only Cloudflare application queries on
 2026-09-13 found all five cache applications at `max_instances: 200`, with 15
-`healthy` instances in each of `sam`, `lhr`, `nrt`, and `syd`; `prod` had 16
-instances (1 `active`, 15 `healthy`). The former four-region `0` override and
+reported instances and 0 `active` in each of `sam`, `lhr`, `nrt`, and `syd`;
+`prod` had 16 reported instances and 1 `active`. The former four-region `0` override and
 the `prod=2` override are no longer installed. Do not execute this old policy
 as a production change without a new owner decision and a current cost readback.
 

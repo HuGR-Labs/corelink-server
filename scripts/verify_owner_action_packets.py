@@ -853,7 +853,7 @@ def _check_b097_evidence(item: dict[str, object]) -> None:
         {"primary_region": "wnam", "tenant_state": "dpa_pending", "tenant_count": 108},
     ] or tenants["total_registered_tenants"] != sum(row["tenant_count"] for row in tenants["rows"]):
         raise PacketError("B-097 tenant census population drifted")
-    if tenants["changed_db"] is not False or tenants["rows_written"] != 0 or tenants["interpretation"] != "tenant_state=active means registered state, not a concurrent workload or container assignment":
+    if tenants["changed_db"] is not False or type(tenants["rows_written"]) is not int or tenants["rows_written"] != 0 or tenants["interpretation"] != "tenant_state=active means registered state, not a concurrent workload or container assignment":
         raise PacketError("B-097 tenant census read-only/disclaimer drifted")
     activity = _exact_keys(capture["activity_readback"], {"database", "access", "customer_audit_rows", "distinct_tenants_all_time", "last_customer_audit_ts_ms", "distinct_tenants_last_15m", "distinct_tenants_last_1h", "distinct_tenants_last_24h", "interpretation"}, "B-097 activity_readback")
     if activity["database"] != "CONFIG_DB/prod" or activity["access"] != "remote-read-only" or any(activity[name] != expected for name, expected in {"customer_audit_rows": 71, "distinct_tenants_all_time": 16, "last_customer_audit_ts_ms": 1784669020765, "distinct_tenants_last_15m": 0, "distinct_tenants_last_1h": 0, "distinct_tenants_last_24h": 0}.items()):

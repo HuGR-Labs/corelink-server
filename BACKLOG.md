@@ -11912,7 +11912,7 @@ Leitura Cloudflare de 2026-09-13: as cinco aplicações de cache estão configur
 aplicações da conta a **1295/1500**, restando 205 vCPU de margem nominal. A API retorna
 `usage=null`: reserva declarada não é uso medido nem custo faturado. As quatro regiões
 antes descritas como desligadas estão hoje em `max_instances=200`, com 15 instâncias
-`healthy` cada. `CONFIG_DB` registra 264 tenants (155 enam, 108 wnam, 1 apac), mas
+reportadas e zero `active` cada. `CONFIG_DB` registra 264 tenants (155 enam, 108 wnam, 1 apac), mas
 registro/`tenant_state` não medem tenants concorrentemente ativos. O teto de 200 é de
 instâncias por aplicação regional, não de clientes totais; a ocupação simultânea por
 tenant continua sem prova direta.
