@@ -57,6 +57,15 @@ def test_invalid_dispatch_cycle_is_rejected() -> None:
     assert result.returncode != 0
 
 
+def test_snapshot_rejects_invalid_calendar_dates() -> None:
+    source = _workflow("dr-drill-monthly.yml")
+    assert "datetime.date.fromisoformat(sys.argv[1])" in source
+    validator = "import datetime, sys; datetime.date.fromisoformat(sys.argv[1])"
+    for value in ("2026-99-99", "2026-02-29"):
+        result = subprocess.run(["python3", "-c", validator, value], check=False)
+        assert result.returncode != 0
+
+
 def test_release_args_keep_shell_metacharacters_as_data() -> None:
     payload = "a$(id)"
     assert subprocess.run(
