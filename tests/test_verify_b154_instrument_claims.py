@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import copy
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,10 +32,24 @@ def test_backlog_verify_uses_claims_and_current_evidence_not_any_501_grep() -> N
     backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
     section = backlog.split("### B-154 —", 1)[1].split("### B-155 —", 1)[0]
     assert "status: open" in section
+    assert "python3 -S scripts/verify_owner_action_packets.py --id B-154 &&\n  python3 -S scripts/verify_b154_instrument_claims.py --self-test" in section
     assert "python3 -S scripts/verify_b154_instrument_claims.py --self-test" in section
     assert "grep -qE" not in section
     assert "B-083 sem ciclo CMK/p99 executado" in section
     assert "probe B-046 mais recente `INDETERMINATE`" in section
+
+
+def test_backlog_verify_cannot_mask_packet_failure_with_later_success() -> None:
+    backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
+    section = backlog.split("### B-154 —", 1)[1].split("### B-155 —", 1)[0]
+    command = section.split("verify: |", 1)[1].split("verify-means: |", 1)[0].strip()
+    first = "python3 -S scripts/verify_owner_action_packets.py --id B-154"
+    second = "python3 -S scripts/verify_b154_instrument_claims.py --self-test"
+    assert command.count(first) == command.count(second) == 1
+    red = command.replace(first, "false").replace(second, "true")
+    green = command.replace(first, "true").replace(second, "true")
+    assert subprocess.run(["bash", "-c", red], check=False).returncode != 0
+    assert subprocess.run(["bash", "-c", green], check=False).returncode == 0
 
 
 def test_current_instruments_find_bold_claims() -> None:

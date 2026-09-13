@@ -16169,7 +16169,7 @@ owner: owner
 status: open
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  python3 -S scripts/verify_owner_action_packets.py --id B-154
+  python3 -S scripts/verify_owner_action_packets.py --id B-154 &&
   python3 -S scripts/verify_b154_instrument_claims.py --self-test
 verify-means: |
   open — o packet conserva as decisões externas não executadas; o detector exige as duas
