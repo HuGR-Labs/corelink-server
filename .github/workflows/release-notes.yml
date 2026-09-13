@@ -81,14 +81,22 @@ jobs:
       - name: Resolve refs
         id: refs
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FROM_REF_INPUT: ${{ inputs.from_ref }}
+          TO_REF_INPUT: ${{ inputs.to_ref }}
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            FROM="${{ inputs.from_ref }}"
-            TO="${{ inputs.to_ref }}"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            FROM="$FROM_REF_INPUT"
+            TO="$TO_REF_INPUT"
             VERSION_FLAG=""
-            if [[ -n "${{ inputs.version }}" ]]; then
-              VERSION_FLAG="--version ${{ inputs.version }}"
+            git check-ref-format --allow-onelevel "refs/$FROM" || { echo "::error::invalid from_ref"; exit 1; }
+            git check-ref-format --allow-onelevel "refs/$TO" || { echo "::error::invalid to_ref"; exit 1; }
+            if [[ -n "$VERSION_INPUT" ]]; then
+              [[ "$VERSION_INPUT" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo "::error::invalid version"; exit 1; }
+              VERSION_FLAG="--version $VERSION_INPUT"
             fi
           else
             TAG="${GITHUB_REF##refs/tags/}"
@@ -111,8 +119,8 @@ jobs:
             echo "version_flag=$VERSION_FLAG"
           } >> "$GITHUB_OUTPUT"
           # Resolve the version literal for output-path use.
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VLITERAL="${{ inputs.version }}"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            VLITERAL="$VERSION_INPUT"
             if [[ -z "$VLITERAL" ]]; then
               VLITERAL="$(git rev-parse --short "$TO")"
               VLITERAL="dev-$VLITERAL"

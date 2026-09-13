@@ -86,14 +86,21 @@ jobs:
 
       - name: Determine release version
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          VERSION_INPUT: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [[ -n "${{ github.event.inputs.version }}" ]]; then
-            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.event_name }}" == "release" ]]; then
-            echo "version=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [[ -n "$VERSION_INPUT" ]]; then
+            VERSION="$VERSION_INPUT"
+          elif [[ "$EVENT_NAME" == "release" ]]; then
+            VERSION="$RELEASE_TAG"
           else
-            echo "version=drift-check-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+            VERSION="drift-check-$(date +%Y%m%d)"
           fi
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$|^drift-check-[0-9]{8}$ ]] || { echo "::error::invalid release version"; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       # The committed SBOM is a deterministic projection of the complete
       # Cargo.lock population.  Unlike a cargo-cyclonedx binary aggregate, this

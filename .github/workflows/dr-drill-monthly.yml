@@ -61,10 +61,13 @@ jobs:
 
       - name: Resolve cycle + cadence
         id: cadence
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CYCLE_INPUT: ${{ inputs.cycle }}
         run: |
           set -euo pipefail
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            CYCLE="${{ github.event.inputs.cycle }}"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            CYCLE="$CYCLE_INPUT"
             RUN_REASON="manual"
           else
             DOM=$(date -u +%d)
@@ -114,28 +117,39 @@ jobs:
         if: steps.cadence.outputs.cycle == '1'
         run: |
           set -euo pipefail
-          REGION="${{ github.event.inputs.region }}"
+          REGION="$REGION_INPUT"
           REGION="${REGION:-weur}"
+          [[ "$REGION" =~ ^(weur|sam|asia)$ ]] || { echo "::error::invalid region"; exit 1; }
           bash tests/dr/dr-drill-cycle-1.sh --region "${REGION}"
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CYCLE_INPUT: ${{ inputs.cycle }}
+          REGION_INPUT: ${{ inputs.region }}
 
       - name: Run DR drill cycle 2 (D1 corruption)
         if: steps.cadence.outputs.cycle == '2'
         run: |
           set -euo pipefail
-          SNAPSHOT="${{ github.event.inputs.snapshot }}"
+          SNAPSHOT="$SNAPSHOT_INPUT"
           if [[ -z "${SNAPSHOT}" ]]; then
             SNAPSHOT=$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null \
               || date -u -v-1d +%Y-%m-%d)
           fi
+          [[ "$SNAPSHOT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "::error::invalid snapshot"; exit 1; }
           bash tests/dr/dr-drill-cycle-2.sh --snapshot "${SNAPSHOT}" --dry-run
+        env:
+          SNAPSHOT_INPUT: ${{ inputs.snapshot }}
 
       - name: Run DR drill cycle 3 (BYOK CMK compromise)
         if: steps.cadence.outputs.cycle == '3'
         run: |
           set -euo pipefail
-          PROVIDER="${{ github.event.inputs.provider }}"
+          PROVIDER="$PROVIDER_INPUT"
           PROVIDER="${PROVIDER:-aws}"
+          [[ "$PROVIDER" =~ ^(aws|gcp|azure|vault)$ ]] || { echo "::error::invalid provider"; exit 1; }
           bash tests/dr/dr-drill-cycle-3.sh --provider "${PROVIDER}" --dry-run
+        env:
+          PROVIDER_INPUT: ${{ inputs.provider }}
 
       - name: Upload drill report
         if: always() && steps.cadence.outputs.cycle != ''
