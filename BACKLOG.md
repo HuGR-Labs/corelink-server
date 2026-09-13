@@ -7445,19 +7445,33 @@ buys nothing, since no gate reads the heading. Read the field.
 
 ### B-012 — a non-Actions credential so bot PRs get CI
 
-`GITHUB_TOKEN`-created events do not trigger workflows — a recursion guard — so
-bot-opened PRs arrive with zero checks and a green-looking gate that proves
-nothing. Needs a fine-grained PAT or GitHub App token with `contents:write` and
-`pull_requests:write`. Deliberately not reusing an existing release token: one
-secret, one purpose.
+GitHub's `GITHUB_TOKEN` recursion guard suppresses most events, including a
+`push` made with that token. But `pull_request` opened/synchronize/reopened
+events from a workflow-created PR can create **approval-required** runs; a
+write-authorized human can approve them. Dependabot PRs can trigger workflows
+independently. Therefore neither bot authorship nor a zero-job
+`startup_failure` proves token suppression. A present run, check, or status
+also does not prove that CI executed or passed.
+
+The five active auto-PR creators already require `BOT_PR_TOKEN` and fail closed
+when it is absent. For **automatic, unapproved** PR CI, the smallest remaining
+owner credential is a dedicated fine-grained PAT scoped to this repository with
+`contents:write` and `pull_requests:write`; a GitHub App alternative must mint
+its short-lived installation token per job. Do not reuse a release credential.
+This token cannot repair Actions startup failure, hosted-billing limits, or an
+offline/missing runner labelled `corelink`. Bot-PR CI is established only when
+the expected jobs actually complete on viable capacity, with no approval
+pending, and the owner records the run/job evidence.
 
 **Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
 today, what each option costs, and what happens if the answer is "not now".
 
-**Só ele (reconfirmado 2026-08-31) — o ato: cunhar o fine-grained PAT (ou criar o GitHub App)
-no fluxo web autenticado da conta dele.** O GitHub **não expõe API para cunhar fine-grained
-PAT** — `POST /authorizations` saiu em 2020 sem substituto — e criar GitHub App exige o
-app-manifest web.
+**Owner-only credential action:** inspect approved dedicated credentials first,
+then mint the fine-grained PAT in the authenticated GitHub account flow if
+none exists. An App path requires per-job minting wiring before use, not a
+one-time installation token stored as `BOT_PR_TOKEN`. Restore Actions job
+startup and `corelink` runner capacity as separate prerequisites before a
+harmless proof PR; neither is solved by the credential itself.
 
 ```backlog
 id: B-012
@@ -7467,8 +7481,10 @@ status: open
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: python3 -S scripts/verify_owner_action_packets.py --id B-012
 verify-means: |
-  packet guard validates the exact bot-credential procedure and evidence schema;
-  the item remains open until a bot-opened PR shows checks.
+  packet guard validates the bot-credential procedure and job-level evidence
+  schema, not live execution; B-012 remains open until the owner records a
+  bot-opened PR whose expected jobs completed on viable runners without pending
+  approval. Check/status presence or a zero-job workflow run does not close it.
 last-verified: 2026-09-05
 ```
 

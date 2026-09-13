@@ -36,6 +36,15 @@ AUTO_PR_HEAD_MARKERS = (
     "releases/v",
 )
 
+B012_BACKLOG_REQUIRED = (
+    "approval-required",
+    "Dependabot PRs can trigger workflows",
+    "status: open",
+    "expected jobs actually complete",
+    "offline/missing runner labelled `corelink`",
+    "Check/status presence or a zero-job workflow run does not close it",
+)
+
 
 def _active_pr_creator(text: str) -> bool:
     """Find executable PR-creation commands/actions, ignoring comments."""
@@ -115,6 +124,12 @@ def verify(root: Path = ROOT) -> list[str]:
             errors.append(f"missing active bot-PR workflow: {path}")
             continue
         text = path.read_text(encoding="utf-8")
+        if "approval-required" not in text or (
+            "completed" not in text and "executed jobs" not in text
+        ):
+            errors.append(f"{name}: PR comments lost approval-required/completed-job distinction")
+        if "suppresses the pull_request event" in text or "pull_request event is suppressed and no checks appear" in text:
+            errors.append(f"{name}: PR comments still claim unconditional GITHUB_TOKEN suppression")
         if "secrets.BOT_PR_TOKEN" not in text:
             errors.append(f"{name}: does not consume secrets.BOT_PR_TOKEN")
         if "gh pr create" not in text:
@@ -179,11 +194,32 @@ def verify(root: Path = ROOT) -> list[str]:
     return errors
 
 
+def verify_b012_backlog(root: Path = ROOT) -> list[str]:
+    path = root / "BACKLOG.md"
+    if not path.is_file():
+        return ["B-012: BACKLOG.md is missing"]
+    text = path.read_text(encoding="utf-8")
+    start = text.find("### B-012 —")
+    end = text.find("### B-013 —", start + 1)
+    if start < 0 or end < 0:
+        return ["B-012: BACKLOG section boundaries are missing"]
+    section = text[start:end]
+    errors = [
+        f"B-012: BACKLOG lost {marker!r}"
+        for marker in B012_BACKLOG_REQUIRED
+        if marker not in section
+    ]
+    if "bot-opened PRs arrive with zero checks" in section or "until a bot-opened PR shows checks" in section:
+        errors.append("B-012: BACKLOG treats token author or check presence as CI proof")
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args()
-    errors = verify(args.root.resolve())
+    root = args.root.resolve()
+    errors = verify(root) + verify_b012_backlog(root)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)

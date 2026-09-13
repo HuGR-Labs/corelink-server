@@ -68,8 +68,10 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-          # The branch push must use a non-Actions credential; otherwise the
-          # resulting pull_request event is suppressed and no checks appear.
+          # GITHUB_TOKEN branch pushes suppress push-triggered workflows, but
+          # opened/synchronize/reopened PR runs may be approval-required.
+          # Once provisioned, the dedicated token on push and PR creation
+          # supports unattended CI; check presence is not completed-job proof.
           token: ${{ secrets.BOT_PR_TOKEN }}
 
       - name: Compute digest date
