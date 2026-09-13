@@ -47,7 +47,7 @@ pub struct StatuspageAuditEvent {
     pub page_id: String,
     /// Statuspage metric ID this publish targeted.
     pub metric_id: String,
-    /// Redacted API key string (`OAuth ***<last4>` — NEVER plaintext).
+    /// Redacted API key (`OAuth ***`, plus last4 only for keys longer than 4).
     pub api_key_redacted: String,
     /// Final HTTP status (None on transport error / local reject).
     pub final_status: Option<u16>,

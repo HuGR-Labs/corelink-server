@@ -5,13 +5,15 @@
 
 /// Redact a Statuspage `Authorization: OAuth <api_key>` header value.
 ///
-/// Returns `OAuth ***<last4>` when the key is long enough to keep a
-/// non-empty trailing fingerprint, or `OAuth ***` otherwise. Never
-/// returns more than the last 4 bytes of the key.
+/// Returns `OAuth ***<last4>` only when the trimmed key has more than
+/// four Unicode codepoints; shorter keys are fully masked as `OAuth ***`.
+/// Never returns more than the last 4 Unicode codepoints of the trimmed key.
 #[must_use]
 pub fn redact_api_key(api_key: &str) -> String {
     let trimmed = api_key.trim();
-    if trimmed.is_empty() {
+    // A fingerprint of a key with at most four codepoints would expose
+    // the *entire* credential, contrary to CTRL-PRIV-001.
+    if trimmed.chars().count() <= 4 {
         return "OAuth ***".to_string();
     }
     // Keep at most 4 trailing chars by codepoint to avoid splitting on
@@ -24,9 +26,6 @@ pub fn redact_api_key(api_key: &str) -> String {
         .chars()
         .rev()
         .collect();
-    if tail.is_empty() {
-        return "OAuth ***".to_string();
-    }
     format!("OAuth ***{tail}")
 }
 
@@ -54,9 +53,11 @@ mod tests {
     }
 
     #[test]
-    fn redact_short_key_still_masked() {
-        let red = redact_api_key("ab");
-        assert_eq!(red, "OAuth ***ab");
+    fn redact_short_key_never_exposes_entire_credential() {
+        for key in ["a", "ab", "abcd", "🙂🙂🙂🙂", "  ab  "] {
+            assert_eq!(redact_api_key(key), "OAuth ***");
+        }
+        assert_eq!(redact_api_key("abcde"), "OAuth ***bcde");
     }
 
     #[test]
@@ -66,5 +67,13 @@ mod tests {
         assert!(!red.contains("supersecret"));
         assert!(!red.contains("statuspageapikey"));
         assert!(red.ends_with("1234"));
+    }
+
+    #[test]
+    fn redact_repeated_prefix_character_is_only_in_authorized_tail() {
+        // The first `I` is masked; the second is part of the permitted
+        // four-character fingerprint. A substring check cannot distinguish
+        // them, but exact output equality can.
+        assert_eq!(redact_api_key("IIA0A"), "OAuth ***IA0A");
     }
 }

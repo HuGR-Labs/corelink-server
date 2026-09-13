@@ -23,7 +23,7 @@
 //! `aggregate_24h_window → bridge_to_report → publish_dsr_metric_async`
 //! on the CF Workers async event loop.
 //!
-//! The credential redaction (`OAuth ***<last4>`) is preserved verbatim
+//! The credential redaction (`OAuth ***`, with last4 only for longer keys) is preserved
 //! via [`crate::redact_api_key`]; the audit envelope shape is identical
 //! to the wave-16 native path; the rate-limit window + retry policy
 //! constants are shared via [`crate::rate_limit::StatuspageRateLimiter`]
@@ -62,7 +62,7 @@ pub enum Wasm32BackendError {
 /// Construction takes the page/metric/api_key triplet + an audit sink.
 /// The api_key is held for the duration of the client but ONLY ever
 /// emitted into the wire `Authorization` header — the audit envelope
-/// carries the redacted form (`OAuth ***<last4>`).
+/// carries the redacted form (`OAuth ***`, with last4 only for longer keys).
 pub struct StatuspageWasm32Client {
     base_url: String,
     page_id: String,
