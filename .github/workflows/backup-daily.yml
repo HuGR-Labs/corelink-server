@@ -85,12 +85,18 @@ jobs:
 
       - name: Resolve dry-run flag
         id: mode
+        env:
+          DRY_INPUT: ${{ github.event.inputs.dry_run }}
         run: |
           set -euo pipefail
           # Scheduled runs are LIVE (dry_run=false). workflow_dispatch may
           # override to "true" for a no-write rehearsal.
-          DRY="${{ github.event.inputs.dry_run }}"
+          DRY="$DRY_INPUT"
           DRY="${DRY:-false}"
+          if [[ "$DRY" != true && "$DRY" != false ]]; then
+            echo "::error::dry_run must be true or false"
+            exit 1
+          fi
           echo "dry=${DRY}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js

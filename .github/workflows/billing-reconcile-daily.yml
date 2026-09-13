@@ -122,10 +122,12 @@ jobs:
 
       - name: Compute billing period (input or current UTC month)
         id: period
+        env:
+          BILLING_PERIOD_INPUT: ${{ inputs.billing_period }}
         run: |
           set -euo pipefail
-          if [[ -n "${{ inputs.billing_period }}" ]]; then
-            PERIOD="${{ inputs.billing_period }}"
+          if [[ -n "$BILLING_PERIOD_INPUT" ]]; then
+            PERIOD="$BILLING_PERIOD_INPUT"
           else
             PERIOD=$(date -u +%Y-%m)
           fi

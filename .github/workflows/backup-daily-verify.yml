@@ -55,6 +55,8 @@ jobs:
 
       - name: Resolve dry-run flag
         id: mode
+        env:
+          DRY_INPUT: ${{ github.event.inputs.dry_run }}
         run: |
           set -euo pipefail
           # The live lane is REAL (scripts/backup-daily-verify.sh lists the
@@ -64,8 +66,12 @@ jobs:
           # its first snapshot, the live verify will correctly report
           # missing/stale (exit 2) or, if BACKUP_R2_BUCKET is unset, a config
           # error (exit 3) — that is honest, not a false green.
-          DRY="${{ github.event.inputs.dry_run }}"
+          DRY="$DRY_INPUT"
           DRY="${DRY:-false}"
+          if [[ "$DRY" != true && "$DRY" != false ]]; then
+            echo "::error::dry_run must be true or false"
+            exit 1
+          fi
           echo "dry=${DRY}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
