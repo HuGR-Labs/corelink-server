@@ -16,6 +16,8 @@ def _install_blocks() -> tuple[str, str]:
 
 def test_b139_pins_official_archives_and_checks_before_extracting() -> None:
     wasm_pack, binaryen = _install_blocks()
+    assert "WASM_PACK_VERSION=0.15.0" in wasm_pack
+    assert "BINARYEN_VERSION=132" in binaryen
     assert "releases/download/v${WASM_PACK_VERSION}/wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl.tar.gz" in wasm_pack
     assert "c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a" in wasm_pack
     assert "releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz" in binaryen
