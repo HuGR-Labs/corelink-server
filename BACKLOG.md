@@ -11953,7 +11953,7 @@ verify-means: |
 
   A abertura/decisão do caso de cota é relação comercial com fornecedor; o caso pendente
   não é aprovação. O guia de custo regional de 2026-08-09 é histórico, não estado atual.
-last-verified: 2026-09-13
+last-verified: 2026-09-12
 ```
 
 ### B-098 — dezoito worktrees vivem num diretório que o sistema operacional apaga, e uma delas tem trabalho não enviado
