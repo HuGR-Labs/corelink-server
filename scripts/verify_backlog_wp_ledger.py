@@ -17,6 +17,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import backlog_verify  # noqa: E402
 import backlog_ledger_successor  # noqa: E402
+import backlog_ledger_contracts  # noqa: E402
 
 CATALOGS = {
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B001-B045.md": (1, 45),
@@ -511,6 +512,16 @@ def successor_required(base_root: Path, candidate_root: Path) -> bool:
     return _successor_policy().successor_required(base_root, candidate_root)
 
 
+def validate_complete_catalog_state(
+    backlog_text: str, ledger_text: str, catalog_bytes: dict[str, bytes],
+    repo_root: Path, expected_base_sha: str,
+) -> int:
+    return backlog_ledger_contracts.validate(
+        sys.modules[__name__], backlog_text, ledger_text, catalog_bytes,
+        repo_root, expected_base_sha,
+    )
+
+
 def validate_snapshot_manifest(
     manifest: dict[str, object],
     backlog_text: str,
@@ -965,8 +976,6 @@ def main() -> int:
     try:
         backlog_text = (REPO_ROOT / "BACKLOG.md").read_text()
         open_ids = open_backlog_ids(backlog_text)
-        backlog_ids = all_backlog_ids(backlog_text)
-        status_counts = backlog_status_counts(backlog_text)
         ledger_text = LEDGER_PATH.read_text()
         try:
             ledger_source = str(LEDGER_PATH.relative_to(REPO_ROOT))
@@ -996,78 +1005,19 @@ def main() -> int:
             base_ref=expected_base_sha,
             base_sha=expected_base_sha,
         )
-        catalog_counts: dict[str, int] = {}
-        assignments: list[tuple[str, str, str]] = []
-        valid_wps: set[str] = set()
-        sections: dict[str, str] = {}
-        source_by_wp: dict[str, str] = {}
-        ownership_rows: list[tuple[str, str, str]] = []
-        ownership_fence_count = 0
-        workflow_rows: list[tuple[str, str, str]] = []
-        workflow_fence_count = 0
-        for path, (lower, upper) in CATALOGS.items():
+        catalog_data: dict[str, bytes] = {}
+        for path in CATALOGS:
             if not path.is_file():
                 raise LedgerError(f"missing catalog: {path.relative_to(REPO_ROOT)}")
-            text = path.read_text()
-            source = str(path.relative_to(REPO_ROOT))
-            if strict_fence(text, "wp-editable-allowlist", source) is not None:
-                ownership_fence_count += 1
-            ownership_rows.extend(parse_structured_allowlist(text, source))
-            if strict_fence(text, WORKFLOW_OWNERSHIP_FENCE, source) is not None:
-                workflow_fence_count += 1
-            workflow_rows.extend(parse_workflow_ownership(text, source))
-            names = declared_wp_names(text, source)
-            valid_wps.update(names)
-            catalog_entries = parse_catalog(text, source, lower, upper)
-            catalog_counts[f"B{lower:03d}-B{upper:03d}"] = len(catalog_entries)
-            for item_id, wp in catalog_entries:
-                section = contract_section(text, wp, source)
-                validate_contract_section(section, wp, source)
-                sections.setdefault(wp, section)
-                source_by_wp.setdefault(wp, source)
-                assignments.append((item_id, wp, str(path.relative_to(REPO_ROOT))))
-        compare(open_ids, assignments, valid_wps)
-        validate_ledger_state(
-            ledger_state,
-            source=ledger_source,
-            item_count=sum(status_counts.values()),
-            status_counts=status_counts,
-            catalog_counts=catalog_counts,
-            expected_base_sha=expected_base_sha,
-        )
-        dependency_order = parse_wp_dependency_order(
-            ledger_text, ledger_source
-        )
-        validate_wp_dependency_order(
-            dependency_order,
-            valid_wps,
-            ledger_source,
-            required={
-                "WP-140": (),
-                "WP-146": (),
-                "WP-148": ("WP-140", "WP-146"),
-                "WP-150": ("WP-148",),
-            },
-        )
-        for wp, section in sections.items():
-            validate_predecessors(section, wp, source_by_wp[wp], backlog_ids, valid_wps)
-        if ownership_fence_count != 1:
-            raise LedgerError(
-                f"expected exactly one editable allowlist fence, found {ownership_fence_count}"
-            )
-        validate_structured_allowlist(ownership_rows, valid_wps)
-        if workflow_fence_count != 1:
-            raise LedgerError(
-                f"expected exactly one workflow ownership fence, found {workflow_fence_count}"
-            )
-        validate_workflow_ownership(
-            workflow_rows, valid_wps, validate_workflow_population(REPO_ROOT)
+            catalog_data[path.relative_to(REPO_ROOT).as_posix()] = path.read_bytes()
+        assignment_count = validate_complete_catalog_state(
+            backlog_text, ledger_text, catalog_data, REPO_ROOT, expected_base_sha,
         )
     except LedgerError as error:
         print(f"BROKEN: {error}", file=sys.stderr)
         return 1
     print(
-        f"CONFIRMED: {len(open_ids)} open backlog IDs, {len(assignments)} unique WP assignments, "
+        f"CONFIRMED: {len(open_ids)} open backlog IDs, {assignment_count} unique WP assignments, "
         f"{len(CATALOGS)} catalogs"
     )
     return 0

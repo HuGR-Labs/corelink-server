@@ -24,10 +24,8 @@ def install(api):
     backlog_status_counts = api.backlog_status_counts
     open_backlog_ids = api.open_backlog_ids
     parse_ledger_state = api.parse_ledger_state
-    declared_wp_names = api.declared_wp_names
-    parse_catalog = api.parse_catalog
-    compare = api.compare
-    validate_ledger_state = api.validate_ledger_state
+    canonical_id = api.canonical_id
+    validate_complete_catalog_state = api.validate_complete_catalog_state
 
     def _sha256(raw: bytes) -> str:
         return hashlib.sha256(raw).hexdigest()
@@ -167,6 +165,34 @@ def install(api):
             path.as_posix(): _git_bytes(repo_root, commit, path) for path in relatives
         }
 
+    def _backlog_sections(raw: bytes) -> tuple[bytes, list[str], dict[str, bytes]]:
+        """Preserve each complete item section and all bytes before the first item."""
+        headings = list(re.finditer(rb"(?m)^### B-[^\r\n]*", raw))
+        if not headings:
+            raise LedgerError("BACKLOG.md has no canonical B-ID sections")
+        order: list[str] = []
+        sections: dict[str, bytes] = {}
+        for index, heading in enumerate(headings):
+            match = re.match(rb"### (B-[0-9]+)(?=\b|\W)", heading.group())
+            if match is None:
+                raise LedgerError("BACKLOG.md has malformed B-ID heading")
+            item_id = canonical_id(match.group(1).decode("ascii"))[0]
+            if item_id in sections:
+                raise LedgerError(f"BACKLOG.md has duplicate heading {item_id}")
+            end = headings[index + 1].start() if index + 1 < len(headings) else len(raw)
+            section = raw[heading.start() : end]
+            try:
+                items = backlog_verify.parse(section.decode("utf-8"))
+            except UnicodeDecodeError as exc:
+                raise LedgerError(f"BACKLOG.md section {item_id} is not UTF-8") from exc
+            if len(items) != 1 or items[0].id != item_id:
+                raise LedgerError(
+                    f"BACKLOG.md heading {item_id} lacks exactly one matching item"
+                )
+            order.append(item_id)
+            sections[item_id] = section
+        return raw[: headings[0].start()], order, sections
+
     def _validate_receipt_transition(
         receipt: dict[str, object],
         prior_manifest_raw: bytes,
@@ -175,6 +201,7 @@ def install(api):
         *,
         base_sha: str,
         sequence: int,
+        workflow_root: Path,
     ) -> None:
         """Derive every receipt assertion from immutable BASE and candidate bytes."""
         expected_hashes = {
@@ -205,17 +232,22 @@ def install(api):
                 raise LedgerError(
                     f"successor snapshot {name} differs from BASE-derived bytes"
                 )
-        old_text = prior["BACKLOG.md"].decode("utf-8")
         new_text = current["BACKLOG.md"].decode("utf-8")
-        old_items = {item.id: item.raw for item in backlog_verify.parse(old_text)}
-        new_items = {item.id: item.raw for item in backlog_verify.parse(new_text)}
+        old_preamble, old_order, old_sections = _backlog_sections(prior["BACKLOG.md"])
+        new_preamble, new_order, new_sections = _backlog_sections(current["BACKLOG.md"])
+        if old_preamble != new_preamble:
+            raise LedgerError("successor changed immutable BACKLOG preamble")
+        if new_order[: len(old_order)] != old_order:
+            raise LedgerError("successor reordered or deleted BASE backlog sections")
         changed = sorted(
             item_id
-            for item_id in set(old_items) | set(new_items)
-            if old_items.get(item_id) != new_items.get(item_id)
+            for item_id in new_order
+            if old_sections.get(item_id) != new_sections[item_id]
         )
         if receipt["changed_ids"] != changed:
-            raise LedgerError("successor changed IDs differ from parsed BACKLOG delta")
+            raise LedgerError(
+                "successor changed IDs differ from BACKLOG section byte delta"
+            )
         counts = backlog_status_counts(new_text)
         if receipt["status_counts"] != {
             key: counts.get(key, 0) for key in ("done", "open", "parked")
@@ -228,26 +260,15 @@ def install(api):
         state = parse_ledger_state(ledger_text, str(LEDGER_RELATIVE))
         if state["base-ref"] != base_sha:
             raise LedgerError("successor ledger base-ref differs from immutable BASE")
-        catalog_counts: dict[str, int] = {}
-        assignments: list[tuple[str, str, str]] = []
-        valid_wps: set[str] = set()
-        for path, (lower, upper) in CATALOGS.items():
-            relative = path.relative_to(REPO_ROOT)
-            text = current[relative.as_posix()].decode("utf-8")
-            valid_wps.update(declared_wp_names(text, relative.as_posix()))
-            rows = parse_catalog(text, relative.as_posix(), lower, upper)
-            catalog_counts[f"B{lower:03d}-B{upper:03d}"] = len(rows)
-            assignments.extend(
-                (item_id, wp, relative.as_posix()) for item_id, wp in rows
-            )
-        compare(set(open_ids), assignments, valid_wps)
-        validate_ledger_state(
-            state,
-            source=str(LEDGER_RELATIVE),
-            item_count=receipt["item_count"],
-            status_counts=counts,
-            catalog_counts=catalog_counts,
-            expected_base_sha=base_sha,
+        validate_complete_catalog_state(
+            new_text,
+            ledger_text,
+            {
+                path.as_posix(): current[path.as_posix()]
+                for path in _catalog_relatives()
+            },
+            workflow_root,
+            base_sha,
         )
 
     def load_successor_chain(root: Path = REPO_ROOT) -> dict[str, object]:
@@ -326,6 +347,7 @@ def install(api):
                 current,
                 base_sha=base_sha,
                 sequence=index + 3,
+                workflow_root=root,
             )
             previous, previous_raw, previous_path = receipt, raw, path
         return previous
@@ -386,6 +408,7 @@ def install(api):
             current,
             base_sha=base_sha,
             sequence=len(base_paths) + 3,
+            workflow_root=candidate_root,
         )
         if receipt["prior_source_sha256"] != previous["source_sha256"]:
             raise LedgerError("candidate predecessor is not the trusted BASE snapshot")

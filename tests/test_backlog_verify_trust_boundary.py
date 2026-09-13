@@ -122,8 +122,8 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
         candidate.raw["verify"] = (
-            "python3 scripts/verify_b089_sla_credits.py\n"
-            "python3 -S scripts/verify_owner_action_packets.py --id B-089\n"
+            "python3 scripts/verify_b089_sla_credits.py && "
+            "python3 -S scripts/verify_owner_action_packets.py --id B-089"
         )
         self.assertEqual(
             backlog_verify.validate_candidate_transitions(
@@ -131,6 +131,34 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             ),
             [],
         )
+        candidate.raw["verify"] = (
+            "python3 scripts/verify_b089_sla_credits.py\n"
+            "python3 -S scripts/verify_owner_action_packets.py --id B-089\n"
+        )
+        errors = backlog_verify.validate_candidate_transitions(
+            [candidate], [base], dt.date(2026, 9, 12), allow_open_verify_means=True,
+        )
+        self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
+
+    def test_b089_conjunction_preserves_first_command_failure(self) -> None:
+        self.assertNotEqual(backlog_verify.run_verify("false && true", mode="trusted")[0], 0)
+        self.assertEqual(backlog_verify.run_verify("false\ntrue", mode="trusted")[0], 0)
+
+    def test_workflow_style_cli_imports_with_clean_pythonpath(self) -> None:
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+        result = subprocess.run(
+            [
+                sys.executable, str(VERIFIER),
+                "--candidate-file", str(self.candidate / "BACKLOG.md"),
+                "--trusted-file", str(ROOT / "BACKLOG.md"),
+                "--candidate-root", str(self.candidate),
+                "--trusted-root", str(ROOT),
+            ],
+            cwd=ROOT, env=env, capture_output=True, text=True, check=False,
+        )
+        self.assertNotIn("ModuleNotFoundError", result.stderr)
+        self.assertNotEqual(result.returncode, 2, result.stdout + result.stderr)
 
     def test_deleting_highest_base_id_is_rejected(self) -> None:
         errors = backlog_verify.validate_candidate_transitions(
@@ -330,7 +358,8 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             (trusted / "scripts").mkdir(parents=True)
             (candidate / "scripts").mkdir(parents=True)
             for control in (
-                "backlog_verify.py", "verify_backlog_wp_ledger.py", "backlog_ledger_successor.py",
+                "backlog_verify.py", "verify_backlog_wp_ledger.py",
+                "backlog_ledger_successor.py", "backlog_ledger_contracts.py",
             ):
                 shutil.copy2(ROOT / "scripts" / control, trusted / "scripts" / control)
                 shutil.copy2(ROOT / "scripts" / control, candidate / "scripts" / control)

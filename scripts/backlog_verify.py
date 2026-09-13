@@ -446,6 +446,7 @@ def _candidate_control_paths(trusted_root: Path, trusted_items: list[Item]) -> s
         "scripts/backlog_verify.py",
         "scripts/verify_backlog_wp_ledger.py",
         "scripts/backlog_ledger_successor.py",
+        "scripts/backlog_ledger_contracts.py",
     }
     queue: list[str] = []
     for item in trusted_items:
@@ -533,8 +534,8 @@ def validate_candidate_transitions(
                 if item_field == "verify" and allow_open_verify_means and item.id == "B-089" and (
                     old_raw.get("verify") == "python3 scripts/verify_b089_sla_credits.py\n"
                     and new_raw.get("verify") == (
-                        "python3 scripts/verify_b089_sla_credits.py\n"
-                        "python3 -S scripts/verify_owner_action_packets.py --id B-089\n"
+                        "python3 scripts/verify_b089_sla_credits.py && "
+                        "python3 -S scripts/verify_owner_action_packets.py --id B-089"
                     )
                 ):
                     continue
@@ -778,7 +779,10 @@ def main() -> int:
             )
             if transition_errors:
                 raise RuntimeError("candidate transition rejected:\n" + "\n".join(transition_errors))
-            from scripts import verify_backlog_wp_ledger as ledger
+            if __package__:
+                from scripts import verify_backlog_wp_ledger as ledger
+            else:
+                import verify_backlog_wp_ledger as ledger
 
             trusted_root = Path(args.trusted_root).resolve()
             try:
