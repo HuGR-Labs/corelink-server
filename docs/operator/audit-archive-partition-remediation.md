@@ -67,6 +67,32 @@ The fleet watermark was approximately 81.96 hours old at that sample, beyond
 per-partition predicate was also true. This is not a healthy historical tail:
 the named partition and its watermark were unchanged across the three reads.
 
+## Safe read-only recheck
+
+The compact D03 B-063 command in
+`docs/handoff/2026-09-06-d03-graduation-packets.json` must **not** be copied
+as a diagnostic: it treats the detector's eight-character tenant display
+prefix as a full ID, greps field names instead of asserting zero failures,
+and dispatches a workflow that can page PagerDuty. Use the standalone
+`scripts/read_b063_archive_partition.py` for an authorized read-only check:
+
+```bash
+set -o pipefail
+test "${OWNER_APPROVED_READONLY:?owner approval required}" = 1
+python3 scripts/read_b063_archive_partition.py | tee artifacts/d03/B063-archive-partition-readback.json
+```
+
+The operator supplies ephemeral `CF_ACCOUNT_ID` and `CF_API_TOKEN` through
+their approved secret path; do not echo or save their values. Create
+`artifacts/d03` beforehand if needed. This reader uses the canonical
+production D1 UUID, the exact canary tenant UUID (not its display prefix),
+and the §3.3 predicate across **all** partitions. It takes three distinct
+reads and records counts without full tenant IDs. Exit 1 means a failing
+partition remains; exit 2 means the read is indeterminate. Exit 0 and
+`NO_FAILED_PARTITIONS_OBSERVED` mean only that these reads saw none. They
+do not prove archive recovery, authorize a repair, dispatch the detector,
+or resolve PagerDuty; the closure gate below remains separate.
+
 ## Detector evidence
 
 No post-repair detector run was created. The latest three completed runs

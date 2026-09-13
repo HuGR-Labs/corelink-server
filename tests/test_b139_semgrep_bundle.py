@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -93,6 +94,25 @@ def locked_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _load(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_ci_semgrep_venv_is_excluded_from_scan() -> None:
+    """The workflow creates this venv before scanning the repository root."""
+    for ignore_file in (ROOT / ".gitignore", ROOT / ".semgrepignore"):
+        lines = ignore_file.read_text(encoding="utf-8").splitlines()
+        assert "/.semgrep-venv/" in lines
+        assert ".semgrep-venv/" not in lines
+
+    root_venv = "./.semgrep-venv/bin/pysemgrep"
+    nested_source = "crates/corelink-server/src/.semgrep-venv/example.py"
+    for path, expected in ((root_venv, 0), (nested_source, 1)):
+        ignored = subprocess.run(
+            ["git", "check-ignore", "--no-index", "-q", "--", path],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+        )
+        assert ignored.returncode == expected, path
 
 
 def test_complete_bundle_is_deterministic(fake_semgrep: Path, tmp_path: Path) -> None:

@@ -6680,26 +6680,29 @@ the chromedriver-only `adm-zip` path uses a local extractor that rejects archive
 escape and symlink-mediated writes. This is a new census after B-028; it is not
 an advisory dismissal.
 
-The candidate must not claim a live zero before merge. The committed snapshot
-retains the 19 open alerts and records `candidate_contained: true` plus
-`post_merge_refresh_required: true`. After this candidate lands on the default
-branch, run the same verifier with `--post-merge`; only that authenticated
-refresh may establish the empty live census.
+The candidate did not claim a live zero before merge. Its committed snapshot
+retains the 19 then-open alerts and records `candidate_contained: true` plus
+`post_merge_refresh_required: true`. PR #1593 merged atomically as
+`6be19a2e525dad045ad8404d722905afde7ad7bd` on 2026-09-12. From a clean
+checkout of that exact commit, `python3 scripts/verify_b373_dependabot.py
+--post-merge --merged-sha 6be19a2e525dad045ad8404d722905afde7ad7bd`
+returned `B-373 verified: post-merge live zero`; a separately paginated,
+authenticated GitHub Dependabot API census returned zero open alerts. The
+historical 19-alert snapshot remains unchanged as the pre-merge witness.
 
 ```backlog
 id: B-373
 repo: corelink-server
 owner: tl
-status: open
+status: done
 verify: python3 scripts/verify_b373_dependabot.py --alerts-file docs/security/b373-dependabot-census-2026-09-09.json
 verify-means: |
-  candidate polarity — exits 0 only when the retained authenticated #39–#57
-  census is complete, the lockfile contains every published fix, the local
-  adm-zip containment is present, and the snapshot explicitly says that a
-  post-merge refresh is still required. It never treats pre-merge API state as
-  zero. After merge, `python3 scripts/verify_b373_dependabot.py --post-merge`
-  is the separate fail-closed live-zero check; API failure is not zero.
-last-verified: 2026-09-09
+  done — the exact delivered main SHA had a clean-tree authenticated live-zero
+  Dependabot census on 2026-09-12. The unchanged verify command retains the
+  pre-merge #39–#57 snapshot/lockfile regression guard; when B-373 is done,
+  that command additionally requires the live-zero post-merge check against
+  origin/main. A fixture alone never proves closure; API failure is not zero.
+last-verified: 2026-09-12
 ```
 
 ### B-033 — the workspace lint gate runs nowhere, and its stated compensation does not hold

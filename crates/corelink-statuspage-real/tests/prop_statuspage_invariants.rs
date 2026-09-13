@@ -5,10 +5,11 @@
 //! Coverage map (each test pins a named invariant from `src/`):
 //!
 //! - `prop_inv_redact_api_key_never_leaks_prefix` (CTRL-PRIV-001) —
-//!   `redact_api_key(k)` MUST NOT contain any prefix of `k` longer than
-//!   the trailing 4 codepoints. The audit envelope carries only the
-//!   redacted form; a regression that bleeds prefix bytes would leak
-//!   the Statuspage `OAuth` credential into the audit trail.
+//!   `redact_api_key(k)` MUST contain exactly the canonical marker and,
+//!   only for keys longer than 4 codepoints, the trailing 4 codepoints.
+//!   Keys of at most four codepoints must be fully masked. The audit
+//!   envelope carries only the redacted form; a regression that bleeds
+//!   prefix bytes would leak the Statuspage credential into the audit trail.
 //! - `prop_inv_dsr_completion_report_serde_roundtrip` — `serde_json`
 //!   round-trip preserves the canonical 24h-rolling DSR completion
 //!   payload byte-for-byte. The wire format is the canonical audit-
@@ -54,14 +55,66 @@ fn proptest_cases() -> u32 {
 
 const RATE_LIMIT_WINDOW_MS: u64 = 5 * 60 * 1_000;
 
+/// Contract oracle: the only permitted dynamic suffix for a key longer than
+/// four Unicode codepoints is its final four codepoints. Keys of at most four
+/// get no suffix. A copy of the prefix before OR after the mask is forbidden.
+fn is_canonical_redaction(key: &str, candidate: &str) -> bool {
+    let trimmed = key.trim();
+    let tail: String = if trimmed.chars().count() <= 4 {
+        String::new()
+    } else {
+        trimmed
+            .chars()
+            .rev()
+            .take(4)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect()
+    };
+    candidate.strip_prefix("OAuth ***") == Some(tail.as_str())
+}
+
+#[test]
+fn redaction_contract_rejects_prefix_leak_mutations() {
+    let key = "IIA0A";
+    assert!(is_canonical_redaction(key, "OAuth ***IA0A"));
+    for leaked in [
+        "OAuth I***IA0A", // prefix before the mask
+        "OAuth ***IIA0A", // prefix after the mask
+        "OAuth ***IA0AI", // prefix after the authorized tail
+        "OAuth ***IA0A ", // suffix/length drift
+    ] {
+        assert!(!is_canonical_redaction(key, leaked), "accepted: {leaked}");
+    }
+}
+
+#[test]
+fn redaction_contract_trims_and_counts_unicode_codepoints() {
+    let key = " \u{2003}xAé🙂Z \t";
+    let redacted = redact_api_key(key);
+    assert_eq!(redacted, "OAuth ***Aé🙂Z");
+    assert!(is_canonical_redaction(key, &redacted));
+}
+
+#[test]
+fn redaction_contract_rejects_full_short_key_disclosure() {
+    for key in ["a", "ab", "abcd", "🙂🙂🙂🙂", "  ab  "] {
+        assert_eq!(redact_api_key(key), "OAuth ***");
+        assert!(is_canonical_redaction(key, "OAuth ***"));
+    }
+    assert!(!is_canonical_redaction("ab", "OAuth ***ab"));
+    assert!(!is_canonical_redaction("abcd", "OAuth ***abcd"));
+}
+
 proptest! {
     #![proptest_config(ProptestConfig { cases: proptest_cases(), .. ProptestConfig::default() })]
 
-    /// CTRL-PRIV-001 NEVER-LEAK invariant: the redacted form MUST NOT
-    /// contain any prefix of the input key longer than the trailing 4
-    /// codepoints (the canonical fingerprint window). Defends against a
-    /// regression where the redactor accidentally echoes leading bytes
-    /// into the audit envelope.
+    /// CTRL-PRIV-001 NEVER-LEAK invariant: the redacted form MUST be
+    /// exactly the canonical marker followed by the trailing 4
+    /// codepoints only for keys longer than 4. Exact equality catches any
+    /// extra key material without mistaking a repeated character inside
+    /// the authorized fingerprint for a leaked prefix.
     #[test]
     fn prop_inv_redact_api_key_never_leaks_prefix(
         // Restrict to printable ASCII (Statuspage keys are ASCII; the
@@ -78,45 +131,19 @@ proptest! {
             "redacted MUST start with 'OAuth ': '{redacted}'"
         );
 
-        // Empty / whitespace-only key ⇒ canonical "OAuth ***" with no
-        // fingerprint — nothing to inspect further.
-        if trimmed.is_empty() {
+        // Empty and short keys ⇒ canonical "OAuth ***" with no
+        // fingerprint. Exposing the entire key would violate privacy.
+        if trimmed.chars().count() <= 4 {
             prop_assert_eq!(redacted.as_str(), "OAuth ***");
             return Ok(());
         }
 
         // The canonical fingerprint is the last ≤4 codepoints of the
-        // trimmed key. The redacted output MUST end with that tail and
-        // MUST NOT contain any longer prefix slice of the trimmed key.
-        let tail: String = trimmed.chars().rev().take(4).collect::<String>()
-            .chars()
-            .rev()
-            .collect();
+        // trimmed key. No other key material may appear after the marker.
         prop_assert!(
-            redacted.ends_with(&tail),
-            "redacted MUST end with the ≤4-char fingerprint '{tail}': '{redacted}'"
+            is_canonical_redaction(&key, &redacted),
+            "redacted MUST contain only the canonical marker and ≤4-char fingerprint: '{redacted}'"
         );
-
-        // For any key whose codepoint length > 4, the leading bytes
-        // (everything BEFORE the last 4 codepoints) MUST NOT appear in
-        // the redacted output. We assemble that leading slice
-        // explicitly (codepoint-safe).
-        let total_cps = trimmed.chars().count();
-        if total_cps > 4 {
-            let leading_cp_len = total_cps - 4;
-            let leading: String =
-                trimmed.chars().take(leading_cp_len).collect();
-            // Skip degenerate cases where `leading` is a substring of
-            // the canonical marker `OAuth ` (e.g. leading == "O" or
-            // "OA" if the user happens to seed those bytes — proptest
-            // can hit that).
-            if !leading.is_empty() && !"OAuth ***".contains(leading.as_str()) {
-                prop_assert!(
-                    !redacted.contains(leading.as_str()),
-                    "redacted MUST NOT echo leading bytes '{leading}': '{redacted}'"
-                );
-            }
-        }
 
         // The redacted output's length is bounded — `OAuth ***` (9
         // bytes) + at most the byte-length of the last 4 codepoints
