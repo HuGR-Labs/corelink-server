@@ -357,21 +357,28 @@ run_validator_pool() {
     local max_concurrent=8
     local running=0
     local pipeline_rc=0
+    local -a validator_pids=()
     for entry in "${VALIDATOR_GATES[@]}"; do
         local name="${entry%%|*}"
         local cmd="${entry#*|}"
         run_gate "$name" "$cmd" validator &
+        validator_pids+=("$!")
         running=$(( running + 1 ))
         if [ "$running" -ge "$max_concurrent" ]; then
-            if ! wait -n; then
-                pipeline_rc=42
-            fi
-            running=$(( running - 1 ))
+            for pid in "${validator_pids[@]}"; do
+                if ! wait "$pid"; then
+                    pipeline_rc=42
+                fi
+            done
+            validator_pids=()
+            running=0
         fi
     done
-    if ! wait; then
-        pipeline_rc=42
-    fi
+    for pid in "${validator_pids[@]}"; do
+        if ! wait "$pid"; then
+            pipeline_rc=42
+        fi
+    done
     return "$pipeline_rc"
 }
 

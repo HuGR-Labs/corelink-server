@@ -51,3 +51,19 @@ cat "$failure_output"
 [ "$failure_rc" -eq 42 ]
 grep -q 'INFRA:' "$failure_output"
 ! grep -q 'INFRA: 0' "$failure_output"
+
+# The last validator must not disappear behind a bare wait: prior records are
+# writable, but this one deliberately reports a failed append.
+last_failure_script="$WORK/ci-last-result-failure.sh"
+sed "s#if ! printf '%s\\\\n' \"\$record\" >>\"\$RESULTS_FILE\"; then#if [[ \"\$record\" == *'check-proptest-density'* ]] || ! printf '%s\\\\n' \"\$record\" >>\"\$RESULTS_FILE\"; then#" \
+    "$ROOT/scripts/ci.sh" >"$last_failure_script"
+chmod +x "$last_failure_script"
+last_output="$WORK/last-failure.out"
+set +e
+run_ci bash "$last_failure_script" --validators-only --fast >"$last_output" 2>&1
+last_rc=$?
+set -e
+cat "$last_output"
+[ "$last_rc" -eq 42 ]
+grep -q 'PASS: 14' "$last_output"
+! grep -q 'INFRA: 0' "$last_output"
