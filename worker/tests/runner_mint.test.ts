@@ -255,7 +255,7 @@ function makeEnv(opts: {
     }),
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
     CORELINK_PAT_MINT_AUTH_KEY: opts.withPatMintKey === false ? undefined : PAT_MINT_KEY,
-    CORELINK_RUNNER_MINT_AUTH_KEY: opts.withRunnerMintKey ? RUNNER_MINT_KEY : undefined,
+    CORELINK_RUNNER_MINT_AUTH_KEY: opts.withRunnerMintKey === false ? undefined : RUNNER_MINT_KEY,
   } as Env;
 }
 
@@ -396,7 +396,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     // ATTRIBUTION changed: 401 stays the caller's fault, 503 is ours.
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured, withInternalKey: false });
-    const resp = await mintFetch(env, { auth: INTERNAL_KEY });
+    const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY });
     expect(resp.status).toBe(503);
     // The load-bearing half: nothing was authorized, no PAT was minted.
     expect(captured.req).toBeUndefined();
@@ -405,7 +405,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("(b) 200 + mint envelope (derived tenant + max_concurrency) for an authorized job", async () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured });
-    const resp = await mintFetch(env, { auth: INTERNAL_KEY, body: mintBody({ job_id: `${JOB_ID}-happy` }) });
+    const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY, body: mintBody({ job_id: `${JOB_ID}-happy` }) });
 
     expect(resp.status).toBe(200);
     const body = (await resp.json()) as Record<string, unknown>;
@@ -442,7 +442,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const env = makeAuthorizedEnv({
       vcpuCeilings: new Map([[TENANT, 100]]), // runner_starter's 100 vCPU-h
     });
-    const resp = await mintFetch(env, { auth: INTERNAL_KEY });
+    const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY });
     expect(resp.status).toBe(200);
     const body = (await resp.json()) as Record<string, unknown>;
     expect(body["max_vcpu_h"]).toBe(100);
@@ -460,7 +460,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     for (const bad of [0, -5]) {
       const env = makeAuthorizedEnv({ vcpuCeilings: new Map([[TENANT, bad]]) });
       const resp = await mintFetch(env, {
-        auth: INTERNAL_KEY,
+        auth: RUNNER_MINT_KEY,
         body: mintBody({ job_id: `${JOB_ID}-vcpu-${String(bad)}` }),
       });
       expect(resp.status).toBe(200); // still a legitimate mint
@@ -474,7 +474,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     // Enforcement (warn / charge overage) belongs to the dispatcher, which sees
     // consumption; the mint sees only entitlement and must not guess.
     const env = makeAuthorizedEnv({ vcpuCeilings: new Map([[TENANT, 1]]) });
-    const resp = await mintFetch(env, { auth: INTERNAL_KEY });
+    const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY });
     expect(resp.status).toBe(200);
     expect(((await resp.json()) as Record<string, unknown>)["max_vcpu_h"]).toBe(1);
   });
@@ -483,7 +483,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured });
     const resp = await mintFetch(env, {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: mintBody({ job_id: `${JOB_ID}-ttl-pass`, ttl_seconds: 600 }),
     });
     expect(resp.status).toBe(200);
@@ -495,7 +495,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured });
     const resp = await mintFetch(env, {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: mintBody({ job_id: `${JOB_ID}-ttl-clamp`, ttl_seconds: 999999 }),
     });
     expect(resp.status).toBe(200);
@@ -507,7 +507,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured });
     const resp = await mintFetch(env, {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: mintBody({ ttl_seconds: 0 }),
     });
     expect(resp.status).toBe(400);
@@ -519,7 +519,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
       const captured: { req?: Request } = {};
       const env = makeAuthorizedEnv({ captured });
       const resp = await mintFetch(env, {
-        auth: INTERNAL_KEY,
+        auth: RUNNER_MINT_KEY,
         body: mintBody({ ttl_seconds: bad }),
       });
       expect(resp.status).toBe(400);
@@ -532,8 +532,8 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const c2: { req?: Request } = {};
     const env1 = makeAuthorizedEnv({ captured: c1 });
     const env2 = makeAuthorizedEnv({ captured: c2 });
-    await mintFetch(env1, { auth: INTERNAL_KEY, body: mintBody({ job_id: `${JOB_ID}-stable` }) });
-    await mintFetch(env2, { auth: INTERNAL_KEY, body: mintBody({ job_id: `${JOB_ID}-stable` }) });
+    await mintFetch(env1, { auth: RUNNER_MINT_KEY, body: mintBody({ job_id: `${JOB_ID}-stable` }) });
+    await mintFetch(env2, { auth: RUNNER_MINT_KEY, body: mintBody({ job_id: `${JOB_ID}-stable` }) });
     const p1 = (await c1.req!.json()) as Record<string, unknown>;
     const p2 = (await c2.req!.json()) as Record<string, unknown>;
     expect(p1["principal_id"]).toBe(p2["principal_id"]);
@@ -560,7 +560,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("(wp2) 403 when the installation is UNMAPPED (no tenant derivable)", async () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured, mapped: new Map() }); // no installation→tenant
-    const resp = await mintFetch(env, { auth: INTERNAL_KEY, body: mintBody({ job_id: `${JOB_ID}-unmapped` }) });
+    const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY, body: mintBody({ job_id: `${JOB_ID}-unmapped` }) });
     expect(resp.status).toBe(403);
     const body = (await resp.json()) as Record<string, unknown>;
     expect(body["error"]).toBe("FORBIDDEN");
@@ -571,7 +571,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("(wp2) 403 when the tenant is SUSPENDED (offboarding row present)", async () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured, suspended: new Set([TENANT]) });
-    const resp = await mintFetch(env, { auth: INTERNAL_KEY, body: mintBody({ job_id: `${JOB_ID}-suspended` }) });
+    const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY, body: mintBody({ job_id: `${JOB_ID}-suspended` }) });
     expect(resp.status).toBe(403);
     const body = (await resp.json()) as Record<string, unknown>;
     expect(body["error"]).toBe("FORBIDDEN");
@@ -582,7 +582,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("(wp2) 403 when the repo is NOT on the allowlist", async () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured, allowlisted: new Set() }); // repo not allowlisted
-    const resp = await mintFetch(env, { auth: INTERNAL_KEY, body: mintBody({ job_id: `${JOB_ID}-noallow` }) });
+    const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY, body: mintBody({ job_id: `${JOB_ID}-noallow` }) });
     expect(resp.status).toBe(403);
     const body = (await resp.json()) as Record<string, unknown>;
     expect(body["error"]).toBe("FORBIDDEN");
@@ -593,7 +593,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("(wp2) 403 when the tenant is NOT entitled to runners", async () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured, entitled: new Map() }); // no entitlement row
-    const resp = await mintFetch(env, { auth: INTERNAL_KEY, body: mintBody({ job_id: `${JOB_ID}-noent` }) });
+    const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY, body: mintBody({ job_id: `${JOB_ID}-noent` }) });
     expect(resp.status).toBe(403);
     const body = (await resp.json()) as Record<string, unknown>;
     expect(body["error"]).toBe("FORBIDDEN");
@@ -611,7 +611,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     ].entries()) {
       const env = makeAuthorizedEnv({ ...override });
       const resp = await mintFetch(env, {
-        auth: INTERNAL_KEY,
+        auth: RUNNER_MINT_KEY,
         body: mintBody({ job_id: `${JOB_ID}-oracle-${String(i)}` }),
       });
       expect(resp.status).toBe(403);
@@ -645,13 +645,13 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
 
     // A genuine authz denial: keys bound, tenant simply not entitled.
     const denied = await mintFetch(makeAuthorizedEnv({ entitled: new Map<string, number>() }), {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: mintBody({ job_id: `${JOB_ID}-authz-denial` }),
     });
 
     // A config fault: the caller is fine, WE have no key bound.
     const broken = await mintFetch(makeAuthorizedEnv({ withInternalKey: false, withPatMintKey: false }), {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: mintBody({ job_id: `${JOB_ID}-config-fault` }),
     });
 
@@ -706,7 +706,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured });
     const resp = await mintFetch(env, {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: mintBody({ scope: "admin" }),
     });
     expect(resp.status).toBe(400);
@@ -717,7 +717,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured });
     const resp = await mintFetch(env, {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: mintBody({ scope: "owner" }),
     });
     expect(resp.status).toBe(400);
@@ -729,7 +729,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     // tenant source ⇒ 401 (acquiring PAT required), NOT the old mandatory 400.
     const env = makeAuthorizedEnv({});
     const resp = await mintFetch(env, {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: { job_id: JOB_ID, repo_full_name: REPO_FULL_NAME },
     });
     expect(resp.status).toBe(401);
@@ -738,7 +738,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("400 when installation_id is present but empty (malformed)", async () => {
     const env = makeAuthorizedEnv({});
     const resp = await mintFetch(env, {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: { job_id: JOB_ID, repo_full_name: REPO_FULL_NAME, installation_id: "" },
     });
     expect(resp.status).toBe(400);
@@ -747,7 +747,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("400 when repo_full_name is missing", async () => {
     const env = makeAuthorizedEnv({});
     const resp = await mintFetch(env, {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: { job_id: JOB_ID, installation_id: INSTALLATION_ID },
     });
     expect(resp.status).toBe(400);
@@ -756,7 +756,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("400 when job_id is missing", async () => {
     const env = makeAuthorizedEnv({});
     const resp = await mintFetch(env, {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: { repo_full_name: REPO_FULL_NAME, installation_id: INSTALLATION_ID },
     });
     expect(resp.status).toBe(400);
@@ -765,7 +765,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("405 on a non-POST method", async () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured });
-    const resp = await mintFetch(env, { auth: INTERNAL_KEY, method: "GET" });
+    const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY, method: "GET" });
     expect(resp.status).toBe(405);
     expect(captured.req).toBeUndefined();
   });
@@ -773,7 +773,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("NEVER lets a client trust header reach the mint route", async () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured });
-    await mintFetch(env, { auth: INTERNAL_KEY, body: mintBody({ job_id: `${JOB_ID}-trusthdr` }) });
+    await mintFetch(env, { auth: RUNNER_MINT_KEY, body: mintBody({ job_id: `${JOB_ID}-trusthdr` }) });
     // mintScopedPat builds a FRESH request; the only internal-auth header on the
     // forwarded request is the server-trusted key, and route-kind is "internal".
     expect(captured.req!.headers.get("x-corelink-route-kind")).toBe("internal");
@@ -791,7 +791,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const patInsertCapture: { sql?: string; binds?: unknown[] } = {};
     const env = makeAuthorizedEnv({ captured, patInsertCapture });
     const resp = await mintFetch(env, {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: mintBody({ job_id: `${JOB_ID}-wp5a-star` }),
     });
     expect(resp.status).toBe(200);
@@ -810,7 +810,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const patInsertCapture: { sql?: string; binds?: unknown[] } = {};
     const env = makeAuthorizedEnv({ captured, patInsertCapture });
     const resp = await mintFetch(env, {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: mintBody({ job_id: `${JOB_ID}-wp5a-key`, ac_output_name: "build-out" }),
     });
     expect(resp.status).toBe(200);
@@ -827,7 +827,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured });
     const resp = await mintFetch(env, {
-      auth: INTERNAL_KEY,
+      auth: RUNNER_MINT_KEY,
       body: mintBody({ job_id: `${JOB_ID}-wp5a-empty`, ac_output_name: "" }),
     });
     expect(resp.status).toBe(400);
