@@ -11398,7 +11398,7 @@ Stripe em test mode e a reconciliação exigidas abaixo.
 Agravantes na mesma cláusula: o SLA define quatro tiers enquanto o produto vende seis, de
 modo que um cliente Solo ($15) ou Max ($149) não tem tier no instrumento assinado, embora
 o `FAQ-MASTER.md:51` lhes prometa 99,5% e 99,9% com créditos. E os Termos de Serviço
-(`terms.tsx:333`) concedem créditos automáticos ao tier Pro, que a própria tabela de
+(`apps/docs/src/pages/legal/terms.tsx:329`) concedem créditos automáticos ao tier Pro, que a própria tabela de
 preços marca como `slaCredits: false`.
 
 Uma cláusula de remédio exclusivo que não pode ser cumprida é a primeira a cair, e sua
@@ -11424,10 +11424,10 @@ sem mudar o estado do item ou os contadores do ledger:
 - O SLA define **quatro** tiers (`Free`, `Starter`, `Pro`, `Enterprise` — linha 30)
   enquanto o produto vende **seis**. Um cliente Solo ($15) ou Max ($149) não tem tier no
   instrumento assinado.
-- **Novo:** a contradição do `terms.tsx` agora tem o outro lado medido.
-  `apps/docs/src/pages/terms.tsx` concede ao tier Pro *"a service credit equal to 10% of
+- **Novo:** a contradição dos Termos agora tem o outro lado medido.
+  `apps/docs/src/pages/legal/terms.tsx:329` concede ao tier Pro *"a service credit equal to 10% of
   the affected month's fees, applied automatically to the next invoice"*, enquanto
-  `apps/docs/src/lib/pricing.ts:203` marca o Pro com `slaCredits: false` — e
+  `apps/docs/src/lib/pricing.ts:204` marca o Pro com `slaCredits: false` — e
   `apps/docs/src/lib/pricing.test.ts:75` **testa** que só o Enterprise tem
   `slaCredits: true`. Os Termos publicados e a tabela de preços publicada, no mesmo site,
   discordam sobre o mesmo tier, e há um teste verde defendendo o lado que os Termos
