@@ -9373,9 +9373,10 @@ esquemas para um *tipo* de evento indicam sobreposição histórica que requer t
 Como a janela é de 30 dias, o alerta pode persistir após uma desativação.
 
 O [readback do dashboard em 2026-08-03](docs/handoff/2026-07-03-REPLY-from-clw-coordinator-webhook-reconcile-DONE-and-no-stray-endpoint-exists.md)
-registrou `exquisite-rhythm-thin` (destino v2 no URL do container) e sua desativação
-naquele dia. O inventário atual v1 **e** v2 não foi obtido: a chave live local expirou
-em 2026-07-05 e o Chrome abriu o login da Stripe em 2026-09-12. Os eventos de
+registrou `exquisite-rhythm-thin` **ativo** (destino v2 no URL do container).
+Esse readback não decide seu estado atual. O inventário atual v1 **e** v2 não foi
+obtido: a chave live local expirou em 2026-07-05 e o Chrome abriu o login da
+Stripe em 2026-09-12. Os eventos de
 `subscription.deleted`/`updated` podem afetar direitos de acesso; não se deve
 desativar outro destino para silenciar um alerta histórico.
 
@@ -9405,9 +9406,9 @@ verify-means: |
 
   `billing-health-daily` detecta sobreposição de esquemas por tipo na janela de 30
   dias; não identifica a mesma entrega nem o estado atual de qualquer destino.
-  O readback histórico de 2026-08-03 registra o v2 thin como desativado, mas não
-  substitui enumeração atual, paginada, de v1 e v2. Uma falha antiga do health
-  check não autoriza desativar um destino saudável.
+  O readback histórico de 2026-08-03 registra o v2 thin como ativo; o estado
+  atual é desconhecido sem enumeração atual, paginada, de v1 e v2. Uma falha
+  antiga do health check não autoriza desativar um destino saudável.
 
   Fechar só com inventário atual dos destinos, correlação de entregas e três
   execuções consecutivas bem-sucedidas de `billing-health-daily`. Se houver

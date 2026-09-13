@@ -92,6 +92,17 @@ B111_RELEASE_CHAIN = {
     "notarize-macos": {"sign-windows", "release"},
 }
 B110_EVIDENCE_PATH = "evidence/owner-actions/B-110/ci-capacity-decision.json"
+B065_EVIDENCE_REQUIRED_FIELDS = [
+    "schema_version", "captured_at", "account", "destination_inventory",
+    "retained_endpoint_ids", "resolution", "billing_health_runs",
+    "duplicate_events_resolved", "operator",
+]
+B065_SCHEMA_REQUIRED_TERMS = (
+    "v1 or v2", "signup_worker", "corelink_prd_container",
+    "observed_disabled", "disabled_now", "mutation_performed",
+    "disabled_at is required only for disabled_now", "Legacy retired_endpoint_id",
+    "never replace the typed resolution or either retained ID",
+)
 B110_EVIDENCE_REQUIRED_FIELDS = [
     "schema_version",
     "captured_at",
@@ -1034,6 +1045,15 @@ def _check_item(
         raise PacketError(f"{expected_id}.references must include its BACKLOG anchor")
     if expected_id == "B-089":
         _check_b089_surface_contract(item)
+    if expected_id == "B-065":
+        if evidence["required_fields"] != B065_EVIDENCE_REQUIRED_FIELDS:
+            raise PacketError("B-065 evidence must retain the two destination IDs and typed resolution")
+        schema = evidence["item_schema"]
+        if any(term not in schema for term in B065_SCHEMA_REQUIRED_TERMS):
+            raise PacketError("B-065 evidence schema omits a resolution or destination invariant")
+        procedure_text = " ".join(procedure)
+        if not all(term in procedure_text for term in ("v1", "v2", "explicit decision", "if already disabled")):
+            raise PacketError("B-065 procedure must distinguish readback, mutation, and no-op")
     if expected_id == "B-110":
         _check_b110_evidence(item)
     if expected_id == "B-054":

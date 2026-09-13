@@ -56,6 +56,37 @@ class OwnerActionPacketTests(unittest.TestCase):
         with self.assertRaises(MODULE.PacketError):
             MODULE.check_data(stale, "B-013")
 
+    def test_b065_evidence_handles_observed_disabled_and_new_retirement(self) -> None:
+        item = next(entry for entry in self.data["items"] if entry["id"] == "B-065")
+        evidence = item["evidence"]
+        self.assertEqual(evidence["required_fields"], MODULE.B065_EVIDENCE_REQUIRED_FIELDS)
+        schema = evidence["item_schema"]
+        for marker in (
+            "signup_worker", "corelink_prd_container", "observed_disabled",
+            "disabled_now", "disabled_at is required only for disabled_now",
+        ):
+            self.assertIn(marker, schema)
+        self.assertEqual(MODULE.check_data(self.data, "B-065"), {"items": 29, "population": 29})
+
+        for name, mutation in (
+            ("legacy single retained ID", lambda entry: entry["evidence"].update(required_fields=[
+                "schema_version", "captured_at", "account", "retired_endpoint_id",
+                "retained_endpoint_id", "retired_at", "billing_health_runs",
+                "duplicate_events_resolved", "operator",
+            ])),
+            ("missing already-disabled path", lambda entry: entry["evidence"].update(
+                item_schema=entry["evidence"]["item_schema"].replace("observed_disabled", "unknown")
+            )),
+            ("missing second legitimate endpoint", lambda entry: entry["evidence"].update(
+                item_schema=entry["evidence"]["item_schema"].replace("corelink_prd_container", "container")
+            )),
+        ):
+            with self.subTest(name=name):
+                mutated = copy.deepcopy(self.data)
+                mutation(next(entry for entry in mutated["items"] if entry["id"] == "B-065"))
+                with self.assertRaises(MODULE.PacketError):
+                    MODULE.check_data(mutated, "B-065")
+
     def test_b110_reconciled_closure_matches_backlog(self) -> None:
         self.assertEqual(
             MODULE.check_data(self.data, "B-110"),
