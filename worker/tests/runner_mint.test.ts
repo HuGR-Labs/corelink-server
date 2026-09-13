@@ -24,6 +24,7 @@ import { batchViaFirst } from "./d1_batch_mock.js";
 
 const INTERNAL_KEY = "test-internal-auth-key-0123456789"; // ≥32 chars
 const RUNNER_MINT_KEY = "test-pat-mint-auth-key-0123456789ab"; // ≥32 chars, distinct
+const PAT_MINT_KEY = "test-dedicated-pat-mint-key-0123456789"; // ≥32 chars, distinct
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
 const JOB_ID = "job-abc-0001";
@@ -225,6 +226,7 @@ function makeEnv(opts: {
   patInsertCapture?: { sql?: string; binds?: unknown[] };
   withInternalKey?: boolean;
   withRunnerMintKey?: boolean;
+  withPatMintKey?: boolean;
 }): Env {
   return {
     METADATA_KV: (opts.kvDeleted || opts.kvThrow
@@ -252,6 +254,7 @@ function makeEnv(opts: {
       patInsertCapture: opts.patInsertCapture,
     }),
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
+    CORELINK_PAT_MINT_AUTH_KEY: opts.withPatMintKey === false ? undefined : PAT_MINT_KEY,
     CORELINK_RUNNER_MINT_AUTH_KEY: opts.withRunnerMintKey ? RUNNER_MINT_KEY : undefined,
   } as Env;
 }
@@ -271,6 +274,7 @@ function makeAuthorizedEnv(opts: {
   patInsertCapture?: { sql?: string; binds?: unknown[] };
   withInternalKey?: boolean;
   withRunnerMintKey?: boolean;
+  withPatMintKey?: boolean;
 }): Env {
   const cfg = authorizedConfig(opts);
   return makeEnv({ ...opts, ...cfg });
@@ -324,11 +328,22 @@ function mintBody(over: Record<string, unknown> = {}): Record<string, unknown> {
     job_id: JOB_ID,
     repo_full_name: REPO_FULL_NAME,
     installation_id: INSTALLATION_ID,
+    operation_id: "11111111-1111-4111-8111-111111111111",
     ...over,
   };
 }
 
 describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
+  it("requires an operation_id before any lifecycle or mint side effect", async () => {
+    const captured: { req?: Request } = {};
+    const resp = await mintFetch(makeAuthorizedEnv({ captured }), {
+      auth: RUNNER_MINT_KEY,
+      body: mintBody({ operation_id: undefined }),
+    });
+    expect(resp.status).toBe(400);
+    expect(captured.req).toBeUndefined();
+  });
+
   it("(a) 401 when the internal-auth header is missing (before any work)", async () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured });
@@ -622,7 +637,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     });
 
     // A config fault: the caller is fine, WE have no key bound.
-    const broken = await mintFetch(makeAuthorizedEnv({ withInternalKey: false }), {
+    const broken = await mintFetch(makeAuthorizedEnv({ withInternalKey: false, withPatMintKey: false }), {
       auth: INTERNAL_KEY,
       body: mintBody({ job_id: `${JOB_ID}-config-fault` }),
     });
@@ -663,6 +678,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
       captured,
       withInternalKey: false, // no shared key, and no CORELINK_PAT_MINT_AUTH_KEY
       withRunnerMintKey: true, // ...but the dispatcher's own gate IS armed
+      withPatMintKey: false,
     });
     const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY });
     expect(resp.status).toBe(503);

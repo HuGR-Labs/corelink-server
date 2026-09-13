@@ -23,6 +23,7 @@ import { batchViaFirst } from "./d1_batch_mock.js";
 
 const INTERNAL_KEY = "test-internal-auth-key-0123456789"; // ≥32 chars
 const RUNNER_MINT_KEY = "test-pat-mint-auth-key-0123456789ab"; // ≥32 chars, distinct
+const PAT_MINT_KEY = "test-dedicated-pat-mint-key-0123456789"; // ≥32 chars, distinct
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
 const JOB_ID = "job-abc-0001";
@@ -224,6 +225,7 @@ function makeEnv(opts: {
   patInsertCapture?: { sql?: string; binds?: unknown[] };
   withInternalKey?: boolean;
   withRunnerMintKey?: boolean;
+  withPatMintKey?: boolean;
 }): Env {
   return {
     METADATA_KV: (opts.kvDeleted || opts.kvThrow
@@ -251,6 +253,7 @@ function makeEnv(opts: {
       patInsertCapture: opts.patInsertCapture,
     }),
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
+    CORELINK_PAT_MINT_AUTH_KEY: opts.withPatMintKey === false ? undefined : PAT_MINT_KEY,
     CORELINK_RUNNER_MINT_AUTH_KEY: opts.withRunnerMintKey ? RUNNER_MINT_KEY : undefined,
   } as Env;
 }
@@ -270,6 +273,7 @@ function makeAuthorizedEnv(opts: {
   patInsertCapture?: { sql?: string; binds?: unknown[] };
   withInternalKey?: boolean;
   withRunnerMintKey?: boolean;
+  withPatMintKey?: boolean;
 }): Env {
   const cfg = authorizedConfig(opts);
   return makeEnv({ ...opts, ...cfg });
@@ -323,6 +327,7 @@ function mintBody(over: Record<string, unknown> = {}): Record<string, unknown> {
     job_id: JOB_ID,
     repo_full_name: REPO_FULL_NAME,
     installation_id: INSTALLATION_ID,
+    operation_id: "11111111-1111-4111-8111-111111111111",
     ...over,
   };
 }
@@ -330,4 +335,4 @@ function mintBody(over: Record<string, unknown> = {}): Record<string, unknown> {
 
 export { workerHandler, batchViaFirst };
 export type { Env };
-export { INTERNAL_KEY, RUNNER_MINT_KEY, TENANT, JOB_ID, INSTALLATION_ID, REPO_FULL_NAME, MAX_CONCURRENCY, EXPECTED_AC_KEY_HEX, CANNED_MINT, makeCtx, makeConfigDb, authorizedConfig, makeMintNamespace, makeEnv, makeAuthorizedEnv, mintFetch, revokeFetch, mintBody };
+export { INTERNAL_KEY, RUNNER_MINT_KEY, PAT_MINT_KEY, TENANT, JOB_ID, INSTALLATION_ID, REPO_FULL_NAME, MAX_CONCURRENCY, EXPECTED_AC_KEY_HEX, CANNED_MINT, makeCtx, makeConfigDb, authorizedConfig, makeMintNamespace, makeEnv, makeAuthorizedEnv, mintFetch, revokeFetch, mintBody };

@@ -289,9 +289,8 @@ export async function handleRunnerMint(
   // with NO shared fallback (DD-HIGH, WP1), so present the dedicated key when set;
   // fall back to the shared key only when the dedicated is unset (additive — once
   // the dedicated is provisioned the shared no longer authorizes the mint).
-  const internalAuthKey =
-    env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY;
-  if (!internalAuthKey || internalAuthKey.length === 0) {
+  const internalAuthKey = env.CORELINK_PAT_MINT_AUTH_KEY;
+  if (typeof internalAuthKey !== "string" || internalAuthKey.length < 32) {
     // 503, NOT 403 (2026-08-02). Nothing about the DISPATCHER failed here — it
     // authenticated fine at step 2. What failed is OUR onward credential to the
     // container mint authority, i.e. a config fault on our side. The body always
@@ -334,10 +333,9 @@ export async function handleRunnerMint(
   }
   const operationId = body.operation_id;
   if (
-    operationId !== undefined &&
-    (typeof operationId !== "string" || !RUNNER_OPERATION_ID.test(operationId))
+    typeof operationId !== "string" || !RUNNER_OPERATION_ID.test(operationId)
   ) {
-    return reapiError("BAD_REQUEST", "operation_id must be a non-nil UUID", 400, requestId);
+    return reapiError("BAD_REQUEST", "operation_id required and must be a non-nil UUID", 400, requestId);
   }
   const repoFullName = body.repo_full_name;
   if (typeof repoFullName !== "string" || repoFullName.length === 0) {
@@ -584,9 +582,7 @@ export async function handleRunnerMint(
   }
 
   let runnerOperation: RunnerCredentialOperation | undefined =
-    operationId === undefined
-      ? undefined
-      : { operationId, tenantId, jobId, repo: repoFullName };
+    { operationId, tenantId, jobId, repo: repoFullName };
   if (runnerOperation !== undefined) {
     try {
       const lifecycle = await readCredentialLifecycle(env, tenantId);
