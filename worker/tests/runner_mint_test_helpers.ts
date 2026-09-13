@@ -99,6 +99,7 @@ function makeConfigDb(opts: {
   return {
     prepare: (sql: string) => ({
       bind: (...args: unknown[]) => ({
+        sql,
         // All authz reads + throttle INSERT...RETURNING go through first().
         first: async <T>() => {
           if (sql.includes("tenant_gh_installation_map")) {
@@ -156,7 +157,7 @@ function makeConfigDb(opts: {
           // WP5a: capture the pat INSERT (SQL + binds) so tests can assert the
           // narrowed runner_job_ac_key column+value. `meta.changes = 1` so the
           // mint's belt-and-braces "wrote no row" guard passes.
-          if (sql.includes("INSERT INTO pat") && opts.patInsertCapture) {
+          if (sql.includes("INSERT INTO pat") && sql.includes("runner_job_ac_key") && opts.patInsertCapture) {
             opts.patInsertCapture.sql = sql;
             opts.patInsertCapture.binds = args;
           }
@@ -164,6 +165,15 @@ function makeConfigDb(opts: {
         },
       }),
     }),
+    // D1 batch executes the already-bound prepared statements atomically. The
+    // mock delegates to each statement's real configured `run` behavior, so
+    // captured writes and non-success results remain observable to tests.
+    batch: async (statements: Array<{ sql: string; first(): Promise<unknown>; run(): Promise<D1Result> }>) =>
+      Promise.all(statements.map((statement) =>
+        /^\s*SELECT\b/i.test(statement.sql)
+          ? statement.first().then((row) => ({ success: true, results: row === null ? [] : [row] }))
+          : statement.run(),
+      )),
   } as unknown as D1Database;
 }
 

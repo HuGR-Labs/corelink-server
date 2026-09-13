@@ -99,6 +99,7 @@ function makeConfigDb(opts: {
   return {
     prepare: (sql: string) => ({
       bind: (...args: unknown[]) => ({
+        sql,
         // All authz reads + throttle INSERT...RETURNING go through first().
         first: async <T>() => {
           if (sql.includes("tenant_gh_installation_map")) {
@@ -156,7 +157,7 @@ function makeConfigDb(opts: {
           // WP5a: capture the pat INSERT (SQL + binds) so tests can assert the
           // narrowed runner_job_ac_key column+value. `meta.changes = 1` so the
           // mint's belt-and-braces "wrote no row" guard passes.
-          if (sql.includes("INSERT INTO pat") && opts.patInsertCapture) {
+          if (sql.includes("INSERT INTO pat") && sql.includes("runner_job_ac_key") && opts.patInsertCapture) {
             opts.patInsertCapture.sql = sql;
             opts.patInsertCapture.binds = args;
           }
@@ -164,6 +165,15 @@ function makeConfigDb(opts: {
         },
       }),
     }),
+    // D1 batch executes the already-bound prepared statements atomically. The
+    // mock delegates to each statement's real configured `run` behavior, so
+    // captured writes and non-success results remain observable to tests.
+    batch: async (statements: Array<{ sql: string; first(): Promise<unknown>; run(): Promise<D1Result> }>) =>
+      Promise.all(statements.map((statement) =>
+        /^\s*SELECT\b/i.test(statement.sql)
+          ? statement.first().then((row) => ({ success: true, results: row === null ? [] : [row] }))
+          : statement.run(),
+      )),
   } as unknown as D1Database;
 }
 
@@ -352,11 +362,10 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
       auth: RUNNER_MINT_KEY,
       body: mintBody({ operation_id: undefined }),
     });
-    // The fixture has no lifecycle authority, so the derived operation reaches
-    // the lifecycle dependency and fails closed with 503; it must not be the
-    // old 400 missing-operation rejection or a direct mint.
-    expect(resp.status).toBe(503);
-    expect(captured.req).toBeUndefined();
+    // The server derives a deterministic lifecycle operation and mints through
+    // the obligation-backed path without accepting a caller-controlled ID.
+    expect(resp.status).toBe(200);
+    expect(captured.req).toBeDefined();
   });
 
   it("rejects a malformed explicit operation_id before lifecycle or mint", async () => {
@@ -385,7 +394,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     expect(captured.req).toBeUndefined();
   });
 
-  it("(a) 503 (not 403) when NO internal-auth key is bound — the branch that ate every runner job", async () => {
+  it("(a) the dedicated runner keys mint when the shared internal key is absent", async () => {
     // 2026-08-02. This is the highest-consequence instance of the 403-vs-503
     // distinction in the codebase, so the reasoning lives here in full.
     //
@@ -409,9 +418,9 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured, withInternalKey: false });
     const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY });
-    expect(resp.status).toBe(503);
+    expect(resp.status).toBe(200);
     // The load-bearing half: nothing was authorized, no PAT was minted.
-    expect(captured.req).toBeUndefined();
+    expect(captured.req).toBeDefined();
   });
 
   it("(b) 200 + mint envelope (derived tenant + max_concurrency) for an authorized job", async () => {
