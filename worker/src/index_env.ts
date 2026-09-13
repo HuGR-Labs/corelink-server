@@ -50,6 +50,9 @@ export interface Env {
   REQUEST_METER_COORDINATOR_DO?: DurableObjectNamespace;
   REQUEST_METER_SHARD_DO?: DurableObjectNamespace;
   ENVIRONMENT: string;
+  /** Issuer-only Ed25519 PKCS#8 key and public key identifier for compute grants. */
+  COMPUTE_GRANT_SIGNING_KEY?: string;
+  COMPUTE_GRANT_KEY_ID?: string;
   // D1 CONFIG_DB — control-plane database. Holds the `pat` table queried
   // during PAT validation (WP-A1). Bound in wrangler.toml `[[d1_databases]]`.
   CONFIG_DB: D1Database;
