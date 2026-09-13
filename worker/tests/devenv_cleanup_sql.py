@@ -43,13 +43,13 @@ class AtomicCleanup(unittest.TestCase):
         self.db.execute(query, (operation, "tenant", deadline if deadline is not None else self.now + 90000, generation))
         self.db.commit()
 
-    def activate(self, pat="pat", fail=False, operation="operation"):
+    def activate(self, pat="pat", fail=False, operation="operation", generation="0"):
         queries = sqls("activateDevenvPat")
         with self.db:
-            self.db.execute(queries[0], (pat, "tenant", "hash-" + pat, "read-write", self.expiry, "token-" + pat, operation))
+            self.db.execute(queries[0], (pat, "tenant", "hash-" + pat, "read-write", self.expiry, "token-" + pat, operation, generation))
             if fail:
                 raise RuntimeError("injected transaction failure")
-            self.db.execute(queries[1], (pat, "token-" + pat, operation, "tenant"))
+            self.db.execute(queries[1], (pat, "token-" + pat, operation, "tenant", generation))
 
     def revoke(self):
         queries = sqls("revokeDevenvOperation")
@@ -129,12 +129,18 @@ class AtomicCleanup(unittest.TestCase):
     def test_generation_floor_blocks_old_activation_and_adoption(self):
         self.prepare(generation="1"); self.db.execute("INSERT INTO tenant_credential_revocation_floor VALUES ('tenant','1')"); self.db.commit()
         self.activate(); self.assertEqual(self.db.execute("SELECT COUNT(*) FROM pat").fetchone()[0], 0)
-        self.prepare(operation="new-operation", generation="2"); self.activate("new-pat", operation="new-operation")
+        self.prepare(operation="new-operation", generation="2"); self.activate("new-pat", operation="new-operation", generation="2")
         self.assertEqual(self.db.execute("SELECT lifecycle_generation FROM devenv_credential_obligation WHERE operation_id='new-operation'").fetchone()[0], "2")
         self.db.execute("UPDATE devenv_credential_obligation SET deadline_ms = ? WHERE operation_id='new-operation'", (self.now + 90000,)); self.db.commit()
         self.db.execute("UPDATE tenant_credential_revocation_floor SET revoked_through='2' WHERE tenant_id='tenant'"); self.db.commit()
         self.db.execute(sqls("adoptDevenvOperation")[0], ("new-operation", "tenant", "new-pat"))
         self.assertEqual(self.db.execute("SELECT state FROM devenv_credential_obligation WHERE operation_id='new-operation'").fetchone()[0], "issued")
+
+    def test_activation_generation_must_match_prepared_obligation(self):
+        self.prepare(generation="6")
+        self.activate(generation="7")
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM pat").fetchone()[0], 0)
+        self.assertEqual(self.db.execute("SELECT state FROM devenv_credential_obligation").fetchone()[0], "prepared")
 
     def test_exact_prepare_replay_does_not_rebind_marker(self):
         self.prepare(generation="3"); self.prepare(generation="3")

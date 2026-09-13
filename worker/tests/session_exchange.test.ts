@@ -878,6 +878,28 @@ describe("L12(b) — MintGrant capability + mintScopedPat scope ceiling", () => 
     expect(captured.req).toBeUndefined();
   });
 
+  it("fails before minting when a DevEnv operation generation differs from its grant", async () => {
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map() });
+    const resp = await mintScopedPat(
+      env,
+      `${REQ}-devenv-generation`,
+      MintGrant.fromDevenvSession("acme-default", "devenv-clerk:acme-default", "6"),
+      3600,
+      "cas:rw",
+      INTERNAL_KEY,
+      undefined,
+      undefined,
+      {
+        operationId: "11111111-2222-4333-8444-555555555555",
+        tenantId: "acme-default",
+        lifecycleGeneration: "7",
+      },
+    );
+    expect(resp.status).toBe(500);
+    expect(captured.req).toBeUndefined();
+  });
+
   it("(2) fail-CLOSED: a scope ABOVE the grant ceiling → 500, NO token, NO pat row, NO container mint", async () => {
     const captured: { req?: Request } = {};
     const patInsertCapture: { binds?: unknown[]; sql?: string } = {};

@@ -181,6 +181,13 @@ export function canonicalizePatScope(scope: string): CanonScope | null {
  */
 export type CanonScope = "read-only" | "read-write" | "admin";
 
+/** A prepared DevEnv obligation, bound to the lifecycle generation it proved. */
+export interface DevenvCredentialOperation {
+  readonly operationId: string;
+  readonly tenantId: string;
+  readonly lifecycleGeneration: string;
+}
+
 /**
  * Total rank over the PAT scope lattice (L12(b)): `read-only < read-write < admin`.
  *
@@ -643,13 +650,13 @@ export async function mintScopedPat(
   internalAuthKey: string,
   extraFields?: Readonly<Record<string, string | number | boolean>>,
   runnerJobAcKey?: string,
-  devenvOperationId?: string,
+  devenvOperation?: DevenvCredentialOperation,
   runnerOperation?: RunnerCredentialOperation,
 ): Promise<Response> {
   // A credential obligation is the only authority allowed to persist a runner
   // or DevEnv PAT. Its generation is bound into the grant, so a stale accepted
   // operation cannot be used to issue after the lifecycle advances.
-  if (runnerOperation !== undefined && devenvOperationId !== undefined) {
+  if (runnerOperation !== undefined && devenvOperation !== undefined) {
     return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
   }
   if (
@@ -661,7 +668,11 @@ export async function mintScopedPat(
   ) {
     return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
   }
-  if (devenvOperationId !== undefined && grant.lifecycleGeneration === undefined) {
+  if (
+    devenvOperation !== undefined &&
+    (devenvOperation.tenantId !== grant.tenantId ||
+      devenvOperation.lifecycleGeneration !== grant.lifecycleGeneration)
+  ) {
     return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
   }
   // L12(b): the tenant is sourced FROM the branded capability — a loose string is
@@ -867,15 +878,16 @@ export async function mintScopedPat(
                 : 0,
             },
           }
-        : devenvOperationId !== undefined
+        : devenvOperation !== undefined
           ? {
               meta: {
                 changes: await activateDevenvPat(
                   env.CONFIG_DB,
-                  devenvOperationId,
+                  devenvOperation.operationId,
                   tenantId,
                   { ...minted, hash: minted.hash },
                   canonicalScope,
+                  devenvOperation.lifecycleGeneration,
                 )
                   ? 1
                   : 0,

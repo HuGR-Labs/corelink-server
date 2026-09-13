@@ -45,18 +45,19 @@ export async function prepareDevenvOperation(storage: DurableObjectStorage, db: 
 
 /** Atomic activation: no authenticatable PAT may exist without its obligation. */
 export async function activateDevenvPat(db: D1Database, operationId: string, tenantId: string,
-  minted: { pat_id: string; token_id: string; hash: string; expires_ms: number }, scope: string): Promise<boolean> {
+  minted: { pat_id: string; token_id: string; hash: string; expires_ms: number }, scope: string,
+  lifecycleGeneration: string): Promise<boolean> {
   const results = await bounded(db.batch([
     db.prepare(`INSERT INTO pat (pat_id, tenant_id, pat_hash, scope, expires_ms, token_id, shown_once_token, shown_once_consumed, created_ms, lifecycle_generation)
       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?6, 1, ${SQL_NOW}, lifecycle_generation FROM devenv_credential_obligation
-      WHERE operation_id = ?7 AND tenant_id = ?2 AND state = 'prepared' AND deadline_ms > ${SQL_NOW}
+      WHERE operation_id = ?7 AND tenant_id = ?2 AND lifecycle_generation = ?8 AND state = 'prepared' AND deadline_ms > ${SQL_NOW}
       AND ${SQL_VALID_GENERATION}
       AND NOT EXISTS (SELECT 1 FROM tenant_credential_revocation_floor f WHERE f.tenant_id = ?2 AND (length(f.revoked_through) > length(lifecycle_generation) OR (length(f.revoked_through) = length(lifecycle_generation) AND f.revoked_through >= lifecycle_generation)))`)
-      .bind(minted.pat_id, tenantId, minted.hash, scope, minted.expires_ms, minted.token_id, operationId),
+      .bind(minted.pat_id, tenantId, minted.hash, scope, minted.expires_ms, minted.token_id, operationId, lifecycleGeneration),
     db.prepare(`UPDATE devenv_credential_obligation SET state = 'issued', pat_id = ?1, token_id = ?2
-      WHERE operation_id = ?3 AND tenant_id = ?4 AND state = 'prepared'
-      AND EXISTS (SELECT 1 FROM pat WHERE pat_id = ?1 AND tenant_id = ?4)`)
-      .bind(minted.pat_id, minted.token_id, operationId, tenantId),
+      WHERE operation_id = ?3 AND tenant_id = ?4 AND lifecycle_generation = ?5 AND state = 'prepared'
+      AND EXISTS (SELECT 1 FROM pat WHERE pat_id = ?1 AND tenant_id = ?4 AND lifecycle_generation = ?5)`)
+      .bind(minted.pat_id, minted.token_id, operationId, tenantId, lifecycleGeneration),
   ]));
   return results.length === 2 && results.every((result) => result.success && result.meta.changes === 1);
 }
