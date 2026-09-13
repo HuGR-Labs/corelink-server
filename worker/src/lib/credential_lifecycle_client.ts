@@ -144,8 +144,8 @@ export async function readCredentialLifecycle(env: CredentialLifecycleEnv, tenan
     try {
       response = await Promise.race([
         fetch(new URL(`/internal/v1/credentials/tenants/${encodeURIComponent(tenantId)}/lifecycle`, endpoint).toString(), {
-          method: "GET", redirect: "error", cache: "no-store", signal: controller.signal,
-          headers: { "x-corelink-internal-auth": key },
+          method: "GET", redirect: "error", signal: controller.signal,
+          headers: { "x-corelink-internal-auth": key, "Cache-Control": "no-store" },
         }),
         deadline,
       ]);

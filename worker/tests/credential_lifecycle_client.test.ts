@@ -19,8 +19,8 @@ describe("credential lifecycle client", () => {
   it("sends the canonical path, dedicated auth, no-store, and refuses redirects", async () => {
     const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(response(valid()));
     await expect(readCredentialLifecycle(ENV, TENANT)).resolves.toEqual({ tenantId: TENANT, generation: "9007199254740993" });
-    expect(fetcher).toHaveBeenCalledWith("https://fabric.example/internal/v1/credentials/tenants/123e4567-e89b-12d3-a456-426614174000/lifecycle", expect.objectContaining({ method: "GET", cache: "no-store", redirect: "error" }));
-    expect((fetcher.mock.calls[0]![1] as RequestInit).headers).toEqual({ "x-corelink-internal-auth": KEY });
+    expect(fetcher).toHaveBeenCalledWith("https://fabric.example/internal/v1/credentials/tenants/123e4567-e89b-12d3-a456-426614174000/lifecycle", expect.objectContaining({ method: "GET", redirect: "error" }));
+    expect((fetcher.mock.calls[0]![1] as RequestInit).headers).toEqual({ "x-corelink-internal-auth": KEY, "Cache-Control": "no-store" });
   });
 
   it("rejects missing or unsafe configuration and tenant identifiers", async () => {
