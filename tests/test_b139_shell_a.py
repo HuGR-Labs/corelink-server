@@ -69,7 +69,8 @@ def test_actual_workflow_guards_reject_malicious_env_and_invalid_month() -> None
         assert "CORELINK_ENV_INPUT: ${{ github.event.inputs.env || 'production' }}" in text
         assert '[[ "$CORELINK_ENV_INPUT" != production && "$CORELINK_ENV_INPUT" != staging ]]' in text
         assert "options: [production, staging]" in text
-        assert "environment: ${{ github.event.inputs.env || 'production' }}" in text
+        assert "environment: ${{ github.event.inputs.env == 'staging' && 'staging' || 'production' }}" in text
+        assert "environment: ${{ github.event.inputs.env || 'production' }}" not in text
         assert '[[ "$CORELINK_ENV_INPUT" == staging && "$DRY" != true ]]' in text
     for filename in ("billing-aggregate-runner.yml", "billing-reconcile-daily.yml"):
         text = (ROOT / ".github/workflows" / filename).read_text()
