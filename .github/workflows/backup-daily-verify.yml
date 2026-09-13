@@ -45,7 +45,7 @@ jobs:
     # `npm install -g` into a shared home is the same class of mutation that
     # took the host down on 2026-06-15.
     runs-on: corelink
-    environment: production
+    environment: ${{ github.event.inputs.env || 'production' }}
     timeout-minutes: 35
 
     env:
@@ -55,10 +55,20 @@ jobs:
       - name: Validate CoreLink environment
         env:
           CORELINK_ENV_INPUT: ${{ github.event.inputs.env || 'production' }}
+          DRY_INPUT: ${{ github.event.inputs.dry_run }}
         run: |
           set -euo pipefail
           if [[ "$CORELINK_ENV_INPUT" != production && "$CORELINK_ENV_INPUT" != staging ]]; then
             echo "::error::env must be production or staging"
+            exit 1
+          fi
+          DRY="${DRY_INPUT:-false}"
+          if [[ "$DRY" != true && "$DRY" != false ]]; then
+            echo "::error::dry_run must be true or false"
+            exit 1
+          fi
+          if [[ "$CORELINK_ENV_INPUT" == staging && "$DRY" != true ]]; then
+            echo "::error::staging LIVE is blocked: isolated staging Cloudflare credentials are not configured"
             exit 1
           fi
 

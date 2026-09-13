@@ -69,6 +69,8 @@ def test_actual_workflow_guards_reject_malicious_env_and_invalid_month() -> None
         assert "CORELINK_ENV_INPUT: ${{ github.event.inputs.env || 'production' }}" in text
         assert '[[ "$CORELINK_ENV_INPUT" != production && "$CORELINK_ENV_INPUT" != staging ]]' in text
         assert "options: [production, staging]" in text
+        assert "environment: ${{ github.event.inputs.env || 'production' }}" in text
+        assert '[[ "$CORELINK_ENV_INPUT" == staging && "$DRY" != true ]]' in text
     for filename in ("billing-aggregate-runner.yml", "billing-reconcile-daily.yml"):
         text = (ROOT / ".github/workflows" / filename).read_text()
         assert "^[0-9]{4}-(0[1-9]|1[0-2])$" in text
@@ -76,3 +78,11 @@ def test_actual_workflow_guards_reject_malicious_env_and_invalid_month() -> None
         assert _bash(guard, VALUE="2026-00").returncode != 0
         assert _bash(guard, VALUE="2026-13").returncode != 0
     assert _bash('[[ "$VALUE" = production || "$VALUE" = staging ]]', VALUE='production"; id; #').returncode != 0
+
+
+def test_staging_live_is_rejected_but_staging_dry_run_is_allowed() -> None:
+    guard = (
+        'if [[ "$ENV" == staging && "$DRY" != true ]]; then exit 1; fi'
+    )
+    assert _bash(guard, ENV="staging", DRY="false").returncode != 0
+    assert _bash(guard, ENV="staging", DRY="true").returncode == 0
