@@ -16,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import backlog_verify  # noqa: E402
+import backlog_ledger_successor  # noqa: E402
 
 CATALOGS = {
     REPO_ROOT / "docs/campaigns/remediation/work-packages/B001-B045.md": (1, 45),
@@ -34,6 +35,16 @@ SNAPSHOT_SHA256 = "3a4cbf652a1d4485ac9c8e03bd79343fb4619b5c2e8cb58af161263f83440
 POSTMERGE_BASE_SHA = "6be19a2e525dad045ad8404d722905afde7ad7bd"
 POSTMERGE_SNAPSHOT_PATH = REPO_ROOT / "docs/campaigns/remediation/backlog-ledger-snapshot-b373-postmerge.json"
 POSTMERGE_SNAPSHOT_SHA256 = "4c6f81def4554196ac784e3300a2e478588e0586b058ca5d0d328df5167d397f"
+SNAPSHOT_DIRECTORY = Path("docs/campaigns/remediation")
+LEDGER_RELATIVE = SNAPSHOT_DIRECTORY / "BACKLOG-WP-LEDGER.md"
+GENESIS_SNAPSHOT_RELATIVE = SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-b373-postmerge.json"
+SUCCESSOR_NAME_RE = re.compile(r"backlog-ledger-snapshot-v([0-9]{4})\.json\Z")
+RECEIPT_FIELDS = frozenset({
+    "schema_version", "sequence", "transition", "base_commit",
+    "prior_snapshot_sha256", "prior_source_sha256", "source_sha256",
+    "prior_ledger_sha256", "ledger_sha256", "prior_catalog_sha256",
+    "catalog_sha256", "item_count", "status_counts", "open_ids", "changed_ids",
+})
 ENTRY_RE = re.compile(r"^(B-\d+)\s+(WP-[A-Z0-9][A-Z0-9./_-]*)$")
 WP_HEADING_RE = re.compile(r"^#{2,6}\s+(WP-[A-Z0-9][A-Z0-9./_-]*)(?:\s|—|$)", re.MULTILINE)
 FIELD_PATTERNS = {
@@ -463,6 +474,43 @@ def load_postmerge_snapshot_manifest() -> dict[str, object]:
     return manifest
 
 
+def _successor_policy():
+    return backlog_ledger_successor.install(sys.modules[__name__])
+
+
+def _sha256(raw: bytes) -> str:
+    return _successor_policy()._sha256(raw)
+
+
+def _catalog_relatives() -> tuple[Path, ...]:
+    return _successor_policy()._catalog_relatives()
+
+
+def _state_bytes(root: Path) -> dict[str, bytes]:
+    return _successor_policy()._state_bytes(root)
+
+
+def _successor_paths(root: Path) -> list[Path]:
+    return _successor_policy()._successor_paths(root)
+
+
+def load_successor_chain(root: Path = REPO_ROOT) -> dict[str, object]:
+    return _successor_policy().load_successor_chain(root)
+
+
+def validate_candidate_successor(
+    base_root: Path, candidate_root: Path, *, base_sha: str | None = None,
+    today: backlog_verify.dt.date | None = None,
+) -> dict[str, object]:
+    return _successor_policy().validate_candidate_successor(
+        base_root, candidate_root, base_sha=base_sha, today=today,
+    )
+
+
+def successor_required(base_root: Path, candidate_root: Path) -> bool:
+    return _successor_policy().successor_required(base_root, candidate_root)
+
+
 def validate_snapshot_manifest(
     manifest: dict[str, object],
     backlog_text: str,
@@ -689,9 +737,11 @@ def parse_ledger_state(text: str, source: str) -> dict[str, str]:
     missing = sorted(required - state.keys())
     if missing:
         raise LedgerError(f"{source}: ledger state missing keys: {', '.join(missing)}")
-    if state["base-ref"] not in {LEDGER_BASE_REF, POSTMERGE_BASE_SHA}:
+    if state["base-ref"] not in {LEDGER_BASE_REF, POSTMERGE_BASE_SHA} and not re.fullmatch(
+        r"[0-9a-f]{40}", state["base-ref"]
+    ):
         raise LedgerError(
-            f"{source}: ledger base-ref must be {LEDGER_BASE_REF} or {POSTMERGE_BASE_SHA}"
+            f"{source}: ledger base-ref must be an immutable 40-digit hex SHA"
         )
     if not re.fullmatch(r"[0-9a-f]{40}", state["base-sha"]):
         raise LedgerError(f"{source}: ledger base-sha is not a 40-digit hex SHA")
@@ -924,10 +974,16 @@ def main() -> int:
             ledger_source = str(LEDGER_PATH)
         ledger_state = parse_ledger_state(ledger_text, ledger_source)
         expected_base_sha = ledger_state["base-ref"]
-        snapshot_manifest = (
-            load_snapshot_manifest() if expected_base_sha == LEDGER_BASE_SHA
-            else load_postmerge_snapshot_manifest()
-        )
+        if _successor_paths(REPO_ROOT):
+            snapshot_manifest = load_successor_chain(REPO_ROOT)
+            if expected_base_sha != snapshot_manifest["base_commit"]:
+                raise LedgerError(f"{ledger_source}: ledger base is not the latest successor base")
+        elif expected_base_sha == LEDGER_BASE_SHA:
+            snapshot_manifest = load_snapshot_manifest()
+        elif expected_base_sha == POSTMERGE_BASE_SHA:
+            snapshot_manifest = load_postmerge_snapshot_manifest()
+        else:
+            raise LedgerError(f"{ledger_source}: unversioned ledger base")
         validate_snapshot_manifest(
             snapshot_manifest,
             backlog_text,

@@ -442,7 +442,11 @@ def _candidate_control_paths(trusted_root: Path, trusted_items: list[Item]) -> s
     This is intentionally a static closure. It never imports or runs a
     candidate module, and it does not blanket-freeze unrelated source files.
     """
-    paths = {"scripts/backlog_verify.py"}
+    paths = {
+        "scripts/backlog_verify.py",
+        "scripts/verify_backlog_wp_ledger.py",
+        "scripts/backlog_ledger_successor.py",
+    }
     queue: list[str] = []
     for item in trusted_items:
         command = item.raw.get("verify")
@@ -500,7 +504,8 @@ def check_candidate_controls(candidate_root: Path, trusted_root: Path, trusted_i
 
 
 def validate_candidate_transitions(
-    candidate_items: list[Item], trusted_items: list[Item], today: dt.date
+    candidate_items: list[Item], trusted_items: list[Item], today: dt.date,
+    *, allow_open_verify_means: bool = False,
 ) -> list[str]:
     """Validate the small, auditable set of BACKLOG changes a PR may make."""
     trusted_by_id = {item.id: item for item in trusted_items if item.raw}
@@ -515,23 +520,37 @@ def validate_candidate_transitions(
         if not item.raw or item.id not in trusted_by_id:
             if item.raw.get("status") != "open":
                 errors.append(f"new item {item.id} must start status: open")
+            if allow_open_verify_means and item.raw.get("verify") != "manual":
+                errors.append(f"new item {item.id} must use non-executable verify: manual")
             continue
         old = trusted_by_id[item.id]
         old_raw, new_raw = old.raw, item.raw
-        for field in IMMUTABLE_ITEM_FIELDS:
-            if old_raw.get(field) != new_raw.get(field):
-                errors.append(f"{item.id}: immutable field {field!r} changed")
-        for field in set(old_raw) | set(new_raw):
-            if field not in IMMUTABLE_ITEM_FIELDS | ALLOWED_TRANSITION_FIELDS:
-                if old_raw.get(field) != new_raw.get(field):
-                    errors.append(f"{item.id}: unsupported field {field!r} changed")
+        for item_field in IMMUTABLE_ITEM_FIELDS:
+            if old_raw.get(item_field) != new_raw.get(item_field):
+                # The B-089 successor may add only this already-BASE-owned
+                # owner-packet gate. A receipt cannot authorize arbitrary
+                # candidate verifier code or shell fragments.
+                if item_field == "verify" and allow_open_verify_means and item.id == "B-089" and (
+                    old_raw.get("verify") == "python3 scripts/verify_b089_sla_credits.py\n"
+                    and new_raw.get("verify") == (
+                        "python3 scripts/verify_b089_sla_credits.py\n"
+                        "python3 -S scripts/verify_owner_action_packets.py --id B-089\n"
+                    )
+                ):
+                    continue
+                errors.append(f"{item.id}: immutable field {item_field!r} changed")
+        for item_field in set(old_raw) | set(new_raw):
+            if item_field not in IMMUTABLE_ITEM_FIELDS | ALLOWED_TRANSITION_FIELDS:
+                if old_raw.get(item_field) != new_raw.get(item_field):
+                    errors.append(f"{item.id}: unsupported field {item_field!r} changed")
         old_status, new_status = old_raw.get("status"), new_raw.get("status")
         if new_status not in allowed_status.get(old_status, set()):
             errors.append(f"{item.id}: status transition {old_status!r} -> {new_status!r} is not allowed")
         if old_raw.get("owner") != new_raw.get("owner") and old_status == new_status:
             errors.append(f"{item.id}: owner may change only with a status transition")
         if old_raw.get("verify-means") != new_raw.get("verify-means") and old_status == new_status:
-            errors.append(f"{item.id}: verify-means may change only with a status transition")
+            if not (allow_open_verify_means and old_status == "open"):
+                errors.append(f"{item.id}: verify-means may change only with a status transition")
         try:
             old_date, new_date = parse_date(old_raw["last-verified"]), parse_date(new_raw["last-verified"])
             if new_date < old_date or new_date > today:
@@ -613,11 +632,11 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
     if not isinstance(jobs, dict) or set(jobs) != {"verify", "trusted_semantic"}:
         raise RuntimeError("candidate workflow policy must contain only the data and trusted jobs")
     checkout_ref = "9f698171ed81b15d1823a05fc7211befd50c8ae0"
-    def checkout(name: str, ref: str, path: str) -> dict:
+    def checkout(name: str, ref: str, path: str, depth: int = 1) -> dict:
         return {
             "name": name,
             "uses": f"actions/checkout@{checkout_ref}",
-            "with": {"ref": ref, "path": path, "fetch-depth": 1, "persist-credentials": False},
+            "with": {"ref": ref, "path": path, "fetch-depth": depth, "persist-credentials": False},
         }
     expected_gate = (
         'python3 scripts/backlog_verify.py --candidate-file "$CANDIDATE_ROOT/BACKLOG.md" '
@@ -640,7 +659,7 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
             checkout("Checkout candidate data (immutable event SHA)",
                      "${{ github.event.pull_request.head.sha || github.sha }}", "_candidate"),
             checkout("Checkout BASE control tree (immutable event SHA)",
-                     "${{ github.event.pull_request.base.sha || github.sha }}", "_base"),
+                     "${{ github.event.pull_request.base.sha || github.sha }}", "_base", 0),
             {"name": "Validate candidate as data with BASE checker", "working-directory": "_base",
              "env": {"CANDIDATE_ROOT": "${{ github.workspace }}/_candidate",
                      "TRUSTED_ROOT": "${{ github.workspace }}/_base"}, "run": expected_gate},
@@ -754,9 +773,19 @@ def main() -> int:
                 Path(args.trusted_root).resolve(),
                 trusted_items,
             )
-            transition_errors = validate_candidate_transitions(items, trusted_items, today)
+            transition_errors = validate_candidate_transitions(
+                items, trusted_items, today, allow_open_verify_means=True,
+            )
             if transition_errors:
                 raise RuntimeError("candidate transition rejected:\n" + "\n".join(transition_errors))
+            from scripts import verify_backlog_wp_ledger as ledger
+
+            trusted_root = Path(args.trusted_root).resolve()
+            try:
+                if ledger.successor_required(trusted_root, candidate_root):
+                    ledger.validate_candidate_successor(trusted_root, candidate_root, today=today)
+            except ledger.LedgerError as exc:
+                raise RuntimeError(f"candidate ledger successor rejected: {exc}") from exc
             validate_candidate_workflow(candidate_root)
         except (OSError, RuntimeError) as exc:
             print(f"FATAL: {exc}", file=sys.stderr)

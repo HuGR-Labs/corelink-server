@@ -106,6 +106,32 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         errors = backlog_verify.validate_candidate_transitions([changed], [base], dt.date(2026, 9, 12))
         self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
 
+    def test_successor_proof_update_does_not_authorize_verifier_commands(self) -> None:
+        base = self.item("B-089", verify="python3 scripts/verify_b089_sla_credits.py\n")
+        candidate = self.item("B-089", verify=base.raw["verify"])
+        candidate.raw["verify-means"] = "new evidence readback"
+        self.assertEqual(
+            backlog_verify.validate_candidate_transitions(
+                [candidate], [base], dt.date(2026, 9, 12), allow_open_verify_means=True,
+            ),
+            [],
+        )
+        candidate.raw["verify"] += "python3 scripts/evil.py\n"
+        errors = backlog_verify.validate_candidate_transitions(
+            [candidate], [base], dt.date(2026, 9, 12), allow_open_verify_means=True,
+        )
+        self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
+        candidate.raw["verify"] = (
+            "python3 scripts/verify_b089_sla_credits.py\n"
+            "python3 -S scripts/verify_owner_action_packets.py --id B-089\n"
+        )
+        self.assertEqual(
+            backlog_verify.validate_candidate_transitions(
+                [candidate], [base], dt.date(2026, 9, 12), allow_open_verify_means=True,
+            ),
+            [],
+        )
+
     def test_deleting_highest_base_id_is_rejected(self) -> None:
         errors = backlog_verify.validate_candidate_transitions(
             [self.item("B-001")],
@@ -303,8 +329,11 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             candidate = Path(directory) / "candidate"
             (trusted / "scripts").mkdir(parents=True)
             (candidate / "scripts").mkdir(parents=True)
-            shutil.copy2(ROOT / "scripts" / "backlog_verify.py", trusted / "scripts" / "backlog_verify.py")
-            shutil.copy2(ROOT / "scripts" / "backlog_verify.py", candidate / "scripts" / "backlog_verify.py")
+            for control in (
+                "backlog_verify.py", "verify_backlog_wp_ledger.py", "backlog_ledger_successor.py",
+            ):
+                shutil.copy2(ROOT / "scripts" / control, trusted / "scripts" / control)
+                shutil.copy2(ROOT / "scripts" / control, candidate / "scripts" / control)
             (trusted / "scripts" / "check.py").write_text("from scripts import helper\n", encoding="utf-8")
             (trusted / "scripts" / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
             for name in ("check.py", "helper.py"):
@@ -350,6 +379,21 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             target = self.candidate / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
+        # The BASE ledger gate also compares the immutable data preimage, even
+        # when a test mutates only one BACKLOG declaration.
+        ledger_data = [
+            "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md",
+            "docs/campaigns/remediation/backlog-ledger-snapshot.json",
+            "docs/campaigns/remediation/backlog-ledger-snapshot-b373-postmerge.json",
+            "docs/campaigns/remediation/work-packages/B001-B045.md",
+            "docs/campaigns/remediation/work-packages/B046-B090.md",
+            "docs/campaigns/remediation/work-packages/B091-B130.md",
+            "docs/campaigns/remediation/work-packages/B131-B167.md",
+        ]
+        for relative in ledger_data:
+            target = self.candidate / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / relative, target)
         workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
         workflow.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / ".github" / "workflows" / "backlog-verify.yml", workflow)
