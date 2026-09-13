@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -135,6 +136,25 @@ class OwnerActionPacketTests(unittest.TestCase):
                     )
                 with self.assertRaises(MODULE.PacketError):
                     MODULE.check_data(mutated, "B-089")
+
+    def test_b089_backlog_verify_is_one_fail_closed_shell_chain(self) -> None:
+        backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
+        section = re.search(r"(?ms)^### B-089\b.*?^```backlog\n(.*?)^```", backlog)
+        self.assertIsNotNone(section)
+        assert section is not None
+        verify_rows = re.findall(r"(?m)^verify: (.+)$", section.group(1))
+        command = (
+            "python3 scripts/verify_b089_sla_credits.py && "
+            "python3 -S scripts/verify_owner_action_packets.py --id B-089"
+        )
+        self.assertEqual(verify_rows, [command])
+        for first, expected in (("false", 1), ("true", 0)):
+            with self.subTest(first=first):
+                probe = command.replace("python3 scripts/verify_b089_sla_credits.py", first).replace(
+                    "python3 -S scripts/verify_owner_action_packets.py --id B-089", "true"
+                )
+                result = subprocess.run(["/bin/bash", "-o", "pipefail", "-c", probe], check=False)
+                self.assertEqual(result.returncode, expected)
 
     def test_b089_known_cross_document_drift_cannot_change_silently(self) -> None:
         item = next(entry for entry in self.data["items"] if entry["id"] == "B-089")

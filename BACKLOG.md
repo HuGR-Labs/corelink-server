@@ -11454,9 +11454,7 @@ id: B-089
 repo: corelink-server
 owner: owner
 status: open
-verify: |
-  python3 scripts/verify_b089_sla_credits.py
-  python3 -S scripts/verify_owner_action_packets.py --id B-089
+verify: python3 scripts/verify_b089_sla_credits.py && python3 -S scripts/verify_owner_action_packets.py --id B-089
 verify-means: |
   open — o caminho repo-owned de medição, elegibilidade, ledger limitado,
   outbox transacional, provider idempotente e reconciliação está implementado, mas
