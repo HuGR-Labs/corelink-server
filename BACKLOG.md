@@ -9356,28 +9356,36 @@ verify-means: |
 last-verified: 2026-09-01
 ```
 
-### B-065 — dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias
+### B-065 — dois esquemas de ID em webhooks Stripe; estado atual dos destinos não verificado
 
-`billing-health-daily` falhou 8 de 8 execuções, sem nenhum sucesso desde 23 de agosto.
-Também não está quebrado: reporta `BILLING HEALTH: 1 anomaly(ies) found` e detalha
+O último `billing-health-daily` observável (2026-09-01) falhou e reportou
+`BILLING HEALTH: 1 anomaly(ies) found`, detalhando
 `3 event type(s) ingested under BOTH id schemes in the last 30d` —
 `customer.subscription.deleted (1/1)`, `customer.subscription.updated (2/2)`,
-`invoice.payment_failed (2/2)`.
+`invoice.payment_failed (2/2)`. Não há execução posterior que prove resolução.
 
-O detector (`scripts/check_billing_health.py:169`) explica o mecanismo:
+O detector (`scripts/check_billing_health.py`) explica o risco:
 `stripe_webhook_events_processed` deduplica por `event_id` como chave primária, o que
-só protege retentativas sob o *mesmo* esquema de identificador. Um endpoint grava o
-`evt_…` da Stripe, o outro grava um hash derivado da mesma entrega; as duas linhas não
-colidem e o evento é processado duas vezes.
+só protege retentativas sob o *mesmo* esquema de identificador. O signup-worker grava
+`evt_…` da Stripe, enquanto o container grava hash derivado. Linhas com ambos os
+esquemas para um *tipo* de evento indicam sobreposição histórica que requer triagem;
+**não correlacionam a mesma entrega nem provam que dois destinos seguem ativos hoje**.
+Como a janela é de 30 dias, o alerta pode persistir após uma desativação.
 
-Processamento duplicado de `subscription.deleted` e `subscription.updated` afeta estado
-de direito de acesso, não apenas contagem. O reparo é no painel da Stripe — aposentar o
-endpoint redundante — e portanto é ação exclusiva do owner.
+O [readback do dashboard em 2026-08-03](docs/handoff/2026-07-03-REPLY-from-clw-coordinator-webhook-reconcile-DONE-and-no-stray-endpoint-exists.md)
+registrou `exquisite-rhythm-thin` (destino v2 no URL do container) e sua desativação
+naquele dia. O inventário atual v1 **e** v2 não foi obtido: a chave live local expirou
+em 2026-07-05 e o Chrome abriu o login da Stripe em 2026-09-12. Os eventos de
+`subscription.deleted`/`updated` podem afetar direitos de acesso; não se deve
+desativar outro destino para silenciar um alerta histórico.
 
-
-**Só ele (reconfirmado 2026-08-31) — o ato: clicar em "disable" no endpoint redundante, no
-painel Stripe da conta dele.** Eu não tenho — e não devo ter — sessão autenticada nesse
-painel.
+Próximo passo: obter acesso autorizado de leitura e enumerar **ambas** as APIs, com
+paginação, registrando IDs, URL, status, tipos de evento e data da última entrega sem
+segredos/payloads; correlacionar entregas, se necessário. Preservar o signup-worker
+(`we_1Tolig…`) e o container `Corelink prd` (`we_1Tfh8…`) até confirmação exata.
+Se um destino redundante ainda estiver ativo, sua desativação exige decisão explícita
+do owner; se já estiver desativado, investigar a cauda da janela e executar o health
+check sem inventar nova mutação.
 
 ```backlog
 id: B-065
@@ -9395,14 +9403,19 @@ verify-means: |
   reportaria zero e passaria verde — portão dominado, exatamente o que este item não
   pode ter.
 
-  O sinal correto já existe e é o `billing-health-daily`, que detecta a duplicidade
-  pelo lado dos dados. Este item não recria esse detector; ele rastreia a AÇÃO no
-  painel da Stripe, que só o owner executa.
+  `billing-health-daily` detecta sobreposição de esquemas por tipo na janela de 30
+  dias; não identifica a mesma entrega nem o estado atual de qualquer destino.
+  O readback histórico de 2026-08-03 registra o v2 thin como desativado, mas não
+  substitui enumeração atual, paginada, de v1 e v2. Uma falha antiga do health
+  check não autoriza desativar um destino saudável.
 
-  Procedimento: no painel Stripe, manter o destino "Corelink prd" apontando para o
-  signup-worker e aposentar o redundante. Fecha quando `billing-health-daily` voltar
-  a passar por três execuções consecutivas.
-last-verified: 2026-09-05
+  Fechar só com inventário atual dos destinos, correlação de entregas e três
+  execuções consecutivas bem-sucedidas de `billing-health-daily`. Se houver
+  destino redundante ainda ativo, registrar ID/status anterior, autorização do
+  owner e desativação verificada; se já estiver desativado, registrar esse fato
+  e a resolução da anomalia sem nova mutação. Preservar ambos os endpoints
+  legítimos: signup-worker (`we_1Tolig…`) e container `Corelink prd` (`we_1Tfh8…`).
+last-verified: 2026-09-12
 ```
 
 ### B-066 — RECUSADO: o `smoke-install` já está portado atrás do gate de Actions hosted

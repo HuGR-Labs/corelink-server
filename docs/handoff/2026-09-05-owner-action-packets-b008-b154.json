@@ -133,13 +133,13 @@
       "status": "open",
       "action_type": "stripe_webhook_endpoint_retirement",
       "procedure": [
-        "UI: In Stripe Developers → Webhooks, identify the redundant endpoint using the duplicate event evidence; confirm the retained Corelink production endpoint remains the signup-worker destination.",
-        "UI: Disable/retire only the redundant endpoint after checking its endpoint ID and event coverage; do not rotate or expose webhook signing secrets.",
-        "RUN: Preserve the endpoint IDs and timestamps, then observe billing-health-daily for three consecutive successful executions."
+        "UI: With authorized live Stripe access, enumerate both paginated v1 webhook endpoints and v2 event destinations; record IDs, URL, status, event coverage and last delivery time without secrets or payloads. The 30-day dual-ID detector alone does not prove current duplicate destinations.",
+        "UI: Preserve the signup-worker endpoint we_1Tolig… and the separate Corelink prd container endpoint we_1Tfh8…. If a distinct redundant destination is confirmed active, obtain the owner's explicit decision and disable only that exact ID; if already disabled, do not mutate Stripe.",
+        "RUN: Preserve the current endpoint IDs/statuses and timestamps, correlate deliveries where needed, then observe billing-health-daily for three consecutive successful executions."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["Stripe account", "endpoint list including v1/v2 destinations", "duplicate event types from billing-health-daily", "retained signup-worker URL"],
-        "credentials": "Owner’s authenticated Stripe dashboard is required. Webhook signing secrets are never exported, logged, or placed in evidence."
+        "inputs": ["Stripe account", "paginated endpoint list including v1/v2 destinations", "dual-scheme event types and latest timestamps from billing-health-daily", "signup-worker and Corelink prd container URLs"],
+        "credentials": "An authorized live Stripe dashboard session or scoped read credential for both v1 and v2 destinations is required for inventory; disabling any active destination requires the owner's explicit decision. Webhook signing secrets are never exported, logged, or placed in evidence."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-065/stripe-endpoint-retirement.json",
@@ -147,7 +147,7 @@
         "required_fields": ["schema_version", "captured_at", "account", "retired_endpoint_id", "retained_endpoint_id", "retired_at", "billing_health_runs", "duplicate_events_resolved", "operator"],
         "item_schema": "billing_health_runs[] contains run_id, completed_at, anomaly_count, and conclusion; endpoint URLs are redacted to host/path and secrets are forbidden."
       },
-      "expected_postcondition": "The redundant endpoint is disabled, the retained endpoint is unchanged, and billing-health-daily passes three consecutive times; B-065 remains open until the owner records closure.",
+      "expected_postcondition": "Any confirmed redundant active destination is disabled, both legitimate signup-worker and Corelink prd container destinations are unchanged, and billing-health-daily passes three consecutive times; if the redundant destination was already disabled, record that without another mutation. B-065 remains open until evidence proves closure.",
       "retry_and_rollback": "Before retrying, reload the endpoint list and stop if the target is already disabled or IDs changed. Do not re-enable an endpoint after duplicate processing without a new owner decision; if an accidental enable occurs, disable it again and record the incident.",
       "references": ["BACKLOG.md#B-065", "scripts/check_billing_health.py", ".github/workflows/billing-health-daily.yml"]
     },
