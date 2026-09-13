@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Verify the B-012 bot-PR credential contract without contacting GitHub.
 
-The owner action provisions ``BOT_PR_TOKEN`` out of band.  This check keeps a
-future workflow edit from silently reverting to ``GITHUB_TOKEN`` (whose events
-do not schedule pull-request workflows) or to an optional fallback.
+The owner action provisions ``BOT_PR_TOKEN`` out of band. This check keeps a
+future workflow edit from silently reverting to ``GITHUB_TOKEN`` (whose
+pull-request events may require human approval rather than running
+automatically) or to an optional fallback.
 """
 
 from __future__ import annotations
@@ -33,6 +34,15 @@ AUTO_PR_HEAD_MARKERS = (
     "auto/compliance-digest-",
     "bot/api-reference-sync-",
     "releases/v",
+)
+
+B012_BACKLOG_REQUIRED = (
+    "approval-required",
+    "Dependabot PRs can trigger workflows",
+    "status: open",
+    "expected jobs actually complete",
+    "offline/missing runner labelled `corelink`",
+    "Check/status presence or a zero-job workflow run does not close it",
 )
 
 
@@ -114,6 +124,12 @@ def verify(root: Path = ROOT) -> list[str]:
             errors.append(f"missing active bot-PR workflow: {path}")
             continue
         text = path.read_text(encoding="utf-8")
+        if "approval-required" not in text or (
+            "completed" not in text and "executed jobs" not in text
+        ):
+            errors.append(f"{name}: PR comments lost approval-required/completed-job distinction")
+        if "suppresses the pull_request event" in text or "pull_request event is suppressed and no checks appear" in text:
+            errors.append(f"{name}: PR comments still claim unconditional GITHUB_TOKEN suppression")
         if "secrets.BOT_PR_TOKEN" not in text:
             errors.append(f"{name}: does not consume secrets.BOT_PR_TOKEN")
         if "gh pr create" not in text:
@@ -149,7 +165,7 @@ def verify(root: Path = ROOT) -> list[str]:
         if "gh auth setup-git" not in text:
             errors.append("okf-autoreconcile.yml: PR step lacks explicit checkout push auth")
         if "OKF_BOT_PAT" in text:
-            errors.append("okf-autoreconcile.yml: optional OKF_BOT_PAT fallback reintroduces an ungated PR path")
+            errors.append("okf-autoreconcile.yml: optional OKF_BOT_PAT fallback loses the automatic-CI guarantee")
 
     release = workflows / "release-notes.yml"
     if release.is_file():
@@ -170,7 +186,31 @@ def verify(root: Path = ROOT) -> list[str]:
                 errors.append(f"bot-pr-has-checks.yml: gate missing marker {marker!r}")
         if "BOT_LOGIN_ALLOWLIST" in text or "def is_bot(" in text:
             errors.append("bot-pr-has-checks.yml: candidate selection depends on actor identity")
+        if 'verdict = "present (not proof of success)"' not in text or 'verdict = "gated"' in text:
+            errors.append("bot-pr-has-checks.yml: count-only verdict must not claim successful gating")
+        if "Inspect the PR approval banner" not in text or "zero-job run is not CI proof" not in text:
+            errors.append("bot-pr-has-checks.yml: missing approval/startup diagnostic guidance")
 
+    return errors
+
+
+def verify_b012_backlog(root: Path = ROOT) -> list[str]:
+    path = root / "BACKLOG.md"
+    if not path.is_file():
+        return ["B-012: BACKLOG.md is missing"]
+    text = path.read_text(encoding="utf-8")
+    start = text.find("### B-012 —")
+    end = text.find("### B-013 —", start + 1)
+    if start < 0 or end < 0:
+        return ["B-012: BACKLOG section boundaries are missing"]
+    section = text[start:end]
+    errors = [
+        f"B-012: BACKLOG lost {marker!r}"
+        for marker in B012_BACKLOG_REQUIRED
+        if marker not in section
+    ]
+    if "bot-opened PRs arrive with zero checks" in section or "until a bot-opened PR shows checks" in section:
+        errors.append("B-012: BACKLOG treats token author or check presence as CI proof")
     return errors
 
 
@@ -178,7 +218,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args()
-    errors = verify(args.root.resolve())
+    root = args.root.resolve()
+    errors = verify(root) + verify_b012_backlog(root)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)

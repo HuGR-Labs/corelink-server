@@ -15,6 +15,7 @@ counsel, notify customers, or infer that the documents were executed.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from dataclasses import dataclass
@@ -24,6 +25,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DPA = ROOT / "legal/dpa/v1.0.0.en-US.md"
 SLA = ROOT / "legal/sla/v1.0.0.md"
+B083_RECEIPT = Path("evidence/owner-actions/B-083/byok-real-kms-lifecycle.json")
+B046_PROBE = Path("evidence/owner-actions/B-046/object-lock-probe.json")
+DOCKERFILE = Path("Dockerfile")
 
 
 class VerificationError(RuntimeError):
@@ -169,6 +173,57 @@ def verify_texts(dpa_text: str, sla_text: str) -> list[tuple[str, int, str]]:
     return found
 
 
+def verify_capability_state(byok: dict, object_lock: dict, dockerfile: str) -> None:
+    """Require the exact current evidence boundary, never a stray 501/NotImplemented."""
+    try:
+        byok_unverified = (
+            byok["tenant_redacted"] == "NOT_PROVISIONED"
+            and byok["image_digest"] is None
+            and byok["check_access"] == "BLOCKED"
+            and all(byok[field]["status"] == "NOT_EXECUTED" for field in (
+                "activation", "cas_ac_round_trip", "revocation", "run_loop"
+            ))
+        )
+        probe_indeterminate = (
+            object_lock["classification"] == "INDETERMINATE"
+            and object_lock["bucket_operation"]["status"] == "INDETERMINATE"
+            and object_lock["object_operation"]["status"] == "SKIPPED"
+        )
+    except (KeyError, TypeError):
+        raise VerificationError("B-154 capability evidence shape changed; re-review") from None
+    if not byok_unverified or not probe_indeterminate:
+        raise VerificationError("B-154 capability evidence changed; re-review runtime/probe before closing")
+
+    active = "\n".join(
+        line.split("#", 1)[0]
+        for line in dockerfile.splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    commands = re.findall(r"(?m)^\s*cargo build\b[^;]*;", active)
+    shipped = [
+        command for command in commands
+        if re.search(r"(?:^|\s)-p\s+corelink-server\b", command)
+        and re.search(r"(?:^|\s)--bin\s+corelink-server\b", command)
+    ]
+    if len(shipped) != 1 or re.findall(r"--features\s+([\w-]+)", shipped[0]) != ["byok-aws-real"]:
+        raise VerificationError("B-154 production Dockerfile BYOK feature changed; re-review")
+
+
+def verify_repository_state(root: Path = ROOT) -> None:
+    sources = (B083_RECEIPT, B046_PROBE, DOCKERFILE)
+    for relative in sources:
+        path = root / relative
+        if not path.is_file() or path.is_symlink():
+            raise VerificationError(f"B-154 source missing or non-regular: {relative}")
+    try:
+        byok = json.loads((root / B083_RECEIPT).read_text(encoding="utf-8"))
+        object_lock = json.loads((root / B046_PROBE).read_text(encoding="utf-8"))
+        dockerfile = (root / DOCKERFILE).read_text(encoding="utf-8")
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise VerificationError(f"B-154 source unreadable or malformed: {exc}") from exc
+    verify_capability_state(byok, object_lock, dockerfile)
+
+
 def _must_reject(dpa_text: str, sla_text: str, label: str) -> None:
     try:
         verify_texts(dpa_text, sla_text)
@@ -221,6 +276,7 @@ def main() -> int:
         dpa_text = DPA.read_text(encoding="utf-8")
         sla_text = SLA.read_text(encoding="utf-8")
         found = verify_texts(dpa_text, sla_text)
+        verify_repository_state()
         if args.self_test:
             self_test(dpa_text, sla_text)
     except (OSError, UnicodeError, VerificationError, AssertionError) as exc:

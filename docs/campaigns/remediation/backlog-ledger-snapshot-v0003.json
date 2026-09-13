@@ -1,0 +1,53 @@
+{
+  "schema_version": 3,
+  "sequence": 3,
+  "transition": "base-derived-data",
+  "base_commit": "df1cd53f56a2eff4643aaf9368e25fb0303ce57d",
+  "prior_snapshot_sha256": "4c6f81def4554196ac784e3300a2e478588e0586b058ca5d0d328df5167d397f",
+  "prior_source_sha256": "66e3eb81fc02f5c7eb65bad1faf0b793565234a9d2f0830e46623b25d4f28c97",
+  "source_sha256": "41726d6c8b2f4b1dc7ff35466a78c242e147b99eaca69a956064024e04212e23",
+  "prior_ledger_sha256": "620634d9d51f8ae2002418a3b3c3afc2d03974345462db3ba096144f29055464",
+  "ledger_sha256": "02d81ecf3ade17a5317b3f24e68a17a801837bde6112cac9288b6a7f6175b656",
+  "prior_catalog_sha256": {
+    "docs/campaigns/remediation/work-packages/B001-B045.md": "2a1735804f43bb726789b99ee80c14cf876f41eb6c684e3ea54e68981413cd38",
+    "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
+    "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
+    "docs/campaigns/remediation/work-packages/B131-B167.md": "4be50ac320f2c8d238a21760bc24a5391a7a5dc1102532d9d034e05556ad089d"
+  },
+  "catalog_sha256": {
+    "docs/campaigns/remediation/work-packages/B001-B045.md": "2a1735804f43bb726789b99ee80c14cf876f41eb6c684e3ea54e68981413cd38",
+    "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
+    "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
+    "docs/campaigns/remediation/work-packages/B131-B167.md": "4be50ac320f2c8d238a21760bc24a5391a7a5dc1102532d9d034e05556ad089d"
+  },
+  "item_count": 373,
+  "status_counts": {
+    "done": 328,
+    "open": 13,
+    "parked": 32
+  },
+  "open_ids": [
+    "B-008",
+    "B-012",
+    "B-032",
+    "B-035",
+    "B-065",
+    "B-086",
+    "B-089",
+    "B-097",
+    "B-111",
+    "B-154",
+    "B-170",
+    "B-314",
+    "B-316"
+  ],
+  "changed_ids": [
+    "B-012",
+    "B-065",
+    "B-087",
+    "B-089",
+    "B-097",
+    "B-154",
+    "B-170"
+  ]
+}

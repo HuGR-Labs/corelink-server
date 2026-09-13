@@ -49,6 +49,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 
 CF_API = "https://api.cloudflare.com/client/v4"
 
@@ -72,10 +73,11 @@ LOOKBACK_DAYS = 30
 CHECK_DEADLINE_SECONDS = 120
 D1_QUERY_TIMEOUT_SECONDS = 30
 
-# `stripe_webhook_events_processed.event_id` is written under TWO different id
-# schemes, because two separately-registered Stripe endpoints both deliver into
-# this one table: the signup-worker stores Stripe's own `evt_…` id, while the
+# Historical rows in `stripe_webhook_events_processed` use TWO different id
+# schemes: the signup-worker stores Stripe's own `evt_…` id, while the
 # container stores a derived content hash. This SQL fragment separates them.
+# Their presence in a 30-day window cannot establish that both destinations
+# remain enabled now, or that rows of one event type represent the same delivery.
 #
 # It matters for counting. Each endpoint receives EVERY event of the types it
 # subscribes to, so each scheme is already a COMPLETE view of those events.
@@ -183,7 +185,7 @@ def check_payment_failure_clusters(
 def check_duplicate_webhook_ingestion(
     account_id: str, database_id: str, token: str
 ) -> list[str]:
-    """Two live Stripe endpoints ingesting the same event under different keys.
+    """Historical overlap of webhook id schemes, not current destination state.
 
     `stripe_webhook_events_processed` dedupes on `event_id` PRIMARY KEY. That
     only protects a retry that arrives under the SAME id scheme. When one
@@ -191,10 +193,10 @@ def check_duplicate_webhook_ingestion(
     same delivery, the two rows do not collide, so the same Stripe event is
     processed twice and every count over this table is inflated.
 
-    Seeing both schemes for one `event_type` is therefore evidence of a second
-    live endpoint, not of a busy month. Resolving it is a Stripe dashboard
-    change (retire the redundant endpoint), which is why this reports rather
-    than repairs.
+    Seeing both schemes for one `event_type` is an anomaly worth investigating,
+    but does not prove the rows are the same delivery or that both endpoints
+    are enabled today. The 30-day window can retain rows after a destination
+    is disabled. Current status requires fresh v1 AND v2 destination reads.
     """
     cutoff_ms = f"(strftime('%s','now') - {LOOKBACK_DAYS} * 86400) * 1000"
     rows = d1_query(
@@ -203,7 +205,9 @@ def check_duplicate_webhook_ingestion(
         token,
         "SELECT event_type, "
         f"SUM(CASE WHEN {CANONICAL_EVENT_ID_SQL} THEN 1 ELSE 0 END) AS canonical, "
-        f"SUM(CASE WHEN NOT ({CANONICAL_EVENT_ID_SQL}) THEN 1 ELSE 0 END) AS derived "
+        f"SUM(CASE WHEN NOT ({CANONICAL_EVENT_ID_SQL}) THEN 1 ELSE 0 END) AS derived, "
+        f"MAX(CASE WHEN {CANONICAL_EVENT_ID_SQL} THEN processed_at_ms END) AS latest_canonical_ms, "
+        f"MAX(CASE WHEN NOT ({CANONICAL_EVENT_ID_SQL}) THEN processed_at_ms END) AS latest_derived_ms "
         "FROM stripe_webhook_events_processed "
         f"WHERE processed_at_ms >= {cutoff_ms} "
         "GROUP BY event_type HAVING canonical > 0 AND derived > 0 "
@@ -211,14 +215,24 @@ def check_duplicate_webhook_ingestion(
     )
     if not rows:
         return []
+    def latest_utc(value: object) -> str:
+        if value is None:
+            return "unknown"
+        return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+
     detail = ", ".join(
-        f"{r['event_type']} ({r['canonical']} canonical / {r['derived']} derived)"
+        f"{r['event_type']} ({r['canonical']} canonical / {r['derived']} derived; "
+        f"latest canonical {latest_utc(r.get('latest_canonical_ms'))}, "
+        f"latest derived {latest_utc(r.get('latest_derived_ms'))})"
         for r in rows
     )
     return [
         f"{len(rows)} event type(s) ingested under BOTH id schemes in the last "
-        f"{LOOKBACK_DAYS}d — a second live Stripe endpoint is writing this table "
-        f"and `event_id` dedupe does not span the two: {detail}"
+        f"{LOOKBACK_DAYS}d — historical overlap, not proof of the same delivery "
+        f"or of two currently enabled destinations; `event_id` dedupe does not "
+        f"span the two schemes: {detail}"
     ]
 
 
@@ -288,8 +302,9 @@ def main() -> int:
         print(
             "\nTriage in the Stripe dashboard. For lost or at-risk revenue: "
             "recover the payment, or cancel the subscription and void its open "
-            "invoice if it is not a real customer. For duplicate ingestion: "
-            "retire the redundant webhook endpoint so one handler owns the event."
+            "invoice if it is not a real customer. For dual-scheme ingestion: "
+            "inspect current v1 and v2 destinations and correlate deliveries; "
+            "retire only a confirmed redundant destination."
         )
         return 1
 

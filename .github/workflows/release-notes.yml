@@ -72,8 +72,10 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
-          # The branch push must use a non-Actions credential; otherwise the
-          # subsequent pull_request event is suppressed and no checks appear.
+          # GITHUB_TOKEN branch pushes suppress push workflows, while the PR
+          # opened/synchronize/reopened event can yield approval-required
+          # runs. Once provisioned, this token supports unattended CI; only
+          # completed jobs prove the generated PR was actually checked.
           token: ${{ secrets.BOT_PR_TOKEN }}
 
       - name: Resolve refs

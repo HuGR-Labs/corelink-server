@@ -335,6 +335,18 @@ mod tests {
         assert!(!is_fresh(0, 2000, 2));
         // Well expired.
         assert!(!is_fresh(0, 5000, 2));
+        // The production npm TTL is exactly 300 seconds. A cache-hit test
+        // seeded from wall time can legitimately take the upstream path if
+        // wall time jumps across this boundary, even when its monotonic test
+        // duration is short; keep expiry semantics pinned separately.
+        let seeded_ms = 1_000_000;
+        assert!(is_fresh(seeded_ms, seeded_ms + 299_999, 300));
+        assert!(!is_fresh(seeded_ms, seeded_ms + 300_000, 300));
+        // Simulate the 917s host sleep observed during the 2026-09-13
+        // nextest run: a real timestamp must expire, while the sentinel
+        // reserved for cache-hit fixtures is always fresh by saturating-sub.
+        assert!(!is_fresh(seeded_ms, seeded_ms + 917_000, 300));
+        assert!(is_fresh(u64::MAX, seeded_ms + 917_000, 300));
     }
 
     #[test]

@@ -12,10 +12,11 @@
 #   Add the repo secret OPENAI_API_KEY (Settings → Secrets → Actions). The Codex
 #   Action cannot run without it. The workflow is push/main + dispatch/main only;
 #   it never exposes that secret to a fork pull request.
-#   The open-PR step requires the dedicated `BOT_PR_TOKEN` secret.  A
-#   GITHUB_TOKEN-created PR suppresses pull_request workflows and is therefore
-#   not an acceptable fallback, even though this workflow validates the docs
-#   before opening it.
+#   The open-PR step requires the dedicated `BOT_PR_TOKEN` secret for
+#   unattended CI. GITHUB_TOKEN-created PRs may produce approval-required
+#   pull_request runs, not automatic execution; missing runner capacity or
+#   zero-job startup failures are separate blockers. This workflow's own
+#   pre-PR validation is not proof that the PR's required jobs completed.
 #
 # COST/SAFETY: runs after a trusted main merge or an operator dispatch on main;
 # spends tokens only when drift is real (stale_count > 0); 20-min hard timeout;
