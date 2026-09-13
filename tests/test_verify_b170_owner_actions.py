@@ -18,6 +18,9 @@ def _packet_fixture(root: Path) -> None:
     destination = root / verifier.PACKET
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ROOT / verifier.PACKET, destination)
+    template = root / verifier.RESIDENCY_TEMPLATE
+    template.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / verifier.RESIDENCY_TEMPLATE, template)
 
 
 def _evidence_fixture(root: Path, *, content: str = "owner evidence\n") -> None:
@@ -80,6 +83,19 @@ def test_packet_marker_loss_fails_closed(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(verifier.PacketError, match="canonical action markers"):
+        verifier.verify(tmp_path)
+
+
+def test_residency_template_cannot_be_called_executed(tmp_path: Path) -> None:
+    _packet_fixture(tmp_path)
+    template = tmp_path / verifier.RESIDENCY_TEMPLATE
+    template.write_text(
+        template.read_text(encoding="utf-8").replace(
+            'doc_status: "PENDING_LEGAL_REVIEW"', 'doc_status: "EXECUTED"', 1
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(verifier.PacketError, match="instrument status changed"):
         verifier.verify(tmp_path)
 
 

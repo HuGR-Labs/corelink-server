@@ -159,7 +159,7 @@
       "status": "open",
       "action_type": "residency_amendment_signature",
       "procedure": [
-        "UI: Have counsel choose whether to provision jurisdictional D1 or amend the executed residency instrument to disclose the single global D1; the packet does not choose the commercial/legal path.",
+        "UI: Have counsel choose whether to provision jurisdictional D1 or review/execute a residency amendment disclosing the single global D1. The current legal/dpa-residency-amendment.md is a pending legal-review template, not an executed instrument; the packet does not choose the commercial/legal path.",
         "RUN: Reconcile the chosen path against all five production wrangler environments and the DPA residency amendment, without changing production bindings in this action packet.",
         "UI: Execute the amendment or Cloudflare account change through the owner’s authenticated legal/provider workflow and record the effective date and counterparty/reference."
       ],
@@ -173,7 +173,7 @@
         "required_fields": ["schema_version", "captured_at", "decision", "production_bindings", "distinct_database_ids", "dpa_status", "effective_at", "signed_document_sha256_or_provider_case", "reviewer"],
         "item_schema": "decision is jurisdictional_d1, legal_amendment, or unresolved; production_bindings[] contains env, binding, database_id, and residency_claim; unresolved requires an explicit owner reason."
       },
-      "expected_postcondition": "The D1 deployment and executed residency claim agree, with an owner/counsel or provider artifact proving the chosen path; B-086 remains open until that decision is executed.",
+      "expected_postcondition": "The D1 deployment and any subsequently executed residency claim agree, with an owner/counsel or provider artifact proving the chosen path; B-086 remains open until that decision is executed.",
       "retry_and_rollback": "Retry read-only inventory with the same account context. Do not rotate D1 IDs or amend signed text twice. Roll back an unexecuted draft by discarding it; a signed amendment requires a superseding legal instrument, and a provider change requires the provider’s documented reversal path.",
       "references": ["BACKLOG.md#B-086", "wrangler.toml", "legal/dpa-residency-amendment.md"]
     },
@@ -279,19 +279,19 @@
       "status": "open",
       "action_type": "executed_instrument_remediation",
       "procedure": [
-        "UI: For the DPA Object Lock statement, the SLA BYOK kill-switch statement, and the attributed case-study claim, have counsel/owner choose amendment, formal notice, or construction of the promised capability for each surface.",
-        "RUN: Reconcile the chosen decision against legal/dpa/v1.0.0.en-US.md, legal/sla/v1.0.0.md, crates/corelink-container/src/routes/byok_admin.rs, and marketing/launch/CASE-STUDIES/enterprise-byok.md; preserve executed bytes and do not silently edit them in place.",
+        "UI: For the effective DPA Object Lock and SLA BYOK kill-switch statements, have counsel/owner choose amendment, formal notice, or construction of the promised capability. The former case-study testimonial is withdrawn in the source draft; check whether any copy circulated before deciding on notice.",
+        "RUN: Reconcile the chosen decision against legal/dpa/v1.0.0.en-US.md, legal/sla/v1.0.0.md, the Dockerfile AWS-enabled BYOK build, the B-083 runtime receipt, and marketing/launch/CASE-STUDIES/enterprise-byok.md; compiled provider and /deactivate wiring do not establish customer CMK operation or kill-switch p99. Preserve executed bytes and do not silently edit them in place.",
         "UI: Execute any required addendum/notice or authorize the engineering and billing spend; record counterparties, signatures, and effective dates before claiming the instrument is truthful."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["executed DPA", "executed SLA", "BYOK runtime capability", "case-study attribution state", "counsel/owner remedy decision"],
+        "inputs": ["executed DPA", "executed SLA", "AWS-enabled BYOK build and B-083 unverified runtime/p99 receipt", "case-study attribution state", "counsel/owner remedy decision"],
         "credentials": "Owner/counsel signature, customer notice authority, or construction budget is external. This packet does not amend legal instruments, notify customers, or enable BYOK."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-154/executed-instrument-resolution.json",
         "format": "json",
         "required_fields": ["schema_version", "captured_at", "surfaces", "decisions", "signed_documents", "notices", "capability_evidence", "operator"],
-        "item_schema": "surfaces[] contains surface, original_claim, decision (amend, notify, build, or unresolved), effective_at, and evidence_reference; signed_documents[] contains version and sha256; unresolved decisions remain explicit."
+        "item_schema": "surfaces[] contains surface, original_claim, decision (amend, notify, build, or unresolved), effective_at, and evidence_reference; signed_documents[] contains version and sha256; unresolved decisions remain explicit. object_lock capability status follows the latest probe classification (INDETERMINATE on 2026-09-09); its historical_report separately records the 2026-08-25 reported NotImplemented result without treating that older report as the current probe. byok_kill_switch status UNVERIFIED_RUNTIME_P99 means AWS-enabled build and Shred route exist, but B-083 has no customer CMK lifecycle or p99 measurement."
       },
       "expected_postcondition": "Every unsupported executed/public claim has an evidenced legal remedy, notice, or delivered capability, while historical signed bytes remain auditable; B-154 remains open until owner completion.",
       "retry_and_rollback": "Retry only against the same document/version and counterpart record. Abandon unexecuted drafts safely; signed amendments/notices and deployed capabilities require formal supersession or the documented product rollback, never an unreviewed git revert.",

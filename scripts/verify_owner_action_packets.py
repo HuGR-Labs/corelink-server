@@ -863,6 +863,11 @@ def _check_b097_evidence(item: dict[str, object]) -> None:
 
 
 def _check_b086_evidence(item: dict[str, object]) -> None:
+    procedure = " ".join(item["procedure"])
+    if "pending legal-review template, not an executed instrument" not in procedure:
+        raise PacketError("B-086 packet must distinguish the pending residency template from an executed instrument")
+    if "any subsequently executed residency claim" not in item["expected_postcondition"]:
+        raise PacketError("B-086 packet must not assert a current executed residency claim")
     evidence = item["evidence"]
     assert isinstance(evidence, dict)
     if evidence["path"] != B086_EVIDENCE_PATH or evidence["format"] != "json":
@@ -1008,9 +1013,36 @@ def _check_b154_evidence(item: dict[str, object]) -> None:
         if not isinstance(row["blocker"], str) or not row["blocker"].strip():
             raise PacketError("B-154 notice blocker is missing")
     capability = _exact_keys(record["capability_evidence"], {"object_lock", "byok_kill_switch", "case_study"}, "B-154 capability_evidence")
+    object_lock = _exact_keys(
+        capability["object_lock"], {"status", "reference", "historical_report"},
+        "B-154 capability_evidence.object_lock",
+    )
+    probe_path = "evidence/owner-actions/B-046/object-lock-probe.json"
+    if object_lock["status"] != "INDETERMINATE" or object_lock["reference"] != probe_path:
+        raise PacketError("B-154 latest Object Lock classification must remain indeterminate")
+    probe_file = ROOT / probe_path
+    if not probe_file.is_file() or probe_file.is_symlink():
+        raise PacketError("B-154 latest Object Lock probe is missing/non-regular")
+    try:
+        probe = json.loads(probe_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise PacketError(f"B-154 latest Object Lock probe is unreadable: {exc}") from exc
+    if probe.get("classification") != "INDETERMINATE":
+        raise PacketError("B-154 Object Lock receipt disagrees with latest probe")
+    history = _exact_keys(
+        object_lock["historical_report"],
+        {"date", "classification", "reference", "raw_probe_artifact"},
+        "B-154 capability_evidence.object_lock.historical_report",
+    )
+    if history != {
+        "date": "2026-08-25",
+        "classification": "REPORTED_NOT_IMPLEMENTED",
+        "reference": "BACKLOG.md#B-046",
+        "raw_probe_artifact": "NOT_LINKED_IN_B046",
+    }:
+        raise PacketError("B-154 historical Object Lock report is not source-bound")
     expected_capabilities = {
-        "object_lock": "NOT_IMPLEMENTED",
-        "byok_kill_switch": "NOT_IMPLEMENTED",
+        "byok_kill_switch": "UNVERIFIED_RUNTIME_P99",
         "case_study": "NOT_PUBLISHED",
     }
     for name, expected_status in expected_capabilities.items():

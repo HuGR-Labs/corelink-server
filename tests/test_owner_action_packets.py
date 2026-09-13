@@ -403,8 +403,35 @@ class OwnerActionPacketTests(unittest.TestCase):
             with self.assertRaises(MODULE.PacketError):
                 MODULE.check_data(self.data, "B-086")
 
+    def test_b086_packet_cannot_call_pending_template_executed(self) -> None:
+        packet = copy.deepcopy(self.data)
+        item = next(row for row in packet["items"] if row["id"] == "B-086")
+        item["procedure"][0] = item["procedure"][0].replace(
+            "pending legal-review template, not an executed instrument",
+            "executed residency instrument",
+        )
+        with self.assertRaises(MODULE.PacketError):
+            MODULE.check_data(packet, "B-086")
+
     def test_b154_unresolved_receipt_mutations_fail_closed(self) -> None:
         original = MODULE._read_json_evidence
+        baseline = original(MODULE.B154_EVIDENCE_PATH, MODULE.B154_EVIDENCE_REQUIRED_FIELDS, "B-154")
+        self.assertEqual(baseline["capability_evidence"]["object_lock"]["status"], "INDETERMINATE")
+        for field, value in (
+            ("status", "NOT_IMPLEMENTED"),
+            ("historical_report", {"date": "2026-09-09", "classification": "NOT_IMPLEMENTED"}),
+        ):
+            with self.subTest(object_lock_field=field):
+                stale = copy.deepcopy(baseline)
+                stale["capability_evidence"]["object_lock"][field] = value
+
+                def read_stale(path, fields, label, receipt=stale):
+                    return receipt if path == MODULE.B154_EVIDENCE_PATH else original(path, fields, label)
+
+                with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_stale):
+                    with self.assertRaises(MODULE.PacketError):
+                        MODULE.check_data(self.data, "B-154")
+
         record = copy.deepcopy(original(MODULE.B154_EVIDENCE_PATH, MODULE.B154_EVIDENCE_REQUIRED_FIELDS, "B-154"))
         record["notices"][0]["status"] = "EXECUTED"
 
