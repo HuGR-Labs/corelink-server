@@ -11896,27 +11896,35 @@ verify-means: |
 last-verified: 2026-09-01
 ```
 
-### B-097 — teto de escala em 200 tenants ativos por região, com o orçamento de vCPU da conta já comprometido
+### B-097 — teto configurado de 200 instâncias por aplicação regional e cota de vCPU limitada
 
 A arquitetura é um contêiner `basic` (0,25 vCPU) por tenant ativo. O comentário do
-`wrangler.toml:503` documenta o teto com honestidade exemplar: *"The BINDING account limit
+`wrangler.toml` documenta o teto: *"The BINDING account limit
 is vCPU, NOT instance count […] against total_vcpu=1500 […] A first attempt at 2000
 (=500 vCPU/region) was REJECTED by CF ("Surpassed total account limits: ... vcpus"). Going
 higher — toward real 2000-user scale — requires a Cloudflare account-limit increase […];
 no config can exceed it."*
 
-Contabilidade atual: 5 regiões × 200 × 0,25 = 250 vCPU para o cache, mais 250 × 4 = 1000
-vCPU para a frota de runners. São **1250 de 1500 já alocados**. Ocioso escala a zero, então
-o teto é de tenants *concorrentemente* ativos, não de clientes totais.
+Leitura Cloudflare de 2026-09-13: as cinco aplicações de cache estão configuradas com
+`max_instances=200` e 0,25 vCPU (250 vCPU declaradas); a frota principal de runners,
+250 × 4 (1000 vCPU). **1250/1500 é apenas esse subtotal.** O runner de desenvolvimento
+10 × 4, o checkhost 1 × 4 e o fabricd 1 × 1 elevam a reserva declarada das onze
+aplicações da conta a **1295/1500**, restando 205 vCPU de margem nominal. A API retorna
+`usage=null`: reserva declarada não é uso medido nem custo faturado. As quatro regiões
+antes descritas como desligadas estão hoje em `max_instances=200`, com 15 instâncias
+`healthy` cada. `CONFIG_DB` registra 264 tenants (155 enam, 108 wnam, 1 apac), mas
+registro/`tenant_state` não medem tenants concorrentemente ativos. O teto de 200 é de
+instâncias por aplicação regional, não de clientes totais; a ocupação simultânea por
+tenant continua sem prova direta.
 
 Não é defeito. É dependência de plataforma no caminho crítico do crescimento, já testada e
 recusada uma vez. Existe como item porque o tempo de resposta de um aumento de limite da
 Cloudflare não é controlado por nós, e descobrir isso quando o teto for atingido é tarde.
 
 
-**Só ele (reconfirmado 2026-08-31) — o ato: abrir o ticket de aumento de cota na conta
-comercial da Cloudflare, em nome e faturamento dele.** É relação de fornecedor. Medir e
-documentar o teto é meu e já está feito.
+Ainda falta medir concorrência real e obter a decisão comercial de limite. Nenhum
+ticket ou limite aprovado consta da captura; isso não prova inexistência de um caso
+fora dela. Não aumentar `max_instances` como substituto.
 
 ```backlog
 id: B-097
@@ -11929,21 +11937,23 @@ verify-means: |
   MANUAL, e declaro que o `verify` não decide a alegação.
 
   A alegação tem duas metades e nenhuma é legível do repositório: o limite de conta vigente
-  na Cloudflare (`total_vcpu`, hoje 1500) e o número de tenants concorrentemente ativos em
+  na Cloudflare (`total_vcpu`, 1500 na captura de 2026-09-13) e o número de tenants concorrentemente ativos em
   produção. A primeira só a API/o painel da Cloudflare respondem; a segunda exige medir
   produção.
 
-  Um `verify` que somasse `max_instances × 0.25` do `wrangler.toml` mediria a RESERVA
-  declarada, não o teto nem o consumo — passaria verde com o teto atingido e passaria
-  vermelho se alguém baixasse o `max_instances` por outro motivo. Portão dominado.
+  O `verify` valida a aritmética e as ressalvas de uma captura datada; não consulta a
+  Cloudflare em tempo real. Somar `max_instances × vCPU` das aplicações mede a RESERVA
+  declarada, não o teto, a concorrência ou o consumo. `usage=null` não prova folga
+  utilizável. O subtotal cache + runner principal (1250) omite 45 vCPU de três apps.
 
   Procedimento de reverificação: confirmar `total_vcpu` da conta no painel; somar as
-  reservas declaradas (cache + frota de runners); e medir tenants ativos concorrentes em
+  reservas declaradas de TODAS as aplicações da conta; e medir tenants ativos concorrentes em
   produção. Fecha quando o aumento de limite for concedido, ou quando a arquitetura deixar
   de ser um contêiner por tenant ativo.
 
-  Owner: pedir aumento de limite à Cloudflare é relação comercial com fornecedor.
-last-verified: 2026-09-09
+  A abertura/decisão do caso de cota é relação comercial com fornecedor; o caso pendente
+  não é aprovação. O guia de custo regional de 2026-08-09 é histórico, não estado atual.
+last-verified: 2026-09-13
 ```
 
 ### B-098 — dezoito worktrees vivem num diretório que o sistema operacional apaga, e uma delas tem trabalho não enviado

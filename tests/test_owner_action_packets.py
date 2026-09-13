@@ -291,6 +291,27 @@ class OwnerActionPacketTests(unittest.TestCase):
             with self.assertRaises(MODULE.PacketError):
                 MODULE.check_data(self.data, "B-097")
 
+    def test_b097_account_reservation_and_tenant_population_mutations_fail_closed(self) -> None:
+        original = MODULE._read_json_evidence
+        baseline = original(MODULE.B097_EVIDENCE_PATH, MODULE.B097_EVIDENCE_REQUIRED_FIELDS, "B-097")
+        mutations = {
+            "omitted_app": lambda r: r["read_only_capture"]["application_readback"]["applications"].pop(),
+            "regional_off_claim": lambda r: r["read_only_capture"]["application_readback"]["applications"][1].update(max_instances=0),
+            "old_subtotal_as_total": lambda r: r.update(declared_reservation_vcpu=1250),
+            "masked_other_apps": lambda r: r["read_only_capture"]["application_readback"].update(other_applications_reservation_vcpu=0),
+            "registered_as_concurrent": lambda r: r.update(active_tenants_concurrent=264),
+            "missing_tenant_region": lambda r: r["read_only_capture"]["tenant_population_readback"]["rows"].pop(),
+            "d1_write_claim": lambda r: r["read_only_capture"]["tenant_population_readback"].update(rows_written=1),
+        }
+        for label, mutate in mutations.items():
+            record = copy.deepcopy(baseline)
+            mutate(record)
+            def read_candidate(path, fields, receipt_label, candidate=record):
+                return candidate if path == MODULE.B097_EVIDENCE_PATH else original(path, fields, receipt_label)
+            with self.subTest(mutation=label), mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_candidate):
+                with self.assertRaises(MODULE.PacketError):
+                    MODULE.check_data(self.data, "B-097")
+
     def test_b086_unresolved_receipt_mutations_fail_closed(self) -> None:
         original = MODULE._read_json_evidence
         record = copy.deepcopy(original(MODULE.B086_EVIDENCE_PATH, MODULE.B086_EVIDENCE_REQUIRED_FIELDS, "B-086"))

@@ -205,19 +205,19 @@
       "status": "open",
       "action_type": "cloudflare_account_quota_request",
       "procedure": [
-        "RUN: Capture the current Cloudflare account total_vcpu limit, cache/runners reservations, and concurrent active-tenant measurement without changing configuration.",
-        "UI: Open a Cloudflare support/quota case requesting the needed total_vcpu increase; include the five-region 0.25-vCPU cache allocation, four-vCPU runner allocation, current 1250/1500 reservation, and desired headroom.",
+        "RUN: Recapture the Cloudflare account total_vcpu limit and every application max_instances × vCPU; separately measure concurrent active tenants in production without changing configuration. Registered tenants and healthy/prewarmed instances are not that metric.",
+        "UI: Open or update one Cloudflare support/quota case requesting the needed total_vcpu increase; include the five-region 0.25-vCPU cache allocation (250), main four-vCPU runner allocation (1000), three other live app reservations (45), current declared 1295/1500, and desired headroom. Do not present this sum as provider usage or billable CPU.",
         "RUN: After Cloudflare responds, record the case ID, approved limit, effective time, and a fresh active-tenant measurement; do not treat a submitted case as an approved limit."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["Cloudflare account", "current total_vcpu limit", "wrangler.toml reservations", "production concurrent active tenants", "desired growth target"],
+        "inputs": ["Cloudflare account", "current total_vcpu limit", "live per-application max_instances and vCPU", "production concurrent active tenants", "desired growth target"],
         "credentials": "Owner’s Cloudflare support/account session and billing relationship are required; no API token is copied into the repository or evidence."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-097/cloudflare-vcpu-quota-case.json",
         "format": "json",
         "required_fields": ["schema_version", "captured_at", "account_id_redacted", "case_id", "requested_total_vcpu", "current_total_vcpu", "declared_reservation_vcpu", "active_tenants_concurrent", "provider_decision", "effective_at", "operator", "read_only_capture"],
-        "item_schema": "provider_decision is submitted, approved, denied, or pending; pending means no owner support case or provider decision was submitted. account identifiers are redacted and the artifact contains no API token. read_only_capture is a schema-validated aggregate-only preflight: it may confirm the provider limit, but must mark unavailable/stale active-tenant telemetry and an absent support case explicitly rather than inventing either."
+        "item_schema": "provider_decision is submitted, approved, denied, or pending; pending means no support case or provider decision is evidenced by this capture, not that none exists elsewhere. Account identifiers are redacted and the artifact contains no API token. read_only_capture records all live app ceilings and a D1 registered-tenant census separately from unavailable concurrent-active telemetry; it may confirm the provider limit but cannot infer usage or an approved quota from declared reservations."
       },
       "expected_postcondition": "A provider-approved quota or an owner-approved architecture change removes the measured growth dependency; B-097 remains open while the case is pending or denied.",
       "retry_and_rollback": "Retry by updating the same provider case with new measurements rather than opening duplicate cases. A rejected request has no configuration rollback; preserve the current safe limit and do not increase max_instances locally as a workaround.",

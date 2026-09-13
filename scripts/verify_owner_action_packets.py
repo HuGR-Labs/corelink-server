@@ -794,21 +794,67 @@ def _check_b097_evidence(item: dict[str, object]) -> None:
     if not isinstance(record["account_id_redacted"], str) or not re.fullmatch(r"[0-9a-f]{4}\.\.\.[0-9a-f]{4}", record["account_id_redacted"]):
         raise PacketError("B-097 account identifier must remain redacted")
     if record["case_id"] is not None or record["requested_total_vcpu"] is not None or record["effective_at"] is not None:
-        raise PacketError("B-097 receipt must not invent an owner support case or requested/effective quota")
-    if record["current_total_vcpu"] != 1500 or record["declared_reservation_vcpu"] != 1250 or record["active_tenants_concurrent"] is not None:
+        raise PacketError("B-097 receipt must not invent an unevidenced support case or requested/effective quota")
+    if record["current_total_vcpu"] != 1500 or record["declared_reservation_vcpu"] != 1295 or record["active_tenants_concurrent"] is not None:
         raise PacketError("B-097 quota/active-tenant capture is not the measured truthful state")
     if record["provider_decision"] != "pending":
-        raise PacketError("B-097 provider decision must remain pending without an owner case")
-    capture = _exact_keys(record["read_only_capture"], {"cloudchamber_account_endpoint", "provider_limit_confirmed", "provider_response", "active_tenant_metric", "activity_readback", "support_case"}, "B-097 read_only_capture")
+        raise PacketError("B-097 provider decision must remain pending without a case/decision receipt")
+    capture = _exact_keys(record["read_only_capture"], {"cloudchamber_account_endpoint", "provider_limit_confirmed", "provider_response", "application_readback", "active_tenant_metric", "tenant_population_readback", "activity_readback", "support_case"}, "B-097 read_only_capture")
     if capture["cloudchamber_account_endpoint"] != "GET /accounts/{account}/containers/me":
         raise PacketError("B-097 read_only_capture endpoint drifted")
-    if capture["provider_limit_confirmed"] is not True or capture["support_case"] != "not submitted; owner Cloudflare support/account session is required":
+    if capture["provider_limit_confirmed"] is not True or capture["support_case"] != "not evidenced in this capture; no case ID or provider decision was supplied":
         raise PacketError("B-097 read_only_capture support/limit boundary drifted")
     response = _exact_keys(capture["provider_response"], {"http_success", "total_vcpu", "vcpu_per_deployment", "total_memory_mib", "usage"}, "B-097 provider_response")
     if response != {"http_success": True, "total_vcpu": 1500, "vcpu_per_deployment": 4, "total_memory_mib": 6291456, "usage": None}:
         raise PacketError("B-097 provider response drifted")
-    if capture["active_tenant_metric"] != "unavailable: CONFIG_DB activity is stale relative to capture and is not a concurrent-active metric":
+    apps = _exact_keys(capture["application_readback"], {"source", "listed_applications", "cache_main_runner_subtotal_vcpu", "other_applications_reservation_vcpu", "applications", "interpretation"}, "B-097 application_readback")
+    if apps["source"] != "Cloudflare Containers application info API via Wrangler OAuth, read-only" or apps["listed_applications"] != 11:
+        raise PacketError("B-097 application census source/count drifted")
+    expected_apps = {
+        "corelink-prod-corelinkserver-prod": (200, 0.25, 16, 1),
+        "corelink-prod-sam-corelinkserver-prod-sam": (200, 0.25, 15, 0),
+        "corelink-prod-lhr-corelinkserver-prod-lhr": (200, 0.25, 15, 0),
+        "corelink-prod-nrt-corelinkserver-prod-nrt": (200, 0.25, 15, 0),
+        "corelink-prod-syd-corelinkserver-prod-syd": (200, 0.25, 15, 0),
+        "corelink-spawn-worker-runnercontainer": (250, 4, 18, 0),
+        "corelink-spawn-worker-runnerdevenvdo": (10, 4, 7, 0),
+        "corelink-spawn-worker-checkhostcontainer": (1, 4, 1, 0),
+        "corelink-fabricd-fabricdcontainer": (1, 1, 1, 0),
+        "githugr-engine-enginecontainer": (0, 0.25, 0, 0),
+        "githugr-githugrcontainer": (0, 0.25, 0, 0),
+    }
+    rows = apps["applications"]
+    if not isinstance(rows, list) or len(rows) != len(expected_apps):
+        raise PacketError("B-097 application census incomplete")
+    observed = {}
+    for index, raw in enumerate(rows):
+        app = _exact_keys(raw, {"name", "max_instances", "vcpu", "instances", "active_instances"}, f"B-097 application[{index}]")
+        name = app["name"]
+        if not isinstance(name, str) or name in observed:
+            raise PacketError("B-097 duplicate/invalid application")
+        observed[name] = (app["max_instances"], app["vcpu"], app["instances"], app["active_instances"])
+    if observed != expected_apps:
+        raise PacketError("B-097 application snapshot drifted")
+    subtotal = sum(row[0] * row[1] for name, row in observed.items() if name.startswith("corelink-prod-") or name == "corelink-spawn-worker-runnercontainer")
+    total = sum(row[0] * row[1] for row in observed.values())
+    if (apps["cache_main_runner_subtotal_vcpu"], apps["other_applications_reservation_vcpu"], total) != (subtotal, total - subtotal, record["declared_reservation_vcpu"]):
+        raise PacketError("B-097 declared reservation arithmetic drifted")
+    if apps["interpretation"] != "max_instances times vCPU is declared application ceiling, not provider usage, billable CPU, or tenant concurrency; application instances include healthy/prewarmed capacity":
+        raise PacketError("B-097 application ceiling disclaimer drifted")
+    if capture["active_tenant_metric"] != "unavailable: tenant registration/state, stale audit activity, and application instance health are not a concurrent-active-tenant metric":
         raise PacketError("B-097 active-tenant metric disclaimer drifted")
+    tenants = _exact_keys(capture["tenant_population_readback"], {"database", "access", "query", "rows", "total_registered_tenants", "changed_db", "rows_written", "interpretation"}, "B-097 tenant_population_readback")
+    if tenants["database"] != "CONFIG_DB/prod" or tenants["access"] != "remote-read-only" or tenants["query"] != "SELECT primary_region, COALESCE(tenant_state,'NULL') AS tenant_state, COUNT(*) AS tenant_count FROM tenant GROUP BY primary_region,tenant_state ORDER BY primary_region,tenant_state":
+        raise PacketError("B-097 tenant census source drifted")
+    if tenants["rows"] != [
+        {"primary_region": "apac", "tenant_state": "active", "tenant_count": 1},
+        {"primary_region": "enam", "tenant_state": "active", "tenant_count": 62},
+        {"primary_region": "enam", "tenant_state": "dpa_pending", "tenant_count": 93},
+        {"primary_region": "wnam", "tenant_state": "dpa_pending", "tenant_count": 108},
+    ] or tenants["total_registered_tenants"] != sum(row["tenant_count"] for row in tenants["rows"]):
+        raise PacketError("B-097 tenant census population drifted")
+    if tenants["changed_db"] is not False or tenants["rows_written"] != 0 or tenants["interpretation"] != "tenant_state=active means registered state, not a concurrent workload or container assignment":
+        raise PacketError("B-097 tenant census read-only/disclaimer drifted")
     activity = _exact_keys(capture["activity_readback"], {"database", "access", "customer_audit_rows", "distinct_tenants_all_time", "last_customer_audit_ts_ms", "distinct_tenants_last_15m", "distinct_tenants_last_1h", "distinct_tenants_last_24h", "interpretation"}, "B-097 activity_readback")
     if activity["database"] != "CONFIG_DB/prod" or activity["access"] != "remote-read-only" or any(activity[name] != expected for name, expected in {"customer_audit_rows": 71, "distinct_tenants_all_time": 16, "last_customer_audit_ts_ms": 1784669020765, "distinct_tenants_last_15m": 0, "distinct_tenants_last_1h": 0, "distinct_tenants_last_24h": 0}.items()):
         raise PacketError("B-097 activity readback drifted")
