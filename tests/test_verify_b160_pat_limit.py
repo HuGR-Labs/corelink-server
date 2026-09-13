@@ -40,6 +40,7 @@ class B160VerifierTest(unittest.TestCase):
             )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("B-160 DRIFTED", result.stderr)
+        self.assertIn("pnpm@10.32.1 is unavailable", result.stderr)
 
     def test_pnpm_executable_override_is_ignored(self):
         with tempfile.TemporaryDirectory() as path:
@@ -64,6 +65,7 @@ class B160VerifierTest(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("B-160 DRIFTED", result.stderr)
+            self.assertIn("pnpm@10.32.1 is unavailable", result.stderr)
             self.assertFalse(sentinel.exists())
 
 
