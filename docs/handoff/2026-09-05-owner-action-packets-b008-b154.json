@@ -37,23 +37,25 @@
       "status": "open",
       "action_type": "github_app_or_fine_grained_pat",
       "procedure": [
-        "UI: In GitHub account settings, create a dedicated GitHub App or fine-grained PAT for bot-created PRs, restricted to HuGR-Labs/corelink-server and only contents:write plus pull_requests:write.",
-        "RUN: Store the credential as the dedicated repository secret BOT_PR_TOKEN using gh secret set BOT_PR_TOKEN --repo HuGR-Labs/corelink-server --body-stdin; provide the value through stdin, never a command argument.",
-        "UI: Have the bot open one harmless test PR, then record the PR check-run URLs and conclusions in the canonical evidence file."
+        "UI: Check for an existing approved dedicated credential before minting. For the five active PR creators already wired to BOT_PR_TOKEN, the smallest path is a fine-grained PAT restricted to HuGR-Labs/corelink-server with contents:write and pull_requests:write. A GitHub App is an alternative only after per-job installation-token minting is wired; its one-hour token must not be stored as a long-lived repository secret.",
+        "RUN: For the PAT path, store only the dedicated credential as repository secret BOT_PR_TOKEN using gh secret set BOT_PR_TOKEN --repo HuGR-Labs/corelink-server --body-stdin; provide the value through stdin, never a command argument. Confirm the five creators consume BOT_PR_TOKEN and fail closed when it is absent.",
+        "UI: Before a test PR, separately confirm Actions can create jobs and an online runner labelled corelink can execute them. A PAT cannot repair workflow startup_failure, a hosted-billing block, or missing corelink runner capacity; the macOS corelink-builder label does not match corelink.",
+        "UI: Have one creator open a harmless test PR only after those checks. GitHub may create approval-required pull_request runs for PRs opened with GITHUB_TOKEN; an owner may approve those runs, but automatic unapproved CI requires the dedicated PAT or a freshly minted App installation token. Dependabot PRs can trigger workflows independently and must not be classified as GITHUB_TOKEN-suppressed by author alone.",
+        "RUN: Record the PR, expected workflow run and job URLs, approval state, conclusions, and runner names in the canonical evidence file; no pending approval, startup_failure, zero-job run, or unrelated green workflow proves B-012 complete."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["GitHub owner authentication", "HuGR-Labs/corelink-server repository", "dedicated bot identity", "least-privilege permissions"],
-        "credentials": "The owner mints the PAT/App credential and GitHub stores it as a write-only Actions secret; no release token or credential value belongs in git, logs, or evidence."
+        "inputs": ["GitHub owner authentication", "HuGR-Labs/corelink-server repository", "dedicated bot identity", "least-privilege permissions", "working Actions job startup", "online corelink runner"],
+        "credentials": "The owner mints a dedicated PAT for existing BOT_PR_TOKEN wiring, or separately approves App ID/private-key storage and per-job token minting. No release token, expired App installation token, or credential value belongs in git, logs, or evidence. The runner slot census needs separate administration:read plus actions:read authorization; the bot-PR credential permissions do not grant it."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-012/bot-pr-checks.json",
         "format": "json",
         "required_fields": ["schema_version", "captured_at", "repository", "bot_identity", "credential_kind", "pr_number", "workflow_runs", "all_required_checks_observed", "reviewer"],
-        "item_schema": "workflow_runs[] entries contain run_id, workflow, url, conclusion, started_at, completed_at; credential_kind is app or fine_grained_pat and never contains a secret."
+        "item_schema": "workflow_runs[] entries contain run_id, workflow, url, approval_state, job_count, job_urls, runner_names, conclusion, started_at, completed_at; credential_kind is app or fine_grained_pat and never contains a secret. A present workflow run with zero jobs or pending approval is not execution evidence."
       },
-      "expected_postcondition": "A bot-created PR receives the repository’s expected checks and the evidence names the observed runs; B-012 remains open until the owner records closure.",
-      "retry_and_rollback": "Before minting, inspect existing dedicated credentials to avoid duplicates. Retry secret storage with the same credential if the API call fails. Roll back by deleting only the newly created credential and BOT_PR_TOKEN after disabling bot use; preserve release credentials and the test PR evidence.",
-      "references": ["BACKLOG.md#B-012", ".github/workflows/backlog-verify.yml"]
+      "expected_postcondition": "A bot-created PR receives the expected checks with actual jobs completed on viable runners and no approval pending; the evidence names each observed run and job. B-012 remains open until the owner records closure.",
+      "retry_and_rollback": "First inspect existing dedicated credentials to avoid duplicates. Retry PAT secret storage with the same credential if the API call fails; do not store a short-lived App installation token for reuse. If job startup or runner capacity is blocked, defer the test without claiming token failure or success. Roll back by deleting only the newly created credential and BOT_PR_TOKEN after disabling bot use; preserve release credentials and test PR evidence.",
+      "references": ["BACKLOG.md#B-012", ".github/workflows/backlog-verify.yml", ".github/workflows/bot-pr-has-checks.yml", ".github/workflows/runner-fleet-health.yml"]
     },
     {
       "id": "B-013",

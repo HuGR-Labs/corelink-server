@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Verify the B-012 bot-PR credential contract without contacting GitHub.
 
-The owner action provisions ``BOT_PR_TOKEN`` out of band.  This check keeps a
-future workflow edit from silently reverting to ``GITHUB_TOKEN`` (whose events
-do not schedule pull-request workflows) or to an optional fallback.
+The owner action provisions ``BOT_PR_TOKEN`` out of band. This check keeps a
+future workflow edit from silently reverting to ``GITHUB_TOKEN`` (whose
+pull-request events may require human approval rather than running
+automatically) or to an optional fallback.
 """
 
 from __future__ import annotations
@@ -149,7 +150,7 @@ def verify(root: Path = ROOT) -> list[str]:
         if "gh auth setup-git" not in text:
             errors.append("okf-autoreconcile.yml: PR step lacks explicit checkout push auth")
         if "OKF_BOT_PAT" in text:
-            errors.append("okf-autoreconcile.yml: optional OKF_BOT_PAT fallback reintroduces an ungated PR path")
+            errors.append("okf-autoreconcile.yml: optional OKF_BOT_PAT fallback loses the automatic-CI guarantee")
 
     release = workflows / "release-notes.yml"
     if release.is_file():
@@ -170,6 +171,10 @@ def verify(root: Path = ROOT) -> list[str]:
                 errors.append(f"bot-pr-has-checks.yml: gate missing marker {marker!r}")
         if "BOT_LOGIN_ALLOWLIST" in text or "def is_bot(" in text:
             errors.append("bot-pr-has-checks.yml: candidate selection depends on actor identity")
+        if 'verdict = "present (not proof of success)"' not in text or 'verdict = "gated"' in text:
+            errors.append("bot-pr-has-checks.yml: count-only verdict must not claim successful gating")
+        if "Inspect the PR approval banner" not in text or "zero-job run is not CI proof" not in text:
+            errors.append("bot-pr-has-checks.yml: missing approval/startup diagnostic guidance")
 
     return errors
 

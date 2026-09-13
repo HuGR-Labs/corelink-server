@@ -43,6 +43,34 @@ class OwnerActionPacketTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("owner-action packet: PASS: 29 item(s)", result.stdout)
 
+    def test_b012_packet_preserves_distinct_ci_blockers(self) -> None:
+        self.assertEqual(
+            MODULE.check_data(self.data, "B-012"),
+            {"items": 29, "population": 29},
+        )
+        mutations = (
+            ("procedure", 0, "one-hour", "durable"),
+            ("procedure", 2, "online runner labelled corelink", "online builder"),
+            ("procedure", 3, "approval-required", "suppressed"),
+            ("procedure", 3, "Dependabot", "bot"),
+            ("procedure", 4, "zero-job run", "workflow run"),
+            ("credentials", None, "administration:read", "contents:read"),
+            ("item_schema", None, "job_count", "check_count"),
+        )
+        for field, index, before, after in mutations:
+            with self.subTest(field=field, index=index, before=before):
+                mutated = copy.deepcopy(self.data)
+                item = next(entry for entry in mutated["items"] if entry["id"] == "B-012")
+                if field == "procedure":
+                    item[field][index] = item[field][index].replace(before, after, 1)
+                elif field == "credentials":
+                    boundary = item["inputs_and_credentials_boundary"]
+                    boundary[field] = boundary[field].replace(before, after, 1)
+                else:
+                    item["evidence"][field] = item["evidence"][field].replace(before, after, 1)
+                with self.assertRaises(MODULE.PacketError):
+                    MODULE.check_data(mutated, "B-012")
+
     def test_b013_reconciled_closure_matches_backlog(self) -> None:
         self.assertEqual(
             MODULE.check_data(self.data, "B-013"),

@@ -80,6 +80,28 @@ class B012BotPrAuthTests(unittest.TestCase):
         path.write_text(text, encoding="utf-8")
         self.assertTrue(any("gate missing marker" in e for e in verify(candidate)))
 
+    def test_check_presence_cannot_be_reported_as_success(self):
+        tmp, candidate = self._candidate()
+        self.addCleanup(tmp.cleanup)
+        path = candidate / ".github/workflows/bot-pr-has-checks.yml"
+        text = path.read_text(encoding="utf-8").replace(
+            'verdict = "present (not proof of success)"',
+            'verdict = "gated"',
+            1,
+        )
+        path.write_text(text, encoding="utf-8")
+        self.assertTrue(any("count-only verdict" in e for e in verify(candidate)))
+
+    def test_missing_approval_diagnostic_is_rejected(self):
+        tmp, candidate = self._candidate()
+        self.addCleanup(tmp.cleanup)
+        path = candidate / ".github/workflows/bot-pr-has-checks.yml"
+        text = path.read_text(encoding="utf-8").replace(
+            "Inspect the PR approval banner", "Inspect the PR page", 1
+        )
+        path.write_text(text, encoding="utf-8")
+        self.assertTrue(any("approval/startup diagnostic" in e for e in verify(candidate)))
+
 
 if __name__ == "__main__":
     unittest.main()

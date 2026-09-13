@@ -1100,6 +1100,32 @@ def _check_item(
         procedure_text = " ".join(procedure)
         if not all(term in procedure_text for term in ("v1", "v2", "explicit decision", "if already disabled")):
             raise PacketError("B-065 procedure must distinguish readback, mutation, and no-op")
+    if expected_id == "B-012":
+        # A token can make bot-PR CI unattended, but a missing runner or a
+        # zero-job startup failure is a different boundary. Keep the owner
+        # packet from regressing to "all bot PR events are suppressed".
+        if item["action_type"] != "github_app_or_fine_grained_pat" or len(procedure) != 5:
+            raise PacketError("B-012 credential procedure drifted")
+        required_by_step = (
+            ("fine-grained PAT", "contents:write", "pull_requests:write", "one-hour"),
+            ("BOT_PR_TOKEN", "--body-stdin", "five creators"),
+            ("startup_failure", "online runner labelled corelink", "hosted-billing"),
+            ("approval-required", "GITHUB_TOKEN", "Dependabot"),
+            ("job URLs", "zero-job run"),
+        )
+        for index, required in enumerate(required_by_step):
+            if any(marker not in procedure[index] for marker in required):
+                raise PacketError(f"B-012 procedure[{index}] lost a token/runner/approval boundary")
+        credentials = boundary["credentials"]
+        assert isinstance(credentials, str)
+        if not all(marker in credentials for marker in ("administration:read", "actions:read", "separate")):
+            raise PacketError("B-012 bot-PR and runner-census credential scopes were conflated")
+        schema = evidence["item_schema"]
+        assert isinstance(schema, str)
+        if not all(marker in schema for marker in ("approval_state", "job_count", "job_urls", "runner_names")):
+            raise PacketError("B-012 evidence no longer requires job-level execution")
+        if "actual jobs completed" not in item["expected_postcondition"]:
+            raise PacketError("B-012 closure no longer requires completed jobs")
     if expected_id == "B-110":
         _check_b110_evidence(item)
     if expected_id == "B-054":
