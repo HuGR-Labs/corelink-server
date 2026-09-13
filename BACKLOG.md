@@ -11442,17 +11442,24 @@ owner: owner
 status: open
 verify: |
   python3 scripts/verify_b089_sla_credits.py
+  python3 -S scripts/verify_owner_action_packets.py --id B-089
 verify-means: |
   open — o caminho repo-owned de medição, elegibilidade, ledger limitado,
   outbox transacional, provider idempotente e reconciliação está implementado, mas
   o guard não alega uma mutação Stripe live. Depois do deploy, o owner precisa
-  aplicar 0117, executar uma operação Stripe em test mode com a flag habilitada,
+  confirmar 0117 no D1 de produção, executar uma operação Stripe em test mode com a flag habilitada,
   replayar o mesmo sweep e reconciliar o provider id com a próxima invoice.
 
+  O pacote de ação exige que as referências ao SLA, aos Termos e ao pricing
+  resolvam para arquivos reais. Seu gate fixa o conflito ainda aberto: quatro
+  tiers no SLA versus seis vendidos, promessa automática ao Pro nos Termos
+  versus `slaCredits: false` no pricing. Qualquer mudança unilateral exige
+  atualizar a decisão e o censo; esse PASS não prova acordo nem provider.
+
   O que NÃO decide, e admito: o descompasso de quatro tiers no SLA contra seis vendidos, e
-  a contradição do `terms.tsx:333` com `slaCredits: false`. São três documentos que
-  precisam concordar entre si, e um `verify` que os comparasse exigiria parsear a tabela
-  de preços — vale escrever junto com o reparo, não antes dele. Ficam registrados na prosa.
+  a contradição dos Termos com `slaCredits: false`. O novo gate verifica que essa
+  divergência continua visível, não a resolve: os três documentos ainda precisam
+  concordar depois da decisão jurídica/financeira executada.
 
   Owner: emenda de instrumento assinado.
 last-verified: 2026-09-08

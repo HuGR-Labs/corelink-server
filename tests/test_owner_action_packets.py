@@ -8,6 +8,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -87,6 +88,53 @@ class OwnerActionPacketTests(unittest.TestCase):
                     item[field] = value
                 with self.assertRaises(MODULE.PacketError):
                     MODULE.check_data(mutated, "B-110")
+
+    def test_b089_packet_references_resolve_and_fail_on_stale_path(self) -> None:
+        item = next(entry for entry in self.data["items"] if entry["id"] == "B-089")
+        MODULE._check_b089_surface_contract(item)
+        for field in ("references", "procedure"):
+            with self.subTest(field=field):
+                mutated = copy.deepcopy(self.data)
+                row = next(entry for entry in mutated["items"] if entry["id"] == "B-089")
+                if field == "references":
+                    row[field][2] = "apps/docs/src/pages/terms.tsx"
+                else:
+                    row[field][1] = row[field][1].replace(
+                        "apps/docs/src/pages/legal/terms.tsx", "apps/docs/src/pages/terms.tsx"
+                    )
+                with self.assertRaises(MODULE.PacketError):
+                    MODULE.check_data(mutated, "B-089")
+
+    def test_b089_known_cross_document_drift_cannot_change_silently(self) -> None:
+        item = next(entry for entry in self.data["items"] if entry["id"] == "B-089")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in MODULE.B089_SURFACES:
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((ROOT / name).read_bytes())
+            MODULE._check_b089_surface_contract(item, root)
+
+            mutations = (
+                (MODULE.B089_SURFACES[0], "| **Starter** |", "| **Solo** |"),
+                (MODULE.B089_SURFACES[1], "Pro-tier customers are entitled to a", "Pro-tier customers are not entitled to a"),
+                (MODULE.B089_SURFACES[2], '"solo",', '"business",'),
+                (MODULE.B089_SURFACES[2], '  pro: {\n    id: "pro",', '  pro: {\n    slaCredits: true,\n    id: "pro",'),
+            )
+            for name, old, new in mutations:
+                with self.subTest(source=name, mutation=old):
+                    target = root / name
+                    original = target.read_text(encoding="utf-8")
+                    self.assertIn(old, original)
+                    target.write_text(original.replace(old, new, 1), encoding="utf-8")
+                    try:
+                        with self.assertRaises(MODULE.PacketError):
+                            MODULE._check_b089_surface_contract(item, root)
+                    finally:
+                        target.write_text(original, encoding="utf-8")
+            (root / MODULE.B089_SURFACES[1]).unlink()
+            with self.assertRaises(MODULE.PacketError):
+                MODULE._check_b089_surface_contract(item, root)
 
     def test_b110_capacity_decision_evidence_mutations_fail_closed(self) -> None:
         for field, value in (

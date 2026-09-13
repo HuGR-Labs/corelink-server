@@ -39,6 +39,11 @@ EXPECTED_IDS = (
 # evidenced and reclassified.
 LEGACY_OWNER_IDS = frozenset(EXPECTED_IDS[:12]) - {"B-013", "B-110"}
 CLOSED_PACKET_IDS = frozenset({"B-013", "B-110", "B-165"})
+B089_SURFACES = (
+    "legal/sla/v1.0.0.md",
+    "apps/docs/src/pages/legal/terms.tsx",
+    "apps/docs/src/lib/pricing.ts",
+)
 ITEM_FIELDS = {
     "id", "owner", "status", "action_type", "procedure",
     "inputs_and_credentials_boundary", "evidence", "expected_postcondition",
@@ -553,6 +558,68 @@ def _check_b110_evidence(item: dict[str, object]) -> None:
         raise PacketError("B-110 evidence ownership metadata drifted")
 
 
+def _check_b089_surface_contract(item: dict[str, object], root: Path = ROOT) -> None:
+    """Pin the *unresolved* legal/pricing contradiction, not a false closure.
+
+    An executed amendment or authorized settlement must update this census and
+    its tests together. A missing path or unilateral copy change cannot pass.
+    """
+    expected_references = ["BACKLOG.md#B-089", *B089_SURFACES]
+    if item["references"] != expected_references:
+        raise PacketError("B-089 source references drifted")
+    procedure = item["procedure"]
+    if not isinstance(procedure, list) or not any(
+        all(path in step for path in B089_SURFACES)
+        for step in procedure if isinstance(step, str)
+    ):
+        raise PacketError("B-089 procedure must name all live source paths")
+
+    sources: dict[str, str] = {}
+    for path_text in B089_SURFACES:
+        path = root / path_text
+        if path.is_symlink() or not path.is_file():
+            raise PacketError(f"B-089 source missing or non-regular: {path_text}")
+        try:
+            sources[path_text] = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise PacketError(f"B-089 source unreadable: {path_text}") from exc
+
+    sla = sources[B089_SURFACES[0]]
+    slo_section = sla.split("## 2. Uptime SLO per Tier", 1)
+    if len(slo_section) != 2:
+        raise PacketError("B-089 SLA tier section missing")
+    slo_rows = slo_section[1].split("\n## ", 1)[0]
+    sla_tiers = re.findall(r"^\| \*\*(\w+)\*\* \|", slo_rows, flags=re.M)
+    if sla_tiers != ["Free", "Starter", "Pro", "Enterprise"]:
+        raise PacketError(f"B-089 executed SLA tier census drifted: {sla_tiers}")
+    if "issued automatically against the next invoice" not in sla or "sole and exclusive remedy" not in sla:
+        raise PacketError("B-089 executed SLA credit/remedy claim drifted")
+
+    pricing = sources[B089_SURFACES[2]]
+    canonical = re.search(r"CANONICAL_TIERS:\s*readonly TierId\[\]\s*=\s*\[([^]]+)\]", pricing, re.S)
+    if canonical is None:
+        raise PacketError("B-089 sold-tier census missing")
+    sold_tiers = re.findall(r'"([a-z]+)"', canonical.group(1))
+    if sold_tiers != ["free", "solo", "starter", "pro", "max", "enterprise"]:
+        raise PacketError(f"B-089 sold-tier census drifted: {sold_tiers}")
+    pro = re.search(r"(?ms)^  pro: \{(.*?)^  \},", pricing)
+    enterprise = re.search(r"(?ms)^  enterprise: \{(.*?)^  \},", pricing)
+    if (
+        pro is None or enterprise is None
+        or re.findall(r"\bslaCredits:\s*(true|false)\b", pro.group(1)) != ["false"]
+        or re.findall(r"\bslaCredits:\s*(true|false)\b", enterprise.group(1)) != ["true"]
+    ):
+        raise PacketError("B-089 published pricing credit posture drifted")
+
+    terms = sources[B089_SURFACES[1]]
+    section = terms.split("14. Service availability and credits", 1)
+    if len(section) != 2:
+        raise PacketError("B-089 published Terms credit section missing")
+    section_body = section[1].split("</section>", 1)[0]
+    if "Pro-tier customers are entitled to a" not in section_body or "applied automatically to the next invoice" not in section_body:
+        raise PacketError("B-089 published Terms Pro credit claim drifted")
+
+
 def _read_json_evidence(path_text: str, expected_fields: list[str], label: str) -> dict[str, object]:
     """Load one canonical receipt and reject missing/extra root fields and secrets."""
     path = ROOT / path_text
@@ -959,6 +1026,8 @@ def _check_item(
     references = _string_list(item["references"], f"{expected_id}.references", minimum=1)
     if not any(reference.startswith("BACKLOG.md#") for reference in references):
         raise PacketError(f"{expected_id}.references must include its BACKLOG anchor")
+    if expected_id == "B-089":
+        _check_b089_surface_contract(item)
     if expected_id == "B-110":
         _check_b110_evidence(item)
     if expected_id == "B-054":

@@ -182,7 +182,7 @@
       "action_type": "sla_credit_legal_and_billing_authorization",
       "procedure": [
         "UI: Have counsel and Finance choose one coherent path: execute an SLA/Terms amendment removing or correcting automatic-credit promises, or authorize implementation of a real Stripe credit path covering all sold tiers.",
-        "RUN: Reconcile the chosen path against legal/sla/v1.0.0.md, apps/docs/src/pages/terms.tsx, apps/docs/src/lib/pricing.ts, and the billing implementation; do not claim code authorization from a signed draft.",
+        "RUN: Reconcile the chosen path against legal/sla/v1.0.0.md, apps/docs/src/pages/legal/terms.tsx, apps/docs/src/lib/pricing.ts, and the billing implementation; do not claim code authorization from a signed draft.",
         "UI: If automatic credits are authorized, record the owner’s spend limit, affected tiers, approval date, and release gate before enabling any billing mutation."
       ],
       "inputs_and_credentials_boundary": {
@@ -197,7 +197,7 @@
       },
       "expected_postcondition": "The executed remedy, published tier matrix, and live billing capability agree, with explicit owner financial/legal authority; B-089 remains open until completion.",
       "retry_and_rollback": "Retry legal review idempotently against the same document version. Never issue a duplicate credit or re-enable an unapproved billing path. Roll back an unlaunched change by disabling it; a signed contract or issued credit requires formal supersession/refund handling by counsel/Finance.",
-      "references": ["BACKLOG.md#B-089", "legal/sla/v1.0.0.md", "apps/docs/src/pages/terms.tsx", "apps/docs/src/lib/pricing.ts"]
+      "references": ["BACKLOG.md#B-089", "legal/sla/v1.0.0.md", "apps/docs/src/pages/legal/terms.tsx", "apps/docs/src/lib/pricing.ts"]
     },
     {
       "id": "B-097",
