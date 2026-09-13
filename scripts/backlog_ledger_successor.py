@@ -9,6 +9,66 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+# A one-time trusted-control authorization for the reviewed Sprint3 correction.
+# The candidate receipt is not an authority: both entire BACKLOG preimages and
+# the seven rewritten sections' machine fields must match pinned SHA-256 bytes.
+SPRINT3_BACKLOG_SHA256 = (
+    "66e3eb81fc02f5c7eb65bad1faf0b793565234a9d2f0830e46623b25d4f28c97",
+    "41726d6c8b2f4b1dc7ff35466a78c242e147b99eaca69a956064024e04212e23",
+)
+SPRINT3_CHANGED_IDS = ["B-012", "B-065", "B-087", "B-089", "B-097", "B-154", "B-170"]
+SPRINT3_FIELDS = {
+    "B-012": (
+        "open",
+        "07e9926943884c0fed543dc54d99eff7d0255c8fb5a92e4e16d5c23c64383e98",
+        "07e9926943884c0fed543dc54d99eff7d0255c8fb5a92e4e16d5c23c64383e98",
+        "e301ed123332e0b4533d487ab3688af2ddd593e7a234a0eb8830913dc08bcf57",
+        "fa310cff3550ddcf700eccd78169a7377c9706351e4c040eba7374a8c5fb5d19",
+    ),
+    "B-065": (
+        "open",
+        "3e3dc027408184f216b8acc68320210b9bb3a549b7a9628b9141697e32d3a252",
+        "3e3dc027408184f216b8acc68320210b9bb3a549b7a9628b9141697e32d3a252",
+        "6255c16777eb66c330bbbce47af999642365ecd7a35ea93938c482c590f26f79",
+        "a6ff51aa1bed4d8fa536fbe4da0b46a4889f4f1c44173bcae4d978313016124c",
+    ),
+    "B-087": (
+        "done",
+        "dd5808253fecba2d0dfc469062cfed897be9cfbb733bd5ebc8343dcaf02be3ec",
+        "dd5808253fecba2d0dfc469062cfed897be9cfbb733bd5ebc8343dcaf02be3ec",
+        "aa6705cddd3ae0e498f0df30109234d001666fc12b40fb659dbe2e94cb8203e3",
+        "d8c3e802a44aa14b23ba4c5ac85aa457bf927830400034a47d14dd918e7e6cc4",
+    ),
+    "B-089": (
+        "open",
+        "5eda9fcb444055498b855f8a8f4861349a1c200950d638c4f12c489ee705d8eb",
+        "be3ca49c4531f3c274213f35c785cdc037f48619a07308c350e1b4bfc673f60e",
+        "87077367ef44d0050d30a178f5cc51854ec227afc12a28028a2dddc818e5c96c",
+        "c40313446497a27c2ab46bc4838e880cc10d4f50af141ec6ebdedc585d9d8b16",
+    ),
+    "B-097": (
+        "open",
+        "c6ac2f9d6bf7f85d3f9b5a9787dec6649d32117744c0d05919e60c81205bd16b",
+        "c6ac2f9d6bf7f85d3f9b5a9787dec6649d32117744c0d05919e60c81205bd16b",
+        "4204daae06fa2b6ad8ee0b8e535551267b67532296ebbdd1d189c02a8a6e7099",
+        "e16c7afa00b279ab513461f20286cb257c5eb706d46f109e2296bddde6484085",
+    ),
+    "B-154": (
+        "open",
+        "a6045afb801b3b6a61ff09d97b6e77ba5fa4f7e1c4f9ed0fde8554957484264e",
+        "b86a04ff5d4ca729279b39631764e85c01c934e459c2db2ac23d0900587de590",
+        "f3434222e0ed605f801a03a34f112e978c242a42f8c4470fda666e267939da35",
+        "8d7fb8611da55cf7db8198fdf67b3cf3884eca09785b5f90871fb4792a3e59f0",
+    ),
+    "B-170": (
+        "open",
+        "91ead1ed21d307436564ac291480eb45ae690b9e3a8ed0b094f9be5026dc2afd",
+        "91ead1ed21d307436564ac291480eb45ae690b9e3a8ed0b094f9be5026dc2afd",
+        "fcfc27240f0995a8483ed10314af4c138886fd97b4ccaac7cf8d056a81cc18de",
+        "fcfc27240f0995a8483ed10314af4c138886fd97b4ccaac7cf8d056a81cc18de",
+    ),
+}
+
 
 def install(api):
     REPO_ROOT = api.REPO_ROOT
@@ -29,6 +89,31 @@ def install(api):
 
     def _sha256(raw: bytes) -> str:
         return hashlib.sha256(raw).hexdigest()
+
+    def _sprint3_rewrite_authorized(
+        prior: dict[str, bytes], current: dict[str, bytes],
+        receipt: dict[str, object], sequence: int,
+    ) -> bool:
+        if (
+            sequence != 3
+            or (_sha256(prior["BACKLOG.md"]), _sha256(current["BACKLOG.md"]))
+            != SPRINT3_BACKLOG_SHA256
+            or receipt["changed_ids"] != SPRINT3_CHANGED_IDS
+        ):
+            return False
+        old_items = {item.id: item.raw for item in backlog_verify.parse(prior["BACKLOG.md"].decode())}
+        new_items = {item.id: item.raw for item in backlog_verify.parse(current["BACKLOG.md"].decode())}
+        for item_id, (status, old_verify, new_verify, old_means, new_means) in SPRINT3_FIELDS.items():
+            old, new = old_items.get(item_id, {}), new_items.get(item_id, {})
+            if (
+                old.get("status") != status or new.get("status") != status
+                or _sha256(str(old.get("verify", "")).encode()) != old_verify
+                or _sha256(str(new.get("verify", "")).encode()) != new_verify
+                or _sha256(str(old.get("verify-means", "")).encode()) != old_means
+                or _sha256(str(new.get("verify-means", "")).encode()) != new_means
+            ):
+                return False
+        return True
 
     def _catalog_relatives() -> tuple[Path, ...]:
         return tuple(path.relative_to(REPO_ROOT) for path in CATALOGS)
@@ -248,6 +333,22 @@ def install(api):
             raise LedgerError(
                 "successor changed IDs differ from BACKLOG section byte delta"
             )
+        sprint3_rewrite = _sprint3_rewrite_authorized(
+            prior, current, receipt, sequence,
+        )
+        for item_id in changed:
+            if item_id not in old_sections:
+                continue
+            old_item = backlog_verify.parse(old_sections[item_id].decode("utf-8"))[0]
+            new_item = backlog_verify.parse(new_sections[item_id].decode("utf-8"))[0]
+            if (
+                old_item.raw.get("status") == "open"
+                and new_item.raw.get("status") == "open"
+                and not (sprint3_rewrite and item_id in SPRINT3_CHANGED_IDS)
+            ):
+                raise LedgerError(
+                    f"{item_id}: open BACKLOG section is immutable without trusted byte-pinned authorization"
+                )
         counts = backlog_status_counts(new_text)
         if receipt["status_counts"] != {
             key: counts.get(key, 0) for key in ("done", "open", "parked")
@@ -421,7 +522,10 @@ def install(api):
             candidate_items,
             trusted_items,
             today or backlog_verify.dt.date.today(),
-            allow_open_verify_means=True,
+            allow_sprint3_rewrite=_sprint3_rewrite_authorized(
+                prior, current, receipt, len(base_paths) + 3,
+            ),
+            successor_mode=True,
         )
         if errors:
             raise LedgerError(
@@ -446,6 +550,7 @@ def install(api):
 
     return SimpleNamespace(
         _sha256=_sha256,
+        _sprint3_rewrite_authorized=_sprint3_rewrite_authorized,
         _catalog_relatives=_catalog_relatives,
         _state_bytes=_state_bytes,
         _successor_paths=_successor_paths,

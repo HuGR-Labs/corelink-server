@@ -12,6 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import verify_backlog_wp_ledger as ledger
+import backlog_ledger_successor as successor
 from verify_backlog_wp_ledger import LedgerError, parse_ledger_state
 
 
@@ -78,8 +79,8 @@ def _advance_successor(base: Path, candidate: Path, sequence: int) -> Path:
     base_sha = _git(base, "rev-parse", "HEAD")
     prior = ledger._state_bytes(base)
     backlog_path = candidate / "BACKLOG.md"
-    old_word, new_word = ("first", "second") if sequence == 3 else ("second", "third")
-    backlog_path.write_text(backlog_path.read_text().replace(f"verify-means: {old_word}", f"verify-means: {new_word}"))
+    old_word, new_word = ("closed fixture", "second closed fixture") if sequence == 3 else ("second closed fixture", "third closed fixture")
+    backlog_path.write_text(backlog_path.read_text().replace(f"### B-002 — {old_word}", f"### B-002 — {new_word}"))
     ledger_path = candidate / ledger.LEDGER_RELATIVE
     text = ledger_path.read_text()
     previous_base = ledger.parse_ledger_state(text, "candidate-ledger")["base-ref"]
@@ -102,7 +103,7 @@ def _advance_successor(base: Path, candidate: Path, sequence: int) -> Path:
         "prior_catalog_sha256": {path.as_posix(): ledger._sha256(prior[path.as_posix()]) for path in ledger._catalog_relatives()},
         "catalog_sha256": {path.as_posix(): ledger._sha256(current[path.as_posix()]) for path in ledger._catalog_relatives()},
         "item_count": 2, "status_counts": {"done": 1, "open": 1, "parked": 0},
-        "open_ids": ["B-001"], "changed_ids": ["B-001"],
+        "open_ids": ["B-001"], "changed_ids": ["B-002"],
     }
     path = candidate / ledger.SNAPSHOT_DIRECTORY / f"backlog-ledger-snapshot-v{sequence:04d}.json"
     path.write_text(json.dumps(receipt, indent=2) + "\n")
@@ -124,6 +125,31 @@ def test_base_derived_successor_accepts_v3_then_v4(tmp_path, monkeypatch):
     shutil.copytree(base, next_candidate, ignore=shutil.ignore_patterns(".git"))
     _advance_successor(base, next_candidate, 4)
     assert ledger.validate_candidate_successor(base, next_candidate)["sequence"] == 4
+
+
+def test_exact_rewrite_authorization_binds_both_sources_ids_and_fields(tmp_path, monkeypatch):
+    base, candidate = _successor_fixture(tmp_path, monkeypatch)
+    prior, current = ledger._state_bytes(base), ledger._state_bytes(candidate)
+    monkeypatch.setattr(successor, "SPRINT3_BACKLOG_SHA256", (
+        ledger._sha256(prior["BACKLOG.md"]), ledger._sha256(current["BACKLOG.md"]),
+    ))
+    monkeypatch.setattr(successor, "SPRINT3_CHANGED_IDS", ["B-001"])
+    first = ledger._sha256(b"first")
+    manual = ledger._sha256(b"manual")
+    monkeypatch.setattr(successor, "SPRINT3_FIELDS", {
+        "B-001": ("open", manual, manual, first, first),
+    })
+    authorized = ledger._successor_policy()._sprint3_rewrite_authorized
+    receipt = {"changed_ids": ["B-001"]}
+    assert authorized(prior, current, receipt, 3)
+    assert not authorized(prior, current, receipt, 4)
+    assert not authorized(prior, current, {"changed_ids": []}, 3)
+    assert not authorized({**prior, "BACKLOG.md": prior["BACKLOG.md"] + b"\n"}, current, receipt, 3)
+    assert not authorized(prior, {**current, "BACKLOG.md": current["BACKLOG.md"] + b"\n"}, receipt, 3)
+    monkeypatch.setattr(successor, "SPRINT3_FIELDS", {
+        "B-001": ("open", manual, manual, first, ledger._sha256(b"no owner approval needed")),
+    })
+    assert not authorized(prior, current, receipt, 3)
 
 
 def test_delivered_successor_rejects_rewritten_receipt(tmp_path, monkeypatch):
@@ -168,6 +194,8 @@ def test_b315_style_two_parent_merge_replays_successor(tmp_path, monkeypatch):
     ("forged-digest", "BASE-derived bytes"),
     ("rewritten-prior", "rewrote prior snapshot"),
     ("candidate-verifier", "immutable field 'verify'"),
+    ("approval-waiver", "open BACKLOG section is immutable"),
+    ("open-prose-waiver", "open BACKLOG section is immutable"),
     ("candidate-code", "mutated trusted backlog control"),
     ("candidate-successor-module", "mutated trusted backlog control"),
     ("candidate-contracts-module", "mutated trusted backlog control"),
@@ -197,9 +225,25 @@ def test_base_derived_successor_rejects_mutations(tmp_path, monkeypatch, mutatio
         (candidate / ledger.GENESIS_SNAPSHOT_RELATIVE).write_text("rewritten\n")
     elif mutation == "candidate-verifier":
         backlog = candidate / "BACKLOG.md"
-        backlog.write_text(backlog.read_text().replace("verify: manual", "verify: python3 scripts/evil.py", 1))
+        first, second = backlog.read_text().split("### B-002", 1)
+        backlog.write_text(first + "### B-002" + second.replace(
+            "verify: manual", "verify: python3 scripts/evil.py", 1,
+        ))
         receipt["source_sha256"] = ledger._sha256(backlog.read_bytes())
-        receipt["changed_ids"] = ["B-001"]
+    elif mutation == "approval-waiver":
+        backlog = candidate / "BACKLOG.md"
+        backlog.write_text(backlog.read_text().replace(
+            "verify-means: first", "verify-means: no owner approval needed", 1,
+        ))
+        receipt["source_sha256"] = ledger._sha256(backlog.read_bytes())
+        receipt["changed_ids"] = ["B-001", "B-002"]
+    elif mutation == "open-prose-waiver":
+        backlog = candidate / "BACKLOG.md"
+        backlog.write_text(backlog.read_text().replace(
+            "### B-001 — fixture", "### B-001 — no owner approval needed", 1,
+        ))
+        receipt["source_sha256"] = ledger._sha256(backlog.read_bytes())
+        receipt["changed_ids"] = ["B-001", "B-002"]
     elif mutation == "candidate-code":
         (candidate / "scripts/backlog_verify.py").write_text("# candidate bypass\n")
     elif mutation == "candidate-successor-module":
@@ -214,6 +258,7 @@ def test_base_derived_successor_rejects_mutations(tmp_path, monkeypatch, mutatio
         backlog = candidate / "BACKLOG.md"
         backlog.write_text(backlog.read_text().replace("status: open", "status: done"))
         receipt["source_sha256"] = ledger._sha256(backlog.read_bytes())
+        receipt["changed_ids"] = ["B-001", "B-002"]
     elif mutation in {
         "preamble-edit", "preamble-only", "unlisted-section",
         "unlisted-section-only", "reordered-sections",
@@ -222,12 +267,12 @@ def test_base_derived_successor_rejects_mutations(tmp_path, monkeypatch, mutatio
         backlog = candidate / "BACKLOG.md"
         source = backlog.read_text()
         if mutation in {"preamble-only", "unlisted-section-only"}:
-            source = source.replace("verify-means: second", "verify-means: first", 1)
+            source = source.replace("### B-002 — second closed fixture", "### B-002 — closed fixture", 1)
             receipt["changed_ids"] = []
         if mutation in {"preamble-edit", "preamble-only"}:
             source = "attacker-owned preamble\n" + source
         elif mutation in {"unlisted-section", "unlisted-section-only"}:
-            source = source.replace("closed fixture", "attacker fixture", 1)
+            source = source.replace("### B-001 — fixture", "### B-001 — attacker fixture", 1)
         elif mutation == "reordered-sections":
             first, second = source.split("### B-002", 1)
             source = "### B-002" + second + first

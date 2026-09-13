@@ -110,15 +110,15 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         base = self.item("B-089", verify="python3 scripts/verify_b089_sla_credits.py\n")
         candidate = self.item("B-089", verify=base.raw["verify"])
         candidate.raw["verify-means"] = "new evidence readback"
-        self.assertEqual(
-            backlog_verify.validate_candidate_transitions(
-                [candidate], [base], dt.date(2026, 9, 12), allow_open_verify_means=True,
-            ),
-            [],
+        self.assertTrue(
+            any("verify-means may change only" in error for error in
+                backlog_verify.validate_candidate_transitions(
+                    [candidate], [base], dt.date(2026, 9, 12), successor_mode=True,
+                ))
         )
         candidate.raw["verify"] += "python3 scripts/evil.py\n"
         errors = backlog_verify.validate_candidate_transitions(
-            [candidate], [base], dt.date(2026, 9, 12), allow_open_verify_means=True,
+            [candidate], [base], dt.date(2026, 9, 12), successor_mode=True,
         )
         self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
         candidate.raw["verify"] = (
@@ -126,8 +126,15 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             "python3 -S scripts/verify_owner_action_packets.py --id B-089"
         )
         self.assertEqual(
+            [error for error in backlog_verify.validate_candidate_transitions(
+                [candidate], [base], dt.date(2026, 9, 12), successor_mode=True,
+            ) if "verify-means" not in error],
+            ["B-089: immutable field 'verify' changed"],
+        )
+        self.assertEqual(
             backlog_verify.validate_candidate_transitions(
-                [candidate], [base], dt.date(2026, 9, 12), allow_open_verify_means=True,
+                [candidate], [base], dt.date(2026, 9, 12),
+                successor_mode=True, allow_sprint3_rewrite=True,
             ),
             [],
         )
@@ -136,13 +143,44 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             "python3 -S scripts/verify_owner_action_packets.py --id B-089\n"
         )
         errors = backlog_verify.validate_candidate_transitions(
-            [candidate], [base], dt.date(2026, 9, 12), allow_open_verify_means=True,
+            [candidate], [base], dt.date(2026, 9, 12),
+            successor_mode=True, allow_sprint3_rewrite=True,
         )
         self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
+
+    def test_open_owner_approval_cannot_be_waived_without_exact_exception(self) -> None:
+        base = self.item("B-065", verify="manual")
+        base.raw["verify-means"] = "owner must approve"
+        candidate = self.item("B-065", verify="manual")
+        candidate.raw["verify-means"] = "no owner approval needed"
+        errors = backlog_verify.validate_candidate_transitions(
+            [candidate], [base], dt.date(2026, 9, 12), successor_mode=True,
+        )
+        self.assertTrue(any("verify-means may change only" in error for error in errors))
 
     def test_b089_conjunction_preserves_first_command_failure(self) -> None:
         self.assertNotEqual(backlog_verify.run_verify("false && true", mode="trusted")[0], 0)
         self.assertEqual(backlog_verify.run_verify("false\ntrue", mode="trusted")[0], 0)
+
+    def test_b154_exception_requires_reviewed_fail_closed_command(self) -> None:
+        base = next(
+            item for item in backlog_verify.parse((ROOT / "BACKLOG.md").read_text())
+            if item.id == "B-154"
+        )
+        candidate = backlog_verify.Item(raw=dict(base.raw), line=base.line, id=base.id)
+        candidate.raw["verify"] = (
+            "python3 -S scripts/verify_owner_action_packets.py --id B-154 &&\n"
+            "python3 -S scripts/verify_b154_instrument_claims.py --self-test\n"
+        )
+        self.assertEqual(backlog_verify.validate_candidate_transitions(
+            [candidate], [base], dt.date(2026, 9, 13), allow_sprint3_rewrite=True,
+        ), [])
+        candidate.raw["verify"] = candidate.raw["verify"].replace(" &&\n", "\n")
+        errors = backlog_verify.validate_candidate_transitions(
+            [candidate], [base], dt.date(2026, 9, 13), allow_sprint3_rewrite=True,
+        )
+        self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
+        self.assertNotEqual(backlog_verify.run_verify("false &&\ntrue", mode="trusted")[0], 0)
 
     def test_workflow_style_cli_imports_with_clean_pythonpath(self) -> None:
         env = dict(os.environ)
@@ -476,7 +514,7 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(marker.exists(), "candidate verify payload was executed")
-        self.assertIn("immutable field 'verify' changed", result.stdout + result.stderr)
+        self.assertIn("candidate must append exactly one next successor snapshot", result.stdout + result.stderr)
 
     def test_mutated_candidate_verifier_cannot_green(self) -> None:
         verifier = self.candidate / "scripts" / "verify_b044_orphan_teardown_wp.py"

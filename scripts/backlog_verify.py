@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import ast
 import datetime as dt
+import hashlib
 import json
 import os
 import posixpath
@@ -506,7 +507,7 @@ def check_candidate_controls(candidate_root: Path, trusted_root: Path, trusted_i
 
 def validate_candidate_transitions(
     candidate_items: list[Item], trusted_items: list[Item], today: dt.date,
-    *, allow_open_verify_means: bool = False,
+    *, allow_sprint3_rewrite: bool = False, successor_mode: bool = False,
 ) -> list[str]:
     """Validate the small, auditable set of BACKLOG changes a PR may make."""
     trusted_by_id = {item.id: item for item in trusted_items if item.raw}
@@ -521,7 +522,7 @@ def validate_candidate_transitions(
         if not item.raw or item.id not in trusted_by_id:
             if item.raw.get("status") != "open":
                 errors.append(f"new item {item.id} must start status: open")
-            if allow_open_verify_means and item.raw.get("verify") != "manual":
+            if successor_mode and item.raw.get("verify") != "manual":
                 errors.append(f"new item {item.id} must use non-executable verify: manual")
             continue
         old = trusted_by_id[item.id]
@@ -531,11 +532,23 @@ def validate_candidate_transitions(
                 # The B-089 successor may add only this already-BASE-owned
                 # owner-packet gate. A receipt cannot authorize arbitrary
                 # candidate verifier code or shell fragments.
-                if item_field == "verify" and allow_open_verify_means and item.id == "B-089" and (
+                if item_field == "verify" and allow_sprint3_rewrite and item.id == "B-089" and (
                     old_raw.get("verify") == "python3 scripts/verify_b089_sla_credits.py\n"
                     and new_raw.get("verify") == (
                         "python3 scripts/verify_b089_sla_credits.py && "
                         "python3 -S scripts/verify_owner_action_packets.py --id B-089"
+                    )
+                ):
+                    continue
+                # The reviewed B-154 repair is a fail-closed conjunction;
+                # never turn the pinned exception into an arbitrary shell slot.
+                if item_field == "verify" and allow_sprint3_rewrite and item.id == "B-154" and (
+                    isinstance(old_raw.get("verify"), str)
+                    and hashlib.sha256(old_raw["verify"].encode()).hexdigest()
+                    == "a6045afb801b3b6a61ff09d97b6e77ba5fa4f7e1c4f9ed0fde8554957484264e"
+                    and new_raw.get("verify") == (
+                        "python3 -S scripts/verify_owner_action_packets.py --id B-154 &&\n"
+                        "python3 -S scripts/verify_b154_instrument_claims.py --self-test\n"
                     )
                 ):
                     continue
@@ -550,7 +563,9 @@ def validate_candidate_transitions(
         if old_raw.get("owner") != new_raw.get("owner") and old_status == new_status:
             errors.append(f"{item.id}: owner may change only with a status transition")
         if old_raw.get("verify-means") != new_raw.get("verify-means") and old_status == new_status:
-            if not (allow_open_verify_means and old_status == "open"):
+            if not (allow_sprint3_rewrite and item.id in {
+                "B-012", "B-065", "B-087", "B-089", "B-097", "B-154", "B-170",
+            }):
                 errors.append(f"{item.id}: verify-means may change only with a status transition")
         try:
             old_date, new_date = parse_date(old_raw["last-verified"]), parse_date(new_raw["last-verified"])
@@ -774,11 +789,6 @@ def main() -> int:
                 Path(args.trusted_root).resolve(),
                 trusted_items,
             )
-            transition_errors = validate_candidate_transitions(
-                items, trusted_items, today, allow_open_verify_means=True,
-            )
-            if transition_errors:
-                raise RuntimeError("candidate transition rejected:\n" + "\n".join(transition_errors))
             if __package__:
                 from scripts import verify_backlog_wp_ledger as ledger
             else:
@@ -788,6 +798,10 @@ def main() -> int:
             try:
                 if ledger.successor_required(trusted_root, candidate_root):
                     ledger.validate_candidate_successor(trusted_root, candidate_root, today=today)
+                else:
+                    transition_errors = validate_candidate_transitions(items, trusted_items, today)
+                    if transition_errors:
+                        raise RuntimeError("candidate transition rejected:\n" + "\n".join(transition_errors))
             except ledger.LedgerError as exc:
                 raise RuntimeError(f"candidate ledger successor rejected: {exc}") from exc
             validate_candidate_workflow(candidate_root)
