@@ -21,6 +21,7 @@
 
 import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-types";
 import type { KvReader } from "./lib/pat_verify_cache.js";
+import type { RunnerDevEnvRpc } from "./types/devenv_rpc.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -107,7 +108,7 @@ export interface Env {
   // or decodes to fewer than 32 bytes. Never optional in any deployed env.
   PAT_SIGNING_KEY: string;
   // DevEnv DO cross-worker binding (WP-08)
-  RUNNER_DEVENV_DO?: DurableObjectNamespace;
+  RUNNER_DEVENV_DO?: DurableObjectNamespace<RunnerDevEnvRpc>;
   // Public base URL (e.g. "https://corelink-api.humangr.com")
   // OPTIONAL rotation overlap keys (key_management.md §3.2.1, 24h overlap).
   // During a PAT_SIGNING_KEY rotation, bind the OUTGOING key as
