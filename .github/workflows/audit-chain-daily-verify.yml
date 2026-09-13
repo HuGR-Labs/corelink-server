@@ -608,7 +608,7 @@ jobs:
               json.dump(keys, out, sort_keys=True, separators=(",", ":"))
           os.chmod(os.environ["OUT"], 0o600)
           PY
-              while read -r tenant region first_sequence; do
+              while read -r tenant region _first_sequence; do
                 query="${DAY_DIR}/receipt-query-${tenant}-${region}.json"
                 TENANT="$tenant" REGION="$region" python3 -c '
                 import json,os
