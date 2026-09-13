@@ -4,8 +4,9 @@
 //!
 //! `POST /_internal/audit/drain` seals `audit_outbox` rows into the BLAKE3
 //! chain, but the seal lands in D1 and D1 is mutable. S-09 calls for an
-//! immutable offsite copy: NDJSON chunks in an R2 bucket under a 7-year Object
-//! Lock. The producer for that copy existed in source
+//! immutable offsite copy. The current NDJSON archive lands in R2 under a
+//! native 2557-day Bucket Lock rule; that administrator-removable rule is not
+//! S3 Object Lock Compliance/WORM. The producer for that copy existed in source
 //! (`corelink_audit_chain::archive_producer`) and the daily verifier cron
 //! existed in CI, but nothing ever connected them — the producer's only caller
 //! sat behind a Cargo feature no build passes, in a crate the live Worker never
@@ -31,10 +32,11 @@
 //! success. The reverse order would mark rows archived that were never written,
 //! and nothing would ever revisit them.
 //!
-//! ## Idempotency under Object Lock
+//! ## Idempotency under native Bucket Lock and conditional PUT
 //!
-//! `corelink-audit-weur` carries a bucket-wide 7-year retention rule, so an
-//! existing object CANNOT be overwritten. The writer therefore does a
+//! `corelink-audit-weur` was observed on 2026-09-13 with an enabled, all-prefix
+//! 2557-day native Bucket Lock rule. That rule blocks overwrites while enabled
+//! but an authorized administrator can remove it. The writer also does a
 //! conditional `PutObject` with `If-None-Match: *`; a `412` means the key is
 //! already there, and the writer then GETs it and compares bytes:
 //!
@@ -163,9 +165,10 @@ fn parse_sealed_epoch_metadata(row: &Value) -> Result<(u8, u64, Option<u64>), St
 
 /// Bucket the archive lands in when `R2_AUDIT_BUCKET` is unset.
 ///
-/// This is a REAL, provisioned bucket that already carries the 7-year Object
-/// Lock rule (`corelink-audit-7y-retention`, `maxAgeSeconds=220924800`) and
-/// already holds the erasure attestations. The default deliberately does NOT
+/// This is a REAL, provisioned bucket observed on 2026-09-13 with the native
+/// Bucket Lock rule (`corelink-audit-7y-retention`, `maxAgeSeconds=220924800`).
+/// The rule is removable by an authorized administrator; the bucket also
+/// holds the erasure attestations. The default deliberately does NOT
 /// name a bucket that has to be created first — an archive whose default target
 /// does not exist is how this control stayed dead for a year.
 pub const DEFAULT_AUDIT_BUCKET: &str = "corelink-audit-weur";
@@ -406,8 +409,8 @@ fn existing_prefix_len(
 
 /// Classify bytes already present under an immutable archive key.
 ///
-/// Keep this independent from the conditional PUT: an Object Lock gateway may
-/// reject a write to an existing WORM key without preserving a classifiable
+/// Keep this independent from the conditional PUT: a native retention rule may
+/// reject a write to an existing retained key without preserving a classifiable
 /// S3 `412` in the SDK error. Reading the known key first lets idempotent and
 /// prefix recovery proceed without attempting an impossible write. The absent
 /// path remains race-safe because it still uses `If-None-Match: *`.
@@ -580,7 +583,7 @@ async fn put_chunk_if_absent(
     epoch: &ChainEpoch,
     link_key: Option<&LinkKey>,
 ) -> Result<ChunkWrite, String> {
-    // The common R2-first/D1-second recovery case already has a durable WORM
+    // The common R2-first/D1-second recovery case already has a retained
     // object. Do not PUT at that key merely to discover it: inspect and verify
     // it first. A concurrent creator after a 404 is still handled by the
     // conditional PUT loser arm below.
@@ -1249,7 +1252,7 @@ fn archive_manifest_object_key(
 
 /// Publish immutable bytes and prove the exact readback under a caller-supplied
 /// memory ceiling. A successful PUT is read back too: the HTTP acknowledgement
-/// alone is not evidence that the bytes retained by the Object-Lock bucket are
+/// alone is not evidence that the bytes retained under the Bucket Lock rule are
 /// the bytes the signed manifest names.
 async fn put_exact_object_last(
     r2: &R2S3Client,
@@ -2954,7 +2957,7 @@ mod tests {
                 None,
             ),
             Ok(ChunkWrite::ExistingPrefix(2)),
-            "a legacy WORM prefix must be handled from its GET bytes without relying on a PUT error"
+            "a legacy retained prefix must be handled from its GET bytes without relying on a PUT error"
         );
         let legacy_with_terminator = format!("{legacy_prefix}\n");
         assert_eq!(

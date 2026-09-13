@@ -108,9 +108,11 @@ env:
   # chunks are actually written. It used to read `corelink-audit-archive` — a
   # bucket that never existed — so the verifier looked for an archive at an
   # address the (never-wired) producer would not have used either.
-  # `corelink-audit-weur` is the configured address. The intended native
-  # Bucket Lock rule `corelink-audit-7y-retention` (220924800s) requires fresh
-  # provider metadata evidence; it is not S3 Object Lock Compliance/WORM.
+  # `corelink-audit-weur` is the configured address. A read-only Wrangler
+  # check on 2026-09-13 observed native Bucket Lock rule
+  # `corelink-audit-7y-retention`: enabled, all prefixes, after 2557 days
+  # (220924800s). This is removable bucket configuration, NOT S3 Object Lock
+  # Compliance/WORM; recheck live metadata before claiming current retention.
   AUDIT_R2_BUCKET_DEFAULT: "corelink-audit-weur"
 
 jobs:
