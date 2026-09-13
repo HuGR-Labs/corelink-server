@@ -294,6 +294,15 @@ VALIDATOR_GATES=(
 RESULTS_FILE="$(mktemp)" || exit 2
 INFRA_FILE="$(mktemp)" || exit 2
 
+record_result() {
+    # A missing result is an infrastructure failure, never an absent gate.
+    local record="$1"
+    if ! printf '%s\n' "$record" >>"$RESULTS_FILE"; then
+        printf '%s\n' "${record%%|*}/result-record" >>"$INFRA_FILE" || true
+        return 42
+    fi
+}
+
 run_gate() {
     # Args: name, command, group
     local name="$1"
@@ -306,22 +315,24 @@ run_gate() {
     if bash -c "$cmd" >"$log" 2>&1; then
         end_ns=$(python3 -c 'import time; print(int(time.time_ns()))')
         dur_ms=$(( (end_ns - start_ns) / 1000000 ))
-        printf '%s|%s|PASS|%s|%s\n' "$group" "$name" "$dur_ms" "$log" >>"$RESULTS_FILE"
+        record_result "$group|$name|PASS|$dur_ms|$log" || return 42
         printf '  \033[32m✔\033[0m %-32s  %5d ms\n' "$name" "$dur_ms" >&2
     else
         end_ns=$(python3 -c 'import time; print(int(time.time_ns()))')
         dur_ms=$(( (end_ns - start_ns) / 1000000 ))
         if classification=$(python3 scripts/classify-runner-failure.py <"$log"); then
-            printf '%s|%s|FAIL|%s|%s\n' "$group" "$name" "$dur_ms" "$log" >>"$RESULTS_FILE"
+            record_result "$group|$name|FAIL|$dur_ms|$log" || return 42
             printf '  \033[31m✘\033[0m %-32s  %5d ms  (see %s)\n' "$name" "$dur_ms" "$log" >&2
         else
             classify_rc=$?
             if [ "$classify_rc" -eq 42 ]; then
-                printf '%s|%s|INFRA|%s|%s\n' "$group" "$name" "$dur_ms" "$log" >>"$RESULTS_FILE"
-                printf '%s/%s\n' "$group" "$name" >>"$INFRA_FILE"
+                record_result "$group|$name|INFRA|$dur_ms|$log" || return 42
+                if ! printf '%s/%s\n' "$group" "$name" >>"$INFRA_FILE"; then
+                    return 42
+                fi
                 printf '  ⚠ %s\n' "$classification" >&2
             else
-                printf '%s|%s|FAIL|%s|%s\n' "$group" "$name" "$dur_ms" "$log" >>"$RESULTS_FILE"
+                record_result "$group|$name|FAIL|$dur_ms|$log" || return 42
                 printf '  \033[31m✘\033[0m %-32s  %5d ms  (see %s)\n' "$name" "$dur_ms" "$log" >&2
             fi
         fi
@@ -331,11 +342,13 @@ run_gate() {
 run_rust_pipeline() {
     # Rust gates run serially within this group (they share cargo target dir;
     # cargo itself parallelises internally per build).
+    local pipeline_rc=0
     for entry in "${RUST_GATES[@]}"; do
         local name="${entry%%|*}"
         local cmd="${entry#*|}"
-        run_gate "$name" "$cmd" rust
+        run_gate "$name" "$cmd" rust || pipeline_rc=42
     done
+    return "$pipeline_rc"
 }
 
 run_validator_pool() {
@@ -343,17 +356,23 @@ run_validator_pool() {
     # for the rust group if running concurrently). xargs -P-style via &/wait.
     local max_concurrent=8
     local running=0
+    local pipeline_rc=0
     for entry in "${VALIDATOR_GATES[@]}"; do
         local name="${entry%%|*}"
         local cmd="${entry#*|}"
         run_gate "$name" "$cmd" validator &
         running=$(( running + 1 ))
         if [ "$running" -ge "$max_concurrent" ]; then
-            wait -n
+            if ! wait -n; then
+                pipeline_rc=42
+            fi
             running=$(( running - 1 ))
         fi
     done
-    wait
+    if ! wait; then
+        pipeline_rc=42
+    fi
+    return "$pipeline_rc"
 }
 
 # --- run groups concurrently --------------------------------------------------
@@ -374,11 +393,17 @@ if [ "$RUN_VALIDATORS" = 1 ]; then
 fi
 
 if [ "$RUN_RUST" = 1 ]; then
-    wait "$RUST_PID" || true
+    if ! wait "$RUST_PID"; then
+        printf 'rust/pipeline\n' >>"$INFRA_FILE" || true
+        PIPELINE_INFRA=1
+    fi
     RUST_PID=""
 fi
 if [ "$RUN_VALIDATORS" = 1 ]; then
-    wait "$VAL_PID" || true
+    if ! wait "$VAL_PID"; then
+        printf 'validator/pipeline\n' >>"$INFRA_FILE" || true
+        PIPELINE_INFRA=1
+    fi
     VAL_PID=""
 fi
 CI_PIPELINES_AWAITED=1
@@ -393,6 +418,9 @@ echo "─── Summary ───" >&2
 PASS_COUNT=$(grep -c '|PASS|' "$RESULTS_FILE" 2>/dev/null); [ -z "$PASS_COUNT" ] && PASS_COUNT=0
 FAIL_COUNT=$(grep -c '|FAIL|' "$RESULTS_FILE" 2>/dev/null); [ -z "$FAIL_COUNT" ] && FAIL_COUNT=0
 INFRA_COUNT=$(grep -c . "$INFRA_FILE" 2>/dev/null); [ -z "$INFRA_COUNT" ] && INFRA_COUNT=0
+if [ "${PIPELINE_INFRA:-0}" -eq 1 ]; then
+    INFRA_COUNT=$((INFRA_COUNT + 1))
+fi
 echo "  PASS: $PASS_COUNT" >&2
 echo "  FAIL: $FAIL_COUNT" >&2
 echo "  INFRA: $INFRA_COUNT" >&2
