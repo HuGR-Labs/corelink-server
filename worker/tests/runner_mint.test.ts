@@ -334,11 +334,24 @@ function mintBody(over: Record<string, unknown> = {}): Record<string, unknown> {
 }
 
 describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
-  it("requires an operation_id before any lifecycle or mint side effect", async () => {
+  it("derives an operation_id for legacy callers before lifecycle or mint", async () => {
     const captured: { req?: Request } = {};
     const resp = await mintFetch(makeAuthorizedEnv({ captured }), {
       auth: RUNNER_MINT_KEY,
       body: mintBody({ operation_id: undefined }),
+    });
+    // The fixture has no lifecycle authority, so the derived operation reaches
+    // the lifecycle dependency and fails closed with 503; it must not be the
+    // old 400 missing-operation rejection or a direct mint.
+    expect(resp.status).toBe(503);
+    expect(captured.req).toBeUndefined();
+  });
+
+  it("rejects a malformed explicit operation_id before lifecycle or mint", async () => {
+    const captured: { req?: Request } = {};
+    const resp = await mintFetch(makeAuthorizedEnv({ captured }), {
+      auth: RUNNER_MINT_KEY,
+      body: mintBody({ operation_id: "malformed" }),
     });
     expect(resp.status).toBe(400);
     expect(captured.req).toBeUndefined();
