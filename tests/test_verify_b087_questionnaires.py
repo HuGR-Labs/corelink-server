@@ -50,7 +50,7 @@ def mutate_all(path: Path, needle: str, replacement: str) -> None:
 def test_live_population_passes_with_owner_actions_only() -> None:
     result = MODULE.verify(ROOT)
     assert result["ok"] is True
-    assert result["population"] == {"caiq": 22, "sig_lite": 15}
+    assert result["population"] == {"caiq": 26, "sig_lite": 17}
     assert len(result["owner_actions"]) == 4
 
 
@@ -118,7 +118,7 @@ def test_reintroducing_test_only_byok_provider_claim_fails_closed(
     root = fixture_tree(tmp_path)
     path = root / document
     text = path.read_text(encoding="utf-8")
-    marker = "ActiveProvider::Unavailable"
+    marker = "byok-aws-real"
     assert marker in text
     path.write_text(text.replace(marker, "InMemoryFake", 1), encoding="utf-8")
     result = MODULE.verify(root)
@@ -157,6 +157,66 @@ def test_orchestrator_unavailable_branch_is_code_and_not_string_safe(tmp_path: P
     result = MODULE.verify(root)
     assert result["ok"] is False
     assert any("ActiveProvider::Unavailable" in failure for failure in result["failures"])
+
+
+def test_shipped_aws_feature_is_required_not_comment_bait(tmp_path: Path) -> None:
+    root = fixture_tree(tmp_path)
+    path = root / "Dockerfile"
+    mutate_line(path, "--features byok-aws-real;", ";")
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("\n# cargo build -p corelink-server --bin corelink-server --features byok-aws-real;\n")
+    result = MODULE.verify(root)
+    assert result["ok"] is False
+    assert any("Dockerfile: production corelink-server" in failure for failure in result["failures"])
+
+
+def test_byok_receipt_transition_forces_questionnaire_review(tmp_path: Path) -> None:
+    root = fixture_tree(tmp_path)
+    path = root / "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json"
+    mutate_line(path, '"status": "NOT_EXECUTED"', '"status": "PASS"')
+    result = MODULE.verify(root)
+    assert result["ok"] is False
+    assert any("runtime BYOK proof changed" in failure for failure in result["failures"])
+
+
+def test_object_lock_probe_transition_forces_questionnaire_review(tmp_path: Path) -> None:
+    root = fixture_tree(tmp_path)
+    path = root / "evidence/owner-actions/B-046/object-lock-probe.json"
+    mutate_line(path, '"classification": "INDETERMINATE"', '"classification": "BLOCKED"')
+    result = MODULE.verify(root)
+    assert result["ok"] is False
+    assert any("Object Lock probe result changed" in failure for failure in result["failures"])
+
+
+def test_unconditional_501_claim_is_not_accepted(tmp_path: Path) -> None:
+    root = fixture_tree(tmp_path)
+    path = root / MODULE.CAIQ
+    mutate_line(path, " if provider construction or CMK access fails;", ";")
+    result = MODULE.verify(root)
+    assert result["ok"] is False
+    assert any("unconditional 501 claim" in failure for failure in result["failures"])
+
+
+@pytest.mark.parametrize(
+    ("document", "needle", "replacement"),
+    [
+        (MODULE.CAIQ, "No HSM protection for customer CMK material is evidenced", "CoreLink holds no customer key material at all"),
+        (MODULE.CAIQ, "staff cannot access customer CMK material is **unverified**", "staff cannot access customer CMK material is vacuously true"),
+        (MODULE.CAIQ, "The `/deactivate` Shred route is implemented", "Customer-controlled crypto-shredding is not available"),
+        (MODULE.CAIQ, "served product's compute and storage are hosted by Cloudflare", "All compute / storage hosted by Cloudflare / AWS / GCP / Azure"),
+        (MODULE.CAIQ, "shipped native container compiles the AWS BYOK path", "Plaintext DEKs never leave request scope (V8 isolate memory)"),
+        (MODULE.CAIQ, "Its Dockerfile pins the runtime base image digest", "Workers run as V8 isolates, not containers"),
+        (MODULE.SIG, "no verified customer rollout", "not shipped"),
+        (MODULE.SIG, "served product's compute and storage are hosted by Cloudflare", "compute / storage hosted by Cloudflare / AWS / GCP / Azure"),
+    ],
+)
+def test_absolute_customer_assurance_claims_fail_closed(
+    tmp_path: Path, document: Path, needle: str, replacement: str
+) -> None:
+    root = fixture_tree(tmp_path)
+    mutate_line(root / document, needle, replacement)
+    result = MODULE.verify(root)
+    assert result["ok"] is False
 
 
 def test_production_empty_cron_table_is_structural_and_fail_closed(tmp_path: Path) -> None:
