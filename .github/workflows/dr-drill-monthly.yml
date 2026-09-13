@@ -68,6 +68,7 @@ jobs:
           set -euo pipefail
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             CYCLE="$CYCLE_INPUT"
+            [[ "$CYCLE" =~ ^[123]$ ]] || { echo "::error::cycle must be 1, 2, or 3"; exit 1; }
             RUN_REASON="manual"
           else
             DOM=$(date -u +%d)
@@ -119,6 +120,8 @@ jobs:
           set -euo pipefail
           REGION="$REGION_INPUT"
           REGION="${REGION:-weur}"
+          # `asia` is the cycle-1 staging synthetic alias; it is not a
+          # production provisioning region (the drill script maps it to weur).
           [[ "$REGION" =~ ^(weur|sam|asia)$ ]] || { echo "::error::invalid region"; exit 1; }
           bash tests/dr/dr-drill-cycle-1.sh --region "${REGION}"
         env:

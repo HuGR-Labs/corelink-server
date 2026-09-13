@@ -28,7 +28,9 @@ def test_dispatch_values_are_env_bound_before_shell_use() -> None:
 
 def test_fail_closed_validators_cover_each_input_boundary() -> None:
     dr = _workflow("dr-drill-monthly.yml")
+    assert "cycle must be 1, 2, or 3" in dr
     assert "weur|sam|asia" in dr
+    assert "staging synthetic alias" in dr
     assert "aws|gcp|azure|vault" in dr
     assert "[0-9]{4}-[0-9]{2}-[0-9]{2}" in dr
     e2e = _workflow("e2e-browser-prod.yml")
@@ -38,6 +40,21 @@ def test_fail_closed_validators_cover_each_input_boundary() -> None:
     assert "invalid version" in release
     sbom = _workflow("sbom.yml")
     assert "invalid release version" in sbom
+    assert 'VERSION="${RELEASE_TAG#v}"' in sbom
+
+
+def test_release_tag_v_prefix_is_normalized_for_sbom() -> None:
+    source = _workflow("sbom.yml")
+    assert "VERSION=\"${RELEASE_TAG#v}\"" in source
+    assert "^drift-check-[0-9]{8}$" in source
+
+
+def test_invalid_dispatch_cycle_is_rejected() -> None:
+    result = subprocess.run(
+        ["bash", "-c", '[[ "$1" =~ ^[123]$ ]]', "cycle-check", "4;id"],
+        check=False,
+    )
+    assert result.returncode != 0
 
 
 def test_release_args_keep_shell_metacharacters_as_data() -> None:

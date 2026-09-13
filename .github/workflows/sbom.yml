@@ -95,7 +95,9 @@ jobs:
           if [[ -n "$VERSION_INPUT" ]]; then
             VERSION="$VERSION_INPUT"
           elif [[ "$EVENT_NAME" == "release" ]]; then
-            VERSION="$RELEASE_TAG"
+            # GitHub release tags are conventionally v-prefixed; artifact
+            # naming uses the bare semver version.
+            VERSION="${RELEASE_TAG#v}"
           else
             VERSION="drift-check-$(date +%Y%m%d)"
           fi
