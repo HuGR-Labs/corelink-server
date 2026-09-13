@@ -26,6 +26,10 @@ def test_b139_pins_official_archives_and_checks_before_extracting() -> None:
         assert install.index("sha256sum -c -") < install.index("tar -xzf")
     assert 'install -m 0755 "$WASM_PACK_DIR/wasm-pack" "$WASM_PACK_DIR/bin/wasm-pack"' in wasm_pack
     assert 'printf \'%s\\n\' "$WASM_PACK_DIR/bin" >> "$GITHUB_PATH"' in wasm_pack
+    assert '"$WASM_PACK_DIR/bin/wasm-pack" --version' in wasm_pack
+    assert 'wasm-pack --version' not in wasm_pack
+    assert '"$BINARYEN_DIR/bin/wasm-opt" --version' in binaryen
+    assert 'wasm-opt --version' not in binaryen
     assert "releases/latest" not in binaryen
     assert "sudo tar" not in binaryen
 
