@@ -48,6 +48,8 @@ on:
         description: "CoreLink env (production | staging)"
         required: false
         default: "production"
+        type: choice
+        options: [production, staging]
       dry_run:
         description: "If true, run the backup in dry-run mode (no live calls / no R2 writes)"
         required: false
@@ -78,6 +80,16 @@ jobs:
     env:
       CORELINK_ENV: ${{ github.event.inputs.env || 'production' }}
     steps:
+      - name: Validate CoreLink environment
+        env:
+          CORELINK_ENV_INPUT: ${{ github.event.inputs.env || 'production' }}
+        run: |
+          set -euo pipefail
+          if [[ "$CORELINK_ENV_INPUT" != production && "$CORELINK_ENV_INPUT" != staging ]]; then
+            echo "::error::env must be production or staging"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:

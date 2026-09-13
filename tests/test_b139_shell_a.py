@@ -61,3 +61,18 @@ def test_provider_and_confirm_guards_reject_invalid_input() -> None:
     assert _bash(provider, VALUE="evil").returncode != 0
     assert _bash(confirm, VALUE='build"; id; #').returncode != 0
     assert _bash(dry_run, VALUE='true"; id; #').returncode != 0
+
+
+def test_actual_workflow_guards_reject_malicious_env_and_invalid_month() -> None:
+    for filename in ("backup-daily-verify.yml", "backup-daily.yml"):
+        text = (ROOT / ".github/workflows" / filename).read_text()
+        assert "CORELINK_ENV_INPUT: ${{ github.event.inputs.env || 'production' }}" in text
+        assert '[[ "$CORELINK_ENV_INPUT" != production && "$CORELINK_ENV_INPUT" != staging ]]' in text
+        assert "options: [production, staging]" in text
+    for filename in ("billing-aggregate-runner.yml", "billing-reconcile-daily.yml"):
+        text = (ROOT / ".github/workflows" / filename).read_text()
+        assert "^[0-9]{4}-(0[1-9]|1[0-2])$" in text
+        guard = '[[ "$VALUE" =~ ^[0-9]{4}-(0[1-9]|1[0-2])$ ]]'
+        assert _bash(guard, VALUE="2026-00").returncode != 0
+        assert _bash(guard, VALUE="2026-13").returncode != 0
+    assert _bash('[[ "$VALUE" = production || "$VALUE" = staging ]]', VALUE='production"; id; #').returncode != 0
