@@ -805,7 +805,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   // The runner_job_ac_key column is written on EVERY runner mint (deny-DELETE at
   // minimum). Without an ac_output_name it is the sentinel "*"; WITH one it is the
   // BLAKE3 hex of ("clw/ref/runner/v1/" + name).
-  const AC_KEY_BIND_INDEX = 8; // pat INSERT: ...,created_ms(?8), runner_job_ac_key(?9)
+  const AC_KEY_BIND_INDEX = 6; // obligation activation binds runner_job_ac_key as ?7
 
   it("(wp5a) a runner mint with NO ac_output_name binds runner_job_ac_key = \"*\"", async () => {
     const captured: { req?: Request } = {};
