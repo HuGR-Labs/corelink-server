@@ -36,6 +36,14 @@ def test_repository_state_is_truthfully_open() -> None:
     assert result["missing"] == [path.as_posix() for path in verifier.EVIDENCE]
 
 
+def test_backlog_does_not_call_residency_template_executed() -> None:
+    backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
+    section = backlog.split("### B-170 —", 1)[1].split("### B-171 —", 1)[0]
+    assert "status: open" in section
+    assert "pending residency-amendment template" in section
+    assert "executed DPA/SLA/residency-amendment claims" not in section
+
+
 def test_all_present_artifacts_force_manual_owner_validation(tmp_path: Path) -> None:
     _packet_fixture(tmp_path)
     _evidence_fixture(tmp_path)

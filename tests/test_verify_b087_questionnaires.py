@@ -54,6 +54,13 @@ def test_live_population_passes_with_owner_actions_only() -> None:
     assert len(result["owner_actions"]) == 4
 
 
+def test_backlog_verify_means_matches_guard_population() -> None:
+    backlog = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
+    section = backlog.split("### B-087 —", 1)[1].split("### B-088 —", 1)[0]
+    assert "26 CAIQ and 17 SIG-LITE rows" in section
+    assert "status: done" in section
+
+
 @pytest.mark.parametrize(
     ("document", "needle", "replacement", "reason"),
     [

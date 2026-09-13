@@ -3954,7 +3954,7 @@ B-087 closed the engineering-controlled questionnaire wording without pretending
 executed agreements, PagerDuty evidence, or communications to prior recipients had been
 changed. The exact action packet is
 `docs/internal/b087-questionnaire-owner-actions.md`. Completion requires three independent
-owner artifacts: Legal's disposition for the executed DPA/SLA/residency-amendment claims,
+owner artifacts: Legal's disposition for the executed DPA/SLA claims and the pending residency-amendment template,
 Operations' PagerDuty rotation export, and Sales/Legal's decision on notification of
 recipients of superseded questionnaire copies. Engineering cannot sign, export, or make
 those external decisions.
@@ -11330,6 +11330,13 @@ agora lê os dois instrumentos. **Ele não emenda ato jurídico assinado — só
 afirma o que afirma.** Emendar é do owner.
 
 
+**Correção de estado em 2026-09-13.** Os parágrafos de 2026-08-31 acima são
+históricos: o Dockerfile hoje compila `byok-aws-real` no binário de produção;
+`501 byok_not_available` é condicional a falha de construção do provider ou acesso
+à CMK, não o resultado incondicional da rota. O recibo B-083 ainda não comprova
+ativação de CMK, revogação ou p99 em tenant real. O aditivo de residência citado
+acima continua template `PENDING_LEGAL_REVIEW`, não instrumento assinado.
+
 **Fechado em 2026-09-05 — `owner: tl`.** As linhas do CAIQ foram corrigidas para
 `N`/`P` com plano datado — edição de texto, minha. O resíduo de owner é decidir se os
 prospects que já receberam a versão atual precisam ser notificados, e o próprio `verify-means`
@@ -11343,7 +11350,7 @@ status: done
 verify: |
   python3 scripts/verify_b087_questionnaires.py
 verify-means: |
-  done — inverted guard: exit 0 means the closed population of 22 CAIQ and 15 SIG-LITE rows matches shipped repository reality.
+  done — inverted guard: exit 0 means the closed population of 26 CAIQ and 17 SIG-LITE rows matches shipped repository reality.
   Unsupported positive claims, mutations, missing/renamed rows, or missing source controls return non-zero.
   Executed DPA/SLA language, PagerDuty export, and prospect-notification decisions are observed in
   docs/internal/b087-questionnaire-owner-actions.md and do not hold this engineering item open.
@@ -16113,36 +16120,37 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-154 — ⛔ OWNER: dois instrumentos jurídicos executados afirmam capacidades que a plataforma devolve como não-implementadas
+### B-154 — ⛔ OWNER: reconciliar promessas jurídicas executadas com capacidades ainda não comprovadas
 
 Não são páginas de marketing. São atos jurídicos assinados, e por isso **nenhuma linha deles
 pode ser emendada sem o owner** — a correção de um instrumento executado é um aditivo, não um
 commit.
 
 - **`legal/dpa/v1.0.0.en-US.md:110`** — *"Audit events are retained in immutable R2 with
-  Object Lock"*. **R2 não implementa Object Lock**; a API devolve `NotImplemented`, o que
-  está registrado neste repositório e é a razão de [B-046] existir como item bloqueado por
-  plataforma. O DPA é o instrumento que o comprador anexa ao contrato dele.
+  Object Lock"*. O relato histórico de 2026-08-25 em [B-046] registrou `NotImplemented`,
+  mas não vinculou o artefato bruto. O probe mais recente, de 2026-09-09, é
+  `INDETERMINATE`: as credenciais foram rejeitadas antes do teste de capacidade e o
+  `PutObject` com retenção não foi executado. Não há prova atual de WORM neste
+  deployment, tampouco prova de que o R2 atualmente não implemente Object Lock.
+  O DPA é o instrumento que o comprador anexa ao contrato dele.
 - **`legal/sla/v1.0.0.md:46`** — a linha Enterprise compromete *"BYOK kill-switch p99 ≤
-  5 min"*. O BYOK devolve **501** (`routes/byok_admin.rs:249`) e o único provider compilado
-  no binário embarcado é o fake — é o [B-083], que já aponta para cá ao dizer que *"a
-  reconciliação dos instrumentos assinados"* é de outro item.
-- **`marketing/launch/CASE-STUDIES/enterprise-byok.md:59`** — depoimento atribuído que afirma
-  que *"o drill de kill-switch produziu o artefato de que a equipe de compliance precisava"*.
-  O drill é o [B-084]: emite `PASS` a partir de um `sleep`.
+  5 min"*. O Dockerfile de produção compila `byok-aws-real`, e a rota `/deactivate`
+  possui caminho Shred; `501 byok_not_available` na ativação é condicional à falha de
+  construção do provider ou acesso à CMK. O recibo [B-083] não contém tenant
+  provisionado, ativação, revogação ou medição p99. Código embarcado não comprova
+  capacidade operacional nem cumprimento do SLA.
+- **`marketing/launch/CASE-STUDIES/enterprise-byok.md`** — depoimento anterior retirado
+  do texto-fonte, que permanece `DRAFT — NOT FOR PUBLICATION`; é preciso apurar se
+  alguma cópia anterior circulou. O drill [B-084] não é evidência operacional de p99.
 
-**Uma correção ao enunciado original, e ela muda o custo para melhor.** A atribuição do
-depoimento é hoje `[ENTERPRISE_CUSTOMER_TITLE]` / `[ENTERPRISE_CUSTOMER_NAME or
-SANITIZED_DESCRIPTOR]` — **marcadores, não uma pessoa**. Ninguém foi citado ainda. Retratar
-custa **zero** agora e passa a exigir uma conversa com um cliente real no minuto em que
-alguém preencher o marcador antes do drill ser real. É o item mais barato desta leva e o que
-mais encarece se esperar.
+**Correção ao enunciado original.** A retirada do depoimento na fonte não prova que
+nenhuma versão anterior tenha sido enviada; a decisão de eventual aviso continua aberta.
 
-**Por que não é duplicata de [B-009]/[B-046]/[B-083]/[B-084]/[B-087].** Aqueles cinco cobrem
-o **defeito de engenharia** (o stub, o binário, o script do drill) e o **CAIQ**. Nenhum deles
-nomeia `legal/dpa/*` nem `legal/sla/*`, e nenhum dos `verify` deles lê esses arquivos —
-conferido. A diferença é material: consertar o binário não retira a afirmação do instrumento
-assinado, e retirar a afirmação não conserta o binário.
+**Por que não é duplicata de [B-009]/[B-046]/[B-083]/[B-084]/[B-087].** Esses itens cobrem
+camadas de engenharia, probe de fornecedor, drill e redação do CAIQ; [B-087] já roteia
+o resíduo jurídico para [B-170]. O B-154 mantém o remédio dos enunciados no DPA/SLA
+executados como decisão distinta: consertar o binário não altera instrumento assinado,
+e alterar instrumento não comprova a capacidade prometida.
 
 **O que este item NÃO decide** — e é exatamente o que o torna `owner:`: qual das três saídas
 tomar em cada instrumento. Emendar (aditivo com contraparte), notificar (comunicação formal a
@@ -16150,11 +16158,9 @@ quem já assinou), ou construir a capacidade. As três envolvem contraparte, din
 assinatura, e nenhuma é minha.
 
 
-**Só ele — e apenas isto (precisado 2026-08-31): a ASSINATURA.** O texto do aditivo, a minuta
-da notificação formal e o parecer de qual das três saídas é mais barata por instrumento **eu
-entrego prontos** — isso é redação, e é minha. O que não é executável sem ele é **executar o
-instrumento**: assinar o aditivo, notificar formalmente a contraparte, ou pagar a construção
-da capacidade.
+**Fronteira de execução.** Engenharia pode preparar minutas e evidências, mas não há neste
+registro uma decisão jurídica final, aditivo assinado ou aviso efetivado. Executar o
+instrumento, notificar formalmente a contraparte ou custear a capacidade requer o owner.
 
 ```backlog
 id: B-154
@@ -16164,52 +16170,19 @@ status: open
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
   python3 -S scripts/verify_owner_action_packets.py --id B-154
-  bash -c 'set -e
-  d=legal/dpa/v1.0.0.en-US.md
-  s=legal/sla/v1.0.0.md
-  b=crates/corelink-container/src/routes/byok_admin.rs
-  for f in "$d" "$s"; do [ -f "$f" ] || { echo "FALHA: $f sumiu — um instrumento executado nao some sozinho; reavalie o item."; exit 1; }; done
-  n=0; det=""
-  grep -qE "^[^#<*>-]*Object Lock" "$d" && { n=$((n+1)); det="$det dpa-afirma-object-lock"; }
-  grep -qE "^[^#<*>-]*BYOK kill-switch" "$s" && { n=$((n+1)); det="$det sla-compromete-kill-switch"; }
-  if [ -f "$b" ]; then
-    grep -qE "^[^/*]*NOT_IMPLEMENTED" "$b" || { echo "FALHA: byok_admin.rs nao devolve mais NOT_IMPLEMENTED em linha executavel — o BYOK pode ter sido construido; releia o item antes de confiar neste portao."; exit 1; }
-  else
-    echo "FALHA: $b sumiu — sem ele nao consigo sustentar que o SLA promete o que nao existe."; exit 1
-  fi
-  if [ "$n" -gt 0 ]; then
-    echo "aberto: $n de 2 instrumentos executados ainda afirmam capacidade nao entregue:$det (BYOK segue 501 no codigo)"
-  else
-    echo "aberto: nenhum instrumento publicado repete a afirmacao; o BYOK segue NOT_IMPLEMENTED e a decisao/assinatura do owner continua pendente"
-  fi'
+  python3 -S scripts/verify_b154_instrument_claims.py --self-test
 verify-means: |
-  open — pelo menos um dos dois instrumentos assinados ainda carrega a afirmação, **e** o
-  código continua devolvendo `NOT_IMPLEMENTED` no caminho do BYOK.
-
-  **Os greps nos instrumentos são ancorados em `^[^#]*`** — markdown não tem comentário de
-  linha, mas as duas páginas usam `#` de cabeçalho, e um título futuro como
-  *"## Object Lock — o que não fazemos"* satisfaria um grep nu e manteria o item verde
-  descrevendo o oposto. O grep no código usa `^[^/]*` pelo motivo padrão: doc-comment não é
-  enforcement.
-
-  **A condição do código é premissa, não achado, e por isso falha ALTO.** Se o BYOK deixar de
-  responder 501, o comando **para** e manda reler, em vez de decidir sozinho — porque nesse
-  cenário a linha do SLA pode ter passado a ser verdadeira, e um portão não deve tomar essa
-  decisão no lugar do owner.
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 2 de 2
-  instrumentos…"* e exit 0. Numa cópia com as duas linhas retiradas dos instrumentos, sai
-  *"FALHA: nenhum dos dois instrumentos assinados carrega mais a afirmacao"* e exit 1.
-
-  **O depoimento do case study ficou FORA do predicado, de propósito.** Ele é hoje um
-  marcador não preenchido — retratá-lo é barato e não muda o veredito deste item; medi-lo
-  junto faria o item parecer resolvido quando só a parte fácil tivesse sido feita. Está no
-  corpo, com o caminho e a linha, para quem fechar tratar os três juntos.
-
-  Este item é `owner:` pelo critério estrito: o próximo passo é um aditivo contratual, uma
-  notificação formal a quem já assinou, ou a construção da capacidade. Nenhum é executável
-  sem a assinatura ou o dinheiro do owner.
-last-verified: 2026-09-09
+  open — o packet conserva as decisões externas não executadas; o detector exige as duas
+  afirmações ativas no DPA/SLA e testa mutações negativas de Markdown. Também exige a
+  evidência atual: Dockerfile com `byok-aws-real`, B-083 sem ciclo CMK/p99 executado e
+  probe B-046 mais recente `INDETERMINATE`. O relato histórico `NotImplemented` não é
+  tratado como resultado do probe atual. Qualquer alteração nessa combinação falha
+  fechado para reavaliação; um `NOT_IMPLEMENTED` solto no código nunca satisfaz o guard.
+  Verde confirma apenas consistência do registro aberto, não cumprimento do SLA, estado
+  definitivo de Object Lock nem solução jurídica. A retirada do case study da fonte não
+  determina se houve circulação anterior. Encerrar B-154 exige evidência de remédio
+  jurídico/aviso aprovado ou capacidade comprovada, com o instrumento assinado preservado.
+last-verified: 2026-09-13
 ```
 
 ### B-155 — 93 de 134 `verify` fazem `grep` de padrão não-ancorado: o comentário do arquivo alvo satisfaz o portão
