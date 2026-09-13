@@ -31,6 +31,9 @@ LEDGER_BASE_SHA = "8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94"
 LEDGER_PATH = REPO_ROOT / "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md"
 SNAPSHOT_PATH = REPO_ROOT / "docs/campaigns/remediation/backlog-ledger-snapshot.json"
 SNAPSHOT_SHA256 = "3a4cbf652a1d4485ac9c8e03bd79343fb4619b5c2e8cb58af161263f83440f18"
+POSTMERGE_BASE_SHA = "6be19a2e525dad045ad8404d722905afde7ad7bd"
+POSTMERGE_SNAPSHOT_PATH = REPO_ROOT / "docs/campaigns/remediation/backlog-ledger-snapshot-b373-postmerge.json"
+POSTMERGE_SNAPSHOT_SHA256 = "4c6f81def4554196ac784e3300a2e478588e0586b058ca5d0d328df5167d397f"
 ENTRY_RE = re.compile(r"^(B-\d+)\s+(WP-[A-Z0-9][A-Z0-9./_-]*)$")
 WP_HEADING_RE = re.compile(r"^#{2,6}\s+(WP-[A-Z0-9][A-Z0-9./_-]*)(?:\s|—|$)", re.MULTILINE)
 FIELD_PATTERNS = {
@@ -349,16 +352,19 @@ def backlog_status_counts(text: str) -> dict[str, int]:
     return dict(counts)
 
 
-def load_snapshot_manifest(path: Path = SNAPSHOT_PATH) -> dict[str, object]:
-    """Load the byte-pinned candidate snapshot used as the anti-tautology anchor."""
+def _load_snapshot_manifest(
+    path: Path, digest_pin: str, schema: int, base_sha: str,
+    counts_pin: dict[str, int], open_count: int, transition_pin: dict[str, object],
+) -> dict[str, object]:
+    """Validate a versioned snapshot against its immutable byte and schema pins."""
     try:
         raw = path.read_bytes()
     except OSError as exc:
         raise LedgerError(f"{path}: snapshot manifest is unreadable: {exc}") from exc
     digest = hashlib.sha256(raw).hexdigest()
-    if digest != SNAPSHOT_SHA256:
+    if digest != digest_pin:
         raise LedgerError(
-            f"{path}: snapshot manifest digest drifted; expected {SNAPSHOT_SHA256}, found {digest}"
+            f"{path}: snapshot manifest digest drifted; expected {digest_pin}, found {digest}"
         )
     try:
         manifest = json.loads(raw)
@@ -378,9 +384,9 @@ def load_snapshot_manifest(path: Path = SNAPSHOT_PATH) -> dict[str, object]:
     }
     if set(manifest) != required:
         raise LedgerError(f"{path}: snapshot manifest schema drifted")
-    if manifest["schema_version"] != 1:
+    if manifest["schema_version"] != schema:
         raise LedgerError(f"{path}: unsupported snapshot manifest schema")
-    if manifest["snapshot_commit"] != LEDGER_BASE_SHA:
+    if manifest["snapshot_commit"] != base_sha:
         raise LedgerError(f"{path}: snapshot commit is not the canonical ledger base")
     if manifest["source"] != "BACKLOG.md":
         raise LedgerError(f"{path}: snapshot source is not BACKLOG.md")
@@ -391,16 +397,69 @@ def load_snapshot_manifest(path: Path = SNAPSHOT_PATH) -> dict[str, object]:
     if not isinstance(manifest["item_count"], int) or manifest["item_count"] < 1:
         raise LedgerError(f"{path}: snapshot item count is malformed")
     counts = manifest["status_counts"]
-    if counts != {"done": 327, "open": 14, "parked": 32}:
+    if counts != counts_pin:
         raise LedgerError(f"{path}: snapshot status population drifted")
     open_ids = manifest["open_ids"]
-    if not isinstance(open_ids, list) or open_ids != sorted(open_ids) or len(open_ids) != 14:
+    if not isinstance(open_ids, list) or open_ids != sorted(open_ids) or len(open_ids) != open_count:
         raise LedgerError(f"{path}: snapshot open population is malformed")
     if any(not isinstance(item_id, str) or not re.fullmatch(r"B-\d{3}", item_id) for item_id in open_ids):
         raise LedgerError(f"{path}: snapshot open population contains malformed IDs")
     transition = manifest["transition"]
-    if transition != {"kind": "candidate-snapshot", "requires_snapshot_ancestor": True}:
+    if transition != transition_pin:
         raise LedgerError(f"{path}: snapshot transition evidence drifted")
+    return manifest
+
+
+def load_snapshot_manifest(path: Path | None = None) -> dict[str, object]:
+    """Load the original, byte-pinned candidate preimage."""
+    return _load_snapshot_manifest(
+        path if path is not None else SNAPSHOT_PATH, SNAPSHOT_SHA256, 1, LEDGER_BASE_SHA,
+        {"done": 327, "open": 14, "parked": 32}, 14,
+        {"kind": "candidate-snapshot", "requires_snapshot_ancestor": True},
+    )
+
+
+def validate_delivered_preimage() -> dict[str, object]:
+    """Tie the candidate snapshot to the exact delivered merge despite squash ancestry."""
+    prior = load_snapshot_manifest()
+    prior_at_merge = subprocess.run(
+        ["git", "show", f"{POSTMERGE_BASE_SHA}:docs/campaigns/remediation/backlog-ledger-snapshot.json"],
+        cwd=REPO_ROOT, check=False, capture_output=True,
+    )
+    if prior_at_merge.returncode or prior_at_merge.stdout != SNAPSHOT_PATH.read_bytes():
+        raise LedgerError("prior snapshot differs from the delivered merge commit")
+    backlog_at_merge = subprocess.run(
+        ["git", "show", f"{POSTMERGE_BASE_SHA}:BACKLOG.md"],
+        cwd=REPO_ROOT, check=False, capture_output=True,
+    )
+    if backlog_at_merge.returncode or hashlib.sha256(backlog_at_merge.stdout).hexdigest() != prior["source_sha256"]:
+        raise LedgerError("prior BACKLOG.md is not anchored to the delivered merge commit")
+    # The source digest ties these exact bytes to the pinned manifest, whose
+    # open-ID population includes B-373.
+    if "B-373" not in prior["open_ids"]:
+        raise LedgerError("delivered merge commit is not the B-373 open preimage")
+    return prior
+
+
+def load_postmerge_snapshot_manifest() -> dict[str, object]:
+    """Accept B-373 closure only with the pinned delivered-merge preimage."""
+    prior = validate_delivered_preimage()
+    manifest = _load_snapshot_manifest(
+        POSTMERGE_SNAPSHOT_PATH, POSTMERGE_SNAPSHOT_SHA256, 2, POSTMERGE_BASE_SHA,
+        {"done": 328, "open": 13, "parked": 32}, 13,
+        {
+            "kind": "post-merge-b373-live-zero",
+            "prior_snapshot_sha256": SNAPSHOT_SHA256,
+            "merged_sha": POSTMERGE_BASE_SHA,
+            "observed_at": "2026-09-12",
+            "authenticated_open_alert_count": 0,
+            "verifier": f"python3 scripts/verify_b373_dependabot.py --post-merge --merged-sha {POSTMERGE_BASE_SHA}",
+        },
+    )
+    if set(prior["open_ids"]) - set(manifest["open_ids"]) != {"B-373"} or (
+        set(manifest["open_ids"]) - set(prior["open_ids"])
+    ):
+        raise LedgerError("post-merge open population is not the B-373-only transition")
     return manifest
 
 
@@ -630,9 +689,9 @@ def parse_ledger_state(text: str, source: str) -> dict[str, str]:
     missing = sorted(required - state.keys())
     if missing:
         raise LedgerError(f"{source}: ledger state missing keys: {', '.join(missing)}")
-    if state["base-ref"] != LEDGER_BASE_REF:
+    if state["base-ref"] not in {LEDGER_BASE_REF, POSTMERGE_BASE_SHA}:
         raise LedgerError(
-            f"{source}: ledger base-ref must be {LEDGER_BASE_REF}"
+            f"{source}: ledger base-ref must be {LEDGER_BASE_REF} or {POSTMERGE_BASE_SHA}"
         )
     if not re.fullmatch(r"[0-9a-f]{40}", state["base-sha"]):
         raise LedgerError(f"{source}: ledger base-sha is not a 40-digit hex SHA")
@@ -836,7 +895,20 @@ def validate_git_anchor(
         cwd=repo_root,
         check=False,
     ).returncode != 0:
-        raise LedgerError(f"{source}: base is not an ancestor of {head_ref}: {base_sha}")
+        # The candidate was squash-integrated into the delivered #1593 merge:
+        # its historical object is not an ancestor, but its exact BACKLOG and
+        # snapshot bytes are present at that immutable merge. No other base
+        # or head gets this exception.
+        if (
+            repo_root != REPO_ROOT or base_sha != LEDGER_BASE_SHA
+            or base_ref != LEDGER_BASE_REF
+            or subprocess.run(
+                ["git", "merge-base", "--is-ancestor", POSTMERGE_BASE_SHA, head_ref],
+                cwd=repo_root, check=False,
+            ).returncode != 0
+        ):
+            raise LedgerError(f"{source}: base is not an ancestor of {head_ref}: {base_sha}")
+        validate_delivered_preimage()
 
 
 def main() -> int:
@@ -851,18 +923,21 @@ def main() -> int:
         except ValueError:
             ledger_source = str(LEDGER_PATH)
         ledger_state = parse_ledger_state(ledger_text, ledger_source)
-        snapshot_manifest = load_snapshot_manifest()
+        expected_base_sha = ledger_state["base-ref"]
+        snapshot_manifest = (
+            load_snapshot_manifest() if expected_base_sha == LEDGER_BASE_SHA
+            else load_postmerge_snapshot_manifest()
+        )
         validate_snapshot_manifest(
             snapshot_manifest,
             backlog_text,
             ledger_state,
             source=ledger_source,
         )
-        expected_base_sha = LEDGER_BASE_SHA
         validate_git_anchor(
             REPO_ROOT,
             source=ledger_source,
-            base_ref=LEDGER_BASE_REF,
+            base_ref=expected_base_sha,
             base_sha=expected_base_sha,
         )
         catalog_counts: dict[str, int] = {}

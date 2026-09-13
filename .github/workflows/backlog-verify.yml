@@ -55,12 +55,30 @@ jobs:
         run: |
           python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test
           python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py
+  trusted_semantic:
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    runs-on: corelink
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      vulnerability-alerts: read
+    steps:
+      - name: Checkout trusted main (immutable event SHA)
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0  # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          path: _base
+          fetch-depth: 0
+          persist-credentials: false
       - name: Execute trusted main semantic checks
-        if: github.event_name == 'push' || github.event_name == 'schedule'
         working-directory: _base
-        run: python3 scripts/backlog_verify.py --trusted-semantic
+        run: python3 scripts/backlog_verify.py --trusted-semantic --exclude-auth-checks
+      - name: Execute authenticated Dependabot semantic checks
+        working-directory: _base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/backlog_verify.py --trusted-semantic --auth-only
       - name: Execute B-046 Object-Lock contract and mutation checks
-        if: github.event_name == 'push' || github.event_name == 'schedule'
         working-directory: _base
         run: |
           python3 scripts/verify_b046_object_lock_probe.py

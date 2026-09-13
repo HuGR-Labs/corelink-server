@@ -4,7 +4,9 @@
 Candidate mode deliberately expects the authenticated pre-merge open census and
 proves that the candidate lockfile contains a fix for every affected package.
 Use ``--post-merge`` only after the candidate is on the default branch; that
-mode requires the authenticated live census to be empty.
+mode requires the authenticated live census to be empty. Once B-373 is marked
+done, its unchanged backlog ``verify:`` command must also prove this live zero;
+the historical candidate fixture alone cannot verify a done declaration.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from typing import Any
 
 REPO = "HuGR-Labs/corelink-server"
 BASE = "b7c6a165de0d456b6679c9662a1ffc8babc6ace8"
+DELIVERED_MERGE_SHA = "6be19a2e525dad045ad8404d722905afde7ad7bd"
 SNAPSHOT = "docs/security/b373-dependabot-census-2026-09-09.json"
 EXPECTED: dict[int, tuple[str, str, str]] = {
     39: ("vitest", "GHSA-82fw-gwwq-j7x9", "medium"),
@@ -111,6 +114,28 @@ def git(root: Path, *arguments: str) -> str:
     return result.stdout.strip()
 
 
+def api_json(endpoint: str) -> dict[str, Any]:
+    """Read GitHub control-plane facts without writing a git credential to disk."""
+    result = subprocess.run(["gh", "api", endpoint], capture_output=True, text=True, check=False)
+    if result.returncode:
+        raise CensusError(f"authenticated GitHub API failed for {endpoint}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise CensusError(f"GitHub API returned invalid JSON for {endpoint}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise CensusError(f"GitHub API returned non-object response for {endpoint}")
+    return payload
+
+
+def live_main_sha() -> str:
+    payload = api_json(f"/repos/{REPO}/git/ref/heads/main")
+    sha = (payload.get("object") or {}).get("sha")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", sha):
+        raise CensusError("GitHub main ref has no valid commit SHA")
+    return sha.lower()
+
+
 def verify_post_merge_ref(root: Path, merged_sha: str | None) -> None:
     """Require a clean checkout whose commit and tree are the delivered ref."""
     if merged_sha:
@@ -118,13 +143,7 @@ def verify_post_merge_ref(root: Path, merged_sha: str | None) -> None:
             raise CensusError("--merged-sha must be a full 40-character commit SHA")
         expected_ref = merged_sha
     else:
-        result = subprocess.run(
-            ["git", "fetch", "--no-tags", "origin", "main"],
-            cwd=root, capture_output=True, text=True, check=False,
-        )
-        if result.returncode:
-            raise CensusError("could not fetch origin/main for post-merge verification")
-        expected_ref = "origin/main"
+        expected_ref = live_main_sha()
     expected_commit = git(root, "rev-parse", "--verify", f"{expected_ref}^{{commit}}")
     expected_tree = git(root, "rev-parse", "--verify", f"{expected_ref}^{{tree}}")
     head = git(root, "rev-parse", "--verify", "HEAD^{commit}")
@@ -135,6 +154,31 @@ def verify_post_merge_ref(root: Path, merged_sha: str | None) -> None:
         result = subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, check=False)
         if result.returncode:
             raise CensusError("working tree is dirty; post-merge verification requires the delivered tree")
+
+
+def verify_delivered_main_for_candidate(root: Path) -> None:
+    """A done declaration may be checked on a descendant before it is merged.
+
+    The exact-tree requirement above belongs only to ``--post-merge``. Here the
+    delivered merge must be an ancestor of both live main and the checked-out
+    candidate. The live ref and comparison come from the authenticated API;
+    private-repository git fetch would require persisting checkout credentials.
+    """
+    main_sha = live_main_sha()
+    shallow = git(root, "rev-parse", "--is-shallow-repository")
+    if shallow != "false":
+        raise CensusError("B-373 closure requires a full-history trusted checkout")
+    comparison = api_json(f"/repos/{REPO}/compare/{DELIVERED_MERGE_SHA}...{main_sha}")
+    if comparison.get("status") not in {"ahead", "identical"}:
+        raise CensusError("live main is not descended from the B-373 delivered merge")
+    if live_main_sha() != main_sha:
+        raise CensusError("main moved during B-373 closure check")
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", DELIVERED_MERGE_SHA, "HEAD"],
+        cwd=root, capture_output=True, text=True, check=False,
+    )
+    if result.returncode:
+        raise CensusError("trusted HEAD is not descended from the B-373 delivered merge")
 
 
 def flatten(payload: Any) -> list[dict[str, Any]]:
@@ -242,6 +286,24 @@ def verify_lockfile(root: Path) -> None:
         raise CensusError("obsolete axe CLI/chromedriver/adm-zip path remains")
 
 
+def backlog_b373_done(root: Path) -> bool:
+    """Read the single canonical B-373 declaration without trusting a fixture."""
+    try:
+        backlog = (root / "BACKLOG.md").read_text(encoding="utf-8")
+    except OSError as exc:
+        raise CensusError(f"BACKLOG.md unavailable: {exc}") from exc
+    sections = re.findall(r"(?ms)^### B-373\b[^\n]*\n(.*?)(?=^### B-\d+\b|\Z)", backlog)
+    if len(sections) != 1:
+        raise CensusError("expected exactly one B-373 backlog section")
+    blocks = re.findall(r"(?ms)^```backlog\n(.*?)^```\s*$", sections[0])
+    if len(blocks) != 1:
+        raise CensusError("expected exactly one B-373 backlog block")
+    statuses = re.findall(r"(?m)^status: ([a-z]+)$", blocks[0])
+    if len(statuses) != 1 or statuses[0] not in {"open", "done"}:
+        raise CensusError("B-373 backlog status is missing or malformed")
+    return statuses[0] == "done"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", default=REPO)
@@ -270,15 +332,23 @@ def main(argv: list[str] | None = None) -> int:
         if actual != expected:
             mode = "post-merge zero" if args.post_merge else "pre-merge candidate census"
             raise CensusError(f"{mode} drifted: expected {expected}, got {actual}")
+        closure_required = snapshot_fixture and not args.post_merge and backlog_b373_done(args.root)
         if args.post_merge:
             verify_post_merge_ref(args.root, args.merged_sha)
         verify_lockfile(args.root)
         if not args.post_merge and not snapshot_fixture:
             verify_snapshot(args.root)
+        if closure_required:
+            verify_delivered_main_for_candidate(args.root)
+            if census(read_alerts(args.repo, None)) != {}:
+                raise CensusError("B-373 done requires an authenticated post-merge live zero")
     except CensusError as exc:
         print(f"FAIL: B-373 fail-closed Dependabot verifier: {exc}", file=sys.stderr)
         return 2
-    print("B-373 verified: " + ("post-merge live zero" if args.post_merge else "19-alert candidate census contained"))
+    mode = "post-merge live zero" if args.post_merge else "19-alert candidate census contained"
+    if closure_required:
+        mode += " and post-merge live zero"
+    print("B-373 verified: " + mode)
     return 0
 
 

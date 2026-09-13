@@ -262,6 +262,84 @@ catalog-counts: B001-B045=8,B046-B090=31,B091-B130=36,B131-B167=32
 def test_live_ledger_uses_immutable_candidate_anchor():
     assert ledger.LEDGER_BASE_REF == "8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94"
     assert ledger.LEDGER_BASE_SHA == "8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94"
+    assert ledger.POSTMERGE_BASE_SHA == "6be19a2e525dad045ad8404d722905afde7ad7bd"
+
+
+def _committed_preimage_file(path: str) -> bytes:
+    return subprocess.run(
+        ["git", "show", f"{ledger.POSTMERGE_BASE_SHA}:{path}"], cwd=ledger.REPO_ROOT,
+        check=True, capture_output=True,
+    ).stdout
+
+
+def _live_snapshot_manifest():
+    state = parse_ledger_state(ledger.LEDGER_PATH.read_text(), "live-ledger.md")
+    return (
+        ledger.load_postmerge_snapshot_manifest()
+        if state["base-ref"] == ledger.POSTMERGE_BASE_SHA
+        else load_snapshot_manifest()
+    )
+
+
+def test_postmerge_snapshot_accepts_versioned_b373_only_transition():
+    if not ledger.POSTMERGE_SNAPSHOT_PATH.is_file():
+        pytest.skip("versioned post-merge data is not present in the candidate tree")
+    manifest = ledger.load_postmerge_snapshot_manifest()
+    backlog = ledger.REPO_ROOT.joinpath("BACKLOG.md").read_text()
+    state = parse_ledger_state(
+        ledger.LEDGER_PATH.read_text(),
+        "postmerge-ledger.md",
+    )
+    validate_snapshot_manifest(manifest, backlog, state, source="postmerge-ledger.md")
+    validate_ledger_state(
+        state, source="postmerge-ledger.md", item_count=373,
+        status_counts={"done": 328, "open": 13, "parked": 32},
+        catalog_counts={"B001-B045": 4, "B046-B090": 3, "B091-B130": 2, "B131-B373": 4},
+        expected_base_sha=ledger.POSTMERGE_BASE_SHA,
+    )
+    ledger.validate_git_anchor(
+        ledger.REPO_ROOT, source="postmerge-ledger.md",
+        base_ref=ledger.POSTMERGE_BASE_SHA, base_sha=ledger.POSTMERGE_BASE_SHA,
+    )
+
+
+def test_postmerge_snapshot_rejects_modified_preimage_and_manifest(monkeypatch, tmp_path):
+    altered_prior = tmp_path / "prior.json"
+    altered_prior.write_bytes(ledger.SNAPSHOT_PATH.read_bytes() + b"\n")
+    monkeypatch.setattr(ledger, "SNAPSHOT_PATH", altered_prior)
+    with pytest.raises(LedgerError, match="snapshot manifest digest drifted"):
+        ledger.load_postmerge_snapshot_manifest()
+    monkeypatch.undo()
+    altered_post = tmp_path / "post.json"
+    altered_post.write_bytes(b"not the pinned post-merge snapshot\n")
+    monkeypatch.setattr(ledger, "POSTMERGE_SNAPSHOT_PATH", altered_post)
+    with pytest.raises(LedgerError, match="snapshot manifest digest drifted"):
+        ledger.load_postmerge_snapshot_manifest()
+
+
+def test_snapshot_rejects_crossed_pre_and_postmerge_states():
+    if not ledger.POSTMERGE_SNAPSHOT_PATH.is_file():
+        pytest.skip("versioned post-merge data is not present in the candidate tree")
+    post = ledger.load_postmerge_snapshot_manifest()
+    old = load_snapshot_manifest()
+    old_backlog = _committed_preimage_file("BACKLOG.md").decode()
+    old_state = parse_ledger_state(
+        _committed_preimage_file("docs/campaigns/remediation/BACKLOG-WP-LEDGER.md").decode(),
+        "old-ledger.md",
+    )
+    post_backlog = ledger.REPO_ROOT.joinpath("BACKLOG.md").read_text()
+    post_state = parse_ledger_state(
+        ledger.LEDGER_PATH.read_text(),
+        "post-ledger.md",
+    )
+    with pytest.raises(LedgerError, match="outside the immutable snapshot"):
+        validate_snapshot_manifest(old, post_backlog, post_state, source="crossed")
+    with pytest.raises(LedgerError, match="outside the immutable snapshot"):
+        validate_snapshot_manifest(post, old_backlog, old_state, source="crossed")
+
+
+def test_current_candidate_main_still_passes():
+    assert ledger.main() == 0
 
 
 def test_current_candidate_tree_has_ancestry_anchor():
@@ -327,10 +405,13 @@ def test_git_anchor_rejects_wrong_ref_and_unrelated_head(tmp_path):
 
 def test_main_rejects_tampered_base_sha_end_to_end(monkeypatch, tmp_path):
     source = ledger.LEDGER_PATH.read_text()
+    state = parse_ledger_state(source, "live-ledger.md")
     tampered = source.replace(
-        "base-sha: 8a8c19d06f398cbec6e73eb95fd3ebcfb5ccbe94",
+        f"base-sha: {state['base-sha']}",
         "base-sha: 0000000000000000000000000000000000000000",
+        1,
     )
+    assert tampered != source
     path = tmp_path / "BACKLOG-WP-LEDGER.md"
     path.write_text(tampered)
     monkeypatch.setattr(ledger, "LEDGER_PATH", path)
@@ -347,13 +428,16 @@ def test_snapshot_rejects_coordinated_open_item_closure_and_count_rewrite():
         + backlog[end:]
     )
     ledger_text = ledger.LEDGER_PATH.read_text()
-    mutated_ledger = ledger_text.replace("open-count: 14", "open-count: 13", 1)
-    mutated_ledger = mutated_ledger.replace("done-count: 327", "done-count: 328", 1)
+    live_state = parse_ledger_state(ledger_text, "live-ledger.md")
+    open_count = int(live_state["open-count"])
+    done_count = int(live_state["done-count"])
+    mutated_ledger = ledger_text.replace(f"open-count: {open_count}", f"open-count: {open_count - 1}", 1)
+    mutated_ledger = mutated_ledger.replace(f"done-count: {done_count}", f"done-count: {done_count + 1}", 1)
     mutated_ledger = mutated_ledger.replace("B001-B045=4", "B001-B045=3", 1)
     state = parse_ledger_state(mutated_ledger, "mutated-ledger.md")
     with pytest.raises(LedgerError, match="outside the immutable snapshot"):
         validate_snapshot_manifest(
-            load_snapshot_manifest(),
+            _live_snapshot_manifest(),
             mutated_backlog,
             state,
             source="mutated-ledger.md",
@@ -361,11 +445,14 @@ def test_snapshot_rejects_coordinated_open_item_closure_and_count_rewrite():
 
 
 def test_snapshot_rejects_ledger_count_rewrite_without_backlog_change():
-    ledger_text = ledger.LEDGER_PATH.read_text().replace("open-count: 14", "open-count: 13", 1)
+    live_text = ledger.LEDGER_PATH.read_text()
+    open_count = int(parse_ledger_state(live_text, "live-ledger.md")["open-count"])
+    ledger_text = live_text.replace(f"open-count: {open_count}", f"open-count: {open_count - 1}", 1)
+    assert ledger_text != live_text
     state = parse_ledger_state(ledger_text, "mutated-ledger.md")
     with pytest.raises(LedgerError, match="ledger open-count is outside"):
         validate_snapshot_manifest(
-            load_snapshot_manifest(),
+            _live_snapshot_manifest(),
             ledger.REPO_ROOT.joinpath("BACKLOG.md").read_text(),
             state,
             source="mutated-ledger.md",

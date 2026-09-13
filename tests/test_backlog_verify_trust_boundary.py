@@ -11,6 +11,7 @@ import tempfile
 import unittest
 import datetime as dt
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts import backlog_verify
 
@@ -29,7 +30,10 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         self.assertIn("github.event.pull_request.base.sha || github.sha", workflow)
         self.assertNotIn("github.event.pull_request.head.ref", workflow)
         self.assertNotIn("github.event.pull_request.base.ref", workflow)
-        self.assertNotIn("GH_TOKEN", workflow)
+        self.assertEqual(workflow.count("GH_TOKEN:"), 1)
+        self.assertIn("vulnerability-alerts: read", workflow)
+        self.assertIn("--trusted-semantic --auth-only", workflow)
+        self.assertIn("--trusted-semantic --exclude-auth-checks", workflow)
         self.assertIn("path: _candidate", workflow)
         self.assertIn("path: _base", workflow)
         self.assertIn("working-directory: _base", workflow)
@@ -84,6 +88,24 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(any("owner may change" in error for error in errors))
 
+    def test_verify_means_can_change_only_with_status_transition(self) -> None:
+        base = self.item("B-373", status="open")
+        changed = self.item("B-373", status="done")
+        changed.raw["verify-means"] = "done — authenticated post-merge live zero"
+        self.assertEqual(
+            backlog_verify.validate_candidate_transitions([changed], [base], dt.date(2026, 9, 12)),
+            [],
+        )
+        unchanged_status = self.item("B-373", status="open")
+        unchanged_status.raw["verify-means"] = changed.raw["verify-means"]
+        errors = backlog_verify.validate_candidate_transitions(
+            [unchanged_status], [base], dt.date(2026, 9, 12)
+        )
+        self.assertTrue(any("verify-means may change only with a status transition" in error for error in errors))
+        changed.raw["verify"] = "true"
+        errors = backlog_verify.validate_candidate_transitions([changed], [base], dt.date(2026, 9, 12))
+        self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
+
     def test_deleting_highest_base_id_is_rejected(self) -> None:
         errors = backlog_verify.validate_candidate_transitions(
             [self.item("B-001")],
@@ -102,6 +124,86 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
             backlog_verify.validate_candidate_workflow(self.candidate)
 
+    def test_b314_trusted_step_shape_and_placement_are_fail_closed(self) -> None:
+        workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
+        baseline = workflow.read_text(encoding="utf-8")
+        backlog_verify.validate_candidate_workflow(self.candidate)
+        b314_marker = "      - name: Prove BASE B-314 owner-gate mutation teeth"
+        semantic_marker = "      - name: Execute trusted main semantic checks"
+        start = baseline.index(b314_marker)
+        end = baseline.index(semantic_marker, start)
+        prefix, b314_step, suffix = baseline[:start], baseline[start:end], baseline[end:]
+        mutations = {
+            "removed": prefix + suffix,
+            "wrong-working-directory": prefix + b314_step.replace(
+                "working-directory: _base", "working-directory: _candidate", 1
+            ) + suffix,
+            "weakened-self-test": prefix + b314_step.replace(
+                "python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test",
+                "python3 -S scripts/verify_b314_gdpr_sigstore.py",
+                1,
+            ) + suffix,
+            "weakened-mutation-test": prefix + b314_step.replace(
+                "python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py", "true", 1
+            ) + suffix,
+            "extra-shell-key": prefix + b314_step + "        shell: bash\n" + suffix,
+            "reordered": prefix + suffix + b314_step,
+        }
+        for label, mutated in mutations.items():
+            with self.subTest(label=label):
+                workflow.write_text(mutated, encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
+                    backlog_verify.validate_candidate_workflow(self.candidate)
+        workflow.write_text(baseline, encoding="utf-8")
+
+    def test_workflow_rejects_inherited_and_step_environment_execution(self) -> None:
+        workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
+        baseline = workflow.read_text(encoding="utf-8")
+        backlog_verify.validate_candidate_workflow(self.candidate)
+        b314_marker = "      - name: Prove BASE B-314 owner-gate mutation teeth"
+        mutations = {
+            "root-env-bash-env": baseline.replace(
+                "name: backlog-verify\n",
+                "name: backlog-verify\nenv:\n  BASH_ENV: ${{ github.workspace }}/_candidate/evil.sh\n", 1,
+            ),
+            "root-default-shell": baseline.replace(
+                "name: backlog-verify\n",
+                "name: backlog-verify\ndefaults:\n  run:\n    shell: bash\n", 1,
+            ),
+            "job-env-bash-env": baseline.replace(
+                "    timeout-minutes: 10\n",
+                "    timeout-minutes: 10\n    env:\n      BASH_ENV: ${{ github.workspace }}/_candidate/evil.sh\n", 1,
+            ),
+            "job-defaults": baseline.replace(
+                "    timeout-minutes: 10\n",
+                "    timeout-minutes: 10\n    defaults:\n      run:\n        working-directory: _candidate\n", 1,
+            ),
+            "job-container": baseline.replace(
+                "    timeout-minutes: 10\n",
+                "    timeout-minutes: 10\n    container: attacker-controlled-image\n", 1,
+            ),
+            "base-gate-env-bash-env": baseline.replace(
+                "          TRUSTED_ROOT: ${{ github.workspace }}/_base\n",
+                "          TRUSTED_ROOT: ${{ github.workspace }}/_base\n"
+                "          BASH_ENV: ${{ github.workspace }}/_candidate/evil.sh\n", 1,
+            ),
+            "b314-step-env": baseline.replace(
+                b314_marker + "\n",
+                b314_marker + "\n        env:\n          BASH_ENV: ${{ github.workspace }}/_candidate/evil.sh\n", 1,
+            ),
+            "extra-pr-trigger": baseline.replace(
+                "    paths: [\"**\"]\n  push:\n",
+                "    paths: [\"**\"]\n    branches: [main]\n  push:\n", 1,
+            ),
+        }
+        for label, mutated in mutations.items():
+            with self.subTest(label=label):
+                self.assertNotEqual(mutated, baseline)
+                workflow.write_text(mutated, encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
+                    backlog_verify.validate_candidate_workflow(self.candidate)
+        workflow.write_text(baseline, encoding="utf-8")
+
     def test_b046_trusted_step_shape_and_placement_are_fail_closed(self) -> None:
         workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
         baseline = workflow.read_text(encoding="utf-8")
@@ -109,24 +211,87 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         marker = "      - name: Execute B-046 Object-Lock contract and mutation checks"
         b046_start = baseline.index(marker)
         prefix, b046_step = baseline[:b046_start], baseline[b046_start:]
-        semantic_marker = "      - name: Execute trusted main semantic checks"
-        semantic_start = prefix.index(semantic_marker)
-        prefix_without_semantic = prefix[:semantic_start]
-        semantic_step = prefix[semantic_start:]
+        auth_marker = "      - name: Execute authenticated Dependabot semantic checks"
+        auth_start = prefix.index(auth_marker)
+        prefix_without_auth = prefix[:auth_start]
+        auth_step = prefix[auth_start:]
         mutations = {
             "removed": prefix.rstrip() + "\n",
-            "wrong-if": prefix + b046_step.replace(
-                "if: github.event_name == 'push' || github.event_name == 'schedule'",
-                "if: github.event_name == 'workflow_dispatch'",
-                1,
-            ),
+            "extra-if": prefix + b046_step.replace(
+                "        working-directory: _base", "        if: github.event_name == 'workflow_dispatch'\n        working-directory: _base", 1),
             "wrong-working-directory": prefix + b046_step.replace(
                 "working-directory: _base", "working-directory: _candidate", 1
             ),
-            "reordered": prefix_without_semantic + b046_step + semantic_step,
+            "reordered": prefix_without_auth + b046_step + auth_step,
         }
         for label, mutated in mutations.items():
             with self.subTest(label=label):
+                workflow.write_text(mutated, encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
+                    backlog_verify.validate_candidate_workflow(self.candidate)
+        workflow.write_text(baseline, encoding="utf-8")
+
+    def test_alert_token_is_confined_to_exact_trusted_verifiers(self) -> None:
+        result = subprocess.CompletedProcess([], 0, "ok", "")
+        commands = backlog_verify.AUTH_VERIFY_COMMANDS
+        with patch.dict(os.environ, {
+            "GH_TOKEN": "test-only-alert-token", "GITHUB_TOKEN": "other-token",
+            "ACTIONS_RUNTIME_TOKEN": "runtime-token", "BASH_ENV": "/tmp/evil",
+        }), patch.object(backlog_verify.subprocess, "run", return_value=result) as run:
+            for item_id, command in commands.items():
+                backlog_verify.run_verify(command, mode="trusted", item_id=item_id)
+                env = run.call_args.kwargs["env"]
+                self.assertEqual(env.get("GH_TOKEN"), "test-only-alert-token")
+                self.assertNotIn("GITHUB_TOKEN", env)
+                self.assertNotIn("ACTIONS_RUNTIME_TOKEN", env)
+                self.assertNotIn("BASH_ENV", env)
+            for item_id, command in (
+                ("B-001", "true"),
+                ("B-028", commands["B-028"] + " && env"),
+                ("B-373", "true"),
+            ):
+                backlog_verify.run_verify(command, mode="trusted", item_id=item_id)
+                self.assertNotIn("GH_TOKEN", run.call_args.kwargs["env"])
+            count = run.call_count
+            backlog_verify.run_verify(commands["B-028"], mode="candidate", item_id="B-028")
+            self.assertEqual(run.call_count, count)
+
+    def test_split_semantic_modes_reject_single_id_shortcut(self) -> None:
+        for mode in ("--auth-only", "--exclude-auth-checks"):
+            with self.subTest(mode=mode):
+                result = subprocess.run(
+                    [sys.executable, str(VERIFIER), "--trusted-semantic", mode, "--id", "B-028"],
+                    cwd=ROOT, capture_output=True, text=True,
+                    env={**os.environ, "GITHUB_EVENT_NAME": "push"}, check=False,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("full partition", result.stderr)
+
+    def test_workflow_rejects_token_grants_or_candidate_exposure(self) -> None:
+        workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
+        baseline = workflow.read_text(encoding="utf-8")
+        mutations = {
+            "workflow-scope-alerts": baseline.replace(
+                "permissions:\n  contents: read\n", "permissions:\n  contents: read\n  vulnerability-alerts: read\n", 1),
+            "pr-step-token": baseline.replace(
+                "          TRUSTED_ROOT: ${{ github.workspace }}/_base\n",
+                "          TRUSTED_ROOT: ${{ github.workspace }}/_base\n          GH_TOKEN: ${{ github.token }}\n", 1),
+            "trusted-candidate-checkout": baseline.replace(
+                "      - name: Execute trusted main semantic checks\n",
+                "      - name: Checkout candidate again\n        run: true\n"
+                "      - name: Execute trusted main semantic checks\n", 1),
+            "extra-token-env": baseline.replace(
+                "      - name: Execute trusted main semantic checks\n",
+                "      - name: Execute trusted main semantic checks\n        env:\n          GH_TOKEN: ${{ github.token }}\n", 1),
+            "wrong-auth-command": baseline.replace(
+                "--trusted-semantic --auth-only", "--trusted-semantic", 1),
+            "credential-persistence": baseline.replace(
+                "          fetch-depth: 0\n          persist-credentials: false",
+                "          fetch-depth: 0\n          persist-credentials: true", 1),
+        }
+        for label, mutated in mutations.items():
+            with self.subTest(label=label):
+                self.assertNotEqual(mutated, baseline)
                 workflow.write_text(mutated, encoding="utf-8")
                 with self.assertRaisesRegex(RuntimeError, "candidate workflow policy"):
                     backlog_verify.validate_candidate_workflow(self.candidate)

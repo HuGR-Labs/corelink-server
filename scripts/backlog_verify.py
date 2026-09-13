@@ -45,6 +45,7 @@ import posixpath
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -75,11 +76,18 @@ DEFAULT_MAX_AGE_DAYS = 14
 # explicit trusted-main workflow mode; candidate mode never executes a verifier.
 MAX_BACKLOG_BYTES = 2_000_000
 VERIFY_TIMEOUT_S = 120
+# Only these BASE-frozen declarations may receive the job's short-lived alert
+# token. Keep the command as well as the ID in the allowlist: a changed shell
+# string must not turn a Dependabot ID into an arbitrary credentialed command.
+AUTH_VERIFY_COMMANDS = {
+    "B-028": "python3 scripts/verify_b028_dependabot.py",
+    "B-373": "python3 scripts/verify_b373_dependabot.py --alerts-file docs/security/b373-dependabot-census-2026-09-09.json",
+}
 IMMUTABLE_ITEM_FIELDS = frozenset({
-    "id", "repo", "verify", "verify-means", "action-packet", "source-document",
+    "id", "repo", "verify", "action-packet", "source-document",
     "source-locator", "finding-title", "problem", "evidence", "acceptance",
 })
-ALLOWED_TRANSITION_FIELDS = frozenset({"status", "owner", "last-verified"})
+ALLOWED_TRANSITION_FIELDS = frozenset({"status", "owner", "last-verified", "verify-means"})
 
 # A command's polarity cannot be inferred from arbitrary shell.  We can still
 # reject the known dangerous declaration: a `done` item whose human explanation
@@ -224,7 +232,7 @@ def age_days(item: Item, today: dt.date) -> int:
     return (today - parse_date(item.raw["last-verified"])).days
 
 
-def run_verify(command: str, *, mode: str) -> tuple[int, str]:
+def run_verify(command: str, *, mode: str, item_id: str = "") -> tuple[int, str]:
     """Run only trusted-main semantics; candidate and fixture text stay inert."""
     if mode == "fixture":
         if command == "true":
@@ -240,17 +248,23 @@ def run_verify(command: str, *, mode: str) -> tuple[int, str]:
     # established shell semantics, but do not inherit runner credential tokens.
     clean_env = {
         key: value for key, value in os.environ.items()
-        if key not in {"GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN"}
+        if key not in {"GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN", "BASH_ENV", "ENV"}
     }
+    if item_id in AUTH_VERIFY_COMMANDS and command == AUTH_VERIFY_COMMANDS[item_id]:
+        token = os.environ.get("GH_TOKEN")
+        if token:
+            clean_env["GH_TOKEN"] = token
     try:
-        process = subprocess.run(
-            ["/bin/bash", "-o", "pipefail", "-c", command],
-            cwd=REPO_ROOT,
-            timeout=VERIFY_TIMEOUT_S,
-            capture_output=True,
-            text=True,
-            env=clean_env,
-        )
+        with tempfile.TemporaryDirectory(prefix="backlog-gh-") as gh_config_dir:
+            clean_env["GH_CONFIG_DIR"] = gh_config_dir
+            process = subprocess.run(
+                ["/bin/bash", "-o", "pipefail", "-c", command],
+                cwd=REPO_ROOT,
+                timeout=VERIFY_TIMEOUT_S,
+                capture_output=True,
+                text=True,
+                env=clean_env,
+            )
     except subprocess.TimeoutExpired:
         return 124, f"verify command exceeded {VERIFY_TIMEOUT_S}s"
     tail = (process.stdout + process.stderr).strip().splitlines()
@@ -299,7 +313,7 @@ def check(
         item.verdict = CONFIRMED
         item.detail = "verify declaration is syntactically present; semantic execution is deferred to exact-SHA CI"
         return
-    code, evidence = run_verify(command, mode=execution_mode)
+    code, evidence = run_verify(command, mode=execution_mode, item_id=item.id)
     item.evidence = evidence
     if code == 0:
         item.verdict = CONFIRMED
@@ -557,94 +571,105 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
         raise RuntimeError("candidate workflow policy missing: " + ", ".join(missing))
     forbidden = (
         "pull_request:\n", "refs/pull/", "pull_request.head.ref", "pull_request.base.ref",
-        "GH_" + "TOKEN", "github." + "token", "shell" + "=" + "True", "bash" + " " + "-c",
+        "shell" + "=" + "True", "bash" + " " + "-c",
     )
     found = [fragment for fragment in forbidden if fragment in text]
     if found:
         raise RuntimeError("candidate workflow contains mutable/credentialed execution policy: " + ", ".join(found))
 
     # The workflow is not executed for this PR, but it becomes the BASE control
-    # plane after merge. Keep its executable shape closed while allowing harmless
-    # comments/concurrency edits. A candidate cannot add a shell step, swap the
-    # checkout action, or redirect the BASE checker without this data check going
-    # red first.
-    trigger = document.get(True, document.get("on")) or {}
+    # plane after merge. All YAML keys that can alter runner execution are
+    # closed-world, including inherited env/defaults and per-step overrides.
+    # Otherwise a job-level BASH_ENV can source candidate bytes before the
+    # pinned BASE gate runs despite every named step appearing unchanged.
+    trigger_keys = {key for key in (True, "on") if key in document}
+    if len(trigger_keys) != 1 or set(document) != {
+        "name", *trigger_keys, "permissions", "concurrency", "jobs"
+    } or document.get("name") != "backlog-verify":
+        raise RuntimeError("candidate workflow policy has unexpected top-level keys")
+    trigger = document[next(iter(trigger_keys))]
+    if not isinstance(trigger, dict) or set(trigger) != {
+        "pull_request_target", "push", "schedule", "workflow_dispatch"
+    }:
+        raise RuntimeError("candidate workflow policy has unexpected triggers")
     pr_trigger = trigger.get("pull_request_target") if isinstance(trigger, dict) else None
     push_trigger = trigger.get("push") if isinstance(trigger, dict) else None
-    if not isinstance(pr_trigger, dict) or pr_trigger.get("types") != ["opened", "synchronize", "reopened"]:
+    if not isinstance(pr_trigger, dict) or pr_trigger != {
+        "types": ["opened", "synchronize", "reopened"], "paths": ["**"]
+    }:
         raise RuntimeError("candidate workflow policy has unexpected pull_request_target types")
-    if pr_trigger.get("paths") != ["**"]:
-        raise RuntimeError("candidate workflow policy must cover the complete PR tree")
-    if not isinstance(push_trigger, dict) or push_trigger.get("branches") != ["main"] or push_trigger.get("paths") != ["**"]:
+    if not isinstance(push_trigger, dict) or push_trigger != {"branches": ["main"], "paths": ["**"]}:
         raise RuntimeError("candidate workflow policy has unexpected main push trigger")
+    if trigger["schedule"] != [{"cron": "17 6 * * *"}] or trigger["workflow_dispatch"] != {}:
+        raise RuntimeError("candidate workflow policy has unexpected schedule or dispatch trigger")
     if document.get("permissions") != {"contents": "read"}:
         raise RuntimeError("candidate workflow policy must grant contents: read only")
+    if document.get("concurrency") != {
+        "group": "ci-backlog-verify-${{ github.event_name }}-${{ github.ref }}",
+        "cancel-in-progress": True,
+    }:
+        raise RuntimeError("candidate workflow policy has unexpected concurrency settings")
     jobs = document.get("jobs")
-    if not isinstance(jobs, dict) or set(jobs) != {"verify"}:
-        raise RuntimeError("candidate workflow policy must contain only the verify job")
-    job = jobs["verify"]
-    steps = job.get("steps") if isinstance(job, dict) else None
-    if not isinstance(job, dict) or job.get("runs-on") != "corelink" or not isinstance(steps, list) or len(steps) != 6:
-        raise RuntimeError("candidate workflow policy has unexpected verify job shape")
-    if not all(isinstance(step, dict) for step in steps):
-        raise RuntimeError("candidate workflow policy has a malformed verify step")
+    if not isinstance(jobs, dict) or set(jobs) != {"verify", "trusted_semantic"}:
+        raise RuntimeError("candidate workflow policy must contain only the data and trusted jobs")
     checkout_ref = "9f698171ed81b15d1823a05fc7211befd50c8ae0"
-    expected_checkouts = (
-        ("${{ github.event.pull_request.head.sha || github.sha }}", "_candidate"),
-        ("${{ github.event.pull_request.base.sha || github.sha }}", "_base"),
-    )
-    expected_checkout_names = (
-        "Checkout candidate data (immutable event SHA)",
-        "Checkout BASE control tree (immutable event SHA)",
-    )
-    for step, (ref, path), name in zip(steps[:2], expected_checkouts, expected_checkout_names):
-        if step.get("name") != name:
-            raise RuntimeError("candidate workflow policy has an unexpected checkout step")
-        if not isinstance(step, dict) or step.get("uses") != f"actions/checkout@{checkout_ref}":
-            raise RuntimeError("candidate workflow policy uses an unexpected checkout action")
-        if step.get("with") != {
-            "ref": ref, "path": path, "fetch-depth": 1, "persist-credentials": False
-        }:
-            raise RuntimeError("candidate workflow policy has an unsafe checkout configuration")
+    def checkout(name: str, ref: str, path: str) -> dict:
+        return {
+            "name": name,
+            "uses": f"actions/checkout@{checkout_ref}",
+            "with": {"ref": ref, "path": path, "fetch-depth": 1, "persist-credentials": False},
+        }
     expected_gate = (
         'python3 scripts/backlog_verify.py --candidate-file "$CANDIDATE_ROOT/BACKLOG.md" '
         '--trusted-file "$TRUSTED_ROOT/BACKLOG.md" --candidate-root "$CANDIDATE_ROOT" '
         '--trusted-root "$TRUSTED_ROOT"'
     )
-    if (
-        steps[2].get("name") != "Validate candidate as data with BASE checker"
-        or steps[2].get("working-directory") != "_base"
-        or steps[2].get("run") != expected_gate
-    ):
-        raise RuntimeError("candidate workflow policy has an unexpected BASE gate command")
-    if (
-        steps[3].get("name") != "Prove BASE checker mutation teeth"
-        or steps[3].get("working-directory") != "_base"
-        or steps[3].get("run") != "python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py"
-    ):
-        raise RuntimeError("candidate workflow policy has an unexpected BASE test command")
-    if (
-        steps[4].get("name") != "Execute trusted main semantic checks"
-        or
-        steps[4].get("if") != "github.event_name == 'push' || github.event_name == 'schedule'"
-        or steps[4].get("working-directory") != "_base"
-        or steps[4].get("run") != "python3 scripts/backlog_verify.py --trusted-semantic"
-    ):
-        raise RuntimeError("candidate workflow policy has an unexpected trusted semantic command")
+    expected_b314_gate = (
+        "python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test\n"
+        "python3 -m pytest -q tests/test_verify_b314_gdpr_sigstore.py\n"
+    )
     expected_b046_gate = (
         "python3 scripts/verify_b046_object_lock_probe.py\n"
         "python3 -m unittest -q tests/test_verify_b046_object_lock_probe.py\n"
         "test -f crates/corelink-container/src/routes/dsr/adapter_r2_cas_legalhold.rs\n"
         "test -f migrations/d1/0102_cas_retention.sql\n"
     )
-    if (
-        steps[5].get("name") != "Execute B-046 Object-Lock contract and mutation checks"
-        or
-        steps[5].get("if") != "github.event_name == 'push' || github.event_name == 'schedule'"
-        or steps[5].get("working-directory") != "_base"
-        or steps[5].get("run") != expected_b046_gate
-    ):
-        raise RuntimeError("candidate workflow policy has an unexpected B-046 trusted gate")
+    expected_data = {
+        "runs-on": "corelink", "timeout-minutes": 10,
+        "steps": [
+            checkout("Checkout candidate data (immutable event SHA)",
+                     "${{ github.event.pull_request.head.sha || github.sha }}", "_candidate"),
+            checkout("Checkout BASE control tree (immutable event SHA)",
+                     "${{ github.event.pull_request.base.sha || github.sha }}", "_base"),
+            {"name": "Validate candidate as data with BASE checker", "working-directory": "_base",
+             "env": {"CANDIDATE_ROOT": "${{ github.workspace }}/_candidate",
+                     "TRUSTED_ROOT": "${{ github.workspace }}/_base"}, "run": expected_gate},
+            {"name": "Prove BASE checker mutation teeth", "working-directory": "_base",
+             "run": "python3 -m unittest -q tests/test_backlog_verify_trust_boundary.py"},
+            {"name": "Prove BASE B-314 owner-gate mutation teeth", "working-directory": "_base",
+             "run": expected_b314_gate},
+        ],
+    }
+    expected_trusted = {
+        "if": "github.event_name == 'push' || github.event_name == 'schedule'",
+        "runs-on": "corelink", "timeout-minutes": 10,
+        "permissions": {"contents": "read", "vulnerability-alerts": "read"},
+        "steps": [
+            {"name": "Checkout trusted main (immutable event SHA)",
+             "uses": f"actions/checkout@{checkout_ref}",
+             "with": {"ref": "${{ github.sha }}", "path": "_base",
+                      "fetch-depth": 0, "persist-credentials": False}},
+            {"name": "Execute trusted main semantic checks", "working-directory": "_base",
+             "run": "python3 scripts/backlog_verify.py --trusted-semantic --exclude-auth-checks"},
+            {"name": "Execute authenticated Dependabot semantic checks", "working-directory": "_base",
+             "env": {"GH_TOKEN": "${{ github.token }}"},
+             "run": "python3 scripts/backlog_verify.py --trusted-semantic --auth-only"},
+            {"name": "Execute B-046 Object-Lock contract and mutation checks", "working-directory": "_base",
+             "run": expected_b046_gate},
+        ],
+    }
+    if jobs["verify"] != expected_data or jobs["trusted_semantic"] != expected_trusted:
+        raise RuntimeError("candidate workflow policy has unexpected data/trusted job shape")
 
 
 def main() -> int:
@@ -663,6 +688,9 @@ def main() -> int:
         "--trusted-semantic", action="store_true",
         help="execute declarations from this immutable trusted checkout (push/schedule only)",
     )
+    semantic_selection = ap.add_mutually_exclusive_group()
+    semantic_selection.add_argument("--exclude-auth-checks", action="store_true")
+    semantic_selection.add_argument("--auth-only", action="store_true")
     args = ap.parse_args()
 
     candidate_mode = bool(args.candidate_file)
@@ -677,6 +705,12 @@ def main() -> int:
         return 2
     if args.trusted_semantic and os.environ.get("GITHUB_EVENT_NAME") not in {"push", "schedule"}:
         print("FATAL: --trusted-semantic is restricted to push/schedule workflow events", file=sys.stderr)
+        return 2
+    if (args.exclude_auth_checks or args.auth_only) and not args.trusted_semantic:
+        print("FATAL: auth-check selection requires --trusted-semantic", file=sys.stderr)
+        return 2
+    if (args.exclude_auth_checks or args.auth_only) and args.id:
+        print("FATAL: split semantic workflow modes must evaluate their full partition", file=sys.stderr)
         return 2
 
     execution_mode = "fixture" if args.file else "trusted" if args.trusted_semantic else "candidate"
@@ -948,6 +982,19 @@ def main() -> int:
     if args.id and not selected:
         print(f"FATAL: no backlog item with id {args.id}", file=sys.stderr)
         return 2
+    if args.auth_only:
+        if set(i.id for i in selected if i.id in AUTH_VERIFY_COMMANDS) != set(AUTH_VERIFY_COMMANDS):
+            print("FATAL: authenticated verifier declaration is missing or selection is incomplete", file=sys.stderr)
+            return 2
+        if not os.environ.get("GH_TOKEN"):
+            print("FATAL: authenticated verifier step has no GH_TOKEN", file=sys.stderr)
+            return 2
+        selected = [i for i in selected if i.id in AUTH_VERIFY_COMMANDS]
+        if any(str(i.raw.get("verify", "")).strip() != AUTH_VERIFY_COMMANDS[i.id] for i in selected):
+            print("FATAL: authenticated verifier command differs from the pinned allowlist", file=sys.stderr)
+            return 2
+    elif args.exclude_auth_checks:
+        selected = [i for i in selected if i.id not in AUTH_VERIFY_COMMANDS]
 
     for it in selected:
         check(
