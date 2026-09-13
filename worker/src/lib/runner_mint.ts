@@ -45,6 +45,9 @@ import {
 } from "./session_exchange.js";
 import { blake3Hex } from "./blake3.js";
 import { patRowKvKey } from "./pat_verify_cache.js";
+import { prepareRunnerCredential } from "./runner_credential_routes.js";
+import { readCredentialLifecycle } from "./credential_lifecycle_client.js";
+import type { RunnerCredentialOperation } from "./runner_credential_obligation.js";
 
 /**
  * Domain-separation prefix for the exact-AC-key narrowing of a runner-job PAT
@@ -93,6 +96,7 @@ const RUNNER_MINT_ALLOWED_SCOPES = new Set(["cas:rw", "read-write"]);
 
 /** Default scope minted when the caller omits `scope`. */
 const RUNNER_MINT_DEFAULT_SCOPE = "cas:rw";
+const RUNNER_OPERATION_ID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * M22(b) per-tenant mint-ceiling scaling factor.
@@ -310,6 +314,7 @@ export async function handleRunnerMint(
     readonly installation_id?: unknown;
     readonly scope?: unknown;
     readonly ttl_seconds?: unknown;
+    readonly operation_id?: unknown;
     // WP5a: OPTIONAL exact-key narrowing. When present, the runner-job PAT is
     // additionally restricted to the single AC key of that output workspace
     // (blake3(RUNNER_AC_KEY_PREFIX + name)). Dormant at launch — the dispatcher
@@ -326,6 +331,13 @@ export async function handleRunnerMint(
   const jobId = body.job_id;
   if (typeof jobId !== "string" || jobId.length === 0) {
     return reapiError("BAD_REQUEST", "job_id required", 400, requestId);
+  }
+  const operationId = body.operation_id;
+  if (
+    operationId !== undefined &&
+    (typeof operationId !== "string" || !RUNNER_OPERATION_ID.test(operationId))
+  ) {
+    return reapiError("BAD_REQUEST", "operation_id must be a non-nil UUID", 400, requestId);
   }
   const repoFullName = body.repo_full_name;
   if (typeof repoFullName !== "string" || repoFullName.length === 0) {
@@ -571,6 +583,22 @@ export async function handleRunnerMint(
     return tenantThrottled;
   }
 
+  let runnerOperation: RunnerCredentialOperation | undefined =
+    operationId === undefined
+      ? undefined
+      : { operationId, tenantId, jobId, repo: repoFullName };
+  if (runnerOperation !== undefined) {
+    try {
+      const lifecycle = await readCredentialLifecycle(env, tenantId);
+      runnerOperation = { ...runnerOperation, lifecycleGeneration: lifecycle.generation };
+    } catch {
+      return reapiError("SERVICE_UNAVAILABLE", "runner mint unavailable", 503, requestId);
+    }
+    if (!(await prepareRunnerCredential(env, requestId, runnerOperation))) {
+      return reapiError("SERVICE_UNAVAILABLE", "runner mint unavailable", 503, requestId);
+    }
+  }
+
   // ── 6+7. Mint via the SINGLE authority with the DERIVED tenant ─────────────
   // `max_concurrency` is threaded through mintScopedPat's extraFields bag so it
   // appears in the returned JSON alongside the standard envelope; `tenant` in
@@ -586,7 +614,11 @@ export async function handleRunnerMint(
     // otherwise collide with that tenant's ceiling row and let a caller burn a
     // victim tenant's runner-mint budget (M22b review finding). Distinct prefixes
     // make a preimage collision impossible; per-job semantics are unchanged.
-    MintGrant.fromRunnerDerivation(tenantId, "runner-job:" + jobId),
+    MintGrant.fromRunnerDerivation(
+      tenantId,
+      "runner-job:" + jobId,
+      runnerOperation?.lifecycleGeneration,
+    ),
     ttlSeconds,
     scope,
     internalAuthKey,
@@ -596,10 +628,15 @@ export async function handleRunnerMint(
     {
       max_concurrency: maxConcurrency,
       ...(maxVcpuH !== null ? { max_vcpu_h: maxVcpuH } : {}),
+      ...(runnerOperation !== undefined
+        ? { lifecycle_generation: runnerOperation.lifecycleGeneration! }
+        : {}),
     },
     // WP5a: persist the narrowed runner-job marker on the `pat` row so the
     // Worker's auth-resolve can forward it to the container for enforcement.
     runnerJobAcKey,
+    undefined,
+    runnerOperation,
   );
 }
 
