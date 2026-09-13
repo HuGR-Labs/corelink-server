@@ -658,7 +658,7 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
     });
     // WIRE-SHAPE: the container replies `{ "pat": { … }, "token": "…" }` — the row
     // is ENVELOPED and the shown-once secret rides alongside it
-    // (routes/customer.rs:810-820). This fixture used to return the flat row +
+    // (routes/customer/part-01.rs). This fixture used to return the flat row +
     // token, a shape the server never sends, which left the E2E gate structurally
     // unable to catch the missing unwrap in `createPat`. Mirror the real wire.
     return {

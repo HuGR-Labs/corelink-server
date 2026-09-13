@@ -58,6 +58,75 @@ export class CustomerClientError extends Error {
   }
 }
 
+interface CustomerPatCreateResponse {
+  pat?: unknown;
+  token_plaintext?: unknown;
+  token?: unknown;
+}
+
+function hasOwn(value: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function isNonblankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function normalizePatMetadata(value: unknown): CustomerPat {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) {
+    throw new CustomerClientError(502, "customer api response has invalid PAT metadata");
+  }
+  const pat = value as Record<string, unknown>;
+  const scopes = pat.scopes;
+  if (
+    !isNonblankString(pat.pat_id) ||
+    !isNonblankString(pat.name) ||
+    !isNonblankString(pat.created_at) ||
+    !Array.isArray(scopes) ||
+    !scopes.every((scope: unknown) => typeof scope === "string")
+  ) {
+    throw new CustomerClientError(502, "customer api response has invalid PAT metadata");
+  }
+  return value as CustomerPat;
+}
+
+/**
+ * Normalize the live container's `token` field and an optional
+ * `token_plaintext` compatibility alias. Both are accepted only when nonblank;
+ * if an envelope carries both fields they must agree exactly.
+ */
+function normalizePatPlaintext(response: CustomerPatCreateResponse): string {
+  const hasLive = hasOwn(response, "token");
+  const hasAlias = hasOwn(response, "token_plaintext");
+  const live = typeof response.token === "string" ? response.token : null;
+  const alias = typeof response.token_plaintext === "string" ? response.token_plaintext : null;
+
+  if (hasLive && hasAlias) {
+    if (
+      live == null ||
+      live.trim() === "" ||
+      alias == null ||
+      alias.trim() === "" ||
+      live !== alias
+    ) {
+      throw new CustomerClientError(
+        502,
+        "customer api response has conflicting token_plaintext and token fields",
+      );
+    }
+    return live;
+  }
+
+  const candidate = hasLive ? live : hasAlias ? alias : null;
+  if (candidate == null || candidate.trim() === "") {
+    throw new CustomerClientError(
+      502,
+      "customer api response missing nonblank token or token_plaintext",
+    );
+  }
+  return candidate;
+}
+
 // Prefers NEXT_PUBLIC_CORELINK_API_URL when set. In production the admin-ui
 // build sets NEXT_PUBLIC_CORELINK_API_URL=https://corelink-api.humangr.com at
 // build time (NEXT_PUBLIC_* is inlined into the client bundle), so the browser
@@ -162,21 +231,27 @@ export class CustomerClient {
   }
 
   /**
-   * [live] Mint a PAT. The container replies `201 { "pat": { … }, "token": "…" }`
-   * (`crates/corelink-container/src/routes/customer.rs:810-820`) — the row is
-   * ENVELOPED, the shown-once secret rides alongside it. `request<T>()` only
-   * CASTS, so declaring the flat row compiled clean while every PAT field came
-   * back `undefined`: the create toast read `Token "undefined" created` and the
-   * rotate path fed that same undefined metadata to the shown-once reveal.
-   * Unwrap here and re-flatten `token` onto the row, so callers keep the
-   * `{ …pat, token }` shape they already destructure.
+   * [live] Mint a PAT. The container replies `201 { "pat": { … },
+   * "token": "…" }` (`crates/corelink-container/src/routes/customer/part-01.rs`).
+   * `token_plaintext` is accepted only as a compatibility alias, not asserted
+   * to be the live wire. The shown-once secret rides alongside the PAT row.
+   * `request<T>()` only casts the parsed JSON, so normalize and validate the
+   * plaintext before re-flattening it as `token` for the existing reveal path.
+   * A malformed success response must never open an empty modal.
    */
-  async createPat(input: { name: string; scopes: string[] }): Promise<CustomerPat & { token?: string }> {
-    const { pat, token } = await this.request<{ pat: CustomerPat; token?: string }>(
+  async createPat(input: { name: string; scopes: string[] }): Promise<CustomerPat & { token: string }> {
+    const response = await this.request<CustomerPatCreateResponse>(
       "/v1/customer/keys",
       { method: "POST", body: JSON.stringify(input) },
     );
-    return { ...pat, token };
+    if (response == null || typeof response !== "object" || Array.isArray(response)) {
+      throw new CustomerClientError(
+        502,
+        "customer api response missing PAT metadata",
+      );
+    }
+    const pat = normalizePatMetadata(response.pat);
+    return { ...pat, token: normalizePatPlaintext(response) };
   }
 
   /**

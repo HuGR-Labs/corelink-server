@@ -124,6 +124,7 @@ export class AdminClient {
     const token = await this.getToken();
     if (token) headers.set("Authorization", `Bearer ${token}`);
 
+    const method = init.method ?? "GET";
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers });
     if (!res.ok) {
       let detail = "";

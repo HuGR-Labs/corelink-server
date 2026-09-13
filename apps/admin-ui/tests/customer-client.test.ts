@@ -47,7 +47,15 @@ describe("CustomerClient auth token", () => {
     const captured: Captured[] = [];
     const client = new CustomerClient({
       baseUrl: "https://api.test",
-      fetchImpl: makeFetch(captured),
+      fetchImpl: makeFetch(captured, {
+        pat: {
+          pat_id: "pat_post",
+          name: "ci",
+          scopes: ["cache:r"],
+          created_at: "2026-08-01T00:00:00Z",
+        },
+        token: "crl_pat_post_secret",
+      }),
       getToken: async () => "sess_jwt_post",
     });
     await client.createPat({ name: "ci", scopes: ["cache:r"] });
@@ -168,13 +176,11 @@ describe("CustomerClient wire-shape contract", () => {
   });
 
   // `POST /v1/customer/keys` → 201 `{ "pat": { … }, "token": "…" }`
-  // (routes/customer.rs:810-820).
+  // (routes/customer/part-01.rs, the current container response envelope).
   // Regression: the client declared `CustomerPat & { token? }` and bare-cast the
-  // envelope. `token` IS top-level so it survived by luck, but every PAT field
-  // (`pat_id` / `name` / `scopes`) was `undefined` — the create toast rendered
-  // `Token "undefined" created` and the rotate path fed the same undefined
-  // metadata to the shown-once reveal.
-  it("createPat unwraps the { pat, token } envelope the container actually sends", async () => {
+  // envelope. PAT metadata became undefined even though the token survived.
+  // The optional alias must also reach the shown-once reveal if received.
+  it("createPat unwraps the live token envelope for the reveal shape", async () => {
     const client = new CustomerClient({
       baseUrl: "https://api.test",
       fetchImpl: respondWith(
@@ -203,6 +209,91 @@ describe("CustomerClient wire-shape contract", () => {
     expect(pat.token).toBe("crl_pat_shown_once_secret");
     // The envelope key must not leak through — callers spread the row.
     expect(pat).not.toHaveProperty("pat");
+  });
+
+  it.each([
+    ["missing PAT row", undefined],
+    ["empty PAT row", {}],
+    ["array PAT row", []],
+    ["blank PAT ID", { pat_id: " ", name: "ci", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" }],
+    ["missing name", { pat_id: "pat_1", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" }],
+    ["missing created_at", { pat_id: "pat_1", name: "ci", scopes: ["cache:r"] }],
+    ["non-array scopes", { pat_id: "pat_1", name: "ci", scopes: "cache:r", created_at: "2026-08-01T00:00:00Z" }],
+    ["non-string scope", { pat_id: "pat_1", name: "ci", scopes: [7], created_at: "2026-08-01T00:00:00Z" }],
+  ])("createPat rejects %s despite a valid plaintext token", async (_caseName, pat) => {
+    const client = new CustomerClient({
+      baseUrl: "https://api.test",
+      fetchImpl: respondWith({ pat, token: "crl_pat_shown_once_secret" }, 201),
+    });
+
+    await expect(client.createPat({ name: "ci", scopes: ["cache:r"] }))
+      .rejects.toMatchObject({ status: 502, message: "customer api response has invalid PAT metadata" });
+  });
+
+  it.each([
+    ["missing", { pat: { pat_id: "pat_missing", name: "ci", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" } }],
+    ["blank live token", { pat: { pat_id: "pat_blank", name: "ci", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" }, token: "" }],
+    ["blank compatibility alias", { pat: { pat_id: "pat_blank_alias", name: "ci", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" }, token_plaintext: "   " }],
+  ])("createPat fails closed when PAT plaintext is %s", async (_caseName, body) => {
+    const client = new CustomerClient({
+      baseUrl: "https://api.test",
+      fetchImpl: respondWith(body, 201),
+    });
+
+    await expect(client.createPat({ name: "ci-github", scopes: ["cache:r"] }))
+      .rejects.toMatchObject({
+        status: 502,
+        message: "customer api response missing nonblank token or token_plaintext",
+      });
+  });
+
+  it("createPat accepts the optional token_plaintext compatibility alias", async () => {
+    const client = new CustomerClient({
+      baseUrl: "https://api.test",
+      fetchImpl: respondWith({
+        pat: {
+          pat_id: "0198f0e3-0000-7000-8000-0000000000ad",
+          name: "ci-github",
+          scopes: ["cache:r"],
+          created_at: "2026-08-01T00:00:00Z",
+        },
+        token_plaintext: "crl_pat_alias_secret",
+      }, 201),
+    });
+
+    await expect(client.createPat({ name: "ci-github", scopes: ["cache:r"] }))
+      .resolves.toMatchObject({ token: "crl_pat_alias_secret" });
+  });
+
+  it("createPat accepts both token fields when they agree", async () => {
+    const client = new CustomerClient({
+      baseUrl: "https://api.test",
+      fetchImpl: respondWith({
+        pat: { pat_id: "pat_agree", name: "ci-github", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" },
+        token: "crl_pat_same_secret",
+        token_plaintext: "crl_pat_same_secret",
+      }, 201),
+    });
+
+    await expect(client.createPat({ name: "ci-github", scopes: ["cache:r"] }))
+      .resolves.toMatchObject({ pat_id: "pat_agree", token: "crl_pat_same_secret" });
+  });
+
+  it("createPat fails closed when both token fields conflict", async () => {
+    const client = new CustomerClient({
+      baseUrl: "https://api.test",
+      fetchImpl: respondWith({
+        pat: { pat_id: "pat_conflict", name: "ci-github", scopes: ["cache:r"], created_at: "2026-08-01T00:00:00Z" },
+        token: "crl_pat_live",
+        token_plaintext: "crl_pat_conflicting_alias",
+      }, 201),
+    });
+
+    await expect(client.createPat({ name: "ci-github", scopes: ["cache:r"] }))
+      .rejects.toMatchObject({
+        status: 502,
+        message: "customer api response has conflicting token_plaintext and token fields",
+      });
   });
 
   // `POST /v1/customer/keys/:id/revoke` → 200 `{ "pat": { … } }`
