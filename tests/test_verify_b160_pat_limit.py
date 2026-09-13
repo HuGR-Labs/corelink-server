@@ -4,6 +4,7 @@
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -26,17 +27,44 @@ class B160VerifierTest(unittest.TestCase):
 
     def test_missing_pnpm_is_red(self):
         environment = os.environ.copy()
-        environment["B160_PNPM"] = "/definitely/missing/pnpm"
-        result = subprocess.run(
-            [sys.executable, str(VERIFY)],
-            cwd=ROOT,
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        environment.pop("B160_PNPM", None)
+        with tempfile.TemporaryDirectory() as path:
+            environment["PATH"] = path
+            result = subprocess.run(
+                [sys.executable, str(VERIFY)],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("B-160 DRIFTED", result.stderr)
+
+    def test_pnpm_executable_override_is_ignored(self):
+        with tempfile.TemporaryDirectory() as path:
+            directory = Path(path)
+            sentinel = directory / "sentinel"
+            shim = directory / "pnpm-shim"
+            shim.write_text(
+                f"#!/bin/sh\nprintf invoked > {sentinel}\nprintf '10.32.1\\n'\n",
+                encoding="utf-8",
+            )
+            shim.chmod(0o755)
+            environment = os.environ.copy()
+            environment["PATH"] = path
+            environment["B160_PNPM"] = str(shim)
+            result = subprocess.run(
+                [sys.executable, str(VERIFY)],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("B-160 DRIFTED", result.stderr)
+            self.assertFalse(sentinel.exists())
 
 
 if __name__ == "__main__":
