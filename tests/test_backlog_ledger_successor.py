@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import datetime as dt
 import shutil
 import subprocess
 import sys
@@ -23,25 +24,37 @@ def _git(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def _successor_fixture(tmp_path, monkeypatch):
+def _successor_fixture(tmp_path, monkeypatch, *, first_status="open", anchor_open=False):
     """Tiny delivered-main fixture; no candidate code is executed."""
     base = tmp_path / "base"
     base.mkdir()
     catalog = Path("docs/campaigns/remediation/work-packages/B001-B045.md")
     genesis = ledger.GENESIS_SNAPSHOT_RELATIVE
+    counts = {"open": 0, "parked": 0, "done": 1}
+    counts[first_status] += 1
+    anchor_open = anchor_open or first_status != "open"
+    if anchor_open:
+        counts["open"] += 1
+    anchor_section = (
+        "### B-003 — anchor\n```backlog\nid: B-003\nrepo: corelink-server\n"
+        "owner: tl\nstatus: open\nverify: manual\nverify-means: anchor\n"
+        "last-verified: 2026-09-01\n```\n"
+    ) if anchor_open else ""
     for relative, body in {
         Path("BACKLOG.md"): (
             "### B-001 — fixture\n```backlog\nid: B-001\nrepo: corelink-server\n"
-            "owner: tl\nstatus: open\nverify: manual\nverify-means: first\n"
+            f"owner: tl\nstatus: {first_status}\nverify: manual\nverify-means: first\n"
             "last-verified: 2026-09-12\n```\n"
             "### B-002 — closed fixture\n```backlog\nid: B-002\nrepo: corelink-server\n"
             "owner: tl\nstatus: done\nverify: manual\nverify-means: closed\n"
-            "last-verified: 2026-09-12\n```\n"
+            "last-verified: 2026-09-01\n```\n"
+            f"{anchor_section}"
         ),
         ledger.LEDGER_RELATIVE: (
             f"```ledger-state\nbase-ref: {ledger.POSTMERGE_BASE_SHA}\n"
             f"base-sha: {ledger.POSTMERGE_BASE_SHA}\nobserved-at: 2026-09-12\n"
-            "item-count: 2\nopen-count: 1\ndone-count: 1\nparked-count: 0\n"
+            f"item-count: {sum(counts.values())}\nopen-count: {counts['open']}\n"
+            f"done-count: {counts['done']}\nparked-count: {counts['parked']}\n"
             "catalog-counts: B001-B045=1\n```\n"
         ),
         catalog: "## WP-A — fixture\n```wp-coverage\nB-001 WP-A\n```\n",
@@ -79,8 +92,11 @@ def _advance_successor(base: Path, candidate: Path, sequence: int) -> Path:
     base_sha = _git(base, "rev-parse", "HEAD")
     prior = ledger._state_bytes(base)
     backlog_path = candidate / "BACKLOG.md"
-    old_word, new_word = ("closed fixture", "second closed fixture") if sequence == 3 else ("second closed fixture", "third closed fixture")
-    backlog_path.write_text(backlog_path.read_text().replace(f"### B-002 — {old_word}", f"### B-002 — {new_word}"))
+    old_date, new_date = ("2026-09-01", "2026-09-02") if sequence == 3 else ("2026-09-02", "2026-09-03")
+    first, second = backlog_path.read_text().split("### B-002", 1)
+    backlog_path.write_text(first + "### B-002" + second.replace(
+        f"last-verified: {old_date}", f"last-verified: {new_date}", 1,
+    ))
     ledger_path = candidate / ledger.LEDGER_RELATIVE
     text = ledger_path.read_text()
     previous_base = ledger.parse_ledger_state(text, "candidate-ledger")["base-ref"]
@@ -102,8 +118,13 @@ def _advance_successor(base: Path, candidate: Path, sequence: int) -> Path:
         "ledger_sha256": ledger._sha256(current[ledger.LEDGER_RELATIVE.as_posix()]),
         "prior_catalog_sha256": {path.as_posix(): ledger._sha256(prior[path.as_posix()]) for path in ledger._catalog_relatives()},
         "catalog_sha256": {path.as_posix(): ledger._sha256(current[path.as_posix()]) for path in ledger._catalog_relatives()},
-        "item_count": 2, "status_counts": {"done": 1, "open": 1, "parked": 0},
-        "open_ids": ["B-001"], "changed_ids": ["B-002"],
+        "item_count": sum(ledger.backlog_status_counts(current["BACKLOG.md"].decode()).values()),
+        "status_counts": {
+            key: ledger.backlog_status_counts(current["BACKLOG.md"].decode()).get(key, 0)
+            for key in ("done", "open", "parked")
+        },
+        "open_ids": sorted(ledger.open_backlog_ids(current["BACKLOG.md"].decode())),
+        "changed_ids": ["B-002"],
     }
     path = candidate / ledger.SNAPSHOT_DIRECTORY / f"backlog-ledger-snapshot-v{sequence:04d}.json"
     path.write_text(json.dumps(receipt, indent=2) + "\n")
@@ -152,6 +173,78 @@ def test_exact_rewrite_authorization_binds_both_sources_ids_and_fields(tmp_path,
     assert not authorized(prior, current, receipt, 3)
 
 
+@pytest.mark.parametrize("old_status,new_status,mutation", [
+    ("open", "parked", "verify-means"),
+    ("open", "done", "verify-means"),
+    ("parked", "open", "prose"),
+    ("done", "done", "prose"),
+])
+def test_status_transition_cannot_waive_existing_normative_text(
+    tmp_path, monkeypatch, old_status, new_status, mutation,
+):
+    base, candidate = _successor_fixture(
+        tmp_path, monkeypatch, first_status=old_status,
+    )
+    backlog = candidate / "BACKLOG.md"
+    source = backlog.read_text().replace(
+        f"status: {old_status}", f"status: {new_status}", 1,
+    )
+    if mutation == "verify-means":
+        source = source.replace(
+            "verify-means: first", "verify-means: no owner approval needed", 1,
+        )
+    else:
+        source = source.replace(
+            "### B-001 — fixture", "### B-001 — no owner approval needed", 1,
+        )
+    backlog.write_text(source)
+    path = candidate / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0003.json"
+    receipt = json.loads(path.read_text())
+    receipt["source_sha256"] = ledger._sha256(backlog.read_bytes())
+    receipt["changed_ids"] = ["B-001", "B-002"]
+    path.write_text(json.dumps(receipt, indent=2) + "\n")
+    with pytest.raises(LedgerError, match="normative BACKLOG section changed"):
+        ledger.validate_candidate_successor(base, candidate)
+
+
+def test_open_to_parked_status_only_is_allowed(tmp_path, monkeypatch):
+    base, candidate = _successor_fixture(tmp_path, monkeypatch, anchor_open=True)
+    backlog = candidate / "BACKLOG.md"
+    backlog.write_text(backlog.read_text().replace("status: open", "status: parked", 1))
+    ledger_path = candidate / ledger.LEDGER_RELATIVE
+    ledger_path.write_text(ledger_path.read_text().replace(
+        "open-count: 2", "open-count: 1", 1,
+    ).replace("parked-count: 0", "parked-count: 1", 1))
+    path = candidate / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0003.json"
+    receipt = json.loads(path.read_text())
+    receipt["source_sha256"] = ledger._sha256(backlog.read_bytes())
+    receipt["ledger_sha256"] = ledger._sha256(ledger_path.read_bytes())
+    receipt["changed_ids"] = ["B-001", "B-002"]
+    receipt["status_counts"] = {"done": 1, "open": 1, "parked": 1}
+    receipt["open_ids"] = ["B-003"]
+    path.write_text(json.dumps(receipt, indent=2) + "\n")
+    assert ledger.validate_candidate_successor(base, candidate)["sequence"] == 3
+
+
+def test_b065_parked_owner_waiver_is_normative_not_status_data():
+    source = (ledger.REPO_ROOT / "BACKLOG.md").read_bytes()
+    start = source.index(b"### B-065")
+    end = source.index(b"### B-066", start)
+    old_section = source[start:end]
+    new_section = old_section.replace(b"status: open", b"status: parked", 1).replace(
+        b"verify-means: |\n",
+        b"verify-means: |\n  No owner approval or Stripe dashboard action required.\n",
+        1,
+    )
+    old_item = ledger.backlog_verify.parse(old_section.decode())[0]
+    new_item = ledger.backlog_verify.parse(new_section.decode())[0]
+    assert ledger.backlog_verify.validate_candidate_transitions(
+        [new_item], [old_item], dt.date(2026, 9, 13), successor_mode=True,
+    ) == []  # Field-only validation alone does not protect prose.
+    normalize = ledger._successor_policy()._normative_section
+    assert normalize(old_section, "B-065") != normalize(new_section, "B-065")
+
+
 def test_delivered_successor_rejects_rewritten_receipt(tmp_path, monkeypatch):
     base, candidate = _successor_fixture(tmp_path, monkeypatch)
     assert ledger.validate_candidate_successor(base, candidate)["sequence"] == 3
@@ -193,9 +286,9 @@ def test_b315_style_two_parent_merge_replays_successor(tmp_path, monkeypatch):
     ("wrong-sequence", "stale/replayed"),
     ("forged-digest", "BASE-derived bytes"),
     ("rewritten-prior", "rewrote prior snapshot"),
-    ("candidate-verifier", "immutable field 'verify'"),
-    ("approval-waiver", "open BACKLOG section is immutable"),
-    ("open-prose-waiver", "open BACKLOG section is immutable"),
+    ("candidate-verifier", "normative BACKLOG section changed"),
+    ("approval-waiver", "normative BACKLOG section changed"),
+    ("open-prose-waiver", "normative BACKLOG section changed"),
     ("candidate-code", "mutated trusted backlog control"),
     ("candidate-successor-module", "mutated trusted backlog control"),
     ("candidate-contracts-module", "mutated trusted backlog control"),
@@ -267,7 +360,7 @@ def test_base_derived_successor_rejects_mutations(tmp_path, monkeypatch, mutatio
         backlog = candidate / "BACKLOG.md"
         source = backlog.read_text()
         if mutation in {"preamble-only", "unlisted-section-only"}:
-            source = source.replace("### B-002 — second closed fixture", "### B-002 — closed fixture", 1)
+            source = source.replace("last-verified: 2026-09-02", "last-verified: 2026-09-01", 1)
             receipt["changed_ids"] = []
         if mutation in {"preamble-edit", "preamble-only"}:
             source = "attacker-owned preamble\n" + source

@@ -278,6 +278,26 @@ def install(api):
             sections[item_id] = section
         return raw[: headings[0].start()], order, sections
 
+    def _normative_section(section: bytes, item_id: str) -> bytes:
+        """Mask only canonical transition fields inside the one backlog fence.
+
+        Every other byte, including headings, free prose, and verify-means,
+        remains normative across every status transition. The parsed field
+        transition is checked separately against BASE-owned rules.
+        """
+        fence = re.search(rb"(?ms)^```backlog\n(.*?)^```", section)
+        if fence is None:
+            raise LedgerError(f"{item_id}: missing canonical backlog fence")
+        body = fence.group(1)
+        for key in (b"status", b"owner", b"last-verified"):
+            pattern = rb"(?m)^" + key + rb":[^\r\n]*$"
+            body, count = re.subn(pattern, key + b": <transition>", body)
+            if count != 1:
+                raise LedgerError(
+                    f"{item_id}: transition field {key.decode()} is not unique and canonical"
+                )
+        return section[: fence.start(1)] + body + section[fence.end(1) :]
+
     def _validate_receipt_transition(
         receipt: dict[str, object],
         prior_manifest_raw: bytes,
@@ -287,6 +307,7 @@ def install(api):
         base_sha: str,
         sequence: int,
         workflow_root: Path,
+        today: backlog_verify.dt.date | None = None,
     ) -> None:
         """Derive every receipt assertion from immutable BASE and candidate bytes."""
         expected_hashes = {
@@ -339,15 +360,12 @@ def install(api):
         for item_id in changed:
             if item_id not in old_sections:
                 continue
-            old_item = backlog_verify.parse(old_sections[item_id].decode("utf-8"))[0]
-            new_item = backlog_verify.parse(new_sections[item_id].decode("utf-8"))[0]
-            if (
-                old_item.raw.get("status") == "open"
-                and new_item.raw.get("status") == "open"
-                and not (sprint3_rewrite and item_id in SPRINT3_CHANGED_IDS)
+            if not (sprint3_rewrite and item_id in SPRINT3_CHANGED_IDS) and (
+                _normative_section(old_sections[item_id], item_id)
+                != _normative_section(new_sections[item_id], item_id)
             ):
                 raise LedgerError(
-                    f"{item_id}: open BACKLOG section is immutable without trusted byte-pinned authorization"
+                    f"{item_id}: normative BACKLOG section changed without trusted byte-pinned authorization"
                 )
         counts = backlog_status_counts(new_text)
         if receipt["status_counts"] != {
@@ -371,6 +389,15 @@ def install(api):
             workflow_root,
             base_sha,
         )
+        transition_errors = backlog_verify.validate_candidate_transitions(
+            backlog_verify.parse(new_text),
+            backlog_verify.parse(prior["BACKLOG.md"].decode("utf-8")),
+            today or backlog_verify.dt.date.today(),
+            allow_sprint3_rewrite=sprint3_rewrite,
+            successor_mode=True,
+        )
+        if transition_errors:
+            raise LedgerError("candidate BACKLOG transition rejected: " + "; ".join(transition_errors))
 
     def load_successor_chain(root: Path = REPO_ROOT) -> dict[str, object]:
         """Replay append-only receipts against immutable delivered-main preimages."""
@@ -510,27 +537,14 @@ def install(api):
             base_sha=base_sha,
             sequence=len(base_paths) + 3,
             workflow_root=candidate_root,
+            today=today,
         )
         if receipt["prior_source_sha256"] != previous["source_sha256"]:
             raise LedgerError("candidate predecessor is not the trusted BASE snapshot")
         trusted_items = backlog_verify.parse(prior["BACKLOG.md"].decode("utf-8"))
-        candidate_items = backlog_verify.parse(current["BACKLOG.md"].decode("utf-8"))
         backlog_verify.check_candidate_controls(
             candidate_root, base_root, trusted_items
         )
-        errors = backlog_verify.validate_candidate_transitions(
-            candidate_items,
-            trusted_items,
-            today or backlog_verify.dt.date.today(),
-            allow_sprint3_rewrite=_sprint3_rewrite_authorized(
-                prior, current, receipt, len(base_paths) + 3,
-            ),
-            successor_mode=True,
-        )
-        if errors:
-            raise LedgerError(
-                "candidate BACKLOG transition rejected: " + "; ".join(errors)
-            )
         return receipt
 
     def successor_required(base_root: Path, candidate_root: Path) -> bool:
@@ -551,6 +565,7 @@ def install(api):
     return SimpleNamespace(
         _sha256=_sha256,
         _sprint3_rewrite_authorized=_sprint3_rewrite_authorized,
+        _normative_section=_normative_section,
         _catalog_relatives=_catalog_relatives,
         _state_bytes=_state_bytes,
         _successor_paths=_successor_paths,
