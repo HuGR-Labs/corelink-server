@@ -45,7 +45,7 @@ jobs:
     # `npm install -g` into a shared home is the same class of mutation that
     # took the host down on 2026-06-15.
     runs-on: corelink
-    environment: ${{ github.event.inputs.env || 'production' }}
+    environment: ${{ github.event.inputs.env == 'staging' && 'staging' || 'production' }}
     timeout-minutes: 35
 
     env:
