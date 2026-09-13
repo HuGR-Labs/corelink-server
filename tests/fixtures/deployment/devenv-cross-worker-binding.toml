@@ -1,7 +1,8 @@
 # Desired Server-side Wrangler fragment. This fixture is deliberately not merged
-# into `wrangler.toml`: it becomes deployable only after the Runners release
-# named in docs/operator/devenv-production-readiness.md has shipped and passed
-# its ABI, verifier, and immutable-image preflight.
+# into `wrangler.toml`: B2 source commits b281859/b26d785 define the candidate
+# target, but it becomes deployable only after that Runners release is deployed
+# and passes its live ABI, verifier, public-key-map, and immutable-image
+# preflight.
 
 [[durable_objects.bindings]]
 name = "RUNNER_DEVENV_DO"

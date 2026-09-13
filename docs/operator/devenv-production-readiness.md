@@ -12,14 +12,17 @@ release input, not a fragment to copy into `wrangler.toml` today.
 `v6`. The Server owns no class of that name; it owns only a typed optional
 `DurableObjectNamespace<RunnerDevEnvRpc>`.
 
-The current Runners class does not satisfy that RPC interface. Server calls
-`prepareAuthorizedCompute`, `startAuthorizedDevenv`, and on compensation
-`abandonAuthorizedCompute`. The current class exposes `startDevenv` instead.
-It also has no compute-grant verifier or configured public-key set, and its
-DevEnv Container image is a mutable `:latest` tag. Do not add the binding until
-the Runners release supplies all three RPC methods, rejects unverified grants,
-and pins an immutable published image digest. A Server deploy with an unresolved
-cross-worker target can be rejected as a whole, including unrelated changes.
+The B2 Runners source target is now sufficient as a *release candidate*, not as
+live evidence: branch head `b281859` includes the authorized RPC surface, and
+consumer commit `b26d785` supplies `prepareAuthorizedCompute`,
+`abandonAuthorizedCompute`, and `startAuthorizedDevenv` plus grant verification.
+Its desired outer `RunnerDevEnvDO` Container image is pinned to
+`corelink-runner-devenv@sha256:0145e461fc1d35e2672f4a2190008fef4214c691bc8485ec68902cb8852fd441`.
+This does not establish that the deployed `corelink-spawn-worker` target is on
+that version, exports the class to the Server binding, has the public-key map,
+or has been qualified. Do not add the binding until those live checks pass. A
+Server deploy with an unresolved cross-worker target can be rejected as a whole,
+including unrelated changes.
 
 ## Compute-grant trust contract
 
@@ -31,9 +34,9 @@ The Server issuer requires two values on every Server production environment:
   but is provisioned and verified with the signer because a mismatch makes all
   grants fail closed.
 
-Runners must separately receive a public-key map, for example
-`COMPUTE_GRANT_PUBLIC_KEYS`, indexed by the same key id. This map contains only
-SPKI public keys and must be deployed with the Runners verifier before any
+Runners must separately receive `FABRIC_COMPUTE_GRANT_PUBLIC_KEYS`: a JSON map
+from the same key id to a standard-base64, raw 32-byte Ed25519 public key. This
+is public material, but it must be deployed with the Runners verifier before any
 Server issuer is activated. The Server does not currently consume or configure
 that map, so adding only its signer and key id cannot make DevEnv runnable.
 
@@ -50,8 +53,9 @@ maximum wall time is separately capped at eight hours. Keep both checks.
 1. Preflight the Runners release in its repository: exact
    `corelink-spawn-worker` target exists in the same account; `RunnerDevEnvDO`
    is exported and migrated; the three RPC methods have the Server wire types;
-   the verifier has an active key-id-to-SPKI public-key map; and the DevEnv
-   image is an immutable, published digest. Deploy and verify that target first.
+   the verifier has an active `FABRIC_COMPUTE_GRANT_PUBLIC_KEYS` key-id-to-raw-
+   Ed25519-public-key map; and the DevEnv image is the published immutable
+   digest recorded above. Deploy and verify that target first.
 2. Preflight the Server checkout: run
    `python3 scripts/verify_devenv_deploy_contract.py`, validate the D1 migration
    set with the repository migration checker, and verify the pending range is

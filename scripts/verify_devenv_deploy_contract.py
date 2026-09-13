@@ -37,7 +37,7 @@ def main() -> int:
     if "RUNNER_DEVENV_DO?: DurableObjectNamespace<RunnerDevEnvRpc>;" not in ENV_TYPE.read_text(encoding="utf-8"):
         raise AssertionError("Server Env must retain the optional typed DevEnv RPC namespace")
     runbook = RUNBOOK.read_text(encoding="utf-8")
-    for required in ("COMPUTE_GRANT_SIGNING_KEY", "COMPUTE_GRANT_KEY_ID", "COMPUTE_GRANT_PUBLIC_KEYS", "0118", "0130", "not deployable"):
+    for required in ("COMPUTE_GRANT_SIGNING_KEY", "COMPUTE_GRANT_KEY_ID", "FABRIC_COMPUTE_GRANT_PUBLIC_KEYS", "b281859", "b26d785", "0145e461fc1d35e2672f4a2190008fef4214c691bc8485ec68902cb8852fd441", "0118", "0130", "not deployable"):
         if required not in runbook:
             raise AssertionError(f"runbook omits required readiness contract: {required}")
     matrix = MATRIX.read_text(encoding="utf-8")
