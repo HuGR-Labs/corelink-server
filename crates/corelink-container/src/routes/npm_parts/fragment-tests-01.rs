@@ -40,7 +40,11 @@
         let kv_backend = Arc::new(FakeKv::default());
         kv_backend.0.lock().unwrap().insert(
             (PUBLIC_NAMESPACE.to_owned(), kv_key_for_pkg("lodash")),
-            (meta_json.clone(), now_ms()),
+            // This fixture exercises cache-hit routing, not TTL expiry. The
+            // adapter's `is_fresh` uses saturating subtraction, so MAX stays
+            // fresh even if the host sleeps >300s between seed and request.
+            // TTL boundary and a simulated 15m sleep are tested separately.
+            (meta_json.clone(), u64::MAX),
         );
 
         let cas = Arc::new(StubCas::default());
@@ -117,7 +121,9 @@
         let kv_backend = Arc::new(FakeKv::default());
         kv_backend.0.lock().unwrap().insert(
             (PUBLIC_NAMESPACE.to_owned(), kv_key_for_pkg("lodash")),
-            (meta_json, now_ms()),
+            // Same cache-hit contract as above: no live registry fallback
+            // after a host sleep while testing the tarball moat wiring.
+            (meta_json, u64::MAX),
         );
 
         // The tarball CAS key is SHA256(tarball-URL); the adapter builds the
@@ -163,11 +169,4 @@
             .await
             .unwrap();
         assert_eq!(body.as_ref(), tarball_bytes.as_slice());
-    }
-
-    fn now_ms() -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0)
     }
