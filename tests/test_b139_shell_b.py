@@ -1,6 +1,7 @@
 """Regression contracts for B-139 shell-injection fixes."""
 
 from pathlib import Path
+import subprocess
 
 
 ROOT = Path(__file__).parents[1]
@@ -37,3 +38,21 @@ def test_fail_closed_validators_cover_each_input_boundary() -> None:
     assert "invalid version" in release
     sbom = _workflow("sbom.yml")
     assert "invalid release version" in sbom
+
+
+def test_release_args_keep_shell_metacharacters_as_data() -> None:
+    payload = "a$(id)"
+    assert subprocess.run(
+        ["git", "check-ref-format", "--allow-onelevel", f"refs/{payload}"],
+        check=False,
+    ).returncode == 0
+    script = 'VALUE="$1"; args=(--from "$VALUE"); printf "%s\\n" "${args[@]}"'
+    result = subprocess.run(["bash", "-c", script, "shell", payload], check=True, text=True, capture_output=True)
+    assert result.stdout.splitlines()[-1] == payload
+
+
+def test_release_generate_step_has_no_direct_output_interpolation() -> None:
+    source = _workflow("release-notes.yml")
+    generate = source.split("          set -euo pipefail\n", 2)[-1].split("      - name: Upload notes", 1)[0]
+    assert "${{ steps.refs.outputs." not in generate
+    assert 'args=(--from "$FROM_REF" --to "$TO_REF")' in generate
