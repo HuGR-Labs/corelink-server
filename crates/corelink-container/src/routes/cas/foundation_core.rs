@@ -220,7 +220,7 @@ const CAS_WRITE_GLOBAL_PERMITS: usize =
 const CAS_READ_GLOBAL_PERMIT_WAIT: Duration = Duration::from_millis(250);
 
 const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES > 0);
-const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES % CAS_READ_BUDGET_UNIT_BYTES == 0);
+const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES.is_multiple_of(CAS_READ_BUDGET_UNIT_BYTES));
 const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES / CAS_READ_BUDGET_UNIT_BYTES <= u32::MAX as u64);
 const _: () = assert!(CAS_READ_SINGLE_PERMITS > 0 && CAS_READ_BATCH_PERMITS > 0);
 const _: () = assert!(CAS_READ_BATCH_OBJECT_PERMITS > 0);
