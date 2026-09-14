@@ -127,14 +127,16 @@ jobs:
 
       - name: Compute billing period (input or current UTC month)
         id: period
+        env:
+          BILLING_PERIOD_INPUT: ${{ inputs.billing_period }}
         run: |
           set -euo pipefail
-          if [[ -n "${{ inputs.billing_period }}" ]]; then
-            PERIOD="${{ inputs.billing_period }}"
+          if [[ -n "$BILLING_PERIOD_INPUT" ]]; then
+            PERIOD="$BILLING_PERIOD_INPUT"
           else
             PERIOD=$(date -u +%Y-%m)
           fi
-          if ! [[ "$PERIOD" =~ ^[0-9]{4}-[0-9]{2}$ ]]; then
+          if ! [[ "$PERIOD" =~ ^[0-9]{4}-(0[1-9]|1[0-2])$ ]]; then
             echo "::error::Invalid billing_period: $PERIOD (want YYYY-MM)"
             exit 1
           fi

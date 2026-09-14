@@ -15,6 +15,8 @@ on:
         description: "CoreLink env (staging | production)"
         required: false
         default: "production"
+        type: choice
+        options: [production, staging]
       dry_run:
         description: "If true, run in deterministic in-memory mode (no live R2 calls)"
         required: false
@@ -43,18 +45,40 @@ jobs:
     # `npm install -g` into a shared home is the same class of mutation that
     # took the host down on 2026-06-15.
     runs-on: corelink
-    environment: production
+    environment: ${{ github.event.inputs.env == 'staging' && 'staging' || 'production' }}
     timeout-minutes: 35
 
     env:
       CORELINK_ENV: ${{ github.event.inputs.env || 'production' }}
 
     steps:
+      - name: Validate CoreLink environment
+        env:
+          CORELINK_ENV_INPUT: ${{ github.event.inputs.env || 'production' }}
+          DRY_INPUT: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [[ "$CORELINK_ENV_INPUT" != production && "$CORELINK_ENV_INPUT" != staging ]]; then
+            echo "::error::env must be production or staging"
+            exit 1
+          fi
+          DRY="${DRY_INPUT:-false}"
+          if [[ "$DRY" != true && "$DRY" != false ]]; then
+            echo "::error::dry_run must be true or false"
+            exit 1
+          fi
+          if [[ "$CORELINK_ENV_INPUT" == staging && "$DRY" != true ]]; then
+            echo "::error::staging LIVE is blocked: isolated staging Cloudflare credentials are not configured"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Resolve dry-run flag
         id: mode
+        env:
+          DRY_INPUT: ${{ github.event.inputs.dry_run }}
         run: |
           set -euo pipefail
           # The live lane is REAL (scripts/backup-daily-verify.sh lists the
@@ -64,8 +88,12 @@ jobs:
           # its first snapshot, the live verify will correctly report
           # missing/stale (exit 2) or, if BACKUP_R2_BUCKET is unset, a config
           # error (exit 3) — that is honest, not a false green.
-          DRY="${{ github.event.inputs.dry_run }}"
+          DRY="$DRY_INPUT"
           DRY="${DRY:-false}"
+          if [[ "$DRY" != true && "$DRY" != false ]]; then
+            echo "::error::dry_run must be true or false"
+            exit 1
+          fi
           echo "dry=${DRY}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js

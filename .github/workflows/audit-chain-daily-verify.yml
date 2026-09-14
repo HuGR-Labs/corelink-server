@@ -208,9 +208,11 @@ jobs:
 
       - name: Compute 7-day window date set
         id: window
+        env:
+          WINDOW_DAYS_INPUT: ${{ github.event.inputs.window_days || env.DEFAULT_WINDOW_DAYS }}
         run: |
           set -euo pipefail
-          WINDOW_DAYS="${{ github.event.inputs.window_days || env.DEFAULT_WINDOW_DAYS }}"
+          WINDOW_DAYS="$WINDOW_DAYS_INPUT"
           if ! [[ "$WINDOW_DAYS" =~ ^[0-9]+$ ]] || [ "$WINDOW_DAYS" -lt 1 ] || [ "$WINDOW_DAYS" -gt 30 ]; then
             echo "::error::window_days must be an integer in [1,30]; got '$WINDOW_DAYS'"
             exit 1
@@ -606,7 +608,7 @@ jobs:
               json.dump(keys, out, sort_keys=True, separators=(",", ":"))
           os.chmod(os.environ["OUT"], 0o600)
           PY
-              while read -r tenant region first_sequence; do
+              while read -r tenant region _first_sequence; do
                 query="${DAY_DIR}/receipt-query-${tenant}-${region}.json"
                 TENANT="$tenant" REGION="$region" python3 -c '
                 import json,os

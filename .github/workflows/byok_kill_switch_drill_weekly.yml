@@ -33,9 +33,15 @@ jobs:
 
       - name: Determine provider (weekly rotation)
         id: provider
+        env:
+          PROVIDER_INPUT: ${{ github.event.inputs.provider }}
         run: |
-          if [[ -n "${{ github.event.inputs.provider }}" ]]; then
-            echo "provider=${{ github.event.inputs.provider }}" >> "$GITHUB_OUTPUT"
+          if [[ -n "$PROVIDER_INPUT" ]]; then
+            if [[ ! "$PROVIDER_INPUT" =~ ^(aws|gcp|azure|vault)$ ]]; then
+              echo "::error::provider must be one of aws|gcp|azure|vault"
+              exit 1
+            fi
+            echo "provider=$PROVIDER_INPUT" >> "$GITHUB_OUTPUT"
           else
             # Rotation: week of year mod 4 → provider index.
             WEEK=$(date -u +%V)
