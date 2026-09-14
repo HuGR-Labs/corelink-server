@@ -12,5 +12,10 @@ CREATE TABLE IF NOT EXISTS credential_generation_event_receipts (
   state TEXT NOT NULL CHECK (state IN ('requested', 'complete'))
 );
 
+CREATE TRIGGER IF NOT EXISTS credential_generation_event_receipts_state_terminal_check
+BEFORE UPDATE OF state ON credential_generation_event_receipts
+WHEN OLD.state = 'complete' AND NEW.state <> 'complete'
+BEGIN SELECT RAISE(ABORT, 'invalid credential generation state transition'); END;
+
 CREATE INDEX IF NOT EXISTS idx_credential_generation_event_receipts_tenant
   ON credential_generation_event_receipts (tenant_id, lifecycle_generation, event_id);

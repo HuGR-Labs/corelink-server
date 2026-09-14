@@ -34,6 +34,11 @@ CREATE TABLE IF NOT EXISTS credential_generation_revocation (
   state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'revoked'))
 );
 
+CREATE TRIGGER IF NOT EXISTS credential_generation_revocation_state_terminal_check
+BEFORE UPDATE OF state ON credential_generation_revocation
+WHEN OLD.state = 'revoked' AND NEW.state <> 'revoked'
+BEGIN SELECT RAISE(ABORT, 'invalid credential generation state transition'); END;
+
 CREATE INDEX IF NOT EXISTS idx_credential_generation_revocation_tenant_generation
   ON credential_generation_revocation (tenant_id, lifecycle_generation, pat_id);
 
@@ -63,6 +68,8 @@ WHEN length(NEW.revoked_through) = 0
   OR NEW.revoked_through GLOB '*[^0-9]*'
   OR (length(NEW.revoked_through) > 1 AND substr(NEW.revoked_through, 1, 1) = '0')
   OR CAST(NEW.revoked_through AS INTEGER) < 0
+  OR length(NEW.revoked_through) < length(OLD.revoked_through)
+  OR (length(NEW.revoked_through) = length(OLD.revoked_through) AND NEW.revoked_through < OLD.revoked_through)
 BEGIN SELECT RAISE(ABORT, 'invalid lifecycle generation'); END;
 
 -- SQLite ALTER TABLE cannot add a CHECK to an existing table. These guards keep
