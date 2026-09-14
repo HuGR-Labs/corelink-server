@@ -7,6 +7,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "migrations" / "d1"
+LEGACY_MIGRATIONS = ROOT / "tests" / "fixtures" / "credential-lifecycle-pre-main"
 
 
 class CredentialLifecycleMigrations(unittest.TestCase):
@@ -211,6 +212,65 @@ class CredentialLifecycleMigrations(unittest.TestCase):
                 finally:
                     self.db.execute("ROLLBACK TO identity_check")
                     self.db.execute("RELEASE identity_check")
+
+
+class CredentialLifecycleLegacyUpgradeMigrations(unittest.TestCase):
+    """An install that recorded the PR's original 0127-0130 bodies."""
+
+    def setUp(self):
+        self.db = sqlite3.connect(":memory:")
+        self.db.execute(
+            "CREATE TABLE pat (pat_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, "
+            "runner_job_ac_key TEXT, token_id TEXT, revoked_at_ms INTEGER)"
+        )
+        self.db.execute("INSERT INTO pat VALUES ('pat', 'tenant', 'job', 'token', NULL)")
+        for name in (
+            "0127_devenv_credential_obligation.sql",
+            "0128_runner_credential_obligation.sql",
+            "0129_credential_lifecycle_generation.sql",
+            "0130_credential_generation_event_receipts.sql",
+        ):
+            self.db.executescript((LEGACY_MIGRATIONS / name).read_text(encoding="utf-8"))
+
+        reconciliation = MIGRATIONS / "0131_credential_lifecycle_generation_reconciliation.sql"
+        self.db.executescript(reconciliation.read_text(encoding="utf-8"))
+        self.db.executescript(reconciliation.read_text(encoding="utf-8"))
+
+    def tearDown(self):
+        self.db.close()
+
+    def test_0131_upgrades_legacy_schema_and_is_idempotent(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                "INSERT INTO credential_generation_revocation VALUES "
+                "('generation', 'token', 'tenant', '01', 'pending')"
+            )
+        self.db.execute(
+            "INSERT INTO credential_generation_revocation VALUES "
+            "('generation', 'token', 'tenant', '1', 'pending')"
+        )
+        self.db.execute(
+            "UPDATE credential_generation_revocation SET state='revoked' "
+            "WHERE pat_id='generation'"
+        )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                "UPDATE credential_generation_revocation SET state='pending' "
+                "WHERE pat_id='generation'"
+            )
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                "INSERT INTO runner_credential_obligation "
+                "(operation_id, tenant_id, job_id, repo, state, deadline_ms, pat_id, token_id) "
+                "VALUES ('cross-tenant', 'other', 'job', 'repo', 'issued', 1, 'pat', 'token')"
+            )
+
+        self.assertIsNone(self.db.execute(
+            "SELECT 1 FROM sqlite_master "
+            "WHERE type='table' AND name='credential_lifecycle_generation_reconciliation_validation'"
+        ).fetchone())
+
 
 if __name__ == "__main__":
     unittest.main()
