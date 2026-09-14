@@ -16,6 +16,7 @@ function deps(events: string[], overrides: Partial<Record<string, (...args: neve
     revoke: async (..._args: never[]) => { events.push("revoke"); return true; },
     adopt: async (..._args: never[]) => { events.push("adopt"); return true; },
     start: async (..._args: never[]) => { events.push("start"); return { sessionUuid, status: "running" as const }; },
+    stop: async (..._args: never[]) => { events.push("stop"); return { sessionUuid, status: "stopped" as const }; },
     now: () => Date.now(), sessionId: () => sessionUuid, cleanupFailed: () => events.push("cleanup"), ...overrides,
   };
 }
@@ -39,6 +40,28 @@ describe("authorized DevEnv issuance", () => {
     expect(response.status).toBe(503);
     expect(events).toContain("abandon");
     expect(events).toContain("revoke");
+    expect(events.indexOf("stop")).toBeLessThan(events.indexOf("abandon"));
+  });
+
+  it("stops after ACK before compensating when adoption fails", async () => {
+    const events: string[] = [];
+    const response = await relayAuthorizedDevenvStart(new Request("https://x/v1/customer/devenv", { method: "POST", body: JSON.stringify({ workspace_name: "demo" }) }), tenantId, deps(events, { adopt: async () => { events.push("adopt"); return false; } }));
+    expect(response.status).toBe(503);
+    expect(events).toEqual(["prepare", "mint", "compute", "start", "adopt", "stop", "abandon", "revoke"]);
+  });
+
+  it("attempts stop even when the stop RPC rejects, without leaking secrets", async () => {
+    const events: string[] = [];
+    const response = await relayAuthorizedDevenvStart(new Request("https://x/v1/customer/devenv", { method: "POST", body: JSON.stringify({ workspace_name: "demo" }) }), tenantId, deps(events, { stop: async () => { events.push("stop"); throw new Error("token_plaintext=secret"); }, adopt: async () => { events.push("adopt"); return false; } }));
+    expect(response.status).toBe(503);
+    expect(events.slice(-3)).toEqual(["stop", "abandon", "revoke"]);
+  });
+
+  it("does not stop when start itself fails", async () => {
+    const events: string[] = [];
+    const response = await relayAuthorizedDevenvStart(new Request("https://x/v1/customer/devenv", { method: "POST", body: JSON.stringify({ workspace_name: "demo" }) }), tenantId, deps(events, { start: async () => { events.push("start"); throw new Error("runner unavailable"); } }));
+    expect(response.status).toBe(503);
+    expect(events).not.toContain("stop");
   });
 
   it.each([

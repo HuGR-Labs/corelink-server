@@ -90,6 +90,7 @@ export async function handleSpecialCustomerRoute(
           },
           mint: operationId => mintScopedPat(env, requestId, MintGrant.fromDevenvSession(devTenantId, principalSource, lifecycleGeneration), DEVENV_MAX_TTL_SECONDS, "cas:rw", mintKey, undefined, undefined, undefined, { operationId, tenantId: devTenantId, principalSource, lifecycleGeneration }),
           start: input => devStub.startAuthorizedDevenv(input),
+          stop: input => devStub.stopAuthorizedDevenv(input),
           revoke: operationId => revokeDevenvOperation(env.CONFIG_DB, env.METADATA_KV, operationId, devTenantId),
           adopt: (operationId, patId) => adoptDevenvOperation(env.CONFIG_DB, operationId, devTenantId, patId),
           now: Date.now, sessionId: () => crypto.randomUUID(), cleanupFailed: () => console.error("devenv_start_revoke_failed"),
