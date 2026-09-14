@@ -44,19 +44,31 @@ population = "CUSTOM" if custom else "BUNDLED"
 level = os.environ.get(f"FAKE_{population}_LEVEL", "warning")
 count = int(os.environ.get(f"FAKE_{population}_COUNT", "1"))
 custom_rule = "corelink.rust.no-tokio-in-lib-crates" if level == "error" else "corelink.rust.no-unwrap-in-src"
+if custom:
+    bundled_rules = []
+else:
+    # Semgrep uses a dotted config path when it cannot resolve a stable rule ID.
+    # The temporary parent is intentionally different on every invocation.
+    rules_prefix = Path(configs[0]).parent.name
+    bundled_rules = [
+        {"id": f"{rules_prefix}.{Path(config).name}.fixture-rule-{index}",
+         "defaultConfiguration": {"level": "warning"}}
+        for index, config in enumerate(configs)
+    ]
 results = [
     {
-        "ruleId": custom_rule if custom else f"python.test.{index}",
+        "ruleId": custom_rule if custom else bundled_rules[index % len(bundled_rules)]["id"],
         "level": level,
         "message": {"text": "controlled finding"},
         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "fixture.py"}}}],
+        "benign": "similar-corelink-b139-rules-text",
     }
     for index in reversed(range(count))
 ]
 sarif = {
     "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
     "version": "2.1.0",
-    "runs": [{"tool": {"driver": {"name": "fake-semgrep", "rules": [
+    "runs": [{"tool": {"driver": {"name": "fake-semgrep", "rules": bundled_rules if not custom else [
         {"id": "corelink.rust.no-unwrap-in-src", "defaultConfiguration": {"level": "warning"}},
         {"id": "corelink.rust.no-tokio-in-lib-crates", "defaultConfiguration": {"level": "error"}},
         {"id": "corelink.rust.prop-assert-matches-struct-variant", "defaultConfiguration": {"level": "error"}},
@@ -147,6 +159,13 @@ def test_complete_bundle_is_deterministic(fake_semgrep: Path, tmp_path: Path) ->
     assert set(path.name for path in output.iterdir()) == set(OUTPUT_NAMES.values())
     report = _load(output / OUTPUT_NAMES["report"])
     assert report["blocking"]["verdict"] == "PASS"  # type: ignore[index]
+    bundled_sarif = _load(output / OUTPUT_NAMES["bundled"])
+    serialized = json.dumps(bundled_sarif)
+    assert "corelink-b139-rules-" not in serialized.replace(
+        "similar-corelink-b139-rules-text", ""
+    )
+    assert "%B139_ROOT_2%.00-security-audit.yml.fixture-rule-" in serialized
+    assert "similar-corelink-b139-rules-text" in serialized
 
 
 @pytest.mark.parametrize("population", ["BUNDLED", "CUSTOM"])
