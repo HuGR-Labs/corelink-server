@@ -92,6 +92,8 @@ function makeConfigDb(opts: {
   return {
     prepare: (sql: string) => ({
       bind: (...args: unknown[]) => ({
+        __args: args,
+        __sql: sql,
         // All authz reads + throttle INSERT...RETURNING go through first().
         first: async <T>() => {
           if (sql.includes("tenant_gh_installation_map")) {
@@ -158,7 +160,9 @@ function makeConfigDb(opts: {
       }),
     }),
     batch: async (statements: unknown[]) => statements.length === 2
-      ? statements.map(() => ({ success: true, meta: { changes: 1 } }))
+      ? (statements[0] && typeof statements[0] === "object" && String((statements[0] as { __sql?: string }).__sql ?? "").includes("INSERT INTO pat") && opts.patInsertCapture
+          ? (opts.patInsertCapture.sql = (statements[0] as { __sql: string }).__sql, opts.patInsertCapture.binds = (statements[0] as { __args?: unknown[] }).__args, statements.map(() => ({ success: true, meta: { changes: 1 } })))
+          : statements.map(() => ({ success: true, meta: { changes: 1 } })))
       : Promise.all(statements.map(async (s) => ({ success: true, meta: { changes: 1 }, results: [await (s as { first: <T>() => Promise<T | null> }).first()].filter(Boolean) }))),
   } as unknown as D1Database;
   return db;
@@ -772,7 +776,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   // The runner_job_ac_key column is written on EVERY runner mint (deny-DELETE at
   // minimum). Without an ac_output_name it is the sentinel "*"; WITH one it is the
   // BLAKE3 hex of ("clw/ref/runner/v1/" + name).
-  const AC_KEY_BIND_INDEX = 8; // pat INSERT: ...,created_ms(?8), runner_job_ac_key(?9)
+  const AC_KEY_BIND_INDEX = 6; // activation INSERT: runner_job_ac_key is ?7
 
   it("(wp5a) a runner mint with NO ac_output_name binds runner_job_ac_key = \"*\"", async () => {
     const captured: { req?: Request } = {};

@@ -93,6 +93,8 @@ function makeConfigDb(opts: {
     prepare: (sql: string) => ({
       sql,
       bind: (...args: unknown[]) => ({
+        __args: args,
+        __sql: sql,
         // All authz reads + throttle INSERT...RETURNING go through first().
         first: async <T>() => {
           if (sql.includes("tenant_gh_installation_map")) {
@@ -159,7 +161,14 @@ function makeConfigDb(opts: {
       }),
     }),
     batch: async (statements: unknown[]) => {
-      if (statements.length === 2) return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      if (statements.length === 2) {
+        const first = statements[0] as { sql?: string; __args?: unknown[] } | undefined;
+        if (first?.__sql?.includes("INSERT INTO pat") && opts.patInsertCapture) {
+          opts.patInsertCapture.sql = first.__sql;
+          opts.patInsertCapture.binds = first.__args;
+        }
+        return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      }
       return Promise.all(statements.map(async (statement) => {
         const row = await (statement as { first: <T>() => Promise<T | null> }).first();
         return { success: true, meta: { changes: 1 }, results: row === null ? [] : [row] };
@@ -299,7 +308,8 @@ function makeAuthorizedEnv(opts: {
 vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
   const url = String(input);
   if (url.includes("/internal/v1/credentials/tenants/")) {
-    return new Response(JSON.stringify({ tenant_id: TENANT, generation: "1", suspended: false }), { status: 200 });
+    const tenantId = url.match(/\/tenants\/([^/]+)\/lifecycle/)?.[1] ?? TENANT;
+    return new Response(JSON.stringify({ tenant_id: decodeURIComponent(tenantId), generation: "1", suspended: false }), { status: 200 });
   }
   return new Response(JSON.stringify(CANNED_MINT), { status: 200 });
 });
