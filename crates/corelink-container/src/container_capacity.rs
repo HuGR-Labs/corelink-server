@@ -186,7 +186,7 @@ pub fn validate_runtime_budget() -> Result<(), &'static str> {
 
 const _: () = assert!(CONTAINER_MEMORY_BYTES == 1024 * 1024 * 1024);
 const _: () = assert!(CONTAINER_VCPU_MILLICORES == 250);
-const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES % MEMORY_BUDGET_UNIT_BYTES == 0);
+const _: () = assert!(CAS_READ_GLOBAL_BUDGET_BYTES.is_multiple_of(MEMORY_BUDGET_UNIT_BYTES));
 const _: () = assert!(CAS_READ_BATCH_OBJECT_PEAK_BYTES == 24 * MEMORY_BUDGET_UNIT_BYTES);
 const _: () = assert!(CAS_READ_BATCH_FANOUT > 1);
 const _: () = assert!(CAS_READ_BATCH_MAX_IN_FLIGHT > 0);
@@ -205,14 +205,14 @@ const _: () = assert!(
             + CAS_READ_BATCH_FANOUT as u64 * CAS_READ_BATCH_OBJECT_PEAK_BYTES)
         <= CAS_READ_GLOBAL_BUDGET_BYTES
 );
-const _: () = assert!(CAS_WRITE_GLOBAL_BUDGET_BYTES % MEMORY_BUDGET_UNIT_BYTES == 0);
+const _: () = assert!(CAS_WRITE_GLOBAL_BUDGET_BYTES.is_multiple_of(MEMORY_BUDGET_UNIT_BYTES));
 const _: () =
     assert!(CAS_READ_GLOBAL_BUDGET_BYTES >= CAS_READ_SINGLE_PEAK_BYTES + CAS_READ_BATCH_PEAK_BYTES);
 const _: () = assert!(CAS_WRITE_GLOBAL_BUDGET_BYTES >= CAS_WRITE_SINGLE_PEAK_BYTES);
 const _: () = assert!(CAS_WRITE_GLOBAL_BUDGET_BYTES >= CAS_WRITE_BATCH_PEAK_BYTES);
 const _: () = assert!(BLOOM_CACHE_BIT_ARRAY_BYTES == 2048 * 128 * 1024);
 const _: () = assert!(BLOOM_CACHE_MEMORY_BUDGET_BYTES >= BLOOM_CACHE_BIT_ARRAY_BYTES);
-const _: () = assert!(ARGON2_MEMORY_BUDGET_BYTES % ARGON2_MEMORY_BYTES == 0);
+const _: () = assert!(ARGON2_MEMORY_BUDGET_BYTES.is_multiple_of(ARGON2_MEMORY_BYTES));
 const _: () = assert!(TURBO_PUT_GLOBAL_PERMITS > 0 && TURBO_GET_GLOBAL_PERMITS > 0);
 const _: () = assert!(TURBO_EVENTS_GLOBAL_PERMITS > 0);
 const _: () = assert!(budget_fits(
