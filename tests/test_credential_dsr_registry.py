@@ -3,6 +3,7 @@
 from pathlib import Path
 import re
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,15 +25,24 @@ def rust_table_array(path: Path, name: str) -> list[str]:
     match = re.search(rf"\b{name}:\s*&\[&str\]\s*=\s*&\[(.*?)\];", source, re.S)
     if match is None:
         raise AssertionError(f"missing DSR array {name} in {path}")
-    return re.findall(r'^\s*"([a-z_]+)"\s*,', match.group(1), re.M)
+    body = re.sub(r"/\*.*?\*/|//[^\n]*", "", match.group(1), flags=re.S)
+    return re.findall(r'^\s*"([a-z_]+)"\s*,', body, re.M)
 
 
 class CredentialDsrRegistry(unittest.TestCase):
+    def test_comment_only_registry_entries_do_not_count(self):
+        source = 'const TENANT_ID_TABLES: &[&str] = &[\n// "fake_line",\n/* "fake_block", */\n"pat",\n];'
+        with mock.patch.object(Path, "read_text", return_value=source):
+            self.assertEqual(rust_table_array(Path("unused"), "TENANT_ID_TABLES"), ["pat"])
+
     def test_every_new_tenant_table_is_erased_before_pat(self):
         erase = rust_table_array(ADAPTER, "TENANT_ID_TABLES")
         census = rust_table_array(REGISTRY, "ALL_TENANT_KEYED_TABLES")
         for migration, tables in TABLES_BY_MIGRATION.items():
-            if not (MIGRATIONS / migration).is_file():
+            path = MIGRATIONS / migration
+            if migration.startswith(("0127_", "0128_")):
+                self.assertTrue(path.is_file(), f"required migration missing: {migration}")
+            if not path.is_file():
                 continue
             for table in tables:
                 with self.subTest(migration=migration, table=table):
