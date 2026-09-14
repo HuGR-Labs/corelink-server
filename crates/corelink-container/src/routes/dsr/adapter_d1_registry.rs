@@ -15,6 +15,8 @@ pub(super) const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "tier_selections",
     "tenant_billing",
     "pilot_signups",
+    "devenv_credential_obligation",
+    "runner_credential_obligation",
     "pat",
     "usage_counter",
     "tenant_storage_state",
