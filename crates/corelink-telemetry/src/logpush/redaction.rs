@@ -776,7 +776,7 @@ fn luhn_valid(digits: &[u8]) -> bool {
         };
         sum = sum.saturating_add(v);
     }
-    sum % 10 == 0
+    sum.is_multiple_of(10)
 }
 
 // -- CPF / CNPJ scanner -----------------------------------------------
