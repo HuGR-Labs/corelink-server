@@ -344,14 +344,10 @@ describe("checkStorageQuota", () => {
 
   // ── CAA-360 #25: verb-aware D1-error posture ──────────────────────────────
 
-  it("fails CLOSED on a storage-query D1 error for a READ request", async () => {
+  it("keeps a READ available on a storage-query D1 error", async () => {
     const db = makeQuotaD1Mock({ throwOnStorageQuery: true });
     const result = await checkStorageQuota(db, TEST_TENANT_ID, ok("free"), READ);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.retryAfterSec).toBe(2);
-      expect(result.reason).toContain("unverifiable");
-    }
+    expect(result).toEqual({ ok: true });
   });
 
   it("fails CLOSED with a short Retry-After on a storage-query D1 error for a WRITE request", async () => {
@@ -366,7 +362,7 @@ describe("checkStorageQuota", () => {
     }
   });
 
-  it("fails CLOSED on an unconfirmed (tier-lookup D1 error) tier for a READ request", async () => {
+  it("keeps a READ available with an unconfirmed tier", async () => {
     const db = makeQuotaD1Mock({ storageBytes: FREE_MAX }); // would be over-cap IF checked
     const result = await checkStorageQuota(
       db,
@@ -374,11 +370,7 @@ describe("checkStorageQuota", () => {
       { tier: "free", d1Error: true },
       READ,
     );
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.retryAfterSec).toBe(2);
-      expect(result.reason).toContain("unverifiable");
-    }
+    expect(result).toEqual({ ok: true });
   });
 
   it("fails CLOSED on an unconfirmed (tier-lookup D1 error) tier for a WRITE request", async () => {

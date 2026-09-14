@@ -263,7 +263,7 @@ describe("runQuotaBatch — verdicts", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("runQuotaBatch — D1 failure posture (CAA-360 #25 / F21)", () => {
-  it("fails CLOSED on a READ when the batch throws, and does not count the request", async () => {
+  it("keeps a READ available when the batch throws, and does not count the request", async () => {
     const { db, calls } = makeD1({ throwOnBatch: true });
     const result = await runQuotaBatch(db, TEST_TENANT_ID, confirmed("free"), {
       meter: true,

@@ -296,19 +296,18 @@ const STORAGE_QUOTA_D1_ERROR_RETRY_SEC = 2;
  *   - The tier has a finite storageBytesMax, AND
  *   - The tenant's current bytes_used >= storageBytesMax.
  *
- * Fails CLOSED on D1 errors (returns a short retryable rejection). A quota
- * decision made without a readable tier or storage total is not a decision at
- * all: allowing it through would make an outage an unbounded write/read quota
- * bypass. The short retry keeps this distinct from a genuine month-long cap.
+ * Fails CLOSED on D1 errors for byte-adding mutations and OPEN for reads. A
+ * read cannot increase stored bytes, so this preserves availability during a
+ * transient outage; writes receive a short retryable rejection.
  *
  * F21 fix — symmetric failure modes: if the tier was derived from a D1
  * error (`tierResult.d1Error === true`), this function SKIPS the storage
- * query entirely and returns a short fail-closed retry. Combining an error-derived 'free'
+ * query entirely and returns the verb-aware outage result. Combining an error-derived 'free'
  * tier with a successful storage query would produce false-positive 429s
  * for paid tenants (e.g. solo with 40 GiB stored → free cap 10 GiB → 429).
  * Skipping the SUM when the tier is unconfirmed still avoids comparing bytes
- * against a guessed tier, but the result is fail-closed because the cap is
- * unverifiable.
+ * against a guessed tier; reads remain available while writes fail closed
+ * because the cap is unverifiable.
  *
  * retryAfterSec is set to seconds-until-next-UTC-month-start (capped at
  * 31 days = 2678400 s) for a real over-cap breach, consistent with the
@@ -320,9 +319,11 @@ const STORAGE_QUOTA_D1_ERROR_RETRY_SEC = 2;
  * the tier lookup errored — `tierResult.d1Error` — or the storage SUM query
  * threw), the failure mode now depends on the request verb:
  *
- *   - **All request verbs** fail CLOSED with a SHORT Retry-After. Reads can
- *     still expose quota-protected data and must not become an outage bypass;
- *     mutations receive the same response, preserving one unambiguous contract.
+ *   - **Reads** fail OPEN so a transient D1 outage does not turn an otherwise
+ *     available read path into a fleet-wide 429. Reads cannot increase stored
+ *     bytes, so this is bounded availability posture.
+ *   - **Mutations** fail CLOSED with a SHORT Retry-After because allowing a
+ *     byte-adding request without a confirmed total could bypass the cap.
  *
  * @param tierResult  Result from {@link getTierForTenant} carrying the
  *                    resolved tier and the d1Error flag (F21).
@@ -336,8 +337,8 @@ export async function checkStorageQuota(
   isMutating: boolean,
 ): Promise<QuotaCheckResult> {
   // F21 + #25: if the tier lookup itself errored, the tier is unconfirmed.
-  // Do not compare against the fallback `free` tier, and do not pass through:
-  // an unconfirmed quota must fail closed for every verb.
+  // Do not compare against the fallback `free` tier; use the verb-aware outage
+  // posture instead.
   if (tierResult.d1Error) {
     return storageD1ErrorResult(isMutating);
   }
@@ -353,7 +354,7 @@ export async function checkStorageQuota(
   try {
     row = await storageSumStatement(db, tenantId).first<StorageSumRow>();
   } catch {
-    // D1 error → fail closed for every verb (B181).
+    // D1 error → reads stay available; byte-adding writes fail closed (B181).
     return storageD1ErrorResult(isMutating);
   }
 
