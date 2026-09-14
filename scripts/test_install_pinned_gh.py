@@ -74,12 +74,6 @@ def main() -> int:
         unsafe_tar(root, "gh_2.79.0_linux_amd64/bin/gh", symlink=True)
         unsafe_zip(root, "../escape")
         unsafe_zip(root, "gh_2.79.0_macOS_amd64/bin/gh", symlink=True)
-        path_shim = root / "path-shim"
-        path_shim.mkdir()
-        (path_shim / "gh").write_bytes(b"gh version 2.79.0 shim")
-        (path_shim / "gh").chmod(0o700)
-        with patch.dict(os.environ, {"CORELINK_GH_BIN": str(path_shim / "gh"), "PATH": str(path_shim)}):
-            expect_error(lambda: verifier.verify_attestation_with_gh({}, b"", {}, []), "PATH/env verifier shim")
         with patch.dict(
             os.environ,
             {
@@ -102,7 +96,7 @@ def main() -> int:
             },
         ):
             environment = verifier.gh_environment(root / "home", root / "config")
-        assert environment["GH_TOKEN"] == "required-token"
+        assert "GH_TOKEN" not in environment
         assert environment["GH_HOST"] == "github.com"
         assert "GH_ENTERPRISE_TOKEN" not in environment
         assert "GITHUB_ENTERPRISE_TOKEN" not in environment

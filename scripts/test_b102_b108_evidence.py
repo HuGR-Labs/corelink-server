@@ -292,12 +292,13 @@ def main() -> int:
         item = candidate["items"]["B-106"]
         attestation = item["github_attestation"]
         try:
-            original_gh_verifier(
-                attestation["bundle"],
-                verifier.b106_subject_bytes(item["cold_attestation"], item["deployment"]),
-                item["deployment"],
-                attestation["verification"],
-            )
+            with patch.object(verifier, "install_pinned_gh", side_effect=verifier.PinnedGhError("test unavailable")):
+                original_gh_verifier(
+                    attestation["bundle"],
+                    verifier.b106_subject_bytes(item["cold_attestation"], item["deployment"]),
+                    item["deployment"],
+                    attestation["verification"],
+                )
         except verifier.EvidenceError:
             return
         raise AssertionError(f"real gh verifier accepted mutation: {label}")

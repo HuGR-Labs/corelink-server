@@ -27,11 +27,9 @@ from typing import Any
 try:
     from install_pinned_gh import InstallError as PinnedGhError
     from install_pinned_gh import install as install_pinned_gh
-    from install_pinned_gh import verify_binary as verify_pinned_gh_binary
 except ModuleNotFoundError:  # imported as scripts.verify_b102_b108_evidence
     from scripts.install_pinned_gh import InstallError as PinnedGhError
     from scripts.install_pinned_gh import install as install_pinned_gh
-    from scripts.install_pinned_gh import verify_binary as verify_pinned_gh_binary
 
 SCHEMA = "corelink.performance-evidence.v2"
 ITEMS = tuple(f"B-{n:03d}" for n in range(102, 109))
@@ -300,19 +298,14 @@ def verify_attestation_with_gh(
 ) -> list[dict[str, Any]]:
     """Run the pinned GitHub Sigstore verifier against the retained bundle.
 
-    The executable and version are deliberately not caller-overridable: an
-    environment-selected shim could claim a version while accepting forged
-    DSSE/tlog material.
+    The executable and version are deliberately not caller-overridable: the
+    verifier is installed from the repository-pinned release and validated
+    before it accepts any DSSE/tlog material.
     """
     with tempfile.TemporaryDirectory(prefix="corelink-b106-verify-") as directory:
         root = Path(directory)
-        configured_binary = os.environ.get("CORELINK_GH_BIN")
         try:
-            verifier_path = (
-                verify_pinned_gh_binary(Path(configured_binary))
-                if configured_binary is not None
-                else install_pinned_gh(root / "gh")
-            )
+            verifier_path = install_pinned_gh(root / "gh")
         except (OSError, PinnedGhError) as exc:
             raise EvidenceError(f"B-106 pinned gh verifier is unavailable: {exc}") from exc
         verifier = str(verifier_path)
@@ -368,9 +361,6 @@ def gh_environment(home: Path, config: Path) -> dict[str, str]:
         "LC_ALL": "C",
         "NO_COLOR": "1",
     }
-    gh_token = os.environ.get("GH_TOKEN")
-    if gh_token:
-        environment["GH_TOKEN"] = gh_token
     return environment
 
 
