@@ -158,7 +158,7 @@ fn decode_base64_padded(s: &str) -> Result<Vec<u8>, String> {
         }
     }
     let bytes = s.as_bytes();
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return Err(format!("base64 length {} not multiple of 4", bytes.len()));
     }
     let pad = bytes.iter().rev().take_while(|&&b| b == b'=').count();
