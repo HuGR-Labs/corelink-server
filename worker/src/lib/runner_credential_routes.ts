@@ -8,6 +8,8 @@ import {
 import { requireConsumerAuth } from "./internal_auth.js";
 
 const OPERATION_ID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const GENERATION = /^(0|[1-9][0-9]*)$/;
+const MAX_GENERATION = 9_223_372_036_854_775_807n;
 
 function response(status: number, requestId: string): Response {
   return new Response(null, { status, headers: { "X-Request-Id": requestId } });
@@ -40,7 +42,8 @@ function operationBody(value: unknown): RunnerCredentialOperation | null {
     typeof tenantId !== "string" || tenantId.length === 0 || tenantId !== tenantId.trim() ||
     typeof jobId !== "string" || jobId.length === 0 || jobId !== jobId.trim() ||
     typeof repo !== "string" || repo.length === 0 || repo !== repo.trim() ||
-    typeof lifecycleGeneration !== "string" || lifecycleGeneration.length === 0
+    typeof lifecycleGeneration !== "string" || lifecycleGeneration.length > 19 ||
+    !GENERATION.test(lifecycleGeneration) || BigInt(lifecycleGeneration) > MAX_GENERATION
   ) return null;
   return { operationId, tenantId, jobId, repo, lifecycleGeneration };
 }
