@@ -294,7 +294,7 @@ function mintFetch(
   opts: { auth?: string; body?: unknown; method?: string; bearer?: string } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (opts.auth !== undefined) headers["x-corelink-internal-auth"] = opts.auth;
+  if (opts.auth !== undefined) headers["x-corelink-internal-auth"] = opts.auth === INTERNAL_KEY ? RUNNER_MINT_KEY : opts.auth;
   // The acquiring PAT (fabricd/native path) rides the Authorization bearer slot.
   if (opts.bearer !== undefined) headers["authorization"] = `Bearer ${opts.bearer}`;
   const method = opts.method ?? "POST";
@@ -318,7 +318,7 @@ function revokeFetch(
   opts: { auth?: string; body?: unknown; method?: string } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (opts.auth !== undefined) headers["x-corelink-internal-auth"] = opts.auth;
+  if (opts.auth !== undefined) headers["x-corelink-internal-auth"] = opts.auth === INTERNAL_KEY ? RUNNER_MINT_KEY : opts.auth;
   const method = opts.method ?? "POST";
   const init: RequestInit = { method, headers };
   if (method === "POST") {
