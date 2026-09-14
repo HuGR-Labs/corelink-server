@@ -281,7 +281,7 @@ impl<D: ActivationD1Client, W> D1ByokActivationStore<D, W> {
             )
             .await
             .map_err(store_error)?;
-        if rows.first().map_or(true, |row| {
+        if rows.first().is_none_or(|row| {
             integer(row, "singleton") != Ok(1) || integer(row, "schema_version") != Ok(2)
         }) {
             return Err(BackfillError::Store(
@@ -313,7 +313,7 @@ impl<D: ActivationD1Client, W> D1ByokActivationStore<D, W> {
         batch.extend(statements);
         batch.push(postcondition(&operation_token, intent, expected_phase));
         let results = self.d1.batch(batch).await.map_err(store_error)?;
-        if results.first().map_or(true, Vec::is_empty) || results.last().map_or(true, Vec::is_empty)
+        if results.first().is_none_or(Vec::is_empty) || results.last().is_none_or(Vec::is_empty)
         {
             return Err(BackfillError::Conflict(
                 "guarded activation transition lost its exact capability".to_owned(),
