@@ -27,13 +27,16 @@ class CredentialLifecycleMigrations(unittest.TestCase):
             path = MIGRATIONS / f"{number:04d}_{name}.sql"
             self.assertTrue(path.is_file(), f"missing migration: {path.name}")
             self.db.executescript(path.read_text(encoding="utf-8"))
+            if number == 128:
+                self.db.execute("INSERT INTO pat VALUES ('devenv','tenant',NULL,'dev-token',NULL)")
+                self.db.execute("INSERT INTO devenv_credential_obligation VALUES ('dev-op','tenant','issued',1,'devenv','dev-token')")
 
     def tearDown(self):
         self.db.close()
 
-    def test_backfill_classifies_runner_but_not_customer_pat(self):
+    def test_backfill_classifies_runner_and_devenv_but_not_customer_pat(self):
         rows = dict(self.db.execute("SELECT pat_id, lifecycle_generation FROM pat"))
-        self.assertEqual(rows, {"customer": None, "runner": "0"})
+        self.assertEqual(rows, {"customer": None, "runner": "0", "devenv": "0"})
 
     def test_generation_rejects_noncanonical_and_out_of_range_values(self):
         invalid = ("", "01", "-1", "1x", "9223372036854775808")
@@ -44,9 +47,7 @@ class CredentialLifecycleMigrations(unittest.TestCase):
                         "INSERT INTO tenant_credential_revocation_floor VALUES (?, ?)",
                         ("tenant", generation),
                     )
-        self.db.execute(
-            "INSERT INTO tenant_credential_revocation_floor VALUES ('tenant', '1')"
-        )
+        self.db.execute("INSERT INTO tenant_credential_revocation_floor VALUES ('tenant', '1')")
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute(
                 "UPDATE tenant_credential_revocation_floor SET revoked_through='00' "
