@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import hmac
 import json
@@ -126,11 +127,18 @@ def _load_lock(path: Path = LOCKFILE) -> dict[str, Any]:
     if not isinstance(lock, dict) or set(lock) != {
         "schema_version",
         "semgrep_version",
+        "captured_at",
+        "provenance",
+        "snapshot_dir",
         "rulesets",
     }:
         raise VerificationError("Semgrep lock fields are not closed")
     if lock["schema_version"] != 1 or lock["semgrep_version"] != "1.164.0":
         raise VerificationError("Semgrep lock schema/version changed")
+    if not isinstance(lock["captured_at"], str) or not isinstance(lock["provenance"], str):
+        raise VerificationError("Semgrep lock provenance is malformed")
+    if lock["snapshot_dir"] != "semgrep-rulesets":
+        raise VerificationError("Semgrep snapshot directory changed")
     rulesets = lock["rulesets"]
     names = (
         [item.get("name") for item in rulesets if isinstance(item, dict)]
@@ -140,7 +148,9 @@ def _load_lock(path: Path = LOCKFILE) -> dict[str, Any]:
     if names != list(BUNDLED):
         raise VerificationError("Semgrep lock population/order changed")
     for item in rulesets:
-        if not isinstance(item, dict) or set(item) != {"name", "sha256", "url"}:
+        if not isinstance(item, dict) or set(item) != {
+            "name", "sha256", "url", "snapshot", "size_bytes"
+        }:
             raise VerificationError("Semgrep ruleset lock fields are not closed")
         expected_url = f"https://semgrep.dev/c/{item['name']}"
         if item["url"] != expected_url:
@@ -153,6 +163,10 @@ def _load_lock(path: Path = LOCKFILE) -> dict[str, Any]:
             raise VerificationError(
                 f"Semgrep ruleset digest is invalid: {item['name']}"
             )
+        if not isinstance(item["snapshot"], str) or item["snapshot"] != f"{names.index(item['name']):02d}-{item['name'].removeprefix('p/')}.yml.gz":
+            raise VerificationError(f"Semgrep snapshot name is invalid: {item['name']}")
+        if not isinstance(item["size_bytes"], int) or not 0 < item["size_bytes"] <= MAX_RULESET_BYTES:
+            raise VerificationError(f"Semgrep snapshot size is invalid: {item['name']}")
     return lock
 
 
@@ -178,8 +192,22 @@ def _materialize_rulesets(
     fetcher: Callable[[str], bytes] = _download,
 ) -> list[str]:
     configs: list[str] = []
+    snapshot_root = (ROOT / lock["snapshot_dir"]).resolve()
+    if not snapshot_root.is_dir() or snapshot_root.is_symlink():
+        raise VerificationError("Semgrep snapshot directory is missing/non-regular")
     for index, item in enumerate(lock["rulesets"]):
-        content = fetcher(item["url"])
+        snapshot = snapshot_root / item["snapshot"]
+        if snapshot.parent != snapshot_root or snapshot.is_symlink() or not snapshot.is_file():
+            raise VerificationError(f"Semgrep snapshot is missing/non-regular: {item['name']}")
+        if snapshot.stat().st_size > MAX_RULESET_BYTES:
+            raise VerificationError(f"Semgrep compressed snapshot is too large: {item['name']}")
+        try:
+            with gzip.open(snapshot, "rb") as stream:
+                content = stream.read(MAX_RULESET_BYTES + 1)
+        except (OSError, EOFError) as exc:
+            raise VerificationError(f"Semgrep snapshot cannot be decompressed: {item['name']}") from exc
+        if len(content) != item["size_bytes"] or len(content) > MAX_RULESET_BYTES:
+            raise VerificationError(f"Semgrep snapshot size mismatch: {item['name']}")
         actual = hashlib.sha256(content).hexdigest()
         if not hmac.compare_digest(actual, item["sha256"]):
             raise VerificationError(f"Semgrep ruleset digest mismatch: {item['name']}")
