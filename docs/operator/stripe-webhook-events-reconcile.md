@@ -140,7 +140,7 @@ Production has **four** Stripe destinations. Exactly one was stray:
 
 | Destination | URL | Events | Payload | Verdict |
 |---|---|---|---|---|
-| *(unnamed)* `we_1Tolig…` | `corelink-signup.humangr.com/webhooks/stripe` | 7 | snapshot | ✅ **KEEP** — the authoritative signup-worker handler. Matches `apps/signup-worker/src/webhooks/handled-stripe-events.json` exactly. |
+| *(unnamed)* `we_1Tolig…` | `corelink-signup.humangr.com/webhooks/stripe` | 7 | snapshot | ✅ **KEEP** — the authoritative signup-worker handler. Matched the 7-event `apps/signup-worker/src/webhooks/handled-stripe-events.json` snapshot as of **2026-08-03**; the current canonical list has 8 events. |
 | `Corelink prd` `we_1Tfh8P…` | `corelink-api.humangr.com/v1/billing/stripe-webhook` | 10 | snapshot | ✅ **KEEP** — the container grant-only materializer. Its signing secret is the one bound to the container. |
 | **`exquisite-rhythm-thin`** | `corelink-api.humangr.com/v1/billing/stripe-webhook` | 24 | **thin** | ❌ was the stray — **DISABLED by the owner 2026-08-03** |
 | *(unnamed)* `we_1TJ1YZ…` | `api.humangr.com/_wallet/stripe/webhook` | 4 | snapshot | 🚫 **DO NOT TOUCH — a different project (hugr-wallet).** Not CoreLink's. |
