@@ -95,7 +95,7 @@ def _normalize_value(
         for original, replacement in replacements:
             value = value.replace(original, replacement)
         # Semgrep may encode a temporary absolute config path as a dotted
-        # rule ID (``<rules-dir-basename>.<config>.<rule>``), so the slash
+        # rule ID (``<absolute-dotted-rules-dir>.<config>.<rule>``), so the slash
         # replacement above cannot see it. Restrict this substitution to rule
         # identifiers and a prefix match: ordinary finding text containing a
         # similar name must remain untouched.
