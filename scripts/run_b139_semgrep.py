@@ -132,6 +132,10 @@ def _normalize_value(
                         value = value.replace(
                             marker, f"{lead_in}{replacement}", 1
                         )
+            elif metadata_path:
+                # Rule names and descriptions may put the dotted path after
+                # a prose prefix; their field path already scopes the change.
+                value = value.replace(original, replacement)
             elif value.startswith(original):
                 value = replacement + value[len(original) :]
         return value
