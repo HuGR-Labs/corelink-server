@@ -157,8 +157,7 @@ impl WriteLeaseLedger {
             .lock()
             .map_err(|_| HarnessError::LedgerPoisoned)?;
         Ok(g.iter()
-            .filter(|e| e.at_ms <= at_ms)
-            .next_back()
+            .rfind(|e| e.at_ms <= at_ms)
             .map(|e| e.holder.clone()))
     }
 
