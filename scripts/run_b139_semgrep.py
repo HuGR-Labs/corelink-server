@@ -13,7 +13,6 @@ import re
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -134,7 +133,7 @@ def _load_lock(path: Path = LOCKFILE) -> dict[str, Any]:
         raise VerificationError("Semgrep lock fields are not closed")
     if lock["schema_version"] != 1 or lock["semgrep_version"] != "1.164.0":
         raise VerificationError("Semgrep lock schema/version changed")
-    if not isinstance(lock["captured_at"], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", lock["captured_at"]):
+    if not isinstance(lock["captured_at"], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", lock["captured_at"]):
         raise VerificationError("Semgrep lock provenance is malformed")
     if not isinstance(lock["provenance"], str) or not lock["provenance"].strip():
         raise VerificationError("Semgrep lock provenance is malformed")
@@ -169,22 +168,6 @@ def _load_lock(path: Path = LOCKFILE) -> dict[str, Any]:
         if isinstance(item["size_bytes"], bool) or not isinstance(item["size_bytes"], int) or not 0 < item["size_bytes"] <= MAX_RULESET_BYTES:
             raise VerificationError(f"Semgrep snapshot size is invalid: {item['name']}")
     return lock
-
-
-def _download(url: str) -> bytes:
-    request = urllib.request.Request(
-        url,
-        headers={"Accept": "application/yaml", "User-Agent": "corelink-b139-lock/1"},
-    )
-    with urllib.request.urlopen(request, timeout=60) as response:
-        if response.geturl() != url:
-            raise VerificationError(
-                f"Semgrep ruleset redirected away from locked URL: {url}"
-            )
-        content = response.read(MAX_RULESET_BYTES + 1)
-    if not content or len(content) > MAX_RULESET_BYTES:
-        raise VerificationError(f"Semgrep ruleset has invalid size: {url}")
-    return content
 
 
 def _materialize_rulesets(

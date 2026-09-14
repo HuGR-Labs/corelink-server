@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "semgrep_version": "1.164.0",
-  "captured_at": "2026-09-08",
-  "provenance": "Reviewed Semgrep registry responses captured for the 2026-09-08 B-139 security CI audit; historical baseline, not a claim about current registry contents.",
+  "captured_at": "2026-09-13T21:20:43Z",
+  "provenance": "Captured 2026-09-13T21:20Z for B-139 diagnostic evidence; p/owasp-top-ten and p/cwe-top-25 differ from the earlier lock, and historical bytes are unavailable. Replacement requires a reviewed policy decision.",
   "snapshot_dir": "semgrep-rulesets",
   "rulesets": [
     {

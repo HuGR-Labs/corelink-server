@@ -84,8 +84,8 @@ def locked_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     lock = {
         "schema_version": 1,
         "semgrep_version": "1.164.0",
-        "captured_at": "2026-09-08",
-        "provenance": "fixture historical snapshot",
+        "captured_at": "2026-09-13T21:20:43Z",
+        "provenance": "fixture diagnostic capture",
         "snapshot_dir": "semgrep-rulesets",
         "rulesets": [
             {
@@ -275,22 +275,27 @@ def test_ruleset_content_mutation_is_rejected(
         run_bundle(fake_semgrep, tmp_path / "evidence", ROOT)
 
 
-def test_network_fetcher_is_not_called(fake_semgrep: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(bundle_runner, "_download", lambda _: (_ for _ in ()).throw(AssertionError("network")))
+def test_network_fetcher_is_not_called(fake_semgrep: Path, tmp_path: Path) -> None:
     assert run_bundle(fake_semgrep, tmp_path / "evidence", ROOT) == 0
 
 
-@pytest.mark.parametrize("mutation", ["missing", "symlink", "size"])
+@pytest.mark.parametrize("mutation", ["missing", "symlink", "size", "corrupt"])
 def test_snapshot_files_fail_closed(fake_semgrep: Path, tmp_path: Path, mutation: str) -> None:
-    snapshot = bundle_runner.ROOT / "semgrep-rulesets/00-security-audit.yml.gz"
+    snapshot_dir = bundle_runner.ROOT / "semgrep-rulesets"
+    snapshot = snapshot_dir / "00-security-audit.yml.gz"
     original = snapshot.read_bytes()
     if mutation == "missing":
         snapshot.unlink()
     elif mutation == "symlink":
         snapshot.unlink()
         snapshot.symlink_to(tmp_path / "outside")
-    else:
+    elif mutation == "corrupt":
+        snapshot.write_bytes(b"not-gzip")
+    elif mutation == "size":
         snapshot.write_bytes(original + b"x" * (bundle_runner.MAX_RULESET_BYTES + 1))
+    else:
+        snapshot_dir.rename(tmp_path / "snapshot-backup")
+        snapshot_dir.symlink_to(tmp_path / "snapshot-backup")
     with pytest.raises(VerificationError):
         run_bundle(fake_semgrep, tmp_path / "evidence", ROOT)
 
