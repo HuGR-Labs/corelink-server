@@ -36,6 +36,7 @@ with db:
     db.execute(act[0], ("pat", tenant, "hash", "read-write", now+100000, "tok", op, "0"))
     db.execute(act[1], ("pat", "tok", op, tenant, "0"))
 assert db.execute("select state from devenv_credential_obligation").fetchone() == ("issued",)
+assert db.execute("select pat_id, tenant_id, token_id, lifecycle_generation from pat").fetchone() == ("pat", "tenant", "tok", "0")
 with db:
     for q in queries("revokeDevenvOperation")[:3]: db.execute(q, (op, tenant))
 assert db.execute("select revoked_at_ms from pat").fetchone()[0] is not None
@@ -53,7 +54,11 @@ db.execute(prep, (op, tenant, now+90000, "0")); db.commit()
 try:
     with db:
         db.execute(act[0], ("pat2", tenant, "hash2", "read-write", now+100000, "tok2", op, "0"))
-        raise RuntimeError("injected failure")
+        # A zero-row second statement is an abort condition for D1.batch; the
+        # surrounding transaction must roll back the first INSERT as well.
+        changed = db.execute(act[1], ("wrong-pat", "tok2", op, tenant, "0")).rowcount
+        assert changed == 0
+        raise RuntimeError("batch abort")
 except RuntimeError: pass
 assert db.execute("select count(*) from pat").fetchone()[0] == 0
 assert db.execute("select state from devenv_credential_obligation").fetchone() == ("prepared",)
