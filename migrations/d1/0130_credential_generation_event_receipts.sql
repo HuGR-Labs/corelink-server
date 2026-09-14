@@ -17,5 +17,12 @@ BEFORE UPDATE OF state ON credential_generation_event_receipts
 WHEN OLD.state = 'complete' AND NEW.state <> 'complete'
 BEGIN SELECT RAISE(ABORT, 'invalid credential generation state transition'); END;
 
+CREATE TRIGGER IF NOT EXISTS credential_generation_event_receipts_identity_immutable
+BEFORE UPDATE OF event_id, tenant_id, lifecycle_generation ON credential_generation_event_receipts
+WHEN NEW.event_id <> OLD.event_id
+  OR NEW.tenant_id <> OLD.tenant_id
+  OR NEW.lifecycle_generation <> OLD.lifecycle_generation
+BEGIN SELECT RAISE(ABORT, 'credential generation receipt identity is immutable'); END;
+
 CREATE INDEX IF NOT EXISTS idx_credential_generation_event_receipts_tenant
   ON credential_generation_event_receipts (tenant_id, lifecycle_generation, event_id);

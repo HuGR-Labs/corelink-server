@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS tenant_credential_revocation_floor (
   revoked_through TEXT NOT NULL
 );
 
+CREATE TRIGGER IF NOT EXISTS tenant_credential_revocation_floor_tenant_immutable
+BEFORE UPDATE OF tenant_id ON tenant_credential_revocation_floor
+WHEN NEW.tenant_id <> OLD.tenant_id
+BEGIN SELECT RAISE(ABORT, 'tenant identity is immutable'); END;
+
 CREATE TABLE IF NOT EXISTS credential_generation_revocation (
   pat_id TEXT PRIMARY KEY NOT NULL,
   token_id TEXT NOT NULL,
@@ -38,6 +43,14 @@ CREATE TRIGGER IF NOT EXISTS credential_generation_revocation_state_terminal_che
 BEFORE UPDATE OF state ON credential_generation_revocation
 WHEN OLD.state = 'revoked' AND NEW.state <> 'revoked'
 BEGIN SELECT RAISE(ABORT, 'invalid credential generation state transition'); END;
+
+CREATE TRIGGER IF NOT EXISTS credential_generation_revocation_identity_immutable
+BEFORE UPDATE OF pat_id, token_id, tenant_id, lifecycle_generation ON credential_generation_revocation
+WHEN NEW.pat_id <> OLD.pat_id
+  OR NEW.token_id <> OLD.token_id
+  OR NEW.tenant_id <> OLD.tenant_id
+  OR NEW.lifecycle_generation <> OLD.lifecycle_generation
+BEGIN SELECT RAISE(ABORT, 'credential generation identity is immutable'); END;
 
 CREATE INDEX IF NOT EXISTS idx_credential_generation_revocation_tenant_generation
   ON credential_generation_revocation (tenant_id, lifecycle_generation, pat_id);
