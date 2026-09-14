@@ -509,7 +509,7 @@ fn anchor_matches_first(anchor: &PartitionAnchor, first: &SealedArchiveLine) -> 
     let same_epoch = anchor.current_epoch_id == first.epoch_id
         && anchor
             .current_link_key_id
-            .map_or(true, |key_id| Some(key_id) == first.link_key_id);
+            .is_none_or(|key_id| Some(key_id) == first.link_key_id);
     let rotated_epoch = anchor.allow_epoch_transition
         && anchor.current_epoch_id.checked_add(1) == Some(first.epoch_id)
         && anchor.current_link_key_id != first.link_key_id;
