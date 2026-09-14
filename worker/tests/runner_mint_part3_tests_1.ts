@@ -22,6 +22,9 @@ describe("POST /internal/v1/runner/mint — fabricd/native path (installation_id
             headers: { "Content-Type": "application/json" },
           });
         }
+        if (pathname === "/_do/runner-cleanup/prepare") {
+          return new Response(null, { status: 204 });
+        }
         mintCaptured.req = req;
         return new Response(JSON.stringify(CANNED_MINT), {
           status: 200,
