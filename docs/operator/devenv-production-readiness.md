@@ -11,6 +11,10 @@ map. The CoreLink Server migration preflight must cover the inclusive range
 0118-0130. Absence of any preflight receipt is a hard failure; do not deploy or
 flip the binding.
 
+The optional Worker compute-grant verifier names are canonicalized as
+`COMPUTE_GRANT_SIGNING_KEY` and `COMPUTE_GRANT_KEY_ID`; the obsolete
+`COMPUTE_GRANT_SIGNING_KEY_ID` alias is forbidden.
+
 Run the offline check before proposing a deployment:
 
 ```sh

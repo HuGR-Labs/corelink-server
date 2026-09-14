@@ -104,7 +104,7 @@ export interface Env {
   RUNNER_DEVENV_DO?: DurableObjectNamespace;
   /** Optional compute-grant verification seam; never enables a live binding. */
   COMPUTE_GRANT_SIGNING_KEY?: string;
-  COMPUTE_GRANT_SIGNING_KEY_ID?: string;
+  COMPUTE_GRANT_KEY_ID?: string;
   // Public base URL (e.g. "https://corelink-api.humangr.com")
   // OPTIONAL rotation overlap keys (key_management.md §3.2.1, 24h overlap).
   // During a PAT_SIGNING_KEY rotation, bind the OUTGOING key as

@@ -42,6 +42,7 @@ def check_contract() -> None:
         ("signer_verifier_public_key_map", "required"),
         ("image_digest", "required:sha256"),
         ("migrations", "0118-0130"),
+        ("compute_grant_key_id", "COMPUTE_GRANT_KEY_ID"),
     ):
         if fixture.get(key) != expected:
             raise ContractError(f"fixture {key} is not the exact fail-closed contract")
@@ -51,10 +52,7 @@ def check_contract() -> None:
     if fixture.get("root", {}).get("environment") != "default":
         raise ContractError("fixture root/default environment is absent")
 
-    env_text = ENV.read_text()
-    for name in ("RUNNER_DEVENV_DO?:", "COMPUTE_GRANT_SIGNING_KEY?:", "COMPUTE_GRANT_SIGNING_KEY_ID?:"):
-        if name not in env_text:
-            raise ContractError(f"Env optional binding is absent: {name}")
+    _check_env_bindings(ENV.read_text())
 
     # The production wrangler file is deliberately untouched: enabling the
     # cross-worker binding is a later, separately gated deployment action.
@@ -70,24 +68,37 @@ def check_contract() -> None:
 
     runbook = RUNBOOK.read_text()
     required_phrases = (
-        "NO live enable",
-        "corelink-runners",
-        "origin/main",
-        "verifier",
-        "image digest",
-        "signer",
-        "0118-0130",
+        "NO live enable", "corelink-runners", "origin/main", "verifier",
+        "image digest", "signer", "0118-0130",
     )
     if any(phrase not in runbook for phrase in required_phrases):
         raise ContractError("runbook does not state every closed-gate prerequisite")
 
 
+def _check_env_bindings(env_text: str) -> None:
+    for name in ("RUNNER_DEVENV_DO?:", "COMPUTE_GRANT_SIGNING_KEY?:", "COMPUTE_GRANT_KEY_ID?:"):
+        if name not in env_text:
+            raise ContractError(f"Env optional binding is absent: {name}")
+    if "COMPUTE_GRANT_SIGNING_KEY_ID?:" in env_text:
+        raise ContractError("obsolete compute-grant key-id alias is forbidden")
+
 def self_test() -> None:
     # Keep the negative checks executable without mutating repository files.
-    original = FIXTURE.read_text()
-    weakened = original.replace('image_digest = "required:sha256"', 'image_digest = ""')
+    weakened = FIXTURE.read_text().replace('image_digest = "required:sha256"', 'image_digest = ""')
     if tomllib.loads(weakened).get("image_digest") == "required:sha256":
         raise ContractError("self-test fixture mutation did not apply")
+    exact_env = ENV.read_text()
+    wrong_env = exact_env.replace("COMPUTE_GRANT_KEY_ID?:", "COMPUTE_GRANT_SIGNING_KEY_ID?:")
+    if "COMPUTE_GRANT_SIGNING_KEY_ID?:" not in wrong_env:
+        raise ContractError("self-test compute-grant alias mutation did not apply")
+    if "COMPUTE_GRANT_KEY_ID?:" in wrong_env:
+        raise ContractError("self-test failed to replace compute-grant key-id alias")
+    try:
+        _check_env_bindings(wrong_env)
+    except ContractError:
+        pass
+    else:
+        raise ContractError("self-test failed to reject obsolete compute-grant alias")
     if "NO live enable" not in RUNBOOK.read_text():
         raise ContractError("self-test cannot establish the closed deployment gate")
 

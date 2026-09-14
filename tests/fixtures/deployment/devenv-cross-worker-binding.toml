@@ -6,6 +6,7 @@ binding = "RUNNER_DEVENV_DO"
 signer_verifier_public_key_map = "required"
 image_digest = "required:sha256"
 migrations = "0118-0130"
+compute_grant_key_id = "COMPUTE_GRANT_KEY_ID"
 
 [root]
 environment = "default"
