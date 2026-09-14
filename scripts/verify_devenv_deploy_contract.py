@@ -35,22 +35,7 @@ def check_contract() -> None:
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ContractError(f"deployment preflight fixture unreadable: {exc}") from exc
 
-    for key, expected in (
-        ("script_name", "corelink-spawn-worker"),
-        ("class_name", "RunnerDevEnvDO"),
-        ("binding", "RUNNER_DEVENV_DO"),
-        ("signer_verifier_public_key_map", "required"),
-        ("image_digest", "required:sha256"),
-        ("migrations", "0118-0130"),
-        ("compute_grant_key_id", "COMPUTE_GRANT_KEY_ID"),
-    ):
-        if fixture.get(key) != expected:
-            raise ContractError(f"fixture {key} is not the exact fail-closed contract")
-    environments = {entry.get("name") for entry in fixture.get("environment", [])}
-    if environments != EXPECTED_ENVS:
-        raise ContractError("fixture must cover exactly the five production environments")
-    if fixture.get("root", {}).get("environment") != "default":
-        raise ContractError("fixture root/default environment is absent")
+    _check_fixture(fixture)
 
     _check_env_bindings(ENV.read_text())
 
@@ -75,6 +60,24 @@ def check_contract() -> None:
         raise ContractError("runbook does not state every closed-gate prerequisite")
 
 
+def _check_fixture(fixture: dict[str, object]) -> None:
+    for key, expected in (
+        ("script_name", "corelink-spawn-worker"),
+        ("class_name", "RunnerDevEnvDO"),
+        ("binding", "RUNNER_DEVENV_DO"),
+        ("signer_verifier_public_key_map", "required"),
+        ("image_digest", "required:sha256"),
+        ("migrations", "0118-0130"),
+        ("compute_grant_key_id", "COMPUTE_GRANT_KEY_ID"),
+    ):
+        if fixture.get(key) != expected:
+            raise ContractError(f"fixture {key} is not the exact fail-closed contract")
+    environments = {entry.get("name") for entry in fixture.get("environment", [])}
+    if environments != EXPECTED_ENVS:
+        raise ContractError("fixture must cover exactly the five production environments")
+    if fixture.get("root", {}).get("environment") != "default":
+        raise ContractError("fixture root/default environment is absent")
+
 def _check_env_bindings(env_text: str) -> None:
     for name in ("RUNNER_DEVENV_DO?:", "COMPUTE_GRANT_SIGNING_KEY?:", "COMPUTE_GRANT_KEY_ID?:"):
         if name not in env_text:
@@ -87,6 +90,12 @@ def self_test() -> None:
     weakened = FIXTURE.read_text().replace('image_digest = "required:sha256"', 'image_digest = ""')
     if tomllib.loads(weakened).get("image_digest") == "required:sha256":
         raise ContractError("self-test fixture mutation did not apply")
+    try:
+        _check_fixture(tomllib.loads(weakened))
+    except ContractError:
+        pass
+    else:
+        raise ContractError("self-test failed to reject missing image digest")
     exact_env = ENV.read_text()
     wrong_env = exact_env.replace("COMPUTE_GRANT_KEY_ID?:", "COMPUTE_GRANT_SIGNING_KEY_ID?:")
     if "COMPUTE_GRANT_SIGNING_KEY_ID?:" not in wrong_env:
