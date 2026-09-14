@@ -276,10 +276,14 @@ def test_ruleset_content_mutation_is_rejected(
 
 
 def test_network_fetcher_is_not_called(fake_semgrep: Path, tmp_path: Path) -> None:
+    source = (ROOT / "scripts/run_b139_semgrep.py").read_text(encoding="utf-8")
+    assert "urllib" not in source
+    assert "urlopen" not in source
+    assert "_download" not in source
     assert run_bundle(fake_semgrep, tmp_path / "evidence", ROOT) == 0
 
 
-@pytest.mark.parametrize("mutation", ["missing", "symlink", "size", "corrupt"])
+@pytest.mark.parametrize("mutation", ["missing", "symlink", "size", "corrupt", "root-symlink"])
 def test_snapshot_files_fail_closed(fake_semgrep: Path, tmp_path: Path, mutation: str) -> None:
     snapshot_dir = bundle_runner.ROOT / "semgrep-rulesets"
     snapshot = snapshot_dir / "00-security-audit.yml.gz"
@@ -287,8 +291,10 @@ def test_snapshot_files_fail_closed(fake_semgrep: Path, tmp_path: Path, mutation
     if mutation == "missing":
         snapshot.unlink()
     elif mutation == "symlink":
+        outside = tmp_path / "outside.yml.gz"
+        outside.write_bytes(original)
         snapshot.unlink()
-        snapshot.symlink_to(tmp_path / "outside")
+        snapshot.symlink_to(outside)
     elif mutation == "corrupt":
         snapshot.write_bytes(b"not-gzip")
     elif mutation == "size":
@@ -296,7 +302,8 @@ def test_snapshot_files_fail_closed(fake_semgrep: Path, tmp_path: Path, mutation
     else:
         snapshot_dir.rename(tmp_path / "snapshot-backup")
         snapshot_dir.symlink_to(tmp_path / "snapshot-backup")
-    with pytest.raises(VerificationError):
+    expected = "snapshot directory" if mutation == "root-symlink" else None
+    with pytest.raises(VerificationError, match=expected):
         run_bundle(fake_semgrep, tmp_path / "evidence", ROOT)
 
 
