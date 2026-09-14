@@ -98,15 +98,6 @@ const RUNNER_MINT_ALLOWED_SCOPES = new Set(["cas:rw", "read-write"]);
 const RUNNER_MINT_DEFAULT_SCOPE = "cas:rw";
 const RUNNER_OPERATION_ID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function derivedRunnerOperationId(tenantId: string, jobId: string, repo: string): Promise<string> {
-  const hex = (await blake3Hex(`runner-operation:v1/${tenantId}\u0000${jobId}\u0000${repo}`)).slice(0, 32).split("");
-  // UUID v5-shaped deterministic identifier: retries of the same server-derived
-  // tuple converge on one obligation without accepting a caller-controlled ID.
-  hex[12] = "5";
-  hex[16] = ((parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16);
-  return `${hex.slice(0, 8).join("")}-${hex.slice(8, 12).join("")}-${hex.slice(12, 16).join("")}-${hex.slice(16, 20).join("")}-${hex.slice(20).join("")}`;
-}
-
 /**
  * M22(b) per-tenant mint-ceiling scaling factor.
  *
@@ -591,10 +582,9 @@ export async function handleRunnerMint(
     return tenantThrottled;
   }
 
-  const effectiveOperationId = operationId ?? await derivedRunnerOperationId(tenantId, jobId, repoFullName);
-  let runnerOperation: RunnerCredentialOperation =
-    { operationId: effectiveOperationId, tenantId, jobId, repo: repoFullName };
-  {
+  let runnerOperation: RunnerCredentialOperation | undefined =
+    operationId === undefined ? undefined : { operationId, tenantId, jobId, repo: repoFullName };
+  if (runnerOperation !== undefined) {
     try {
       const lifecycle = await readCredentialLifecycle(env, tenantId);
       runnerOperation = { ...runnerOperation, lifecycleGeneration: lifecycle.generation };
@@ -621,11 +611,7 @@ export async function handleRunnerMint(
     // otherwise collide with that tenant's ceiling row and let a caller burn a
     // victim tenant's runner-mint budget (M22b review finding). Distinct prefixes
     // make a preimage collision impossible; per-job semantics are unchanged.
-    MintGrant.fromRunnerDerivation(
-      tenantId,
-      "runner-job:" + jobId,
-      runnerOperation?.lifecycleGeneration,
-    ),
+    MintGrant.fromRunnerDerivation(tenantId, "runner-job:" + jobId, runnerOperation?.lifecycleGeneration),
     ttlSeconds,
     scope,
     internalAuthKey,

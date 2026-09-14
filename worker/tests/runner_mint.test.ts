@@ -88,6 +88,8 @@ function makeConfigDb(opts: {
   entitled?: Map<string, number>; // tenant → max_concurrency
   /** tenant → max_vcpu_h (0072 is NULLABLE; absent ⇒ the column reads null). */
   vcpuCeilings?: Map<string, number | null>;
+  /** Durable lifecycle floor returned to direct (no operation_id) mints. */
+  lifecycleFloors?: Map<string, string>;
   revokeCapture?: { sql?: string; binds?: unknown[] };
   patInsertCapture?: { sql?: string; binds?: unknown[] };
 }): D1Database {
@@ -96,12 +98,18 @@ function makeConfigDb(opts: {
   const allowlisted = opts.allowlisted ?? new Set<string>();
   const entitled = opts.entitled ?? new Map<string, number>();
   const vcpuCeilings = opts.vcpuCeilings ?? new Map<string, number | null>();
+  const lifecycleFloors = opts.lifecycleFloors ?? new Map<string, string>();
   return {
     prepare: (sql: string) => ({
       bind: (...args: unknown[]) => ({
         sql,
         // All authz reads + throttle INSERT...RETURNING go through first().
         first: async <T>() => {
+          if (sql.includes("tenant_credential_revocation_floor")) {
+            const tenantId = args[0] as string;
+            const revokedThrough = lifecycleFloors.get(tenantId);
+            return (revokedThrough === undefined ? null : { revoked_through: revokedThrough }) as T | null;
+          }
           if (sql.includes("tenant_gh_installation_map")) {
             const installationId = args[0] as string;
             const tenantId = mapped.get(installationId);
@@ -239,6 +247,7 @@ function makeEnv(opts: {
   allowlisted?: Set<string>;
   entitled?: Map<string, number>;
   vcpuCeilings?: Map<string, number | null>;
+  lifecycleFloors?: Map<string, string>;
   revokeCapture?: { sql?: string; binds?: unknown[] };
   revokeTokenId?: string | null;
   kvDeleted?: string[];
@@ -267,6 +276,7 @@ function makeEnv(opts: {
       allowlisted: opts.allowlisted,
       entitled: opts.entitled,
       vcpuCeilings: opts.vcpuCeilings,
+      lifecycleFloors: opts.lifecycleFloors,
       revokeCapture: opts.revokeCapture,
       revokeTokenId: (opts as { revokeTokenId?: string | null }).revokeTokenId,
       kvDeleted: (opts as { kvDeleted?: string[] }).kvDeleted,
@@ -289,6 +299,7 @@ function makeAuthorizedEnv(opts: {
   allowlisted?: Set<string>;
   entitled?: Map<string, number>;
   vcpuCeilings?: Map<string, number | null>;
+  lifecycleFloors?: Map<string, string>;
   revokeCapture?: { sql?: string; binds?: unknown[] };
   revokeTokenId?: string | null;
   kvDeleted?: string[];
@@ -356,16 +367,35 @@ function mintBody(over: Record<string, unknown> = {}): Record<string, unknown> {
 }
 
 describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
-  it("derives an operation_id for legacy callers before lifecycle or mint", async () => {
+  it("direct legacy mint derives lifecycle_generation from the durable floor in its PAT INSERT", async () => {
     const captured: { req?: Request } = {};
-    const resp = await mintFetch(makeAuthorizedEnv({ captured }), {
+    const patInsertCapture: { sql?: string; binds?: unknown[] } = {};
+    const resp = await mintFetch(makeAuthorizedEnv({ captured, patInsertCapture }), {
       auth: RUNNER_MINT_KEY,
       body: mintBody({ operation_id: undefined }),
     });
-    // The server derives a deterministic lifecycle operation and mints through
-    // the obligation-backed path without accepting a caller-controlled ID.
     expect(resp.status).toBe(200);
     expect(captured.req).toBeDefined();
+    // Direct callers bypass the operation protocol, but not the lifecycle
+    // fence: the one D1 statement computes floor + 1 with the PAT write.
+    expect(patInsertCapture.sql).toContain("tenant_credential_revocation_floor");
+    expect(patInsertCapture.sql).toContain("+ 1");
+  });
+
+  it("direct legacy mint rejects a signed-i64 ceiling before upstream mint or PAT insert", async () => {
+    const captured: { req?: Request } = {};
+    const patInsertCapture: { sql?: string; binds?: unknown[] } = {};
+    const resp = await mintFetch(makeAuthorizedEnv({
+      captured,
+      patInsertCapture,
+      lifecycleFloors: new Map([[TENANT, "9223372036854775807"]]),
+    }), {
+      auth: RUNNER_MINT_KEY,
+      body: mintBody({ operation_id: undefined }),
+    });
+    expect(resp.status).toBe(500);
+    expect(captured.req).toBeUndefined();
+    expect(patInsertCapture.sql).toBeUndefined();
   });
 
   it("rejects a malformed explicit operation_id before lifecycle or mint", async () => {

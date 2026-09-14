@@ -681,6 +681,36 @@ export async function mintScopedPat(
   // likewise carried by the grant.
   const { tenantId, principalSource } = grant;
 
+  // Legacy runner callers do not carry a credential-operation id, so they use
+  // the plain PAT persistence path below. Read the durable floor before doing
+  // the irreversible upstream mint only to reject the terminal signed-i64
+  // generation. The INSERT remains the authority for the normal case: its
+  // SELECT computes revoked_through + 1 atomically with the write, so a revoke
+  // racing this read cannot admit a stale generation.
+  if (runnerJobAcKey !== undefined && runnerOperation === undefined) {
+    try {
+      const floor = await env.CONFIG_DB.prepare(
+        "SELECT revoked_through FROM tenant_credential_revocation_floor WHERE tenant_id = ?1",
+      ).bind(tenantId).first<{ revoked_through: unknown }>();
+      if (floor !== null) {
+        const value = floor.revoked_through;
+        if (
+          typeof value !== "string" ||
+          !/^(0|[1-9][0-9]*)$/.test(value) ||
+          value.length > 19 ||
+          (value.length === 19 && value > "9223372036854775807") ||
+          value === "9223372036854775807"
+        ) {
+          return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
+        }
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "unknown error";
+      console.error(`[${requestId}] session exchange lifecycle floor read failed: ${message.slice(0, 80)}`);
+      return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
+    }
+  }
+
   // Route to the _system DO which fronts the container, then call the audited
   // /_internal/pat/mint route with the SERVER-trusted internal-auth header.
   // The browser/client can never supply that header — it never leaves the
@@ -824,10 +854,10 @@ export async function mintScopedPat(
   }
   try {
     // WP5a: when the caller marks this a NARROWED runner-job PAT, ALSO write
-    // `runner_job_ac_key`. When omitted the column is not written at all → it
-    // stays NULL (a normal PAT), so the session/token-exchange/rotate callers'
-    // persisted row is UNCHANGED. The two INSERT variants differ only by that
-    // one column+bind; everything else is byte-identical.
+    // `runner_job_ac_key`. A direct (non-operation-backed) runner mint derives
+    // its lifecycle generation in this same statement from the durable floor.
+    // The ceiling WHERE is deliberately repeated with the generation expression:
+    // D1 returns zero changes at signed-i64 max, and no PAT row is possible.
     const stmt =
       runnerJobAcKey === undefined
         ? env.CONFIG_DB.prepare(
@@ -849,8 +879,13 @@ export async function mintScopedPat(
         : env.CONFIG_DB.prepare(
             "INSERT INTO pat " +
               "(pat_id, tenant_id, pat_hash, scope, expires_ms, token_id, " +
-              " shown_once_token, shown_once_consumed, created_ms, runner_job_ac_key) " +
-              "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, ?9)",
+              " shown_once_token, shown_once_consumed, created_ms, runner_job_ac_key, lifecycle_generation) " +
+              "SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, ?9, " +
+              "CASE WHEN (SELECT revoked_through FROM tenant_credential_revocation_floor WHERE tenant_id = ?2) IS NULL THEN '0' " +
+              "WHEN CAST((SELECT revoked_through FROM tenant_credential_revocation_floor WHERE tenant_id = ?2) AS INTEGER) >= 9223372036854775807 THEN NULL " +
+              "ELSE CAST(CAST((SELECT revoked_through FROM tenant_credential_revocation_floor WHERE tenant_id = ?2) AS INTEGER) + 1 AS TEXT) END " +
+              "WHERE (SELECT revoked_through FROM tenant_credential_revocation_floor WHERE tenant_id = ?2) IS NULL " +
+              "OR CAST((SELECT revoked_through FROM tenant_credential_revocation_floor WHERE tenant_id = ?2) AS INTEGER) < 9223372036854775807",
           ).bind(
             minted.pat_id,
             tenantId,
