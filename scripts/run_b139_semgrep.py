@@ -124,10 +124,14 @@ def _normalize_value(
                 "text",
             ) == path[-4:]
             if notification_path:
-                # Semgrep embeds this path in diagnostic sentences (with
-                # several different lead-ins); scope replacement to this
-                # notification field and the exact invocation prefix.
-                value = value.replace(original, replacement)
+                # Semgrep embeds this path after one of these diagnostic
+                # lead-ins; do not rewrite an unrelated occurrence.
+                for lead_in in ("in rule '", "rule ", "when running "):
+                    marker = f"{lead_in}{original}"
+                    if marker in value:
+                        value = value.replace(
+                            marker, f"{lead_in}{replacement}", 1
+                        )
             elif value.startswith(original):
                 value = replacement + value[len(original) :]
         return value

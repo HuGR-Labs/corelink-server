@@ -51,7 +51,8 @@ else:
     # The temporary parent is intentionally different on every invocation.
     rules_prefix = str(Path(configs[0]).parent).lstrip("/").replace("/", ".")
     bundled_rules = [
-        {"id": f"fixture-rule-{index}",
+        {"id": (f"{rules_prefix}.{Path(config).name}.fixture-rule-{index}"
+                 if index == 0 else f"fixture-rule-{index}"),
          "name": f"{rules_prefix}.{Path(config).name}.fixture-rule-{index}",
          "shortDescription": {"text": f"{rules_prefix}.{Path(config).name}.fixture-rule-{index}"},
          "defaultConfiguration": {"level": "warning"}}
@@ -59,7 +60,7 @@ else:
     ]
 results = [
     {
-        "ruleId": custom_rule if custom else "fixture-rule-0",
+        "ruleId": custom_rule if custom else bundled_rules[0]["id"],
         "level": level,
         "message": {"text": "controlled finding"},
         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "fixture.py"}}}],
@@ -70,7 +71,8 @@ results = [
 notification_texts = (["similar-corelink-b139-rules-text"] if custom else [
     f"Syntax error at line 1. When parsing expression in rule '{rules_prefix}.{Path(configs[0]).name}.notification'",
     f"rule {rules_prefix}.{Path(configs[0]).name}.notification could not be loaded",
-    f"when running {rules_prefix}.{Path(configs[0]).name}.notification",
+    f"when running {rules_prefix}.{Path(configs[0]).name}.notification then rule {rules_prefix}.{Path(configs[0]).name}.again",
+    "unrelated context corelink-b139-rules-sentinel",
     "similar-corelink-b139-rules-text",
 ])
 sarif = {
@@ -175,7 +177,11 @@ def test_complete_bundle_is_deterministic(fake_semgrep: Path, tmp_path: Path) ->
     assert report["blocking"]["verdict"] == "PASS"  # type: ignore[index]
     bundled_sarif = _load(output / OUTPUT_NAMES["bundled"])
     serialized = json.dumps(bundled_sarif)
-    assert "corelink-b139-rules-" not in serialized.replace(
+    notifications = bundled_sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"]  # type: ignore[index]
+    benign = notifications[3]["message"]["text"]  # type: ignore[index]
+    assert benign == "unrelated context corelink-b139-rules-sentinel"
+    assert "%B139_ROOT_2%" not in benign
+    assert "corelink-b139-rules-" not in serialized.replace(benign, "").replace(
         "similar-corelink-b139-rules-text", ""
     )
     assert "%B139_ROOT_2%.00-security-audit.yml.fixture-rule-" in serialized
