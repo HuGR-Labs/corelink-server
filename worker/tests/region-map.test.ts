@@ -20,7 +20,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 /**
  * Extract the string literals from a `PROVISIONED_MACROS` definition in a source
  * file (TS `new Set([...])` or Rust `[&str; N] = [...]`), sorted. Used to diff
- * the three physical copies of the set against each other and the canonical.
+ * the three physical definitions of the set against each other and the canonical.
  */
 function parseProvisioned(absPath: string): string[] {
   const src = readFileSync(absPath, "utf8");
@@ -102,7 +102,7 @@ describe("region-map (FROZEN macro→colo contract)", () => {
 });
 
 // backlog #29 / H1 — the three-consumer drift gate. The four-macro provisionable
-// set is physically duplicated in three consumers; parse each copy from source
+// set is physically duplicated in three consumers; parse each definition from source
 // and assert they are byte-identical to the canonical {wnam, enam, weur, apac}. This makes
 // the clerk drift (the 2-set that masked an LGPD trap) impossible to reintroduce
 // silently — any divergence in ANY of the three files fails CI here.
@@ -114,7 +114,7 @@ describe("region-map (three-consumer PROVISIONED_MACROS drift gate)", () => {
   );
   const clerkSrc = resolve(
     __dirname,
-    "../../apps/signup-worker/src/webhooks/clerk.ts",
+    "../../apps/signup-worker/src/webhooks/clerk_identity.ts",
   );
 
   it("the worker runtime set equals the canonical set", () => {
