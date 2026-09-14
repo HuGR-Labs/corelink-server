@@ -16,7 +16,7 @@
  * revoke UPDATE by inspecting the SQL.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-types";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
@@ -24,6 +24,7 @@ import { batchViaFirst } from "./d1_batch_mock.js";
 
 const INTERNAL_KEY = "test-internal-auth-key-0123456789"; // ≥32 chars
 const RUNNER_MINT_KEY = "test-pat-mint-auth-key-0123456789ab"; // ≥32 chars, distinct
+const PAT_MINT_KEY = "test-dedicated-pat-mint-key-0123456789";
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
 const JOB_ID = "job-abc-0001";
@@ -46,7 +47,7 @@ const CANNED_MINT = {
 };
 
 function makeCtx(): ExecutionContext {
-  return {
+  const db = {
     waitUntil: (_p: Promise<unknown>) => {},
     passThroughOnException: () => {},
   } as unknown as ExecutionContext;
@@ -156,7 +157,11 @@ function makeConfigDb(opts: {
         },
       }),
     }),
+    batch: async (statements: unknown[]) => statements.length === 2
+      ? statements.map(() => ({ success: true, meta: { changes: 1 } }))
+      : Promise.all(statements.map(async (s) => ({ success: true, meta: { changes: 1 }, results: [await (s as { first: <T>() => Promise<T | null> }).first()].filter(Boolean) }))),
   } as unknown as D1Database;
+  return db;
 }
 
 /**
@@ -252,9 +257,17 @@ function makeEnv(opts: {
       patInsertCapture: opts.patInsertCapture,
     }),
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
-    CORELINK_RUNNER_MINT_AUTH_KEY: opts.withRunnerMintKey ? RUNNER_MINT_KEY : undefined,
+    CORELINK_RUNNER_MINT_AUTH_KEY: opts.withRunnerMintKey === false ? undefined : RUNNER_MINT_KEY,
+    CORELINK_PAT_MINT_AUTH_KEY: PAT_MINT_KEY,
+    FABRIC_CREDENTIAL_AUTHORITY_URL: "https://fabric.test",
+    FABRIC_CREDENTIAL_ISSUER_AUTH_KEY: "test-fabric-credential-issuer-key-012345",
   } as Env;
 }
+
+vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+  if (String(input).includes("/internal/v1/credentials/tenants/")) return new Response(JSON.stringify({ tenant_id: TENANT, generation: "1", suspended: false }), { status: 200 });
+  return new Response(JSON.stringify(CANNED_MINT), { status: 200 });
+});
 
 /** Env pre-loaded with the fully-authorized world (all 4 checks pass). */
 function makeAuthorizedEnv(opts: {
