@@ -490,7 +490,7 @@ impl CustomerUsageHandler for InMemoryCustomerHandler {
 
         let resp = g
             .get(&req.caller_tenant)
-            .filter(|u| req.period.as_deref().map_or(true, |p| u.period == p))
+            .filter(|u| req.period.as_deref().is_none_or(|p| u.period == p))
             .cloned()
             .ok_or_else(|| {
                 self.emit_sli(true);
