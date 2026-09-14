@@ -14,7 +14,6 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -135,7 +134,9 @@ def _load_lock(path: Path = LOCKFILE) -> dict[str, Any]:
         raise VerificationError("Semgrep lock fields are not closed")
     if lock["schema_version"] != 1 or lock["semgrep_version"] != "1.164.0":
         raise VerificationError("Semgrep lock schema/version changed")
-    if not isinstance(lock["captured_at"], str) or not isinstance(lock["provenance"], str):
+    if not isinstance(lock["captured_at"], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", lock["captured_at"]):
+        raise VerificationError("Semgrep lock provenance is malformed")
+    if not isinstance(lock["provenance"], str) or not lock["provenance"].strip():
         raise VerificationError("Semgrep lock provenance is malformed")
     if lock["snapshot_dir"] != "semgrep-rulesets":
         raise VerificationError("Semgrep snapshot directory changed")
@@ -147,7 +148,7 @@ def _load_lock(path: Path = LOCKFILE) -> dict[str, Any]:
     )
     if names != list(BUNDLED):
         raise VerificationError("Semgrep lock population/order changed")
-    for item in rulesets:
+    for index, item in enumerate(rulesets):
         if not isinstance(item, dict) or set(item) != {
             "name", "sha256", "url", "snapshot", "size_bytes"
         }:
@@ -163,9 +164,9 @@ def _load_lock(path: Path = LOCKFILE) -> dict[str, Any]:
             raise VerificationError(
                 f"Semgrep ruleset digest is invalid: {item['name']}"
             )
-        if not isinstance(item["snapshot"], str) or item["snapshot"] != f"{names.index(item['name']):02d}-{item['name'].removeprefix('p/')}.yml.gz":
+        if not isinstance(item["snapshot"], str) or item["snapshot"] != f"{index:02d}-{item['name'].removeprefix('p/')}.yml.gz":
             raise VerificationError(f"Semgrep snapshot name is invalid: {item['name']}")
-        if not isinstance(item["size_bytes"], int) or not 0 < item["size_bytes"] <= MAX_RULESET_BYTES:
+        if isinstance(item["size_bytes"], bool) or not isinstance(item["size_bytes"], int) or not 0 < item["size_bytes"] <= MAX_RULESET_BYTES:
             raise VerificationError(f"Semgrep snapshot size is invalid: {item['name']}")
     return lock
 
@@ -189,12 +190,12 @@ def _download(url: str) -> bytes:
 def _materialize_rulesets(
     lock: dict[str, Any],
     directory: Path,
-    fetcher: Callable[[str], bytes] = _download,
 ) -> list[str]:
     configs: list[str] = []
-    snapshot_root = (ROOT / lock["snapshot_dir"]).resolve()
-    if not snapshot_root.is_dir() or snapshot_root.is_symlink():
+    snapshot_root = ROOT / lock["snapshot_dir"]
+    if snapshot_root.is_symlink() or not snapshot_root.is_dir():
         raise VerificationError("Semgrep snapshot directory is missing/non-regular")
+    snapshot_root = snapshot_root.resolve()
     for index, item in enumerate(lock["rulesets"]):
         snapshot = snapshot_root / item["snapshot"]
         if snapshot.parent != snapshot_root or snapshot.is_symlink() or not snapshot.is_file():
@@ -258,7 +259,6 @@ def run_bundle(
     target: Path,
     *,
     lock_path: Path | None = None,
-    fetcher: Callable[[str], bytes] | None = None,
 ) -> int:
     if not semgrep.is_file() or not os.access(semgrep, os.X_OK):
         raise VerificationError(
@@ -283,9 +283,7 @@ def run_bundle(
 
     with tempfile.TemporaryDirectory(prefix="corelink-b139-rules-") as temporary:
         rules_dir = Path(temporary)
-        configs = _materialize_rulesets(
-            lock, rules_dir, _download if fetcher is None else fetcher
-        )
+        configs = _materialize_rulesets(lock, rules_dir)
         bundled_run = subprocess.run(
             _scan_command(semgrep, configs, bundled, target), cwd=ROOT, check=False
         )
