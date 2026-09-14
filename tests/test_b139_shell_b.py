@@ -2,13 +2,67 @@
 
 from pathlib import Path
 import subprocess
+import sys
 
 
 ROOT = Path(__file__).parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from verify_b072_receiver import _has_staging_deploy  # noqa: E402
 
 
 def _workflow(name: str) -> str:
     return (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+
+
+def _shell_blocks(source: str) -> list[str]:
+    """Return only `run: |` bodies, where GitHub expressions reach a shell."""
+    lines = source.splitlines()
+    blocks: list[str] = []
+    for index, line in enumerate(lines):
+        if not line.lstrip().startswith("run: |"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        body: list[str] = []
+        for candidate in lines[index + 1 :]:
+            candidate_indent = len(candidate) - len(candidate.lstrip())
+            if candidate.strip() and candidate_indent <= indent:
+                break
+            body.append(candidate)
+        blocks.append("\n".join(body))
+    return blocks
+
+
+def test_residual_workflow_shells_do_not_interpolate_github_expressions() -> None:
+    """All values crossing into shell are env-bound, not template-interpolated."""
+    sources = {
+        ".github/actions/setup-pnpm/action.yml": ("PNPM_VERSION", "want=\"${PNPM_VERSION}\""),
+        ".github/workflows/codeql.yml": ("REPOSITORY", "ANALYZE_OUTCOME", "GHAS_ENABLED"),
+        ".github/workflows/secrets-drift.yml": ("EVENT_NAME", "RUN_ID", "REF"),
+        ".github/workflows/synthetic-pager-worker-deploy.yml": ("DEPLOY_ENV",),
+    }
+    for path, required in sources.items():
+        source = (ROOT / path).read_text(encoding="utf-8")
+        assert all("${{" not in block for block in _shell_blocks(source)), path
+        for value in required:
+            assert value in source, (path, value)
+
+    deploy = _workflow("synthetic-pager-worker-deploy.yml")
+    assert 'if [[ "$DEPLOY_ENV" != "staging" ]]' in deploy
+    assert 'pnpm exec wrangler deploy --env "$DEPLOY_ENV"' in deploy
+
+    codeql = _workflow("codeql.yml")
+    assert 'gh api "repos/${REPOSITORY}/code-scanning/alerts"' in codeql
+    assert "json.dump(manifest, sys.stdout," in codeql
+
+    secrets = _workflow("secrets-drift.yml")
+    assert "json.dump(manifest, sys.stdout," in secrets
+
+
+def test_b072_verifier_accepts_only_env_bound_staging_deploy() -> None:
+    source = _workflow("synthetic-pager-worker-deploy.yml")
+    assert _has_staging_deploy(source)
+    assert not _has_staging_deploy(source.replace('!= "staging"', '!= "production"'))
 
 
 def test_dispatch_values_are_env_bound_before_shell_use() -> None:

@@ -26,9 +26,11 @@ runs:
     - name: Use pre-installed pnpm if it matches the pinned version
       id: preinstalled
       shell: bash
+      env:
+        PNPM_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        want="${{ inputs.version }}"
+        want="${PNPM_VERSION}"
         if command -v pnpm >/dev/null 2>&1 && [ "$(pnpm --version 2>/dev/null)" = "$want" ]; then
           echo "Using pre-installed pnpm $want at $(command -v pnpm) — no network, no shared-dir race."
           echo "ok=true" >> "$GITHUB_OUTPUT"

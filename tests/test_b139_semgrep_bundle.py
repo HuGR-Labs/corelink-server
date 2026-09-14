@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import gzip
+import shutil
 import stat
 import subprocess
 import sys
@@ -76,28 +78,32 @@ def fake_semgrep(tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def locked_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    content_by_url = {
-        f"https://semgrep.dev/c/{name}": f"rules: [] # {name}\n".encode()
-        for name in bundle_runner.BUNDLED
-    }
+    snapshot_dir = tmp_path / "semgrep-rulesets"
+    snapshot_dir.mkdir()
+    source_dir = ROOT / "semgrep-rulesets"
     lock = {
         "schema_version": 1,
         "semgrep_version": "1.164.0",
+        "captured_at": "2026-09-13T21:20:43Z",
+        "provenance": "fixture diagnostic capture",
+        "snapshot_dir": "semgrep-rulesets",
         "rulesets": [
             {
                 "name": name,
                 "url": f"https://semgrep.dev/c/{name}",
-                "sha256": hashlib.sha256(
-                    content_by_url[f"https://semgrep.dev/c/{name}"]
-                ).hexdigest(),
+                "snapshot": f"{index:02d}-{name.removeprefix('p/')}.yml.gz",
+                "size_bytes": len(gzip.open(source_dir / f"{index:02d}-{name.removeprefix('p/')}.yml.gz", "rb").read()),
+                "sha256": hashlib.sha256(gzip.open(source_dir / f"{index:02d}-{name.removeprefix('p/')}.yml.gz", "rb").read()).hexdigest(),
             }
-            for name in bundle_runner.BUNDLED
+            for index, name in enumerate(bundle_runner.BUNDLED)
         ],
     }
+    for source in source_dir.glob("*.yml.gz"):
+        shutil.copy2(source, snapshot_dir / source.name)
     lock_path = tmp_path / "semgrep-bundled-lock.json"
     lock_path.write_text(json.dumps(lock), encoding="utf-8")
     monkeypatch.setattr(bundle_runner, "LOCKFILE", lock_path)
-    monkeypatch.setattr(bundle_runner, "_download", content_by_url.__getitem__)
+    monkeypatch.setattr(bundle_runner, "ROOT", tmp_path)
 
 
 def _load(path: Path) -> dict[str, object]:
@@ -263,21 +269,55 @@ def test_output_symlink_is_rejected(fake_semgrep: Path, tmp_path: Path) -> None:
 def test_ruleset_content_mutation_is_rejected(
     fake_semgrep: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    original_fetch = bundle_runner._download
-
-    def changed_content(url: str) -> bytes:
-        content = original_fetch(url)
-        return (
-            content + b"# mutable registry response\n"
-            if url.endswith("security-audit")
-            else content
-        )
-
-    monkeypatch.setattr(bundle_runner, "_download", changed_content)
-    with pytest.raises(
-        VerificationError, match="ruleset digest mismatch: p/security-audit"
-    ):
+    snapshot = bundle_runner.ROOT / "semgrep-rulesets/00-security-audit.yml.gz"
+    snapshot.write_bytes(snapshot.read_bytes() + b"tamper")
+    with pytest.raises(VerificationError):
         run_bundle(fake_semgrep, tmp_path / "evidence", ROOT)
+
+
+def test_network_fetcher_is_not_called(fake_semgrep: Path, tmp_path: Path) -> None:
+    source = (ROOT / "scripts/run_b139_semgrep.py").read_text(encoding="utf-8")
+    assert "urllib" not in source
+    assert "urlopen" not in source
+    assert "_download" not in source
+    assert run_bundle(fake_semgrep, tmp_path / "evidence", ROOT) == 0
+
+
+@pytest.mark.parametrize("mutation", ["missing", "symlink", "size", "corrupt", "root-symlink"])
+def test_snapshot_files_fail_closed(fake_semgrep: Path, tmp_path: Path, mutation: str) -> None:
+    snapshot_dir = bundle_runner.ROOT / "semgrep-rulesets"
+    snapshot = snapshot_dir / "00-security-audit.yml.gz"
+    original = snapshot.read_bytes()
+    if mutation == "missing":
+        snapshot.unlink()
+    elif mutation == "symlink":
+        outside = tmp_path / "outside.yml.gz"
+        outside.write_bytes(original)
+        snapshot.unlink()
+        snapshot.symlink_to(outside)
+    elif mutation == "corrupt":
+        snapshot.write_bytes(b"not-gzip")
+    elif mutation == "size":
+        snapshot.write_bytes(original + b"x" * (bundle_runner.MAX_RULESET_BYTES + 1))
+    else:
+        snapshot_dir.rename(tmp_path / "snapshot-backup")
+        snapshot_dir.symlink_to(tmp_path / "snapshot-backup")
+    expected = "snapshot directory" if mutation == "root-symlink" else None
+    with pytest.raises(VerificationError, match=expected):
+        run_bundle(fake_semgrep, tmp_path / "evidence", ROOT)
+
+
+@pytest.mark.parametrize("field,value", [("semgrep_version", "1.163.0"), ("captured_at", "yesterday"), ("size_bytes", True)])
+def test_lock_metadata_fails_closed(tmp_path: Path, field: str, value: object) -> None:
+    lock = json.loads(bundle_runner.LOCKFILE.read_text(encoding="utf-8"))
+    if field == "size_bytes":
+        lock["rulesets"][0][field] = value
+    else:
+        lock[field] = value
+    path = tmp_path / "bad-lock.json"
+    path.write_text(json.dumps(lock), encoding="utf-8")
+    with pytest.raises(VerificationError):
+        bundle_runner._load_lock(path)
 
 
 def test_ruleset_order_mutation_is_rejected(tmp_path: Path) -> None:
