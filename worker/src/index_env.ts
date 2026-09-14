@@ -145,6 +145,9 @@ export interface Env {
   DSR_RECEIPT_SIGNING_KEY?: string; // HMAC signer for DSR customer-portal receipt JWTs (union #717; read by dsr/portal.rs, forwarded to the container)
   DPA_RECEIPT_SIGNING_KEY?: string; // RS256 (RSA PKCS#8/PKCS#1 PEM) signer for DPA-acceptance receipt JWTs (read by routes/dpa_accept.rs, forwarded to the container; route unmounts fail-CLOSED when absent)
   CORELINK_RUNNER_MINT_AUTH_KEY?: string; // gate for `/internal/v1/runner/{mint,revoke}` (runner dispatcher; scoped away from signup's pat_mint)
+  /** Dedicated Fabric credential-lifecycle snapshot authority (no shared-key fallback). */
+  FABRIC_CREDENTIAL_AUTHORITY_URL?: string;
+  FABRIC_CREDENTIAL_ISSUER_AUTH_KEY?: string;
   CORELINK_QUOTA_READ_AUTH_KEY?: string; // gate for `/_internal/tenant/{tenant_id}/quota` (read-only tenant-quota lookup; low-privilege read consumer, distinct from mint/erase/admin)
   // Per-tier quota enforcement (worker/src/lib/quota.ts).
   // Storage quota is always enforced for finite-quota tiers.
