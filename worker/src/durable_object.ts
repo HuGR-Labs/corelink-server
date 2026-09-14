@@ -25,43 +25,16 @@
  *   - Container is started fresh per cold-start; idle timeout triggers stop.
  */
 
-import {
-  emitLifecycleEvent,
-  hashForLog,
-  probeD1Path,
-  proxyToContainer,
-  resolveDoColo,
-  timedD1Read,
-  timingSafeEqual,
-  errText,
-  unavailablePath,
-} from "./durable_object_probes.js";
+import { emitLifecycleEvent, hashForLog, probeD1Path, proxyToContainer, resolveDoColo, timedD1Read, timingSafeEqual, errText, unavailablePath } from "./durable_object_probes.js";
 import { startContainer as runStartContainer } from "./durable_object_start.js";
-import type {
-  D1ProbeBinding,
-  D1PathProbeResult,
-  D1ProbeReport,
-} from "./durable_object_probes.js";
+import type { D1ProbeBinding, D1PathProbeResult, D1ProbeReport } from "./durable_object_probes.js";
 export { timingSafeEqual };
-import type {
-  DurableObject,
-  DurableObjectState,
-  DurableObjectStorage,
-  Container,
-  Fetcher,
-} from "@cloudflare/workers-types";
+import type { DurableObject, DurableObjectState, DurableObjectStorage, Container, Fetcher } from "@cloudflare/workers-types";
 import type { Env } from "./index.js";
-import {
-  enforcePatIssueRateLimit,
-  PAT_ISSUE_AUTHORIZED_HEADER,
-} from "./pat_issue_rate_limit.js";
+import { enforcePatIssueRateLimit, PAT_ISSUE_AUTHORIZED_HEADER } from "./pat_issue_rate_limit.js";
 import { isPilotSignupPath } from "./route_match.js";
 import { requireConsumerAuth } from "./lib/internal_auth.js";
-import {
-  bounded,
-  drainDevenvOperations,
-  prepareDevenvOperation,
-} from "./lib/devenv_cleanup.js";
+import { bounded, drainDevenvOperations, prepareDevenvOperation } from "./lib/devenv_cleanup.js";
 import { handleRunnerPrepare } from "./lib/runner_credential_routes.js";
 import { drainRunnerOperations } from "./lib/runner_credential_obligation.js";
 

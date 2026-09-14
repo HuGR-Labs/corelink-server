@@ -6,7 +6,7 @@ import { isValidPatSigningKeyHex } from "./lib/pat_signing_key.js";
 import { isPatExpiryLive } from "./lib/pat_expiry.js";
 import { verifyPatRowCached, type KvReader } from "./lib/pat_verify_cache.js";
 import { isTenantSuspended } from "./lib/tenant_suspend_gate.js";
-import { extractBasicAuthPassword } from "./index_auth_policy.js";
+import { extractBasicAuthForAuthStage } from "./index_auth.js";
 import { base64url, parsePat, verifyPatHmacMulti } from "./index_auth_pat.js";
 
 export async function extractAuth(
@@ -73,7 +73,7 @@ export async function extractAuth(
     // `:`, or empty password) is rejected with the SAME 401 shape as an
     // unsupported scheme — never a bypass. From here the token flows through the
     // identical length/char/format/HMAC/D1 checks as a Bearer PAT.
-    const basicPat = extractBasicAuthPassword(authHeader.slice(basicPrefix.length).trim());
+    const basicPat = extractBasicAuthForAuthStage(authHeader.slice(basicPrefix.length).trim());
     if (basicPat === null) {
       return { ok: false, reason: "invalid_scheme" };
     }

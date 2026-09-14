@@ -311,24 +311,3 @@ export function stripClientTrustHeaders(h: Headers): void {
     h.delete(name);
   }
 }
-
-/** Decode a pip/uv Basic credential and return only its password (the PAT).
- *
- * Basic auth is accepted exclusively by the pip route. The username is merely
- * the adapter label; the returned password still traverses the canonical PAT
- * format, HMAC, D1, expiry, and suspension checks in `extractAuth`.
- */
-export function extractBasicAuthPassword(b64: string): string | null {
-  let decoded: string;
-  try {
-    // `atob` rejects malformed base64. Its latin-1 output is intentional: the
-    // canonical PAT path below rejects every non-printable/non-ASCII byte.
-    decoded = atob(b64);
-  } catch {
-    return null;
-  }
-  const colon = decoded.indexOf(":");
-  if (colon < 0) return null;
-  const password = decoded.slice(colon + 1);
-  return password.length === 0 ? null : password;
-}
