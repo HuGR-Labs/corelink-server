@@ -194,7 +194,7 @@ async fn handle_batch_read(
     let semaphore = Arc::new(tokio::sync::Semaphore::new(BATCH_READ_FANOUT));
     let mut tasks = BatchReadTaskGuard::with_capacity(BATCH_READ_FANOUT);
     let mut append_outcome =
-        |hash: &str, outcome: BatchReadOutcome| -> Result<(), axum::response::Response> {
+        |hash: &str, outcome: BatchReadOutcome| -> Result<(), Box<axum::response::Response>> {
             match outcome {
                 BatchReadOutcome::Absent => {
                     manifest.push_str(&format!(
@@ -215,7 +215,7 @@ async fn handle_batch_read(
                     _global_permit: _,
                 } => {
                     if payload.len() + bytes.len() > BATCH_MAX_BYTES {
-                        return Err(batch_too_large());
+                        return Err(Box::new(batch_too_large()));
                     }
                     manifest.push_str(&format!(
                         "{}\n",
@@ -224,17 +224,17 @@ async fn handle_batch_read(
                     payload.extend_from_slice(&bytes);
                     Ok(())
                 }
-                BatchReadOutcome::BudgetFault => Err((
+                BatchReadOutcome::BudgetFault => Err(Box::new((
                     StatusCode::SERVICE_UNAVAILABLE,
                     "global read budget unavailable",
                 )
-                    .into_response()),
-                BatchReadOutcome::TombstoneFault => Err((
+                    .into_response())),
+                BatchReadOutcome::TombstoneFault => Err(Box::new((
                     StatusCode::SERVICE_UNAVAILABLE,
                     "tombstone gate unavailable",
                 )
-                    .into_response()),
-                BatchReadOutcome::ReadErr(error) => Err(map_err(error)),
+                    .into_response())),
+                BatchReadOutcome::ReadErr(error) => Err(Box::new(map_err(error))),
             }
         };
     let mut result_hashes = hashes.iter();
@@ -333,7 +333,7 @@ async fn handle_batch_read(
             };
             if let Err(response) = append_outcome(result_hash, outcome) {
                 tasks.abort_and_drain().await;
-                return response;
+                return *response;
             }
         }
     }
@@ -360,7 +360,7 @@ async fn handle_batch_read(
         };
         if let Err(response) = append_outcome(result_hash, outcome) {
             tasks.abort_and_drain().await;
-            return response;
+            return *response;
         }
     }
     // Stream the manifest and payload as separate frames. Keeping both guards
