@@ -124,7 +124,7 @@ impl WindowedCounters {
         if self
             .buckets
             .back()
-            .map_or(true, |bucket| bucket.start_ms != bucket_start)
+            .is_none_or(|bucket| bucket.start_ms != bucket_start)
         {
             self.buckets.push_back(TimedBucket {
                 start_ms: bucket_start,
