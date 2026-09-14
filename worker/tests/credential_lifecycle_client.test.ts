@@ -23,6 +23,11 @@ describe("credential lifecycle client", () => {
     for (const url of ["http://fabric.example/", "https://u:p@fabric.example/", "https://fabric.example/path", "https://fabric.example/?x=1", "https://fabric.example/#x"]) await expect(readCredentialLifecycle({ ...ENV, FABRIC_CREDENTIAL_AUTHORITY_URL: url }, TENANT)).rejects.toThrow();
     await expect(readCredentialLifecycle(ENV, "00000000-0000-0000-0000-000000000000")).rejects.toThrow();
   });
+  it("accepts non-nil canonical UUID-shaped tenant IDs regardless of version or variant", async () => {
+    const tenantId = "00000000-0000-0000-0000-000000000001";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(response(valid("1", tenantId)));
+    await expect(readCredentialLifecycle(ENV, tenantId)).resolves.toEqual({ tenantId, generation: "1" });
+  });
   it("requires exact active lifecycle response", async () => {
     for (const body of [{ ...valid(), suspended: true }, { ...valid(), tenant_id: "123e4567-e89b-12d3-a456-426614174001" }, { ...valid(), generation: "01" }, { ...valid(), generation: "9223372036854775808" }, { ...valid(), extra: 1 }, { tenant_id: TENANT, generation: "1" }]) { vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(response(body)); await expect(readCredentialLifecycle(ENV, TENANT)).rejects.toThrow(); vi.restoreAllMocks(); }
   });

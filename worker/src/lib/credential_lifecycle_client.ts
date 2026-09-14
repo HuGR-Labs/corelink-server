@@ -11,7 +11,7 @@ export interface CredentialLifecycleSnapshot {
 const MAX_BODY_BYTES = 4 * 1024;
 const DEADLINE_MS = 5_000;
 const I64_MAX = 9_223_372_036_854_775_807n;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 
 function fail(message: string): never { throw new Error(message); }
