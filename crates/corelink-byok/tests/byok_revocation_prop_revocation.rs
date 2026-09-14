@@ -78,7 +78,7 @@ proptest! {
             // Use different ciphertext prefix to create distinct cache entries.
             let marker = (i % 256) as u8;
             w.ciphertext = std::iter::once(marker)
-                .chain(std::iter::repeat(0u8).take(63))
+                .chain(std::iter::repeat_n(0u8, 63))
                 .collect();
             let dek = Dek { bytes: [0u8; 32] };
             rt.block_on(cache.put(&w, dek)).expect("put ok");
@@ -133,7 +133,7 @@ proptest! {
                 provider: KmsProviderKind::AwsKms,
                 key_id: key_id.clone(),
                 ciphertext: std::iter::once(marker)
-                    .chain(std::iter::repeat(0u8).take(63))
+                    .chain(std::iter::repeat_n(0u8, 63))
                     .collect(),
                 encryption_context: None,
             };
