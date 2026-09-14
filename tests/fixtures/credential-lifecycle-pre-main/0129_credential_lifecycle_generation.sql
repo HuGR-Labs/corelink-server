@@ -48,6 +48,7 @@ WHEN length(NEW.revoked_through) = 0
   OR (length(NEW.revoked_through) > 1 AND substr(NEW.revoked_through, 1, 1) = '0')
   OR CAST(NEW.revoked_through AS INTEGER) < 0
 BEGIN SELECT RAISE(ABORT, 'invalid lifecycle generation'); END;
+
 CREATE TRIGGER IF NOT EXISTS tenant_credential_revocation_floor_generation_update_check
 BEFORE UPDATE OF revoked_through ON tenant_credential_revocation_floor
 WHEN length(NEW.revoked_through) = 0

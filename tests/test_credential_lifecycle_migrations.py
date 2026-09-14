@@ -1,6 +1,7 @@
 """Acceptance tests for the additive credential-lifecycle D1 schema."""
 
 from pathlib import Path
+import hashlib
 import sqlite3
 import unittest
 
@@ -8,6 +9,13 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "migrations" / "d1"
 LEGACY_MIGRATIONS = ROOT / "tests" / "fixtures" / "credential-lifecycle-pre-main"
+# SHA-256 digests of the exact migration blobs from PR head e5a8fb69270b.
+LEGACY_MIGRATION_SHA256 = {
+    "0127_devenv_credential_obligation.sql": "89761f331cff1da1fc05d5412a3e8095b9855002a1daa913e813afe7a3365747",
+    "0128_runner_credential_obligation.sql": "5c3d752fdcefbffc08cd2b68c0ed240f32171be1485f3f0e8e7e51f0915a3939",
+    "0129_credential_lifecycle_generation.sql": "4a40c7c97358a41de1cfad02e370585eacf782e32075780f6b11cbbf8ed9cf7b",
+    "0130_credential_generation_event_receipts.sql": "9ecf7b6a2eed833ce475c7f9266f7a6b1dd401bc9a2eb8a0297a5a2163de4a4f",
+}
 
 
 class CredentialLifecycleMigrations(unittest.TestCase):
@@ -238,6 +246,14 @@ class CredentialLifecycleLegacyUpgradeMigrations(unittest.TestCase):
 
     def tearDown(self):
         self.db.close()
+
+    def test_legacy_fixtures_match_the_pr_migration_blobs(self):
+        for name, expected_digest in LEGACY_MIGRATION_SHA256.items():
+            with self.subTest(migration=name):
+                actual_digest = hashlib.sha256(
+                    (LEGACY_MIGRATIONS / name).read_bytes()
+                ).hexdigest()
+                self.assertEqual(actual_digest, expected_digest)
 
     def test_0131_upgrades_legacy_schema_and_is_idempotent(self):
         with self.assertRaises(sqlite3.IntegrityError):
