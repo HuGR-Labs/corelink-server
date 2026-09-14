@@ -7,6 +7,13 @@ import { reapiError, serverGetOpts } from "./index_common.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 import { emailHashCandidates, redeemTeamInvitation, verifiedPrimaryEmail } from "./lib/team_invitation.js";
 import { isProductionEnvironment } from "../../config/production_environment.js";
+import type { DurableObjectStub } from "@cloudflare/workers-types";
+import type { RunnerDevEnvRpc } from "./types/devenv_rpc.js";
+import { bounded, adoptDevenvOperation, revokeDevenvOperation } from "./lib/devenv_cleanup.js";
+import { DEVENV_MAX_TTL_SECONDS, isDevenvStart, mayAccessDevenv, relayAuthorizedDevenvStart } from "./lib/devenv_relay.js";
+import { prepareDevenvCompute } from "./lib/devenv_compute.js";
+import { readCredentialLifecycle } from "./lib/credential_lifecycle_client.js";
+import { mintScopedPat, MintGrant } from "./lib/session_exchange.js";
 
 export async function handleSpecialCustomerRoute(
   request: Request,
@@ -46,16 +53,6 @@ export async function handleSpecialCustomerRoute(
         devTokenPrefix = auth.tokenPrefix;
       }
 
-      // Check quota
-      const { checkDevenvQuota } = await import("./lib/devenv_guard.js");
-      const quota = await checkDevenvQuota(env, devTenantId);
-      if (!quota.allowed) {
-        return applyCors(
-          reapiError("QUOTA_EXCEEDED", quota.reason ?? "DevEnv quota exceeded", 403, requestId),
-          request,
-        );
-      }
-
       if (!env.RUNNER_DEVENV_DO) {
         return applyCors(
           reapiError("SERVICE_UNAVAILABLE", "RUNNER_DEVENV_DO binding not configured", 503, requestId),
@@ -63,8 +60,42 @@ export async function handleSpecialCustomerRoute(
         );
       }
 
-      const devDoId = env.RUNNER_DEVENV_DO.idFromName(devTenantId);
-      const devStub = env.RUNNER_DEVENV_DO.get(devDoId);
+      if (!mayAccessDevenv(request, devScope)) return applyCors(reapiError("FORBIDDEN", "DevEnv scope required", 403, requestId), request);
+      const isStart = isDevenvStart(request.method, route.pathSuffix);
+      if (isStart) {
+        try {
+          const { checkDevenvQuota } = await import("./lib/devenv_guard.js");
+          const quota = await bounded(checkDevenvQuota(env, devTenantId));
+          if (!quota.allowed) return applyCors(reapiError("QUOTA_EXCEEDED", "DevEnv quota exceeded", 403, requestId), request);
+        } catch { return applyCors(reapiError("SERVICE_UNAVAILABLE", "DevEnv admission unavailable", 503, requestId), request); }
+      }
+      let devStub: DurableObjectStub<RunnerDevEnvRpc>;
+      try { devStub = env.RUNNER_DEVENV_DO.get(env.RUNNER_DEVENV_DO.idFromName(devTenantId)) as DurableObjectStub<RunnerDevEnvRpc>; }
+      catch { return applyCors(reapiError("SERVICE_UNAVAILABLE", "DevEnv unavailable", 503, requestId), request); }
+      if (isStart) {
+        let lifecycleGeneration: string;
+        try { lifecycleGeneration = (await readCredentialLifecycle(env, devTenantId)).generation; }
+        catch { return applyCors(reapiError("SERVICE_UNAVAILABLE", "DevEnv issuer unavailable", 503, requestId), request); }
+        const mintKey = env.CORELINK_PAT_MINT_AUTH_KEY, revokeKey = env.CORELINK_RUNNER_MINT_AUTH_KEY;
+        if (!mintKey || !revokeKey) return applyCors(reapiError("SERVICE_UNAVAILABLE", "DevEnv issuer unavailable", 503, requestId), request);
+        const principalSource = devTokenPrefix === "clerk" ? `devenv-clerk:${devTenantId}` : `devenv-pat:${devTenantId}`;
+        const result = await relayAuthorizedDevenvStart(request, devTenantId, {
+          lifecycleGeneration,
+          prepareCompute: (sessionUuid, tier) => prepareDevenvCompute(env, devStub, devTenantId, sessionUuid, Date.now()),
+          abandonCompute: reservationId => devStub.abandonAuthorizedCompute(reservationId),
+          prepare: async (operationId, tenantId, generation) => {
+            const system = env.CORELINK_SERVER.get(env.CORELINK_SERVER.idFromName("_system"));
+            const response = await bounded(system.fetch(new Request("https://do/_do/devenv-cleanup/prepare", { method: "POST", headers: { "content-type": "application/json", "x-corelink-internal-auth": revokeKey }, body: JSON.stringify({ operationId, tenantId, lifecycleGeneration: generation }) })));
+            return response.status === 204;
+          },
+          mint: operationId => mintScopedPat(env, requestId, MintGrant.fromDevenvSession(devTenantId, principalSource, lifecycleGeneration), DEVENV_MAX_TTL_SECONDS, "cas:rw", mintKey, undefined, undefined, undefined, { operationId, tenantId: devTenantId, principalSource, lifecycleGeneration }),
+          start: input => devStub.startAuthorizedDevenv(input),
+          revoke: operationId => revokeDevenvOperation(env.CONFIG_DB, env.METADATA_KV, operationId, devTenantId),
+          adopt: (operationId, patId) => adoptDevenvOperation(env.CONFIG_DB, operationId, devTenantId, patId),
+          now: Date.now, sessionId: () => crypto.randomUUID(), cleanupFailed: () => console.error("devenv_start_revoke_failed"),
+        });
+        return applyCors(result, request);
+      }
 
       const devAugmented = new Request(request, {
         headers: (() => {
