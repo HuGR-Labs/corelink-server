@@ -111,7 +111,10 @@ export async function readCredentialLifecycle(env: CredentialLifecycleEnv, tenan
     let response: Response;
     try { response = await Promise.race([fetch(new URL(`/internal/v1/credentials/tenants/${encodeURIComponent(tenantId)}/lifecycle`, endpoint).toString(), { method: "GET", redirect: "error", signal: controller.signal, headers: { "x-corelink-internal-auth": key, "Cache-Control": "no-store" } }), deadline]); }
     catch { fail(timedOut ? "credential lifecycle request timed out" : "credential lifecycle request unavailable"); }
-    if (response.status !== 200) fail("credential lifecycle request rejected");
+    if (response.status !== 200) {
+      void response.body?.cancel("credential lifecycle request rejected").catch(() => {});
+      fail("credential lifecycle request rejected");
+    }
     return parseSnapshot(await boundedBody(response, controller.signal), tenantId);
   } finally { clearTimeout(timer); }
 }

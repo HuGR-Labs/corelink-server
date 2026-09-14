@@ -27,6 +27,13 @@ describe("credential lifecycle client", () => {
     for (const body of [{ ...valid(), suspended: true }, { ...valid(), tenant_id: "123e4567-e89b-12d3-a456-426614174001" }, { ...valid(), generation: "01" }, { ...valid(), generation: "9223372036854775808" }, { ...valid(), extra: 1 }, { tenant_id: TENANT, generation: "1" }]) { vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(response(body)); await expect(readCredentialLifecycle(ENV, TENANT)).rejects.toThrow(); vi.restoreAllMocks(); }
   });
   it("rejects non-200 without exposing response text", async () => { const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(response({ secret: "do not expose" }, 503)); await expect(readCredentialLifecycle(ENV, TENANT)).rejects.toThrow("rejected"); expect(fetcher).toHaveBeenCalledTimes(1); });
+  it("cancels a non-200 response body without waiting for cancellation", async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array([1])); }, cancel() { cancelled = true; return new Promise<void>(() => {}); } });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(body, { status: 503 }));
+    await expect(readCredentialLifecycle(ENV, TENANT)).rejects.toThrow("rejected");
+    expect(cancelled).toBe(true);
+  });
   it("detects duplicate response keys", async () => { const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(`{"tenant_id":"${TENANT}","generation":"1","generation":"2","suspended":false}`)); await expect(readCredentialLifecycle(ENV, TENANT)).rejects.toThrow(); fetcher.mockResolvedValue(new Response(`{"tenant_id":"${TENANT}","generation":"1","\\u0067eneration":"2","suspended":false}`)); await expect(readCredentialLifecycle(ENV, TENANT)).rejects.toThrow(); });
   it("bounds oversized bodies and cancels hanging readers on timeout", async () => {
     const oversized = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array(4096)); controller.enqueue(new Uint8Array(1)); } });
