@@ -194,5 +194,29 @@ class CredentialLifecycleMigrations(unittest.TestCase):
                 "WHERE event_id='event'"
             )
 
+    def test_generation_control_identity_cannot_be_rebound(self):
+        self.db.execute("INSERT INTO tenant_credential_revocation_floor VALUES ('tenant','1')")
+        self.db.execute("INSERT INTO credential_generation_revocation VALUES ('pat','token','tenant','1','revoked')")
+        self.db.execute("INSERT INTO credential_generation_event_receipts VALUES ('event','tenant','1','complete')")
+        cases = (
+            ("tenant_credential_revocation_floor", "tenant_id", "tenant", "tenant_id", "other"),
+            ("credential_generation_revocation", "pat_id", "pat", "pat_id", "other"),
+            ("credential_generation_revocation", "pat_id", "pat", "token_id", "other"),
+            ("credential_generation_revocation", "pat_id", "pat", "tenant_id", "other"),
+            ("credential_generation_revocation", "pat_id", "pat", "lifecycle_generation", "2"),
+            ("credential_generation_event_receipts", "event_id", "event", "event_id", "other"),
+            ("credential_generation_event_receipts", "event_id", "event", "tenant_id", "other"),
+            ("credential_generation_event_receipts", "event_id", "event", "lifecycle_generation", "2"),
+        )
+        for table, key, old, column, new in cases:
+            with self.subTest(table=table, column=column):
+                self.db.execute("SAVEPOINT identity_check")
+                try:
+                    with self.assertRaises(sqlite3.IntegrityError):
+                        self.db.execute(f"UPDATE {table} SET {column}=? WHERE {key}=?", (new, old))
+                finally:
+                    self.db.execute("ROLLBACK TO identity_check")
+                    self.db.execute("RELEASE identity_check")
+
 if __name__ == "__main__":
     unittest.main()
