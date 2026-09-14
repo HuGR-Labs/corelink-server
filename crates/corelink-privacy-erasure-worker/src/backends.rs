@@ -243,7 +243,7 @@ impl InMemoryBackendErasureAdapter {
         match self.rows.lock() {
             Ok(g) => g
                 .get(&(tenant_id, subject_id))
-                .map_or(true, |rows| rows.iter().all(|r| r.pii_redacted)),
+                .is_none_or(|rows| rows.iter().all(|r| r.pii_redacted)),
             Err(_) => false,
         }
     }
