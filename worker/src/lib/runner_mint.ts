@@ -45,6 +45,32 @@ import {
 } from "./session_exchange.js";
 import { blake3Hex } from "./blake3.js";
 import { patRowKvKey } from "./pat_verify_cache.js";
+import { readCredentialLifecycle } from "./credential_lifecycle_client.js";
+import { prepareRunnerCredential } from "./runner_credential_routes.js";
+import type { RunnerCredentialOperation } from "./runner_credential_obligation.js";
+
+const RUNNER_OPERATION_ID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function deriveLegacyOperationId(
+  tenantId: string,
+  installationId: string | undefined,
+  jobId: string,
+  repoFullName: string,
+): Promise<string> {
+  const input = JSON.stringify([
+    "corelink/runner-obligation/v1",
+    tenantId,
+    installationId ?? "",
+    jobId,
+    repoFullName,
+  ]);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  const bytes = new Uint8Array(digest).slice(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x80;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 /**
  * Domain-separation prefix for the exact-AC-key narrowing of a runner-job PAT
@@ -269,10 +295,13 @@ export async function handleRunnerMint(
     return reapiError("METHOD_NOT_ALLOWED", "runner mint requires POST", 405, requestId);
   }
 
-  // ── 2. Internal-auth gate (runner_mint consumer key, shared fallback) ──────
+  // ── 2. Internal-auth gate (dedicated runner key only) ─────────────────────
   // Scoped to the runner dispatcher's OWN key (CORELINK_RUNNER_MINT_AUTH_KEY),
   // distinct from signup's `pat_mint` — a leaked runner key mints/revokes ONLY
   // per-job runner PATs, never the signup PAT-mint / erase / admin surfaces.
+  if (typeof env.CORELINK_RUNNER_MINT_AUTH_KEY !== "string" || env.CORELINK_RUNNER_MINT_AUTH_KEY.length < 32) {
+    return reapiError("SERVICE_UNAVAILABLE", "runner mint unavailable", 503, requestId);
+  }
   const authErr = requireConsumerAuth(request, env, "runner_mint", requestId);
   if (authErr) {
     return authErr;
@@ -285,9 +314,8 @@ export async function handleRunnerMint(
   // with NO shared fallback (DD-HIGH, WP1), so present the dedicated key when set;
   // fall back to the shared key only when the dedicated is unset (additive — once
   // the dedicated is provisioned the shared no longer authorizes the mint).
-  const internalAuthKey =
-    env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY;
-  if (!internalAuthKey || internalAuthKey.length === 0) {
+  const internalAuthKey = env.CORELINK_PAT_MINT_AUTH_KEY;
+  if (typeof internalAuthKey !== "string" || internalAuthKey.length < 32) {
     // 503, NOT 403 (2026-08-02). Nothing about the DISPATCHER failed here — it
     // authenticated fine at step 2. What failed is OUR onward credential to the
     // container mint authority, i.e. a config fault on our side. The body always
@@ -310,6 +338,7 @@ export async function handleRunnerMint(
     readonly installation_id?: unknown;
     readonly scope?: unknown;
     readonly ttl_seconds?: unknown;
+    readonly operation_id?: unknown;
     // WP5a: OPTIONAL exact-key narrowing. When present, the runner-job PAT is
     // additionally restricted to the single AC key of that output workspace
     // (blake3(RUNNER_AC_KEY_PREFIX + name)). Dormant at launch — the dispatcher
@@ -330,6 +359,11 @@ export async function handleRunnerMint(
   const repoFullName = body.repo_full_name;
   if (typeof repoFullName !== "string" || repoFullName.length === 0) {
     return reapiError("BAD_REQUEST", "repo_full_name required", 400, requestId);
+  }
+  const explicitOperationId = body.operation_id;
+  if (explicitOperationId !== undefined &&
+      (typeof explicitOperationId !== "string" || !RUNNER_OPERATION_ID.test(explicitOperationId))) {
+    return reapiError("BAD_REQUEST", "operation_id must be a non-nil UUID", 400, requestId);
   }
   // installation_id is OPTIONAL (frozen 2026-07-08): present ⇒ CF-worker/webhook
   // path (tenant via the installation map, step 5a); absent ⇒ fabricd/native path
@@ -571,6 +605,29 @@ export async function handleRunnerMint(
     return tenantThrottled;
   }
 
+  // Every runner mint is backed by a prepared obligation. Legacy callers that
+  // predate operation_id receive a deterministic UUID for the exact request
+  // tuple, preserving idempotency without exposing identifiers in logs.
+  const operationId = typeof explicitOperationId === "string"
+    ? explicitOperationId
+    : await deriveLegacyOperationId(tenantId, typeof installationId === "string" ? installationId : undefined, jobId, repoFullName);
+  let lifecycle: { tenantId: string; generation: string };
+  try {
+    lifecycle = await readCredentialLifecycle(env, tenantId);
+  } catch {
+    return reapiError("SERVICE_UNAVAILABLE", "runner mint unavailable", 503, requestId);
+  }
+  const operation: RunnerCredentialOperation = {
+    operationId,
+    tenantId,
+    jobId,
+    repo: repoFullName,
+    lifecycleGeneration: lifecycle.generation,
+  };
+  if (!(await prepareRunnerCredential(env, requestId, operation))) {
+    return reapiError("SERVICE_UNAVAILABLE", "runner mint unavailable", 503, requestId);
+  }
+
   // ── 6+7. Mint via the SINGLE authority with the DERIVED tenant ─────────────
   // `max_concurrency` is threaded through mintScopedPat's extraFields bag so it
   // appears in the returned JSON alongside the standard envelope; `tenant` in
@@ -586,7 +643,7 @@ export async function handleRunnerMint(
     // otherwise collide with that tenant's ceiling row and let a caller burn a
     // victim tenant's runner-mint budget (M22b review finding). Distinct prefixes
     // make a preimage collision impossible; per-job semantics are unchanged.
-    MintGrant.fromRunnerDerivation(tenantId, "runner-job:" + jobId),
+    MintGrant.fromRunnerDerivation(tenantId, "runner-job:" + jobId, lifecycle.generation),
     ttlSeconds,
     scope,
     internalAuthKey,
@@ -600,6 +657,7 @@ export async function handleRunnerMint(
     // WP5a: persist the narrowed runner-job marker on the `pat` row so the
     // Worker's auth-resolve can forward it to the container for enforcement.
     runnerJobAcKey,
+    operation,
   );
 }
 
