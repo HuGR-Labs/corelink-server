@@ -61,17 +61,34 @@ def _json_key(value: Any) -> str:
 
 
 def _normalize_value(
-    value: Any, *, key: str | None, replacements: tuple[tuple[str, str], ...]
+    value: Any,
+    *,
+    key: str | None,
+    replacements: tuple[tuple[str, str], ...],
+    dotted_rule_prefix: tuple[str, str] | None = None,
+    path: tuple[str, ...] = (),
 ) -> Any:
     if isinstance(value, dict):
         return {
-            item_key: _normalize_value(item, key=item_key, replacements=replacements)
+            item_key: _normalize_value(
+                item,
+                key=item_key,
+                replacements=replacements,
+                dotted_rule_prefix=dotted_rule_prefix,
+                path=path + (item_key,),
+            )
             for item_key, item in value.items()
             if item_key not in VOLATILE_KEYS
         }
     if isinstance(value, list):
         normalized = [
-            _normalize_value(item, key=None, replacements=replacements)
+            _normalize_value(
+                item,
+                key=None,
+                replacements=replacements,
+                dotted_rule_prefix=dotted_rule_prefix,
+                path=path,
+            )
             for item in value
         ]
         if key in UNORDERED_ARRAY_KEYS:
@@ -80,11 +97,54 @@ def _normalize_value(
     if isinstance(value, str):
         for original, replacement in replacements:
             value = value.replace(original, replacement)
+        # Semgrep may encode a temporary absolute config path as a dotted
+        # rule ID (``<absolute-dotted-rules-dir>.<config>.<rule>``), so the slash
+        # replacement above cannot see it. Restrict this substitution to rule
+        # identifiers and a prefix match: ordinary finding text containing a
+        # similar name must remain untouched.
+        metadata_path = (
+            ("tool", "driver", "rules", "name") == path[-4:]
+            or ("tool", "driver", "rules", "shortDescription", "text") == path[-5:]
+            or (
+                "invocations",
+                "toolExecutionNotifications",
+                "message",
+                "text",
+            )
+            == path[-4:]
+        )
+        if dotted_rule_prefix is not None and (
+            key in {"id", "ruleId"} or metadata_path
+        ):
+            original, replacement = dotted_rule_prefix
+            notification_path = (
+                "invocations",
+                "toolExecutionNotifications",
+                "message",
+                "text",
+            ) == path[-4:]
+            if notification_path:
+                # Semgrep embeds this path after one of these diagnostic
+                # lead-ins; do not rewrite an unrelated occurrence.
+                for lead_in in ("in rule '", "rule ", "when running "):
+                    marker = f"{lead_in}{original}"
+                    if marker in value:
+                        value = value.replace(
+                            marker, f"{lead_in}{replacement}", 1
+                        )
+            elif metadata_path:
+                # Rule names and descriptions may put the dotted path after
+                # a prose prefix; their field path already scopes the change.
+                value = value.replace(original, replacement)
+            elif value.startswith(original):
+                value = replacement + value[len(original) :]
         return value
     return value
 
 
-def _canonical_json(path: Path, *volatile_roots: Path) -> None:
+def _canonical_json(
+    path: Path, *volatile_roots: Path, dotted_rule_root: Path | None = None
+) -> None:
     """Normalize Semgrep/SARIF volatility while preserving ordered semantics."""
 
     if not path.is_file() or path.is_symlink():
@@ -108,7 +168,23 @@ def _canonical_json(path: Path, *volatile_roots: Path) -> None:
     replacements = tuple(
         sorted(root_labels.items(), key=lambda item: (-len(item[0]), item[1]))
     )
-    normalized = _normalize_value(data, key=None, replacements=replacements)
+    dotted_rule_prefix = None
+    if dotted_rule_root is not None:
+        # Keep the exact path spelling supplied to Semgrep. On macOS,
+        # ``/var`` commonly resolves to ``/private/var`` but Semgrep's dotted
+        # rule IDs retain the former spelling.
+        rules_dir = str(dotted_rule_root)
+        rules_label = root_labels[str(dotted_rule_root.resolve())]
+        dotted_rule_prefix = (
+            f"{rules_dir.lstrip('/').replace('/', '.')}.",
+            f"{rules_label}.",
+        )
+    normalized = _normalize_value(
+        data,
+        key=None,
+        replacements=replacements,
+        dotted_rule_prefix=dotted_rule_prefix,
+    )
     path.write_text(
         json.dumps(normalized, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
@@ -275,8 +351,12 @@ def run_bundle(
             cwd=ROOT,
             check=False,
         )
-        _canonical_json(bundled, ROOT, output_dir, rules_dir, target)
-        _canonical_json(custom, ROOT, output_dir, rules_dir, target)
+        _canonical_json(
+            bundled, ROOT, output_dir, rules_dir, target, dotted_rule_root=rules_dir
+        )
+        _canonical_json(
+            custom, ROOT, output_dir, rules_dir, target, dotted_rule_root=rules_dir
+        )
 
     return evaluate(
         bundled, custom, report, bundled_run.returncode, custom_run.returncode
