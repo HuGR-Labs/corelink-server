@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import "./setup.ts";
 
 const { drainDevenv, drainRunner } = vi.hoisted(() => ({
   drainDevenv: vi.fn(),
@@ -37,7 +38,10 @@ function makeHarness({ system = true, schemaFails = false }: { system?: boolean;
     if (schemaFails) throw new Error("D1 unavailable");
     return { results: [] };
   });
-  const inserts = vi.fn(async () => ({ success: true, meta: { changes: 1 } }));
+  const inserts = vi.fn(async () => {
+    if (schemaFails) throw new Error("D1 unavailable");
+    return { success: true, meta: { changes: 1 } };
+  });
   const storage = {
     get: async (key: string) => saved.get(key),
     put: async (key: string, value: unknown) => { saved.set(key, value); },
@@ -105,6 +109,11 @@ describe("DevEnv cleanup DO boundary", () => {
       {},
       { operationId: OPERATION_ID },
       { operationId: OPERATION_ID, tenantId: TENANT_ID },
+      { operationId: "not-a-uuid", tenantId: TENANT_ID, lifecycleGeneration: "0" },
+      { operationId: OPERATION_ID, tenantId: "not-a-uuid", lifecycleGeneration: "0" },
+      { operationId: OPERATION_ID, tenantId: TENANT_ID, lifecycleGeneration: "01" },
+      { operationId: OPERATION_ID, tenantId: TENANT_ID, lifecycleGeneration: "9223372036854775808" },
+      { operationId: OPERATION_ID, tenantId: TENANT_ID, lifecycleGeneration: "0", extra: true },
       { operationId: 1, tenantId: TENANT_ID, lifecycleGeneration: "0" },
       { operationId: OPERATION_ID, tenantId: 1, lifecycleGeneration: "0" },
       { operationId: OPERATION_ID, tenantId: TENANT_ID, lifecycleGeneration: 0 },
@@ -112,6 +121,13 @@ describe("DevEnv cleanup DO boundary", () => {
       expect((await malformed.do_.fetch(prepareRequest(body, { auth: AUTH_KEY }))).status).toBe(400);
     }
     expect(malformed.schemaReads).not.toHaveBeenCalled();
+
+    const oversized = makeHarness();
+    const oversizedBody = JSON.stringify({ operationId: OPERATION_ID, tenantId: TENANT_ID, lifecycleGeneration: "0", pad: "x".repeat(16 * 1024) });
+    expect((await oversized.do_.fetch(new Request("https://do.test/_do/devenv-cleanup/prepare", {
+      method: "POST", headers: { "content-type": "application/json", "x-corelink-internal-auth": AUTH_KEY }, body: oversizedBody,
+    }))).status).toBe(413);
+    expect(oversized.inserts).not.toHaveBeenCalled();
 
     const unauthenticated = makeHarness();
     expect((await unauthenticated.do_.fetch(prepareRequest({ operationId: OPERATION_ID, tenantId: TENANT_ID, lifecycleGeneration: "0" }))).status).toBe(401);
@@ -126,18 +142,36 @@ describe("DevEnv cleanup DO boundary", () => {
     const successful = makeHarness();
     const input = { operationId: OPERATION_ID, tenantId: TENANT_ID, lifecycleGeneration: "0" };
     expect((await successful.do_.fetch(prepareRequest(input, { auth: AUTH_KEY }))).status).toBe(204);
-    expect(successful.schemaReads).toHaveBeenCalledTimes(1);
+    expect(successful.schemaReads).not.toHaveBeenCalled();
     expect(successful.inserts).toHaveBeenCalledTimes(1);
     expect(successful.saved.get(`devenv-cleanup/${OPERATION_ID}`)).toMatchObject({ attempts: 0, tenantId: TENANT_ID, lifecycleGeneration: "0" });
     expect(successful.alarms).toHaveLength(1);
 
     const rejectedByPrepare = makeHarness();
-    expect((await rejectedByPrepare.do_.fetch(prepareRequest({ ...input, operationId: "not-a-uuid" }, { auth: AUTH_KEY }))).status).toBe(503);
+    expect((await rejectedByPrepare.do_.fetch(prepareRequest({ ...input, operationId: "not-a-uuid" }, { auth: AUTH_KEY }))).status).toBe(400);
     expect(rejectedByPrepare.schemaReads).not.toHaveBeenCalled();
 
     const failed = makeHarness({ schemaFails: true });
     expect((await failed.do_.fetch(prepareRequest(input, { auth: AUTH_KEY }))).status).toBe(503);
-    expect(failed.saved).toHaveLength(0);
+    // The durable marker is intentionally retained when D1 is unavailable;
+    // the alarm drain owns the retry and prevents an orphaned mint intent.
+    expect(failed.saved.get(`devenv-cleanup/${OPERATION_ID}`)).toMatchObject({ attempts: 0 });
+  });
+
+  it.each([
+    ["adopt", { operationId: OPERATION_ID, tenantId: TENANT_ID }],
+    ["revoke", { operationId: OPERATION_ID }],
+  ] as const)("validates %s cleanup bodies before touching D1", async (action, body) => {
+    const harness = makeHarness();
+    const response = await harness.do_.fetch(
+      new Request(`https://do.test/_do/devenv-cleanup/${action}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-corelink-internal-auth": AUTH_KEY },
+        body: JSON.stringify(body),
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(harness.inserts).not.toHaveBeenCalled();
   });
 
   it("keeps a stopped DO alarmed when a cleanup drain is pending or rejected, then permits hibernation after both drains finish", async () => {

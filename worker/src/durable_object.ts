@@ -49,6 +49,7 @@ import type {
   DurableObjectStorage,
   Container,
   Fetcher,
+  KVNamespace,
 } from "@cloudflare/workers-types";
 import type { Env } from "./index.js";
 import {
@@ -56,7 +57,30 @@ import {
   PAT_ISSUE_AUTHORIZED_HEADER,
 } from "./pat_issue_rate_limit.js";
 import { isPilotSignupPath } from "./route_match.js";
+import { requireConsumerAuth } from "./lib/internal_auth.js";
 import { handleRunnerPrepare } from "./lib/runner_credential_routes.js";
+import {
+  adoptDevenvOperation,
+  bounded as boundedDevenvCleanup,
+  drainDevenvOperations,
+  prepareDevenvOperation,
+  revokeDevenvOperation,
+} from "./lib/devenv_cleanup.js";
+import { drainRunnerOperations } from "./lib/runner_credential_obligation.js";
+
+const DEVENV_CLEANUP_MAX_BODY_BYTES = 16 * 1024;
+const DEVENV_CLEANUP_UUID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DEVENV_CLEANUP_GENERATION = /^(0|[1-9][0-9]*)$/;
+const DEVENV_CLEANUP_MAX_GENERATION = 9_223_372_036_854_775_807n;
+
+function validDevenvCleanupUuid(value: unknown): value is string {
+  return typeof value === "string" && DEVENV_CLEANUP_UUID.test(value);
+}
+
+function validDevenvCleanupGeneration(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 19 || !DEVENV_CLEANUP_GENERATION.test(value)) return false;
+  try { return BigInt(value) <= DEVENV_CLEANUP_MAX_GENERATION; } catch { return false; }
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -256,6 +280,120 @@ export class CoreLinkServer implements DurableObject {
   // fetch — DO entry point
   // ──────────────────────────────────────────────────────────────────────────
 
+  /**
+   * System-only DevEnv credential lifecycle boundary.  This is deliberately
+   * kept at the DO edge: the container is never started for cleanup work and
+   * the request body is parsed only after the consumer gate and system-ID
+   * check.  The cleanup module owns all validation and D1 fencing.
+   */
+  private async handleDevenvCleanup(
+    request: Request,
+    requestId: string,
+    action: "prepare" | "adopt" | "revoke",
+  ): Promise<Response> {
+    if (
+      typeof this.env.CORELINK_RUNNER_MINT_AUTH_KEY !== "string" ||
+      this.env.CORELINK_RUNNER_MINT_AUTH_KEY.length < 32
+    ) {
+      return new Response(null, { status: 503, headers: { "X-Request-Id": requestId } });
+    }
+    const denied = requireConsumerAuth(request, this.env, "runner_mint", requestId);
+    if (denied) return denied;
+    if (
+      request.method !== "POST" ||
+      !this.state.id.equals(this.env.CORELINK_SERVER.idFromName("_system"))
+    ) {
+      return new Response(null, { status: 403, headers: { "X-Request-Id": requestId } });
+    }
+    try {
+      const contentLength = request.headers.get("content-length");
+      if (contentLength !== null && /^(?:0|[1-9][0-9]*)$/.test(contentLength) && Number(contentLength) > DEVENV_CLEANUP_MAX_BODY_BYTES) {
+        return new Response(null, { status: 413, headers: { "X-Request-Id": requestId } });
+      }
+      const reader = request.body?.getReader();
+      const chunks: Uint8Array[] = [];
+      let bytes = 0;
+      if (reader) {
+        try {
+          for (;;) {
+            const part = await boundedDevenvCleanup(reader.read());
+            if (part.done) break;
+            bytes += part.value.byteLength;
+            if (bytes > DEVENV_CLEANUP_MAX_BODY_BYTES) {
+              await reader.cancel();
+              return new Response(null, { status: 413, headers: { "X-Request-Id": requestId } });
+            }
+            chunks.push(part.value);
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      }
+      const raw = new Uint8Array(bytes);
+      let offset = 0;
+      for (const chunk of chunks) { raw.set(chunk, offset); offset += chunk.byteLength; }
+      let body: unknown;
+      try {
+        body = JSON.parse(new TextDecoder().decode(raw));
+      } catch {
+        return new Response(null, { status: 400, headers: { "X-Request-Id": requestId } });
+      }
+      if (body === null || typeof body !== "object" || Array.isArray(body)) {
+        return new Response(null, { status: 400, headers: { "X-Request-Id": requestId } });
+      }
+      const input = body as Record<string, unknown>;
+      const expectedKeys = action === "prepare"
+        ? ["lifecycleGeneration", "operationId", "tenantId"]
+        : action === "adopt"
+          ? ["operationId", "patId", "tenantId"]
+          : ["operationId", "tenantId"];
+      const actualKeys = Object.keys(input).sort();
+      if (actualKeys.length !== expectedKeys.length || actualKeys.some((key, index) => key !== expectedKeys.sort()[index])) {
+        return new Response(null, { status: 400, headers: { "X-Request-Id": requestId } });
+      }
+      const operationId = input["operationId"];
+      const tenantId = input["tenantId"];
+      if (!validDevenvCleanupUuid(operationId) || !validDevenvCleanupUuid(tenantId)) {
+        return new Response(null, { status: 400, headers: { "X-Request-Id": requestId } });
+      }
+      let ok: boolean;
+      if (action === "prepare") {
+        const generation = input["lifecycleGeneration"];
+        if (!validDevenvCleanupGeneration(generation)) {
+          return new Response(null, { status: 400, headers: { "X-Request-Id": requestId } });
+        }
+        ok = await prepareDevenvOperation(
+          this.storage,
+          this.env.CONFIG_DB,
+          operationId,
+          tenantId,
+          Date.now(),
+          generation,
+        );
+      } else if (action === "adopt") {
+        if (typeof input["patId"] !== "string" || input["patId"].trim() !== input["patId"] || input["patId"].length === 0) {
+          return new Response(null, { status: 400, headers: { "X-Request-Id": requestId } });
+        }
+        ok = await adoptDevenvOperation(
+          this.env.CONFIG_DB,
+          operationId,
+          tenantId,
+          input["patId"],
+        );
+      } else {
+        ok = await revokeDevenvOperation(
+          this.env.CONFIG_DB,
+          this.env.METADATA_KV,
+          operationId,
+          tenantId,
+        );
+      }
+      return new Response(null, { status: ok ? 204 : action === "prepare" ? 503 : 409, headers: { "X-Request-Id": requestId } });
+    } catch {
+      return new Response(null, { status: 503, headers: { "X-Request-Id": requestId } });
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
     const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
     const url = new URL(request.url);
@@ -271,6 +409,15 @@ export class CoreLinkServer implements DurableObject {
     }
     if (url.pathname === "/_do/runner-cleanup/prepare") {
       return handleRunnerPrepare(request, this.env, this.state, this.storage, requestId);
+    }
+    if (url.pathname === "/_do/devenv-cleanup/prepare") {
+      return this.handleDevenvCleanup(request, requestId, "prepare");
+    }
+    if (url.pathname === "/_do/devenv-cleanup/adopt") {
+      return this.handleDevenvCleanup(request, requestId, "adopt");
+    }
+    if (url.pathname === "/_do/devenv-cleanup/revoke") {
+      return this.handleDevenvCleanup(request, requestId, "revoke");
     }
 
     const durableRouteGate = await this.enforceDurableRouteRateLimit(request, url);
@@ -806,10 +953,34 @@ export class CoreLinkServer implements DurableObject {
     // of ReplicationCoordinatorDO.alarm(): re-arm in `finally` UNLESS this
     // tick deliberately ended the chain (`chainEnded`).
     let chainEnded = false;
+    // Credential cleanup is independent of container health.  Each drain is
+    // attempted even if the sibling fails; a failed drain remains pending and
+    // therefore owns the next wakeup through its bounded backoff marker.
+    let cleanupPending = false;
     try {
+      try {
+        cleanupPending = (await drainDevenvOperations(
+          this.storage,
+          this.env.CONFIG_DB,
+          this.env.METADATA_KV,
+          Date.now(),
+        )) || cleanupPending;
+      } catch {
+        cleanupPending = true;
+      }
+      try {
+        cleanupPending = (await drainRunnerOperations(
+          this.storage,
+          this.env.CONFIG_DB,
+          this.env.METADATA_KV,
+          Date.now(),
+        )) || cleanupPending;
+      } catch {
+        cleanupPending = true;
+      }
       chainEnded = await this.alarmTick();
     } finally {
-      if (!chainEnded) {
+      if (!chainEnded || cleanupPending) {
         await this.storage.setAlarm(Date.now() + HEALTH_CHECK_INTERVAL_MS);
       }
     }
@@ -956,5 +1127,9 @@ declare module "./index.js" {
     PAT_MINT_MAX_PER_MINUTE?: string;
     QUOTA_COST_PER_OP_MICROS?: string;
     EXPORT_ROW_BUFFER_BYTES?: string;
+    // Metadata KV is the edge PAT cache invalidation surface used by
+    // credential-obligation drains. It is optional in local/test bindings;
+    // revoke fails closed when an issued token requires cache eviction.
+    METADATA_KV?: KVNamespace;
   }
 }
