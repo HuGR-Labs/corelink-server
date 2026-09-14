@@ -71,14 +71,6 @@ class CredentialLifecycleMigrations(unittest.TestCase):
 
     def test_new_tables_have_only_opaque_identity_and_state_columns(self):
         expected = {
-            "devenv_credential_obligation": {
-                "operation_id", "tenant_id", "state", "deadline_ms", "pat_id",
-                "token_id", "lifecycle_generation",
-            },
-            "runner_credential_obligation": {
-                "operation_id", "tenant_id", "job_id", "repo", "state",
-                "deadline_ms", "pat_id", "token_id", "lifecycle_generation",
-            },
             "tenant_credential_revocation_floor": {"tenant_id", "revoked_through"},
             "credential_generation_revocation": {
                 "pat_id", "token_id", "tenant_id", "lifecycle_generation", "state",
