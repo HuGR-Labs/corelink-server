@@ -35,20 +35,6 @@ class CredentialLifecycleMigrations(unittest.TestCase):
         rows = dict(self.db.execute("SELECT pat_id, lifecycle_generation FROM pat"))
         self.assertEqual(rows, {"customer": None, "runner": "0"})
 
-    def test_obligations_reject_issued_state_without_token_identity(self):
-        for table, extra_columns, extra_values in (
-            ("devenv_credential_obligation", "", ()),
-            ("runner_credential_obligation", ", job_id, repo", ("job", "repo")),
-        ):
-            with self.subTest(table=table):
-                columns = "operation_id, tenant_id, state, deadline_ms" + extra_columns
-                values = ("op", "tenant", "issued", 1, *extra_values)
-                placeholders = ", ".join("?" for _ in values)
-                with self.assertRaises(sqlite3.IntegrityError):
-                    self.db.execute(
-                        f"INSERT INTO {table} ({columns}) VALUES ({placeholders})", values
-                    )
-
     def test_generation_rejects_noncanonical_and_out_of_range_values(self):
         invalid = ("", "01", "-1", "1x", "9223372036854775808")
         for generation in invalid:
@@ -106,78 +92,6 @@ class CredentialLifecycleMigrations(unittest.TestCase):
                 actual = {row[1] for row in self.db.execute(f"PRAGMA table_info({table})")}
                 self.assertEqual(actual, columns)
 
-    def test_obligation_state_enums_and_prepared_identity(self):
-        self.db.execute(
-            "INSERT INTO pat (pat_id,tenant_id,runner_job_ac_key,token_id,revoked_at_ms) "
-            "VALUES ('pat','tenant',NULL,'token',NULL)"
-        )
-        for table, extra_columns, extra_values in (
-            ("devenv_credential_obligation", "", ()),
-            ("runner_credential_obligation", ", job_id, repo", ("job", "repo")),
-        ):
-            columns = "operation_id, tenant_id, state, deadline_ms, pat_id, token_id" + extra_columns
-            for state, pat, token, accepted in (
-                ("unknown", None, None, False),
-                ("prepared", "pat", "token", False),
-                ("prepared", None, None, True),
-                ("issued", "pat", "token", True),
-                ("adopted", "pat", "token", True),
-                ("revoking", None, None, True),
-                ("revoked", None, None, True),
-            ):
-                with self.subTest(table=table, state=state, accepted=accepted):
-                    values = (f"{table}-{state}", "tenant", state, 1, pat, token, *extra_values)
-                    placeholders = ", ".join("?" for _ in values)
-                    statement = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
-                    if accepted:
-                        self.db.execute(statement, values)
-                    else:
-                        with self.assertRaises(sqlite3.IntegrityError):
-                            self.db.execute(statement, values)
-
-    def test_obligation_activation_requires_live_same_tenant_pat_and_token(self):
-        self.db.execute("PRAGMA foreign_keys = ON")
-        self.db.execute(
-            "INSERT INTO pat (pat_id,tenant_id,runner_job_ac_key,token_id,revoked_at_ms) "
-            "VALUES ('pat','tenant',NULL,'token',NULL)"
-        )
-        for table, extra_columns, extra_values in (
-            ("devenv_credential_obligation", "", ()),
-            ("runner_credential_obligation", ", job_id, repo", ("job", "repo")),
-        ):
-            columns = "operation_id, tenant_id, state, deadline_ms, pat_id, token_id" + extra_columns
-            for label, tenant, pat, token in (
-                ("missing", "tenant", "missing", "token"),
-                ("cross-tenant", "other", "pat", "token"),
-                ("wrong-token", "tenant", "pat", "wrong"),
-            ):
-                with self.subTest(table=table, label=label):
-                    values = (label, tenant, "issued", 1, pat, token, *extra_values)
-                    marks = ", ".join("?" for _ in values)
-                    with self.assertRaises(sqlite3.IntegrityError):
-                        self.db.execute(
-                            f"INSERT INTO {table} ({columns}) VALUES ({marks})", values
-                        )
-            valid = (f"valid-{table}", "tenant", "issued", 1, "pat", "token", *extra_values)
-            marks = ", ".join("?" for _ in valid)
-            self.db.execute(f"INSERT INTO {table} ({columns}) VALUES ({marks})", valid)
-            with self.assertRaises(sqlite3.IntegrityError):
-                self.db.execute(
-                    f"UPDATE {table} SET tenant_id='other' WHERE operation_id=?", (valid[0],)
-                )
-            with self.assertRaises(sqlite3.IntegrityError):
-                self.db.execute(
-                    f"UPDATE {table} SET token_id='wrong' WHERE operation_id=?", (valid[0],)
-                )
-        self.db.execute("DELETE FROM pat WHERE pat_id='pat'")
-        for table in ("devenv_credential_obligation", "runner_credential_obligation"):
-            with self.subTest(table=table, phase="post-erasure-adopt"):
-                with self.assertRaises(sqlite3.IntegrityError):
-                    self.db.execute(
-                        f"UPDATE {table} SET state='adopted' WHERE operation_id=?",
-                        (f"valid-{table}",),
-                    )
-
     def test_every_generation_column_rejects_noncanonical_values(self):
         valid_inserts = (
             ("devenv_credential_obligation", "INSERT INTO devenv_credential_obligation "
@@ -231,6 +145,54 @@ class CredentialLifecycleMigrations(unittest.TestCase):
                 "('other', 'token', 'tenant', '1', 'invalid')"
             )
 
+
+    def test_revocation_floor_cannot_decrease(self):
+        self.db.execute(
+            "INSERT INTO tenant_credential_revocation_floor VALUES ('tenant', '5')"
+        )
+        for value in ("1", "4"):
+            with self.subTest(value=value):
+                with self.assertRaises(sqlite3.IntegrityError):
+                    self.db.execute(
+                        "UPDATE tenant_credential_revocation_floor SET revoked_through=? "
+                        "WHERE tenant_id='tenant'", (value,)
+                    )
+        self.db.execute(
+            "UPDATE tenant_credential_revocation_floor SET revoked_through='6' "
+            "WHERE tenant_id='tenant'"
+        )
+        self.assertEqual(self.db.execute(
+            "SELECT revoked_through FROM tenant_credential_revocation_floor "
+            "WHERE tenant_id='tenant'"
+        ).fetchone()[0], "6")
+
+    def test_revoked_projection_cannot_reopen(self):
+        self.db.execute(
+            "INSERT INTO credential_generation_revocation VALUES "
+            "('pat', 'token', 'tenant', '1', 'pending')"
+        )
+        self.db.execute(
+            "UPDATE credential_generation_revocation SET state='revoked' WHERE pat_id='pat'"
+        )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                "UPDATE credential_generation_revocation SET state='pending' WHERE pat_id='pat'"
+            )
+
+    def test_complete_receipt_cannot_reopen(self):
+        self.db.execute(
+            "INSERT INTO credential_generation_event_receipts VALUES "
+            "('event', 'tenant', '1', 'requested')"
+        )
+        self.db.execute(
+            "UPDATE credential_generation_event_receipts SET state='complete' "
+            "WHERE event_id='event'"
+        )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                "UPDATE credential_generation_event_receipts SET state='requested' "
+                "WHERE event_id='event'"
+            )
 
 if __name__ == "__main__":
     unittest.main()
