@@ -308,7 +308,7 @@ where
             ])
             .await
             .map_err(store_error)?;
-        if results.first().map_or(true, Vec::is_empty) || results.get(1).map_or(true, Vec::is_empty)
+        if results.first().is_none_or(Vec::is_empty) || results.get(1).is_none_or(Vec::is_empty)
         {
             return Err(BackfillError::Conflict(
                 "tenant snapshot changed or transition is already held".to_owned(),
@@ -736,7 +736,7 @@ where
             ])
             .await
             .map_err(store_error)?;
-        if results.get(1).map_or(true, Vec::is_empty) {
+        if results.get(1).is_none_or(Vec::is_empty) {
             return Err(BackfillError::Conflict(
                 "checkpoint guard or allocation identity failed".to_owned(),
             ));
@@ -841,9 +841,9 @@ where
             ])
             .await
             .map_err(store_error)?;
-        if results.first().map_or(true, Vec::is_empty)
-            || results.get(2).map_or(true, Vec::is_empty)
-            || results.get(3).map_or(true, Vec::is_empty)
+        if results.first().is_none_or(Vec::is_empty)
+            || results.get(2).is_none_or(Vec::is_empty)
+            || results.get(3).is_none_or(Vec::is_empty)
         {
             return Err(BackfillError::Conflict(
                 "abort capability is stale or expired".to_owned(),
