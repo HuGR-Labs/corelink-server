@@ -40,8 +40,15 @@ with db:
     for q in queries("revokeDevenvOperation")[:3]: db.execute(q, (op, tenant))
 assert db.execute("select revoked_at_ms from pat").fetchone()[0] is not None
 assert db.execute("select state from devenv_credential_obligation").fetchone() == ("revoking",)
+# A terminal tombstone fences a late prepare/mint replay.
+db.execute("UPDATE devenv_credential_obligation SET state='revoked'"); db.commit()
+assert db.execute(prep, (op, tenant, now+90000, "0")).rowcount == 0
+assert db.execute(act[0], ("late", tenant, "late-hash", "read-write", now+100000, "late-token", op, "0")).rowcount == 0
+# Floor blocks a newer-looking prepare/activation when the generation is retired.
+db.execute("DELETE FROM devenv_credential_obligation"); db.execute("INSERT INTO tenant_credential_revocation_floor VALUES ('tenant','4')")
+db.commit(); assert db.execute(prep, ("floored", tenant, now+90000, "3")).rowcount == 0
 # A failed activation batch must leave both sides unchanged (SQLite transaction analogue).
-db.execute("delete from pat"); db.execute("delete from devenv_credential_obligation"); db.commit()
+db.execute("delete from pat"); db.execute("delete from devenv_credential_obligation"); db.execute("delete from tenant_credential_revocation_floor"); db.commit()
 db.execute(prep, (op, tenant, now+90000, "0")); db.commit()
 try:
     with db:
@@ -50,4 +57,8 @@ try:
 except RuntimeError: pass
 assert db.execute("select count(*) from pat").fetchone()[0] == 0
 assert db.execute("select state from devenv_credential_obligation").fetchone() == ("prepared",)
+# Adoption is allowed before the durable drain and transfers ownership.
+db.execute(act[0], ("pat3", tenant, "hash3", "read-write", now+100000, "tok3", op, "0")); db.execute(act[1], ("pat3", "tok3", op, tenant, "0")); db.commit()
+adopt = queries("adoptDevenvOperation")[0]
+assert db.execute(adopt, (op, tenant, "pat3")).rowcount == 1
 print("")

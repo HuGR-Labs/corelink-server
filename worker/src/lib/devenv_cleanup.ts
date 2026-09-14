@@ -54,7 +54,7 @@ export async function revokeDevenvOperation(db: D1Database, kv: { delete(key: st
 }
 export async function drainDevenvOperations(storage: DurableObjectStorage, db: D1Database, kv: { delete(key: string): Promise<void> } | undefined, now: number): Promise<boolean> {
   const entries = await bounded(storage.list<unknown>({ prefix: PREFIX, limit: 64 })); const due: [string, Marker][] = [];
-  for (const [key, value] of entries) { if (!validMarker(value, key)) continue; if (value.due <= now) due.push([key, value]); }
+  for (const [key, value] of entries) { if (!validMarker(value, key)) { console.error("malformed DevEnv cleanup marker retained"); continue; } if (value.due <= now) due.push([key, value]); }
   due.sort((a,b) => a[1].due - b[1].due).splice(4);
   for (const [key, marker] of due) try { if (await revokeDevenvOperation(db, kv, marker.operationId, marker.tenantId)) await bounded(storage.delete(key)); else throw new Error("obligation not confirmed"); } catch { const attempts = Math.min(marker.attempts + 1, 9); await bounded(storage.put(key, { ...marker, attempts, due: now + Math.min(300000, 1000 * 2 ** attempts) } satisfies Marker)); }
   return (await bounded(storage.list({ prefix: PREFIX, limit: 1 }))).size > 0;
