@@ -57,9 +57,16 @@ describe("authorized DevEnv issuance", () => {
     expect(events.slice(-3)).toEqual(["stop", "abandon", "revoke"]);
   });
 
-  it("does not stop when start itself fails", async () => {
+  it("stops after a start RPC throws, covering delayed side effects", async () => {
     const events: string[] = [];
     const response = await relayAuthorizedDevenvStart(new Request("https://x/v1/customer/devenv", { method: "POST", body: JSON.stringify({ workspace_name: "demo" }) }), tenantId, deps(events, { start: async () => { events.push("start"); throw new Error("runner unavailable"); } }));
+    expect(response.status).toBe(503);
+    expect(events.slice(-3)).toEqual(["stop", "abandon", "revoke"]);
+  });
+
+  it("does not stop before the start RPC is attempted", async () => {
+    const events: string[] = [];
+    const response = await relayAuthorizedDevenvStart(new Request("https://x/v1/customer/devenv", { method: "POST", body: JSON.stringify({ workspace_name: "demo" }) }), tenantId, deps(events, { mint: async () => { events.push("mint"); return new Response(null, { status: 503 }); } }));
     expect(response.status).toBe(503);
     expect(events).not.toContain("stop");
   });

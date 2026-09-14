@@ -61,7 +61,7 @@ export async function relayAuthorizedDevenvStart(request: Request, tenantId: str
   if (!name(workspaceName) || !name(profileName) || typeof tier !== "string" || !["standard-2", "standard-4", "power-8", "ultra-16"].includes(tier)) return failure(400);
   const deadline = deps.now() + DEVENV_MAX_TTL_SECONDS * 1000, sessionUuid = deps.sessionId();
   if (!UUID.test(sessionUuid) || !UUID.test(tenantId)) return failure(503);
-  let patId: string | null = null, armed = false, accepted = false, started = false, computeReservationId: string | null = null;
+  let patId: string | null = null, armed = false, accepted = false, startAttempted = false, computeReservationId: string | null = null;
   try {
     // The obligation is armed before minting; compute is staged only after the token exists.
     armed = await bounded(deps.prepare(sessionUuid, tenantId, deps.lifecycleGeneration));
@@ -75,14 +75,14 @@ export async function relayAuthorizedDevenvStart(request: Request, tenantId: str
     if (patId === null || !UUID.test(patId) || typeof token !== "string" || token.trim().length === 0 || token.length > 4096 || issued["tenant"] !== tenantId || typeof expires !== "number" || !Number.isSafeInteger(expires) || expires <= now || expires > now + DEVENV_MAX_TTL_SECONDS * 1000 || deadline <= now) return failure(503);
     computeReservationId = await bounded(deps.prepareCompute(sessionUuid, tier));
     if (computeReservationId !== null && computeReservationId !== sessionUuid) return failure(503);
+    startAttempted = true;
     const ack = await bounded(deps.start({ config: { workspaceName, profileName, tier }, grant: { tenantId, sessionUuid, casPat: token, patId, expiresAtMs: Math.min(expires, deadline), lifecycleGeneration: deps.lifecycleGeneration, ...(computeReservationId !== null ? { computeReservationId } : {}) } }), 20_000);
     if (!ack || ack.sessionUuid !== sessionUuid || !["starting", "running"].includes(ack.status)) return failure(503);
-    started = true;
     accepted = await bounded(deps.adopt(sessionUuid, patId)); if (!accepted) return failure(503);
     return Response.json({ sessionUuid, status: ack.status, lifecycle_generation: deps.lifecycleGeneration }, { status: 201 });
   } catch { return failure(503); }
   finally {
-    if (started && !accepted) {
+    if (startAttempted && !accepted) {
       try {
         const stopped = await bounded(deps.stop({ tenantId, sessionUuid }), 20_000);
         if (!stopped || stopped.sessionUuid !== sessionUuid || !["stopped", "already_stopped", "not_current"].includes(stopped.status)) throw new Error("invalid stop acknowledgement");
