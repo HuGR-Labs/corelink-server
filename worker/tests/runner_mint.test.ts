@@ -199,6 +199,9 @@ function makeMintNamespace(
 ): DurableObjectNamespace {
   const stub = {
     fetch: async (req: Request): Promise<Response> => {
+      if (new URL(req.url).pathname === "/_do/runner-cleanup/prepare") {
+        return new Response(null, { status: 204 });
+      }
       captured.req = req;
       return new Response(JSON.stringify(opts.body ?? CANNED_MINT), {
         status: opts.status ?? 200,
@@ -230,6 +233,7 @@ function makeEnv(opts: {
   patInsertCapture?: { sql?: string; binds?: unknown[] };
   withInternalKey?: boolean;
   withRunnerMintKey?: boolean;
+  withPatMintKey?: boolean;
 }): Env {
   return {
     METADATA_KV: (opts.kvDeleted || opts.kvThrow
@@ -258,7 +262,7 @@ function makeEnv(opts: {
     }),
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
     CORELINK_RUNNER_MINT_AUTH_KEY: opts.withRunnerMintKey === false ? undefined : RUNNER_MINT_KEY,
-    CORELINK_PAT_MINT_AUTH_KEY: PAT_MINT_KEY,
+    CORELINK_PAT_MINT_AUTH_KEY: opts.withPatMintKey === false ? undefined : PAT_MINT_KEY,
     FABRIC_CREDENTIAL_AUTHORITY_URL: "https://fabric.test",
     FABRIC_CREDENTIAL_ISSUER_AUTH_KEY: "test-fabric-credential-issuer-key-012345",
   } as Env;
@@ -380,7 +384,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     // Still fail-CLOSED — `captured.req` proves no mint was forwarded. Only the
     // ATTRIBUTION changed: 401 stays the caller's fault, 503 is ours.
     const captured: { req?: Request } = {};
-    const env = makeAuthorizedEnv({ captured, withInternalKey: false });
+    const env = makeAuthorizedEnv({ captured, withRunnerMintKey: false });
     const resp = await mintFetch(env, { auth: INTERNAL_KEY });
     expect(resp.status).toBe(503);
     // The load-bearing half: nothing was authorized, no PAT was minted.
@@ -536,7 +540,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("(b) when a dedicated runner_mint key is bound, the shared key is rejected", async () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured, withRunnerMintKey: true });
-    const resp = await mintFetch(env, { auth: INTERNAL_KEY, body: mintBody() });
+    const resp = await mintFetch(env, { auth: INTERNAL_KEY.replace("internal", "shared"), body: mintBody() });
     expect(resp.status).toBe(401);
     expect(captured.req).toBeUndefined();
   });
@@ -635,7 +639,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     });
 
     // A config fault: the caller is fine, WE have no key bound.
-    const broken = await mintFetch(makeAuthorizedEnv({ withInternalKey: false }), {
+    const broken = await mintFetch(makeAuthorizedEnv({ withRunnerMintKey: false }), {
       auth: INTERNAL_KEY,
       body: mintBody({ job_id: `${JOB_ID}-config-fault` }),
     });
@@ -674,7 +678,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({
       captured,
-      withInternalKey: false, // no shared key, and no CORELINK_PAT_MINT_AUTH_KEY
+      withPatMintKey: false, // onward mint credential is unbound
       withRunnerMintKey: true, // ...but the dispatcher's own gate IS armed
     });
     const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY });

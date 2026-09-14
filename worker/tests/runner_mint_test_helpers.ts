@@ -204,10 +204,10 @@ function makeMintNamespace(
 ): DurableObjectNamespace {
   const stub = {
     fetch: async (req: Request): Promise<Response> => {
-      captured.req = req;
       if (new URL(req.url).pathname === "/_do/runner-cleanup/prepare") {
         return new Response(null, { status: 204 });
       }
+      captured.req = req;
       return new Response(JSON.stringify(opts.body ?? CANNED_MINT), {
         status: opts.status ?? 200,
         headers: { "Content-Type": "application/json" },

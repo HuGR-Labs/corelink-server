@@ -358,7 +358,10 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
         ENVIRONMENT: "test",
         CONFIG_DB: db,
         CORELINK_INTERNAL_AUTH_KEY: INTERNAL_KEY,
-        CORELINK_RUNNER_MINT_AUTH_KEY: undefined,
+        CORELINK_RUNNER_MINT_AUTH_KEY: RUNNER_MINT_KEY,
+        CORELINK_PAT_MINT_AUTH_KEY: "test-dedicated-pat-mint-key-0123456789",
+        FABRIC_CREDENTIAL_AUTHORITY_URL: "https://fabric.test",
+        FABRIC_CREDENTIAL_ISSUER_AUTH_KEY: "test-fabric-credential-issuer-key-012345",
       } as Env,
       batches,
       serialFirsts,
@@ -483,6 +486,7 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
     // so a future refactor cannot quietly remove the guard.
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured }); // no `batch` on this double
+    delete (env.CONFIG_DB as { batch?: unknown }).batch;
     // The double has no `batch` method — the guard MUST take the fallback.
     expect(typeof (env.CONFIG_DB as { batch?: unknown }).batch).toBe("undefined");
     // And the sequential path still produces a successful mint.
