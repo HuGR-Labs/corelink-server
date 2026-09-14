@@ -42,7 +42,6 @@ import { requireInternalAuth } from "./internal_auth.js";
 import {
   activateRunnerPat,
   type RunnerCredentialOperation,
-  type RunnerIssuedPat,
 } from "./runner_credential_obligation.js";
 
 /**
@@ -644,6 +643,7 @@ export async function mintScopedPat(
   const hasRunnerKey = runnerJobAcKey !== undefined;
   if (
     (hasRunnerKey && runnerOperation === undefined) ||
+    (principalSource.startsWith("runner-job:") && (!runnerOperation || !runnerJobAcKey)) ||
     (runnerOperation !== undefined &&
       (!runnerJobAcKey ||
         runnerOperation.tenantId !== tenantId ||
@@ -800,7 +800,12 @@ export async function mintScopedPat(
       const activated = await activateRunnerPat(
         env.CONFIG_DB,
         runnerOperation,
-        minted as RunnerIssuedPat,
+        {
+          pat_id: minted.pat_id,
+          token_id: minted.token_id,
+          hash: minted.hash,
+          expires_ms: minted.expires_ms,
+        },
         canonicalScope,
         runnerJobAcKey as string,
       );
@@ -808,9 +813,8 @@ export async function mintScopedPat(
         console.error(`[${requestId}] runner credential activation failed`);
         return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "unknown error";
-      console.error(`[${requestId}] runner credential activation failed: ${message.slice(0, 80)}`);
+    } catch {
+      console.error(`[${requestId}] runner credential activation failed`);
       return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
     }
   } else try {
