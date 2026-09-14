@@ -18,7 +18,7 @@ import verify_prod_deployability as deploy  # noqa: E402
 def test_closed_inventory_rederives_all_production_surfaces() -> None:
     report = deploy.verify(ROOT)
 
-    assert report["surfaces"] == 6
+    assert report["surfaces"] == 8
     assert report["excluded_configs"] == ["crates/corelink-clerk-cf/wrangler.toml"]
     assert report["status"] == "production_deployability_verified"
 

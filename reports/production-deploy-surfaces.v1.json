@@ -74,6 +74,28 @@
       "workflow_markers": [],
       "deploy_manifest": "apps/get-corelink-worker/package.json",
       "deploy_marker": "deploy:prod"
+    },
+    {
+      "id": "audit-witness-worker",
+      "config": "apps/audit-witness-worker/wrangler.toml",
+      "production_environment": "default",
+      "entrypoint": "apps/audit-witness-worker/src/index.ts",
+      "artifacts": [
+        {"path": "apps/audit-witness-worker/src/index.ts", "generated": false}
+      ],
+      "workflow": ".github/workflows/audit-witness-deploy.yml",
+      "workflow_markers": ["workflow_dispatch:", "environment: audit-witness-production", "test \"${EXPECTED_SHA}\" = \"${ACTUAL_SHA}\"", "wrangler deploy"]
+    },
+    {
+      "id": "synthetic-pager-worker",
+      "config": "apps/synthetic-pager-worker/wrangler.toml",
+      "production_environment": "prod",
+      "entrypoint": "apps/synthetic-pager-worker/src/index.ts",
+      "artifacts": [
+        {"path": "apps/synthetic-pager-worker/src/index.ts", "generated": false}
+      ],
+      "workflow": ".github/workflows/synthetic-pager-worker-deploy.yml",
+      "workflow_markers": ["options: [staging]", "Verify receiver remains inert before deploy", "wrangler deploy --env"]
     }
   ],
   "excluded_configs": [
