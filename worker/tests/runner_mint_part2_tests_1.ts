@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-types";
 import type { Env } from "../src/index.js";
-import { workerHandler, batchViaFirst, INTERNAL_KEY, RUNNER_MINT_KEY, TENANT, JOB_ID, INSTALLATION_ID, REPO_FULL_NAME, MAX_CONCURRENCY, EXPECTED_AC_KEY_HEX, CANNED_MINT, makeCtx, makeConfigDb, authorizedConfig, makeMintNamespace, makeEnv, makeAuthorizedEnv, mintFetch, revokeFetch, mintBody } from "./runner_mint_test_helpers.js";
+import { workerHandler, INTERNAL_KEY, RUNNER_MINT_KEY, TENANT, JOB_ID, INSTALLATION_ID, REPO_FULL_NAME, MAX_CONCURRENCY, EXPECTED_AC_KEY_HEX, CANNED_MINT, makeCtx, makeConfigDb, authorizedConfig, makeMintNamespace, makeEnv, makeAuthorizedEnv, mintFetch, revokeFetch, mintBody } from "./runner_mint_test_helpers.js";
 
 describe("POST /internal/v1/runner/revoke — D-9 runner PAT revoke", () => {
   it("(e) 200 + marks the pat revoked via tenant-scoped UPDATE pat SET revoked_at_ms", async () => {
@@ -135,7 +135,7 @@ describe("M22(b) — per-tenant runner mint ceiling composes with the per-job th
   // Unique tenant + installation so the per-tenant throttle key is FRESH: the
   // in-memory backstop map is module-scoped, and we drive the DURABLE per-tenant
   // count deterministically through the mock below.
-  const M22_TENANT = "22222222-aaaa-bbbb-cccc-dddddddddd22";
+  const M22_TENANT = TENANT;
   const M22_INSTALL = "gh-install-m22";
   const M22_REPO = "acme/m22";
 
@@ -150,6 +150,7 @@ describe("M22(b) — per-tenant runner mint ceiling composes with the per-job th
     return {
       prepare: (sql: string) => ({
         bind: (...args: unknown[]) => ({
+          sql,
           first: async <T>() => {
             if (sql.includes("tenant_gh_installation_map")) {
               return (args[0] === M22_INSTALL ? { tenant_id: M22_TENANT } : null) as T | null;
@@ -177,6 +178,14 @@ describe("M22(b) — per-tenant runner mint ceiling composes with the per-job th
           run: async () => ({ success: true, meta: { changes: 1 } }) as unknown as D1Result,
         }),
       }),
+      // Match D1's positional result contract for both authz SELECTs and the
+      // later credential-persistence writes in the same mint request.
+      batch: async (statements: Array<{ sql: string; first(): Promise<unknown>; run(): Promise<D1Result> }>) =>
+        Promise.all(statements.map((statement) =>
+          /^\s*SELECT\b/i.test(statement.sql)
+            ? statement.first().then((row) => ({ success: true, results: row === null ? [] : [row] }))
+            : statement.run(),
+        )),
     } as unknown as D1Database;
   }
 
@@ -186,7 +195,10 @@ describe("M22(b) — per-tenant runner mint ceiling composes with the per-job th
       ENVIRONMENT: "test",
       CONFIG_DB: countingDb(maxConcurrency, throttleCounts),
       CORELINK_INTERNAL_AUTH_KEY: INTERNAL_KEY,
-      CORELINK_RUNNER_MINT_AUTH_KEY: undefined,
+      CORELINK_RUNNER_MINT_AUTH_KEY: INTERNAL_KEY,
+      CORELINK_PAT_MINT_AUTH_KEY: INTERNAL_KEY,
+      FABRIC_CREDENTIAL_AUTHORITY_URL: "https://fabric.test",
+      FABRIC_CREDENTIAL_ISSUER_AUTH_KEY: "credential-issuer-test-key-0123456789",
     } as Env;
   }
 
@@ -313,12 +325,9 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
       return null;
     };
 
-    // `batchViaFirst` resolves a batch THROUGH each statement's own `first()`
-    // (deliberately — see `d1_batch_mock.ts`: one routing table, so the serial
-    // and batched paths can never answer differently). That makes a naive
-    // "`first()` was called" recorder unable to tell a batched read from a
-    // leaked serial one. So record into `serialFirsts` only while NOT inside a
-    // batch; `batch` flips this for the duration of its own resolution.
+    // Read results and write metadata are both resolved through the same bound
+    // statement routing. Record serial reads only outside `batch` so the authz
+    // round trip remains distinguishable from a leaked sequential fallback.
     let inBatch = false;
     const db = {
       prepare: (sql: string) => ({
@@ -331,14 +340,17 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
           run: async () => ({ success: true, meta: { changes: 1 } }) as unknown as D1Result,
         }),
       }),
-      batch: async (statements: Array<{ __sql?: string; first: <T>() => Promise<T | null> }>) => {
+      batch: async (statements: Array<{ __sql?: string; first: <T>() => Promise<T | null>; run(): Promise<D1Result> }>) => {
         batches.push(statements.map((s) => s.__sql ?? ""));
         // Resolve through the SAME per-SQL routing as the serial path — a mock
         // that diverged between the two would let this test lie about precedence.
         inBatch = true;
         try {
-          const results = await batchViaFirst()(statements);
-          return results as Array<{ results?: unknown[] }>;
+          return await Promise.all(statements.map((statement) =>
+            /^\s*SELECT\b/i.test(statement.__sql ?? "")
+              ? statement.first().then((row) => ({ success: true, results: row === null ? [] : [row] }))
+              : statement.run(),
+          ));
         } finally {
           inBatch = false;
         }
@@ -358,7 +370,10 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
         ENVIRONMENT: "test",
         CONFIG_DB: db,
         CORELINK_INTERNAL_AUTH_KEY: INTERNAL_KEY,
-        CORELINK_RUNNER_MINT_AUTH_KEY: undefined,
+        CORELINK_RUNNER_MINT_AUTH_KEY: INTERNAL_KEY,
+        CORELINK_PAT_MINT_AUTH_KEY: INTERNAL_KEY,
+        FABRIC_CREDENTIAL_AUTHORITY_URL: "https://fabric.test",
+        FABRIC_CREDENTIAL_ISSUER_AUTH_KEY: "credential-issuer-test-key-0123456789",
       } as Env,
       batches,
       serialFirsts,
@@ -377,14 +392,15 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
       body: mintBody({ job_id: `${JOB_ID}-batch-once` }),
     });
     expect(resp.status).toBe(200);
+    const authBatches = batches.filter((batch) => batch[0]?.includes("tenant_offboarding_state"));
     expect(
-      batches.length,
+      authBatches.length,
       `expected exactly ONE db.batch call carrying the three authz reads, saw ${batches.length}: ${JSON.stringify(batches)}`,
     ).toBe(1);
-    expect(batches[0]).toHaveLength(3);
-    expect(batches[0]![0]).toContain("tenant_offboarding_state");
-    expect(batches[0]![1]).toContain("runner_repo_allowlist");
-    expect(batches[0]![2]).toContain("runners_entitlement");
+    expect(authBatches[0]).toHaveLength(3);
+    expect(authBatches[0]![0]).toContain("tenant_offboarding_state");
+    expect(authBatches[0]![1]).toContain("runner_repo_allowlist");
+    expect(authBatches[0]![2]).toContain("runners_entitlement");
     // And NO statement reached the database via the serial path (the .first()
     // on the bound statement, when used by db.batch, is not a "serial round
     // trip" — the mock only records the SQL on the .first() path so the test
@@ -476,15 +492,22 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
   });
 
   it("(fallback) a double WITHOUT `db.batch` still authorizes via three sequential .first()s", async () => {
-    // The existing makeConfigDb in this file does NOT implement `batch`, so
-    // `typeof env.CONFIG_DB.batch !== "function"` is true and the code falls
-    // back to the three sequential reads. Every earlier test in this file
-    // already exercises that path implicitly; this case pins it explicitly
-    // so a future refactor cannot quietly remove the guard.
+    // The shared double implements batch for the later transactional writes;
+    // temporarily hiding it here pins the authz fallback without weakening
+    // those writes.
     const captured: { req?: Request } = {};
-    const env = makeAuthorizedEnv({ captured }); // no `batch` on this double
-    // The double has no `batch` method — the guard MUST take the fallback.
-    expect(typeof (env.CONFIG_DB as { batch?: unknown }).batch).toBe("undefined");
+    const env = makeAuthorizedEnv({ captured });
+    // Hide batch for the authz read (the first access is this assertion and
+    // the second is the handler's feature check), then restore it for the
+    // later transactional credential persistence writes.
+    const db = env.CONFIG_DB as { batch?: unknown };
+    const batch = db.batch;
+    let accesses = 0;
+    Object.defineProperty(db, "batch", {
+      configurable: true,
+      get: () => (++accesses <= 2 ? undefined : batch),
+    });
+    expect(typeof db.batch).toBe("undefined");
     // And the sequential path still produces a successful mint.
     const resp = await mintFetch(env, {
       auth: INTERNAL_KEY,

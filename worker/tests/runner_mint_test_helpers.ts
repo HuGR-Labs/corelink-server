@@ -20,7 +20,6 @@ import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-typ
 import { afterEach, beforeEach, vi } from "vitest";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
-import { batchViaFirst } from "./d1_batch_mock.js";
 
 const INTERNAL_KEY = "test-internal-auth-key-0123456789"; // ≥32 chars
 const RUNNER_MINT_KEY = "test-pat-mint-auth-key-0123456789ab"; // ≥32 chars, distinct
@@ -166,8 +165,7 @@ function makeConfigDb(opts: {
       }),
     }),
     // D1 batch executes the already-bound prepared statements atomically. The
-    // mock delegates to each statement's real configured `run` behavior, so
-    // captured writes and non-success results remain observable to tests.
+    // mock delegates to each statement's real configured `first`/`run` behavior.
     batch: async (statements: Array<{ sql: string; first(): Promise<unknown>; run(): Promise<D1Result> }>) =>
       Promise.all(statements.map((statement) =>
         /^\s*SELECT\b/i.test(statement.sql)
@@ -360,6 +358,6 @@ function mintBody(over: Record<string, unknown> = {}): Record<string, unknown> {
 }
 
 
-export { workerHandler, batchViaFirst };
+export { workerHandler };
 export type { Env };
 export { INTERNAL_KEY, RUNNER_MINT_KEY, PAT_MINT_KEY, TENANT, JOB_ID, INSTALLATION_ID, REPO_FULL_NAME, MAX_CONCURRENCY, EXPECTED_AC_KEY_HEX, CANNED_MINT, makeCtx, makeConfigDb, authorizedConfig, makeMintNamespace, makeEnv, makeAuthorizedEnv, mintFetch, revokeFetch, mintBody };
