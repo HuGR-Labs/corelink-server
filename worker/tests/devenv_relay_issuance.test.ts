@@ -40,4 +40,19 @@ describe("authorized DevEnv issuance", () => {
     expect(events).toContain("abandon");
     expect(events).toContain("revoke");
   });
+
+  it.each([
+    ["absent", undefined],
+    ["forged small", "1"],
+  ])("rejects an oversized body with %s content length", async (_label, length) => {
+    const headers = length === undefined ? undefined : { "content-length": length };
+    const body = JSON.stringify({ workspace_name: "x".repeat(4090) });
+    const response = await relayAuthorizedDevenvStart(new Request("https://x/v1/customer/devenv", { method: "POST", headers, body }), tenantId, deps([]));
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects malformed content length", async () => {
+    const response = await relayAuthorizedDevenvStart(new Request("https://x/v1/customer/devenv", { method: "POST", headers: { "content-length": "bogus" }, body: JSON.stringify({ workspace_name: "demo" }) }), tenantId, deps([]));
+    expect(response.status).toBe(400);
+  });
 });

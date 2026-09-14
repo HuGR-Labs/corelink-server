@@ -6,6 +6,7 @@ const UUID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-
 const BASES = ["/v1/customer/devenv", "/v1/devenv"];
 const MAX_START_BODY_BYTES = 4 * 1024;
 const GENERATION = /^(0|[1-9][0-9]*)$/;
+const MAX_GENERATION = 9223372036854775807n;
 export function devenvPath(path: string): string | null { for (const base of BASES) if (path === base || path.startsWith(`${base}/`)) return path.slice(base.length).replace(/\/+$/, ""); return null; }
 export function isDevenvStart(method: string, path: string): boolean { return method === "POST" && devenvPath(path) === ""; }
 export function mayAccessDevenv(request: Request, scope: string): boolean {
@@ -34,9 +35,26 @@ function name(value: unknown): value is string { return typeof value === "string
 /** Called only after verified identity, write authorization and start quota. */
 export async function relayAuthorizedDevenvStart(request: Request, tenantId: string, deps: RelayDeps): Promise<Response> {
   const contentLength = request.headers.get("content-length");
-  if (contentLength !== null && /^(0|[1-9][0-9]*)$/.test(contentLength) && Number(contentLength) > MAX_START_BODY_BYTES) return failure(400);
-  if (!GENERATION.test(deps.lifecycleGeneration) || deps.lifecycleGeneration.length > 19) return failure(503);
-  let body: unknown; try { body = await bounded(request.json()); } catch { return failure(400); }
+  if (contentLength !== null && (!/^(0|[1-9][0-9]*)$/.test(contentLength) || Number(contentLength) > MAX_START_BODY_BYTES)) return failure(400);
+  if (!GENERATION.test(deps.lifecycleGeneration) || deps.lifecycleGeneration.length > 19 || BigInt(deps.lifecycleGeneration) > MAX_GENERATION) return failure(503);
+  let body: unknown;
+  try {
+    const reader = request.body?.getReader();
+    if (!reader) throw new Error("missing body");
+    const chunks: Uint8Array[] = []; let bytes = 0;
+    try {
+      for (;;) {
+        const part = await reader.read();
+        if (part.done) break;
+        bytes += part.value.byteLength;
+        if (bytes > MAX_START_BODY_BYTES) throw new Error("body too large");
+        chunks.push(part.value);
+      }
+    } finally { reader.releaseLock(); }
+    const raw = new Uint8Array(bytes); let offset = 0;
+    for (const chunk of chunks) { raw.set(chunk, offset); offset += chunk.byteLength; }
+    body = JSON.parse(new TextDecoder().decode(raw));
+  } catch { return failure(400); }
   if (!record(body) || Object.keys(body).some(key => !["workspace_name", "profile_name", "tier"].includes(key))) return failure(400);
   const workspaceName = body["workspace_name"], profileName = body["profile_name"] ?? "default", tier = body["tier"] ?? "standard-4";
   if (!name(workspaceName) || !name(profileName) || typeof tier !== "string" || !["standard-2", "standard-4", "power-8", "ultra-16"].includes(tier)) return failure(400);
