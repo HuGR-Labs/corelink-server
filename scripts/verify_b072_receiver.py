@@ -15,6 +15,18 @@ def fail(message: str) -> None:
     raise AssertionError(message)
 
 
+def _has_staging_deploy(deploy_source: str) -> bool:
+    """Require env-bound input, an exact staging guard, and the deploy command."""
+    return all(
+        fragment in deploy_source
+        for fragment in (
+            "DEPLOY_ENV: ${{ inputs.environment }}",
+            'if [[ "$DEPLOY_ENV" != "staging" ]]',
+            'pnpm exec wrangler deploy --env "$DEPLOY_ENV"',
+        )
+    )
+
+
 def main(root: Path) -> None:
     root_config = root / "wrangler.toml"
     staging_contract = root / "infra/staging/topology.json"
@@ -156,10 +168,11 @@ def main(root: Path) -> None:
         "receiver typecheck": "pnpm run typecheck",
         "receiver lifecycle test": "pnpm run test",
         "terminal race test": "python3 scripts/test_b072_terminal_race.py",
-        "staging deploy": 'pnpm exec wrangler deploy --env "${{ inputs.environment }}"',
     }.items():
         if fragment not in deploy_source:
             fail(f"missing {label}")
+    if not _has_staging_deploy(deploy_source):
+        fail("missing staging deploy")
 
     print("B-072 receiver/schedule guard: PASS")
 

@@ -2,9 +2,13 @@
 
 from pathlib import Path
 import subprocess
+import sys
 
 
 ROOT = Path(__file__).parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from verify_b072_receiver import _has_staging_deploy  # noqa: E402
 
 
 def _workflow(name: str) -> str:
@@ -53,6 +57,12 @@ def test_residual_workflow_shells_do_not_interpolate_github_expressions() -> Non
 
     secrets = _workflow("secrets-drift.yml")
     assert "json.dump(manifest, sys.stdout," in secrets
+
+
+def test_b072_verifier_accepts_only_env_bound_staging_deploy() -> None:
+    source = _workflow("synthetic-pager-worker-deploy.yml")
+    assert _has_staging_deploy(source)
+    assert not _has_staging_deploy(source.replace('!= "staging"', '!= "production"'))
 
 
 def test_dispatch_values_are_env_bound_before_shell_use() -> None:
