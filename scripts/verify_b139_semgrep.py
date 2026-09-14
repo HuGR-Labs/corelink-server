@@ -36,6 +36,9 @@ CUSTOM = (
     "corelink.rust.prop-assert-matches-struct-variant",
     "corelink.rust.no-expect-in-byok-src",
 )
+SUPPRESSION_RULE = "yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout"
+_RULE_ROOT = "%B139_ROOT_2%"
+_URI_ROOT = "%B139_ROOT_3%"
 LEGACY_LEVELS = ("error", "warning", "note", "none")
 REQUIRED_POLICY_KEYS = {
     "schema_version",
@@ -124,6 +127,9 @@ def _check_policy(policy: dict[str, Any]) -> None:
         raise VerificationError("SARIF upload categories changed")
     if "unavailable_or_unverified" not in str(sarif.get("advanced_security_unavailable", "")):
         raise VerificationError("SARIF upload limitation is not explicit")
+    suppression = rule_policy.get("suppression")
+    if not isinstance(suppression, str) or "approved_suppression_sites" not in suppression:
+        raise VerificationError("suppression policy does not require the guard")
 
 
 def check_static(
@@ -164,13 +170,78 @@ def check_static(
     return {"custom_rules": len(CUSTOM), "bundled_rulesets": len(BUNDLED)}
 
 
-def _sarif_counts(path: Path, *, custom: bool) -> tuple[dict[str, int], int]:
+def _approved_sites() -> set[tuple[str, int, str]]:
+    """Run the PR-target guard and return its tree-derived suppression allowlist."""
+    try:
+        from verify_b139_prtarget_data_boundary import approved_suppression_sites
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise VerificationError("PR-target suppression guard is unavailable") from exc
+    try:
+        sites = approved_suppression_sites(ROOT)
+    except Exception as exc:  # guard failures are fail-closed, regardless of guard exception type
+        raise VerificationError(f"PR-target suppression guard failed: {exc}") from exc
+    if not isinstance(sites, set) or len(sites) != 9 or any(
+        not isinstance(site, tuple)
+        or len(site) != 3
+        or not isinstance(site[0], str)
+        or not isinstance(site[1], int)
+        or isinstance(site[1], bool)
+        or site[1] < 1
+        or site[2] != SUPPRESSION_RULE
+        for site in sites
+    ):
+        raise VerificationError("PR-target suppression guard returned malformed sites")
+    return sites
+
+
+def _normalized_rule(rule_id: str) -> str:
+    root_prefix = str(ROOT).replace("\\", "/") + "."
+    if rule_id.startswith(_RULE_ROOT + "."):
+        return rule_id[len(_RULE_ROOT) + 1 :]
+    if rule_id.startswith(root_prefix):
+        return rule_id[len(root_prefix) :]
+    raise VerificationError(f"SARIF ruleId has unsupported prefix: {rule_id!r}")
+
+
+def _suppression_site(result: dict[str, Any], path: Path) -> tuple[str, int, str]:
+    if result.get("suppressions") != [{"kind": "inSource"}]:
+        raise VerificationError(f"{path} has unsupported or malformed suppression")
+    rule = _normalized_rule(result["ruleId"])
+    if rule != SUPPRESSION_RULE:
+        raise VerificationError(f"{path} has suppression for unsupported rule {rule!r}")
+    locations = result.get("locations")
+    if not isinstance(locations, list) or len(locations) != 1 or not isinstance(locations[0], dict):
+        raise VerificationError(f"{path} has malformed suppressed location")
+    physical = locations[0].get("physicalLocation")
+    if not isinstance(physical, dict):
+        raise VerificationError(f"{path} has malformed suppressed physical location")
+    artifact = physical.get("artifactLocation")
+    region = physical.get("region")
+    if not isinstance(artifact, dict) or not isinstance(region, dict) or not isinstance(artifact.get("uri"), str):
+        raise VerificationError(f"{path} has malformed suppressed location fields")
+    uri = artifact["uri"].replace("\\", "/")
+    root_prefix = str(ROOT).replace("\\", "/").rstrip("/") + "/"
+    if uri.startswith(_URI_ROOT + "/"):
+        uri = uri[len(_URI_ROOT) + 1 :]
+    elif uri.startswith(root_prefix):
+        uri = uri[len(root_prefix) :]
+    elif uri.startswith("/") or uri.startswith("../") or "/../" in uri:
+        raise VerificationError(f"{path} has non-repository suppression URI")
+    line = region.get("startLine")
+    if not isinstance(line, int) or isinstance(line, bool) or line < 1:
+        raise VerificationError(f"{path} has malformed suppressed line")
+    return (uri, line, rule)
+
+
+def _sarif_counts(path: Path, *, custom: bool, approved: set[tuple[str, int, str]]) -> tuple[dict[str, int], int, int, set[tuple[str, int, str]]]:
     data = _load_json(path)
     runs = data.get("runs")
     if not isinstance(runs, list) or not runs:
         raise VerificationError(f"{path} has no SARIF runs")
     counts = {level: 0 for level in LEGACY_LEVELS}
     results_seen = 0
+    suppressed_seen = 0
+    suppressed_sites: set[tuple[str, int, str]] = set()
     for run in runs:
         if not isinstance(run, dict) or not isinstance(run.get("results"), list):
             raise VerificationError(f"{path} has malformed SARIF run")
@@ -181,12 +252,18 @@ def _sarif_counts(path: Path, *, custom: bool) -> tuple[dict[str, int], int]:
             if is_custom != custom:
                 expected = "custom CoreLink" if custom else "bundled"
                 raise VerificationError(f"{path} mixes a non-{expected} rule result")
-            level = result.get("level", "warning")
+            level = result.get("level", "error")
             if level not in counts:
                 raise VerificationError(f"{path} has unsupported SARIF level {level!r}")
             counts[level] += 1
             results_seen += 1
-    return counts, results_seen
+            if result.get("suppressions") is not None:
+                site = _suppression_site(result, path)
+                if site not in approved:
+                    raise VerificationError(f"{path} contains unapproved suppression site {site!r}")
+                suppressed_seen += 1
+                suppressed_sites.add(site)
+    return counts, results_seen, suppressed_seen, suppressed_sites
 
 
 def evaluate(
@@ -196,9 +273,13 @@ def evaluate(
     bundled_rc: int,
     custom_rc: int,
 ) -> int:
-    bundled_counts, bundled_results = _sarif_counts(bundled_sarif, custom=False)
-    custom_counts, custom_results = _sarif_counts(custom_sarif, custom=True)
+    approved = _approved_sites()
+    bundled_counts, bundled_results, bundled_suppressed, bundled_sites = _sarif_counts(bundled_sarif, custom=False, approved=approved)
+    custom_counts, custom_results, custom_suppressed, custom_sites = _sarif_counts(custom_sarif, custom=True, approved=approved)
+    if bundled_suppressed + custom_suppressed != len(approved) or bundled_sites | custom_sites != approved:
+        raise VerificationError("suppressed SARIF sites do not exactly match approved tree sites")
     error_findings = bundled_counts["error"] + custom_counts["error"]
+    unsuppressed_errors = error_findings - bundled_suppressed - custom_suppressed
     scanner_error = bool(bundled_rc or custom_rc)
     report_data = {
         "schema_version": 1,
@@ -206,12 +287,13 @@ def evaluate(
         "status": "evaluated",
         "captured_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "scanner_exit_codes": {"bundled": bundled_rc, "custom": custom_rc},
-        "bundled": {"results": bundled_results, "levels": bundled_counts},
-        "custom": {"results": custom_results, "levels": custom_counts},
+        "bundled": {"results": bundled_results, "levels": bundled_counts, "approved_suppressed": bundled_suppressed},
+        "custom": {"results": custom_results, "levels": custom_counts, "approved_suppressed": custom_suppressed},
         "blocking": {
             "explicit_error_findings": error_findings,
+            "unsuppressed_error_findings": unsuppressed_errors,
             "scanner_error": scanner_error,
-            "verdict": "FAIL" if error_findings or scanner_error else "PASS",
+            "verdict": "FAIL" if unsuppressed_errors or scanner_error else "PASS",
         },
         "sarif_upload": {
             "bundled": "pending-upload-step",
@@ -228,7 +310,7 @@ def evaluate(
     report.write_text(json.dumps(report_data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if bundled_rc or custom_rc:
         return 1
-    return 1 if error_findings else 0
+    return 1 if unsuppressed_errors else 0
 
 
 def mutation_self_test() -> int:

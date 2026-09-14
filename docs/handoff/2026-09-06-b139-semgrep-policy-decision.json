@@ -20,7 +20,7 @@
     "blocking_condition": "A finding blocks only when its SARIF level is error, or when the Semgrep process exits nonzero for an execution or output error.",
     "bundled_findings": "Bundled findings are counted separately by SARIF level; warning, note, and none are retained and reported but do not block.",
     "custom_findings": "CoreLink rules declare metadata policy explicit-error and severity ERROR; an unsuppressed custom finding at level error blocks.",
-    "suppression": "Custom suppressions remain subject to the runbook nosemgrep reason and ADR convention; this policy does not broaden exclusions.",
+    "suppression": "In-source suppressions are accepted only after approved_suppression_sites(root) passes and the nine returned (repo-relative URI, uses-line, rule-id) coordinates are matched exactly; raw ERROR counts remain retained and approved-suppressed counts are reported separately.",
     "fail_closed": true,
     "semgrep_error_flag": "not used; the evaluator applies the explicit SARIF ERROR policy and preserves nonzero scanner failures"
   },
