@@ -93,9 +93,11 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-          # A GITHUB_TOKEN push suppresses the pull_request event.  This
-          # dedicated owner-provisioned credential makes the auto-PR a normal
-          # external event, so its required checks are created.
+          # A GITHUB_TOKEN branch push does not trigger push workflows; PR
+          # opened/synchronize/reopened events can instead produce
+          # approval-required runs. Once provisioned, the dedicated token
+          # here and at PR creation supports unattended CI; only executed jobs
+          # are evidence of actual coverage.
           token: ${{ secrets.BOT_PR_TOKEN }}
 
       - name: Regenerate public MDX

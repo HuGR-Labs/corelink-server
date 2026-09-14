@@ -24,6 +24,7 @@ Run:
 from __future__ import annotations
 
 import importlib.util
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -67,6 +68,9 @@ def fake_d1(
         if "FROM stripe_subscriptions" in sql:
             return list(subscriptions)
         if "GROUP BY event_type" in sql:
+            assert "MAX(CASE WHEN" in sql
+            assert "latest_canonical_ms" in sql
+            assert "latest_derived_ms" in sql
             return list(duplicate_event_types)
         if "invoice.payment_failed" in sql:
             return [{"canonical": payment_failed_count, "derived": derived}]
@@ -209,14 +213,27 @@ def test_cluster_fires_on_derived_scheme_alone(monkeypatch, configured):
 
 
 def test_duplicate_ingestion_is_flagged(monkeypatch, configured, capsys):
-    """A second live endpoint is itself the anomaly, and must be named as one."""
+    """Historical dual-scheme rows still fail, without asserting live status."""
+    disabled_at_ms = int(datetime(2026, 8, 3, tzinfo=timezone.utc).timestamp() * 1000)
     monkeypatch.setattr(
         mod,
         "d1_query",
         fake_d1(
             duplicate_event_types=[
-                {"event_type": "invoice.payment_failed", "canonical": 2, "derived": 2},
-                {"event_type": "customer.subscription.updated", "canonical": 2, "derived": 5},
+                {
+                    "event_type": "invoice.payment_failed",
+                    "canonical": 2,
+                    "derived": 2,
+                    "latest_canonical_ms": disabled_at_ms,
+                    "latest_derived_ms": disabled_at_ms,
+                },
+                {
+                    "event_type": "customer.subscription.updated",
+                    "canonical": 2,
+                    "derived": 5,
+                    "latest_canonical_ms": disabled_at_ms,
+                    "latest_derived_ms": disabled_at_ms,
+                },
             ]
         ),
     )
@@ -225,6 +242,10 @@ def test_duplicate_ingestion_is_flagged(monkeypatch, configured, capsys):
     assert "BOTH id schemes" in out
     assert "invoice.payment_failed" in out
     assert "customer.subscription.updated" in out
+    assert "latest derived 2026-08-03T00:00:00Z" in out
+    assert "not proof of the same delivery or of two currently enabled destinations" in out
+    assert "a second live Stripe endpoint" not in out
+    assert "retire only a confirmed redundant destination" in out
 
 
 def test_single_scheme_is_not_reported_as_duplicate(monkeypatch, configured):

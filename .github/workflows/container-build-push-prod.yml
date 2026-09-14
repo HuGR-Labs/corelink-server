@@ -49,8 +49,10 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
     steps:
       - name: Confirm intent
+        env:
+          CONFIRM_INPUT: ${{ inputs.confirm }}
         run: |
-          if [ "${{ inputs.confirm }}" != "build" ]; then
+          if [ "$CONFIRM_INPUT" != "build" ]; then
             echo "::error::Type 'build' in the confirm input to proceed."; exit 1
           fi
 

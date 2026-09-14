@@ -37,23 +37,25 @@
       "status": "open",
       "action_type": "github_app_or_fine_grained_pat",
       "procedure": [
-        "UI: In GitHub account settings, create a dedicated GitHub App or fine-grained PAT for bot-created PRs, restricted to HuGR-Labs/corelink-server and only contents:write plus pull_requests:write.",
-        "RUN: Store the credential as the dedicated repository secret BOT_PR_TOKEN using gh secret set BOT_PR_TOKEN --repo HuGR-Labs/corelink-server --body-stdin; provide the value through stdin, never a command argument.",
-        "UI: Have the bot open one harmless test PR, then record the PR check-run URLs and conclusions in the canonical evidence file."
+        "UI: Check for an existing approved dedicated credential before minting. For the five active PR creators already wired to BOT_PR_TOKEN, the smallest path is a fine-grained PAT restricted to HuGR-Labs/corelink-server with contents:write and pull_requests:write. A GitHub App is an alternative only after per-job installation-token minting is wired; its one-hour token must not be stored as a long-lived repository secret.",
+        "RUN: For the PAT path, store only the dedicated credential as repository secret BOT_PR_TOKEN using gh secret set BOT_PR_TOKEN --repo HuGR-Labs/corelink-server --body-stdin; provide the value through stdin, never a command argument. Confirm the five creators consume BOT_PR_TOKEN and fail closed when it is absent.",
+        "UI: Before a test PR, separately confirm Actions can create jobs and an online runner labelled corelink can execute them. A PAT cannot repair workflow startup_failure, a hosted-billing block, or missing corelink runner capacity; the macOS corelink-builder label does not match corelink.",
+        "UI: Have one creator open a harmless test PR only after those checks. GitHub may create approval-required pull_request runs for PRs opened with GITHUB_TOKEN; an owner may approve those runs, but automatic unapproved CI requires the dedicated PAT or a freshly minted App installation token. Dependabot PRs can trigger workflows independently and must not be classified as GITHUB_TOKEN-suppressed by author alone.",
+        "RUN: Record the PR, expected workflow run and job URLs, approval state, conclusions, and runner names in the canonical evidence file; no pending approval, startup_failure, zero-job run, or unrelated green workflow proves B-012 complete."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["GitHub owner authentication", "HuGR-Labs/corelink-server repository", "dedicated bot identity", "least-privilege permissions"],
-        "credentials": "The owner mints the PAT/App credential and GitHub stores it as a write-only Actions secret; no release token or credential value belongs in git, logs, or evidence."
+        "inputs": ["GitHub owner authentication", "HuGR-Labs/corelink-server repository", "dedicated bot identity", "least-privilege permissions", "working Actions job startup", "online corelink runner"],
+        "credentials": "The owner mints a dedicated PAT for existing BOT_PR_TOKEN wiring, or separately approves App ID/private-key storage and per-job token minting. No release token, expired App installation token, or credential value belongs in git, logs, or evidence. The runner slot census needs separate administration:read plus actions:read authorization; the bot-PR credential permissions do not grant it."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-012/bot-pr-checks.json",
         "format": "json",
         "required_fields": ["schema_version", "captured_at", "repository", "bot_identity", "credential_kind", "pr_number", "workflow_runs", "all_required_checks_observed", "reviewer"],
-        "item_schema": "workflow_runs[] entries contain run_id, workflow, url, conclusion, started_at, completed_at; credential_kind is app or fine_grained_pat and never contains a secret."
+        "item_schema": "workflow_runs[] entries contain run_id, workflow, url, approval_state, job_count, job_urls, runner_names, conclusion, started_at, completed_at; credential_kind is app or fine_grained_pat and never contains a secret. A present workflow run with zero jobs or pending approval is not execution evidence."
       },
-      "expected_postcondition": "A bot-created PR receives the repository’s expected checks and the evidence names the observed runs; B-012 remains open until the owner records closure.",
-      "retry_and_rollback": "Before minting, inspect existing dedicated credentials to avoid duplicates. Retry secret storage with the same credential if the API call fails. Roll back by deleting only the newly created credential and BOT_PR_TOKEN after disabling bot use; preserve release credentials and the test PR evidence.",
-      "references": ["BACKLOG.md#B-012", ".github/workflows/backlog-verify.yml"]
+      "expected_postcondition": "A bot-created PR receives the expected checks with actual jobs completed on viable runners and no approval pending; the evidence names each observed run and job. B-012 remains open until the owner records closure.",
+      "retry_and_rollback": "First inspect existing dedicated credentials to avoid duplicates. Retry PAT secret storage with the same credential if the API call fails; do not store a short-lived App installation token for reuse. If job startup or runner capacity is blocked, defer the test without claiming token failure or success. Roll back by deleting only the newly created credential and BOT_PR_TOKEN after disabling bot use; preserve release credentials and test PR evidence.",
+      "references": ["BACKLOG.md#B-012", ".github/workflows/backlog-verify.yml", ".github/workflows/bot-pr-has-checks.yml", ".github/workflows/runner-fleet-health.yml"]
     },
     {
       "id": "B-013",
@@ -133,21 +135,21 @@
       "status": "open",
       "action_type": "stripe_webhook_endpoint_retirement",
       "procedure": [
-        "UI: In Stripe Developers → Webhooks, identify the redundant endpoint using the duplicate event evidence; confirm the retained Corelink production endpoint remains the signup-worker destination.",
-        "UI: Disable/retire only the redundant endpoint after checking its endpoint ID and event coverage; do not rotate or expose webhook signing secrets.",
-        "RUN: Preserve the endpoint IDs and timestamps, then observe billing-health-daily for three consecutive successful executions."
+        "UI: With authorized live Stripe access, enumerate both paginated v1 webhook endpoints and v2 event destinations; record IDs, URL, status, event coverage and last delivery time without secrets or payloads. The 30-day dual-ID detector alone does not prove current duplicate destinations.",
+        "UI: Preserve the signup-worker endpoint we_1Tolig… and the separate Corelink prd container endpoint we_1Tfh8…. If a distinct redundant destination is confirmed active, obtain the owner's explicit decision and disable only that exact ID; if already disabled, do not mutate Stripe.",
+        "RUN: Preserve the current endpoint IDs/statuses and timestamps, correlate deliveries where needed, then observe billing-health-daily for three consecutive successful executions."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["Stripe account", "endpoint list including v1/v2 destinations", "duplicate event types from billing-health-daily", "retained signup-worker URL"],
-        "credentials": "Owner’s authenticated Stripe dashboard is required. Webhook signing secrets are never exported, logged, or placed in evidence."
+        "inputs": ["Stripe account", "paginated endpoint list including v1/v2 destinations", "dual-scheme event types and latest timestamps from billing-health-daily", "signup-worker and Corelink prd container URLs"],
+        "credentials": "An authorized live Stripe dashboard session or scoped read credential for both v1 and v2 destinations is required for inventory; disabling any active destination requires the owner's explicit decision. Webhook signing secrets are never exported, logged, or placed in evidence."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-065/stripe-endpoint-retirement.json",
         "format": "json",
-        "required_fields": ["schema_version", "captured_at", "account", "retired_endpoint_id", "retained_endpoint_id", "retired_at", "billing_health_runs", "duplicate_events_resolved", "operator"],
-        "item_schema": "billing_health_runs[] contains run_id, completed_at, anomaly_count, and conclusion; endpoint URLs are redacted to host/path and secrets are forbidden."
+        "required_fields": ["schema_version", "captured_at", "account", "destination_inventory", "retained_endpoint_ids", "resolution", "billing_health_runs", "duplicate_events_resolved", "operator"],
+        "item_schema": "destination_inventory[] contains api_version (v1 or v2), endpoint_id, URL host/path, status, event_types, and observed_at; retained_endpoint_ids contains separate signup_worker and corelink_prd_container IDs. resolution contains mode (observed_disabled or disabled_now), endpoint_id, status_before, status_after, observed_at, mutation_performed, and owner_authorization; disabled_at is required only for disabled_now and optional when historically observed_disabled. Legacy retired_endpoint_id, retained_endpoint_id, and retired_at may be included as aliases but never replace the typed resolution or either retained ID. billing_health_runs[] contains run_id, completed_at, anomaly_count, and conclusion; endpoint URLs are redacted to host/path and secrets are forbidden."
       },
-      "expected_postcondition": "The redundant endpoint is disabled, the retained endpoint is unchanged, and billing-health-daily passes three consecutive times; B-065 remains open until the owner records closure.",
+      "expected_postcondition": "Any confirmed redundant active destination is disabled, both legitimate signup-worker and Corelink prd container destinations are unchanged, and billing-health-daily passes three consecutive times; if the redundant destination was already disabled, record that without another mutation. B-065 remains open until evidence proves closure.",
       "retry_and_rollback": "Before retrying, reload the endpoint list and stop if the target is already disabled or IDs changed. Do not re-enable an endpoint after duplicate processing without a new owner decision; if an accidental enable occurs, disable it again and record the incident.",
       "references": ["BACKLOG.md#B-065", "scripts/check_billing_health.py", ".github/workflows/billing-health-daily.yml"]
     },
@@ -157,7 +159,7 @@
       "status": "open",
       "action_type": "residency_amendment_signature",
       "procedure": [
-        "UI: Have counsel choose whether to provision jurisdictional D1 or amend the executed residency instrument to disclose the single global D1; the packet does not choose the commercial/legal path.",
+        "UI: Have counsel choose whether to provision jurisdictional D1 or review/execute a residency amendment disclosing the single global D1. The current legal/dpa-residency-amendment.md is a pending legal-review template, not an executed instrument; the packet does not choose the commercial/legal path.",
         "RUN: Reconcile the chosen path against all five production wrangler environments and the DPA residency amendment, without changing production bindings in this action packet.",
         "UI: Execute the amendment or Cloudflare account change through the owner’s authenticated legal/provider workflow and record the effective date and counterparty/reference."
       ],
@@ -171,7 +173,7 @@
         "required_fields": ["schema_version", "captured_at", "decision", "production_bindings", "distinct_database_ids", "dpa_status", "effective_at", "signed_document_sha256_or_provider_case", "reviewer"],
         "item_schema": "decision is jurisdictional_d1, legal_amendment, or unresolved; production_bindings[] contains env, binding, database_id, and residency_claim; unresolved requires an explicit owner reason."
       },
-      "expected_postcondition": "The D1 deployment and executed residency claim agree, with an owner/counsel or provider artifact proving the chosen path; B-086 remains open until that decision is executed.",
+      "expected_postcondition": "The D1 deployment and any subsequently executed residency claim agree, with an owner/counsel or provider artifact proving the chosen path; B-086 remains open until that decision is executed.",
       "retry_and_rollback": "Retry read-only inventory with the same account context. Do not rotate D1 IDs or amend signed text twice. Roll back an unexecuted draft by discarding it; a signed amendment requires a superseding legal instrument, and a provider change requires the provider’s documented reversal path.",
       "references": ["BACKLOG.md#B-086", "wrangler.toml", "legal/dpa-residency-amendment.md"]
     },
@@ -182,7 +184,7 @@
       "action_type": "sla_credit_legal_and_billing_authorization",
       "procedure": [
         "UI: Have counsel and Finance choose one coherent path: execute an SLA/Terms amendment removing or correcting automatic-credit promises, or authorize implementation of a real Stripe credit path covering all sold tiers.",
-        "RUN: Reconcile the chosen path against legal/sla/v1.0.0.md, apps/docs/src/pages/terms.tsx, apps/docs/src/lib/pricing.ts, and the billing implementation; do not claim code authorization from a signed draft.",
+        "RUN: Reconcile the chosen path against legal/sla/v1.0.0.md, apps/docs/src/pages/legal/terms.tsx, apps/docs/src/lib/pricing.ts, and the billing implementation; do not claim code authorization from a signed draft.",
         "UI: If automatic credits are authorized, record the owner’s spend limit, affected tiers, approval date, and release gate before enabling any billing mutation."
       ],
       "inputs_and_credentials_boundary": {
@@ -197,7 +199,7 @@
       },
       "expected_postcondition": "The executed remedy, published tier matrix, and live billing capability agree, with explicit owner financial/legal authority; B-089 remains open until completion.",
       "retry_and_rollback": "Retry legal review idempotently against the same document version. Never issue a duplicate credit or re-enable an unapproved billing path. Roll back an unlaunched change by disabling it; a signed contract or issued credit requires formal supersession/refund handling by counsel/Finance.",
-      "references": ["BACKLOG.md#B-089", "legal/sla/v1.0.0.md", "apps/docs/src/pages/terms.tsx", "apps/docs/src/lib/pricing.ts"]
+      "references": ["BACKLOG.md#B-089", "legal/sla/v1.0.0.md", "apps/docs/src/pages/legal/terms.tsx", "apps/docs/src/lib/pricing.ts"]
     },
     {
       "id": "B-097",
@@ -205,19 +207,19 @@
       "status": "open",
       "action_type": "cloudflare_account_quota_request",
       "procedure": [
-        "RUN: Capture the current Cloudflare account total_vcpu limit, cache/runners reservations, and concurrent active-tenant measurement without changing configuration.",
-        "UI: Open a Cloudflare support/quota case requesting the needed total_vcpu increase; include the five-region 0.25-vCPU cache allocation, four-vCPU runner allocation, current 1250/1500 reservation, and desired headroom.",
+        "RUN: Recapture the Cloudflare account total_vcpu limit and every application max_instances × vCPU; separately measure concurrent active tenants in production without changing configuration. Registered tenants and healthy/prewarmed instances are not that metric.",
+        "UI: Open or update one Cloudflare support/quota case requesting the needed total_vcpu increase; include the five-region 0.25-vCPU cache allocation (250), main four-vCPU runner allocation (1000), three other live app reservations (45), current declared 1295/1500, and desired headroom. Do not present this sum as provider usage or billable CPU.",
         "RUN: After Cloudflare responds, record the case ID, approved limit, effective time, and a fresh active-tenant measurement; do not treat a submitted case as an approved limit."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["Cloudflare account", "current total_vcpu limit", "wrangler.toml reservations", "production concurrent active tenants", "desired growth target"],
+        "inputs": ["Cloudflare account", "current total_vcpu limit", "live per-application max_instances and vCPU", "production concurrent active tenants", "desired growth target"],
         "credentials": "Owner’s Cloudflare support/account session and billing relationship are required; no API token is copied into the repository or evidence."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-097/cloudflare-vcpu-quota-case.json",
         "format": "json",
         "required_fields": ["schema_version", "captured_at", "account_id_redacted", "case_id", "requested_total_vcpu", "current_total_vcpu", "declared_reservation_vcpu", "active_tenants_concurrent", "provider_decision", "effective_at", "operator", "read_only_capture"],
-        "item_schema": "provider_decision is submitted, approved, denied, or pending; pending means no owner support case or provider decision was submitted. account identifiers are redacted and the artifact contains no API token. read_only_capture is a schema-validated aggregate-only preflight: it may confirm the provider limit, but must mark unavailable/stale active-tenant telemetry and an absent support case explicitly rather than inventing either."
+        "item_schema": "provider_decision is submitted, approved, denied, or pending; pending means no support case or provider decision is evidenced by this capture, not that none exists elsewhere. Account identifiers are redacted and the artifact contains no API token. read_only_capture records all live app ceilings and a D1 registered-tenant census separately from unavailable concurrent-active telemetry; it may confirm the provider limit but cannot infer usage or an approved quota from declared reservations."
       },
       "expected_postcondition": "A provider-approved quota or an owner-approved architecture change removes the measured growth dependency; B-097 remains open while the case is pending or denied.",
       "retry_and_rollback": "Retry by updating the same provider case with new measurements rather than opening duplicate cases. A rejected request has no configuration rollback; preserve the current safe limit and do not increase max_instances locally as a workaround.",
@@ -277,19 +279,19 @@
       "status": "open",
       "action_type": "executed_instrument_remediation",
       "procedure": [
-        "UI: For the DPA Object Lock statement, the SLA BYOK kill-switch statement, and the attributed case-study claim, have counsel/owner choose amendment, formal notice, or construction of the promised capability for each surface.",
-        "RUN: Reconcile the chosen decision against legal/dpa/v1.0.0.en-US.md, legal/sla/v1.0.0.md, crates/corelink-container/src/routes/byok_admin.rs, and marketing/launch/CASE-STUDIES/enterprise-byok.md; preserve executed bytes and do not silently edit them in place.",
+        "UI: For the effective DPA Object Lock and SLA BYOK kill-switch statements, have counsel/owner choose amendment, formal notice, or construction of the promised capability. The former case-study testimonial is withdrawn in the source draft; check whether any copy circulated before deciding on notice.",
+        "RUN: Reconcile the chosen decision against legal/dpa/v1.0.0.en-US.md, legal/sla/v1.0.0.md, the Dockerfile AWS-enabled BYOK build, the B-083 runtime receipt, and marketing/launch/CASE-STUDIES/enterprise-byok.md; compiled provider and /deactivate wiring do not establish customer CMK operation or kill-switch p99. Preserve executed bytes and do not silently edit them in place.",
         "UI: Execute any required addendum/notice or authorize the engineering and billing spend; record counterparties, signatures, and effective dates before claiming the instrument is truthful."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["executed DPA", "executed SLA", "BYOK runtime capability", "case-study attribution state", "counsel/owner remedy decision"],
+        "inputs": ["executed DPA", "executed SLA", "AWS-enabled BYOK build and B-083 unverified runtime/p99 receipt", "case-study attribution state", "counsel/owner remedy decision"],
         "credentials": "Owner/counsel signature, customer notice authority, or construction budget is external. This packet does not amend legal instruments, notify customers, or enable BYOK."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-154/executed-instrument-resolution.json",
         "format": "json",
         "required_fields": ["schema_version", "captured_at", "surfaces", "decisions", "signed_documents", "notices", "capability_evidence", "operator"],
-        "item_schema": "surfaces[] contains surface, original_claim, decision (amend, notify, build, or unresolved), effective_at, and evidence_reference; signed_documents[] contains version and sha256; unresolved decisions remain explicit."
+        "item_schema": "surfaces[] contains surface, original_claim, decision (amend, notify, build, or unresolved), effective_at, and evidence_reference; signed_documents[] contains version and sha256; unresolved decisions remain explicit. object_lock capability status follows the latest probe classification (INDETERMINATE on 2026-09-09); its historical_report separately records the 2026-08-25 reported NotImplemented result without treating that older report as the current probe. byok_kill_switch status UNVERIFIED_RUNTIME_P99 means AWS-enabled build and Shred route exist, but B-083 has no customer CMK lifecycle or p99 measurement."
       },
       "expected_postcondition": "Every unsupported executed/public claim has an evidenced legal remedy, notice, or delivered capability, while historical signed bytes remain auditable; B-154 remains open until owner completion.",
       "retry_and_rollback": "Retry only against the same document/version and counterpart record. Abandon unexecuted drafts safely; signed amendments/notices and deployed capabilities require formal supersession or the documented product rollback, never an unreviewed git revert.",

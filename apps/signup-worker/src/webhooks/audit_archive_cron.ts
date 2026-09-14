@@ -57,6 +57,8 @@ export interface AuditArchiveSweepResult {
   rowsArchived: number;
   chunksCreated: number;
   partitionsFailed: number;
+  /** Fixed, container-supplied classes only; never a raw provider error. */
+  failureCodes: readonly ArchiveFailureCode[];
   /** Rows ruled permanently unarchivable (a chain break; migration 0100). */
   rowsQuarantined: number;
   /** Partitions that contributed at least one quarantined row this sweep. */
@@ -73,9 +75,53 @@ interface AuditArchiveResponse {
   chunks_already_present: number;
   partitions_archived: number;
   partitions_failed: number;
+  failure_codes?: readonly ArchiveFailureCode[];
   rows_quarantined: number;
   partitions_quarantined: number;
   incomplete: boolean;
+}
+
+const ARCHIVE_FAILURE_CODES = [
+  "immutable_key_conflict",
+  "r2_conditional_put",
+  "r2_read",
+  "r2_consistency",
+  "d1_mark",
+  "d1_query",
+  "row_decode",
+  "epoch_evidence",
+  "candidate_invalid",
+  "unclassified",
+] as const;
+
+type ArchiveFailureCode = (typeof ARCHIVE_FAILURE_CODES)[number] | "unreported";
+
+function parseFailureCodes(
+  body: Record<string, unknown>,
+  partitionsFailed: number,
+): readonly ArchiveFailureCode[] | null {
+  const raw = body.failure_codes;
+  if (raw === undefined) {
+    // An older container can still report a failure without this diagnostic.
+    return partitionsFailed > 0 ? ["unreported"] : [];
+  }
+  if (
+    !Array.isArray(raw) ||
+    raw.length > ARCHIVE_FAILURE_CODES.length ||
+    raw.length > partitionsFailed ||
+    (partitionsFailed === 0 && raw.length !== 0) ||
+    (partitionsFailed > 0 && raw.length === 0)
+  ) {
+    return null;
+  }
+  const allowed = new Set<string>(ARCHIVE_FAILURE_CODES);
+  if (
+    raw.some((code: unknown) => typeof code !== "string" || !allowed.has(code)) ||
+    new Set(raw).size !== raw.length
+  ) {
+    return null;
+  }
+  return raw as ArchiveFailureCode[];
 }
 
 const ARCHIVE_COUNTER_FIELDS = [
@@ -111,7 +157,17 @@ function parseAuditArchiveResponse(value: unknown):
     }
   }
 
-  return { value: body as unknown as AuditArchiveResponse };
+  const failureCodes = parseFailureCodes(body, body.partitions_failed as number);
+  if (failureCodes === null) {
+    return { error: "invalid failure_codes" };
+  }
+
+  return {
+    value: {
+      ...(body as unknown as AuditArchiveResponse),
+      failure_codes: failureCodes,
+    },
+  };
 }
 
 /**
@@ -131,6 +187,7 @@ export async function runAuditArchiveSweep(
       rowsArchived: 0,
       chunksCreated: 0,
       partitionsFailed: 0,
+      failureCodes: [],
       rowsQuarantined: 0,
       partitionsQuarantined: 0,
       incomplete: false,
@@ -154,6 +211,7 @@ export async function runAuditArchiveSweep(
     let rowsArchived = 0;
     let chunksCreated = 0;
     let partitionsFailed = 0;
+    let failureCodes: readonly ArchiveFailureCode[] = [];
     let rowsQuarantined = 0;
     let partitionsQuarantined = 0;
     let incomplete = true;
@@ -170,6 +228,7 @@ export async function runAuditArchiveSweep(
         rowsArchived = j.rows_archived;
         chunksCreated = j.chunks_created;
         partitionsFailed = j.partitions_failed;
+        failureCodes = j.failure_codes ?? [];
         rowsQuarantined = j.rows_quarantined;
         partitionsQuarantined = j.partitions_quarantined;
         incomplete = j.incomplete;
@@ -186,27 +245,36 @@ export async function runAuditArchiveSweep(
       ok = false;
       incomplete = true;
     }
+    if (partitionsFailed > 0) {
+      // Older or inconsistent handlers may return 200 for partial failure.
+      // The count is authoritative; a successful HTTP envelope cannot clear it.
+      ok = false;
+      incomplete = true;
+    }
     return {
       ok,
       status: resp.status,
       rowsArchived,
       chunksCreated,
       partitionsFailed,
+      failureCodes,
       rowsQuarantined,
       partitionsQuarantined,
       incomplete,
       skipped: false,
     };
   } catch (err) {
-    console.error(
-      `[audit-archive-cron] archive call threw: ${(err as Error).message.slice(0, 120)}`,
-    );
+    // The thrown transport error is not an authenticated diagnostic and may
+    // contain a URL or provider text. Never print it into Worker logs.
+    void err;
+    console.error("[audit-archive-cron] archive call threw: transport error");
     return {
       ok: false,
       status: 0,
       rowsArchived: 0,
       chunksCreated: 0,
       partitionsFailed: 0,
+      failureCodes: [],
       rowsQuarantined: 0,
       partitionsQuarantined: 0,
       incomplete: false,

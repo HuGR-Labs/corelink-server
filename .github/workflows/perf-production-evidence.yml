@@ -228,10 +228,6 @@ jobs:
             --output "${RUNNER_TEMP}/corelink-performance-evidence.v2.json"
 
       - name: Verify canonical packet (fail closed; B-102..B-107 remain open)
-        env:
-          CORELINK_GH_BIN: ${{ runner.temp }}/corelink-gh/gh
-          GH_TOKEN: ${{ github.token }}
-          GH_HOST: github.com
         run: |
           set -eu
           unset GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GITHUB_TOKEN

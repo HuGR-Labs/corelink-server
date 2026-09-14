@@ -20,6 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKET = Path("docs/internal/b087-questionnaire-owner-actions.md")
+RESIDENCY_TEMPLATE = Path("legal/dpa-residency-amendment.md")
 EVIDENCE = (
     Path("reports/owner-actions/b170-legal-contract-review.md"),
     Path("reports/owner-actions/b170-pagerduty-export.json"),
@@ -30,6 +31,7 @@ PACKET_MARKERS = (
     "Operations' redacted",
     "`reports/owner-actions/b170-recipient-notification-decision.md` — Sales/Legal",
     "no notification is claimed here",
+    "executed DPA/SLA claims and the pending residency template",
     *tuple(path.as_posix() for path in EVIDENCE),
 )
 
@@ -86,6 +88,14 @@ def _packet_text(root: Path) -> str:
             "B-170 owner packet lost or duplicated canonical action markers: "
             + ", ".join(missing)
         )
+    template = _regular_text(root, RESIDENCY_TEMPLATE, "B-170 residency template")
+    front_matter = template.split("---", 2)
+    if (
+        len(front_matter) < 3
+        or 'doc_status: "PENDING_LEGAL_REVIEW"' not in front_matter[1]
+        or "NOT a finalised legal instrument" not in template
+    ):
+        raise PacketError("B-170 residency instrument status changed; re-evaluate owner packet")
     return text
 
 

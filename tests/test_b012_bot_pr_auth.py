@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.verify_bot_pr_auth import CREATOR_WORKFLOWS, verify
+from scripts.verify_bot_pr_auth import CREATOR_WORKFLOWS, verify, verify_b012_backlog
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +22,39 @@ class B012BotPrAuthTests(unittest.TestCase):
 
     def test_base_workflows_use_dedicated_token_and_gate(self):
         self.assertEqual(verify(ROOT), [])
+        self.assertEqual(verify_b012_backlog(ROOT), [])
+
+    def test_each_creator_comment_distinguishes_approval_from_execution(self):
+        for name in CREATOR_WORKFLOWS:
+            with self.subTest(workflow=name):
+                tmp, candidate = self._candidate()
+                self.addCleanup(tmp.cleanup)
+                path = candidate / ".github/workflows" / name
+                text = path.read_text(encoding="utf-8")
+                self.assertIn("approval-required", text)
+                path.write_text(
+                    text.replace("approval-required", "always suppressed", 1),
+                    encoding="utf-8",
+                )
+                self.assertTrue(
+                    any("approval-required/completed-job" in error and name in error
+                        for error in verify(candidate))
+                )
+
+    def test_backlog_rejects_old_zero_check_closure_claim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            candidate = Path(tmp)
+            text = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
+            self.assertIn("Check/status presence or a zero-job workflow run does not close it", text)
+            (candidate / "BACKLOG.md").write_text(
+                text.replace(
+                    "Check/status presence or a zero-job workflow run does not close it",
+                    "Check/status presence closes it",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            self.assertTrue(any("Check/status presence" in error for error in verify_b012_backlog(candidate)))
 
     def test_mutating_pr_step_back_to_github_token_is_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -79,6 +112,28 @@ class B012BotPrAuthTests(unittest.TestCase):
         )
         path.write_text(text, encoding="utf-8")
         self.assertTrue(any("gate missing marker" in e for e in verify(candidate)))
+
+    def test_check_presence_cannot_be_reported_as_success(self):
+        tmp, candidate = self._candidate()
+        self.addCleanup(tmp.cleanup)
+        path = candidate / ".github/workflows/bot-pr-has-checks.yml"
+        text = path.read_text(encoding="utf-8").replace(
+            'verdict = "present (not proof of success)"',
+            'verdict = "gated"',
+            1,
+        )
+        path.write_text(text, encoding="utf-8")
+        self.assertTrue(any("count-only verdict" in e for e in verify(candidate)))
+
+    def test_missing_approval_diagnostic_is_rejected(self):
+        tmp, candidate = self._candidate()
+        self.addCleanup(tmp.cleanup)
+        path = candidate / ".github/workflows/bot-pr-has-checks.yml"
+        text = path.read_text(encoding="utf-8").replace(
+            "Inspect the PR approval banner", "Inspect the PR page", 1
+        )
+        path.write_text(text, encoding="utf-8")
+        self.assertTrue(any("approval/startup diagnostic" in e for e in verify(candidate)))
 
 
 if __name__ == "__main__":

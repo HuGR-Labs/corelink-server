@@ -72,21 +72,31 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
-          # The branch push must use a non-Actions credential; otherwise the
-          # subsequent pull_request event is suppressed and no checks appear.
+          # GITHUB_TOKEN branch pushes suppress push workflows, while the PR
+          # opened/synchronize/reopened event can yield approval-required
+          # runs. Once provisioned, this token supports unattended CI; only
+          # completed jobs prove the generated PR was actually checked.
           token: ${{ secrets.BOT_PR_TOKEN }}
 
       - name: Resolve refs
         id: refs
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FROM_REF_INPUT: ${{ inputs.from_ref }}
+          TO_REF_INPUT: ${{ inputs.to_ref }}
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            FROM="${{ inputs.from_ref }}"
-            TO="${{ inputs.to_ref }}"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            FROM="$FROM_REF_INPUT"
+            TO="$TO_REF_INPUT"
             VERSION_FLAG=""
-            if [[ -n "${{ inputs.version }}" ]]; then
-              VERSION_FLAG="--version ${{ inputs.version }}"
+            git check-ref-format --allow-onelevel "refs/$FROM" || { echo "::error::invalid from_ref"; exit 1; }
+            git check-ref-format --allow-onelevel "refs/$TO" || { echo "::error::invalid to_ref"; exit 1; }
+            if [[ -n "$VERSION_INPUT" ]]; then
+              [[ "$VERSION_INPUT" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo "::error::invalid version"; exit 1; }
+              VERSION_FLAG="$VERSION_INPUT"
             fi
           else
             TAG="${GITHUB_REF##refs/tags/}"
@@ -101,7 +111,8 @@ jobs:
               PREV="$(git log --max-parents=0 --format=%H -1)"
             fi
             FROM="$PREV"
-            VERSION_FLAG="--version ${TAG#v}"
+            [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo "::error::invalid release tag"; exit 1; }
+            VERSION_FLAG="${TAG#v}"
           fi
           {
             echo "from=$FROM"
@@ -109,8 +120,8 @@ jobs:
             echo "version_flag=$VERSION_FLAG"
           } >> "$GITHUB_OUTPUT"
           # Resolve the version literal for output-path use.
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VLITERAL="${{ inputs.version }}"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            VLITERAL="$VERSION_INPUT"
             if [[ -z "$VLITERAL" ]]; then
               VLITERAL="$(git rev-parse --short "$TO")"
               VLITERAL="dev-$VLITERAL"
@@ -123,13 +134,17 @@ jobs:
       - name: Generate release notes
         id: gen
         shell: bash
+        env:
+          FROM_REF: ${{ steps.refs.outputs.from }}
+          TO_REF: ${{ steps.refs.outputs.to }}
+          VERSION_FLAG: ${{ steps.refs.outputs.version_flag }}
+          VERSION: ${{ steps.refs.outputs.version }}
         run: |
           set -euo pipefail
-          python3 scripts/generate-release-notes.py \
-            --from "${{ steps.refs.outputs.from }}" \
-            --to   "${{ steps.refs.outputs.to }}" \
-            ${{ steps.refs.outputs.version_flag }}
-          OUTPATH="releases/RELEASE-${{ steps.refs.outputs.version }}.md"
+          args=(--from "$FROM_REF" --to "$TO_REF")
+          if [[ -n "$VERSION_FLAG" ]]; then args+=(--version "$VERSION_FLAG"); fi
+          python3 scripts/generate-release-notes.py "${args[@]}"
+          OUTPATH="releases/RELEASE-${VERSION}.md"
           if [[ ! -f "$OUTPATH" ]]; then
             echo "error: expected $OUTPATH not produced" >&2
             exit 1
@@ -151,6 +166,8 @@ jobs:
           BOT_PR_TOKEN: ${{ secrets.BOT_PR_TOKEN }}
           NOTES_PATH: ${{ steps.gen.outputs.outpath }}
           VERSION: ${{ steps.refs.outputs.version }}
+          FROM_REF: ${{ steps.refs.outputs.from }}
+          TO_REF: ${{ steps.refs.outputs.to }}
         run: |
           set -euo pipefail
           : "${BOT_PR_TOKEN:?BOT_PR_TOKEN must be configured before opening an auto-PR}"
@@ -164,7 +181,7 @@ jobs:
           git commit -m "docs(release): auto-generated notes for v${VERSION}
 
           Trigger:    tag push (${GITHUB_REF})
-          From/To:    ${{ steps.refs.outputs.from }}..${{ steps.refs.outputs.to }}
+          From/To:    ${FROM_REF}..${TO_REF}
           Generator:  scripts/generate-release-notes.py
           Editorial:  marketing/launch/RELEASE-NOTES-EDITORIAL-GUIDE.md
 

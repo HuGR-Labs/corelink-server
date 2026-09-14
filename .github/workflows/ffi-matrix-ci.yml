@@ -281,22 +281,39 @@ jobs:
           key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        run: |
+          set -euo pipefail
+          WASM_PACK_VERSION=0.15.0
+          WASM_PACK_SHA256=c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a
+          WASM_PACK_DIR="$RUNNER_TEMP/wasm-pack-$WASM_PACK_VERSION"
+          WASM_PACK_ARCHIVE="$RUNNER_TEMP/wasm-pack-$WASM_PACK_VERSION.tar.gz"
+          mkdir -p "$WASM_PACK_DIR/bin"
+          curl -fsSL --retry 3 -o "$WASM_PACK_ARCHIVE" \
+            "https://github.com/wasm-bindgen/wasm-pack/releases/download/v${WASM_PACK_VERSION}/wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          printf '%s  %s\n' "$WASM_PACK_SHA256" "$WASM_PACK_ARCHIVE" | sha256sum -c -
+          tar -xzf "$WASM_PACK_ARCHIVE" -C "$WASM_PACK_DIR" --strip-components=1
+          install -m 0755 "$WASM_PACK_DIR/wasm-pack" "$WASM_PACK_DIR/bin/wasm-pack"
+          printf '%s\n' "$WASM_PACK_DIR/bin" >> "$GITHUB_PATH"
+          "$WASM_PACK_DIR/bin/wasm-pack" --version
 
       - name: Install wasm-opt (recent binaryen)
         # Ubuntu's apt `binaryen` is too old to validate the reference-types /
         # multivalue wasm that rust 1.91 + wasm-bindgen now emit by default
-        # ("Fatal: error validating input" → wasm-pack build fails). Install the
-        # latest official binaryen release into /usr/local (ahead of /usr/bin).
+        # ("Fatal: error validating input" → wasm-pack build fails). Install a
+        # pinned official Binaryen release in the runner-private temp directory.
         run: |
           set -euo pipefail
-          TAG=$(curl -fsSL https://api.github.com/repos/WebAssembly/binaryen/releases/latest \
-            | grep -m1 -oE '"tag_name":[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)"$/\1/')
-          TAG=${TAG%%$'\n'*}
-          echo "binaryen ${TAG}"
-          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/${TAG}/binaryen-${TAG}-x86_64-linux.tar.gz" \
-            | sudo tar xz -C /usr/local --strip-components=1
-          wasm-opt --version
+          BINARYEN_VERSION=132
+          BINARYEN_SHA256=195ddc94f9bc89f45abdabb0b9eea86023d727ba90eac8b35b80f2544fc30572
+          BINARYEN_DIR="$RUNNER_TEMP/binaryen-version_$BINARYEN_VERSION"
+          BINARYEN_ARCHIVE="$RUNNER_TEMP/binaryen-version_$BINARYEN_VERSION-x86_64-linux.tar.gz"
+          mkdir -p "$BINARYEN_DIR"
+          curl -fsSL --retry 3 -o "$BINARYEN_ARCHIVE" \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          printf '%s  %s\n' "$BINARYEN_SHA256" "$BINARYEN_ARCHIVE" | sha256sum -c -
+          tar -xzf "$BINARYEN_ARCHIVE" -C "$BINARYEN_DIR" --strip-components=1
+          printf '%s/bin\n' "$BINARYEN_DIR" >> "$GITHUB_PATH"
+          "$BINARYEN_DIR/bin/wasm-opt" --version
 
       - name: wasm-pack build (release)
         working-directory: crates/corelink-wasm

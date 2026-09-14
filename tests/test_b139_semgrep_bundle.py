@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import gzip
+import shutil
 import stat
 import subprocess
 import sys
@@ -17,8 +19,11 @@ import run_b139_semgrep as bundle_runner  # noqa: E402
 from run_b139_semgrep import OUTPUT_NAMES, run_bundle  # noqa: E402
 from verify_b139_semgrep import (  # noqa: E402
     VerificationError,
+    _sarif_counts,
     classify_uploads,
+    CUSTOM_POLICY,
     enforce_report,
+    evaluate,
 )
 
 
@@ -38,20 +43,53 @@ custom = configs == ["./semgrep.yml"]
 population = "CUSTOM" if custom else "BUNDLED"
 level = os.environ.get(f"FAKE_{population}_LEVEL", "warning")
 count = int(os.environ.get(f"FAKE_{population}_COUNT", "1"))
-prefix = "corelink.test." if custom else "python.test."
+custom_rule = "corelink.rust.no-tokio-in-lib-crates" if level == "error" else "corelink.rust.no-unwrap-in-src"
+if custom:
+    bundled_rules = []
+else:
+    # Semgrep uses a dotted config path when it cannot resolve a stable rule ID.
+    # The temporary parent is intentionally different on every invocation.
+    rules_prefix = str(Path(configs[0]).parent).lstrip("/").replace("/", ".")
+    bundled_rules = [
+        {"id": (f"{rules_prefix}.{Path(config).name}.fixture-rule-{index}"
+                 if index == 0 else f"fixture-rule-{index}"),
+         "name": f"{rules_prefix}.{Path(config).name}.fixture-rule-{index}",
+         "shortDescription": {"text": f"{rules_prefix}.{Path(config).name}.fixture-rule-{index}"},
+         "defaultConfiguration": {"level": "warning"}}
+        for index, config in enumerate(configs)
+    ]
 results = [
     {
-        "ruleId": f"{prefix}{index}",
+        "ruleId": custom_rule if custom else bundled_rules[0]["id"],
         "level": level,
         "message": {"text": "controlled finding"},
         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "fixture.py"}}}],
+        "benign": "similar-corelink-b139-rules-text",
     }
     for index in reversed(range(count))
 ]
+notification_texts = (["similar-corelink-b139-rules-text"] if custom else [
+    f"Syntax error at line 1. When parsing expression in rule '{rules_prefix}.{Path(configs[0]).name}.notification'",
+    f"rule {rules_prefix}.{Path(configs[0]).name}.notification could not be loaded",
+    f"when running {rules_prefix}.{Path(configs[0]).name}.notification then rule {rules_prefix}.{Path(configs[0]).name}.again",
+    "unrelated context corelink-b139-rules-sentinel",
+    "similar-corelink-b139-rules-text",
+])
 sarif = {
     "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
     "version": "2.1.0",
-    "runs": [{"tool": {"driver": {"name": "fake-semgrep", "rules": []}}, "results": results}],
+    "runs": [{
+        "tool": {"driver": {"name": "fake-semgrep", "rules": bundled_rules if not custom else [
+            {"id": "corelink.rust.no-unwrap-in-src", "defaultConfiguration": {"level": "warning"}},
+            {"id": "corelink.rust.no-tokio-in-lib-crates", "defaultConfiguration": {"level": "error"}},
+            {"id": "corelink.rust.prop-assert-matches-struct-variant", "defaultConfiguration": {"level": "error"}},
+            {"id": "corelink.rust.no-expect-in-byok-src", "defaultConfiguration": {"level": "warning"}},
+        ] if custom else []}},
+        "results": results,
+        "invocations": [{"toolExecutionNotifications": [
+            {"message": {"text": text}} for text in notification_texts
+        ]}],
+    }],
 }
 output.write_text(json.dumps(sarif))
 raise SystemExit(int(os.environ.get(f"FAKE_{population}_RC", "0")))
@@ -68,28 +106,32 @@ def fake_semgrep(tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def locked_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    content_by_url = {
-        f"https://semgrep.dev/c/{name}": f"rules: [] # {name}\n".encode()
-        for name in bundle_runner.BUNDLED
-    }
+    snapshot_dir = tmp_path / "semgrep-rulesets"
+    snapshot_dir.mkdir()
+    source_dir = ROOT / "semgrep-rulesets"
     lock = {
         "schema_version": 1,
         "semgrep_version": "1.164.0",
+        "captured_at": "2026-09-13T21:20:43Z",
+        "provenance": "fixture diagnostic capture",
+        "snapshot_dir": "semgrep-rulesets",
         "rulesets": [
             {
                 "name": name,
                 "url": f"https://semgrep.dev/c/{name}",
-                "sha256": hashlib.sha256(
-                    content_by_url[f"https://semgrep.dev/c/{name}"]
-                ).hexdigest(),
+                "snapshot": f"{index:02d}-{name.removeprefix('p/')}.yml.gz",
+                "size_bytes": len(gzip.open(source_dir / f"{index:02d}-{name.removeprefix('p/')}.yml.gz", "rb").read()),
+                "sha256": hashlib.sha256(gzip.open(source_dir / f"{index:02d}-{name.removeprefix('p/')}.yml.gz", "rb").read()).hexdigest(),
             }
-            for name in bundle_runner.BUNDLED
+            for index, name in enumerate(bundle_runner.BUNDLED)
         ],
     }
+    for source in source_dir.glob("*.yml.gz"):
+        shutil.copy2(source, snapshot_dir / source.name)
     lock_path = tmp_path / "semgrep-bundled-lock.json"
     lock_path.write_text(json.dumps(lock), encoding="utf-8")
     monkeypatch.setattr(bundle_runner, "LOCKFILE", lock_path)
-    monkeypatch.setattr(bundle_runner, "_download", content_by_url.__getitem__)
+    monkeypatch.setattr(bundle_runner, "ROOT", tmp_path)
 
 
 def _load(path: Path) -> dict[str, object]:
@@ -133,6 +175,18 @@ def test_complete_bundle_is_deterministic(fake_semgrep: Path, tmp_path: Path) ->
     assert set(path.name for path in output.iterdir()) == set(OUTPUT_NAMES.values())
     report = _load(output / OUTPUT_NAMES["report"])
     assert report["blocking"]["verdict"] == "PASS"  # type: ignore[index]
+    bundled_sarif = _load(output / OUTPUT_NAMES["bundled"])
+    serialized = json.dumps(bundled_sarif)
+    notifications = bundled_sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"]  # type: ignore[index]
+    benign = notifications[3]["message"]["text"]  # type: ignore[index]
+    assert benign == "unrelated context corelink-b139-rules-sentinel"
+    assert "%B139_ROOT_2%" not in benign
+    assert "corelink-b139-rules-" not in serialized.replace(benign, "").replace(
+        "similar-corelink-b139-rules-text", ""
+    )
+    assert "%B139_ROOT_2%.00-security-audit.yml.fixture-rule-" in serialized
+    assert "%B139_ROOT_2%.00-security-audit.yml.notification" in serialized
+    assert "similar-corelink-b139-rules-text" in serialized
 
 
 @pytest.mark.parametrize("population", ["BUNDLED", "CUSTOM"])
@@ -255,21 +309,55 @@ def test_output_symlink_is_rejected(fake_semgrep: Path, tmp_path: Path) -> None:
 def test_ruleset_content_mutation_is_rejected(
     fake_semgrep: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    original_fetch = bundle_runner._download
-
-    def changed_content(url: str) -> bytes:
-        content = original_fetch(url)
-        return (
-            content + b"# mutable registry response\n"
-            if url.endswith("security-audit")
-            else content
-        )
-
-    monkeypatch.setattr(bundle_runner, "_download", changed_content)
-    with pytest.raises(
-        VerificationError, match="ruleset digest mismatch: p/security-audit"
-    ):
+    snapshot = bundle_runner.ROOT / "semgrep-rulesets/00-security-audit.yml.gz"
+    snapshot.write_bytes(snapshot.read_bytes() + b"tamper")
+    with pytest.raises(VerificationError):
         run_bundle(fake_semgrep, tmp_path / "evidence", ROOT)
+
+
+def test_network_fetcher_is_not_called(fake_semgrep: Path, tmp_path: Path) -> None:
+    source = (ROOT / "scripts/run_b139_semgrep.py").read_text(encoding="utf-8")
+    assert "urllib" not in source
+    assert "urlopen" not in source
+    assert "_download" not in source
+    assert run_bundle(fake_semgrep, tmp_path / "evidence", ROOT) == 0
+
+
+@pytest.mark.parametrize("mutation", ["missing", "symlink", "size", "corrupt", "root-symlink"])
+def test_snapshot_files_fail_closed(fake_semgrep: Path, tmp_path: Path, mutation: str) -> None:
+    snapshot_dir = bundle_runner.ROOT / "semgrep-rulesets"
+    snapshot = snapshot_dir / "00-security-audit.yml.gz"
+    original = snapshot.read_bytes()
+    if mutation == "missing":
+        snapshot.unlink()
+    elif mutation == "symlink":
+        outside = tmp_path / "outside.yml.gz"
+        outside.write_bytes(original)
+        snapshot.unlink()
+        snapshot.symlink_to(outside)
+    elif mutation == "corrupt":
+        snapshot.write_bytes(b"not-gzip")
+    elif mutation == "size":
+        snapshot.write_bytes(original + b"x" * (bundle_runner.MAX_RULESET_BYTES + 1))
+    else:
+        snapshot_dir.rename(tmp_path / "snapshot-backup")
+        snapshot_dir.symlink_to(tmp_path / "snapshot-backup")
+    expected = "snapshot directory" if mutation == "root-symlink" else None
+    with pytest.raises(VerificationError, match=expected):
+        run_bundle(fake_semgrep, tmp_path / "evidence", ROOT)
+
+
+@pytest.mark.parametrize("field,value", [("semgrep_version", "1.163.0"), ("captured_at", "yesterday"), ("size_bytes", True)])
+def test_lock_metadata_fails_closed(tmp_path: Path, field: str, value: object) -> None:
+    lock = json.loads(bundle_runner.LOCKFILE.read_text(encoding="utf-8"))
+    if field == "size_bytes":
+        lock["rulesets"][0][field] = value
+    else:
+        lock[field] = value
+    path = tmp_path / "bad-lock.json"
+    path.write_text(json.dumps(lock), encoding="utf-8")
+    with pytest.raises(VerificationError):
+        bundle_runner._load_lock(path)
 
 
 def test_ruleset_order_mutation_is_rejected(tmp_path: Path) -> None:
@@ -370,3 +458,386 @@ def test_canonicalization_preserves_semantic_content_mutation(tmp_path: Path) ->
     bundle_runner._canonical_json(first, Path("/src"))
     bundle_runner._canonical_json(second, Path("/src"))
     assert first.read_bytes() != second.read_bytes()
+
+
+def _write_sarif(
+    path: Path,
+    rules: list[dict],
+    results: list[dict],
+    *,
+    invocations: list[dict] | None = None,
+) -> Path:
+    path.write_text(
+        json.dumps(
+            {
+                "version": "2.1.0",
+                "runs": [
+                    {
+                        "tool": {"driver": {"name": "Semgrep", "rules": rules}},
+                        "results": results,
+                        "invocations": [] if invocations is None else invocations,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_omitted_result_level_uses_rule_error_and_blocks(tmp_path: Path) -> None:
+    bundled = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example", "defaultConfiguration": {"level": "error"}}],
+        [{"ruleId": "python.example"}],
+    )
+    custom = _write_sarif(
+        tmp_path / "custom.sarif",
+        [
+            {"id": rule_id, "defaultConfiguration": {"level": severity[0].lower()}}
+            for rule_id, severity in CUSTOM_POLICY.items()
+        ],
+        [{"ruleId": "corelink.rust.no-tokio-in-lib-crates"}],
+    )
+    report = tmp_path / "report.json"
+    assert evaluate(bundled, custom, report, 0, 0) == 1
+    data = _load(report)
+    assert data["blocking"]["explicit_error_findings"] == 2  # type: ignore[index]
+    assert data["blocking"]["verdict"] == "FAIL"  # type: ignore[index]
+
+
+def test_explicit_result_level_overrides_rule_default(tmp_path: Path) -> None:
+    path = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example", "defaultConfiguration": {"level": "error"}}],
+        [{"ruleId": "python.example", "level": "warning"}],
+    )
+    counts, total = _sarif_counts(path, custom=False)
+    assert total == 1
+    assert counts["warning"] == 1
+    assert counts["error"] == 0
+
+
+def test_implicit_warning_only_without_explicit_or_rule_level(tmp_path: Path) -> None:
+    path = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example", "defaultConfiguration": {}}],
+        [{"ruleId": "python.example"}],
+    )
+    assert _sarif_counts(path, custom=False)[0]["warning"] == 1
+
+
+def test_index_only_rule_reference_and_suppressed_result_count(tmp_path: Path) -> None:
+    path = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example", "defaultConfiguration": {"level": "error"}}],
+        [{"ruleIndex": 0, "suppressions": [{"kind": "inSource"}]}],
+    )
+    assert _sarif_counts(path, custom=False)[0]["error"] == 1
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"ruleId": "python.example", "ruleIndex": -1},
+        {"ruleId": "python.example", "ruleIndex": True},
+        {"ruleId": "python.example", "ruleIndex": 1},
+        {"ruleId": "python.other", "ruleIndex": 0},
+        {"ruleId": "python.example", "rule": {"id": "python.other"}},
+        {"ruleId": "python.example", "ruleIndex": 0, "rule": {"index": 1}},
+    ],
+)
+def test_malformed_or_conflicting_rule_reference_fails_closed(
+    tmp_path: Path, result: dict
+) -> None:
+    path = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example", "defaultConfiguration": {"level": "error"}}],
+        [result],
+    )
+    with pytest.raises(VerificationError):
+        _sarif_counts(path, custom=False)
+
+
+def test_ambiguous_rule_id_fails_closed(tmp_path: Path) -> None:
+    path = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example"}, {"id": "python.example"}],
+        [{"ruleId": "python.example"}],
+    )
+    with pytest.raises(VerificationError, match="ambiguous"):
+        _sarif_counts(path, custom=False)
+
+
+def test_malformed_rule_severity_fails_closed(tmp_path: Path) -> None:
+    path = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example", "defaultConfiguration": {"level": "ERROR"}}],
+        [{"ruleId": "python.example"}],
+    )
+    with pytest.raises(VerificationError, match="unsupported SARIF level"):
+        _sarif_counts(path, custom=False)
+
+
+def test_custom_sarif_severity_must_match_calibrated_policy(tmp_path: Path) -> None:
+    path = _write_sarif(
+        tmp_path / "custom.sarif",
+        [
+            {
+                "id": "corelink.rust.no-unwrap-in-src",
+                "defaultConfiguration": {"level": "error"},
+            }
+        ],
+        [{"ruleId": "corelink.rust.no-unwrap-in-src"}],
+    )
+    with pytest.raises(VerificationError, match="conflicts with custom policy"):
+        _sarif_counts(path, custom=True)
+
+
+def test_m3_custom_omitted_levels_keep_advisory_findings_nonblocking(
+    tmp_path: Path,
+) -> None:
+    rules = [
+        {
+            "id": "corelink.rust.no-unwrap-in-src",
+            "defaultConfiguration": {"level": "warning"},
+        },
+        {
+            "id": "corelink.rust.no-tokio-in-lib-crates",
+            "defaultConfiguration": {"level": "error"},
+        },
+        {
+            "id": "corelink.rust.prop-assert-matches-struct-variant",
+            "defaultConfiguration": {"level": "error"},
+        },
+        {
+            "id": "corelink.rust.no-expect-in-byok-src",
+            "defaultConfiguration": {"level": "warning"},
+        },
+    ]
+    path = _write_sarif(
+        tmp_path / "custom.sarif",
+        rules,
+        [
+            {"ruleId": "corelink.rust.no-unwrap-in-src"},
+            {
+                "ruleId": "corelink.rust.no-expect-in-byok-src",
+                "suppressions": [{"kind": "inSource"}],
+            },
+        ],
+    )
+    counts, total = _sarif_counts(path, custom=True)
+    assert total == 2
+    assert counts == {"error": 0, "warning": 2, "note": 0, "none": 0}
+
+
+def test_invocation_override_cannot_turn_error_into_implicit_warning(
+    tmp_path: Path,
+) -> None:
+    path = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example", "defaultConfiguration": {"level": "warning"}}],
+        [{"ruleId": "python.example", "provenance": {"invocationIndex": 0}}],
+        invocations=[{"ruleConfigurationOverrides": [{
+            "descriptor": {"id": "python.example", "index": 0},
+            "configuration": {"level": "error"},
+        }]}],
+    )
+    with pytest.raises(VerificationError, match="overrides"):
+        _sarif_counts(path, custom=False)
+
+
+def test_result_provenance_without_override_is_rejected(tmp_path: Path) -> None:
+    path = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example", "defaultConfiguration": {"level": "warning"}}],
+        [{"ruleId": "python.example", "provenance": {"invocationIndex": 0}}],
+        invocations=[{}],
+    )
+    with pytest.raises(VerificationError, match="provenance"):
+        _sarif_counts(path, custom=False)
+
+
+def test_nonfailing_kind_defaults_to_none_not_rule_error(tmp_path: Path) -> None:
+    path = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example", "defaultConfiguration": {"level": "error"}}],
+        [{"ruleId": "python.example", "kind": "pass"}],
+    )
+    counts, _ = _sarif_counts(path, custom=False)
+    assert counts["none"] == 1
+    assert counts["error"] == 0
+
+
+def test_nonfailing_kind_with_error_level_is_rejected(tmp_path: Path) -> None:
+    path = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example", "defaultConfiguration": {"level": "error"}}],
+        [{"ruleId": "python.example", "kind": "pass", "level": "error"}],
+    )
+    with pytest.raises(VerificationError, match="kind/level"):
+        _sarif_counts(path, custom=False)
+
+
+def test_guid_rule_reference_is_rejected_before_level_fallback(tmp_path: Path) -> None:
+    path = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example", "defaultConfiguration": {"level": "error"}}],
+        [{"ruleId": "python.example", "ruleIndex": 0, "rule": {"guid": "mismatch"}}],
+    )
+    with pytest.raises(VerificationError, match="unsupported SARIF rule reference"):
+        _sarif_counts(path, custom=False)
+
+
+@pytest.mark.parametrize("result", [
+    {"ruleId": None, "ruleIndex": 0},
+    {"ruleId": "python.example", "ruleIndex": None},
+    {"ruleId": "python.example", "rule": None},
+])
+def test_null_rule_references_are_rejected(tmp_path: Path, result: dict) -> None:
+    path = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": "python.example", "defaultConfiguration": {"level": "error"}}],
+        [result],
+    )
+    with pytest.raises(VerificationError, match="null SARIF rule reference"):
+        _sarif_counts(path, custom=False)
+
+
+def test_unknown_custom_rule_result_is_rejected(tmp_path: Path) -> None:
+    path = _write_sarif(
+        tmp_path / "custom.sarif",
+        [{"id": "corelink.rust.new-rule", "defaultConfiguration": {"level": "warning"}}],
+        [{"ruleId": "corelink.rust.new-rule"}],
+    )
+    with pytest.raises(VerificationError, match="unknown custom rule"):
+        _sarif_counts(path, custom=True)
+
+
+def _custom_result_sarif(tmp_path: Path, rule_id: str, result: dict) -> Path:
+    rules = [
+        {"id": configured_id, "defaultConfiguration": {"level": severity[0].lower()}}
+        for configured_id, severity in CUSTOM_POLICY.items()
+    ]
+    return _write_sarif(
+        tmp_path / "custom.sarif",
+        rules,
+        [{"ruleId": rule_id, **result}],
+    )
+
+
+def test_custom_error_result_cannot_be_downgraded(tmp_path: Path) -> None:
+    path = _custom_result_sarif(
+        tmp_path,
+        "corelink.rust.no-tokio-in-lib-crates",
+        {"level": "warning"},
+    )
+    with pytest.raises(VerificationError, match="conflicts with custom policy"):
+        _sarif_counts(path, custom=True)
+
+
+def test_custom_warning_result_cannot_be_escalated(tmp_path: Path) -> None:
+    path = _custom_result_sarif(
+        tmp_path,
+        "corelink.rust.no-unwrap-in-src",
+        {"level": "error"},
+    )
+    with pytest.raises(VerificationError, match="conflicts with custom policy"):
+        _sarif_counts(path, custom=True)
+
+
+def test_custom_result_matching_explicit_level_is_accepted(tmp_path: Path) -> None:
+    path = _custom_result_sarif(
+        tmp_path,
+        "corelink.rust.no-tokio-in-lib-crates",
+        {"level": "error"},
+    )
+    counts, total = _sarif_counts(path, custom=True)
+    assert total == 1
+    assert counts["error"] == 1
+
+
+def test_custom_nonfailing_kind_ignores_calibrated_result_level(tmp_path: Path) -> None:
+    path = _custom_result_sarif(
+        tmp_path,
+        "corelink.rust.no-tokio-in-lib-crates",
+        {"kind": "pass"},
+    )
+    counts, total = _sarif_counts(path, custom=True)
+    assert total == 1
+    assert counts["none"] == 1
+
+
+@pytest.mark.parametrize("descriptor_mutation", ["missing", "extra"])
+def test_custom_sarif_requires_exact_rule_descriptor_set(
+    tmp_path: Path, descriptor_mutation: str
+) -> None:
+    rules = [
+        {"id": rule_id, "defaultConfiguration": {"level": severity[0].lower()}}
+        for rule_id, severity in CUSTOM_POLICY.items()
+    ]
+    if descriptor_mutation == "missing":
+        rules.pop()
+    else:
+        rules.append({"id": "corelink.rust.unconfigured"})
+    path = _write_sarif(tmp_path / "custom.sarif", rules, [])
+    with pytest.raises(VerificationError, match="descriptor set|unknown custom rule"):
+        _sarif_counts(path, custom=True)
+
+
+def test_custom_sarif_exact_rule_descriptor_set_allows_zero_findings(
+    tmp_path: Path,
+) -> None:
+    rules = [
+        {"id": rule_id, "defaultConfiguration": {"level": severity[0].lower()}}
+        for rule_id, severity in CUSTOM_POLICY.items()
+    ]
+    path = _write_sarif(tmp_path / "custom.sarif", rules, [])
+    counts, total = _sarif_counts(path, custom=True)
+    assert total == 0
+    assert counts == {"error": 0, "warning": 0, "note": 0, "none": 0}
+
+
+def _valid_evaluated_report() -> dict:
+    levels = {"error": 0, "warning": 0, "note": 0, "none": 0}
+    return {
+        "status": "evaluated",
+        "scanner_exit_codes": {"bundled": 0, "custom": 0},
+        "bundled": {"results": 0, "levels": levels.copy()},
+        "custom": {"results": 0, "levels": levels.copy()},
+        "blocking": {
+            "explicit_error_findings": 0,
+            "scanner_error": False,
+            "verdict": "PASS",
+        },
+        "sarif_upload": {
+            "bundled": "uploaded",
+            "custom": "uploaded",
+            "step_outcomes": {"bundled": "success", "custom": "success"},
+            "advanced_security_claim": "verified",
+        },
+    }
+
+
+@pytest.mark.parametrize("tamper", [
+    "invalid-exit-code",
+    "mismatched-total",
+    "missing-total",
+    "missing-blocking-field",
+])
+def test_enforce_report_rejects_tampered_core_evidence(
+    tmp_path: Path, tamper: str
+) -> None:
+    report = _valid_evaluated_report()
+    if tamper == "invalid-exit-code":
+        report["scanner_exit_codes"]["custom"] = -1  # type: ignore[index]
+    elif tamper == "mismatched-total":
+        report["bundled"]["results"] = 1  # type: ignore[index]
+    elif tamper == "missing-total":
+        del report["custom"]["results"]  # type: ignore[index]
+    else:
+        del report["blocking"]["verdict"]  # type: ignore[index]
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(VerificationError):
+        enforce_report(report_path)

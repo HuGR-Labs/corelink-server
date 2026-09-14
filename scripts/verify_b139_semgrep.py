@@ -323,6 +323,119 @@ def check_static(
     return {"custom_rules": len(CUSTOM), "bundled_rulesets": len(BUNDLED)}
 
 
+def _sarif_result_level(
+    path: Path, result: dict[str, Any], rules: list[Any], *, custom: bool
+) -> tuple[str, str]:
+    """Resolve a result against its run's driver rules before applying defaults."""
+
+    rule_id = result.get("ruleId")
+    rule_index = result.get("ruleIndex")
+    rule_ref = result.get("rule")
+    if "provenance" in result:
+        raise VerificationError(f"{path} has unsupported SARIF result provenance")
+    if any(
+        key in result and result[key] is None
+        for key in ("ruleId", "ruleIndex", "rule")
+    ):
+        raise VerificationError(f"{path} has a null SARIF rule reference")
+    if rule_ref is not None:
+        if not isinstance(rule_ref, dict) or any(
+            key in rule_ref for key in ("toolComponent", "guid")
+        ):
+            raise VerificationError(f"{path} has an unsupported SARIF rule reference")
+        if "id" in rule_ref:
+            if rule_id is not None and rule_id != rule_ref["id"]:
+                raise VerificationError(f"{path} has conflicting SARIF rule ids")
+            rule_id = rule_ref["id"]
+        if "index" in rule_ref:
+            if rule_index is not None and rule_index != rule_ref["index"]:
+                raise VerificationError(f"{path} has conflicting SARIF rule indices")
+            rule_index = rule_ref["index"]
+        if any(
+            key in rule_ref and rule_ref[key] is None for key in ("id", "index")
+        ):
+            raise VerificationError(f"{path} has a null SARIF rule reference")
+    if rule_id is not None and (not isinstance(rule_id, str) or not rule_id):
+        raise VerificationError(f"{path} has an invalid SARIF rule id")
+    if rule_index is not None and (type(rule_index) is not int or rule_index < 0):
+        raise VerificationError(f"{path} has an invalid SARIF rule index")
+    if rule_id is None and rule_index is None:
+        raise VerificationError(f"{path} has a result without a rule reference")
+
+    descriptor: dict[str, Any] | None = None
+    if rule_index is not None:
+        if rule_index >= len(rules):
+            raise VerificationError(f"{path} has an out-of-range SARIF rule index")
+        descriptor = rules[rule_index]
+        if rule_id is not None and rule_id != descriptor["id"]:
+            raise VerificationError(f"{path} has conflicting SARIF rule id/index")
+    elif rules:
+        # Semgrep 1.164.0 emits ruleId without ruleIndex. Match its driver
+        # descriptor only when the ID is unique within this run.
+        matches = [rule for rule in rules if rule["id"] == rule_id]
+        if len(matches) != 1:
+            raise VerificationError(
+                f"{path} has an unresolved or ambiguous SARIF rule id"
+            )
+        descriptor = matches[0]
+    effective_id = descriptor["id"] if descriptor is not None else rule_id
+    assert isinstance(effective_id, str)
+    configuration = descriptor.get("defaultConfiguration") if descriptor else None
+    if (
+        descriptor is not None
+        and "defaultConfiguration" in descriptor
+        and configuration is None
+    ):
+        raise VerificationError(f"{path} has malformed SARIF rule configuration")
+    if configuration is not None:
+        if not isinstance(configuration, dict):
+            raise VerificationError(f"{path} has malformed SARIF rule configuration")
+        if "level" in configuration and configuration["level"] not in LEGACY_LEVELS:
+            raise VerificationError(
+                f"{path} has unsupported SARIF level {configuration['level']!r}"
+            )
+
+    # A SARIF file from another rulepack revision can disagree with M3's
+    # calibrated severities. Reject that evidence instead of reclassifying it.
+    custom_expected: str | None = None
+    if custom:
+        if effective_id not in CUSTOM_POLICY:
+            raise VerificationError(f"{path} has an unknown custom rule {effective_id}")
+        if descriptor is None:
+            raise VerificationError(f"{path} has no descriptor for {effective_id}")
+        if not isinstance(configuration, dict):
+            raise VerificationError(f"{path} has no severity for {effective_id}")
+        custom_expected = CUSTOM_POLICY[effective_id][0].lower()
+        if configuration.get("level") != custom_expected:
+            raise VerificationError(
+                f"{path} SARIF severity for {effective_id} conflicts with custom policy"
+            )
+
+    kind = result.get("kind", "fail")
+    if not isinstance(kind, str) or kind not in {
+        "fail", "pass", "review", "open", "informational", "notApplicable"
+    }:
+        raise VerificationError(f"{path} has unsupported SARIF kind {kind!r}")
+    if kind != "fail":
+        if "level" in result and result["level"] != "none":
+            raise VerificationError(f"{path} has inconsistent SARIF kind/level")
+        return effective_id, "none"
+
+    if "level" in result:
+        level = result["level"]
+    elif configuration is not None:
+        level = configuration.get("level", "warning")
+    else:
+        level = "warning"  # SARIF's implicit level for a failing result.
+    if level not in LEGACY_LEVELS:
+        raise VerificationError(f"{path} has unsupported SARIF level {level!r}")
+    if custom_expected is not None and "level" in result and level != custom_expected:
+        raise VerificationError(
+            f"{path} SARIF result severity for {effective_id} conflicts with custom policy"
+        )
+    return effective_id, level
+
+
 def _sarif_counts(path: Path, *, custom: bool) -> tuple[dict[str, int], int]:
     data = _load_json(path)
     runs = data.get("runs")
@@ -333,18 +446,56 @@ def _sarif_counts(path: Path, *, custom: bool) -> tuple[dict[str, int], int]:
     for run in runs:
         if not isinstance(run, dict) or not isinstance(run.get("results"), list):
             raise VerificationError(f"{path} has malformed SARIF run")
+        tool = run.get("tool")
+        driver = tool.get("driver") if isinstance(tool, dict) else None
+        if not isinstance(driver, dict):
+            raise VerificationError(f"{path} has no SARIF driver")
+        invocations = run.get("invocations", [])
+        if not isinstance(invocations, list) or any(
+            not isinstance(invocation, dict) for invocation in invocations
+        ):
+            raise VerificationError(f"{path} has malformed SARIF invocations")
+        for invocation in invocations:
+            if "ruleConfigurationOverrides" in invocation:
+                overrides = invocation["ruleConfigurationOverrides"]
+                if not isinstance(overrides, list) or overrides:
+                    raise VerificationError(
+                        f"{path} has unsupported SARIF rule configuration overrides"
+                    )
+        rules = driver.get("rules", [])
+        if not isinstance(rules, list) or any(
+            not isinstance(rule, dict)
+            or not isinstance(rule.get("id"), str)
+            or not rule["id"]
+            for rule in rules
+        ):
+            raise VerificationError(f"{path} has malformed SARIF driver rules")
+        if custom:
+            if len({rule["id"] for rule in rules}) != len(rules):
+                raise VerificationError(f"{path} has duplicate custom rule descriptors")
+            for rule in rules:
+                rule_id = rule["id"]
+                if rule_id not in CUSTOM_POLICY:
+                    raise VerificationError(f"{path} has an unknown custom rule {rule_id}")
+                configuration = rule.get("defaultConfiguration")
+                if not isinstance(configuration, dict) or configuration.get(
+                    "level"
+                ) != CUSTOM_POLICY[rule_id][0].lower():
+                    raise VerificationError(
+                        f"{path} SARIF severity for {rule_id} conflicts with custom policy"
+                    )
+            if {rule["id"] for rule in rules} != set(CUSTOM_POLICY):
+                raise VerificationError(
+                    f"{path} has an incomplete or extra custom rule descriptor set"
+                )
         for result in run["results"]:
-            if not isinstance(result, dict) or not isinstance(
-                result.get("ruleId"), str
-            ):
-                raise VerificationError(f"{path} has a result without ruleId")
-            is_custom = result["ruleId"].startswith("corelink.")
+            if not isinstance(result, dict):
+                raise VerificationError(f"{path} has a malformed SARIF result")
+            rule_id, level = _sarif_result_level(path, result, rules, custom=custom)
+            is_custom = rule_id.startswith("corelink.")
             if is_custom != custom:
                 expected = "custom CoreLink" if custom else "bundled"
                 raise VerificationError(f"{path} mixes a non-{expected} rule result")
-            level = result.get("level", "warning")
-            if level not in counts:
-                raise VerificationError(f"{path} has unsupported SARIF level {level!r}")
             counts[level] += 1
             results_seen += 1
     return counts, results_seen

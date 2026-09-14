@@ -64,7 +64,7 @@ def verify(root: Path = ROOT) -> dict[str, object]:
         "failures": failures,
         "status": "parked_until_provider_proof",
         "post_deploy_proof_remaining": [
-            "apply migration 0117 to the production D1 binding",
+            "confirm migration 0117 is applied to the production D1 binding",
             "run one owner-approved Stripe test-mode invoice-item mutation with the gate enabled",
             "replay the same sweep and verify one provider object for the stable idempotency key",
             "reconcile the provider object against the next invoice and retain the D1 audit rows",

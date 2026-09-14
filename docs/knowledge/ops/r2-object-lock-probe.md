@@ -73,18 +73,32 @@ also gives explicit rule-removal procedures. Consequently:
 - native Bucket Lock is real retention protection, but is not S3 Object Lock
   Compliance mode and does not resist the bucket-configuration administrator;
 - native Bucket Lock is therefore administrator-removable, not WORM;
-- the repository's named `corelink-audit-7y-retention` / `220924800` values are
-  desired configuration, not live provider metadata;
+- the repository's named `corelink-audit-7y-retention` / `220924800` values were
+  desired configuration, not live provider metadata in this 2026-09-09 pass;
 - the `audit-witness-production` environment endpoint returned HTTP 404 under
   the current GitHub principal, repository secret APIs exposed names only, and
   the inspected local AWS profiles did not yield a validated R2 key. These
   observations do not prove that no local credential or hidden environment
-  exists. They do mean no current bucket-lock rule, account separation, or
-  provider retention state was verified in this pass;
-- B-046 remains `BLOCKED` for Compliance capability and `INDETERMINATE` for the
-  current native lock configuration of `corelink-audit-weur`.
+  exists. They mean no bucket-lock rule, account separation, or provider
+  retention state was verified in that pass;
+- B-046 remained `BLOCKED` for Compliance capability and `INDETERMINATE` for the
+  native lock configuration of `corelink-audit-weur` in that pass.
 
-Primary provider sources (observed 2026-09-09):
+### Read-only live follow-up (2026-09-13)
+
+An authenticated Wrangler 4.111.0 read-only listing found the actual
+`corelink-audit-weur` bucket and reported one native lock rule:
+`corelink-audit-7y-retention`, enabled, all prefixes, `after 2557 days`
+(`220924800` seconds). No bucket or object was created, altered, or deleted.
+This establishes the current native rule metadata only. It does not prove
+S3 Object Lock Compliance, administrator-resistant WORM, a particular archived
+object's contents, or separation of the rule-removal authority. Cloudflare's
+S3 compatibility table marks the required `CreateBucket` Object Lock setting
+and `PutObject` Object Lock mode/retain-until headers unsupported; its native
+Bucket Lock documentation allows an authorized administrator to remove a rule.
+B-046/B-154 therefore remain open pending the documented provider/legal remedy.
+
+Primary provider sources (reviewed 2026-09-09 and 2026-09-13):
 
 - https://developers.cloudflare.com/r2/buckets/bucket-locks/
 - https://developers.cloudflare.com/r2/buckets/object-lifecycles/

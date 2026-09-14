@@ -106,6 +106,98 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         errors = backlog_verify.validate_candidate_transitions([changed], [base], dt.date(2026, 9, 12))
         self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
 
+    def test_successor_proof_update_does_not_authorize_verifier_commands(self) -> None:
+        base = self.item("B-089", verify="python3 scripts/verify_b089_sla_credits.py\n")
+        candidate = self.item("B-089", verify=base.raw["verify"])
+        candidate.raw["verify-means"] = "new evidence readback"
+        self.assertTrue(
+            any("verify-means may change only" in error for error in
+                backlog_verify.validate_candidate_transitions(
+                    [candidate], [base], dt.date(2026, 9, 12), successor_mode=True,
+                ))
+        )
+        candidate.raw["verify"] += "python3 scripts/evil.py\n"
+        errors = backlog_verify.validate_candidate_transitions(
+            [candidate], [base], dt.date(2026, 9, 12), successor_mode=True,
+        )
+        self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
+        candidate.raw["verify"] = (
+            "python3 scripts/verify_b089_sla_credits.py && "
+            "python3 -S scripts/verify_owner_action_packets.py --id B-089"
+        )
+        self.assertEqual(
+            [error for error in backlog_verify.validate_candidate_transitions(
+                [candidate], [base], dt.date(2026, 9, 12), successor_mode=True,
+            ) if "verify-means" not in error],
+            ["B-089: immutable field 'verify' changed"],
+        )
+        self.assertEqual(
+            backlog_verify.validate_candidate_transitions(
+                [candidate], [base], dt.date(2026, 9, 12),
+                successor_mode=True, allow_sprint3_rewrite=True,
+            ),
+            [],
+        )
+        candidate.raw["verify"] = (
+            "python3 scripts/verify_b089_sla_credits.py\n"
+            "python3 -S scripts/verify_owner_action_packets.py --id B-089\n"
+        )
+        errors = backlog_verify.validate_candidate_transitions(
+            [candidate], [base], dt.date(2026, 9, 12),
+            successor_mode=True, allow_sprint3_rewrite=True,
+        )
+        self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
+
+    def test_open_owner_approval_cannot_be_waived_without_exact_exception(self) -> None:
+        base = self.item("B-065", verify="manual")
+        base.raw["verify-means"] = "owner must approve"
+        candidate = self.item("B-065", verify="manual")
+        candidate.raw["verify-means"] = "no owner approval needed"
+        errors = backlog_verify.validate_candidate_transitions(
+            [candidate], [base], dt.date(2026, 9, 12), successor_mode=True,
+        )
+        self.assertTrue(any("verify-means may change only" in error for error in errors))
+
+    def test_b089_conjunction_preserves_first_command_failure(self) -> None:
+        self.assertNotEqual(backlog_verify.run_verify("false && true", mode="trusted")[0], 0)
+        self.assertEqual(backlog_verify.run_verify("false\ntrue", mode="trusted")[0], 0)
+
+    def test_b154_exception_requires_reviewed_fail_closed_command(self) -> None:
+        base = next(
+            item for item in backlog_verify.parse((ROOT / "BACKLOG.md").read_text())
+            if item.id == "B-154"
+        )
+        candidate = backlog_verify.Item(raw=dict(base.raw), line=base.line, id=base.id)
+        candidate.raw["verify"] = (
+            "python3 -S scripts/verify_owner_action_packets.py --id B-154 &&\n"
+            "python3 -S scripts/verify_b154_instrument_claims.py --self-test\n"
+        )
+        self.assertEqual(backlog_verify.validate_candidate_transitions(
+            [candidate], [base], dt.date(2026, 9, 13), allow_sprint3_rewrite=True,
+        ), [])
+        candidate.raw["verify"] = candidate.raw["verify"].replace(" &&\n", "\n")
+        errors = backlog_verify.validate_candidate_transitions(
+            [candidate], [base], dt.date(2026, 9, 13), allow_sprint3_rewrite=True,
+        )
+        self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
+        self.assertNotEqual(backlog_verify.run_verify("false &&\ntrue", mode="trusted")[0], 0)
+
+    def test_workflow_style_cli_imports_with_clean_pythonpath(self) -> None:
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+        result = subprocess.run(
+            [
+                sys.executable, str(VERIFIER),
+                "--candidate-file", str(self.candidate / "BACKLOG.md"),
+                "--trusted-file", str(ROOT / "BACKLOG.md"),
+                "--candidate-root", str(self.candidate),
+                "--trusted-root", str(ROOT),
+            ],
+            cwd=ROOT, env=env, capture_output=True, text=True, check=False,
+        )
+        self.assertNotIn("ModuleNotFoundError", result.stderr)
+        self.assertNotEqual(result.returncode, 2, result.stdout + result.stderr)
+
     def test_deleting_highest_base_id_is_rejected(self) -> None:
         errors = backlog_verify.validate_candidate_transitions(
             [self.item("B-001")],
@@ -303,8 +395,12 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             candidate = Path(directory) / "candidate"
             (trusted / "scripts").mkdir(parents=True)
             (candidate / "scripts").mkdir(parents=True)
-            shutil.copy2(ROOT / "scripts" / "backlog_verify.py", trusted / "scripts" / "backlog_verify.py")
-            shutil.copy2(ROOT / "scripts" / "backlog_verify.py", candidate / "scripts" / "backlog_verify.py")
+            for control in (
+                "backlog_verify.py", "verify_backlog_wp_ledger.py",
+                "backlog_ledger_successor.py", "backlog_ledger_contracts.py",
+            ):
+                shutil.copy2(ROOT / "scripts" / control, trusted / "scripts" / control)
+                shutil.copy2(ROOT / "scripts" / control, candidate / "scripts" / control)
             (trusted / "scripts" / "check.py").write_text("from scripts import helper\n", encoding="utf-8")
             (trusted / "scripts" / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
             for name in ("check.py", "helper.py"):
@@ -350,6 +446,21 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             target = self.candidate / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
+        # The BASE ledger gate also compares the immutable data preimage, even
+        # when a test mutates only one BACKLOG declaration.
+        ledger_data = [
+            "docs/campaigns/remediation/BACKLOG-WP-LEDGER.md",
+            "docs/campaigns/remediation/backlog-ledger-snapshot.json",
+            "docs/campaigns/remediation/backlog-ledger-snapshot-b373-postmerge.json",
+            "docs/campaigns/remediation/work-packages/B001-B045.md",
+            "docs/campaigns/remediation/work-packages/B046-B090.md",
+            "docs/campaigns/remediation/work-packages/B091-B130.md",
+            "docs/campaigns/remediation/work-packages/B131-B167.md",
+        ]
+        for relative in ledger_data:
+            target = self.candidate / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / relative, target)
         workflow = self.candidate / ".github" / "workflows" / "backlog-verify.yml"
         workflow.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / ".github" / "workflows" / "backlog-verify.yml", workflow)
@@ -403,7 +514,7 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(marker.exists(), "candidate verify payload was executed")
-        self.assertIn("immutable field 'verify' changed", result.stdout + result.stderr)
+        self.assertIn("candidate must append exactly one next successor snapshot", result.stdout + result.stderr)
 
     def test_mutated_candidate_verifier_cannot_green(self) -> None:
         verifier = self.candidate / "scripts" / "verify_b044_orphan_teardown_wp.py"

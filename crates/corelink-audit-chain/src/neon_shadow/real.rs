@@ -75,16 +75,21 @@
 
 use std::sync::Arc;
 
+#[cfg(not(target_arch = "wasm32"))]
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 use corelink_analytics::Region;
 
 use crate::archive_producer::ArchiveReceipt;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::neon_shadow::{
-    redact_tenant_uuid, EventCountBucket, NeonShadowError, NeonShadowSink, ShadowEventRow,
-    ShadowSyncAuditRow, ShadowSyncAuditSink, ShadowSyncReceipt, TimelineBucket,
-    EVENT_TYPE_SHADOW_SYNCED, EVENT_TYPE_SHADOW_SYNC_FAILED, SHADOW_LAG_SEV2_THRESHOLD_MS,
+    redact_tenant_uuid, ShadowSyncAuditRow, EVENT_TYPE_SHADOW_SYNCED,
+    EVENT_TYPE_SHADOW_SYNC_FAILED, SHADOW_LAG_SEV2_THRESHOLD_MS,
+};
+use crate::neon_shadow::{
+    EventCountBucket, NeonShadowError, NeonShadowSink, ShadowEventRow, ShadowSyncAuditSink,
+    ShadowSyncReceipt, TimelineBucket,
 };
 
 // ---------------------------------------------------------------------------

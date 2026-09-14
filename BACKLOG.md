@@ -3954,7 +3954,7 @@ B-087 closed the engineering-controlled questionnaire wording without pretending
 executed agreements, PagerDuty evidence, or communications to prior recipients had been
 changed. The exact action packet is
 `docs/internal/b087-questionnaire-owner-actions.md`. Completion requires three independent
-owner artifacts: Legal's disposition for the executed DPA/SLA/residency-amendment claims,
+owner artifacts: Legal's disposition for the executed DPA/SLA claims and the pending residency-amendment template,
 Operations' PagerDuty rotation export, and Sales/Legal's decision on notification of
 recipients of superseded questionnaire copies. Engineering cannot sign, export, or make
 those external decisions.
@@ -7445,19 +7445,33 @@ buys nothing, since no gate reads the heading. Read the field.
 
 ### B-012 — a non-Actions credential so bot PRs get CI
 
-`GITHUB_TOKEN`-created events do not trigger workflows — a recursion guard — so
-bot-opened PRs arrive with zero checks and a green-looking gate that proves
-nothing. Needs a fine-grained PAT or GitHub App token with `contents:write` and
-`pull_requests:write`. Deliberately not reusing an existing release token: one
-secret, one purpose.
+GitHub's `GITHUB_TOKEN` recursion guard suppresses most events, including a
+`push` made with that token. But `pull_request` opened/synchronize/reopened
+events from a workflow-created PR can create **approval-required** runs; a
+write-authorized human can approve them. Dependabot PRs can trigger workflows
+independently. Therefore neither bot authorship nor a zero-job
+`startup_failure` proves token suppression. A present run, check, or status
+also does not prove that CI executed or passed.
+
+The five active auto-PR creators already require `BOT_PR_TOKEN` and fail closed
+when it is absent. For **automatic, unapproved** PR CI, the smallest remaining
+owner credential is a dedicated fine-grained PAT scoped to this repository with
+`contents:write` and `pull_requests:write`; a GitHub App alternative must mint
+its short-lived installation token per job. Do not reuse a release credential.
+This token cannot repair Actions startup failure, hosted-billing limits, or an
+offline/missing runner labelled `corelink`. Bot-PR CI is established only when
+the expected jobs actually complete on viable capacity, with no approval
+pending, and the owner records the run/job evidence.
 
 **Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
 today, what each option costs, and what happens if the answer is "not now".
 
-**Só ele (reconfirmado 2026-08-31) — o ato: cunhar o fine-grained PAT (ou criar o GitHub App)
-no fluxo web autenticado da conta dele.** O GitHub **não expõe API para cunhar fine-grained
-PAT** — `POST /authorizations` saiu em 2020 sem substituto — e criar GitHub App exige o
-app-manifest web.
+**Owner-only credential action:** inspect approved dedicated credentials first,
+then mint the fine-grained PAT in the authenticated GitHub account flow if
+none exists. An App path requires per-job minting wiring before use, not a
+one-time installation token stored as `BOT_PR_TOKEN`. Restore Actions job
+startup and `corelink` runner capacity as separate prerequisites before a
+harmless proof PR; neither is solved by the credential itself.
 
 ```backlog
 id: B-012
@@ -7467,8 +7481,10 @@ status: open
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: python3 -S scripts/verify_owner_action_packets.py --id B-012
 verify-means: |
-  packet guard validates the exact bot-credential procedure and evidence schema;
-  the item remains open until a bot-opened PR shows checks.
+  packet guard validates the bot-credential procedure and job-level evidence
+  schema, not live execution; B-012 remains open until the owner records a
+  bot-opened PR whose expected jobs completed on viable runners without pending
+  approval. Check/status presence or a zero-job workflow run does not close it.
 last-verified: 2026-09-05
 ```
 
@@ -9356,28 +9372,37 @@ verify-means: |
 last-verified: 2026-09-01
 ```
 
-### B-065 — dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias
+### B-065 — dois esquemas de ID em webhooks Stripe; estado atual dos destinos não verificado
 
-`billing-health-daily` falhou 8 de 8 execuções, sem nenhum sucesso desde 23 de agosto.
-Também não está quebrado: reporta `BILLING HEALTH: 1 anomaly(ies) found` e detalha
+O último `billing-health-daily` observável (2026-09-01) falhou e reportou
+`BILLING HEALTH: 1 anomaly(ies) found`, detalhando
 `3 event type(s) ingested under BOTH id schemes in the last 30d` —
 `customer.subscription.deleted (1/1)`, `customer.subscription.updated (2/2)`,
-`invoice.payment_failed (2/2)`.
+`invoice.payment_failed (2/2)`. Não há execução posterior que prove resolução.
 
-O detector (`scripts/check_billing_health.py:169`) explica o mecanismo:
+O detector (`scripts/check_billing_health.py`) explica o risco:
 `stripe_webhook_events_processed` deduplica por `event_id` como chave primária, o que
-só protege retentativas sob o *mesmo* esquema de identificador. Um endpoint grava o
-`evt_…` da Stripe, o outro grava um hash derivado da mesma entrega; as duas linhas não
-colidem e o evento é processado duas vezes.
+só protege retentativas sob o *mesmo* esquema de identificador. O signup-worker grava
+`evt_…` da Stripe, enquanto o container grava hash derivado. Linhas com ambos os
+esquemas para um *tipo* de evento indicam sobreposição histórica que requer triagem;
+**não correlacionam a mesma entrega nem provam que dois destinos seguem ativos hoje**.
+Como a janela é de 30 dias, o alerta pode persistir após uma desativação.
 
-Processamento duplicado de `subscription.deleted` e `subscription.updated` afeta estado
-de direito de acesso, não apenas contagem. O reparo é no painel da Stripe — aposentar o
-endpoint redundante — e portanto é ação exclusiva do owner.
+O [readback do dashboard em 2026-08-03](docs/handoff/2026-07-03-REPLY-from-clw-coordinator-webhook-reconcile-DONE-and-no-stray-endpoint-exists.md)
+registrou `exquisite-rhythm-thin` **ativo** (destino v2 no URL do container).
+Esse readback não decide seu estado atual. O inventário atual v1 **e** v2 não foi
+obtido: a chave live local expirou em 2026-07-05 e o Chrome abriu o login da
+Stripe em 2026-09-12. Os eventos de
+`subscription.deleted`/`updated` podem afetar direitos de acesso; não se deve
+desativar outro destino para silenciar um alerta histórico.
 
-
-**Só ele (reconfirmado 2026-08-31) — o ato: clicar em "disable" no endpoint redundante, no
-painel Stripe da conta dele.** Eu não tenho — e não devo ter — sessão autenticada nesse
-painel.
+Próximo passo: obter acesso autorizado de leitura e enumerar **ambas** as APIs, com
+paginação, registrando IDs, URL, status, tipos de evento e data da última entrega sem
+segredos/payloads; correlacionar entregas, se necessário. Preservar o signup-worker
+(`we_1Tolig…`) e o container `Corelink prd` (`we_1Tfh8…`) até confirmação exata.
+Se um destino redundante ainda estiver ativo, sua desativação exige decisão explícita
+do owner; se já estiver desativado, investigar a cauda da janela e executar o health
+check sem inventar nova mutação.
 
 ```backlog
 id: B-065
@@ -9395,14 +9420,19 @@ verify-means: |
   reportaria zero e passaria verde — portão dominado, exatamente o que este item não
   pode ter.
 
-  O sinal correto já existe e é o `billing-health-daily`, que detecta a duplicidade
-  pelo lado dos dados. Este item não recria esse detector; ele rastreia a AÇÃO no
-  painel da Stripe, que só o owner executa.
+  `billing-health-daily` detecta sobreposição de esquemas por tipo na janela de 30
+  dias; não identifica a mesma entrega nem o estado atual de qualquer destino.
+  O readback histórico de 2026-08-03 registra o v2 thin como ativo; o estado
+  atual é desconhecido sem enumeração atual, paginada, de v1 e v2. Uma falha
+  antiga do health check não autoriza desativar um destino saudável.
 
-  Procedimento: no painel Stripe, manter o destino "Corelink prd" apontando para o
-  signup-worker e aposentar o redundante. Fecha quando `billing-health-daily` voltar
-  a passar por três execuções consecutivas.
-last-verified: 2026-09-05
+  Fechar só com inventário atual dos destinos, correlação de entregas e três
+  execuções consecutivas bem-sucedidas de `billing-health-daily`. Se houver
+  destino redundante ainda ativo, registrar ID/status anterior, autorização do
+  owner e desativação verificada; se já estiver desativado, registrar esse fato
+  e a resolução da anomalia sem nova mutação. Preservar ambos os endpoints
+  legítimos: signup-worker (`we_1Tolig…`) e container `Corelink prd` (`we_1Tfh8…`).
+last-verified: 2026-09-12
 ```
 
 ### B-066 — RECUSADO: o `smoke-install` já está portado atrás do gate de Actions hosted
@@ -11300,6 +11330,13 @@ agora lê os dois instrumentos. **Ele não emenda ato jurídico assinado — só
 afirma o que afirma.** Emendar é do owner.
 
 
+**Correção de estado em 2026-09-13.** Os parágrafos de 2026-08-31 acima são
+históricos: o Dockerfile hoje compila `byok-aws-real` no binário de produção;
+`501 byok_not_available` é condicional a falha de construção do provider ou acesso
+à CMK, não o resultado incondicional da rota. O recibo B-083 ainda não comprova
+ativação de CMK, revogação ou p99 em tenant real. O aditivo de residência citado
+acima continua template `PENDING_LEGAL_REVIEW`, não instrumento assinado.
+
 **Fechado em 2026-09-05 — `owner: tl`.** As linhas do CAIQ foram corrigidas para
 `N`/`P` com plano datado — edição de texto, minha. O resíduo de owner é decidir se os
 prospects que já receberam a versão atual precisam ser notificados, e o próprio `verify-means`
@@ -11313,7 +11350,7 @@ status: done
 verify: |
   python3 scripts/verify_b087_questionnaires.py
 verify-means: |
-  done — inverted guard: exit 0 means the closed population of 22 CAIQ and 15 SIG-LITE rows matches shipped repository reality.
+  done — inverted guard: exit 0 means the closed population of 26 CAIQ and 17 SIG-LITE rows matches shipped repository reality.
   Unsupported positive claims, mutations, missing/renamed rows, or missing source controls return non-zero.
   Executed DPA/SLA language, PagerDuty export, and prospect-notification decisions are observed in
   docs/internal/b087-questionnaire-owner-actions.md and do not hold this engineering item open.
@@ -11384,7 +11421,7 @@ Stripe em test mode e a reconciliação exigidas abaixo.
 Agravantes na mesma cláusula: o SLA define quatro tiers enquanto o produto vende seis, de
 modo que um cliente Solo ($15) ou Max ($149) não tem tier no instrumento assinado, embora
 o `FAQ-MASTER.md:51` lhes prometa 99,5% e 99,9% com créditos. E os Termos de Serviço
-(`terms.tsx:333`) concedem créditos automáticos ao tier Pro, que a própria tabela de
+(`apps/docs/src/pages/legal/terms.tsx:329`) concedem créditos automáticos ao tier Pro, que a própria tabela de
 preços marca como `slaCredits: false`.
 
 Uma cláusula de remédio exclusivo que não pode ser cumprida é a primeira a cair, e sua
@@ -11410,10 +11447,10 @@ sem mudar o estado do item ou os contadores do ledger:
 - O SLA define **quatro** tiers (`Free`, `Starter`, `Pro`, `Enterprise` — linha 30)
   enquanto o produto vende **seis**. Um cliente Solo ($15) ou Max ($149) não tem tier no
   instrumento assinado.
-- **Novo:** a contradição do `terms.tsx` agora tem o outro lado medido.
-  `apps/docs/src/pages/terms.tsx` concede ao tier Pro *"a service credit equal to 10% of
+- **Novo:** a contradição dos Termos agora tem o outro lado medido.
+  `apps/docs/src/pages/legal/terms.tsx:329` concede ao tier Pro *"a service credit equal to 10% of
   the affected month's fees, applied automatically to the next invoice"*, enquanto
-  `apps/docs/src/lib/pricing.ts:203` marca o Pro com `slaCredits: false` — e
+  `apps/docs/src/lib/pricing.ts:204` marca o Pro com `slaCredits: false` — e
   `apps/docs/src/lib/pricing.test.ts:75` **testa** que só o Enterprise tem
   `slaCredits: true`. Os Termos publicados e a tabela de preços publicada, no mesmo site,
   discordam sobre o mesmo tier, e há um teste verde defendendo o lado que os Termos
@@ -11440,19 +11477,26 @@ id: B-089
 repo: corelink-server
 owner: owner
 status: open
-verify: |
-  python3 scripts/verify_b089_sla_credits.py
+verify: python3 scripts/verify_b089_sla_credits.py && python3 -S scripts/verify_owner_action_packets.py --id B-089
 verify-means: |
   open — o caminho repo-owned de medição, elegibilidade, ledger limitado,
   outbox transacional, provider idempotente e reconciliação está implementado, mas
   o guard não alega uma mutação Stripe live. Depois do deploy, o owner precisa
-  aplicar 0117, executar uma operação Stripe em test mode com a flag habilitada,
+  confirmar 0117 no D1 de produção, executar uma operação Stripe em test mode com a flag habilitada,
   replayar o mesmo sweep e reconciliar o provider id com a próxima invoice.
 
+  O pacote de ação exige que as referências ao SLA, aos Termos e ao pricing
+  resolvam para arquivos reais. Seu gate fixa o conflito ainda aberto: quatro
+  tiers no SLA versus seis vendidos, créditos Starter/Pro no SLA versus
+  `slaCredits: false` no pricing e promessa automática ao Pro nos Termos.
+  O gate confere a postura de créditos de cada um dos seis tiers vendidos e
+  a cobertura de cada linha do SLA. Qualquer mudança unilateral exige
+  atualizar a decisão e o censo; esse PASS não prova acordo nem provider.
+
   O que NÃO decide, e admito: o descompasso de quatro tiers no SLA contra seis vendidos, e
-  a contradição do `terms.tsx:333` com `slaCredits: false`. São três documentos que
-  precisam concordar entre si, e um `verify` que os comparasse exigiria parsear a tabela
-  de preços — vale escrever junto com o reparo, não antes dele. Ficam registrados na prosa.
+  a contradição dos Termos com `slaCredits: false`. O novo gate verifica que essa
+  divergência continua visível, não a resolve: os três documentos ainda precisam
+  concordar depois da decisão jurídica/financeira executada.
 
   Owner: emenda de instrumento assinado.
 last-verified: 2026-09-08
@@ -11873,27 +11917,35 @@ verify-means: |
 last-verified: 2026-09-01
 ```
 
-### B-097 — teto de escala em 200 tenants ativos por região, com o orçamento de vCPU da conta já comprometido
+### B-097 — teto configurado de 200 instâncias por aplicação regional e cota de vCPU limitada
 
 A arquitetura é um contêiner `basic` (0,25 vCPU) por tenant ativo. O comentário do
-`wrangler.toml:503` documenta o teto com honestidade exemplar: *"The BINDING account limit
+`wrangler.toml` documenta o teto: *"The BINDING account limit
 is vCPU, NOT instance count […] against total_vcpu=1500 […] A first attempt at 2000
 (=500 vCPU/region) was REJECTED by CF ("Surpassed total account limits: ... vcpus"). Going
 higher — toward real 2000-user scale — requires a Cloudflare account-limit increase […];
 no config can exceed it."*
 
-Contabilidade atual: 5 regiões × 200 × 0,25 = 250 vCPU para o cache, mais 250 × 4 = 1000
-vCPU para a frota de runners. São **1250 de 1500 já alocados**. Ocioso escala a zero, então
-o teto é de tenants *concorrentemente* ativos, não de clientes totais.
+Leitura Cloudflare de 2026-09-13: as cinco aplicações de cache estão configuradas com
+`max_instances=200` e 0,25 vCPU (250 vCPU declaradas); a frota principal de runners,
+250 × 4 (1000 vCPU). **1250/1500 é apenas esse subtotal.** O runner de desenvolvimento
+10 × 4, o checkhost 1 × 4 e o fabricd 1 × 1 elevam a reserva declarada das onze
+aplicações da conta a **1295/1500**, restando 205 vCPU de margem nominal. A API retorna
+`usage=null`: reserva declarada não é uso medido nem custo faturado. As quatro regiões
+antes descritas como desligadas estão hoje em `max_instances=200`, com 15 instâncias
+reportadas e zero `active` cada. `CONFIG_DB` registra 264 tenants (155 enam, 108 wnam, 1 apac), mas
+registro/`tenant_state` não medem tenants concorrentemente ativos. O teto de 200 é de
+instâncias por aplicação regional, não de clientes totais; a ocupação simultânea por
+tenant continua sem prova direta.
 
 Não é defeito. É dependência de plataforma no caminho crítico do crescimento, já testada e
 recusada uma vez. Existe como item porque o tempo de resposta de um aumento de limite da
 Cloudflare não é controlado por nós, e descobrir isso quando o teto for atingido é tarde.
 
 
-**Só ele (reconfirmado 2026-08-31) — o ato: abrir o ticket de aumento de cota na conta
-comercial da Cloudflare, em nome e faturamento dele.** É relação de fornecedor. Medir e
-documentar o teto é meu e já está feito.
+Ainda falta medir concorrência real e obter a decisão comercial de limite. Nenhum
+ticket ou limite aprovado consta da captura; isso não prova inexistência de um caso
+fora dela. Não aumentar `max_instances` como substituto.
 
 ```backlog
 id: B-097
@@ -11906,21 +11958,23 @@ verify-means: |
   MANUAL, e declaro que o `verify` não decide a alegação.
 
   A alegação tem duas metades e nenhuma é legível do repositório: o limite de conta vigente
-  na Cloudflare (`total_vcpu`, hoje 1500) e o número de tenants concorrentemente ativos em
+  na Cloudflare (`total_vcpu`, 1500 na captura de 2026-09-13) e o número de tenants concorrentemente ativos em
   produção. A primeira só a API/o painel da Cloudflare respondem; a segunda exige medir
   produção.
 
-  Um `verify` que somasse `max_instances × 0.25` do `wrangler.toml` mediria a RESERVA
-  declarada, não o teto nem o consumo — passaria verde com o teto atingido e passaria
-  vermelho se alguém baixasse o `max_instances` por outro motivo. Portão dominado.
+  O `verify` valida a aritmética e as ressalvas de uma captura datada; não consulta a
+  Cloudflare em tempo real. Somar `max_instances × vCPU` das aplicações mede a RESERVA
+  declarada, não o teto, a concorrência ou o consumo. `usage=null` não prova folga
+  utilizável. O subtotal cache + runner principal (1250) omite 45 vCPU de três apps.
 
   Procedimento de reverificação: confirmar `total_vcpu` da conta no painel; somar as
-  reservas declaradas (cache + frota de runners); e medir tenants ativos concorrentes em
+  reservas declaradas de TODAS as aplicações da conta; e medir tenants ativos concorrentes em
   produção. Fecha quando o aumento de limite for concedido, ou quando a arquitetura deixar
   de ser um contêiner por tenant ativo.
 
-  Owner: pedir aumento de limite à Cloudflare é relação comercial com fornecedor.
-last-verified: 2026-09-09
+  A abertura/decisão do caso de cota é relação comercial com fornecedor; o caso pendente
+  não é aprovação. O guia de custo regional de 2026-08-09 é histórico, não estado atual.
+last-verified: 2026-09-12
 ```
 
 ### B-098 — dezoito worktrees vivem num diretório que o sistema operacional apaga, e uma delas tem trabalho não enviado
@@ -16066,36 +16120,37 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-154 — ⛔ OWNER: dois instrumentos jurídicos executados afirmam capacidades que a plataforma devolve como não-implementadas
+### B-154 — ⛔ OWNER: reconciliar promessas jurídicas executadas com capacidades ainda não comprovadas
 
 Não são páginas de marketing. São atos jurídicos assinados, e por isso **nenhuma linha deles
 pode ser emendada sem o owner** — a correção de um instrumento executado é um aditivo, não um
 commit.
 
 - **`legal/dpa/v1.0.0.en-US.md:110`** — *"Audit events are retained in immutable R2 with
-  Object Lock"*. **R2 não implementa Object Lock**; a API devolve `NotImplemented`, o que
-  está registrado neste repositório e é a razão de [B-046] existir como item bloqueado por
-  plataforma. O DPA é o instrumento que o comprador anexa ao contrato dele.
+  Object Lock"*. O relato histórico de 2026-08-25 em [B-046] registrou `NotImplemented`,
+  mas não vinculou o artefato bruto. O probe mais recente, de 2026-09-09, é
+  `INDETERMINATE`: as credenciais foram rejeitadas antes do teste de capacidade e o
+  `PutObject` com retenção não foi executado. Não há prova atual de WORM neste
+  deployment, tampouco prova de que o R2 atualmente não implemente Object Lock.
+  O DPA é o instrumento que o comprador anexa ao contrato dele.
 - **`legal/sla/v1.0.0.md:46`** — a linha Enterprise compromete *"BYOK kill-switch p99 ≤
-  5 min"*. O BYOK devolve **501** (`routes/byok_admin.rs:249`) e o único provider compilado
-  no binário embarcado é o fake — é o [B-083], que já aponta para cá ao dizer que *"a
-  reconciliação dos instrumentos assinados"* é de outro item.
-- **`marketing/launch/CASE-STUDIES/enterprise-byok.md:59`** — depoimento atribuído que afirma
-  que *"o drill de kill-switch produziu o artefato de que a equipe de compliance precisava"*.
-  O drill é o [B-084]: emite `PASS` a partir de um `sleep`.
+  5 min"*. O Dockerfile de produção compila `byok-aws-real`, e a rota `/deactivate`
+  possui caminho Shred; `501 byok_not_available` na ativação é condicional à falha de
+  construção do provider ou acesso à CMK. O recibo [B-083] não contém tenant
+  provisionado, ativação, revogação ou medição p99. Código embarcado não comprova
+  capacidade operacional nem cumprimento do SLA.
+- **`marketing/launch/CASE-STUDIES/enterprise-byok.md`** — depoimento anterior retirado
+  do texto-fonte, que permanece `DRAFT — NOT FOR PUBLICATION`; é preciso apurar se
+  alguma cópia anterior circulou. O drill [B-084] não é evidência operacional de p99.
 
-**Uma correção ao enunciado original, e ela muda o custo para melhor.** A atribuição do
-depoimento é hoje `[ENTERPRISE_CUSTOMER_TITLE]` / `[ENTERPRISE_CUSTOMER_NAME or
-SANITIZED_DESCRIPTOR]` — **marcadores, não uma pessoa**. Ninguém foi citado ainda. Retratar
-custa **zero** agora e passa a exigir uma conversa com um cliente real no minuto em que
-alguém preencher o marcador antes do drill ser real. É o item mais barato desta leva e o que
-mais encarece se esperar.
+**Correção ao enunciado original.** A retirada do depoimento na fonte não prova que
+nenhuma versão anterior tenha sido enviada; a decisão de eventual aviso continua aberta.
 
-**Por que não é duplicata de [B-009]/[B-046]/[B-083]/[B-084]/[B-087].** Aqueles cinco cobrem
-o **defeito de engenharia** (o stub, o binário, o script do drill) e o **CAIQ**. Nenhum deles
-nomeia `legal/dpa/*` nem `legal/sla/*`, e nenhum dos `verify` deles lê esses arquivos —
-conferido. A diferença é material: consertar o binário não retira a afirmação do instrumento
-assinado, e retirar a afirmação não conserta o binário.
+**Por que não é duplicata de [B-009]/[B-046]/[B-083]/[B-084]/[B-087].** Esses itens cobrem
+camadas de engenharia, probe de fornecedor, drill e redação do CAIQ; [B-087] já roteia
+o resíduo jurídico para [B-170]. O B-154 mantém o remédio dos enunciados no DPA/SLA
+executados como decisão distinta: consertar o binário não altera instrumento assinado,
+e alterar instrumento não comprova a capacidade prometida.
 
 **O que este item NÃO decide** — e é exatamente o que o torna `owner:`: qual das três saídas
 tomar em cada instrumento. Emendar (aditivo com contraparte), notificar (comunicação formal a
@@ -16103,11 +16158,9 @@ quem já assinou), ou construir a capacidade. As três envolvem contraparte, din
 assinatura, e nenhuma é minha.
 
 
-**Só ele — e apenas isto (precisado 2026-08-31): a ASSINATURA.** O texto do aditivo, a minuta
-da notificação formal e o parecer de qual das três saídas é mais barata por instrumento **eu
-entrego prontos** — isso é redação, e é minha. O que não é executável sem ele é **executar o
-instrumento**: assinar o aditivo, notificar formalmente a contraparte, ou pagar a construção
-da capacidade.
+**Fronteira de execução.** Engenharia pode preparar minutas e evidências, mas não há neste
+registro uma decisão jurídica final, aditivo assinado ou aviso efetivado. Executar o
+instrumento, notificar formalmente a contraparte ou custear a capacidade requer o owner.
 
 ```backlog
 id: B-154
@@ -16116,53 +16169,20 @@ owner: owner
 status: open
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  python3 -S scripts/verify_owner_action_packets.py --id B-154
-  bash -c 'set -e
-  d=legal/dpa/v1.0.0.en-US.md
-  s=legal/sla/v1.0.0.md
-  b=crates/corelink-container/src/routes/byok_admin.rs
-  for f in "$d" "$s"; do [ -f "$f" ] || { echo "FALHA: $f sumiu — um instrumento executado nao some sozinho; reavalie o item."; exit 1; }; done
-  n=0; det=""
-  grep -qE "^[^#<*>-]*Object Lock" "$d" && { n=$((n+1)); det="$det dpa-afirma-object-lock"; }
-  grep -qE "^[^#<*>-]*BYOK kill-switch" "$s" && { n=$((n+1)); det="$det sla-compromete-kill-switch"; }
-  if [ -f "$b" ]; then
-    grep -qE "^[^/*]*NOT_IMPLEMENTED" "$b" || { echo "FALHA: byok_admin.rs nao devolve mais NOT_IMPLEMENTED em linha executavel — o BYOK pode ter sido construido; releia o item antes de confiar neste portao."; exit 1; }
-  else
-    echo "FALHA: $b sumiu — sem ele nao consigo sustentar que o SLA promete o que nao existe."; exit 1
-  fi
-  if [ "$n" -gt 0 ]; then
-    echo "aberto: $n de 2 instrumentos executados ainda afirmam capacidade nao entregue:$det (BYOK segue 501 no codigo)"
-  else
-    echo "aberto: nenhum instrumento publicado repete a afirmacao; o BYOK segue NOT_IMPLEMENTED e a decisao/assinatura do owner continua pendente"
-  fi'
+  python3 -S scripts/verify_owner_action_packets.py --id B-154 &&
+  python3 -S scripts/verify_b154_instrument_claims.py --self-test
 verify-means: |
-  open — pelo menos um dos dois instrumentos assinados ainda carrega a afirmação, **e** o
-  código continua devolvendo `NOT_IMPLEMENTED` no caminho do BYOK.
-
-  **Os greps nos instrumentos são ancorados em `^[^#]*`** — markdown não tem comentário de
-  linha, mas as duas páginas usam `#` de cabeçalho, e um título futuro como
-  *"## Object Lock — o que não fazemos"* satisfaria um grep nu e manteria o item verde
-  descrevendo o oposto. O grep no código usa `^[^/]*` pelo motivo padrão: doc-comment não é
-  enforcement.
-
-  **A condição do código é premissa, não achado, e por isso falha ALTO.** Se o BYOK deixar de
-  responder 501, o comando **para** e manda reler, em vez de decidir sozinho — porque nesse
-  cenário a linha do SLA pode ter passado a ser verdadeira, e um portão não deve tomar essa
-  decisão no lugar do owner.
-
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 2 de 2
-  instrumentos…"* e exit 0. Numa cópia com as duas linhas retiradas dos instrumentos, sai
-  *"FALHA: nenhum dos dois instrumentos assinados carrega mais a afirmacao"* e exit 1.
-
-  **O depoimento do case study ficou FORA do predicado, de propósito.** Ele é hoje um
-  marcador não preenchido — retratá-lo é barato e não muda o veredito deste item; medi-lo
-  junto faria o item parecer resolvido quando só a parte fácil tivesse sido feita. Está no
-  corpo, com o caminho e a linha, para quem fechar tratar os três juntos.
-
-  Este item é `owner:` pelo critério estrito: o próximo passo é um aditivo contratual, uma
-  notificação formal a quem já assinou, ou a construção da capacidade. Nenhum é executável
-  sem a assinatura ou o dinheiro do owner.
-last-verified: 2026-09-09
+  open — o packet conserva as decisões externas não executadas; o detector exige as duas
+  afirmações ativas no DPA/SLA e testa mutações negativas de Markdown. Também exige a
+  evidência atual: Dockerfile com `byok-aws-real`, B-083 sem ciclo CMK/p99 executado e
+  probe B-046 mais recente `INDETERMINATE`. O relato histórico `NotImplemented` não é
+  tratado como resultado do probe atual. Qualquer alteração nessa combinação falha
+  fechado para reavaliação; um `NOT_IMPLEMENTED` solto no código nunca satisfaz o guard.
+  Verde confirma apenas consistência do registro aberto, não cumprimento do SLA, estado
+  definitivo de Object Lock nem solução jurídica. A retirada do case study da fonte não
+  determina se houve circulação anterior. Encerrar B-154 exige evidência de remédio
+  jurídico/aviso aprovado ou capacidade comprovada, com o instrumento assinado preservado.
+last-verified: 2026-09-13
 ```
 
 ### B-155 — 93 de 134 `verify` fazem `grep` de padrão não-ancorado: o comentário do arquivo alvo satisfaz o portão

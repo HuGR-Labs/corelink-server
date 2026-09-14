@@ -392,11 +392,11 @@ def assert_dependencies() -> str:
         ROOT / "worker/tests/setup.ts",
     ):
         read(path)
-    pnpm = os.environ.get("B160_PNPM") or "pnpm"
+    pnpm = "pnpm"
     try:
         version = subprocess.run(
             [pnpm, "--version"], cwd=ROOT, check=True, capture_output=True,
-            text=True, timeout=30,
+            text=True, timeout=30, shell=False,
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError) as error:
         fail(f"pnpm@{PNPM_VERSION} is unavailable: {error}")
@@ -418,7 +418,7 @@ def run_focal(pnpm: str) -> None:
         try:
             result = subprocess.run(
                 command, cwd=ROOT, capture_output=True, text=True,
-                timeout=MAX_TEST_SECONDS,
+                timeout=MAX_TEST_SECONDS, shell=False,
             )
         except subprocess.TimeoutExpired:
             fail(f"B-160 focal Vitest exceeded bounded timeout ({MAX_TEST_SECONDS}s)")

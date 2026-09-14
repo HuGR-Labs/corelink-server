@@ -39,6 +39,11 @@ EXPECTED_IDS = (
 # evidenced and reclassified.
 LEGACY_OWNER_IDS = frozenset(EXPECTED_IDS[:12]) - {"B-013", "B-110"}
 CLOSED_PACKET_IDS = frozenset({"B-013", "B-110", "B-165"})
+B089_SURFACES = (
+    "legal/sla/v1.0.0.md",
+    "apps/docs/src/pages/legal/terms.tsx",
+    "apps/docs/src/lib/pricing.ts",
+)
 ITEM_FIELDS = {
     "id", "owner", "status", "action_type", "procedure",
     "inputs_and_credentials_boundary", "evidence", "expected_postcondition",
@@ -87,6 +92,17 @@ B111_RELEASE_CHAIN = {
     "notarize-macos": {"sign-windows", "release"},
 }
 B110_EVIDENCE_PATH = "evidence/owner-actions/B-110/ci-capacity-decision.json"
+B065_EVIDENCE_REQUIRED_FIELDS = [
+    "schema_version", "captured_at", "account", "destination_inventory",
+    "retained_endpoint_ids", "resolution", "billing_health_runs",
+    "duplicate_events_resolved", "operator",
+]
+B065_SCHEMA_REQUIRED_TERMS = (
+    "v1 or v2", "signup_worker", "corelink_prd_container",
+    "observed_disabled", "disabled_now", "mutation_performed",
+    "disabled_at is required only for disabled_now", "Legacy retired_endpoint_id",
+    "never replace the typed resolution or either retained ID",
+)
 B110_EVIDENCE_REQUIRED_FIELDS = [
     "schema_version",
     "captured_at",
@@ -553,6 +569,74 @@ def _check_b110_evidence(item: dict[str, object]) -> None:
         raise PacketError("B-110 evidence ownership metadata drifted")
 
 
+def _check_b089_surface_contract(item: dict[str, object], root: Path = ROOT) -> None:
+    """Pin the *unresolved* legal/pricing contradiction, not a false closure.
+
+    An executed amendment or authorized settlement must update this census and
+    its tests together. A missing path or unilateral copy change cannot pass.
+    """
+    expected_references = ["BACKLOG.md#B-089", *B089_SURFACES]
+    if item["references"] != expected_references:
+        raise PacketError("B-089 source references drifted")
+    procedure = item["procedure"]
+    if not isinstance(procedure, list) or not any(
+        all(path in step for path in B089_SURFACES)
+        for step in procedure if isinstance(step, str)
+    ):
+        raise PacketError("B-089 procedure must name all live source paths")
+
+    sources: dict[str, str] = {}
+    for path_text in B089_SURFACES:
+        path = root / path_text
+        if path.is_symlink() or not path.is_file():
+            raise PacketError(f"B-089 source missing or non-regular: {path_text}")
+        try:
+            sources[path_text] = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise PacketError(f"B-089 source unreadable: {path_text}") from exc
+
+    sla = sources[B089_SURFACES[0]]
+    slo_section = sla.split("## 2. Uptime SLO per Tier", 1)
+    if len(slo_section) != 2:
+        raise PacketError("B-089 SLA tier section missing")
+    slo_rows = slo_section[1].split("\n## ", 1)[0]
+    tier_rows = re.findall(r"^\| \*\*\w+\*\* \|.*$", slo_rows, flags=re.M)
+    sla_tiers = [row.split("**", 2)[1] for row in tier_rows]
+    if sla_tiers != ["Free", "Starter", "Pro", "Enterprise"]:
+        raise PacketError(f"B-089 executed SLA tier census drifted: {sla_tiers}")
+    for row, credit_expected in zip(tier_rows, (False, True, True, True), strict=True):
+        coverage = row.rsplit("|", 2)[1].strip().lower()
+        positive = "service credits per §4" in coverage
+        negative = "no service credits" in coverage
+        if positive != credit_expected or negative == credit_expected:
+            raise PacketError(f"B-089 executed SLA tier credit coverage drifted: {row.split('**', 2)[1]}")
+    if "issued automatically against the next invoice" not in sla or "sole and exclusive remedy" not in sla:
+        raise PacketError("B-089 executed SLA credit/remedy claim drifted")
+
+    pricing = sources[B089_SURFACES[2]]
+    canonical = re.search(r"CANONICAL_TIERS:\s*readonly TierId\[\]\s*=\s*\[([^]]+)\]", pricing, re.S)
+    if canonical is None:
+        raise PacketError("B-089 sold-tier census missing")
+    sold_tiers = re.findall(r'"([a-z]+)"', canonical.group(1))
+    if sold_tiers != ["free", "solo", "starter", "pro", "max", "enterprise"]:
+        raise PacketError(f"B-089 sold-tier census drifted: {sold_tiers}")
+    # The two live contradictions are Starter/Pro (SLA promises credit, price
+    # card denies it). Solo/Max are sold but absent from the executed SLA.
+    expected_flags = ("false", "false", "false", "false", "false", "true")
+    for tier, expected_flag in zip(sold_tiers, expected_flags, strict=True):
+        blocks = re.findall(rf"(?ms)^  {tier}: \{{(.*?)^  \}},", pricing)
+        if len(blocks) != 1 or re.findall(r"\bslaCredits:\s*(true|false)\b", blocks[0]) != [expected_flag]:
+            raise PacketError(f"B-089 published pricing credit posture drifted: {tier}")
+
+    terms = sources[B089_SURFACES[1]]
+    section = terms.split("14. Service availability and credits", 1)
+    if len(section) != 2:
+        raise PacketError("B-089 published Terms credit section missing")
+    section_body = section[1].split("</section>", 1)[0]
+    if "Pro-tier customers are entitled to a" not in section_body or "applied automatically to the next invoice" not in section_body:
+        raise PacketError("B-089 published Terms Pro credit claim drifted")
+
+
 def _read_json_evidence(path_text: str, expected_fields: list[str], label: str) -> dict[str, object]:
     """Load one canonical receipt and reject missing/extra root fields and secrets."""
     path = ROOT / path_text
@@ -705,26 +789,94 @@ def _check_b097_evidence(item: dict[str, object]) -> None:
     if evidence["required_fields"] != B097_EVIDENCE_REQUIRED_FIELDS:
         raise PacketError("B-097 evidence required fields drifted")
     record = _read_json_evidence(B097_EVIDENCE_PATH, B097_EVIDENCE_REQUIRED_FIELDS, "B-097")
-    if record["schema_version"] != 1 or not isinstance(record["captured_at"], str) or not record["captured_at"].strip():
+    if record["schema_version"] != 1 or record["captured_at"] != "2026-09-13T00:44:49Z":
         raise PacketError("B-097 evidence capture metadata drifted")
     if not isinstance(record["account_id_redacted"], str) or not re.fullmatch(r"[0-9a-f]{4}\.\.\.[0-9a-f]{4}", record["account_id_redacted"]):
         raise PacketError("B-097 account identifier must remain redacted")
     if record["case_id"] is not None or record["requested_total_vcpu"] is not None or record["effective_at"] is not None:
-        raise PacketError("B-097 receipt must not invent an owner support case or requested/effective quota")
-    if record["current_total_vcpu"] != 1500 or record["declared_reservation_vcpu"] != 1250 or record["active_tenants_concurrent"] is not None:
+        raise PacketError("B-097 receipt must not invent an unevidenced support case or requested/effective quota")
+    if record["current_total_vcpu"] != 1500 or record["declared_reservation_vcpu"] != 1295 or record["active_tenants_concurrent"] is not None:
         raise PacketError("B-097 quota/active-tenant capture is not the measured truthful state")
     if record["provider_decision"] != "pending":
-        raise PacketError("B-097 provider decision must remain pending without an owner case")
-    capture = _exact_keys(record["read_only_capture"], {"cloudchamber_account_endpoint", "provider_limit_confirmed", "provider_response", "active_tenant_metric", "activity_readback", "support_case"}, "B-097 read_only_capture")
+        raise PacketError("B-097 provider decision must remain pending without a case/decision receipt")
+    capture = _exact_keys(record["read_only_capture"], {"cloudchamber_account_endpoint", "provider_limit_confirmed", "provider_response", "application_readback", "instance_census", "active_tenant_metric", "tenant_population_readback", "activity_readback", "support_case"}, "B-097 read_only_capture")
     if capture["cloudchamber_account_endpoint"] != "GET /accounts/{account}/containers/me":
         raise PacketError("B-097 read_only_capture endpoint drifted")
-    if capture["provider_limit_confirmed"] is not True or capture["support_case"] != "not submitted; owner Cloudflare support/account session is required":
+    if capture["provider_limit_confirmed"] is not True or capture["support_case"] != "not evidenced in this capture; no case ID or provider decision was supplied":
         raise PacketError("B-097 read_only_capture support/limit boundary drifted")
     response = _exact_keys(capture["provider_response"], {"http_success", "total_vcpu", "vcpu_per_deployment", "total_memory_mib", "usage"}, "B-097 provider_response")
     if response != {"http_success": True, "total_vcpu": 1500, "vcpu_per_deployment": 4, "total_memory_mib": 6291456, "usage": None}:
         raise PacketError("B-097 provider response drifted")
-    if capture["active_tenant_metric"] != "unavailable: CONFIG_DB activity is stale relative to capture and is not a concurrent-active metric":
+    apps = _exact_keys(capture["application_readback"], {"source", "listed_applications", "cache_main_runner_subtotal_vcpu", "other_applications_reservation_vcpu", "applications", "interpretation"}, "B-097 application_readback")
+    if apps["source"] != "Cloudflare Containers application info API via Wrangler OAuth, read-only" or apps["listed_applications"] != 11:
+        raise PacketError("B-097 application census source/count drifted")
+    expected_apps = {
+        "corelink-prod-corelinkserver-prod": (200, 0.25, 16, 1),
+        "corelink-prod-sam-corelinkserver-prod-sam": (200, 0.25, 15, 0),
+        "corelink-prod-lhr-corelinkserver-prod-lhr": (200, 0.25, 15, 0),
+        "corelink-prod-nrt-corelinkserver-prod-nrt": (200, 0.25, 15, 0),
+        "corelink-prod-syd-corelinkserver-prod-syd": (200, 0.25, 15, 0),
+        "corelink-spawn-worker-runnercontainer": (250, 4, 18, 0),
+        "corelink-spawn-worker-runnerdevenvdo": (10, 4, 7, 0),
+        "corelink-spawn-worker-checkhostcontainer": (1, 4, 1, 0),
+        "corelink-fabricd-fabricdcontainer": (1, 1, 1, 0),
+        "githugr-engine-enginecontainer": (0, 0.25, 0, 0),
+        "githugr-githugrcontainer": (0, 0.25, 0, 0),
+    }
+    rows = apps["applications"]
+    if not isinstance(rows, list) or len(rows) != len(expected_apps):
+        raise PacketError("B-097 application census incomplete")
+    observed = {}
+    for index, raw in enumerate(rows):
+        app = _exact_keys(raw, {"name", "max_instances", "vcpu", "instances", "active_instances"}, f"B-097 application[{index}]")
+        name = app["name"]
+        if not isinstance(name, str) or name in observed:
+            raise PacketError("B-097 duplicate/invalid application")
+        observed[name] = (app["max_instances"], app["vcpu"], app["instances"], app["active_instances"])
+    if observed != expected_apps:
+        raise PacketError("B-097 application snapshot drifted")
+    subtotal = sum(row[0] * row[1] for name, row in observed.items() if name.startswith("corelink-prod-") or name == "corelink-spawn-worker-runnercontainer")
+    total = sum(row[0] * row[1] for row in observed.values())
+    if (apps["cache_main_runner_subtotal_vcpu"], apps["other_applications_reservation_vcpu"], total) != (subtotal, total - subtotal, record["declared_reservation_vcpu"]):
+        raise PacketError("B-097 declared reservation arithmetic drifted")
+    if apps["interpretation"] != "max_instances times vCPU is declared application ceiling, not provider usage, billable CPU, or tenant concurrency; application instances include healthy/prewarmed capacity":
+        raise PacketError("B-097 application ceiling disclaimer drifted")
+    census = _exact_keys(capture["instance_census"], {"source", "window_start_utc", "captured_at", "by_region", "listed_named_instances", "inactive", "running_tenant_named", "running_reserved_system", "interpretation"}, "B-097 instance_census")
+    if census["source"] != "Cloudflare Containers instances API via Wrangler OAuth, read-only":
+        raise PacketError("B-097 instance census source drifted")
+    if (census["window_start_utc"], census["captured_at"]) != ("2026-09-13T14:28:08Z", "2026-09-13T14:28:56Z"):
+        raise PacketError("B-097 instance census capture window drifted")
+    expected_regions = {
+        "prod": {"listed": 4, "inactive": 3, "running_tenant_named": 0, "running_reserved_system": 1},
+        "prod-sam": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+        "prod-lhr": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+        "prod-nrt": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+        "prod-syd": {"listed": 2, "inactive": 2, "running_tenant_named": 0, "running_reserved_system": 0},
+    }
+    if census["by_region"] != expected_regions:
+        raise PacketError("B-097 instance census regional state drifted")
+    for region, observed_region in census["by_region"].items():
+        if any(type(observed_region[field]) is not int for field in expected_regions[region]):
+            raise PacketError("B-097 instance census regional count must be an integer")
+    for field, row_field in (("listed_named_instances", "listed"), ("inactive", "inactive"), ("running_tenant_named", "running_tenant_named"), ("running_reserved_system", "running_reserved_system")):
+        if type(census[field]) is not int or census[field] != sum(row[row_field] for row in expected_regions.values()):
+            raise PacketError(f"B-097 instance census {field} arithmetic drifted")
+    if census["interpretation"] != "later point-in-time named-instance supplement (2026-09-13T14:28:08Z..14:28:56Z) to the top-level 2026-09-13T00:44:49Z quota/application-cap/D1 capture, not one simultaneous snapshot; zero running tenant-named containers is not peak tenant concurrency, customer activity, or account vCPU usage":
+        raise PacketError("B-097 instance census point-in-time disclaimer drifted")
+    if capture["active_tenant_metric"] != "unavailable: tenant registration/state, stale audit activity, and application instance health are not a concurrent-active-tenant metric":
         raise PacketError("B-097 active-tenant metric disclaimer drifted")
+    tenants = _exact_keys(capture["tenant_population_readback"], {"database", "access", "query", "rows", "total_registered_tenants", "changed_db", "rows_written", "interpretation"}, "B-097 tenant_population_readback")
+    if tenants["database"] != "CONFIG_DB/prod" or tenants["access"] != "remote-read-only" or tenants["query"] != "SELECT primary_region, COALESCE(tenant_state,'NULL') AS tenant_state, COUNT(*) AS tenant_count FROM tenant GROUP BY primary_region,tenant_state ORDER BY primary_region,tenant_state":
+        raise PacketError("B-097 tenant census source drifted")
+    if tenants["rows"] != [
+        {"primary_region": "apac", "tenant_state": "active", "tenant_count": 1},
+        {"primary_region": "enam", "tenant_state": "active", "tenant_count": 62},
+        {"primary_region": "enam", "tenant_state": "dpa_pending", "tenant_count": 93},
+        {"primary_region": "wnam", "tenant_state": "dpa_pending", "tenant_count": 108},
+    ] or tenants["total_registered_tenants"] != sum(row["tenant_count"] for row in tenants["rows"]):
+        raise PacketError("B-097 tenant census population drifted")
+    if tenants["changed_db"] is not False or type(tenants["rows_written"]) is not int or tenants["rows_written"] != 0 or tenants["interpretation"] != "tenant_state=active means registered state, not a concurrent workload or container assignment":
+        raise PacketError("B-097 tenant census read-only/disclaimer drifted")
     activity = _exact_keys(capture["activity_readback"], {"database", "access", "customer_audit_rows", "distinct_tenants_all_time", "last_customer_audit_ts_ms", "distinct_tenants_last_15m", "distinct_tenants_last_1h", "distinct_tenants_last_24h", "interpretation"}, "B-097 activity_readback")
     if activity["database"] != "CONFIG_DB/prod" or activity["access"] != "remote-read-only" or any(activity[name] != expected for name, expected in {"customer_audit_rows": 71, "distinct_tenants_all_time": 16, "last_customer_audit_ts_ms": 1784669020765, "distinct_tenants_last_15m": 0, "distinct_tenants_last_1h": 0, "distinct_tenants_last_24h": 0}.items()):
         raise PacketError("B-097 activity readback drifted")
@@ -733,6 +885,11 @@ def _check_b097_evidence(item: dict[str, object]) -> None:
 
 
 def _check_b086_evidence(item: dict[str, object]) -> None:
+    procedure = " ".join(item["procedure"])
+    if "pending legal-review template, not an executed instrument" not in procedure:
+        raise PacketError("B-086 packet must distinguish the pending residency template from an executed instrument")
+    if "any subsequently executed residency claim" not in item["expected_postcondition"]:
+        raise PacketError("B-086 packet must not assert a current executed residency claim")
     evidence = item["evidence"]
     assert isinstance(evidence, dict)
     if evidence["path"] != B086_EVIDENCE_PATH or evidence["format"] != "json":
@@ -878,9 +1035,36 @@ def _check_b154_evidence(item: dict[str, object]) -> None:
         if not isinstance(row["blocker"], str) or not row["blocker"].strip():
             raise PacketError("B-154 notice blocker is missing")
     capability = _exact_keys(record["capability_evidence"], {"object_lock", "byok_kill_switch", "case_study"}, "B-154 capability_evidence")
+    object_lock = _exact_keys(
+        capability["object_lock"], {"status", "reference", "historical_report"},
+        "B-154 capability_evidence.object_lock",
+    )
+    probe_path = "evidence/owner-actions/B-046/object-lock-probe.json"
+    if object_lock["status"] != "INDETERMINATE" or object_lock["reference"] != probe_path:
+        raise PacketError("B-154 latest Object Lock classification must remain indeterminate")
+    probe_file = ROOT / probe_path
+    if not probe_file.is_file() or probe_file.is_symlink():
+        raise PacketError("B-154 latest Object Lock probe is missing/non-regular")
+    try:
+        probe = json.loads(probe_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise PacketError(f"B-154 latest Object Lock probe is unreadable: {exc}") from exc
+    if probe.get("classification") != "INDETERMINATE":
+        raise PacketError("B-154 Object Lock receipt disagrees with latest probe")
+    history = _exact_keys(
+        object_lock["historical_report"],
+        {"date", "classification", "reference", "raw_probe_artifact"},
+        "B-154 capability_evidence.object_lock.historical_report",
+    )
+    if history != {
+        "date": "2026-08-25",
+        "classification": "REPORTED_NOT_IMPLEMENTED",
+        "reference": "BACKLOG.md#B-046",
+        "raw_probe_artifact": "NOT_LINKED_IN_B046",
+    }:
+        raise PacketError("B-154 historical Object Lock report is not source-bound")
     expected_capabilities = {
-        "object_lock": "NOT_IMPLEMENTED",
-        "byok_kill_switch": "NOT_IMPLEMENTED",
+        "byok_kill_switch": "UNVERIFIED_RUNTIME_P99",
         "case_study": "NOT_PUBLISHED",
     }
     for name, expected_status in expected_capabilities.items():
@@ -959,6 +1143,43 @@ def _check_item(
     references = _string_list(item["references"], f"{expected_id}.references", minimum=1)
     if not any(reference.startswith("BACKLOG.md#") for reference in references):
         raise PacketError(f"{expected_id}.references must include its BACKLOG anchor")
+    if expected_id == "B-089":
+        _check_b089_surface_contract(item)
+    if expected_id == "B-065":
+        if evidence["required_fields"] != B065_EVIDENCE_REQUIRED_FIELDS:
+            raise PacketError("B-065 evidence must retain the two destination IDs and typed resolution")
+        schema = evidence["item_schema"]
+        if any(term not in schema for term in B065_SCHEMA_REQUIRED_TERMS):
+            raise PacketError("B-065 evidence schema omits a resolution or destination invariant")
+        procedure_text = " ".join(procedure)
+        if not all(term in procedure_text for term in ("v1", "v2", "explicit decision", "if already disabled")):
+            raise PacketError("B-065 procedure must distinguish readback, mutation, and no-op")
+    if expected_id == "B-012":
+        # A token can make bot-PR CI unattended, but a missing runner or a
+        # zero-job startup failure is a different boundary. Keep the owner
+        # packet from regressing to "all bot PR events are suppressed".
+        if item["action_type"] != "github_app_or_fine_grained_pat" or len(procedure) != 5:
+            raise PacketError("B-012 credential procedure drifted")
+        required_by_step = (
+            ("fine-grained PAT", "contents:write", "pull_requests:write", "one-hour"),
+            ("BOT_PR_TOKEN", "--body-stdin", "five creators"),
+            ("startup_failure", "online runner labelled corelink", "hosted-billing"),
+            ("approval-required", "GITHUB_TOKEN", "Dependabot"),
+            ("job URLs", "zero-job run"),
+        )
+        for index, required in enumerate(required_by_step):
+            if any(marker not in procedure[index] for marker in required):
+                raise PacketError(f"B-012 procedure[{index}] lost a token/runner/approval boundary")
+        credentials = boundary["credentials"]
+        assert isinstance(credentials, str)
+        if not all(marker in credentials for marker in ("administration:read", "actions:read", "separate")):
+            raise PacketError("B-012 bot-PR and runner-census credential scopes were conflated")
+        schema = evidence["item_schema"]
+        assert isinstance(schema, str)
+        if not all(marker in schema for marker in ("approval_state", "job_count", "job_urls", "runner_names")):
+            raise PacketError("B-012 evidence no longer requires job-level execution")
+        if "actual jobs completed" not in item["expected_postcondition"]:
+            raise PacketError("B-012 closure no longer requires completed jobs")
     if expected_id == "B-110":
         _check_b110_evidence(item)
     if expected_id == "B-054":

@@ -1,7 +1,7 @@
 # Backlog work-package ledger
 
 > Historical D03 source checkpoint: `codex/d03-delivery-20260906@7b992e9db123abeb76381b1c1337011692f2e834`.
-> Canonical post-merge base: `6be19a2e525dad045ad8404d722905afde7ad7bd`,
+> Historical B-373 post-merge base: `6be19a2e525dad045ad8404d722905afde7ad7bd`,
 > observed 2026-09-12 in `America/Sao_Paulo`.
 
 This is the execution ledger for the open CoreLink backlog. `BACKLOG.md` remains
@@ -25,9 +25,9 @@ closure. A legitimate new observation must version a new manifest and transition
 the ledger base in the same reviewed change.
 
 ```ledger-state
-base-ref: 6be19a2e525dad045ad8404d722905afde7ad7bd
-base-sha: 6be19a2e525dad045ad8404d722905afde7ad7bd
-observed-at: 2026-09-12
+base-ref: df1cd53f56a2eff4643aaf9368e25fb0303ce57d
+base-sha: df1cd53f56a2eff4643aaf9368e25fb0303ce57d
+observed-at: 2026-09-13
 item-count: 373
 open-count: 13
 done-count: 328

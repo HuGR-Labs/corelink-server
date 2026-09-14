@@ -20,13 +20,37 @@ CREATE TABLE IF NOT EXISTS tenant_credential_revocation_floor (
   revoked_through TEXT NOT NULL
 );
 
+CREATE TRIGGER IF NOT EXISTS tenant_credential_revocation_floor_tenant_immutable
+BEFORE UPDATE OF tenant_id ON tenant_credential_revocation_floor
+WHEN NEW.tenant_id <> OLD.tenant_id
+BEGIN SELECT RAISE(ABORT, 'tenant identity is immutable'); END;
+
 CREATE TABLE IF NOT EXISTS credential_generation_revocation (
   pat_id TEXT PRIMARY KEY NOT NULL,
   token_id TEXT NOT NULL,
   tenant_id TEXT NOT NULL,
-  lifecycle_generation TEXT NOT NULL,
+  lifecycle_generation TEXT NOT NULL CHECK (
+    length(lifecycle_generation) > 0
+    AND length(lifecycle_generation) <= 19
+    AND lifecycle_generation NOT GLOB '*[^0-9]*'
+    AND (length(lifecycle_generation) = 1 OR substr(lifecycle_generation, 1, 1) <> '0')
+    AND (length(lifecycle_generation) < 19 OR lifecycle_generation <= '9223372036854775807')
+  ),
   state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'revoked'))
 );
+
+CREATE TRIGGER IF NOT EXISTS credential_generation_revocation_state_terminal_check
+BEFORE UPDATE OF state ON credential_generation_revocation
+WHEN OLD.state = 'revoked' AND NEW.state <> 'revoked'
+BEGIN SELECT RAISE(ABORT, 'invalid credential generation state transition'); END;
+
+CREATE TRIGGER IF NOT EXISTS credential_generation_revocation_identity_immutable
+BEFORE UPDATE OF pat_id, token_id, tenant_id, lifecycle_generation ON credential_generation_revocation
+WHEN NEW.pat_id <> OLD.pat_id
+  OR NEW.token_id <> OLD.token_id
+  OR NEW.tenant_id <> OLD.tenant_id
+  OR NEW.lifecycle_generation <> OLD.lifecycle_generation
+BEGIN SELECT RAISE(ABORT, 'credential generation identity is immutable'); END;
 
 CREATE INDEX IF NOT EXISTS idx_credential_generation_revocation_tenant_generation
   ON credential_generation_revocation (tenant_id, lifecycle_generation, pat_id);
@@ -57,6 +81,8 @@ WHEN length(NEW.revoked_through) = 0
   OR NEW.revoked_through GLOB '*[^0-9]*'
   OR (length(NEW.revoked_through) > 1 AND substr(NEW.revoked_through, 1, 1) = '0')
   OR CAST(NEW.revoked_through AS INTEGER) < 0
+  OR length(NEW.revoked_through) < length(OLD.revoked_through)
+  OR (length(NEW.revoked_through) = length(OLD.revoked_through) AND NEW.revoked_through < OLD.revoked_through)
 BEGIN SELECT RAISE(ABORT, 'invalid lifecycle generation'); END;
 
 -- SQLite ALTER TABLE cannot add a CHECK to an existing table. These guards keep

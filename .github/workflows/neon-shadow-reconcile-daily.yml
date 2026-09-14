@@ -111,10 +111,12 @@ jobs:
 
       - name: Compute target date (UTC yesterday or input)
         id: date
+        env:
+          TARGET_DATE_INPUT: ${{ inputs.target_date }}
         run: |
           set -euo pipefail
-          if [[ -n "${{ inputs.target_date }}" ]]; then
-            TARGET_DATE="${{ inputs.target_date }}"
+          if [[ -n "$TARGET_DATE_INPUT" ]]; then
+            TARGET_DATE="$TARGET_DATE_INPUT"
           else
             # BSD date, not GNU: this job runs on the self-hosted macOS
             # `corelink-builder` fleet, where `date -d` is an illegal option and

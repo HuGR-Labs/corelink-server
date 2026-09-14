@@ -12,3 +12,13 @@ CREATE TABLE IF NOT EXISTS runner_credential_obligation (
       OR state IN ('revoking', 'revoked')
       OR (state IN ('issued', 'adopted') AND pat_id IS NOT NULL AND token_id IS NOT NULL))
 );
+
+CREATE TRIGGER IF NOT EXISTS runner_credential_obligation_binding_insert
+BEFORE INSERT ON runner_credential_obligation
+WHEN NEW.state IN ('issued','adopted') AND NOT EXISTS (SELECT 1 FROM pat WHERE pat.pat_id=NEW.pat_id AND pat.tenant_id=NEW.tenant_id AND pat.token_id=NEW.token_id AND pat.revoked_at_ms IS NULL)
+BEGIN SELECT RAISE(ABORT,'invalid credential obligation binding'); END;
+
+CREATE TRIGGER IF NOT EXISTS runner_credential_obligation_binding_update
+BEFORE UPDATE ON runner_credential_obligation
+WHEN NEW.state IN ('issued','adopted') AND NOT EXISTS (SELECT 1 FROM pat WHERE pat.pat_id=NEW.pat_id AND pat.tenant_id=NEW.tenant_id AND pat.token_id=NEW.token_id AND pat.revoked_at_ms IS NULL)
+BEGIN SELECT RAISE(ABORT,'invalid credential obligation binding'); END;
