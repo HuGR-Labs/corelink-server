@@ -123,7 +123,7 @@ impl ProductionByokBackfillEncryptor {
                 config.state,
                 ByokState::Active | ByokState::Pending | ByokState::Partial
             )
-            || config.cmk_key_id.as_deref().map_or(true, str::is_empty)
+            || config.cmk_key_id.as_deref().is_none_or(str::is_empty)
         {
             return Err(BackfillError::Conflict(
                 "BYOK policy is not a complete pending/partial activation".to_owned(),
