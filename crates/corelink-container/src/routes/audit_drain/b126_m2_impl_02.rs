@@ -674,7 +674,7 @@ fn resolve_sealed_tail_rows(
             }
         } else if archived
             || !quarantined
-            || quarantine_reason.map_or(true, |reason| reason.trim().is_empty())
+            || quarantine_reason.is_none_or(|reason| reason.trim().is_empty())
         {
             return Err(format!(
                 "audit_outbox sealed tail sequence {first_sequence} has a losing branch that is not exclusively quarantined"
