@@ -17,7 +17,6 @@ export async function bounded<T>(work: Promise<T>, ms = 5000): Promise<T> { let 
 
 export async function prepareDevenvOperation(storage: DurableObjectStorage, db: D1Database, operationId: string, tenantId: string, now: number, generation: string): Promise<boolean> {
   if (!UUID.test(operationId) || !UUID.test(tenantId) || !validGeneration(generation) || !Number.isSafeInteger(now) || now < 0 || now > Number.MAX_SAFE_INTEGER - PREPARE_MS) return false;
-  await bounded(db.prepare("SELECT operation_id FROM devenv_credential_obligation LIMIT 1").all());
   const deadline = now + PREPARE_MS, key = PREFIX + encodeURIComponent(operationId);
   const retained = await bounded(storage.transaction(async txn => {
     const old = await txn.get(key) as Marker | undefined;
