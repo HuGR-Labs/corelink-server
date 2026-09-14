@@ -39,10 +39,18 @@ import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-typ
 import type { Env } from "../index.js";
 import { verifyClerkSessionAndResolveTenant } from "./clerk_auth.js";
 import { requireInternalAuth } from "./internal_auth.js";
+import { activateDevenvPat } from "./devenv_cleanup.js";
 import {
   activateRunnerPat,
   type RunnerCredentialOperation,
 } from "./runner_credential_obligation.js";
+
+export interface DevenvMintOperation {
+  operationId: string;
+  tenantId: string;
+  principalSource: string;
+  lifecycleGeneration: string;
+}
 
 /**
  * Default lifetime of the exchanged PAT, in seconds. Short-lived by design:
@@ -270,6 +278,11 @@ export class MintGrant {
    * disposable runner must never carry an admin bit (least privilege).
    */
   static fromRunnerDerivation(tenantId: string, principalSource: string, lifecycleGeneration?: string): MintGrant {
+    return new MintGrant(tenantId, principalSource, "read-write", lifecycleGeneration);
+  }
+
+  /** A prepared DevEnv session. The operation binds tenant, principal, and generation. */
+  static fromDevenvSession(tenantId: string, principalSource: string, lifecycleGeneration: string): MintGrant {
     return new MintGrant(tenantId, principalSource, "read-write", lifecycleGeneration);
   }
 }
@@ -630,6 +643,7 @@ export async function mintScopedPat(
   extraFields?: Readonly<Record<string, string | number | boolean>>,
   runnerJobAcKey?: string,
   runnerOperation?: RunnerCredentialOperation,
+  devenvOperation?: DevenvMintOperation,
 ): Promise<Response> {
   // L12(b): the tenant is sourced FROM the branded capability — a loose string is
   // no longer accepted, so a caller can only mint for the tenant its proven grant
@@ -641,7 +655,18 @@ export async function mintScopedPat(
   // this chokepoint. Reject malformed/mismatched runner metadata before any
   // throttle or upstream mint work, preventing a legacy direct-runner bypass.
   const hasRunnerKey = runnerJobAcKey !== undefined;
+  const validDevenvOperation = devenvOperation === undefined ||
+    (devenvOperation.operationId.length > 0 && devenvOperation.tenantId.length > 0 &&
+      devenvOperation.principalSource.length > 0 &&
+      /^(0|[1-9][0-9]*)$/.test(devenvOperation.lifecycleGeneration) &&
+      devenvOperation.lifecycleGeneration.length <= 19);
   if (
+    (runnerOperation !== undefined && devenvOperation !== undefined) ||
+    (devenvOperation !== undefined &&
+      (!validDevenvOperation ||
+        devenvOperation.tenantId !== tenantId ||
+        devenvOperation.principalSource !== principalSource ||
+        grant.lifecycleGeneration !== devenvOperation.lifecycleGeneration)) ||
     (hasRunnerKey && runnerOperation === undefined) ||
     (principalSource.startsWith("runner-job:") && (!runnerOperation || !runnerJobAcKey)) ||
     (runnerOperation !== undefined &&
@@ -795,7 +820,30 @@ export async function mintScopedPat(
     console.error(`[${requestId}] session exchange mint 200 missing hash; cannot persist`);
     return reapiError("INTERNAL_ERROR", "session exchange mint malformed", 500, requestId);
   }
-  if (runnerOperation !== undefined) {
+  if (devenvOperation !== undefined) {
+    try {
+      const activated = await activateDevenvPat(
+        env.CONFIG_DB,
+        devenvOperation.operationId,
+        devenvOperation.tenantId,
+        {
+          pat_id: minted.pat_id,
+          token_id: minted.token_id,
+          hash: minted.hash,
+          expires_ms: minted.expires_ms,
+        },
+        canonicalScope,
+        devenvOperation.lifecycleGeneration,
+      );
+      if (activated !== true) {
+        console.error(`[${requestId}] devenv credential activation failed`);
+        return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
+      }
+    } catch {
+      console.error(`[${requestId}] devenv credential activation failed`);
+      return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
+    }
+  } else if (runnerOperation !== undefined) {
     try {
       const activated = await activateRunnerPat(
         env.CONFIG_DB,

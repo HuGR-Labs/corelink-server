@@ -853,6 +853,7 @@ describe("L12(b) — MintGrant capability + mintScopedPat scope ceiling", () => 
     expect(MintGrant.fromVerifiedSession("t", "p").maxScope).toBe("read-write");
     expect(MintGrant.fromTokenExchange("t", "p").maxScope).toBe("read-write");
     expect(MintGrant.fromRunnerDerivation("t", "p").maxScope).toBe("read-write");
+    expect(MintGrant.fromDevenvSession("t", "devenv-p", "3").maxScope).toBe("read-write");
     // Rotation's ceiling = the OLD row's scope — the ONLY factory that can reach admin.
     expect(MintGrant.fromRotation("t", "p", "admin").maxScope).toBe("admin");
     expect(MintGrant.fromRotation("t", "p", "read-only").maxScope).toBe("read-only");
@@ -971,5 +972,70 @@ describe("runner mint obligation persistence", () => {
     expect(resp.status).toBe(200);
     expect(patInsertCapture.sql).toBeUndefined();
     expect(captured.req).toBeDefined();
+  });
+});
+
+describe("DevEnv mint obligation persistence", () => {
+  const OP = {
+    operationId: "22222222-3333-4444-8555-666666666666",
+    tenantId: "33333333-4444-4555-8666-777777777777",
+    principalSource: "devenv-session-1",
+    lifecycleGeneration: "3",
+  } as const;
+
+  function mintArgs(grant = MintGrant.fromDevenvSession(OP.tenantId, OP.principalSource, OP.lifecycleGeneration)) {
+    return [grant, 300, "read-write", INTERNAL_KEY, undefined, undefined, undefined, OP] as const;
+  }
+
+  it("activates through the DevEnv obligation and never uses ordinary pat INSERT", async () => {
+    const captured: { req?: Request } = {};
+    const patInsertCapture: { binds?: unknown[]; sql?: string } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), runnerActivation: "success", patInsertCapture });
+    const resp = await mintScopedPat(env, "devenv-activation", ...mintArgs());
+    expect(resp.status).toBe(200);
+    expect(patInsertCapture.sql).toBeUndefined();
+    expect(captured.req).toBeDefined();
+  });
+
+  it.each([
+    ["tenant", { tenantId: "other-tenant" }],
+    ["principal", { principalSource: "devenv-session-other" }],
+    ["generation", { lifecycleGeneration: "4" }],
+  ] as const)("rejects a mismatched DevEnv %s before upstream mint", async (_label, change) => {
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), runnerActivation: "success" });
+    const operation = { ...OP, ...change };
+    const resp = await mintScopedPat(
+      env,
+      `devenv-mismatch-${_label}`,
+      MintGrant.fromDevenvSession(OP.tenantId, OP.principalSource, OP.lifecycleGeneration),
+      300,
+      "read-write",
+      INTERNAL_KEY,
+      undefined,
+      undefined,
+      operation,
+    );
+    expect(resp.status).toBe(500);
+    expect(captured.req).toBeUndefined();
+  });
+
+  it("rejects a dual runner+DevEnv operation before upstream mint", async () => {
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), runnerActivation: "success" });
+    const runner = { operationId: OP.operationId, tenantId: OP.tenantId, jobId: "job", repo: "repo", lifecycleGeneration: OP.lifecycleGeneration };
+    const resp = await mintScopedPat(env, "devenv-dual", MintGrant.fromDevenvSession(OP.tenantId, OP.principalSource, OP.lifecycleGeneration), 300, "read-write", INTERNAL_KEY, undefined, "ac-key", runner, OP);
+    expect(resp.status).toBe(500);
+    expect(captured.req).toBeUndefined();
+  });
+
+  it.each(["false", "throw"] as const)("fails closed when DevEnv activation is %s", async (activation) => {
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), runnerActivation: activation });
+    const resp = await mintScopedPat(env, `devenv-activation-${activation}`, ...mintArgs());
+    expect(resp.status).toBe(500);
+    const body = (await resp.json()) as Record<string, unknown>;
+    expect(body.token_plaintext).toBeUndefined();
+    expect(body.hash).toBeUndefined();
   });
 });
