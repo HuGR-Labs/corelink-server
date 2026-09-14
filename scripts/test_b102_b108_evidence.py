@@ -7,12 +7,14 @@ import copy
 import base64
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 import verify_b102_b108_evidence as verifier
@@ -275,6 +277,10 @@ def workflow_run_timestamp_contract() -> None:
     assert 'repos/HuGR-Labs/corelink-server/actions/runs/${GITHUB_RUN_ID}' in timestamp_step
     assert "\n          gh api" not in timestamp_step
     assert "HTTP_PROXY" not in timestamp_step and "SSL_CERT_FILE" not in timestamp_step
+    verify_step = workflow[workflow.index("      - name: Verify canonical packet"):workflow.index("      - name: Publish verifier-backed owner handoff")]
+    assert "GH_TOKEN" not in verify_step
+    assert "CORELINK_GH_BIN" not in verify_step
+    assert "GH_HOST" not in verify_step
 
 
 def main() -> int:
@@ -285,21 +291,32 @@ def main() -> int:
     else:
         raise AssertionError("fake fixture unexpectedly passed the pinned gh verifier")
     original_gh_verifier = verifier.verify_attestation_with_gh
+    real_gh_root = tempfile.TemporaryDirectory(prefix="corelink-real-gh-test-")
+    real_verifier = verifier.install_pinned_gh(Path(real_gh_root.name) / "gh")
 
     def expect_real_gh_error(mutator, label: str) -> None:
         candidate = packet()
         mutator(candidate)
         item = candidate["items"]["B-106"]
         attestation = item["github_attestation"]
+        installer_calls = []
+
+        def use_real_verifier(path: Path) -> Path:
+            installer_calls.append(path)
+            return real_verifier
+
         try:
-            with patch.object(verifier, "install_pinned_gh", side_effect=verifier.PinnedGhError("test unavailable")):
-                original_gh_verifier(
-                    attestation["bundle"],
-                    verifier.b106_subject_bytes(item["cold_attestation"], item["deployment"]),
-                    item["deployment"],
-                    attestation["verification"],
-                )
+            with patch.dict(os.environ, {"CORELINK_GH_BIN": str(Path(real_gh_root.name) / "attacker"), "PATH": str(Path(real_gh_root.name) / "attacker")}):
+                with patch.object(verifier, "install_pinned_gh", side_effect=use_real_verifier):
+                    original_gh_verifier(
+                        attestation["bundle"],
+                        verifier.b106_subject_bytes(item["cold_attestation"], item["deployment"]),
+                        item["deployment"],
+                        attestation["verification"],
+                    )
         except verifier.EvidenceError:
+            if len(installer_calls) != 1:
+                raise AssertionError("CORELINK_GH_BIN selected the verifier instead of the pinned installer")
             return
         raise AssertionError(f"real gh verifier accepted mutation: {label}")
 
