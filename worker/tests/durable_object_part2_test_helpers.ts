@@ -62,6 +62,11 @@ function makeMockState(idStr = "test-do-id"): DurableObjectState {
 function makeEnv(): Env {
   return {
     CORELINK_SERVER: {} as DurableObjectNamespace,
+    // The alarm driver drains durable cleanup obligations before deciding
+    // whether an idle container's alarm chain can end.  Keep this fixture's
+    // control-plane binding present so an empty marker set is distinguishable
+    // from a real dependency failure (which must conservatively re-arm).
+    CONFIG_DB: { prepare: () => { throw new Error("unexpected D1 access"); } } as unknown as D1Database,
     ENVIRONMENT: "test",
     PAGERDUTY_ROUTING_KEY: "",
   };
@@ -111,7 +116,9 @@ function makeReaperState(lifecycle: Record<string, unknown>, currentAlarm: numbe
       get: async (key: string) => storageMap.get(key),
       put: async (key: string, val: unknown) => { storageMap.set(key, val); },
       delete: async (key: string) => storageMap.delete(key),
-      list: async () => new Map(storageMap),
+      list: async (options?: { prefix?: string }) => new Map(
+        [...storageMap].filter(([key]) => !options?.prefix || key.startsWith(options.prefix)),
+      ),
       getAlarm: async () => pendingAlarm,
       setAlarm: async (time: number) => { alarms.push(time); pendingAlarm = time; },
       deleteAlarm: async () => { pendingAlarm = null; },
