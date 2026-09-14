@@ -6,9 +6,11 @@ import { activateRunnerPat, adoptRunnerOperation } from "../src/lib/runner_crede
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 const OP = { operationId: "11111111-1111-4111-8111-111111111111", tenantId: "tenant-a", jobId: "job-a", repo: "acme/repo", lifecycleGeneration: "7" };
 const PAT = { pat_id: "22222222-2222-4222-8222-222222222222", token_id: "token-a", hash: "hmac$argon2$digest", expires_ms: Date.now() + 86_400_000 };
+const RAW_SECRET = "raw-runner-secret-must-not-persist";
 
 class RealD1 {
   readonly sqlite = new DatabaseSync(":memory:");
+  failSecondBatchStatement = false;
   constructor() {
     this.sqlite.exec(`CREATE TABLE pat (
       pat_id TEXT PRIMARY KEY NOT NULL, tenant_id TEXT NOT NULL, pat_hash TEXT NOT NULL UNIQUE,
@@ -36,7 +38,19 @@ class RealD1 {
     }};
   }
   async batch(statements: Array<{ run(): Promise<{ meta: { changes: number }; success: boolean }> }>) {
-    return Promise.all(statements.map((statement) => statement.run()));
+    this.sqlite.exec("BEGIN");
+    try {
+      const results = [];
+      for (const [index, statement] of statements.entries()) {
+        if (this.failSecondBatchStatement && index === 1) throw new Error("injected activation update failure");
+        results.push(await statement.run());
+      }
+      this.sqlite.exec("COMMIT");
+      return results;
+    } catch (error) {
+      this.sqlite.exec("ROLLBACK");
+      throw error;
+    }
   }
 }
 
@@ -52,10 +66,17 @@ function patCount(db: RealD1) { return Number((db.sqlite.prepare("SELECT COUNT(*
 describe("runner credential activation and adoption against migrated D1", () => {
   it("activates only the prepared exact tuple and never persists plaintext", async () => {
     const db = new RealD1(); prepared(db);
-    await expect(activateRunnerPat(db as never, OP, PAT, "read-write", "ac-key")).resolves.toBe(true);
+    await expect(activateRunnerPat(db as never, OP, { ...PAT, rawSecret: RAW_SECRET } as never, "read-write", "ac-key")).resolves.toBe(true);
     expect(row(db)).toMatchObject({ state: "issued", tenant_id: OP.tenantId, job_id: OP.jobId, repo: OP.repo, lifecycle_generation: "7", pat_id: PAT.pat_id, token_id: PAT.token_id });
     expect(db.sqlite.prepare("SELECT pat_hash, shown_once_token FROM pat").get()).toEqual({ pat_hash: PAT.hash, shown_once_token: PAT.token_id });
-    expect(JSON.stringify(db.sqlite.prepare("SELECT * FROM pat").get())).not.toContain("plaintext-runner-secret");
+    expect(JSON.stringify(db.sqlite.prepare("SELECT * FROM pat").get())).not.toContain(RAW_SECRET);
+    expect(JSON.stringify(row(db))).not.toContain(RAW_SECRET);
+  });
+
+  it("rolls back PAT insertion when the obligation update fails", async () => {
+    const db = new RealD1(); prepared(db); db.failSecondBatchStatement = true;
+    await expect(activateRunnerPat(db as never, OP, { ...PAT, rawSecret: RAW_SECRET } as never, "read-write", "ac-key")).rejects.toThrow("injected activation update failure");
+    expect(patCount(db)).toBe(0); expect(row(db)).toMatchObject({ state: "prepared", pat_id: null, token_id: null });
   });
 
   it.each(["7", "8"])("blocks activation at revocation floor %s with no PAT side effect", async (floor) => {
