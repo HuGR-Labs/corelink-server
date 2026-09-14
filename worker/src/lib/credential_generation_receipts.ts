@@ -80,7 +80,7 @@ export async function closeGenerationEvent(
   }
   try {
     for (let page = 0; page < budget; page++) {
-      await closeCredentialGeneration(db, input.tenant_id, input.lifecycle_generation);
+      await closeCredentialGeneration(db, input.tenant_id, input.lifecycle_generation, page === 0, page === 0, page === 0);
       const drained = await drainCredentialGenerationRevocations(db, kv, input.tenant_id, input.lifecycle_generation);
       if (!drained.complete) continue;
       const updated = await db.prepare(`UPDATE credential_generation_event_receipts SET state = 'complete'

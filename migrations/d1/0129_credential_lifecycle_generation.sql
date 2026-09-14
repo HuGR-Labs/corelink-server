@@ -31,6 +31,14 @@ CREATE TABLE IF NOT EXISTS credential_generation_revocation (
 CREATE INDEX IF NOT EXISTS idx_credential_generation_revocation_tenant_generation
   ON credential_generation_revocation (tenant_id, lifecycle_generation, pat_id);
 
+-- A bounded drain revisits both projections once per KV page. These indexes
+-- keep the queue and source PAT lookups selective as a tenant grows.
+CREATE INDEX IF NOT EXISTS idx_credential_generation_revocation_tenant_state
+  ON credential_generation_revocation (tenant_id, state, lifecycle_generation, pat_id);
+
+CREATE INDEX IF NOT EXISTS idx_pat_tenant_generation
+  ON pat (tenant_id, lifecycle_generation, pat_id);
+
 CREATE TRIGGER IF NOT EXISTS tenant_credential_revocation_floor_generation_check
 BEFORE INSERT ON tenant_credential_revocation_floor
 WHEN length(NEW.revoked_through) = 0

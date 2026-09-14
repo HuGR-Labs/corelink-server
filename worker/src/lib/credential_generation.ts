@@ -30,20 +30,23 @@ export async function closeCredentialGeneration(
   db: D1Database,
   tenantId: string,
   throughGeneration: string,
+  refreshPatRevocations = true,
+  ensureFloor = true,
+  verifyIdentity = true,
 ): Promise<void> {
   const generation = validateLifecycleGeneration(throughGeneration);
   if (!validIdentity(tenantId)) throw new Error("invalid tenant identity");
-  const conflicts = await db.prepare(`SELECT 1 FROM credential_generation_revocation q
+  const conflicts = verifyIdentity ? await db.prepare(`SELECT 1 FROM credential_generation_revocation q
     JOIN pat p ON p.pat_id = q.pat_id
     WHERE q.tenant_id = ?1 AND (q.token_id <> p.token_id OR q.lifecycle_generation <> p.lifecycle_generation)
-    LIMIT 1`).bind(tenantId).all();
+    LIMIT 1`).bind(tenantId).all() : { results: [] };
   if ((conflicts.results ?? []).length !== 0) throw new Error("credential revocation identity conflict");
-  const results = await db.batch([
-    db.prepare(`INSERT INTO tenant_credential_revocation_floor (tenant_id, revoked_through)
+  const statements = [
+    ensureFloor ? db.prepare(`INSERT INTO tenant_credential_revocation_floor (tenant_id, revoked_through)
       VALUES (?1, ?2)
       ON CONFLICT(tenant_id) DO UPDATE SET revoked_through = CASE
         WHEN CAST(tenant_credential_revocation_floor.revoked_through AS INTEGER) < CAST(excluded.revoked_through AS INTEGER)
-        THEN excluded.revoked_through ELSE tenant_credential_revocation_floor.revoked_through END`).bind(tenantId, generation),
+        THEN excluded.revoked_through ELSE tenant_credential_revocation_floor.revoked_through END`).bind(tenantId, generation) : undefined,
     db.prepare(`INSERT OR IGNORE INTO credential_generation_revocation (pat_id, token_id, tenant_id, lifecycle_generation)
       SELECT p.pat_id, p.token_id, p.tenant_id, p.lifecycle_generation
       FROM pat p
@@ -54,11 +57,13 @@ export async function closeCredentialGeneration(
           WHERE q.pat_id = p.pat_id AND q.token_id = p.token_id
             AND q.tenant_id = p.tenant_id AND q.lifecycle_generation = p.lifecycle_generation)
       ORDER BY p.lifecycle_generation, p.pat_id LIMIT 256`).bind(tenantId),
-    db.prepare(`UPDATE pat SET revoked_at_ms = COALESCE(revoked_at_ms, CAST(strftime('%s','now') AS INTEGER) * 1000)
+    refreshPatRevocations ? db.prepare(`UPDATE pat SET revoked_at_ms = COALESCE(revoked_at_ms, CAST(strftime('%s','now') AS INTEGER) * 1000)
       WHERE tenant_id = ?1 AND lifecycle_generation IS NOT NULL
-        AND CAST(lifecycle_generation AS INTEGER) <= CAST((SELECT revoked_through FROM tenant_credential_revocation_floor WHERE tenant_id = ?1) AS INTEGER)`).bind(tenantId),
-  ]);
-  if (results.length !== 3 || results.some((result) => !result.success)) throw new Error("credential generation close not confirmed");
+        AND CAST(lifecycle_generation AS INTEGER) <= CAST((SELECT revoked_through FROM tenant_credential_revocation_floor WHERE tenant_id = ?1) AS INTEGER)
+        AND revoked_at_ms IS NULL`).bind(tenantId) : undefined,
+  ].filter((statement): statement is NonNullable<typeof statement> => statement !== undefined);
+  const results = await db.batch(statements);
+  if (results.length !== statements.length || results.some((result) => !result.success)) throw new Error("credential generation close not confirmed");
 }
 
 interface PendingRevocation { pat_id: string; token_id: string; tenant_id: string; lifecycle_generation: string }
@@ -99,6 +104,7 @@ export async function drainCredentialGenerationRevocations(
   }
   const remaining = await db.prepare(`SELECT 1 FROM credential_generation_revocation
     WHERE tenant_id = ?1 AND state = 'pending' AND CAST(lifecycle_generation AS INTEGER) <= CAST(?2 AS INTEGER) LIMIT 1`).bind(tenantId, generation).first();
+  if (failed || remaining !== null) return { complete: false, revoked };
   const unqueued = await db.prepare(`SELECT 1 FROM pat p
     WHERE p.tenant_id = ?1 AND p.lifecycle_generation IS NOT NULL AND p.token_id IS NOT NULL
       AND CAST(p.lifecycle_generation AS INTEGER) <= CAST(?2 AS INTEGER)
@@ -106,5 +112,5 @@ export async function drainCredentialGenerationRevocations(
         WHERE q.pat_id = p.pat_id AND q.token_id = p.token_id
           AND q.tenant_id = p.tenant_id AND q.lifecycle_generation = p.lifecycle_generation)
     LIMIT 1`).bind(tenantId, generation).first();
-  return { complete: !failed && remaining === null && unqueued === null, revoked };
+  return { complete: unqueued === null, revoked };
 }
