@@ -237,7 +237,7 @@ async function resolveTenantFromAcquiringPat(
  * Pipeline (every step fail-CLOSED):
  *   1. Method gate (POST only → 405).
  *   2. Internal-auth gate — the `runner_mint` consumer key
- *      (`CORELINK_RUNNER_MINT_AUTH_KEY`) with fallback to the shared
+ *      (`CORELINK_RUNNER_MINT_AUTH_KEY`), dedicated and isolated
  *      `CORELINK_INTERNAL_AUTH_KEY` (401 wrong/missing header, 503 no sized key —
  *      `requireConsumerAuth` returns 503, NOT 403: an unbound key is a config
  *      fault, and this route's dispatcher drops the job forever on a 403).
@@ -312,8 +312,7 @@ export async function handleRunnerMint(
   // this is the secret presented to the container's /_internal/pat/mint route
   // (the mint authority). That gate REQUIRES the DEDICATED CORELINK_PAT_MINT_AUTH_KEY
   // with NO shared fallback (DD-HIGH, WP1), so present the dedicated key when set;
-  // fall back to the shared key only when the dedicated is unset (additive — once
-  // the dedicated is provisioned the shared no longer authorizes the mint).
+  // There is deliberately no shared-key fallback for this onward authority.
   const internalAuthKey = env.CORELINK_PAT_MINT_AUTH_KEY;
   if (typeof internalAuthKey !== "string" || internalAuthKey.length < 32) {
     // 503, NOT 403 (2026-08-02). Nothing about the DISPATCHER failed here — it
@@ -624,7 +623,13 @@ export async function handleRunnerMint(
     repo: repoFullName,
     lifecycleGeneration: lifecycle.generation,
   };
-  if (!(await prepareRunnerCredential(env, requestId, operation))) {
+  let prepared = false;
+  try {
+    prepared = await prepareRunnerCredential(env, requestId, operation);
+  } catch {
+    prepared = false;
+  }
+  if (!prepared) {
     return reapiError("SERVICE_UNAVAILABLE", "runner mint unavailable", 503, requestId);
   }
 
@@ -652,6 +657,7 @@ export async function handleRunnerMint(
     // a shape change.
     {
       max_concurrency: maxConcurrency,
+      lifecycle_generation: lifecycle.generation,
       ...(maxVcpuH !== null ? { max_vcpu_h: maxVcpuH } : {}),
     },
     // WP5a: persist the narrowed runner-job marker on the `pat` row so the

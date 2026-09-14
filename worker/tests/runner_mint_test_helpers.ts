@@ -17,12 +17,14 @@
  */
 
 import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-types";
+import { vi } from "vitest";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
 import { batchViaFirst } from "./d1_batch_mock.js";
 
 const INTERNAL_KEY = "test-internal-auth-key-0123456789"; // ≥32 chars
 const RUNNER_MINT_KEY = "test-pat-mint-auth-key-0123456789ab"; // ≥32 chars, distinct
+const PAT_MINT_KEY = "test-dedicated-pat-mint-key-0123456789";
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
 const JOB_ID = "job-abc-0001";
@@ -87,8 +89,9 @@ function makeConfigDb(opts: {
   const allowlisted = opts.allowlisted ?? new Set<string>();
   const entitled = opts.entitled ?? new Map<string, number>();
   const vcpuCeilings = opts.vcpuCeilings ?? new Map<string, number | null>();
-  return {
+  const db = {
     prepare: (sql: string) => ({
+      sql,
       bind: (...args: unknown[]) => ({
         // All authz reads + throttle INSERT...RETURNING go through first().
         first: async <T>() => {
@@ -155,7 +158,15 @@ function makeConfigDb(opts: {
         },
       }),
     }),
+    batch: async (statements: unknown[]) => {
+      if (statements.length === 2) return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      return Promise.all(statements.map(async (statement) => {
+        const row = await (statement as { first: <T>() => Promise<T | null> }).first();
+        return { success: true, meta: { changes: 1 }, results: row === null ? [] : [row] };
+      }));
+    },
   } as unknown as D1Database;
+  return db;
 }
 
 /**
@@ -194,6 +205,9 @@ function makeMintNamespace(
   const stub = {
     fetch: async (req: Request): Promise<Response> => {
       captured.req = req;
+      if (new URL(req.url).pathname === "/_do/runner-cleanup/prepare") {
+        return new Response(null, { status: 204 });
+      }
       return new Response(JSON.stringify(opts.body ?? CANNED_MINT), {
         status: opts.status ?? 200,
         headers: { "Content-Type": "application/json" },
@@ -224,6 +238,7 @@ function makeEnv(opts: {
   patInsertCapture?: { sql?: string; binds?: unknown[] };
   withInternalKey?: boolean;
   withRunnerMintKey?: boolean;
+  withPatMintKey?: boolean;
 }): Env {
   return {
     METADATA_KV: (opts.kvDeleted || opts.kvThrow
@@ -251,7 +266,10 @@ function makeEnv(opts: {
       patInsertCapture: opts.patInsertCapture,
     }),
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
-    CORELINK_RUNNER_MINT_AUTH_KEY: opts.withRunnerMintKey ? RUNNER_MINT_KEY : undefined,
+    CORELINK_RUNNER_MINT_AUTH_KEY: opts.withRunnerMintKey === false ? undefined : RUNNER_MINT_KEY,
+    CORELINK_PAT_MINT_AUTH_KEY: opts.withPatMintKey === false ? undefined : PAT_MINT_KEY,
+    FABRIC_CREDENTIAL_AUTHORITY_URL: "https://fabric.test",
+    FABRIC_CREDENTIAL_ISSUER_AUTH_KEY: "test-fabric-credential-issuer-key-012345",
   } as Env;
 }
 
@@ -270,10 +288,21 @@ function makeAuthorizedEnv(opts: {
   patInsertCapture?: { sql?: string; binds?: unknown[] };
   withInternalKey?: boolean;
   withRunnerMintKey?: boolean;
+  withPatMintKey?: boolean;
 }): Env {
   const cfg = authorizedConfig(opts);
   return makeEnv({ ...opts, ...cfg });
 }
+
+// Default lifecycle authority response for runner tests. Individual tests may
+// replace global fetch to exercise authority failures.
+vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+  const url = String(input);
+  if (url.includes("/internal/v1/credentials/tenants/")) {
+    return new Response(JSON.stringify({ tenant_id: TENANT, generation: "1", suspended: false }), { status: 200 });
+  }
+  return new Response(JSON.stringify(CANNED_MINT), { status: 200 });
+});
 
 function mintFetch(
   env: Env,
