@@ -51,13 +51,15 @@ else:
     # The temporary parent is intentionally different on every invocation.
     rules_prefix = str(Path(configs[0]).parent).lstrip("/").replace("/", ".")
     bundled_rules = [
-        {"id": f"{rules_prefix}.{Path(config).name}.fixture-rule-{index}",
+        {"id": f"fixture-rule-{index}",
+         "name": f"{rules_prefix}.{Path(config).name}.fixture-rule-{index}",
+         "shortDescription": {"text": f"{rules_prefix}.{Path(config).name}.fixture-rule-{index}"},
          "defaultConfiguration": {"level": "warning"}}
         for index, config in enumerate(configs)
     ]
 results = [
     {
-        "ruleId": custom_rule if custom else bundled_rules[index % len(bundled_rules)]["id"],
+        "ruleId": custom_rule if custom else "fixture-rule-0",
         "level": level,
         "message": {"text": "controlled finding"},
         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "fixture.py"}}}],
@@ -68,12 +70,18 @@ results = [
 sarif = {
     "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
     "version": "2.1.0",
-    "runs": [{"tool": {"driver": {"name": "fake-semgrep", "rules": bundled_rules if not custom else [
-        {"id": "corelink.rust.no-unwrap-in-src", "defaultConfiguration": {"level": "warning"}},
-        {"id": "corelink.rust.no-tokio-in-lib-crates", "defaultConfiguration": {"level": "error"}},
-        {"id": "corelink.rust.prop-assert-matches-struct-variant", "defaultConfiguration": {"level": "error"}},
-        {"id": "corelink.rust.no-expect-in-byok-src", "defaultConfiguration": {"level": "warning"}},
-    ] if custom else []}}, "results": results}],
+    "runs": [{
+        "tool": {"driver": {"name": "fake-semgrep", "rules": bundled_rules if not custom else [
+            {"id": "corelink.rust.no-unwrap-in-src", "defaultConfiguration": {"level": "warning"}},
+            {"id": "corelink.rust.no-tokio-in-lib-crates", "defaultConfiguration": {"level": "error"}},
+            {"id": "corelink.rust.prop-assert-matches-struct-variant", "defaultConfiguration": {"level": "error"}},
+            {"id": "corelink.rust.no-expect-in-byok-src", "defaultConfiguration": {"level": "warning"}},
+        ] if custom else []}},
+        "results": results,
+        "invocations": [{"toolExecutionNotifications": [{
+            "message": {"text": "similar-corelink-b139-rules-text" if custom else f"{rules_prefix}.{Path(configs[0]).name}.notification"}
+        }]}],
+    }],
 }
 output.write_text(json.dumps(sarif))
 raise SystemExit(int(os.environ.get(f"FAKE_{population}_RC", "0")))
@@ -165,6 +173,7 @@ def test_complete_bundle_is_deterministic(fake_semgrep: Path, tmp_path: Path) ->
         "similar-corelink-b139-rules-text", ""
     )
     assert "%B139_ROOT_2%.00-security-audit.yml.fixture-rule-" in serialized
+    assert "%B139_ROOT_2%.00-security-audit.yml.notification" in serialized
     assert "similar-corelink-b139-rules-text" in serialized
 
 

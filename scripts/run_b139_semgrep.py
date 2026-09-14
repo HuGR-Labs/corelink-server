@@ -66,6 +66,7 @@ def _normalize_value(
     key: str | None,
     replacements: tuple[tuple[str, str], ...],
     dotted_rule_prefix: tuple[str, str] | None = None,
+    path: tuple[str, ...] = (),
 ) -> Any:
     if isinstance(value, dict):
         return {
@@ -74,6 +75,7 @@ def _normalize_value(
                 key=item_key,
                 replacements=replacements,
                 dotted_rule_prefix=dotted_rule_prefix,
+                path=path + (item_key,),
             )
             for item_key, item in value.items()
             if item_key not in VOLATILE_KEYS
@@ -85,6 +87,7 @@ def _normalize_value(
                 key=None,
                 replacements=replacements,
                 dotted_rule_prefix=dotted_rule_prefix,
+                path=path,
             )
             for item in value
         ]
@@ -99,7 +102,20 @@ def _normalize_value(
         # replacement above cannot see it. Restrict this substitution to rule
         # identifiers and a prefix match: ordinary finding text containing a
         # similar name must remain untouched.
-        if dotted_rule_prefix is not None and key in {"id", "ruleId"}:
+        metadata_path = (
+            ("tool", "driver", "rules", "name") == path[-4:]
+            or ("tool", "driver", "rules", "shortDescription", "text") == path[-5:]
+            or (
+                "invocations",
+                "toolExecutionNotifications",
+                "message",
+                "text",
+            )
+            == path[-4:]
+        )
+        if dotted_rule_prefix is not None and (
+            key in {"id", "ruleId"} or metadata_path
+        ):
             original, replacement = dotted_rule_prefix
             if value.startswith(original):
                 value = replacement + value[len(original) :]
