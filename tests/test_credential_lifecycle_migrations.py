@@ -282,10 +282,32 @@ class CredentialLifecycleLegacyUpgradeMigrations(unittest.TestCase):
                 "VALUES ('cross-tenant', 'other', 'job', 'repo', 'issued', 1, 'pat', 'token')"
             )
 
-        self.assertIsNone(self.db.execute(
-            "SELECT 1 FROM sqlite_master "
-            "WHERE type='table' AND name='credential_lifecycle_generation_reconciliation_validation'"
-        ).fetchone())
+        self.assertEqual(dict(self.db.execute(
+            "SELECT check_name, valid "
+            "FROM credential_lifecycle_generation_reconciliation_validation"
+        )), {
+            "devenv_binding": 1,
+            "runner_binding": 1,
+            "revocation_generation": 1,
+            "receipt_generation": 1,
+        })
+
+    def test_0131_rejects_invalid_legacy_data_before_installing_guards(self):
+        db = sqlite3.connect(":memory:")
+        self.addCleanup(db.close)
+        db.execute(
+            "CREATE TABLE pat (pat_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, "
+            "runner_job_ac_key TEXT, token_id TEXT, revoked_at_ms INTEGER)"
+        )
+        for name in LEGACY_MIGRATION_SHA256:
+            db.executescript((LEGACY_MIGRATIONS / name).read_text(encoding="utf-8"))
+        db.execute(
+            "INSERT INTO credential_generation_event_receipts VALUES "
+            "('invalid', 'tenant', '01', 'requested')"
+        )
+        reconciliation = MIGRATIONS / "0131_credential_lifecycle_generation_reconciliation.sql"
+        with self.assertRaises(sqlite3.IntegrityError):
+            db.executescript(reconciliation.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

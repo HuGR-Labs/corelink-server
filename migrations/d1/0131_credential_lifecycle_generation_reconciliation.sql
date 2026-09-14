@@ -5,42 +5,51 @@
 -- trigger is therefore additive and idempotent, while existing installs gain
 -- the same binding, canonical-generation, terminal-state, and identity guards.
 
--- Do not silently bless a legacy row that the new guards would reject.  The
--- scratch table is dropped before this migration completes and does not retain
--- application data.
-CREATE TABLE credential_lifecycle_generation_reconciliation_validation (
+-- Do not silently bless a legacy row that the new guards would reject.  Keep
+-- one opaque, fixed-cardinality attestation per check so the preflight is
+-- additive and repeatable; the table contains no tenant or credential data.
+CREATE TABLE IF NOT EXISTS credential_lifecycle_generation_reconciliation_validation (
+  check_name TEXT PRIMARY KEY NOT NULL,
   valid INTEGER NOT NULL CHECK (valid = 1)
 );
 
-INSERT INTO credential_lifecycle_generation_reconciliation_validation (valid)
-SELECT CASE WHEN EXISTS (SELECT 1 FROM pat WHERE pat.pat_id=o.pat_id AND pat.tenant_id=o.tenant_id AND pat.token_id=o.token_id AND pat.revoked_at_ms IS NULL) THEN 1 ELSE 0 END
-FROM devenv_credential_obligation o
-WHERE o.state IN ('issued', 'adopted');
+INSERT INTO credential_lifecycle_generation_reconciliation_validation (check_name, valid)
+VALUES ('devenv_binding', CASE WHEN EXISTS (
+  SELECT 1 FROM devenv_credential_obligation o
+  WHERE o.state IN ('issued', 'adopted')
+    AND NOT EXISTS (SELECT 1 FROM pat WHERE pat.pat_id=o.pat_id AND pat.tenant_id=o.tenant_id AND pat.token_id=o.token_id AND pat.revoked_at_ms IS NULL)
+) THEN 0 ELSE 1 END)
+ON CONFLICT(check_name) DO UPDATE SET valid = excluded.valid;
 
-INSERT INTO credential_lifecycle_generation_reconciliation_validation (valid)
-SELECT CASE WHEN EXISTS (SELECT 1 FROM pat WHERE pat.pat_id=o.pat_id AND pat.tenant_id=o.tenant_id AND pat.token_id=o.token_id AND pat.revoked_at_ms IS NULL) THEN 1 ELSE 0 END
-FROM runner_credential_obligation o
-WHERE o.state IN ('issued', 'adopted');
+INSERT INTO credential_lifecycle_generation_reconciliation_validation (check_name, valid)
+VALUES ('runner_binding', CASE WHEN EXISTS (
+  SELECT 1 FROM runner_credential_obligation o
+  WHERE o.state IN ('issued', 'adopted')
+    AND NOT EXISTS (SELECT 1 FROM pat WHERE pat.pat_id=o.pat_id AND pat.tenant_id=o.tenant_id AND pat.token_id=o.token_id AND pat.revoked_at_ms IS NULL)
+) THEN 0 ELSE 1 END)
+ON CONFLICT(check_name) DO UPDATE SET valid = excluded.valid;
 
-INSERT INTO credential_lifecycle_generation_reconciliation_validation (valid)
-SELECT CASE WHEN length(lifecycle_generation) > 0
-  AND length(lifecycle_generation) <= 19
-  AND lifecycle_generation NOT GLOB '*[^0-9]*'
-  AND (length(lifecycle_generation) = 1 OR substr(lifecycle_generation, 1, 1) <> '0')
-  AND (length(lifecycle_generation) < 19 OR lifecycle_generation <= '9223372036854775807')
-THEN 1 ELSE 0 END
-FROM credential_generation_revocation;
+INSERT INTO credential_lifecycle_generation_reconciliation_validation (check_name, valid)
+VALUES ('revocation_generation', CASE WHEN EXISTS (
+  SELECT 1 FROM credential_generation_revocation
+  WHERE length(lifecycle_generation) = 0
+    OR length(lifecycle_generation) > 19
+    OR (length(lifecycle_generation) = 19 AND lifecycle_generation > '9223372036854775807')
+    OR lifecycle_generation GLOB '*[^0-9]*'
+    OR (length(lifecycle_generation) > 1 AND substr(lifecycle_generation, 1, 1) = '0')
+) THEN 0 ELSE 1 END)
+ON CONFLICT(check_name) DO UPDATE SET valid = excluded.valid;
 
-INSERT INTO credential_lifecycle_generation_reconciliation_validation (valid)
-SELECT CASE WHEN length(lifecycle_generation) > 0
-  AND length(lifecycle_generation) <= 19
-  AND lifecycle_generation NOT GLOB '*[^0-9]*'
-  AND (length(lifecycle_generation) = 1 OR substr(lifecycle_generation, 1, 1) <> '0')
-  AND (length(lifecycle_generation) < 19 OR lifecycle_generation <= '9223372036854775807')
-THEN 1 ELSE 0 END
-FROM credential_generation_event_receipts;
-
-DROP TABLE credential_lifecycle_generation_reconciliation_validation;
+INSERT INTO credential_lifecycle_generation_reconciliation_validation (check_name, valid)
+VALUES ('receipt_generation', CASE WHEN EXISTS (
+  SELECT 1 FROM credential_generation_event_receipts
+  WHERE length(lifecycle_generation) = 0
+    OR length(lifecycle_generation) > 19
+    OR (length(lifecycle_generation) = 19 AND lifecycle_generation > '9223372036854775807')
+    OR lifecycle_generation GLOB '*[^0-9]*'
+    OR (length(lifecycle_generation) > 1 AND substr(lifecycle_generation, 1, 1) = '0')
+) THEN 0 ELSE 1 END)
+ON CONFLICT(check_name) DO UPDATE SET valid = excluded.valid;
 
 CREATE TRIGGER IF NOT EXISTS devenv_credential_obligation_binding_insert
 BEFORE INSERT ON devenv_credential_obligation
