@@ -82,8 +82,6 @@ where
     TIER_PRICE_ENV_TABLE
         .iter()
         .filter(|(env_name, _fallback, _tier)| {
-            // MSRV 1.80 — `Option::is_none_or` is 1.82; `map_or(true, …)` is the
-            // MSRV-safe equivalent (unset OR whitespace-only ⇒ "missing").
             lookup(env_name).is_none_or(|v| v.trim().is_empty())
         })
         .map(|(env_name, _, _)| *env_name)
