@@ -7,6 +7,7 @@ import {
   prepareRunnerCredential,
 } from "../src/lib/runner_credential_routes.js";
 import { matchRoute } from "../src/route_match.js";
+import { CoreLinkServer } from "../src/durable_object.js";
 
 const KEY = "runner-route-test-key-0123456789abcdef";
 const OP = "11111111-1111-4111-8111-111111111111";
@@ -46,6 +47,19 @@ function db(mode: "ok" | "conflict" | "error"): D1Database {
 }
 
 describe("runner credential handoff routes", () => {
+  it("dispatches the private prepare path through the actual DO fetch entry point", async () => {
+    const storage = {
+      get: async () => undefined, list: async () => new Map(), getAlarm: async () => null, setAlarm: async () => {}, put: async () => {},
+      transaction: async (fn: (txn: DurableObjectStorage) => Promise<unknown>) => fn(storage as unknown as DurableObjectStorage),
+    } as unknown as DurableObjectStorage;
+    const state = {
+      id: { equals: () => true, toString: () => "system" }, storage,
+      blockConcurrencyWhile: async (fn: () => Promise<void>) => fn(),
+    } as unknown as DurableObjectState;
+    const response = await new CoreLinkServer(state, env(db("ok"))).fetch(request("/_do/runner-cleanup/prepare", operation));
+    expect(response.status).toBe(204);
+  });
+
   it("matches the dispatcher adoption endpoint to its Worker handler", () => {
     expect(matchRoute(new URL("https://worker.test/internal/v1/runner/adopt")).routeKind).toBe("runner_adopt");
   });
@@ -96,6 +110,12 @@ describe("runner credential handoff routes", () => {
       body: "{",
     });
     expect((await handleRunnerPrepare(malformed, env(db("error")), state, {} as DurableObjectStorage, "req-json")).status).toBe(400);
+  });
+
+  it.each(["abc", "01", "-1", "9223372036854775808"])("rejects non-canonical generation %s", async (generation) => {
+    const state = { id: { equals: () => true } } as unknown as DurableObjectState;
+    const response = await handleRunnerPrepare(request("/_do/runner-cleanup/prepare", { ...operation, lifecycleGeneration: generation }), env(db("error")), state, {} as DurableObjectStorage, "req-generation");
+    expect(response.status).toBe(400);
   });
 
   it("adopt returns 204, 409, and 503 without a body", async () => {

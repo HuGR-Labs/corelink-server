@@ -56,6 +56,7 @@ import {
   PAT_ISSUE_AUTHORIZED_HEADER,
 } from "./pat_issue_rate_limit.js";
 import { isPilotSignupPath } from "./route_match.js";
+import { handleRunnerPrepare } from "./lib/runner_credential_routes.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -267,6 +268,9 @@ export class CoreLinkServer implements DurableObject {
     }
     if (url.pathname === "/_do/stop") {
       return this.handleStop(requestId);
+    }
+    if (url.pathname === "/_do/runner-cleanup/prepare") {
+      return handleRunnerPrepare(request, this.env, this.state, this.storage, requestId);
     }
 
     const durableRouteGate = await this.enforceDurableRouteRateLimit(request, url);
