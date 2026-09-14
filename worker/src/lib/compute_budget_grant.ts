@@ -5,7 +5,8 @@ const MAX_TOKEN_BYTES = 8 * 1024;
 const MAX_U32 = 0xffff_ffffn;
 const MAX_I64 = 0x7fff_ffff_ffff_ffffn;
 const MS_PER_VCPU_HOUR = 3_600_000n;
-const UUID_RE = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Matches the Runners verifier's UUID v1-v5 / RFC 4122 variant contract.
+const UUID_RE = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const WORKLOAD_ID_RE = /^[A-Za-z0-9:_./-]{1,256}$/;
 const KEY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 

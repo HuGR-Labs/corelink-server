@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { issueComputeGrant } from "../src/lib/compute_budget_grant.js";
+import { prepareDevenvCompute } from "../src/lib/devenv_compute.js";
 
 const input = { tenantId: "11111111-1111-4111-8111-111111111111", workloadKind: "devenv" as const, workloadId: "session-1", reservationId: "22222222-2222-4222-8222-222222222222", maxVcpuHours: 1, vcpuCount: 4, maximumWallMs: 28_800_000 };
 const now = Date.parse("2026-09-14T12:00:00.000Z");
@@ -28,5 +29,35 @@ describe("compute grant validation", () => {
   it.each([["zero ceiling", 0], ["fractional ceiling", 1.5], ["bad tenant", "bad"]])("rejects %s", async (_label, value) => {
     const modified = typeof value === "string" ? { ...input, tenantId: value } : { ...input, maxVcpuHours: value };
     await expect(issueComputeGrant({ COMPUTE_GRANT_SIGNING_KEY: "bad", COMPUTE_GRANT_KEY_ID: "compute-v1" }, modified, Date.now())).rejects.toThrow();
+  });
+});
+
+describe("prepareDevenvCompute", () => {
+  function deps(row: Record<string, unknown> | null = { max_concurrency: 1, max_vcpu_h: 240 }) {
+    const calls: unknown[] = [];
+    const db = { prepare: (sql: string) => ({ bind: (tenant: string) => ({ first: async () => { calls.push([sql, tenant]); return row; } }) }) } as never;
+    const rpc = { prepareAuthorizedCompute: async (binding: unknown) => { calls.push(binding); } };
+    return { env: { CONFIG_DB: db, ...env }, rpc, calls };
+  }
+  it("passes a tenant/session-bound fixed-shape token to the RPC", async () => {
+    const d = deps();
+    await expect(prepareDevenvCompute(d.env, d.rpc, input.tenantId, input.reservationId, now)).resolves.toBe(input.reservationId);
+    const binding = d.calls[1] as Record<string, unknown>;
+    expect(binding).toMatchObject({ tenantId: input.tenantId, reservationId: input.reservationId, workloadId: input.reservationId, workloadKind: "devenv", vcpuCount: 4, maximumWallMs: 28_800_000 });
+    const payload = JSON.parse(new TextDecoder().decode(decode(String(binding.token).split(".")[0]))) as Record<string, unknown>;
+    expect(payload.tenant_id).toBe(input.tenantId);
+    expect(payload.reservation_id).toBe(input.reservationId);
+  });
+  it("fails closed for missing entitlement or ceiling", async () => {
+    const noEntitlement = deps(null);
+    await expect(prepareDevenvCompute(noEntitlement.env, noEntitlement.rpc, input.tenantId, input.reservationId, now)).rejects.toThrow("invalid DevEnv runners entitlement");
+    const noCeiling = deps({ max_concurrency: 1, max_vcpu_h: null });
+    await expect(prepareDevenvCompute(noCeiling.env, noCeiling.rpc, input.tenantId, input.reservationId, now)).resolves.toBeNull();
+    expect(noCeiling.calls).toHaveLength(1);
+  });
+  it("propagates RPC rejection for relay-owned compensation", async () => {
+    const d = deps();
+    d.rpc.prepareAuthorizedCompute = async () => { throw new Error("runner unavailable"); };
+    await expect(prepareDevenvCompute(d.env, d.rpc, input.tenantId, input.reservationId, now)).rejects.toThrow("runner unavailable");
   });
 });

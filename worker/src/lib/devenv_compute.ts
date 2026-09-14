@@ -8,7 +8,8 @@ interface EntitlementRow { max_concurrency?: unknown; max_vcpu_h?: unknown; }
 function positiveInteger(value: unknown): value is number { return typeof value === "number" && Number.isSafeInteger(value) && value > 0; }
 function positiveU32(value: unknown): value is number { return positiveInteger(value) && value <= 0xffff_ffff; }
 
-/** Validate entitlement, stage the external reservation, and compensate only through the RPC. */
+/** Validate entitlement and stage the external reservation. The DO owns staged-obligation recovery;
+ * the relay owns compensation when a later mint/start/adopt step fails. */
 export async function prepareDevenvCompute(
   env: { CONFIG_DB: D1Database; COMPUTE_GRANT_SIGNING_KEY?: string; COMPUTE_GRANT_KEY_ID?: string },
   stub: Pick<RunnerDevEnvRpc, "prepareAuthorizedCompute">,
