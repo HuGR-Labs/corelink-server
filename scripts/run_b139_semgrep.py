@@ -117,7 +117,18 @@ def _normalize_value(
             key in {"id", "ruleId"} or metadata_path
         ):
             original, replacement = dotted_rule_prefix
-            if value.startswith(original):
+            notification_path = (
+                "invocations",
+                "toolExecutionNotifications",
+                "message",
+                "text",
+            ) == path[-4:]
+            if notification_path:
+                # Semgrep embeds this path in diagnostic sentences (with
+                # several different lead-ins); scope replacement to this
+                # notification field and the exact invocation prefix.
+                value = value.replace(original, replacement)
+            elif value.startswith(original):
                 value = replacement + value[len(original) :]
         return value
     return value

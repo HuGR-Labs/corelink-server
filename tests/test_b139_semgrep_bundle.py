@@ -67,6 +67,12 @@ results = [
     }
     for index in reversed(range(count))
 ]
+notification_texts = (["similar-corelink-b139-rules-text"] if custom else [
+    f"Syntax error at line 1. When parsing expression in rule '{rules_prefix}.{Path(configs[0]).name}.notification'",
+    f"rule {rules_prefix}.{Path(configs[0]).name}.notification could not be loaded",
+    f"when running {rules_prefix}.{Path(configs[0]).name}.notification",
+    "similar-corelink-b139-rules-text",
+])
 sarif = {
     "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
     "version": "2.1.0",
@@ -78,9 +84,9 @@ sarif = {
             {"id": "corelink.rust.no-expect-in-byok-src", "defaultConfiguration": {"level": "warning"}},
         ] if custom else []}},
         "results": results,
-        "invocations": [{"toolExecutionNotifications": [{
-            "message": {"text": "similar-corelink-b139-rules-text" if custom else f"{rules_prefix}.{Path(configs[0]).name}.notification"}
-        }]}],
+        "invocations": [{"toolExecutionNotifications": [
+            {"message": {"text": text}} for text in notification_texts
+        ]}],
     }],
 }
 output.write_text(json.dumps(sarif))
