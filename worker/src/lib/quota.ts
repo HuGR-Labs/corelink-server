@@ -390,7 +390,8 @@ export function storageCapIsFinite(tier: Tier): boolean {
  * existing callers and the batch/standalone parity stay source-compatible;
  * quota failure is intentionally not verb-dependent.
  */
-function storageD1ErrorResult(_isMutating: boolean): QuotaCheckResult {
+function storageD1ErrorResult(isMutating: boolean): QuotaCheckResult {
+  if (!isMutating) return { ok: true };
   return {
     ok: false,
     retryAfterSec: STORAGE_QUOTA_D1_ERROR_RETRY_SEC,

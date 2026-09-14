@@ -287,15 +287,11 @@ export async function checkStorageQuotaCachedRead(
   storageCapFinite: boolean,
   opts: StorageOpts = {},
 ): Promise<QuotaCheckResult> {
-  // Unconfirmed tier → fail closed (identical to checkStorageQuota's first
-  // branch after B181). Never cache an authorization decision made without a
-  // confirmed tier.
+  // Unconfirmed tier → keep reads available (identical to checkStorageQuota's
+  // verb-aware branch after B181). Never cache an authorization decision made
+  // without a confirmed tier.
   if (tierD1Error) {
-    return {
-      ok: false,
-      retryAfterSec: 2,
-      reason: "storage quota temporarily unverifiable (store error); retry",
-    };
+    return { ok: true };
   }
   // Unlimited-storage tier (enterprise) → nothing to check, no SUM.
   if (!storageCapFinite) {
@@ -303,13 +299,9 @@ export async function checkStorageQuotaCachedRead(
   }
   const { totalBytes, d1Error } = await resolveStorageBytesCached(db, tenantId, opts);
   if (d1Error) {
-    // A cached read is still an authorization surface: a D1/cache fault must
-    // not turn it into an unbounded quota bypass.
-    return {
-      ok: false,
-      retryAfterSec: 2,
-      reason: "storage quota temporarily unverifiable (store error); retry",
-    };
+    // Reads cannot increase usage, so retain availability during a transient
+    // D1/cache fault. The error is deliberately never cached.
+    return { ok: true };
   }
   return storageResultForBytes(totalBytes, tier);
 }
