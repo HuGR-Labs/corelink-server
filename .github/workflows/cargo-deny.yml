@@ -105,7 +105,7 @@ jobs:
       # (ADR-S12-045 v1.2.0: 0.16.4 → 0.19.8 — CVSS 4.0 advisory parse fix).
       #
       # `dtolnay/rust-toolchain` removed — see rustfmt.yml for the full argument.
-      # In short: it asked for `stable`, `rust-toolchain.toml` pins 1.91.1, and
+      # In short: it asked for `stable`, `rust-toolchain.toml` pins 1.94.1, and
       # rustup honours the file over any `rustup default`, so the action never
       # determined what ran here. `cargo deny` only needs a working `cargo` shim,
       # which the assertion below both provisions (the first in-repo cargo call

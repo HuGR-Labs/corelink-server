@@ -66,10 +66,10 @@
 
 # ---- Build stage ----
 # HO-1: digest-pinned per Wave-32 Phase E audit (supply-chain integrity).
-# Tag rust:1.91-slim-bookworm is preserved alongside the digest for human
+# Tag rust:1.94.1-slim-bookworm is preserved alongside the digest for human
 # readability; the digest is the authoritative reference. Refresh both
 # together when bumping the Rust toolchain.
-FROM rust:1.91-slim-bookworm@sha256:ac77791dbc2ab3cd3ab732fe9b45b0414a794743da99e679fa99e8faa3b6c1e3 AS builder
+FROM rust:1.94.1-slim-bookworm@sha256:cf9dd0ec73e75f827fe59123fff9dc65af1a1c8363c3c31ee8d7f8ad0b6a5fb2 AS builder
 
 # Deps pra compilar protos e linkagem.
 # `jq` is builder-only (never copied into the runtime stage): the build RUN

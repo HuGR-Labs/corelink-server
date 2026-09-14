@@ -91,9 +91,9 @@ jobs:
 
       # `dtolnay/rust-toolchain` was REMOVED here, and that is a no-op for what
       # this gate checks — not a shortcut. It requested `stable` + the `rustfmt`
-      # component, but `rust-toolchain.toml` pins channel 1.91.1 WITH rustfmt in
+      # component, but `rust-toolchain.toml` pins channel 1.94.1 WITH rustfmt in
       # its `components` list, and rustup's shims honour that file over any
-      # `rustup default`. So `cargo fmt` has always run 1.91.1's rustfmt on this
+      # `rustup default`. So `cargo fmt` runs 1.94.1's rustfmt on this
       # lane, on hosted runners too; the action's `stable` never reached it. What
       # changes is only that an ephemeral box no longer re-downloads an unused
       # toolchain on every run. The step below now PROVES the pinned rustfmt is

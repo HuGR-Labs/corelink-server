@@ -402,7 +402,7 @@ exclude = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.94.1"
 # Cargo's publication sentinel is not an SPDX identifier. The workspace is
 # proprietary; CycloneDX represents that truth using the SPDX
 # extension point below rather than emitting an invalid license expression.
@@ -501,23 +501,24 @@ getrandom = "0.2"
 # `corelink-byok::dek_cache` which uses get/put/pop/iter/new — all stable
 # across the 0.12→0.18 major-version progression.
 lru = "0.18"
-# AWS SDK — requires Rust ≥ 1.91.1 per MSRV; workspace is pegged to 1.80 as floor.
-# The actual CI toolchain (1.88+) compiles these correctly.
-# `cargo check -p corelink-byok-aws --ignore-rust-version` is required until
-# the workspace rust-version floor is bumped (tracked as infra debt post-S-14).
+# AWS SDK — aws-sdk-s3 1.144.0 is the first release that removes the
+# RUSTSEC-2026-0253-vulnerable lru 0.16.4 transitively. Its AWS/Smithy graph
+# requires Rust ≥ 1.94.1, which is the workspace toolchain pin.
+# The workspace MSRV matches this AWS/Smithy graph, so normal Cargo commands
+# enforce the same compiler floor without `--ignore-rust-version`.
 #
 # R1-9: `default-features = false` + explicit `rustls-aws-lc-runtime` excludes
 # the `tls-rustls` legacy feature path (hyper 0.14 + rustls 0.21 +
 # rustls-webpki 0.101.7 vulnerable to RUSTSEC-2026-0098/0099/0104). The
 # modern `rustls-aws-lc` runtime pulls rustls 0.23 + rustls-webpki 0.103.
-aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso", "default-https-client"] }
-aws-sdk-kms = { version = "1", default-features = false, features = ["rt-tokio", "default-https-client"] }
+aws-config = { version = "1.12.0", default-features = false, features = ["behavior-version-latest", "rt-tokio", "credentials-process", "sso", "default-https-client"] }
+aws-sdk-kms = { version = "1.118.0", default-features = false, features = ["rt-tokio", "default-https-client"] }
 # WP-S1 Phase 1 — R2 S3-compatible API client for the native container.
 # R2 is accessed via the standard S3-compatible endpoint using static
 # access-key credentials (DECISION-GATE-1 Option A). Same major-version
 # pin as aws-sdk-kms to share the existing smithy/runtime infrastructure
 # (aws-smithy-*, aws-runtime, aws-credential-types) already in Cargo.lock.
-aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", "default-https-client"] }
+aws-sdk-s3 = { version = "1.144.0", default-features = false, features = ["rt-tokio", "default-https-client"] }
 
 # RFC 8785 JCS canonical JSON for AAD / encryption_context binding
 # (used by BYOK providers + audit-chain link hashing).

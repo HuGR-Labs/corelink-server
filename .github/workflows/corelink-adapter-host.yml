@@ -81,8 +81,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
 
       # `dtolnay/rust-toolchain` removed. It asked for `stable` + clippy/rustfmt;
-      # `rust-toolchain.toml` pins 1.91.1 and lists both components, and rustup
-      # honours that file over any `rustup default` — so 1.91.1's clippy is what
+      # `rust-toolchain.toml` pins 1.94.1 and lists both components, and rustup
+      # honours that file over any `rustup default` — so 1.94.1's clippy is what
       # has always run here, hosted included. The assertion makes that provable
       # per run, so an image drift fails loudly instead of silently changing the
       # compiler.

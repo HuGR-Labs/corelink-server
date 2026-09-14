@@ -7,11 +7,11 @@
 # runner fabric) no longer call `dtolnay/rust-toolchain`. That is safe for one
 # specific reason, and this script is the machine-checked statement of it:
 #
-#   `rust-toolchain.toml` pins channel 1.91.1 together with its components
+#   `rust-toolchain.toml` pins channel 1.94.1 together with its components
 #   (rustc, cargo, rust-std, rust-src, rustfmt, clippy) and its targets
 #   (wasm32-unknown-unknown, x86_64-unknown-linux-musl). rustup's shims honour
 #   that file over ANY `rustup default`, and provision it on first use. So
-#   inside this repo, cargo resolves to 1.91.1 regardless of what the image
+#   inside this repo, cargo resolves to 1.94.1 regardless of what the image
 #   happens to ship — measured on `cf-runner-cdeec405` (2026-08-03): the image
 #   defaults to 1.96.0 with only x86_64-unknown-linux-gnu, and the first
 #   in-repo `cargo --version` pulled 1.91.1 with rustfmt 1.8.0, clippy 0.1.91,
@@ -19,7 +19,7 @@
 #   then a 0 s no-op.
 #
 # The action was therefore never what decided the compiling toolchain — it asked
-# for `stable` while the workspace pins 1.91.1, and the workspace pin won. On a
+# for `stable` while the workspace pins 1.94.1, and the workspace pin won. On a
 # GitHub-hosted runner that disagreement was merely wasteful; on an EPHEMERAL box
 # it is wasteful on EVERY run, because nothing is cached between jobs.
 #
@@ -61,8 +61,8 @@ echo "ci-assert-pinned-toolchain: resolved in ${elapsed}s"
 echo "  rustc : ${ACTUAL_RUSTC}"
 echo "  cargo : ${ACTUAL_CARGO}"
 
-# `rustc --version` prints e.g. "rustc 1.91.1 (ed61e7d7e 2025-11-07)". Compare the
-# VERSION FIELD exactly, so 1.91.10 can never satisfy a 1.91.1 pin.
+# `rustc --version` prints e.g. "rustc 1.94.1 (e408947bf 2026-03-25)". Compare the
+# VERSION FIELD exactly, so 1.94.10 can never satisfy a 1.94.1 pin.
 ACTUAL_VER="$(printf '%s\n' "$ACTUAL_RUSTC" | awk '{print $2}')"
 if [ "$ACTUAL_VER" != "$CHANNEL" ]; then
     echo "::error::ci-assert-pinned-toolchain: this job is compiling with rustc ${ACTUAL_VER}, but rust-toolchain.toml pins ${CHANNEL}." >&2

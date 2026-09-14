@@ -93,7 +93,7 @@ jobs:
       - name: Use host toolchain (baked, workspace-pinned)
         # NOT dtolnay — validate_no_shared_rustup_mutation.py forbids provisioning
         # a toolchain on a self-hosted job (`corelink` counts as self-hosted). The
-        # image bakes the rust-toolchain.toml pin (1.91.1) with clippy/rustfmt.
+        # image bakes the rust-toolchain.toml pin (1.94.1) with clippy/rustfmt.
         env:
           HOST_TRIPLE: x86_64-unknown-linux-gnu
         run: bash scripts/ci-use-host-toolchain.sh

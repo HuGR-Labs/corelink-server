@@ -22,7 +22,7 @@ name: cargo-audit (WI-S12-004)
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin policy.
 # Version bump requires ADR + Security review (§14.s12.004.1) — the 0.21.2→0.22.1
 # bump below was ratified by Owner + techlead 2026-06-02 (§14.s12.004.1 review;
-# needed for CVSS-4.0 parsing, MSRV 1.85 ≤ repo 1.91.1).
+# needed for CVSS-4.0 parsing, MSRV 1.85 ≤ repo 1.94.1).
 
 on:
   pull_request:
@@ -71,7 +71,7 @@ env:
   # col 8 — unsupported CVSS version: 4.0"). `rustsec` propagates that first
   # per-advisory parse error and stops, so one modern advisory left this repo
   # silently UN-AUDITED — NOT a real CVE in our deps. cargo-audit 0.22.1
-  # (rustsec lib 0.32 / `cvss` 2.2.0) parses CVSS 4.0. MSRV 1.85 ≤ repo 1.91.1.
+  # (rustsec lib 0.32 / `cvss` 2.2.0) parses CVSS 4.0. MSRV 1.85 ≤ repo 1.94.1.
   CARGO_AUDIT_VERSION: "0.22.1"
   # SHA-pinned RUSTSEC advisory database for deterministic, reproducible audits
   # (defense-in-depth + so a PR result never flakes on upstream DB churn). This
@@ -109,7 +109,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       # `dtolnay/rust-toolchain` removed — see rustfmt.yml for the full argument.
-      # In short: it asked for `stable`, `rust-toolchain.toml` pins 1.91.1, and
+      # In short: it asked for `stable`, `rust-toolchain.toml` pins 1.94.1, and
       # rustup honours the file, so the action never determined what ran here.
       # `cargo audit` only needs a working `cargo` shim, which the assertion below
       # both provides (first in-repo cargo call provisions the pin) and verifies.

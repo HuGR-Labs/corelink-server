@@ -114,7 +114,7 @@ LLVM IR optimisation passes, introduction of new MIR rewrites, or linker
 plugin behaviour — all of which can produce different byte sequences for
 identical source.
 
-**Mitigation**: `rust-toolchain.toml` pins `channel = "1.91.1"` (exact
+**Mitigation**: `rust-toolchain.toml` pins `channel = "1.94.1"` (exact
 minor).  Cargo automatically reads this file and installs the correct
 toolchain on every runner.
 
@@ -262,7 +262,7 @@ gh release download <tag> --repo HuGR-Labs/corelink-server \
     --pattern 'corelink-darwin-x86_64*'
 
 # 2. Rebuild from the same commit with the same pinned toolchain.
-rustup toolchain install 1.91.1
+rustup toolchain install 1.94.1
 SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
 RUSTFLAGS="--remap-path-prefix=$HOME/.cargo/registry=cargo-registry \
   --remap-path-prefix=$HOME/.cargo/git=cargo-git \

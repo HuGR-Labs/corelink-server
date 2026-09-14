@@ -82,13 +82,13 @@ jobs:
         run: |
           # ADR-0015: SOURCE_DATE_EPOCH from HEAD commit timestamp. RUST_VERSION
           # mirrors the prior lane; both passed as build-args for fidelity (the
-          # Dockerfile hardcodes FROM rust:1.91 + does not declare the ARGs, so
+          # Dockerfile hardcodes the ADR-0015 Rust 1.94.1 base and does not declare the ARGs, so
           # BuildKit ignores undeclared args — passed anyway for parity + to stay
           # correct if the Dockerfile later wires them).
           {
             echo "short_sha=$(git rev-parse --short HEAD)"
             echo "source_date_epoch=$(git log -1 --format=%ct)"
-            echo "rust_version=1.91"
+            echo "rust_version=1.94.1"
           } >> "$GITHUB_OUTPUT"
 
       - name: Start buildkitd (rootful; the microVM is the isolation boundary)

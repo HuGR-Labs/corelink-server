@@ -48,7 +48,7 @@ jobs:
       # Use the runner image's PRE-INSTALLED, workspace-pinned toolchain rather
       # than provisioning one. A self-hosted job must not run
       # dtolnay/rust-toolchain (validate_no_shared_rustup_mutation.py) — the
-      # `corelink` image bakes 1.91.1 (the rust-toolchain.toml pin) WITH clippy,
+      # `corelink` image bakes 1.94.1 (the rust-toolchain.toml pin) WITH clippy,
       # which the clippy step below needs. HOST_TRIPLE selects the Linux triple
       # (the script defaults to apple-darwin for the Mac fleet).
       - name: Use host toolchain (baked, workspace-pinned)

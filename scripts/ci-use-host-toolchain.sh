@@ -19,7 +19,7 @@
 #      note in fuzz-nightly.yml).
 #
 #   2. SILENT REPRODUCIBILITY DRIFT — `rustup default` rewrites the MACHINE-GLOBAL
-#      default. The workspace pins 1.91.1 in rust-toolchain.toml precisely because
+#      default. The workspace pins 1.94.1 in rust-toolchain.toml precisely because
 #      "rustc minor upgrades can introduce LLVM non-determinism that breaks
 #      reproducibility" (ADR-0015). A job that defaults the host to `stable`
 #      therefore moves every OTHER concurrent job off the reproducibility pin,
@@ -47,7 +47,7 @@ fi
 # This used to default to `x86_64-apple-darwin` unconditionally, from when the
 # only self-hosted fleet was the owner's Macs. The moment a caller runs on the
 # Linux fabric (`runs-on: corelink`) that default sends it looking for
-# `…/toolchains/1.91.1-x86_64-apple-darwin` on a Linux box, which cannot exist —
+# `…/toolchains/1.94.1-x86_64-apple-darwin` on a Linux box, which cannot exist —
 # and the script then reports "not installed on this runner host", i.e. it blames
 # the host for a triple the script itself invented. Detecting is the fix; a
 # second hardcoded triple would just move the assumption.

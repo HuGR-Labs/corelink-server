@@ -3,9 +3,9 @@ id: "ADR-0015"
 type: "adr"
 doc_status: "FROZEN"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.0.1"
 created: "2026-04-24"
-updated: "2026-05-14"
+updated: "2026-09-14"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -18,8 +18,8 @@ tags: ["adr", "supply-chain", "reproducible-builds", "source-date-epoch", "remap
 # ADR-0015: Reproducible Builds Best-Effort — 5 % Byte-Diff Threshold + Roadmap 100 % Post-GA Q3
 
 > **doc_status:** FROZEN
-> **Version:** 1.0.0
-> **Date:** 2026-05-14
+> **Version:** 1.0.1
+> **Date:** 2026-09-14
 > **Owner:** Gustavo Schneiter
 > **Approver:** Gustavo Schneiter
 > **Related:** ADR-0014 (SBOM CycloneDX), ADR-0013 (Sigstore)
@@ -75,7 +75,7 @@ Adopt a **best-effort reproducible build** approach with the following controls:
 2. **Three hermetic flags** applied on every build:
    - `SOURCE_DATE_EPOCH` from `git log -1 --pretty=%ct`.
    - `RUSTFLAGS="--remap-path-prefix=... -C codegen-units=1"`.
-   - `rust-toolchain.toml` pinned to `channel = "1.84.0"` (exact minor).
+   - `rust-toolchain.toml` pinned to `channel = "1.94.1"` (exact minor).
 3. **Diff threshold: ≤ 5 % bytes** in release builds (best-effort; goal-state
    is 0 %).  CI gate: FAIL if exceeded.
 4. **Nightly + tag-triggered CI** for regression detection (≤ 24 h signal).
@@ -83,6 +83,13 @@ Adopt a **best-effort reproducible build** approach with the following controls:
    required for any threshold change.
 6. **Roadmap**: aim 100 % bit-identical post-GA Q3 (12 months) when rustc +
    LLVM toolchain matures.
+7. **Security toolchain amendment (2026-09-14)**: pin Rust 1.94.1, the
+   minimum supported compiler for `aws-sdk-s3` 1.144.0. That is the first S3
+   release that removes the `lru 0.16.4` dependency affected by
+   RUSTSEC-2026-0253. The workspace MSRV and production Docker builder use
+   that exact floor; the Docker builder is the digest-pinned
+   `rust:1.94.1-slim-bookworm` OCI index. The reproducible-build workflow
+   must pass its complete two-leg build before this amended pin is released.
 
 ---
 
@@ -147,7 +154,7 @@ triggers the mandatory full check before any release ships.
 | Debuginfo quality | Full (unstripped release WASM) | Full |
 | Parallel codegen | No (`--jobs 1` in repro mode) | No (required for determinism) |
 | Build hermeticity | Yes (`--frozen --offline`) | Yes |
-| Toolchain pin | Yes (rust-toolchain.toml 1.84.0) | Yes (bumped quarterly) |
+| Toolchain pin | Yes (rust-toolchain.toml 1.94.1) | Yes (bumped quarterly) |
 | Cross-platform | Linux only (ubuntu-22.04) | Linux + macOS (post-GA) |
 
 **Debuginfo trade-off**: Using `--remap-path-prefix` means that crash dumps
@@ -178,7 +185,7 @@ reproducible-build workflow is nightly + tag-triggered (not in the hot PR path).
 
 ### Negative / Residual
 
-- **LLVM path leak residual**: Some DWARF paths not remapped by rustc 1.84.x.
+- **LLVM path leak residual**: Some DWARF paths not remapped by rustc 1.94.x.
   Acceptable within 5 % budget.  Tracked for resolution in Post-GA Q3.
 - **CPU heterogeneity residual**: GitHub Actions runners are not guaranteed
   homogeneous CPU model.  Accepted limitation.
@@ -222,7 +229,7 @@ reproducible-build workflow is nightly + tag-triggered (not in the hot PR path).
 | Compromised builder injects backdoor | 2-runner diff detects ≥ 5 % change; alert SEV-2 | Attacker must compromise BOTH runners AND stay within 5 % budget simultaneously |
 | TOCTOU: source swapped between checkout and compile | `--frozen`; SHA-pinned checkout action | Low |
 | Non-determinism regression masks real tampering | Nightly CI trend; alert SEV-3 if diff grows; quarterly review | Acceptable |
-| rustc supply chain attack | `rust-toolchain.toml` exact pin + SHA-verified dtolnay action | SHA-pinned action ensures known-good rustc |
+| rustc supply chain attack | `rust-toolchain.toml` exact pin + reproducible-build two-leg gate | The pin fixes compiler identity; the two-leg gate detects unexpected codegen drift |
 | Cargo registry MITM | `--frozen --offline` — no network during build | Low |
 
 ---
@@ -257,5 +264,6 @@ This ADR is ratified as part of WI-S12-006 SEAL.  Amendment requires:
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.0.1 | 2026-09-14 | Gustavo Schneiter | Amend the exact Rust pin to 1.94.1 so the first non-vulnerable `aws-sdk-s3` release (1.144.0) can remove RUSTSEC-2026-0253's transitive `lru 0.16.4`; require the complete two-leg reproducible-build check before release. |
 | 0.1.0 | 2026-04-24 | Gustavo (via Claude Opus 4.7) | Stub — WI-S12-006 spec authoring cycle. |
 | 1.0.0 | 2026-05-14 | Gustavo (via Claude Sonnet 4.6) | Full ADR — WI-S12-006 SEAL. |
