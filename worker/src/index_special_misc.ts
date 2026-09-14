@@ -5,6 +5,7 @@ import type { RouteMatch } from "./route_match.js";
 import { reapiError, getServerNonce } from "./index_common.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
+import { handleRunnerAdopt } from "./lib/runner_credential_routes.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
 
@@ -56,6 +57,11 @@ export async function handleSpecialMiscRoute(
     if (route.routeKind === "runner_mint") {
       const mintResp = await handleRunnerMint(request, env, requestId);
       return applyCors(mintResp, request);
+    }
+
+    if (route.routeKind === "runner_adopt") {
+      const adoptResp = await handleRunnerAdopt(request, env, requestId);
+      return applyCors(adoptResp, request);
     }
 
     // corelink-runners D-9 — runner PAT revoke (POST /internal/v1/runner/revoke).
