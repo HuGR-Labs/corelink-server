@@ -49,7 +49,7 @@ if custom:
 else:
     # Semgrep uses a dotted config path when it cannot resolve a stable rule ID.
     # The temporary parent is intentionally different on every invocation.
-    rules_prefix = Path(configs[0]).parent.name
+    rules_prefix = str(Path(configs[0]).parent).lstrip("/").replace("/", ".")
     bundled_rules = [
         {"id": f"{rules_prefix}.{Path(config).name}.fixture-rule-{index}",
          "defaultConfiguration": {"level": "warning"}}

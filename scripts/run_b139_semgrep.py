@@ -135,9 +135,15 @@ def _canonical_json(
     )
     dotted_rule_prefix = None
     if dotted_rule_root is not None:
-        rules_dir = dotted_rule_root.resolve()
-        rules_label = root_labels[str(rules_dir)]
-        dotted_rule_prefix = (f"{rules_dir.name}.", f"{rules_label}.")
+        # Keep the exact path spelling supplied to Semgrep. On macOS,
+        # ``/var`` commonly resolves to ``/private/var`` but Semgrep's dotted
+        # rule IDs retain the former spelling.
+        rules_dir = str(dotted_rule_root)
+        rules_label = root_labels[str(dotted_rule_root.resolve())]
+        dotted_rule_prefix = (
+            f"{rules_dir.lstrip('/').replace('/', '.')}.",
+            f"{rules_label}.",
+        )
     normalized = _normalize_value(
         data,
         key=None,
