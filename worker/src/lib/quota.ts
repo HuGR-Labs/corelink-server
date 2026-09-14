@@ -386,10 +386,8 @@ export function storageCapIsFinite(tier: Tier): boolean {
 }
 
 /**
- * D1-error posture for the storage gate (B181 / CAA-360 #25). Every verb fails
- * CLOSED with a SHORT Retry-After. `isMutating` remains in the signature so
- * existing callers and the batch/standalone parity stay source-compatible;
- * quota failure is intentionally not verb-dependent.
+ * D1-error posture for the storage gate (B181 / CAA-360 #25). Reads fail OPEN
+ * for availability; byte-adding writes fail CLOSED with a SHORT Retry-After.
  */
 function storageD1ErrorResult(isMutating: boolean): QuotaCheckResult {
   if (!isMutating) return { ok: true };

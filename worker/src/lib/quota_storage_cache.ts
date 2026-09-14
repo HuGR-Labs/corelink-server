@@ -272,7 +272,7 @@ export async function resolveStorageBytesCached(
  * Cached storage-quota check for a NON-MUTATING (GET/HEAD) request — a drop-in for
  * `checkStorageQuota(db, tenant, tier, isMutating=false)` that avoids the
  * synchronous SUM on a warm hit. Semantics are byte-identical to the live check:
- *   - unconfirmed tier (`d1Error`) → fail CLOSED with a short retry, nothing cached;
+ *   - unconfirmed tier (`d1Error`) → fail OPEN for reads, nothing cached;
  *   - unlimited-storage tier → `ok:true`, no SUM at all;
  *   - otherwise → `storageResultForBytes(cachedBytes, tier)`, the SAME verdict
  *     (and the same `reason` string) the live path returns from the same bytes.
