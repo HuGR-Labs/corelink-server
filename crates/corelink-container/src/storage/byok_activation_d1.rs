@@ -1306,7 +1306,7 @@ fn postcondition(
 }
 
 fn ensure_edges(results: &[Vec<D1Row>], action: &str) -> Result<(), BackfillError> {
-    if results.first().map_or(true, Vec::is_empty) || results.last().map_or(true, Vec::is_empty) {
+    if results.first().is_none_or(Vec::is_empty) || results.last().is_none_or(Vec::is_empty) {
         return Err(BackfillError::Conflict(format!(
             "guarded activation {action} did not complete"
         )));
