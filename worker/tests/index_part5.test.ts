@@ -368,7 +368,15 @@ describe("H1: x-corelink-scope server-trust header", () => {
           "x-corelink-scope": "admin", // smuggle attempt on the fanout path
         },
       },
-      { CONFIG_DB: d1, PROD_LHR: regionalBinding },
+      {
+        CONFIG_DB: d1,
+        PROD_LHR: regionalBinding,
+        // This case verifies authenticated residency fan-out/header trust. Keep
+        // the orthogonal monthly quota gate out of the fixture so a missing or
+        // partial quota mock cannot turn the forwarding assertion into a 429.
+        // Production keeps the default fail-closed quota behavior unchanged.
+        REQUEST_QUOTA_DISABLED: "true",
+      },
     );
     expect(resp.status).toBe(200);
     expect(fanoutHeaders?.get("x-corelink-scope")).toBe("cas:rw");
