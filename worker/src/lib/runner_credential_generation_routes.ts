@@ -6,6 +6,7 @@ import {
   type CloseGenerationInput,
 } from "./credential_generation_receipts.js";
 import { validateLifecycleGeneration } from "./credential_generation.js";
+import { readLegacyCredentialCoverage } from "./credential_legacy_coverage.js";
 
 export interface CloseGenerationRequest extends CloseGenerationInput {}
 
@@ -13,10 +14,10 @@ const TENANT_ID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f
 const MAX_BODY_BYTES = 16 * 1024;
 const CLOSE_BUDGET = 256;
 
-function reply(status: number, requestId: string, body?: unknown): Response {
+function reply(status: number, requestId: string, body?: unknown, coverage = "unknown"): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", "X-Request-Id": requestId },
+    headers: { "Content-Type": "application/json", "X-Request-Id": requestId, "x-corelink-legacy-coverage": coverage },
   });
 }
 
@@ -28,7 +29,7 @@ function parseBody(value: unknown): CloseGenerationRequest {
   const eventId = object["event_id"];
   const tenantId = object["tenant_id"];
   const generation = object["lifecycle_generation"];
-  if (typeof eventId !== "string" || eventId.length === 0 || eventId.length > 256 || eventId !== eventId.trim() || /[\u0000-\u001f\u007f]/u.test(eventId)) throw new CredentialGenerationEventError("invalid", "invalid suspension event");
+  if (typeof eventId !== "string" || eventId.length === 0 || new TextEncoder().encode(eventId).byteLength > 256 || eventId !== eventId.trim() || /[\u0000-\u001f\u007f]/u.test(eventId)) throw new CredentialGenerationEventError("invalid", "invalid suspension event");
   if (typeof tenantId !== "string" || !TENANT_ID.test(tenantId) || tenantId !== tenantId.toLowerCase()) throw new CredentialGenerationEventError("invalid", "invalid suspension event");
   if (typeof generation !== "string") throw new CredentialGenerationEventError("invalid", "invalid suspension event");
   try { validateLifecycleGeneration(generation); } catch { throw new CredentialGenerationEventError("invalid", "invalid suspension event"); }
@@ -55,7 +56,9 @@ export async function handleRunnerCloseGeneration(request: Request, env: Env, re
   }
   try {
     const result = await closeGenerationEvent(env.CONFIG_DB, env.METADATA_KV, input, CLOSE_BUDGET);
-    return reply(result.complete ? 200 : 202, requestId, { ...input, complete: result.complete });
+    let coverage = "unknown";
+    try { if ((await readLegacyCredentialCoverage(env.CONFIG_DB, input.tenant_id, input.lifecycle_generation)).complete) coverage = "verified"; } catch { /* fail closed to unknown */ }
+    return reply(result.complete ? 200 : 202, requestId, { ...input, complete: result.complete }, coverage);
   } catch (error) {
     const code = error instanceof CredentialGenerationEventError ? error.code : "unavailable";
     if (code === "conflict") return reply(409, requestId, { error: "suspension_event_identity_conflict" });

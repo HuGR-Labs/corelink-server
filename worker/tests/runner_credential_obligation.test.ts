@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 import { drainRunnerOperations, prepareRunnerOperation, RUNNER_PREPARE_MS } from "../src/lib/runner_credential_obligation";
 
@@ -5,6 +7,18 @@ const operation = { operationId: "11111111-1111-4111-8111-111111111111", tenantI
 const key = "runner-credential/11111111-1111-4111-8111-111111111111";
 const marker = (overrides: Record<string, unknown> = {}) => ({ schema_version: 1, ...operation, deadline_ms: 91_000, due: 91_000, attempts: 0, ...overrides });
 const operationAt = (n: number) => ({ ...operation, operationId: `11111111-1111-4111-8111-${String(n).padStart(12, "0")}` });
+
+const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+class RealD1 {
+  readonly sqlite = new DatabaseSync(":memory:");
+  constructor() {
+    this.sqlite.exec("CREATE TABLE runner_credential_obligation (operation_id TEXT PRIMARY KEY, tenant_id TEXT, job_id TEXT, repo TEXT, state TEXT, deadline_ms INTEGER, pat_id TEXT, token_id TEXT, lifecycle_generation TEXT); CREATE TABLE tenant_credential_revocation_floor (tenant_id TEXT PRIMARY KEY, revoked_through TEXT); CREATE TABLE pat (pat_id TEXT PRIMARY KEY, tenant_id TEXT, token_id TEXT);");
+  }
+  prepare(sql: string) {
+    const db = this.sqlite;
+    return { bind: (...args: unknown[]) => { const normalized = sql.replace(/\?(\d+)/g, "?"); const values = [...sql.matchAll(/\?(\d+)/g)].map((m) => args[Number(m[1]) - 1]); const statement = db.prepare(normalized); return { run: async () => { const result = statement.run(...values); return { meta: { changes: Number(result.changes) } }; }, first: async <T>() => statement.get(...values) as T | undefined ?? null }; } };
+  }
+}
 
 function storage() {
   const map = new Map<string, unknown>(); let alarm: number | null = null;
@@ -31,6 +45,15 @@ function dbMock() {
 }
 
 describe("runner credential obligation issuer handoff", () => {
+  it.each(["1", "9223372036854775807"])("rejects a prepared generation at revocation floor %s before any PAT persistence", async (floor) => {
+    const store = storage(); const db = new RealD1();
+    db.sqlite.prepare("INSERT INTO tenant_credential_revocation_floor VALUES (?, ?)").run(operation.tenantId, floor);
+    const result = await prepareRunnerOperation(store.storage, db as never, { ...operation, lifecycleGeneration: floor }, 1000);
+    expect(result).toBe(false);
+    expect(db.sqlite.prepare("SELECT COUNT(*) AS n FROM runner_credential_obligation").get()?.n).toBe(0);
+    expect(db.sqlite.prepare("SELECT COUNT(*) AS n FROM pat").get()?.n).toBe(0);
+  });
+
   it("arms a durable marker and alarm before preparing the D1 obligation", async () => {
     const store = storage(); const db = dbMock();
     await expect(prepareRunnerOperation(store.storage, db.db, operation, 1000)).resolves.toBe(true);

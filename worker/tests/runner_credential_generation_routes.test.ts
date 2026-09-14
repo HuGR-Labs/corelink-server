@@ -45,12 +45,17 @@ describe("runner close-generation endpoint", () => {
     expect((await handleRunnerCloseGeneration(request({ ...input, tenant_id: "00000000-0000-0000-0000-000000000000" }), env(db), "r")).status).toBe(400);
     const oversized = new Request("https://worker/internal/v1/runner/credentials/close-generation", { method: "POST", headers: { "x-corelink-internal-auth": key }, body: "x".repeat(17000) });
     expect((await handleRunnerCloseGeneration(oversized, env(db), "r")).status).toBe(400);
+    const atLimit = await handleRunnerCloseGeneration(request({ ...input, event_id: "a".repeat(256) }), env(db), "r");
+    expect(atLimit.status).toBe(200);
+    const astralOver = await handleRunnerCloseGeneration(request({ ...input, event_id: "a".repeat(254) + "😀" }), env(db), "r");
+    expect(astralOver.status).toBe(400);
   });
 
   it("returns the exact accepted tuple and supports conflict/replay", async () => {
     const db = new SqliteD1();
     const response = await handleRunnerCloseGeneration(request(input), env(db), "r");
     expect(response.status).toBe(200);
+    expect(response.headers.get("x-corelink-legacy-coverage")).toBe("unknown");
     expect(await response.json()).toEqual({ ...input, complete: true });
     const conflict = await handleRunnerCloseGeneration(request({ ...input, lifecycle_generation: "1" }), env(db), "r");
     expect(conflict.status).toBe(409);

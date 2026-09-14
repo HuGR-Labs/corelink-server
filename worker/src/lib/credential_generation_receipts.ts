@@ -16,7 +16,7 @@ export class CredentialGenerationEventError extends Error {
 }
 
 function validate(input: CloseGenerationInput): void {
-  if (!input || typeof input.event_id !== "string" || input.event_id.length === 0 || input.event_id.length > 256 || input.event_id !== input.event_id.trim() ||
+  if (!input || typeof input.event_id !== "string" || input.event_id.length === 0 || new TextEncoder().encode(input.event_id).byteLength > 256 || input.event_id !== input.event_id.trim() ||
     typeof input.tenant_id !== "string" || input.tenant_id.length === 0 ||
     typeof input.lifecycle_generation !== "string") throw new CredentialGenerationEventError("invalid", "invalid suspension event");
   try { validateLifecycleGeneration(input.lifecycle_generation); } catch { throw new CredentialGenerationEventError("invalid", "invalid suspension event"); }
