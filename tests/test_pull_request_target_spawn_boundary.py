@@ -20,6 +20,7 @@ ALL_PULL_REQUEST_TARGET_WORKFLOWS = {
     "dependabot-policy-trust-boundary.yml",
     "file-size-ratchet.yml",
     "backlog-verify.yml",
+    "secrets-drift.yml",
     "pr-labels.yml",
     "welcome-first-pr.yml",
 }
@@ -28,7 +29,8 @@ EXPECTED_JOBS = {
     "dependabot-policy.yml": {"sentinel", "policy-gate"},
     "dependabot-policy-trust-boundary.yml": {"trust-boundary-teeth"},
     "file-size-ratchet.yml": {"ratchet"},
-    "backlog-verify.yml": {"verify"},
+    "backlog-verify.yml": {"verify", "trusted_semantic"},
+    "secrets-drift.yml": {"secrets-drift"},
     "pr-labels.yml": {"label", "size"},
     "welcome-first-pr.yml": {"welcome"},
 }
@@ -46,7 +48,11 @@ EXPECTED_RUNNERS = {
     "file-size-ratchet.yml": {
         "ratchet": "corelink",
     },
-    "backlog-verify.yml": {"verify": "corelink"},
+    "backlog-verify.yml": {
+        "verify": "corelink",
+        "trusted_semantic": "corelink",
+    },
+    "secrets-drift.yml": {"secrets-drift": "corelink"},
     "pr-labels.yml": {
         "label": "corelink",
         "size": "corelink",
@@ -65,6 +71,7 @@ EXPECTED_PERMISSIONS = {
     "dependabot-policy-trust-boundary.yml": {"contents": "read"},
     "file-size-ratchet.yml": {"contents": "read"},
     "backlog-verify.yml": {"contents": "read"},
+    "secrets-drift.yml": {"contents": "read"},
     "pr-labels.yml": {
         "contents": "read",
         "pull-requests": "write",
@@ -612,13 +619,20 @@ def assert_file_size_trusted_base(test: unittest.TestCase, raw: str) -> None:
     )
 
 
-def assert_backlog_verify_boundary(test: unittest.TestCase, workflow: dict) -> None:
+def assert_backlog_verify_boundary(
+    test: unittest.TestCase, workflow: dict, raw: str | None = None
+) -> None:
     """The backlog PR lane executes only BASE control over PR data."""
     jobs = workflow.get("jobs")
-    test.assertEqual(set(jobs or {}), {"verify"})
+    test.assertEqual(set(jobs or {}), {"verify", "trusted_semantic"})
     test.assertEqual(workflow.get("permissions"), {"contents": "read"})
     test.assertEqual(jobs["verify"].get("runs-on"), "corelink")
-    raw = (WORKFLOWS / "backlog-verify.yml").read_text(encoding="utf-8")
+    test.assertEqual(jobs["trusted_semantic"].get("runs-on"), "corelink")
+    test.assertEqual(
+        jobs["trusted_semantic"].get("if"),
+        "github.event_name == 'push' || github.event_name == 'schedule'",
+    )
+    raw = raw or (WORKFLOWS / "backlog-verify.yml").read_text(encoding="utf-8")
     test.assertIn("pull_request_target:", raw)
     test.assertNotIn("\n  pull_request:\n", raw)
     test.assertGreaterEqual(raw.count("persist-credentials: false"), 2)
@@ -634,6 +648,50 @@ def assert_backlog_verify_boundary(test: unittest.TestCase, workflow: dict) -> N
     test.assertIn("--trusted-file", raw)
     test.assertIn("--trusted-semantic", raw)
     test.assertIn("if: github.event_name == 'push' || github.event_name == 'schedule'", raw)
+    semantic_start = raw.index("  trusted_semantic:\n")
+    semantic = raw[semantic_start:]
+    test.assertIn("if: github.event_name == 'push' || github.event_name == 'schedule'", semantic)
+    test.assertIn("ref: ${{ github.sha }}", semantic)
+    test.assertIn("path: _base", semantic)
+    test.assertIn("working-directory: _base", semantic)
+    test.assertIn("permissions:\n      contents: read", semantic)
+
+
+def assert_secrets_drift_boundary(
+    test: unittest.TestCase, workflow: dict, raw: str | None = None
+) -> None:
+    """The PR scanner executes BASE tooling while treating the PR tree as data."""
+    jobs = workflow.get("jobs")
+    test.assertEqual(set(jobs or {}), {"secrets-drift"})
+    test.assertEqual(workflow.get("permissions"), {"contents": "read"})
+    job = jobs["secrets-drift"]
+    test.assertEqual(job.get("runs-on"), "corelink")
+    test.assertEqual(
+        job.get("if"),
+        "github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'",
+    )
+
+    raw = raw or (WORKFLOWS / "secrets-drift.yml").read_text(encoding="utf-8")
+    test.assertIn("pull_request_target:", raw)
+    test.assertIn(
+        "if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'",
+        raw,
+    )
+    test.assertEqual(raw.count("persist-credentials: false"), 2)
+    test.assertIn(
+        "ref: ${{ github.event.pull_request.base.sha || github.sha }}", raw
+    )
+    test.assertIn("ref: ${{ github.event.pull_request.head.sha }}", raw)
+    test.assertIn("path: .trusted", raw)
+    test.assertIn("path: .candidate", raw)
+    for script in (
+        "validate_secrets_matrix.py",
+        "check-env-contract.py",
+        "secrets-checklist-verify.sh",
+    ):
+        test.assertIn(f'"${{GITHUB_WORKSPACE}}/.trusted/scripts/{script}"', raw)
+    test.assertNotRegex(raw, r"(?m)^\s*(?:python3|bash) scripts/")
+    test.assertNotIn("github.event.pull_request.head.ref", raw)
 
 
 def assert_welcome_boundary(test: unittest.TestCase, workflow: dict) -> None:
@@ -729,6 +787,8 @@ jobs:
                     assert_file_size_boundary(self, workflow)
                 elif name == "backlog-verify.yml":
                     assert_backlog_verify_boundary(self, workflow)
+                elif name == "secrets-drift.yml":
+                    assert_secrets_drift_boundary(self, workflow)
                 else:
                     assert_actor_gate(self, job, f"{name}:{job_name}")
 
@@ -944,6 +1004,63 @@ jobs:
             with self.subTest(mutant=f"ratchet {label}"):
                 with self.assertRaises(AssertionError):
                     assert_file_size_boundary(self, file_size, mutation(file_size_text))
+
+        backlog = load_workflow("backlog-verify.yml")
+        for label, mutation in (
+            (
+                "remove trusted semantic job",
+                lambda value: value["jobs"].pop("trusted_semantic"),
+            ),
+            (
+                "allow trusted semantic on pull requests",
+                lambda value: value["jobs"]["trusted_semantic"].__setitem__(
+                    "if", "github.event_name != 'pull_request_target'"
+                ),
+            ),
+        ):
+            with self.subTest(mutant=f"backlog {label}"):
+                mutant = copy.deepcopy(backlog)
+                mutation(mutant)
+                with self.assertRaises(AssertionError):
+                    assert_backlog_verify_boundary(self, mutant)
+
+        backlog_text = (WORKFLOWS / "backlog-verify.yml").read_text(encoding="utf-8")
+        with self.subTest(mutant="backlog checkout semantic from mutable ref"):
+            mutated_text = backlog_text.replace("ref: ${{ github.sha }}", "ref: main", 1)
+            with self.assertRaises(AssertionError):
+                assert_backlog_verify_boundary(self, backlog, mutated_text)
+
+        secrets = load_workflow("secrets-drift.yml")
+        secrets_text = (WORKFLOWS / "secrets-drift.yml").read_text(encoding="utf-8")
+        for label, mutation in (
+            (
+                "run validator from candidate tree",
+                lambda text: text.replace(
+                    '"${GITHUB_WORKSPACE}/.trusted/scripts/validate_secrets_matrix.py"',
+                    '"${GITHUB_WORKSPACE}/.candidate/scripts/validate_secrets_matrix.py"',
+                ),
+            ),
+            (
+                "checkout candidate as trusted",
+                lambda text: text.replace(
+                    "github.event.pull_request.base.sha || github.sha",
+                    "github.event.pull_request.head.sha",
+                    1,
+                ),
+            ),
+            (
+                "broaden manual dispatch",
+                lambda text: text.replace(
+                    "github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'",
+                    "true",
+                ),
+            ),
+        ):
+            with self.subTest(mutant=f"secrets-drift {label}"):
+                with self.assertRaises(AssertionError):
+                    assert_secrets_drift_boundary(
+                        self, secrets, mutation(secrets_text)
+                    )
 
         for name, job_name in (
             ("dependabot-auto-merge.yml", "auto-merge"),
