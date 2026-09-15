@@ -14,7 +14,7 @@ export type RouteKind =
   | "reapi_v2" | "customer_v1" | "devenv_v1" | "openapi" | "openapi_devenv"
   | "public_attestation" | "reapi_v1" | "bazel_v2" | "turbo_v8" | "signup"
   | "onboarding" | "session_exchange" | "tenant_lookup" | "token_exchange"
-  | "runner_mint" | "runner_adopt" | "runner_revoke" | "auth_rotate" | "internal"
+  | "runner_mint" | "runner_adopt" | "runner_close_generation" | "runner_revoke" | "auth_rotate" | "internal"
   | "health_container" | "health_container_authed" | "not_found";
 
 /**
@@ -367,6 +367,12 @@ export function matchRoute(url: URL): RouteMatch {
   // dispatcher can atomically acknowledge the PAT after receiving it.
   if (path === "/internal/v1/runner/adopt") {
     return { tenantId: "_system", pathSuffix: path, routeKind: "runner_adopt" };
+  }
+
+  // Runner credential lifecycle close-generation acknowledgement. Handled at
+  // the Worker so the dispatcher can durably close a credential generation.
+  if (path === "/internal/v1/runner/close-generation") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "runner_close_generation" };
   }
 
   // corelink-runners D-9 — runner PAT revoke by pat_id. EXACT
