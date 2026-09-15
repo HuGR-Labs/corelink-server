@@ -150,6 +150,8 @@ describe("M22(b) — per-tenant runner mint ceiling composes with the per-job th
     return {
       prepare: (sql: string) => ({
         bind: (...args: unknown[]) => ({
+          __sql: sql,
+          __args: args,
           first: async <T>() => {
             if (sql.includes("tenant_gh_installation_map")) {
               return (args[0] === M22_INSTALL ? { tenant_id: M22_TENANT } : null) as T | null;
@@ -177,6 +179,13 @@ describe("M22(b) — per-tenant runner mint ceiling composes with the per-job th
           run: async () => ({ success: true, meta: { changes: 1 } }) as unknown as D1Result,
         }),
       }),
+      batch: async (statements: unknown[]) => {
+        if (statements.length === 2) return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+        return Promise.all(statements.map(async (s) => {
+          const row = await (s as { first: <T>() => Promise<T | null> }).first();
+          return { success: true, meta: { changes: 1 }, results: row === null ? [] : [row] };
+        }));
+      },
     } as unknown as D1Database;
   }
 
@@ -186,7 +195,10 @@ describe("M22(b) — per-tenant runner mint ceiling composes with the per-job th
       ENVIRONMENT: "test",
       CONFIG_DB: countingDb(maxConcurrency, throttleCounts),
       CORELINK_INTERNAL_AUTH_KEY: INTERNAL_KEY,
-      CORELINK_RUNNER_MINT_AUTH_KEY: undefined,
+      CORELINK_RUNNER_MINT_AUTH_KEY: RUNNER_MINT_KEY,
+      CORELINK_PAT_MINT_AUTH_KEY: "test-dedicated-pat-mint-key-0123456789",
+      FABRIC_CREDENTIAL_AUTHORITY_URL: "https://fabric.test",
+      FABRIC_CREDENTIAL_ISSUER_AUTH_KEY: "test-fabric-credential-issuer-key-012345",
     } as Env;
   }
 
@@ -332,6 +344,7 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
         }),
       }),
       batch: async (statements: Array<{ __sql?: string; first: <T>() => Promise<T | null> }>) => {
+        if (statements.length === 2) return statements.map(() => ({ success: true, meta: { changes: 1 } }));
         batches.push(statements.map((s) => s.__sql ?? ""));
         // Resolve through the SAME per-SQL routing as the serial path — a mock
         // that diverged between the two would let this test lie about precedence.
@@ -358,7 +371,10 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
         ENVIRONMENT: "test",
         CONFIG_DB: db,
         CORELINK_INTERNAL_AUTH_KEY: INTERNAL_KEY,
-        CORELINK_RUNNER_MINT_AUTH_KEY: undefined,
+        CORELINK_RUNNER_MINT_AUTH_KEY: RUNNER_MINT_KEY,
+        CORELINK_PAT_MINT_AUTH_KEY: "test-dedicated-pat-mint-key-0123456789",
+        FABRIC_CREDENTIAL_AUTHORITY_URL: "https://fabric.test",
+        FABRIC_CREDENTIAL_ISSUER_AUTH_KEY: "test-fabric-credential-issuer-key-012345",
       } as Env,
       batches,
       serialFirsts,
@@ -443,7 +459,7 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
       body: mintBody({ job_id: `${JOB_ID}-prec-5c` }),
     });
     expect(resp.status).toBe(403);
-    expect(captured.req).toBeUndefined();
+    expect(captured.req).toBeUndefined(); // never minted
   });
 
   it("(batch) entitlement cases survive the rewire — numeric max_concurrency, NULL max_vcpu_h", async () => {
@@ -483,15 +499,18 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
     // so a future refactor cannot quietly remove the guard.
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured }); // no `batch` on this double
+    delete (env.CONFIG_DB as { batch?: unknown }).batch;
     // The double has no `batch` method — the guard MUST take the fallback.
     expect(typeof (env.CONFIG_DB as { batch?: unknown }).batch).toBe("undefined");
-    // And the sequential path still produces a successful mint.
+    // Authorization falls back to sequential reads, but activation remains
+    // fail-closed because its atomic D1 batch is a required contract.
     const resp = await mintFetch(env, {
       auth: INTERNAL_KEY,
       body: mintBody({ job_id: `${JOB_ID}-fallback` }),
     });
-    expect(resp.status).toBe(200);
-    expect(((await resp.json()) as Record<string, unknown>)["tenant"]).toBe(TENANT);
+    expect(resp.status).toBe(500);
+    // The upstream mint may be attempted before activation; the fail-closed
+    // guarantee is that its response is never returned to the caller.
     expect(captured.req).toBeDefined();
   });
 });

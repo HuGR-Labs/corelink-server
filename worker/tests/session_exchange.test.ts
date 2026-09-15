@@ -24,6 +24,7 @@ import { verifyToken } from "@clerk/backend";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
 import { mintScopedPat, MintGrant, checkMintThrottle } from "../src/lib/session_exchange.js";
+import type { RunnerCredentialOperation } from "../src/lib/runner_credential_obligation.js";
 
 const mockVerifyToken = vi.mocked(verifyToken);
 
@@ -189,6 +190,7 @@ function makeConfigDb(
     orgMap?: Map<string, string>;
     /** Simulate a D1 fault during githugr provisioning (fail-CLOSED path). */
     githugrProvisionThrows?: boolean;
+    runnerActivation?: "success" | "false" | "throw";
   } = {},
 ): D1Database {
   const orgMap = opts.orgMap;
@@ -254,6 +256,13 @@ function makeConfigDb(
     // Transactional batch — the githugr provision path (all-or-nothing). Replays
     // each statement's write effect in order; a throw aborts the whole batch.
     batch: async (statements: Array<{ __sql: string; __args: unknown[] }>) => {
+      if (opts.runnerActivation) {
+        if (opts.runnerActivation === "throw") throw new Error("activation database failure");
+        return statements.map(() => ({
+          success: opts.runnerActivation === "success",
+          meta: { changes: opts.runnerActivation === "success" ? 1 : 0 },
+        })) as unknown as D1Result[];
+      }
       const out: unknown[] = [];
       for (const s of statements) {
         applyProvisionWrite(s.__sql, s.__args);
@@ -305,6 +314,7 @@ function makeEnv(opts: {
   withGithugr?: boolean;
   orgMap?: Map<string, string>;
   githugrProvisionThrows?: boolean;
+  runnerActivation?: "success" | "false" | "throw";
 }): Env {
   return {
     ...(opts.withGithugr
@@ -323,6 +333,7 @@ function makeEnv(opts: {
       ...(opts.patInsertThrows !== undefined ? { patInsertThrows: opts.patInsertThrows } : {}),
       ...(opts.orgMap !== undefined ? { orgMap: opts.orgMap } : {}),
       ...(opts.githugrProvisionThrows !== undefined ? { githugrProvisionThrows: opts.githugrProvisionThrows } : {}),
+      ...(opts.runnerActivation !== undefined ? { runnerActivation: opts.runnerActivation } : {}),
     }),
     CLERK_SECRET_KEY: opts.withClerkSecret === false ? undefined : CLERK_SECRET,
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
@@ -904,5 +915,61 @@ describe("L12(b) — MintGrant capability + mintScopedPat scope ceiling", () => 
     expect(resp.status).toBe(200);
     const mintBody = (await captured.req!.json()) as Record<string, unknown>;
     expect(mintBody["scopes"]).toBe("admin"); // admin flows through when the ceiling permits it
+  });
+});
+
+describe("runner mint obligation persistence", () => {
+  const OP: RunnerCredentialOperation = {
+    operationId: "11111111-2222-4333-8444-555555555555",
+    tenantId: "runner-tenant",
+    jobId: "job-a",
+    repo: "repo-a",
+    lifecycleGeneration: "7",
+  };
+
+  function mintArgs(grant = MintGrant.fromRunnerDerivation(OP.tenantId, `runner-job:${OP.jobId}`, "7")) {
+    return [grant, 300, "read-write", INTERNAL_KEY, undefined, "ac-key", OP] as const;
+  }
+
+  it("rejects a runner key without an operation before upstream mint", async () => {
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map() });
+    const resp = await mintScopedPat(
+      env, "runner-missing-operation", MintGrant.fromRunnerDerivation(OP.tenantId, `runner-job:${OP.jobId}`, "7"),
+      300, "read-write", INTERNAL_KEY, undefined, "ac-key",
+    );
+    expect(resp.status).toBe(500);
+    expect(captured.req).toBeUndefined();
+  });
+
+  it("rejects a mismatched lifecycle generation before upstream mint", async () => {
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map() });
+    const resp = await mintScopedPat(
+      env, "runner-wrong-generation", MintGrant.fromRunnerDerivation(OP.tenantId, `runner-job:${OP.jobId}`, "8"),
+      300, "read-write", INTERNAL_KEY, undefined, "ac-key", OP,
+    );
+    expect(resp.status).toBe(500);
+    expect(captured.req).toBeUndefined();
+  });
+
+  it.each(["false", "throw"] as const)("fails closed when activation is %s", async (activation) => {
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), runnerActivation: activation });
+    const resp = await mintScopedPat(env, `runner-activation-${activation}`, ...mintArgs());
+    expect(resp.status).toBe(500);
+    const body = (await resp.json()) as Record<string, unknown>;
+    expect(body.token_plaintext).toBeUndefined();
+    expect(body.hash).toBeUndefined();
+  });
+
+  it("activates a prepared runner operation through D1 batch, without ordinary INSERT", async () => {
+    const captured: { req?: Request } = {};
+    const patInsertCapture: { binds?: unknown[]; sql?: string } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), runnerActivation: "success", patInsertCapture });
+    const resp = await mintScopedPat(env, "runner-activation-success", ...mintArgs());
+    expect(resp.status).toBe(200);
+    expect(patInsertCapture.sql).toBeUndefined();
+    expect(captured.req).toBeDefined();
   });
 });

@@ -16,6 +16,7 @@ describe("POST /internal/v1/runner/mint — fabricd/native path (installation_id
     const stub = {
       fetch: async (req: Request): Promise<Response> => {
         const { pathname } = new URL(req.url);
+        if (pathname === "/_do/runner-cleanup/prepare") return new Response(null, { status: 204 });
         if (pathname === "/internal/v1/auth/introspect") {
           return new Response(JSON.stringify(introspect.body ?? { valid: false }), {
             status: introspect.status ?? 200,

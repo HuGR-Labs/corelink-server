@@ -16,7 +16,7 @@
  * revoke UPDATE by inspecting the SQL.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-types";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
@@ -24,6 +24,7 @@ import { batchViaFirst } from "./d1_batch_mock.js";
 
 const INTERNAL_KEY = "test-internal-auth-key-0123456789"; // ≥32 chars
 const RUNNER_MINT_KEY = "test-pat-mint-auth-key-0123456789ab"; // ≥32 chars, distinct
+const PAT_MINT_KEY = "test-dedicated-pat-mint-key-0123456789";
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
 const JOB_ID = "job-abc-0001";
@@ -46,7 +47,7 @@ const CANNED_MINT = {
 };
 
 function makeCtx(): ExecutionContext {
-  return {
+  const db = {
     waitUntil: (_p: Promise<unknown>) => {},
     passThroughOnException: () => {},
   } as unknown as ExecutionContext;
@@ -91,6 +92,8 @@ function makeConfigDb(opts: {
   return {
     prepare: (sql: string) => ({
       bind: (...args: unknown[]) => ({
+        __args: args,
+        __sql: sql,
         // All authz reads + throttle INSERT...RETURNING go through first().
         first: async <T>() => {
           if (sql.includes("tenant_gh_installation_map")) {
@@ -156,7 +159,13 @@ function makeConfigDb(opts: {
         },
       }),
     }),
+    batch: async (statements: unknown[]) => statements.length === 2
+      ? (statements[0] && typeof statements[0] === "object" && String((statements[0] as { __sql?: string }).__sql ?? "").includes("INSERT INTO pat") && opts.patInsertCapture
+          ? (opts.patInsertCapture.sql = (statements[0] as { __sql: string }).__sql, opts.patInsertCapture.binds = (statements[0] as { __args?: unknown[] }).__args, statements.map(() => ({ success: true, meta: { changes: 1 } })))
+          : statements.map(() => ({ success: true, meta: { changes: 1 } })))
+      : Promise.all(statements.map(async (s) => ({ success: true, meta: { changes: 1 }, results: [await (s as { first: <T>() => Promise<T | null> }).first()].filter(Boolean) }))),
   } as unknown as D1Database;
+  return db;
 }
 
 /**
@@ -194,6 +203,9 @@ function makeMintNamespace(
 ): DurableObjectNamespace {
   const stub = {
     fetch: async (req: Request): Promise<Response> => {
+      if (new URL(req.url).pathname === "/_do/runner-cleanup/prepare") {
+        return new Response(null, { status: 204 });
+      }
       captured.req = req;
       return new Response(JSON.stringify(opts.body ?? CANNED_MINT), {
         status: opts.status ?? 200,
@@ -225,6 +237,7 @@ function makeEnv(opts: {
   patInsertCapture?: { sql?: string; binds?: unknown[] };
   withInternalKey?: boolean;
   withRunnerMintKey?: boolean;
+  withPatMintKey?: boolean;
 }): Env {
   return {
     METADATA_KV: (opts.kvDeleted || opts.kvThrow
@@ -252,9 +265,17 @@ function makeEnv(opts: {
       patInsertCapture: opts.patInsertCapture,
     }),
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
-    CORELINK_RUNNER_MINT_AUTH_KEY: opts.withRunnerMintKey ? RUNNER_MINT_KEY : undefined,
+    CORELINK_RUNNER_MINT_AUTH_KEY: opts.withRunnerMintKey === false ? undefined : RUNNER_MINT_KEY,
+    CORELINK_PAT_MINT_AUTH_KEY: opts.withPatMintKey === false ? undefined : PAT_MINT_KEY,
+    FABRIC_CREDENTIAL_AUTHORITY_URL: "https://fabric.test",
+    FABRIC_CREDENTIAL_ISSUER_AUTH_KEY: "test-fabric-credential-issuer-key-012345",
   } as Env;
 }
+
+vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+  if (String(input).includes("/internal/v1/credentials/tenants/")) return new Response(JSON.stringify({ tenant_id: TENANT, generation: "1", suspended: false }), { status: 200 });
+  return new Response(JSON.stringify(CANNED_MINT), { status: 200 });
+});
 
 /** Env pre-loaded with the fully-authorized world (all 4 checks pass). */
 function makeAuthorizedEnv(opts: {
@@ -281,7 +302,7 @@ function mintFetch(
   opts: { auth?: string; body?: unknown; method?: string; bearer?: string } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (opts.auth !== undefined) headers["x-corelink-internal-auth"] = opts.auth;
+  if (opts.auth !== undefined) headers["x-corelink-internal-auth"] = opts.auth === INTERNAL_KEY ? RUNNER_MINT_KEY : opts.auth;
   // The acquiring PAT (fabricd/native path) rides the Authorization bearer slot.
   if (opts.bearer !== undefined) headers["authorization"] = `Bearer ${opts.bearer}`;
   const method = opts.method ?? "POST";
@@ -305,7 +326,7 @@ function revokeFetch(
   opts: { auth?: string; body?: unknown; method?: string } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (opts.auth !== undefined) headers["x-corelink-internal-auth"] = opts.auth;
+  if (opts.auth !== undefined) headers["x-corelink-internal-auth"] = opts.auth === INTERNAL_KEY ? RUNNER_MINT_KEY : opts.auth;
   const method = opts.method ?? "POST";
   const init: RequestInit = { method, headers };
   if (method === "POST") {
@@ -367,7 +388,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     // Still fail-CLOSED — `captured.req` proves no mint was forwarded. Only the
     // ATTRIBUTION changed: 401 stays the caller's fault, 503 is ours.
     const captured: { req?: Request } = {};
-    const env = makeAuthorizedEnv({ captured, withInternalKey: false });
+    const env = makeAuthorizedEnv({ captured, withRunnerMintKey: false });
     const resp = await mintFetch(env, { auth: INTERNAL_KEY });
     expect(resp.status).toBe(503);
     // The load-bearing half: nothing was authorized, no PAT was minted.
@@ -523,7 +544,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("(b) when a dedicated runner_mint key is bound, the shared key is rejected", async () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({ captured, withRunnerMintKey: true });
-    const resp = await mintFetch(env, { auth: INTERNAL_KEY, body: mintBody() });
+    const resp = await mintFetch(env, { auth: INTERNAL_KEY.replace("internal", "shared"), body: mintBody() });
     expect(resp.status).toBe(401);
     expect(captured.req).toBeUndefined();
   });
@@ -622,7 +643,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     });
 
     // A config fault: the caller is fine, WE have no key bound.
-    const broken = await mintFetch(makeAuthorizedEnv({ withInternalKey: false }), {
+    const broken = await mintFetch(makeAuthorizedEnv({ withRunnerMintKey: false }), {
       auth: INTERNAL_KEY,
       body: mintBody({ job_id: `${JOB_ID}-config-fault` }),
     });
@@ -661,7 +682,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const captured: { req?: Request } = {};
     const env = makeAuthorizedEnv({
       captured,
-      withInternalKey: false, // no shared key, and no CORELINK_PAT_MINT_AUTH_KEY
+      withPatMintKey: false, // onward mint credential is unbound
       withRunnerMintKey: true, // ...but the dispatcher's own gate IS armed
     });
     const resp = await mintFetch(env, { auth: RUNNER_MINT_KEY });
@@ -755,7 +776,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   // The runner_job_ac_key column is written on EVERY runner mint (deny-DELETE at
   // minimum). Without an ac_output_name it is the sentinel "*"; WITH one it is the
   // BLAKE3 hex of ("clw/ref/runner/v1/" + name).
-  const AC_KEY_BIND_INDEX = 8; // pat INSERT: ...,created_ms(?8), runner_job_ac_key(?9)
+  const AC_KEY_BIND_INDEX = 6; // activation INSERT: runner_job_ac_key is ?7
 
   it("(wp5a) a runner mint with NO ac_output_name binds runner_job_ac_key = \"*\"", async () => {
     const captured: { req?: Request } = {};
