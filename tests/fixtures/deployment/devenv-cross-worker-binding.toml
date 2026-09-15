@@ -1,0 +1,27 @@
+# Offline deployment contract only.  This fixture is intentionally not a
+# wrangler configuration and must never be copied into a live environment.
+script_name = "corelink-spawn-worker"
+class_name = "RunnerDevEnvDO"
+binding = "RUNNER_DEVENV_DO"
+signer_verifier_public_key_map = "required"
+image_digest = "required:sha256"
+migrations = "0118-0130"
+compute_grant_key_id = "COMPUTE_GRANT_KEY_ID"
+
+[root]
+environment = "default"
+
+[[environment]]
+name = "prod"
+
+[[environment]]
+name = "prod-sam"
+
+[[environment]]
+name = "prod-lhr"
+
+[[environment]]
+name = "prod-nrt"
+
+[[environment]]
+name = "prod-syd"
