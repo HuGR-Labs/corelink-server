@@ -32,4 +32,5 @@ export interface RunnerDevEnvRpc extends Rpc.DurableObjectBranded {
   startAuthorizedDevenv(input: AuthorizedDevenvInput): Promise<AuthorizedDevenvAck>;
   prepareAuthorizedCompute(binding: ComputeBinding): Promise<void>;
   abandonAuthorizedCompute(reservationId: string): Promise<void>;
+  stopAuthorizedDevenv(input: { tenantId: string; sessionUuid: string }): Promise<{ sessionUuid: string; status: "stopped" | "already_stopped" | "not_current" }>;
 }

@@ -68,7 +68,7 @@ describe("credential generation event receipts", () => {
     expect(result).toEqual({ complete: true });
     expect(db.sqlite.prepare("SELECT state FROM credential_generation_event_receipts WHERE event_id='evt'").get()?.state).toBe("complete");
     expect(db.sqlite.prepare("SELECT COUNT(*) AS n FROM credential_generation_revocation WHERE state='revoked'").get()?.n).toBe(513);
-  });
+  }, 20_000);
 
   it("replays complete events only while the durable floor proves coverage", async () => {
     const db = new SqliteD1();

@@ -226,7 +226,7 @@ export function matchRoute(url: URL): RouteMatch {
 
   // DevEnv cloud development environments — /v1/customer/devenv* (WP-08)
   // Checked BEFORE generic customer_v1 so it forwards to RUNNER_DEVENV_DO
-  if (path.startsWith("/v1/customer/devenv") || path === "/v1/customer/devenv" || path.startsWith("/v1/devenv")) {
+  if (path === "/v1/customer/devenv" || path.startsWith("/v1/customer/devenv/") || path === "/v1/devenv" || path.startsWith("/v1/devenv/")) {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "devenv_v1" };
   }
 

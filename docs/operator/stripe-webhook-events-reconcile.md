@@ -31,11 +31,12 @@ The **same** file drives:
 A vitest guardrail (`tests/handled-stripe-events.test.ts`) fails CI if any
 `downgrade_critical` event is dropped. **Edit the JSON — never a literal.**
 
-The canonical set (7 events):
+The canonical set (8 events):
 
 | Event | Role |
 |---|---|
 | `checkout.session.completed` | grant (upgrade) |
+| `checkout.session.expired` | ack (checkout expired before payment) |
 | `checkout.session.async_payment_succeeded` | grant (delayed methods: SEPA/ACH) |
 | `checkout.session.async_payment_failed` | ack (nothing was granted) |
 | `customer.subscription.created` | backfill period-end |
