@@ -38,7 +38,7 @@ REPO=corelink-server
 BASE=cca798ff5bc2df660ecf2570ed243eb9775ff3d0
 python3 scripts/repository_org_migration.py scan --revision "$BASE" \
   > "$AUDIT/source-baseline.json"
-python3 -m unittest discover -s tests -p test_repository_org_migration.py -v
+python3 -m unittest discover -s tests -p 'test_repository_org_migration*.py' -v
 ```
 
 Executar o snapshot como uma etapa própria, preservando seu exit code. Código `2` exige ler quais superfícies ficaram não verificadas; não o converter em aprovação.

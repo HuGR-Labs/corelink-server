@@ -54,7 +54,7 @@ python3 scripts/repository_org_migration.py plan \
   --target-owner "$CONFIRMED_TARGET_OWNER" \
   --target-owner-id "$CONFIRMED_TARGET_OWNER_ID"
 python3 scripts/repository_org_migration.py compare "$BEFORE_SCAN" "$AFTER_SCAN"
-python3 -m unittest discover -s tests -p test_repository_org_migration.py -v
+python3 -m unittest discover -s tests -p 'test_repository_org_migration*.py' -v
 ```
 
 `scan` opera em blobs Git, não no working tree. `compare` só relata delta. `plan` deixa todos os gates UNVERIFIED. Exit 0 dessas ferramentas não é readiness; exit 2 do snapshot preserva falhas de observação. Não mascarar resultados negativos.

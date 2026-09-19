@@ -26,7 +26,7 @@ O kit contém scanner por commit, comparação de árvores, plano parametrizado 
 
 ## Uso e estado
 
-Executar da raiz: `python3 -m unittest discover -s tests -p test_repository_org_migration.py -v`. Python 3.10+ e Git bastam para testes/scan/plan; o snapshot exige `gh` autenticado em `github.com`. [RUNBOOK.md](RUNBOOK.md) fornece comandos que gravam relatórios em um diretório temporário novo.
+Executar da raiz: `python3 -m unittest discover -s tests -p 'test_repository_org_migration*.py' -v`. Python 3.10+ e Git bastam para testes/scan/plan; o snapshot exige `gh` autenticado em `github.com`. [RUNBOOK.md](RUNBOOK.md) fornece comandos que gravam relatórios em um diretório temporário novo.
 
 Exit codes: scan/plan/compare retornam `0` quando produziram dados, não quando aprovaram uma migração; erro retorna `2`. Snapshot retorna `2` se houver superfície não verificada, preservando o relatório quando possível. Um plano nasce com todos os gates `UNVERIFIED`. A entrega do kit não fecha a migração: G01–G08 antecedem o corte; G09–G10 comprovam identidade, comportamento e observação posterior.
 

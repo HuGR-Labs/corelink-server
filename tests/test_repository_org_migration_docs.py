@@ -175,6 +175,8 @@ class MigrationDocumentationTests(unittest.TestCase):
                     self.assertIn("      - '" + path + "'", match[1])
 
     def test_backlog_only_claims_kit_not_transfer(self):
+        for doc in [DOC / 'README.md', DOC / 'RUNBOOK.md', SKILL]:
+            self.assertIn("-p 'test_repository_org_migration*.py'", doc.read_text())
         text = (ROOT / 'BACKLOG.md').read_text()
         self.assertEqual(len(re.findall(r'(?m)^### B-374\b', text)), 1)
         section = text.split('### B-374', 1)[1].split('\n### ', 1)[0]
