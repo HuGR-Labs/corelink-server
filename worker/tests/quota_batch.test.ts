@@ -403,7 +403,7 @@ describe("Worker quota gate — batched", () => {
     ).toHaveLength(0);
   });
 
-  it("keeps the D1-outage posture end to end: PUT fails closed 429, GET passes through", async () => {
+  it("keeps the D1-outage posture end to end: PUT and GET fail closed 429", async () => {
     const put = await fetchAs("PUT", makeEnv(makeD1({ throwOnBatch: true }).db));
     expect(put.status).toBe(429);
     expect(put.headers.get("Retry-After")).toBe("2");
@@ -412,7 +412,11 @@ describe("Worker quota gate — batched", () => {
     expect(body.message).toContain("temporarily unverifiable");
 
     const get = await fetchAs("GET", makeEnv(makeD1({ throwOnBatch: true }).db));
-    expect(get.status, "a read must stay available during a D1 outage").toBe(200);
+    expect(get.status, "a read must fail closed during a D1 outage").toBe(429);
+    expect(get.headers.get("Retry-After")).toBe("2");
+    const getBody = (await get.json()) as { error: string; message: string };
+    expect(getBody.error).toBe("QUOTA_EXCEEDED");
+    expect(getBody.message).toContain("temporarily unverifiable");
   });
 
   it("still 429s a tenant over the storage cap", async () => {
