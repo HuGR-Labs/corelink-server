@@ -3,10 +3,8 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import importlib.util
 import io
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -216,6 +214,39 @@ class SnapshotTests(unittest.TestCase):
         with patch.object(subprocess, 'run', return_value=response):
             out = snapshot.query('endpoint', snapshot.items('secrets', ('name',)))
         self.assertEqual(len(out['pages']), 2)
+
+
+class MalformedInputTests(unittest.TestCase):
+    def test_manifest_must_be_object(self):
+        for value in [None, [], "text", 1]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                migration.validate_manifest(value)
+
+    def test_nested_shapes_fail_with_diagnostic(self):
+        for key in ['source', 'dependencies', 'legacy_owners']:
+            for value in [None, 'text', 42]:
+                data = copy.deepcopy(MANIFEST)
+                data[key] = value
+                with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                    migration.validate_manifest(data)
+
+    def test_repository_id_is_not_float(self):
+        data = copy.deepcopy(MANIFEST)
+        data['source']['repository_id'] = float(migration.SERVER_ID)
+        with self.assertRaises(ValueError):
+            migration.validate_manifest(data)
+
+    def test_dependency_entry_is_object(self):
+        data = copy.deepcopy(MANIFEST)
+        data['dependencies']['runners'] = None
+        with self.assertRaises(ValueError):
+            migration.validate_manifest(data)
+
+    def test_baseline_must_be_string(self):
+        data = copy.deepcopy(MANIFEST)
+        data['source']['baseline_sha'] = 123
+        with self.assertRaises(ValueError):
+            migration.validate_manifest(data)
 
 
 if __name__ == '__main__':

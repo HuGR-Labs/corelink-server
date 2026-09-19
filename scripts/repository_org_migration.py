@@ -40,20 +40,28 @@ def positive_id(value: Any) -> bool:
 
 
 def validate_manifest(data: dict[str, Any]) -> None:
+    if not isinstance(data, dict):
+        raise ValueError('manifest must be an object')
     if data.get('schema_version') != 1:
         raise ValueError('unsupported manifest schema')
     source = data.get('source', {})
+    if not isinstance(source, dict):
+        raise ValueError('source must be an object')
+    if not positive_id(source.get('repository_id')):
+        raise ValueError('repository ID must be an integer')
     if source.get('repository_id') != SERVER_ID or source.get('name') != 'corelink-server':
         raise ValueError('scope is exclusively repository 1232040291/corelink-server')
     if not valid_owner(source.get('owner')) or not positive_id(source.get('owner_id')):
         raise ValueError('source owner and numeric ID required')
-    if not SHA.fullmatch(source.get('baseline_sha', '')):
+    if not isinstance(source.get('baseline_sha'), str) or not SHA.fullmatch(source['baseline_sha']):
         raise ValueError('baseline must be a full commit SHA')
     if data.get('transfer_scope') != ['server']:
         raise ValueError('only server may be transferred')
     if data.get('preserve_visibility') != 'private' or data.get('allow_repository_rename') is not False:
         raise ValueError('visibility and repository name are invariants')
     deps = data.get('dependencies', {})
+    if not isinstance(deps, dict):
+        raise ValueError('dependencies must be an object')
     expected = {'runners': (1266754321, 'corelink-runners'),
                 'workspaces': (1259579816, 'corelink-workspaces'),
                 'cli_distribution': (1251605593, 'corelink-cli')}
@@ -61,11 +69,14 @@ def validate_manifest(data: dict[str, Any]) -> None:
         raise ValueError('independent dependency roles must be explicit')
     for role, (repo_id, name) in expected.items():
         entry = deps[role]
+        if not isinstance(entry, dict) or not positive_id(entry.get('repository_id')):
+            raise ValueError(f'invalid dependency: {role}')
         if (entry.get('repository_id'), entry.get('name')) != (repo_id, name):
             raise ValueError(f'wrong dependency identity: {role}')
         if not valid_owner(entry.get('owner')) or entry.get('transfer_in_this_campaign') is not False:
             raise ValueError(f'dependency cannot join this transfer: {role}')
-    if not all(valid_owner(x) for x in data.get('legacy_owners', [])):
+    legacy = data.get('legacy_owners', [])
+    if not isinstance(legacy, list) or not all(valid_owner(x) for x in legacy):
         raise ValueError('invalid legacy owner')
 
 
