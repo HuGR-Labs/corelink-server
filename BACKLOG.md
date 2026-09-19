@@ -17647,3 +17647,31 @@ verify-means: |
   nunca um falso verde.
 last-verified: 2026-09-05
 ```
+
+### B-374 — kit verificável para mudança de organização do server (não é transferência)
+
+Mapa, runbook, arquitetura de portabilidade, skill, manifesto com papéis
+independentes e inventários por commit/API estão em
+`docs/operations/repository-org-migration/`. Os helpers só coletam e planejam.
+A skill está em `.claude/skills/migrate-server-organization/SKILL.md`.
+
+O estado abaixo é exclusivamente do kit neste candidato; não declara a
+transferência pronta/executada nem os adaptadores de produção implementados.
+Destino e gates operacionais permanecem não aprovados. WP-01 a WP-07 descrevem
+a preparação/corte/observação futuros e mantêm Runners/Workspaces/CLI separados.
+Progresso entregue na baseline só existe depois do merge aprovado deste PR.
+
+```backlog
+id: B-374
+repo: corelink-server
+owner: tl
+status: done
+verify: python3 -m unittest discover -s tests -p 'test_repository_org_migration*.py'
+verify-means: |
+  done — testes do kit, schema/IDs/escopo, negativos, inventário imutável,
+  redação de metadados, integridade dos documentos/links e triggers de CI
+  passam neste checkout. Não significa execução de transferência, adoção
+  do catálogo por produção ou aceitação G01–G10. Não valida fornecedores live.
+  Reabre quando faltar parte do kit ou quando seus contratos deixarem de passar.
+last-verified: 2026-09-19
+```
