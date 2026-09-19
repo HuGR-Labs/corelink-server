@@ -189,6 +189,37 @@ beforeAll(async () => {
   await d1.prepare(seedTenant).bind(TEST_TENANT_ID, "wnam").run();
   await d1.prepare(seedTenant).bind(SECOND_TENANT_ID, "wnam").run();
 
+  // Dispatch/isolation assertions still traverse the production storage quota
+  // gate. Seed only the quota evidence needed for these fixtures so missing
+  // optional migration tables cannot turn a DO 503 assertion into a quota 429.
+  await d1.exec(
+    "CREATE TABLE IF NOT EXISTS tier_selections (" +
+      "tenant_id TEXT NOT NULL PRIMARY KEY, " +
+      "tier TEXT NOT NULL, subscription_state TEXT NOT NULL)",
+  );
+  await d1.prepare(
+    "INSERT OR IGNORE INTO tier_selections (tenant_id, tier, subscription_state) VALUES (?1, 'free', 'active')",
+  ).bind(TEST_TENANT_ID).run();
+  await d1.prepare(
+    "INSERT OR IGNORE INTO tier_selections (tenant_id, tier, subscription_state) VALUES (?1, 'free', 'active')",
+  ).bind(SECOND_TENANT_ID).run();
+  await d1.exec(
+    "CREATE TABLE IF NOT EXISTS tenant_storage_state (" +
+      "tenant_id TEXT NOT NULL, region TEXT NOT NULL, bytes_used INTEGER NOT NULL DEFAULT 0)",
+  );
+  await d1.prepare(
+    "INSERT INTO tenant_storage_state (tenant_id, region, bytes_used) VALUES (?1, 'iad', 0)",
+  ).bind(TEST_TENANT_ID).run();
+  await d1.prepare(
+    "INSERT INTO tenant_storage_state (tenant_id, region, bytes_used) VALUES (?1, 'iad', 0)",
+  ).bind(SECOND_TENANT_ID).run();
+  await d1.exec(
+    "CREATE TABLE IF NOT EXISTS monthly_request_counts (" +
+      "tenant_id TEXT NOT NULL, year_month TEXT NOT NULL, " +
+      "request_count INTEGER NOT NULL DEFAULT 0, updated_at_ms INTEGER NOT NULL DEFAULT 0, " +
+      "PRIMARY KEY (tenant_id, year_month))",
+  );
+
   // Warm up: dispatch a health check to confirm the worker is ready
   const health = await mf.dispatchFetch("https://corelink.test/health");
   if (health.status !== 200) {
