@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "status": "DESIGN_AND_DISCOVERY_NOT_TRANSFER_AUTHORIZATION",
+  "source": {
+    "owner": "HuGR-Labs",
+    "owner_id": 311862110,
+    "name": "corelink-server",
+    "repository_id": 1232040291,
+    "default_branch": "main",
+    "baseline_sha": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0"
+  },
+  "target_owner": null,
+  "target_owner_id": null,
+  "transfer_scope": ["server"],
+  "preserve_visibility": "private",
+  "allow_repository_rename": false,
+  "legacy_owners": ["HumanGuardrail"],
+  "dependencies": {
+    "runners": {
+      "owner": "HuGR-Labs", "name": "corelink-runners", "repository_id": 1266754321,
+      "transfer_in_this_campaign": false,
+      "contract": "App installation, workflow_job routing, JIT runner provisioning, labels and server auth/usage APIs"
+    },
+    "workspaces": {
+      "owner": "HuGR-Labs", "name": "corelink-workspaces", "repository_id": 1259579816,
+      "transfer_in_this_campaign": false,
+      "contract": "Separate migration; preserve server API/auth/DevEnv contract; inbound source dependencies not exhaustively audited"
+    },
+    "cli_distribution": {
+      "owner": "HuGR-Labs", "name": "corelink-cli", "repository_id": 1251605593,
+      "transfer_in_this_campaign": false,
+      "contract": "Public release assets; CORELINK_CLI_RELEASE_TOKEN remains scoped to this repository"
+    }
+  },
+  "invariants": [
+    "repository numeric ID, private visibility, name, approved Git refs and release assets unchanged by transfer",
+    "no cloud account, DNS, Worker name, binding, database, bucket, DO identity, image pin, Terraform state, billing or tenant migration",
+    "no automatic sibling or GitHub App ownership transfer",
+    "no historical signature, provenance, signed bundle or source history rewrite",
+    "no authorization tautology, wildcard trust or paid-runner fallback",
+    "no execution approval inferred from a generated plan or HTTP 202"
+  ]
+}

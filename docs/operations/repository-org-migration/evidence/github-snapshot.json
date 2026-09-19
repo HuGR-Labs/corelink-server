@@ -1,0 +1,3283 @@
+{
+  "finished_at_utc": "2026-09-19T21:02:31.763285+00:00",
+  "method": "GET only; paginated; allowlisted metadata; no secret, variable or webhook values",
+  "requested_repository": "HuGR-Labs/corelink-server",
+  "schema_version": 1,
+  "started_at_utc": "2026-09-19T21:02:24.540625+00:00",
+  "status": "OBSERVATION_NOT_READINESS",
+  "surfaces": {
+    "actions_permissions": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/actions/permissions",
+      "observed_at_utc": "2026-09-19T21:02:25.304872+00:00",
+      "pages": [
+        {
+          "allowed_actions": "all",
+          "enabled": true,
+          "sha_pinning_required": true
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "codespaces_secrets": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/codespaces/secrets?per_page=100",
+      "error": "GitHub read failed; no empty-state inference allowed",
+      "http_status": 404,
+      "observed_at_utc": "2026-09-19T21:02:27.568509+00:00",
+      "status": "UNVERIFIED"
+    },
+    "collaborators": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/collaborators?affiliation=all&per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:25.132768+00:00",
+      "pages": [
+        [
+          {
+            "login": "gmhelmold",
+            "permissions": {
+              "admin": true,
+              "maintain": true,
+              "pull": true,
+              "push": true,
+              "triage": true
+            },
+            "role_name": "admin"
+          }
+        ]
+      ],
+      "status": "OBSERVED"
+    },
+    "dependabot_secrets": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/dependabot/secrets?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:27.527905+00:00",
+      "pages": [
+        {
+          "secrets": [],
+          "total_count": 0
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "deploy_keys": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/keys?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:25.296231+00:00",
+      "pages": [
+        []
+      ],
+      "status": "OBSERVED"
+    },
+    "env:production:secrets": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/environments/production/secrets?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:29.347860+00:00",
+      "pages": [
+        {
+          "secrets": [],
+          "total_count": 0
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "env:production:variables": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/environments/production/variables?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:29.957739+00:00",
+      "pages": [
+        {
+          "total_count": 0,
+          "variables": []
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "env:staging:secrets": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/environments/staging/secrets?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:30.563289+00:00",
+      "pages": [
+        {
+          "secrets": [],
+          "total_count": 0
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "env:staging:variables": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/environments/staging/variables?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:31.183682+00:00",
+      "pages": [
+        {
+          "total_count": 0,
+          "variables": []
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "environments": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/environments?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:26.391193+00:00",
+      "pages": [
+        {
+          "environments": [
+            {
+              "can_admins_bypass": true,
+              "deployment_branch_policy": null,
+              "id": 16984133156,
+              "name": "production",
+              "protection_rules": []
+            },
+            {
+              "can_admins_bypass": true,
+              "deployment_branch_policy": null,
+              "id": 15411673463,
+              "name": "staging",
+              "protection_rules": []
+            }
+          ],
+          "total_count": 2
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "heads": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/git/matching-refs/heads/?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:24.541198+00:00",
+      "pages": [
+        [
+          {
+            "object": {
+              "sha": "69fab21b88a21bdee40dd0a77665f3007f103ecc",
+              "type": "commit"
+            },
+            "ref": "refs/heads/agents/b096-stack-r6"
+          },
+          {
+            "object": {
+              "sha": "8567bc3f392402413cec5a62f79757d1abce410a",
+              "type": "commit"
+            },
+            "ref": "refs/heads/agents/session-state-2026-09-01-r2"
+          },
+          {
+            "object": {
+              "sha": "345fa9407a399125bf36907fd5fe98843c2ec253",
+              "type": "commit"
+            },
+            "ref": "refs/heads/audit/d1-audit-trail"
+          },
+          {
+            "object": {
+              "sha": "557bb24de06cb2d3e31ade8ec5a08de566232199",
+              "type": "commit"
+            },
+            "ref": "refs/heads/audit/d3-dpa"
+          },
+          {
+            "object": {
+              "sha": "f5c894be39ee27221d18bc5e5d94efecfcff606e",
+              "type": "commit"
+            },
+            "ref": "refs/heads/audit/d4-byok"
+          },
+          {
+            "object": {
+              "sha": "3b6b6eb3fc69aa35d8a9d5c7151f3d5e1718cab9",
+              "type": "commit"
+            },
+            "ref": "refs/heads/auto/compliance-digest-2026-08-31"
+          },
+          {
+            "object": {
+              "sha": "9905133a8cff98274898afa437c5bcba35a83de3",
+              "type": "commit"
+            },
+            "ref": "refs/heads/backlog/okf-anchor-incentive"
+          },
+          {
+            "object": {
+              "sha": "efd05d6ea63267f701b74df41108a099d7a01fe9",
+              "type": "commit"
+            },
+            "ref": "refs/heads/chore/adopt-e2e-browser-suite"
+          },
+          {
+            "object": {
+              "sha": "fcf9a21238ce64c37661930acaec3c631351a704",
+              "type": "commit"
+            },
+            "ref": "refs/heads/chore/repin-container-d6c6cf1a"
+          },
+          {
+            "object": {
+              "sha": "b4e8e9204d157de21789e83080908491b48c12bd",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/audit-report-analysis-4e1455"
+          },
+          {
+            "object": {
+              "sha": "4f67591c4df1d6f2dddcc46366b58de79b78734d",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/b088-pentest-residue-4e1455"
+          },
+          {
+            "object": {
+              "sha": "122e6a6502eb685b0f76ee3aa56d9734f0003a5c",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/b094-buck2-residue-4e1455"
+          },
+          {
+            "object": {
+              "sha": "ffd3e73233b18742d95ce77f1e0817fd252625ad",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/b132-abbrev-cite-resolver"
+          },
+          {
+            "object": {
+              "sha": "8440ea24d00e095163da86a301c687567e543477",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/backlog-b136-b137-concurrency-ref-scope"
+          },
+          {
+            "object": {
+              "sha": "8205ff00b0ed7eda4b42e75fb8a2b5dee3464868",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/backlog-b138-runner-image-not-served"
+          },
+          {
+            "object": {
+              "sha": "236679b68093ff26b99dbb74e8d15a01ba573a0e",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/backlog-owner-field-strict"
+          },
+          {
+            "object": {
+              "sha": "db224fc49dd63fe5d0bc4947885571674024174a",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/backlog-owner-reclassify-4e1455"
+          },
+          {
+            "object": {
+              "sha": "8505b639b37eb9edba5cbec5f7493a449168b28c",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/backlog-wp-ci-findings"
+          },
+          {
+            "object": {
+              "sha": "d74a04c918773b42fb1bf02faeec715692352e50",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/c4-openapi-json-devenv-4e1455"
+          },
+          {
+            "object": {
+              "sha": "f5e6d020aaf519ac4f67698b7e5e9875dfaae4be",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/c4-phantom-api-paths-4e1455"
+          },
+          {
+            "object": {
+              "sha": "de3ec37c92e0dc43a01578710410ce568970e39d",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/c4-promessas-x-estacoes"
+          },
+          {
+            "object": {
+              "sha": "c57d346abf66e56ae360b6f9e0e3d3ebff795477",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/esforco-classificacao-4e1455"
+          },
+          {
+            "object": {
+              "sha": "958c32c423fbb491f9b53acb6aa855d3dabd57fa",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/estacoes-dois-tenants"
+          },
+          {
+            "object": {
+              "sha": "e80ef102d5f5e8e7b5ca37d51c34a903a1cabe49",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/fabric-box-doc-2026-08-31"
+          },
+          {
+            "object": {
+              "sha": "2916d0b4b44a83fd18095826c5e4b50d1eb96110",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/gitleaks-shape-rule-99e1db"
+          },
+          {
+            "object": {
+              "sha": "0f503d95b5fe62f5d23125974a3cf647f7f4346c",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/onda2-b081-pat-rotation-4e1455"
+          },
+          {
+            "object": {
+              "sha": "e79338ec307070b46a7821d7eb54f3fb38e21b5c",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/onda2-b084-drill-attestation-4e1455"
+          },
+          {
+            "object": {
+              "sha": "e95469c62e5d771ea3d6a32074ed629380d7147a",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/onda2-backlog-gate-4e1455"
+          },
+          {
+            "object": {
+              "sha": "9aa881754bd72e1b4562041e65f7930e42cebcc6",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/pip-f27-write-gate-tests"
+          },
+          {
+            "object": {
+              "sha": "45a87433df471232ee91ffdae4ca1c93ff9a945f",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/report-concurrency-cold-review"
+          },
+          {
+            "object": {
+              "sha": "3f2a1b1484a6d4520faa35b9db9e67d52eb7f20c",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/wp-a-authz"
+          },
+          {
+            "object": {
+              "sha": "4044005c54cb3ada08bc162e3161bd6972ea4720",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/wp-a-b073-invite-expiry"
+          },
+          {
+            "object": {
+              "sha": "2f61db4e6c43c0e95c23a367026a5fc9c3c08e7c",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/wp-a-b080-scopes"
+          },
+          {
+            "object": {
+              "sha": "0c909d44a5c096fb27a732dd66336a7d60f3affd",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/wp-b-money"
+          },
+          {
+            "object": {
+              "sha": "78f8574d15adcb8fafd8219def5519a70d226876",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/wp-c-b092"
+          },
+          {
+            "object": {
+              "sha": "8c59353912643105934808ebe76b4d0f4e513ae7",
+              "type": "commit"
+            },
+            "ref": "refs/heads/claude/wp-h-okf"
+          },
+          {
+            "object": {
+              "sha": "43063a29ba8ac2434286ee832090d49caabfd9a6",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/app-bundle-p01-20260915"
+          },
+          {
+            "object": {
+              "sha": "80cdabe28c33dfa72d87e2d8534589963496f44b",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/app-bundle-p02-20260915"
+          },
+          {
+            "object": {
+              "sha": "8c33999223a914cdcf1808b72648c437b36e1828",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/app-bundle-p03-20260915"
+          },
+          {
+            "object": {
+              "sha": "7f2c389f94c4475423b2cf6689da3c6aea9e33fe",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/app-bundle-p04-20260915"
+          },
+          {
+            "object": {
+              "sha": "cc17c6fe37e77e8ae707d044d5baa929dae1ba7a",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/app-bundle-p05-20260915"
+          },
+          {
+            "object": {
+              "sha": "ce4abcd18e4bf47352a5054b482dccf858dda9f0",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/app-bundle-p06-20260915"
+          },
+          {
+            "object": {
+              "sha": "0e44e2b684b28beea32371f0889da80942fc7938",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/app-bundle-p07-20260915"
+          },
+          {
+            "object": {
+              "sha": "099fc76bc17e0cafb9f9078c2034e3de51548011",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/app-bundle-p08-20260915"
+          },
+          {
+            "object": {
+              "sha": "d3bed81bb8ce6ae9270755e3ee1f063de83869e8",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/app-bundle-p09-20260915"
+          },
+          {
+            "object": {
+              "sha": "8e3ebd43f58026e9bf518c175359ac84ad8c06a3",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/app-bundle-p10-20260915"
+          },
+          {
+            "object": {
+              "sha": "f84379675d611e1cc85fe2806533041d1bcc644c",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/app-bundle-p11-20260915"
+          },
+          {
+            "object": {
+              "sha": "8e0b0d7987ad979975ceac94d731230737f84ce3",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b028-selector-parser-security"
+          },
+          {
+            "object": {
+              "sha": "90cfae72c312381beb003311aef8efae2224c863",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b091-deterministic-sbom"
+          },
+          {
+            "object": {
+              "sha": "ee9ca8b980572c23684c09c3c02e88dc126bf063",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b091-stack-r1"
+          },
+          {
+            "object": {
+              "sha": "ad01b4fd0afac3d2e86e6ebd649822fefeea56d8",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b095-installer-region"
+          },
+          {
+            "object": {
+              "sha": "7ebcbd4f2f39b162ee85dab881f6e9cba7e7730f",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b095-team-role-contract"
+          },
+          {
+            "object": {
+              "sha": "46a9013a6f4b25c6c68a90e286debd3287b4c6b4",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b096-comment-followup"
+          },
+          {
+            "object": {
+              "sha": "14b52cdc8463fe99f627bf069f012245501b5719",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b101-finding-coverage"
+          },
+          {
+            "object": {
+              "sha": "26d29ef7ed351c00a25582a6b410ace2073a0dba",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b112-release-artifact-chain"
+          },
+          {
+            "object": {
+              "sha": "83a3d5d86bdcd403c27d0f04b8d72ffcea7795a6",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b128-ci-failclosed-bundle-20260913"
+          },
+          {
+            "object": {
+              "sha": "356ad2df014371df9a4d5e993ebfcbb553863218",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b135-server-closure-20260908"
+          },
+          {
+            "object": {
+              "sha": "ab978e4b032acfab8babd725cdd472728590e6a9",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b139-b160-pnpm-stack-20260913"
+          },
+          {
+            "object": {
+              "sha": "4f890dc343e7d533ae88b28ae1d0d06c12568710",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b139-code-20260913"
+          },
+          {
+            "object": {
+              "sha": "f7f8f400d4e48c6e38df1c7185ce1153bb2cec1b",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b139-ffi-stack-20260913"
+          },
+          {
+            "object": {
+              "sha": "4aced334c6b79ff7bccda8a6b9d98a89306e4d7b",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b139-post1604-metadata-20260914"
+          },
+          {
+            "object": {
+              "sha": "e4cdab0071647bdc8f384f553e5efcca8d249dcc",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b139-post1604-snapshot-20260914"
+          },
+          {
+            "object": {
+              "sha": "cb46840cf0756adec170fe2049c8c36f3e2c8ec4",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b139-shell-a-stack-20260913"
+          },
+          {
+            "object": {
+              "sha": "fcf53efb0e5bed3eb08d866b576e7c32f5ff03d4",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b139-shell-b-stack-20260913"
+          },
+          {
+            "object": {
+              "sha": "11fe7a3c42c502a085bf2ac1a14c10c1c87280a0",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b139-tests-20260913"
+          },
+          {
+            "object": {
+              "sha": "54ed6d3f22bf8d215d85f65ddd44cb53e3c53468",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b140-structural-runs-on-parser"
+          },
+          {
+            "object": {
+              "sha": "4ac7aff2d74da217f824549c404130819007c90e",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b145-docs-route-reality"
+          },
+          {
+            "object": {
+              "sha": "6b3979ba76f5e70f060d7705be9569c584be8e53",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b152-actions-job-deaths"
+          },
+          {
+            "object": {
+              "sha": "2adb6cea33c762c15fa75705e38476f965c31388",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b159-sccache-delete-contract"
+          },
+          {
+            "object": {
+              "sha": "ccc986c2b6530dd3535687518856179aea9e52bd",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b160-pat-issue-rate-limit"
+          },
+          {
+            "object": {
+              "sha": "74816c6c0ab89544b279bcee539d98c9aa65abf8",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b160-reopen-durable-20260904"
+          },
+          {
+            "object": {
+              "sha": "cc732095c18755003e55cfaae6613b25b188743e",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b161-homebrew-no-pat"
+          },
+          {
+            "object": {
+              "sha": "ca2b8da43da5832bc754f5baf20a9e9872567885",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b163-curl-directory-fail-closed"
+          },
+          {
+            "object": {
+              "sha": "f715c13e2f26859746ede7b7a3857ee5b30b97ca",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/b373-control-bootstrap-20260912"
+          },
+          {
+            "object": {
+              "sha": "87dc11e06f7e2a37ecc980253b710f920026bbb8",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/backlog-postmerge-sprint3-20260913"
+          },
+          {
+            "object": {
+              "sha": "df1cd53f56a2eff4643aaf9368e25fb0303ce57d",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/backlog-sprint-postmerge-20260912"
+          },
+          {
+            "object": {
+              "sha": "2c74b8fc9a772c43cdeb3aff3fd277ec31eb1077",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/backlog-wp-ledger"
+          },
+          {
+            "object": {
+              "sha": "f88c6ca41868f6a02e78ba9f4357d3abf67da4be",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/d02-bundle-post-d01-20260905"
+          },
+          {
+            "object": {
+              "sha": "d2e39bb7a4a913313f8b3920e12f1d47c03df25a",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/emergency-container-boot-20260909"
+          },
+          {
+            "object": {
+              "sha": "0227d446d251137fd8abc7507161735873d80152",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/external-drain-20260908"
+          },
+          {
+            "object": {
+              "sha": "404e42cb4c7f8acc7c2413585c425b6915c4b852",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/fix-b167-dynamic-control"
+          },
+          {
+            "object": {
+              "sha": "2a470111a27b09d038336905df2405d49eb4eedd",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/fix-backlog-verifiers-b075-b149"
+          },
+          {
+            "object": {
+              "sha": "6dd0c50ca57ae513a24b52548a5b947a2a7638b5",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/fix-frontend-pat-response-contract-20260909"
+          },
+          {
+            "object": {
+              "sha": "627ec21afefb3873e11010800db2ba216b86b87a",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/integrate-b149-r1"
+          },
+          {
+            "object": {
+              "sha": "62630472bb4ae865bb2b2cfdf8ce1522de687345",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/land-b081-pat-rotation-rfinal-20260904"
+          },
+          {
+            "object": {
+              "sha": "8643c675bb574756fa6a29c3c2194ddc6df4c44c",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/land-b123-c5c-anchor-20260904"
+          },
+          {
+            "object": {
+              "sha": "e21b73b134e011b3b983bdd49314ea9c07fd6e9d",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/land-b126-cas-tail-20260904"
+          },
+          {
+            "object": {
+              "sha": "1f7dd4abe989dfb5cad56325bdc0df45fc9c3878",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/land-b126-write-gate-20260904"
+          },
+          {
+            "object": {
+              "sha": "feac69055acb683ce3dcd16686d0c5b78cbc1777",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/land-b160-pat-selfservice-20260904"
+          },
+          {
+            "object": {
+              "sha": "5d27c8a56300ad61a5f1f6bee388c52158f6fd00",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/land-capacity-guard-b217-20260904"
+          },
+          {
+            "object": {
+              "sha": "ce4412061763a5018195651c8dbbfbd809935537",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/land-integrity-b059-b181-20260904"
+          },
+          {
+            "object": {
+              "sha": "88f362ff63725f06181e83dc2372d96513b971ae",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/land-oci-godfile-20260904"
+          },
+          {
+            "object": {
+              "sha": "c28bdff8be9782c088b84d0b0fc5f4bef65a94d3",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/okf-b096-reconcile"
+          },
+          {
+            "object": {
+              "sha": "de501464e7aaaf5bd01f898be0e4a0bbf31c06d1",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/okf-bot-codex-r1"
+          },
+          {
+            "object": {
+              "sha": "a36d18141856847fee22ccd9e39816ae890fd3ac",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/p0-actions-canary-1788304796"
+          },
+          {
+            "object": {
+              "sha": "c12d13289a178c06924838769a3ccdca45df4f6f",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/perf-probes-20260909"
+          },
+          {
+            "object": {
+              "sha": "21d7fdfc01ee90c5372241e849743e54932d64e7",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/pr1597-generation-close-route-20260914"
+          },
+          {
+            "object": {
+              "sha": "40f80fd4db0297699c781b1fe6a94938a35408cf",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/pr1597-generation-core-20260914"
+          },
+          {
+            "object": {
+              "sha": "8effb089bfc23dae64d1745e517756e3941b46cd",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/pr1597-generation-receipts-20260914"
+          },
+          {
+            "object": {
+              "sha": "54cb9fb2711148da11eb8aa9f6c7aa01c5d943a5",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/pr1597-generation-schema-20260914"
+          },
+          {
+            "object": {
+              "sha": "9235cdfe2303397d8dcb9e7d76dc4740e58f48be",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/pr1597-obligation-schema-20260914"
+          },
+          {
+            "object": {
+              "sha": "94e4f5990759444c4f4fe6d2e0ed148a0fac9a00",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/pr1597-runner-activation-tests-20260914"
+          },
+          {
+            "object": {
+              "sha": "8b813374eb3b9131f9893699f14a1b0ac01e33a2",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/pr1597-runner-obligation-20260914"
+          },
+          {
+            "object": {
+              "sha": "085766356ca438bf633ae0f177737c7974ed443a",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/pr1597-runner-routes-20260914"
+          },
+          {
+            "object": {
+              "sha": "b29ed082d332b80a798f36175c0b3f4d810c8292",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/server-closure-integrated-20260913"
+          },
+          {
+            "object": {
+              "sha": "f137c1e509cb609157de20a0bfda3b04b62c5c82",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/sprint-d01-control-plane-20260905"
+          },
+          {
+            "object": {
+              "sha": "0ed2c782cc2d4b6419ee8f92b18e6e4f8b79fd90",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/stack-b126-corecheck-20260904"
+          },
+          {
+            "object": {
+              "sha": "4ff9bbe468e3729ea0523c16f065c6b6d331cd90",
+              "type": "commit"
+            },
+            "ref": "refs/heads/codex/stack-b126-tail-rfinal-20260904"
+          },
+          {
+            "object": {
+              "sha": "41293c9e686c624a5a1ad226d135f5b54ae7fe63",
+              "type": "commit"
+            },
+            "ref": "refs/heads/docs/adr-tls-floor"
+          },
+          {
+            "object": {
+              "sha": "93ff0356a24e21438bcf08dbeabe95f3dfed9bc0",
+              "type": "commit"
+            },
+            "ref": "refs/heads/docs/backlog-owner-items-verified"
+          },
+          {
+            "object": {
+              "sha": "cbd0f156feff8bfac3b65e3a5d5008995f8065ff",
+              "type": "commit"
+            },
+            "ref": "refs/heads/docs/close-b037"
+          },
+          {
+            "object": {
+              "sha": "95b6730b16fa4517d41b96e319dd1ec4af1fcad9",
+              "type": "commit"
+            },
+            "ref": "refs/heads/docs/okf-reconcile-fmt-devenv"
+          },
+          {
+            "object": {
+              "sha": "b87ff04f50455b182673e07378b10826d89fa139",
+              "type": "commit"
+            },
+            "ref": "refs/heads/docs/supersede-statuspage-provisioning"
+          },
+          {
+            "object": {
+              "sha": "48d91ec446969c16d3ad56877904bb310ddbf141",
+              "type": "commit"
+            },
+            "ref": "refs/heads/feat/audit-archive-producer-wire"
+          },
+          {
+            "object": {
+              "sha": "57a474d907b6ce88c062eef324eaafe811fdf7cc",
+              "type": "commit"
+            },
+            "ref": "refs/heads/feat/backlog-single-source"
+          },
+          {
+            "object": {
+              "sha": "737aa29fe519696d92fadfb9968094ba17983a29",
+              "type": "commit"
+            },
+            "ref": "refs/heads/feat/devenv-ingress-control-plane-wp08-wp09"
+          },
+          {
+            "object": {
+              "sha": "b76a937a98841b44cd6078c52c3c6caf82fc30e7",
+              "type": "commit"
+            },
+            "ref": "refs/heads/feat/sccache-rust-lanes"
+          },
+          {
+            "object": {
+              "sha": "4e83b0510ac2f07a03f3183371ab8525304e7e77",
+              "type": "commit"
+            },
+            "ref": "refs/heads/feat/tla-jar-own-mirror"
+          },
+          {
+            "object": {
+              "sha": "524c7c31cad6e23fe0b2915e525bc17f4c0b1dd8",
+              "type": "commit"
+            },
+            "ref": "refs/heads/fix/audit-verify-no-page-on-missing-archive"
+          },
+          {
+            "object": {
+              "sha": "a3e112bb38bc9a98820ce22f86c5e4b5252ca482",
+              "type": "commit"
+            },
+            "ref": "refs/heads/fix/b037-linkcheck-vantage"
+          },
+          {
+            "object": {
+              "sha": "2ce32ae3116347060444c69648543e01295cede2",
+              "type": "commit"
+            },
+            "ref": "refs/heads/fix/b057-sli-observer2"
+          },
+          {
+            "object": {
+              "sha": "65683bfecfb8479b94990575a6aba2297a9af6c8",
+              "type": "commit"
+            },
+            "ref": "refs/heads/fix/backlog-b040-verify"
+          },
+          {
+            "object": {
+              "sha": "68e2cf34fc8331343a2b069282f74531d73d9f40",
+              "type": "commit"
+            },
+            "ref": "refs/heads/fix/buildtool-ci-credential"
+          },
+          {
+            "object": {
+              "sha": "7225f89e9a55ba13d6013ea628a26bd44124d708",
+              "type": "commit"
+            },
+            "ref": "refs/heads/fix/docs-worker-redirect-loses-mount"
+          },
+          {
+            "object": {
+              "sha": "bf76beb49c1737012f87220339e5284cc9acf8ba",
+              "type": "commit"
+            },
+            "ref": "refs/heads/fix/head-under-pipefail-b040"
+          },
+          {
+            "object": {
+              "sha": "543bd550922d09df349e40290235e982cf6ba232",
+              "type": "commit"
+            },
+            "ref": "refs/heads/fix/mutation-mutants-flags"
+          },
+          {
+            "object": {
+              "sha": "f57c3015ccf2086ab8839a3c763f1539c989cb5f",
+              "type": "commit"
+            },
+            "ref": "refs/heads/go-live/wp-3-429-urls"
+          },
+          {
+            "object": {
+              "sha": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+              "type": "commit"
+            },
+            "ref": "refs/heads/main"
+          },
+          {
+            "object": {
+              "sha": "05ddc1448c77b4970c1f365fa6908dcbf8e08a20",
+              "type": "commit"
+            },
+            "ref": "refs/heads/pr-0a-d13-rustfmt"
+          },
+          {
+            "object": {
+              "sha": "d450c6e962152745422e4fddc8608fc72f7b9fe6",
+              "type": "commit"
+            },
+            "ref": "refs/heads/pr-0b-n11-clean"
+          },
+          {
+            "object": {
+              "sha": "7f6d2beb23b707a3295325da89ffa1657a65951e",
+              "type": "commit"
+            },
+            "ref": "refs/heads/pr-0b-n11-dsr-table"
+          },
+          {
+            "object": {
+              "sha": "f7e054ed0346b407ac6d23ce0f3e866e8e42a66b",
+              "type": "commit"
+            },
+            "ref": "refs/heads/pr-d13-fmt-clean"
+          }
+        ]
+      ],
+      "status": "OBSERVED"
+    },
+    "metadata": {
+      "endpoint": "repos/HuGR-Labs/corelink-server",
+      "observed_at_utc": "2026-09-19T21:02:23.903452+00:00",
+      "pages": [
+        {
+          "allow_auto_merge": false,
+          "allow_merge_commit": true,
+          "allow_rebase_merge": true,
+          "allow_squash_merge": true,
+          "archived": false,
+          "default_branch": "main",
+          "delete_branch_on_merge": false,
+          "fork": false,
+          "full_name": "HuGR-Labs/corelink-server",
+          "has_discussions": false,
+          "has_pages": false,
+          "has_wiki": false,
+          "id": 1232040291,
+          "node_id": "R_kgDOSW9xYw",
+          "owner": {
+            "id": 311862110,
+            "login": "HuGR-Labs",
+            "type": "Organization"
+          },
+          "permissions": {
+            "admin": true,
+            "maintain": true,
+            "pull": true,
+            "push": true,
+            "triage": true
+          },
+          "private": true,
+          "visibility": "private"
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "oidc": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/actions/oidc/customization/sub",
+      "observed_at_utc": "2026-09-19T21:02:27.171499+00:00",
+      "pages": [
+        {
+          "sub_claim_prefix": "repo:HuGR-Labs@311862110/corelink-server@1232040291",
+          "use_default": true,
+          "use_immutable_subject": true
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "open_issues": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/issues?state=open&per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:28.102603+00:00",
+      "pages": [
+        [
+          {
+            "milestone": null,
+            "number": 1645,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1644,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1643,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1642,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1641,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1640,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1639,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1638,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1637,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1636,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1635,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1634,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1633,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1632,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1631,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1630,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1629,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1628,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1627,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1626,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1614,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1613,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1612,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1611,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1610,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1609,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1597,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1552,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1548,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1547,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1546,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1545,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1518,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1517,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1514,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1357,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1326,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 1007,
+            "state": "open",
+            "type": null
+          },
+          {
+            "milestone": null,
+            "number": 893,
+            "state": "open",
+            "type": null
+          }
+        ]
+      ],
+      "status": "OBSERVED"
+    },
+    "open_prs": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/pulls?state=open&per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:27.939596+00:00",
+      "pages": [
+        [
+          {
+            "base_ref": "codex/pr1597-generation-receipts-20260914",
+            "draft": true,
+            "head_ref": "codex/pr1597-generation-close-route-20260914",
+            "head_sha": "21d7fdfc01ee90c5372241e849743e54932d64e7",
+            "number": 1614
+          },
+          {
+            "base_ref": "codex/pr1597-runner-activation-tests-20260914",
+            "draft": true,
+            "head_ref": "codex/pr1597-runner-routes-20260914",
+            "head_sha": "085766356ca438bf633ae0f177737c7974ed443a",
+            "number": 1613
+          },
+          {
+            "base_ref": "codex/pr1597-runner-obligation-20260914",
+            "draft": true,
+            "head_ref": "codex/pr1597-runner-activation-tests-20260914",
+            "head_sha": "94e4f5990759444c4f4fe6d2e0ed148a0fac9a00",
+            "number": 1612
+          },
+          {
+            "base_ref": "codex/pr1597-generation-core-20260914",
+            "draft": true,
+            "head_ref": "codex/pr1597-runner-obligation-20260914",
+            "head_sha": "8b813374eb3b9131f9893699f14a1b0ac01e33a2",
+            "number": 1611
+          },
+          {
+            "base_ref": "codex/pr1597-generation-core-20260914",
+            "draft": true,
+            "head_ref": "codex/pr1597-generation-receipts-20260914",
+            "head_sha": "8effb089bfc23dae64d1745e517756e3941b46cd",
+            "number": 1610
+          },
+          {
+            "base_ref": "main",
+            "draft": true,
+            "head_ref": "codex/pr1597-generation-core-20260914",
+            "head_sha": "40f80fd4db0297699c781b1fe6a94938a35408cf",
+            "number": 1609
+          },
+          {
+            "base_ref": "main",
+            "draft": true,
+            "head_ref": "codex/server-closure-integrated-20260913",
+            "head_sha": "b29ed082d332b80a798f36175c0b3f4d810c8292",
+            "number": 1597
+          }
+        ]
+      ],
+      "status": "OBSERVED"
+    },
+    "org_installations": {
+      "endpoint": "orgs/HuGR-Labs/installations?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:26.958211+00:00",
+      "pages": [
+        {
+          "installations": [
+            {
+              "app_id": 4222041,
+              "app_slug": "corelink-runners",
+              "events": [
+                "workflow_job"
+              ],
+              "id": 150584374,
+              "permissions": {
+                "actions": "read",
+                "administration": "write",
+                "metadata": "read"
+              },
+              "repository_selection": "all",
+              "suspended_at": null,
+              "target_type": "Organization"
+            },
+            {
+              "app_id": 1144995,
+              "app_slug": "chatgpt-codex-connector",
+              "events": [
+                "check_run",
+                "check_suite",
+                "commit_comment",
+                "issues",
+                "issue_comment",
+                "pull_request",
+                "pull_request_review",
+                "pull_request_review_comment",
+                "pull_request_review_thread",
+                "repository",
+                "status",
+                "sub_issues"
+              ],
+              "id": 162524831,
+              "permissions": {
+                "actions": "write",
+                "checks": "read",
+                "contents": "write",
+                "issues": "write",
+                "metadata": "read",
+                "pull_requests": "write",
+                "statuses": "read",
+                "workflows": "write"
+              },
+              "repository_selection": "all",
+              "suspended_at": null,
+              "target_type": "Organization"
+            }
+          ],
+          "total_count": 2
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "org_runners": {
+      "endpoint": "orgs/HuGR-Labs/actions/runners?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:26.516372+00:00",
+      "pages": [
+        {
+          "runners": [],
+          "total_count": 0
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "org_secrets": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/actions/organization-secrets?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:25.938431+00:00",
+      "pages": [
+        {
+          "secrets": [],
+          "total_count": 0
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "org_variables": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/actions/organization-variables?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:26.317423+00:00",
+      "pages": [
+        {
+          "total_count": 0,
+          "variables": []
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "protection": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/branches/main/protection",
+      "error": "GitHub read failed; no empty-state inference allowed",
+      "http_status": 403,
+      "observed_at_utc": "2026-09-19T21:02:28.484221+00:00",
+      "status": "UNVERIFIED"
+    },
+    "releases": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/releases?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:27.755559+00:00",
+      "pages": [
+        [
+          {
+            "assets": [
+              {
+                "digest": "sha256:a8ca9830d097662e3ed69c4ba652080c9425a09fc3132fc026f30775ab6dd0cf",
+                "id": 433298856,
+                "name": "checksums.txt",
+                "size": 356,
+                "state": "uploaded"
+              },
+              {
+                "digest": "sha256:67edacdda4f518510c2d7559c7e5bdbfbf99b21f2a5a30d28c4c0aac3df0f725",
+                "id": 433298813,
+                "name": "corelink-darwin-aarch64",
+                "size": 3835664,
+                "state": "uploaded"
+              },
+              {
+                "digest": "sha256:2b96685440b6cb870188a7cf0f4ec5a77004ad2d4f8d7df8526dec5359094d15",
+                "id": 433298812,
+                "name": "corelink-darwin-aarch64.sha256",
+                "size": 90,
+                "state": "uploaded"
+              },
+              {
+                "digest": "sha256:f9cb7093be5781c17720ba6e94bd83eab85d69dd4638469e0fc07a5484b10f5f",
+                "id": 433298811,
+                "name": "corelink-darwin-x86_64",
+                "size": 4592844,
+                "state": "uploaded"
+              },
+              {
+                "digest": "sha256:f2a21b0006929e52ceaa122bc7afa8a88bfbd6e37d05df19a57e015733a5fdaa",
+                "id": 433298814,
+                "name": "corelink-darwin-x86_64.sha256",
+                "size": 89,
+                "state": "uploaded"
+              },
+              {
+                "digest": "sha256:9486eee33d870d43b6e59f2cfc988204a54a49370f3deff1df5b6b3bced11e0a",
+                "id": 433298828,
+                "name": "corelink-linux-aarch64",
+                "size": 4133680,
+                "state": "uploaded"
+              },
+              {
+                "digest": "sha256:058be486ef8b6751dfe280194fc1f323bec1afebfcc3474fe5aacd98df01c04b",
+                "id": 433298844,
+                "name": "corelink-linux-aarch64.sha256",
+                "size": 89,
+                "state": "uploaded"
+              },
+              {
+                "digest": "sha256:0dae9a6cc9d914cd0e3ba3b4e8cc0b87c2779565e164748be1e898bd8c8e8b04",
+                "id": 433298810,
+                "name": "corelink-linux-x86_64",
+                "size": 5041944,
+                "state": "uploaded"
+              },
+              {
+                "digest": "sha256:d645c5666081b28bfbf4390be41db9af1ebf8ff5d235932661272401cb7d27a8",
+                "id": 433298829,
+                "name": "corelink-linux-x86_64.sha256",
+                "size": 88,
+                "state": "uploaded"
+              }
+            ],
+            "draft": false,
+            "id": 331745141,
+            "prerelease": false,
+            "published_at": "2026-05-29T20:09:38Z",
+            "tag_name": "cli-v0.1.0"
+          }
+        ]
+      ],
+      "status": "OBSERVED"
+    },
+    "repo_secrets": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/actions/secrets?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:25.760021+00:00",
+      "pages": [
+        {
+          "secrets": [
+            {
+              "created_at": "2026-07-13T17:20:13Z",
+              "name": "BACKUP_GPG_PUBLIC_KEY",
+              "updated_at": "2026-07-13T17:20:13Z"
+            },
+            {
+              "created_at": "2026-07-13T17:20:14Z",
+              "name": "BACKUP_GPG_RECIPIENT",
+              "updated_at": "2026-07-13T17:20:14Z"
+            },
+            {
+              "created_at": "2026-06-07T11:57:20Z",
+              "name": "CF_ACCOUNT_ID",
+              "updated_at": "2026-06-07T11:57:20Z"
+            },
+            {
+              "created_at": "2026-06-07T11:57:19Z",
+              "name": "CF_API_TOKEN",
+              "updated_at": "2026-06-07T11:57:19Z"
+            },
+            {
+              "created_at": "2026-08-30T16:06:51Z",
+              "name": "CF_CLIENT_ID",
+              "updated_at": "2026-08-30T16:06:51Z"
+            },
+            {
+              "created_at": "2026-08-30T16:06:35Z",
+              "name": "CF_CLIENT_SECRET",
+              "updated_at": "2026-08-30T16:06:35Z"
+            },
+            {
+              "created_at": "2026-08-25T18:35:04Z",
+              "name": "CLERK_LIVE_PUBLISHABLE_KEY",
+              "updated_at": "2026-08-25T18:35:04Z"
+            },
+            {
+              "created_at": "2026-08-25T18:35:06Z",
+              "name": "CLERK_LIVE_SECRET_KEY",
+              "updated_at": "2026-08-25T18:35:06Z"
+            },
+            {
+              "created_at": "2026-07-12T22:32:57Z",
+              "name": "CORELINK_BILLING_D1_DATABASE_ID",
+              "updated_at": "2026-07-12T22:32:57Z"
+            },
+            {
+              "created_at": "2026-07-10T17:55:47Z",
+              "name": "CORELINK_CANARY_PAT",
+              "updated_at": "2026-07-12T16:55:18Z"
+            },
+            {
+              "created_at": "2026-05-29T21:35:36Z",
+              "name": "CORELINK_CLI_RELEASE_TOKEN",
+              "updated_at": "2026-05-29T21:59:01Z"
+            },
+            {
+              "created_at": "2026-08-03T21:57:35Z",
+              "name": "CORELINK_SCCACHE_TOKEN",
+              "updated_at": "2026-08-03T21:57:35Z"
+            },
+            {
+              "created_at": "2026-08-30T16:06:14Z",
+              "name": "GPG_KEY_ID",
+              "updated_at": "2026-08-30T16:06:14Z"
+            },
+            {
+              "created_at": "2026-08-30T16:06:12Z",
+              "name": "GPG_PRIVATE_KEY",
+              "updated_at": "2026-08-30T16:06:12Z"
+            },
+            {
+              "created_at": "2026-08-30T16:06:13Z",
+              "name": "GPG_PRIVATE_KEY_PASS",
+              "updated_at": "2026-08-30T16:06:13Z"
+            },
+            {
+              "created_at": "2026-07-12T22:32:56Z",
+              "name": "PAGERDUTY_ROUTING_KEY",
+              "updated_at": "2026-07-12T22:32:56Z"
+            },
+            {
+              "created_at": "2026-08-30T16:06:37Z",
+              "name": "TF_BACKEND_BUCKET",
+              "updated_at": "2026-08-30T16:06:37Z"
+            },
+            {
+              "created_at": "2026-08-30T16:06:38Z",
+              "name": "TF_BACKEND_ENDPOINT",
+              "updated_at": "2026-08-30T16:06:38Z"
+            }
+          ],
+          "total_count": 18
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "repo_variables": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/actions/variables?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:25.904604+00:00",
+      "pages": [
+        {
+          "total_count": 7,
+          "variables": [
+            {
+              "created_at": "2026-07-13T17:20:14Z",
+              "name": "BACKUP_R2_BUCKET",
+              "updated_at": "2026-07-13T17:20:14Z"
+            },
+            {
+              "created_at": "2026-08-04T03:22:00Z",
+              "name": "CORELINK_SCCACHE_PILOT",
+              "updated_at": "2026-08-30T20:09:59Z"
+            },
+            {
+              "created_at": "2026-07-13T17:23:34Z",
+              "name": "D1_DATABASES",
+              "updated_at": "2026-07-13T17:23:34Z"
+            },
+            {
+              "created_at": "2026-07-13T17:31:16Z",
+              "name": "KV_NAMESPACES",
+              "updated_at": "2026-07-13T17:31:16Z"
+            },
+            {
+              "created_at": "2026-06-14T12:40:23Z",
+              "name": "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+              "updated_at": "2026-06-14T12:40:23Z"
+            },
+            {
+              "created_at": "2026-06-14T12:40:24Z",
+              "name": "NEXT_PUBLIC_CORELINK_API_URL",
+              "updated_at": "2026-06-14T12:40:24Z"
+            },
+            {
+              "created_at": "2026-06-14T12:48:43Z",
+              "name": "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+              "updated_at": "2026-06-14T12:48:43Z"
+            }
+          ]
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "rulesets": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/rulesets?includes_parents=true&per_page=100",
+      "error": "GitHub read failed; no empty-state inference allowed",
+      "http_status": 403,
+      "observed_at_utc": "2026-09-19T21:02:28.163853+00:00",
+      "status": "UNVERIFIED"
+    },
+    "runner_groups": {
+      "endpoint": "orgs/HuGR-Labs/actions/runner-groups?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:26.896319+00:00",
+      "pages": [
+        {
+          "runner_groups": [
+            {
+              "allows_public_repositories": false,
+              "default": true,
+              "id": 1,
+              "inherited": false,
+              "name": "Default",
+              "restricted_to_workflows": false,
+              "selected_workflows": [],
+              "visibility": "all"
+            }
+          ],
+          "total_count": 1
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "runners": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/actions/runners?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:26.480936+00:00",
+      "pages": [
+        {
+          "runners": [
+            {
+              "busy": false,
+              "id": 11188,
+              "labels": [
+                {
+                  "id": 0,
+                  "name": "self-hosted",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "macOS",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "X64",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "mac",
+                  "type": "custom"
+                },
+                {
+                  "id": 0,
+                  "name": "corelink-builder",
+                  "type": "custom"
+                }
+              ],
+              "name": "corelink-builder-1",
+              "os": "macOS",
+              "status": "online"
+            },
+            {
+              "busy": false,
+              "id": 25,
+              "labels": [
+                {
+                  "id": 0,
+                  "name": "self-hosted",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "macOS",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "X64",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "mac",
+                  "type": "custom"
+                },
+                {
+                  "id": 0,
+                  "name": "corelink-builder",
+                  "type": "custom"
+                }
+              ],
+              "name": "corelink-builder-2",
+              "os": "macOS",
+              "status": "online"
+            },
+            {
+              "busy": false,
+              "id": 23,
+              "labels": [
+                {
+                  "id": 0,
+                  "name": "self-hosted",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "macOS",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "X64",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "mac",
+                  "type": "custom"
+                },
+                {
+                  "id": 0,
+                  "name": "corelink-builder",
+                  "type": "custom"
+                }
+              ],
+              "name": "corelink-builder-3",
+              "os": "macOS",
+              "status": "online"
+            },
+            {
+              "busy": false,
+              "id": 24,
+              "labels": [
+                {
+                  "id": 0,
+                  "name": "self-hosted",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "macOS",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "X64",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "mac",
+                  "type": "custom"
+                },
+                {
+                  "id": 0,
+                  "name": "corelink-builder",
+                  "type": "custom"
+                }
+              ],
+              "name": "corelink-builder-4",
+              "os": "macOS",
+              "status": "online"
+            },
+            {
+              "busy": false,
+              "id": 21,
+              "labels": [
+                {
+                  "id": 0,
+                  "name": "self-hosted",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "macOS",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "X64",
+                  "type": "read-only"
+                },
+                {
+                  "id": 0,
+                  "name": "mac",
+                  "type": "custom"
+                },
+                {
+                  "id": 0,
+                  "name": "corelink-builder",
+                  "type": "custom"
+                }
+              ],
+              "name": "corelink-builder-5",
+              "os": "macOS",
+              "status": "online"
+            }
+          ],
+          "total_count": 5
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "source_org": {
+      "endpoint": "orgs/HuGR-Labs",
+      "observed_at_utc": "2026-09-19T21:02:24.540998+00:00",
+      "pages": [
+        {
+          "default_repository_permission": "read",
+          "id": 311862110,
+          "login": "HuGR-Labs",
+          "members_can_create_repositories": true,
+          "plan": {
+            "name": "free"
+          },
+          "two_factor_requirement_enabled": false
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "tags": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/git/matching-refs/tags/?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:24.544755+00:00",
+      "pages": [
+        [
+          {
+            "object": {
+              "sha": "01194c8947f4995da754fca1abf8c0945195fbb6",
+              "type": "tag"
+            },
+            "ref": "refs/tags/cli-v0.1.0"
+          },
+          {
+            "object": {
+              "sha": "dad5861d5a7452dc7a63c4b1d19ec209dbce1631",
+              "type": "tag"
+            },
+            "ref": "refs/tags/cli-v0.1.1"
+          },
+          {
+            "object": {
+              "sha": "0247d4c80e4d4325439290fea4e0db6068ab7abe",
+              "type": "tag"
+            },
+            "ref": "refs/tags/corelink-prod-deploy-v1"
+          },
+          {
+            "object": {
+              "sha": "f8227dab818ff05a31ca75ede3382c942ecec457",
+              "type": "tag"
+            },
+            "ref": "refs/tags/corelink-prod-deploy-v1.1"
+          },
+          {
+            "object": {
+              "sha": "c36bb190bfe9706019da350f65038c197ccf6f58",
+              "type": "tag"
+            },
+            "ref": "refs/tags/ga-engineering-gate-complete"
+          },
+          {
+            "object": {
+              "sha": "644f1c38fcc4fcbf5bc14d9326672a1c9ebc4ef6",
+              "type": "tag"
+            },
+            "ref": "refs/tags/perf-baseline-ga-2026-05-16"
+          },
+          {
+            "object": {
+              "sha": "0c7529e4de54ed96889e6e644e711ba15ea628b4",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s01-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "a2755c03b925a7f6d52250f351a8c0f4c3da0cc2",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s02-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "bacf5c679ec39b972237a1038ea00dddcd963d5a",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s03-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "120469a19089925cfa08580e4ea35fa527eb512e",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s04-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "7542c05c91587b26fbe47c3c4162490ae8910f2c",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s05-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "5fa8694bee5d9c45c63fc83f0a85c0e8c2b97685",
+              "type": "commit"
+            },
+            "ref": "refs/tags/s06-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "34574c47a2d3ea5e2f1cd7c86e3538508f987a7e",
+              "type": "commit"
+            },
+            "ref": "refs/tags/s07-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "936d348fa437dc50c7ea54395977e22999ad3a8a",
+              "type": "commit"
+            },
+            "ref": "refs/tags/s08-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "c8139623cb8b9216541654881f99296792cff9de",
+              "type": "commit"
+            },
+            "ref": "refs/tags/s09-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "7029633775a48a3d262082d77018081ac2f36969",
+              "type": "commit"
+            },
+            "ref": "refs/tags/s10-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "dc5a491431454a7fdb606e9ce3dcb2a35863f981",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s11-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "8ff2b99ec9b88dca7b29a6d1032676a30361d90d",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s12-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "c27968875f15ae15e24f18421f2c1ea3cfbf15d3",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s13-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "928903e50fbd027ba7ef0dbe3c17ac03abe6a149",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s14-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "59912844c075734ed99831e3165c4ba919550926",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s14-impl-sealed-conditional"
+          },
+          {
+            "object": {
+              "sha": "aa32ed594608c345f6aaa6dc70091c44dba52693",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s15-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "58c12bdae9986751f9629a6664ace061c155da1a",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s16-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "af243c1100def98b3217ada7ac2741c1fb76beb1",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s17-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "f82e9de94b26657d529855c347b5a61231fe4eed",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s18-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "84ef5bfc9a411c1a4eedeed548db7845fcdb7a26",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s19-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "fc9423519f683605be945b390585a43e1d7b2d68",
+              "type": "tag"
+            },
+            "ref": "refs/tags/s20-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "ff8797f5bb47572be3d48a925a4f32c6bcf36058",
+              "type": "tag"
+            },
+            "ref": "refs/tags/tier3-gtm-wave-sealed-2026-05-30"
+          },
+          {
+            "object": {
+              "sha": "a6e76b8eacd67e1d9cce06063bac04e005e56c69",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-14-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "a46fe5ac6e59a80c79e8db42abfcdebc884ceca5",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-15-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "873df630c306d1bae1d84350dd3d0eed8566589b",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-16-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "9894068b4dd670e5165b76f32d6a8faf6b193c66",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-17-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "72fb027ef9eace1cfcc50abe2c6685b6fe8c6263",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-18-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "3bdf163c12c2301c2ab1e3fda91fc9429bb3a803",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-19-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "238283a234343449c46176b3c4aae38d1ac8c622",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-20-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "fe7e3dfaded40881c4cae0dad72d3b545a6d2156",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-21-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "becb83e0a1d4034cb74ad7c3597b8ae6690b8153",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-22-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "616a8b2fcc34d33e21e8e48da3f7311061e83cc8",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-23-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "9f2b0e7f8a932f022caa3947dad102dd146b7ac2",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-24-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "3aa05021a5539289108575ef1e231100ef665b49",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-25-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "da2d1380e534b07ec049346a35c6f1af585f3318",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-26-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "2e4734d87825a1d5abc4f36389d232b10ee9256b",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-27-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "ad5a2b8bd95315998c7a1718db9dac53290973b4",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-28-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "2f8e74a4237a542cc4ae560791dd825e85cf9c0e",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-29-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "71ef9b5faa4f815a7db8352402041b60ef12e914",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-30-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "5ba6750c835c3b1249cfe978f7383663b85ceddd",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-31-impl-sealed"
+          },
+          {
+            "object": {
+              "sha": "47a4ebcc9d390206f1473f6f9329ef5dfd73f48a",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-33-stage1-sealed"
+          },
+          {
+            "object": {
+              "sha": "58659db7e7e1b2ef9f02559ca403e74931040411",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-33-stage2-sealed"
+          },
+          {
+            "object": {
+              "sha": "caac6a3c99e95c856c77ba070cb55682c3c4af6f",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-34-adapters-sealed"
+          },
+          {
+            "object": {
+              "sha": "e0b17783aaa7e6d632dbee5f3bbf6fc891b66a09",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-35-phase-2-sealed"
+          },
+          {
+            "object": {
+              "sha": "76fc024d916af1c431fc93f548e8d8445da751db",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-36-final-sealed"
+          },
+          {
+            "object": {
+              "sha": "7fa721140d5a2fb6f336ce75fb0959751d4cdcd5",
+              "type": "tag"
+            },
+            "ref": "refs/tags/wave-36-stage-2-sealed"
+          }
+        ]
+      ],
+      "status": "OBSERVED"
+    },
+    "teams": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/teams?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:24.546517+00:00",
+      "pages": [
+        []
+      ],
+      "status": "OBSERVED"
+    },
+    "webhooks": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/hooks?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:25.175151+00:00",
+      "pages": [
+        []
+      ],
+      "status": "OBSERVED"
+    },
+    "workflow_permissions": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/actions/permissions/workflow",
+      "observed_at_utc": "2026-09-19T21:02:25.745644+00:00",
+      "pages": [
+        {
+          "can_approve_pull_request_reviews": true,
+          "default_workflow_permissions": "read"
+        }
+      ],
+      "status": "OBSERVED"
+    },
+    "workflows": {
+      "endpoint": "repos/HuGR-Labs/corelink-server/actions/workflows?per_page=100",
+      "observed_at_utc": "2026-09-19T21:02:27.095978+00:00",
+      "pages": [
+        {
+          "total_count": 147,
+          "workflows": [
+            {
+              "id": 272712871,
+              "name": "AC Bucket ACL Hardening Cron",
+              "path": ".github/workflows/ac-bucket-acl-cron.yml",
+              "state": "active"
+            },
+            {
+              "id": 272712872,
+              "name": "CAS Foundation CI (WI-S01-007)",
+              "path": ".github/workflows/cas_foundation.yml",
+              "state": "active"
+            },
+            {
+              "id": 272712873,
+              "name": "corelink-client-verify (WI-S02-003)",
+              "path": ".github/workflows/corelink-client-verify.yml",
+              "state": "active"
+            },
+            {
+              "id": 272712874,
+              "name": "corelink-hash (WI-S01-002)",
+              "path": ".github/workflows/corelink-hash.yml",
+              "state": "active"
+            },
+            {
+              "id": 272712876,
+              "name": "corelink-meta (WI-S01-004)",
+              "path": ".github/workflows/corelink-meta.yml",
+              "state": "active"
+            },
+            {
+              "id": 272712877,
+              "name": "corelink-reapi (WI-S01-005 + WI-S02-001)",
+              "path": ".github/workflows/corelink-reapi.yml",
+              "state": "active"
+            },
+            {
+              "id": 272712878,
+              "name": "corelink-worker (WI-S01-003)",
+              "path": ".github/workflows/corelink-worker.yml",
+              "state": "active"
+            },
+            {
+              "id": 272712879,
+              "name": "Dashboard Validation (WI-S09-005)",
+              "path": ".github/workflows/dashboard_validation.yml",
+              "state": "active"
+            },
+            {
+              "id": 272712881,
+              "name": "Nightly extended gates (WI-S01-007)",
+              "path": ".github/workflows/nightly.yml",
+              "state": "active"
+            },
+            {
+              "id": 272712887,
+              "name": "Spec Validation (Lote 9.5c)",
+              "path": ".github/workflows/spec_validation.yml",
+              "state": "active"
+            },
+            {
+              "id": 272712888,
+              "name": "tenant-path (WI-S01-001)",
+              "path": ".github/workflows/tenant-path.yml",
+              "state": "active"
+            },
+            {
+              "id": 272712891,
+              "name": "TLA+ Model Check (Lote 10.11.0-bis-prime cycle 2)",
+              "path": ".github/workflows/tla_check.yml",
+              "state": "active"
+            },
+            {
+              "id": 276464623,
+              "name": "cargo-audit (WI-S12-004)",
+              "path": ".github/workflows/cargo-audit.yml",
+              "state": "active"
+            },
+            {
+              "id": 276464624,
+              "name": "cargo-deny (WI-S12-004)",
+              "path": ".github/workflows/cargo-deny.yml",
+              "state": "active"
+            },
+            {
+              "id": 276464626,
+              "name": "dependabot-auto-merge (R-PREP scoped \u2014 SECURITY-patch only)",
+              "path": ".github/workflows/dependabot-auto-merge.yml",
+              "state": "active"
+            },
+            {
+              "id": 276464627,
+              "name": "lockfile-diff (WI-S12-004)",
+              "path": ".github/workflows/lockfile-diff.yml",
+              "state": "active"
+            },
+            {
+              "id": 276464628,
+              "name": "Release \u2014 SLSA L2 Build Provenance, self-hosted (WI-S12-001)",
+              "path": ".github/workflows/release-slsa3.yml",
+              "state": "active"
+            },
+            {
+              "id": 276464629,
+              "name": "SBOM \u2014 CycloneDX 1.5+ (WI-S12-002)",
+              "path": ".github/workflows/sbom.yml",
+              "state": "active"
+            },
+            {
+              "id": 276464654,
+              "name": "Dependabot Updates",
+              "path": "dynamic/dependabot/dependabot-updates",
+              "state": "active"
+            },
+            {
+              "id": 276476571,
+              "name": "Reproducible Build (2-leg byte diff)",
+              "path": ".github/workflows/reproducible-build.yml",
+              "state": "active"
+            },
+            {
+              "id": 276487827,
+              "name": "Terraform Drift Detection",
+              "path": ".github/workflows/terraform-drift.yml",
+              "state": "active"
+            },
+            {
+              "id": 276544949,
+              "name": "BYOK Kill Switch Chaos Drill (Weekly)",
+              "path": ".github/workflows/byok_kill_switch_drill_weekly.yml",
+              "state": "active"
+            },
+            {
+              "id": 276544950,
+              "name": "BYOK Matrix \u2014 Weekly Staging (WI-S14-005)",
+              "path": ".github/workflows/byok_matrix_weekly.yml",
+              "state": "active"
+            },
+            {
+              "id": 276544951,
+              "name": "Region pinning enforcement gate (WI-S14-002)",
+              "path": ".github/workflows/region_pinning.yml",
+              "state": "active"
+            },
+            {
+              "id": 276727799,
+              "name": "Bazel Starter CI (WI-S15-002)",
+              "path": ".github/workflows/bazel-starter-ci.yml",
+              "state": "active"
+            },
+            {
+              "id": 276727800,
+              "name": "Buck2 Starter CI (WI-S15-003)",
+              "path": ".github/workflows/buck2-starter-ci.yml",
+              "state": "active"
+            },
+            {
+              "id": 276727801,
+              "name": "FFI Matrix CI (Python \u00d7 Go \u00d7 JS)",
+              "path": ".github/workflows/ffi-matrix-ci.yml",
+              "state": "active"
+            },
+            {
+              "id": 276727804,
+              "name": "release-cli",
+              "path": ".github/workflows/release-cli.yml",
+              "state": "active"
+            },
+            {
+              "id": 276742201,
+              "name": "notarize-macos",
+              "path": ".github/workflows/notarize-macos.yml",
+              "state": "active"
+            },
+            {
+              "id": 276742204,
+              "name": "sign-linux",
+              "path": ".github/workflows/sign-linux.yml",
+              "state": "active"
+            },
+            {
+              "id": 276742205,
+              "name": "sign-windows",
+              "path": ".github/workflows/sign-windows.yml",
+              "state": "active"
+            },
+            {
+              "id": 276785009,
+              "name": "admin-ui CI",
+              "path": ".github/workflows/admin-ui-ci.yml",
+              "state": "active"
+            },
+            {
+              "id": 276806387,
+              "name": "admin-ui e2e",
+              "path": ".github/workflows/admin-ui-e2e.yml",
+              "state": "active"
+            },
+            {
+              "id": 276886949,
+              "name": "docs CI",
+              "path": ".github/workflows/docs-ci.yml",
+              "state": "active"
+            },
+            {
+              "id": 276886957,
+              "name": "docs vale (tone consistency lint)",
+              "path": ".github/workflows/docs-vale.yml",
+              "state": "active"
+            },
+            {
+              "id": 276950886,
+              "name": "dpa-legal-review",
+              "path": ".github/workflows/dpa-legal-review.yml",
+              "state": "active"
+            },
+            {
+              "id": 276994759,
+              "name": "legal-changes-review",
+              "path": ".github/workflows/legal-changes-review.yml",
+              "state": "active"
+            },
+            {
+              "id": 276994760,
+              "name": "Pentest Findings Sync (WI-S20-002)",
+              "path": ".github/workflows/pentest-findings-sync.yml",
+              "state": "active"
+            },
+            {
+              "id": 277047168,
+              "name": "cf-deploy-prod",
+              "path": ".github/workflows/cf-deploy-prod.yml",
+              "state": "active"
+            },
+            {
+              "id": 277053090,
+              "name": "d1-migration-validate (R2-13)",
+              "path": ".github/workflows/d1-migration-validate.yml",
+              "state": "active"
+            },
+            {
+              "id": 277062519,
+              "name": "DR Drill Monthly (Cycle 1 Quarterly)",
+              "path": ".github/workflows/dr-drill-monthly.yml",
+              "state": "active"
+            },
+            {
+              "id": 277062520,
+              "name": "load-test (operator dispatch, R3-prep)",
+              "path": ".github/workflows/load-test-nightly.yml",
+              "state": "active"
+            },
+            {
+              "id": 277062521,
+              "name": "translation import validate",
+              "path": ".github/workflows/translation-import-validate.yml",
+              "state": "active"
+            },
+            {
+              "id": 277084639,
+              "name": "changelog-validate",
+              "path": ".github/workflows/changelog-validate.yml",
+              "state": "active"
+            },
+            {
+              "id": 277084640,
+              "name": "Fuzz nightly (BYOK + tenant-path + audit-chain + HKDF)",
+              "path": ".github/workflows/fuzz-nightly.yml",
+              "state": "active"
+            },
+            {
+              "id": 277084641,
+              "name": "mutation-nightly (R2 baseline + 5-crate expansion + wave-24 large-crate lane)",
+              "path": ".github/workflows/mutation-nightly.yml",
+              "state": "active"
+            },
+            {
+              "id": 277084642,
+              "name": "openapi validate (3.1 spec + breaking-change detection)",
+              "path": ".github/workflows/openapi-validate.yml",
+              "state": "active"
+            },
+            {
+              "id": 277084643,
+              "name": "Performance nightly (criterion baseline)",
+              "path": ".github/workflows/perf-nightly.yml",
+              "state": "active"
+            },
+            {
+              "id": 277088235,
+              "name": "coverage (R7-1 supply-quality rollup)",
+              "path": ".github/workflows/coverage.yml",
+              "state": "active"
+            },
+            {
+              "id": 277088237,
+              "name": "license-policy (R7-1 supply-quality rollup)",
+              "path": ".github/workflows/license-policy.yml",
+              "state": "active"
+            },
+            {
+              "id": 277088238,
+              "name": "sbom-consolidated (R7-1 supply-quality rollup)",
+              "path": ".github/workflows/sbom-consolidated.yml",
+              "state": "active"
+            },
+            {
+              "id": 277090042,
+              "name": "SLO Instrumentation Gate (audit 2026-05-14)",
+              "path": ".github/workflows/slo-instrumentation.yml",
+              "state": "active"
+            },
+            {
+              "id": 277097613,
+              "name": "quickstart-validate",
+              "path": ".github/workflows/quickstart-validate.yml",
+              "state": "active"
+            },
+            {
+              "id": 277327853,
+              "name": "endurance-2h (operator dispatch, R-prep)",
+              "path": ".github/workflows/endurance-2h-nightly.yml",
+              "state": "active"
+            },
+            {
+              "id": 277339196,
+              "name": "api reference sync (regenerate MDX from openapi/corelink-v1.yaml)",
+              "path": ".github/workflows/api-reference-sync.yml",
+              "state": "active"
+            },
+            {
+              "id": 277339197,
+              "name": "Backup Daily Verify",
+              "path": ".github/workflows/backup-daily-verify.yml",
+              "state": "active"
+            },
+            {
+              "id": 277365051,
+              "name": "Compliance Weekly Digest (CC4.2 / GAP-08)",
+              "path": ".github/workflows/compliance-weekly.yml",
+              "state": "active"
+            },
+            {
+              "id": 277365052,
+              "name": "subprocessors sync (auto-regen public page from VENDOR-RISK-REGISTER + 30-day notify)",
+              "path": ".github/workflows/subprocessors-sync.yml",
+              "state": "active"
+            },
+            {
+              "id": 277382702,
+              "name": "secrets-drift (R-PREP)",
+              "path": ".github/workflows/secrets-drift.yml",
+              "state": "active"
+            },
+            {
+              "id": 277406965,
+              "name": "api deprecation check (stability policy enforcement)",
+              "path": ".github/workflows/api-deprecation-check.yml",
+              "state": "active"
+            },
+            {
+              "id": 277406966,
+              "name": "Canonical Consistency (R-PREP canonical-lint)",
+              "path": ".github/workflows/canonical-consistency.yml",
+              "state": "active"
+            },
+            {
+              "id": 277406967,
+              "name": "CodeQL (R-prep static analysis)",
+              "path": ".github/workflows/codeql.yml",
+              "state": "active"
+            },
+            {
+              "id": 277406969,
+              "name": "i18n stale-content check",
+              "path": ".github/workflows/i18n-stale.yml",
+              "state": "active"
+            },
+            {
+              "id": 277406972,
+              "name": "Semgrep (R-prep static analysis)",
+              "path": ".github/workflows/semgrep.yml",
+              "state": "active"
+            },
+            {
+              "id": 277406974,
+              "name": "Close Stale Issues and PRs",
+              "path": ".github/workflows/stale.yml",
+              "state": "active"
+            },
+            {
+              "id": 277406975,
+              "name": "Terraform Lint",
+              "path": ".github/workflows/terraform-lint.yml",
+              "state": "active"
+            },
+            {
+              "id": 277406976,
+              "name": "Welcome First-Time Contributor",
+              "path": ".github/workflows/welcome-first-pr.yml",
+              "state": "active"
+            },
+            {
+              "id": 277424916,
+              "name": "action-sha-audit",
+              "path": ".github/workflows/action-sha-audit.yml",
+              "state": "active"
+            },
+            {
+              "id": 277432278,
+              "name": "dco-check",
+              "path": ".github/workflows/dco-check.yml",
+              "state": "active"
+            },
+            {
+              "id": 277483209,
+              "name": "actionlint",
+              "path": ".github/workflows/actionlint.yml",
+              "state": "active"
+            },
+            {
+              "id": 277483212,
+              "name": "dependabot-policy (license + status-check enforcement)",
+              "path": ".github/workflows/dependabot-policy.yml",
+              "state": "active"
+            },
+            {
+              "id": 277505886,
+              "name": "proptest-density-gate",
+              "path": ".github/workflows/proptest-density-gate.yml",
+              "state": "active"
+            },
+            {
+              "id": 277558718,
+              "name": "perf-regression (r-prep)",
+              "path": ".github/workflows/perf-regression.yml",
+              "state": "active"
+            },
+            {
+              "id": 277558719,
+              "name": "release-notes",
+              "path": ".github/workflows/release-notes.yml",
+              "state": "active"
+            },
+            {
+              "id": 277601923,
+              "name": ".github/workflows/audit-chain-daily-verify.yml",
+              "path": ".github/workflows/audit-chain-daily-verify.yml",
+              "state": "active"
+            },
+            {
+              "id": 277680716,
+              "name": "neon-shadow-reconcile-daily (Wave 19)",
+              "path": ".github/workflows/neon-shadow-reconcile-daily.yml",
+              "state": "active"
+            },
+            {
+              "id": 284431974,
+              "name": "smoke-install",
+              "path": ".github/workflows/smoke-install.yml",
+              "state": "active"
+            },
+            {
+              "id": 284436665,
+              "name": "e2e-prod",
+              "path": ".github/workflows/e2e-prod.yml",
+              "state": "active"
+            },
+            {
+              "id": 285659637,
+              "name": "admin-ui \u2014 CF Worker deploy",
+              "path": ".github/workflows/admin-ui-deploy.yml",
+              "state": "active"
+            },
+            {
+              "id": 286131533,
+              "name": "e2e-clerk-signup (scheduled prod)",
+              "path": ".github/workflows/e2e-clerk-signup.yml",
+              "state": "active"
+            },
+            {
+              "id": 286131534,
+              "name": "e2e-stripe-checkout (scheduled prod)",
+              "path": ".github/workflows/e2e-stripe-checkout.yml",
+              "state": "active"
+            },
+            {
+              "id": 292504845,
+              "name": "mutation-pr (per-diff cargo-mutants \u2014 fast PR gate)",
+              "path": ".github/workflows/mutation-pr.yml",
+              "state": "active"
+            },
+            {
+              "id": 293311061,
+              "name": "pnpm-audit (supply-chain)",
+              "path": ".github/workflows/pnpm-audit.yml",
+              "state": "active"
+            },
+            {
+              "id": 295957896,
+              "name": "e2e \u2014 admin-ui render smoke",
+              "path": ".github/workflows/e2e-admin-ui-render.yml",
+              "state": "active"
+            },
+            {
+              "id": 297976716,
+              "name": "gitleaks (secret-leak scan)",
+              "path": ".github/workflows/gitleaks.yml",
+              "state": "active"
+            },
+            {
+              "id": 297976717,
+              "name": "trivy (JS-deps CVE + IaC misconfig)",
+              "path": ".github/workflows/trivy.yml",
+              "state": "active"
+            },
+            {
+              "id": 299050920,
+              "name": "container-build-push-prod",
+              "path": ".github/workflows/container-build-push-prod.yml",
+              "state": "active"
+            },
+            {
+              "id": 302748119,
+              "name": "corelink-server",
+              "path": ".github/workflows/corelink-server.yml",
+              "state": "active"
+            },
+            {
+              "id": 302748120,
+              "name": "corelink-adapter-host",
+              "path": ".github/workflows/corelink-adapter-host.yml",
+              "state": "active"
+            },
+            {
+              "id": 302833412,
+              "name": "OKF-CoreLink Wiki Validation",
+              "path": ".github/workflows/okf_wiki.yml",
+              "state": "active"
+            },
+            {
+              "id": 302961910,
+              "name": "OKF-CoreLink Wiki Nightly (C-AGE / C-REV)",
+              "path": ".github/workflows/okf_nightly.yml",
+              "state": "active"
+            },
+            {
+              "id": 303742596,
+              "name": "OKF auto-reconcile",
+              "path": ".github/workflows/okf-autoreconcile.yml",
+              "state": "active"
+            },
+            {
+              "id": 304758149,
+              "name": "Backup Daily (live)",
+              "path": ".github/workflows/backup-daily.yml",
+              "state": "active"
+            },
+            {
+              "id": 304901360,
+              "name": "billing-reconcile-daily",
+              "path": ".github/workflows/billing-reconcile-daily.yml",
+              "state": "active"
+            },
+            {
+              "id": 304906280,
+              "name": "GC sweep (dry-run)",
+              "path": ".github/workflows/gc-sweep-dry-run.yml",
+              "state": "active"
+            },
+            {
+              "id": 306230482,
+              "name": "Security Risk Assessment",
+              "path": "dynamic/github-code-scanning/code-security-risk-assessment",
+              "state": "active"
+            },
+            {
+              "id": 306318461,
+              "name": "worker vitest",
+              "path": ".github/workflows/worker-vitest.yml",
+              "state": "active"
+            },
+            {
+              "id": 306712704,
+              "name": "signup-worker vitest",
+              "path": ".github/workflows/signup-worker-vitest.yml",
+              "state": "active"
+            },
+            {
+              "id": 310305001,
+              "name": "Docs Reality Gate",
+              "path": ".github/workflows/docs-reality.yml",
+              "state": "active"
+            },
+            {
+              "id": 310801425,
+              "name": "diag-cas-datacenter-probe",
+              "path": ".github/workflows/diag-cas-datacenter-probe.yml",
+              "state": "active"
+            }
+          ]
+        },
+        {
+          "total_count": 147,
+          "workflows": [
+            {
+              "id": 310863395,
+              "name": "cas-datacenter-canary",
+              "path": ".github/workflows/cas-canary.yml",
+              "state": "active"
+            },
+            {
+              "id": 314869503,
+              "name": "docs \u2014 CF Worker deploy",
+              "path": ".github/workflows/docs-deploy.yml",
+              "state": "active"
+            },
+            {
+              "id": 317011674,
+              "name": "rustfmt",
+              "path": ".github/workflows/rustfmt.yml",
+              "state": "active"
+            },
+            {
+              "id": 325284382,
+              "name": "proof \u2014 runs-on corelink (remote cache hit)",
+              "path": ".github/workflows/proof-runs-on-corelink.yml",
+              "state": "active"
+            },
+            {
+              "id": 325312422,
+              "name": "probe-corelink-box",
+              "path": ".github/workflows/probe-corelink-box.yml",
+              "state": "active"
+            },
+            {
+              "id": 325628343,
+              "name": "fabric-soak-proof",
+              "path": ".github/workflows/fabric-soak-proof.yml",
+              "state": "active"
+            },
+            {
+              "id": 326290435,
+              "name": "Dependency Graph",
+              "path": "dynamic/dependabot/update-graph",
+              "state": "active"
+            },
+            {
+              "id": 326540865,
+              "name": "sdks/js (@corelink/client)",
+              "path": ".github/workflows/sdks-js.yml",
+              "state": "active"
+            },
+            {
+              "id": 332417398,
+              "name": "signup-worker \u2014 CF Worker deploy",
+              "path": ".github/workflows/signup-worker-deploy.yml",
+              "state": "active"
+            },
+            {
+              "id": 332480261,
+              "name": "PR labels",
+              "path": ".github/workflows/pr-labels.yml",
+              "state": "active"
+            },
+            {
+              "id": 333195045,
+              "name": "billing-aggregate-runner",
+              "path": ".github/workflows/billing-aggregate-runner.yml",
+              "state": "active"
+            },
+            {
+              "id": 333252084,
+              "name": "proof \u2014 buildkit builds inside a corelink lease (F0.1)",
+              "path": ".github/workflows/proof-buildkit-lease.yml",
+              "state": "active"
+            },
+            {
+              "id": 333657633,
+              "name": "proof \u2014 daemonless build gates (F1b prototype)",
+              "path": ".github/workflows/proof-daemonless-gates.yml",
+              "state": "active"
+            },
+            {
+              "id": 335777455,
+              "name": "mr-wp1-probe",
+              "path": ".github/workflows/mr-wp1-probe.yml",
+              "state": "active"
+            },
+            {
+              "id": 340275338,
+              "name": "Billing Health Daily",
+              "path": ".github/workflows/billing-health-daily.yml",
+              "state": "active"
+            },
+            {
+              "id": 340733998,
+              "name": "backlog-verify",
+              "path": ".github/workflows/backlog-verify.yml",
+              "state": "active"
+            },
+            {
+              "id": 340817205,
+              "name": "unreachable-radar",
+              "path": ".github/workflows/unreachable-radar.yml",
+              "state": "active"
+            },
+            {
+              "id": 340896343,
+              "name": "audit-archive-lag",
+              "path": ".github/workflows/audit-archive-lag.yml",
+              "state": "active"
+            },
+            {
+              "id": 340896921,
+              "name": "bot-pr-has-checks",
+              "path": ".github/workflows/bot-pr-has-checks.yml",
+              "state": "active"
+            },
+            {
+              "id": 340897676,
+              "name": "Workflow-state guard",
+              "path": ".github/workflows/workflow-state-guard.yml",
+              "state": "active"
+            },
+            {
+              "id": 341195464,
+              "name": "tls-floor drift",
+              "path": ".github/workflows/tls-floor-drift.yml",
+              "state": "active"
+            },
+            {
+              "id": 341226109,
+              "name": "Python tests",
+              "path": ".github/workflows/python-tests.yml",
+              "state": "active"
+            },
+            {
+              "id": 341298047,
+              "name": "alerts-validate",
+              "path": ".github/workflows/alerts-validate.yml",
+              "state": "active"
+            },
+            {
+              "id": 341334228,
+              "name": "runner-fleet health",
+              "path": ".github/workflows/runner-fleet-health.yml",
+              "state": "active"
+            },
+            {
+              "id": 341349676,
+              "name": "workspace lint",
+              "path": ".github/workflows/workspace-lint.yml",
+              "state": "active"
+            },
+            {
+              "id": 341530597,
+              "name": "manual-install-recipes",
+              "path": ".github/workflows/manual-install-recipes.yml",
+              "state": "active"
+            },
+            {
+              "id": 341587591,
+              "name": "shell-pipeline-safety",
+              "path": ".github/workflows/shell-pipeline-safety.yml",
+              "state": "active"
+            },
+            {
+              "id": 341666171,
+              "name": "e2e-browser-prod",
+              "path": ".github/workflows/e2e-browser-prod.yml",
+              "state": "active"
+            },
+            {
+              "id": 346126003,
+              "name": "rust-affected-tests",
+              "path": ".github/workflows/rust-affected-tests.yml",
+              "state": "active"
+            },
+            {
+              "id": 346225696,
+              "name": "file-size ratchet (god files, B-126)",
+              "path": ".github/workflows/file-size-ratchet.yml",
+              "state": "active"
+            },
+            {
+              "id": 346284578,
+              "name": "api surface parity (openapi/corelink-v1.yaml vs the routes the code registers)",
+              "path": ".github/workflows/api-surface-parity.yml",
+              "state": "active"
+            },
+            {
+              "id": 346293465,
+              "name": "corelink-auth + corelink-pat (B-067)",
+              "path": ".github/workflows/corelink-auth-pat.yml",
+              "state": "active"
+            },
+            {
+              "id": 347885911,
+              "name": "dependabot-policy trust-boundary teeth",
+              "path": ".github/workflows/dependabot-policy-trust-boundary.yml",
+              "state": "active"
+            },
+            {
+              "id": 351184788,
+              "name": "Published permission matrix",
+              "path": ".github/workflows/permission-matrix.yml",
+              "state": "active"
+            },
+            {
+              "id": 351381329,
+              "name": "b156-published-claims",
+              "path": ".github/workflows/b156-published-claims.yml",
+              "state": "active"
+            },
+            {
+              "id": 351381330,
+              "name": "B249 Dependency-Track webhook sunset guard",
+              "path": ".github/workflows/b249-dt-webhook-sunset.yml",
+              "state": "active"
+            },
+            {
+              "id": 352734157,
+              "name": "Audit finding coverage",
+              "path": ".github/workflows/audit-finding-coverage.yml",
+              "state": "active"
+            },
+            {
+              "id": 352734158,
+              "name": "B-044 orphan teardown contract",
+              "path": ".github/workflows/b044-orphan-teardown.yml",
+              "state": "active"
+            },
+            {
+              "id": 352734159,
+              "name": "CodeQL evidence watchdog",
+              "path": ".github/workflows/codeql-evidence-watchdog.yml",
+              "state": "active"
+            },
+            {
+              "id": 352734161,
+              "name": "perf-production-evidence",
+              "path": ".github/workflows/perf-production-evidence.yml",
+              "state": "active"
+            },
+            {
+              "id": 352734162,
+              "name": "production-deployability",
+              "path": ".github/workflows/production-deployability.yml",
+              "state": "active"
+            },
+            {
+              "id": 352734163,
+              "name": "real ignored integration harnesses (B-068)",
+              "path": ".github/workflows/real-ignored-harnesses.yml",
+              "state": "active"
+            },
+            {
+              "id": 352734165,
+              "name": "secrets-drift evidence watchdog",
+              "path": ".github/workflows/secrets-drift-evidence-watchdog.yml",
+              "state": "active"
+            },
+            {
+              "id": 353849633,
+              "name": "B-152 Actions evidence monitor",
+              "path": ".github/workflows/b152-actions-monitor.yml",
+              "state": "active"
+            },
+            {
+              "id": 353849635,
+              "name": "B-165 latency evidence monitor",
+              "path": ".github/workflows/b165-latency-monitor.yml",
+              "state": "active"
+            },
+            {
+              "id": 353849639,
+              "name": "synthetic pager receiver \u2014 staging deploy",
+              "path": ".github/workflows/synthetic-pager-worker-deploy.yml",
+              "state": "active"
+            },
+            {
+              "id": 356780781,
+              "name": "audit-witness-deploy",
+              "path": ".github/workflows/audit-witness-deploy.yml",
+              "state": "active"
+            }
+          ]
+        }
+      ],
+      "status": "OBSERVED"
+    }
+  },
+  "unverified_surfaces": [
+    "codespaces_secrets",
+    "rulesets",
+    "protection"
+  ]
+}
