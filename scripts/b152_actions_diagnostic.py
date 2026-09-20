@@ -618,7 +618,7 @@ def fetch_logs(repo: str, records: Iterable[dict[str, Any]]) -> list[dict[str, A
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "HuGR-Labs/corelink-server"))
+    parser.add_argument("--repo", help="exact authorized repo; default resolves repository ID 1232040291")
     parser.add_argument("--start", required=True, type=parse_time)
     parser.add_argument("--end", required=True, type=parse_time)
     parser.add_argument("--low", type=int, default=594)
@@ -627,17 +627,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fetch-logs", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
+    try:
+        from server_repository import resolve_server_repository
+    except ModuleNotFoundError:  # imported as scripts.b152_actions_diagnostic
+        from scripts.server_repository import resolve_server_repository
+    try:
+        repo = resolve_server_repository(args.repo)
+    except (OSError, ValueError) as exc:
+        parser.error(f"cannot safely resolve server repository: {exc}")
     if args.low < 0 or args.high < args.low:
         parser.error("duration bounds are invalid")
     try:
-        report = collect_evidence(args.repo, args.start, args.end, args.low, args.high)
+        report = collect_evidence(repo, args.start, args.end, args.low, args.high)
         # Controls may be successful/cancelled, so compare against all selected
         # run IDs, not only failed jobs.  This also avoids a second API walk.
         missing = [run_id for run_id in args.known_run if run_id not in set(report.get("run_ids", []))]
         if missing:
             raise EvidenceUnavailable(f"known run(s) absent from complete window: {','.join(map(str, missing))}")
         if args.fetch_logs:
-            report["logs"] = fetch_logs(args.repo, report["window_jobs"])
+            report["logs"] = fetch_logs(repo, report["window_jobs"])
             unavailable = [item for item in report["logs"] if item["status"] == "indeterminate"]
             report["log_signature_distribution"] = dict(
                 Counter(item.get("log_signature", "indeterminate") for item in report["logs"])

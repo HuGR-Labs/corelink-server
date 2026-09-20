@@ -30,10 +30,16 @@ try:
 except ModuleNotFoundError:  # imported as scripts.verify_b102_b108_evidence
     from scripts.install_pinned_gh import InstallError as PinnedGhError
     from scripts.install_pinned_gh import install as install_pinned_gh
+try:
+    from server_repository import resolve_server_repository
+except ModuleNotFoundError:  # imported as scripts.verify_b102_b108_evidence
+    from scripts.server_repository import resolve_server_repository
 
 SCHEMA = "corelink.performance-evidence.v2"
 ITEMS = tuple(f"B-{n:03d}" for n in range(102, 109))
-REPO = "HuGR-Labs/corelink-server"
+SOURCE_REPO = "HuGR-Labs/corelink-server"
+SERVER_REPOSITORIES = frozenset({SOURCE_REPO, "HuGR-dev/corelink-server"})
+REPO: str | None = None
 SOURCE = "worker/src/lib/quota.ts"
 WORKFLOW = ".github/workflows/perf-production-evidence.yml"
 SLSA_PREDICATE = "https://slsa.dev/provenance/v1"
@@ -65,6 +71,13 @@ COUNTER_SQL = (
 
 class EvidenceError(ValueError):
     pass
+
+
+def validate_server_repository(repository: str) -> str:
+    """Require the exact source or destination repository identity."""
+    if repository not in SERVER_REPOSITORIES:
+        raise EvidenceError("repository is not an authorized corelink-server identity")
+    return repository
 
 
 def obj(v: Any, label: str) -> dict[str, Any]:
@@ -786,6 +799,9 @@ CHECKERS = {"B-102": b102, "B-103": b103, "B-104": b104, "B-105": b105, "B-107":
 
 
 def assess(packet: Any, repo_root: Path = Path("."), now_epoch: float | None = None) -> dict[str, str]:
+    if REPO is None:
+        raise EvidenceError("expected server repository identity was not selected")
+    validate_server_repository(REPO)
     root = obj(packet, "packet")
     reject_secrets(root)
     if root.get("schema") != SCHEMA or root.get("environment") != "production":
@@ -831,10 +847,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--packet", type=Path, required=True)
     parser.add_argument("--expect", choices=("open", "closed"), default="closed")
+    parser.add_argument("--repo", help="exact authorized repo; default resolves repository ID 1232040291")
     args = parser.parse_args(argv)
+    global REPO
     try:
+        REPO = resolve_server_repository(args.repo)
         result = assess(json.loads(args.packet.read_text(encoding="utf-8")))
-    except (OSError, json.JSONDecodeError, EvidenceError) as exc:
+    except (OSError, ValueError, json.JSONDecodeError, EvidenceError) as exc:
         print(f"instrument error: {exc}", file=sys.stderr)
         return 2
     for item, state in result.items():

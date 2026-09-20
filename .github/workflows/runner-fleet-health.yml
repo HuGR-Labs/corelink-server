@@ -40,6 +40,7 @@ jobs:
   fleet:
     name: every expected Mac slot is online and nothing is stuck
     runs-on: corelink
+    if: github.repository_id == '1232040291' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.id == github.repository_id)
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -55,4 +56,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           FLEET_SLOT_CENSUS: skip
-        run: python3 scripts/check_runner_fleet.py
+          CORELINK_EXPECTED_REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/check_runner_fleet.py --repo "$CORELINK_EXPECTED_REPOSITORY"

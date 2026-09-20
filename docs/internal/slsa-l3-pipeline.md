@@ -2,13 +2,11 @@
 
 Internal documentation for the CoreLink SLSA L3 supply chain hardening pipeline.
 
-> **Note on `HumanGuardrail/corelink-server` below:** the GitHub org moved to
-> `HuGR-Labs` (2026-08-01), but the provenance/builder-identity strings on
-> this page are deliberately left as `HumanGuardrail/corelink-server` because
-> the code that emits and verifies them (Sigstore builder ID, `--expected-builder`
-> default, cosign/provenance config) still hardcodes the old org. Doc and code
-> must move together — this is out of scope for a docs-only fix and is pending
-> the org-rename landing in code.
+> The current server release identity follows the exact GitHub caller repository;
+> after transfer, use `HuGR-dev/corelink-server`. Pre-transfer source artifacts
+> use the exact source identity `HuGR-Labs/corelink-server`. Older provenance
+> remains verifiable by selecting its exact historical builder explicitly; the
+> CLI does not widen trust or infer aliases.
 
 ## Overview
 
@@ -89,14 +87,14 @@ Customer runs:
   corelink-supply-verify verify \
     --bundle provenance.intoto.bundle \
     --release v0.X.Y \
-    --expected-builder HumanGuardrail/corelink-server
+    --expected-builder HuGR-dev/corelink-server
 
 CLI performs:
   1. Parse DSSE envelope → reject if alg=none or no signatures
   2. Decode payload → parse in-toto v1.0 Statement
   3. Validate predicateType == "https://slsa.dev/provenance/v1"
   4. Extract Fulcio cert → validate PEM format + SAN URI extraction
-  5. Match builder identity → reject if not "HumanGuardrail/corelink-server"
+  5. Match builder identity → reject unless it is the exact selected caller repository
   6. Validate Rekor inclusion proof (MANDATORY; no bypass)
      → Merkle root hash 64-char hex
      → log_index < tree_size
@@ -105,7 +103,7 @@ CLI performs:
 
 Output (success):
   SLSA L3 provenance verification PASSED for release v0.X.Y
-    builder_id:    https://github.com/HumanGuardrail/corelink-server/...
+    builder_id:    https://github.com/HuGR-dev/corelink-server/...
     commit_sha:    <40-char SHA>
     workflow_ref:  refs/tags/v0.X.Y
     rekor_index:   <log index>
@@ -149,7 +147,7 @@ for TAG in $RELEASES; do
     corelink-supply-verify verify \
         --bundle "/tmp/provenance-$TAG.bundle" \
         --release "$TAG" \
-        --expected-builder "HumanGuardrail/corelink-server" \
+        --expected-builder "HuGR-dev/corelink-server" \
         --format json
 done
 ```

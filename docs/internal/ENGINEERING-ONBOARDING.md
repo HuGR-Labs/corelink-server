@@ -115,7 +115,7 @@ you are over-preparing. Stop.
 
 ```bash
 # 1. Clone (SSH).
-git clone git@github.com:HuGR-Labs/corelink-server.git
+git clone git@github.com:HuGR-dev/corelink-server.git
 cd corelink-server
 
 # 2. Pin toolchain (reads rust-toolchain.toml automatically).

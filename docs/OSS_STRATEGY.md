@@ -38,7 +38,7 @@ Five bullets. Commit these to memory before any public launch action.
    proof to their own tooling is a developer who trusts CoreLink. Trust
    converts to paying customers.
 5. **Post-GA, codebase splits into two repos.** `HumanGuardrail/corelink`
-   (public, OSS crates) and `HumanGuardrail/corelink-server` (private,
+   (public, OSS crates) and `HuGR-dev/corelink-server` (private,
    server). Until then: one monorepo, per-crate license tags.
 
 ---
@@ -97,7 +97,7 @@ point for "BLAKE3 Rust artifact verification."
 
 ## What Is Proprietary (and Why)
 
-Proprietary means: source stays in `HumanGuardrail/corelink-server`
+Proprietary means: source stays in `HuGR-dev/corelink-server`
 (private). No `crates.io` publish. No `git clone` access for
 customers.
 
@@ -140,7 +140,7 @@ the `-materializer` / `-coordinator` counterparts stay closed.
 
 ### Today (pre-GA)
 
-One monorepo: `HumanGuardrail/corelink-server` (private). All crates,
+One monorepo: `HuGR-dev/corelink-server` (private). All crates,
 open and closed, live together. OSS-flagged crates carry
 `license = "MIT OR Apache-2.0"` in `Cargo.toml` and are independently
 publishable to crates.io with `cargo publish -p <crate>`.
@@ -153,7 +153,7 @@ during early iteration.
 | Repo | Visibility | Contents |
 |---|---|---|
 | `HumanGuardrail/corelink` | **PUBLIC** | OSS crates + client SDK + CLI + OpenAPI + customer-facing docs + contribution guide |
-| `HumanGuardrail/corelink-server` | **PRIVATE** | Closed server crates + deployment scripts + compliance docs + internal runbooks |
+| `HuGR-dev/corelink-server` | **PRIVATE** | Closed server crates + deployment scripts + compliance docs + internal runbooks |
 
 The public repo will vendor-copy or path-dep the few open crates that
 the server also depends on. No circular dependency. Migration tracked as

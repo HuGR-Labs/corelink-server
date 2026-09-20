@@ -75,12 +75,14 @@ jobs:
     name: every automation PR has at least one check
     # Self-hosted fleet — zero GitHub-hosted spend, per the standing mandate.
     runs-on: corelink
+    if: github.repository_id == '1232040291'
     timeout-minutes: 10
     steps:
       - name: automation-created open PRs are actually gated
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          REPOSITORY_ID: ${{ github.repository_id }}
         run: |
           python3 - <<'PY'
           import json
@@ -89,7 +91,11 @@ jobs:
           import sys
           from datetime import datetime, timedelta, timezone
 
-          REPO = os.environ.get("REPO") or "HuGR-Labs/corelink-server"
+          REPO = os.environ.get("REPO", "")
+          if os.environ.get("REPOSITORY_ID") != "1232040291" or REPO not in {
+              "HuGR-Labs/corelink-server", "HuGR-dev/corelink-server"
+          }:
+              raise SystemExit("workflow context is not an authorized CoreLink server identity")
 
           # A PR opened seconds ago may legitimately have no checks yet — the
           # runs are still being created. Only PRs older than this are judged.

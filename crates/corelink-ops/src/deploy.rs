@@ -35,7 +35,7 @@
 //!     DeployTarget::new("corelink-worker", "a".repeat(32), "api.corelink.humangr.com/*"),
 //!     GitHubActor::new(
 //!         "github-actions[bot]",
-//!         "HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0",
+//!         "HuGR-dev/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0",
 //!     ),
 //! );
 //! let image_ref = OciImageRef::from_tag("ghcr.io/HumanGuardrail/corelink-worker:v0.1.0");

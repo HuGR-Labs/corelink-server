@@ -168,9 +168,9 @@ impl MerkleInclusionProof {
 ///
 /// The `id` must be the full Fulcio certificate SAN URI matching the expected GitHub Actions
 /// workflow ref, e.g.:
-/// `https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.X.Y`
+/// `https://github.com/HuGR-dev/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.X.Y`
 ///
-/// The `org_pattern` is a simpler org-scoped pattern (e.g., `HumanGuardrail/corelink-server`)
+/// The `org_pattern` is an org/repo path prefix (e.g., `HuGR-dev/corelink-server`)
 /// used when the caller does not know the exact release tag at verify time.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -178,8 +178,8 @@ pub struct BuilderIdentity {
     /// Exact SAN URI (if known); takes precedence over `org_pattern`.
     pub id: Option<String>,
 
-    /// Org-scoped pattern (substring match within Fulcio SAN URI).
-    /// Must include org + repo, e.g., `HumanGuardrail/corelink-server`.
+    /// Org/repo prefix matched at the GitHub SAN URI path boundary.
+    /// Must include org + repo, e.g., `HuGR-dev/corelink-server`.
     pub org_pattern: String,
 }
 
@@ -214,8 +214,47 @@ impl BuilderIdentity {
         if let Some(ref exact) = self.id {
             san == exact.as_str()
         } else {
-            san.contains(&self.org_pattern)
+            let expected_path = format!("{}/", self.org_pattern.trim_end_matches('/'));
+            san.strip_prefix("https://github.com/")
+                .is_some_and(|path| path.starts_with(&expected_path))
         }
+    }
+}
+
+#[cfg(test)]
+mod builder_identity_tests {
+    use super::BuilderIdentity;
+
+    const HISTORICAL_SAN: &str = "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0";
+    const SOURCE_SAN: &str = "https://github.com/HuGR-Labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0";
+    const DESTINATION_SAN: &str = "https://github.com/HuGR-dev/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0";
+
+    #[test]
+    fn exact_builder_identity_preserves_historical_and_destination_verification() {
+        assert!(BuilderIdentity::from_exact(HISTORICAL_SAN).matches_san(HISTORICAL_SAN));
+        assert!(BuilderIdentity::from_exact(SOURCE_SAN).matches_san(SOURCE_SAN));
+        assert!(BuilderIdentity::from_exact(DESTINATION_SAN).matches_san(DESTINATION_SAN));
+        assert!(!BuilderIdentity::from_exact(DESTINATION_SAN).matches_san(SOURCE_SAN));
+    }
+
+    #[test]
+    fn org_pattern_matches_only_the_requested_github_repository_path() {
+        let historical = BuilderIdentity::from_org_pattern("HumanGuardrail/corelink-server");
+        assert!(historical.matches_san(HISTORICAL_SAN));
+
+        let source = BuilderIdentity::from_org_pattern("HuGR-Labs/corelink-server");
+        assert!(source.matches_san(SOURCE_SAN));
+        assert!(!source.matches_san(DESTINATION_SAN));
+
+        let destination = BuilderIdentity::from_org_pattern("HuGR-dev/corelink-server");
+        assert!(destination.matches_san(DESTINATION_SAN));
+        assert!(!destination.matches_san(SOURCE_SAN));
+        assert!(!destination.matches_san(
+            "https://github.com/attacker/HuGR-dev/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"
+        ));
+        assert!(!destination.matches_san(
+            "https://github.com/HuGR-dev/corelink-server-evil/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"
+        ));
     }
 }
 

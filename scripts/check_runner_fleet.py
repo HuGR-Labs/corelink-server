@@ -45,7 +45,10 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-REPO = "HuGR-Labs/corelink-server"
+try:
+    from server_repository import resolve_server_repository
+except ModuleNotFoundError:  # imported as scripts.check_runner_fleet
+    from scripts.server_repository import resolve_server_repository
 
 # The Mac fleet this repo is supposed to have. Five launchd slots exist on the
 # host; a count below this means a slot died or was deregistered, which is the
@@ -87,13 +90,19 @@ def census_available(repo: str) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", default=REPO)
+    parser.add_argument("--repo", help="exact authorized repo; default resolves repository ID 1232040291")
     parser.add_argument("--expected-slots", type=int, default=EXPECTED_MAC_SLOTS)
     parser.add_argument("--queue-stuck-minutes", type=float,
                         default=QUEUE_STUCK_MINUTES)
     args = parser.parse_args()
 
-    do_census = census_available(args.repo)
+    try:
+        repo = resolve_server_repository(args.repo)
+    except (OSError, ValueError) as exc:
+        print(f"FAIL: cannot safely resolve server repository: {exc}", file=sys.stderr)
+        return 2
+
+    do_census = census_available(repo)
     if not do_census:
         if os.environ.get("FLEET_SLOT_CENSUS") != "skip":
             print("FAIL: this token cannot list self-hosted runners, so the slot "
@@ -109,7 +118,7 @@ def main() -> int:
     online: list[dict] = []
     busy: list[dict] = []
     if do_census:
-        runners = gh_json(f"repos/{args.repo}/actions/runners").get("runners", [])
+        runners = gh_json(f"repos/{repo}/actions/runners").get("runners", [])
         macs = [r for r in runners if r["name"].startswith(MAC_PREFIX)]
         online = [r for r in macs if r["status"] == "online"]
         busy = [r for r in online if r["busy"]]
@@ -117,7 +126,7 @@ def main() -> int:
     # NOT paginated: --paginate here walks the repo's entire run history, which
     # takes minutes and tells us nothing — only the newest page can contain a
     # run that is still queued or in progress.
-    runs = gh_json(f"repos/{args.repo}/actions/runs?per_page=50", paginate=False).get(
+    runs = gh_json(f"repos/{repo}/actions/runs?per_page=50", paginate=False).get(
         "workflow_runs", [])
     in_progress = [r for r in runs if r["status"] == "in_progress"]
     queued = [r for r in runs if r["status"] == "queued"]

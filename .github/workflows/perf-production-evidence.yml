@@ -31,6 +31,9 @@ jobs:
   collect:
     runs-on: corelink
     timeout-minutes: 15
+    # Production credentials and attestation permissions are restricted to
+    # the stable repository identity, protected main, and an explicit dispatch.
+    if: github.repository_id == '1232040291' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
     environment: production
     steps:
       - name: Confirm intent (fail closed)
@@ -72,7 +75,7 @@ jobs:
           test "$(run_pinned_gh version | awk 'NR == 1 {print $3}')" = "2.79.0"
           run_pinned_gh api --paginate \
             --slurp \
-            "repos/HuGR-Labs/corelink-server/deployments?sha=${GITHUB_SHA}&environment=production&per_page=100" \
+            "repos/${GITHUB_REPOSITORY}/deployments?sha=${GITHUB_SHA}&environment=production&per_page=100" \
             > "${RUNNER_TEMP}/github-deployments.json"
 
       - name: Fetch Cloudflare deployment identity (redacted output)
@@ -114,7 +117,7 @@ jobs:
           }
           test "$(run_pinned_gh version | awk 'NR == 1 {print $3}')" = "2.79.0"
           run_started_at="$(run_pinned_gh api \
-            "repos/HuGR-Labs/corelink-server/actions/runs/${GITHUB_RUN_ID}" \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             --jq '.run_started_at')"
           test -n "${run_started_at}"
           printf 'started_at=%s\n' "${run_started_at}" >> "${GITHUB_OUTPUT}"
@@ -204,10 +207,10 @@ jobs:
           test "$(run_pinned_gh version | awk 'NR == 1 {print $3}')" = "2.79.0"
           test -s "${B106_BUNDLE}"
           run_pinned_gh attestation verify "${B106_SUBJECT}" \
-            --repo HuGR-Labs/corelink-server \
+            --repo "${GITHUB_REPOSITORY}" \
             --bundle "${B106_BUNDLE}" \
             --predicate-type https://slsa.dev/provenance/v1 \
-            --cert-identity "https://github.com/HuGR-Labs/corelink-server/.github/workflows/perf-production-evidence.yml@${GITHUB_REF}" \
+            --cert-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/perf-production-evidence.yml@${GITHUB_REF}" \
             --cert-oidc-issuer https://token.actions.githubusercontent.com \
             --signer-digest "${GITHUB_SHA}" \
             --source-digest "${GITHUB_SHA}" \
@@ -228,6 +231,8 @@ jobs:
             --output "${RUNNER_TEMP}/corelink-performance-evidence.v2.json"
 
       - name: Verify canonical packet (fail closed; B-102..B-107 remain open)
+        env:
+          CORELINK_EXPECTED_REPOSITORY: ${{ github.repository }}
         run: |
           set -eu
           unset GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GITHUB_TOKEN
