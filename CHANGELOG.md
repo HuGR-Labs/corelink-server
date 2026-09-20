@@ -24,6 +24,15 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Server identity checks now survive the repository transfer.** Workflow
+  trust guards use stable repository ID `1232040291`; live operational scripts
+  resolve that ID or accept only the exact HuGR-Labs source and HuGR-dev
+  destination. API requests use current GitHub context, while historical
+  evidence remains identity-bound. Cosign regexes now match the full SAN, SLSA
+  builder expectations remain caller-selected, and current repository links,
+  dashboard projections, and server crate metadata name HuGR-dev without
+  changing the independent corelink-cli or runner-label identities.
+
 - **Owner-action evidence binding.** B-086 receipts now identify and verify their
   immutable capture commit; B-154 surface references and signed-document hashes
   are checked against source bytes, with mutation coverage for both boundaries.

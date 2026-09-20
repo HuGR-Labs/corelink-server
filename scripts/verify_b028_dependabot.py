@@ -24,8 +24,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-REPO = "HuGR-Labs/corelink-server"
-ALERTS_PATH = f"/repos/{REPO}/dependabot/alerts"
+try:
+    from server_repository import resolve_server_repository
+except ModuleNotFoundError:  # imported as scripts.verify_b028_dependabot
+    from scripts.server_repository import resolve_server_repository
 
 # The pre-merge census remains retained for the focused tests and provenance.
 # The live default branch census is now separately expected to be empty after
@@ -287,12 +289,15 @@ def verify_lockfile(root: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", default=REPO)
+    parser.add_argument("--repo", help="exact authorized repo; default resolves repository ID 1232040291")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--alerts-file", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
-        alerts = read_alerts(args.repo, args.alerts_file)
+        # Offline fixtures do not address GitHub. Every live API call resolves
+        # the server by numeric repository ID or an exact authorized name.
+        repo = resolve_server_repository(args.repo) if args.alerts_file is None else ""
+        alerts = read_alerts(repo, args.alerts_file)
         # ``--alerts-file`` is a focused-test compatibility path for the
         # retained pre-merge fixture.  The authenticated live API is always
         # adjudicated against the post-merge empty census.

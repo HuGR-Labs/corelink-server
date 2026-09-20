@@ -17,6 +17,9 @@
 # Steps (UI portion takes ~2 minutes):
 set -euo pipefail
 
+SCRIPT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+SERVER_REPO="$(python3 "$SCRIPT_ROOT/scripts/server_repository.py")"
+
 cat <<'STEPS'
 
 ═══ CORELINK_CLI_RELEASE_TOKEN ROTATION ═══
@@ -67,13 +70,13 @@ if ! curl -fsS \
 fi
 
 # Set as secret on corelink-server (where the workflow lives)
-echo "Setting CORELINK_CLI_RELEASE_TOKEN on HuGR-Labs/corelink-server..."
+echo "Setting CORELINK_CLI_RELEASE_TOKEN on $SERVER_REPO..."
 echo -n "$NEW_PAT" | gh secret set CORELINK_CLI_RELEASE_TOKEN \
-    --repo HuGR-Labs/corelink-server
+    --repo "$SERVER_REPO"
 
 echo
 echo "✓ Done. Verify with:"
-echo "  gh secret list --repo HuGR-Labs/corelink-server | grep CORELINK_CLI"
+echo "  gh secret list --repo $SERVER_REPO | grep CORELINK_CLI"
 echo
 echo "Next release will use the new fine-grained PAT."
 echo "Old gh-CLI token can stay in gh's keyring — it's not used by the"

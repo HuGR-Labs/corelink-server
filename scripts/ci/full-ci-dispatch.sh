@@ -14,7 +14,8 @@
 # ~/Library/Logs/corelink-full-ci.log via the crontab redirection.
 set -euo pipefail
 
-REPO="HuGR-Labs/corelink-server"
+SCRIPT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO="$(python3 "$SCRIPT_ROOT/scripts/server_repository.py")"
 echo "=== full-ci dispatch @ $(date -u +%FT%TZ) on main ==="
 
 # Every workflow that declares workflow_dispatch. Disabled workflows and
@@ -31,6 +32,6 @@ while IFS= read -r wf; do
     fi
     # Gentle stagger so 60+ dispatches don't slam the queue at one instant.
     sleep 5
-done < <(ls "$(git -C "$(dirname "$0")/../.." rev-parse --show-toplevel 2>/dev/null || echo "$HOME/Documents/HuGR/corelink-server")"/.github/workflows/*.yml)
+done < <(ls "$SCRIPT_ROOT"/.github/workflows/*.yml)
 
 echo "=== done: $dispatched dispatched, $skipped skipped @ $(date -u +%FT%TZ) ==="

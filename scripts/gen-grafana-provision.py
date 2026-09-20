@@ -227,7 +227,13 @@ def render_dashboard(spec_path: Path, registry: set[str], strict: bool) -> tuple
 
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     spec_rel = spec_path.relative_to(REPO_ROOT).as_posix()
-    spec_url = f"https://github.com/HumanGuardrail/corelink-server/blob/main/{spec_rel}"
+    try:
+        from server_repository import resolve_server_repository
+    except ModuleNotFoundError:  # imported as scripts.gen_grafana_provision
+        from scripts.server_repository import resolve_server_repository
+    server_repository = resolve_server_repository()
+    spec_url = f"https://github.com/{server_repository}/blob/main/{spec_rel}"
+    index_url = f"https://github.com/{server_repository}/blob/main/specs/_dashboards/INDEX.md"
 
     rendered = (
         template
@@ -237,6 +243,7 @@ def render_dashboard(spec_path: Path, registry: set[str], strict: bool) -> tuple
         .replace("{{REFRESH}}", meta["refresh"])
         .replace("{{TIME_FROM}}", meta["time_from"])
         .replace("{{SPEC_URL}}", spec_url)
+        .replace("{{INDEX_URL}}", index_url)
         .replace("{{AUDIENCE_TAG}}", audience_tag)
         .replace("{{EXTRA_VARIABLES_JSON}}", "")
         .replace("{{PANELS_JSON}}", json.dumps(grafana_panels, indent=2))

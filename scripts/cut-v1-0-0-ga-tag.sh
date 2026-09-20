@@ -594,7 +594,7 @@ if [[ "$REMOTE" != "origin" ]]; then
 fi
 REMOTE_URL="$(git remote get-url origin 2>/dev/null || true)"
 case "$REMOTE_URL" in
-  https://github.com/HuGR-Labs/corelink-server.git|git@github.com:HuGR-Labs/corelink-server.git) ;;
+  https://github.com/HuGR-Labs/corelink-server.git|git@github.com:HuGR-Labs/corelink-server.git|https://github.com/HuGR-dev/corelink-server.git|git@github.com:HuGR-dev/corelink-server.git) ;;
   *) log_fail "origin is not the canonical CoreLink repository: $REMOTE_URL"; exit 1 ;;
 esac
 REMOTE_MAIN="$(git ls-remote --heads origin refs/heads/main | awk 'NR == 1 {print $1}')"

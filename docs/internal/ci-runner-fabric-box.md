@@ -464,7 +464,7 @@ operator checkout with a repository-admin token (the slot census requires
 
 ```bash
 GH_TOKEN="$REPO_ADMIN_TOKEN" python3 scripts/check_runner_fleet.py \
-  --repo HuGR-Labs/corelink-server
+  --repo "$(python3 scripts/server_repository.py)"
 ```
 
 When Actions is available again, `runner-fleet-health.yml` is the automated

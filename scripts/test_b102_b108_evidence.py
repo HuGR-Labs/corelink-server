@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import verify_b102_b108_evidence as verifier
 import collect_b102_b107_measurements as collector
 import collect_b102_b108_context as context_collector
+verifier.REPO = verifier.SOURCE_REPO
 
 ROOT = Path(__file__).parents[1]
 NOW = 1_800_000_000.0
@@ -265,6 +266,7 @@ def provider_record_boundary() -> None:
 def workflow_run_timestamp_contract() -> None:
     """The authoritative run timestamp must use the pinned, isolated CLI."""
     workflow = (ROOT / ".github/workflows/perf-production-evidence.yml").read_text(encoding="utf-8")
+    assert "if: github.repository_id == '1232040291' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected" in workflow
     assert "${{ github.run_started_at }}" not in workflow
     assert "actions: read" in workflow
     assert "GITHUB_RUN_STARTED_AT: ${{ steps.github-run.outputs.started_at }}" in workflow
@@ -274,13 +276,54 @@ def workflow_run_timestamp_contract() -> None:
     assert "/usr/bin/env -i" in timestamp_step
     assert "GH_HOST=github.com" in timestamp_step
     assert "run_pinned_gh api" in timestamp_step
-    assert 'repos/HuGR-Labs/corelink-server/actions/runs/${GITHUB_RUN_ID}' in timestamp_step
+    assert 'repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}' in timestamp_step
+    assert '--repo "${GITHUB_REPOSITORY}"' in workflow
+    assert 'https://github.com/${GITHUB_REPOSITORY}/.github/workflows/perf-production-evidence.yml@${GITHUB_REF}' in workflow
     assert "\n          gh api" not in timestamp_step
     assert "HTTP_PROXY" not in timestamp_step and "SSL_CERT_FILE" not in timestamp_step
     verify_step = workflow[workflow.index("      - name: Verify canonical packet"):workflow.index("      - name: Publish verifier-backed owner handoff")]
+    assert "CORELINK_EXPECTED_REPOSITORY: ${{ github.repository }}" in verify_step
     assert "GH_TOKEN" not in verify_step
     assert "CORELINK_GH_BIN" not in verify_step
     assert "GH_HOST" not in verify_step
+
+
+def repository_identity_scope() -> None:
+    """Source and destination are exact server identities; CLI/attacker names fail."""
+    source = "HuGR-Labs/corelink-server"
+    destination = "HuGR-dev/corelink-server"
+    assert context_collector.is_server_repository(source)
+    assert context_collector.is_server_repository(destination)
+    assert not context_collector.is_server_repository("HuGR-Labs/corelink-cli")
+    assert not context_collector.is_server_repository("attacker/corelink-server")
+    try:
+        verifier.validate_server_repository("attacker/corelink-server")
+    except verifier.EvidenceError:
+        pass
+    else:
+        raise AssertionError("attacker repository unexpectedly passed the evidence verifier")
+
+    original_repo = verifier.REPO
+    original_gh_verifier = verifier.verify_attestation_with_gh
+    try:
+        verifier.verify_attestation_with_gh = lambda _bundle, _subject, _deployment, expected: expected
+        for expected_repo in (source, destination):
+            verifier.REPO = expected_repo
+            assert verifier.validate_server_repository(expected_repo) == expected_repo
+            result = verifier.assess(packet(), ROOT, NOW)
+            assert result["B-108"] == "closed"
+            assert all(result[item] == "open" for item in verifier.ITEMS[:-1])
+
+        verifier.REPO = "HuGR-Labs/corelink-cli"
+        try:
+            verifier.assess(packet(), ROOT, NOW)
+        except verifier.EvidenceError:
+            pass
+        else:
+            raise AssertionError("CLI identity unexpectedly passed the server evidence verifier")
+    finally:
+        verifier.REPO = original_repo
+        verifier.verify_attestation_with_gh = original_gh_verifier
 
 
 def main() -> int:
@@ -446,6 +489,7 @@ def main() -> int:
     mint_wire_binding_round_trip()
     provider_record_boundary()
     workflow_run_timestamp_contract()
+    repository_identity_scope()
     verifier.verify_attestation_with_gh = original_gh_verifier
     print("B102-B108 evidence verifier mutations: PASS (fake bundle rejected by pinned gh gate)")
     return 0

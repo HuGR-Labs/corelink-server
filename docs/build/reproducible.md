@@ -258,7 +258,7 @@ A SecOps lead or enterprise prospect can reproduce the released CLI binary:
 
 ```bash
 # 1. Fetch the release binary and its published checksum.
-gh release download <tag> --repo HuGR-Labs/corelink-server \
+gh release download <tag> --repo "$(python3 scripts/server_repository.py)" \
     --pattern 'corelink-darwin-x86_64*'
 
 # 2. Rebuild from the same commit with the same pinned toolchain.

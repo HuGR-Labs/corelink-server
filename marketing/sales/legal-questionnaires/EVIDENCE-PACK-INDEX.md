@@ -19,7 +19,7 @@ tags: ["sales", "legal", "questionnaire", "evidence-pack", "procurement", "audit
 
 > **Audience:** auditor or procurement reviewer with countersigned NDA on file via `trust@humangr.com`. This is the one-page wayfinder for the evidence bundle attached to any CoreLink SIG / CAIQ / custom-form response.
 >
-> **Source of truth:** `HuGR-Labs/corelink-server` at commit `<SHA>` (cited per response) — a **private** repository. All paths below are repo-relative unless they start with `https://`.
+> **Source of truth:** `HuGR-dev/corelink-server` at commit `<SHA>` (cited per response) — a **private** repository. All paths below are repo-relative unless they start with `https://`.
 >
 > **⛔ CoreLink is not open source.** There is no public source repository. No row in this index may invite an auditor to "go read the code" — the platform source is private and is shared only under NDA. The only artifacts anyone can fetch without auth are release **binaries and checksums** (see PUBLIC-REPO). Verified 2026-08-02: `HumanGuardrail/corelink` and `HuGR-Labs/corelink` both return **HTTP 404** — that repo has never existed in either org, so this is not org-rename drift.
 >
@@ -242,7 +242,7 @@ Every artifact in a customer-bound pack **must** be watermarked:
 ```
 CONFIDENTIAL — <Prospect Org> — <YYYY-MM-DD> — CoreLink (HuGR Labs)
 Pursuant to NDA dated <NDA date>. Not for redistribution.
-Source commit: <SHA> · `HuGR-Labs/corelink-server` (private)
+Source commit: <SHA> · `HuGR-dev/corelink-server` (private)
 ```
 
 Bundle naming:

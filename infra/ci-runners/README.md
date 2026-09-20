@@ -22,6 +22,7 @@ for the full one-time setup. TL;DR:
 
 ```sh
 cd infra/ci-runners/linux
+export REPO_URL="https://github.com/$(python3 ../../../scripts/server_repository.py)"
 cp .env.example .env          # paste a registration token from repo Settings → Actions → Runners
 docker compose up -d
 ```
@@ -43,7 +44,8 @@ sudo ./svc.sh start # if installed as a service
 Verify all online:
 
 ```sh
-gh api repos/HuGR-Labs/corelink-server/actions/runners \
+REPO="$(python3 scripts/server_repository.py)"
+gh api "repos/$REPO/actions/runners" \
   --jq '.runners[] | {name, os, status}'
 # expect status: "online" for corelink-builder-1..5 (+ corelink-linux-1)
 ```

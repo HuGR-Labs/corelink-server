@@ -5,7 +5,7 @@ teams that need BYOK, residency honesty, and a re-derivable audit log.
 
 ## Featured
 
-**[corelink-server](https://github.com/HuGR-Labs/corelink-server)**
+**[corelink-server](https://github.com/HuGR-dev/corelink-server)**
 Multi-tenant content-addressable cache — Bazel, Cargo, npm, pip, OCI.
 REAPI v2 compatible. Per-tenant BYOK (AWS KMS; GCP/Azure/Vault on the
 roadmap). RFC-6962-style audit chain

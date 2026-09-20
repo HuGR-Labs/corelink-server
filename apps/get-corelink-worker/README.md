@@ -65,7 +65,7 @@ testing the install flow.
 The install Worker at `https://corelink-get.humangr.com` serves binaries
 from `https://github.com/HuGR-Labs/corelink-cli/releases/latest/download`.
 Releases in that repo are created automatically by
-`.github/workflows/release-cli.yml` in `HuGR-Labs/corelink-server`
+`.github/workflows/release-cli.yml` in `HuGR-dev/corelink-server`
 whenever a `cli-v*` tag is pushed.
 
 ### One-time operator setup (do this once, before the first release)
@@ -75,7 +75,7 @@ whenever a `cli-v*` tag is pushed.
    "Contents: write" on that repo).
 
 2. **Store the PAT as a repository secret** in
-   `HuGR-Labs/corelink-server`:
+   `HuGR-dev/corelink-server`:
    - Name: `CORELINK_CLI_RELEASE_TOKEN`
    - Value: the PAT from step 1
 

@@ -97,7 +97,7 @@ async fn main() {
             if e.is_security_failure() {
                 eprintln!();
                 eprintln!("SECURITY ALERT: Do NOT use this artifact.");
-                eprintln!("Report to: https://github.com/HumanGuardrail/corelink-server/security");
+                eprintln!("Report to: https://github.com/HuGR-dev/corelink-server/security");
             }
             std::process::exit(e.exit_code());
         }

@@ -38,6 +38,7 @@ jobs:
     # final executor step below. The contract/mutation step has no credentials.
     environment: real-integration
     runs-on: corelink
+    if: github.repository_id == '1232040291' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
     timeout-minutes: 90
     steps:
       - name: Checkout pinned main
@@ -49,7 +50,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REPOSITORY" = "HuGR-Labs/corelink-server"
+          test "$GITHUB_REPOSITORY_ID" = "1232040291"
           test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
           test "$GITHUB_REF" = "refs/heads/main"
           echo "protected manual executor: repository/ref/event verified"

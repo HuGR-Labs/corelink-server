@@ -13,7 +13,7 @@ Reference project for wiring Bazel 7.x to CoreLink remote cache via REAPI v2.
 ### 1. Clone
 
 ```bash
-git clone https://github.com/HuGR-Labs/corelink-server
+git clone https://github.com/HuGR-dev/corelink-server
 cd corelink-server/examples/bazel-starter
 ```
 
