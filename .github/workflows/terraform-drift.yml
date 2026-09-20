@@ -6,15 +6,20 @@ name: Terraform Drift Detection
 # On exit 2 → SEV-3 Slack alert + upload plan artifact.
 # On exit 1 → SEV-2 Slack alert (terraform error) + upload logs.
 # NO `terraform apply` step — auto-apply is FORBIDDEN (RB-FM-206).
-# OIDC-bound credentials only (no long-lived secrets).
+# Cloudflare credentials come from repository secrets; this workflow only plans.
+# Operational prerequisite: provision and verify the dedicated read-only token
+# before running this workflow. This code cannot verify live secret existence
+# or scope; missing/insufficient credentials fail the Terraform steps.
 #
 # Inputs (repo secrets):
-#   CF_CLIENT_ID        — Cloudflare OIDC client ID
-#   CF_CLIENT_SECRET    — Cloudflare OIDC client secret
+#   CF_TERRAFORM_DRIFT_API_TOKEN — dedicated read-only Cloudflare provider token
+#   CF_ACCOUNT_ID       — Cloudflare account ID for the Terraform provider
 #   SLACK_BOT_TOKEN     — Slack Bot OAuth token for #infra-drift
 #   SLACK_CHANNEL_ID    — Slack channel ID for #infra-drift
 #   TF_BACKEND_BUCKET   — R2/S3-compatible backend bucket name
 #   TF_BACKEND_ENDPOINT — Backend endpoint URL
+# Input (repo variable, non-secret):
+#   CF_ZONE_ID          — zone ID for api.humangr.com, used by Terraform plan
 #
 # Supply-chain: all uses SHA-pinned per WI-S01-007 + hard constraint WI-S13-004.
 
@@ -32,7 +37,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # OIDC for Cloudflare API auth
 
 concurrency:
   group: terraform-drift
@@ -96,17 +100,10 @@ jobs:
         # WI-S14-001: regions directory contains per-region module invocations.
         working-directory: infra/terraform/regions
         env:
-          CF_CLIENT_ID: ${{ secrets.CF_CLIENT_ID }}
-          CF_CLIENT_SECRET: ${{ secrets.CF_CLIENT_SECRET }}
           TF_BACKEND_BUCKET: ${{ secrets.TF_BACKEND_BUCKET }}
           TF_BACKEND_ENDPOINT: ${{ secrets.TF_BACKEND_ENDPOINT }}
         run: |
           set -euo pipefail
-          # Secrets presence check — fail loudly (no silent skip)
-          if [[ -z "${CF_CLIENT_ID:-}" || -z "${CF_CLIENT_SECRET:-}" ]]; then
-            echo "::error::CF_CLIENT_ID or CF_CLIENT_SECRET missing — cannot authenticate OIDC"
-            exit 1
-          fi
           if [[ -z "${TF_BACKEND_BUCKET:-}" ]]; then
             echo "::error::TF_BACKEND_BUCKET missing — cannot init backend"
             exit 1
@@ -136,8 +133,10 @@ jobs:
         id: plan
         working-directory: infra/terraform/regions
         env:
-          CF_CLIENT_ID: ${{ secrets.CF_CLIENT_ID }}
-          CF_CLIENT_SECRET: ${{ secrets.CF_CLIENT_SECRET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_TERRAFORM_DRIFT_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          TF_VAR_cf_account_id: ${{ secrets.CF_ACCOUNT_ID }}
+          TF_VAR_cf_zone_id: ${{ vars.CF_ZONE_ID }}
         continue-on-error: true  # we handle exit codes explicitly below
         run: |
           set -euo pipefail
@@ -145,13 +144,20 @@ jobs:
           plan_file="plan-${region}.tfplan"
           plan_log="plan-${region}.log"
 
-          terraform plan \
-            -detailed-exitcode \
-            -out="${plan_file}" \
-            -input=false \
-            2>&1 | tee "${plan_log}"
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" \
+            || -z "${TF_VAR_cf_account_id:-}" \
+            || -z "${TF_VAR_cf_zone_id:-}" ]]; then
+            echo "::error::Required Cloudflare inputs missing: CF_TERRAFORM_DRIFT_API_TOKEN or CF_ACCOUNT_ID secret, or CF_ZONE_ID repository variable"
+            TF_EXIT=1
+          else
+            terraform plan \
+              -detailed-exitcode \
+              -out="${plan_file}" \
+              -input=false \
+              2>&1 | tee "${plan_log}"
 
-          TF_EXIT="${PIPESTATUS[0]}"
+            TF_EXIT="${PIPESTATUS[0]}"
+          fi
           {
             echo "exitcode=${TF_EXIT}"
             echo "plan_log=${plan_log}"

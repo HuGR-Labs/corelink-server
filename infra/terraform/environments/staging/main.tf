@@ -34,7 +34,7 @@ terraform {
 }
 
 provider "cloudflare" {
-  # CF_API_TOKEN injected via OIDC at runtime — no long-lived secret.
+  # Cloudflare credentials are supplied via runtime environment variables.
 }
 
 # ---------------------------------------------------------------------------
@@ -75,8 +75,8 @@ module "cf_storage" {
 # ---------------------------------------------------------------------------
 # Worker secrets for the staging Worker.
 # Values arrive via TF_VAR_<...> sensitive variables that the apply runner
-# sources from an OIDC-bound vault read. Plaintext NEVER lives in Terraform
-# code.
+# sources from an OIDC-authenticated vault read. Plaintext NEVER lives in
+# Terraform code.
 # ---------------------------------------------------------------------------
 
 module "cf_secrets" {

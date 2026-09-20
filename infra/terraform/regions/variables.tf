@@ -2,7 +2,7 @@
 
 variable "cf_account_id" {
   type        = string
-  description = "Cloudflare account ID. Injected via TF_VAR_cf_account_id env var (OIDC-bound)."
+  description = "Cloudflare account ID. Injected via TF_VAR_cf_account_id at runtime."
   sensitive   = true
 }
 

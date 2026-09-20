@@ -40,7 +40,8 @@ module "cf_base" {
 
 ## Operational rules
 
-- All credentials are OIDC-bound; no long-lived API tokens in code.
+- Cloudflare credentials are supplied at runtime; secret values are not stored
+  in Terraform configuration.
 - `terraform apply` runs ONLY through the manual apply workflow with
   dual-approval (WI-S13-002).
 - Drift detected by `RB-TERRAFORM-DRIFT` daily cron.

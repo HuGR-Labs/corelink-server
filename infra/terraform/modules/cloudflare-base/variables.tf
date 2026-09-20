@@ -1,10 +1,10 @@
 # cloudflare-base — Variables.
-# All sensitive inputs MUST be supplied via TF_VAR_* env vars sourced from
-# OIDC-bound credentials. No hard-coded secrets.
+# Sensitive inputs MUST be supplied via TF_VAR_* environment variables.
+# No hard-coded secret values.
 
 variable "cf_account_id" {
   type        = string
-  description = "Cloudflare account ID. Injected via TF_VAR_cf_account_id (OIDC-bound)."
+  description = "Cloudflare account ID. Injected via TF_VAR_cf_account_id at runtime."
   sensitive   = true
 }
 

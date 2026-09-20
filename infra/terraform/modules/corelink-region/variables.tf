@@ -53,7 +53,7 @@ variable "cf_zone_id" {
 
 variable "cf_account_id" {
   type        = string
-  description = "Cloudflare account ID. Injected via TF_VAR_cf_account_id env var (OIDC-bound; no hard-coded tokens)."
+  description = "Cloudflare account ID. Injected via TF_VAR_cf_account_id at runtime; no hard-coded values."
   sensitive   = true
 }
 
