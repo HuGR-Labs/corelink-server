@@ -309,13 +309,7 @@ production App's identity in GitHub before changing any setting.
    using the deployment control plane; the Worker secret values are write-only.
    The callback requires the OAuth code and proves that the installing user
    controls the presented installation whenever both credentials are bound.
-3. After both OAuth credential bindings and the GitHub OAuth setting are
-   verified, configure `GITHUB_APP_PUBLIC=true` on the signup-worker and
-   deploy it through the approved release path. Then switch the verified GitHub
-   App to public. The callback has a structural fail-closed guard: a public App
-   without both OAuth credentials returns HTTP 403 before provisioning. Do not
-   interpret this documentation or a configured variable as proof of deploy.
-4. For the admin-ui Install button, verify `GITHUB_APP_SLUG` and
+3. For the admin-ui Install button, verify `GITHUB_APP_SLUG` and
    `INSTALL_STATE_SIGNING_KEY` on the production admin-ui. The signing key must
    match the signup-worker's `INSTALL_STATE_SIGNING_KEY` byte-for-byte. Set the
    signup-worker's `ADMIN_UI_PUBLIC_URL` to the current public app base
@@ -324,7 +318,35 @@ production App's identity in GitHub before changing any setting.
    `apps/admin-ui/next.config.ts` and `apps/admin-ui/wrangler.toml`. Do not copy
    write-only values into evidence; verify their names and then test via an
    authenticated tenant session.
-5. As an authenticated tenant, use the Install button and complete the GitHub
+4. Before the public flip, perform a read-only production preflight. In the
+   deployed signup-worker's bindings/secrets view, confirm the names
+   `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, and
+   `INSTALL_STATE_SIGNING_KEY` are present, and confirm the `CONFIG_DB` D1
+   binding targets `corelink-prod-d1`. Check names and binding metadata only;
+   never reveal or copy secret values. Record the active production deployment
+   version ID and timestamp from Cloudflare and correlate them to the source
+   commit in the approved deploy record. With `ADMIN_UI_PUBLIC_URL` set, request the callback without query
+   parameters and without following redirects:
+
+   ```sh
+   curl --silent --show-error --output /dev/null --write-out 'HTTP %{http_code}\n' \
+     https://corelink-signup.humangr.com/install/github/callback
+   ```
+
+   Expect HTTP `302` to the admin-ui error result: this confirms the deployed
+   route passed its required-binding guard and took the deliberate missing-state
+   path without provisioning. HTTP `503` means a required binding is absent;
+   `404` or any other non-`302` means the route/deployment is not ready. Stop.
+   This probe does not validate
+   write-only secret values or prove OAuth ownership. Keep the deployment record
+   and status as evidence, with no secret material.
+5. After preflight, configure `GITHUB_APP_PUBLIC=true` on the signup-worker
+   and deploy it through the approved release path. Then switch the verified
+   GitHub App to public. The callback's fail-closed guard returns HTTP `403`
+   before provisioning if the App is public but either OAuth credential is
+   unbound. Do not interpret this document or a configured variable as proof
+   of deployment.
+6. As an authenticated tenant, use the Install button and complete the GitHub
    OAuth ownership prompt. Verify the browser returns to
    `/corelink/settings/runners` with `runner_install=ok`, then perform the
    separate owner-approved live proof: confirm the installation's tenant map
