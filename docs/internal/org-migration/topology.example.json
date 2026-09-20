@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "profile": "corelink-server-org-migration-example",
+  "status": "DESIGN_AND_DISCOVERY_ONLY_NOT_AUTHORIZED",
+  "source": {
+    "owner": "HuGR-Labs",
+    "owner_id": 311862110,
+    "name": "corelink-server",
+    "repository_id": 1232040291,
+    "default_branch": "main",
+    "baseline_sha": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0"
+  },
+  "destination": null,
+  "transfer_scope": ["server"],
+  "preserve_visibility": "private",
+  "allow_repository_rename": false,
+  "legacy_owners": ["HumanGuardrail"],
+  "dependencies": {
+    "runners": {
+      "owner": "HuGR-Labs",
+      "name": "corelink-runners",
+      "repository_id": 1266754321,
+      "transfer_in_this_campaign": false,
+      "contract": "Separate ownership scope; this kit covers the server's runner fleet handoff and compatibility only."
+    },
+    "workspaces": {
+      "owner": "HuGR-Labs",
+      "name": "corelink-workspaces",
+      "repository_id": 1259579816,
+      "transfer_in_this_campaign": false,
+      "contract": "Separate ownership scope; preserve server API, auth, and DevEnv compatibility."
+    },
+    "cli_distribution": {
+      "owner": "HuGR-Labs",
+      "name": "corelink-cli",
+      "repository_id": 1251605593,
+      "transfer_in_this_campaign": false,
+      "contract": "Independent release destination; keep credentials scoped to the CLI repository."
+    }
+  },
+  "invariants": [
+    "repository ID 1232040291, repository name corelink-server, private visibility, approved refs, and release assets are preserved",
+    "no cloud account, DNS, Worker, binding, database, bucket, Durable Object, image pin, Terraform state, billing, or tenant migration",
+    "no peer repository or GitHub App ownership transfer is implied",
+    "no historical signature, provenance, signed bundle, tag, or source history rewrite",
+    "no broad trust, wildcard identity, paid-runner fallback, or token scope expansion",
+    "no authorization inferred from this profile, a checklist, an HTTP 202, or an exit code"
+  ]
+}
