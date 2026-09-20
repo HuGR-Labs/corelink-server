@@ -438,6 +438,42 @@ function isCanonicalReplay(
   );
 }
 
+async function deprovisionStateMatches(
+  db: D1Database,
+  body: DeprovisionBody,
+): Promise<boolean> {
+  for (const repo of body.repositories) {
+    const remaining = await db
+      .prepare(
+        "SELECT repo_full_name FROM runner_repo_allowlist " +
+          "WHERE tenant_id = ?1 AND repo_full_name = ?2",
+      )
+      .bind(body.tenant_id, repo)
+      .first<{ repo_full_name: string }>();
+    if (remaining) return false;
+  }
+
+  const map = await db
+    .prepare(
+      "SELECT installation_id, tenant_id FROM tenant_gh_installation_map " +
+        "WHERE installation_id = ?1",
+    )
+    .bind(body.installation_id)
+    .first<{ installation_id: string; tenant_id: string }>();
+  if (body.remove_installation ? map !== null : map?.tenant_id !== body.tenant_id) {
+    return false;
+  }
+
+  if (body.remove_installation) {
+    const allowlist = await db
+      .prepare("SELECT repo_full_name FROM runner_repo_allowlist WHERE tenant_id = ?1")
+      .bind(body.tenant_id)
+      .all<{ repo_full_name: string }>();
+    if ((allowlist.results ?? []).length !== 0) return false;
+  }
+  return true;
+}
+
 /**
  * `DELETE /internal/v1/runner/provision-installation`.
  * Deletes only explicitly named allowlist entries and optionally the exact
@@ -502,6 +538,9 @@ export async function handleInstallationDeprovision(
       ) {
         return json(409, { error: "request_id_conflict" });
       }
+      if (!(await deprovisionStateMatches(db, body))) {
+        return json(500, { error: "deprovision_verify_failed" });
+      }
       return json(200, {
         installation_id: body.installation_id,
         repos_removed: data.repository_count,
@@ -547,31 +586,48 @@ export async function handleInstallationDeprovision(
       time: new Date().toISOString(),
       data,
     };
-    const statements = [
-      ...repos.map((repo) =>
-        db
-          .prepare(
-            "DELETE FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2",
-          )
-          .bind(body.tenant_id, repo),
-      ),
-    ];
+    const statements = [];
     if (body.remove_installation) {
+      const reposOutsideRequest = repos.length
+        ? ` AND repo_full_name NOT IN (${repos.map((_, index) => `?${index + 3}`).join(", ")})`
+        : "";
       statements.push(
         db
           .prepare(
             "DELETE FROM tenant_gh_installation_map WHERE installation_id = ?1 AND tenant_id = ?2 " +
-              "AND NOT EXISTS (SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?2)",
+              "AND NOT EXISTS (SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?2" +
+              reposOutsideRequest +
+              ")",
           )
-          .bind(body.installation_id, body.tenant_id),
+          .bind(body.installation_id, body.tenant_id, ...repos),
       );
     }
+    statements.push(
+      ...repos.map((repo) =>
+        db
+          .prepare(
+            "DELETE FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2 " +
+              (body.remove_installation
+                ? "AND NOT EXISTS (SELECT 1 FROM tenant_gh_installation_map WHERE installation_id = ?3 AND tenant_id = ?1)"
+                : "AND EXISTS (SELECT 1 FROM tenant_gh_installation_map WHERE installation_id = ?3 AND tenant_id = ?1)"),
+          )
+          .bind(body.tenant_id, repo, body.installation_id),
+      ),
+    );
+
+    const repoAbsenceGuard = repos.length
+      ? `NOT EXISTS (SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?2 AND repo_full_name IN (${repos.map((_, index) => `?${index + 10}`).join(", ")}))`
+      : "1 = 1";
+    const expectedMapGuard = body.remove_installation
+      ? "NOT EXISTS (SELECT 1 FROM tenant_gh_installation_map WHERE installation_id = ?9 AND tenant_id = ?2) AND NOT EXISTS (SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?2)"
+      : "EXISTS (SELECT 1 FROM tenant_gh_installation_map WHERE installation_id = ?9 AND tenant_id = ?2)";
     statements.push(
       db
         .prepare(
           "INSERT INTO audit_outbox " +
             "(id, tenant_id, region, digest, request_id, event_type, payload_json, enqueued_at) " +
-            "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8 WHERE " +
+            repoAbsenceGuard + " AND " + expectedMapGuard,
         )
         .bind(
           event.id,
@@ -582,29 +638,12 @@ export async function handleInstallationDeprovision(
           DEPROVISION_EVENT,
           JSON.stringify(event),
           Date.now(),
+          body.installation_id,
+          ...repos,
         ),
     );
     await db.batch(statements);
-
-    for (const repo of repos) {
-      const remaining = await db
-        .prepare(
-          "SELECT repo_full_name FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2",
-        )
-        .bind(body.tenant_id, repo)
-        .first<{ repo_full_name: string }>();
-      if (remaining) return json(500, { error: "deprovision_verify_failed" });
-    }
-    const mapAfter = await db
-      .prepare(
-        "SELECT installation_id, tenant_id FROM tenant_gh_installation_map WHERE installation_id = ?1",
-      )
-      .bind(body.installation_id)
-      .first<{ installation_id: string; tenant_id: string }>();
-    if (
-      (body.remove_installation && mapAfter !== null) ||
-      (!body.remove_installation && (!mapAfter || mapAfter.tenant_id !== body.tenant_id))
-    ) {
+    if (!(await deprovisionStateMatches(db, body))) {
       return json(500, { error: "deprovision_verify_failed" });
     }
     return json(200, {
