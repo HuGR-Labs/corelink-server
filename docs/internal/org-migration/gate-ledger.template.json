@@ -1,0 +1,159 @@
+{
+  "schema_version": 2,
+  "campaign_id": "corelink-server-org-migration-2026-example",
+  "scope": {
+    "repository_id": 1232040291,
+    "repository_name": "corelink-server",
+    "source": {"owner": "HuGR-Labs", "owner_id": 311862110},
+    "destination": {"owner": "HuGR-dev", "owner_id": 331432289},
+    "visibility": "private",
+    "transfer_scope": ["server"]
+  },
+  "scope_sha256": "7754afb6728369acc2fec4c0ab19d58ee3596b28a137a884add78873ea011da1",
+  "migration_ready": false,
+  "authorization_verified": false,
+  "go": {
+    "status": "UNKNOWN",
+    "issued_at": null,
+    "valid_until": null,
+    "scope_sha256": null,
+    "evidence_sha256": null,
+    "window_start": null,
+    "window_end": null,
+    "authority_reference": null,
+    "candidate_sha": null,
+    "profile_sha256": null,
+    "inventory_sha256": null,
+    "refs_manifest_sha256": null,
+    "controls_manifest_sha256": null,
+    "peers_manifest_sha256": null,
+    "freeze_sha": null,
+    "operator": null,
+    "reviewer": null,
+    "impact_budget_reference": null
+  },
+  "transfer_requested_at": null,
+  "inventory": {
+    "schema_version": 2,
+    "source_sha": null,
+    "report_sha256": null,
+    "profile_sha256": null,
+    "unresolved_findings": null,
+    "opaque_dispositions_complete": false,
+    "coverage_limit_acknowledged": false
+  },
+  "readback": {
+    "status": "UNKNOWN",
+    "repository_id": null,
+    "owner": null,
+    "owner_id": null,
+    "name": null,
+    "visibility": null,
+    "canonical_path": null,
+    "observed_at": null
+  },
+  "mutation_policy": {
+    "preparation_allowlist": [
+      "create_documentation",
+      "create_offline_audit_report",
+      "create_isolated_test_fixture",
+      "update_profile_on_reviewed_branch",
+      "open_preparation_pull_request"
+    ],
+    "forbidden": [
+      "transfer_repository",
+      "push_mirror",
+      "rewrite_history_or_signatures",
+      "deploy_or_publish",
+      "dispatch_production_workflow",
+      "restart_runner_fleet",
+      "change_cloud_resources_or_customer_data",
+      "change_visibility_or_repository_name",
+      "transfer_peer_repository",
+      "broad_credential_rotation",
+      "git_clean_or_reset_hard"
+    ]
+  },
+  "preparation_mutations": [],
+  "forbidden_mutations_observed": [],
+  "write_fences": {
+    "source": "UNKNOWN",
+    "destination": "UNKNOWN",
+    "writers_drained": false,
+    "remaining_writers": [],
+    "freeze_sha": null,
+    "reconciliation": {"equal": false}
+  },
+  "backup_restore": {
+    "freeze_sha": null,
+    "backup_sha": null,
+    "restored_sha": null,
+    "refs_manifest_sha256": null,
+    "assets_manifest_sha256": null,
+    "lfs_manifest_sha256": null,
+    "parity_verified": false,
+    "restore_tested": false,
+    "evidence_reference": null
+  },
+  "privacy": {
+    "classification": "PRIVATE",
+    "raw_credentials_exported": false,
+    "tenant_data_exported": false
+  },
+  "rollback": {
+    "forward_recovery_plan": null,
+    "independent_recovery_access": false,
+    "transfer_back_assumed": false,
+    "evidence_reference": null
+  },
+  "credential_rotation": {
+    "planned": false,
+    "old_credentials_revoked": false,
+    "new_consumers_verified": false,
+    "values_exported": false,
+    "evidence_reference": null
+  },
+  "split_brain": {
+    "source_writers_disabled": false,
+    "destination_single_writer": false,
+    "active_writer_count": 0,
+    "reconciliation_after_cutover": false
+  },
+  "access_cleanup": {
+    "inventory_complete": false,
+    "temporary_grants_reconciled": false,
+    "inventory_evidence_reference": null,
+    "grants": [],
+    "source_bridge": {
+      "removed": false,
+      "readback_status": "UNKNOWN",
+      "repository_id": 1232040291,
+      "source_owner_id": 311862110,
+      "destination_owner_id": 331432289,
+      "observed_at": null,
+      "evidence_reference": null
+    }
+  },
+  "gates": [
+    {"id": "G00", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G01", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G02", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G03", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G04", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G05", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G06", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G07", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G08", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G09", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G10", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G11", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G12", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G13", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G14", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G15", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G16", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G17", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G18", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null},
+    {"id": "G19", "status": "UNKNOWN", "owner": null, "evidence": null, "observed_at": null, "valid_until": null, "reviewer": null, "reviewed_at": null, "reason": null}
+  ]
+}

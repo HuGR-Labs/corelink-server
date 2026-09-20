@@ -1,9 +1,0 @@
-{
-  "observed_date_utc": "2026-09-19",
-  "method": "gh api GET metadata; no sibling source or configuration mutations",
-  "dependencies": [
-    {"endpoint": "repos/HuGR-Labs/corelink-cli", "id": 1251605593, "full_name": "HuGR-Labs/corelink-cli", "private": false, "default_branch": "main"},
-    {"endpoint": "repos/HuGR-Labs/corelink-runners", "id": 1266754321, "full_name": "HuGR-Labs/corelink-runners", "private": true, "default_branch": "main"},
-    {"endpoint": "repos/HuGR-Labs/corelink-workspaces", "id": 1259579816, "full_name": "HuGR-Labs/corelink-workspaces", "private": true, "default_branch": "main"}
-  ]
-}

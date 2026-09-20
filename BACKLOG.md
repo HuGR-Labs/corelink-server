@@ -17650,28 +17650,29 @@ last-verified: 2026-09-05
 
 ### B-374 — kit verificável para mudança de organização do server (não é transferência)
 
-Mapa, runbook, arquitetura de portabilidade, skill, manifesto com papéis
-independentes e inventários por commit/API estão em
-`docs/operations/repository-org-migration/`. Os helpers só coletam e planejam.
-A skill está em `.claude/skills/migrate-server-organization/SKILL.md`.
+Kit preparatório canonicalizado para a issue guarda-chuva
+[#1702](https://github.com/HuGR-Labs/corelink-server/issues/1702): mapa,
+runbook, desenho, skill, perfil com identidades independentes, inventário
+commit-bound, auditor offline e checker de ledger schema 2 em
+`docs/internal/org-migration/`. As ferramentas não transferem, não autorizam e
+não alteram produção. G00–G19 começam UNKNOWN; prontidão e autorização continuam
+false. Runners/Workspaces/CLI permanecem peers independentes.
 
-O estado abaixo é exclusivamente do kit neste candidato; não declara a
-transferência pronta/executada nem os adaptadores de produção implementados.
-Destino e gates operacionais permanecem não aprovados. WP-01 a WP-07 descrevem
-a preparação/corte/observação futuros e mantêm Runners/Workspaces/CLI separados.
-Progresso entregue na baseline só existe depois do merge aprovado deste PR.
+B-374 acompanha apenas a integridade deste kit. #1702 continua aberta para
+census atual, projeções de produção, gates, GO, operação e observação; integrar
+o kit não conclui nem fecha a migração.
 
 ```backlog
 id: B-374
 repo: corelink-server
 owner: tl
-status: done
-verify: python3 -m unittest discover -s tests -p 'test_repository_org_migration*.py'
+status: open
+verify: python3 scripts/test_org_migration_audit.py && python3 scripts/test_org_migration_gate_check.py
 verify-means: |
-  done — testes do kit, schema/IDs/escopo, negativos, inventário imutável,
-  redação de metadados, integridade dos documentos/links e triggers de CI
-  passam neste checkout. Não significa execução de transferência, adoção
-  do catálogo por produção ou aceitação G01–G10. Não valida fornecedores live.
-  Reabre quando faltar parte do kit ou quando seus contratos deixarem de passar.
+  open — o kit canônico e seus testes focais continuam presentes e passam.
+  Isto não declara transferência pronta/executada, consumers de produção
+  portados, evidências live, GO, nem gates aceitos; também não fecha #1702.
+  Manter OPEN neste PR enquanto a integração ainda não foi revisada e merged;
+  não marcar done aqui. A issue #1702 tem gates operacionais independentes.
 last-verified: 2026-09-19
 ```
