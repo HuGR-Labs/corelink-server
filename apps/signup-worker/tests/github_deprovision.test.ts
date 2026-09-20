@@ -17,6 +17,7 @@ type Seed = { installs?: Install[]; repos?: Repo[]; regions?: Record<string, str
 type Options = { failAtMutation?: number; ignoreRepoDelete?: boolean; ignoreMapDelete?: boolean; noBatch?: boolean; provisionRepoBeforeBatch?: Repo };
 type Db = {
   binding: NonNullable<InstallationProvisionEnv["CONFIG_DB"]>;
+  reads: RecordSql[];
   mutations: RecordSql[];
   batches: RecordSql[][];
   provision(repo: Repo): void;
@@ -42,6 +43,7 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
   let repos = (seed.repos ?? []).map((r) => ({ ...r }));
   let audits = new Map((seed.audits ?? []).map((r) => [pairKey(r.request_id, r.event_type), { ...r }]));
   const regions = new Map(Object.entries(seed.regions ?? {}));
+  const reads: RecordSql[] = [];
   const mutations: RecordSql[] = [];
   const batches: RecordSql[][] = [];
   let activeBatch: RecordSql[] = [];
@@ -62,6 +64,10 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
       const tenant = param(rec, "tenant_id");
       let found = repos.filter((r) => r.tenant_id === tenant);
       if (/\brepo_full_name\s*=/.test(sql)) found = found.filter((r) => r.repo_full_name === param(rec, "repo_full_name"));
+      if (sql.includes("repo_full_name in (select cast(value as text) from json_each(?2))")) {
+        const requested = new Set(JSON.parse(String(rec.vals[1])) as string[]);
+        found = found.filter((r) => requested.has(r.repo_full_name));
+      }
       if (/\bcount\s*\(/.test(sql)) return [{ count: found.length }];
       return found.map((r) => ({ ...r }));
     }
@@ -143,8 +149,8 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
         const rec = { sql, vals };
         const q = norm(sql).startsWith("select");
         const stmt = {
-          first: async <T = Row>() => (rows(rec)[0] as T | undefined) ?? null,
-          all: async <T = Row>() => ({ results: rows(rec) as T[] }),
+          first: async <T = Row>() => { reads.push(rec); return (rows(rec)[0] as T | undefined) ?? null; },
+          all: async <T = Row>() => { reads.push(rec); return { results: rows(rec) as T[] }; },
           run: async () => { if (!q) mutate(rec, 1); return { success: true, meta: { changes: q ? 0 : 1 } }; },
         };
         Object.defineProperty(stmt, "record", { value: rec });
@@ -180,7 +186,7 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
     };
   }
   return {
-    binding: raw as unknown as Db["binding"], mutations, batches,
+    binding: raw as unknown as Db["binding"], reads, mutations, batches,
     provision: (repo) => { repos.push({ ...repo }); },
     state: () => ({
       installs: [...installs].map(([installation_id, tenant_id]) => ({ installation_id, tenant_id })),
@@ -372,6 +378,8 @@ describe("#1725 installation deprovision contract", () => {
       env(db),
     );
     expect(response.status).toBe(200);
+    expect(db.reads).toHaveLength(7);
+    expect(db.reads.filter((read) => norm(read.sql).includes("json_each(?2)"))).toHaveLength(1);
     expect(db.batches[0]!.every((statement) => statement.vals.length <= 100)).toBe(true);
     expect(db.state().repos).toHaveLength(0);
     expect(db.state().installs).toHaveLength(0);

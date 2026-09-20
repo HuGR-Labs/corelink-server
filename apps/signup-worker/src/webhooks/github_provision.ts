@@ -442,16 +442,15 @@ async function deprovisionStateMatches(
   db: D1Database,
   body: DeprovisionBody,
 ): Promise<boolean> {
-  for (const repo of body.repositories) {
-    const remaining = await db
-      .prepare(
-        "SELECT repo_full_name FROM runner_repo_allowlist " +
-          "WHERE tenant_id = ?1 AND repo_full_name = ?2",
-      )
-      .bind(body.tenant_id, repo)
-      .first<{ repo_full_name: string }>();
-    if (remaining) return false;
-  }
+  const requestedRemaining = await db
+    .prepare(
+      "SELECT repo_full_name FROM runner_repo_allowlist " +
+        "WHERE tenant_id = ?1 AND repo_full_name IN " +
+        "(SELECT CAST(value AS TEXT) FROM json_each(?2))",
+    )
+    .bind(body.tenant_id, JSON.stringify(body.repositories))
+    .all<{ repo_full_name: string }>();
+  if ((requestedRemaining.results ?? []).length !== 0) return false;
 
   const map = await db
     .prepare(
