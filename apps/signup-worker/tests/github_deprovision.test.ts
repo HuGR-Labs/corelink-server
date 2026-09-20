@@ -14,7 +14,7 @@ type Install = { installation_id: string; tenant_id: string };
 type Audit = { id: string; tenant_id: string; request_id: string; event_type: string; payload_json: string; region: string };
 type RecordSql = { sql: string; vals: unknown[] };
 type Seed = { installs?: Install[]; repos?: Repo[]; regions?: Record<string, string>; audits?: Audit[] };
-type Options = { failAtMutation?: number; ignoreRepoDelete?: boolean; noBatch?: boolean };
+type Options = { failAtMutation?: number; ignoreRepoDelete?: boolean; ignoreMapDelete?: boolean; noBatch?: boolean };
 type Db = {
   binding: NonNullable<InstallationProvisionEnv["CONFIG_DB"]>;
   mutations: RecordSql[];
@@ -75,8 +75,7 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
     mutations.push(rec);
     if (opts.failAtMutation === nth) throw new Error(`injected failure at ${nth}`);
     if (sql.startsWith("delete from runner_repo_allowlist")) {
-      const where = sql.slice(sql.indexOf("where"));
-      if (!/\btenant_id\s*=\s*\?\d*/.test(where) || !/\band\b/.test(where) || !/\brepo_full_name\s*=\s*\?\d*/.test(where)) {
+      if (sql !== "delete from runner_repo_allowlist where tenant_id = ?1 and repo_full_name = ?2") {
         throw new Error(`Unscoped repo delete: ${rec.sql}`);
       }
       if (opts.ignoreRepoDelete) return;
@@ -86,10 +85,10 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
       return;
     }
     if (sql.startsWith("delete from tenant_gh_installation_map")) {
-      const where = sql.slice(sql.indexOf("where"));
-      if (!/\binstallation_id\s*=\s*\?\d*/.test(where) || !/\btenant_id\s*=\s*\?\d*/.test(where) || !/not\s+exists/.test(where) || !where.includes("runner_repo_allowlist")) {
+      if (sql !== "delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2)") {
         throw new Error(`Unscoped/unguarded map delete: ${rec.sql}`);
       }
+      if (opts.ignoreMapDelete) return;
       const id = param(rec, "installation_id");
       const tenant = param(rec, "tenant_id");
       if ([...installs].some(([key, value]) => key === id && value === tenant) && !repos.some((r) => r.tenant_id === tenant)) installs.delete(id);
@@ -202,6 +201,11 @@ describe("#1725 installation deprovision contract", () => {
     const noBatch = fake(seed, { noBatch: true });
     expect((await handleInstallationDeprovision(request(payload()), env(noBatch))).status).toBe(500);
     expect(noBatch.mutations).toHaveLength(0);
+    const sharedOnly = {
+      CONFIG_DB: db.binding,
+      CORELINK_INTERNAL_AUTH_KEY: AUTH,
+    } as InstallationProvisionEnv & { CORELINK_INTERNAL_AUTH_KEY: string };
+    expect((await handleInstallationDeprovision(request(payload()), sharedOnly)).status).toBe(503);
     expect(db.mutations).toHaveLength(0);
   });
 
@@ -258,7 +262,7 @@ describe("#1725 installation deprovision contract", () => {
     expect(done.status).toBe(200);
     expect(cleared.state().installs).toEqual([{ installation_id: "inst-2", tenant_id: "tenant-1" }]);
     const mapDelete = cleared.batches[0].find((r) => /delete from tenant_gh_installation_map/i.test(r.sql));
-    expect(mapDelete?.sql).toMatch(/where[^;]*installation_id\s*=\s*\?\d*[^;]*and[^;]*tenant_id\s*=\s*\?\d*[^;]*not\s+exists[^;]*runner_repo_allowlist/i);
+    expect(norm(mapDelete!.sql)).toBe("delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2)");
     expect(param(mapDelete!, "installation_id")).toBe("inst-1");
     expect(param(mapDelete!, "tenant_id")).toBe("tenant-1");
   });
@@ -275,7 +279,7 @@ describe("#1725 installation deprovision contract", () => {
     const deletes = db.batches[0].filter((r) => /delete from runner_repo_allowlist/i.test(r.sql));
     expect(deletes).toHaveLength(2);
     for (const d of deletes) {
-      expect(d.sql).toMatch(/where[^;]*tenant_id\s*=\s*\?\d*[^;]*and[^;]*repo_full_name\s*=\s*\?\d*/i);
+      expect(norm(d.sql)).toBe("delete from runner_repo_allowlist where tenant_id = ?1 and repo_full_name = ?2");
       expect(param(d, "tenant_id")).toBe("tenant-1");
       expect(repos).toContain(param(d, "repo_full_name"));
     }
@@ -284,9 +288,22 @@ describe("#1725 installation deprovision contract", () => {
     expect(audit.request_id).toBe("req-1725");
     expect(audit.tenant_id).toBe("tenant-1");
     expect(audit.region).toBe("sam");
-    const parsed = JSON.parse(audit.payload_json) as Record<string, unknown>;
-    expect(Object.keys(parsed).sort()).toEqual(["installation_id", "remove_installation", "repositories_sha256", "repository_count"].sort());
-    expect(parsed).toEqual({
+    const envelope = JSON.parse(audit.payload_json) as Record<string, unknown>;
+    expect(Object.keys(envelope).sort()).toEqual(["specversion", "id", "source", "type", "subject", "time", "data"].sort());
+    expect(envelope.specversion).toBe("1.0");
+    expect(envelope.type).toBe(EVENT);
+    expect(envelope.source).toBe("corelink-signup-worker");
+    expect(typeof envelope.id).toBe("string");
+    expect(String(envelope.id).length).toBeGreaterThan(0);
+    expect(String(envelope.id)).not.toContain("tenant-1");
+    expect(String(envelope.id)).not.toContain(AUTH);
+    expect(typeof envelope.subject).toBe("string");
+    expect(String(envelope.subject)).toContain("inst-1");
+    expect(String(envelope.subject)).not.toContain("tenant-1");
+    expect(new Date(String(envelope.time)).toISOString()).toBe(envelope.time);
+    const data = envelope.data as Record<string, unknown>;
+    expect(Object.keys(data).sort()).toEqual(["installation_id", "remove_installation", "repositories_sha256", "repository_count"].sort());
+    expect(data).toEqual({
       installation_id: "inst-1", repositories_sha256: await sha256(JSON.stringify(["alpha/web", "zeta/api"])),
       repository_count: 2, remove_installation: false,
     });
@@ -311,6 +328,11 @@ describe("#1725 installation deprovision contract", () => {
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: "deprovision_verify_failed" });
     expect(db.state().repos).toContainEqual({ tenant_id: "tenant-1", repo_full_name: "acme/web" });
+    const mapDb = fake({ installs: [{ installation_id: "inst-1", tenant_id: "tenant-1" }], repos: [{ tenant_id: "tenant-1", repo_full_name: "acme/web" }], regions: seed.regions }, { ignoreMapDelete: true });
+    const mapResponse = await handleInstallationDeprovision(request(payload({ remove_installation: true })), env(mapDb));
+    expect(mapResponse.status).toBe(500);
+    expect(await mapResponse.json()).toEqual({ error: "deprovision_verify_failed" });
+    expect(mapDb.state().installs).toEqual([{ installation_id: "inst-1", tenant_id: "tenant-1" }]);
   });
 
   it("replays canonical digest identity once, rejects divergent payload, and requires audit for absent maps", async () => {
@@ -320,14 +342,22 @@ describe("#1725 installation deprovision contract", () => {
     ] });
     const firstBody = payload({ repositories: ["zeta/api", "alpha/web"], remove_installation: true });
     expect((await handleInstallationDeprovision(request(firstBody), env(db))).status).toBe(200);
+    const firstData = (JSON.parse(db.state().audits[0].payload_json) as { data: unknown }).data;
     const replay = await handleInstallationDeprovision(request({ ...firstBody, repositories: [...firstBody.repositories].reverse() }), env(db));
     expect(replay.status).toBe(200);
     expect((await replay.json()).replayed).toBe(true);
+    expect((JSON.parse(db.state().audits[0].payload_json) as { data: unknown }).data).toEqual(firstData);
     expect(db.batches).toHaveLength(1);
+    const beforeConflict = db.state();
+    const batchesBeforeConflict = db.batches.map((batch) => [...batch]);
     const conflict = await handleInstallationDeprovision(request(payload({ repositories: ["other/repo"], remove_installation: true })), env(db));
     expect(conflict.status).toBe(409);
+    expect(db.state()).toEqual(beforeConflict);
+    expect(db.batches).toEqual(batchesBeforeConflict);
     const absent = fake({ regions: seed.regions });
     expect((await handleInstallationDeprovision(request(payload()), env(absent))).status).toBe(404);
     expect(absent.mutations).toHaveLength(0);
   });
 });
+
+// This unit suite cannot perform the live canary; keep it as a separate runbook/done gate.
