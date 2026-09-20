@@ -33,6 +33,14 @@ moved any of the three numbers in PLG §7.5.
 - `POST /webhooks/stripe` — Stripe-signed events
   (`checkout.session.created`, `checkout.session.completed`,
   `customer.subscription.deleted`, etc.)
+- `POST /internal/v1/runner/provision-installation` — provision an
+  installation-to-tenant mapping and repository allowlist; requires the
+  dedicated `CORELINK_RUNNER_PROVISION_AUTH_KEY`.
+- `DELETE /internal/v1/runner/provision-installation` — remove explicitly
+  named allowlist entries and, when requested, the installation mapping; uses
+  the same dedicated key and records an idempotent audit event. See the
+  [runner cold-signup go-live runbook](../../docs/operator/runner-cold-signup-golive-runbook.md)
+  for the production-safe provision, bounded-canary, and cleanup sequence.
 - `GET /health`
 
 ## Contract with `@corelink/analytics-worker`

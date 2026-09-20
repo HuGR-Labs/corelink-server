@@ -17,7 +17,7 @@ import { handleClerkWebhook, defaultApiClient } from "./webhooks/clerk.js";
 import type { AutoProvisionEnv, DsrQueuedV1 } from "./webhooks/clerk.js";
 import { handleStripeWebhook } from "./webhooks/stripe.js";
 import type { StripeWebhookEnv } from "./webhooks/stripe.js";
-import { handleInstallationProvision } from "./webhooks/github_provision.js";
+import { handleInstallationDeprovision, handleInstallationProvision } from "./webhooks/github_provision.js";
 import type { InstallationProvisionEnv } from "./webhooks/github_provision.js";
 import {
   handleAppManifestForm,
@@ -42,28 +42,32 @@ type WorkerEnv = AutoProvisionEnv &
   GithubAppManifestEnv &
   InstallCallbackEnv;
 
-async function route(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
+export async function route(request: Request, env: InstallationProvisionEnv, ctx: ExecutionContext): Promise<Response> {
+  const workerEnv = env as WorkerEnv;
   const url = new URL(request.url);
   if (url.pathname === "/webhooks/clerk") {
-    return handleClerkWebhook(request, env, defaultApiClient);
+    return handleClerkWebhook(request, workerEnv, defaultApiClient);
   }
   if (url.pathname === "/webhooks/stripe") {
-    return handleStripeWebhook(request, env, ctx);
+    return handleStripeWebhook(request, workerEnv, ctx);
   }
   if (url.pathname === "/internal/v1/runner/provision-installation") {
+    if (request.method === "DELETE") {
+      return handleInstallationDeprovision(request, env);
+    }
     return handleInstallationProvision(request, env);
   }
   if (url.pathname === "/internal/sla/monthly-observation") {
-    return handleSlaObservationIngest(request, env as unknown as SlaCreditCronEnv);
+    return handleSlaObservationIngest(request, workerEnv as unknown as SlaCreditCronEnv);
   }
   if (url.pathname === "/install/github/app/new" && request.method === "GET") {
-    return handleAppManifestForm(request, env);
+    return handleAppManifestForm(request, workerEnv);
   }
   if (url.pathname === "/install/github/app/created" && request.method === "GET") {
-    return handleAppManifestCallback(request, env);
+    return handleAppManifestCallback(request, workerEnv);
   }
   if (url.pathname === "/install/github/callback" && request.method === "GET") {
-    return handleInstallGithubCallback(request, env);
+    return handleInstallGithubCallback(request, workerEnv);
   }
   if (url.pathname === "/health") {
     return Response.json({ ok: true, worker: "signup-worker" });
