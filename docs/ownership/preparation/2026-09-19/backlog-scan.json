@@ -1,0 +1,16 @@
+{
+  "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+  "path": "BACKLOG.md",
+  "bytes": 1053336,
+  "lines": 17649,
+  "sha256": "41726d6c8b2f4b1dc7ff35466a78c242e147b99eaca69a956064024e04212e23",
+  "method": "Complete text scan; candidate passages require semantic disposition, not a claim to read every line.",
+  "patterns": "crate.ownership|ownership.{0,100}skill|skill.{0,100}ownership|blast.?radius|CO-1",
+  "matches": [
+    {
+      "line": 7871,
+      "text": "real blast radius handed to CI on the owner's explicit call; the fixture",
+      "context": "the whole money path (tier-select → DPA → real `cs_live_` Stripe session)\nexercised as a customer, not asserted. `sk_live` can create/delete prod users — a\nreal blast radius handed to CI on the owner's explicit call; the fixture\nDSR-deletes the throwaway user on teardown. Kept `workflow_dispatch`-only;\npromoting to a `schedule:` is a separate, deferred decision."
+    }
+  ]
+}

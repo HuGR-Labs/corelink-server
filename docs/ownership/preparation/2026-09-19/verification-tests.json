@@ -1,0 +1,68 @@
+{
+  "positive_controls": 1,
+  "rejected_negative_cases": 11,
+  "cases": [
+    {
+      "result": "PREPARATION_STRUCTURE_CONSISTENT",
+      "packages": 105,
+      "targets": 631,
+      "declared_edges": 235,
+      "publication_approved": false
+    },
+    {
+      "case": 1,
+      "rejected": true,
+      "reason": "population identity"
+    },
+    {
+      "case": 2,
+      "rejected": true,
+      "reason": "targets/runtime"
+    },
+    {
+      "case": 3,
+      "rejected": true,
+      "reason": "targets/runtime"
+    },
+    {
+      "case": 4,
+      "rejected": true,
+      "reason": "source/seed population"
+    },
+    {
+      "case": 5,
+      "rejected": true,
+      "reason": "unproved readiness"
+    },
+    {
+      "case": 6,
+      "rejected": true,
+      "reason": "dirty capture"
+    },
+    {
+      "case": 7,
+      "rejected": true,
+      "reason": "target count"
+    },
+    {
+      "case": 8,
+      "rejected": true,
+      "reason": "edge count"
+    },
+    {
+      "case": 9,
+      "rejected": true,
+      "reason": "scope unclassified"
+    },
+    {
+      "case": 10,
+      "rejected": true,
+      "reason": "inverse mismatch: corelink-ac"
+    },
+    {
+      "case": 11,
+      "rejected": true,
+      "reason": "unexecuted command credited"
+    }
+  ]
+}

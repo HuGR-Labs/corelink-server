@@ -1,0 +1,55 @@
+# Preparação: corelink-meta
+
+**Estado:** SOURCE_PREPARED_NOT_SEMANTICALLY_APPROVED. **Publicação de issue:** bloqueada pelo contrato/piloto/revisões pendentes.
+
+**Manifesto:** `crates/corelink-meta/Cargo.toml`. **Baseline:** `cca798ff5bc2df660ecf2570ed243eb9775ff3d0`.
+
+[Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
+
+## Fatos
+
+- Package `corelink-meta` em `crates/corelink-meta/Cargo.toml`; 5 targets devolvidos pelo Cargo na baseline.
+- População fonte própria: 11 arquivos Rust rastreados, 2376 linhas físicas, excluídas raízes de packages aninhados.
+- Entradas confirmadas: `crates/corelink-meta/src/lib.rs`.
+- Declarações de navegação (amostra, não API completa): `crates/corelink-meta/src/lib.rs:112` — `pub mod cas_query;`; `crates/corelink-meta/src/lib.rs:113` — `pub mod error;`; `crates/corelink-meta/src/lib.rs:114` — `pub mod fake;`; `crates/corelink-meta/src/lib.rs:115` — `pub mod schema;`
+
+## Targets
+
+5 targets enumerados em `../census.json`, registro cujo `manifest` é `crates/corelink-meta/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+
+- [`crates/corelink-meta/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-meta/src/lib.rs)
+
+## Relações
+
+7 declarações de dependência e 3 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
+
+Consumidores declarados: `corelink-cas`, `corelink-meta-fuzz`, `corelink-reapi`.
+
+## OKF
+
+- Nenhum conceito OKF declara diretamente fonte própria deste package no levantamento de source_files; não equivale a ausência de documentação semântica.
+- Contexto herdado de dependência: `docs/knowledge/crates/cas-ac-core.md` — CAS/AC core crate cluster
+- Roteador existente: `python3 scripts/okf_context.py --file crates/corelink-meta/src/lib.rs --full`; ausência de match deve permanecer explícita.
+
+## Riscos
+
+- Fronteira a conferir: `crates/corelink-meta/src/cas_query.rs:142` contém `#[cfg(test)]`; provar seleção e efeito, não inferir runtime do nome.
+- Fronteira a conferir: `crates/corelink-meta/src/fake.rs:88` contém `impl Default for InMemoryMetaStore {`; provar seleção e efeito, não inferir runtime do nome.
+- Fronteira a conferir: `crates/corelink-meta/src/fake.rs:96` contém `impl InMemoryMetaStore {`; provar seleção e efeito, não inferir runtime do nome.
+- Coordenar contratos com consumidores declarados corelink-cas, corelink-meta-fuzz, corelink-reapi. Aresta Cargo não certifica chamada ou produção.
+
+## Comandos
+
+- **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
+- **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file crates/corelink-meta/src/lib.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
+- **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path crates/corelink-meta/Cargo.toml -p corelink-meta --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
+
+## Fontes
+
+- [crates/corelink-meta/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-meta/Cargo.toml); blob `b46812f88a190cd56f16d509e9a31d380884f876`.
+- [crates/corelink-meta/src/lib.rs](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-meta/src/lib.rs); blob `c08845c65b4bdd800d8949850eafaee3ddaa4937`.
+- [docs/knowledge/crates/cas-ac-core.md](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/docs/knowledge/crates/cas-ac-core.md); blob `01b501172f40115174fe6c88d8942af5f3590b51`.
+
+O inventário semântico completo, os contratos de runtime, os procedimentos e os quatro cold reviews continuam no escopo da futura issue. Nenhuma mudança funcional é autorizada por este pacote.
+
+[Voltar ao índice](../index.md)

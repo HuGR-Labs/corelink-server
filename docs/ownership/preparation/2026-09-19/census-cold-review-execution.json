@@ -1,0 +1,6 @@
+{
+  "exit_code": 0,
+  "review_exists": true,
+  "scope": "structural_cargo_census_only",
+  "stdin": "neutral prompt only; fresh ephemeral context"
+}

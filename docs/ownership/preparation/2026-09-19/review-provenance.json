@@ -1,0 +1,25 @@
+{
+  "scope": "structural_cargo_census_only",
+  "reviewer": "Codex CLI independent fresh ephemeral context",
+  "thread_id": "01a0bc1c-8a09-7202-acee-eb35313adcea",
+  "sandbox": "read-only",
+  "network": "disabled for reviewer",
+  "author_conversation_provided": false,
+  "reviewed_files": {
+    "census.json": "600105707e9a81c0825092434939116db38c7650ece2826f92ac6ffcf89094ac",
+    "summary.json": "15ec727075f0600dc8bbd97050bc75467ecd7a6a2bf65337933e4315477fe3e3"
+  },
+  "prompt_sha256": "a24a06ac0a637420f24196d225b622ece3b3ad8dc81d34ed1f1795967eae6d92",
+  "report_sha256": "55bad7b6f351d541369c412d0b7026fba590997185ceafca1e9ef1b840a28092",
+  "raw_transcript_sha256": "850c9bb66350159eb78376363de0e054d1086e9c44f9371f719889161db61178",
+  "raw_transcript_retained_on_authorized_host": true,
+  "previous_broad_review": "timeout_without_verdict; not treated as PASS",
+  "standard_approved": false,
+  "per_crate_artifacts_approved": false,
+  "execution": {
+    "exit_code": 0,
+    "review_exists": true,
+    "scope": "structural_cargo_census_only",
+    "stdin": "neutral prompt only; fresh ephemeral context"
+  }
+}

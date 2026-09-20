@@ -1,0 +1,164 @@
+[
+  {
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--no-deps",
+      "--format-version=1"
+    ],
+    "exit_code": 0,
+    "stderr": ""
+  },
+  {
+    "manifest": "crates/corelink-ac/fuzz/Cargo.toml",
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--no-deps",
+      "--format-version=1",
+      "--manifest-path",
+      "crates/corelink-ac/fuzz/Cargo.toml"
+    ],
+    "exit_code": 0,
+    "stderr": ""
+  },
+  {
+    "manifest": "crates/corelink-audit-chain/fuzz/Cargo.toml",
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--no-deps",
+      "--format-version=1",
+      "--manifest-path",
+      "crates/corelink-audit-chain/fuzz/Cargo.toml"
+    ],
+    "exit_code": 0,
+    "stderr": ""
+  },
+  {
+    "manifest": "crates/corelink-byok/fuzz/Cargo.toml",
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--no-deps",
+      "--format-version=1",
+      "--manifest-path",
+      "crates/corelink-byok/fuzz/Cargo.toml"
+    ],
+    "exit_code": 0,
+    "stderr": ""
+  },
+  {
+    "manifest": "crates/corelink-client-verify/fuzz/Cargo.toml",
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--no-deps",
+      "--format-version=1",
+      "--manifest-path",
+      "crates/corelink-client-verify/fuzz/Cargo.toml"
+    ],
+    "exit_code": 0,
+    "stderr": ""
+  },
+  {
+    "manifest": "crates/corelink-hash/fuzz/Cargo.toml",
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--no-deps",
+      "--format-version=1",
+      "--manifest-path",
+      "crates/corelink-hash/fuzz/Cargo.toml"
+    ],
+    "exit_code": 0,
+    "stderr": ""
+  },
+  {
+    "manifest": "crates/corelink-meta/fuzz/Cargo.toml",
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--no-deps",
+      "--format-version=1",
+      "--manifest-path",
+      "crates/corelink-meta/fuzz/Cargo.toml"
+    ],
+    "exit_code": 0,
+    "stderr": ""
+  },
+  {
+    "manifest": "crates/corelink-reapi/fuzz/Cargo.toml",
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--no-deps",
+      "--format-version=1",
+      "--manifest-path",
+      "crates/corelink-reapi/fuzz/Cargo.toml"
+    ],
+    "exit_code": 0,
+    "stderr": ""
+  },
+  {
+    "manifest": "crates/corelink-worker/fuzz/Cargo.toml",
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--no-deps",
+      "--format-version=1",
+      "--manifest-path",
+      "crates/corelink-worker/fuzz/Cargo.toml"
+    ],
+    "exit_code": 0,
+    "stderr": ""
+  },
+  {
+    "manifest": "crates/tenant-path/fuzz/Cargo.toml",
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--no-deps",
+      "--format-version=1",
+      "--manifest-path",
+      "crates/tenant-path/fuzz/Cargo.toml"
+    ],
+    "exit_code": 0,
+    "stderr": ""
+  },
+  {
+    "manifest": "tools/cli/fuzz/Cargo.toml",
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--no-deps",
+      "--format-version=1",
+      "--manifest-path",
+      "tools/cli/fuzz/Cargo.toml"
+    ],
+    "exit_code": 0,
+    "stderr": ""
+  }
+]
