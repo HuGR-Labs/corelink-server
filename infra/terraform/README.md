@@ -97,9 +97,23 @@ No literal secrets in code. Every secret pushed by `cloudflare-secrets`
 has a row in `docs/internal/secrets-checklist.md`; CI fails if a key is
 pushed that isn't matrixed.
 
-OIDC-bound credentials only:
+Credentials are supplied at runtime; secret values are not stored in Terraform:
 
-- Cloudflare: `CF_API_TOKEN` injected via GitHub OIDC → CF Workers OIDC.
+- Cloudflare Terraform drift: the dedicated `CF_TERRAFORM_DRIFT_API_TOKEN`
+  and `CF_ACCOUNT_ID` GitHub repository secrets are mapped to the provider and
+  `cf_account_id` at runtime. `CF_ZONE_ID` is a non-secret GitHub repository
+  variable for the `api.humangr.com` zone, mapped to `cf_zone_id` in the plan
+  step. Before running drift detection, provision the dedicated token with
+  exactly these Cloudflare permissions: account scope restricted to the one
+  `CF_ACCOUNT_ID` with `Workers R2 Storage Read`, `D1 Read`,
+  `Workers KV Storage Read`, and `Workers Scripts Read`; zone scope restricted
+  to `CF_ZONE_ID` (`api.humangr.com`) with `DNS Read` and `Workers Routes Read`.
+  Grant no Edit/Write, `API Tokens Read` or `API Tokens Write` (token
+  management), Access, Pages, or user permissions.
+  Cloudflare's `Workers R2 Storage Read` is account-scoped and cannot be
+  narrowed to one bucket. Provision and verify this secret, its scopes, the
+  account ID, and the zone variable before running; this repository change
+  does not establish their live existence or configuration.
 - AWS: `AWS_ROLE_ARN` assumed via `aws-actions/configure-aws-credentials`
   using GitHub OIDC.
 - GCP: `google-github-actions/auth` with Workload Identity Federation.

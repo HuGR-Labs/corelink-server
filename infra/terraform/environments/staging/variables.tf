@@ -1,6 +1,7 @@
 # environments/staging — Variables.
-# All TF_VAR_* sensitive inputs come from an OIDC-bound vault read at
-# apply time; never literal in code.
+# Worker-secret TF_VAR_* inputs come from an OIDC-bound vault read at apply time;
+# Cloudflare provider credentials are supplied separately at runtime.
+# Secret values are never literal in code.
 
 variable "cf_account_id" {
   type        = string

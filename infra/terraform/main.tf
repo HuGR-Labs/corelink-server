@@ -19,10 +19,10 @@ terraform {
   }
 }
 
-# Provider configuration — credentials via OIDC environment variables.
-# No long-lived API tokens in code (WI-S13-004 §6.1 OIDC-bound only).
+# Provider configuration — credentials via runtime environment variables.
+# Secret values are not stored in Terraform configuration.
 provider "cloudflare" {
-  # CF_API_TOKEN or CF_CLIENT_ID + CF_CLIENT_SECRET injected at runtime via OIDC.
+  # CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are supplied by the runtime.
 }
 
 # -----------------------------------------------------------------------
