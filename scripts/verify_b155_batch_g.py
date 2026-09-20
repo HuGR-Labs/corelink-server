@@ -599,7 +599,7 @@ def assert_trusted_write_boundary(block: list[str], label: str) -> None:
     source = job_conditions[0]
     assert_true("||" not in source, f"{label} trust guard contains an OR bypass")
     required = (
-        "github.repository == 'HuGR-Labs/corelink-server'",
+        "github.repository_id == '1232040291'",
         "github.ref == 'refs/heads/main'",
         "github.ref_protected",
     )
@@ -718,10 +718,12 @@ def verify_b110() -> None:
     mutation_block = workflow_job_block(".github/workflows/mutation-nightly.yml", "aggregate")
     assert_trusted_write_guard(mutation_block, "workflow_dispatch", "mutation aggregate")
     assert_true(
-        "if: github.event_name == 'workflow_dispatch' && github.repository == 'HuGR-Labs/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected"
+        "if: github.event_name == 'workflow_dispatch' && github.repository_id == '1232040291' && github.ref == 'refs/heads/main' && github.ref_protected"
         in "\n".join(mutation_block),
         "mutation commit step is missing the trusted-source guard",
     )
+    perf_evidence_block = workflow_job_block(".github/workflows/perf-production-evidence.yml", "collect")
+    assert_trusted_write_guard(perf_evidence_block, "workflow_dispatch", "perf production evidence")
     semgrep_block = workflow_job_block(".github/workflows/semgrep.yml", "semgrep")
     assert_trusted_write_guard(
         semgrep_block,

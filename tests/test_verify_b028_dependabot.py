@@ -61,9 +61,14 @@ class B028VerifierTests(unittest.TestCase):
 
     def test_api_failure_is_not_an_empty_census(self):
         result = type("Result", (), {"returncode": 1, "stderr": "HTTP 403", "stdout": ""})()
-        with patch.object(VERIFY.subprocess, "run", return_value=result):
+        repo = VERIFY.resolve_server_repository("HuGR-dev/corelink-server")
+        with patch.object(VERIFY.subprocess, "run", return_value=result) as run:
             with self.assertRaisesRegex(VERIFY.CensusError, "not an empty census"):
-                VERIFY.read_alerts(VERIFY.REPO, None)
+                VERIFY.read_alerts(repo, None)
+        self.assertEqual(
+            run.call_args.args[0][-1],
+            "/repos/HuGR-dev/corelink-server/dependabot/alerts",
+        )
 
     def test_cli_checks_lockfile_and_fixture(self):
         overrides = "\n".join(f'"{key}": "{value}"' for key, value in VERIFY.REQUIRED_OVERRIDES)

@@ -7,7 +7,7 @@ tools that default to BYOK, residency honesty, and verifiable audit logs.
 
 ### CoreLink — content-addressable cache
 
-[corelink-server](https://github.com/HuGR-Labs/corelink-server) |
+[corelink-server](https://github.com/HuGR-dev/corelink-server) |
 [corelink-cli](https://github.com/HuGR-Labs/corelink-cli)
 
 REAPI v2 (over HTTP/REST) cache for Bazel, plus Cargo, npm, pip, OCI Docker
@@ -47,7 +47,7 @@ workspace.
 ## Currently shipping
 
 CoreLink launched self-serve on 2026-07-10 and is generally available. See
-[ROADMAP-TO-LAUNCH.md](https://github.com/HuGR-Labs/corelink-server/blob/main/ROADMAP-TO-LAUNCH.md)
+[ROADMAP-TO-LAUNCH.md](https://github.com/HuGR-dev/corelink-server/blob/main/ROADMAP-TO-LAUNCH.md)
 for the full 8-phase plan and what ships next.
 
 ## Community

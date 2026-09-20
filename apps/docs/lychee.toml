@@ -22,7 +22,7 @@ exclude = [
   "^https?://127\\.0\\.0\\.1",
   # GitHub edit links are constructed from EDIT_BASE + path; not all
   # paths exist in the source repo yet (placeholder docs).
-  "^https?://github\\.com/HumanGuardrail/corelink-server/edit/.+",
+  "^https?://github\\.com/HuGR-dev/corelink-server/edit/.+",
   # `file://<relative-name>` with no leading slash after the scheme is a
   # shell-command placeholder inside a fenced code block (e.g.
   # `aws s3api put-bucket-policy --policy file://deny-write.json` in

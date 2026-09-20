@@ -28,7 +28,7 @@ CoreLink opens the primitives a developer must *trust* and *reproduce*, and
 closes the server that runs the service. A client cannot back off correctly
 against a black-box header format — so this contract is published. The
 abuse-prevention heuristics that decide *when* to emit a `429` stay in the
-closed server. See [`docs/OSS_STRATEGY.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/docs/OSS_STRATEGY.md).
+closed server. See [`docs/OSS_STRATEGY.md`](https://github.com/HuGR-dev/corelink-server/blob/main/docs/OSS_STRATEGY.md).
 
 ## License
 

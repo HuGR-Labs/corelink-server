@@ -16,7 +16,7 @@ Three 1280×640 PNG social-preview images for HuGR CoreLink repos.
 
 | File                        | Repo                                     | Title              | Subtitle                                           |
 |-----------------------------|------------------------------------------|--------------------|----------------------------------------------------|
-| `corelink-server.png`       | `HuGR-Labs/corelink-server`           | CoreLink           | REAPI v2 build cache. BYOK. Verifiable audit log.  |
+| `corelink-server.png`       | `HuGR-dev/corelink-server`            | CoreLink           | REAPI v2 build cache. BYOK. Verifiable audit log.  |
 | `corelink-cli.png`          | `HuGR-Labs/corelink-cli`              | corelink CLI       | Bazel · Cargo · npm · OCI                          |
 | `corelink-bazel-example.png`| `HuGR-Labs/corelink-bazel-example`    | CoreLink + Bazel   | 5-minute setup walkthrough                         |
 
@@ -45,7 +45,7 @@ GitHub does **not** expose a REST or GraphQL API for repository social
 preview images. The `PUT /repos/:owner/:repo/og-image` endpoint returns
 404. Upload must be done via the Settings UI:
 
-1. https://github.com/HuGR-Labs/corelink-server/settings → **Social preview** → Edit → Upload an image
+1. https://github.com/HuGR-dev/corelink-server/settings → **Social preview** → Edit → Upload an image
 2. https://github.com/HuGR-Labs/corelink-cli/settings → **Social preview** → Edit → Upload an image
 3. `corelink-bazel-example` — repo does not exist yet; upload after creating it
 

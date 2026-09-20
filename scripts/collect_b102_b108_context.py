@@ -19,6 +19,12 @@ import sys
 from pathlib import Path
 
 SHA = re.compile(r"^[0-9a-f]{40}$")
+SERVER_REPOSITORIES = frozenset({"HuGR-Labs/corelink-server", "HuGR-dev/corelink-server"})
+
+
+def is_server_repository(repository: str) -> bool:
+    """Match only the exact authorized source or destination server repository."""
+    return repository in SERVER_REPOSITORIES
 
 
 def read(path: Path) -> tuple[object, str]:
@@ -71,7 +77,7 @@ def main() -> int:
         run_attempt = required("GITHUB_RUN_ATTEMPT")
         run_started_at = required("GITHUB_RUN_STARTED_AT")
         github_ref = required("GITHUB_REF")
-        if repo != "HuGR-Labs/corelink-server" or not SHA.fullmatch(sha) or not run_id.isdigit():
+        if not is_server_repository(repo) or not SHA.fullmatch(sha) or not run_id.isdigit():
             raise ValueError("invalid canonical GitHub context")
         if not run_attempt.isdigit() or int(run_attempt) < 1:
             raise ValueError("invalid GitHub run attempt")

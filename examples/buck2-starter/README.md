@@ -42,7 +42,7 @@ export CORELINK_PAT=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 ## Step 3 — Clone and enter the starter directory (~30 s)
 
 ```bash
-git clone https://github.com/HuGR-Labs/corelink-server.git
+git clone https://github.com/HuGR-dev/corelink-server.git
 cd corelink-server/examples/buck2-starter
 ```
 

@@ -304,8 +304,10 @@ def assert_contract(workflow: str, runner: str) -> None:
         fail("executor is not pinned to the protected main ref")
     if 'test "$GITHUB_EVENT_NAME" = "workflow_dispatch"' not in wf:
         fail("executor does not fail closed on event type")
-    if "HuGR-Labs/corelink-server" not in wf:
-        fail("executor is not repository-scoped")
+    if "github.repository_id == '1232040291'" not in wf or 'test "$GITHUB_REPOSITORY_ID" = "1232040291"' not in wf:
+        fail("executor is not scoped to the stable server repository ID")
+    if "if: github.repository_id == '1232040291' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected" not in wf:
+        fail("real executor job lacks the stable-ID, protected-main dispatch guard")
 
     # The workflow must have a selectable, bounded profile set.
     for profile in ("d1", "r2", "stripe", "neon", "all"):

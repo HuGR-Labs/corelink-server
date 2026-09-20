@@ -53,6 +53,11 @@ import sys
 import time
 from dataclasses import dataclass
 
+try:
+    from server_repository import resolve_server_repository
+except ModuleNotFoundError:  # imported as scripts.runner_wedge_watchdog
+    from scripts.server_repository import resolve_server_repository
+
 
 # The launchd services that back `[self-hosted, mac, corelink-builder]`. Named
 # explicitly rather than discovered: a wildcard over `actions.runner.*` would
@@ -175,7 +180,7 @@ def _uid() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--repo", default="HuGR-Labs/corelink-server")
+    ap.add_argument("--repo", help="exact authorized repo; default resolves repository ID 1232040291")
     ap.add_argument(
         "--min-age-s",
         type=float,
@@ -185,9 +190,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="decide and report, change nothing")
     args = ap.parse_args(argv)
 
+    try:
+        repo = resolve_server_repository(args.repo)
+    except (OSError, ValueError) as exc:
+        print(f"watchdog: cannot resolve server repository ({exc}); doing nothing", file=sys.stderr)
+        return 0
+
     now = time.time()
     try:
-        ages = queued_builder_job_ages(args.repo, now)
+        ages = queued_builder_job_ages(repo, now)
     except subprocess.CalledProcessError as exc:
         # A GitHub read failure is NOT a wedge. Report and exit 0 — a watchdog
         # that restarts runners because it could not see is worse than one that

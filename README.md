@@ -71,7 +71,7 @@ unavailable or invalid limiter state fails closed with `503`.
 
 The production data plane is wired and deployed. The Wave 32
 production-deploy campaign sealed 2026-05-22 (tag
-[`corelink-prod-deploy-v1`](https://github.com/HumanGuardrail/corelink-server/releases/tag/corelink-prod-deploy-v1)),
+[`corelink-prod-deploy-v1`](https://github.com/HuGR-dev/corelink-server/releases/tag/corelink-prod-deploy-v1)),
 with all 5 customer endpoints live behind the flat
 `corelink-{api,signup,app,docs,get}.humangr.com` hosts (the dotted
 `corelink.humangr.com` apex is dead). The Wave 33-36 reorg campaign
@@ -212,7 +212,7 @@ Then:
 - Code of conduct: [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md)
   (Contributor Covenant v2.1).
 - First-PR backlog: GitHub issues labeled
-  [`good first issue`](https://github.com/HuGR-Labs/corelink-server/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+  [`good first issue`](https://github.com/HuGR-dev/corelink-server/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
   — each scoped to roughly half a day.
 - OSS vs closed boundary:
   [`docs/internal/OSS-VS-CLOSED-MATRIX.md`](./docs/internal/OSS-VS-CLOSED-MATRIX.md)

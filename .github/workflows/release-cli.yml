@@ -2,7 +2,7 @@ name: release-cli
 
 # CoreLink CLI cross-platform release pipeline (Stream 2.8).
 #
-# Triggers on version tags cli-v* in HumanGuardrail/corelink-server.
+# Triggers on version tags cli-v* in the server repository.
 # Builds 5 platform binaries on the self-hosted macOS `corelink-builder` fleet
 # (one physical host): Linux and Windows use the pinned Zig/cargo-zigbuild
 # cross-toolchain, while the macOS targets use native cargo. It then creates a
@@ -335,12 +335,9 @@ jobs:
   # immediately below had said the canonical home was HuGR-Labs since 2026-08-02
   # while the code two dozen lines down was never updated to match.
   #
-  # NOTE the asymmetry, deliberately left alone: the `HumanGuardrail/corelink-server`
-  # strings elsewhere in this file are NOT broken and were NOT touched. GitHub
-  # keeps a permanent redirect after a transfer, and `gh api
-  # repos/HumanGuardrail/corelink-server` resolves to `HuGR-Labs/corelink-server`.
-  # `corelink-cli` has no such redirect because it came from a personal account,
-  # not from that org — which is exactly why one 404s and the other does not.
+  # Historical migration note: the original release lane published server-built
+  # CLI artifacts to a separate repository. Keep the release target below bound
+  # to HuGR-Labs/corelink-cli; it is independent of the server transfer.
   #
   # Canonical home is now HuGR-Labs/corelink-cli (transferred 2026-08-02 off the
   # personal gmhelmold account; the get-corelink-worker RELEASE_ORIGIN is pinned
@@ -448,7 +445,7 @@ jobs:
           NOTES_EOF
           # Dynamic line: GITHUB_REF_NAME expands at runtime.
           # shellcheck disable=SC2016
-          echo "Built from \`HumanGuardrail/corelink-server\` tag \`${GITHUB_REF_NAME}\`." \
+          echo "Built from \`${GITHUB_REPOSITORY}\` tag \`${GITHUB_REF_NAME}\`." \
             >> /tmp/release-notes.md
 
       - name: Assert external cross-repository release credential

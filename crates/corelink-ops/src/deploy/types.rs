@@ -53,7 +53,7 @@ pub struct GitHubActor {
     /// GitHub login of the actor.
     pub login: String,
     /// OIDC workflow ref, e.g.
-    /// `"HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"`.
+    /// `"HuGR-dev/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"`.
     pub workflow_ref: String,
 }
 
@@ -155,12 +155,13 @@ impl OciImageRef {
 ///
 /// The canonical pattern for CoreLink is:
 /// ```text
-/// ^https://github\.com/HumanGuardrail/corelink-server/\.github/workflows/release-slsa3\.yml@refs/tags/v\d+\.\d+\.\d+$
+/// ^https://github\.com/(?:HumanGuardrail|HuGR-Labs|HuGR-dev)/corelink-server/\.github/workflows/release-slsa3\.yml@refs/tags/v\d+\.\d+\.\d+$
 /// ```
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct CosignIdentityPattern {
-    /// Raw regex string (must be a valid regex; validated at construction).
+    /// Raw regex string. It is compiled and full-string matched when checked;
+    /// invalid patterns fail closed.
     pub pattern: String,
 }
 
@@ -168,7 +169,7 @@ impl CosignIdentityPattern {
     /// Canonical identity pattern for CoreLink release pipeline.
     pub fn corelink_release() -> Self {
         Self {
-            pattern: r"^https://github\.com/HumanGuardrail/corelink-server/\.github/workflows/release-slsa3\.yml@refs/tags/v\d+\.\d+\.\d+$".to_string(),
+            pattern: r"^https://github\.com/(?:HumanGuardrail|HuGR-Labs|HuGR-dev)/corelink-server/\.github/workflows/release-slsa3\.yml@refs/tags/v\d+\.\d+\.\d+$".to_string(),
         }
     }
 
@@ -181,17 +182,12 @@ impl CosignIdentityPattern {
 
     /// Returns `true` if `san_uri` matches this pattern.
     ///
-    /// Uses a simple prefix/suffix structural check to avoid pulling in a
-    /// regex crate in the wasm32 target.  Full regex matching is applied only
-    /// in the native test harness via the `regex` dev-dependency.
+    /// Evaluates the supplied regular expression against the entire SAN URI.
+    /// Invalid patterns fail closed; unanchored expressions cannot match a substring.
     pub fn matches_simple(&self, san_uri: &str) -> bool {
-        // Structural match: must start with the expected GitHub OIDC prefix
-        // and contain the org/repo/workflow path.
-        san_uri.starts_with("https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v")
-            && san_uri
-                .trim_start_matches("https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v")
-                .chars()
-                .all(|c| c.is_ascii_digit() || c == '.')
+        regex::Regex::new(&format!(r"\A(?:{})\z", self.pattern))
+            .map(|pattern| pattern.is_match(san_uri))
+            .unwrap_or(false)
     }
 }
 
@@ -374,6 +370,12 @@ mod tests {
             "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"
         ));
         assert!(p.matches_simple(
+            "https://github.com/HuGR-Labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"
+        ));
+        assert!(p.matches_simple(
+            "https://github.com/HuGR-dev/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"
+        ));
+        assert!(p.matches_simple(
             "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v1.23.456"
         ));
     }
@@ -389,6 +391,33 @@ mod tests {
         assert!(!p.matches_simple(
             "https://github.com/HumanGuardrail/corelink-server/.github/workflows/build.yml@refs/tags/v0.1.0"
         ));
+        assert!(!p.matches_simple(
+            "https://github.com/attacker/HuGR-Labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"
+        ));
+        assert!(!p.matches_simple(
+            "https://github.com/HuGR-Labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0.evil"
+        ));
+        assert!(!p.matches_simple(
+            "https://github.com/HuGR-Labs/corelink-cli/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"
+        ));
+    }
+
+    #[test]
+    fn cosign_identity_pattern_uses_the_supplied_expression() {
+        let p = CosignIdentityPattern::new(
+            r"^https://github\.com/ExampleOrg/example-repo/\.github/workflows/release\.yml@refs/heads/main$",
+        );
+        assert!(p.matches_simple(
+            "https://github.com/ExampleOrg/example-repo/.github/workflows/release.yml@refs/heads/main"
+        ));
+        assert!(!p.matches_simple(
+            "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v1.2.3"
+        ));
+        assert!(!CosignIdentityPattern::new("[").matches_simple("anything"));
+        assert!(!CosignIdentityPattern::new("ExampleOrg/example-repo")
+            .matches_simple("https://github.com/ExampleOrg/example-repo/workflow"));
+        assert!(CosignIdentityPattern::new("ExampleOrg/example-repo")
+            .matches_simple("ExampleOrg/example-repo"));
     }
 
     #[test]

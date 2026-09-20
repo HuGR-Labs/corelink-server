@@ -60,7 +60,10 @@ except ImportError:  # pragma: no cover - environment guard
     print("ERROR: PyYAML is required (pip install pyyaml)", file=sys.stderr)
     sys.exit(2)
 
-DEFAULT_REPO = "HuGR-Labs/corelink-server"
+try:
+    from server_repository import resolve_server_repository
+except ModuleNotFoundError:  # imported as scripts.check_workflow_state
+    from scripts.server_repository import resolve_server_repository
 DEFAULT_WAIVERS = ".github/workflow-state-waivers.yml"
 REQUIRED_FIELDS = ("reason", "authorized-by", "date", "expires", "tracking")
 MAX_WAIVER_DAYS = 90
@@ -268,7 +271,7 @@ def render_summary(rows: list[list[str]], failures: list[str], notes: list[str])
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--repo", default=DEFAULT_REPO, help="primary repo to gate")
+    ap.add_argument("--repo", help="exact authorized repo; default resolves repository ID 1232040291")
     ap.add_argument("--waivers", default=DEFAULT_WAIVERS, help="waiver register path")
     ap.add_argument(
         "--also-report",
@@ -283,6 +286,12 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    try:
+        primary_repo = resolve_server_repository(args.repo)
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: cannot safely resolve server repository: {exc}", file=sys.stderr)
+        return 2
+
     today = dt.date.today()
     notes: list[str] = []
 
@@ -293,7 +302,7 @@ def main() -> int:
         return 2
 
     try:
-        failures, rows = check_repo(args.repo, waivers, today)
+        failures, rows = check_repo(primary_repo, waivers, today)
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -306,7 +315,7 @@ def main() -> int:
         except Exception as exc:
             notes.append(
                 f"`{extra}` NOT INSPECTED — {exc}. The default GITHUB_TOKEN is "
-                f"scoped to `{args.repo}`; both repos are private, so cross-repo "
+                f"scoped to `{primary_repo}`; both repos are private, so cross-repo "
                 f"listing needs a credential this workflow deliberately does not "
                 f"carry. This is a KNOWN gap, not a pass."
             )

@@ -21,7 +21,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-REPO = "HuGR-Labs/corelink-server"
+REPO: str | None = None
+try:
+    from server_repository import resolve_server_repository
+except ModuleNotFoundError:  # imported as scripts.verify_b373_dependabot
+    from scripts.server_repository import resolve_server_repository
 BASE = "b7c6a165de0d456b6679c9662a1ffc8babc6ace8"
 DELIVERED_MERGE_SHA = "6be19a2e525dad045ad8404d722905afde7ad7bd"
 SNAPSHOT = "docs/security/b373-dependabot-census-2026-09-09.json"
@@ -129,6 +133,8 @@ def api_json(endpoint: str) -> dict[str, Any]:
 
 
 def live_main_sha() -> str:
+    if REPO is None:
+        raise CensusError("live server repository identity was not resolved")
     payload = api_json(f"/repos/{REPO}/git/ref/heads/main")
     sha = (payload.get("object") or {}).get("sha")
     if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", sha):
@@ -306,13 +312,14 @@ def backlog_b373_done(root: Path) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", default=REPO)
+    parser.add_argument("--repo", help="exact authorized repo; default resolves repository ID 1232040291")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--alerts-file", type=Path)
     parser.add_argument("--post-merge", action="store_true")
     parser.add_argument("--merged-sha", help="full delivered merge commit SHA (skips fetching origin/main)")
     args = parser.parse_args(argv)
     try:
+        global REPO
         if args.post_merge and args.alerts_file is not None:
             raise CensusError(
                 "--post-merge requires an authenticated GitHub API census; "
@@ -323,11 +330,17 @@ def main(argv: list[str] | None = None) -> int:
             exact_snapshot = args.alerts_file.resolve() == (args.root / SNAPSHOT).resolve() and not args.alerts_file.is_symlink()
             if not exact_snapshot:
                 raise CensusError("alerts fixture with the snapshot name must use the exact repository path")
+        # Local fixtures stay offline and byte-bound. Live census and closure
+        # paths require the current ID-backed repo or an exact source/dest name.
+        if not args.alerts_file or args.post_merge:
+            REPO = resolve_server_repository(args.repo)
+        elif args.repo:
+            REPO = resolve_server_repository(args.repo)
         if snapshot_fixture and not args.post_merge:
             verify_snapshot(args.root)
             actual = EXPECTED.copy()
         else:
-            actual = census(read_alerts(args.repo, args.alerts_file))
+            actual = census(read_alerts(REPO or "", args.alerts_file))
         expected = {} if args.post_merge else EXPECTED
         if actual != expected:
             mode = "post-merge zero" if args.post_merge else "pre-merge candidate census"
@@ -340,7 +353,9 @@ def main(argv: list[str] | None = None) -> int:
             verify_snapshot(args.root)
         if closure_required:
             verify_delivered_main_for_candidate(args.root)
-            if census(read_alerts(args.repo, None)) != {}:
+            if REPO is None:
+                REPO = resolve_server_repository(args.repo)
+            if census(read_alerts(REPO, None)) != {}:
                 raise CensusError("B-373 done requires an authenticated post-merge live zero")
     except CensusError as exc:
         print(f"FAIL: B-373 fail-closed Dependabot verifier: {exc}", file=sys.stderr)

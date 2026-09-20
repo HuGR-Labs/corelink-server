@@ -258,7 +258,7 @@ jobs:
                   sys.exit(1)
               return v
 
-          repo = env("REPO")                    # e.g. HuGR-Labs/corelink-server
+          repo = env("REPO")                    # exact caller repository identity
           server = os.environ.get("SERVER_URL", "https://github.com")
           release_tag = env("RELEASE_TAG")
           github_ref = env("GITHUB_REF")        # e.g. refs/tags/v0.1.0
@@ -472,6 +472,7 @@ jobs:
         env:
           TAG: ${{ inputs.release_tag }}
           SUBJECT_LIST: ${{ needs.build-artifacts.outputs.subject-list }}
+          EXPECTED_BUILDER: ${{ github.repository }}
         run: |
           set -euo pipefail
           echo "SLSA Build L2 provenance (self-hosted) generated for release: ${TAG}"
@@ -482,7 +483,7 @@ jobs:
           echo "  corelink-supply-verify verify \\"
           echo "    --bundle provenance.intoto.jsonl.bundle \\"
           echo "    --release ${TAG} \\"
-          echo "    --expected-builder HuGR-Labs/corelink-server"
+          echo "    --expected-builder ${EXPECTED_BUILDER}"
 
       - name: Emit SLSA attestation metric (success)
         # Structured log event for Prometheus scrape (OTel collector parses)
