@@ -126,7 +126,7 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
       try {
         const result = [];
         for (let i = 0; i < statements.length; i++) {
-          const st = statements[i];
+          const st = statements[i]!;
           // D1 batch runs prepared statements sequentially in one transaction.
           if (st.record && !norm(st.record.sql).startsWith("select")) mutate(st.record, i + 1);
           else result.push(await st.run());
@@ -238,7 +238,8 @@ describe("#1725 installation deprovision contract", () => {
       { tenant_id: "tenant-2", repo_full_name: "acme/api" },
     ]);
     expect(db.state().installs).toContainEqual({ installation_id: "inst-2", tenant_id: "tenant-1" });
-    expect(db.batches[0].filter((r) => /delete from runner_repo_allowlist/i.test(r.sql))).toHaveLength(1);
+    const batch = db.batches[0]!;
+    expect(batch.filter((r) => /delete from runner_repo_allowlist/i.test(r.sql))).toHaveLength(1);
     const beforeWrongTenant = db.state();
     const wrongTenant = await handleInstallationDeprovision(request(payload({ tenant_id: "tenant-2" })), env(db));
     expect(wrongTenant.status).toBe(409);
@@ -261,7 +262,8 @@ describe("#1725 installation deprovision contract", () => {
     const done = await handleInstallationDeprovision(request(payload({ remove_installation: true })), env(cleared));
     expect(done.status).toBe(200);
     expect(cleared.state().installs).toEqual([{ installation_id: "inst-2", tenant_id: "tenant-1" }]);
-    const mapDelete = cleared.batches[0].find((r) => /delete from tenant_gh_installation_map/i.test(r.sql));
+    const batch = cleared.batches[0]!;
+    const mapDelete = batch.find((r) => /delete from tenant_gh_installation_map/i.test(r.sql));
     expect(norm(mapDelete!.sql)).toBe("delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2)");
     expect(param(mapDelete!, "installation_id")).toBe("inst-1");
     expect(param(mapDelete!, "tenant_id")).toBe("tenant-1");
@@ -276,14 +278,15 @@ describe("#1725 installation deprovision contract", () => {
     const repos = ["zeta/api", "alpha/web"];
     expect((await handleInstallationDeprovision(request(payload({ repositories: repos })), env(db))).status).toBe(200);
     expect(db.batches).toHaveLength(1);
-    const deletes = db.batches[0].filter((r) => /delete from runner_repo_allowlist/i.test(r.sql));
+    const batch = db.batches[0]!;
+    const deletes = batch.filter((r) => /delete from runner_repo_allowlist/i.test(r.sql));
     expect(deletes).toHaveLength(2);
     for (const d of deletes) {
       expect(norm(d.sql)).toBe("delete from runner_repo_allowlist where tenant_id = ?1 and repo_full_name = ?2");
       expect(param(d, "tenant_id")).toBe("tenant-1");
       expect(repos).toContain(param(d, "repo_full_name"));
     }
-    const [audit] = db.state().audits;
+    const audit = db.state().audits[0]!;
     expect(audit.event_type).toBe(EVENT);
     expect(audit.request_id).toBe("req-1725");
     expect(audit.tenant_id).toBe("tenant-1");
@@ -342,12 +345,15 @@ describe("#1725 installation deprovision contract", () => {
     ] });
     const firstBody = payload({ repositories: ["zeta/api", "alpha/web"], remove_installation: true });
     expect((await handleInstallationDeprovision(request(firstBody), env(db))).status).toBe(200);
-    const firstData = (JSON.parse(db.state().audits[0].payload_json) as { data: unknown }).data;
+    const firstAudit = db.state().audits[0]!;
+    const firstData = (JSON.parse(firstAudit.payload_json) as { data: unknown }).data;
     const mutationsAfterFirst = db.mutations.length;
     const replay = await handleInstallationDeprovision(request({ ...firstBody, repositories: [...firstBody.repositories].reverse() }), env(db));
     expect(replay.status).toBe(200);
-    expect((await replay.json()).replayed).toBe(true);
-    expect((JSON.parse(db.state().audits[0].payload_json) as { data: unknown }).data).toEqual(firstData);
+    const replayBody = await replay.json() as { replayed: unknown };
+    expect(replayBody.replayed).toBe(true);
+    const replayAudit = db.state().audits[0]!;
+    expect((JSON.parse(replayAudit.payload_json) as { data: unknown }).data).toEqual(firstData);
     expect(db.batches).toHaveLength(1);
     expect(db.mutations).toHaveLength(mutationsAfterFirst);
     const beforeConflict = db.state();
