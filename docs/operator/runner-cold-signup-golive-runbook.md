@@ -53,6 +53,7 @@ export SIGNUP_BASE='https://corelink-signup.humangr.com'
 export TENANT_ID='<verified-dedicated-tenant-id>'
 export INSTALLATION_ID='<verified-github-app-installation-id>'
 export FIXTURE_REPO='<verified-owner>/<private-fixture-repo>'
+export FIXTURE_REF='<verified-fixture-default-branch>'
 export DEPROVISION_REQUEST_ID='runner-deprovision:<new-unique-uuid>'
 ```
 
@@ -150,21 +151,31 @@ properties before dispatch:
 
 - `workflow_dispatch` only; one job on the approved `corelink` runner label;
 - a two-minute job timeout and a wall-clock operator deadline of five minutes;
-- a unique `canary_request_id` input included in `run-name`, so the one run is
-  unambiguous in GitHub's read-only run list;
+- a required unique `canary_request_id` input and
+  `run-name: corelink-installation-canary:${{ inputs.canary_request_id }}`;
 - no repository or organization secrets, no checkout, no write permissions,
   and no steps that modify the repository or external state.
 
-Dispatch that workflow once, supplying a fresh non-secret canary ID. Record the
-returned run ID, then locate the run by its unique display title using
-`gh api repos/<OWNER>/<REPO>/actions/runs?per_page=20`. Confirm exactly one
-matching `workflow_dispatch` run exists and that its repository/ref are the
-fixture values. Poll or inspect that run by ID only. Do not repeat the dispatch
-if the CLI response or run lookup is ambiguous. If it is queued or running
-beyond the five-minute wall-clock deadline, cancel that exact run with
-`gh run cancel <RUN_ID> --repo <OWNER>/<REPO>` and wait until GitHub reports a
-terminal state before cleanup. A missing/duplicate run record or failed
-cancellation is an abort; do not dispatch another run.
+Run this once with a fresh non-secret ID. `gh workflow run` targets the
+fixture's default branch; the workflow filename, input, and `run-name` above
+must match exactly. `gh api` is quoted for zsh so `?per_page` is not treated as
+a glob. The follow-up query is read-only and must return exactly one run; poll
+or cancel that run by ID only.
+
+```sh
+CANARY_ID='runner-canary:<fresh-unique-uuid>'
+gh workflow run corelink-installation-canary.yml --repo "$FIXTURE_REPO" \
+  --ref "$FIXTURE_REF" -f canary_request_id="$CANARY_ID"
+gh api "repos/$FIXTURE_REPO/actions/runs?per_page=20" --jq \
+  ".workflow_runs[] | select(.event == \"workflow_dispatch\" and .display_title == \"corelink-installation-canary:$CANARY_ID\") | {id,status,conclusion,head_branch,repository:.repository.full_name}"
+```
+
+Confirm one matching run and the fixture repository/ref. Never repeat the
+dispatch if the CLI response or run lookup is ambiguous. If queued or running
+beyond the five-minute wall-clock deadline, cancel only that run with
+`gh run cancel "$RUN_ID" --repo "$FIXTURE_REPO"` and wait for a terminal
+state before cleanup. Missing/duplicate run records or failed cancellation
+are aborts; do not dispatch again.
 
 ## 4. Deprovision before removing the GitHub fixture
 
