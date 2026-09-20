@@ -24,6 +24,8 @@ on:
       - 'tests/*.py'
       - 'scripts/**'
       - 'BACKLOG.md'
+      - 'docs/internal/org-migration/**'
+      - '.claude/skills/corelink-org-migration/**'
       - '.github/workflows/release-cli.yml'
       - '.github/workflows/cosign-sign.yml'
       - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
@@ -49,6 +51,8 @@ on:
       - 'tests/*.py'
       - 'scripts/**'
       - 'BACKLOG.md'
+      - 'docs/internal/org-migration/**'
+      - '.claude/skills/corelink-org-migration/**'
       - '.github/workflows/release-cli.yml'
       - '.github/workflows/cosign-sign.yml'
       - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
@@ -159,9 +163,13 @@ jobs:
           # collector in scripts/, rather than pretending it is a generic
           # tests/ fixture.  Keep it explicit and assert its presence: a glob
           # change must never make this CI gate green over a missing suite.
+          # The migration auditor and ledger regressions also live under
+          # scripts/; register both explicitly and execute this full array below.
           REQUIRED_SUITES=(
             scripts/test_b152_actions_diagnostic.py
             scripts/test_b250_deleted_workflow_startup_failure.py
+            scripts/test_org_migration_audit.py
+            scripts/test_org_migration_gate_check.py
           )
           for suite in "${REQUIRED_SUITES[@]}"; do
             if [ ! -f "$suite" ]; then
