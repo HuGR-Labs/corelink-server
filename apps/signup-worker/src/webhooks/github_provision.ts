@@ -97,6 +97,46 @@ interface ProvisionBody {
   repositories: string[];
 }
 
+interface DeprovisionBody {
+  request_id: string;
+  installation_id: string;
+  tenant_id: string;
+  repositories: string[];
+  remove_installation: boolean;
+}
+
+const DEPROVISION_EVENT = "corelink.runner.installation_deprovision_requested";
+const DEPROVISION_BODY_KEYS = [
+  "installation_id",
+  "remove_installation",
+  "repositories",
+  "request_id",
+  "tenant_id",
+].sort();
+const DEPROVISION_DATA_KEYS = [
+  "installation_id",
+  "remove_installation",
+  "repositories_sha256",
+  "repository_count",
+].sort();
+
+interface DeprovisionData {
+  installation_id: string;
+  repositories_sha256: string;
+  repository_count: number;
+  remove_installation: boolean;
+}
+
+interface AuditCloudEvent {
+  specversion: "1.0";
+  id: string;
+  source: "corelink-signup-worker";
+  type: typeof DEPROVISION_EVENT;
+  subject: string;
+  time: string;
+  data: DeprovisionData;
+}
+
 /**
  * Constant-time string equality over the UTF-8 bytes. Guards the internal-auth
  * compare against a timing side-channel that could otherwise let an attacker
@@ -317,4 +357,263 @@ export async function handleInstallationProvision(
   }
 
   return json(200, { installation_id: installationId, repos_added: repos.length });
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  const actual = Object.keys(value).sort();
+  return actual.length === keys.length && actual.every((key, index) => key === keys[index]);
+}
+
+function canonicalRepository(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const parts = value.split("/");
+  return parts.length === 2 && parts.every((part) => /^[A-Za-z0-9_.-]+$/.test(part));
+}
+
+function validIdentifier(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+function validRequestId(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value);
+}
+
+async function deprovisionData(body: DeprovisionBody): Promise<DeprovisionData> {
+  const repositories = [...body.repositories].sort();
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify(repositories)),
+  );
+  const repositoriesSha256 = [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  return {
+    installation_id: body.installation_id,
+    repositories_sha256: repositoriesSha256,
+    repository_count: repositories.length,
+    remove_installation: body.remove_installation,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCanonicalReplay(
+  payloadJson: unknown,
+  rowTenantId: unknown,
+  body: DeprovisionBody,
+  expectedData: DeprovisionData,
+): boolean {
+  if (typeof payloadJson !== "string" || rowTenantId !== body.tenant_id) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payloadJson);
+  } catch {
+    return false;
+  }
+  if (!isRecord(parsed)) return false;
+  const envelopeKeys = ["data", "id", "source", "specversion", "subject", "time", "type"].sort();
+  if (!hasExactKeys(parsed, envelopeKeys)) return false;
+  if (
+    parsed.specversion !== "1.0" ||
+    parsed.source !== "corelink-signup-worker" ||
+    parsed.type !== DEPROVISION_EVENT ||
+    typeof parsed.id !== "string" ||
+    parsed.id.length === 0 ||
+    parsed.subject !== `installation/${body.installation_id}` ||
+    typeof parsed.time !== "string" ||
+    !Number.isFinite(Date.parse(parsed.time))
+  ) return false;
+  const time = new Date(parsed.time as string).toISOString();
+  if (time !== parsed.time || !isRecord(parsed.data) || !hasExactKeys(parsed.data, DEPROVISION_DATA_KEYS)) {
+    return false;
+  }
+  const data = parsed.data;
+  return (
+    data.installation_id === expectedData.installation_id &&
+    data.repositories_sha256 === expectedData.repositories_sha256 &&
+    data.repository_count === expectedData.repository_count &&
+    data.remove_installation === expectedData.remove_installation
+  );
+}
+
+/**
+ * `DELETE /internal/v1/runner/provision-installation`.
+ * Deletes only explicitly named allowlist entries and optionally the exact
+ * installation mapping, with an atomic audit-outbox record.
+ */
+export async function handleInstallationDeprovision(
+  request: Request,
+  env: InstallationProvisionEnv,
+): Promise<Response> {
+  if (request.method !== "DELETE") return json(405, { error: "method_not_allowed" });
+
+  const expected = resolveRunnerProvisionKey(env);
+  if (expected === null) return json(503, { error: "unavailable" });
+  const authz = request.headers.get("authorization") ?? "";
+  const prefix = "Bearer ";
+  const presented = authz.startsWith(prefix) ? authz.slice(prefix.length) : "";
+  if (!constantTimeEqual(presented, expected)) return json(401, { error: "unauthorized" });
+
+  let input: unknown;
+  try {
+    input = await request.json();
+  } catch {
+    return json(400, { error: "invalid_json" });
+  }
+  if (!isRecord(input) || !hasExactKeys(input, DEPROVISION_BODY_KEYS)) {
+    return json(400, { error: "invalid_body" });
+  }
+  const body = input as unknown as DeprovisionBody;
+  if (
+    !validRequestId(body.request_id) ||
+    !validIdentifier(body.installation_id) ||
+    !validIdentifier(body.tenant_id) ||
+    !Array.isArray(body.repositories) ||
+    typeof body.remove_installation !== "boolean" ||
+    body.repositories.some((repo) => !canonicalRepository(repo)) ||
+    new Set(body.repositories).size !== body.repositories.length ||
+    (body.repositories.length === 0 && body.remove_installation !== true)
+  ) {
+    return json(400, { error: "invalid_body" });
+  }
+
+  const db = env.CONFIG_DB;
+  if (!db) return json(500, { error: "config_db_unavailable" });
+  if (typeof db.batch !== "function") return json(500, { error: "deprovision_failed" });
+
+  const repos = [...body.repositories].sort();
+  let data: DeprovisionData;
+  try {
+    data = await deprovisionData(body);
+    const existing = await db
+      .prepare(
+        "SELECT tenant_id, request_id, event_type, payload_json FROM audit_outbox " +
+          "WHERE request_id = ?1 AND event_type = ?2",
+      )
+      .bind(body.request_id, DEPROVISION_EVENT)
+      .first<{ tenant_id: string; request_id: string; event_type: string; payload_json: string }>();
+    if (existing) {
+      if (
+        existing.request_id !== body.request_id ||
+        existing.event_type !== DEPROVISION_EVENT ||
+        !isCanonicalReplay(existing.payload_json, existing.tenant_id, body, data)
+      ) {
+        return json(409, { error: "request_id_conflict" });
+      }
+      return json(200, {
+        installation_id: body.installation_id,
+        repos_removed: data.repository_count,
+        installation_removed: body.remove_installation,
+        replayed: true,
+      });
+    }
+
+    const installation = await db
+      .prepare(
+        "SELECT installation_id, tenant_id FROM tenant_gh_installation_map WHERE installation_id = ?1",
+      )
+      .bind(body.installation_id)
+      .first<{ installation_id: string; tenant_id: string }>();
+    if (!installation) return json(404, { error: "installation_not_found" });
+    if (installation.tenant_id !== body.tenant_id) return json(409, { error: "tenant_mismatch" });
+
+    const tenant = await db
+      .prepare("SELECT tenant_id, primary_region FROM tenant WHERE tenant_id = ?1")
+      .bind(body.tenant_id)
+      .first<{ tenant_id: string; primary_region: string }>();
+    if (!tenant || typeof tenant.primary_region !== "string" || tenant.primary_region.length === 0) {
+      return json(500, { error: "tenant_region_unavailable" });
+    }
+
+    const allowlist = await db
+      .prepare("SELECT repo_full_name FROM runner_repo_allowlist WHERE tenant_id = ?1")
+      .bind(body.tenant_id)
+      .all<{ repo_full_name: string }>();
+    const currentRepos = (allowlist.results ?? []).map((row) => row.repo_full_name);
+    const currentSet = new Set(currentRepos);
+    if (repos.some((repo) => !currentSet.has(repo))) return json(404, { error: "repository_not_found" });
+    if (body.remove_installation && currentRepos.some((repo) => !repos.includes(repo))) {
+      return json(409, { error: "installation_repositories_remain" });
+    }
+
+    const event: AuditCloudEvent = {
+      specversion: "1.0",
+      id: crypto.randomUUID(),
+      source: "corelink-signup-worker",
+      type: DEPROVISION_EVENT,
+      subject: `installation/${body.installation_id}`,
+      time: new Date().toISOString(),
+      data,
+    };
+    const statements = [
+      ...repos.map((repo) =>
+        db
+          .prepare(
+            "DELETE FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2",
+          )
+          .bind(body.tenant_id, repo),
+      ),
+    ];
+    if (body.remove_installation) {
+      statements.push(
+        db
+          .prepare(
+            "DELETE FROM tenant_gh_installation_map WHERE installation_id = ?1 AND tenant_id = ?2 " +
+              "AND NOT EXISTS (SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?2)",
+          )
+          .bind(body.installation_id, body.tenant_id),
+      );
+    }
+    statements.push(
+      db
+        .prepare(
+          "INSERT INTO audit_outbox " +
+            "(id, tenant_id, region, digest, request_id, event_type, payload_json, enqueued_at) " +
+            "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        )
+        .bind(
+          event.id,
+          body.tenant_id,
+          tenant.primary_region,
+          null,
+          body.request_id,
+          DEPROVISION_EVENT,
+          JSON.stringify(event),
+          Date.now(),
+        ),
+    );
+    await db.batch(statements);
+
+    for (const repo of repos) {
+      const remaining = await db
+        .prepare(
+          "SELECT repo_full_name FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2",
+        )
+        .bind(body.tenant_id, repo)
+        .first<{ repo_full_name: string }>();
+      if (remaining) return json(500, { error: "deprovision_verify_failed" });
+    }
+    const mapAfter = await db
+      .prepare(
+        "SELECT installation_id, tenant_id FROM tenant_gh_installation_map WHERE installation_id = ?1",
+      )
+      .bind(body.installation_id)
+      .first<{ installation_id: string; tenant_id: string }>();
+    if (
+      (body.remove_installation && mapAfter !== null) ||
+      (!body.remove_installation && (!mapAfter || mapAfter.tenant_id !== body.tenant_id))
+    ) {
+      return json(500, { error: "deprovision_verify_failed" });
+    }
+    return json(200, {
+      installation_id: body.installation_id,
+      repos_removed: data.repository_count,
+      installation_removed: body.remove_installation,
+      replayed: false,
+    });
+  } catch {
+    return json(500, { error: "deprovision_failed" });
+  }
 }
