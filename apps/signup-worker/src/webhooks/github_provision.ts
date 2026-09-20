@@ -588,18 +588,14 @@ export async function handleInstallationDeprovision(
     };
     const statements = [];
     if (body.remove_installation) {
-      const reposOutsideRequest = repos.length
-        ? ` AND repo_full_name NOT IN (${repos.map((_, index) => `?${index + 3}`).join(", ")})`
-        : "";
       statements.push(
         db
           .prepare(
             "DELETE FROM tenant_gh_installation_map WHERE installation_id = ?1 AND tenant_id = ?2 " +
-              "AND NOT EXISTS (SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?2" +
-              reposOutsideRequest +
-              ")",
+              "AND NOT EXISTS (SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?2 " +
+              "AND repo_full_name NOT IN (SELECT CAST(value AS TEXT) FROM json_each(?3)))",
           )
-          .bind(body.installation_id, body.tenant_id, ...repos),
+          .bind(body.installation_id, body.tenant_id, JSON.stringify(repos)),
       );
     }
     statements.push(
@@ -615,9 +611,9 @@ export async function handleInstallationDeprovision(
       ),
     );
 
-    const repoAbsenceGuard = repos.length
-      ? `NOT EXISTS (SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?2 AND repo_full_name IN (${repos.map((_, index) => `?${index + 10}`).join(", ")}))`
-      : "1 = 1";
+    const repoAbsenceGuard =
+      "NOT EXISTS (SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?2 " +
+      "AND repo_full_name IN (SELECT CAST(value AS TEXT) FROM json_each(?10)))";
     const expectedMapGuard = body.remove_installation
       ? "NOT EXISTS (SELECT 1 FROM tenant_gh_installation_map WHERE installation_id = ?9 AND tenant_id = ?2) AND NOT EXISTS (SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?2)"
       : "EXISTS (SELECT 1 FROM tenant_gh_installation_map WHERE installation_id = ?9 AND tenant_id = ?2)";
@@ -639,7 +635,7 @@ export async function handleInstallationDeprovision(
           JSON.stringify(event),
           Date.now(),
           body.installation_id,
-          ...repos,
+          JSON.stringify(repos),
         ),
     );
     await db.batch(statements);
