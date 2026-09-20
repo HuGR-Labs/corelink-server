@@ -14,11 +14,12 @@ type Install = { installation_id: string; tenant_id: string };
 type Audit = { id: string; tenant_id: string; request_id: string; event_type: string; payload_json: string; region: string };
 type RecordSql = { sql: string; vals: unknown[] };
 type Seed = { installs?: Install[]; repos?: Repo[]; regions?: Record<string, string>; audits?: Audit[] };
-type Options = { failAtMutation?: number; ignoreRepoDelete?: boolean; ignoreMapDelete?: boolean; noBatch?: boolean };
+type Options = { failAtMutation?: number; ignoreRepoDelete?: boolean; ignoreMapDelete?: boolean; noBatch?: boolean; provisionRepoBeforeBatch?: Repo };
 type Db = {
   binding: NonNullable<InstallationProvisionEnv["CONFIG_DB"]>;
   mutations: RecordSql[];
   batches: RecordSql[][];
+  provision(repo: Repo): void;
   state(): { installs: Install[]; repos: Repo[]; audits: Audit[] };
 };
 
@@ -43,6 +44,8 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
   const regions = new Map(Object.entries(seed.regions ?? {}));
   const mutations: RecordSql[] = [];
   const batches: RecordSql[][] = [];
+  let activeBatch: RecordSql[] = [];
+  let injected = false;
 
   function rows(rec: RecordSql): Row[] {
     const sql = norm(rec.sql);
@@ -75,29 +78,56 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
     mutations.push(rec);
     if (opts.failAtMutation === nth) throw new Error(`injected failure at ${nth}`);
     if (sql.startsWith("delete from runner_repo_allowlist")) {
-      if (sql !== "delete from runner_repo_allowlist where tenant_id = ?1 and repo_full_name = ?2") {
-        throw new Error(`Unscoped repo delete: ${rec.sql}`);
-      }
+      const legacySql = "delete from runner_repo_allowlist where tenant_id = ?1 and repo_full_name = ?2";
+      const keepSql = "delete from runner_repo_allowlist where tenant_id = ?1 and repo_full_name = ?2 and exists (select 1 from tenant_gh_installation_map where installation_id = ?3 and tenant_id = ?1)";
+      const removeSql = "delete from runner_repo_allowlist where tenant_id = ?1 and repo_full_name = ?2 and not exists (select 1 from tenant_gh_installation_map where installation_id = ?3 and tenant_id = ?1)";
+      const removeMapIndex = activeBatch.findIndex((r) => norm(r.sql).startsWith("delete from tenant_gh_installation_map"));
+      if (sql !== legacySql && sql !== keepSql && sql !== removeSql) throw new Error(`Unscoped repo delete: ${rec.sql}`);
+      const guardedMapDelete = removeMapIndex >= 0 && norm(activeBatch[removeMapIndex]!.sql).includes("repo_full_name not in");
+      if (guardedMapDelete && activeBatch.indexOf(rec) < removeMapIndex) throw new Error("Map delete must precede repo deletes");
       if (opts.ignoreRepoDelete) return;
       const tenant = param(rec, "tenant_id");
       const repo = param(rec, "repo_full_name");
+      const install = String(rec.vals[2] ?? "");
+      const mapped = installs.get(install) === tenant;
+      if (sql !== legacySql && ((sql === keepSql && !mapped) || (sql === removeSql && mapped))) return;
       repos = repos.filter((r) => r.tenant_id !== tenant || r.repo_full_name !== repo);
       return;
     }
     if (sql.startsWith("delete from tenant_gh_installation_map")) {
-      if (sql !== "delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2)") {
-        throw new Error(`Unscoped/unguarded map delete: ${rec.sql}`);
-      }
+      const requested = rec.vals.slice(2).map(String);
+      const notIn = requested.length ? ` and repo_full_name not in (${requested.map((_, i) => `?${i + 3}`).join(", ")})` : "";
+      const legacySql = "delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2)";
+      const guardedSql = `delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2${notIn})`;
+      if (sql !== legacySql && sql !== guardedSql) throw new Error(`Unscoped/unguarded map delete: ${rec.sql}`);
       if (opts.ignoreMapDelete) return;
       const id = param(rec, "installation_id");
       const tenant = param(rec, "tenant_id");
-      if ([...installs].some(([key, value]) => key === id && value === tenant) && !repos.some((r) => r.tenant_id === tenant)) installs.delete(id);
+      const requestedSet = new Set(requested);
+      const residual = repos.some((r) => r.tenant_id === tenant && (sql === legacySql || !requestedSet.has(r.repo_full_name)));
+      if (installs.get(id) === tenant && !residual) installs.delete(id);
       return;
     }
     if (sql.startsWith("insert") && sql.includes("into audit_outbox")) {
+      const guardedAudit = /^insert into audit_outbox\s*\([^)]*\) select /.test(sql) && sql.includes(" where ");
+      const legacyAudit = /^insert into audit_outbox\s*\([^)]*\) values\s*\(/.test(sql);
+      if (sql.startsWith("insert or ignore") || (!guardedAudit && !legacyAudit)) throw new Error(`Unexpected audit insert: ${rec.sql}`);
+      if (guardedAudit) {
+        const predicate = sql.slice(sql.indexOf(" where "));
+        if (!predicate.includes("tenant_gh_installation_map") || !predicate.includes("runner_repo_allowlist")) throw new Error(`Audit lacks live-state guards: ${rec.sql}`);
+      }
       const columns = rec.sql.match(/into\s+audit_outbox\s*\(([^)]+)\)/i)?.[1];
       if (!columns) throw new Error(`Audit insert must name columns: ${rec.sql}`);
       const row = Object.fromEntries(columns.split(",").map((c, i) => [c.trim(), rec.vals[i]])) as Audit;
+      const mapDelete = activeBatch.find((r) => norm(r.sql).startsWith("delete from tenant_gh_installation_map"));
+      const remove = Boolean(mapDelete);
+      const install = String(mapDelete?.vals[0] ?? activeBatch.find((r) => norm(r.sql).startsWith("delete from runner_repo_allowlist"))?.vals[2] ?? "");
+      const tenant = String(row.tenant_id);
+      const requested = activeBatch.filter((r) => norm(r.sql).startsWith("delete from runner_repo_allowlist") && String(r.vals[0]) === tenant).map((r) => String(r.vals[1]));
+      const requestedRemain = requested.some((repo) => repos.some((r) => r.tenant_id === tenant && r.repo_full_name === repo));
+      const mapRemains = installs.get(install) === tenant;
+      const tenantResidue = repos.some((r) => r.tenant_id === tenant);
+      if (guardedAudit && (requestedRemain || (remove ? mapRemains || tenantResidue : !mapRemains))) return;
       audits.set(pairKey(row.request_id, row.event_type), row);
       return;
     }
@@ -121,8 +151,10 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
   };
   if (!opts.noBatch) {
     raw.batch = async (statements: Array<{ run(): Promise<unknown>; record?: RecordSql }>) => {
+      if (!injected && opts.provisionRepoBeforeBatch) { repos.push({ ...opts.provisionRepoBeforeBatch }); injected = true; }
       const before = { installs: new Map(installs), repos: repos.map((r) => ({ ...r })), audits: new Map([...audits].map(([k, v]) => [k, { ...v }])) };
-      batches.push(statements.map((s) => s.record!).filter(Boolean));
+      activeBatch = statements.map((s) => s.record!).filter(Boolean);
+      batches.push(activeBatch);
       try {
         const result = [];
         for (let i = 0; i < statements.length; i++) {
@@ -136,11 +168,14 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
       } catch (error) {
         installs = before.installs; repos = before.repos; audits = before.audits;
         throw error;
+      } finally {
+        activeBatch = [];
       }
     };
   }
   return {
     binding: raw as unknown as Db["binding"], mutations, batches,
+    provision: (repo) => { repos.push({ ...repo }); },
     state: () => ({
       installs: [...installs].map(([installation_id, tenant_id]) => ({ installation_id, tenant_id })),
       repos: repos.map((r) => ({ ...r })), audits: [...audits.values()].map((r) => ({ ...r })),
@@ -264,9 +299,12 @@ describe("#1725 installation deprovision contract", () => {
     expect(cleared.state().installs).toEqual([{ installation_id: "inst-2", tenant_id: "tenant-1" }]);
     const batch = cleared.batches[0]!;
     const mapDelete = batch.find((r) => /delete from tenant_gh_installation_map/i.test(r.sql));
-    expect(norm(mapDelete!.sql)).toBe("delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2)");
+    expect(["delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2)", "delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2 and repo_full_name not in (?3))"]).toContain(norm(mapDelete!.sql));
     expect(param(mapDelete!, "installation_id")).toBe("inst-1");
     expect(param(mapDelete!, "tenant_id")).toBe("tenant-1");
+    if (norm(mapDelete!.sql).includes("repo_full_name not in")) {
+      expect(batch.indexOf(mapDelete!)).toBeLessThan(batch.findIndex((r) => /delete from runner_repo_allowlist/i.test(r.sql)));
+    }
   });
 
   it("writes one atomic audit row with the canonical payload and tenant region", async () => {
@@ -282,9 +320,10 @@ describe("#1725 installation deprovision contract", () => {
     const deletes = batch.filter((r) => /delete from runner_repo_allowlist/i.test(r.sql));
     expect(deletes).toHaveLength(2);
     for (const d of deletes) {
-      expect(norm(d.sql)).toBe("delete from runner_repo_allowlist where tenant_id = ?1 and repo_full_name = ?2");
+      expect(["delete from runner_repo_allowlist where tenant_id = ?1 and repo_full_name = ?2", "delete from runner_repo_allowlist where tenant_id = ?1 and repo_full_name = ?2 and exists (select 1 from tenant_gh_installation_map where installation_id = ?3 and tenant_id = ?1)"]).toContain(norm(d.sql));
       expect(param(d, "tenant_id")).toBe("tenant-1");
       expect(repos).toContain(param(d, "repo_full_name"));
+      if (norm(d.sql).includes("tenant_gh_installation_map")) expect(d.vals[2]).toBe("inst-1");
     }
     const audit = db.state().audits[0]!;
     expect(audit.event_type).toBe(EVENT);
@@ -366,6 +405,26 @@ describe("#1725 installation deprovision contract", () => {
     const absent = fake({ regions: seed.regions });
     expect((await handleInstallationDeprovision(request(payload()), env(absent))).status).toBe(404);
     expect(absent.mutations).toHaveLength(0);
+  });
+
+  it("rejects a matching replay when live repository state contradicts its audit", async () => {
+    const db = fake({ ...seed, repos: [{ tenant_id: "tenant-1", repo_full_name: "acme/web" }] }), body = payload({ remove_installation: true });
+    expect((await handleInstallationDeprovision(request(body), env(db))).status).toBe(200);
+    db.provision({ tenant_id: "tenant-1", repo_full_name: "acme/new" }); const batches = db.batches.length;
+    expect((await handleInstallationDeprovision(request(body), env(db))).status).toBe(500);
+    expect(db.batches).toHaveLength(batches);
+    expect(db.state().repos).toContainEqual({ tenant_id: "tenant-1", repo_full_name: "acme/new" });
+  });
+
+  it("keeps both repositories and the map when a new repo races final installation removal", async () => {
+    const db = fake({ installs: [{ installation_id: "inst-1", tenant_id: "tenant-1" }], repos: [{ tenant_id: "tenant-1", repo_full_name: "acme/web" }], regions: seed.regions },
+      { provisionRepoBeforeBatch: { tenant_id: "tenant-1", repo_full_name: "acme/new" } }), body = payload({ remove_installation: true });
+    expect((await handleInstallationDeprovision(request(body), env(db))).status).toBe(500);
+    expect(db.state()).toEqual({ installs: [{ installation_id: "inst-1", tenant_id: "tenant-1" }], repos: [
+      { tenant_id: "tenant-1", repo_full_name: "acme/web" }, { tenant_id: "tenant-1", repo_full_name: "acme/new" },
+    ], audits: [] });
+    const retry = await handleInstallationDeprovision(request(body), env(db));
+    expect([409, 500]).toContain(retry.status); expect(retry.status).not.toBe(200); expect(db.state().audits).toHaveLength(0);
   });
 });
 
