@@ -6,6 +6,7 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-audit` em `crates/corelink-audit/Cargo.toml`; 8 targets devolvidos pelo Cargo na baseline.
@@ -13,23 +14,27 @@
 - Entradas confirmadas: `crates/corelink-audit/src/lib.rs`.
 - Declarações de navegação (amostra, não API completa): `crates/corelink-audit/src/lib.rs:115` — `pub mod emitter;`; `crates/corelink-audit/src/lib.rs:116` — `pub mod error;`; `crates/corelink-audit/src/lib.rs:117` — `pub mod events;`; `crates/corelink-audit/src/lib.rs:118` — `pub mod link_hash;`
 
+<a id="targets"></a>
 ## Targets
 
-8 targets enumerados em `../census.json`, registro cujo `manifest` é `crates/corelink-audit/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+8 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `crates/corelink-audit/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`crates/corelink-audit/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-audit/src/lib.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 13 declarações de dependência e 9 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: `corelink-ac`, `corelink-adapter-host`, `corelink-auth`, `corelink-cas`, `corelink-ops`, `corelink-server`, `corelink-worker`, `e2e-tenant-isolation`.
 
+<a id="okf"></a>
 ## OKF
 
 - Direto: `docs/knowledge/crates/audit-analytics.md` — Audit/analytics crate cluster
 - Roteador existente: `python3 scripts/okf_context.py --file crates/corelink-audit/src/lib.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Fronteira a conferir: `crates/corelink-audit/src/analytics.rs:10` contém `pub use corelink_analytics::*;`; provar seleção e efeito, não inferir runtime do nome.
@@ -37,12 +42,14 @@ Consumidores declarados: `corelink-ac`, `corelink-adapter-host`, `corelink-auth`
 - Fronteira a conferir: `crates/corelink-audit/src/emitter.rs:81` contém `impl InMemoryEmitter {`; provar seleção e efeito, não inferir runtime do nome.
 - Coordenar contratos com consumidores declarados corelink-ac, corelink-adapter-host, corelink-auth, corelink-cas, corelink-ops, corelink-server. Aresta Cargo não certifica chamada ou produção.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file crates/corelink-audit/src/lib.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path crates/corelink-audit/Cargo.toml -p corelink-audit --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [crates/corelink-audit/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-audit/Cargo.toml); blob `c789259deb2d1987b0a0fb83f3c21e9787ead30f`.

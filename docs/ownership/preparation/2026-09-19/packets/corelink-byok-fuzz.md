@@ -6,25 +6,29 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-byok-fuzz` em `crates/corelink-byok/fuzz/Cargo.toml`; 2 targets devolvidos pelo Cargo na baseline.
 - População fonte própria: 2 arquivos Rust rastreados, 206 linhas físicas, excluídas raízes de packages aninhados.
 - Entradas confirmadas: `crates/corelink-byok/fuzz/fuzz_targets/envelope_roundtrip.rs`, `crates/corelink-byok/fuzz/fuzz_targets/wrapped_dek_parse.rs`.
 
+<a id="targets"></a>
 ## Targets
 
-2 targets enumerados em `../census.json`, registro cujo `manifest` é `crates/corelink-byok/fuzz/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+2 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `crates/corelink-byok/fuzz/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`crates/corelink-byok/fuzz/fuzz_targets/envelope_roundtrip.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-byok/fuzz/fuzz_targets/envelope_roundtrip.rs)
 - [`crates/corelink-byok/fuzz/fuzz_targets/wrapped_dek_parse.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-byok/fuzz/fuzz_targets/wrapped_dek_parse.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 6 declarações de dependência e 0 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: nenhum na população Cargo examinada.
 
+<a id="okf"></a>
 ## OKF
 
 - Nenhum conceito OKF declara diretamente fonte própria deste package no levantamento de source_files; não equivale a ausência de documentação semântica.
@@ -32,17 +36,20 @@ Consumidores declarados: nenhum na população Cargo examinada.
 - Contexto herdado de dependência: `docs/knowledge/storage/byok-envelope-encryption.md` — BYOK envelope encryption at rest (CAS+AC wired, real KMS boundary; owner-runtime gated)
 - Roteador existente: `python3 scripts/okf_context.py --file crates/corelink-byok/fuzz/fuzz_targets/envelope_roundtrip.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Nenhum consumidor Cargo entre os packages elegíveis nesta seleção declarada. Verificar CLI, FFI, workflows, dados e clientes externos antes de alegar isolamento.
 - O harness tem workspace próprio. Testar o alvo original e registrar limites/corpus, sem creditar cobertura da crate-mãe somente pela localização da pasta.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1 --manifest-path crates/corelink-byok/fuzz/Cargo.toml`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file crates/corelink-byok/fuzz/fuzz_targets/envelope_roundtrip.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path crates/corelink-byok/fuzz/Cargo.toml -p corelink-byok-fuzz --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [crates/corelink-byok/fuzz/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-byok/fuzz/Cargo.toml); blob `c2a1247a566e6b95baf3352dc8bef9f8cf41374e`.

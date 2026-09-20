@@ -6,6 +6,7 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-cli` em `tools/cli/Cargo.toml`; 14 targets devolvidos pelo Cargo na baseline.
@@ -13,19 +14,22 @@
 - Entradas confirmadas: `tools/cli/src/lib.rs`, `tools/cli/src/main.rs`.
 - Declarações de navegação (amostra, não API completa): `tools/cli/src/lib.rs:24` — `pub mod auth;`; `tools/cli/src/lib.rs:25` — `pub mod config;`; `tools/cli/src/lib.rs:26` — `pub mod error;`; `tools/cli/src/lib.rs:27` — `pub mod output;`
 
+<a id="targets"></a>
 ## Targets
 
-14 targets enumerados em `../census.json`, registro cujo `manifest` é `tools/cli/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+14 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `tools/cli/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`tools/cli/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/cli/src/lib.rs)
 - [`tools/cli/src/main.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/cli/src/main.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 33 declarações de dependência e 1 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: `corelink-cli-fuzz`.
 
+<a id="okf"></a>
 ## OKF
 
 - Nenhum conceito OKF declara diretamente fonte própria deste package no levantamento de source_files; não equivale a ausência de documentação semântica.
@@ -34,6 +38,7 @@ Consumidores declarados: `corelink-cli-fuzz`.
 - Contexto herdado de dependência: `docs/knowledge/crates/audit-analytics.md` — Audit/analytics crate cluster
 - Roteador existente: `python3 scripts/okf_context.py --file tools/cli/src/lib.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Fronteira a conferir: `tools/cli/examples/quickstart_audit.rs:15` contém `#![forbid(unsafe_code)]`; provar seleção e efeito, não inferir runtime do nome.
@@ -41,12 +46,14 @@ Consumidores declarados: `corelink-cli-fuzz`.
 - Fronteira a conferir: `tools/cli/examples/quickstart_get.rs:14` contém `#![forbid(unsafe_code)]`; provar seleção e efeito, não inferir runtime do nome.
 - Coordenar contratos com consumidores declarados corelink-cli-fuzz. Aresta Cargo não certifica chamada ou produção.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file tools/cli/src/lib.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path tools/cli/Cargo.toml -p corelink-cli --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [docs/knowledge/compliance/audit-chain.md](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/docs/knowledge/compliance/audit-chain.md); blob `e4a587ffccaa3a6e01af52cb039f65d0eb09fc52`.

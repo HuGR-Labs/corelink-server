@@ -6,6 +6,7 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-auth` em `crates/corelink-auth/Cargo.toml`; 12 targets devolvidos pelo Cargo na baseline.
@@ -13,23 +14,27 @@
 - Entradas confirmadas: `crates/corelink-auth/src/lib.rs`.
 - Declarações de navegação (amostra, não API completa): `crates/corelink-auth/src/lib.rs:136` — `pub mod clerk;`; `crates/corelink-auth/src/lib.rs:137` — `pub mod clerk_cf;`; `crates/corelink-auth/src/lib.rs:138` — `pub mod pat;`; `crates/corelink-auth/src/lib.rs:139` — `pub mod schema;`
 
+<a id="targets"></a>
 ## Targets
 
-12 targets enumerados em `../census.json`, registro cujo `manifest` é `crates/corelink-auth/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+12 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `crates/corelink-auth/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`crates/corelink-auth/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-auth/src/lib.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 20 declarações de dependência e 1 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: `corelink-reapi`.
 
+<a id="okf"></a>
 ## OKF
 
 - Direto: `docs/knowledge/crates/auth-pat.md` — Auth/PAT crate cluster
 - Roteador existente: `python3 scripts/okf_context.py --file crates/corelink-auth/src/lib.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Investigar ativação e compatibilidade das features declaradas: clerk-jwt-adapter, default, tower-middleware. Não assumir que --all-features é válido.
@@ -38,12 +43,14 @@ Consumidores declarados: `corelink-reapi`.
 - Fronteira a conferir: `crates/corelink-auth/src/lib.rs:133` contém `#![forbid(unsafe_code)]`; provar seleção e efeito, não inferir runtime do nome.
 - Coordenar contratos com consumidores declarados corelink-reapi. Aresta Cargo não certifica chamada ou produção.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file crates/corelink-auth/src/lib.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path crates/corelink-auth/Cargo.toml -p corelink-auth --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [crates/corelink-auth/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-auth/Cargo.toml); blob `fa745a73c62675cd7d1fb50eb6a2f6d4fc449c50`.

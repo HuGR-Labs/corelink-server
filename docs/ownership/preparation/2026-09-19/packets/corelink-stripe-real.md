@@ -6,6 +6,7 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-stripe-real` em `crates/corelink-stripe-real/Cargo.toml`; 10 targets devolvidos pelo Cargo na baseline.
@@ -13,18 +14,21 @@
 - Entradas confirmadas: `crates/corelink-stripe-real/src/lib.rs`.
 - Declarações de navegação (amostra, não API completa): `crates/corelink-stripe-real/src/lib.rs:74` — `pub mod client;`; `crates/corelink-stripe-real/src/lib.rs:75` — `pub mod clock;`; `crates/corelink-stripe-real/src/lib.rs:76` — `pub mod dlq;`; `crates/corelink-stripe-real/src/lib.rs:77` — `pub mod error;`
 
+<a id="targets"></a>
 ## Targets
 
-10 targets enumerados em `../census.json`, registro cujo `manifest` é `crates/corelink-stripe-real/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+10 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `crates/corelink-stripe-real/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`crates/corelink-stripe-real/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-stripe-real/src/lib.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 18 declarações de dependência e 5 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: `corelink-adapters-cloud`, `corelink-billing`, `corelink-billing-stripe-materializer`, `corelink-server`, `e2e-signup-flow`.
 
+<a id="okf"></a>
 ## OKF
 
 - Direto: `docs/knowledge/crates/billing-pipeline.md` — Billing usage→charge pipeline (emit/reconcile/aggregate/materialize + stripe-real egress)
@@ -32,6 +36,7 @@ Consumidores declarados: `corelink-adapters-cloud`, `corelink-billing`, `corelin
 - Direto: `docs/knowledge/security/money-path-review.md` — Money-path security review
 - Roteador existente: `python3 scripts/okf_context.py --file crates/corelink-stripe-real/src/lib.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Investigar ativação e compatibilidade das features declaradas: default, live-integration. Não assumir que --all-features é válido.
@@ -40,12 +45,14 @@ Consumidores declarados: `corelink-adapters-cloud`, `corelink-billing`, `corelin
 - Fronteira a conferir: `crates/corelink-stripe-real/src/clock.rs:120` contém `#[cfg(not(target_arch = "wasm32"))]`; provar seleção e efeito, não inferir runtime do nome.
 - Coordenar contratos com consumidores declarados corelink-adapters-cloud, corelink-billing, corelink-billing-stripe-materializer, corelink-server, e2e-signup-flow. Aresta Cargo não certifica chamada ou produção.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file crates/corelink-stripe-real/src/lib.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path crates/corelink-stripe-real/Cargo.toml -p corelink-stripe-real --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [crates/corelink-stripe-real/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-stripe-real/Cargo.toml); blob `db2c9d4c48a5b3ec4d7c02db9acef19a37273970`.

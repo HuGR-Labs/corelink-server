@@ -6,40 +6,47 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `migrate-single-to-multi-region` em `apps/migrate-single-to-multi-region/Cargo.toml`; 1 targets devolvidos pelo Cargo na baseline.
 - População fonte própria: 1 arquivos Rust rastreados, 327 linhas físicas, excluídas raízes de packages aninhados.
 - Entradas confirmadas: `apps/migrate-single-to-multi-region/src/main.rs`.
 
+<a id="targets"></a>
 ## Targets
 
-1 targets enumerados em `../census.json`, registro cujo `manifest` é `apps/migrate-single-to-multi-region/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+1 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `apps/migrate-single-to-multi-region/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`apps/migrate-single-to-multi-region/src/main.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/apps/migrate-single-to-multi-region/src/main.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 8 declarações de dependência e 0 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: nenhum na população Cargo examinada.
 
+<a id="okf"></a>
 ## OKF
 
 - Direto: `docs/knowledge/adr/adr-s14-001-multi-region-terraform-module.md` — ADR-S14-001 — Multi-region Terraform module + per-region KV namespace + DO EU jurisdiction
 - Roteador existente: `python3 scripts/okf_context.py --file apps/migrate-single-to-multi-region/src/main.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Fronteira a conferir: `apps/migrate-single-to-multi-region/src/main.rs:17` contém `#![forbid(unsafe_code)]`; provar seleção e efeito, não inferir runtime do nome.
 - Nenhum consumidor Cargo entre os packages elegíveis nesta seleção declarada. Verificar CLI, FFI, workflows, dados e clientes externos antes de alegar isolamento.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file apps/migrate-single-to-multi-region/src/main.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path apps/migrate-single-to-multi-region/Cargo.toml -p migrate-single-to-multi-region --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [apps/migrate-single-to-multi-region/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/apps/migrate-single-to-multi-region/Cargo.toml); blob `4063bebc8ff6c3782512e15315638248d77c927d`.

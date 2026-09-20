@@ -6,6 +6,7 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-cf-bindings` em `crates/corelink-cf-bindings/Cargo.toml`; 5 targets devolvidos pelo Cargo na baseline.
@@ -13,23 +14,27 @@
 - Entradas confirmadas: `crates/corelink-cf-bindings/src/lib.rs`.
 - Declarações de navegação (amostra, não API completa): `crates/corelink-cf-bindings/src/lib.rs:54` — `pub mod cf_d1;`; `crates/corelink-cf-bindings/src/lib.rs:56` — `pub mod cf_do;`; `crates/corelink-cf-bindings/src/lib.rs:58` — `pub mod cf_kv;`; `crates/corelink-cf-bindings/src/lib.rs:60` — `pub mod cf_r2;`
 
+<a id="targets"></a>
 ## Targets
 
-5 targets enumerados em `../census.json`, registro cujo `manifest` é `crates/corelink-cf-bindings/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+5 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `crates/corelink-cf-bindings/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`crates/corelink-cf-bindings/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-cf-bindings/src/lib.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 16 declarações de dependência e 6 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: `corelink-adapters-cloud`, `corelink-billing-stripe-materializer`, `corelink-clerk-cf`, `corelink-dsr-statuspage-scheduler`, `corelink-server`.
 
+<a id="okf"></a>
 ## OKF
 
 - Direto: `docs/knowledge/crates/container-platform.md` — Container/platform crate cluster
 - Roteador existente: `python3 scripts/okf_context.py --file crates/corelink-cf-bindings/src/lib.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Fronteira a conferir: `crates/corelink-cf-bindings/src/cf_do.rs:25` contém `// re-export at crate root (`pub use crate::durable::*` in`; provar seleção e efeito, não inferir runtime do nome.
@@ -37,12 +42,14 @@ Consumidores declarados: `corelink-adapters-cloud`, `corelink-billing-stripe-mat
 - Fronteira a conferir: `crates/corelink-cf-bindings/src/d1_real.rs:306` contém `#[cfg(target_arch = "wasm32")]`; provar seleção e efeito, não inferir runtime do nome.
 - Coordenar contratos com consumidores declarados corelink-adapters-cloud, corelink-billing-stripe-materializer, corelink-clerk-cf, corelink-dsr-statuspage-scheduler, corelink-server. Aresta Cargo não certifica chamada ou produção.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file crates/corelink-cf-bindings/src/lib.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path crates/corelink-cf-bindings/Cargo.toml -p corelink-cf-bindings --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [crates/corelink-cf-bindings/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-cf-bindings/Cargo.toml); blob `0d870f8b6d658e34d71fd64916473cbc94b7c039`.

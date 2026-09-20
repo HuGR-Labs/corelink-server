@@ -6,6 +6,7 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-py` em `tools/sdks/python/Cargo.toml`; 2 targets devolvidos pelo Cargo na baseline.
@@ -13,23 +14,27 @@
 - Entradas confirmadas: `tools/sdks/python/src/lib.rs`.
 - Declarações de navegação (amostra, não API completa): `tools/sdks/python/src/lib.rs:34` — `pub struct PyCorelinkClient {`; `tools/sdks/python/src/lib.rs:66` — `pub fn new(pat: String, tenant_id: String, client_verify: bool) -> PyResult<Self> {`; `tools/sdks/python/src/lib.rs:91` — `pub fn _inner_client_verify_enabled(&self) -> bool {`; `tools/sdks/python/src/lib.rs:109` — `pub fn get<'py>(&self, py: Python<'py>, digest: String) -> PyResult<Bound<'py, PyBytes>> {`
 
+<a id="targets"></a>
 ## Targets
 
-2 targets enumerados em `../census.json`, registro cujo `manifest` é `tools/sdks/python/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+2 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `tools/sdks/python/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`tools/sdks/python/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/sdks/python/src/lib.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 4 declarações de dependência e 0 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: nenhum na população Cargo examinada.
 
+<a id="okf"></a>
 ## OKF
 
 - Nenhum conceito OKF declara diretamente fonte própria deste package no levantamento de source_files; não equivale a ausência de documentação semântica.
 - Roteador existente: `python3 scripts/okf_context.py --file tools/sdks/python/src/lib.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Investigar ativação e compatibilidade das features declaradas: default, extension-module. Não assumir que --all-features é válido.
@@ -38,12 +43,14 @@ Consumidores declarados: nenhum na população Cargo examinada.
 - Fronteira a conferir: `tools/sdks/python/src/lib.rs:18` contém `#![deny(unsafe_code)]`; provar seleção e efeito, não inferir runtime do nome.
 - Nenhum consumidor Cargo entre os packages elegíveis nesta seleção declarada. Verificar CLI, FFI, workflows, dados e clientes externos antes de alegar isolamento.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file tools/sdks/python/src/lib.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path tools/sdks/python/Cargo.toml -p corelink-py --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [tools/sdks/python/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tools/sdks/python/Cargo.toml); blob `3b9bde7367978020f29d276f1f72c397c3c13bfe`.

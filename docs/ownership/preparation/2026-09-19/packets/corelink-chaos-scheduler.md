@@ -6,6 +6,7 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-chaos-scheduler` em `crates/corelink-chaos-scheduler/Cargo.toml`; 4 targets devolvidos pelo Cargo na baseline.
@@ -13,23 +14,27 @@
 - Entradas confirmadas: `crates/corelink-chaos-scheduler/src/lib.rs`.
 - Declarações de navegação (amostra, não API completa): `crates/corelink-chaos-scheduler/src/lib.rs:60` — `pub mod catalog;`; `crates/corelink-chaos-scheduler/src/lib.rs:61` — `pub mod runner;`; `crates/corelink-chaos-scheduler/src/lib.rs:62` — `pub mod types;`; `crates/corelink-chaos-scheduler/src/lib.rs:65` — `pub use catalog::{canonical_catalog, distinct_fm_count, lookup};`
 
+<a id="targets"></a>
 ## Targets
 
-4 targets enumerados em `../census.json`, registro cujo `manifest` é `crates/corelink-chaos-scheduler/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+4 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `crates/corelink-chaos-scheduler/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`crates/corelink-chaos-scheduler/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-chaos-scheduler/src/lib.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 1 declarações de dependência e 2 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: `corelink-ops`, `e2e-chaos`.
 
+<a id="okf"></a>
 ## OKF
 
 - Direto: `docs/knowledge/ops/sre-operations-hub.md` — SRE operations hub (corelink-ops + satellites)
 - Roteador existente: `python3 scripts/okf_context.py --file crates/corelink-chaos-scheduler/src/lib.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Fronteira a conferir: `crates/corelink-chaos-scheduler/src/catalog.rs:130` contém `#[cfg(test)]`; provar seleção e efeito, não inferir runtime do nome.
@@ -37,12 +42,14 @@ Consumidores declarados: `corelink-ops`, `e2e-chaos`.
 - Fronteira a conferir: `crates/corelink-chaos-scheduler/src/lib.rs:65` contém `pub use catalog::{canonical_catalog, distinct_fm_count, lookup};`; provar seleção e efeito, não inferir runtime do nome.
 - Coordenar contratos com consumidores declarados corelink-ops, e2e-chaos. Aresta Cargo não certifica chamada ou produção.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file crates/corelink-chaos-scheduler/src/lib.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path crates/corelink-chaos-scheduler/Cargo.toml -p corelink-chaos-scheduler --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [crates/corelink-chaos-scheduler/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-chaos-scheduler/Cargo.toml); blob `c153fefe9f40f10c87d42397422f8656348a30d5`.

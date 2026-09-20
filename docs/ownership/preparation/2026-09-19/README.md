@@ -74,11 +74,11 @@ cargo metadata --locked --offline --no-deps --format-version=1 \
 um `resolve` completo: inversas são reconstruídas das declarações de path, com
 kind/cfg/optional/aliases preservados. A união de workspaces não é um único build.
 
-O verificador desta captura compara populações, inversas, contagens, estados e
+A partir da raiz do checkout do PR, o verificador desta captura compara populações, inversas, contagens, estados e
 atribuição de comandos executados. Não aprova semântica, autonomia ou produção:
 
 ```sh
-python3 verify_preparation.py --root . --self-test
+python3 docs/ownership/preparation/2026-09-19/verify_preparation.py --self-test
 ```
 
 Resultado obtido: um controle positivo e onze entradas alteradas corretamente

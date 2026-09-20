@@ -6,6 +6,7 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `e2e-byok-revoke` em `tests/e2e-byok-revoke/Cargo.toml`; 9 targets devolvidos pelo Cargo na baseline.
@@ -13,18 +14,21 @@
 - Entradas confirmadas: `tests/e2e-byok-revoke/src/lib.rs`.
 - Declarações de navegação (amostra, não API completa): `tests/e2e-byok-revoke/src/lib.rs:60` — `pub mod helpers;`; `tests/e2e-byok-revoke/src/lib.rs:62` — `pub use helpers::{`
 
+<a id="targets"></a>
 ## Targets
 
-9 targets enumerados em `../census.json`, registro cujo `manifest` é `tests/e2e-byok-revoke/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+9 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `tests/e2e-byok-revoke/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`tests/e2e-byok-revoke/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/tests/e2e-byok-revoke/src/lib.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 7 declarações de dependência e 0 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: nenhum na população Cargo examinada.
 
+<a id="okf"></a>
 ## OKF
 
 - Nenhum conceito OKF declara diretamente fonte própria deste package no levantamento de source_files; não equivale a ausência de documentação semântica.
@@ -33,6 +37,7 @@ Consumidores declarados: nenhum na população Cargo examinada.
 - Contexto herdado de dependência: `docs/knowledge/ops/sre-operations-hub.md` — SRE operations hub (corelink-ops + satellites)
 - Roteador existente: `python3 scripts/okf_context.py --file tests/e2e-byok-revoke/src/lib.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Fronteira a conferir: `tests/e2e-byok-revoke/src/helpers.rs:569` contém `impl InMemoryTenantStatusStore {`; provar seleção e efeito, não inferir runtime do nome.
@@ -40,12 +45,14 @@ Consumidores declarados: nenhum na população Cargo examinada.
 - Fronteira a conferir: `tests/e2e-byok-revoke/src/lib.rs:56` contém `#![forbid(unsafe_code)]`; provar seleção e efeito, não inferir runtime do nome.
 - Nenhum consumidor Cargo entre os packages elegíveis nesta seleção declarada. Verificar CLI, FFI, workflows, dados e clientes externos antes de alegar isolamento.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file tests/e2e-byok-revoke/src/lib.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path tests/e2e-byok-revoke/Cargo.toml -p e2e-byok-revoke --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [docs/knowledge/crates/adapter-hosts.md](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/docs/knowledge/crates/adapter-hosts.md); blob `2b74eba18fcf4969549a225dc346e9dd8e5768d8`.

@@ -6,6 +6,7 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-bazel-bridge` em `crates/corelink-bazel-bridge/Cargo.toml`; 2 targets devolvidos pelo Cargo na baseline.
@@ -13,23 +14,27 @@
 - Entradas confirmadas: `crates/corelink-bazel-bridge/src/lib.rs`.
 - Declarações de navegação (amostra, não API completa): `crates/corelink-bazel-bridge/src/lib.rs:56` — `pub mod adapter;`; `crates/corelink-bazel-bridge/src/lib.rs:57` — `pub mod digest;`; `crates/corelink-bazel-bridge/src/lib.rs:58` — `pub mod error;`; `crates/corelink-bazel-bridge/src/lib.rs:59` — `pub mod find_missing;`
 
+<a id="targets"></a>
 ## Targets
 
-2 targets enumerados em `../census.json`, registro cujo `manifest` é `crates/corelink-bazel-bridge/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+2 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `crates/corelink-bazel-bridge/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`crates/corelink-bazel-bridge/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-bazel-bridge/src/lib.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 10 declarações de dependência e 1 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: `corelink-server`.
 
+<a id="okf"></a>
 ## OKF
 
 - Direto: `docs/knowledge/crates/adapter-hosts.md` — Adapter-host crate cluster (surfaces + KMS)
 - Roteador existente: `python3 scripts/okf_context.py --file crates/corelink-bazel-bridge/src/lib.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Fronteira a conferir: `crates/corelink-bazel-bridge/src/adapter.rs:294` contém `#[cfg(test)]`; provar seleção e efeito, não inferir runtime do nome.
@@ -37,12 +42,14 @@ Consumidores declarados: `corelink-server`.
 - Fronteira a conferir: `crates/corelink-bazel-bridge/src/error.rs:132` contém `#[cfg(test)]`; provar seleção e efeito, não inferir runtime do nome.
 - Coordenar contratos com consumidores declarados corelink-server. Aresta Cargo não certifica chamada ou produção.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file crates/corelink-bazel-bridge/src/lib.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path crates/corelink-bazel-bridge/Cargo.toml -p corelink-bazel-bridge --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [crates/corelink-bazel-bridge/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-bazel-bridge/Cargo.toml); blob `8b8d4859722d1cfc111d2d290d5250f354d4b7aa`.

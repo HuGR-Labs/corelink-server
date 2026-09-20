@@ -6,6 +6,7 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-core` em `crates/corelink-core/Cargo.toml`; 1 targets devolvidos pelo Cargo na baseline.
@@ -13,23 +14,27 @@
 - Entradas confirmadas: `crates/corelink-core/src/lib.rs`.
 - Declarações de navegação (amostra, não API completa): `crates/corelink-core/src/lib.rs:58` — `pub mod errors;`; `crates/corelink-core/src/lib.rs:59` — `pub mod time;`; `crates/corelink-core/src/lib.rs:60` — `pub mod types;`; `crates/corelink-core/src/lib.rs:64` — `pub use errors::{CoreError, DigestParseError};`
 
+<a id="targets"></a>
 ## Targets
 
-1 targets enumerados em `../census.json`, registro cujo `manifest` é `crates/corelink-core/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+1 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `crates/corelink-core/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`crates/corelink-core/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-core/src/lib.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 6 declarações de dependência e 5 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: `corelink-ac`, `corelink-adapter-host`, `corelink-cas`, `corelink-server`.
 
+<a id="okf"></a>
 ## OKF
 
 - Nenhum conceito OKF declara diretamente fonte própria deste package no levantamento de source_files; não equivale a ausência de documentação semântica.
 - Roteador existente: `python3 scripts/okf_context.py --file crates/corelink-core/src/lib.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Fronteira a conferir: `crates/corelink-core/src/errors.rs:14` contém `pub use digest_parse::DigestParseError;`; provar seleção e efeito, não inferir runtime do nome.
@@ -37,12 +42,14 @@ Consumidores declarados: `corelink-ac`, `corelink-adapter-host`, `corelink-cas`,
 - Fronteira a conferir: `crates/corelink-core/src/lib.rs:37` contém `//! via `pub use corelink_core::*` and drop the scattered duplicates.`; provar seleção e efeito, não inferir runtime do nome.
 - Coordenar contratos com consumidores declarados corelink-ac, corelink-adapter-host, corelink-cas, corelink-server. Aresta Cargo não certifica chamada ou produção.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file crates/corelink-core/src/lib.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path crates/corelink-core/Cargo.toml -p corelink-core --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [crates/corelink-core/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-core/Cargo.toml); blob `a76458267dc5ed5e13ded2deb906a2126ba57377`.

@@ -6,6 +6,7 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-ratelimit` em `crates/corelink-ratelimit/Cargo.toml`; 5 targets devolvidos pelo Cargo na baseline.
@@ -13,24 +14,28 @@
 - Entradas confirmadas: `crates/corelink-ratelimit/src/lib.rs`.
 - Declarações de navegação (amostra, não API completa): `crates/corelink-ratelimit/src/lib.rs:169` — `pub mod audit;`; `crates/corelink-ratelimit/src/lib.rs:170` — `pub mod bucket;`; `crates/corelink-ratelimit/src/lib.rs:171` — `pub mod config;`; `crates/corelink-ratelimit/src/lib.rs:172` — `pub mod error;`
 
+<a id="targets"></a>
 ## Targets
 
-5 targets enumerados em `../census.json`, registro cujo `manifest` é `crates/corelink-ratelimit/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+5 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `crates/corelink-ratelimit/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`crates/corelink-ratelimit/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ratelimit/src/lib.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 4 declarações de dependência e 3 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: `corelink-billing`, `corelink-server`, `e2e-resilience`.
 
+<a id="okf"></a>
 ## OKF
 
 - Direto: `docs/knowledge/crates/operations.md` — Operations crate cluster (GC, replication, ratelimit, SRE)
 - Direto: `docs/knowledge/tenancy/governance.md` — Tenant governance: rate-limit, customer & user admin
 - Roteador existente: `python3 scripts/okf_context.py --file crates/corelink-ratelimit/src/lib.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Fronteira a conferir: `crates/corelink-ratelimit/src/audit.rs:151` contém `impl InMemoryRateLimitAuditSink {`; provar seleção e efeito, não inferir runtime do nome.
@@ -38,12 +43,14 @@ Consumidores declarados: `corelink-billing`, `corelink-server`, `e2e-resilience`
 - Fronteira a conferir: `crates/corelink-ratelimit/src/audit.rs:272` contém `#[cfg(test)]`; provar seleção e efeito, não inferir runtime do nome.
 - Coordenar contratos com consumidores declarados corelink-billing, corelink-server, e2e-resilience. Aresta Cargo não certifica chamada ou produção.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file crates/corelink-ratelimit/src/lib.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path crates/corelink-ratelimit/Cargo.toml -p corelink-ratelimit --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [crates/corelink-ratelimit/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ratelimit/Cargo.toml); blob `f9f358c65aa557937cd755d0789c08831b1737f8`.

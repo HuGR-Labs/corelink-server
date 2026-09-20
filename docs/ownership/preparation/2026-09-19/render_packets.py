@@ -15,7 +15,7 @@ def render(pkg, seed, source, baseline):
         '## Fatos', '']
     text += ['- ' + x for x in seed['verified_facts']]
     text += ['', '## Targets', '',
-        f'{len(pkg["targets"])} targets enumerados em `../census.json`, registro cujo `manifest` é `{pkg["manifest"]}`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.', '']
+        f'{len(pkg["targets"])} targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `{pkg["manifest"]}`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.', '']
     text += ['- [`' + x + '`](' + url + x + ')' for x in source['entrypoints']]
     consumers = ', '.join('`' + x + '`' for x in sorted({a['package'] for a in pkg['declared_workspace_consumers']}))
     text += ['', '## Relações', '',
@@ -31,6 +31,8 @@ def render(pkg, seed, source, baseline):
         text += [f'- [{x["path"]}]({url + x["path"]}); blob `{x["blob"]}`.']
     text += ['', 'O inventário semântico completo, os contratos de runtime, os procedimentos e os quatro cold reviews continuam no escopo da futura issue. Nenhuma mudança funcional é autorizada por este pacote.', '', '[Voltar ao índice](../index.md)']
     result = '\n'.join(text) + '\n'
+    for title, anchor in [('Fatos', 'fatos'), ('Targets', 'targets'), ('Relações', 'relacoes'), ('OKF', 'okf'), ('Riscos', 'riscos'), ('Comandos', 'comandos'), ('Fontes', 'fontes')]:
+        result = result.replace('\n## ' + title + '\n', '\n<a id="' + anchor + '"></a>\n## ' + title + '\n')
     if len(result.splitlines()) > 150 or len(result.encode()) > 24000 or len(result.split()) > 2400:
         raise ValueError('Packet capacity exceeded: ' + name)
     return result

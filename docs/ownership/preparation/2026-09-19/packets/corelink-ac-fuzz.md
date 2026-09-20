@@ -6,40 +6,47 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-ac-fuzz` em `crates/corelink-ac/fuzz/Cargo.toml`; 1 targets devolvidos pelo Cargo na baseline.
 - População fonte própria: 1 arquivos Rust rastreados, 94 linhas físicas, excluídas raízes de packages aninhados.
 - Entradas confirmadas: `crates/corelink-ac/fuzz/fuzz_targets/hkdf_expand.rs`.
 
+<a id="targets"></a>
 ## Targets
 
-1 targets enumerados em `../census.json`, registro cujo `manifest` é `crates/corelink-ac/fuzz/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+1 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `crates/corelink-ac/fuzz/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`crates/corelink-ac/fuzz/fuzz_targets/hkdf_expand.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ac/fuzz/fuzz_targets/hkdf_expand.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 3 declarações de dependência e 0 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: nenhum na população Cargo examinada.
 
+<a id="okf"></a>
 ## OKF
 
 - Nenhum conceito OKF declara diretamente fonte própria deste package no levantamento de source_files; não equivale a ausência de documentação semântica.
 - Roteador existente: `python3 scripts/okf_context.py --file crates/corelink-ac/fuzz/fuzz_targets/hkdf_expand.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Nenhum consumidor Cargo entre os packages elegíveis nesta seleção declarada. Verificar CLI, FFI, workflows, dados e clientes externos antes de alegar isolamento.
 - O harness tem workspace próprio. Testar o alvo original e registrar limites/corpus, sem creditar cobertura da crate-mãe somente pela localização da pasta.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1 --manifest-path crates/corelink-ac/fuzz/Cargo.toml`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file crates/corelink-ac/fuzz/fuzz_targets/hkdf_expand.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path crates/corelink-ac/fuzz/Cargo.toml -p corelink-ac-fuzz --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [crates/corelink-ac/fuzz/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-ac/fuzz/Cargo.toml); blob `d84afdbf77e3ffdc31d5c58b72ed40f2b45951c7`.

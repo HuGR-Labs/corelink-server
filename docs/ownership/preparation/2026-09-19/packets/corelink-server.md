@@ -6,6 +6,7 @@
 
 [Fatos](#fatos) · [Targets](#targets) · [Relações](#relacoes) · [OKF](#okf) · [Riscos](#riscos) · [Comandos](#comandos) · [Fontes](#fontes)
 
+<a id="fatos"></a>
 ## Fatos
 
 - Package `corelink-server` em `crates/corelink-container/Cargo.toml`; 17 targets devolvidos pelo Cargo na baseline.
@@ -13,20 +14,23 @@
 - Entradas confirmadas: `crates/corelink-container/src/bin/gc_sweep.rs`, `crates/corelink-container/src/lib.rs`, `crates/corelink-container/src/main.rs`.
 - Declarações de navegação (amostra, não API completa): `crates/corelink-container/src/lib.rs:70` — `pub mod byok;`; `crates/corelink-container/src/lib.rs:77` — `pub mod adapter_cache;`; `crates/corelink-container/src/lib.rs:80` — `pub mod adapter_kv;`; `crates/corelink-container/src/lib.rs:84` — `pub mod adapter_oci_kv;`
 
+<a id="targets"></a>
 ## Targets
 
-17 targets enumerados em `../census.json`, registro cujo `manifest` é `crates/corelink-container/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
+17 targets enumerados no [censo completo](../census.json), registro cujo `manifest` é `crates/corelink-container/Cargo.toml`. Abaixo estão apenas as entradas de implementação, não uma substituição do inventário completo.
 
 - [`crates/corelink-container/src/bin/gc_sweep.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-container/src/bin/gc_sweep.rs)
 - [`crates/corelink-container/src/lib.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-container/src/lib.rs)
 - [`crates/corelink-container/src/main.rs`](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-container/src/main.rs)
 
+<a id="relacoes"></a>
 ## Relações
 
 75 declarações de dependência e 0 registros inversos. O censo preserva kind, aliases, optional, cfg e features. A união inclui workspaces independentes e **não é um grafo resolvido de um build**.
 
 Consumidores declarados: nenhum na população Cargo examinada.
 
+<a id="okf"></a>
 ## OKF
 
 - Direto: `docs/knowledge/adr/adr-s14-001-multi-region-terraform-module.md` — ADR-S14-001 — Multi-region Terraform module + per-region KV namespace + DO EU jurisdiction
@@ -35,6 +39,7 @@ Consumidores declarados: nenhum na população Cargo examinada.
 - Direto: `docs/knowledge/auth/argon2id-verify.md` — Argon2id adapter-plane verification + scope
 - Roteador existente: `python3 scripts/okf_context.py --file crates/corelink-container/src/bin/gc_sweep.rs --full`; ausência de match deve permanecer explícita.
 
+<a id="riscos"></a>
 ## Riscos
 
 - Investigar ativação e compatibilidade das features declaradas: byok-aws-real, byok-azure-real, byok-gcp-real, byok-vault-real, cf-billing-real, cf-r2-real, default. Não assumir que --all-features é válido.
@@ -43,12 +48,14 @@ Consumidores declarados: nenhum na população Cargo examinada.
 - Fronteira a conferir: `crates/corelink-container/src/adapter_oci_kv.rs:158` contém `#[cfg(test)]`; provar seleção e efeito, não inferir runtime do nome.
 - Nenhum consumidor Cargo entre os packages elegíveis nesta seleção declarada. Verificar CLI, FFI, workflows, dados e clientes externos antes de alegar isolamento.
 
+<a id="comandos"></a>
 ## Comandos
 
 - **EXECUTED / READ_ONLY:** `cargo metadata --locked --offline --no-deps --format-version=1`. Invocação do workspace correspondente retornou o package e seus targets; não é comando individual de teste nem grafo resolvido.
 - **NOT_EXECUTED / READ_ONLY:** `python3 scripts/okf_context.py --file crates/corelink-container/src/bin/gc_sweep.rs --full`. seleção de conceitos; match vazio não é conclusão de ausência
 - **NOT_EXECUTED / READ_ONLY_RESOLUTION:** `cargo tree --locked --offline --manifest-path crates/corelink-container/Cargo.toml -p corelink-server --target x86_64-unknown-linux-gnu --edges normal,build`. seleção Linux de análise, não prova de build implantado; confrontar com a matriz real da crate
 
+<a id="fontes"></a>
 ## Fontes
 
 - [crates/corelink-container/Cargo.toml](https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-container/Cargo.toml); blob `e9feace6365776c6a4141ff59efa70fe1b36e158`.
