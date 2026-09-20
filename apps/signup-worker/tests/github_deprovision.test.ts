@@ -151,6 +151,9 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
   };
   if (!opts.noBatch) {
     raw.batch = async (statements: Array<{ run(): Promise<unknown>; record?: RecordSql }>) => {
+      if (statements.some((statement) => (statement.record?.vals.length ?? 0) > 100)) {
+        throw new Error("D1 bound-parameter limit exceeded");
+      }
       if (!injected && opts.provisionRepoBeforeBatch) { repos.push({ ...opts.provisionRepoBeforeBatch }); injected = true; }
       const before = { installs: new Map(installs), repos: repos.map((r) => ({ ...r })), audits: new Map([...audits].map(([k, v]) => [k, { ...v }])) };
       activeBatch = statements.map((s) => s.record!).filter(Boolean);
@@ -352,6 +355,23 @@ describe("#1725 installation deprovision contract", () => {
     expect(audit.payload_json).not.toMatch(/acme|alpha|zeta|tenant-1|Bearer|authorization/i);
     expect(audit.payload_json).not.toContain("req-1725");
     expect(audit.payload_json).not.toContain(AUTH);
+  });
+
+  it("keeps every D1 statement under the 100 bound-parameter limit", async () => {
+    const repositories = Array.from({ length: 120 }, (_, index) => `acme/repo-${index}`);
+    const db = fake({
+      installs: [{ installation_id: "inst-1", tenant_id: "tenant-1" }],
+      repos: repositories.map((repo_full_name) => ({ tenant_id: "tenant-1", repo_full_name })),
+      regions: seed.regions,
+    });
+    const response = await handleInstallationDeprovision(
+      request(payload({ repositories, remove_installation: true })),
+      env(db),
+    );
+    expect(response.status).toBe(200);
+    expect(db.batches[0]!.every((statement) => statement.vals.length <= 100)).toBe(true);
+    expect(db.state().repos).toHaveLength(0);
+    expect(db.state().installs).toHaveLength(0);
   });
 
   it("rolls back every mutation when batch statement two fails", async () => {
