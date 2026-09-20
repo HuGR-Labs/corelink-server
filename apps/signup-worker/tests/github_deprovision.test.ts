@@ -95,11 +95,14 @@ function fake(seed: Seed = {}, opts: Options = {}): Db {
       return;
     }
     if (sql.startsWith("delete from tenant_gh_installation_map")) {
-      const requested = rec.vals.slice(2).map(String);
+      const requested = sql.includes("json_each(?3)")
+        ? (JSON.parse(String(rec.vals[2])) as string[])
+        : rec.vals.slice(2).map(String);
       const notIn = requested.length ? ` and repo_full_name not in (${requested.map((_, i) => `?${i + 3}`).join(", ")})` : "";
       const legacySql = "delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2)";
       const guardedSql = `delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2${notIn})`;
-      if (sql !== legacySql && sql !== guardedSql) throw new Error(`Unscoped/unguarded map delete: ${rec.sql}`);
+      const jsonGuardedSql = "delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2 and repo_full_name not in (select cast(value as text) from json_each(?3)))";
+      if (sql !== legacySql && sql !== guardedSql && sql !== jsonGuardedSql) throw new Error(`Unscoped/unguarded map delete: ${rec.sql}`);
       if (opts.ignoreMapDelete) return;
       const id = param(rec, "installation_id");
       const tenant = param(rec, "tenant_id");
@@ -302,7 +305,7 @@ describe("#1725 installation deprovision contract", () => {
     expect(cleared.state().installs).toEqual([{ installation_id: "inst-2", tenant_id: "tenant-1" }]);
     const batch = cleared.batches[0]!;
     const mapDelete = batch.find((r) => /delete from tenant_gh_installation_map/i.test(r.sql));
-    expect(["delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2)", "delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2 and repo_full_name not in (?3))"]).toContain(norm(mapDelete!.sql));
+    expect(["delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2)", "delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2 and repo_full_name not in (?3))", "delete from tenant_gh_installation_map where installation_id = ?1 and tenant_id = ?2 and not exists (select 1 from runner_repo_allowlist where tenant_id = ?2 and repo_full_name not in (select cast(value as text) from json_each(?3)))"]).toContain(norm(mapDelete!.sql));
     expect(param(mapDelete!, "installation_id")).toBe("inst-1");
     expect(param(mapDelete!, "tenant_id")).toBe("tenant-1");
     if (norm(mapDelete!.sql).includes("repo_full_name not in")) {
