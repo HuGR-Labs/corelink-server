@@ -922,7 +922,7 @@ describe("L12(b) — MintGrant capability + mintScopedPat scope ceiling", () => 
 describe("runner mint obligation persistence", () => {
   const OP: RunnerCredentialOperation = {
     operationId: "11111111-2222-4333-8444-555555555555",
-    tenantId: "runner-tenant",
+    tenantId: "22222222-2222-4222-8222-222222222222",
     jobId: "job-a",
     repo: "repo-a",
     lifecycleGeneration: "7",

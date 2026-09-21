@@ -6,6 +6,7 @@ import {
   type RunnerCredentialOperation,
 } from "./runner_credential_obligation.js";
 import { requireConsumerAuth } from "./internal_auth.js";
+import { isCanonicalTenantUuid } from "./tenant_uuid.js";
 
 const OPERATION_ID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const GENERATION = /^(0|[1-9][0-9]*)$/;
@@ -39,7 +40,7 @@ function operationBody(value: unknown): RunnerCredentialOperation | null {
   const lifecycleGeneration = body["lifecycleGeneration"];
   if (
     typeof operationId !== "string" || !OPERATION_ID.test(operationId) ||
-    typeof tenantId !== "string" || tenantId.length === 0 || tenantId !== tenantId.trim() ||
+    !isCanonicalTenantUuid(tenantId) ||
     typeof jobId !== "string" || jobId.length === 0 || jobId !== jobId.trim() ||
     typeof repo !== "string" || repo.length === 0 || repo !== repo.trim() ||
     typeof lifecycleGeneration !== "string" || lifecycleGeneration.length > 19 ||

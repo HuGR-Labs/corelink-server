@@ -67,13 +67,14 @@ import {
   revokeDevenvOperation,
 } from "./lib/devenv_cleanup.js";
 import { drainRunnerOperations } from "./lib/runner_credential_obligation.js";
+import { isCanonicalTenantUuid } from "./lib/tenant_uuid.js";
 
 const DEVENV_CLEANUP_MAX_BODY_BYTES = 16 * 1024;
 const DEVENV_CLEANUP_UUID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEVENV_CLEANUP_GENERATION = /^(0|[1-9][0-9]*)$/;
 const DEVENV_CLEANUP_MAX_GENERATION = 9_223_372_036_854_775_807n;
 
-function validDevenvCleanupUuid(value: unknown): value is string {
+function validDevenvCleanupOperationId(value: unknown): value is string {
   return typeof value === "string" && DEVENV_CLEANUP_UUID.test(value);
 }
 
@@ -353,7 +354,7 @@ export class CoreLinkServer implements DurableObject {
       }
       const operationId = input["operationId"];
       const tenantId = input["tenantId"];
-      if (!validDevenvCleanupUuid(operationId) || !validDevenvCleanupUuid(tenantId)) {
+      if (!validDevenvCleanupOperationId(operationId) || !isCanonicalTenantUuid(tenantId)) {
         return new Response(null, { status: 400, headers: { "X-Request-Id": requestId } });
       }
       let ok: boolean;

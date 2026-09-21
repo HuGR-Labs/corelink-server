@@ -1,5 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import { closeCredentialGeneration, drainCredentialGenerationRevocations, validateLifecycleGeneration } from "./credential_generation.js";
+import { isCanonicalTenantUuid } from "./tenant_uuid.js";
 
 export interface CloseGenerationInput {
   event_id: string;
@@ -17,7 +18,7 @@ export class CredentialGenerationEventError extends Error {
 
 function validate(input: CloseGenerationInput): void {
   if (!input || typeof input.event_id !== "string" || input.event_id.length === 0 || new TextEncoder().encode(input.event_id).byteLength > 256 || input.event_id !== input.event_id.trim() ||
-    typeof input.tenant_id !== "string" || input.tenant_id.length === 0 ||
+    !isCanonicalTenantUuid(input.tenant_id) ||
     typeof input.lifecycle_generation !== "string") throw new CredentialGenerationEventError("invalid", "invalid suspension event");
   try { validateLifecycleGeneration(input.lifecycle_generation); } catch { throw new CredentialGenerationEventError("invalid", "invalid suspension event"); }
 }
@@ -31,7 +32,7 @@ async function receipt(db: D1Database, eventId: string): Promise<CredentialGener
   if (row === null || row === undefined) return null;
   if (typeof row !== "object" || Array.isArray(row)) throw new CredentialGenerationEventError("unavailable", "credential generation receipt is corrupt");
   const value = row as Record<string, unknown>;
-  if (typeof value["event_id"] !== "string" || typeof value["tenant_id"] !== "string" || typeof value["lifecycle_generation"] !== "string" || (value["state"] !== "requested" && value["state"] !== "complete")) {
+  if (typeof value["event_id"] !== "string" || !isCanonicalTenantUuid(value["tenant_id"]) || typeof value["lifecycle_generation"] !== "string" || (value["state"] !== "requested" && value["state"] !== "complete")) {
     throw new CredentialGenerationEventError("unavailable", "credential generation receipt is corrupt");
   }
   try { validateLifecycleGeneration(value["lifecycle_generation"]); } catch { throw new CredentialGenerationEventError("unavailable", "credential generation receipt is corrupt"); }

@@ -1,5 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import { issueComputeGrant } from "./compute_budget_grant.js";
+import { isCanonicalTenantUuid } from "./tenant_uuid.js";
 import type { ComputeBinding, PreparedDevenvCompute, RunnerDevEnvRpc } from "../types/devenv_rpc.js";
 
 export const DEVENV_COMPUTE_VCPU_COUNT = 4 as const;
@@ -16,6 +17,7 @@ export async function prepareDevenvCompute(
   sessionUuid: string,
   nowMs: number,
 ): Promise<PreparedDevenvCompute | null> {
+  if (!isCanonicalTenantUuid(tenantId)) throw new Error("invalid DevEnv tenant identity");
   const row = await env.CONFIG_DB.prepare("SELECT max_concurrency, max_vcpu_h FROM runners_entitlement WHERE tenant_id = ?1").bind(tenantId).first<EntitlementRow>();
   if (row === null || !positiveInteger(row.max_concurrency)) throw new Error("invalid DevEnv runners entitlement");
   if (row.max_vcpu_h === null || row.max_vcpu_h === undefined) return null;

@@ -11,7 +11,9 @@ import { CoreLinkServer } from "../src/durable_object.js";
 
 const KEY = "runner-route-test-key-0123456789abcdef";
 const OP = "11111111-1111-4111-8111-111111111111";
-const operation = { operationId: OP, tenantId: "tenant-1", jobId: "job-1", repo: "acme/repo", lifecycleGeneration: "1" };
+const TENANT_V4 = "22222222-2222-4222-8222-222222222222";
+const TENANT_V7 = "018f48a8-2c08-7f7e-8a1d-2c3d4e5f6071";
+const operation = { operationId: OP, tenantId: TENANT_V4, jobId: "job-1", repo: "acme/repo", lifecycleGeneration: "1" };
 
 function request(path: string, body: unknown, method = "POST", auth = KEY): Request {
   return new Request(`https://worker.test${path}`, {
@@ -70,7 +72,7 @@ describe("runner credential handoff routes", () => {
     expect(ok).toBe(true);
     expect(captured.request?.method).toBe("POST");
     await expect(captured.request?.json()).resolves.toEqual({
-      operationId: OP, tenantId: "tenant-1", jobId: "job-1", repo: "acme/repo", lifecycleGeneration: "1",
+      operationId: OP, tenantId: TENANT_V4, jobId: "job-1", repo: "acme/repo", lifecycleGeneration: "1",
     });
   });
 
@@ -116,6 +118,20 @@ describe("runner credential handoff routes", () => {
     const state = { id: { equals: () => true } } as unknown as DurableObjectState;
     const response = await handleRunnerPrepare(request("/_do/runner-cleanup/prepare", { ...operation, lifecycleGeneration: generation }), env(db("error")), state, {} as DurableObjectStorage, "req-generation");
     expect(response.status).toBe(400);
+  });
+
+  it.each([TENANT_V7, "22222222-2222-1222-8222-222222222222"])("accepts v7 and rejects noncanonical tenant %s at ingress", async (tenantId) => {
+    const state = { id: { equals: () => true } } as unknown as DurableObjectState;
+    let touchedStorage = false;
+    const storage = {
+      transaction: async (fn: (txn: DurableObjectStorage) => Promise<unknown>) => {
+        touchedStorage = true;
+        return fn({ list: async () => new Map(), get: async () => undefined, getAlarm: async () => null, setAlarm: async () => {}, put: async () => {} } as unknown as DurableObjectStorage);
+      },
+    } as unknown as DurableObjectStorage;
+    const response = await handleRunnerPrepare(request("/_do/runner-cleanup/prepare", { ...operation, tenantId }), env(db("ok")), state, storage, "req-tenant");
+    expect(response.status).toBe(tenantId === TENANT_V7 ? 204 : 400);
+    expect(touchedStorage).toBe(tenantId === TENANT_V7);
   });
 
   it("adopt returns 204, 409, and 503 without a body", async () => {
