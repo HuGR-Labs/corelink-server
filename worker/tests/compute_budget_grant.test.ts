@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { issueComputeGrant } from "../src/lib/compute_budget_grant.js";
 import { prepareDevenvCompute } from "../src/lib/devenv_compute.js";
 
-const input = { tenantId: "11111111-1111-4111-8111-111111111111", workloadKind: "devenv" as const, workloadId: "session-1", reservationId: "22222222-2222-4222-8222-222222222222", maxVcpuHours: 1, vcpuCount: 4, maximumWallMs: 28_800_000 };
+const input = { tenantId: "11111111-1111-4111-8111-111111111111", workloadKind: "devenv" as const, workloadId: "session-1", reservationId: "22222222-2222-4222-8222-222222222222", maxVcpuHours: 1, vcpuCount: 4 };
 const now = Date.parse("2026-09-14T12:00:00.000Z");
 let env: { COMPUTE_GRANT_SIGNING_KEY: string; COMPUTE_GRANT_KEY_ID: string };
 let publicKey: CryptoKey;
@@ -16,19 +16,35 @@ beforeAll(async () => {
 });
 describe("compute grant validation", () => {
   it("emits a verifiable fixed-bound DevEnv grant", async () => {
-    const token = await issueComputeGrant(env, input, now);
+    const { token, maximumWallMs } = await issueComputeGrant(env, input, now);
     const [encoded, signature] = token.split(".");
     const payloadBytes = decode(encoded);
     const payload = JSON.parse(new TextDecoder().decode(payloadBytes)) as Record<string, unknown>;
     expect(payload).toMatchObject({ v: 1, key_id: "compute-v1", tenant_id: input.tenantId, workload_kind: "devenv", workload_id: "session-1", reservation_id: input.reservationId, period_key: 202609, ceiling_vcpu_ms: "3600000", vcpu_count: 4, maximum_wall_ms: 28_800_000, issued_at_ms: now, expires_at_ms: now + 90_000 });
+    expect(maximumWallMs).toBe(28_800_000);
     await expect(crypto.subtle.verify({ name: "Ed25519" }, publicKey, decode(signature), payloadBytes)).resolves.toBe(true);
+  });
+  it.each([
+    ["eight hours before October boundary after grant expiry", Date.parse("2026-10-01T00:00:00.000Z") - 28_800_000 - 90_000, 28_800_000],
+    ["one millisecond before October boundary after grant expiry", Date.parse("2026-10-01T00:00:00.000Z") - 90_001, 1],
+    ["leap-day February boundary", Date.parse("2028-03-01T00:00:00.000Z") - 7_200_000 - 90_000, 7_200_000],
+    ["December to January boundary", Date.parse("2027-01-01T00:00:00.000Z") - 3_600_000 - 90_000, 3_600_000],
+  ])("derives the exact maximum wall duration at the %s", async (_label, issuedAtMs, expectedMaximumWallMs) => {
+    const { token, maximumWallMs } = await issueComputeGrant(env, input, issuedAtMs);
+    const payload = JSON.parse(new TextDecoder().decode(decode(token.split(".")[0]))) as Record<string, unknown>;
+    expect(maximumWallMs).toBe(expectedMaximumWallMs);
+    expect(payload.maximum_wall_ms).toBe(expectedMaximumWallMs);
+  });
+  it("rejects a grant whose 90-second expiry reaches the month boundary", async () => {
+    const periodStart = Date.parse("2026-10-01T00:00:00.000Z");
+    await expect(issueComputeGrant(env, input, periodStart - 90_000)).rejects.toThrow("invalid compute grant request");
   });
   it("fails closed for malformed issuer material", async () => {
     await expect(issueComputeGrant({ COMPUTE_GRANT_SIGNING_KEY: "bad", COMPUTE_GRANT_KEY_ID: "compute-v1" }, input, now)).rejects.toThrow("invalid compute grant request");
   });
   it.each([["zero ceiling", 0], ["fractional ceiling", 1.5], ["bad tenant", "bad"]])("rejects %s", async (_label, value) => {
     const modified = typeof value === "string" ? { ...input, tenantId: value } : { ...input, maxVcpuHours: value };
-    await expect(issueComputeGrant({ COMPUTE_GRANT_SIGNING_KEY: "bad", COMPUTE_GRANT_KEY_ID: "compute-v1" }, modified, Date.now())).rejects.toThrow();
+    await expect(issueComputeGrant({ COMPUTE_GRANT_SIGNING_KEY: "bad", COMPUTE_GRANT_KEY_ID: "compute-v1" }, modified, now)).rejects.toThrow();
   });
 });
 
@@ -41,12 +57,18 @@ describe("prepareDevenvCompute", () => {
   }
   it("passes a tenant/session-bound fixed-shape token to the RPC", async () => {
     const d = deps();
-    await expect(prepareDevenvCompute(d.env, d.rpc, input.tenantId, input.reservationId, now)).resolves.toBe(input.reservationId);
+    await expect(prepareDevenvCompute(d.env, d.rpc, input.tenantId, input.reservationId, now)).resolves.toEqual({ reservationId: input.reservationId, maximumWallMs: 28_800_000 });
     const binding = d.calls[1] as Record<string, unknown>;
     expect(binding).toMatchObject({ tenantId: input.tenantId, reservationId: input.reservationId, workloadId: input.reservationId, workloadKind: "devenv", vcpuCount: 4, maximumWallMs: 28_800_000 });
     const payload = JSON.parse(new TextDecoder().decode(decode(String(binding.token).split(".")[0]))) as Record<string, unknown>;
     expect(payload.tenant_id).toBe(input.tenantId);
     expect(payload.reservation_id).toBe(input.reservationId);
+  });
+  it("returns the one-millisecond month-bound duration with the reservation", async () => {
+    const d = deps();
+    const issuedAtMs = Date.parse("2026-10-01T00:00:00.000Z") - 90_001;
+    await expect(prepareDevenvCompute(d.env, d.rpc, input.tenantId, input.reservationId, issuedAtMs)).resolves.toEqual({ reservationId: input.reservationId, maximumWallMs: 1 });
+    expect(d.calls[1]).toMatchObject({ reservationId: input.reservationId, maximumWallMs: 1 });
   });
   it("fails closed for missing entitlement or ceiling", async () => {
     const noEntitlement = deps(null);

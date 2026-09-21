@@ -9,6 +9,7 @@ export interface AuthorizedDevenvInput {
     expiresAtMs: number;
     lifecycleGeneration: string;
     computeReservationId?: string;
+    maximumWallMs?: number;
   };
 }
 
@@ -19,7 +20,12 @@ export interface ComputeBinding {
   workloadKind: "devenv";
   workloadId: string;
   vcpuCount: 4;
-  maximumWallMs: 28_800_000;
+  maximumWallMs: number;
+}
+
+export interface PreparedDevenvCompute {
+  reservationId: string;
+  maximumWallMs: number;
 }
 
 export interface AuthorizedDevenvAck {

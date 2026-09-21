@@ -5,19 +5,20 @@ import { matchRoute } from "../src/route_match.js";
 const tenantId = "11111111-1111-4111-8111-111111111111";
 const patId = "22222222-2222-4222-8222-222222222222";
 const sessionUuid = "33333333-3333-4333-8333-333333333333";
+const nowMs = Date.parse("2026-09-14T12:00:00.000Z");
 
-function deps(events: string[], overrides: Partial<Record<string, (...args: never[]) => unknown>> = {}) {
+function deps(events: string[], overrides: Partial<Record<string, (...args: never[]) => unknown>> = {}, startInputs: unknown[] = []) {
   return {
     lifecycleGeneration: "7",
     prepare: async (..._args: never[]) => { events.push("prepare"); return true; },
-    prepareCompute: async (..._args: never[]) => { events.push("compute"); return sessionUuid; },
+    prepareCompute: async (..._args: never[]) => { events.push("compute"); return { reservationId: sessionUuid, maximumWallMs: 28_800_000 }; },
     abandonCompute: async (..._args: never[]) => { events.push("abandon"); },
-    mint: async (..._args: never[]) => { events.push("mint"); return Response.json({ pat_id: patId, token_plaintext: "secret", tenant: tenantId, expires_ms: Date.now() + 1000 }); },
+    mint: async (..._args: never[]) => { events.push("mint"); return Response.json({ pat_id: patId, token_plaintext: "secret", tenant: tenantId, expires_ms: nowMs + 1000 }); },
     revoke: async (..._args: never[]) => { events.push("revoke"); return true; },
     adopt: async (..._args: never[]) => { events.push("adopt"); return true; },
-    start: async (..._args: never[]) => { events.push("start"); return { sessionUuid, status: "running" as const }; },
+    start: async (...args: never[]) => { events.push("start"); startInputs.push(args[0]); return { sessionUuid, status: "running" as const }; },
     stop: async (..._args: never[]) => { events.push("stop"); return { sessionUuid, status: "stopped" as const }; },
-    now: () => Date.now(), sessionId: () => sessionUuid, cleanupFailed: () => events.push("cleanup"), ...overrides,
+    now: () => nowMs, sessionId: () => sessionUuid, cleanupFailed: () => events.push("cleanup"), ...overrides,
   };
 }
 
@@ -32,6 +33,35 @@ describe("authorized DevEnv issuance", () => {
     const response = await relayAuthorizedDevenvStart(new Request("https://x/v1/customer/devenv", { method: "POST", body: JSON.stringify({ workspace_name: "demo" }) }), tenantId, deps(events));
     expect(response.status).toBe(201);
     expect(events).toEqual(["prepare", "mint", "compute", "start", "adopt"]);
+  });
+
+  it("caps the provider-facing expiry at the prepared compute wall bound", async () => {
+    const events: string[] = [], starts: unknown[] = [];
+    const response = await relayAuthorizedDevenvStart(new Request("https://x/v1/customer/devenv", { method: "POST", body: JSON.stringify({ workspace_name: "demo" }) }), tenantId, deps(events, {
+      prepareCompute: async (..._args: never[]) => { events.push("compute"); return { reservationId: sessionUuid, maximumWallMs: 1 }; },
+      mint: async (..._args: never[]) => { events.push("mint"); return Response.json({ pat_id: patId, token_plaintext: "secret", tenant: tenantId, expires_ms: nowMs + 1_000 }); },
+    }, starts));
+    expect(response.status).toBe(201);
+    expect((starts[0] as { grant: Record<string, unknown> }).grant).toMatchObject({ computeReservationId: sessionUuid, maximumWallMs: 1, expiresAtMs: nowMs + 1 });
+  });
+
+  it("rejects a compute reservation mismatch before the provider-facing start", async () => {
+    const events: string[] = [];
+    const response = await relayAuthorizedDevenvStart(new Request("https://x/v1/customer/devenv", { method: "POST", body: JSON.stringify({ workspace_name: "demo" }) }), tenantId, deps(events, {
+      prepareCompute: async (..._args: never[]) => { events.push("compute"); return { reservationId: patId, maximumWallMs: 1 }; },
+    }));
+    expect(response.status).toBe(503);
+    expect(events).toEqual(["prepare", "mint", "compute", "abandon", "revoke"]);
+  });
+
+  it("rejects a PAT that expires before the provider-facing start", async () => {
+    const events: string[] = [], times = [nowMs, nowMs, nowMs + 1];
+    const response = await relayAuthorizedDevenvStart(new Request("https://x/v1/customer/devenv", { method: "POST", body: JSON.stringify({ workspace_name: "demo" }) }), tenantId, deps(events, {
+      mint: async (..._args: never[]) => { events.push("mint"); return Response.json({ pat_id: patId, token_plaintext: "secret", tenant: tenantId, expires_ms: nowMs + 1 }); },
+      now: () => times.shift() ?? nowMs + 1,
+    }));
+    expect(response.status).toBe(503);
+    expect(events).toEqual(["prepare", "mint", "compute", "abandon", "revoke"]);
   });
 
   it("compensates compute and credential obligation when start fails", async () => {

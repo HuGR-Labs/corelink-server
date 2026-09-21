@@ -1,5 +1,5 @@
 import { bounded } from "./devenv_cleanup.js";
-import type { AuthorizedDevenvInput, AuthorizedDevenvAck } from "../types/devenv_rpc.js";
+import type { AuthorizedDevenvInput, AuthorizedDevenvAck, PreparedDevenvCompute } from "../types/devenv_rpc.js";
 
 export const DEVENV_MAX_TTL_SECONDS = 8 * 60 * 60;
 const UUID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -18,7 +18,7 @@ export function mayAccessDevenv(request: Request, scope: string): boolean {
 interface RelayDeps {
   lifecycleGeneration: string;
   prepare(operationId: string, tenantId: string, lifecycleGeneration: string): Promise<boolean>;
-  prepareCompute(sessionUuid: string, tier: string): Promise<string | null>;
+  prepareCompute(sessionUuid: string, tier: string): Promise<PreparedDevenvCompute | null>;
   abandonCompute(reservationId: string): Promise<void>;
   mint(operationId: string): Promise<Response>;
   revoke(operationId: string): Promise<boolean>;
@@ -61,7 +61,7 @@ export async function relayAuthorizedDevenvStart(request: Request, tenantId: str
   if (!name(workspaceName) || !name(profileName) || typeof tier !== "string" || !["standard-2", "standard-4", "power-8", "ultra-16"].includes(tier)) return failure(400);
   const deadline = deps.now() + DEVENV_MAX_TTL_SECONDS * 1000, sessionUuid = deps.sessionId();
   if (!UUID.test(sessionUuid) || !UUID.test(tenantId)) return failure(503);
-  let patId: string | null = null, armed = false, accepted = false, startAttempted = false, computeReservationId: string | null = null;
+  let patId: string | null = null, armed = false, accepted = false, startAttempted = false, compute: PreparedDevenvCompute | null = null;
   try {
     // The obligation is armed before minting; compute is staged only after the token exists.
     armed = await bounded(deps.prepare(sessionUuid, tenantId, deps.lifecycleGeneration));
@@ -73,10 +73,13 @@ export async function relayAuthorizedDevenvStart(request: Request, tenantId: str
     if (typeof id === "string" && id.trim().length > 0 && id.length <= 256) patId = id;
     const now = deps.now();
     if (patId === null || !UUID.test(patId) || typeof token !== "string" || token.trim().length === 0 || token.length > 4096 || issued["tenant"] !== tenantId || typeof expires !== "number" || !Number.isSafeInteger(expires) || expires <= now || expires > now + DEVENV_MAX_TTL_SECONDS * 1000 || deadline <= now) return failure(503);
-    computeReservationId = await bounded(deps.prepareCompute(sessionUuid, tier));
-    if (computeReservationId !== null && computeReservationId !== sessionUuid) return failure(503);
+    compute = await bounded(deps.prepareCompute(sessionUuid, tier));
+    if (compute !== null && (compute.reservationId !== sessionUuid || !Number.isSafeInteger(compute.maximumWallMs) || compute.maximumWallMs < 1 || compute.maximumWallMs > DEVENV_MAX_TTL_SECONDS * 1000)) return failure(503);
+    const relayNow = deps.now();
+    const expiresAtMs = compute === null ? Math.min(expires, deadline) : Math.min(expires, relayNow + compute.maximumWallMs);
+    if (!Number.isSafeInteger(relayNow) || !Number.isSafeInteger(expiresAtMs) || expiresAtMs <= relayNow) return failure(503);
     startAttempted = true;
-    const ack = await bounded(deps.start({ config: { workspaceName, profileName, tier }, grant: { tenantId, sessionUuid, casPat: token, patId, expiresAtMs: Math.min(expires, deadline), lifecycleGeneration: deps.lifecycleGeneration, ...(computeReservationId !== null ? { computeReservationId } : {}) } }), 20_000);
+    const ack = await bounded(deps.start({ config: { workspaceName, profileName, tier }, grant: { tenantId, sessionUuid, casPat: token, patId, expiresAtMs, lifecycleGeneration: deps.lifecycleGeneration, ...(compute !== null ? { computeReservationId: compute.reservationId, maximumWallMs: compute.maximumWallMs } : {}) } }), 20_000);
     if (!ack || ack.sessionUuid !== sessionUuid || !["starting", "running"].includes(ack.status)) return failure(503);
     accepted = await bounded(deps.adopt(sessionUuid, patId)); if (!accepted) return failure(503);
     return Response.json({ sessionUuid, status: ack.status, lifecycle_generation: deps.lifecycleGeneration }, { status: 201 });
@@ -88,7 +91,7 @@ export async function relayAuthorizedDevenvStart(request: Request, tenantId: str
         if (!stopped || stopped.sessionUuid !== sessionUuid || !["stopped", "already_stopped", "not_current"].includes(stopped.status)) throw new Error("invalid stop acknowledgement");
       } catch { console.error("devenv_cleanup_pending"); }
     }
-    if (!accepted && computeReservationId !== null) { try { await bounded(deps.abandonCompute(computeReservationId)); } catch {} }
+    if (!accepted && compute !== null) { try { await bounded(deps.abandonCompute(compute.reservationId)); } catch {} }
     if (armed && !accepted) { let revoked = false; for (let attempt = 0; attempt < 2 && !revoked; attempt++) { try { revoked = await bounded(deps.revoke(sessionUuid)); } catch {} } if (!revoked) deps.cleanupFailed(); }
   }
 }
