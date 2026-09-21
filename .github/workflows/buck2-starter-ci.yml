@@ -10,7 +10,7 @@
 #
 # Gates (intended, once un-parked):
 #   build   — cold build + warm cache-hit assertion (≥ 80 % hits)
-#   benchmark — 10+10 iteration report; updates BENCHMARK.md on main
+#   benchmark — 10+10 iteration report; uploaded as a workflow artifact
 #
 # Originally spec'd as: failure = SEV-3 alert + blocking PR merge
 # (fail-closed, STANDARD lane). Not true today — see `on:` block.
@@ -119,18 +119,7 @@ jobs:
   # ── build: cold → warm cache-hit validation ─────────────────────────────────
   build:
     name: buck2 build :hello (cold → warm cache hit)
-    # Runner: `corelink` — was `[self-hosted, Linux, X64]`, a pool that DOES NOT
-    # EXIST (every online self-hosted runner in this repo is labelled
-    # `self-hosted,macOS,X64,mac,corelink-builder`; see reproducible-build.yml's
-    # `build` job for the same root-cause finding). GitHub does not fail an
-    # unsatisfiable `runs-on` — it QUEUES IT FOREVER, which is what this
-    # workflow did on every PR touching examples/buck2-starter back when it
-    # still carried a `pull_request` trigger (see the top-level `on:` block
-    # for why that trigger is gone for now). `corelink` is CoreLink's own
-    # ephemeral Linux (Ubuntu 24.04, Firecracker) fabric — a real Linux pool
-    # that exists, with apt-get + passwordless sudo, which is all this job's
-    # steps (buck2/zstd/clang download + apt install) need.
-    runs-on: corelink
+    runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
@@ -299,10 +288,7 @@ jobs:
   # ── negative scenarios ───────────────────────────────────────────────────────
   negative-scenarios:
     name: Negative scenarios (PAT missing / invalid / endpoint bad)
-    # Runner: `corelink` — see the `build` job above for why the previous
-    # `[self-hosted, Linux, X64]` pool does not exist and queued this job
-    # forever on every PR.
-    runs-on: corelink
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     # Keep negative probes independent: a failed canary build must not skip
     # the auth, endpoint, and quota assertions that diagnose separate causes.
@@ -430,14 +416,10 @@ jobs:
           }
           echo "OK: quota probe failed closed with a quota/rate-limit error."
 
-  # ── benchmark (weekly + push to main) ────────────────────────────────────────
+  # ── benchmark report ────────────────────────────────────────────────────────
   benchmark:
-    name: Benchmark (10+10 iterations) + update BENCHMARK.md
-    # Runner: `corelink` — see the `build` job above for why the previous
-    # `[self-hosted, Linux, X64]` pool does not exist. This job only runs on
-    # push/schedule/workflow_dispatch (never `pull_request`), so it wasn't a PR
-    # gate, but it was still queuing forever whenever it fired.
-    runs-on: corelink
+    name: Benchmark (10+10 iterations) + report artifact
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     # Only run on push to main or weekly cron; skip on PRs to save minutes.
     if: |
@@ -445,14 +427,10 @@ jobs:
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch'
     needs: build
-    permissions:
-      contents: write  # required to commit BENCHMARK.md update
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Buck2
         timeout-minutes: 5
@@ -490,18 +468,17 @@ jobs:
         working-directory: examples/buck2-starter
         run: |
           chmod +x scripts/benchmark.sh
-          ./scripts/benchmark.sh --iterations 10
+          mkdir -p "${RUNNER_TEMP}/buck2-benchmark"
+          ./scripts/benchmark.sh --iterations 10 \
+            --output-md "${RUNNER_TEMP}/buck2-benchmark/BENCHMARK.md"
         env:
           CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
 
-      - name: Commit updated BENCHMARK.md
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add examples/buck2-starter/BENCHMARK.md
-          if git diff --cached --quiet; then
-            echo "No changes to BENCHMARK.md — skipping commit."
-          else
-            git commit -m "chore(benchmark): auto-update Buck2 starter BENCHMARK.md [skip ci]"
-            git push
-          fi
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: buck2-benchmark-report
+          path: ${{ runner.temp }}/buck2-benchmark/BENCHMARK.md
+          if-no-files-found: error
+          retention-days: 14
