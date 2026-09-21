@@ -410,6 +410,11 @@ def verify_schema() -> None:
         SET intent_token='token-new', transition_epoch=2
         WHERE tenant_id='tenant-a'"""
     )
+    expect_integrity_error(
+        connection,
+        """INSERT INTO byok_transition_commit_guard
+        (token,tenant_id,epoch,action) VALUES ('stale-token','tenant-a',2,'shred')""",
+    )
     connection.execute(
         """INSERT INTO byok_transition_commit_guard
         (token,tenant_id,epoch,action) VALUES ('token-new','tenant-a',2,'shred')"""
