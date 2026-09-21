@@ -4,6 +4,85 @@ use std::sync::Arc;
 use crate::audit::InMemoryAuditSink;
 use crate::observer::InMemorySliObserver;
 
+#[derive(Debug)]
+struct EffectAwareFailingCas {
+    effect: EffectAwareFailure,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EffectAwareFailure {
+    Committed,
+    Pending(uuid::Uuid),
+}
+
+impl CasWriteHandler for EffectAwareFailingCas {
+    fn write(&self, _req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+        Err(CasHandlerError::Internal("post-commit audit failed".into()))
+    }
+
+    fn write_with_effect(
+        &self,
+        _req: CasWriteRequest,
+    ) -> Result<CasWriteResponse, crate::CasWriteFailure> {
+        let cause = CasHandlerError::Internal("post-commit audit failed".into());
+        match self.effect {
+            EffectAwareFailure::Committed => Err(crate::CasWriteFailure::committed(cause)),
+            EffectAwareFailure::Pending(intent_id) => {
+                Err(crate::CasWriteFailure::pending(cause, intent_id))
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct LegacyFailingCas;
+
+impl CasWriteHandler for LegacyFailingCas {
+    fn write(&self, _req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+        Err(CasHandlerError::Internal("legacy storage error".into()))
+    }
+}
+
+fn write_request() -> CasWriteRequest {
+    CasWriteRequest::new("t1", "a".repeat(64), b"body".to_vec(), "p1", "t1", 1)
+}
+
+#[test]
+fn explicit_write_effects_cross_trait_boundary() {
+    let handler: Arc<dyn CasWriteHandler> = Arc::new(EffectAwareFailingCas {
+        effect: EffectAwareFailure::Committed,
+    });
+
+    let failure = handler
+        .write_with_effect(write_request())
+        .expect_err("effect-aware failure");
+
+    assert_eq!(failure.effect, crate::MutationEffect::Committed);
+    assert!(matches!(failure.cause, CasHandlerError::Internal(_)));
+
+    let intent_id = uuid::Uuid::new_v4();
+    let handler: Arc<dyn CasWriteHandler> = Arc::new(EffectAwareFailingCas {
+        effect: EffectAwareFailure::Pending(intent_id),
+    });
+    let failure = handler
+        .write_with_effect(write_request())
+        .expect_err("effect-aware pending failure");
+
+    assert_eq!(failure.effect, crate::MutationEffect::Pending { intent_id });
+}
+
+#[test]
+fn default_write_effect_is_unknown_without_a_durable_intent() {
+    let handler: Arc<dyn CasWriteHandler> = Arc::new(LegacyFailingCas);
+
+    let failure = handler
+        .write_with_effect(write_request())
+        .expect_err("legacy write failure");
+
+    assert_eq!(failure.effect, crate::MutationEffect::Unknown);
+    assert_ne!(failure.effect, crate::MutationEffect::Committed);
+}
+
 fn fixture() -> (
     Arc<InMemoryAuditSink>,
     Arc<InMemorySliObserver>,
