@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import * as ts from "typescript";
 import {
   coloForMacro,
   coloMatchesMacro,
@@ -112,7 +113,13 @@ describe("region-map (three-consumer PROVISIONED_MACROS drift gate)", () => {
     __dirname,
     "../../crates/corelink-container/src/storage/region_map.rs",
   );
-  const clerkSrc = resolve(
+  // The Clerk facade delegates identity/provisioning to this physical copy;
+  // clerk.ts itself only imports and re-exports the set.
+  const clerkIdentitySrc = resolve(
+    __dirname,
+    "../../apps/signup-worker/src/webhooks/clerk_identity.ts",
+  );
+  const clerkFacadeSrc = resolve(
     __dirname,
     "../../apps/signup-worker/src/webhooks/clerk.ts",
   );
@@ -121,21 +128,89 @@ describe("region-map (three-consumer PROVISIONED_MACROS drift gate)", () => {
     expect([...PROVISIONED_MACROS].sort()).toEqual(CANONICAL_PROVISIONED);
   });
 
-  it("all three source copies (worker + container + clerk) match the four-macro canonical set", () => {
+  it("all three source copies (worker + container + clerk identity) match the four-macro canonical set", () => {
     const worker = parseProvisioned(workerSrc);
     const container = parseProvisioned(containerSrc);
-    const clerk = parseProvisioned(clerkSrc);
+    const clerkIdentity = parseProvisioned(clerkIdentitySrc);
     expect(worker).toEqual(CANONICAL_PROVISIONED);
     expect(container).toEqual(CANONICAL_PROVISIONED);
-    expect(clerk).toEqual(CANONICAL_PROVISIONED);
+    expect(clerkIdentity).toEqual(CANONICAL_PROVISIONED);
     // ...and therefore to each other (explicit cross-diff for a clear failure).
     expect(container).toEqual(worker);
-    expect(clerk).toEqual(worker);
+    expect(clerkIdentity).toEqual(worker);
   });
 
   it("none of the three copies provisions `sam` (the LGPD cross-border trap)", () => {
-    for (const p of [workerSrc, containerSrc, clerkSrc]) {
+    for (const p of [workerSrc, containerSrc, clerkIdentitySrc]) {
       expect(parseProvisioned(p)).not.toContain("sam");
     }
+  });
+
+  function hasActiveClerkIdentityImport(src: string): boolean {
+    // Parse actual ImportDeclaration nodes so comments, strings, template
+    // literals, and dynamic import() calls cannot masquerade as wiring. The
+    // runtime facade must import both symbols that establish identity-region
+    // provisioning; a type-only import is not sufficient.
+    const file = ts.createSourceFile(
+      "clerk.ts",
+      src,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    let wired = false;
+    file.forEachChild((node) => {
+      if (!ts.isImportDeclaration(node)) return;
+      if (
+        !ts.isStringLiteral(node.moduleSpecifier) ||
+        node.moduleSpecifier.text !== "./clerk_identity.js"
+      ) {
+        return;
+      }
+      const clause = node.importClause;
+      if (!clause || clause.isTypeOnly || !clause.namedBindings) return;
+      if (!ts.isNamedImports(clause.namedBindings)) return;
+      const names = new Set(
+        clause.namedBindings.elements
+          .filter((element) => !element.isTypeOnly)
+          .map((element) => element.propertyName?.text ?? element.name.text),
+      );
+      if (names.has("PROVISIONED_MACROS") && names.has("isProvisionedMacro")) {
+        wired = true;
+      }
+    });
+    return wired;
+  }
+
+  it("Clerk facade actively wires runtime identity helpers (AST guard rejects bait and drift)", () => {
+    const facade = readFileSync(clerkFacadeSrc, "utf8");
+    expect(hasActiveClerkIdentityImport(facade)).toBe(true);
+
+    const withoutImport = facade.replace(
+      /import\s+(?:type\s+)?\{[^;]*?\}\s*from\s*["']\.\/clerk_identity\.js["'];\s*/g,
+      "",
+    );
+    expect(hasActiveClerkIdentityImport(withoutImport)).toBe(false);
+    const withoutProvisionedSymbols = facade.replace(
+      /import\s*\{([\s\S]*?)\}\s*from\s*["']\.\/clerk_identity\.js["'];/,
+      (_match, imports: string) =>
+        `import {${imports.replace(/\b(?:PROVISIONED_MACROS|isProvisionedMacro)\s*,?/g, "")}} from "./clerk_identity.js";`,
+    );
+    expect(hasActiveClerkIdentityImport(withoutProvisionedSymbols)).toBe(false);
+    expect(
+      hasActiveClerkIdentityImport(
+        `// import { PROVISIONED_MACROS, isProvisionedMacro } from "./clerk_identity.js";\nconst bait = "import { PROVISIONED_MACROS, isProvisionedMacro } from './clerk_identity.js';"`,
+      ),
+    ).toBe(false);
+    expect(
+      hasActiveClerkIdentityImport(
+        "const bait = `\nimport { PROVISIONED_MACROS, isProvisionedMacro } from './clerk_identity.js';\n`;",
+      ),
+    ).toBe(false);
+    expect(
+      hasActiveClerkIdentityImport(
+        'const bait = import("./clerk_identity.js");',
+      ),
+    ).toBe(false);
   });
 });

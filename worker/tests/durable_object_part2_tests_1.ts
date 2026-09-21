@@ -26,6 +26,48 @@ describe("adversarial_replay_attack — replay of old stop request", () => {
     expect(stored?.["containerStatus"]).toBe("stopped");
   });
 });
+
+describe("DO branch coverage: real lifecycle and admission edges", () => {
+  it("reports 200 health while a container is running", async () => {
+    const now = Date.now();
+    const { do_ } = await makeReaperDO({ containerStatus: "running", lastHealthCheckMs: now, coldStartCount: 1, tenantId: "tenant-health", lastActivityMs: now });
+    expect((await do_.fetch(new Request("http://localhost/_do/health"))).status).toBe(200);
+  });
+
+  it("applies the audit analytics rate limit path", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({ containerStatus: "running", lastHealthCheckMs: now, coldStartCount: 1, tenantId: "tenant-audit", lastActivityMs: now });
+    const request = () => new Request("http://localhost/v1/audit/analytics/events", { method: "GET", headers: { "x-corelink-tenant-id": "tenant-audit" } });
+    for (let i = 0; i < 10; i += 1) expect((await do_.fetch(request())).status).not.toBe(429);
+    const response = await do_.fetch(request());
+    expect(response.status).toBe(429);
+    expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+    const bucket = [...h.storageMap.entries()].find(([key]) => key.startsWith("durable-route-rate:v1:audit:"));
+    expect(bucket?.[1]).toMatchObject({ count: 10 });
+  });
+
+  it("self-heals a stale running lifecycle record when its container is gone", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({ containerStatus: "running", lastHealthCheckMs: now, coldStartCount: 1, tenantId: "tenant-stale", lastActivityMs: now });
+    await h.destroy();
+    await h.state.storage.put("lifecycle", { containerStatus: "running", lastHealthCheckMs: now, coldStartCount: 1, tenantId: "tenant-stale", lastActivityMs: now });
+    expect((await do_.fetch(new Request("http://localhost/v1/test"))).status).toBe(503);
+  });
+
+  it("restarts a stale starting lifecycle record", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({ containerStatus: "starting", startingAt_ms: now - 120_000, lastHealthCheckMs: now, coldStartCount: 1, tenantId: "tenant-starting", lastActivityMs: now });
+    await h.state.storage.put("lifecycle", { containerStatus: "starting", startingAt_ms: now - 120_000, lastHealthCheckMs: now, coldStartCount: 1, tenantId: "tenant-starting", lastActivityMs: now });
+    expect((await do_.fetch(new Request("http://localhost/v1/test"))).status).toBe(200);
+  });
+
+  it("returns a bounded error for an unknown lifecycle state", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({ containerStatus: "unknown", lastHealthCheckMs: now, coldStartCount: 1, tenantId: "tenant-unknown", lastActivityMs: now });
+    await h.state.storage.put("lifecycle", { containerStatus: "unknown", lastHealthCheckMs: now, coldStartCount: 1, tenantId: "tenant-unknown", lastActivityMs: now });
+    expect((await do_.fetch(new Request("http://localhost/v1/test"))).status).toBe(503);
+  });
+});
 describe("adversarial_tenant_boundary — cross-tenant request injection", () => {
   it("two DO instances with different DO IDs cannot share lifecycle state", async () => {
     // Attack: adversary attempts to leak one tenant's container state into another

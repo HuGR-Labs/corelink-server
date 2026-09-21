@@ -24,6 +24,7 @@ const originalRoots = [
 const extractedFiles = [
   "src/durable_object_probes.ts",
   "src/durable_object_start.ts",
+  "src/lib/devenv_cleanup_route.ts",
   "src/route_match.ts",
   "src/index_observability.ts",
   "src/index_auth.ts",
@@ -62,6 +63,7 @@ const expectedPopulation = [...originalRoots, ...extractedFiles];
 
 const importBoundaries = [
   { parent: "src/durable_object.ts", module: "./durable_object_start.js" },
+  { parent: "src/durable_object.ts", module: "./lib/devenv_cleanup_route.js" },
   { parent: "src/index.ts", module: "./index_fetch.js" },
   { parent: "../apps/signup-worker/src/webhooks/clerk.ts", module: "./clerk_identity.js" },
   { parent: "../apps/signup-worker/src/webhooks/stripe.ts", module: "./stripe_persistence.js" },
@@ -238,8 +240,44 @@ function activeImportSources(text: string): ReadonlySet<string> {
   return sources;
 }
 
+function activeReexportSources(text: string, symbol: string): ReadonlySet<string> {
+  const sources = new Set<string>();
+  const tokens = lexTypeScript(text);
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i]?.kind !== "identifier" || tokens[i]?.value !== "export") continue;
+    let found = false;
+    for (let j = i + 1; j + 1 < tokens.length; j++) {
+      const token = tokens[j]!;
+      if (token.kind === "punct" && token.value === ";") break;
+      if (token.kind === "identifier" && token.value === symbol) found = true;
+      if (token.kind === "identifier" && token.value === "from" && found) {
+        const source = tokens[j + 1];
+        if (source?.kind === "string") sources.add(source.value);
+        break;
+      }
+    }
+  }
+  return sources;
+}
+
 function activeCode(text: string): string {
   return maskInactive(text);
+}
+
+function hasExecutableTests(file: string, text = source(file)): boolean {
+  const code = activeCode(text);
+  if (/\b(describe|it|test)\s*\(/.test(code)) return true;
+  const imports = [...activeImportSources(text)].filter((value) => value.startsWith("./") && value.endsWith(".js"));
+  if (imports.length === 0) return false;
+  return imports.every((value) => {
+    const target = resolve(ROOT, file, "..");
+    const targetFile = resolve(target, value.slice(2).replace(/\.js$/, ".ts"));
+    try {
+      return /\b(describe|it|test)\s*\(/.test(activeCode(readFileSync(targetFile, "utf8")));
+    } catch {
+      return false;
+    }
+  });
 }
 
 function validatePopulation(population: readonly string[]): void {
@@ -259,20 +297,21 @@ function validateImportWiring(parent: string, module: string, text: string): voi
   }
 }
 
-function validateAuthHelper(text: string): void {
-  const code = activeCode(text);
-  if (!/\bexport\s+function\s+extractBasicAuthPassword\b/.test(code)) {
-    throw new Error("index_auth.ts: extractBasicAuthPassword export is missing");
+function validateAuthHelper(facadeText: string, policyText: string): void {
+  if (!activeReexportSources(facadeText, "extractBasicAuthPassword").has("./index_auth_policy.js")) {
+    throw new Error("index_auth.ts: active policy import is missing");
   }
-  const calls = code.match(/\bextractBasicAuthPassword\s*\(/g) ?? [];
-  if (calls.length < 2) throw new Error("index_auth.ts: extractBasicAuthPassword call is missing");
+  const policy = activeCode(policyText);
+  if (!/\bexport\s+function\s+extractBasicAuthPassword\s*\(/.test(policy)) {
+    throw new Error("index_auth_policy.ts: extractBasicAuthPassword implementation is missing");
+  }
 }
 
 describe("B-126 M3 domain boundaries", () => {
   it("keeps the complete 43-path original/extracted population bounded", () => {
     validatePopulation(expectedPopulation);
     for (const file of extractedFiles.filter((path) => path.includes("tests/"))) {
-      expect(activeCode(source(file)), `${file} must remain executable`).toMatch(/\b(describe|it|test)\s*\(/);
+      expect(hasExecutableTests(file), `${file} must remain executable`).toBe(true);
     }
   });
 
@@ -284,7 +323,7 @@ describe("B-126 M3 domain boundaries", () => {
     for (const boundary of importBoundaries) {
       validateImportWiring(boundary.parent, boundary.module, source(boundary.parent));
     }
-    validateAuthHelper(source("src/index_auth.ts"));
+    validateAuthHelper(source("src/index_auth.ts"), source("src/index_auth_policy.ts"));
   });
 
   it("rejects comment-wrapped import bait and a missing Basic helper", () => {
@@ -296,11 +335,22 @@ describe("B-126 M3 domain boundaries", () => {
       );
       expect(() => validateImportWiring(boundary.parent, boundary.module, bait)).toThrow();
     }
-    const missingHelper = source("src/index_auth.ts").replace(
+    const missingReexport = source("src/index_auth.ts").replaceAll(
+      'from "./index_auth_policy.js"',
+      'from "./removed_policy.js"',
+    );
+    expect(() => validateAuthHelper(missingReexport, source("src/index_auth_policy.ts"))).toThrow();
+    const missingHelper = source("src/index_auth_policy.ts").replace(
       "export function extractBasicAuthPassword",
       "function removedBasicAuthPassword",
     );
-    expect(() => validateAuthHelper(missingHelper)).toThrow();
+    expect(() => validateAuthHelper(source("src/index_auth.ts"), missingHelper)).toThrow();
+  });
+
+  it("rejects an unrelated import as executable test wiring", () => {
+    const file = "tests/durable_object_part2.test.ts";
+    const unrelated = `import "./unrelated.js";`;
+    expect(hasExecutableTests(file, unrelated)).toBe(false);
   });
 
   it("rejects the exact line/block/nested comment, string, and dynamic-import baits", () => {

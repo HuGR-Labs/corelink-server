@@ -352,12 +352,21 @@ describe("H1: x-corelink-scope server-trust header", () => {
               // here would NOT match any macro and fail-close (RESIDENCY_UNAVAILABLE).
               return { primary_region: "weur" } as T;
             }
+            if (sql.includes("tenant_storage_state")) {
+              // The fan-out/header assertion is not a storage-quota test, but
+              // B-181 keeps the storage gate fail-closed for every verb. Give
+              // the orthogonal gate a valid within-cap result in this fixture.
+              return { total_bytes: 0 } as T;
+            }
             void args;
             return null as T;
           },
         }),
         first: async <T>() => null as T | null,
       }),
+      // Quota is disabled for this forwarding-only assertion; return a valid
+      // within-cap storage result for the still-enforced B-181 storage check.
+      batch: async () => [{ success: true, meta: {}, results: [{ total_bytes: 0 }] }],
     } as unknown as D1Database;
 
     const resp = await workerFetch(
@@ -368,7 +377,14 @@ describe("H1: x-corelink-scope server-trust header", () => {
           "x-corelink-scope": "admin", // smuggle attempt on the fanout path
         },
       },
-      { CONFIG_DB: d1, PROD_LHR: regionalBinding },
+      {
+        CONFIG_DB: d1,
+        PROD_LHR: regionalBinding,
+        // This test verifies authenticated residency fan-out/header trust.
+        // Keep the orthogonal quota gate out of the fixture; production keeps
+        // its default fail-closed quota behavior unchanged.
+        REQUEST_QUOTA_DISABLED: "true",
+      },
     );
     expect(resp.status).toBe(200);
     expect(fanoutHeaders?.get("x-corelink-scope")).toBe("cas:rw");

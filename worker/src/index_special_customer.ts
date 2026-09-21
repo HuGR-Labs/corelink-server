@@ -62,13 +62,11 @@ export async function handleSpecialCustomerRoute(
 
       if (!mayAccessDevenv(request, devScope)) return applyCors(reapiError("FORBIDDEN", "DevEnv scope required", 403, requestId), request);
       const isStart = isDevenvStart(request.method, route.pathSuffix);
-      if (isStart) {
-        try {
-          const { checkDevenvQuota } = await import("./lib/devenv_guard.js");
-          const quota = await bounded(checkDevenvQuota(env, devTenantId));
-          if (!quota.allowed) return applyCors(reapiError("QUOTA_EXCEEDED", "DevEnv quota exceeded", 403, requestId), request);
-        } catch { return applyCors(reapiError("SERVICE_UNAVAILABLE", "DevEnv admission unavailable", 503, requestId), request); }
-      }
+      try {
+        const { checkDevenvQuota } = await import("./lib/devenv_guard.js");
+        const quota = await bounded(checkDevenvQuota(env, devTenantId));
+        if (!quota.allowed) return applyCors(reapiError("QUOTA_EXCEEDED", "DevEnv quota exceeded", 403, requestId), request);
+      } catch { return applyCors(reapiError("SERVICE_UNAVAILABLE", "DevEnv admission unavailable", 503, requestId), request); }
       let devStub: DurableObjectStub<RunnerDevEnvRpc>;
       try { devStub = env.RUNNER_DEVENV_DO.get(env.RUNNER_DEVENV_DO.idFromName(devTenantId)) as DurableObjectStub<RunnerDevEnvRpc>; }
       catch { return applyCors(reapiError("SERVICE_UNAVAILABLE", "DevEnv unavailable", 503, requestId), request); }

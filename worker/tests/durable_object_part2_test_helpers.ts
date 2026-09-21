@@ -111,7 +111,12 @@ function makeReaperState(lifecycle: Record<string, unknown>, currentAlarm: numbe
       get: async (key: string) => storageMap.get(key),
       put: async (key: string, val: unknown) => { storageMap.set(key, val); },
       delete: async (key: string) => storageMap.delete(key),
-      list: async () => new Map(storageMap),
+      list: async (options?: { prefix?: string; limit?: number }) => {
+        const entries = [...storageMap.entries()]
+          .filter(([key]) => options?.prefix === undefined || key.startsWith(options.prefix))
+          .slice(0, options?.limit ?? Number.POSITIVE_INFINITY);
+        return new Map(entries);
+      },
       getAlarm: async () => pendingAlarm,
       setAlarm: async (time: number) => { alarms.push(time); pendingAlarm = time; },
       deleteAlarm: async () => { pendingAlarm = null; },
