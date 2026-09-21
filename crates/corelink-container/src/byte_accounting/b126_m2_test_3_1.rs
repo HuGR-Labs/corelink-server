@@ -3,7 +3,8 @@ use super::testing::{InMemoryByteStore, Row};
 use super::*;
 use corelink_handler_cas::{
     CasDeleteHandler, CasDeleteRequest, CasHandlerError, CasReadHandler, CasReadRequest,
-    CasWriteHandler, CasWriteRequest, InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver,
+    CasWriteHandler, CasWriteRequest, CasWriteResponse, InMemoryAuditSink, InMemoryCasHandler,
+    InMemorySliObserver,
 };
 
 const REGION: &str = "iad";
@@ -204,6 +205,50 @@ fn cas_fixture(
 /// so we use an arbitrary 64-hex string.
 fn hash_for(bytes: &[u8]) -> String {
     corelink_handler_cas::handler::fake_hash(bytes)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EffectfulFailure {
+    NotWritten,
+    Pending(uuid::Uuid),
+    Unknown,
+}
+
+#[derive(Debug)]
+struct EffectfulCas(EffectfulFailure);
+
+impl CasWriteHandler for EffectfulCas {
+    fn write(&self, _req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> { Err(CasHandlerError::Internal("injected write failure".to_owned())) }
+
+    fn write_with_effect(
+        &self,
+        _req: CasWriteRequest,
+    ) -> Result<CasWriteResponse, corelink_handler_cas::CasWriteFailure> {
+        match self.0 {
+            EffectfulFailure::NotWritten => Err(corelink_handler_cas::CasWriteFailure::not_written(CasHandlerError::Internal("injected write failure".to_owned()))),
+            EffectfulFailure::Pending(intent_id) => Err(corelink_handler_cas::CasWriteFailure::pending(CasHandlerError::Internal("injected write failure".to_owned()), intent_id)),
+            EffectfulFailure::Unknown => Err(corelink_handler_cas::CasWriteFailure::unknown(CasHandlerError::Internal("injected write failure".to_owned()))),
+        }
+    }
+}
+
+fn effectful_fixture(effect: EffectfulFailure) -> (Arc<AccountingCasHandler>, Arc<InMemoryByteStore>) {
+    let audit = Arc::new(InMemoryAuditSink::new());
+    let sli = Arc::new(InMemorySliObserver::new());
+    let delete_inner = Arc::new(InMemoryCasHandler::new(audit, sli));
+    let store = Arc::new(InMemoryByteStore::new());
+    let accountant = Arc::new(ByteAccountant::new(
+        store.clone() as Arc<dyn ByteStore>,
+        REGION.to_owned(),
+    ));
+    (
+        Arc::new(AccountingCasHandler::new(
+            Arc::new(EffectfulCas(effect)) as Arc<dyn CasWriteHandler>,
+            delete_inner as Arc<dyn CasDeleteHandler>,
+            accountant,
+        )),
+        store,
+    )
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -470,24 +515,66 @@ async fn idempotent_rewrite_does_not_double_count() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn failed_inner_write_releases_reservation() {
-    // An inner write that errors (cross-tenant denial) must roll the
-    // reservation back — a failed PUT must not consume headroom.
-    let (dec, _inner, store) = cas_fixture(None);
+async fn unknown_inner_write_retains_and_owns_reservation() {
+    let (dec, store) = effectful_fixture(EffectfulFailure::Unknown);
     let body = b"abc".to_vec();
     let hash = hash_for(&body);
-    // `tenant != caller_tenant` ⇒ the inner InMemory handler returns
-    // CrossTenantDenied AFTER the decorator reserved.
+    let bytes = body.len() as i64;
     let err = dec.write(
-        CasWriteRequest::new("victim", hash, body, "p", "attacker", 1)
+        CasWriteRequest::new("t", hash.clone(), body, "p", "t", 1)
             .with_storage_quota_bytes(Some(1_000_000)),
     );
-    assert!(err.is_err(), "cross-tenant write must error");
+    assert!(err.is_err());
     assert_eq!(
-        store.used("victim", REGION),
-        0,
-        "a failed inner write must release its reservation (no leaked headroom)"
+        store.used("t", REGION),
+        bytes,
+        "unknown write outcome must retain the reservation"
     );
+    let liability = store
+        .liability("t", REGION, &hash)
+        .expect("unknown outcome must be durably owned");
+    assert_eq!(liability.state, MutationLiabilityState::Unknown);
+    assert!(liability.intent_id.is_some());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn not_written_effect_refunds_reservation() {
+    let (dec, store) = effectful_fixture(EffectfulFailure::NotWritten);
+    let body = b"safe-refund".to_vec();
+    let hash = hash_for(&body);
+    let err = dec.write(
+        CasWriteRequest::new("t", hash.clone(), body, "p", "t", 1)
+            .with_storage_quota_bytes(Some(1_000_000)),
+    );
+    assert!(err.is_err());
+    assert_eq!(store.used("t", REGION), 0, "only NotWritten refunds");
+    assert_eq!(
+        store.liability("t", REGION, &hash).expect("liability row").state,
+        MutationLiabilityState::Released
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pending_effect_persists_exact_intent_and_retains_reservation() {
+    let intent_id = uuid::Uuid::new_v4();
+    let (dec, store) = effectful_fixture(EffectfulFailure::Pending(intent_id));
+    let body = b"pending-liability".to_vec();
+    let bytes = body.len() as i64;
+    let hash = hash_for(&body);
+    let failure = dec
+        .write_with_effect(
+            CasWriteRequest::new("t", hash.clone(), body, "p", "t", 1)
+                .with_storage_quota_bytes(Some(1_000_000)),
+        )
+        .expect_err("pending write failure");
+    assert_eq!(
+        failure.effect,
+        corelink_handler_cas::MutationEffect::Pending { intent_id }
+    );
+    assert_eq!(store.used("t", REGION), bytes);
+    let liability = store.liability("t", REGION, &hash).expect("pending liability");
+    assert_eq!(liability.state, MutationLiabilityState::Pending);
+    assert_eq!(liability.intent_id, Some(intent_id));
 }
 
 include!("b126_m2_test_3_1_part_02.rs");

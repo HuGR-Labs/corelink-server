@@ -58,6 +58,42 @@ pub enum AccrueOutcome {
     Indeterminate,
 }
 
+/// Durable state for one accounted CAS mutation liability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+#[allow(missing_docs)]
+pub enum MutationLiabilityState {
+    Reserved,
+    Committed,
+    Pending,
+    Unknown,
+    Released,
+}
+
+impl MutationLiabilityState {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Reserved => "reserved",
+            Self::Committed => "committed",
+            Self::Pending => "pending",
+            Self::Unknown => "unknown",
+            Self::Released => "released",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct MutationLiability<'a> {
+    pub tenant_id: &'a str,
+    pub region: &'a str,
+    pub logical_key: &'a str,
+    pub bytes_reserved: i64,
+    pub state: MutationLiabilityState,
+    pub intent_id: Option<Uuid>,
+    pub now_ms: i64,
+}
+
 /// Backing store for the per-tenant byte counter.
 ///
 /// Abstracted as a trait so the security-critical accrual logic can be
@@ -106,6 +142,14 @@ pub trait ByteStore: std::fmt::Debug + Send + Sync {
         bytes: i64,
         now_ms: i64,
     ) -> Result<(), String>;
+
+    /// Upsert the durable ownership record for an accounted CAS mutation.
+    async fn record_mutation_liability(
+        &self,
+        _liability: MutationLiability<'_>,
+    ) -> Result<(), String> {
+        Err("byte store does not support mutation-liability persistence".to_owned())
+    }
 }
 
 /// The per-tenant storage byte accountant.
@@ -174,6 +218,27 @@ impl ByteAccountant {
         let now_ms = current_unix_ms();
         self.store
             .release(tenant, &self.region, bytes, now_ms)
+            .await
+    }
+
+    async fn record_mutation_liability(
+        &self,
+        tenant: &str,
+        logical_key: &str,
+        bytes_reserved: i64,
+        state: MutationLiabilityState,
+        intent_id: Option<Uuid>,
+    ) -> Result<(), String> {
+        self.store
+            .record_mutation_liability(MutationLiability {
+                tenant_id: tenant,
+                region: &self.region,
+                logical_key,
+                bytes_reserved,
+                state,
+                intent_id,
+                now_ms: current_unix_ms(),
+            })
             .await
     }
 }
@@ -438,6 +503,34 @@ impl ByteStore for D1ByteStore {
                 ],
             )
             .await?;
+        Ok(())
+    }
+
+    async fn record_mutation_liability(
+        &self,
+        liability: MutationLiability<'_>,
+    ) -> Result<(), String> {
+        let _ = self.client.query(
+            "INSERT INTO storage_mutation_liability \
+               (tenant_id, region, surface, logical_key, bytes_reserved, state, intent_id, \
+                attempts, created_at_ms, updated_at_ms) \
+             VALUES (?1, ?2, 'cas', ?3, ?4, ?5, ?6, 0, ?7, ?7) \
+             ON CONFLICT(tenant_id, region, surface, logical_key) DO UPDATE SET \
+               bytes_reserved = excluded.bytes_reserved, state = excluded.state, \
+               intent_id = excluded.intent_id, attempts = attempts + 1, \
+               updated_at_ms = excluded.updated_at_ms",
+            &[
+                serde_json::Value::String(liability.tenant_id.to_owned()),
+                serde_json::Value::String(liability.region.to_owned()),
+                serde_json::Value::String(liability.logical_key.to_owned()),
+                serde_json::Value::from(liability.bytes_reserved),
+                serde_json::Value::String(liability.state.as_str().to_owned()),
+                liability.intent_id.map_or(serde_json::Value::Null, |id| {
+                    serde_json::Value::String(id.to_string())
+                }),
+                serde_json::Value::from(liability.now_ms),
+            ],
+        ).await?;
         Ok(())
     }
 }

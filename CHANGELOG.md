@@ -26,7 +26,8 @@ Each entry cross-references:
 
 - **CAS writes expose durable failure effects.** The handler seam now
   distinguishes definitely-not-written, committed, reconciliation-pending, and
-  legacy-unknown failures for storage-accounting decorators.
+  legacy-unknown failures for storage-accounting decorators. Byte accounting
+  retains ambiguous reservations in a D1 liability record for reconciliation.
 
 - **Server identity checks now survive the repository transfer.** Workflow
   trust guards use stable repository ID `1232040291`; live operational scripts

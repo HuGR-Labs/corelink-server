@@ -79,6 +79,7 @@ pub(super) const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "gc_purge_intent",
     "cas_write_intent",
     "cas_reconciliation_intent",
+    "storage_mutation_liability",
     // erase-set (namespace)
     "adapter_cache_map",
     "adapter_npm_meta",
