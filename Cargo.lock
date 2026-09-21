@@ -2291,6 +2291,7 @@ dependencies = [
 name = "corelink-runner-aggregate"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "corelink-billing-aggregator",
  "corelink-billing-emit",
  "corelink-runner-overage",
