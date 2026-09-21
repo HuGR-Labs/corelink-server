@@ -116,6 +116,48 @@ def test_nightly_dispatch_cannot_run_the_wrong_lane(job: str | None, before: str
         MODULE.verify(sources)
 
 
+@pytest.mark.parametrize("job", ("build", "negative-scenarios", "benchmark"))
+def test_buck2_jobs_require_hosted_linux_runner(job: str) -> None:
+    sources = corpus()
+    workflow = sources[".github/workflows/buck2-starter-ci.yml"]
+    start = workflow.index(f"  {job}:\n")
+    runner = workflow.index("runs-on: ubuntu-latest", start)
+    sources[".github/workflows/buck2-starter-ci.yml"] = (
+        workflow[:runner] + "runs-on: corelink" + workflow[runner + len("runs-on: ubuntu-latest"):]
+    )
+    with pytest.raises(MODULE.VerificationError, match="hosted ubuntu-latest"):
+        MODULE.verify(sources)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "error"),
+    (
+        ("contents: read", "contents: write", "permissions"),
+        ("if-no-files-found: error", "if-no-files-found: warn", "missing report"),
+        ("retention-days: 14", "retention-days: 0", "retention"),
+        ("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", "actions/upload-artifact@v7", "SHA-pinned"),
+        ("git push", "git fetch", "repository write"),
+    ),
+)
+def test_buck2_benchmark_write_and_artifact_regressions_fail(
+    old: str, new: str, error: str
+) -> None:
+    sources = corpus()
+    workflow = sources[".github/workflows/buck2-starter-ci.yml"]
+    if old == "git push":
+        marker = "      - name: Upload benchmark report\n"
+        assert workflow.count(marker) == 1
+        workflow = workflow.replace(marker, "      - name: Forbidden mutation probe\n        run: git push\n\n" + marker, 1)
+    else:
+        assert workflow.count(old) >= 1
+        prefix, separator, suffix = workflow.rpartition(old)
+        assert separator
+        workflow = prefix + new + suffix
+    sources[".github/workflows/buck2-starter-ci.yml"] = workflow
+    with pytest.raises(MODULE.VerificationError, match=error):
+        MODULE.verify(sources)
+
+
 def test_empty_workflow_cannot_be_a_green_population() -> None:
     sources = corpus()
     sources[".github/workflows/nightly.yml"] = ""

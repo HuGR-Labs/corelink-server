@@ -124,7 +124,7 @@ LANES = (
         ".github/workflows/buck2-starter-ci.yml",
         "build",
         (
-            "runs-on: corelink",
+            "runs-on: ubuntu-latest",
             "timeout-minutes: 20",
             'name: Install Buck2 latest stable',
             '"${BUCK2_INSTALL_DIR}/buck2" --version',
@@ -144,7 +144,7 @@ LANES = (
         ".github/workflows/buck2-starter-ci.yml",
         "negative-scenarios",
         (
-            "runs-on: corelink",
+            "runs-on: ubuntu-latest",
             "timeout-minutes: 10",
             "name: Install Buck2",
             "--max-time 120",
@@ -160,7 +160,7 @@ LANES = (
         ".github/workflows/buck2-starter-ci.yml",
         "benchmark",
         (
-            "runs-on: corelink",
+            "runs-on: ubuntu-latest",
             "timeout-minutes: 30",
             "name: Install Buck2",
             "--max-time 120",
@@ -353,6 +353,38 @@ def assert_yaml_lane_shape(parsed: dict, lane: Lane) -> None:
         ]
         if len(quota) != 1 or quota[0].get("working-directory") != "examples/buck2-starter":
             raise VerificationError("buck2-negative: quota probe is not rooted in the starter project")
+    if lane.workflow == ".github/workflows/buck2-starter-ci.yml":
+        if job.get("runs-on") != "ubuntu-latest":
+            raise VerificationError(f"{lane.name}: Buck2 jobs must use the hosted ubuntu-latest runner")
+        permissions = parsed.get("permissions")
+        if permissions != {"contents": "read"}:
+            raise VerificationError(f"{lane.name}: workflow permissions must remain contents: read only")
+        if lane.name == "buck2-benchmark":
+            if "permissions" in job:
+                raise VerificationError("buck2-benchmark: job-level permission overrides are forbidden")
+            steps = job.get("steps")
+            if not isinstance(steps, list):
+                raise VerificationError("buck2-benchmark: steps are missing")
+            forbidden = re.compile(r"(?m)^\s*git\s+(?:push|commit|add)\b")
+            if any(forbidden.search(step.get("run", "")) for step in steps if isinstance(step, dict)):
+                raise VerificationError("buck2-benchmark: repository write commands are forbidden")
+            uploads = [
+                step for step in steps
+                if isinstance(step, dict)
+                and step.get("uses") == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+            ]
+            if len(uploads) != 1:
+                raise VerificationError("buck2-benchmark: expected one SHA-pinned report artifact upload")
+            artifact = uploads[0].get("with")
+            if not isinstance(artifact, dict) or artifact.get("name") != "buck2-benchmark-report":
+                raise VerificationError("buck2-benchmark: artifact name is missing")
+            if artifact.get("path") != "${{ runner.temp }}/buck2-benchmark/BENCHMARK.md":
+                raise VerificationError("buck2-benchmark: report artifact path drifted")
+            if artifact.get("if-no-files-found") != "error":
+                raise VerificationError("buck2-benchmark: missing report must fail")
+            retention = artifact.get("retention-days")
+            if not isinstance(retention, int) or not 1 <= retention <= 30:
+                raise VerificationError("buck2-benchmark: artifact retention must be bounded to 1–30 days")
     for marker in lane.workflow_markers:
         if marker == "schedule:" and not isinstance(workflow_events(parsed).get("schedule"), list):
             raise VerificationError(f"{lane.name}: missing YAML schedule trigger")
