@@ -427,6 +427,17 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     expect(mint["principal_id"]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-/);
   });
 
+  it("refuses a whitespace-corrupted derived tenant before mint", async () => {
+    const captured: { req?: Request } = {};
+    const env = makeAuthorizedEnv({
+      captured,
+      mapped: new Map([[INSTALLATION_ID, ` ${TENANT}`]]),
+    });
+    const resp = await mintFetch(env, { auth: INTERNAL_KEY });
+    expect(resp.status).toBe(403);
+    expect(captured.req).toBeUndefined();
+  });
+
   it("(wp2) forwards max_vcpu_h when the tenant HAS a metered compute ceiling", async () => {
     // The whole point of threading this: the dispatcher can warn a customer as
     // they approach the monthly allowance instead of surprising them with

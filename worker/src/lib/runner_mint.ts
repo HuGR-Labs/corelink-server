@@ -223,7 +223,8 @@ async function resolveTenantFromAcquiringPat(
   if (
     parsed.valid !== true ||
     typeof parsed.tenant_id !== "string" ||
-    parsed.tenant_id.length === 0
+    parsed.tenant_id.length === 0 ||
+    parsed.tenant_id !== parsed.tenant_id.trim()
   ) {
     return null;
   }
@@ -289,6 +290,7 @@ export async function handleRunnerMint(
   request: Request,
   env: Env,
   requestId: string,
+  authorizeOnly = false,
 ): Promise<Response> {
   // ── 1. Method gate ─────────────────────────────────────────────────────────
   if (request.method !== "POST") {
@@ -314,7 +316,10 @@ export async function handleRunnerMint(
   // with NO shared fallback (DD-HIGH, WP1), so present the dedicated key when set;
   // There is deliberately no shared-key fallback for this onward authority.
   const internalAuthKey = env.CORELINK_PAT_MINT_AUTH_KEY;
-  if (typeof internalAuthKey !== "string" || internalAuthKey.length < 32) {
+  if (
+    !authorizeOnly &&
+    (typeof internalAuthKey !== "string" || internalAuthKey.length < 32)
+  ) {
     // 503, NOT 403 (2026-08-02). Nothing about the DISPATCHER failed here — it
     // authenticated fine at step 2. What failed is OUR onward credential to the
     // container mint authority, i.e. a config fault on our side. The body always
@@ -351,12 +356,19 @@ export async function handleRunnerMint(
   } catch {
     return reapiError("BAD_REQUEST", "invalid request body", 400, requestId);
   }
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    return reapiError("BAD_REQUEST", "invalid request body", 400, requestId);
+  }
   const jobId = body.job_id;
-  if (typeof jobId !== "string" || jobId.length === 0) {
+  if (typeof jobId !== "string" || jobId.length === 0 || jobId !== jobId.trim()) {
     return reapiError("BAD_REQUEST", "job_id required", 400, requestId);
   }
   const repoFullName = body.repo_full_name;
-  if (typeof repoFullName !== "string" || repoFullName.length === 0) {
+  if (
+    typeof repoFullName !== "string" ||
+    repoFullName.length === 0 ||
+    repoFullName !== repoFullName.trim()
+  ) {
     return reapiError("BAD_REQUEST", "repo_full_name required", 400, requestId);
   }
   const explicitOperationId = body.operation_id;
@@ -371,7 +383,9 @@ export async function handleRunnerMint(
   const installationId = body.installation_id;
   if (
     installationId !== undefined &&
-    (typeof installationId !== "string" || installationId.length === 0)
+    (typeof installationId !== "string" ||
+      installationId.length === 0 ||
+      installationId !== installationId.trim())
   ) {
     return reapiError(
       "BAD_REQUEST",
@@ -420,7 +434,7 @@ export async function handleRunnerMint(
     runnerJobAcKey = RUNNER_AC_KEY_DENY_DELETE_ONLY;
   } else {
     const name = body.ac_output_name;
-    if (typeof name !== "string" || name.length === 0) {
+    if (typeof name !== "string" || name.length === 0 || name !== name.trim()) {
       return reapiError("BAD_REQUEST", "ac_output_name must be a non-empty string", 400, requestId);
     }
     runnerJobAcKey = await blake3Hex(RUNNER_AC_KEY_PREFIX + name);
@@ -455,7 +469,8 @@ export async function handleRunnerMint(
       if (
         mapRow === null ||
         typeof mapRow.tenant_id !== "string" ||
-        mapRow.tenant_id.length === 0
+        mapRow.tenant_id.length === 0 ||
+        mapRow.tenant_id !== mapRow.tenant_id.trim()
       ) {
         return forbidden();
       }
@@ -496,8 +511,10 @@ export async function handleRunnerMint(
     const offStmt = env.CONFIG_DB.prepare(
       "SELECT 1 FROM tenant_offboarding_state WHERE tenant_id = ?1 LIMIT 1",
     ).bind(tenantId);
+    // GitHub repository names are case-insensitive; keep tenant_id exact so an
+    // allowlist entry can never authorize a different tenant.
     const allowStmt = env.CONFIG_DB.prepare(
-      "SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2 LIMIT 1",
+      "SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2 COLLATE NOCASE LIMIT 1",
     ).bind(tenantId, repoFullName);
     const entStmt = env.CONFIG_DB.prepare(
       "SELECT max_concurrency, max_vcpu_h FROM runners_entitlement WHERE tenant_id = ?1",
@@ -574,6 +591,18 @@ export async function handleRunnerMint(
     const message = err instanceof Error ? err.message : "unknown error";
     console.error(`[${requestId}] runner mint authz lookup failed: ${message.slice(0, 80)}`);
     return reapiError("INTERNAL_ERROR", "runner mint unavailable", 500, requestId);
+  }
+
+  if (authorizeOnly) {
+    return new Response(JSON.stringify({
+      tenant: tenantId,
+      max_concurrency: maxConcurrency,
+      ...(maxVcpuH !== null ? { max_vcpu_h: maxVcpuH } : {}),
+    }), { status: 200, headers: { "Content-Type": "application/json", "X-Request-Id": requestId } });
+  }
+
+  if (!internalAuthKey || internalAuthKey.length === 0) {
+    return reapiError("SERVICE_UNAVAILABLE", "runner mint unavailable", 503, requestId);
   }
 
   // ── 5e. M22(b) per-tenant mint ceiling (AFTER derivation, BEFORE the mint) ──
