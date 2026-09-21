@@ -305,7 +305,15 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
       if (sql.includes("runner_repo_allowlist")) {
         const tenantId = args[0] as string;
         const repo = args[1] as string;
-        return allowlisted.has(`${tenantId}\u0000${repo}`) ? { "1": 1 } : null;
+        const exactKey = `${tenantId}\u0000${repo}`;
+        const caseInsensitiveRepoMatch = sql.includes("COLLATE NOCASE") &&
+          [...allowlisted].some((key) => {
+            const separator = key.indexOf("\u0000");
+            return separator >= 0 &&
+              key.slice(0, separator) === tenantId &&
+              key.slice(separator + 1).toLowerCase() === repo.toLowerCase();
+          });
+        return allowlisted.has(exactKey) || caseInsensitiveRepoMatch ? { "1": 1 } : null;
       }
       if (sql.includes("runners_entitlement")) {
         const tenantId = args[0] as string;
@@ -416,6 +424,47 @@ describe("POST /internal/v1/runner/mint — 5b/5c/5d authz reads in ONE batch", 
       `an authz read escaped the batch onto a serial round trip: ${JSON.stringify(authzSerial)}`,
     ).toHaveLength(0);
     expect(captured.req).toBeDefined(); // the mint still happened
+  });
+
+  it("(batch) matches repository casing while keeping the tenant exact", async () => {
+    const mixedCaseRepo = "HuGR-dev/CoreLink-Runner-C3-20260921-A6";
+    const lowercaseRepo = mixedCaseRepo.toLowerCase();
+    const captured: { req?: Request } = {};
+    const { env, batches } = makeBatchEnv({
+      allowlisted: new Set([`${TENANT}\u0000${mixedCaseRepo}`]),
+    }, captured);
+    const resp = await mintFetch(env, {
+      auth: INTERNAL_KEY,
+      body: mintBody({
+        job_id: `${JOB_ID}-repo-case`,
+        repo_full_name: lowercaseRepo,
+      }),
+    });
+
+    expect(resp.status).toBe(200);
+    expect(captured.req).toBeDefined();
+    const allowlistSql = batches[0]?.[1] ?? "";
+    expect(allowlistSql).toContain("tenant_id = ?1");
+    expect(allowlistSql).toContain("repo_full_name = ?2 COLLATE NOCASE");
+  });
+
+  it("(batch) a case-insensitive repo match cannot cross tenant boundaries", async () => {
+    const otherTenant = "99999999-9999-9999-9999-999999999999";
+    const mixedCaseRepo = "HuGR-dev/CoreLink-Runner-C3-20260921-A6";
+    const captured: { req?: Request } = {};
+    const { env } = makeBatchEnv({
+      allowlisted: new Set([`${otherTenant}\u0000${mixedCaseRepo}`]),
+    }, captured);
+    const resp = await mintFetch(env, {
+      auth: INTERNAL_KEY,
+      body: mintBody({
+        job_id: `${JOB_ID}-repo-case-other-tenant`,
+        repo_full_name: mixedCaseRepo.toLowerCase(),
+      }),
+    });
+
+    expect(resp.status).toBe(403);
+    expect(captured.req).toBeUndefined();
   });
 
   it("(batch) PRECEDENCE — offboarding AND not-allowlisted still denies (5b wins, behaves identically)", async () => {
