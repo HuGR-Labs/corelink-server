@@ -24,6 +24,8 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use corelink_runner_aggregate::TenantPeriodTerms;
+
 /// Absolute path to the compiled bin (cargo injects this for integration tests).
 const BIN: &str = env!("CARGO_BIN_EXE_runner-aggregate-run");
 
@@ -52,25 +54,35 @@ fn run(stdin: &str) -> (i32, String, String) {
 /// A Starter tenant that ran 240 vCPU-h (100 included) → 140 vCPU-h over at
 /// $0.20 = $28.00 = 2_800_000 millicents.
 fn starter_240h_input() -> String {
-    r#"{
-        "artifact_contract_version": 2,
+    let mut terms: TenantPeriodTerms = serde_json::from_str(
+        r#"{
+            "tenant_id": "00000000-0000-0000-0000-000000000001",
+            "billing_period": "2026-08",
+            "allowance_vcpu_seconds": 360000,
+            "rate_cents_per_vcpu_hour": 20,
+            "terms_snapshot_ref": "terms://tenant/2026-08/v1",
+            "terms_snapshot_digest_hex": ""
+        }"#,
+    )
+    .expect("valid deterministic terms fixture");
+    terms.terms_snapshot_digest_hex = terms.expected_snapshot_digest_hex();
+    serde_json::json!({
+        "artifact_contract_version": 3,
         "billing_period": "2026-08",
         "period_start_ms": 1000,
         "period_end_ms": 2000,
         "now_ms": 1500,
         "prior_consumption": {},
-        "staged": [
-            {
-                "tenant_id": "00000000-0000-0000-0000-000000000001",
-                "region": "iad",
-                "qty_vcpu_seconds": 864000,
-                "idem_key_hex": "0101010101010101010101010101010101010101010101010101010101010101",
-                "time_ms": 1
-            }
-        ],
-        "tenant_tiers": { "00000000-0000-0000-0000-000000000001": "runner_starter" },
+        "staged": [{
+            "tenant_id": "00000000-0000-0000-0000-000000000001",
+            "region": "iad",
+            "qty_vcpu_seconds": 864000,
+            "idem_key_hex": "0101010101010101010101010101010101010101010101010101010101010101",
+            "time_ms": 1
+        }],
+        "tenant_period_terms": { "00000000-0000-0000-0000-000000000001": terms },
         "prior_chain_heads": {}
-    }"#
+    })
     .to_string()
 }
 
@@ -81,7 +93,7 @@ fn valid_input_exits_zero_and_emits_the_shadow_charge() {
 
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is JSON");
     assert_eq!(v["counters"].as_array().unwrap().len(), 1);
-    assert_eq!(v["artifact_contract_version"].as_u64().unwrap(), 2);
+    assert_eq!(v["artifact_contract_version"].as_u64().unwrap(), 3);
     let line = &v["shadow_ledger"][0];
     assert_eq!(
         line["shadow_charge_millicents"].as_u64().unwrap(),
@@ -99,6 +111,14 @@ fn valid_input_exits_zero_and_emits_the_shadow_charge() {
         2_800_000
     );
     assert_eq!(line["overage_vcpu_hours"].as_str().unwrap(), "140.000000");
+    assert_eq!(
+        line["terms_snapshot_ref"].as_str().unwrap(),
+        "terms://tenant/2026-08/v1"
+    );
+    assert_eq!(
+        line["terms_snapshot_digest_hex"].as_str().unwrap().len(),
+        64
+    );
     assert_eq!(v["total_shadow_millicents"].as_u64().unwrap(), 2_800_000);
 }
 
@@ -124,12 +144,13 @@ fn malformed_input_json_exits_non_zero_and_writes_no_stdout() {
 #[test]
 fn empty_staged_still_succeeds_with_empty_ledger() {
     let input = r#"{
-        "artifact_contract_version": 2,
+        "artifact_contract_version": 3,
         "billing_period": "2026-08",
         "period_start_ms": 1000,
         "period_end_ms": 2000,
         "now_ms": 1500,
         "prior_consumption": {},
+        "tenant_period_terms": {},
         "staged": []
     }"#;
     let (code, stdout, _stderr) = run(input);

@@ -3,7 +3,7 @@
 //!
 //! Given the staged `runner_vcpu_seconds` usage events for one billing period
 //! (drained from `usage_event_staging` by the credentialed cron workflow), the
-//! per-tenant runner tier map, and the per-region prior hash-chain heads, this
+//! immutable per-tenant period terms snapshots, and the per-region prior hash-chain heads, this
 //! crate:
 //!
 //!   1. aggregates the events per `(tenant_id, region, billing_period)` into a
@@ -45,8 +45,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use corelink_billing_aggregator::{AggregatedCounter, ChainHash, HashChainBuilder};
 use corelink_billing_emit::event::{IdemKey, UsageEventKind};
 use corelink_runner_overage::{
-    millicents_to_cents, overage_vcpu_hours_decimal, overage_vcpu_seconds, RunnerTier,
-    DEFAULT_OVERAGE_RATE_CENTS_PER_VCPU_HOUR, SECONDS_PER_VCPU_HOUR,
+    millicents_to_cents, overage_vcpu_hours_decimal, SECONDS_PER_VCPU_HOUR,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -61,8 +60,8 @@ const AGG_ID_NAMESPACE: Uuid = Uuid::from_u128(0x5751_0007_0094_0000_0000_0000_0
 const RUNNER_AGG_SOURCE: &str = "corelink/billing/runner-aggregate";
 
 /// JSON artifact contract for `runner-aggregate-run`.
-/// Version 2 adds durable prior consumption and cumulative shadow arithmetic.
-pub const RUNNER_AGGREGATE_ARTIFACT_CONTRACT_VERSION: u32 = 2;
+/// Version 3 requires immutable terms; v2 artifacts fail closed because their mutable inputs cannot safely price late usage.
+pub const RUNNER_AGGREGATE_ARTIFACT_CONTRACT_VERSION: u32 = 3;
 
 /// Product discriminator for the runner compute meter.
 pub const RUNNER_VCPU_SECONDS_PRODUCT: &str = "runner_vcpu_seconds";
@@ -105,6 +104,15 @@ pub enum RunnerAggregateError {
     #[error("invalid prior consumption for tenant {tenant_id}: {detail}")]
     InvalidPriorConsumption {
         /// Tenant whose durable state was invalid.
+        tenant_id: Uuid,
+        /// Validation failure detail.
+        detail: String,
+    },
+    /// A tenant-period terms snapshot was absent, malformed, or did not bind
+    /// to the tenant, billing period, or durable prior consumption.
+    #[error("invalid tenant-period terms for tenant {tenant_id}: {detail}")]
+    InvalidTenantPeriodTerms {
+        /// Tenant whose immutable terms did not validate.
         tenant_id: Uuid,
         /// Validation failure detail.
         detail: String,
@@ -157,10 +165,50 @@ pub struct PriorTenantConsumption {
     pub billing_period: String,
     /// Consumption already durably recorded for this tenant/product/period.
     pub cumulative_vcpu_seconds: u128,
+    /// Immutable terms snapshot reference used to price this durable total.
+    pub terms_snapshot_ref: String,
+    /// BLAKE3-256 digest of the immutable terms snapshot, lowercase 64-hex.
+    pub terms_snapshot_digest_hex: String,
+}
+
+/// Immutable pricing terms for one `(tenant_id, billing_period)` snapshot.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct TenantPeriodTerms {
+    /// Tenant this snapshot belongs to; must equal its input map key.
+    pub tenant_id: Uuid,
+    /// Billing period this snapshot belongs to; must equal the input period.
+    pub billing_period: String,
+    /// Included vCPU-seconds for this tenant and period.
+    pub allowance_vcpu_seconds: u128,
+    /// Whole US cents per vCPU-hour for this tenant and period.
+    pub rate_cents_per_vcpu_hour: u64,
+    /// Immutable snapshot identifier in the upstream terms store.
+    pub terms_snapshot_ref: String,
+    /// BLAKE3-256 of the canonical fields in this record, lowercase 64-hex.
+    pub terms_snapshot_digest_hex: String,
+}
+
+impl TenantPeriodTerms {
+    /// Return the canonical BLAKE3-256 digest that this snapshot must carry.
+    #[must_use]
+    pub fn expected_snapshot_digest_hex(&self) -> String {
+        let mut canonical =
+            Vec::with_capacity(64 + self.billing_period.len() + self.terms_snapshot_ref.len());
+        canonical.extend_from_slice(b"corelink.runner.tenant-period-terms.v1\\0");
+        canonical.extend_from_slice(self.tenant_id.as_bytes());
+        canonical.extend_from_slice(&(self.billing_period.len() as u64).to_be_bytes());
+        canonical.extend_from_slice(self.billing_period.as_bytes());
+        canonical.extend_from_slice(&self.allowance_vcpu_seconds.to_be_bytes());
+        canonical.extend_from_slice(&self.rate_cents_per_vcpu_hour.to_be_bytes());
+        canonical.extend_from_slice(&(self.terms_snapshot_ref.len() as u64).to_be_bytes());
+        canonical.extend_from_slice(self.terms_snapshot_ref.as_bytes());
+        blake3::hash(&canonical).to_hex().to_string()
+    }
 }
 
 /// The pure aggregation input (one billing period).
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunnerAggregateInput {
     /// Required JSON artifact contract version.
     pub artifact_contract_version: u32,
@@ -174,20 +222,14 @@ pub struct RunnerAggregateInput {
     /// `time_ms` + the counter row's `aggregated_at`. Passed in (never read from
     /// a clock) so the function stays pure + reproducible.
     pub now_ms: u64,
-    /// Overage rate in whole US cents per vCPU-hour (shadow only). Defaults to
-    /// [`DEFAULT_OVERAGE_RATE_CENTS_PER_VCPU_HOUR`] when absent.
-    #[serde(default)]
-    pub rate_cents_per_vcpu_hour: Option<u64>,
     /// Durable consumption before this deduplicated batch, keyed by tenant.
     pub prior_consumption: BTreeMap<Uuid, PriorTenantConsumption>,
     /// The staged runner events to aggregate (the workflow feeds only
     /// not-yet-aggregated rows — the watermark).
     pub staged: Vec<StagedRunnerEvent>,
-    /// Tenant UUID → runner tier SKU (`runner_starter`..`runner_max`), from
-    /// `runners_entitlement`. A tenant absent here (or with an unknown SKU) is
-    /// reported in `skipped` and gets no shadow line.
-    #[serde(default)]
-    pub tenant_tiers: BTreeMap<Uuid, String>,
+    /// Required immutable terms, keyed by tenant. Every staged tenant must
+    /// have exactly one snapshot matching this input's billing period.
+    pub tenant_period_terms: BTreeMap<Uuid, TenantPeriodTerms>,
     /// Region code → prior chain head. A region absent here starts at genesis.
     #[serde(default)]
     pub prior_chain_heads: BTreeMap<String, PriorChainHead>,
@@ -236,8 +278,6 @@ pub struct ShadowLine {
     pub tenant_id: Uuid,
     /// Billing period `YYYY-MM`.
     pub billing_period: String,
-    /// The tenant's runner tier SKU.
-    pub tier_sku: String,
     /// Legacy alias for [`Self::batch_vcpu_seconds`].
     pub total_vcpu_seconds: u128,
     /// Durable vCPU-seconds before this new batch (`C0`).
@@ -254,6 +294,10 @@ pub struct ShadowLine {
     pub overage_vcpu_hours: String,
     /// The rate applied, whole cents per vCPU-hour.
     pub rate_cents_per_vcpu_hour: u64,
+    /// Immutable terms snapshot reference used for this line.
+    pub terms_snapshot_ref: String,
+    /// Immutable terms snapshot digest used for this line.
+    pub terms_snapshot_digest_hex: String,
     /// Legacy alias for [`Self::charge_delta_millicents`].
     pub shadow_charge_millicents: u128,
     /// Display-only whole cents for [`Self::charge_delta_millicents`].
@@ -285,7 +329,8 @@ pub struct RunnerAggregateOutput {
     pub chain_head_updates: Vec<ChainHeadUpdate>,
     /// Per-tenant shadow charges (bills nothing).
     pub shadow_ledger: Vec<ShadowLine>,
-    /// Records skipped (unknown tenant tier, etc.).
+    /// Reserved for explicit non-pricing notes. Missing or invalid terms fail
+    /// the entire artifact and are never silently skipped.
     pub skipped: Vec<SkipNote>,
     /// Total shadow charge across all tenants this period, in millicents.
     pub total_shadow_millicents: u128,
@@ -302,6 +347,47 @@ struct GroupAccum {
 fn parse_hex32(s: &str) -> Option<[u8; 32]> {
     let bytes = hex::decode(s).ok()?;
     <[u8; 32]>::try_from(bytes.as_slice()).ok()
+}
+
+fn is_canonical_hex32(s: &str) -> bool {
+    parse_hex32(s).is_some_and(|digest| hex::encode(digest) == s)
+}
+
+fn validate_terms(
+    terms: &TenantPeriodTerms,
+    tenant_id: Uuid,
+    billing_period: &str,
+) -> Result<(), RunnerAggregateError> {
+    if terms.tenant_id != tenant_id {
+        return Err(RunnerAggregateError::InvalidTenantPeriodTerms {
+            tenant_id,
+            detail: format!("snapshot tenant {} does not match map key", terms.tenant_id),
+        });
+    }
+    if terms.billing_period != billing_period {
+        return Err(RunnerAggregateError::InvalidTenantPeriodTerms {
+            tenant_id,
+            detail: format!(
+                "snapshot billing_period {:?} does not match input {:?}",
+                terms.billing_period, billing_period
+            ),
+        });
+    }
+    if terms.terms_snapshot_ref.is_empty() {
+        return Err(RunnerAggregateError::InvalidTenantPeriodTerms {
+            tenant_id,
+            detail: "snapshot reference is empty".to_string(),
+        });
+    }
+    if !is_canonical_hex32(&terms.terms_snapshot_digest_hex)
+        || terms.terms_snapshot_digest_hex != terms.expected_snapshot_digest_hex()
+    {
+        return Err(RunnerAggregateError::InvalidTenantPeriodTerms {
+            tenant_id,
+            detail: "snapshot digest does not bind the canonical terms".to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn cumulative_shadow_charge_millicents_checked(
@@ -339,6 +425,10 @@ pub fn aggregate_runner_usage(
         });
     }
 
+    for (tenant_id, terms) in &input.tenant_period_terms {
+        validate_terms(terms, *tenant_id, &input.billing_period)?;
+    }
+
     for (tenant_id, prior) in &input.prior_consumption {
         if prior.product != RUNNER_VCPU_SECONDS_PRODUCT {
             return Err(RunnerAggregateError::InvalidPriorConsumption {
@@ -358,11 +448,38 @@ pub fn aggregate_runner_usage(
                 ),
             });
         }
+        if prior.terms_snapshot_ref.is_empty()
+            || !is_canonical_hex32(&prior.terms_snapshot_digest_hex)
+        {
+            return Err(RunnerAggregateError::InvalidTenantPeriodTerms {
+                tenant_id: *tenant_id,
+                detail: "prior consumption has an invalid terms snapshot binding".to_string(),
+            });
+        }
+        let terms = input.tenant_period_terms.get(tenant_id).ok_or(
+            RunnerAggregateError::InvalidTenantPeriodTerms {
+                tenant_id: *tenant_id,
+                detail: "missing terms snapshot for prior consumption".to_string(),
+            },
+        )?;
+        if prior.terms_snapshot_ref != terms.terms_snapshot_ref
+            || prior.terms_snapshot_digest_hex != terms.terms_snapshot_digest_hex
+        {
+            return Err(RunnerAggregateError::InvalidTenantPeriodTerms {
+                tenant_id: *tenant_id,
+                detail: "prior consumption terms snapshot does not match input".to_string(),
+            });
+        }
     }
 
-    let rate = input
-        .rate_cents_per_vcpu_hour
-        .unwrap_or(DEFAULT_OVERAGE_RATE_CENTS_PER_VCPU_HOUR);
+    for event in &input.staged {
+        if !input.tenant_period_terms.contains_key(&event.tenant_id) {
+            return Err(RunnerAggregateError::InvalidTenantPeriodTerms {
+                tenant_id: event.tenant_id,
+                detail: "missing terms snapshot for staged usage".to_string(),
+            });
+        }
+    }
 
     // 1. Group staged events by region → tenant (BTreeMap = deterministic walk).
     let mut by_region: BTreeMap<String, BTreeMap<Uuid, GroupAccum>> = BTreeMap::new();
@@ -482,24 +599,16 @@ pub fn aggregate_runner_usage(
 
     // 3. Per-tenant shadow charge (allowance is per-tenant across all regions).
     let mut shadow_ledger: Vec<ShadowLine> = Vec::new();
-    let mut skipped: Vec<SkipNote> = Vec::new();
+    let skipped: Vec<SkipNote> = Vec::new();
     let mut total_shadow_millicents: u128 = 0;
 
     for (tenant_id, total) in &tenant_totals {
-        let Some(sku) = input.tenant_tiers.get(tenant_id) else {
-            skipped.push(SkipNote {
-                reason: "no runner tier for tenant (absent from tenant_tiers)".to_string(),
-                tenant_id: Some(*tenant_id),
-            });
-            continue;
-        };
-        let Some(tier) = RunnerTier::from_sku(sku) else {
-            skipped.push(SkipNote {
-                reason: format!("unknown runner tier sku '{sku}'"),
-                tenant_id: Some(*tenant_id),
-            });
-            continue;
-        };
+        let terms = input.tenant_period_terms.get(tenant_id).ok_or(
+            RunnerAggregateError::InvalidTenantPeriodTerms {
+                tenant_id: *tenant_id,
+                detail: "missing terms snapshot for aggregated usage".to_string(),
+            },
+        )?;
 
         let prior = input
             .prior_consumption
@@ -512,11 +621,19 @@ pub fn aggregate_runner_usage(
                     tenant_id: *tenant_id,
                     operation: "adding durable prior consumption and batch usage",
                 })?;
-        let allowance = u128::from(tier.allowance_vcpu_seconds());
-        let prior_charge =
-            cumulative_shadow_charge_millicents_checked(prior, allowance, rate, *tenant_id)?;
-        let cumulative_charge =
-            cumulative_shadow_charge_millicents_checked(cumulative, allowance, rate, *tenant_id)?;
+        let allowance = terms.allowance_vcpu_seconds;
+        let prior_charge = cumulative_shadow_charge_millicents_checked(
+            prior,
+            allowance,
+            terms.rate_cents_per_vcpu_hour,
+            *tenant_id,
+        )?;
+        let cumulative_charge = cumulative_shadow_charge_millicents_checked(
+            cumulative,
+            allowance,
+            terms.rate_cents_per_vcpu_hour,
+            *tenant_id,
+        )?;
         let charge_delta = cumulative_charge.checked_sub(prior_charge).ok_or(
             RunnerAggregateError::InvalidPriorConsumption {
                 tenant_id: *tenant_id,
@@ -529,12 +646,11 @@ pub fn aggregate_runner_usage(
                 operation: "summing shadow charge deltas",
             },
         )?;
-        let over = overage_vcpu_seconds(cumulative, tier);
+        let over = cumulative.saturating_sub(allowance);
 
         shadow_ledger.push(ShadowLine {
             tenant_id: *tenant_id,
             billing_period: input.billing_period.clone(),
-            tier_sku: sku.clone(),
             total_vcpu_seconds: *total,
             prior_vcpu_seconds: prior,
             batch_vcpu_seconds: *total,
@@ -542,7 +658,9 @@ pub fn aggregate_runner_usage(
             allowance_vcpu_seconds: allowance,
             overage_vcpu_seconds: over,
             overage_vcpu_hours: overage_vcpu_hours_decimal(over),
-            rate_cents_per_vcpu_hour: rate,
+            rate_cents_per_vcpu_hour: terms.rate_cents_per_vcpu_hour,
+            terms_snapshot_ref: terms.terms_snapshot_ref.clone(),
+            terms_snapshot_digest_hex: terms.terms_snapshot_digest_hex.clone(),
             shadow_charge_millicents: charge_delta,
             shadow_charge_cents: millicents_to_cents(charge_delta),
             charge_delta_millicents: charge_delta,
@@ -579,17 +697,37 @@ mod tests {
         Uuid::from_u128(n)
     }
 
+    fn terms_for(
+        tenant_id: Uuid,
+        allowance_vcpu_seconds: u128,
+        rate_cents_per_vcpu_hour: u64,
+    ) -> TenantPeriodTerms {
+        let mut terms = TenantPeriodTerms {
+            tenant_id,
+            billing_period: "2026-08".to_string(),
+            allowance_vcpu_seconds,
+            rate_cents_per_vcpu_hour,
+            terms_snapshot_ref: format!("terms://{tenant_id}/2026-08/v1"),
+            terms_snapshot_digest_hex: String::new(),
+        };
+        terms.terms_snapshot_digest_hex = terms.expected_snapshot_digest_hex();
+        terms
+    }
+
     fn base_input(staged: Vec<StagedRunnerEvent>) -> RunnerAggregateInput {
+        let tenant_period_terms = staged
+            .iter()
+            .map(|event| (event.tenant_id, terms_for(event.tenant_id, 100 * 3600, 20)))
+            .collect();
         RunnerAggregateInput {
             artifact_contract_version: RUNNER_AGGREGATE_ARTIFACT_CONTRACT_VERSION,
             billing_period: "2026-08".to_string(),
             period_start_ms: 1_000,
             period_end_ms: 2_000,
             now_ms: 1_500,
-            rate_cents_per_vcpu_hour: None,
             prior_consumption: BTreeMap::new(),
             staged,
-            tenant_tiers: BTreeMap::new(),
+            tenant_period_terms,
             prior_chain_heads: BTreeMap::new(),
         }
     }
@@ -605,7 +743,7 @@ mod tests {
     #[test]
     fn sums_qty_per_tenant_region_and_counts_events() {
         let t = tenant(1);
-        let mut input = base_input(vec![
+        let input = base_input(vec![
             StagedRunnerEvent {
                 tenant_id: t,
                 region: "iad".to_string(),
@@ -621,7 +759,6 @@ mod tests {
                 time_ms: 2,
             },
         ]);
-        input.tenant_tiers.insert(t, "runner_starter".to_string()); // 100h allowance
         let out = aggregate_runner_usage(&input).unwrap();
 
         assert_eq!(out.counters.len(), 1);
@@ -645,7 +782,7 @@ mod tests {
     #[test]
     fn allowance_spans_regions_for_one_tenant() {
         let t = tenant(7);
-        let mut input = base_input(vec![
+        let input = base_input(vec![
             StagedRunnerEvent {
                 tenant_id: t,
                 region: "iad".to_string(),
@@ -661,7 +798,6 @@ mod tests {
                 time_ms: 2,
             },
         ]);
-        input.tenant_tiers.insert(t, "runner_starter".to_string()); // 100h allowance
         let out = aggregate_runner_usage(&input).unwrap();
 
         // Two counter rows (one per region), but ONE shadow line summing both.
@@ -682,29 +818,61 @@ mod tests {
             idem_key_hex: ik(0x03),
             time_ms: 1,
         }]);
-        input.tenant_tiers.insert(t, "runner_pro".to_string()); // 240h allowance
+        input
+            .tenant_period_terms
+            .insert(t, terms_for(t, 240 * 3600, 20));
         let out = aggregate_runner_usage(&input).unwrap();
         assert_eq!(out.shadow_ledger[0].overage_vcpu_seconds, 0);
         assert_eq!(out.shadow_ledger[0].shadow_charge_millicents, 0);
     }
 
     #[test]
-    fn unknown_tier_is_skipped_not_charged() {
+    fn each_tenant_uses_its_own_allowance_and_rate() {
+        let t1 = tenant(31);
+        let t2 = tenant(32);
+        let mut input = base_input(vec![
+            StagedRunnerEvent {
+                tenant_id: t1,
+                region: "iad".to_string(),
+                qty_vcpu_seconds: 200 * 3600,
+                idem_key_hex: ik(0x31),
+                time_ms: 1,
+            },
+            StagedRunnerEvent {
+                tenant_id: t2,
+                region: "fra".to_string(),
+                qty_vcpu_seconds: 200 * 3600,
+                idem_key_hex: ik(0x32),
+                time_ms: 2,
+            },
+        ]);
+        input
+            .tenant_period_terms
+            .insert(t1, terms_for(t1, 100 * 3600, 10));
+        input
+            .tenant_period_terms
+            .insert(t2, terms_for(t2, 180 * 3600, 40));
+        let out = aggregate_runner_usage(&input).unwrap();
+
+        assert_eq!(out.shadow_ledger[0].charge_delta_millicents, 1_000_000);
+        assert_eq!(out.shadow_ledger[1].charge_delta_millicents, 800_000);
+    }
+
+    #[test]
+    fn missing_terms_fail_closed_before_aggregate_output() {
         let t = tenant(9);
-        let input = base_input(vec![StagedRunnerEvent {
+        let mut input = base_input(vec![StagedRunnerEvent {
             tenant_id: t,
             region: "iad".to_string(),
             qty_vcpu_seconds: 500 * 3600,
             idem_key_hex: ik(0x09),
             time_ms: 1,
         }]);
-        // no tenant_tiers entry
-        let out = aggregate_runner_usage(&input).unwrap();
-        assert!(out.shadow_ledger.is_empty());
-        assert_eq!(out.skipped.len(), 1);
-        assert_eq!(out.skipped[0].tenant_id, Some(t));
-        // The counter row is still produced (usage is recorded even if unpriced).
-        assert_eq!(out.counters.len(), 1);
+        input.tenant_period_terms.clear();
+        assert!(matches!(
+            aggregate_runner_usage(&input),
+            Err(RunnerAggregateError::InvalidTenantPeriodTerms { .. })
+        ));
     }
 
     #[test]
@@ -795,11 +963,13 @@ mod tests {
         ));
     }
 
-    fn prior_consumption(vcpu_seconds: u128) -> PriorTenantConsumption {
+    fn prior_consumption(terms: &TenantPeriodTerms, vcpu_seconds: u128) -> PriorTenantConsumption {
         PriorTenantConsumption {
             product: RUNNER_VCPU_SECONDS_PRODUCT.to_string(),
             billing_period: "2026-08".to_string(),
             cumulative_vcpu_seconds: vcpu_seconds,
+            terms_snapshot_ref: terms.terms_snapshot_ref.clone(),
+            terms_snapshot_digest_hex: terms.terms_snapshot_digest_hex.clone(),
         }
     }
 
@@ -809,10 +979,11 @@ mod tests {
     ) -> RunnerAggregateInput {
         let t = tenant(42);
         let mut input = base_input(staged);
-        input.tenant_tiers.insert(t, "runner_starter".to_string());
+        let terms = terms_for(t, 100 * 3600, 20);
+        input.tenant_period_terms.insert(t, terms.clone());
         input
             .prior_consumption
-            .insert(t, prior_consumption(prior_vcpu_seconds));
+            .insert(t, prior_consumption(&terms, prior_vcpu_seconds));
         input
     }
 
@@ -865,7 +1036,7 @@ mod tests {
     #[test]
     fn allowance_boundary_is_applied_once_to_cumulative_usage() {
         let t = tenant(42);
-        let allowance = u128::from(RunnerTier::Starter.allowance_vcpu_seconds());
+        let allowance = 100 * 3600;
         for (prior, batch, expected_delta) in
             [(allowance - 1, 1, 0), (allowance, 0, 0), (allowance, 1, 5)]
         {
@@ -950,7 +1121,7 @@ mod tests {
     fn rejects_wrong_contract_or_prior_scope_and_overflow() {
         let t = tenant(42);
         let mut unsupported = starter_input_with_prior(0, vec![]);
-        unsupported.artifact_contract_version = 1;
+        unsupported.artifact_contract_version = 2;
         assert!(matches!(
             aggregate_runner_usage(&unsupported),
             Err(RunnerAggregateError::UnsupportedArtifactContractVersion { .. })
@@ -965,6 +1136,51 @@ mod tests {
         assert!(matches!(
             aggregate_runner_usage(&wrong_period),
             Err(RunnerAggregateError::InvalidPriorConsumption { .. })
+        ));
+
+        let mut missing_prior_terms = starter_input_with_prior(0, vec![]);
+        missing_prior_terms.tenant_period_terms.clear();
+        assert!(matches!(
+            aggregate_runner_usage(&missing_prior_terms),
+            Err(RunnerAggregateError::InvalidTenantPeriodTerms { .. })
+        ));
+
+        let mut wrong_terms_period = starter_input_with_prior(0, vec![]);
+        wrong_terms_period
+            .tenant_period_terms
+            .get_mut(&t)
+            .unwrap()
+            .billing_period = "2026-09".to_string();
+        assert!(matches!(
+            aggregate_runner_usage(&wrong_terms_period),
+            Err(RunnerAggregateError::InvalidTenantPeriodTerms { .. })
+        ));
+
+        let mut wrong_terms_tenant = starter_input_with_prior(0, vec![]);
+        wrong_terms_tenant
+            .tenant_period_terms
+            .get_mut(&t)
+            .unwrap()
+            .tenant_id = tenant(43);
+        assert!(matches!(
+            aggregate_runner_usage(&wrong_terms_tenant),
+            Err(RunnerAggregateError::InvalidTenantPeriodTerms { .. })
+        ));
+
+        let mut changed_terms = starter_input_with_prior(0, vec![]);
+        let terms = changed_terms.tenant_period_terms.get_mut(&t).unwrap();
+        terms.allowance_vcpu_seconds += 1;
+        assert!(matches!(
+            aggregate_runner_usage(&changed_terms),
+            Err(RunnerAggregateError::InvalidTenantPeriodTerms { .. })
+        ));
+
+        let terms = changed_terms.tenant_period_terms.get_mut(&t).unwrap();
+        terms.terms_snapshot_ref = "terms://current/2026-08/v2".to_string();
+        terms.terms_snapshot_digest_hex = terms.expected_snapshot_digest_hex();
+        assert!(matches!(
+            aggregate_runner_usage(&changed_terms),
+            Err(RunnerAggregateError::InvalidTenantPeriodTerms { .. })
         ));
 
         let overflow = starter_input_with_prior(
