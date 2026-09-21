@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS byok_activation_source_capture (
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_source_capture_exact
 BEFORE INSERT ON byok_activation_source_capture
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
+    SELECT RAISE(ABORT, 'invalid activation source capture') WHERE NOT EXISTS (
         SELECT 1 FROM byok_transition_fence f
         JOIN byok_tenant_gate g ON g.tenant_id=f.tenant_id
         WHERE f.token=NEW.transition_token AND f.tenant_id=NEW.tenant_id
@@ -176,7 +176,7 @@ BEGIN
                     AND s.cmk_key_id=NEW.source_cmk_key_id
                     AND s.tcs_wrapped IS NOT NULL)
               END
-    ) THEN RAISE(ABORT, 'invalid activation source capture') END;
+    );
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_source_capture_immutable
@@ -264,7 +264,7 @@ END;
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_guard_snapshot
 BEFORE INSERT ON byok_activation_guard
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
+    SELECT RAISE(ABORT, 'invalid or non-exclusive BYOK activation transition') WHERE NOT EXISTS (
         SELECT 1 FROM byok_transition_fence f
          WHERE f.token = NEW.transition_token AND f.tenant_id = NEW.tenant_id
            AND f.epoch = NEW.transition_epoch AND f.outcome = 'active'
@@ -273,19 +273,19 @@ BEGIN
         SELECT 1 FROM byok_data_intent i WHERE i.tenant_id = NEW.tenant_id
           AND i.outcome = 'active'
           AND i.expires_at_ms > (CAST(strftime('%s','now') AS INTEGER) * 1000)
-    ) THEN RAISE(ABORT, 'invalid or non-exclusive BYOK activation transition') END;
+    );
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_guard_takeover_snapshot
 BEFORE UPDATE OF transition_token, transition_epoch ON byok_activation_guard
 WHEN OLD.transition_token IS NOT NEW.transition_token
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
+    SELECT RAISE(ABORT, 'invalid BYOK activation transition takeover') WHERE NOT EXISTS (
         SELECT 1 FROM byok_transition_fence f
          WHERE f.token = NEW.transition_token AND f.tenant_id = NEW.tenant_id
            AND f.epoch = NEW.transition_epoch AND f.outcome = 'active'
            AND f.expires_at_ms > (CAST(strftime('%s','now') AS INTEGER) * 1000)
-    ) THEN RAISE(ABORT, 'invalid BYOK activation transition takeover') END;
+    );
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_byok_data_intent_activation_barrier
@@ -408,7 +408,7 @@ CREATE TABLE IF NOT EXISTS byok_activation_key_health (
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_intent_snapshot
 BEFORE INSERT ON byok_activation_intent
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
+    SELECT RAISE(ABORT, 'invalid BYOK activation snapshot') WHERE NOT EXISTS (
         SELECT 1
           FROM byok_activation_guard f
           JOIN byok_transition_fence tf ON tf.token = f.transition_token
@@ -457,7 +457,7 @@ BEGIN
                      AND sh.cmk_region=NEW.source_cmk_region
                      AND sh.tcs_wrapped IS NOT NULL)
                END
-    ) THEN RAISE(ABORT, 'invalid BYOK activation snapshot') END;
+    );
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_intent_forward_only
@@ -631,7 +631,7 @@ CREATE INDEX IF NOT EXISTS idx_byok_activation_source_copy
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_source_insert_guard
 BEFORE INSERT ON byok_activation_source_object
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
+    SELECT RAISE(ABORT, 'invalid activation source snapshot identity') WHERE NOT EXISTS (
         SELECT 1 FROM byok_activation_intent a
          WHERE a.intent_id=NEW.intent_id AND a.tenant_id=NEW.tenant_id
            AND a.phase='copy' AND a.source_generation=NEW.source_generation
@@ -671,7 +671,7 @@ BEGIN
                          AND sh.cmk_key_id=NEW.source_cmk_key_id
                          AND sh.cmk_region=NEW.source_cmk_region))
              END
-    ) THEN RAISE(ABORT, 'invalid activation source snapshot identity') END;
+    );
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_source_forward_only
@@ -734,7 +734,7 @@ ON byok_logical_object_generation
 WHEN OLD.ciphertext_size IS NOT NEW.ciphertext_size
   OR OLD.ciphertext_blake3 IS NOT NEW.ciphertext_blake3
 BEGIN
-    SELECT CASE WHEN NOT (
+    SELECT RAISE(ABORT, 'activation ciphertext receipt is not append-only') WHERE NOT (
         OLD.ciphertext_size IS NULL AND OLD.ciphertext_blake3 IS NULL
         AND NEW.ciphertext_size IS NOT NULL AND NEW.ciphertext_size >= 0
         AND length(NEW.ciphertext_blake3)=64
@@ -760,7 +760,7 @@ BEGIN
               AND s.logical_key=OLD.logical_key AND s.target_allocation_id=OLD.allocation_id
               AND s.target_physical_key=OLD.physical_key
               AND a.target_generation=OLD.generation AND a.phase='copy')
-    ) THEN RAISE(ABORT, 'activation ciphertext receipt is not append-only') END;
+    );
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_generation_forward_only
@@ -1014,7 +1014,7 @@ CREATE TRIGGER IF NOT EXISTS trg_byok_activation_operation_guard
 BEFORE INSERT ON byok_activation_operation_guard
 WHEN NEW.action NOT IN ('cancel','preempt')
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
+    SELECT RAISE(ABORT, 'invalid or stale BYOK activation capability') WHERE NOT EXISTS (
         SELECT 1
           FROM byok_activation_intent a
           JOIN byok_activation_guard f ON f.guard_id = a.guard_id
@@ -1066,14 +1066,14 @@ BEGIN
                WHEN 'abort' THEN a.phase = 'copy'
                WHEN 'preempt' THEN 0
                ELSE 0 END
-    ) THEN RAISE(ABORT, 'invalid or stale BYOK activation capability') END;
+    );
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_preempt_guard
 BEFORE INSERT ON byok_activation_operation_guard
 WHEN NEW.action IN ('cancel','preempt')
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
+    SELECT RAISE(ABORT, 'invalid BYOK destructive preemption capability') WHERE NOT EXISTS (
         SELECT 1 FROM byok_activation_intent a
         JOIN byok_transition_commit_guard cg
           ON cg.tenant_id = a.tenant_id AND cg.token = NEW.control_token
@@ -1086,7 +1086,7 @@ BEGIN
           AND tf.tenant_id = a.tenant_id
           AND tf.outcome = 'active'
           AND tf.expires_at_ms > (CAST(strftime('%s','now') AS INTEGER) * 1000)
-    ) THEN RAISE(ABORT, 'invalid BYOK destructive preemption capability') END;
+    );
 END;
 
 -- Final statement of every object-worker mutation batch. The trigger turns a
@@ -1110,7 +1110,7 @@ CREATE TABLE IF NOT EXISTS byok_activation_worker_assertion (
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_worker_assertion
 BEFORE INSERT ON byok_activation_worker_assertion
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
+    SELECT RAISE(ABORT, 'activation worker postcondition failed') WHERE NOT EXISTS (
         SELECT 1 FROM byok_activation_intent a
         JOIN byok_activation_operation_guard og ON og.operation_token=NEW.operation_token
          AND og.intent_id=a.intent_id
@@ -1155,7 +1155,7 @@ BEGIN
                  WHERE p.purge_id=NEW.purge_id AND p.state='verified'
                   AND p.claim_token IS NULL)
             ELSE 0 END
-    ) THEN RAISE(ABORT, 'activation worker postcondition failed') END;
+    );
 END;
 
 -- Terminalization clears capabilities and truthfully classifies the owning
@@ -1173,8 +1173,8 @@ BEGIN
      WHERE guard_id = NEW.guard_id
        AND (outcome = 'active'
             OR (NEW.phase IN ('aborted','preempted') AND outcome = 'expired'));
-    SELECT CASE WHEN changes() <> 1
-        THEN RAISE(ABORT, 'BYOK activation guard terminalization failed') END;
+    SELECT RAISE(ABORT, 'BYOK activation guard terminalization failed')
+        WHERE changes() <> 1;
     UPDATE byok_transition_fence
        SET outcome = CASE WHEN outcome = 'expired' THEN 'expired'
            ELSE CASE NEW.phase
@@ -1187,8 +1187,8 @@ BEGIN
                     WHERE guard_id = NEW.guard_id)
        AND (outcome = 'active'
             OR (NEW.phase IN ('aborted','preempted') AND outcome = 'expired'));
-    SELECT CASE WHEN changes() <> 1
-        THEN RAISE(ABORT, 'BYOK transition fence terminalization failed') END;
+    SELECT RAISE(ABORT, 'BYOK transition fence terminalization failed')
+        WHERE changes() <> 1;
 END;
 
 -- Last statement in every lifecycle batch. A missing/mismatched durable result
@@ -1207,7 +1207,7 @@ CREATE TABLE IF NOT EXISTS byok_activation_postcondition (
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_postcondition
 BEFORE INSERT ON byok_activation_postcondition
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
+    SELECT RAISE(ABORT, 'BYOK activation postcondition failed') WHERE NOT EXISTS (
         SELECT 1 FROM byok_activation_intent a
         JOIN byok_tenant_gate g ON g.tenant_id=a.tenant_id
         JOIN tenant_byok_config c ON c.tenant_id=a.tenant_id
@@ -1311,7 +1311,7 @@ BEGIN
                     WHERE s.intent_id=a.intent_id
                      AND (p.purge_id IS NULL OR pc.purge_id IS NULL)))
             ELSE 0 END
-    ) THEN RAISE(ABORT, 'BYOK activation postcondition failed') END;
+    );
 END;
 
 -- Atomic degrade/restore must either leave the live activation safely paused
@@ -1329,7 +1329,7 @@ CREATE TABLE IF NOT EXISTS byok_activation_suspension_postcondition (
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_suspension_postcondition
 BEFORE INSERT ON byok_activation_suspension_postcondition
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
+    SELECT RAISE(ABORT, 'BYOK activation suspension postcondition failed') WHERE NOT EXISTS (
         SELECT 1 FROM byok_activation_intent a
         JOIN tenant t ON t.tenant_id=a.tenant_id
         JOIN tenant_byok_config c ON c.tenant_id=a.tenant_id
@@ -1372,7 +1372,7 @@ BEGIN
                 OR (a.phase IN ('published_partial','purging','ready_finalize')
                   AND a.publication_gate_epoch=g.gate_epoch))
             ELSE 0 END
-    ) THEN RAISE(ABORT, 'BYOK activation suspension postcondition failed') END;
+    );
 END;
 
 CREATE TABLE IF NOT EXISTS byok_activation_transition_assertion (
@@ -1385,7 +1385,7 @@ CREATE TABLE IF NOT EXISTS byok_activation_transition_assertion (
 CREATE TRIGGER IF NOT EXISTS trg_byok_activation_transition_assertion
 BEFORE INSERT ON byok_activation_transition_assertion
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
+    SELECT RAISE(ABORT, 'BYOK activation transition recovery failed') WHERE NOT EXISTS (
         SELECT 1 FROM byok_activation_guard f
         JOIN byok_transition_fence tf ON tf.token=f.transition_token
         WHERE f.guard_id=NEW.guard_id AND f.outcome='active'
@@ -1393,7 +1393,7 @@ BEGIN
           AND tf.tenant_id=f.tenant_id AND tf.epoch=f.transition_epoch
           AND tf.outcome='active'
           AND tf.expires_at_ms>(CAST(strftime('%s','now') AS INTEGER)*1000)
-    ) THEN RAISE(ABORT, 'BYOK activation transition recovery failed') END;
+    );
 END;
 
 -- Written last. Runtime adapters require this exact marker before using any
