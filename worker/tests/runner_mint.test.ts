@@ -26,7 +26,7 @@ const INTERNAL_KEY = "test-internal-auth-key-0123456789"; // ≥32 chars
 const RUNNER_MINT_KEY = "test-pat-mint-auth-key-0123456789ab"; // ≥32 chars, distinct
 const PAT_MINT_KEY = "test-dedicated-pat-mint-key-0123456789";
 
-const TENANT = "11111111-1111-1111-1111-111111111111";
+const TENANT = "11111111-1111-4111-8111-111111111111";
 const JOB_ID = "job-abc-0001";
 const INSTALLATION_ID = "gh-install-42";
 const REPO_FULL_NAME = "acme/widgets";

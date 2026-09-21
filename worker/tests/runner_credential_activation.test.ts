@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { activateRunnerPat, adoptRunnerOperation } from "../src/lib/runner_credential_obligation";
 
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
-const OP = { operationId: "11111111-1111-4111-8111-111111111111", tenantId: "tenant-a", jobId: "job-a", repo: "acme/repo", lifecycleGeneration: "7" };
+const OP = { operationId: "11111111-1111-4111-8111-111111111111", tenantId: "22222222-2222-4222-8222-222222222222", jobId: "job-a", repo: "acme/repo", lifecycleGeneration: "7" };
 const PAT = { pat_id: "22222222-2222-4222-8222-222222222222", token_id: "token-a", hash: "hmac$argon2$digest", expires_ms: Date.now() + 86_400_000 };
 const RAW_SECRET = "raw-runner-secret-must-not-persist";
 

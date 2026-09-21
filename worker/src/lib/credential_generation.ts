@@ -1,4 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types";
+import { isCanonicalTenantUuid } from "./tenant_uuid.js";
 
 const I64_MAX = 9_223_372_036_854_775_807n;
 const UUID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -8,7 +9,7 @@ export function validateLifecycleGeneration(value: unknown): string {
   try { if (BigInt(value) > I64_MAX) throw new Error("out of range"); } catch { throw new Error("invalid lifecycle generation"); }
   return value;
 }
-function validIdentity(value: unknown): value is string { return typeof value === "string" && value.length > 0 && value === value.trim(); }
+function validTokenId(value: unknown): value is string { return typeof value === "string" && value.length > 0 && value === value.trim(); }
 async function bounded(work: Promise<void>, milliseconds = 1_000): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try { await Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("credential invalidation timeout")), milliseconds); })]); }
@@ -16,7 +17,7 @@ async function bounded(work: Promise<void>, milliseconds = 1_000): Promise<void>
 }
 export async function closeCredentialGeneration(db: D1Database, tenantId: string, throughGeneration: string, refreshPatRevocations = true, ensureFloor = true): Promise<void> {
   const generation = validateLifecycleGeneration(throughGeneration);
-  if (!validIdentity(tenantId)) throw new Error("invalid tenant identity");
+  if (!isCanonicalTenantUuid(tenantId)) throw new Error("invalid tenant identity");
   const conflicts = await db.prepare(`SELECT 1 FROM credential_generation_revocation q JOIN pat p ON p.pat_id = q.pat_id
     WHERE q.tenant_id = ?1 AND (q.tenant_id <> p.tenant_id OR q.token_id <> p.token_id OR q.lifecycle_generation <> p.lifecycle_generation) LIMIT 1`).bind(tenantId).all();
   if ((conflicts.results ?? []).length > 0) throw new Error("credential revocation identity conflict");
@@ -38,7 +39,7 @@ export async function closeCredentialGeneration(db: D1Database, tenantId: string
 interface PendingRevocation { pat_id: string; token_id: string; tenant_id: string; lifecycle_generation: string }
 export async function drainCredentialGenerationRevocations(db: D1Database, kv: { delete(key: string): Promise<void> } | undefined, tenantId: string, throughGeneration: string): Promise<{ complete: boolean; revoked: number }> {
   const generation = validateLifecycleGeneration(throughGeneration);
-  if (!validIdentity(tenantId)) throw new Error("invalid tenant identity");
+  if (!isCanonicalTenantUuid(tenantId)) throw new Error("invalid tenant identity");
   if (kv === undefined) throw new Error("credential metadata KV is unavailable");
   const rows = await db.prepare(`SELECT q.pat_id, q.token_id, q.tenant_id, q.lifecycle_generation
     FROM credential_generation_revocation q JOIN pat p ON p.pat_id = q.pat_id
@@ -49,7 +50,7 @@ export async function drainCredentialGenerationRevocations(db: D1Database, kv: {
   let revoked = 0; let processed = 0; let failed = false;
   for (const row of rows.results ?? []) {
     if (processed >= 4) break;
-    if (!UUID.test(row.pat_id) || !validIdentity(row.token_id) || row.tenant_id !== tenantId) continue;
+    if (!UUID.test(row.pat_id) || !validTokenId(row.token_id) || row.tenant_id !== tenantId) continue;
     try { validateLifecycleGeneration(row.lifecycle_generation); } catch { continue; }
     const current = await db.prepare("SELECT tenant_id, token_id, lifecycle_generation FROM pat WHERE pat_id = ?1").bind(row.pat_id).first<PendingRevocation | null>();
     if (current === null || current.tenant_id !== row.tenant_id || current.token_id !== row.token_id || current.lifecycle_generation !== row.lifecycle_generation) { failed = true; continue; }

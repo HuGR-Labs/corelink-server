@@ -1,3 +1,5 @@
+import { isCanonicalTenantUuid } from "./tenant_uuid.js";
+
 /** Signed, short-lived external compute grant issued by the server authority. */
 export const MAX_COMPUTE_GRANT_WALL_MS = 8 * 60 * 60 * 1000;
 const GRANT_TTL_MS = 90_000;
@@ -5,7 +7,7 @@ const MAX_TOKEN_BYTES = 8 * 1024;
 const MAX_U32 = 0xffff_ffffn;
 const MAX_I64 = 0x7fff_ffff_ffff_ffffn;
 const MS_PER_VCPU_HOUR = 3_600_000n;
-// Matches the Runners verifier's UUID v1-v5 / RFC 4122 variant contract.
+// Reservation IDs remain an independent workload-domain contract.
 const UUID_RE = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const WORKLOAD_ID_RE = /^[A-Za-z0-9:_./-]{1,256}$/;
 const KEY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -51,7 +53,7 @@ export async function issueComputeGrant(
   const key = env.COMPUTE_GRANT_SIGNING_KEY;
   const keyId = env.COMPUTE_GRANT_KEY_ID;
   if (typeof key !== "string" || key.length === 0 || key.length > 1024 || typeof keyId !== "string" || !KEY_ID_RE.test(keyId) ||
-      !UUID_RE.test(input.tenantId) || !UUID_RE.test(input.reservationId) || !WORKLOAD_ID_RE.test(input.workloadId) ||
+      !isCanonicalTenantUuid(input.tenantId) || !UUID_RE.test(input.reservationId) || !WORKLOAD_ID_RE.test(input.workloadId) ||
       (input.workloadKind !== "spawn_worker_runner" && input.workloadKind !== "devenv") ||
       !Number.isSafeInteger(input.maxVcpuHours) || input.maxVcpuHours <= 0 || BigInt(input.maxVcpuHours) > MAX_U32 ||
       !Number.isInteger(input.vcpuCount) || input.vcpuCount < 1 || input.vcpuCount > 16 || !validDate(nowMs)) throw invalid();

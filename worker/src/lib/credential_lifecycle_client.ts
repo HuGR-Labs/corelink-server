@@ -1,3 +1,5 @@
+import { isCanonicalTenantUuid } from "./tenant_uuid.js";
+
 export interface CredentialLifecycleEnv {
   FABRIC_CREDENTIAL_AUTHORITY_URL?: string;
   FABRIC_CREDENTIAL_ISSUER_AUTH_KEY?: string;
@@ -11,13 +13,12 @@ export interface CredentialLifecycleSnapshot {
 const MAX_BODY_BYTES = 4 * 1024;
 const DEADLINE_MS = 5_000;
 const I64_MAX = 9_223_372_036_854_775_807n;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 
 function fail(message: string): never { throw new Error(message); }
 
 function validateTenant(tenantId: string): void {
-  if (typeof tenantId !== "string" || tenantId !== tenantId.toLowerCase() || !UUID.test(tenantId) || /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(tenantId)) fail("invalid tenant id");
+  if (!isCanonicalTenantUuid(tenantId)) fail("invalid tenant id");
 }
 
 function validateEndpoint(raw: string): URL {

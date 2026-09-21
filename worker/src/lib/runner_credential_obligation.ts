@@ -1,3 +1,5 @@
+import { isCanonicalTenantUuid } from "./tenant_uuid.js";
+
 /** Runner mint handoff: issuer owns cleanup until the Worker durably adopts. */
 export const RUNNER_PREPARE_MS = 90_000;
 export interface RunnerCredentialOperation {
@@ -20,7 +22,7 @@ interface Marker extends RunnerCredentialOperation { schema_version: 1; deadline
 interface Row extends RunnerCredentialOperation { state: string; deadline_ms: number; token_id: string | null; pat_id: string | null; lifecycle_generation: string }
 
 function validOperation(o: RunnerCredentialOperation): boolean {
-  return UUID.test(o.operationId) && typeof o.tenantId === "string" && o.tenantId.trim() === o.tenantId && o.tenantId.trim() !== "" &&
+  return UUID.test(o.operationId) && isCanonicalTenantUuid(o.tenantId) &&
     typeof o.jobId === "string" && o.jobId.trim() === o.jobId && o.jobId.trim() !== "" &&
     typeof o.repo === "string" && o.repo.trim() === o.repo && o.repo.trim() !== "";
 }

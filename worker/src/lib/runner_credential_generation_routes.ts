@@ -3,9 +3,9 @@ import { requireConsumerAuth } from "./internal_auth.js";
 import { closeGenerationEvent, CredentialGenerationEventError, type CloseGenerationInput } from "./credential_generation_receipts.js";
 import { validateLifecycleGeneration } from "./credential_generation.js";
 import { readLegacyCredentialCoverage } from "./credential_legacy_coverage.js";
+import { isCanonicalTenantUuid } from "./tenant_uuid.js";
 
 export interface CloseGenerationRequest extends CloseGenerationInput {}
-const TENANT_ID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_BODY_BYTES = 16 * 1024;
 const CLOSE_BUDGET = 256;
 
@@ -24,7 +24,7 @@ function parseBody(value: unknown): CloseGenerationRequest {
   const tenantId = object["tenant_id"];
   const generation = object["lifecycle_generation"];
   if (typeof eventId !== "string" || eventId.length === 0 || new TextEncoder().encode(eventId).byteLength > 256 || eventId !== eventId.trim() || /[\u0000-\u001f\u007f]/u.test(eventId)) throw new CredentialGenerationEventError("invalid", "invalid suspension event");
-  if (typeof tenantId !== "string" || !TENANT_ID.test(tenantId) || tenantId !== tenantId.toLowerCase()) throw new CredentialGenerationEventError("invalid", "invalid suspension event");
+  if (!isCanonicalTenantUuid(tenantId)) throw new CredentialGenerationEventError("invalid", "invalid suspension event");
   if (typeof generation !== "string") throw new CredentialGenerationEventError("invalid", "invalid suspension event");
   try { validateLifecycleGeneration(generation); } catch { throw new CredentialGenerationEventError("invalid", "invalid suspension event"); }
   return { event_id: eventId, tenant_id: tenantId, lifecycle_generation: generation };

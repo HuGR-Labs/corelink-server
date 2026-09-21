@@ -1,4 +1,5 @@
 import { bounded } from "./devenv_cleanup.js";
+import { isCanonicalTenantUuid } from "./tenant_uuid.js";
 import type { AuthorizedDevenvInput, AuthorizedDevenvAck, PreparedDevenvCompute } from "../types/devenv_rpc.js";
 
 export const DEVENV_MAX_TTL_SECONDS = 8 * 60 * 60;
@@ -60,7 +61,7 @@ export async function relayAuthorizedDevenvStart(request: Request, tenantId: str
   const workspaceName = body["workspace_name"], profileName = body["profile_name"] ?? "default", tier = body["tier"] ?? "standard-4";
   if (!name(workspaceName) || !name(profileName) || typeof tier !== "string" || !["standard-2", "standard-4", "power-8", "ultra-16"].includes(tier)) return failure(400);
   const deadline = deps.now() + DEVENV_MAX_TTL_SECONDS * 1000, sessionUuid = deps.sessionId();
-  if (!UUID.test(sessionUuid) || !UUID.test(tenantId)) return failure(503);
+  if (!UUID.test(sessionUuid) || !isCanonicalTenantUuid(tenantId)) return failure(503);
   let patId: string | null = null, armed = false, accepted = false, startAttempted = false, compute: PreparedDevenvCompute | null = null;
   try {
     // The obligation is armed before minting; compute is staged only after the token exists.

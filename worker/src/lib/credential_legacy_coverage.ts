@@ -1,12 +1,12 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import { validateLifecycleGeneration } from "./credential_generation.js";
+import { isCanonicalTenantUuid } from "./tenant_uuid.js";
 
 export interface LegacyCredentialCoverage { complete: boolean }
-const UUID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** Read-only, fail-closed proof that the requested floor covers legacy PATs. */
 export async function readLegacyCredentialCoverage(db: D1Database, tenantId: string, throughGeneration: string): Promise<LegacyCredentialCoverage> {
-  if (typeof tenantId !== "string" || !UUID.test(tenantId) || tenantId !== tenantId.toLowerCase()) throw new Error("invalid coverage identity");
+  if (!isCanonicalTenantUuid(tenantId)) throw new Error("invalid coverage identity");
   validateLifecycleGeneration(throughGeneration);
   const row = await db.prepare(`WITH floor AS (SELECT revoked_through FROM tenant_credential_revocation_floor WHERE tenant_id = ?1), classified AS (
     SELECT p.pat_id,

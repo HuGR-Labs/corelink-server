@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 import { drainRunnerOperations, prepareRunnerOperation, RUNNER_PREPARE_MS } from "../src/lib/runner_credential_obligation";
 
-const operation = { operationId: "11111111-1111-4111-8111-111111111111", tenantId: "tenant-a", jobId: "job-a", repo: "acme/repo", lifecycleGeneration: "1" };
+const operation = { operationId: "11111111-1111-4111-8111-111111111111", tenantId: "22222222-2222-4222-8222-222222222222", jobId: "job-a", repo: "acme/repo", lifecycleGeneration: "1" };
 const key = "runner-credential/11111111-1111-4111-8111-111111111111";
 const marker = (overrides: Record<string, unknown> = {}) => ({ schema_version: 1, ...operation, deadline_ms: 91_000, due: 91_000, attempts: 0, ...overrides });
 const operationAt = (n: number) => ({ ...operation, operationId: `11111111-1111-4111-8111-${String(n).padStart(12, "0")}` });
