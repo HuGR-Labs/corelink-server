@@ -71,19 +71,20 @@ unavailable or invalid limiter state fails closed with `503`.
 
 The production data plane is wired and deployed. The Wave 32
 production-deploy campaign sealed 2026-05-22 (tag
-[`corelink-prod-deploy-v1`](https://github.com/HuGR-dev/corelink-server/releases/tag/corelink-prod-deploy-v1)),
-with all 5 customer endpoints live behind the flat
-`corelink-{api,signup,app,docs,get}.humangr.com` hosts (the dotted
-`corelink.humangr.com` apex is dead). The Wave 33-36 reorg campaign
+[`corelink-prod-deploy-v1`](https://github.com/HuGR-dev/corelink-server/releases/tag/corelink-prod-deploy-v1)).
+Current public entry points are `corelink-api.humangr.com`,
+`corelink-signup.humangr.com`, `corelink-get.humangr.com`,
+`corelink-docs.humangr.com`, and the path-mounted customer app at
+`https://humangr.com/corelink`. `corelink-app.humangr.com` is retired
+(NXDOMAIN); the docs host redirects to `https://humangr.com/corelink/docs/`.
+The Wave 33-36 reorg campaign
 (2026-05-22 → 2026-05-27) then consolidated the workspace from 149
 packages to 87 across 11 umbrella crates, restored the wasm32 build,
 resolved the materializer dependency cycle via traits extraction,
 added 14 proptests, and locked the adapter import boundaries down
-with cargo-deny. The remaining path to GA Full is the human-driven
-external-engagement track (pentest + SOC 2 + Legal + lighthouse
-customers + 30-day staging burn-in) tracked in
-[`ROADMAP-TO-GA.md`](./ROADMAP-TO-GA.md) Waves R-5..R-8. No code
-debt; only time-bounded calendar work.
+with cargo-deny. Current engineering, legal, operational, launch-readiness,
+and customer-iteration work is tracked in [`BACKLOG.md`](./BACKLOG.md) and
+[`ROADMAP-TO-GA.md`](./ROADMAP-TO-GA.md).
 
 ## Why CoreLink
 
