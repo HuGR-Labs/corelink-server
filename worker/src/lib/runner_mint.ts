@@ -511,8 +511,10 @@ export async function handleRunnerMint(
     const offStmt = env.CONFIG_DB.prepare(
       "SELECT 1 FROM tenant_offboarding_state WHERE tenant_id = ?1 LIMIT 1",
     ).bind(tenantId);
+    // GitHub repository names are case-insensitive; keep tenant_id exact so an
+    // allowlist entry can never authorize a different tenant.
     const allowStmt = env.CONFIG_DB.prepare(
-      "SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2 LIMIT 1",
+      "SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2 COLLATE NOCASE LIMIT 1",
     ).bind(tenantId, repoFullName);
     const entStmt = env.CONFIG_DB.prepare(
       "SELECT max_concurrency, max_vcpu_h FROM runners_entitlement WHERE tenant_id = ?1",
@@ -533,7 +535,7 @@ export async function handleRunnerMint(
 
     let offRow: { 1: number } | null;
     let allowRow: { 1: number } | null;
-    let entRow: { max_concurrency: number; max_vcpu_h?: unknown } | null;
+    let entRow: { max_concurrency: number; max_vcpu_h: number | null } | null;
     if (typeof (env.CONFIG_DB as { batch?: unknown }).batch === "function") {
       // ONE round trip carrying all three statements in the original 5b/5c/5d order.
       const results = await (
@@ -545,14 +547,14 @@ export async function handleRunnerMint(
       ).batch([offStmt, allowStmt, entStmt]);
       offRow = rowOf<{ 1: number }>(results[0]);
       allowRow = rowOf<{ 1: number }>(results[1]);
-      entRow = rowOf<{ max_concurrency: number; max_vcpu_h?: unknown }>(results[2]);
+      entRow = rowOf<{ max_concurrency: number; max_vcpu_h: number | null }>(results[2]);
     } else {
       // Fallback for test doubles that do not implement `batch` — IDENTICAL to
       // today's serial behaviour, so every existing test continues to exercise
       // the same three awaits in the same order.
       offRow = await offStmt.first<{ 1: number }>();
       allowRow = await allowStmt.first<{ 1: number }>();
-      entRow = await entStmt.first<{ max_concurrency: number; max_vcpu_h?: unknown }>();
+      entRow = await entStmt.first<{ max_concurrency: number; max_vcpu_h: number | null }>();
     }
 
     // 5b. Suspend gate: an ACTIVE tenant has NO offboarding row; a row EXISTS ⇒
@@ -581,16 +583,10 @@ export async function handleRunnerMint(
     // which is NOT the same as zero. Only a real positive number is forwarded —
     // a 0 or a negative would make the dispatcher compute a nonsense percentage
     // and warn every tenant on their first job.
-    if (!Number.isSafeInteger(maxConcurrency) || maxConcurrency <= 0) {
-      return forbidden();
-    }
-    const rawVcpuH = entRow.max_vcpu_h;
-    if (rawVcpuH !== null && rawVcpuH !== undefined) {
-      if (typeof rawVcpuH !== "number" || !Number.isFinite(rawVcpuH) || rawVcpuH < 0) {
-        return forbidden();
-      }
-      maxVcpuH = rawVcpuH;
-    }
+    maxVcpuH =
+      typeof entRow.max_vcpu_h === "number" && entRow.max_vcpu_h > 0
+        ? entRow.max_vcpu_h
+        : null;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     console.error(`[${requestId}] runner mint authz lookup failed: ${message.slice(0, 80)}`);

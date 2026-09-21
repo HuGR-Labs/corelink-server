@@ -455,14 +455,22 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     expect(body["max_concurrency"]).toBeDefined();
   });
 
-  it("(wp2) a ZERO max_vcpu_h is preserved and a negative value is rejected", async () => {
-    const zeroEnv = makeAuthorizedEnv({ vcpuCeilings: new Map([[TENANT, 0]]) });
-    const zeroResp = await mintFetch(zeroEnv, { auth: INTERNAL_KEY });
-    expect(zeroResp.status).toBe(200);
-    expect((await zeroResp.json() as Record<string, unknown>)["max_vcpu_h"]).toBe(0);
-    const negativeEnv = makeAuthorizedEnv({ vcpuCeilings: new Map([[TENANT, -5]]) });
-    const negativeResp = await mintFetch(negativeEnv, { auth: INTERNAL_KEY });
-    expect(negativeResp.status).toBe(403);
+  it("(wp2) a ZERO or NEGATIVE max_vcpu_h is treated as ABSENT, never forwarded", async () => {
+    // A 0 would make the dispatcher divide by zero (or compute an infinite
+    // percentage) and warn every tenant on their very first job; a negative is
+    // data corruption. Neither is a real ceiling, so neither reaches the wire —
+    // the tenant is simply "no metered ceiling on file", which is the honest
+    // reading. Guarded at the SOURCE so no consumer has to re-derive it.
+    for (const bad of [0, -5]) {
+      const env = makeAuthorizedEnv({ vcpuCeilings: new Map([[TENANT, bad]]) });
+      const resp = await mintFetch(env, {
+        auth: INTERNAL_KEY,
+        body: mintBody({ job_id: `${JOB_ID}-vcpu-${String(bad)}` }),
+      });
+      expect(resp.status).toBe(200); // still a legitimate mint
+      const body = (await resp.json()) as Record<string, unknown>;
+      expect(body["max_vcpu_h"]).toBeUndefined();
+    }
   });
 
   it("(wp2) max_vcpu_h is ADVISORY — a tenant at any ceiling is still minted", async () => {
