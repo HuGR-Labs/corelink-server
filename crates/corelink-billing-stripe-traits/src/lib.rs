@@ -284,6 +284,84 @@ pub trait IdempotencyStore: fmt::Debug + Send + Sync {
     ) -> Result<IdempotencyOutcome, String>;
 }
 
+/// Authenticated Stripe delivery persisted before any materializer effect.
+#[derive(Clone, Debug)]
+pub struct DurableWebhookEvent {
+    /// Stripe event identifier.
+    pub event_id: String,
+    /// Canonical classified event type.
+    pub event_type: String,
+    /// Exact signed request bytes, hex encoded.
+    pub raw_body_hex: String,
+    /// SHA-256 digest of the raw bytes, lower hexadecimal.
+    pub payload_sha256: String,
+    /// Stripe envelope creation time in milliseconds.
+    pub stripe_created_at_ms: u64,
+}
+
+/// Result of recording an authenticated delivery.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InboxReceiveOutcome {
+    /// The event remains actionable and must be claimed before processing.
+    Received,
+    /// The event reached a durable terminal state and may be acknowledged.
+    Terminal,
+    /// A legacy marker lacks proof of completion and needs reconciliation.
+    LegacyAmbiguous,
+}
+
+/// Fenced ownership of an inbox event.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InboxClaim {
+    /// Event owned by this claim.
+    pub event_id: String,
+    /// Monotonically increasing ownership fence.
+    pub fence: u64,
+}
+
+impl InboxClaim {
+    /// Construct an ownership fence returned by a successful claim.
+    pub fn new(event_id: String, fence: u64) -> Self {
+        Self { event_id, fence }
+    }
+}
+
+/// Durable terminal states an owned event may enter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InboxTerminalState {
+    /// Materialization completed durably.
+    Completed,
+    /// A durable DLQ row preserves the actionable event body.
+    Quarantined,
+}
+
+/// Restart-safe persistence and ownership seam for authenticated webhooks.
+pub trait DurableWebhookInbox: fmt::Debug + Send + Sync {
+    /// Persist an authenticated event before any effect occurs.
+    fn receive(
+        &self,
+        event: &DurableWebhookEvent,
+        now_ms: u64,
+    ) -> Result<InboxReceiveOutcome, String>;
+    /// Claim or reclaim an expired event lease. `None` is not an acknowledgement.
+    fn claim(
+        &self,
+        event_id: &str,
+        owner: &str,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<Option<InboxClaim>, String>;
+    /// Move only this live, fenced claim to a terminal state.
+    fn finish(
+        &self,
+        claim: &InboxClaim,
+        owner: &str,
+        state: InboxTerminalState,
+        error: Option<&str>,
+        now_ms: u64,
+    ) -> Result<bool, String>;
+}
+
 // =========================================================================
 // State materializer trait.
 // =========================================================================
