@@ -226,3 +226,5 @@ pub mod usage_meter;
 pub mod wall_clock;
 pub mod webhook;
 pub mod webhook_dlq_d1;
+/// Durable D1 persistence for restart-safe Stripe webhook ownership.
+pub mod webhook_inbox_d1;
