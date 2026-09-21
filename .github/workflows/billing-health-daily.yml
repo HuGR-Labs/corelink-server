@@ -51,9 +51,9 @@ concurrency:
 jobs:
   billing-health:
     name: Flag revenue-affecting billing anomalies
-    # Self-hosted `corelink` (ephemeral CF-Container Ubuntu 24.04) per the
-    # zero-hosted-CI mandate. Uses only the stdlib, so no package install step.
-    runs-on: corelink
+    # GitHub-hosted Linux: the self-hosted `corelink` label has no online runner.
+    # Uses only the stdlib, so no package install step is needed.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout

@@ -228,7 +228,7 @@ LANES = (
         ".github/workflows/billing-health-daily.yml",
         "billing-health",
         (
-            "runs-on: corelink",
+            "runs-on: ubuntu-latest",
             "timeout-minutes: 10",
             "python3 scripts/check_billing_health.py",
         ),

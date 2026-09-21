@@ -34,6 +34,16 @@ def test_live_population_and_mutations_pass() -> None:
     MODULE.mutation_checks(corpus())
 
 
+def test_billing_health_rejects_unavailable_self_hosted_runner() -> None:
+    lane = next(item for item in MODULE.LANES if item.name == "billing-health")
+    sources = corpus()
+    sources[lane.workflow] = sources[lane.workflow].replace(
+        "runs-on: ubuntu-latest", "runs-on: corelink", 1
+    )
+    with pytest.raises(MODULE.VerificationError, match="billing-health"):
+        MODULE.verify(sources)
+
+
 @pytest.mark.parametrize("lane_index", range(len(MODULE.LANES)))
 def test_removing_each_named_job_fails_closed(lane_index: int) -> None:
     lane = MODULE.LANES[lane_index]
