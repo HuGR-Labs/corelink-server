@@ -35,6 +35,26 @@ describe("compute grant validation", () => {
     expect(maximumWallMs).toBe(expectedMaximumWallMs);
     expect(payload.maximum_wall_ms).toBe(expectedMaximumWallMs);
   });
+  it("cryptographically binds the month-end ledger tuple", async () => {
+    const boundary = Date.parse("2026-10-01T00:00:00.000Z");
+    const issuedAtMs = boundary - 90_001;
+    const { token, maximumWallMs } = await issueComputeGrant(env, input, issuedAtMs);
+    const [encoded, signature] = token.split(".");
+    const payloadBytes = decode(encoded);
+    const payload = JSON.parse(new TextDecoder().decode(payloadBytes)) as Record<string, unknown>;
+
+    expect(maximumWallMs).toBe(1);
+    expect(payload).toMatchObject({ tenant_id: input.tenantId, workload_kind: input.workloadKind, workload_id: input.workloadId,
+      reservation_id: input.reservationId, period_key: 202609, ceiling_vcpu_ms: "3600000", vcpu_count: input.vcpuCount,
+      maximum_wall_ms: 1, issued_at_ms: issuedAtMs, expires_at_ms: issuedAtMs + 90_000 });
+    expect(Number(payload.expires_at_ms) + Number(payload.maximum_wall_ms)).toBe(boundary);
+    await expect(crypto.subtle.verify({ name: "Ed25519" }, publicKey, decode(signature), payloadBytes)).resolves.toBe(true);
+
+    const alteredWall = new TextEncoder().encode(JSON.stringify({ ...payload, maximum_wall_ms: 2 }));
+    const alteredReservation = new TextEncoder().encode(JSON.stringify({ ...payload, reservation_id: "33333333-3333-4333-8333-333333333333" }));
+    await expect(crypto.subtle.verify({ name: "Ed25519" }, publicKey, decode(signature), alteredWall)).resolves.toBe(false);
+    await expect(crypto.subtle.verify({ name: "Ed25519" }, publicKey, decode(signature), alteredReservation)).resolves.toBe(false);
+  });
   it("rejects a grant whose 90-second expiry reaches the month boundary", async () => {
     const periodStart = Date.parse("2026-10-01T00:00:00.000Z");
     await expect(issueComputeGrant(env, input, periodStart - 90_000)).rejects.toThrow("invalid compute grant request");
@@ -81,5 +101,19 @@ describe("prepareDevenvCompute", () => {
     const d = deps();
     d.rpc.prepareAuthorizedCompute = async () => { throw new Error("runner unavailable"); };
     await expect(prepareDevenvCompute(d.env, d.rpc, input.tenantId, input.reservationId, now)).rejects.toThrow("runner unavailable");
+  });
+  it("replays the exact signed ledger binding after a transport fault", async () => {
+    const d = deps();
+    const bindings: unknown[] = [];
+    let fail = true;
+    d.rpc.prepareAuthorizedCompute = async (binding: unknown) => {
+      bindings.push(binding);
+      if (fail) { fail = false; throw new Error("runner transport fault"); }
+    };
+
+    await expect(prepareDevenvCompute(d.env, d.rpc, input.tenantId, input.reservationId, now)).rejects.toThrow("runner transport fault");
+    await expect(prepareDevenvCompute(d.env, d.rpc, input.tenantId, input.reservationId, now)).resolves.toEqual({ reservationId: input.reservationId, maximumWallMs: 28_800_000 });
+    expect(bindings).toHaveLength(2);
+    expect(bindings[1]).toStrictEqual(bindings[0]);
   });
 });
