@@ -9,6 +9,7 @@ ERROR policy. It never dispatches a workflow, contacts GitHub, or runs Semgrep.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import re
 import subprocess
@@ -233,15 +234,43 @@ def _check_policy(policy: dict[str, Any]) -> None:
 
 
 def _check_bundled_lock(lock: dict[str, Any]) -> None:
-    if set(lock) != {"schema_version", "semgrep_version", "rulesets"}:
+    if set(lock) != {
+        "schema_version",
+        "semgrep_version",
+        "captured_at",
+        "provenance",
+        "snapshot_dir",
+        "rulesets",
+    }:
         raise VerificationError("bundled lock fields are not closed")
     if lock.get("schema_version") != 1 or lock.get("semgrep_version") != "1.164.0":
         raise VerificationError("bundled lock schema/version changed")
+    captured_at = lock.get("captured_at")
+    if not isinstance(captured_at, str) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", captured_at
+    ):
+        raise VerificationError("bundled lock capture timestamp is invalid")
+    try:
+        dt.datetime.strptime(captured_at, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as exc:
+        raise VerificationError("bundled lock capture timestamp is invalid") from exc
+    if not isinstance(lock.get("provenance"), str) or not lock["provenance"].strip():
+        raise VerificationError("bundled lock provenance is missing")
+    if lock.get("snapshot_dir") != "semgrep-rulesets":
+        raise VerificationError("bundled lock snapshot directory changed")
     rulesets = lock.get("rulesets")
     if not isinstance(rulesets, list) or len(rulesets) != len(BUNDLED):
         raise VerificationError("bundled lock population changed")
-    for expected_name, item in zip(BUNDLED, rulesets, strict=True):
-        if not isinstance(item, dict) or set(item) != {"name", "sha256", "url"}:
+    for index, (expected_name, item) in enumerate(
+        zip(BUNDLED, rulesets, strict=True)
+    ):
+        if not isinstance(item, dict) or set(item) != {
+            "name",
+            "sha256",
+            "url",
+            "snapshot",
+            "size_bytes",
+        }:
             raise VerificationError("bundled ruleset fields are not closed")
         if item.get("name") != expected_name:
             raise VerificationError("bundled lock order changed")
@@ -250,6 +279,18 @@ def _check_bundled_lock(lock: dict[str, Any]) -> None:
         digest = item.get("sha256")
         if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise VerificationError(f"bundled ruleset digest invalid: {expected_name}")
+        snapshot = f"{index:02d}-{expected_name.removeprefix('p/')}.yml.gz"
+        if item.get("snapshot") != snapshot:
+            raise VerificationError(f"bundled ruleset snapshot changed: {expected_name}")
+        size_bytes = item.get("size_bytes")
+        if (
+            isinstance(size_bytes, bool)
+            or not isinstance(size_bytes, int)
+            or not 0 < size_bytes <= 32 * 1024 * 1024
+        ):
+            raise VerificationError(
+                f"bundled ruleset snapshot size invalid: {expected_name}"
+            )
 
 
 def check_static(
@@ -744,6 +785,48 @@ def mutation_self_test() -> int:
         passed += 1
     else:
         raise VerificationError("mutation was accepted: bundled-lock-order")
+    invalid_snapshot = {
+        **bundled_lock,
+        "rulesets": [
+            {**bundled_lock["rulesets"][0], "snapshot": "../outside.yml.gz"},
+            *bundled_lock["rulesets"][1:],
+        ],
+    }
+    try:
+        check_static(bundled_lock=invalid_snapshot)
+    except VerificationError:
+        passed += 1
+    else:
+        raise VerificationError("mutation was accepted: bundled-lock-snapshot")
+    missing_provenance = {
+        key: value for key, value in bundled_lock.items() if key != "provenance"
+    }
+    try:
+        check_static(bundled_lock=missing_provenance)
+    except VerificationError:
+        passed += 1
+    else:
+        raise VerificationError("mutation was accepted: bundled-lock-provenance")
+    invalid_timestamp = {**bundled_lock, "captured_at": "2026-02-30T21:20:43Z"}
+    try:
+        check_static(bundled_lock=invalid_timestamp)
+    except VerificationError:
+        passed += 1
+    else:
+        raise VerificationError("mutation was accepted: bundled-lock-timestamp")
+    invalid_size = {
+        **bundled_lock,
+        "rulesets": [
+            {**bundled_lock["rulesets"][0], "size_bytes": True},
+            *bundled_lock["rulesets"][1:],
+        ],
+    }
+    try:
+        check_static(bundled_lock=invalid_size)
+    except VerificationError:
+        passed += 1
+    else:
+        raise VerificationError("mutation was accepted: bundled-lock-size")
     return passed
 
 
@@ -824,7 +907,7 @@ def main(argv: list[str] | None = None) -> int:
         mutations = mutation_self_test() if args.self_test else 0
         if args.semgrep_bin:
             semgrep_rule_test(args.semgrep_bin)
-        suffix = f"; mutations={mutations}/9" if args.self_test else ""
+        suffix = f"; mutations={mutations}/13" if args.self_test else ""
         if args.semgrep_bin:
             suffix += "; semgrep-controls=4/4"
         print(
