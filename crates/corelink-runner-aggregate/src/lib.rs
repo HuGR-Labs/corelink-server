@@ -40,13 +40,13 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use corelink_billing_aggregator::{AggregatedCounter, ChainHash, HashChainBuilder};
 use corelink_billing_emit::event::{IdemKey, UsageEventKind};
 use corelink_runner_overage::{
-    millicents_to_cents, overage_vcpu_hours_decimal, overage_vcpu_seconds,
-    shadow_charge_millicents, RunnerTier, DEFAULT_OVERAGE_RATE_CENTS_PER_VCPU_HOUR,
+    millicents_to_cents, overage_vcpu_hours_decimal, overage_vcpu_seconds, RunnerTier,
+    DEFAULT_OVERAGE_RATE_CENTS_PER_VCPU_HOUR, SECONDS_PER_VCPU_HOUR,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -60,10 +60,27 @@ const AGG_ID_NAMESPACE: Uuid = Uuid::from_u128(0x5751_0007_0094_0000_0000_0000_0
 /// CloudEvents `source` stamped on each runner aggregate.
 const RUNNER_AGG_SOURCE: &str = "corelink/billing/runner-aggregate";
 
+/// JSON artifact contract for `runner-aggregate-run`.
+/// Version 2 adds durable prior consumption and cumulative shadow arithmetic.
+pub const RUNNER_AGGREGATE_ARTIFACT_CONTRACT_VERSION: u32 = 2;
+
+/// Product discriminator for the runner compute meter.
+pub const RUNNER_VCPU_SECONDS_PRODUCT: &str = "runner_vcpu_seconds";
+
 /// Aggregation error surface.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum RunnerAggregateError {
+    /// The input JSON uses a contract version this binary does not understand.
+    #[error(
+        "unsupported runner aggregate artifact contract version {found} (supported: {supported})"
+    )]
+    UnsupportedArtifactContractVersion {
+        /// Contract version supplied by the caller.
+        found: u32,
+        /// Contract version supported by this binary.
+        supported: u32,
+    },
     /// A staged event carried a malformed field (bad uuid, non-64-hex idem_key,
     /// bad billing period).
     #[error("malformed staged event: {0}")]
@@ -83,6 +100,22 @@ pub enum RunnerAggregateError {
         region: String,
         /// The underlying chain-break detail.
         detail: String,
+    },
+    /// Durable prior consumption did not belong to this runner product / period.
+    #[error("invalid prior consumption for tenant {tenant_id}: {detail}")]
+    InvalidPriorConsumption {
+        /// Tenant whose durable state was invalid.
+        tenant_id: Uuid,
+        /// Validation failure detail.
+        detail: String,
+    },
+    /// Integer-only usage or money arithmetic overflowed and was rejected.
+    #[error("arithmetic overflow while {operation} for tenant {tenant_id}")]
+    ArithmeticOverflow {
+        /// Tenant whose calculation overflowed.
+        tenant_id: Uuid,
+        /// Checked operation that overflowed.
+        operation: &'static str,
     },
 }
 
@@ -115,9 +148,22 @@ pub struct PriorChainHead {
     pub next_sequence: u64,
 }
 
+/// Durable cumulative runner usage for one `(tenant, product, billing_period)`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct PriorTenantConsumption {
+    /// Product whose consumption is represented; must be `runner_vcpu_seconds`.
+    pub product: String,
+    /// Billing period owning the durable consumption, `YYYY-MM`.
+    pub billing_period: String,
+    /// Consumption already durably recorded for this tenant/product/period.
+    pub cumulative_vcpu_seconds: u128,
+}
+
 /// The pure aggregation input (one billing period).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RunnerAggregateInput {
+    /// Required JSON artifact contract version.
+    pub artifact_contract_version: u32,
     /// The billing period, `YYYY-MM`.
     pub billing_period: String,
     /// Inclusive period-start wall-clock (unix ms) stamped on each aggregate.
@@ -132,6 +178,8 @@ pub struct RunnerAggregateInput {
     /// [`DEFAULT_OVERAGE_RATE_CENTS_PER_VCPU_HOUR`] when absent.
     #[serde(default)]
     pub rate_cents_per_vcpu_hour: Option<u64>,
+    /// Durable consumption before this deduplicated batch, keyed by tenant.
+    pub prior_consumption: BTreeMap<Uuid, PriorTenantConsumption>,
     /// The staged runner events to aggregate (the workflow feeds only
     /// not-yet-aggregated rows — the watermark).
     pub staged: Vec<StagedRunnerEvent>,
@@ -190,8 +238,14 @@ pub struct ShadowLine {
     pub billing_period: String,
     /// The tenant's runner tier SKU.
     pub tier_sku: String,
-    /// Total vCPU-seconds across ALL regions this period.
+    /// Legacy alias for [`Self::batch_vcpu_seconds`].
     pub total_vcpu_seconds: u128,
+    /// Durable vCPU-seconds before this new batch (`C0`).
+    pub prior_vcpu_seconds: u128,
+    /// New deduplicated vCPU-seconds in this aggregate call (`Δ`).
+    pub batch_vcpu_seconds: u128,
+    /// Durable prior plus this new batch (`C1 = C0 + Δ`).
+    pub cumulative_vcpu_seconds: u128,
     /// The tier's included allowance, in vCPU-seconds.
     pub allowance_vcpu_seconds: u128,
     /// Overage above the allowance, in vCPU-seconds.
@@ -200,10 +254,14 @@ pub struct ShadowLine {
     pub overage_vcpu_hours: String,
     /// The rate applied, whole cents per vCPU-hour.
     pub rate_cents_per_vcpu_hour: u64,
-    /// The would-be charge, in millicents (canonical; avoids compounding round).
+    /// Legacy alias for [`Self::charge_delta_millicents`].
     pub shadow_charge_millicents: u128,
-    /// The would-be charge, whole US cents (display).
+    /// Display-only whole cents for [`Self::charge_delta_millicents`].
     pub shadow_charge_cents: u128,
+    /// `F(C1) - F(C0)`, in canonical millicents. Never derived from display cents.
+    pub charge_delta_millicents: u128,
+    /// `F(C1)`, in canonical millicents, for shadow reconciliation only.
+    pub cumulative_shadow_charge_millicents: u128,
 }
 
 /// A record that was not aggregated / not charged, with the reason.
@@ -219,6 +277,8 @@ pub struct SkipNote {
 /// The pure aggregation output.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct RunnerAggregateOutput {
+    /// JSON artifact contract version emitted by this binary.
+    pub artifact_contract_version: u32,
     /// Counter rows to UPSERT into `runner_usage_counter`.
     pub counters: Vec<CounterRow>,
     /// Chain-head updates to write into `runner_hash_chain_head`.
@@ -244,6 +304,23 @@ fn parse_hex32(s: &str) -> Option<[u8; 32]> {
     <[u8; 32]>::try_from(bytes.as_slice()).ok()
 }
 
+fn cumulative_shadow_charge_millicents_checked(
+    cumulative_vcpu_seconds: u128,
+    allowance_vcpu_seconds: u128,
+    rate_cents_per_vcpu_hour: u64,
+    tenant_id: Uuid,
+) -> Result<u128, RunnerAggregateError> {
+    cumulative_vcpu_seconds
+        .saturating_sub(allowance_vcpu_seconds)
+        .checked_mul(u128::from(rate_cents_per_vcpu_hour))
+        .and_then(|value| value.checked_mul(1000))
+        .map(|numerator| numerator / u128::from(SECONDS_PER_VCPU_HOUR))
+        .ok_or(RunnerAggregateError::ArithmeticOverflow {
+            tenant_id,
+            operation: "evaluating cumulative shadow charge",
+        })
+}
+
 /// Aggregate staged runner usage into per-`(tenant, region)` counters (chained
 /// per region) + per-tenant shadow charges. Pure — no I/O.
 ///
@@ -255,12 +332,41 @@ fn parse_hex32(s: &str) -> Option<[u8; 32]> {
 pub fn aggregate_runner_usage(
     input: &RunnerAggregateInput,
 ) -> Result<RunnerAggregateOutput, RunnerAggregateError> {
+    if input.artifact_contract_version != RUNNER_AGGREGATE_ARTIFACT_CONTRACT_VERSION {
+        return Err(RunnerAggregateError::UnsupportedArtifactContractVersion {
+            found: input.artifact_contract_version,
+            supported: RUNNER_AGGREGATE_ARTIFACT_CONTRACT_VERSION,
+        });
+    }
+
+    for (tenant_id, prior) in &input.prior_consumption {
+        if prior.product != RUNNER_VCPU_SECONDS_PRODUCT {
+            return Err(RunnerAggregateError::InvalidPriorConsumption {
+                tenant_id: *tenant_id,
+                detail: format!(
+                    "product {:?} is not {RUNNER_VCPU_SECONDS_PRODUCT:?}",
+                    prior.product
+                ),
+            });
+        }
+        if prior.billing_period != input.billing_period {
+            return Err(RunnerAggregateError::InvalidPriorConsumption {
+                tenant_id: *tenant_id,
+                detail: format!(
+                    "billing_period {:?} does not match input {:?}",
+                    prior.billing_period, input.billing_period
+                ),
+            });
+        }
+    }
+
     let rate = input
         .rate_cents_per_vcpu_hour
         .unwrap_or(DEFAULT_OVERAGE_RATE_CENTS_PER_VCPU_HOUR);
 
     // 1. Group staged events by region → tenant (BTreeMap = deterministic walk).
     let mut by_region: BTreeMap<String, BTreeMap<Uuid, GroupAccum>> = BTreeMap::new();
+    let mut deduped_idem_keys: BTreeSet<[u8; 32]> = BTreeSet::new();
     for ev in &input.staged {
         let key = parse_hex32(&ev.idem_key_hex).ok_or_else(|| {
             RunnerAggregateError::MalformedEvent(format!(
@@ -268,13 +374,29 @@ pub fn aggregate_runner_usage(
                 ev.tenant_id, ev.region
             ))
         })?;
+        // `Δ` is a deduplicated batch. An idempotency key identifies one usage
+        // event globally, so a replay cannot change either the counter or charge.
+        if !deduped_idem_keys.insert(key) {
+            continue;
+        }
         let acc = by_region
             .entry(ev.region.clone())
             .or_default()
             .entry(ev.tenant_id)
             .or_default();
-        acc.vcpu_seconds = acc.vcpu_seconds.saturating_add(ev.qty_vcpu_seconds);
-        acc.event_count = acc.event_count.saturating_add(1);
+        acc.vcpu_seconds = acc.vcpu_seconds.checked_add(ev.qty_vcpu_seconds).ok_or(
+            RunnerAggregateError::ArithmeticOverflow {
+                tenant_id: ev.tenant_id,
+                operation: "summing deduplicated batch usage",
+            },
+        )?;
+        acc.event_count =
+            acc.event_count
+                .checked_add(1)
+                .ok_or(RunnerAggregateError::ArithmeticOverflow {
+                    tenant_id: ev.tenant_id,
+                    operation: "counting deduplicated batch events",
+                })?;
         acc.idem_keys.push(IdemKey(key));
     }
 
@@ -342,7 +464,12 @@ pub fn aggregate_runner_usage(
             });
 
             let t = tenant_totals.entry(*tenant_id).or_default();
-            *t = t.saturating_add(acc.vcpu_seconds);
+            *t = t.checked_add(acc.vcpu_seconds).ok_or(
+                RunnerAggregateError::ArithmeticOverflow {
+                    tenant_id: *tenant_id,
+                    operation: "summing a tenant batch across regions",
+                },
+            )?;
         }
 
         chain_head_updates.push(ChainHeadUpdate {
@@ -374,25 +501,57 @@ pub fn aggregate_runner_usage(
             continue;
         };
 
-        let over = overage_vcpu_seconds(*total, tier);
-        let millicents = shadow_charge_millicents(over, rate);
-        total_shadow_millicents = total_shadow_millicents.saturating_add(millicents);
+        let prior = input
+            .prior_consumption
+            .get(tenant_id)
+            .map_or(0, |state| state.cumulative_vcpu_seconds);
+        let cumulative =
+            prior
+                .checked_add(*total)
+                .ok_or(RunnerAggregateError::ArithmeticOverflow {
+                    tenant_id: *tenant_id,
+                    operation: "adding durable prior consumption and batch usage",
+                })?;
+        let allowance = u128::from(tier.allowance_vcpu_seconds());
+        let prior_charge =
+            cumulative_shadow_charge_millicents_checked(prior, allowance, rate, *tenant_id)?;
+        let cumulative_charge =
+            cumulative_shadow_charge_millicents_checked(cumulative, allowance, rate, *tenant_id)?;
+        let charge_delta = cumulative_charge.checked_sub(prior_charge).ok_or(
+            RunnerAggregateError::InvalidPriorConsumption {
+                tenant_id: *tenant_id,
+                detail: "cumulative shadow charge decreased".to_string(),
+            },
+        )?;
+        total_shadow_millicents = total_shadow_millicents.checked_add(charge_delta).ok_or(
+            RunnerAggregateError::ArithmeticOverflow {
+                tenant_id: *tenant_id,
+                operation: "summing shadow charge deltas",
+            },
+        )?;
+        let over = overage_vcpu_seconds(cumulative, tier);
 
         shadow_ledger.push(ShadowLine {
             tenant_id: *tenant_id,
             billing_period: input.billing_period.clone(),
             tier_sku: sku.clone(),
             total_vcpu_seconds: *total,
-            allowance_vcpu_seconds: u128::from(tier.allowance_vcpu_seconds()),
+            prior_vcpu_seconds: prior,
+            batch_vcpu_seconds: *total,
+            cumulative_vcpu_seconds: cumulative,
+            allowance_vcpu_seconds: allowance,
             overage_vcpu_seconds: over,
             overage_vcpu_hours: overage_vcpu_hours_decimal(over),
             rate_cents_per_vcpu_hour: rate,
-            shadow_charge_millicents: millicents,
-            shadow_charge_cents: millicents_to_cents(millicents),
+            shadow_charge_millicents: charge_delta,
+            shadow_charge_cents: millicents_to_cents(charge_delta),
+            charge_delta_millicents: charge_delta,
+            cumulative_shadow_charge_millicents: cumulative_charge,
         });
     }
 
     Ok(RunnerAggregateOutput {
+        artifact_contract_version: RUNNER_AGGREGATE_ARTIFACT_CONTRACT_VERSION,
         counters,
         chain_head_updates,
         shadow_ledger,
@@ -422,11 +581,13 @@ mod tests {
 
     fn base_input(staged: Vec<StagedRunnerEvent>) -> RunnerAggregateInput {
         RunnerAggregateInput {
+            artifact_contract_version: RUNNER_AGGREGATE_ARTIFACT_CONTRACT_VERSION,
             billing_period: "2026-08".to_string(),
             period_start_ms: 1_000,
             period_end_ms: 2_000,
             now_ms: 1_500,
             rate_cents_per_vcpu_hour: None,
+            prior_consumption: BTreeMap::new(),
             staged,
             tenant_tiers: BTreeMap::new(),
             prior_chain_heads: BTreeMap::new(),
@@ -473,6 +634,11 @@ mod tests {
         assert_eq!(line.overage_vcpu_seconds, 200 * 3600);
         assert_eq!(line.shadow_charge_millicents, 4_000_000);
         assert_eq!(line.shadow_charge_cents, 4000);
+        assert_eq!(line.prior_vcpu_seconds, 0);
+        assert_eq!(line.batch_vcpu_seconds, 300 * 3600);
+        assert_eq!(line.cumulative_vcpu_seconds, 300 * 3600);
+        assert_eq!(line.charge_delta_millicents, 4_000_000);
+        assert_eq!(line.cumulative_shadow_charge_millicents, 4_000_000);
         assert_eq!(out.total_shadow_millicents, 4_000_000);
     }
 
@@ -626,6 +792,194 @@ mod tests {
         assert!(matches!(
             aggregate_runner_usage(&input),
             Err(RunnerAggregateError::MalformedEvent(_))
+        ));
+    }
+
+    fn prior_consumption(vcpu_seconds: u128) -> PriorTenantConsumption {
+        PriorTenantConsumption {
+            product: RUNNER_VCPU_SECONDS_PRODUCT.to_string(),
+            billing_period: "2026-08".to_string(),
+            cumulative_vcpu_seconds: vcpu_seconds,
+        }
+    }
+
+    fn starter_input_with_prior(
+        prior_vcpu_seconds: u128,
+        staged: Vec<StagedRunnerEvent>,
+    ) -> RunnerAggregateInput {
+        let t = tenant(42);
+        let mut input = base_input(staged);
+        input.tenant_tiers.insert(t, "runner_starter".to_string());
+        input
+            .prior_consumption
+            .insert(t, prior_consumption(prior_vcpu_seconds));
+        input
+    }
+
+    #[test]
+    fn charge_delta_is_partition_invariant_across_the_allowance_boundary() {
+        let t = tenant(42);
+        let one = aggregate_runner_usage(&starter_input_with_prior(
+            0,
+            vec![StagedRunnerEvent {
+                tenant_id: t,
+                region: "iad".to_string(),
+                qty_vcpu_seconds: 120 * 3600,
+                idem_key_hex: ik(0x42),
+                time_ms: 1,
+            }],
+        ))
+        .unwrap();
+
+        let first = aggregate_runner_usage(&starter_input_with_prior(
+            0,
+            vec![StagedRunnerEvent {
+                tenant_id: t,
+                region: "iad".to_string(),
+                qty_vcpu_seconds: 60 * 3600,
+                idem_key_hex: ik(0x43),
+                time_ms: 1,
+            }],
+        ))
+        .unwrap();
+        let second = aggregate_runner_usage(&starter_input_with_prior(
+            first.shadow_ledger[0].cumulative_vcpu_seconds,
+            vec![StagedRunnerEvent {
+                tenant_id: t,
+                region: "iad".to_string(),
+                qty_vcpu_seconds: 60 * 3600,
+                idem_key_hex: ik(0x44),
+                time_ms: 2,
+            }],
+        ))
+        .unwrap();
+
+        assert_eq!(one.shadow_ledger[0].charge_delta_millicents, 400_000);
+        assert_eq!(
+            one.shadow_ledger[0].charge_delta_millicents,
+            first.shadow_ledger[0].charge_delta_millicents
+                + second.shadow_ledger[0].charge_delta_millicents
+        );
+    }
+
+    #[test]
+    fn allowance_boundary_is_applied_once_to_cumulative_usage() {
+        let t = tenant(42);
+        let allowance = u128::from(RunnerTier::Starter.allowance_vcpu_seconds());
+        for (prior, batch, expected_delta) in
+            [(allowance - 1, 1, 0), (allowance, 0, 0), (allowance, 1, 5)]
+        {
+            let out = aggregate_runner_usage(&starter_input_with_prior(
+                prior,
+                vec![StagedRunnerEvent {
+                    tenant_id: t,
+                    region: "iad".to_string(),
+                    qty_vcpu_seconds: batch,
+                    idem_key_hex: ik(batch as u8),
+                    time_ms: 1,
+                }],
+            ))
+            .unwrap();
+            let line = &out.shadow_ledger[0];
+            assert_eq!(line.cumulative_vcpu_seconds, prior + batch);
+            assert_eq!(line.charge_delta_millicents, expected_delta);
+        }
+    }
+
+    #[test]
+    fn multi_region_batches_converge_with_one_region_batch() {
+        let t = tenant(42);
+        let one_region = aggregate_runner_usage(&starter_input_with_prior(
+            0,
+            vec![StagedRunnerEvent {
+                tenant_id: t,
+                region: "iad".to_string(),
+                qty_vcpu_seconds: 120 * 3600,
+                idem_key_hex: ik(0x51),
+                time_ms: 1,
+            }],
+        ))
+        .unwrap();
+        let multi_region = aggregate_runner_usage(&starter_input_with_prior(
+            0,
+            vec![
+                StagedRunnerEvent {
+                    tenant_id: t,
+                    region: "iad".to_string(),
+                    qty_vcpu_seconds: 60 * 3600,
+                    idem_key_hex: ik(0x52),
+                    time_ms: 1,
+                },
+                StagedRunnerEvent {
+                    tenant_id: t,
+                    region: "fra".to_string(),
+                    qty_vcpu_seconds: 60 * 3600,
+                    idem_key_hex: ik(0x53),
+                    time_ms: 2,
+                },
+            ],
+        ))
+        .unwrap();
+
+        assert_eq!(multi_region.counters.len(), 2);
+        assert_eq!(one_region.shadow_ledger, multi_region.shadow_ledger);
+    }
+
+    #[test]
+    fn duplicate_idempotency_key_is_a_noop_for_usage_chain_and_shadow_charge() {
+        let t = tenant(42);
+        let event = StagedRunnerEvent {
+            tenant_id: t,
+            region: "iad".to_string(),
+            qty_vcpu_seconds: 120 * 3600,
+            idem_key_hex: ik(0x61),
+            time_ms: 1,
+        };
+        let once =
+            aggregate_runner_usage(&starter_input_with_prior(0, vec![event.clone()])).unwrap();
+        let duplicate =
+            aggregate_runner_usage(&starter_input_with_prior(0, vec![event.clone(), event]))
+                .unwrap();
+        assert_eq!(duplicate.counters, once.counters);
+        assert_eq!(duplicate.chain_head_updates, once.chain_head_updates);
+        assert_eq!(duplicate.counters[0].event_count, 1);
+        assert_eq!(duplicate.shadow_ledger, once.shadow_ledger);
+    }
+
+    #[test]
+    fn rejects_wrong_contract_or_prior_scope_and_overflow() {
+        let t = tenant(42);
+        let mut unsupported = starter_input_with_prior(0, vec![]);
+        unsupported.artifact_contract_version = 1;
+        assert!(matches!(
+            aggregate_runner_usage(&unsupported),
+            Err(RunnerAggregateError::UnsupportedArtifactContractVersion { .. })
+        ));
+
+        let mut wrong_period = starter_input_with_prior(0, vec![]);
+        wrong_period
+            .prior_consumption
+            .get_mut(&t)
+            .unwrap()
+            .billing_period = "2026-09".to_string();
+        assert!(matches!(
+            aggregate_runner_usage(&wrong_period),
+            Err(RunnerAggregateError::InvalidPriorConsumption { .. })
+        ));
+
+        let overflow = starter_input_with_prior(
+            u128::MAX,
+            vec![StagedRunnerEvent {
+                tenant_id: t,
+                region: "iad".to_string(),
+                qty_vcpu_seconds: 1,
+                idem_key_hex: ik(0x71),
+                time_ms: 1,
+            }],
+        );
+        assert!(matches!(
+            aggregate_runner_usage(&overflow),
+            Err(RunnerAggregateError::ArithmeticOverflow { .. })
         ));
     }
 }
