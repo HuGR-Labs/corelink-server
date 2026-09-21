@@ -22,9 +22,17 @@ from verify_b139_semgrep import (  # noqa: E402
     _sarif_counts,
     classify_uploads,
     CUSTOM_POLICY,
+    check_static,
     enforce_report,
     evaluate,
 )
+
+
+def test_workflow_locks_semgrep_to_hosted_runner() -> None:
+    workflow = (ROOT / ".github/workflows/semgrep.yml").read_text(encoding="utf-8")
+    check_static()
+    with pytest.raises(VerificationError, match="hosted ubuntu-latest"):
+        check_static(workflow=workflow.replace("runs-on: ubuntu-latest", "runs-on: corelink", 1))
 
 
 FAKE_SEMGREP = r"""#!/usr/bin/env python3
