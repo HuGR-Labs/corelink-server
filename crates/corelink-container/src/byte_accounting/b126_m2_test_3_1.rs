@@ -210,6 +210,7 @@ fn hash_for(bytes: &[u8]) -> String {
 #[derive(Debug, Clone, Copy)]
 enum EffectfulFailure {
     NotWritten,
+    Committed,
     Pending(uuid::Uuid),
     Unknown,
 }
@@ -226,13 +227,16 @@ impl CasWriteHandler for EffectfulCas {
     ) -> Result<CasWriteResponse, corelink_handler_cas::CasWriteFailure> {
         match self.0 {
             EffectfulFailure::NotWritten => Err(corelink_handler_cas::CasWriteFailure::not_written(CasHandlerError::Internal("injected write failure".to_owned()))),
+            EffectfulFailure::Committed => Err(corelink_handler_cas::CasWriteFailure::committed(CasHandlerError::Internal("injected write failure".to_owned()))),
             EffectfulFailure::Pending(intent_id) => Err(corelink_handler_cas::CasWriteFailure::pending(CasHandlerError::Internal("injected write failure".to_owned()), intent_id)),
             EffectfulFailure::Unknown => Err(corelink_handler_cas::CasWriteFailure::unknown(CasHandlerError::Internal("injected write failure".to_owned()))),
         }
     }
 }
 
-fn effectful_fixture(effect: EffectfulFailure) -> (Arc<AccountingCasHandler>, Arc<InMemoryByteStore>) {
+fn effectful_fixture_with_accountant(
+    effect: EffectfulFailure,
+) -> (Arc<AccountingCasHandler>, Arc<InMemoryByteStore>, Arc<ByteAccountant>) {
     let audit = Arc::new(InMemoryAuditSink::new());
     let sli = Arc::new(InMemorySliObserver::new());
     let delete_inner = Arc::new(InMemoryCasHandler::new(audit, sli));
@@ -241,14 +245,17 @@ fn effectful_fixture(effect: EffectfulFailure) -> (Arc<AccountingCasHandler>, Ar
         store.clone() as Arc<dyn ByteStore>,
         REGION.to_owned(),
     ));
-    (
-        Arc::new(AccountingCasHandler::new(
+    let dec = Arc::new(AccountingCasHandler::new(
             Arc::new(EffectfulCas(effect)) as Arc<dyn CasWriteHandler>,
             delete_inner as Arc<dyn CasDeleteHandler>,
-            accountant,
-        )),
-        store,
-    )
+            accountant.clone(),
+        ));
+    (dec, store, accountant)
+}
+
+fn effectful_fixture(effect: EffectfulFailure) -> (Arc<AccountingCasHandler>, Arc<InMemoryByteStore>) {
+    let (dec, store, _accountant) = effectful_fixture_with_accountant(effect);
+    (dec, store)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -539,7 +546,7 @@ async fn unknown_inner_write_retains_and_owns_reservation() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn not_written_effect_refunds_reservation() {
-    let (dec, store) = effectful_fixture(EffectfulFailure::NotWritten);
+    let (dec, store, accountant) = effectful_fixture_with_accountant(EffectfulFailure::NotWritten);
     let body = b"safe-refund".to_vec();
     let hash = hash_for(&body);
     let err = dec.write(
@@ -551,6 +558,38 @@ async fn not_written_effect_refunds_reservation() {
     assert_eq!(
         store.liability("t", REGION, &hash).expect("liability row").state,
         MutationLiabilityState::Released
+    );
+    assert_eq!(
+        accountant
+            .settle_mutation_liability(
+                "t",
+                &hash,
+                MutationLiabilityResolution::NotWritten,
+            )
+            .await
+            .expect("repeat settlement"),
+        MutationLiabilitySettlement::AlreadySettled
+    );
+    assert_eq!(store.used("t", REGION), 0, "repeat settlement must not refund twice");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn committed_effect_retains_reservation() {
+    let (dec, store) = effectful_fixture(EffectfulFailure::Committed);
+    let body = b"already-durable".to_vec();
+    let bytes = body.len() as i64;
+    let hash = hash_for(&body);
+    let failure = dec
+        .write_with_effect(
+            CasWriteRequest::new("t", hash.clone(), body, "p", "t", 1)
+                .with_storage_quota_bytes(Some(1_000_000)),
+        )
+        .expect_err("committed write failure");
+    assert_eq!(failure.effect, corelink_handler_cas::MutationEffect::Committed);
+    assert_eq!(store.used("t", REGION), bytes, "committed effect retains bytes");
+    assert_eq!(
+        store.liability("t", REGION, &hash).expect("committed liability").state,
+        MutationLiabilityState::Committed
     );
 }
 

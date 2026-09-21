@@ -118,6 +118,46 @@ fn block_on_record_liability(
     })
 }
 
+fn block_on_settle_liability(
+    acc: &ByteAccountant,
+    tenant: &str,
+    logical_key: &str,
+    resolution: MutationLiabilityResolution,
+) -> Result<MutationLiabilitySettlement, String> {
+    let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Accounting);
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::block_in_place(|| {
+        handle.block_on(acc.settle_mutation_liability(tenant, logical_key, resolution))
+    })
+}
+
+/// Classify one effect-aware CAS failure into its accounting disposition.
+///
+/// This is deliberately the only decision point for failed CAS writes:
+/// `NotWritten` releases, while every other outcome retains a durable
+/// liability. `unknown_intent_id` is generated once by the caller so the
+/// ownership record remains stable throughout this attempt.
+fn classify_mutation_failure(
+    effect: &corelink_handler_cas::MutationEffect,
+    unknown_intent_id: uuid::Uuid,
+) -> (MutationLiabilityState, Option<uuid::Uuid>, bool) {
+    match effect {
+        corelink_handler_cas::MutationEffect::NotWritten => {
+            (MutationLiabilityState::Released, None, true)
+        }
+        corelink_handler_cas::MutationEffect::Committed => {
+            (MutationLiabilityState::Committed, None, false)
+        }
+        corelink_handler_cas::MutationEffect::Pending { intent_id } => {
+            (MutationLiabilityState::Pending, Some(*intent_id), false)
+        }
+        corelink_handler_cas::MutationEffect::Unknown => {
+            (MutationLiabilityState::Unknown, Some(unknown_intent_id), false)
+        }
+        _ => (MutationLiabilityState::Unknown, Some(unknown_intent_id), false),
+    }
+}
+
 /// Number of per-`(tenant, hash)` serialization-lock shards held by an
 /// [`AccountingCasHandler`].
 ///
@@ -264,7 +304,7 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
         req: corelink_handler_cas::CasWriteRequest,
     ) -> Result<corelink_handler_cas::CasWriteResponse, corelink_handler_cas::CasWriteFailure>
     {
-        use corelink_handler_cas::{CasHandlerError, CasWriteFailure, MutationEffect};
+        use corelink_handler_cas::{CasHandlerError, CasWriteFailure};
         // Reject a forged physical/accounting pairing before touching the
         // quota ledger.  The inner handler repeats the gate (and emits the
         // canonical denial audit), but the decorator must not even transiently
@@ -364,16 +404,15 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                 // An idempotent re-write stored NOTHING new (`durable == false`),
                 // so roll the reservation back to avoid double-counting.
                 if !resp.durable {
-                    block_on_release(&self.accountant, &accounting_tenant, byte_len);
-                    if let Err(e) = block_on_record_liability(
+                    if let Err(e) = block_on_settle_liability(
                         &self.accountant,
                         &accounting_tenant,
                         &logical_key,
-                        byte_len,
-                        MutationLiabilityState::Released,
-                        None,
+                        MutationLiabilityResolution::NotWritten,
                     ) {
-                        tracing::warn!(error = %e, "cas: idempotent liability release record failed");
+                        return Err(CasWriteFailure::unknown(CasHandlerError::Internal(format!(
+                            "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
+                        ))));
                     }
                 } else if let Err(e) = block_on_record_liability(
                     &self.accountant,
@@ -390,21 +429,20 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                 Ok(resp)
             }
             Err(failure) => {
-                let (state, intent_id, refund) = match &failure.effect {
-                    MutationEffect::NotWritten => (MutationLiabilityState::Released, None, true),
-                    MutationEffect::Committed => (MutationLiabilityState::Committed, None, false),
-                    MutationEffect::Pending { intent_id } => {
-                        (MutationLiabilityState::Pending, Some(*intent_id), false)
-                    }
-                    MutationEffect::Unknown => {
-                        (MutationLiabilityState::Unknown, Some(uuid::Uuid::new_v4()), false)
-                    }
-                    _ => (MutationLiabilityState::Unknown, Some(uuid::Uuid::new_v4()), false),
-                };
+                let (state, intent_id, refund) =
+                    classify_mutation_failure(&failure.effect, uuid::Uuid::new_v4());
                 if refund {
-                    block_on_release(&self.accountant, &accounting_tenant, byte_len);
-                }
-                if let Err(e) = block_on_record_liability(
+                    if let Err(e) = block_on_settle_liability(
+                        &self.accountant,
+                        &accounting_tenant,
+                        &logical_key,
+                        MutationLiabilityResolution::NotWritten,
+                    ) {
+                        return Err(CasWriteFailure::unknown(CasHandlerError::Internal(format!(
+                            "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
+                        ))));
+                    }
+                } else if let Err(e) = block_on_record_liability(
                     &self.accountant,
                     &accounting_tenant,
                     &logical_key,
