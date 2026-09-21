@@ -941,12 +941,13 @@ impl WebhookDispatcher {
                     )
                     .is_some()
                     || !matches!(
-                        context.inbox.finish(
+                        context.inbox.commit_effect(
                             &claim,
                             OWNER,
-                            InboxTerminalState::Completed,
-                            None,
-                            context.now_ms
+                            &event,
+                            &format!("stripe-webhook-effect:{}", context.token.to_hex()),
+                            context.canon.label(),
+                            context.now_ms,
                         ),
                         Ok(true)
                     )

@@ -360,6 +360,23 @@ pub trait DurableWebhookInbox: fmt::Debug + Send + Sync {
         error: Option<&str>,
         now_ms: u64,
     ) -> Result<bool, String>;
+    /// Atomically persist the idempotent business-effect witness and mark only
+    /// this live, fenced claim completed. A `false` result is never an
+    /// acknowledgement: the caller must return a retryable failure.
+    ///
+    /// `effect_key` is deterministic for the event. Implementations must bind
+    /// it to `event_id`, `payload_sha256`, and `claim.fence`, so a stale owner
+    /// or a changed authenticated body can neither create nor acknowledge an
+    /// effect.
+    fn commit_effect(
+        &self,
+        claim: &InboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+    ) -> Result<bool, String>;
 }
 
 // =========================================================================
