@@ -30,11 +30,12 @@ use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use corelink_billing::stripe::real::webhook_dispatch::{
-    RecordingSliRecorder, StateMaterializer, SystemClock, WebhookDispatcher,
+    InMemoryIdempotencyStore, RecordingSliRecorder, StateMaterializer, SystemClock,
+    WebhookDispatcher,
 };
 use corelink_billing_stripe_materializer::{
-    BillingAuditEmitter, BillingD1Writer, D1IdempotencyStore, D1SubscriptionStateHandler,
-    InMemoryBillingAuditEmitter, InMemoryBillingD1, RealStripeAuditEmitter,
+    BillingAuditEmitter, BillingD1Writer, D1SubscriptionStateHandler, InMemoryBillingAuditEmitter,
+    InMemoryBillingD1, RealStripeAuditEmitter,
 };
 use corelink_server::billing_d1_http::D1HttpBillingWriter;
 use corelink_server::routes;
@@ -833,7 +834,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
         let materializer: Arc<dyn StateMaterializer> = Arc::new(sub_handler);
         let dispatcher_audit = Arc::new(RealStripeAuditEmitter::new(billing_audit.clone()));
-        let idempotency = Arc::new(D1IdempotencyStore::new(billing_d1.clone()));
+        let idempotency = Arc::new(InMemoryIdempotencyStore::new());
+        let webhook_inbox = Arc::new(corelink_server::webhook_inbox_d1::D1WebhookInbox::new(
+            Arc::clone(client),
+        ));
         // F-008 closure: wire a DLQ sink so a TRANSIENT materialize
         // failure quarantines the (already HMAC-verified) event instead
         // of silently dropping it. The idempotency dedup row is committed
@@ -860,6 +864,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 Arc::new(RecordingSliRecorder::new()),
                 Arc::new(SystemClock),
             )
+            .with_durable_inbox(webhook_inbox)
             .with_dlq(webhook_dlq),
         );
         let state = Arc::new(WebhookState::new(dispatcher));

@@ -5,6 +5,10 @@
 
 use std::sync::Arc;
 
+use corelink_billing::stripe::real::webhook_dispatch::{
+    DurableWebhookEvent, DurableWebhookInbox, InboxClaim as DispatcherInboxClaim,
+    InboxReceiveOutcome, InboxTerminalState as DispatcherInboxTerminalState,
+};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -53,12 +57,6 @@ pub enum InboxReceipt {
 pub struct InboxClaim {
     /// Stripe event id.
     pub event_id: String,
-    /// Canonical event type.
-    pub event_type: String,
-    /// Exact signed body, hex encoded.
-    pub raw_body_hex: String,
-    /// Digest recorded with the body.
-    pub payload_sha256: String,
     /// Monotonically increasing ownership fence.
     pub fence: u64,
 }
@@ -170,9 +168,6 @@ impl D1WebhookInbox {
             None => Ok(None),
             Some(row) => Ok(Some(InboxClaim {
                 event_id: text(&row, "event_id")?,
-                event_type: text(&row, "event_type")?,
-                raw_body_hex: text(&row, "raw_body_hex")?,
-                payload_sha256: text(&row, "payload_sha256")?,
                 fence: number(&row, "fence")?,
             })),
         }
@@ -212,6 +207,64 @@ impl D1WebhookInbox {
             )?,
         };
         Ok(!rows.is_empty())
+    }
+}
+
+impl DurableWebhookInbox for D1WebhookInbox {
+    fn receive(
+        &self,
+        event: &DurableWebhookEvent,
+        now_ms: u64,
+    ) -> Result<InboxReceiveOutcome, String> {
+        match self.receive(
+            &AuthenticatedWebhookEvent {
+                event_id: event.event_id.clone(),
+                event_type: event.event_type.clone(),
+                raw_body_hex: event.raw_body_hex.clone(),
+                payload_sha256: event.payload_sha256.clone(),
+                stripe_created_at_ms: Some(event.stripe_created_at_ms),
+            },
+            now_ms,
+        )? {
+            InboxReceipt::Received => Ok(InboxReceiveOutcome::Received),
+            InboxReceipt::Terminal => Ok(InboxReceiveOutcome::Terminal),
+            InboxReceipt::LegacyAmbiguous => Ok(InboxReceiveOutcome::LegacyAmbiguous),
+        }
+    }
+
+    fn claim(
+        &self,
+        event_id: &str,
+        owner: &str,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<Option<DispatcherInboxClaim>, String> {
+        self.claim(event_id, owner, now_ms, lease_ms)
+            .map(|claim| claim.map(|claim| DispatcherInboxClaim::new(claim.event_id, claim.fence)))
+    }
+
+    fn finish(
+        &self,
+        claim: &DispatcherInboxClaim,
+        owner: &str,
+        state: DispatcherInboxTerminalState,
+        error: Option<&str>,
+        now_ms: u64,
+    ) -> Result<bool, String> {
+        let state = match state {
+            DispatcherInboxTerminalState::Completed => InboxTerminalState::Completed,
+            DispatcherInboxTerminalState::Quarantined => InboxTerminalState::Quarantined,
+        };
+        self.finish(
+            &InboxClaim {
+                event_id: claim.event_id.clone(),
+                fence: claim.fence,
+            },
+            owner,
+            state,
+            error,
+            now_ms,
+        )
     }
 }
 

@@ -94,6 +94,8 @@
 use core::fmt;
 use std::sync::{Arc, Mutex};
 
+use sha2::{Digest, Sha256};
+
 use crate::dlq::{WebhookDlqRow, WebhookDlqStore};
 use crate::error::WebhookVerifyError;
 use crate::webhook::{verify_webhook_signature, DEFAULT_TOLERANCE_SECONDS};
@@ -106,8 +108,10 @@ use crate::webhook::{verify_webhook_signature, DEFAULT_TOLERANCE_SECONDS};
 
 pub use corelink_billing_stripe_traits::{
     AuditEmitter, AuditOutcome, AuditRecord, CanonicalWebhookEventType, DispatchResponse,
-    IdempotencyOutcome, IdempotencyStore, IdempotencyToken, MaterializerError, SliObservation,
-    SliRecorder, StateMaterializer, StripeWebhookEnvelope, SLI_BILLING_STRIPE_EVENT_SECONDS,
+    DurableWebhookEvent, DurableWebhookInbox, IdempotencyOutcome, IdempotencyStore,
+    IdempotencyToken, InboxClaim, InboxReceiveOutcome, InboxTerminalState, MaterializerError,
+    SliObservation, SliRecorder, StateMaterializer, StripeWebhookEnvelope,
+    SLI_BILLING_STRIPE_EVENT_SECONDS,
 };
 
 // =========================================================================
@@ -461,6 +465,19 @@ pub struct WebhookDispatcher {
     /// backend (the failure still returns 500 → Stripe retries within
     /// its 3-day window; the quarantine adds durability past that).
     dlq: Option<Arc<dyn WebhookDlqStore>>,
+    /// Durable authenticated-event inbox. When present, this supersedes the
+    /// legacy pre-effect idempotency marker for this dispatcher instance.
+    inbox: Option<Arc<dyn DurableWebhookInbox>>,
+}
+
+struct DurableDispatchContext<'a> {
+    inbox: &'a Arc<dyn DurableWebhookInbox>,
+    body: &'a [u8],
+    env: &'a StripeWebhookEnvelope,
+    canon: CanonicalWebhookEventType,
+    token: &'a IdempotencyToken,
+    now_ms: u64,
+    start: u64,
 }
 
 impl fmt::Debug for WebhookDispatcher {
@@ -474,6 +491,7 @@ impl fmt::Debug for WebhookDispatcher {
             .field("sli", &self.sli)
             .field("clock", &self.clock)
             .field("dlq", &self.dlq)
+            .field("inbox", &self.inbox)
             .finish()
     }
 }
@@ -498,6 +516,7 @@ impl WebhookDispatcher {
             clock,
             tolerance_seconds: DEFAULT_TOLERANCE_SECONDS,
             dlq: None,
+            inbox: None,
         }
     }
 
@@ -521,6 +540,13 @@ impl WebhookDispatcher {
     #[must_use]
     pub fn with_dlq(mut self, dlq: Arc<dyn WebhookDlqStore>) -> Self {
         self.dlq = Some(dlq);
+        self
+    }
+
+    /// Wire durable receive/claim/fence ownership for authenticated events.
+    #[must_use]
+    pub fn with_durable_inbox(mut self, inbox: Arc<dyn DurableWebhookInbox>) -> Self {
+        self.inbox = Some(inbox);
         self
     }
 
@@ -607,6 +633,18 @@ impl WebhookDispatcher {
         // (4) Derive BLAKE3 idempotency token from event id.
         let token = IdempotencyToken::from_event_id(&env.id);
         let canon = CanonicalWebhookEventType::classify(&env.event_type);
+
+        if let Some(inbox) = self.inbox.as_ref() {
+            return self.process_durable(DurableDispatchContext {
+                inbox,
+                body,
+                env: &env,
+                canon,
+                token: &token,
+                now_ms,
+                start,
+            });
+        }
 
         // (5) Idempotency dedup.
         match self.idempotency.try_insert(token, canon, now_ms) {
@@ -797,6 +835,199 @@ impl WebhookDispatcher {
                 DispatchResponse::InternalError500
             }
         }
+    }
+
+    fn process_durable(&self, context: DurableDispatchContext<'_>) -> DispatchResponse {
+        const OWNER: &str = "stripe-webhook-dispatcher";
+        let event = DurableWebhookEvent {
+            event_id: context.env.id.clone(),
+            event_type: context.canon.label().to_owned(),
+            raw_body_hex: hex::encode(context.body),
+            payload_sha256: hex::encode(Sha256::digest(context.body)),
+            stripe_created_at_ms: context.env.created.saturating_mul(1_000),
+        };
+        match context.inbox.receive(&event, context.now_ms) {
+            Ok(InboxReceiveOutcome::Terminal) => {
+                self.emit_audit_and_sli(
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        context.env.id.clone(),
+                        context.canon,
+                        AuditOutcome::Duplicate,
+                        Some(context.token.to_hex()),
+                        context.now_ms,
+                        None,
+                    ),
+                    context.canon,
+                    AuditOutcome::Duplicate,
+                    context.start,
+                );
+                return DispatchResponse::Ok200;
+            }
+            Ok(InboxReceiveOutcome::LegacyAmbiguous) => {
+                self.emit_audit_and_sli(
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        context.env.id.clone(),
+                        context.canon,
+                        AuditOutcome::MaterializerFailed,
+                        Some(context.token.to_hex()),
+                        context.now_ms,
+                        Some("legacy ambiguous inbox row requires reconciliation".to_owned()),
+                    ),
+                    context.canon,
+                    AuditOutcome::MaterializerFailed,
+                    context.start,
+                );
+                return DispatchResponse::InternalError500;
+            }
+            Ok(InboxReceiveOutcome::Received) => {}
+            Err(_) => return DispatchResponse::InternalError500,
+        }
+        let claim = match context
+            .inbox
+            .claim(&context.env.id, OWNER, context.now_ms, 30_000)
+        {
+            Ok(Some(claim)) => claim,
+            Ok(None) | Err(_) => return DispatchResponse::InternalError500,
+        };
+        let dispatch_result = match context.canon {
+            CanonicalWebhookEventType::SubscriptionDeleted => {
+                self.materializer.on_subscription_deleted(context.env)
+            }
+            CanonicalWebhookEventType::SubscriptionUpdated => {
+                self.materializer.on_subscription_updated(context.env)
+            }
+            CanonicalWebhookEventType::InvoicePaid => {
+                self.materializer.on_invoice_paid(context.env)
+            }
+            CanonicalWebhookEventType::InvoicePaymentFailed => {
+                self.materializer.on_invoice_payment_failed(context.env)
+            }
+            CanonicalWebhookEventType::ChargeDisputeCreated => {
+                self.materializer.on_charge_dispute_created(context.env)
+            }
+            CanonicalWebhookEventType::ChargeRefunded => {
+                self.materializer.on_charge_refunded(context.env)
+            }
+            CanonicalWebhookEventType::SubscriptionCreated
+            | CanonicalWebhookEventType::SubscriptionTrialWillEnd
+            | CanonicalWebhookEventType::CustomerCreated
+            | CanonicalWebhookEventType::InvoiceCreated
+            | CanonicalWebhookEventType::Unknown => Ok(()),
+            _ => Ok(()),
+        };
+        match dispatch_result {
+            Ok(()) => {
+                let outcome = if context.canon == CanonicalWebhookEventType::Unknown {
+                    AuditOutcome::UnknownEventType
+                } else {
+                    AuditOutcome::Dispatched
+                };
+                if self
+                    .emit_audit_and_sli(
+                        AuditRecord::new(
+                            "corelink.billing.stripe_event_processed.v1",
+                            context.env.id.clone(),
+                            context.canon,
+                            outcome,
+                            Some(context.token.to_hex()),
+                            context.now_ms,
+                            None,
+                        ),
+                        context.canon,
+                        outcome,
+                        context.start,
+                    )
+                    .is_some()
+                    || !matches!(
+                        context.inbox.finish(
+                            &claim,
+                            OWNER,
+                            InboxTerminalState::Completed,
+                            None,
+                            context.now_ms
+                        ),
+                        Ok(true)
+                    )
+                {
+                    return DispatchResponse::InternalError500;
+                }
+                DispatchResponse::Ok200
+            }
+            Err(error) => {
+                let (outcome, status, message) = match error {
+                    MaterializerError::Transient(message) => (
+                        AuditOutcome::MaterializerFailed,
+                        DispatchResponse::InternalError500,
+                        message,
+                    ),
+                    MaterializerError::InvalidPayload(message) => (
+                        AuditOutcome::MaterializerInvalid,
+                        DispatchResponse::Unprocessable422,
+                        message,
+                    ),
+                    _ => (
+                        AuditOutcome::MaterializerFailed,
+                        DispatchResponse::InternalError500,
+                        "unknown materializer error".to_owned(),
+                    ),
+                };
+                let quarantined = self.quarantine_owned(&context, &claim, &message);
+                self.emit_audit_and_sli(
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        context.env.id.clone(),
+                        context.canon,
+                        outcome,
+                        Some(context.token.to_hex()),
+                        context.now_ms,
+                        Some(message),
+                    ),
+                    context.canon,
+                    outcome,
+                    context.start,
+                );
+                if quarantined {
+                    status
+                } else {
+                    DispatchResponse::InternalError500
+                }
+            }
+        }
+    }
+
+    fn quarantine_owned(
+        &self,
+        context: &DurableDispatchContext<'_>,
+        claim: &InboxClaim,
+        error: &str,
+    ) -> bool {
+        let Some(dlq) = self.dlq.as_ref() else {
+            return false;
+        };
+        let row = WebhookDlqRow::new_quarantine(
+            context.env.id.clone(),
+            format!("dlq_{}", blake3::hash(context.env.id.as_bytes()).to_hex()),
+            context.canon.label().to_owned(),
+            hex::encode(context.body),
+            context.token.to_hex(),
+            error.to_owned(),
+            context.now_ms,
+        );
+        if dlq.try_quarantine(row).is_err() {
+            return false;
+        }
+        matches!(
+            context.inbox.finish(
+                claim,
+                "stripe-webhook-dispatcher",
+                InboxTerminalState::Quarantined,
+                Some(error),
+                context.now_ms
+            ),
+            Ok(true)
+        )
     }
 
     /// Quarantine a transiently-failed (but already HMAC-verified)
