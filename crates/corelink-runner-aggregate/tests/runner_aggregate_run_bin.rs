@@ -53,10 +53,12 @@ fn run(stdin: &str) -> (i32, String, String) {
 /// $0.20 = $28.00 = 2_800_000 millicents.
 fn starter_240h_input() -> String {
     r#"{
+        "artifact_contract_version": 2,
         "billing_period": "2026-08",
         "period_start_ms": 1000,
         "period_end_ms": 2000,
         "now_ms": 1500,
+        "prior_consumption": {},
         "staged": [
             {
                 "tenant_id": "00000000-0000-0000-0000-000000000001",
@@ -79,12 +81,23 @@ fn valid_input_exits_zero_and_emits_the_shadow_charge() {
 
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is JSON");
     assert_eq!(v["counters"].as_array().unwrap().len(), 1);
+    assert_eq!(v["artifact_contract_version"].as_u64().unwrap(), 2);
     let line = &v["shadow_ledger"][0];
     assert_eq!(
         line["shadow_charge_millicents"].as_u64().unwrap(),
         2_800_000
     );
     assert_eq!(line["shadow_charge_cents"].as_u64().unwrap(), 2800);
+    assert_eq!(line["prior_vcpu_seconds"].as_u64().unwrap(), 0);
+    assert_eq!(line["batch_vcpu_seconds"].as_u64().unwrap(), 864_000);
+    assert_eq!(line["cumulative_vcpu_seconds"].as_u64().unwrap(), 864_000);
+    assert_eq!(line["charge_delta_millicents"].as_u64().unwrap(), 2_800_000);
+    assert_eq!(
+        line["cumulative_shadow_charge_millicents"]
+            .as_u64()
+            .unwrap(),
+        2_800_000
+    );
     assert_eq!(line["overage_vcpu_hours"].as_str().unwrap(), "140.000000");
     assert_eq!(v["total_shadow_millicents"].as_u64().unwrap(), 2_800_000);
 }
@@ -111,10 +124,12 @@ fn malformed_input_json_exits_non_zero_and_writes_no_stdout() {
 #[test]
 fn empty_staged_still_succeeds_with_empty_ledger() {
     let input = r#"{
+        "artifact_contract_version": 2,
         "billing_period": "2026-08",
         "period_start_ms": 1000,
         "period_end_ms": 2000,
         "now_ms": 1500,
+        "prior_consumption": {},
         "staged": []
     }"#;
     let (code, stdout, _stderr) = run(input);
