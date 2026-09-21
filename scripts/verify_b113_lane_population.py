@@ -275,6 +275,32 @@ def assert_yaml_lane_shape(parsed: dict, lane: Lane) -> None:
     job = jobs.get(lane.job)
     if not isinstance(job, dict):
         raise VerificationError(f"{lane.name}: expected executable job {lane.job!r}")
+    if lane.name == "nightly-mutants":
+        events = workflow_events(parsed)
+        dispatch = events.get("workflow_dispatch")
+        inputs = dispatch.get("inputs") if isinstance(dispatch, dict) else None
+        lane_input = inputs.get("lane") if isinstance(inputs, dict) else None
+        if not isinstance(lane_input, dict) or lane_input.get("type") != "choice":
+            raise VerificationError("nightly-mutants: workflow_dispatch lane choice is missing")
+        if lane_input.get("default") != "all" or lane_input.get("options") != ["all", "mutants"]:
+            raise VerificationError("nightly-mutants: lane choice must default to all and offer all/mutants")
+
+        all_lanes = ("tlc-extended", "proptest-extended", "fuzz-matrix")
+        all_condition = "github.event_name != 'workflow_dispatch' || inputs.lane == 'all'"
+        mutants_condition = (
+            "github.event_name != 'workflow_dispatch' || inputs.lane == 'all' "
+            "|| inputs.lane == 'mutants'"
+        )
+        for job_name in all_lanes:
+            candidate = jobs.get(job_name)
+            if not isinstance(candidate, dict) or candidate.get("if") != all_condition:
+                raise VerificationError(
+                    f"nightly-mutants: {job_name} must run for schedule/all and be excluded for mutants dispatch"
+                )
+        if job.get("if") != mutants_condition:
+            raise VerificationError(
+                "nightly-mutants: mutants-workspace must run for schedule, all, and mutants dispatch"
+            )
     if lane.name == "fuzz-nightly":
         env = job.get("env")
         if not isinstance(env, dict) or env.get("RUSTUP_TOOLCHAIN") != "nightly-x86_64-apple-darwin":

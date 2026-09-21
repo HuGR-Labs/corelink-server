@@ -33,6 +33,15 @@ on:
   workflow_dispatch:
     # Manual trigger for ops/dev to re-run nightly on demand (e.g. after a
     # PR landing flagged in nightly post-mortem).
+    inputs:
+      lane:
+        description: Select the nightly lane to run
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - mutants
 
 permissions:
   contents: read
@@ -48,6 +57,7 @@ jobs:
   # invariant violation) fail the job — no warning-only.
   # ---------------------------------------------------------------------
   tlc-extended:
+    if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all'
     name: TLC extended (${{ matrix.spec }})
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 35
@@ -190,6 +200,7 @@ jobs:
   # WI §10.7.6 / Gherkin "Property test extended 100k".
   # ---------------------------------------------------------------------
   proptest-extended:
+    if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all'
     name: proptest extended (100k iter cross-component)
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 30
@@ -354,6 +365,7 @@ jobs:
   # 3. Fuzz matrix — all 9 targets across 5 SEALed crates, 1h each parallel.
   # ---------------------------------------------------------------------
   fuzz-matrix:
+    if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all'
     name: fuzz 1h (${{ matrix.crate }}::${{ matrix.target }})
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 75
@@ -446,6 +458,7 @@ jobs:
   # coverage of the mutated code path — fix the test, not the threshold.
   # ---------------------------------------------------------------------
   mutants-workspace:
+    if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all' || inputs.lane == 'mutants'
     name: cargo-mutants workspace (fail-on-any-survivor)
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 240

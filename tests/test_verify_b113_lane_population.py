@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -65,6 +66,53 @@ def test_shared_buck2_marker_is_scoped_to_the_named_job() -> None:
         '"${BUCK2_INSTALL_DIR}/buck2" --version', "", 1
     )
     with pytest.raises(MODULE.VerificationError, match="buck2-build"):
+        MODULE.verify(sources)
+
+
+@pytest.mark.parametrize(
+    ("job", "before", "after"),
+    (
+        (None, "        default: all\n", "        default: mutants\n"),
+        (None, "          - mutants\n", "          - other\n"),
+        (
+            "tlc-extended",
+            "if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all'\n",
+            "if: always()\n",
+        ),
+        (
+            "proptest-extended",
+            "if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all'\n",
+            "if: always()\n",
+        ),
+        (
+            "fuzz-matrix",
+            "if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all'\n",
+            "if: always()\n",
+        ),
+        (
+            "mutants-workspace",
+            "if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all' || inputs.lane == 'mutants'\n",
+            "if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all'\n",
+        ),
+    ),
+)
+def test_nightly_dispatch_cannot_run_the_wrong_lane(job: str | None, before: str, after: str) -> None:
+    sources = corpus()
+    nightly = sources[".github/workflows/nightly.yml"]
+    if job is None:
+        assert nightly.count(before) == 1
+        mutated = nightly.replace(before, after, 1)
+    else:
+        boundary = re.compile(rf"(?ms)^  {re.escape(job)}:\n.*?(?=^  [A-Za-z0-9_-]+:\n|\Z)")
+        match = boundary.search(nightly)
+        assert match is not None and match.group(0).count(before) == 1
+        mutated = (
+            nightly[: match.start()]
+            + match.group(0).replace(before, after, 1)
+            + nightly[match.end() :]
+        )
+    sources[".github/workflows/nightly.yml"] = mutated
+    with pytest.raises(MODULE.VerificationError, match="nightly-mutants"):
         MODULE.verify(sources)
 
 
