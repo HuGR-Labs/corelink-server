@@ -209,6 +209,47 @@ impl ByteStore for InMemoryByteStore {
         }
         Ok(())
     }
+
+    async fn settle_mutation_liability(
+        &self,
+        tenant_id: &str,
+        region: &str,
+        logical_key: &str,
+        resolution: MutationLiabilityResolution,
+        _now_ms: i64,
+    ) -> Result<MutationLiabilitySettlement, String> {
+        // Hold ownership while applying the counter transition, so a concurrent
+        // repeat cannot observe the liability active and refund it twice.
+        let mut liabilities = self
+            .liabilities
+            .lock()
+            .map_err(|_| "liability lock poisoned".to_owned())?;
+        let key = (tenant_id.to_owned(), region.to_owned(), logical_key.to_owned());
+        let Some(liability) = liabilities.get_mut(&key) else {
+            return Ok(MutationLiabilitySettlement::AlreadySettled);
+        };
+        if matches!(liability.state, MutationLiabilityState::Released | MutationLiabilityState::Committed) {
+            return Ok(MutationLiabilitySettlement::AlreadySettled);
+        }
+        match resolution {
+            MutationLiabilityResolution::Committed => {
+                liability.state = MutationLiabilityState::Committed;
+                liability.intent_id = None;
+            }
+            MutationLiabilityResolution::NotWritten => {
+                let mut rows = self
+                    .rows
+                    .lock()
+                    .map_err(|_| "InMemoryByteStore: poisoned lock".to_owned())?;
+                if let Some(row) = rows.get_mut(&(tenant_id.to_owned(), region.to_owned())) {
+                    row.used = (row.used - liability.bytes_reserved).max(0);
+                }
+                liability.state = MutationLiabilityState::Released;
+                liability.intent_id = None;
+            }
+        }
+        Ok(MutationLiabilitySettlement::Applied)
+    }
 }
 
 /// A [`ByteStore`] that always errors — drives the fail-CLOSED 503 path.
