@@ -320,7 +320,10 @@ name = "corelink-prod"
 # material. Keep it versioned so a deploy cannot retain/recreate the retired app
 # hostname pin and reject otherwise-valid production sessions. Regional Workers
 # intentionally have no Clerk surface; do not copy this var into prod-*/vars.
-vars = { ENVIRONMENT = "prod", CLERK_ISSUER_URL = "https://clerk.corelink-app.humangr.com", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad", R2_CAS_REGION = "iad", R2_CHUNK_BUCKET = "corelink-chunk-iad", R2_CHUNK_REGION = "iad", EDGE_PUBLIC_READ = "serve", EDGE_ASYNC_METER = "on", EDGE_DO_METER = "serve", OCI_PUBLIC_DEDUP_ENABLED = "1", OCI_UPSTREAM_ON_MISS = "1", AUDIT_DRAIN_BATCH_LIMIT = "512", AUDIT_DRAIN_LEASE_ENABLED = "1", EDGE_FIND_MISSING = "on" }
+# Runner credential lifecycle uses this public Fabric origin. The issuer auth
+# key is a separate Worker secret and must be provisioned per environment;
+# regional vars do not inherit from prod.
+vars = { ENVIRONMENT = "prod", CLERK_ISSUER_URL = "https://clerk.corelink-app.humangr.com", FABRIC_CREDENTIAL_AUTHORITY_URL = "https://corelink-fabricd.gmhelmold.workers.dev", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad", R2_CAS_REGION = "iad", R2_CHUNK_BUCKET = "corelink-chunk-iad", R2_CHUNK_REGION = "iad", EDGE_PUBLIC_READ = "serve", EDGE_ASYNC_METER = "on", EDGE_DO_METER = "serve", OCI_PUBLIC_DEDUP_ENABLED = "1", OCI_UPSTREAM_ON_MISS = "1", AUDIT_DRAIN_BATCH_LIMIT = "512", AUDIT_DRAIN_LEASE_ENABLED = "1", EDGE_FIND_MISSING = "on" }
 
 [env.prod.triggers]
 crons = []
@@ -636,6 +639,7 @@ head_sampling_rate = 1
 
 [env.prod-sam.vars]
 ENVIRONMENT = "prod-sam"
+FABRIC_CREDENTIAL_AUTHORITY_URL = "https://corelink-fabricd.gmhelmold.workers.dev"
 # Edge _public read + async metering (see [env.prod].vars note). Declared as vars
 # so the live behavior is repo-reproducible, not a hidden runtime secret.
 EDGE_PUBLIC_READ = "serve"
@@ -804,6 +808,7 @@ head_sampling_rate = 1
 
 [env.prod-lhr.vars]
 ENVIRONMENT = "prod-lhr"
+FABRIC_CREDENTIAL_AUTHORITY_URL = "https://corelink-fabricd.gmhelmold.workers.dev"
 # Edge _public read + async metering (see [env.prod].vars note). Declared as vars
 # so the live behavior is repo-reproducible, not a hidden runtime secret.
 EDGE_PUBLIC_READ = "serve"
@@ -980,6 +985,7 @@ head_sampling_rate = 1
 
 [env.prod-nrt.vars]
 ENVIRONMENT = "prod-nrt"
+FABRIC_CREDENTIAL_AUTHORITY_URL = "https://corelink-fabricd.gmhelmold.workers.dev"
 # Edge _public read + async metering (see [env.prod].vars note). Declared as vars
 # so the live behavior is repo-reproducible, not a hidden runtime secret.
 EDGE_PUBLIC_READ = "serve"
@@ -1150,6 +1156,7 @@ head_sampling_rate = 1
 
 [env.prod-syd.vars]
 ENVIRONMENT = "prod-syd"
+FABRIC_CREDENTIAL_AUTHORITY_URL = "https://corelink-fabricd.gmhelmold.workers.dev"
 # Edge _public read + async metering (see [env.prod].vars note). Declared as vars
 # so the live behavior is repo-reproducible, not a hidden runtime secret.
 EDGE_PUBLIC_READ = "serve"
