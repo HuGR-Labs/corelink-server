@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/semgrep.yml"
@@ -308,6 +310,16 @@ def check_static(
     bundled_lock = _load_json(BUNDLED_LOCK) if bundled_lock is None else bundled_lock
     _check_policy(policy)
     _check_bundled_lock(bundled_lock)
+
+    try:
+        workflow_data = yaml.safe_load(workflow)
+        runner_label = workflow_data["jobs"]["semgrep"]["runs-on"]
+    except (AttributeError, KeyError, TypeError, yaml.YAMLError) as exc:
+        raise VerificationError("workflow YAML has no parseable semgrep runner") from exc
+    if runner_label != "ubuntu-latest":
+        raise VerificationError(
+            f"semgrep job must use hosted ubuntu-latest runner, got {runner_label!r}"
+        )
 
     blocks = _rule_blocks(config)
     if set(blocks) != set(CUSTOM):
@@ -764,6 +776,12 @@ def mutation_self_test() -> int:
             workflow,
             policy,
         ),
+        (
+            "hosted-runner",
+            config,
+            workflow.replace("runs-on: ubuntu-latest", "runs-on: corelink", 1),
+            policy,
+        ),
     ]
     passed = 0
     for name, mutated_config, mutated_workflow, mutated_policy in mutations:
@@ -907,7 +925,7 @@ def main(argv: list[str] | None = None) -> int:
         mutations = mutation_self_test() if args.self_test else 0
         if args.semgrep_bin:
             semgrep_rule_test(args.semgrep_bin)
-        suffix = f"; mutations={mutations}/13" if args.self_test else ""
+        suffix = f"; mutations={mutations}/14" if args.self_test else ""
         if args.semgrep_bin:
             suffix += "; semgrep-controls=4/4"
         print(
