@@ -89,6 +89,35 @@ def _backend_probe(timeout: float) -> dict[str, Any]:
     return {"status": "PASS", "kind": kind, "reason": "docker_info_reachable"}
 
 
+def _runner_provenance() -> dict[str, str]:
+    """Bind a receipt to the workflow's required CoreLink fleet route."""
+    label = os.environ.get("I1672_FLEET_LABEL", "")
+    name = os.environ.get("I1672_RUNNER_NAME", "")
+    runner_os = os.environ.get("I1672_RUNNER_OS", "")
+    architecture = os.environ.get("I1672_RUNNER_ARCH", "")
+    if (
+        os.environ.get("GITHUB_ACTIONS") != "true"
+        or label != "corelink"
+        or not name
+        or not runner_os
+        or not architecture
+    ):
+        return {
+            "status": "FAIL",
+            "kind": "unverified",
+            "label": label or "missing",
+            "reason": "corelink_fleet_provenance_missing",
+        }
+    return {
+        "status": "PASS",
+        "kind": "corelink-fleet",
+        "label": label,
+        "name": name,
+        "os": runner_os,
+        "architecture": architecture,
+    }
+
+
 def _provenance() -> dict[str, str]:
     helper = Path(__file__).resolve()
     digest = hashlib.sha256(helper.read_bytes()).hexdigest()
@@ -106,6 +135,9 @@ def observe(receipt_path: Path, timeout: float) -> dict[str, Any]:
     started = time.monotonic()
     observations: dict[str, dict[str, Any]] = {}
     failures: list[str] = []
+    runner = _runner_provenance()
+    if runner["status"] != "PASS":
+        failures.append("runner_provenance_invalid")
     backend = _backend_probe(timeout)
     if backend["status"] != "PASS":
         failures.append("backend_unavailable")
@@ -195,11 +227,7 @@ def observe(receipt_path: Path, timeout: float) -> dict[str, Any]:
         "receipt_type": "corelink_smoke_install_observation",
         "issue": 1672,
         "captured_at": _now(),
-        "runner": {
-            "kind": "github-hosted" if os.environ.get("GITHUB_ACTIONS") == "true" else "local",
-            "label": os.environ.get("RUNNER_LABEL", "ubuntu-latest"),
-            "event": os.environ.get("GITHUB_EVENT_NAME", "manual"),
-        },
+        "runner": {**runner, "event": os.environ.get("GITHUB_EVENT_NAME", "manual")},
         "backend": backend,
         "service": {
             "classification": classification,
