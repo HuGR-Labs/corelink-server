@@ -1,54 +1,54 @@
 ---
 id: intro
-title: Was ist CoreLink?
+title: What is CoreLink?
 sidebar_position: 1
-description: CoreLink ist ein mandantenfähiger, inhaltsadressierbarer Cache für Build-Artefakte, Pakete, Container-Layer und ML-Modellgewichte — gehostet auf Cloudflare.
+description: CoreLink is a multi-tenant content-addressable cache for build artifacts, packages, container layers, and ML model weights — hosted on Cloudflare.
 ---
-
 <!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
 
 > MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
 >
 > Canonical EN source: `docs/intro.md`
 
-# Was ist CoreLink?
 
-CoreLink ist ein gehosteter, mandantenfähiger **inhaltsadressierbarer Cache** für Build-Artefakte. Er speichert jeden Blob genau einmal anhand seines SHA-256-Digests und liefert ihn vom Cloudflare-Edge aus, der jedem Client am nächsten liegt.
+# What is CoreLink?
 
-Build-Werkzeuge, die die [Remote Execution API (REAPI)](https://github.com/bazelbuild/remote-apis) **über HTTP/REST** sprechen — Bazel und andere REST-fähige REAPI-Clients — können ohne Codeänderungen direkt auf CoreLink verweisen. CoreLink stellt keinen gRPC-Ingress bereit; REAPI-Clients, die ausschließlich gRPC sprechen (Buck2, NativeLink), können sich daher heute nicht verbinden. Turborepo verbindet sich über eine einzige Umgebungsvariable. Rohe HTTP-Clients nutzen die REST-Endpunkte.
+CoreLink is a hosted, multi-tenant **content-addressable cache** for build artifacts. It stores any blob exactly once by its BLAKE3 digest and serves it from the Cloudflare edge nearest to each client.
 
-## Für wen es gedacht ist
+Build tools that speak the [Remote Execution API (REAPI)](https://github.com/bazelbuild/remote-apis) **over HTTP/REST** — Bazel, and other REST-capable REAPI clients — can point directly at CoreLink with zero code changes. CoreLink serves no gRPC ingress, so gRPC-only REAPI clients (Buck2, NativeLink) cannot connect today. Turborepo connects via a single environment variable. Raw HTTP clients use the REST endpoints.
 
-- **Teams, die Bazel einsetzen** und einen verwalteten Remote-Cache wollen, ohne selbst S3-Buckets, Redis oder `bazel-remote` zu betreiben.
-- **Turborepo-Monorepos**, die einen benutzerdefinierten Remote-Cache außerhalb des gehosteten Angebots von Vercel wollen.
-- **Plattform-Engineering-Teams**, die Mandantenisolierung, Audit-Logs und BYOK-Verschlüsselung in einem Dienst wollen.
+## Who it is for
 
-## Was CoreLink nicht ist
+- **Teams running Bazel** that want a managed remote cache without operating S3 buckets, Redis, or `bazel-remote` themselves.
+- **Turborepo monorepos** that want a custom remote cache outside Vercel's hosted offering.
+- **Platform engineering teams** that want tenant isolation, audit logs, and BYOK encryption in one service.
 
-CoreLink ist keine Remote-Execution-Engine. Es speichert und ruft Inhalte anhand ihres Hashes ab; es plant oder führt keine Build-Aktionen aus. Verwenden Sie es zusammen mit [BuildBarn](https://github.com/buildbarn/bb-storage) oder [EngFlow](https://www.engflow.com), wenn Sie Remote-Execution benötigen.
+## What CoreLink is not
 
-## Wie es funktioniert
+CoreLink is not a remote execution engine. It stores and retrieves content by hash; it does not schedule or run build actions. Use it alongside [BuildBarn](https://github.com/buildbarn/bb-storage) or [EngFlow](https://www.engflow.com) if you need remote execution.
+
+## How it works
 
 ```
 build tool                CoreLink API (Cloudflare Worker)       R2 / KV
 ─────────────────────     ─────────────────────────────────     ─────────
-PUT /v1/cas/<t>/<hash> ─► auth (PAT) → tenant isolation        → stored once
-GET /v1/cas/<t>/<hash> ◄─ cache-hit lookup                     ← returned
+PUT /v1/cas/<t>/<b3>   ─► auth (PAT) → tenant isolation        → stored once
+GET /v1/cas/<t>/<b3>   ◄─ cache-hit lookup                     ← returned
 ```
 
-Jeder Blob wird anhand seines SHA-256-Digests adressiert. Wenn zwei Mandanten dieselben Bytes hochladen, zahlt jeder Mandant für eine Kopie und hat eine unabhängige Zugriffssteuerung — der Inhalt wird auf der Speicherebene geteilt, der Zugriff nicht.
+Every blob is addressed by its BLAKE3 digest — compute it with `b3sum`, **not** `sha256sum`; a digest of the wrong algorithm is rejected with `422 content hash mismatch`. If two tenants upload the same bytes, each tenant pays for one copy and has independent access control — content is shared at the storage layer, access is not.
 
-## Wichtige Funktionen
+## Key capabilities
 
-| Funktion | Details |
+| Capability | Details |
 |---|---|
-| Inhaltsadressierbarer Speicher (CAS) | SHA-256-basierter Blob-Speicher. Dedupliziert automatisch. |
-| Action Cache (AC) | Ordnet `(action_digest) → (output_digest)` zu, sodass Bazel identische Aktionen überspringt. |
-| Mandantenfähigkeit | Jeder Mandant ist auf PAT-Ebene isoliert. Mandantenübergreifende Lesezugriffe sind niemals möglich. |
-| BYOK-Verschlüsselung | Mandanten im Enterprise-Plan können ihren eigenen AES-256-Schlüssel bereitstellen. |
-| Audit-Log | Jeder Lese- und Schreibvorgang wird an ein unveränderliches, mandantengebundenes Log angehängt. |
-| REAPI v2 | Vollständige gRPC-Dienste `ContentAddressableStorage` + `ActionCache` + `ByteStream`. |
+| Content-addressable storage (CAS) | BLAKE3-keyed blob store (`b3sum`). Deduplicates automatically. |
+| Action cache (AC) | Maps `(action_digest) → (output_digest)` so Bazel skips identical actions. |
+| Multi-tenancy | Each tenant is isolated at the PAT level. Cross-tenant reads are never possible. |
+| BYOK encryption | Tenants on the Enterprise plan can supply their own AES-256 key. |
+| Audit log | Every read and write is appended to an immutable, tenant-scoped log. |
+| REAPI v2 | Bazel REAPI v2 (`ContentAddressableStorage` + `ActionCache` + `ByteStream` semantics) served over plain HTTP/REST — no gRPC ingress. |
 
-## Nächster Schritt
+## Next step
 
-Der schnellste Weg zu Ihrem ersten Cache-Hit ist der [5-minütige Quickstart](./quickstart.md).
+The fastest path to your first cache hit is the [5-minute quickstart](./quickstart.md).

@@ -17,46 +17,49 @@ last_updated: "2026-08-24"
 
 > MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
 >
-> Canonical EN source: `compliance/sub-processors.mdx`
+> Canonical EN source: `docs/explanation/compliance/sub-processors.mdx`
 
 import { DraftBanner } from "@site/src/components/DraftBanner";
 
 <DraftBanner pageType="compliance" />
 
-# Subprocesadores
+# Sub-processors
 
-## Política de notificación
+> **DRAFT — pending Legal + Finance + Security review.** The authoritative
+> machine-readable source is `legal/sub-processors.md`. This page mirrors that
+> file for procurement teams who cannot pull from the repository.
 
-CoreLink se compromete a enviar un **aviso previo de 30 días** antes de que cualquier
-nuevo subprocesador comience a procesar datos personales de clientes, y antes de que
-un subprocesador existente cambie materialmente su función de procesamiento, región
-o lista de subsubprocesadores (GDPR Art. 28(2)).
+## Notification policy
 
-Para suscribir una dirección adicional (equipo de seguridad, DPO, adquisiciones) a
-los avisos de cambio, envíe un correo a
-[privacy@humangr.com](mailto:privacy@humangr.com) con el asunto
-"Suscripción a avisos de subprocesadores" e incluya su identificador de tenant.
+CoreLink commits to a **30-day prior notice** before any new sub-processor
+begins processing customer personal data. Notices are DKIM-signed and delivered
+to the account owner contact.
 
-## Subprocesadores activos
+## Active sub-processors
 
-| Subprocesador | Servicio | Datos procesados | Región | DPA / Cert | Vigente desde |
-| --- | --- | --- | --- | --- | --- |
-| Cloudflare, Inc. | CDN, edge compute (Workers), R2, KV, Durable Objects, D1, Pages, Email Routing | Tráfico de app + artefactos de clientes (cifrados en reposo) | Global con anclaje regional | [DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) · ISO 27001 · SOC 2 Type II · ISO 27018 · PCI DSS L1 · EU–US DPF | 2026-04-01 |
-| Clerk, Inc. | Autenticación + identidad de usuario (SSO, MFA) | Email, nombre, hash de contraseña, tokens de sesión | United States (us-east-1) | [DPA](https://clerk.com/legal/dpa) · SOC 2 Type II · GDPR · CCPA · EU–US DPF | 2026-04-01 |
-| Stripe, Inc. | Procesamiento de pagos y facturación | Email de facturación + tokens de método de pago (PCI-DSS L1) | US; UE vía Stripe Payments Europe Ltd. (Irlanda) | [DPA](https://stripe.com/legal/dpa) · PCI DSS L1 · SOC 2 Type II · ISO 27001 · EU–US DPF | 2026-04-01 |
-| PagerDuty, Inc. | Gestión de incidentes + alertas on-call | Alertas operativas + metadatos de incidentes | United States | [Política de privacidad](https://www.pagerduty.com/privacy-policy/) · SOC 2 Type II · ISO 27001 | 2026-04-23 |
-| Resend | Email transaccional + lista de newsletter | Email del destinatario + estado de entrega | United States | [DPA](https://resend.com/legal/dpa) · SOC 2 Type II (en progreso) | 2026-05-27 |
-| Sentry (Functional Software, Inc.) | Monitoreo de errores de aplicación (SaaS Cloud) | Eventos de error — campos PII eliminados por configuración | United States (Sentry SaaS Cloud) | [DPA](https://sentry.io/legal/dpa/) · SOC 2 Type II · GDPR | 2026-05-27 |
-| Plausible Analytics | Analítica web privada (nube EU) | Eventos anonimizados — sin cookies, sin PII | European Union (Alemania) | [Data Policy](https://plausible.io/data-policy) · GDPR (sin cookies por diseño) | 2026-05-27 |
-| Better Stack, Inc. (Better Uptime) | Página de estado público | Solo estado público — ningún dato personal de clientes | European Union | [Privacy Policy](https://betterstack.com/privacy) · GDPR | 2026-05-27 |
-| GitHub, Inc. (Microsoft) | Alojamiento de código fuente + CI/CD | Código + issues + logs de artefactos de CI | United States | [DPA](https://docs.github.com/en/site-policy/privacy-policies/github-data-protection-agreement) · SOC 2 Type II · ISO 27001 · GDPR · EU–US DPF | 2026-04-01 |
+| Provider | Role | Region | Certifications | DPA |
+| --- | --- | --- | --- | --- |
+| Cloudflare, Inc. | Infrastructure (Workers, R2, KV, DO, D1, Pages, Email) | R2/DO tenant-pinned; D1 control-plane metadata global under SCC/TIA safeguards | SOC 2 Type II, ISO 27001, ISO 27018, PCI-DSS L1, HIPAA-compliant infra | [DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
+| Clerk | Authentication and user identity | Multi-region (tenant-pinned) | SOC 2 Type II, GDPR processor | Clerk DPA (on request) |
+| Stripe, Inc. | Billing and payment processing | US and EU (PCI-DSS L1) | SOC 2 Type II, PCI-DSS L1, ISO 27001 | [DPA](https://stripe.com/legal/dpa) |
+| GitHub, Inc. | Source code repository and CI/CD | United States | SOC 2 Type II, ISO 27001 | [DPA](https://docs.github.com/en/site-policy/privacy-policies/github-data-protection-agreement) |
+| PagerDuty, Inc. | Incident management + on-call alerting | United States | SOC 2 Type II, ISO 27001 | [Privacy Policy](https://www.pagerduty.com/privacy-policy/) |
+| Resend, Inc. | Transactional email + newsletter-audience delivery | United States | DPA policy published; signed-copy evidence pending (VR-6) | [DPA](https://resend.com/legal/dpa) |
+| Functional Software, Inc. (Sentry) | Application error monitoring — scrubbed diagnostic telemetry | United States | DPA policy published; signed-copy evidence pending (VR-7) | [DPA](https://sentry.io/legal/dpa/) |
+| Plausible Insights OÜ (Plausible Analytics) | Web analytics that sets no cookies, for the docs-site marketing funnel | European Union | DPA policy published; signed-copy evidence pending (VR-8) | [DPA](https://plausible.io/dpa) |
 
-> La lista completa — incluyendo jurisdicción, categorías de datos, certificaciones y
-> fechas de contrato — se mantiene en `apps/admin-ui/src/content/sub-processors.json`
-> y se publica en el trust portal.
+> The full machine-readable list — including jurisdiction, data categories,
+> certifications, and contract dates — is maintained in
+> `legal/sub-processors.md` and published to the trust portal.
 
-## Cómo suscribirse a avisos de cambio
+## How to subscribe to change notices
 
-1. Envíe un correo a **privacy@humangr.com** con el asunto "Suscripción a avisos de subprocesadores".
-2. Proporcione la dirección de email que debe recibir los avisos firmados con DKIM.
-3. La suscripción se confirma con un enlace de opt-in en un día hábil.
+1. Open a support ticket of type **"Compliance / Sub-processor Notice."**
+2. Provide the email address that should receive DKIM-signed notices.
+3. We confirm subscription within TBD business days.
+
+## Cross-functional review checklist
+
+- [ ] DPO — confirm GDPR and LGPD compliance of each provider.
+- [ ] Procurement — confirm DPA links and contract status.
+- [ ] Legal — confirm 30-day notice mechanism.
