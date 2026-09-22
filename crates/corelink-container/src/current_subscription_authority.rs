@@ -105,7 +105,7 @@ mod tests {
             "status": "active",
             "customer": "cus_1",
             "current_period_end": 1800000000,
-            "items": items,
+            "items": { "data": items },
         }))
         .unwrap()
     }
