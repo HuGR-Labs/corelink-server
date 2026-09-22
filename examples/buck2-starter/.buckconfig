@@ -11,11 +11,20 @@
 [repository]
     name = buck2-starter
 
+# Explicitly define the project cell. Buck2 requires the root cell mapping
+# before it can resolve the starter's build graph.
+[cells]
+    root = .
+    prelude = prelude
+
+[external_cells]
+    prelude = bundled
+
 [buck2]
-    execution_platforms = //:platforms
+    execution_platforms = prelude//platforms:default
 
 [build]
-    execution_platforms = //:platforms
+    execution_platforms = prelude//platforms:default
 
 [remote_cache]
     # CoreLink CAS HTTP endpoint (REAPI v2).

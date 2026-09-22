@@ -1,0 +1,38 @@
+name: issue-1682 B-316 vendor review contract
+
+# B-316 remains pending external Legal evidence.  This credentialless lane
+# keeps the repository-owned packet shape and its explicit open boundary
+# reproducible on every PR that can change the contract inputs.
+
+on:
+  pull_request:
+    paths:
+      - "BACKLOG.md"
+      - ".github/workflows/issue-1682-b316-vendor-review.yml"
+      - "docs/compliance/vendor-reviews/betterstack-dpa-review-2026-09.md"
+      - "docs/compliance/vendor-reviews/plausible-dpa-review-2026-09.md"
+      - "docs/compliance/vendor-reviews/resend-dpa-review-2026-09.md"
+      - "docs/compliance/vendor-reviews/sentry-dpa-review-2026-09.md"
+      - "docs/handoff/2026-09-06-b316-vendor-legal-review.json"
+      - "legal/dpa/SUB-PROCESSOR-COMMITMENTS.md"
+      - "legal/sub-processors.md"
+      - "scripts/verify_b316_pending_vendor_reviews.py"
+      - "specs/_compliance/VENDOR-RISK-REGISTER.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify B-316 pending vendor packets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify pending packets and adversarial mutations
+        run: python3 scripts/verify_b316_pending_vendor_reviews.py --expect open --self-test
