@@ -1,0 +1,320 @@
+name: staging bootstrap (#1700)
+
+# Manual only. Every step is restricted to the canonical protected main ref and
+# the separately protected staging environment. Both config phases are rendered
+# from the frozen topology into RUNNER_TEMP; none are checked into the repo.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "bootstrap-staging-1700" to deploy the isolated staging target'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: isolated staging bootstrap
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.STAGING_CF_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.STAGING_CF_ACCOUNT_ID }}
+      STAGING_CF_WORKER_API_TOKEN: ${{ secrets.STAGING_CF_WORKER_API_TOKEN }}
+      CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
+      STAGING_R2_S3_ENDPOINT: ${{ secrets.STAGING_R2_S3_ENDPOINT }}
+      CLERK_ISSUER_URL: ${{ secrets.STAGING_CLERK_ISSUER_URL }}
+      CLERK_SECRET_KEY: ${{ secrets.STAGING_CLERK_SECRET_KEY }}
+      CLERK_WEBHOOK_SECRET: ${{ secrets.STAGING_CLERK_WEBHOOK_SECRET }}
+      ERASURE_SALT_KEY: ${{ secrets.STAGING_ERASURE_SALT_KEY }}
+      PAGERDUTY_ROUTING_KEY: ${{ secrets.STAGING_PAGERDUTY_ROUTING_KEY }}
+      PAGERDUTY_SYNTHETIC_ROUTING_KEY: ${{ secrets.STAGING_PAGERDUTY_SYNTHETIC_ROUTING_KEY }}
+      PAGERDUTY_WEBHOOK_SECRET: ${{ secrets.STAGING_PAGERDUTY_WEBHOOK_SECRET }}
+      R2_S3_ACCESS_KEY_ID: ${{ secrets.STAGING_R2_S3_ACCESS_KEY_ID }}
+      R2_S3_SECRET_ACCESS_KEY: ${{ secrets.STAGING_R2_S3_SECRET_ACCESS_KEY }}
+      K6_STAGING_BYOK_CMK_ID: ${{ secrets.K6_STAGING_BYOK_CMK_ID }}
+      K6_STAGING_MFA_STUB: ${{ secrets.K6_STAGING_MFA_STUB }}
+      K6_STAGING_PAT: ${{ secrets.K6_STAGING_PAT }}
+      K6_STAGING_STRIPE_WHSEC: ${{ secrets.K6_STAGING_STRIPE_WHSEC }}
+      K6_STAGING_TEARDOWN_TOKEN: ${{ secrets.K6_STAGING_TEARDOWN_TOKEN }}
+      K6_TARGET_IDENTITY_RECEIPT: ${{ secrets.K6_TARGET_IDENTITY_RECEIPT }}
+      K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}
+
+    steps:
+      - name: Confirm operation
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRM" = "bootstrap-staging-1700"
+
+      - name: Checkout canonical main without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify frozen staging boundary
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_staging_target.py
+          python3 scripts/verify_staging_topology_contract.py --expect ready
+          test "$(jq -r '.deployment_state' infra/staging/topology.json)" = unprovisioned
+          test "$K6_TARGET_HOST" = 'https://staging.corelink.humangr.com'
+
+      - name: Check non-derivable input presence without reading values
+        id: prerequisites
+        run: |
+          set -euo pipefail
+          required=(
+            CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_CF_WORKER_API_TOKEN
+            CF_ZONE_ID STAGING_R2_S3_ENDPOINT
+            CLERK_ISSUER_URL CLERK_SECRET_KEY CLERK_WEBHOOK_SECRET
+            ERASURE_SALT_KEY PAGERDUTY_ROUTING_KEY
+            PAGERDUTY_SYNTHETIC_ROUTING_KEY PAGERDUTY_WEBHOOK_SECRET
+            R2_S3_ACCESS_KEY_ID R2_S3_SECRET_ACCESS_KEY
+            K6_STAGING_BYOK_CMK_ID K6_STAGING_MFA_STUB K6_STAGING_PAT
+            K6_STAGING_STRIPE_WHSEC K6_STAGING_TEARDOWN_TOKEN
+            K6_TARGET_IDENTITY_RECEIPT K6_TARGET_HOST
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if ((${#missing[@]})); then
+            printf '::error::Missing required staging input names: %s\n' "${missing[*]}"
+            exit 1
+          fi
+          if [[ "$CLOUDFLARE_API_TOKEN" == "$STAGING_CF_WORKER_API_TOKEN" ]]; then
+            echo '::error::deployment and runtime Cloudflare tokens must be distinct'
+            exit 1
+          fi
+          echo "All required staging input names are present."
+
+      - name: Install locked Wrangler dependencies
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Confirm configured staging account owns the target zone
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          request = urllib.request.Request(
+              f"https://api.cloudflare.com/client/v4/zones/{os.environ['CF_ZONE_ID']}",
+              headers={"Authorization": f"Bearer {os.environ['CLOUDFLARE_API_TOKEN']}",
+                       "Content-Type": "application/json"},
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  payload = json.load(response)
+          except (urllib.error.URLError, urllib.error.HTTPError) as error:
+              raise SystemExit("staging Cloudflare zone readback failed") from error
+          if payload.get("success") is not True or payload.get("result", {}).get("account", {}).get("id") != os.environ["CLOUDFLARE_ACCOUNT_ID"]:
+              raise SystemExit("configured staging account does not own the canonical zone")
+          PY
+
+      - name: Render and verify no-route staging configs
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/staging-config"
+          for pair in root:corelink-staging signup:corelink-signup-staging synthetic:corelink-synthetic-pager-staging; do
+            IFS=: read -r worker expected_name <<< "$pair"
+            python3 scripts/render_staging_wrangler.py \
+              --phase bootstrap --worker "$worker" \
+              --output "$RUNNER_TEMP/staging-config/$worker.toml"
+            python3 - "$RUNNER_TEMP/staging-config/$worker.toml" "$expected_name" <<'PY'
+            import sys, tomllib
+            config = tomllib.load(open(sys.argv[1], "rb"))
+            if config.get("name") != sys.argv[2] or config.get("workers_dev") is not False:
+                raise SystemExit("bootstrap config is not the exact isolated staging Worker")
+            if config.get("routes") or config.get("route") or config.get("custom_domain"):
+                raise SystemExit("bootstrap config must have no public route")
+            PY
+          done
+
+      - name: Deploy quarantined staging Workers without routes
+        id: deploy_quarantined
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          for worker in synthetic root signup; do
+            pnpm exec wrangler deploy --config "$RUNNER_TEMP/staging-config/$worker.toml"
+          done
+
+      - name: Bootstrap staging Worker secrets and expose routes last
+        id: bootstrap_secrets
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          umask 077
+          material="$RUNNER_TEMP/staging-generated"
+          mkdir -m 700 "$material"
+          trap 'find "$material" -type f -exec shred -u -- {} + 2>/dev/null || true' EXIT
+          for name in CORELINK_INTERNAL_AUTH_KEY CORELINK_ADMIN_AUTH_KEY CORELINK_ERASE_AUTH_KEY PAT_SIGNING_KEY; do
+            openssl rand -hex 32 > "$material/$name"
+          done
+          # Bind generated and external secret values only to the staging-named
+          # scripts. No secret value is sent to logs, outputs, artifacts or git.
+          bind_secret() {
+            local config="$1" name="$2" value_file="$3"
+            pnpm exec wrangler secret put "$name" --config "$config" < "$value_file" >/dev/null
+          }
+          bind_env_secret() {
+            local config="$1" name="$2" variable="$3"
+            printf '%s' "${!variable}" | pnpm exec wrangler secret put "$name" --config "$config" >/dev/null
+          }
+          root="$RUNNER_TEMP/staging-config/root.toml"
+          signup="$RUNNER_TEMP/staging-config/signup.toml"
+          receiver="$RUNNER_TEMP/staging-config/synthetic.toml"
+          bind_secret "$root" CORELINK_INTERNAL_AUTH_KEY "$material/CORELINK_INTERNAL_AUTH_KEY"
+          bind_secret "$root" CORELINK_ADMIN_AUTH_KEY "$material/CORELINK_ADMIN_AUTH_KEY"
+          bind_secret "$root" CORELINK_ERASE_AUTH_KEY "$material/CORELINK_ERASE_AUTH_KEY"
+          bind_secret "$root" PAT_SIGNING_KEY "$material/PAT_SIGNING_KEY"
+          printf '%s' "$STAGING_CF_WORKER_API_TOKEN" | pnpm exec wrangler secret put CF_API_TOKEN --config "$root" >/dev/null
+          printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | pnpm exec wrangler secret put CLOUDFLARE_ACCOUNT_ID --config "$root" >/dev/null
+          bind_secret "$signup" CORELINK_INTERNAL_AUTH_KEY "$material/CORELINK_INTERNAL_AUTH_KEY"
+          bind_secret "$signup" CORELINK_ERASE_AUTH_KEY "$material/CORELINK_ERASE_AUTH_KEY"
+          for item in \
+            "$root:CLERK_ISSUER_URL:CLERK_ISSUER_URL" \
+            "$root:CLERK_SECRET_KEY:CLERK_SECRET_KEY" \
+            "$root:R2_S3_ACCESS_KEY_ID:R2_S3_ACCESS_KEY_ID" \
+            "$root:R2_S3_SECRET_ACCESS_KEY:R2_S3_SECRET_ACCESS_KEY" \
+            "$signup:CLERK_SECRET_KEY:CLERK_SECRET_KEY" \
+            "$signup:CLERK_WEBHOOK_SECRET:CLERK_WEBHOOK_SECRET" \
+            "$signup:ERASURE_SALT_KEY:ERASURE_SALT_KEY" \
+            "$signup:PAGERDUTY_ROUTING_KEY:PAGERDUTY_ROUTING_KEY" \
+            "$receiver:PAGERDUTY_SYNTHETIC_ROUTING_KEY:PAGERDUTY_SYNTHETIC_ROUTING_KEY" \
+            "$receiver:PAGERDUTY_WEBHOOK_SECRET:PAGERDUTY_WEBHOOK_SECRET"; do
+            IFS=: read -r config name variable <<< "$item"
+            bind_env_secret "$config" "$name" "$variable"
+          done
+          # Read back secret names only. Require each expected name before the
+          # final config can add the public staging route.
+          for pair in "$root:CORELINK_INTERNAL_AUTH_KEY,CORELINK_ADMIN_AUTH_KEY,CORELINK_ERASE_AUTH_KEY,PAT_SIGNING_KEY,CF_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,CLERK_ISSUER_URL,CLERK_SECRET_KEY,R2_S3_ACCESS_KEY_ID,R2_S3_SECRET_ACCESS_KEY" "$signup:CORELINK_INTERNAL_AUTH_KEY,CORELINK_ERASE_AUTH_KEY,CLERK_SECRET_KEY,CLERK_WEBHOOK_SECRET,ERASURE_SALT_KEY,PAGERDUTY_ROUTING_KEY" "$receiver:PAGERDUTY_SYNTHETIC_ROUTING_KEY,PAGERDUTY_WEBHOOK_SECRET"; do
+            IFS=: read -r config expected <<< "$pair"
+            pnpm exec wrangler secret list --config "$config" > "$RUNNER_TEMP/secret-names.json"
+            jq -r '.[].name' "$RUNNER_TEMP/secret-names.json" | sort -u > "$RUNNER_TEMP/actual-secret-names.txt"
+            tr ',' '\n' <<< "$expected" | sort -u > "$RUNNER_TEMP/expected-secret-names.txt"
+            diff -u "$RUNNER_TEMP/expected-secret-names.txt" "$RUNNER_TEMP/actual-secret-names.txt"
+          done
+
+      - name: Render and deploy final staging routes
+        id: final_deploy
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          # The generic root route is applied last, after the more-specific
+          # receiver route, so pager delivery is never transiently caught by
+          # the root Worker during route publication.
+          for pair in synthetic:corelink-synthetic-pager-staging signup:corelink-signup-staging root:corelink-staging; do
+            IFS=: read -r worker expected_name <<< "$pair"
+            config="$RUNNER_TEMP/staging-config/final-$worker.toml"
+            python3 scripts/render_staging_wrangler.py \
+              --phase final --worker "$worker" --output "$config"
+            python3 - "$config" "$expected_name" <<'PY'
+            import sys, tomllib
+            config = tomllib.load(open(sys.argv[1], "rb"))
+            if config.get("name") != sys.argv[2] or config.get("workers_dev") is not False:
+                raise SystemExit("final config is not the exact isolated staging Worker")
+            routes = config.get("routes", [])
+            allowed = {"staging.corelink.humangr.com/*", "staging.corelink.humangr.com/v1/webhooks/pagerduty"}
+            for route in routes:
+                pattern = route.get("pattern") if isinstance(route, dict) else route
+                if pattern not in allowed:
+                    raise SystemExit("final config contains a route outside the frozen staging host")
+            PY
+            pnpm exec wrangler deploy --config "$config"
+          done
+
+      - name: Read back exact staging route and resource boundary
+        id: provider_postflight
+        if: success()
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/staging-readback"
+          python3 scripts/plan_staging_provider.py \
+            --receipt "$RUNNER_TEMP/staging-readback/provider-plan.json"
+
+      - name: Publish the one manual teardown hook without provider writes
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/staging-readback"
+          python3 - "$RUNNER_TEMP/staging-readback/teardown-hook.json" <<'PY'
+          import json, pathlib, sys
+          payload = {
+              "schema_version": 1,
+              "issue": 1700,
+              "scope": "staging-only",
+              "target": "https://staging.corelink.humangr.com",
+              "hook": "manual-owner-teardown-after-independent-readback",
+              "requires_sre_and_security_approval": True,
+              "provider_mutation_performed": False,
+              "ordered_actions": ["load data", "queues", "workers", "bindings", "DNS"],
+              "fail_closed_if_readiness_or_cleanup_receipt_missing": True,
+          }
+          pathlib.Path(sys.argv[1]).write_text(json.dumps(payload, sort_keys=True) + "\n")
+          PY
+
+      - name: Write secret-free staged readback
+        if: always()
+        env:
+          PREREQUISITES: ${{ steps.prerequisites.outcome }}
+          NO_ROUTE_DEPLOY: ${{ steps.deploy_quarantined.outcome }}
+          SECRET_BINDING: ${{ steps.bootstrap_secrets.outcome }}
+          FINAL_DEPLOY: ${{ steps.final_deploy.outcome }}
+          PROVIDER_READBACK: ${{ steps.provider_postflight.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/staging-readback"
+          python3 - "$RUNNER_TEMP/staging-readback/readback.json" <<'PY'
+          import json, os, pathlib, sys
+          payload = {
+              "schema_version": 1,
+              "issue": 1700,
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "commit": os.environ["GITHUB_SHA"],
+              "operation": "bootstrap",
+              "environment": "staging",
+              "target": "https://staging.corelink.humangr.com",
+              "prerequisites": "present" if os.environ.get("PREREQUISITES") == "success" else "incomplete",
+              "quarantined_deploy": os.environ.get("NO_ROUTE_DEPLOY") == "success",
+              "secret_binding": os.environ.get("SECRET_BINDING") == "success",
+              "final_deploy": os.environ.get("FINAL_DEPLOY") == "success",
+              "provider_readback": os.environ.get("PROVIDER_READBACK") == "success",
+              "secret_values_recorded": False,
+              "secret_values_artifacted": False,
+              "generated_values_artifacted": False,
+              "automatic_teardown_performed": False,
+          }
+          pathlib.Path(sys.argv[1]).write_text(json.dumps(payload, sort_keys=True) + "\n")
+          PY
+
+      - name: Upload secret-free readback receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-bootstrap-readback-${{ github.run_id }}
+          path: ${{ runner.temp }}/staging-readback/
+          retention-days: 30
+          if-no-files-found: error
