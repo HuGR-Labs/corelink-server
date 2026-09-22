@@ -4,9 +4,8 @@
 //! The counterpart of `tests_record_skip`: there, one bad record among many is
 //! skipped so the batch still drains. Here there is no batch left to drain —
 //! an empty array, a body that is not JSON, or an `event_kind` outside the
-//! canonical enum (which fails at deserialization, before any per-record
-//! validation runs). Retrying such a request can never succeed, so 400 is what
-//! tells the runner to drop it rather than retain it.
+//! canonical enum. Per-record deserialization faults now receive ordered
+//! rejected outcomes, while an unparseable batch remains a 400.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -49,7 +48,7 @@ async fn malformed_json_is_400() {
 }
 
 #[tokio::test]
-async fn unknown_event_kind_is_400() {
+async fn unknown_event_kind_is_a_rejected_record() {
     let mut rec = record_json(&tenant_a(), &hex64(0x11));
     rec["event_kind"] = serde_json::json!("not_a_real_kind");
     let app = router(state_with(Arc::new(FakeStore::new())));
@@ -60,5 +59,5 @@ async fn unknown_event_kind_is_400() {
         ))
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }

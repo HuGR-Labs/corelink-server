@@ -436,9 +436,11 @@ struct UsageRecordWire {
     idem_key: String,
 }
 
-/// JSON response body: the per-batch accepted / deduped / rejected tally.
+/// JSON response body: the ordered outcome of every input record.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IngestResponse {
+    /// One result for each array element, in request order.
+    pub outcomes: Vec<IngestRecordOutcome>,
     /// First-sight records inserted into the staging store.
     pub accepted: u32,
     /// Records whose `idem_key` already existed (idempotent no-ops).
@@ -451,6 +453,34 @@ pub struct IngestResponse {
     /// Total records successfully staged (`accepted + deduped`; excludes
     /// `rejected`).
     pub total: u32,
+}
+
+/// The durable or validation result for one submitted record.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IngestRecordOutcome {
+    /// Zero-based position in the request array.
+    pub index: usize,
+    /// The canonical idempotency key, when the input supplied a valid key.
+    pub idem_key: Option<String>,
+    /// Classification of this input.
+    pub outcome: IngestOutcomeKind,
+    /// Stable diagnostic for rejected and conflict outcomes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Wire classification for a submitted usage record.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IngestOutcomeKind {
+    /// The submitted record was newly staged.
+    Accepted,
+    /// The submitted record exactly matched a durable prior record.
+    Deduped,
+    /// The submitted record failed wire or record validation.
+    Rejected,
+    /// The submitted record disagreed with its durable identity winner.
+    Conflict,
 }
 
 /// Validation failure for a single record (mapped to a 400 with a stable,
@@ -482,6 +512,16 @@ impl RecordError {
             Self::BadIdemKey => "bad_idem_key",
             Self::EmptySource => "empty_source",
             Self::SourceTooLong => "source_too_long",
+        }
+    }
+}
+
+impl StageConflictReason {
+    /// Stable public conflict reason.
+    const fn code(self) -> &'static str {
+        match self {
+            Self::PayloadMismatch => "payload_mismatch",
+            Self::ExistingFingerprintUnverifiable => "existing_fingerprint_unverifiable",
         }
     }
 }
@@ -550,6 +590,14 @@ fn validate_record(wire: UsageRecordWire) -> Result<StagedUsageRecord, RecordErr
     })
 }
 
+/// Extract an idempotency key only when it is a canonicalizable BLAKE3 hex
+/// coordinate. Rejections can therefore be correlated without echoing a
+/// malformed caller value.
+fn canonical_idem_key(input: &serde_json::Value) -> Option<String> {
+    let idem_key = input.get("idem_key")?.as_str()?.to_ascii_lowercase();
+    (idem_key.len() == 64 && idem_key.bytes().all(|b| b.is_ascii_hexdigit())).then_some(idem_key)
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Route handler
 // ──────────────────────────────────────────────────────────────────────────────
@@ -584,7 +632,7 @@ async fn handle_ingest(
     }
 
     // ── 2. Parse the batch — ONLY after the auth gate passed ────────────────
-    let wire_records: Vec<UsageRecordWire> = match serde_json::from_slice(&body) {
+    let inputs: Vec<serde_json::Value> = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(error = %e, "billing_ingest: invalid request body");
@@ -592,10 +640,10 @@ async fn handle_ingest(
         }
     };
 
-    if wire_records.is_empty() {
+    if inputs.is_empty() {
         return bad_request("empty_batch");
     }
-    if wire_records.len() > MAX_BATCH_RECORDS {
+    if inputs.len() > MAX_BATCH_RECORDS {
         return bad_request("batch_too_large");
     }
 
@@ -611,17 +659,36 @@ async fn handle_ingest(
     // a retry signal). Batch-level faults (unparseable / empty / oversized) stay
     // 400 above; a genuine backend persist fault stays 503 below (fail-CLOSED,
     // idempotent retry).
-    let mut staged: Vec<StagedUsageRecord> = Vec::with_capacity(wire_records.len());
+    let mut staged = Vec::with_capacity(inputs.len());
+    let mut outcomes = Vec::with_capacity(inputs.len());
     let mut rejected: u32 = 0;
-    for wire in wire_records {
-        match validate_record(wire) {
-            Ok(rec) => staged.push(rec),
-            Err(e) => {
+    for (index, input) in inputs.into_iter().enumerate() {
+        let idem_key = canonical_idem_key(&input);
+        match serde_json::from_value::<UsageRecordWire>(input)
+            .map_err(|_| "invalid_record")
+            .and_then(|wire| validate_record(wire).map_err(|e| e.code()))
+        {
+            Ok(rec) => {
+                staged.push((outcomes.len(), rec));
+                outcomes.push(IngestRecordOutcome {
+                    index,
+                    idem_key,
+                    outcome: IngestOutcomeKind::Accepted,
+                    reason: None,
+                });
+            }
+            Err(reason) => {
                 rejected = rejected.saturating_add(1);
                 tracing::warn!(
-                    reason = e.code(),
+                    reason,
                     "billing_ingest: record validation failed; skipping (batch not rejected)"
                 );
+                outcomes.push(IngestRecordOutcome {
+                    index,
+                    idem_key,
+                    outcome: IngestOutcomeKind::Rejected,
+                    reason: Some(reason.to_owned()),
+                });
             }
         }
     }
@@ -629,16 +696,24 @@ async fn handle_ingest(
     // ── 4. Persist idempotently; tally accepted vs deduped ──────────────────
     let mut accepted: u32 = 0;
     let mut deduped: u32 = 0;
-    for rec in &staged {
+    let mut has_conflict = false;
+    for (outcome_index, rec) in &staged {
         match state.store.stage(rec).await {
             Ok(StageOutcome::Inserted) => accepted = accepted.saturating_add(1),
-            Ok(StageOutcome::Deduped) => deduped = deduped.saturating_add(1),
+            Ok(StageOutcome::Deduped) => {
+                deduped = deduped.saturating_add(1);
+                let Some(outcome) = outcomes.get_mut(*outcome_index) else {
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                };
+                outcome.outcome = IngestOutcomeKind::Deduped;
+            }
             Ok(StageOutcome::Conflict(reason)) => {
-                tracing::error!(
-                    ?reason,
-                    "billing_ingest: staged coordinate conflicts with durable winner"
-                );
-                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                has_conflict = true;
+                let Some(outcome) = outcomes.get_mut(*outcome_index) else {
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                };
+                outcome.outcome = IngestOutcomeKind::Conflict;
+                outcome.reason = Some(reason.code().to_owned());
             }
             Err(e) => {
                 // Fail-CLOSED: a backend fault → 503; the runner retries the
@@ -650,9 +725,17 @@ async fn handle_ingest(
     }
 
     let total = accepted.saturating_add(deduped);
+    let status = if has_conflict {
+        StatusCode::CONFLICT
+    } else if total == 0 && rejected != 0 {
+        StatusCode::UNPROCESSABLE_ENTITY
+    } else {
+        StatusCode::ACCEPTED
+    };
     (
-        StatusCode::ACCEPTED,
+        status,
         Json(IngestResponse {
+            outcomes,
             accepted,
             deduped,
             rejected,
@@ -784,3 +867,6 @@ mod tests_payload_hash;
 
 #[cfg(test)]
 mod tests_durable_classification;
+
+#[cfg(test)]
+mod tests_http_outcomes;
