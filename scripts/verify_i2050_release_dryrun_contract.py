@@ -16,7 +16,6 @@ from pathlib import Path
 WORKFLOW = Path(".github/workflows/issue-2050-cli-release-dry-run.yml")
 ALLOWED_FILES = {
     ".github/workflows/issue-2050-cli-release-dry-run.yml",
-    ".github/workflows/issue-1724-cli-provenance.yml",
     "scripts/verify_i2050_release_dryrun_contract.py",
 }
 TARGETS = {
@@ -27,10 +26,32 @@ TARGETS = {
     "corelink-windows-x86_64.zip",
 }
 PINNED_ACTION = re.compile(r"^\s*uses:\s+[^\s@]+@[0-9a-f]{40}(?:\s+#.*)?$", re.MULTILINE)
+ZIGBUILD_VERSION_PROBE = '''test "$(cargo zigbuild -V | awk '{print $2}')" = "0.19.8"'''
+UNSUPPORTED_ZIGBUILD_VERSION_PROBE = 'cargo zigbuild --version'
 
 
 def fail(message: str) -> None:
     raise SystemExit(f"contract failure: {message}")
+
+
+def _verify_zigbuild_version_probe(text: str) -> None:
+    if ZIGBUILD_VERSION_PROBE not in text:
+        fail("cargo-zigbuild must be pinned by the supported cargo zigbuild -V probe")
+    if UNSUPPORTED_ZIGBUILD_VERSION_PROBE in text:
+        fail("unsupported cargo zigbuild --version probe must not return")
+
+
+def _zigbuild_version_probe_mutation_self_test(text: str) -> None:
+    mutated = text.replace(
+        ZIGBUILD_VERSION_PROBE,
+        '''test "$(cargo zigbuild --version | awk '{print $2}')" = "0.19.8"''',
+        1,
+    )
+    try:
+        _verify_zigbuild_version_probe(mutated)
+    except SystemExit:
+        return
+    fail("unsupported cargo-zigbuild version-probe mutation survived")
 
 
 def contract() -> None:
@@ -119,6 +140,8 @@ def contract() -> None:
     ):
         if token.lower() not in text.lower():
             fail(f"required release proof is missing: {token}")
+    _verify_zigbuild_version_probe(text)
+    _zigbuild_version_probe_mutation_self_test(text)
     print("PASS: only the new dry-run workflow, its checker, and read-only PR test wiring changed")
     print("PASS: manual protected-main lane, no release/tag/cross-repo write path")
     print("PASS: five targets, pinned cross-toolchain, CycloneDX, Rekor, and SLSA provenance")
