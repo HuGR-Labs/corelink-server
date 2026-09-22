@@ -15,9 +15,15 @@ pub const REGIONS: &[&str] = &["us-east", "us-west", "eu-west", "ap-southeast", 
 pub fn is_safe_summary_artifact_url(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     url.starts_with("https://")
-        && ![".tfplan", ".log", "plan.json", "full-plan", "terraform-plan-"]
-            .iter()
-            .any(|marker| lower.contains(marker))
+        && ![
+            ".tfplan",
+            ".log",
+            "plan.json",
+            "full-plan",
+            "terraform-plan-",
+        ]
+        .iter()
+        .any(|marker| lower.contains(marker))
 }
 
 /// Severity classification for a drift finding.
