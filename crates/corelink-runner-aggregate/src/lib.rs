@@ -1302,7 +1302,7 @@ mod tests {
         terms.terms_snapshot_digest_hex = terms.expected_snapshot_digest_hex();
         assert!(matches!(
             aggregate_runner_usage(&changed_rate),
-            Err(RunnerAggregateError::InvalidPriorConsumption { .. })
+            Err(RunnerAggregateError::InvalidTenantPeriodTerms { .. })
         ));
 
         let overflow = starter_input_with_prior(
