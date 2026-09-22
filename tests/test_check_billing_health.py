@@ -45,6 +45,7 @@ def fake_d1(
     subscriptions=(),
     payment_failed_count=0,
     payment_failed_derived=None,
+    unknown_event_count=0,
     duplicate_event_types=(),
     dlq_count=0,
     tables=None,
@@ -73,7 +74,7 @@ def fake_d1(
             assert "latest_derived_ms" in sql
             return list(duplicate_event_types)
         if "invoice.payment_failed" in sql:
-            return [{"canonical": payment_failed_count, "derived": derived}]
+            return [{"canonical": payment_failed_count, "derived": derived, "unknown": unknown_event_count}]
         if "stripe_webhook_events_dlq" in sql:
             return [{"n": dlq_count}]
         raise AssertionError(f"unexpected SQL: {sql}")
@@ -199,6 +200,12 @@ def test_cluster_still_fires_when_only_one_scheme_is_present(monkeypatch, config
     assert mod.check_payment_failure_clusters(*CREDS) != []
 
 
+def test_unrecognized_event_id_scheme_fails_closed(monkeypatch, configured):
+    """A malformed/future key must not be silently counted as the derived scheme."""
+    monkeypatch.setattr(mod, "d1_query", fake_d1(unknown_event_count=1))
+    assert mod.check_payment_failure_clusters(*CREDS)
+
+
 def test_cluster_fires_on_derived_scheme_alone(monkeypatch, configured):
     """Symmetric: neither scheme is privileged as the source of truth."""
     monkeypatch.setattr(
@@ -246,6 +253,27 @@ def test_duplicate_ingestion_is_flagged(monkeypatch, configured, capsys):
     assert "not proof of the same delivery or of two currently enabled destinations" in out
     assert "a second live Stripe endpoint" not in out
     assert "retire only a confirmed redundant destination" in out
+
+
+def test_unrecognized_duplicate_row_fails_closed(monkeypatch, configured):
+    monkeypatch.setattr(
+        mod,
+        "d1_query",
+        fake_d1(
+            duplicate_event_types=[
+                {
+                    "event_type": "invoice.payment_failed",
+                    "canonical": 0,
+                    "derived": 0,
+                    "unknown": 1,
+                    "latest_canonical_ms": None,
+                    "latest_derived_ms": None,
+                }
+            ]
+        ),
+    )
+    findings = mod.check_duplicate_webhook_ingestion(*CREDS)
+    assert findings and "unrecognized event_id scheme" in findings[0]
 
 
 def test_single_scheme_is_not_reported_as_duplicate(monkeypatch, configured):
