@@ -1,0 +1,29 @@
+name: Issue 1653 — BYOK KMS lifecycle evidence contract
+
+on:
+  pull_request:
+    paths:
+      - 'BACKLOG.md'
+      - 'docs/handoff/2026-09-05-owner-action-packets-b008-b154.json'
+      - 'evidence/owner-actions/B-083/**'
+      - 'scripts/verify_b083_kms_lifecycle_evidence.py'
+      - 'scripts/verify_owner_action_packets.py'
+      - 'tests/test_verify_b083_kms_lifecycle_evidence.py'
+      - 'tests/test_verify_b083_byok.py'
+      - 'tests/test_owner_action_packets.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Redacted lifecycle contract and adversarial mutations
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Verify the current exact external blocker
+        run: python3 scripts/verify_b083_kms_lifecycle_evidence.py
+      - name: Reject forged lifecycle evidence
+        run: python3 tests/test_verify_b083_kms_lifecycle_evidence.py

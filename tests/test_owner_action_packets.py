@@ -287,14 +287,14 @@ class OwnerActionPacketTests(unittest.TestCase):
     def test_b083_receipt_mutations_fail_closed(self) -> None:
         original = MODULE._read_json_evidence
         record = copy.deepcopy(original(MODULE.B083_EVIDENCE_PATH, MODULE.B083_EVIDENCE_REQUIRED_FIELDS, "B-083"))
-        record["activation"]["audit_event_reference"] = "forged-reference"
+        record["lifecycle"]["wrap_unwrap"]["receipt_reference"] = "audit://forged/receipt"
         def read_b083(path, fields, label):
             return record if path == MODULE.B083_EVIDENCE_PATH else original(path, fields, label)
         with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_b083):
             with self.assertRaises(MODULE.PacketError):
                 MODULE.check_data(self.data, "B-083")
 
-        for field, value in (("check_access", "PASS"), ("tenant_redacted", "tenant-redacted")):
+        for field, value in (("evidence_state", "VERIFIED"), ("tenant_redacted", "tenant-redacted")):
             mutated = copy.deepcopy(original(MODULE.B083_EVIDENCE_PATH, MODULE.B083_EVIDENCE_REQUIRED_FIELDS, "B-083"))
             mutated[field] = value
             def read_mutated(path, fields, label, receipt=mutated):
