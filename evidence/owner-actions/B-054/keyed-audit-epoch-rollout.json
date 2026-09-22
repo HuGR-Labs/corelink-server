@@ -15,6 +15,23 @@
     "status": "BLOCKED",
     "blocker": "The witnessed production cutover is not authorized until the external witness, D1 binding, archive proof, and key custody are provisioned."
   },
+  "two_person_administration": {
+    "status": "BLOCKED",
+    "executor_role": "SRE executor",
+    "approver_role": "Security approver",
+    "access_review": {
+      "status": "BLOCKED",
+      "owner": null,
+      "review_date": null,
+      "blocker": "No access-review artifact names eligible human custodians with an owner and expiry or review date."
+    },
+    "authorization_receipt": {
+      "status": "NOT_EXECUTED",
+      "reference": null,
+      "blocker": "No approved E0 bootstrap or E0 to E1 transition produced a redacted two-person authorization receipt."
+    },
+    "blocker": "Distinct repository credentials and route guards do not prove separately held human custodians; protected-environment custody and approved witnessed authorization evidence remain external."
+  },
   "migration_receipts": {
     "status": "NOT_EXECUTED",
     "migrations": ["0109_audit_chain_epoch_contract.sql", "0110_audit_chain_epoch_row_metadata.sql"],

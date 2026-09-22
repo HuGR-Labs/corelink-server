@@ -263,6 +263,22 @@ class OwnerActionPacketTests(unittest.TestCase):
                 MODULE.check_data(self.data, "B-054")
 
         mutated = copy.deepcopy(original(MODULE.B054_EVIDENCE_PATH, MODULE.B054_EVIDENCE_REQUIRED_FIELDS, "B-054"))
+        mutated["two_person_administration"]["status"] = "PASS"
+        def read_custody_status(path, fields, label):
+            return mutated if path == MODULE.B054_EVIDENCE_PATH else original(path, fields, label)
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_custody_status):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-054")
+
+        mutated = copy.deepcopy(original(MODULE.B054_EVIDENCE_PATH, MODULE.B054_EVIDENCE_REQUIRED_FIELDS, "B-054"))
+        mutated["two_person_administration"]["access_review"]["owner"] = "unverified-owner"
+        def read_custody_owner(path, fields, label):
+            return mutated if path == MODULE.B054_EVIDENCE_PATH else original(path, fields, label)
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_custody_owner):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-054")
+
+        mutated = copy.deepcopy(original(MODULE.B054_EVIDENCE_PATH, MODULE.B054_EVIDENCE_REQUIRED_FIELDS, "B-054"))
         mutated["witness_receipt"]["status"] = "NOT_EXECUTED"
         def read_witness(path, fields, label):
             return mutated if path == MODULE.B054_EVIDENCE_PATH else original(path, fields, label)

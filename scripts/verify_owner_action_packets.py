@@ -164,7 +164,7 @@ B110_PROCEDURE = [
 B054_EVIDENCE_PATH = "evidence/owner-actions/B-054/keyed-audit-epoch-rollout.json"
 B054_EVIDENCE_REQUIRED_FIELDS = [
     "schema_version", "captured_at", "legacy_epoch", "keyed_epoch",
-    "migration_receipts", "witness_receipt", "archive_verification",
+    "two_person_administration", "migration_receipts", "witness_receipt", "archive_verification",
     "rotation_receipt", "rollback_plan", "operator", "repository_checks",
 ]
 B083_EVIDENCE_PATH = "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json"
@@ -705,6 +705,37 @@ def _check_b054_evidence(item: dict[str, object]) -> None:
         if epoch["verification"] != expected_status or status != expected_status or status != epoch["verification"]:
             raise PacketError(f"B-054 {name} status/verification coherence drifted")
         _receipt_blocker(epoch["blocker"], status, f"B-054 {name}")
+    custody = _exact_keys(
+        record["two_person_administration"],
+        {"status", "executor_role", "approver_role", "access_review", "authorization_receipt", "blocker"},
+        "B-054 two_person_administration",
+    )
+    custody_status = _receipt_status(custody["status"], "B-054 two_person_administration")
+    if custody_status != "BLOCKED":
+        raise PacketError("B-054 two-person administration status would overstate custody evidence")
+    if custody["executor_role"] != "SRE executor" or custody["approver_role"] != "Security approver":
+        raise PacketError("B-054 two-person administration roles drifted")
+    access_review = _exact_keys(
+        custody["access_review"],
+        {"status", "owner", "review_date", "blocker"},
+        "B-054 two_person_administration.access_review",
+    )
+    if _receipt_status(access_review["status"], "B-054 access review") != "BLOCKED":
+        raise PacketError("B-054 access review status would overstate custody evidence")
+    if access_review["owner"] is not None or access_review["review_date"] is not None:
+        raise PacketError("B-054 access review cannot invent owner or review-date evidence")
+    _receipt_blocker(access_review["blocker"], "BLOCKED", "B-054 access review")
+    authorization = _exact_keys(
+        custody["authorization_receipt"],
+        {"status", "reference", "blocker"},
+        "B-054 two_person_administration.authorization_receipt",
+    )
+    if _receipt_status(authorization["status"], "B-054 authorization receipt") != "NOT_EXECUTED":
+        raise PacketError("B-054 authorization receipt status would overstate witnessed custody")
+    if authorization["reference"] is not None:
+        raise PacketError("B-054 authorization receipt has a reference despite not being executed")
+    _receipt_blocker(authorization["blocker"], "NOT_EXECUTED", "B-054 authorization receipt")
+    _receipt_blocker(custody["blocker"], custody_status, "B-054 two_person_administration")
     migration = _exact_keys(record["migration_receipts"], {"status", "migrations", "references", "blocker"}, "B-054 migration_receipts")
     migration_status = _receipt_status(migration["status"], "B-054 migration_receipts")
     if migration_status != "NOT_EXECUTED":
