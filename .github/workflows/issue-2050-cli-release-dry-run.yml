@@ -1,0 +1,267 @@
+name: issue-2050-cli-release-dry-run
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-2050-cli-release-dry-run.yml"
+      - "scripts/verify_i2050_release_dryrun_contract.py"
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type run-2050-dry-run to build and sign ephemeral CLI artifacts
+        required: true
+        type: choice
+        options:
+          - run-2050-dry-run
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: credentialless release dry-run contract
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the fail-closed workflow contract
+        run: python3 scripts/verify_i2050_release_dryrun_contract.py contract
+
+  build:
+    name: build five CLI targets and ephemeral release inventory
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository_id == '1232040291' &&
+      github.ref == 'refs/heads/main' &&
+      github.ref_protected &&
+      inputs.confirm == 'run-2050-dry-run'
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      CARGO_INCREMENTAL: "0"
+      GPG_KEY_FINGERPRINT: ${{ secrets.GPG_KEY_FINGERPRINT }}
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install the repository-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+      - name: Install all five target standard libraries
+        run: |
+          set -euo pipefail
+          rustup target add \
+            x86_64-unknown-linux-gnu \
+            aarch64-unknown-linux-gnu \
+            x86_64-apple-darwin \
+            aarch64-apple-darwin \
+            x86_64-pc-windows-gnu
+          test "$(rustc --version | awk '{print $2}')" = "1.91.1"
+          cargo --version
+      - name: Install the pinned Zig cross toolchain
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.16.0
+      - name: Verify Zig and install pinned cargo-zigbuild
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-zigbuild@0.19.8
+      - name: Build Linux and Windows targets with cargo-zigbuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(zig version)" = "0.16.0"
+          test "$(cargo zigbuild --version | awk '{print $2}')" = "0.19.8"
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-pc-windows-gnu; do
+            CARGO_TARGET_DIR="${RUNNER_TEMP}/corelink-target/${target}" \
+              cargo zigbuild -p corelink-cli --release --locked --target "${target}"
+          done
+      - name: Build Apple targets with the hosted macOS linker
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in x86_64-apple-darwin aarch64-apple-darwin; do
+            CARGO_TARGET_DIR="${RUNNER_TEMP}/corelink-target/${target}" \
+              cargo build -p corelink-cli --release --locked --target "${target}"
+          done
+      - name: Package all five targets and verify checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          package_target() {
+            local triple="$1" name="$2" ext="$3" src archive
+            src="${RUNNER_TEMP}/corelink-target/${triple}/${triple}/release/corelink${ext}"
+            test -s "${src}"
+            local package_dir="${RUNNER_TEMP}/corelink-package-${name}"
+            mkdir -p "${package_dir}"
+            cp "${src}" "${package_dir}/corelink${ext}"
+            if [ "${triple}" = "x86_64-pc-windows-gnu" ]; then
+              archive="${name}.zip"
+              (cd "${package_dir}" && zip -q -X "${GITHUB_WORKSPACE}/dist/${archive}" "corelink${ext}")
+              test "$(unzip -Z1 "dist/${archive}")" = "corelink.exe"
+              unzip -t "dist/${archive}" >/dev/null
+            else
+              archive="${name}.tar.gz"
+              tar -czf "dist/${archive}" -C "${package_dir}" "corelink${ext}"
+              tar -tzf "dist/${archive}" | grep -Fx "corelink${ext}" >/dev/null
+            fi
+            (cd dist && shasum -a 256 "${archive}" > "${archive}.sha256")
+            (cd dist && shasum -a 256 -c "${archive}.sha256")
+          }
+          package_target x86_64-unknown-linux-gnu corelink-linux-x86_64 ""
+          package_target aarch64-unknown-linux-gnu corelink-linux-aarch64 ""
+          package_target x86_64-apple-darwin corelink-darwin-x86_64 ""
+          package_target aarch64-apple-darwin corelink-darwin-arm64 ""
+          package_target x86_64-pc-windows-gnu corelink-windows-x86_64 .exe
+          LC_ALL=C sort dist/*.sha256 > dist/checksums.txt
+      - name: Generate pinned CycloneDX 1.5 CLI SBOM
+        run: |
+          set -euo pipefail
+          cargo install cargo-cyclonedx --locked --version =0.5.9
+          cargo cyclonedx --format json --spec-version 1.5 --all
+          test -s tools/cli/bom.json
+          cp tools/cli/bom.json dist/corelink-cli.cdx.json
+      - name: Verify optional configured GPG public-key fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GPG_KEY_FINGERPRINT:-}" ]; then
+            echo "GPG public-key fingerprint check: not configured" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          expected="$(printf '%s' "$GPG_KEY_FINGERPRINT" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+          [[ "$expected" =~ ^[A-F0-9]{40,64}$ ]]
+          actual="$(gpg --show-keys --with-colons docs/internal/gpg-release-pubkey.asc | awk -F: '$1 == "fpr" {print toupper($10); exit}')"
+          test -n "$actual"
+          test "$actual" = "$expected"
+          printf 'GPG public-key fingerprint check: verified (suffix %s)\n' "${actual: -8}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Create release-shaped dry-run manifest
+        run: python3 scripts/verify_i2050_release_dryrun_contract.py manifest --directory dist --source-sha "$GITHUB_SHA"
+      - name: Upload ephemeral build inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cli-release-dry-run-inputs-${{ github.run_id }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  attest-and-verify:
+    name: keyless signatures and SLSA provenance verification
+    needs: build
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository_id == '1232040291' &&
+      github.ref == 'refs/heads/main' &&
+      github.ref_protected &&
+      inputs.confirm == 'run-2050-dry-run'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download ephemeral build inventory
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: cli-release-dry-run-inputs-${{ github.run_id }}
+          path: dist/
+      - name: Verify inventory before signing
+        run: python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import hashlib
+          root = Path("dist")
+          manifest = json.loads((root / "dry-run-manifest.json").read_text())
+          assert manifest["dry_run"] is True
+          assert manifest["source_sha"] == "${{ github.sha }}"
+          artifacts = manifest["artifacts"]
+          assert len(artifacts) == 5
+          for item in artifacts:
+              data = (root / item["name"]).read_bytes()
+              assert hashlib.sha256(data).hexdigest() == item["sha256"]
+          bom = json.loads((root / "corelink-cli.cdx.json").read_text())
+          assert bom["bomFormat"] == "CycloneDX" and bom["specVersion"] == "1.5"
+          PY
+      - name: Install pinned cosign
+        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409 # v3.7.0
+        with:
+          cosign-release: v2.4.1
+      - name: Sign every release-shaped archive and inventory file with GitHub OIDC
+        shell: bash
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            cosign sign-blob --yes \
+              --output-signature "${file}.sig" \
+              --output-certificate "${file}.cert" \
+              --bundle "${file}.bundle" \
+              "${file}"
+          done < <(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.sha256' -o -name '*.cdx.json' -o -name 'checksums.txt' -o -name 'dry-run-manifest.json' \) -print0 | sort -z)
+      - name: Verify cosign signatures and Rekor inclusion fail closed
+        shell: bash
+        env:
+          EXPECTED_IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/issue-2050-cli-release-dry-run.yml@${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_IDENTITY" == "https://github.com/HuGR-dev/corelink-server/.github/workflows/issue-2050-cli-release-dry-run.yml@refs/heads/main" ]]
+          while IFS= read -r -d '' file; do
+            test -s "${file}.bundle"
+            cosign verify-blob \
+              --bundle "${file}.bundle" \
+              --certificate-identity "$EXPECTED_IDENTITY" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "${file}"
+          done < <(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.sha256' -o -name '*.cdx.json' -o -name 'checksums.txt' -o -name 'dry-run-manifest.json' \) -print0 | sort -z)
+      - name: Create GitHub-managed SLSA v1 in-toto provenance
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+            dist/*.cdx.json
+            dist/dry-run-manifest.json
+            dist/checksums.txt
+      - name: Verify provenance predicate and exact artifact subjects
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: python3 scripts/verify_i2050_release_dryrun_contract.py provenance --directory dist --bundle "$BUNDLE_PATH"
+      - name: Record redacted evidence and upload run-scoped evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_i2050_release_dryrun_contract.py summary --directory dist --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
+          cp "${{ steps.attest.outputs.bundle-path }}" dist/provenance.intoto.jsonl.bundle
+          python3 - "${{ steps.attest.outputs.bundle-path }}" <<'PY'
+          import base64, json, pathlib, sys
+          bundle = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          payload = base64.b64decode(bundle["dsseEnvelope"]["payload"], validate=True)
+          statement = json.loads(payload)
+          if statement.get("predicateType") != "https://slsa.dev/provenance/v1":
+              raise SystemExit("attestation is not SLSA v1 provenance")
+          pathlib.Path("dist/provenance.intoto.jsonl").write_bytes(payload + b"\n")
+          PY
+      - name: Upload ephemeral signatures and provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cli-release-dry-run-evidence-${{ github.run_id }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
