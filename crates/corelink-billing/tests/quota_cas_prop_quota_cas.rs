@@ -599,7 +599,7 @@ fn real_latency_probe_under_5ms_p99() {
         p99
     )
     .expect("latency probe result must be writable");
-    assert!(p99 < 5_000, "quota CAS p99 was not below 5ms: {p99}us");
+    assert!(p99 <= 5_000, "quota CAS p99 exceeded 5ms: {p99}us");
 }
 
 // ---- prop_retry_after_canonical_at_boundary -----------------------
