@@ -276,19 +276,6 @@ crons = [
     "0 14 * * 1",
 ]
 
-# Staging-only receiver binding. The environment is intentionally triggerless
-# until the synthetic-drill activation review enables its cron explicitly.
-[env.staging]
-name = "corelink-staging"
-workers_dev = false
-
-[env.staging.triggers]
-crons = []
-
-[[env.staging.services]]
-binding = "SCHEDULED_DRILL_DELIVERY"
-service = "corelink-synthetic-pager-staging"
-
 # Secrets: `wrangler secret put STRIPE_KEY` etc
 # - CLERK_SECRET_KEY
 # - CLERK_ISSUER_URL  — Clerk JWT issuer URL pin; read by worker/src/index.ts to

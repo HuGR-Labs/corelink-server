@@ -82,19 +82,32 @@ jobs:
             tests/load/k6/scenarios/endurance-24h.js
 
       - name: pre-flight target host check
+        id: target_host
         env:
           K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}
+          DURATION: ${{ github.event.inputs.duration || '2h' }}
         run: |
           set -euo pipefail
           if [[ -z "${K6_TARGET_HOST:-}" ]]; then
             echo "::error::K6_TARGET_HOST secret missing in staging environment"
             exit 1
           fi
-          if [[ "$K6_TARGET_HOST" != *"staging."* && "$K6_TARGET_HOST" != *"dev."* ]]; then
-            echo "::error::K6_TARGET_HOST=$K6_TARGET_HOST is not a staging hostname"
+          CANONICAL_TARGET='https://staging.corelink.humangr.com'
+          TARGET_HOST="${K6_TARGET_HOST%/}"
+          if [[ "$TARGET_HOST" != "$CANONICAL_TARGET" ]]; then
+            echo "::error::K6_TARGET_HOST must equal $CANONICAL_TARGET (optional trailing slash only)"
             exit 1
           fi
-          echo "Target: $K6_TARGET_HOST"
+          case "${DURATION}" in
+            30s|2h) ;;
+            *) echo "::error::DURATION must be 30s or 2h"; exit 1 ;;
+          esac
+          if [[ "${DURATION}" == "2h" && "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]]; then
+            echo "::error::endurance is dispatch-only"
+            exit 1
+          fi
+          echo "target_host=$TARGET_HOST" >> "$GITHUB_OUTPUT"
+          echo "Target: $TARGET_HOST duration=${DURATION}"
 
       - name: prepare results dir
         run: |
@@ -103,7 +116,7 @@ jobs:
 
       - name: run k6 endurance 2h
         env:
-          K6_TARGET_HOST:             ${{ secrets.K6_TARGET_HOST }}
+          K6_TARGET_HOST:             ${{ steps.target_host.outputs.target_host }}
           K6_AUTH_BEARER:             ${{ secrets.K6_STAGING_PAT }}
           K6_PROMETHEUS_RW_SERVER_URL: ${{ secrets.K6_PROMETHEUS_RW_SERVER_URL }}
           DURATION:                   ${{ github.event.inputs.duration || '2h' }}

@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "issue": 1700,
+  "deployment_state": "unprovisioned",
+  "canonical_origin": "https://staging.corelink.humangr.com",
+  "ownership": {
+    "owner": "SRE Lead",
+    "approvers": ["SRE Lead", "Security Lead"],
+    "github_environment": "staging",
+    "escalation": "CoreLink operations on-call"
+  },
+  "budget": {
+    "currency": "USD",
+    "max_load_run": 25,
+    "max_endurance_run": 50,
+    "monthly_cap": 250,
+    "workflow_timeout_minutes": 145,
+    "enforce_before_apply": true
+  },
+  "lifecycle": {
+    "lease_ttl_hours": 24,
+    "idle_teardown_after_hours": 2,
+    "r2_object_ttl_hours": 24,
+    "teardown": {
+      "automatic": false,
+      "manual_only": true,
+      "fail_closed": true,
+      "requires_approvals": ["SRE Lead", "Security Lead"],
+      "deletion_order": ["load data", "queues", "workers", "bindings", "DNS"]
+    }
+  },
+  "validated_inputs": {
+    "runner_label": "corelink",
+    "target_host": "https://staging.corelink.humangr.com",
+    "target_host_normalization": "one trailing slash is allowed",
+    "load_scenarios": ["signup", "webhook", "dsr", "cas", "byok"],
+    "endurance_durations": ["30s", "2h"],
+    "validation_mode": "fail-closed",
+    "required_secret_names": [
+      "K6_STAGING_BYOK_CMK_ID", "K6_STAGING_MFA_STUB", "K6_STAGING_PAT",
+      "K6_STAGING_STRIPE_WHSEC", "K6_TARGET_HOST"
+    ],
+    "forbidden_secret_patterns": ["PROD", "PRODUCTION"]
+  },
+  "outputs": {
+    "target_host": "https://staging.corelink.humangr.com",
+    "github_environment": "staging",
+    "load_workflow": ".github/workflows/load-test-nightly.yml",
+    "endurance_workflow": ".github/workflows/endurance-2h-nightly.yml",
+    "readiness_artifact": "evidence/staging/readiness.json",
+    "worker_names": [
+      "corelink-staging", "corelink-signup-staging",
+      "corelink-synthetic-pager-staging"
+    ],
+    "resource_names": [
+      "corelink-config-staging", "corelink-cas-staging",
+      "corelink-ac-iad-staging", "corelink-chunk-iad-staging",
+      "corelink-manifest-iad-staging", "corelink-metadata-staging",
+      "corelink-clerk-jwks-staging", "corelink-negative-cache-staging",
+      "corelink-dsr-erasure-staging", "corelink-dsr-erasure-dlq-staging"
+    ]
+  },
+  "cloudflare": {
+    "zone_name": "humangr.com",
+    "root_worker": "corelink-staging",
+    "signup_worker": "corelink-signup-staging",
+    "synthetic_receiver_worker": "corelink-synthetic-pager-staging",
+    "route": "staging.corelink.humangr.com/*",
+    "root_worker_settings": {"workers_dev": false, "compatibility_date": "2026-04-01", "crons": [], "observability": {"enabled": true, "head_sampling_rate": 1}},
+    "container": {
+      "class_name": "CoreLinkServer",
+      "source": "./Dockerfile",
+      "instance_type": "basic",
+      "max_instances": 5
+    },
+    "d1": [{"binding": "CONFIG_DB", "database_name": "corelink-config-staging", "migrations_dir": "migrations/d1"}],
+    "r2": [
+      {"binding": "CAS_BUCKET", "bucket_name": "corelink-cas-staging"},
+      {"binding": "AC_BUCKET_IAD", "bucket_name": "corelink-ac-iad-staging"},
+      {"binding": "CHUNK_BUCKET_IAD", "bucket_name": "corelink-chunk-iad-staging"},
+      {"binding": "MANIFEST_BUCKET_IAD", "bucket_name": "corelink-manifest-iad-staging"}
+    ],
+    "kv": [
+      {"binding": "METADATA_KV", "namespace_title": "corelink-metadata-staging"},
+      {"binding": "CLERK_JWKS_KV", "namespace_title": "corelink-clerk-jwks-staging"},
+      {"binding": "NEGATIVE_CACHE_KV", "namespace_title": "corelink-negative-cache-staging"}
+    ],
+    "durable_objects": [
+      {"binding": "CORELINK_SERVER", "class_name": "CoreLinkServer"},
+      {"binding": "ROLLOUT_DO", "class_name": "RolloutController"},
+      {"binding": "EVENT_LOG_DO", "class_name": "EventLogDO"},
+      {"binding": "REPLICATION_COORDINATOR_DO", "class_name": "ReplicationCoordinatorDO"},
+      {"binding": "REQUEST_METER_COORDINATOR_DO", "class_name": "RequestMeterCoordinatorDO"},
+      {"binding": "REQUEST_METER_SHARD_DO", "class_name": "RequestMeterShardDO"}
+    ],
+    "queues": [{"producer_binding": "DSR_QUEUE", "queue_name": "corelink-dsr-erasure-staging", "dead_letter_queue": "corelink-dsr-erasure-dlq-staging", "consumer_worker": "corelink-signup-staging"}],
+    "service_bindings": [
+      {"worker": "corelink-staging", "binding": "SCHEDULED_DRILL_DELIVERY", "service": "corelink-synthetic-pager-staging"},
+      {"worker": "corelink-signup-staging", "binding": "CORELINK_API_SVC", "service": "corelink-staging"}
+    ]
+  }
+}
