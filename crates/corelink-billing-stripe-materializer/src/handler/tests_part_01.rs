@@ -37,6 +37,25 @@ impl TestCurrentSubscriptionAuthority {
             ),
         );
     }
+
+    fn set_authority_for(
+        &self,
+        requested_subscription_id: &str,
+        authoritative_subscription_id: &str,
+        status: &str,
+        price_id: &str,
+        subscription_created_at_ms: u64,
+    ) {
+        self.snapshots.lock().unwrap().insert(
+            requested_subscription_id.to_owned(),
+            crate::CurrentSubscription::new(
+                authoritative_subscription_id,
+                status,
+                price_id,
+                subscription_created_at_ms,
+            ),
+        );
+    }
 }
 
 impl crate::CurrentSubscriptionAuthority for TestCurrentSubscriptionAuthority {
@@ -587,6 +606,42 @@ fn replaced_subscription_identity_is_tenant_authority() {
     assert_eq!(
         d1.runner_fence_of("ten_replaced"),
         Some(("sub_successor".to_owned(), 1_700_000_001_000, 1_700_000_000_000, "evt_successor_active".to_owned(), true))
+    );
+}
+
+#[test]
+fn same_second_reversed_id_predecessor_webhook_uses_current_provider_identity() {
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    // The old identity sorts after the successor. The test authority models the
+    // provider customer list resolving the unique active successor for either
+    // delivery; lexical subscription-id order must not influence the outcome.
+    authority.set_authority_for(
+        "sub_zzz_predecessor",
+        "sub_aaa_successor",
+        "active",
+        "price_runner_team",
+        1_700_000_000_000,
+    );
+    authority.set_with_created_at_ms(
+        "sub_aaa_successor",
+        "active",
+        "price_runner_team",
+        1_700_000_000_000,
+    );
+    let old_cancel = env(
+        "evt_old_cancel",
+        "customer.subscription.deleted",
+        serde_json::json!({
+            "object": { "id": "sub_zzz_predecessor", "status": "canceled",
+                "metadata": { "tenant_id": "ten_same_second" },
+                "plan": { "id": "price_runner_team" } }
+        }),
+    );
+    handler.on_subscription_deleted(&old_cancel).unwrap();
+    assert_eq!(d1.runners_entitlement_of("ten_same_second"), Some((80, 600)));
+    assert_eq!(
+        d1.runner_fence_of("ten_same_second"),
+        Some(("sub_aaa_successor".to_owned(), 1_700_000_000_000, 1_700_000_000_000, "evt_old_cancel".to_owned(), true)),
     );
 }
 

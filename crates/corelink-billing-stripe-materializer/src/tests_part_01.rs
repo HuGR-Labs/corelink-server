@@ -22,6 +22,7 @@ fn runner_revision<'a>(
         subscription_created_at_ms,
         stripe_event_created_at_ms,
         stripe_event_id,
+        authority_is_current: false,
     }
 }
 
@@ -146,31 +147,30 @@ fn runners_entitlement_cas_is_idempotent_and_rejects_stale_provider_revisions() 
 }
 
 #[test]
-fn runner_cas_total_orders_same_second_replacement_identities() {
+fn runner_cas_uses_current_provider_authority_for_same_second_replacements() {
     let d1 = InMemoryBillingD1::new();
-    // Stripe exposes whole-second subscription creation times. When two
-    // replacement identities share that second, their immutable provider ids
-    // decide the winner before either event timestamp is considered.
+    // Stripe exposes whole-second creation times. A lexically lower current
+    // identity can replace a higher predecessor only with provider authority.
     assert_eq!(
         d1.cas_runners_entitlement(
-            "ten_equal", runner_revision("sub_aaa_predecessor", 1_700_000_000_000, 5_000,
+            "ten_equal", runner_revision("sub_zzz_predecessor", 1_700_000_000_000, 5_000,
             "evt_predecessor_grant"), Some((80, 600)), 1,
         ).unwrap(),
         EntitlementCasOutcome::Applied,
     );
     assert_eq!(
         d1.cas_runners_entitlement(
-            "ten_equal", runner_revision("sub_zzz_successor", 1_700_000_000_000, 4_000,
-            "evt_successor_cancel"), None, 2,
+            "ten_equal", RunnerEntitlementRevision { authority_is_current: true, ..runner_revision("sub_aaa_successor", 1_700_000_000_000, 4_000,
+            "evt_successor_cancel") }, None, 2,
         ).unwrap(),
         EntitlementCasOutcome::Applied,
     );
     assert_eq!(d1.runners_entitlement_of("ten_equal"), None);
-    // A replay of the lexically lower predecessor cannot re-grant after the
+    // A replay of the lexically higher predecessor cannot re-grant after the
     // successor cancellation, even with a later event timestamp.
     assert_eq!(
         d1.cas_runners_entitlement(
-            "ten_equal", runner_revision("sub_aaa_predecessor", 1_700_000_000_000, 9_000,
+            "ten_equal", runner_revision("sub_zzz_predecessor", 1_700_000_000_000, 9_000,
             "evt_predecessor_replay"), Some((80, 600)), 3,
         ).unwrap(),
         EntitlementCasOutcome::Stale,
@@ -184,7 +184,8 @@ fn runner_cas_sql_keeps_fence_and_mutation_tenant_scoped() {
     assert!(SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE.contains("is_granting"));
     assert!(SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE.contains("subscription_created_at_ms"));
     assert!(SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE.contains("stripe_event_id"));
-    assert!(SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE.contains("stripe_subscription_id >"));
+    assert!(!SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE.contains("stripe_subscription_id >"));
+    assert!(SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE.contains("authority_is_current = 1"));
     assert!(SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT.contains("stripe_event_created_at_ms"));
     assert!(SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT.contains("stripe_subscription_id = ?"));
     assert!(SQL_CAS_DELETE_RUNNERS_ENTITLEMENT.contains("subscription_created_at_ms"));

@@ -41,4 +41,15 @@ impl CurrentSubscription {
 pub trait CurrentSubscriptionAuthority: fmt::Debug + Send + Sync {
     /// Return the current Stripe object for `subscription_id`.
     fn current_subscription(&self, subscription_id: &str) -> Result<CurrentSubscription, String>;
+
+    /// Return the current customer subscription state associated with a webhook
+    /// subscription. Implementations that can query Stripe's customer list must
+    /// return the complete list; the default keeps existing single-object test
+    /// authorities conservative.
+    fn current_customer_subscriptions(
+        &self,
+        subscription_id: &str,
+    ) -> Result<Vec<CurrentSubscription>, String> {
+        Ok(vec![self.current_subscription(subscription_id)?])
+    }
 }

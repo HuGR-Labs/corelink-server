@@ -1,0 +1,39 @@
+name: i1639 runner entitlement gate
+
+# Narrow, hosted-only evidence for the provider-authority fence. It is manual
+# by design: it does not wake the repository's unrelated PR or deploy fleet.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authority-fence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Exercise Rust provider authority and D1 CAS behavior
+        run: |
+          cargo test --locked -p corelink-billing-stripe-materializer runner_cas_ -- --nocapture
+          cargo test --locked -p corelink-billing-stripe-materializer same_second_reversed_id -- --nocapture
+
+      - uses: ./.github/actions/setup-pnpm
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install signup-worker dependencies
+        run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
+
+      - name: Exercise signup-worker provider authority and D1 batch behavior
+        working-directory: apps/signup-worker
+        run: npx vitest run tests/runner_entitlement_authority.test.ts

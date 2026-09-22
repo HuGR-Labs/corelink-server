@@ -17,7 +17,6 @@ import {
   resolveSubscriptionTier,
   runnerEntitlementFromSubscriptionPrice,
   runnerTierFromMetadata,
-  subscriptionCreatedAtMs,
   subscriptionStatusGrantsAccess,
   tenantIdFromMetadata,
   tierFromMetadata,
@@ -39,6 +38,7 @@ import {
   upsertBillingPaid,
   upsertRunnerBilling,
 } from "./stripe_persistence.js";
+import { resolveAuthoritativeRunnerSubscription } from "./stripe_persistence_runner.js";
 import type { D1DatabaseLike } from "./billing_checkout";
 
 // ---------------------------------------------------------------------------
@@ -71,6 +71,9 @@ export interface StripeWebhookEnv extends AnalyticsEmitEnv {
     STRIPE_PRICE_ID_RUNNER_TEAM?: string;
     STRIPE_PRICE_ID_RUNNER_SCALE?: string;
     STRIPE_PRICE_ID_RUNNER_MAX?: string;
+    /** Outbound Stripe read credential for provider-backed Runners authority. */
+    STRIPE_SECRET_KEY?: string;
+    STRIPE_API_BASE?: string;
 }
 
 // Minimal D1 interface — keeps unit tests independent of @cloudflare/workers-types.
@@ -95,6 +98,48 @@ function stripeEventCreatedAtMs(event: StripeEvent): number | null {
     return typeof event.created === "number" && Number.isFinite(event.created) && event.created > 0
         ? event.created * 1000
         : null;
+}
+
+function runnerPriceIds(env: StripeWebhookEnv): Set<string> {
+    return new Set([
+        env.STRIPE_PRICE_ID_RUNNER_STARTER,
+        env.STRIPE_PRICE_ID_RUNNER_PRO,
+        env.STRIPE_PRICE_ID_RUNNER_TEAM,
+        env.STRIPE_PRICE_ID_RUNNER_SCALE,
+        env.STRIPE_PRICE_ID_RUNNER_MAX,
+    ].filter((value): value is string => typeof value === "string" && value.length > 0));
+}
+
+async function reconcileCurrentRunnersEntitlement(
+    db: D1DatabaseLike,
+    env: StripeWebhookEnv,
+    event: StripeEvent,
+    eventSubscriptionId: string,
+    tenantId: string | null,
+    nowMs: number,
+): Promise<void> {
+    const authority = await resolveAuthoritativeRunnerSubscription({
+        eventSubscriptionId,
+        stripeSecretKey: env.STRIPE_SECRET_KEY,
+        stripeApiBase: env.STRIPE_API_BASE,
+        runnerPriceIds: runnerPriceIds(env),
+    });
+    const entitlement = subscriptionStatusGrantsAccess(authority.status)
+        ? runnerEntitlementFromSubscriptionPrice({ plan: { id: authority.priceId } }, env)
+        : null;
+    if (subscriptionStatusGrantsAccess(authority.status) && !entitlement) {
+        throw new Error("runner entitlement authority resolved an unmapped active price");
+    }
+    await reconcileRunnersEntitlement(db, {
+        tenantId,
+        runnerSubscriptionId: authority.subscriptionId,
+        subscriptionCreatedAtMs: authority.subscriptionCreatedAtMs,
+        stripeEventCreatedAtMs: stripeEventCreatedAtMs(event),
+        stripeEventId: event.id,
+        authorityIsCurrent: authority.authorityIsCurrent,
+        entitlement,
+        nowMs,
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -559,15 +604,9 @@ export async function handleStripeWebhook(
                                 nowMs,
                             }));
                     }
-                    requiredWrites.push(() => reconcileRunnersEntitlement(db, {
-                        tenantId,
-                        runnerSubscriptionId: stripeSubscriptionId,
-                        subscriptionCreatedAtMs: subscriptionCreatedAtMs(obj),
-                        stripeEventCreatedAtMs: stripeEventCreatedAtMs(event),
-                        stripeEventId: event.id,
-                        entitlement: grantsAccess ? runnerEnt : null,
-                        nowMs,
-                    }));
+                    requiredWrites.push(() => reconcileCurrentRunnersEntitlement(
+                        db, env, event, stripeSubscriptionId, tenantId, nowMs,
+                    ));
                 }
             }
 
@@ -658,15 +697,9 @@ export async function handleStripeWebhook(
                                 nowMs,
                             }));
                     }
-                    requiredWrites.push(() => reconcileRunnersEntitlement(db, {
-                        tenantId,
-                        runnerSubscriptionId: stripeSubscriptionId,
-                        subscriptionCreatedAtMs: subscriptionCreatedAtMs(obj),
-                        stripeEventCreatedAtMs: stripeEventCreatedAtMs(event),
-                        stripeEventId: event.id,
-                        entitlement: grantsAccess ? runnerEnt : null,
-                        nowMs,
-                    }));
+                    requiredWrites.push(() => reconcileCurrentRunnersEntitlement(
+                        db, env, event, stripeSubscriptionId, tenantId, nowMs,
+                    ));
                 }
             }
             break;
@@ -799,19 +832,14 @@ export async function handleStripeWebhook(
                         stripeSubscriptionId,
                     }));
 
-                // `customer.subscription.deleted` carries the provider creation
-                // time, so it can revoke through the exact same fenced CAS as a
-                // granting update. A cache subscription has no runner_billing row;
-                // its batch therefore cannot advance a runner fence or delete one.
-                requiredWrites.push(() => reconcileRunnersEntitlement(db, {
-                    tenantId,
-                    runnerSubscriptionId: stripeSubscriptionId,
-                    subscriptionCreatedAtMs: subscriptionCreatedAtMs(obj),
-                    stripeEventCreatedAtMs: stripeEventCreatedAtMs(event),
-                    stripeEventId: event.id,
-                    entitlement: null,
-                    nowMs,
-                }));
+                // A deleted Runners subscription uses Stripe's current customer
+                // state before it can touch the shared durable fence. Cache
+                // subscriptions have no Runners price and therefore no writer.
+                if (runnerEntitlementFromSubscriptionPrice(obj, env)) {
+                    requiredWrites.push(() => reconcileCurrentRunnersEntitlement(
+                        db, env, event, stripeSubscriptionId, tenantId, nowMs,
+                    ));
+                }
                 requiredWrites.push(() => markRunnerBillingStatusBySubscription(db, {
                         runnerSubscriptionId: stripeSubscriptionId,
                         status: "canceled",

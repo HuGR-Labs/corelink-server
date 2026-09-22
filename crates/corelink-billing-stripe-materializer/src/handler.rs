@@ -448,17 +448,6 @@ impl D1SubscriptionStateHandler {
             })
             .transpose()?;
         let current = self.current_subscription(&sub_id)?;
-        if let (Some(resolver), Some(current)) = (self.runners_resolver.as_ref(), current.as_ref())
-        {
-            if resolver.resolve(event_price_id).is_some()
-                && resolver.resolve(&current.price_id).is_none()
-            {
-                return Err(MaterializerError::Transient(format!(
-                    "Runners entitlement authority returned non-Runners price {} for {sub_id}",
-                    current.price_id
-                )));
-            }
-        }
 
         let audit_name = if canceled {
             "corelink.billing.subscription_canceled.materialized.v1"
@@ -472,14 +461,8 @@ impl D1SubscriptionStateHandler {
         let payload = serde_json::json!({
             "stripe_event_type": env.event_type,
             "stripe_subscription_id": sub_id,
-            "status": current
-                .as_ref()
-                .map_or(status.as_str(), |snapshot| snapshot.status.as_str()),
-            "provider_current": current.as_ref().map(|snapshot| serde_json::json!({
-                "status": snapshot.status,
-                "price_id": snapshot.price_id,
-                "subscription_created_at_ms": snapshot.subscription_created_at_ms,
-            })),
+            "status": status,
+            "provider_current": current,
         });
         self.audit
             .emit_billing(&BillingAuditRecord {
@@ -536,7 +519,7 @@ impl D1SubscriptionStateHandler {
                 &tenant_id,
                 &sub_id,
                 event_price_id,
-                current.as_ref(),
+                current.as_deref(),
                 now_ms,
             )?;
             if env.event_type == "customer.subscription.updated" && !runners_handled {
@@ -566,7 +549,7 @@ impl D1SubscriptionStateHandler {
     fn current_subscription(
         &self,
         subscription_id: &str,
-    ) -> Result<Option<crate::CurrentSubscription>, MaterializerError> {
+    ) -> Result<Option<Vec<crate::CurrentSubscription>>, MaterializerError> {
         let Some(_resolver) = self.runners_resolver.as_ref() else {
             return Ok(None);
         };
@@ -577,18 +560,12 @@ impl D1SubscriptionStateHandler {
             )
         })?;
         let current = authority
-            .current_subscription(subscription_id)
+            .current_customer_subscriptions(subscription_id)
             .map_err(|e| {
                 MaterializerError::Transient(format!(
                     "Runners entitlement authority unavailable for {subscription_id}: {e}"
                 ))
             })?;
-        if current.subscription_id != subscription_id {
-            return Err(MaterializerError::Transient(format!(
-                "Runners entitlement authority returned {} for requested {subscription_id}",
-                current.subscription_id
-            )));
-        }
         Ok(Some(current))
     }
 
@@ -612,28 +589,52 @@ impl D1SubscriptionStateHandler {
         tenant_id: &str,
         subscription_id: &str,
         event_price_id: &str,
-        current: Option<&crate::CurrentSubscription>,
+        current: Option<&[crate::CurrentSubscription]>,
         now_ms: u64,
     ) -> Result<bool, MaterializerError> {
         let Some(resolver) = self.runners_resolver.as_ref() else {
             return Ok(false); // dormant (no STRIPE_PRICE_ID_RUNNER_* wired)
         };
         let event_is_runner = resolver.resolve(event_price_id).is_some();
-        let current = current.ok_or_else(|| {
+        let snapshots = current.ok_or_else(|| {
             MaterializerError::Transient(
                 "Runners entitlement authority is unavailable; refusing webhook snapshot"
                     .to_owned(),
             )
         })?;
-        let Some(ent) = resolver.resolve(&current.price_id) else {
-            if event_is_runner {
-                return Err(MaterializerError::Transient(format!(
-                    "Runners entitlement authority returned non-Runners price {} for {subscription_id}",
-                    current.price_id
-                )));
+        let active = snapshots
+            .iter()
+            .filter(|snapshot| {
+                subscription_status_grants_access(&snapshot.status)
+                    && resolver.resolve(&snapshot.price_id).is_some()
+            })
+            .collect::<Vec<_>>();
+        let (current, authority_is_current) = match active.as_slice() {
+            [current] => (*current, true),
+            [] => {
+                let Some(current) = snapshots.iter().find(|snapshot| {
+                    snapshot.subscription_id == subscription_id
+                        && resolver.resolve(&snapshot.price_id).is_some()
+                }) else {
+                    if event_is_runner {
+                        return Err(MaterializerError::Transient(format!(
+                            "Runners entitlement authority has no current Runners identity for {subscription_id}"
+                        )));
+                    }
+                    return Ok(false);
+                };
+                (current, false)
             }
-            return Ok(false); // not a Runners price → cache-tier path
+            _ => return Err(MaterializerError::Transient(format!(
+                "Runners entitlement authority is ambiguous for {subscription_id}"
+            ))),
         };
+        let ent = resolver.resolve(&current.price_id).ok_or_else(|| {
+            MaterializerError::Transient(format!(
+                "Runners entitlement authority returned non-Runners price {} for {subscription_id}",
+                current.price_id
+            ))
+        })?;
         // It IS a Runners-tier price ⇒ handled (return Ok(true) either way so the
         // caller never falls through to the cache reconcile, which would 422
         // UnknownPlan on a Runners price).
@@ -660,10 +661,11 @@ impl D1SubscriptionStateHandler {
             self.apply_runner_cas(
                 tenant_id,
                 RunnerEntitlementRevision {
-                    subscription_id,
+                    subscription_id: &current.subscription_id,
                     subscription_created_at_ms: current.subscription_created_at_ms,
                     stripe_event_created_at_ms: event_created_at_ms(env)?,
                     stripe_event_id: &env.id,
+                    authority_is_current,
                 },
                 None,
                 now_ms,
@@ -690,10 +692,11 @@ impl D1SubscriptionStateHandler {
         self.apply_runner_cas(
             tenant_id,
             RunnerEntitlementRevision {
-                subscription_id,
+                subscription_id: &current.subscription_id,
                 subscription_created_at_ms: current.subscription_created_at_ms,
                 stripe_event_created_at_ms: event_created_at_ms(env)?,
                 stripe_event_id: &env.id,
+                authority_is_current,
             },
             Some((ent.max_concurrency, ent.max_vcpu_h)),
             now_ms,
@@ -1011,7 +1014,7 @@ impl D1SubscriptionStateHandler {
                     self.persist_tier_downgrade(&tenant_id, TierKind::Free, env, now_ms)?;
                 }
                 Some(purchase) if purchase.product == crate::d1::RefundedProduct::Runners => {
-                    let current = self
+                    let snapshots = self
                         .current_subscription(&purchase.stripe_subscription_id)?
                         .ok_or_else(|| {
                             MaterializerError::Transient(
@@ -1019,13 +1022,20 @@ impl D1SubscriptionStateHandler {
                                     .to_owned(),
                             )
                         })?;
+                    let current = snapshots
+                        .iter()
+                        .find(|snapshot| snapshot.subscription_id == purchase.stripe_subscription_id)
+                        .ok_or_else(|| MaterializerError::Transient(
+                            "Runners refund authority omitted the purchased subscription".to_owned(),
+                        ))?;
                     self.apply_runner_cas(
                         &tenant_id,
                         RunnerEntitlementRevision {
-                            subscription_id: &purchase.stripe_subscription_id,
+                            subscription_id: &current.subscription_id,
                             subscription_created_at_ms: current.subscription_created_at_ms,
                             stripe_event_created_at_ms: event_created_at_ms(env)?,
                             stripe_event_id: &env.id,
+                            authority_is_current: false,
                         },
                         None,
                         now_ms,

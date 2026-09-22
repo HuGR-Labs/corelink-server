@@ -99,6 +99,36 @@ impl CurrentSubscriptionAuthority for StripeCurrentSubscriptionAuthority {
         }
         Ok(current)
     }
+
+    fn current_customer_subscriptions(
+        &self,
+        subscription_id: &str,
+    ) -> Result<Vec<CurrentSubscription>, String> {
+        let requested = self
+            .stripe
+            .get_subscription(subscription_id)
+            .map_err(|error| format!("Stripe get_subscription({subscription_id}) failed: {error}"))?;
+        let customer_id = requested.customer.trim();
+        if customer_id.is_empty() {
+            return Err(format!("Stripe subscription {subscription_id} has an empty customer"));
+        }
+        let listed = self
+            .stripe
+            .list_customer_subscriptions(customer_id)
+            .map_err(|error| format!("Stripe list subscriptions for {customer_id} failed: {error}"))?;
+        if listed.has_more {
+            return Err(format!("Stripe customer {customer_id} subscription list is truncated"));
+        }
+        let mut snapshots = listed
+            .data
+            .iter()
+            .map(Self::map_subscription)
+            .collect::<Result<Vec<_>, _>>()?;
+        if !snapshots.iter().any(|snapshot| snapshot.subscription_id == requested.id) {
+            snapshots.push(Self::map_subscription(&requested)?);
+        }
+        Ok(snapshots)
+    }
 }
 
 #[cfg(test)]

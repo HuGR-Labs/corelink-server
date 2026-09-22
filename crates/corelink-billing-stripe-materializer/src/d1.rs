@@ -335,11 +335,12 @@ pub const SQL_DELETE_RUNNERS_ENTITLEMENT: &str =
 
 /// Advance the durable Runner entitlement fence for a newer snapshot of the
 /// same subscription. A different subscription id is a replacement boundary:
-/// only a successor grant may replace a predecessor revoke. This keeps a
-/// predecessor cancellation from revoking a successor entitlement when Stripe
-/// replaces a subscription within one billing period. The fence row is
-/// retained after revoke so an old grant cannot be reinserted after restart.
-pub const SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE: &str = "INSERT INTO runner_entitlement_reconcile_fence (tenant_id, stripe_subscription_id, subscription_created_at_ms, stripe_event_created_at_ms, stripe_event_id, is_granting, applied_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET stripe_subscription_id = excluded.stripe_subscription_id, subscription_created_at_ms = excluded.subscription_created_at_ms, stripe_event_created_at_ms = excluded.stripe_event_created_at_ms, stripe_event_id = excluded.stripe_event_id, is_granting = excluded.is_granting, applied_at_ms = excluded.applied_at_ms WHERE excluded.subscription_created_at_ms > runner_entitlement_reconcile_fence.subscription_created_at_ms OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms AND excluded.stripe_subscription_id > runner_entitlement_reconcile_fence.stripe_subscription_id) OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms AND excluded.stripe_subscription_id = runner_entitlement_reconcile_fence.stripe_subscription_id AND excluded.stripe_event_created_at_ms > runner_entitlement_reconcile_fence.stripe_event_created_at_ms) OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms AND excluded.stripe_subscription_id = runner_entitlement_reconcile_fence.stripe_subscription_id AND excluded.stripe_event_created_at_ms = runner_entitlement_reconcile_fence.stripe_event_created_at_ms AND excluded.stripe_event_id > runner_entitlement_reconcile_fence.stripe_event_id) RETURNING stripe_subscription_id";
+/// a provider-authorized current identity may replace a same-second
+/// predecessor. This keeps a predecessor cancellation from revoking a
+/// successor entitlement when Stripe replaces a subscription within one
+/// billing period. The fence row is retained after revoke so an old grant
+/// cannot be reinserted after restart.
+pub const SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE: &str = "INSERT INTO runner_entitlement_reconcile_fence (tenant_id, stripe_subscription_id, subscription_created_at_ms, stripe_event_created_at_ms, stripe_event_id, authority_is_current, is_granting, applied_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET stripe_subscription_id = excluded.stripe_subscription_id, subscription_created_at_ms = excluded.subscription_created_at_ms, stripe_event_created_at_ms = excluded.stripe_event_created_at_ms, stripe_event_id = excluded.stripe_event_id, authority_is_current = excluded.authority_is_current, is_granting = excluded.is_granting, applied_at_ms = excluded.applied_at_ms WHERE excluded.subscription_created_at_ms > runner_entitlement_reconcile_fence.subscription_created_at_ms OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms AND excluded.authority_is_current = 1 AND excluded.stripe_subscription_id <> runner_entitlement_reconcile_fence.stripe_subscription_id) OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms AND excluded.stripe_subscription_id = runner_entitlement_reconcile_fence.stripe_subscription_id AND excluded.stripe_event_created_at_ms > runner_entitlement_reconcile_fence.stripe_event_created_at_ms) OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms AND excluded.stripe_subscription_id = runner_entitlement_reconcile_fence.stripe_subscription_id AND excluded.stripe_event_created_at_ms = runner_entitlement_reconcile_fence.stripe_event_created_at_ms AND excluded.stripe_event_id > runner_entitlement_reconcile_fence.stripe_event_id) RETURNING stripe_subscription_id";
 /// Apply a grant only when this operation owns the current durable fence row.
 pub const SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT: &str = "INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h) SELECT ?, ?, 'runners', ?, ? WHERE EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ? AND stripe_subscription_id = ? AND subscription_created_at_ms = ? AND stripe_event_created_at_ms = ? AND stripe_event_id = ?) ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency = excluded.max_concurrency, max_vcpu_h = excluded.max_vcpu_h";
 /// Apply a revoke only when this operation owns the current durable fence row.
@@ -350,8 +351,8 @@ pub const SQL_READ_RUNNER_ENTITLEMENT_FENCE: &str =
     "SELECT stripe_subscription_id, subscription_created_at_ms, stripe_event_created_at_ms, stripe_event_id FROM runner_entitlement_reconcile_fence WHERE tenant_id = ?";
 
 /// Immutable provider facts that define one Runner entitlement revision.
-/// The durable fence orders these values lexicographically in declaration
-/// order, so no local clock or synthesized authority participates.
+/// The durable fence uses provider time within one identity. A same-second
+/// identity replacement needs the explicit provider-backed authority bit.
 #[derive(Clone, Copy, Debug)]
 pub struct RunnerEntitlementRevision<'a> {
     /// Immutable provider subscription identity.
@@ -362,6 +363,9 @@ pub struct RunnerEntitlementRevision<'a> {
     pub stripe_event_created_at_ms: u64,
     /// Immutable Stripe event identity, the final tie-breaker.
     pub stripe_event_id: &'a str,
+    /// True only after a unique active/trialing Runners subscription was
+    /// resolved from the provider's current customer state.
+    pub authority_is_current: bool,
 }
 
 /// Canonical billing-D1 writer trait.
@@ -867,27 +871,26 @@ impl BillingD1Writer for InMemoryBillingD1 {
             .runner_fences
             .lock()
             .map_err(|e| BillingD1Error::Transient(format!("runner fence mutex poisoned: {e}")))?;
-        // Provider facts form one total order: creation generation, immutable
-        // subscription identity, provider event time, then provider event id.
-        // The identity tie-breaker handles Stripe's whole-second creation clock.
-        let candidate = (
-            revision.subscription_created_at_ms,
-            revision.subscription_id,
-            revision.stripe_event_created_at_ms,
-            revision.stripe_event_id,
-        );
         let outcome = match fences.get(tenant_id) {
             Some((current_subscription, current_created, current_event, current_event_id, _)) => {
-                let current = (
-                    *current_created,
-                    current_subscription.as_str(),
-                    *current_event,
-                    current_event_id.as_str(),
-                );
-                if current > candidate {
-                    EntitlementCasOutcome::Stale
-                } else if current == candidate {
+                let same_identity = current_subscription == revision.subscription_id;
+                let advances = revision.subscription_created_at_ms > *current_created
+                    || (revision.subscription_created_at_ms == *current_created
+                        && !same_identity
+                        && revision.authority_is_current)
+                    || (revision.subscription_created_at_ms == *current_created
+                        && same_identity
+                        && (revision.stripe_event_created_at_ms > *current_event
+                            || (revision.stripe_event_created_at_ms == *current_event
+                                && revision.stripe_event_id > current_event_id)));
+                if !advances && same_identity
+                    && revision.subscription_created_at_ms == *current_created
+                    && revision.stripe_event_created_at_ms == *current_event
+                    && revision.stripe_event_id == current_event_id
+                {
                     EntitlementCasOutcome::Duplicate
+                } else if !advances {
+                    EntitlementCasOutcome::Stale
                 } else {
                     fences.insert(
                         tenant_id.to_owned(),

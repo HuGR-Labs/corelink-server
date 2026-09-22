@@ -1,6 +1,73 @@
 /** Runner billing and entitlement persistence writers. */
 import type { D1DatabaseLike } from "./billing_checkout";
 
+export interface AuthoritativeRunnerSubscription {
+    subscriptionId: string;
+    status: string;
+    priceId: string;
+    subscriptionCreatedAtMs: number;
+    /** A unique active/trialing customer subscription authorized this identity. */
+    authorityIsCurrent: boolean;
+}
+
+type StripeSubscription = Record<string, unknown>;
+
+function subscriptionPriceId(subscription: StripeSubscription, runnerPriceIds: ReadonlySet<string>): string | null {
+    const items = subscription["items"] as { data?: Array<Record<string, unknown>> } | undefined;
+    const matches = (items?.data ?? [])
+        .map((item) => (item["price"] as Record<string, unknown> | undefined)?.["id"])
+        .filter((price): price is string => typeof price === "string" && runnerPriceIds.has(price));
+    return matches.length === 1 ? matches[0]! : null;
+}
+
+function snapshot(subscription: StripeSubscription, runnerPriceIds: ReadonlySet<string>): AuthoritativeRunnerSubscription | null {
+    const subscriptionId = subscription["id"];
+    const status = subscription["status"];
+    const created = subscription["created"];
+    const priceId = subscriptionPriceId(subscription, runnerPriceIds);
+    if (typeof subscriptionId !== "string" || !subscriptionId || typeof status !== "string" ||
+        typeof created !== "number" || !Number.isFinite(created) || created <= 0 || !priceId) return null;
+    return { subscriptionId, status, priceId, subscriptionCreatedAtMs: created * 1000, authorityIsCurrent: false };
+}
+
+/**
+ * Resolve the only Runners identity allowed to replace a fence row. Stripe
+ * subscription IDs are opaque and are never compared for authority. A current
+ * customer list must contain exactly one active/trialing Runners subscription;
+ * a non-granting event may only act on its own provider-fetched identity.
+ */
+export async function resolveAuthoritativeRunnerSubscription(opts: {
+    eventSubscriptionId: string;
+    stripeSecretKey?: string;
+    stripeApiBase?: string;
+    runnerPriceIds: ReadonlySet<string>;
+}): Promise<AuthoritativeRunnerSubscription> {
+    const key = opts.stripeSecretKey?.trim();
+    if (!key) throw new Error("runner entitlement authority requires STRIPE_SECRET_KEY");
+    const base = (opts.stripeApiBase?.trim() || "https://api.stripe.com").replace(/\/$/, "");
+    const request = async (path: string): Promise<StripeSubscription> => {
+        const response = await fetch(`${base}${path}`, { headers: { Authorization: `Bearer ${key}` } });
+        if (!response.ok) throw new Error(`runner entitlement authority Stripe HTTP ${response.status}`);
+        return await response.json() as StripeSubscription;
+    };
+    const eventSubscription = await request(`/v1/subscriptions/${encodeURIComponent(opts.eventSubscriptionId)}`);
+    const customer = eventSubscription["customer"];
+    if (typeof customer !== "string" || !customer) throw new Error("runner entitlement authority response has no customer");
+    const listed = await request(`/v1/subscriptions?customer=${encodeURIComponent(customer)}&status=all&limit=100`);
+    if (listed["has_more"] === true || !Array.isArray(listed["data"])) {
+        throw new Error("runner entitlement authority customer list is incomplete");
+    }
+    const snapshots = listed["data"].map((value) => snapshot(value as StripeSubscription, opts.runnerPriceIds)).filter(
+        (value): value is AuthoritativeRunnerSubscription => value !== null,
+    );
+    const active = snapshots.filter((value) => value.status === "active" || value.status === "trialing");
+    if (active.length === 1) return { ...active[0]!, authorityIsCurrent: true };
+    if (active.length > 1) throw new Error("runner entitlement authority is ambiguous");
+    const eventSnapshot = snapshot(eventSubscription, opts.runnerPriceIds);
+    if (!eventSnapshot) throw new Error("runner entitlement authority has no current Runners identity");
+    return eventSnapshot;
+}
+
 /**
  * Upsert the `runner_billing` row that maps a RUNNER Stripe subscription →
  * tenant (migration 0087). Keyed by `runner_subscription_id` (PK) so it does
@@ -43,9 +110,9 @@ export async function upsertRunnerBilling(
 /**
  * Apply a Runners entitlement through the shared durable fence.
  *
- * The provider tuple is `(subscription.created, subscription.id,
- * event.created, event.id)`. Every coordinate is supplied by Stripe; the
- * subscription id resolves the documented same-second replacement ambiguity.
+ * Provider timestamps order revisions within an identity. A same-second
+ * replacement is permitted only when `authorityIsCurrent` came from the
+ * provider's unique active/trialing customer subscription state.
  * D1 `batch` is a transaction, so the fence advancement and guarded mutation
  * cannot interleave with the materializer's identical CAS.
  */
@@ -57,6 +124,7 @@ export async function reconcileRunnersEntitlement(
         subscriptionCreatedAtMs: number | null;
         stripeEventCreatedAtMs: number | null;
         stripeEventId: string;
+        authorityIsCurrent: boolean;
         entitlement: { maxConcurrency: number; maxVcpuH: number } | null;
         nowMs: number;
     },
@@ -71,22 +139,24 @@ export async function reconcileRunnersEntitlement(
         throw new Error("runner entitlement CAS max concurrency must be positive");
     }
     const tenantSource = opts.tenantId
-        ? { sql: "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", binds: [opts.tenantId] }
-        : { sql: "SELECT tenant_id, ?1, ?2, ?3, ?4, ?5, ?6 FROM runner_billing WHERE runner_subscription_id = ?1", binds: [] as unknown[] };
+        ? { sql: "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)", binds: [opts.tenantId] }
+        : { sql: "SELECT tenant_id, ?1, ?2, ?3, ?4, ?5, ?6, ?7 FROM runner_billing WHERE runner_subscription_id = ?1", binds: [] as unknown[] };
     const fence = db.prepare(
         `INSERT INTO runner_entitlement_reconcile_fence
-           (tenant_id, stripe_subscription_id, subscription_created_at_ms,
-            stripe_event_created_at_ms, stripe_event_id, is_granting, applied_at_ms)
+         (tenant_id, stripe_subscription_id, subscription_created_at_ms,
+            stripe_event_created_at_ms, stripe_event_id, authority_is_current, is_granting, applied_at_ms)
          ${tenantSource.sql}
          ON CONFLICT(tenant_id) DO UPDATE SET
            stripe_subscription_id=excluded.stripe_subscription_id,
            subscription_created_at_ms=excluded.subscription_created_at_ms,
            stripe_event_created_at_ms=excluded.stripe_event_created_at_ms,
            stripe_event_id=excluded.stripe_event_id,
+           authority_is_current=excluded.authority_is_current,
            is_granting=excluded.is_granting, applied_at_ms=excluded.applied_at_ms
          WHERE excluded.subscription_created_at_ms > runner_entitlement_reconcile_fence.subscription_created_at_ms
             OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms
-                AND excluded.stripe_subscription_id > runner_entitlement_reconcile_fence.stripe_subscription_id)
+                AND excluded.authority_is_current = 1
+                AND excluded.stripe_subscription_id <> runner_entitlement_reconcile_fence.stripe_subscription_id)
             OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms
                 AND excluded.stripe_subscription_id = runner_entitlement_reconcile_fence.stripe_subscription_id
                 AND excluded.stripe_event_created_at_ms > runner_entitlement_reconcile_fence.stripe_event_created_at_ms)
@@ -97,7 +167,8 @@ export async function reconcileRunnersEntitlement(
          RETURNING stripe_subscription_id`,
     ).bind(
         ...(tenantSource.binds), opts.runnerSubscriptionId, opts.subscriptionCreatedAtMs,
-        opts.stripeEventCreatedAtMs, opts.stripeEventId, opts.entitlement ? 1 : 0, opts.nowMs,
+        opts.stripeEventCreatedAtMs, opts.stripeEventId, opts.authorityIsCurrent ? 1 : 0,
+        opts.entitlement ? 1 : 0, opts.nowMs,
     );
     const mutation = opts.entitlement
         ? opts.tenantId
