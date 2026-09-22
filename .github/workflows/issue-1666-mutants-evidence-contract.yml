@@ -1,0 +1,29 @@
+name: issue #1666 hosted mutants evidence contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-1863-mutants-hosted.yml"
+      - ".github/workflows/issue-1666-mutants-evidence-contract.yml"
+      - "scripts/verify_i1666_mutants_evidence.py"
+      - "tests/test_verify_i1666_mutants_evidence.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: verify hosted mutants evidence retention
+    if: github.repository == 'HuGR-dev/corelink-server'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify hosted mutants evidence contract
+        run: python3 scripts/verify_i1666_mutants_evidence.py
+      - name: Run focused adversarial checks
+        run: python3 tests/test_verify_i1666_mutants_evidence.py
