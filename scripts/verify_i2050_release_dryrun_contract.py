@@ -124,7 +124,7 @@ def _verify_dlltool_contract(text: str) -> None:
             fail(f"untrusted or unpinned tap installation is forbidden: {unsupported}")
     for token in (
         "Install and verify pinned MinGW-w64 dlltool",
-        "EXPECTED_MINGW_W64_VERSION=14.0.0",
+        "EXPECTED_MINGW_W64_VERSION=14.0.0_3",
         "EXPECTED_DLLTOOL_VERSION='GNU dlltool (GNU Binutils) 2.47'",
         f"EXPECTED_MINGW_W64_FORMULA_SHA256={MINGW_W64_FORMULA_SHA256}",
         MINGW_W64_FORMULA_URL,
@@ -154,6 +154,14 @@ def _verify_dlltool_contract(text: str) -> None:
 
 def _dlltool_contract_mutation_self_test(text: str) -> None:
     for token, replacement in (
+        (
+            "EXPECTED_MINGW_W64_VERSION=14.0.0_3",
+            "EXPECTED_MINGW_W64_VERSION=14.0.0",
+        ),
+        (
+            "EXPECTED_MINGW_W64_VERSION=14.0.0_3",
+            "EXPECTED_MINGW_W64_VERSION=14.0.0_2",
+        ),
         (MINGW_W64_FORMULA_URL, "https://example.invalid/mingw-w64.rb"),
         (
             PINNED_FORMULA_INSTALL,
