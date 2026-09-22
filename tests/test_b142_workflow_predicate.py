@@ -26,15 +26,15 @@ class B142WorkflowPredicateTest(unittest.TestCase):
     def test_current_codeql_and_secrets_drift_population_passes(self) -> None:
         observed = contract.verify(ROOT)
         self.assertEqual(len(observed), 4)
-        self.assertEqual(observed[".github/workflows/codeql.yml:analyze"], "corelink")
+        self.assertEqual(observed[".github/workflows/codeql.yml:analyze"], "ubuntu-latest")
         self.assertEqual(observed[".github/workflows/secrets-drift.yml:secrets-drift"], "corelink")
 
     def test_runner_label_mutation_is_rejected(self) -> None:
         root = self._mutated_root(
-            ".github/workflows/codeql.yml", "runs-on: corelink", "runs-on: ubuntu-latest"
+            ".github/workflows/codeql.yml", "runs-on: ubuntu-latest", "runs-on: self-hosted"
         )
         with self.assertRaises(contract.ContractError):
-            contract.check_workflow(root, ".github/workflows/codeql.yml", "analyze", "corelink")
+            contract.check_workflow(root, ".github/workflows/codeql.yml", "analyze", "ubuntu-latest")
 
     def test_missing_job_and_comment_bait_are_rejected(self) -> None:
         root = self._mutated_root(

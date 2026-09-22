@@ -25,6 +25,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKET = ROOT / "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json"
+sys.path.insert(0, str(ROOT / "scripts"))
+from verify_b083_kms_lifecycle_evidence import EvidenceError as B083EvidenceError
+from verify_b083_kms_lifecycle_evidence import validate_record as validate_b083_evidence
 EXPECTED_IDS = (
     "B-008", "B-012", "B-013", "B-032", "B-035", "B-065",
     "B-086", "B-089", "B-097", "B-110", "B-111", "B-154",
@@ -166,9 +169,9 @@ B054_EVIDENCE_REQUIRED_FIELDS = [
 ]
 B083_EVIDENCE_PATH = "evidence/owner-actions/B-083/byok-real-kms-lifecycle.json"
 B083_EVIDENCE_REQUIRED_FIELDS = [
-    "schema_version", "captured_at", "tenant_redacted", "image_digest",
-    "kms_provider", "check_access", "activation", "cas_ac_round_trip",
-    "revocation", "run_loop", "operator", "repository_checks",
+    "schema_version", "captured_at", "evidence_state", "tenant_redacted",
+    "runtime", "external_prerequisites", "custody_policy", "lifecycle",
+    "operator", "repository_checks",
 ]
 B097_EVIDENCE_PATH = "evidence/owner-actions/B-097/cloudflare-vcpu-quota-case.json"
 B097_EVIDENCE_REQUIRED_FIELDS = [
@@ -762,22 +765,10 @@ def _check_b083_evidence(item: dict[str, object]) -> None:
     if evidence["required_fields"] != B083_EVIDENCE_REQUIRED_FIELDS:
         raise PacketError("B-083 evidence required fields drifted")
     record = _read_json_evidence(B083_EVIDENCE_PATH, B083_EVIDENCE_REQUIRED_FIELDS, "B-083")
-    if record["schema_version"] != 1 or not isinstance(record["captured_at"], str) or not record["captured_at"].strip():
-        raise PacketError("B-083 evidence capture metadata drifted")
-    if record["tenant_redacted"] != "NOT_PROVISIONED" or record["image_digest"] is not None or record["kms_provider"] != "aws":
-        raise PacketError("B-083 evidence must identify the unprovisioned AWS runtime without a digest")
-    if record["check_access"] != "BLOCKED":
-        raise PacketError("B-083 check_access must be BLOCKED while the runtime is not provisioned")
-    for name in ("activation", "cas_ac_round_trip", "revocation", "run_loop"):
-        nested = _exact_keys(record[name], {"status", "audit_event_reference", "completed_at", "blocker"}, f"B-083 {name}")
-        status = _receipt_status(nested["status"], f"B-083 {name}")
-        if status != "PASS" and (nested["audit_event_reference"] is not None or nested["completed_at"] is not None):
-            raise PacketError(f"B-083 {name} has completion evidence despite status {status}")
-        if status != "NOT_EXECUTED":
-            raise PacketError(f"B-083 {name} cannot run without a provisioned runtime")
-        _receipt_blocker(nested["blocker"], status, f"B-083 {name}")
-    if not isinstance(record["operator"], str) or not record["operator"].strip():
-        raise PacketError("B-083 operator missing")
+    try:
+        validate_b083_evidence(record)
+    except B083EvidenceError as exc:
+        raise PacketError(f"B-083 lifecycle evidence invalid: {exc}") from exc
     _check_repository_checks(record["repository_checks"], "B-083", B083_REPOSITORY_CHECKS)
 
 
