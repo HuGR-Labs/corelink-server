@@ -120,7 +120,7 @@ jobs:
           cat >"${askpass}" <<'SH'
           # Git invokes this process only for the username/password prompts.
           case "$1" in
-            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Username*) printf '%s\n' "$GITHUB_ACTOR" ;;
             *Password*) printf '%s\n' "$CORELINK_CANARY_PAT" ;;
             *) exit 1 ;;
           esac
