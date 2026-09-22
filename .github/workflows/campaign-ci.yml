@@ -644,16 +644,62 @@ jobs:
               'CONCURRENCIES = (4, 16, 64)',
               'TARGET = "https://staging.corelink.humangr.com"',
               'WEBDAV_METHODS = ("GET", "HEAD", "PROPFIND", "MKCOL", "PUT", "DELETE")',
+              'body = f"b103-diagnostic:{key}".encode("ascii")',
+              'request_body_sha256',
               '"put_only"',
               '"webdav_sequence"',
+              '"warm_sequence": ["PUT", "PUT", "PUT"]',
+              '"warm_sequence": warm_sequence',
+              'int(warm_sequence["failed_requests"])',
           )
           for marker in required:
               if marker not in source:
                   raise SystemExit(f"missing B-103 contract marker: {marker}")
           if not any(isinstance(node, ast.FunctionDef) and node.name == "run_arm" for node in tree.body):
               raise SystemExit("missing B-103 run_arm contract")
+          if not any(isinstance(node, ast.FunctionDef) and node.name == "run_warm_sequence" for node in tree.body):
+              raise SystemExit("missing B-103 warm sequence contract")
           if not any(isinstance(node, ast.FunctionDef) and node.name == "request" for node in tree.body):
               raise SystemExit("missing B-103 request contract")
+
+          warm = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "run_warm_sequence")
+          if not any(
+              isinstance(node, ast.For)
+              and isinstance(node.iter, ast.Call)
+              and isinstance(node.iter.func, ast.Name)
+              and node.iter.func.id == "range"
+              and len(node.iter.args) == 1
+              and isinstance(node.iter.args[0], ast.Constant)
+              and node.iter.args[0].value == 3
+              for node in ast.walk(warm)
+          ):
+              raise SystemExit("B-103 warm sequence must execute range(3)")
+
+          if not any(
+              isinstance(node, ast.Call)
+              and isinstance(node.func, ast.Name)
+              and node.func.id == "request"
+              and len(node.args) == 6
+              and isinstance(node.args[3], ast.Constant)
+              and node.args[3].value == "PUT"
+              and isinstance(node.args[4], ast.Name)
+              and node.args[4].id == "key"
+              and isinstance(node.args[5], ast.Name)
+              and node.args[5].id == "body"
+              for node in ast.walk(warm)
+          ):
+              raise SystemExit("B-103 warm request must pass PUT, key, and body")
+
+          main = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "main")
+          if not any(
+              isinstance(node, ast.Assign)
+              and any(isinstance(target, ast.Name) and target.id == "warm_sequence" for target in node.targets)
+              and isinstance(node.value, ast.Call)
+              and isinstance(node.value.func, ast.Name)
+              and node.value.func.id == "run_warm_sequence"
+              for node in ast.walk(main)
+          ):
+              raise SystemExit("B-103 main must invoke run_warm_sequence")
           print("B-103 reproducer dry contract: PASS (no staging requests made)")
           PY
 
