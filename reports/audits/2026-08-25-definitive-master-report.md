@@ -97,7 +97,7 @@ WAVE 3 — Agressiva (8 agentes simultâneos)
 
 ### C2 — Seed Ed25519 REAL plaintext no git 🆕✅
 
-`wrangler.toml [env.prod]`: `AUDIT_CHAIN_SIGNING_SEED_HEX="c4bdb99f…d7141"` — `git log -S` → entrou em `0a5e3349` (**HEAD**). Checklist row 164 prescreve UNSET ou `wrangler secret put`. Portador da seed forja tamper-evidence da audit chain. Gitleaks não pega (hex sem keyword = gap). **Fix:** rotacionar → remover var → política de history purge → regra gitleaks custom.
+`wrangler.toml [env.prod]`: `AUDIT_CHAIN_SIGNING_SEED_HEX="<REDACTED-64-HEX>"` — the historical report intentionally retains no key bytes. Checklist row 164 prescreve UNSET ou `wrangler secret put`. Portador da seed forja tamper-evidence da audit chain. Gitleaks não pega (hex sem keyword = gap). **Fix:** rotacionar → remover var → política de history purge → regra gitleaks custom.
 
 ### C3 — Gate secrets VERMELHO no main ✅
 

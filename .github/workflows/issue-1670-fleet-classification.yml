@@ -24,9 +24,6 @@ jobs:
     timeout-minutes: 10
     env:
       I1670_FLEET_LABEL: corelink
-      I1670_RUNNER_NAME: ${{ runner.name }}
-      I1670_RUNNER_OS: ${{ runner.os }}
-      I1670_RUNNER_ARCH: ${{ runner.arch }}
       CORELINK_I1670_FIXTURE_MOUNT: /mnt/corelink-i1670/${{ github.run_id }}
       CORELINK_I1670_FIXTURE_MAX_BYTES: '134217728'
     steps:
@@ -35,6 +32,10 @@ jobs:
           persist-credentials: false
       - name: Induce and classify isolated ENOSPC plus linker failure
         shell: bash
+        env:
+          I1670_RUNNER_NAME: ${{ runner.name }}
+          I1670_RUNNER_OS: ${{ runner.os }}
+          I1670_RUNNER_ARCH: ${{ runner.arch }}
         run: |
           set -euo pipefail
           test "$I1670_FLEET_LABEL" = corelink

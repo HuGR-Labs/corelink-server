@@ -15,7 +15,7 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations/d1/0115_gc_purge_fence.sql"
-CONTROL_MIGRATION = ROOT / "migrations/d1/0118_gc_accounting_legal_hold.sql"
+CONTROL_MIGRATION = ROOT / "migrations/d1/0142_gc_accounting_legal_hold.sql"
 CAS_QUERY = ROOT / "crates/corelink-meta/src/cas_query.rs"
 CAS_FENCE = ROOT / "crates/corelink-container/src/storage/cas_write_fence.rs"
 CAS_OPS = ROOT / "crates/corelink-container/src/storage/r2_s3_parts/cas_write.rs"
