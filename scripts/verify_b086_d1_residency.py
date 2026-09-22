@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WRANGLER = ROOT / "wrangler.toml"
 DPA = ROOT / "legal/dpa-residency-amendment.md"
 BACKLOG = ROOT / "BACKLOG.md"
+MANIFEST = ROOT / "evidence/i1654/d1-residency-contract-manifest.json"
 
 PRODUCTION_ENVS = ("prod", "prod-sam", "prod-lhr", "prod-nrt", "prod-syd")
 UUID = re.compile(
@@ -49,6 +50,57 @@ def _load_toml(text: str) -> dict[str, object]:
         raise VerificationError(f"wrangler.toml is not valid TOML: {exc}") from exc
     if not isinstance(value, dict):
         raise VerificationError("wrangler.toml did not decode to a table")
+    return value
+
+
+def _load_manifest() -> dict[str, object]:
+    try:
+        import json
+
+        value = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise VerificationError(f"contract manifest is unreadable: {exc}") from exc
+    if not isinstance(value, dict):
+        raise VerificationError("contract manifest must be a JSON object")
+    required = {
+        "schema",
+        "issue",
+        "backlog_id",
+        "credentialless",
+        "network_calls",
+        "mutating_actions",
+        "status",
+        "sources",
+        "acceptance",
+        "external_blocker",
+        "prohibited",
+    }
+    if set(value) != required:
+        raise VerificationError("contract manifest has unexpected or missing fields")
+    if value["schema"] != "corelink.d1.residency-contract-manifest.v1":
+        raise VerificationError("unsupported contract manifest schema")
+    if value["issue"] != 1654 or value["backlog_id"] != "B-086":
+        raise VerificationError("contract manifest issue identity drifted")
+    if value["credentialless"] is not True or value["network_calls"] is not False or value["mutating_actions"] is not False:
+        raise VerificationError("contract manifest must be credentialless, network-free, and read-only")
+    if value["status"] != "open_external_decision_pending":
+        raise VerificationError("contract manifest must keep B-086 open pending owner/counsel evidence")
+    sources = value["sources"]
+    if sources != {
+        "wrangler": "wrangler.toml",
+        "legal_instrument": "legal/dpa-residency-amendment.md",
+        "backlog": "BACKLOG.md",
+        "verifier": "scripts/verify_b086_d1_residency.py",
+    }:
+        raise VerificationError("contract manifest source paths drifted")
+    acceptance = value["acceptance"]
+    if not isinstance(acceptance, dict) or acceptance.get("production_environments") != list(PRODUCTION_ENVS):
+        raise VerificationError("contract manifest production environment set drifted")
+    if acceptance.get("d1_binding") != "CONFIG_DB" or acceptance.get("minimum_distinct_database_ids") != 2:
+        raise VerificationError("contract manifest D1 mismatch contract drifted")
+    blocker = value["external_blocker"]
+    if not isinstance(blocker, dict) or blocker.get("owner") != "owner/counsel" or blocker.get("decision") != "provision jurisdictional D1 or amend and execute the residency instrument":
+        raise VerificationError("contract manifest external decision boundary drifted")
     return value
 
 
@@ -178,6 +230,7 @@ def _dpa_claim_count(text: str) -> int:
 def assess(
     wrangler_text: str, dpa_text: str, backlog_text: str | None = None
 ) -> tuple[int, int, int, int]:
+    _load_manifest()
     doc = _load_toml(wrangler_text)
     d1_rows = _production_d1(doc)
     jurisdiction_keys = _jurisdiction_keys(doc)

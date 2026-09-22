@@ -7453,11 +7453,13 @@ independently. Therefore neither bot authorship nor a zero-job
 `startup_failure` proves token suppression. A present run, check, or status
 also does not prove that CI executed or passed.
 
-The five active auto-PR creators already require `BOT_PR_TOKEN` and fail closed
-when it is absent. For **automatic, unapproved** PR CI, the smallest remaining
-owner credential is a dedicated fine-grained PAT scoped to this repository with
-`contents:write` and `pull_requests:write`; a GitHub App alternative must mint
-its short-lived installation token per job. Do not reuse a release credential.
+The five active auto-PR creators now mint a repository-scoped, one-hour GitHub
+App installation token per job from `CORELINK_BOT_APP_ID` and
+`CORELINK_BOT_APP_PRIVATE_KEY`; those App secrets remain absent in the
+read-only inventory. For **automatic, unapproved** PR CI, the owner creates a
+private App installed only on this repository with `contents:write` and
+`pull_requests:write`. No installation token or PAT is stored as a durable bot
+credential. Do not reuse a release credential.
 This token cannot repair Actions startup failure, hosted-billing limits, or an
 offline/missing runner labelled `corelink`. Bot-PR CI is established only when
 the expected jobs actually complete on viable capacity, with no approval
@@ -7467,9 +7469,10 @@ pending, and the owner records the run/job evidence.
 today, what each option costs, and what happens if the answer is "not now".
 
 **Owner-only credential action:** inspect approved dedicated credentials first,
-then mint the fine-grained PAT in the authenticated GitHub account flow if
-none exists. An App path requires per-job minting wiring before use, not a
-one-time installation token stored as `BOT_PR_TOKEN`. Restore Actions job
+then create/install the private App in the authenticated GitHub account flow if
+it does not exist. Store only its numeric ID and PEM private key as
+`CORELINK_BOT_APP_ID` and `CORELINK_BOT_APP_PRIVATE_KEY`; the workflow already
+mints per-job tokens and fails closed when either is absent. Restore Actions job
 startup and `corelink` runner capacity as separate prerequisites before a
 harmless proof PR; neither is solved by the credential itself.
 
@@ -11988,11 +11991,12 @@ não apagadas), 87 remotas, e a seção `[Unreleased]` do CHANGELOG com 9.911 li
 uma release jamais tenha sido cortada — zero tags semver, versão do workspace em `0.1.0`.
 Isto explica parte de [B-091]: a lane `cosign-sign` dispara em tag `v*`, e nunca houve uma.
 
-Itens menores que o mandato de impecabilidade cobre: o `CLAUDE.md` diz "~73 crates" (são
-75), "160 conceitos OKF" (são 165) e "485 specs" (são 486); a conta `gmhelmold` tem token
-inválido no keyring e está marcada como ativa no `gh`; e `corelink-runbook-tracker` é o
-único crate cujos lints copiados divergiram do workspace — faltam `print_stdout` e
-`print_stderr`.
+Itens menores que o mandato de impecabilidade cobre: a conta `gmhelmold` tem token
+inválido no keyring e está marcada como ativa no `gh`; e `corelink-runbook-tracker` era o
+único crate cujos lints copiados divergiam do workspace — faltavam `print_stdout` e
+`print_stderr`. A fonte dinâmica atual (verificada em 2026-09-22) reporta 95 pacotes Rust,
+75 diretórios de crate, 170 conceitos OKF e 481 specs com schema mais 11 somente com YAML
+(492 no total); esses valores estão documentados em `CLAUDE.md` e vinculados ao verificador.
 
 ```backlog
 id: B-098
@@ -12013,9 +12017,11 @@ verify-means: |
   placeholders. O cut script exige SHA completo, framework FROZEN assinado,
   execução real do cutover, readback de deploy e dois commits de sign-off com
   identidades e chaves distintas. Qualquer fonte ausente, saída malformada,
-  drift, tag local/lightweight/unsigned ou evidência stale falha fechado. A
-  ausência esperada da tag mantém o item aberto e retorna exit 0, para que o
-  backlog continue verificável.
+  drift, tag local/lightweight/unsigned ou evidência stale falha fechado. O modo padrão
+  é determinístico e avalia somente a árvore versionada; `--verify-origin` acrescenta a
+  leitura bounded de `origin` e aplica a validade temporal do recibo de ausência. A
+  ausência esperada da tag mantém o item aberto e retorna exit 0, para que o backlog
+  continue verificável.
 
   Deliberadamente NÃO gateia as worktrees em `/private/tmp` nem a contagem de branches: são
   estado da máquina do desenvolvedor, não do repositório, e um `verify` que os medisse
@@ -12024,7 +12030,7 @@ verify-means: |
 
   O que este comando decide é a parte que vive no repositório e é verificável em qualquer
   clone. A parte das worktrees exige ação humana na máquina e está registrada acima.
-last-verified: 2026-09-09
+last-verified: 2026-09-22
 ```
 
 ### B-099 — o `CODEOWNERS` atribuía revisão a dez times que o próprio arquivo admitia não existirem — FECHADO, e a reverificação CONFIRMOU zero times

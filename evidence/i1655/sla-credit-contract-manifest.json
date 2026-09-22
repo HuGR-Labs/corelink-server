@@ -1,0 +1,86 @@
+{
+  "schema": "corelink.sla-credit.contract-manifest.v1",
+  "issue": 1655,
+  "backlog_id": "B-089",
+  "credentialless": true,
+  "network_calls": false,
+  "mutating_actions": false,
+  "status": "repository_contract_ready_external_receipt_pending",
+  "contract": {
+    "legal_instrument": "legal/sla/v1.0.0.md",
+    "legal_instrument_version": "1.0.0",
+    "automatic_credit_clause": "§4: credits are issued automatically against the next invoice",
+    "exclusive_remedy_clause": "§4.5: service credits are the sole and exclusive remedy, subject to stated exceptions",
+    "service_period": "UTC calendar month",
+    "report_cutoff": "within 10 business days after month close",
+    "credit_cap": "100% of Monthly Service Fee per Service Period",
+    "provider": "Stripe invoice item",
+    "idempotency": "one ledger row and one stable Stripe Idempotency-Key per tenant and UTC service month",
+    "safety_gate": "SLA_CREDITS_ENABLED=true is required by both the sweep and provider; production wrangler value is false"
+  },
+  "repository_path": {
+    "producer_and_sweep": "apps/signup-worker/src/webhooks/sla_credit_cron.ts",
+    "migration": "migrations/d1/0117_sla_credit_ledger.sql",
+    "tests": "apps/signup-worker/tests/sla_credit_cron.test.ts",
+    "verifier": "scripts/verify_b089_sla_credits.py",
+    "runtime_config": "apps/signup-worker/wrangler.toml",
+    "effective_terms": "legal/sla/v1.0.0.md",
+    "pricing_surface": "apps/docs/src/lib/pricing.ts",
+    "terms_surface": "apps/docs/src/pages/legal/terms.tsx"
+  },
+  "invariants": [
+    "No observation is published before a closed UTC month and the ten-business-day report cutoff.",
+    "A tenant and service month can create at most one credit and one idempotency key.",
+    "A provider call is impossible while the explicit credits gate is disabled or no provider credential is supplied.",
+    "Crash recovery reuses the durable outbox body and idempotency key; a changed billing mapping is blocked or retried for review.",
+    "Provider acceptance is not treated as proof until the provider object is reconciled against the request and recorded in D1."
+  ],
+  "repository_observation": {
+    "implementation": "present",
+    "guard": "present and intentionally reports parked_until_provider_proof",
+    "production_flags": {
+      "SLA_CREDITS_ENABLED": "false",
+      "SLA_OBSERVATIONS_ENABLED": "false"
+    },
+    "remaining_repo_verification": "none identified for the implemented contract path"
+  },
+  "external_receipts_required": [
+    {
+      "artifact": "production D1 migration receipt",
+      "action": "apply migration 0117 to the production BILLING_DB binding",
+      "owner": "operator",
+      "credential_required": true
+    },
+    {
+      "artifact": "owner-approved Stripe test-mode invoice-item receipt",
+      "action": "enable the gate only for a controlled test tenant and execute one credit mutation",
+      "owner": "owner/finance",
+      "credential_required": true
+    },
+    {
+      "artifact": "idempotent replay receipt",
+      "action": "replay the same sweep and show one provider object for the stable idempotency key",
+      "owner": "owner/SRE",
+      "credential_required": true
+    },
+    {
+      "artifact": "provider reconciliation and D1 audit export",
+      "action": "match the provider object to the next invoice and retain ledger, outbox, reconciliation, and audit rows",
+      "owner": "owner/finance",
+      "credential_required": true
+    }
+  ],
+  "contract_decisions_pending": [
+    "The executed SLA defines Free, Starter, Pro, and Enterprise, while the published product ladder also sells Solo and Max; those tiers have no corresponding executed SLA tier.",
+    "The published Terms grant Pro an automatic credit, while apps/docs/src/lib/pricing.ts marks Pro slaCredits=false and its test expects only Enterprise to have credits.",
+    "Owner and counsel must decide whether to amend the signed instrument and align published pricing/Terms before enabling credits."
+  ],
+  "prohibited": [
+    "issuing credits or calling Stripe from this repository-only artifact",
+    "enabling either production flag",
+    "editing or replacing the signed/effective SLA or other legal instrument",
+    "inventing provider, invoice, migration, or reconciliation evidence",
+    "storing credentials, routing keys, or provider responses in git"
+  ],
+  "closure_rule": "Close only after the legal/commercial decision is recorded and the owner supplies the four provider-backed receipts; repository text alone cannot prove a live credit or invoice."
+}

@@ -69,6 +69,21 @@ def test_shared_buck2_marker_is_scoped_to_the_named_job() -> None:
         MODULE.verify(sources)
 
 
+def test_nightly_mutants_requires_hosted_linux_runner() -> None:
+    lane = next(item for item in MODULE.LANES if item.name == "nightly-mutants")
+    sources = corpus()
+    workflow = sources[lane.workflow]
+    start = workflow.index("  mutants-workspace:\n")
+    runner = workflow.index("runs-on: ubuntu-latest", start)
+    sources[lane.workflow] = (
+        workflow[:runner]
+        + "runs-on: [self-hosted, mac, corelink-builder]"
+        + workflow[runner + len("runs-on: ubuntu-latest"):]
+    )
+    with pytest.raises(MODULE.VerificationError, match="nightly-mutants"):
+        MODULE.verify(sources)
+
+
 def test_nightly_mutants_keeps_a_bounded_pinned_fallback() -> None:
     """A missing release asset must not strand the nightly mutation gate."""
     lane = next(item for item in MODULE.LANES if item.name == "nightly-mutants")

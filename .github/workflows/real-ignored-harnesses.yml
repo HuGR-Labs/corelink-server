@@ -79,6 +79,7 @@ jobs:
           STRIPE_PRICE_ID_STARTER: ${{ vars.STRIPE_PRICE_ID_STARTER }}
           # Neon is separately selected and receives only its staging DSN.
           NEON_TEST_DSN: ${{ secrets.NEON_TEST_DSN }}
+          REAL_HARNESS_RECEIPT_DIR: artifacts/real-ignored-harnesses
           # Pass the untrusted input as data, never by interpolating it into
           # the shell program. The runner's allow-list validates it again.
           REAL_HARNESS_PROFILE: ${{ inputs.profile }}
@@ -90,3 +91,12 @@ jobs:
             fi
           done
           bash scripts/run-real-ignored-harnesses.sh "$REAL_HARNESS_PROFILE"
+
+      - name: Upload exact test receipts and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: real-ignored-harnesses-${{ inputs.profile }}-receipt
+          path: artifacts/real-ignored-harnesses/
+          if-no-files-found: error
+          retention-days: 30

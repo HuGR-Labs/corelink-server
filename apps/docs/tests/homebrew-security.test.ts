@@ -150,7 +150,7 @@ describe("Homebrew documentation safety", () => {
       path.join(DOCS_ROOT, HOMEBREW_DOCS[0]),
       "utf8",
     );
-    const mutated = `${source}\n\nexport HOMEBREW_DOCKER_REGISTRY_TOKEN=\"$TOKEN\"\n`;
+    const mutated = `${source}\n\nexport HOMEBREW_DOCKER_REGISTRY_TOKEN="$TOKEN"\n`;
     expect(scanHomebrewDocs(mutated)).not.toEqual([]);
   });
 

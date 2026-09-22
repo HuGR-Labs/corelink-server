@@ -201,7 +201,12 @@ def assess(root: Path = Path(".")) -> list[str]:
     if cloudflare.get("synthetic_receiver_worker_settings") != EXPECTED_RECEIVER_SETTINGS:
         gaps.append("synthetic-receiver-worker-settings")
     if cloudflare.get("routes") != [
-        {"worker": "corelink-staging", "pattern": "staging.corelink.humangr.com/*", "zone_name": "humangr.com"}
+        {"worker": "corelink-staging", "pattern": "staging.corelink.humangr.com/*", "zone_name": "humangr.com"},
+        {
+            "worker": "corelink-synthetic-pager-staging",
+            "pattern": "staging.corelink.humangr.com/v1/webhooks/pagerduty",
+            "zone_name": "humangr.com",
+        },
     ]:
         gaps.append("canonical-route")
     if cloudflare.get("container") != {

@@ -8,6 +8,7 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -200,7 +201,7 @@ class B098VerifierTests(unittest.TestCase):
             "63-character checkpoint": lambda value: value.__setitem__("checkpoint_sha", "a" * 63),
             "older reachable checkpoint": lambda value: value.__setitem__(
                 "checkpoint_sha", subprocess.check_output(
-                    ["git", "rev-parse", "404e17ef1dc7d205da97e65c6dc18f1225452405^"],
+                    ["git", "rev-parse", "1126e25d294ae16e73efa70004642e34f223285d^"],
                     cwd=ROOT, text=True,
                 ).strip(),
             ),
@@ -241,9 +242,9 @@ class B098VerifierTests(unittest.TestCase):
         self.assertTrue(any("census is missing" in issue for issue in issues))
 
         mutations = {
-            "all-zero checkpoint": ("checkpoint_sha: \"404e17ef1dc7d205da97e65c6dc18f1225452405\"", "checkpoint_sha: \"0000000000000000000000000000000000000000\""),
-            "unrelated checkpoint": ("checkpoint_sha: \"404e17ef1dc7d205da97e65c6dc18f1225452405\"", "checkpoint_sha: \"721e536619a487fda15db1a226941b12dc257a8a\""),
-            "future timestamp": ("timestamp: \"2026-09-09T15:13:33Z\"", "timestamp: \"2999-01-01T00:00:00Z\""),
+            "all-zero checkpoint": ("checkpoint_sha: \"1126e25d294ae16e73efa70004642e34f223285d\"", "checkpoint_sha: \"0000000000000000000000000000000000000000\""),
+            "unrelated checkpoint": ("checkpoint_sha: \"1126e25d294ae16e73efa70004642e34f223285d\"", "checkpoint_sha: \"721e536619a487fda15db1a226941b12dc257a8a\""),
+            "future timestamp": ("timestamp: \"2026-09-22T05:05:26Z\"", "timestamp: \"2999-01-01T00:00:00Z\""),
             "provenance mutation": ("provenance: \"AUTHORED\"", "provenance: \"UNTRUSTED\""),
             "object mutation": ("08fa5a6906ce4bd7895e0a75badac671651b2bb9", "0" * 40),
             "allowlist object mutation": ("dfd72d7f31980aa452bfd67628e635a769b3207f", "0" * 40),
@@ -259,7 +260,7 @@ class B098VerifierTests(unittest.TestCase):
         for length in (41, 63):
             with self.subTest(checkpoint_length=length):
                 mutated = baseline.replace(
-                    'checkpoint_sha: "404e17ef1dc7d205da97e65c6dc18f1225452405"',
+                    'checkpoint_sha: "1126e25d294ae16e73efa70004642e34f223285d"',
                     f'checkpoint_sha: "{"a" * length}"',
                     1,
                 )
@@ -268,7 +269,7 @@ class B098VerifierTests(unittest.TestCase):
         receipt_text = (ROOT / "evidence/owner-actions/B-098/release-governance-blocker-2026-09-09.json").read_text()
         for label, replacement in {
             "receipt census checkpoint drift": (
-                'checkpoint_sha: "404e17ef1dc7d205da97e65c6dc18f1225452405"',
+                'checkpoint_sha: "1126e25d294ae16e73efa70004642e34f223285d"',
                 'checkpoint_sha: "' + "a" * 40 + '"',
             ),
             "receipt census capture drift": (
@@ -318,6 +319,40 @@ class B098VerifierTests(unittest.TestCase):
         mutated = claude.replace(census, f"{census}\n{census}", 1)
         with self.assertRaises(verifier.VerificationError):
             verifier.audit(ROOT, claude_text=mutated)
+
+    def test_cargo_metadata_package_ids_are_unique_and_well_formed(self) -> None:
+        def mocked_metadata(packages: object):
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"packages": packages}),
+                stderr="",
+            )
+
+        cases = {
+            "duplicate ids": [
+                {"id": "path+first#1.0.0"},
+                {"id": "path+first#1.0.0"},
+            ],
+            "missing id": [{"name": "first"}],
+            "non-string id": [{"id": 1}],
+            "non-object package": ["path+first#1.0.0"],
+        }
+        for label, packages in cases.items():
+            with self.subTest(label=label), patch.object(
+                verifier.subprocess, "run", return_value=mocked_metadata(packages)
+            ):
+                with self.assertRaises(verifier.VerificationError):
+                    verifier.package_count(ROOT)
+
+        unique = [
+            {"id": "path+first#1.0.0"},
+            {"id": "path+second#1.0.0"},
+            {"id": "registry+https://github.com/rust-lang/crates.io-index#third@1.0.0"},
+        ]
+        with patch.object(
+            verifier.subprocess, "run", return_value=mocked_metadata(unique)
+        ):
+            self.assertEqual(verifier.package_count(ROOT), len(unique))
 
     def test_cli_reports_open_without_mutating_refs(self) -> None:
         before = subprocess.check_output(["git", "show-ref", "--tags"], cwd=ROOT, text=True)

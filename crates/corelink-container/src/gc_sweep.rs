@@ -302,6 +302,18 @@ pub fn run_production(config: &GcProductionConfig) -> Result<SweepReport, String
     validate_observation_region(config.region)?;
     validate_observation_candidate_limit(config.max_candidates)?;
     let d1 = Arc::new(D1HttpClient::from_d1_env()?);
+    // Check the durable hold before constructing any production adapters.
+    // The finalization trigger repeats this check inside D1, covering a hold
+    // placed after this read and before an irreversible boundary.
+    let held = query_sync(
+        &d1,
+        "SELECT 1 AS held FROM tenant_legal_hold WHERE tenant_id = ?1 LIMIT 1",
+        &[json!(config.tenant_id.to_string())],
+    )
+    .map_err(|error| format!("legal-hold check failed closed: {error}"))?;
+    if !held.is_empty() {
+        return Err("GC refused: tenant is under an active legal hold".to_owned());
+    }
     validate_cas_bucket_for_region(&config.bucket, config.region.as_str())?;
     let runs = Arc::new(D1GcRunStore::new(Arc::clone(&d1)));
     let candidates = Arc::new(D1GcCandidatesStore::new(

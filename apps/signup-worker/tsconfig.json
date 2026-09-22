@@ -15,9 +15,18 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    // The production marker module is canonical shared source for both Worker
+    // packages. Keep it in this typecheck project instead of relying on an
+    // implicit cross-package import (which infers apps/signup-worker as the
+    // rootDir and fails with TS6059).
+    "rootDir": "../..",
     "outDir": "dist"
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "../../config/production_environment.ts"
+  ],
   "exclude": [
     // This contract test intentionally imports the standalone CAS middleware
     // from its sibling worker package. Keep it in Vitest discovery, but leave

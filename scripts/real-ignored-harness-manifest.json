@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "description": "Reviewed allow-list for the protected real integration lane. Every name is an ignored test and every source is bound by the executor verifier.",
+  "profiles": {
+    "d1": {
+      "package": "corelink-server",
+      "target": "lib",
+      "required_env": [
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CF_API_TOKEN",
+        "D1_DATABASE_ID",
+        "R2_S3_ENDPOINT",
+        "R2_S3_ACCESS_KEY_ID",
+        "R2_S3_SECRET_ACCESS_KEY"
+      ],
+      "tests": [
+        {
+          "name": "d1_acquire_lock_then_held_then_release",
+          "source": "crates/corelink-container/src/routes/tier_select_store.rs"
+        },
+        {
+          "name": "d1_dpa_and_active_subscription_reads",
+          "source": "crates/corelink-container/src/routes/tier_select_store.rs"
+        },
+        {
+          "name": "d1_persist_free_active_does_not_count_as_a_subscription",
+          "source": "crates/corelink-container/src/routes/tier_select_store.rs"
+        },
+        {
+          "name": "d1_http_blob_meta_round_trip",
+          "source": "crates/corelink-container/src/storage/d1_http.rs"
+        },
+        {
+          "name": "d1_http_tenant_admin_lookup_round_trip",
+          "source": "crates/corelink-container/src/storage/d1_http.rs"
+        },
+        {
+          "name": "d1_audit_write_blocking_records_oaudit_phase",
+          "source": "crates/corelink-container/src/storage/d1_audit_sink/tests_phase_attribution.rs"
+        }
+      ]
+    },
+    "r2": {
+      "package": "corelink-server",
+      "target": "lib",
+      "required_env": [
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CF_API_TOKEN",
+        "D1_DATABASE_ID",
+        "R2_S3_ENDPOINT",
+        "R2_S3_ACCESS_KEY_ID",
+        "R2_S3_SECRET_ACCESS_KEY",
+        "R2_TEST_BUCKET"
+      ],
+      "tests": [
+        {
+          "name": "r2_cas_list_durable_audit_failure_precedes_storage",
+          "source": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs"
+        },
+        {
+          "name": "storage_r2_round_trip",
+          "source": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs"
+        },
+        {
+          "name": "cas_idempotent_rewrite_reports_durable_false",
+          "source": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs"
+        },
+        {
+          "name": "delete_if_present_credits_size_once_then_none",
+          "source": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs"
+        },
+        {
+          "name": "r2_cas_exists_batch_fails_closed_on_bad_audit_creds",
+          "source": "crates/corelink-container/src/storage/r2_s3_parts/tests_2.rs"
+        }
+      ]
+    },
+    "stripe": {
+      "package": "corelink-stripe-real",
+      "target": "test/live_integration",
+      "features": ["live-integration"],
+      "required_env": [
+        "HUGR_WALLET_BASE",
+        "HUGR_WALLET_TOKEN",
+        "HUGR_STRIPE_REF",
+        "STRIPE_AUTH_MODE",
+        "STRIPE_PRICE_ID_STARTER"
+      ],
+      "tests": [
+        {
+          "name": "live_create_customer",
+          "source": "crates/corelink-stripe-real/tests/live_integration.rs"
+        },
+        {
+          "name": "live_get_customer_404",
+          "source": "crates/corelink-stripe-real/tests/live_integration.rs"
+        },
+        {
+          "name": "live_create_checkout_session_starter",
+          "source": "crates/corelink-stripe-real/tests/live_integration.rs"
+        },
+        {
+          "name": "live_idempotent_checkout_returns_same_session",
+          "source": "crates/corelink-stripe-real/tests/live_integration.rs"
+        },
+        {
+          "name": "live_billing_portal_session",
+          "source": "crates/corelink-stripe-real/tests/live_integration.rs"
+        },
+        {
+          "name": "live_authentication_failure_bad_token",
+          "source": "crates/corelink-stripe-real/tests/live_integration.rs"
+        }
+      ]
+    },
+    "neon": {
+      "package": "corelink-audit-chain",
+      "target": "test/neon_shadow_real",
+      "features": ["neon-real"],
+      "required_env": ["NEON_TEST_DSN"],
+      "tests": [
+        {
+          "name": "sync_chunk_persists_rows_against_live_postgres",
+          "source": "crates/corelink-audit-chain/tests/neon_shadow_real.rs"
+        },
+        {
+          "name": "sync_chunk_is_idempotent_on_replay",
+          "source": "crates/corelink-audit-chain/tests/neon_shadow_real.rs"
+        },
+        {
+          "name": "aggregate_event_count_against_live_postgres",
+          "source": "crates/corelink-audit-chain/tests/neon_shadow_real.rs"
+        },
+        {
+          "name": "aggregate_timeline_against_live_postgres",
+          "source": "crates/corelink-audit-chain/tests/neon_shadow_real.rs"
+        },
+        {
+          "name": "rls_policy_isolates_tenants_against_live_postgres",
+          "source": "crates/corelink-audit-chain/tests/neon_shadow_real.rs"
+        }
+      ]
+    }
+  }
+}

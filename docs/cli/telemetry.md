@@ -19,7 +19,7 @@ LGPD Article 8 (consent-based collection).
 
 | Field | Example | Purpose |
 |---|---|---|
-| `cli_version` | `"0.1.0"` | Track CLI adoption and drive backcompat decisions |
+| `cli_version` | `"0.1.2"` | Track CLI adoption and drive backcompat decisions |
 | `os` | `"linux-x86_64"` | Prioritize platform-specific bug fixes |
 | `subcommand` | `"ls"` | Understand which features are used |
 | `outcome` | `"ok"` | Measure CLI reliability |

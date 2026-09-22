@@ -1,0 +1,50 @@
+{
+  "schema": "corelink.d1.residency-contract-manifest.v1",
+  "issue": 1654,
+  "backlog_id": "B-086",
+  "credentialless": true,
+  "network_calls": false,
+  "mutating_actions": false,
+  "status": "open_external_decision_pending",
+  "sources": {
+    "wrangler": "wrangler.toml",
+    "legal_instrument": "legal/dpa-residency-amendment.md",
+    "backlog": "BACKLOG.md",
+    "verifier": "scripts/verify_b086_d1_residency.py"
+  },
+  "acceptance": {
+    "production_environments": [
+      "prod",
+      "prod-sam",
+      "prod-lhr",
+      "prod-nrt",
+      "prod-syd"
+    ],
+    "d1_binding": "CONFIG_DB",
+    "current_observation": {
+      "production_d1_bindings": 5,
+      "distinct_database_ids": 1,
+      "active_dpa_d1_tenant_pinned_claims": 1,
+      "active_eu_jurisdiction_bindings": 2,
+      "eu_jurisdiction_binding_kind": "R2 bucket only"
+    },
+    "minimum_distinct_database_ids": 2,
+    "resolution": [
+      "provision jurisdictional D1 databases and bind them per production region",
+      "or amend and execute the residency instrument to remove the tenant-pinned D1 claim"
+    ]
+  },
+  "external_blocker": {
+    "owner": "owner/counsel",
+    "decision": "provision jurisdictional D1 or amend and execute the residency instrument",
+    "required_artifact": "executed legal decision or fresh provider-backed D1 binding evidence",
+    "physical_primary_location_decides_closure": false,
+    "reason": "The canonical mismatch is one shared D1 identity versus the active tenant-pinned D1 claim; repository prose cannot resolve that legal choice."
+  },
+  "prohibited": [
+    "editing the signed or effective legal instrument",
+    "inventing D1 residency or jurisdiction claims",
+    "creating databases or changing deployed bindings",
+    "using credentials, network calls, or mutating provider state"
+  ]
+}

@@ -41,11 +41,11 @@ afterEach(() => {
 });
 
 describe("scheduled drill configuration", () => {
-  it("declares only the synthetic route in default/dev, never production", () => {
+  it("keeps the synthetic root trigger dormant until owner evidence exists", () => {
     const config = readFileSync(resolve(WORKTREE_ROOT, "wrangler.toml"), "utf8");
-    const expectedRows = 'crons = [\n    "0 14 * * 1",\n]';
 
-    expect(config.split(expectedRows)).toHaveLength(2);
+    expect(config).not.toMatch(/^\[triggers\]\s*$/m);
+    expect(config).not.toContain('"0 14 * * 1"');
     expect(config).not.toContain('"0 6 * * 1"');
     expect(config).toContain(
       '[[services]]\nbinding = "SCHEDULED_DRILL_DELIVERY"\nservice = "corelink-synthetic-pager"',
@@ -57,7 +57,7 @@ describe("scheduled drill configuration", () => {
 });
 
 describe("scheduled drill delivery", () => {
-  it("delivers the synthetic cron", async () => {
+  it("delivers an explicitly invoked synthetic drill", async () => {
     const cron = "0 14 * * 1";
     const drill = "synthetic_page";
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(null, { status: 202 }));

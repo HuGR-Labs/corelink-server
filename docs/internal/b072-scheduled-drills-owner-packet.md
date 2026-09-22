@@ -1,7 +1,8 @@
 # B-072 owner packet — external delivery remains outstanding
 
 Status: open. The repository now contains the fail-closed receiver Worker and
-the default/dev `SCHEDULED_DRILL_DELIVERY` service binding. The receiver stores
+the dormant default/dev `SCHEDULED_DRILL_DELIVERY` service binding. The root
+Worker has no active synthetic cron. The receiver stores
 the trigger before calling PagerDuty, records delivery only after PagerDuty
 accepts the canonical dedup key, and accepts signed acknowledgement/escalation
 webhooks only after that durable receipt. These local contracts still do not
@@ -12,7 +13,9 @@ Before changing B-072 to `done`, the owner must:
 
 1. Deploy the committed receiver Worker in the same Cloudflare account and
    verify the committed `SCHEDULED_DRILL_DELIVERY` binding for the non-production
-   environment that owns the default Worker cron. The receiver validates the
+   environment that will own any explicitly reactivated Worker trigger. There
+   is no active trigger at this commit; receiver deployment alone is not trigger
+   evidence. The receiver validates the
    fixed synthetic scheduler contract and deduplicates the
    `x-corelink-scheduled-drill-id`. For synthetic
    week 3, it must honor `delivery_mode=deferred` and schedule `emit_at_ms` for the
@@ -22,7 +25,8 @@ Before changing B-072 to `done`, the owner must:
    dedicated `synthetic-drill` service routing key, and configure its signed
    webhook subscription to the exact committed staging callback path. Both
    secrets must remain outside this Worker source and its payload/logs.
-3. Prove one successful synthetic-page path end to end: Worker cron log →
+3. After an owner-approved non-production trigger is explicitly reactivated,
+   prove one successful synthetic-page path end to end: trigger log →
    receiver request → PagerDuty incident on `synthetic-drill` → D1
    `synthetic_page_drills` row → acknowledgement/escalation outcome. Attach the
    PagerDuty incident identifier and timestamps (including the week-3 Sunday

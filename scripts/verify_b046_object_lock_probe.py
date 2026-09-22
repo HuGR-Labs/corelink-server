@@ -35,6 +35,7 @@ BACKLOG_PATH = ROOT / "BACKLOG.md"
 OKF_PATH = ROOT / "docs/knowledge/ops/r2-object-lock-probe.md"
 ADR_PATH = ROOT / "specs/03_architecture/adrs/ADR-0100-r2-object-lock-capability-gate.md"
 CHANGELOG_PATH = ROOT / "changelog.d/b046-r2-object-lock-reprobe.md"
+EVIDENCE_PATH = ROOT / "evidence/owner-actions/B-046/object-lock-probe.json"
 WORKFLOW_PATH = ROOT / ".github/workflows/backlog-verify.yml"
 ADAPTER_PATH = ROOT / "crates/corelink-container/src/routes/dsr/adapter_r2_cas_legalhold.rs"
 MIGRATION_PATH = ROOT / "migrations/d1/0102_cas_retention.sql"
@@ -43,6 +44,8 @@ NOT_SUPPORTED_RE = re.compile(r"\bNotImplemented\b|\bNot[ \t]+Implemented\b", re
 SAFE_BUCKET_RE = re.compile(r"^corelink-b046-probe-[a-z0-9-]{3,50}$")
 BACKLOG_BLOCK_RE = re.compile(r"^```backlog\n(.*?)^```", re.MULTILINE | re.DOTALL)
 B046_VERIFY_COMMAND = "python3 scripts/verify_owner_action_packets.py --id B-046"
+EVIDENCE_STATUSES = {"PASS", "NOT_SUPPORTED", "INDETERMINATE", "SKIPPED"}
+EVIDENCE_VERDICTS = {"BLOCKED", "INDETERMINATE", "SUPPORTED"}
 
 
 class ProbeError(RuntimeError):
@@ -97,6 +100,75 @@ def evaluate_operations(create: OperationResult, put: OperationResult) -> str:
     if statuses == {"PASS"}:
         return "SUPPORTED"
     raise ProbeError(f"unknown operation statuses: {sorted(statuses)}")
+
+
+def _require_string(value: object, field: str, *, allow_empty: bool = False) -> str:
+    if not isinstance(value, str) or (not allow_empty and not value.strip()):
+        raise ProbeError(f"B-046 evidence field {field!r} must be a non-empty string")
+    return value
+
+
+def _validate_operation_evidence(value: object, field: str) -> None:
+    if not isinstance(value, dict):
+        raise ProbeError(f"B-046 evidence field {field!r} must be an object")
+    expected = {"operation", "status", "provider_code", "detail", "request_reference"}
+    if set(value) != expected:
+        raise ProbeError(f"B-046 evidence {field!r} has unexpected or missing fields")
+    _require_string(value["operation"], f"{field}.operation")
+    status = _require_string(value["status"], f"{field}.status")
+    if status not in EVIDENCE_STATUSES:
+        raise ProbeError(f"B-046 evidence {field!r} has unknown status {status!r}")
+    for child in ("provider_code", "request_reference"):
+        if value[child] is not None:
+            _require_string(value[child], f"{field}.{child}")
+    _require_string(value["detail"], f"{field}.detail")
+
+
+def validate_evidence_record(raw: str) -> None:
+    """Validate the redacted external receipt without treating it as capability proof."""
+    try:
+        record = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise ProbeError(f"B-046 evidence is not valid JSON: {error}") from error
+    if not isinstance(record, dict):
+        raise ProbeError("B-046 evidence root must be an object")
+    expected = {
+        "schema_version", "captured_at", "provider", "bucket_operation",
+        "object_operation", "classification", "bucket_cleanup", "operator",
+    }
+    if set(record) != expected:
+        raise ProbeError("B-046 evidence has unexpected or missing top-level fields")
+    if record["schema_version"] != 1:
+        raise ProbeError("B-046 evidence schema_version must be 1")
+    for field in ("captured_at", "provider", "operator"):
+        _require_string(record[field], field)
+    _validate_operation_evidence(record["bucket_operation"], "bucket_operation")
+    _validate_operation_evidence(record["object_operation"], "object_operation")
+    classification = _require_string(record["classification"], "classification")
+    if classification not in EVIDENCE_VERDICTS:
+        raise ProbeError(f"B-046 evidence has unknown classification {classification!r}")
+    cleanup = record["bucket_cleanup"]
+    if not isinstance(cleanup, dict) or set(cleanup) != {"attempted", "resources_created", "reason"}:
+        raise ProbeError("B-046 evidence bucket_cleanup has unexpected or missing fields")
+    if not isinstance(cleanup["attempted"], bool) or not isinstance(cleanup["resources_created"], bool):
+        raise ProbeError("B-046 evidence cleanup flags must be boolean")
+    _require_string(cleanup["reason"], "bucket_cleanup.reason")
+    if classification == "SUPPORTED":
+        if record["bucket_operation"]["status"] != "PASS" or record["object_operation"]["status"] != "PASS":
+            raise ProbeError("SUPPORTED B-046 evidence requires both operations to pass")
+    elif classification == "BLOCKED":
+        if "NOT_SUPPORTED" not in {
+            record["bucket_operation"]["status"], record["object_operation"]["status"]
+        }:
+            raise ProbeError("BLOCKED B-046 evidence requires explicit provider NotImplemented")
+    else:
+        if record["bucket_operation"]["status"] == "PASS" and record["object_operation"]["status"] == "PASS":
+            raise ProbeError("INDETERMINATE B-046 evidence cannot have two passing operations")
+    if cleanup["resources_created"] and not cleanup["attempted"]:
+        raise ProbeError("B-046 evidence cannot report resources without cleanup being attempted")
+    evidence_text = json.dumps(record, ensure_ascii=False)
+    if re.search(r"AWS_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)|R2_S3_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)", evidence_text):
+        raise ProbeError("B-046 evidence contains a credential-shaped field")
 
 
 def redact(value: str, secrets: Sequence[str]) -> str:
@@ -272,6 +344,12 @@ def _required_markers() -> Mapping[str, tuple[str, ...]]:
             "NotImplemented",
             "does not claim a Compliance guarantee",
         ),
+        EVIDENCE_PATH.as_posix(): (
+            '"schema_version": 1',
+            '"classification": "INDETERMINATE"',
+            '"provider_code": "InvalidArgument"',
+            '"status": "SKIPPED"',
+        ),
         WORKFLOW_PATH.as_posix(): (
             "scripts/verify_b046_object_lock_probe.py",
             "tests/test_verify_b046_object_lock_probe.py",
@@ -299,6 +377,7 @@ def validate_repository_contract(files: Mapping[str, str] | None = None) -> None
         OKF_PATH,
         ADR_PATH,
         CHANGELOG_PATH,
+        EVIDENCE_PATH,
         WORKFLOW_PATH,
         ADAPTER_PATH,
         MIGRATION_PATH,
@@ -310,6 +389,7 @@ def validate_repository_contract(files: Mapping[str, str] | None = None) -> None
         missing = [marker for marker in markers if marker not in text]
         if missing:
             raise ProbeError(f"{path} missing contract markers: {', '.join(missing)}")
+    validate_evidence_record(texts[EVIDENCE_PATH.as_posix()])
     backlog = texts[BACKLOG_PATH.as_posix()]
     b046 = _b046_record(backlog)
     if _record_field(b046, "status") != "parked":

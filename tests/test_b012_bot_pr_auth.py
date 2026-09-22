@@ -65,7 +65,7 @@ class B012BotPrAuthTests(unittest.TestCase):
                 text = source.read_text(encoding="utf-8")
                 if name == "api-reference-sync.yml":
                     text = text.replace(
-                        'BOT_PR_TOKEN: ${{ secrets.BOT_PR_TOKEN }}',
+                        'BOT_APP_TOKEN: ${{ steps.app-token.outputs.token }}',
                         'GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}',
                         1,
                     )
@@ -98,7 +98,7 @@ class B012BotPrAuthTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         path = candidate / ".github/workflows/okf-autoreconcile.yml"
         text = path.read_text(encoding="utf-8").replace(
-            "          token: ${{ secrets.BOT_PR_TOKEN }}\n", ""
+            "          token: ${{ steps.app-token.outputs.token }}\n", ""
         )
         path.write_text(text, encoding="utf-8")
         self.assertTrue(any("okf-autoreconcile.yml: checkout" in e for e in verify(candidate)))

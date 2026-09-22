@@ -460,20 +460,19 @@ jobs:
   mutants-workspace:
     if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all' || inputs.lane == 'mutants'
     name: cargo-mutants workspace (fail-on-any-survivor)
-    runs-on: [self-hosted, mac, corelink-builder]
+    # This lane is isolated from the shared Mac fleet. GitHub-hosted Linux
+    # provides a disposable workspace and a native runner for the pinned
+    # cargo-mutants binary.
+    runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
-      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
-      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
-      # `rustc` unexecutable mid-build for every other job — it took the host down
-      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
-      # default, silently moving every concurrent job off the ADR-0015 reproducibility
-      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
-      - name: Use the workspace-pinned host toolchain (provisions nothing)
-        run: bash scripts/ci-use-host-toolchain.sh
+      # Hosted runners are disposable, so provision and assert the exact
+      # workspace pin through rustup instead of depending on a Mac host image.
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        timeout-minutes: 10
+        run: bash scripts/ci-assert-pinned-toolchain.sh
 
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
