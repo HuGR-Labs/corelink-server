@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "issue": "#1644",
+  "backlog_id": "B-032",
+  "status": "pending_external",
+  "captured_at": "2026-09-22",
+  "cadence": {
+    "critical": "quarterly",
+    "cadence_days": 90,
+    "baseline_last_review": "2026-05-15",
+    "scheduled_next_review": "2026-08-15",
+    "days_overdue_at_capture": 38
+  },
+  "accountable_owner": "owner",
+  "review_owner": "VP-Sec",
+  "source_register": "specs/_compliance/VENDOR-RISK-REGISTER.md",
+  "vendors": [
+    {
+      "id": "cloudflare",
+      "name": "Cloudflare, Inc.",
+      "category": "Critical",
+      "last_review": "2026-05-15",
+      "next_review": "2026-08-15",
+      "owner": "VP-Sec",
+      "canonical_record": "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md",
+      "record_kind": "repository_template",
+      "evidence_status": "template_pending_external_review"
+    },
+    {
+      "id": "stripe",
+      "name": "Stripe, Inc.",
+      "category": "Critical",
+      "last_review": "2026-05-15",
+      "next_review": "2026-08-15",
+      "owner": "VP-Sec",
+      "canonical_record": "docs/compliance/vendor-reviews/stripe-dpa-review-2026-04.md",
+      "record_kind": "repository_template",
+      "evidence_status": "template_pending_external_review"
+    },
+    {
+      "id": "clerk",
+      "name": "Clerk, Inc.",
+      "category": "Critical",
+      "last_review": "2026-05-15",
+      "next_review": "2026-08-15",
+      "owner": "VP-Sec",
+      "canonical_record": "docs/compliance/vendor-reviews/clerk-dpa-review-2026-04.md",
+      "record_kind": "repository_template",
+      "evidence_status": "template_pending_external_review"
+    },
+    {
+      "id": "aws-kms",
+      "name": "Amazon Web Services, Inc.",
+      "category": "Critical",
+      "last_review": "2026-05-15",
+      "next_review": "2026-08-15",
+      "owner": "VP-Sec",
+      "canonical_record": null,
+      "record_kind": "external_drata_or_aws_artifact",
+      "evidence_status": "external_evidence_required"
+    },
+    {
+      "id": "gcp-kms",
+      "name": "Google LLC (Google Cloud)",
+      "category": "Critical",
+      "last_review": "2026-05-15",
+      "next_review": "2026-08-15",
+      "owner": "VP-Sec",
+      "canonical_record": null,
+      "record_kind": "external_drata_or_google_compliance_reports_manager",
+      "evidence_status": "external_evidence_required"
+    },
+    {
+      "id": "azure-key-vault",
+      "name": "Microsoft Corporation (Azure)",
+      "category": "Critical",
+      "last_review": "2026-05-15",
+      "next_review": "2026-08-15",
+      "owner": "VP-Sec",
+      "canonical_record": null,
+      "record_kind": "external_drata_or_service_trust_portal",
+      "evidence_status": "external_evidence_required"
+    },
+    {
+      "id": "drata",
+      "name": "Drata, Inc.",
+      "category": "Critical",
+      "last_review": "2026-05-15",
+      "next_review": "2026-08-15",
+      "owner": "VP-Sec",
+      "canonical_record": null,
+      "record_kind": "external_drata_vendor_module",
+      "evidence_status": "external_credential_and_workspace_export_required"
+    }
+  ],
+  "non_claims": [
+    "No review, signature, approval, SOC 2 report, ISO certificate, or Drata export is claimed.",
+    "Repository templates are structural packets only and are not completed reviews.",
+    "Public vendor pages do not close the Critical review cadence item.",
+    "The manifest does not authorize editing effective legal or contractual text."
+  ],
+  "next_external_action": "Owner supplies an authorized Drata credential or workspace export; VP-Sec/Compliance records current evidence and dated review outcomes in the canonical system of record."
+}
