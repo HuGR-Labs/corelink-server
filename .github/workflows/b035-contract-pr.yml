@@ -1,0 +1,33 @@
+name: B-035 TLS contract PR guard
+
+# The repository-level B-035 workflow is manually disabled in this repository.
+# This PR guard keeps the exact static/mutation contract checks hosted and
+# credential-free; it never calls a provider and never changes legal state.
+on:
+  pull_request:
+    paths:
+      - "scripts/verify_b035_tls_surfaces.py"
+      - "tests/test_verify_b035_tls_surfaces.py"
+      - "reports/b035/**"
+      - ".github/workflows/b035-contract-pr.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  b035-contract:
+    name: static and mutation contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify fail-closed mutation behavior
+        run: python3 scripts/verify_b035_tls_surfaces.py --self-test
+      - name: Run focused B-035 contract tests
+        run: python3 -m unittest -v tests/test_verify_b035_tls_surfaces.py
+      - name: Emit redacted static evidence
+        run: python3 scripts/verify_b035_tls_surfaces.py --expect-open --json
