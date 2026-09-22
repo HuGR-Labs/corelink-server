@@ -13,6 +13,10 @@ on:
         description: "40 character SHA confirmed on the deployed target"
         required: true
         type: string
+      deployed_region:
+        description: "Canonical deployed region confirmed on the target wire"
+        required: true
+        type: string
       tenant:
         description: "Approved dogfood tenant UUID"
         required: true
@@ -53,6 +57,7 @@ jobs:
           TENANT: ${{ inputs.tenant }}
           CARGO_KEY: ${{ inputs.cargo_key }}
           DEPLOYED_SHA: ${{ inputs.deployed_sha }}
+          DEPLOYED_REGION: ${{ inputs.deployed_region }}
           CORELINK_DEPLOYED_COMMIT: ${{ inputs.deployed_sha }}
           OWNER_APPROVED_PROBE: ${{ inputs.owner_approved_probe }}
           DEPLOYED_SERVER_TIMING_WDB_DETAIL: ${{ inputs.deployed_server_timing_wdb_detail }}
@@ -62,7 +67,7 @@ jobs:
           mkdir -p artifacts
           python3 scripts/probe_i1671_b129.py \
             --target "$TARGET" --tenant "$TENANT" --cargo-key "$CARGO_KEY" \
-            --deployed-sha "$DEPLOYED_SHA" --samples 10 \
+            --deployed-sha "$DEPLOYED_SHA" --deployed-region "$DEPLOYED_REGION" --samples 10 \
             --output artifacts/issue-1671-b129-receipt.json
           # The output is already redacted: no PAT or response body is retained.
           python3 - <<'PY'
