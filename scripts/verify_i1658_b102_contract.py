@@ -66,7 +66,7 @@ def main() -> int:
         'TARGET = "https://staging.corelink.humangr.com"',
         'RETRYABLE = {429, 500, 502, 503, 504}',
         '"attempts": 1',
-        'method == "DELETE"',
+        'cleanup = request(base, tenant, token, "DELETE"',
         'row["hashing_phase"] = "ohandler"',
         '"ostore"',
         '"oaccounting"',
