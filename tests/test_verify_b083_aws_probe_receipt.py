@@ -32,7 +32,14 @@ def test_aws_probe_receipt_green_then_named_red_mutants() -> None:
         assert green.returncode == 0, green.stdout + green.stderr
         assert "partial provider boundary" in green.stdout
 
-        record = json.loads(path.read_text(encoding="utf-8"))
+        record = json.loads((ROOT / EVIDENCE).read_text(encoding="utf-8"))
+        record["schema_version"] = True
+        path.write_text(json.dumps(record), encoding="utf-8")
+        bool_schema = _run(tree)
+        assert bool_schema.returncode != 0
+        assert "must be the integer 1" in bool_schema.stderr
+
+        record = json.loads((ROOT / EVIDENCE).read_text(encoding="utf-8"))
         record["conclusion"]["closure_eligibility"] = "ELIGIBLE"
         path.write_text(json.dumps(record), encoding="utf-8")
         forged_closure = _run(tree)
