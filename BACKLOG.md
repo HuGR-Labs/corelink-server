@@ -15056,6 +15056,20 @@ SARIF em vez de alegar upload no Security tab. O packet de ação está em
 enquanto o braço `secrets-drift` — explicitamente separado e pertencente ao B-132 — não for
 fechado no mesmo cutover; não se conta o slice como fechamento do item inteiro.
 
+**Reconciliação de evidência 2026-09-22 — residual externo ainda aberto.** O PR #1774 foi
+integrado em `main` no commit `5cfcb86c64f4fc6e6b885ccd414ecf5d411dfe13`; o recibo hospedado
+focado de CodeQL é o run
+`https://github.com/HuGR-dev/corelink-server/actions/runs/35695599538` (Rust,
+JavaScript/TypeScript e Python, com os artefatos SARIF e as guardas de evidência verdes). A
+execução agendada de `secrets-drift` mais recente que a plataforma ainda lista como sucesso é
+`https://github.com/HuGR-dev/corelink-server/actions/runs/33489746051`, de 2026-09-01, e já
+está fora da janela de 26 horas exigida pelo watchdog. A dispatch manual não satisfaz o
+predicado: `scripts/check_secrets_drift_evidence.py` exige `event=schedule` e
+`head_branch=main`; não há um recibo agendado atual nem um resultado atual do watchdog. Os
+workflows permanecem desabilitados até que o owner autorize e disponibilize a lane; portanto
+este item permanece `parked`, a issue #1674 permanece aberta, e não se afirma fechamento por
+fiação estrutural ou por um run manual.
+
 ```backlog
 id: B-142
 repo: corelink-server
