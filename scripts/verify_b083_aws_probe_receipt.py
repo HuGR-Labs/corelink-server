@@ -95,8 +95,8 @@ def _observation(name: str, value: Any, seen_receipts: set[str]) -> None:
 
 def validate_record(record: Any) -> None:
     root = _exact(record, frozenset({"schema_version", "captured_at", "provider", "scope", "identity_boundary", "observations", "runtime_binding", "conclusion"}), "AWS KMS probe")
-    if root["schema_version"] != 1:
-        raise EvidenceError("schema_version must be 1")
+    if type(root["schema_version"]) is not int or root["schema_version"] != 1:
+        raise EvidenceError("schema_version must be the integer 1")
     if not isinstance(root["captured_at"], str) or not UTC_TIMESTAMP.fullmatch(root["captured_at"]):
         raise EvidenceError("captured_at must be a UTC second-precision timestamp")
     if root["provider"] != "aws-kms":
