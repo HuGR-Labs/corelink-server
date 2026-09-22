@@ -49,3 +49,30 @@ Erased tenants remain legitimate retained audit evidence. They still fail this
 *residency proof* because their `primary_region` no longer exists, while their
 retention/erasure semantics remain unchanged. The unexplained-orphan counts are
 separate specifically so they cannot disappear from the denominator.
+
+## Offline classification of a retained hosted receipt
+
+The manual #1669 workflow uploads aggregate counts and SHA-256 bindings only;
+it does not retain tenant identifiers or row payloads. Classify a downloaded
+redacted receipt without Cloudflare credentials:
+
+```bash
+python3 scripts/classify_i1669_receipt.py \
+  /restricted/path/issue-1669-read-only-receipt.json \
+  --sha256 /restricted/path/issue-1669-read-only-receipt.sha256
+```
+
+The command validates the artifact checksum, receipt digest, exact query hashes, all three
+population partitions, and the fail-closed verdict. Its disjoint classes give
+every row an aggregate disposition: satisfied, violated, retained DSR orphan,
+unexplained orphan, other unevaluable customer row, valid `_public`, or invalid
+`_public`. Retained DSR orphans are marked **preserve**; unexplained orphans are
+marked **preserve and require restricted owner reconciliation**. Neither class
+is treated as residency-compliant, and the command cannot assign an individual
+tenant identity from aggregate-only evidence.
+
+Keep the restricted crosswalk and any row-level evidence in the approved
+restricted store. Do not rewrite or delete retained audit rows to make the
+aggregate green. An unexplained residual remains open until the data owner
+records a disposition for every affected tenant and row; any historical repair
+requires a separate approved, auditable change.
