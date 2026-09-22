@@ -201,17 +201,32 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
 
   it("emits a critical alert and requeues exactly once", async () => {
     const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
-    const m = fakeDlq(msg("dlq-1"));
+    const body: DsrDlqBody = {
+      ...msg("dlq-1"),
+      tenant_id: "tenant-private-canary",
+      subject_id: "subject-private-canary",
+      clerk_user_id: "user_private_canary",
+      erasure_salt_hex: "ab".repeat(32),
+    };
+    const m = fakeDlq(body);
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     let errorCalls: unknown[][] = [];
+    const env = pagedEnv(send);
     try {
-      await handleErasureDlqBatch({ messages: [m] }, pagedEnv(send));
+      await handleErasureDlqBatch({ messages: [m] }, env);
     } finally {
       errorCalls = error.mock.calls;
       error.mockRestore();
     }
     expect(send).toHaveBeenCalledOnce();
-    expect(send.mock.calls[0]?.[0]).toMatchObject({ dsr_id: "dlq-1", _dlq_requeue: 1 });
+    expect(send.mock.calls[0]?.[0]).toMatchObject({
+      dsr_id: "dlq-1",
+      tenant_id: "tenant-private-canary",
+      subject_id: "subject-private-canary",
+      clerk_user_id: "user_private_canary",
+      erasure_salt_hex: "ab".repeat(32),
+      _dlq_requeue: 1,
+    });
     expect(m.ack).toHaveBeenCalledOnce();
     expect(m.retry).not.toHaveBeenCalled();
     expect(errorCalls).toHaveLength(1);
@@ -225,7 +240,18 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       paging_configured: true,
     });
     expect(String(alert.event_id)).toMatch(/^dsr-erasure-dlq:[0-9a-f]{64}$/);
-    expect(JSON.stringify(alert)).not.toContain("dlq-1");
+    const privateDsrFields = [
+      "dlq-1",
+      "tenant-private-canary",
+      "subject-private-canary",
+      "user_private_canary",
+      "ab".repeat(32),
+    ];
+    for (const privateValue of privateDsrFields) {
+      expect(JSON.stringify(alert)).not.toContain(privateValue);
+      expect(JSON.stringify(env.PAGERDUTY_FETCH.mock.calls)).not.toContain(privateValue);
+      expect(JSON.stringify(errorCalls)).not.toContain(privateValue);
+    }
   });
 
   it("leaves an already requeued message dead and alerts without looping", async () => {
