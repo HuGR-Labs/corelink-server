@@ -169,7 +169,12 @@ jobs:
           # Call the binary by its absolute path here; the `>> $GITHUB_PATH`
           # above is still what serves every LATER step.
           echo "${BUCK2_INSTALL_DIR}" >> "${GITHUB_PATH}"
-          "${BUCK2_INSTALL_DIR}/buck2" --version
+          VERSION_OUTPUT="$("${BUCK2_INSTALL_DIR}/buck2" --version)"
+          printf '%s\n' "${VERSION_OUTPUT}"
+          grep -F -- "${BUCK2_VERSION}" <<<"${VERSION_OUTPUT}" || {
+            echo "::error::Buck2 reported an unexpected version: ${VERSION_OUTPUT}" >&2
+            exit 1
+          }
 
       # ── C++ toolchain ─────────────────────────────────────────────────────
       - name: Install C++ toolchain
