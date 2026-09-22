@@ -1,0 +1,72 @@
+{
+  "schema": "corelink.authenticated-404.contract-manifest.v1",
+  "issue": 1660,
+  "backlog_id": "B-104",
+  "status": "open_external_measurement_required",
+  "credentialless": true,
+  "network_calls": false,
+  "mutating_actions": false,
+  "scope": {
+    "request": "GET /cargo/<tenant>/<fresh-64-hex-key>",
+    "population": "authenticated nonexistent cache keys",
+    "minimum_samples": 10,
+    "controls": [
+      "GET /health without credentials -> 200",
+      "GET /cargo/<tenant>/<fresh-64-hex-key> without credentials -> 401 or 403"
+    ],
+    "required_result": "every authenticated sample -> 404",
+    "statistics": ["arithmetic median", "nearest-rank p90"],
+    "forbidden_shortcuts": [
+      "single sample",
+      "maximum-only claim",
+      "wall-time-only attribution",
+      "partial population",
+      "auth refusal counted as a served miss"
+    ]
+  },
+  "paths": {
+    "probe": "scripts/probe-authenticated-404.sh",
+    "runbook": "specs/_runbooks/RB-B104-AUTHENTICATED-404.md",
+    "route_match": "worker/src/route_match.ts",
+    "auth_stage": "worker/src/index_auth_stage.ts",
+    "timing_merge": "worker/src/index_finish_stage.ts",
+    "timing_vocabulary": "worker/src/index_observability.ts",
+    "container_timing": "crates/corelink-container/src/origin_timing.rs",
+    "cargo_route": "crates/corelink-container/src/routes/cargo/part-00.rs",
+    "miss_map": "crates/corelink-container/src/adapter_cache.rs",
+    "co_read": "crates/corelink-container/src/d1_coread.rs"
+  },
+  "attribution": {
+    "edge": ["auth", "wdb", "total"],
+    "container": ["origin", "ohop", "opat", "oquota", "ostore", "oaccounting", "ohandler"],
+    "miss_signal": "HTTP 404 plus opat present and ostore absent; opat includes the cargo URL-map co-read",
+    "padded_signal": "total includes the deliberate 404 timing pad and is retained only as end-to-end context",
+    "legacy_alias": "oother maps to ohandler once; conflicting or missing required phases fail the probe"
+  },
+  "invariants": [
+    "unauthenticated controls and authenticated miss samples are separate populations",
+    "PAT values, random keys, response bodies, headers, and personal data never enter the committed artifact",
+    "fixed phase vocabulary keeps metric cardinality bounded; descriptor cache-tier text is not emitted",
+    "the timing pad remains enabled; instrumentation does not alter status, route, auth, or storage decisions",
+    "a missing phase cannot be interpreted as zero latency",
+    "the probe performs only GET requests and cannot close the issue without fresh external evidence"
+  ],
+  "closure": {
+    "target": "median authenticated miss latency in the order of low tens of milliseconds",
+    "required_receipt": [
+      "deployed Worker/container version",
+      "at least ten authenticated 404 samples",
+      "median and p90 for wall time and fixed attribution phases",
+      "redacted output linked to issue #1660"
+    ],
+    "current_blocker": "production credential and authority evidence are unavailable in this repository-only change",
+    "backlog_reconciliation": "deferred until the external receipt exists"
+  },
+  "prohibited": [
+    "live load generation",
+    "production deployment",
+    "padding removal or bypass",
+    "PAT or tenant secret values in GitHub",
+    "campaign or unrelated backlog edits"
+  ]
+}
