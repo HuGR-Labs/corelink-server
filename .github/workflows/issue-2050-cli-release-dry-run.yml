@@ -80,6 +80,31 @@ jobs:
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
           tool: cargo-zigbuild@0.19.8
+      - name: Install and verify pinned MinGW-w64 dlltool
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_MINGW_W64_VERSION=14.0.0
+          EXPECTED_DLLTOOL_VERSION='GNU dlltool (GNU Binutils) 2.47'
+          MINGW_W64_FORMULA_URL=https://raw.githubusercontent.com/Homebrew/homebrew-core/00e77a1611f627f2ea8f876fad0468f2c4b3ed20/Formula/m/mingw-w64.rb
+          brew install "${MINGW_W64_FORMULA_URL}"
+          ACTUAL_MINGW_W64_VERSION="$(brew list --versions mingw-w64 | awk '{print $2}')"
+          if [ "${ACTUAL_MINGW_W64_VERSION}" != "${EXPECTED_MINGW_W64_VERSION}" ]; then
+            echo "::error::release dry-run needs MinGW-w64 ${EXPECTED_MINGW_W64_VERSION}, got ${ACTUAL_MINGW_W64_VERSION}." >&2
+            exit 1
+          fi
+          DLLTOOL_PATH="$(brew --prefix mingw-w64)/bin/x86_64-w64-mingw32-dlltool"
+          if [ ! -x "${DLLTOOL_PATH}" ]; then
+            echo "::error::pinned MinGW-w64 is missing x86_64-w64-mingw32-dlltool at ${DLLTOOL_PATH}." >&2
+            exit 1
+          fi
+          ACTUAL_DLLTOOL_VERSION="$("${DLLTOOL_PATH}" --version | sed -n '1p')"
+          if [ "${ACTUAL_DLLTOOL_VERSION}" != "${EXPECTED_DLLTOOL_VERSION}" ]; then
+            echo "::error::release dry-run needs ${EXPECTED_DLLTOOL_VERSION}, got ${ACTUAL_DLLTOOL_VERSION}." >&2
+            exit 1
+          fi
+          dirname "${DLLTOOL_PATH}" >> "${GITHUB_PATH}"
+          "${DLLTOOL_PATH}" --version
       - name: Build Linux and Windows targets with cargo-zigbuild
         shell: bash
         run: |
@@ -89,6 +114,10 @@ jobs:
           # forwards these flags to the zigbuild subcommand, which rejects them.
           test "$(cargo-zigbuild --version | awk '{print $2}')" = "0.19.8"
           for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-pc-windows-gnu; do
+            if [ "${target}" = "x86_64-pc-windows-gnu" ]; then
+              command -v x86_64-w64-mingw32-dlltool
+              test "$(x86_64-w64-mingw32-dlltool --version | sed -n '1p')" = 'GNU dlltool (GNU Binutils) 2.47'
+            fi
             CARGO_TARGET_DIR="${RUNNER_TEMP}/corelink-target/${target}" \
               cargo zigbuild -p corelink-cli --release --locked --target "${target}"
           done
