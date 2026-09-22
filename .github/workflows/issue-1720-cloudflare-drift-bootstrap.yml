@@ -133,6 +133,9 @@ jobs:
             cloudflare_get "$endpoint" "$receipt"
             echo "::notice::Read receipt PASS: $label"
           done
+          account_receipt="${CF_ACCOUNT_ID:0:6}...${CF_ACCOUNT_ID: -4}"
+          zone_receipt="${CF_ZONE_ID:0:6}...${CF_ZONE_ID: -4}"
+          echo "::notice::Scope receipt: account=$account_receipt zone=$zone_receipt account_reads=4 zone_reads=2"
           unset CF_ACCESS_TOKEN
           echo "::notice::Stored CF_TERRAFORM_DRIFT_API_TOKEN with four account and two humangr.com zone read groups."
 
