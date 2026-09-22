@@ -1,0 +1,57 @@
+{
+  "schema": "corelink.pagerduty.contract-manifest.v1",
+  "issue": 1641,
+  "credentialless": true,
+  "network_calls": false,
+  "mutating_actions": false,
+  "status": "repository_contract_ready_external_receipt_pending",
+  "github_hosted_command": "python3 scripts/verify_i1641_pagerduty_contract.py",
+  "github_hosted_command_contract": "Runs only against checked-out repository files; no credentials, network, PagerDuty API calls, incident actions, or campaign-ci edits.",
+  "path": {
+    "scheduler": "worker/src/index_schedule.ts",
+    "scheduler_contract": "worker/src/index_common.ts",
+    "receiver": "apps/synthetic-pager-worker/src/index.ts",
+    "receiver_contract": "apps/synthetic-pager-worker/src/contract.ts",
+    "pagerduty_config": "infra/pagerduty/schedule.yaml",
+    "lifecycle_migration": "migrations/d1/0116_synthetic_page_delivery_lifecycle.sql",
+    "runbook": "specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md",
+    "policy": "specs/_runbooks/RB-ONCALL-POLICY.md"
+  },
+  "contract": {
+    "cron": "0 14 * * 1",
+    "service": "synthetic-drill",
+    "endpoint": "https://events.pagerduty.com/v2/enqueue",
+    "event_action": "trigger",
+    "severity": "info",
+    "semantic_severity": "sev2_synthetic",
+    "dedup_key": "SP-<13-digit scheduled timestamp>",
+    "correlation_prefix": "PAT-CORRELATION-ID-001:",
+    "boundary_handoff": {
+      "delivery_mode": "deferred",
+      "emit_at": "following Sunday 23:59:00 UTC"
+    },
+    "escalation_policy": {
+      "name": "corelink-incident-response",
+      "delays_minutes": [5, 10, 30],
+      "references": ["corelink-oncall-tier-1", "corelink-oncall-tier-2", "corelink-oncall-tier-3"]
+    }
+  },
+  "receipts": {
+    "required_chain": [
+      "scheduler acceptance",
+      "receiver D1 triggered row",
+      "PagerDuty incident id and timestamp",
+      "signed acknowledgement or escalation webhook",
+      "D1 outcome and mtta_ms"
+    ],
+    "repository_proof": "The scheduler, receiver, schema, and webhook path are statically verifiable here.",
+    "external_owner_artifact": "PagerDuty incident timeline export plus matching D1 drill row for one staging synthetic drill.",
+    "external_owner": "SRE Lead",
+    "blocker": "No repository or credentialless check can prove PagerDuty acceptance or human acknowledgement."
+  },
+  "prohibited": [
+    "routing keys or webhook secrets in git",
+    "direct PagerDuty calls from the scheduler",
+    "production synthetic-drill activation without an explicit reviewed deployment"
+  ]
+}
