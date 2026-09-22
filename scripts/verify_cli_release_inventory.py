@@ -74,8 +74,10 @@ def subject_digests(statement: dict[str, object]) -> dict[str, str]:
         if not isinstance(item, dict) or set(item) != {"name", "digest"}:
             raise ValueError(f"provenance subject[{index}] has a non-canonical shape")
         name, digest = item.get("name"), item.get("digest")
-        if not isinstance(name, str) or not name or name in result:
+        if not isinstance(name, str) or not name:
             raise ValueError(f"provenance subject[{index}] has an invalid name")
+        if name in result:
+            raise ValueError(f"provenance subject[{index}] has a duplicate name")
         if (not isinstance(digest, dict) or set(digest) != {"sha256"}
                 or not isinstance(digest.get("sha256"), str)
                 or not re.fullmatch(r"[0-9a-fA-F]{64}", digest["sha256"])):
