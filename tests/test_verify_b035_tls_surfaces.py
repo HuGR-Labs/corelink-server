@@ -31,6 +31,33 @@ class B035TlsSurfaceTests(unittest.TestCase):
         self.assertEqual(report["external_surface"]["protocol_floor"], "TLS 1.2")
         self.assertIn("no cipher-suite floor", report["external_surface"]["cipher_policy"])
 
+    def test_surface_inventory_is_source_bound_and_covers_route_families(self) -> None:
+        surfaces = verify.inventory()["external_surface"]["named_surfaces"]
+        self.assertGreaterEqual(len(surfaces), 22)
+        self.assertTrue(
+            all(
+                {"name", "kind", "hostname", "enforcement", "source", "status"}
+                <= set(surface)
+                for surface in surfaces
+            )
+        )
+        hostnames = {surface["hostname"] for surface in surfaces}
+        self.assertIn("humangr.com/corelink/*", hostnames)
+        self.assertIn("humangr.com/corelink/docs", hostnames)
+        self.assertIn("humangr.com/corelink/docs/*", hostnames)
+        self.assertIn("api.humangr.com/*", hostnames)
+        self.assertIn("<region>.api.humangr.com/*", hostnames)
+        self.assertIn(
+            "staging.corelink.humangr.com/v1/webhooks/pagerduty", hostnames
+        )
+        self.assertIn("events.pagerduty.com/v2/enqueue", hostnames)
+        self.assertIn(
+            "github.com/HuGR-Labs/corelink-cli/releases/latest/download", hostnames
+        )
+        self.assertTrue(
+            all(boundary["status"] for boundary in verify.PROVIDER_BOUNDARIES)
+        )
+
     def test_each_instrument_is_required_and_missing_file_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

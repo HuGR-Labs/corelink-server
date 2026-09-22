@@ -37,24 +37,41 @@ PROTOCOL_FLOOR = "1.2"
 CIPHER_POLICY = "external Cloudflare policy; no cipher-suite floor is claimed or verified"
 
 # Keep the contract audit honest about the traffic surfaces it covers.  These
-# are the hostnames declared by the Worker/Pages route manifests, plus the R2
-# endpoints used by the container.  Cloudflare's zone setting applies to every
-# proxied hostname in this zone; it does not configure TLS on an R2 origin.
-# The latter is deliberately recorded as a provider boundary rather than
-# inferred from the edge setting.
+# are the ingress routes and explicit egress URLs found in the Worker/Terraform
+# manifests, plus the R2 endpoints used by the container.  Cloudflare's zone
+# setting applies to proxied hostnames in this zone; it does not configure TLS
+# on an R2 origin or prove a provider-managed egress policy.  Every row carries
+# its source and proof status so a repository declaration cannot be mistaken
+# for live provider evidence.
 NAMED_SURFACES = (
-    {"name": "corelink-api", "kind": "ingress", "hostname": "corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
-    {"name": "corelink-oci", "kind": "ingress", "hostname": "corelink-oci.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
-    {"name": "regional-api-sam", "kind": "custom_domain", "hostname": "sam.corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
-    {"name": "regional-api-lhr", "kind": "custom_domain", "hostname": "lhr.corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
-    {"name": "regional-api-nrt", "kind": "custom_domain", "hostname": "nrt.corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
-    {"name": "regional-api-syd", "kind": "custom_domain", "hostname": "syd.corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
-    {"name": "signup-worker", "kind": "ingress", "hostname": "corelink-signup.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
-    {"name": "get-worker", "kind": "ingress", "hostname": "corelink-get.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
-    {"name": "analytics-worker", "kind": "custom_domain", "hostname": "corelink-analytics.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
-    {"name": "docs-pages", "kind": "custom_domain", "hostname": "corelink-docs.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
-    {"name": "r2-global", "kind": "egress", "hostname": "*.r2.cloudflarestorage.com", "enforcement": "Cloudflare R2 provider TLS policy; no repo setting"},
-    {"name": "r2-eu", "kind": "egress", "hostname": "*.eu.r2.cloudflarestorage.com", "enforcement": "Cloudflare R2 provider TLS policy; no repo setting"},
+    {"name": "corelink-api", "kind": "ingress", "hostname": "corelink-api.humangr.com/*", "enforcement": "Cloudflare zone min_tls_version", "source": "wrangler.toml:340-342", "status": "production_route_declared"},
+    {"name": "corelink-oci", "kind": "ingress", "hostname": "corelink-oci.humangr.com/*", "enforcement": "Cloudflare zone min_tls_version", "source": "wrangler.toml:349-351", "status": "production_route_declared"},
+    {"name": "regional-api-sam", "kind": "ingress", "hostname": "sam.corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version", "source": "wrangler.toml:665-667", "status": "production_custom_domain_declared"},
+    {"name": "regional-api-lhr", "kind": "ingress", "hostname": "lhr.corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version", "source": "wrangler.toml:837-839", "status": "production_custom_domain_declared"},
+    {"name": "regional-api-nrt", "kind": "ingress", "hostname": "nrt.corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version", "source": "wrangler.toml:1013-1015", "status": "production_custom_domain_declared"},
+    {"name": "regional-api-syd", "kind": "ingress", "hostname": "syd.corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version", "source": "wrangler.toml:1180-1182", "status": "production_custom_domain_declared"},
+    {"name": "signup-worker", "kind": "ingress", "hostname": "corelink-signup.humangr.com/*", "enforcement": "Cloudflare zone min_tls_version", "source": "apps/signup-worker/wrangler.toml:91-93", "status": "production_route_declared"},
+    {"name": "get-worker", "kind": "ingress", "hostname": "corelink-get.humangr.com/*", "enforcement": "Cloudflare zone min_tls_version", "source": "apps/get-corelink-worker/wrangler.toml:80-82", "status": "production_route_declared"},
+    {"name": "analytics-worker", "kind": "ingress", "hostname": "corelink-analytics.humangr.com", "enforcement": "Cloudflare zone min_tls_version", "source": "apps/analytics-worker/wrangler.toml:85-87", "status": "production_custom_domain_declared"},
+    {"name": "docs-route", "kind": "ingress", "hostname": "corelink-docs.humangr.com/*", "enforcement": "Cloudflare zone min_tls_version", "source": "apps/docs/wrangler.toml:54-56", "status": "production_route_declared"},
+    {"name": "docs-apex-bare", "kind": "ingress", "hostname": "humangr.com/corelink/docs", "enforcement": "Cloudflare zone min_tls_version", "source": "apps/docs/wrangler.toml:41-43", "status": "production_route_declared"},
+    {"name": "docs-apex-wildcard", "kind": "ingress", "hostname": "humangr.com/corelink/docs/*", "enforcement": "Cloudflare zone min_tls_version", "source": "apps/docs/wrangler.toml:45-47", "status": "production_route_declared"},
+    {"name": "admin-apex", "kind": "ingress", "hostname": "humangr.com/corelink/*", "enforcement": "Cloudflare zone min_tls_version", "source": "apps/admin-ui/wrangler.toml:68-79", "status": "operator_managed_route_not_live_verified"},
+    {"name": "synthetic-pager-staging", "kind": "ingress", "hostname": "staging.corelink.humangr.com/v1/webhooks/pagerduty", "enforcement": "Cloudflare zone min_tls_version", "source": "apps/synthetic-pager-worker/wrangler.toml:35-36", "status": "staging_route_activation_gated"},
+    {"name": "api-apex-terraform", "kind": "ingress", "hostname": "api.humangr.com/*", "enforcement": "proxied Cloudflare route; zone min_tls_version", "source": "infra/terraform/modules/cloudflare-base/main.tf:68-87", "status": "terraform_desired_state_not_live_verified"},
+    {"name": "regional-api-terraform", "kind": "ingress", "hostname": "<region>.api.humangr.com/*", "enforcement": "proxied Cloudflare route; zone min_tls_version", "source": "infra/terraform/modules/corelink-region/main.tf:131-149", "status": "terraform_desired_state_not_live_verified"},
+    {"name": "clerk-issuer", "kind": "egress", "hostname": "clerk.corelink-app.humangr.com", "enforcement": "provider-managed Clerk TLS; no repo floor", "source": "wrangler.toml:317; apps/admin-ui/wrangler.toml:76-78", "status": "provider_managed_not_live_verified"},
+    {"name": "fabric-authority", "kind": "egress", "hostname": "corelink-fabricd.gmhelmold.workers.dev", "enforcement": "provider-managed Cloudflare Worker TLS; no repo floor", "source": "wrangler.toml:317,633,802,979,1150", "status": "provider_managed_not_live_verified"},
+    {"name": "pagerduty-events", "kind": "egress", "hostname": "events.pagerduty.com/v2/enqueue", "enforcement": "provider-managed PagerDuty TLS; no repo floor", "source": "apps/synthetic-pager-worker/wrangler.toml:19,35,49", "status": "explicit_external_endpoint_not_live_verified"},
+    {"name": "github-release-origin", "kind": "egress", "hostname": "github.com/HuGR-Labs/corelink-cli/releases/latest/download", "enforcement": "provider-managed GitHub TLS; no repo floor", "source": "apps/get-corelink-worker/wrangler.toml:63,69", "status": "production_config_declared_not_live_verified"},
+    {"name": "r2-global", "kind": "egress", "hostname": "*.r2.cloudflarestorage.com", "enforcement": "provider-managed R2 TLS; no repo setting", "source": "wrangler.toml:317,653,998,1169", "status": "provider_managed_not_live_verified"},
+    {"name": "r2-eu", "kind": "egress", "hostname": "*.eu.r2.cloudflarestorage.com", "enforcement": "provider-managed R2 TLS; no repo setting", "source": "wrangler.toml:826", "status": "provider_managed_not_live_verified"},
+)
+
+PROVIDER_BOUNDARIES = (
+    {"name": "cloudflare-bindings", "kind": "internal_provider", "surface": "Worker service bindings, D1, KV, Durable Objects", "source": "wrangler.toml", "status": "provider_managed_no_public_handshake"},
+    {"name": "configurable-egress", "kind": "egress", "surface": "Neon, Stripe, GitHub, PagerDuty, Resend, Sentry and analytics URLs", "source": "wrangler.toml + application secrets/config", "status": "host_or_setting_not_repo_declared"},
+    {"name": "future-byok", "kind": "provider", "surface": "AWS KMS, GCP KMS, Azure Key Vault, HashiCorp Vault", "source": "legal/dpa-residency-amendment.md", "status": "future_only_not_active"},
 )
 
 
@@ -129,11 +146,12 @@ def inventory(root: Path = ROOT) -> dict[str, Any]:
         "external_surface": {
             "zone": ZONE_NAME,
             "zone_id": f"{ZONE_ID[:8]}…{ZONE_ID[-4:]}",
-            "hostname_mapping": "not present in instruments; no hostnames inferred",
+            "hostname_mapping": "repository route/config inventory only; legal instruments name no hosts",
             "protocol_floor": f"TLS {PROTOCOL_FLOOR}",
             "cipher_policy": CIPHER_POLICY,
             "source": "ADR-0072 + scripts/check_tls_floor.py",
             "named_surfaces": [dict(surface) for surface in NAMED_SURFACES],
+            "provider_boundaries": [dict(boundary) for boundary in PROVIDER_BOUNDARIES],
             "downgrade_probe": {
                 "status": "provider_read_only_setting_only",
                 "scope": "Cloudflare edge zone setting; no production handshake mutation",
