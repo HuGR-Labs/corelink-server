@@ -38,6 +38,7 @@ SUPPORT_UNITS = (
     "crates/corelink-container/src/routes/ratelimit_layer_tests.rs",
     "crates/corelink-container/src/routes/dsr/adapter_d1_registry.rs",
     "crates/corelink-container/src/routes/dsr/adapter_d1_tests.rs",
+    "crates/corelink-container/src/routes/dsr/adapter_d1/classification.rs",
 )
 
 ALL_UNITS = ROOT_UNITS + SUPPORT_UNITS
