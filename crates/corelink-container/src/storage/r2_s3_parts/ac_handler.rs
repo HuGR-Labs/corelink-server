@@ -50,10 +50,9 @@ impl R2AcHandler {
     ///
     /// GATED-INERT: encryption engages ONLY for a tenant whose
     /// `tenant_byok_config.state == 'active'`; every other tenant (and the
-    /// `_public` namespace) keeps the exact plaintext path. The production
-    /// builder ([`build_r2_ac_handler_from_env`]) calls this when exactly one
-    /// real KMS feature is compiled. The default no-provider build remains on
-    /// the unchanged plaintext path and activation itself returns 501.
+    /// `_public` namespace) keeps the exact plaintext path. Production router
+    /// assembly calls this only after it has constructed the one real-provider
+    /// [`DataPlaneByok`](crate::storage::byok_cas::DataPlaneByok) set.
     #[must_use]
     pub fn with_byok(
         mut self,
