@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Verify B-142's self-hosted CodeQL and secrets-drift workflow wiring.
+"""Verify CodeQL hosted and secrets-drift workflow wiring.
 
-This is the repository-side half of B-142. It proves the jobs that must run
-on the product-owned ``corelink`` runner are present and structurally bound to
-that label. It does not query GitHub, assert runner availability, or claim
-that GHAS accepted a SARIF upload; those remain external evidence.
+This repository-side contract proves the CodeQL job uses the canonical hosted
+runner while the separate secrets-drift and watchdog jobs retain their
+product-owned runner policy. It does not query GitHub, assert runner
+availability, or claim that GHAS accepted a SARIF upload; those remain
+external evidence.
 
 The workflow reader is the repository's stdlib-compatible structural parser,
 so comments and shell strings cannot manufacture a job or runner label. The
 secrets-drift watchdog allows its documented owner-controlled hosted fallback,
-but its default branch must remain ``corelink``.
+while its default branch must remain ``corelink``.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ class ContractError(ValueError):
 
 
 CONTRACTS: tuple[tuple[str, str, str], ...] = (
-    (".github/workflows/codeql.yml", "analyze", "corelink"),
+    (".github/workflows/codeql.yml", "analyze", "ubuntu-latest"),
     (".github/workflows/secrets-drift.yml", "secrets-drift", "corelink"),
     (".github/workflows/codeql-evidence-watchdog.yml", "inspect", "corelink"),
     (
@@ -72,7 +73,12 @@ def check_workflow(root: pathlib.Path, relative: str, expected_job: str, runner:
             f"{relative}: expected exactly one job {expected_job!r}; observed {names!r}"
         )
     observed = _runner_value(getattr(matches[0], "runs_on", None))
-    if runner == "corelink":
+    if runner == "ubuntu-latest":
+        if observed != "ubuntu-latest":
+            raise ContractError(
+                f"{relative}:{expected_job}: runner must be ubuntu-latest, got {observed!r}"
+            )
+    elif runner == "corelink":
         if observed != "corelink":
             raise ContractError(
                 f"{relative}:{expected_job}: runner must be the exact corelink label, got {observed!r}"
@@ -105,8 +111,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"B-142 workflow contract: FAIL: {exc}", file=sys.stderr)
         return 1
     print(
-        "B-142 workflow contract: PASS: CodeQL and secrets-drift jobs/watchdogs "
-        "are structurally present on corelink; GHAS/run evidence remains external"
+        "B-142 workflow contract: PASS: CodeQL hosted and secrets-drift jobs/watchdogs "
+        "are structurally present; GHAS/run evidence remains external"
     )
     return 0
 
