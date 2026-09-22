@@ -14,6 +14,8 @@ name: Terraform Drift Detection
 #
 # Provider inputs are separate from the backend credentials. All third-party
 # actions are SHA-pinned per WI-S01-007.
+# Owners must provision and verify the dedicated read-only token before a live
+# run; this repository cannot verify live secret existence.
 
 on:
   schedule:
