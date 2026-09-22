@@ -363,6 +363,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
+      validated_tag: ${{ steps.validate-release-tag.outputs.tag }}
       staging_manifest_sha256: ${{ steps.staging-manifest.outputs.sha256 }}
       source_sha: ${{ steps.release-identity.outputs.source_sha }}
     # The source-repo GITHUB_TOKEN cannot publish cross-repo. The only write
@@ -379,10 +380,27 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Validate release tag before shell use
+        id: validate-release-tag
+        env:
+          INPUT_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${INPUT_TAG}" in
+            cli-v*) ;;
+            *)
+              echo "::error::expected a cli-v* release tag, got: ${INPUT_TAG}" >&2
+              exit 1
+              ;;
+          esac
+          [[ "${INPUT_TAG}" =~ ^cli-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+          printf 'tag=%s\n' "${INPUT_TAG}" >> "${GITHUB_OUTPUT}"
+
       - name: Resolve typed release identity
         id: release-identity
         env:
-          TAG: ${{ inputs.release_tag }}
+          TAG: ${{ steps.validate-release-tag.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
@@ -435,7 +453,7 @@ jobs:
       - name: Bind staged artifacts to the immutable source manifest
         id: staging-manifest
         env:
-          TAG: ${{ steps.release-identity.outputs.tag }}
+          TAG: ${{ steps.validate-release-tag.outputs.tag }}
           SOURCE_SHA: ${{ steps.release-identity.outputs.source_sha }}
         run: |
           set -euo pipefail
@@ -447,6 +465,8 @@ jobs:
 
       - name: Write release notes
         shell: bash
+        env:
+          TAG: ${{ steps.validate-release-tag.outputs.tag }}
         run: |
           # Static section (single-quoted heredoc: no variable expansion).
           cat > /tmp/release-notes.md << 'NOTES_EOF'
@@ -472,7 +492,7 @@ jobs:
 
           ## Source
           NOTES_EOF
-          echo "Built from \`${GITHUB_REPOSITORY}\` tag \`${{ inputs.release_tag }}\`." \
+          echo "Built from \`${GITHUB_REPOSITORY}\` tag \`${TAG}\`." \
             >> /tmp/release-notes.md
 
       - name: Assert external cross-repository release credential
@@ -490,7 +510,7 @@ jobs:
       - name: Create GitHub Release in HuGR-Labs/corelink-cli
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
-          TAG: ${{ inputs.release_tag }}
+          TAG: ${{ needs.release.outputs.validated_tag }}
         run: |
           set -euo pipefail
           RELEASE_JSON="${RUNNER_TEMP}/corelink-cli-existing-release.json"
@@ -529,18 +549,20 @@ jobs:
       - name: Upload binaries + checksums to release
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          TAG: ${{ steps.validate-release-tag.outputs.tag }}
         run: |
-          gh release upload "${{ inputs.release_tag }}" dist/* --repo HuGR-Labs/corelink-cli --clobber
+          gh release upload "${TAG}" dist/* --repo HuGR-Labs/corelink-cli --clobber
 
       - name: Read back published artifacts and verify release-root digests
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+          TAG: ${{ steps.validate-release-tag.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
           PUBLISHED="${RUNNER_TEMP}/corelink-release-readback"
           mkdir -p "$PUBLISHED"
-          gh release download "${{ inputs.release_tag }}" \
+          gh release download "${TAG}" \
             --repo HuGR-Labs/corelink-cli \
             --dir "$PUBLISHED" \
             --pattern 'corelink-*' \
@@ -556,7 +578,7 @@ jobs:
           (cd "$PUBLISHED" && shasum -a 256 -c checksums.txt)
           python3 scripts/cli_release_manifest.py verify \
             --directory "$PUBLISHED" --manifest "$PUBLISHED/staging-manifest.json" \
-            --tag "${{ inputs.release_tag }}" --source-sha "${{ steps.release-identity.outputs.source_sha }}"
+            --tag "${TAG}" --source-sha "${{ steps.release-identity.outputs.source_sha }}"
 
   # The release root owns the full serial writer chain. Calling each signer as a
   # reusable workflow preserves the exact tag as an explicit typed input and
@@ -566,7 +588,7 @@ jobs:
     needs: release
     uses: ./.github/workflows/sign-linux.yml
     with:
-      tag: ${{ inputs.release_tag }}
+      tag: ${{ needs.release.outputs.validated_tag }}
       source_sha: ${{ needs.release.outputs.source_sha }}
       staging_manifest_sha256: ${{ needs.release.outputs.staging_manifest_sha256 }}
     secrets:
@@ -614,7 +636,7 @@ jobs:
     needs: [sign-linux, release]
     uses: ./.github/workflows/sign-windows.yml
     with:
-      tag: ${{ inputs.release_tag }}
+      tag: ${{ needs.release.outputs.validated_tag }}
       source_sha: ${{ needs.release.outputs.source_sha }}
       staging_manifest_sha256: ${{ needs.release.outputs.staging_manifest_sha256 }}
     secrets:
@@ -628,7 +650,7 @@ jobs:
     needs: [sign-windows, release]
     uses: ./.github/workflows/notarize-macos.yml
     with:
-      tag: ${{ inputs.release_tag }}
+      tag: ${{ needs.release.outputs.validated_tag }}
       source_sha: ${{ needs.release.outputs.source_sha }}
       staging_manifest_sha256: ${{ needs.release.outputs.staging_manifest_sha256 }}
     secrets:
@@ -659,7 +681,7 @@ jobs:
         id: manifest
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
-          TAG: ${{ inputs.release_tag }}
+          TAG: ${{ needs.release.outputs.validated_tag }}
           SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
           STAGING_MANIFEST_SHA256: ${{ needs.release.outputs.staging_manifest_sha256 }}
         run: |
@@ -760,7 +782,7 @@ jobs:
       id-token: write
     uses: ./.github/workflows/release-slsa3.yml
     with:
-      release_tag: ${{ inputs.release_tag }}
+      release_tag: ${{ needs.release.outputs.validated_tag }}
       source_sha: ${{ needs.release.outputs.source_sha }}
       manifest_sha256: ${{ needs.final-manifest.outputs.sha256 }}
     secrets:
@@ -785,7 +807,7 @@ jobs:
       - name: Verify complete authenticated inventory before publication
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
-          TAG: ${{ inputs.release_tag }}
+          TAG: ${{ needs.release.outputs.validated_tag }}
           SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
           FINAL_MANIFEST_SHA256: ${{ needs.final-manifest.outputs.sha256 }}
         run: |
@@ -805,7 +827,7 @@ jobs:
       - name: Publish only the verified signed release
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
-          TAG: ${{ inputs.release_tag }}
+          TAG: ${{ needs.release.outputs.validated_tag }}
           SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
           FINAL_MANIFEST_SHA256: ${{ needs.final-manifest.outputs.sha256 }}
         run: |
