@@ -24,9 +24,9 @@ name: release-cli
 #                               HuGR-Labs/corelink-cli. Build jobs never receive
 #                               this credential.
 #
-# Keyless cosign signing is performed by the release-slsa3 reusable workflow
-# after every platform signer has replaced its staged bytes.  Publication is
-# blocked unless that workflow uploads and verifies its Rekor-backed bundle.
+# GitHub-managed provenance is created by the release-slsa3 reusable workflow
+# after every platform signer has replaced its staged bytes. Publication is
+# blocked unless its Sigstore/Rekor bundle verifies against the final inventory.
 
 on:
   # Releases are an explicit owner operation.  A tag alone must never start a
@@ -778,6 +778,7 @@ jobs:
     # OIDC only to this provenance call; all other release jobs retain the
     # workflow-level contents:read default.
     permissions:
+      attestations: write
       contents: read
       id-token: write
     uses: ./.github/workflows/release-slsa3.yml
@@ -800,10 +801,6 @@ jobs:
           persist-credentials: false
       - name: Verify pinned GitHub CLI
         run: test "$(gh --version | awk 'NR == 1 {print $3}')" = "2.79.0"
-      - name: Install Cosign for final bundle verification
-        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
-        with:
-          cosign-release: 'v2.4.3'
       - name: Verify complete authenticated inventory before publication
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
@@ -821,9 +818,9 @@ jobs:
             --api-json "${API_JSON}" --directory "${PUBLISHED}" \
             --manifest "${PUBLISHED}/release-manifest.json" \
             --provenance "${PUBLISHED}/provenance.intoto.jsonl" \
+            --bundle "${PUBLISHED}/provenance.intoto.jsonl.bundle" \
             --tag "${TAG}" --source-sha "${SOURCE_SHA}" \
-            --manifest-sha256 "${FINAL_MANIFEST_SHA256}" \
-            --repository "${GITHUB_REPOSITORY}"
+            --manifest-sha256 "${FINAL_MANIFEST_SHA256}"
       - name: Publish only the verified signed release
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
@@ -849,14 +846,20 @@ jobs:
             --directory "${FINAL_ASSETS}" \
             --manifest "${FINAL_ASSETS}/release-manifest.json" \
             --provenance "${FINAL_ASSETS}/provenance.intoto.jsonl" \
-            --tag "${TAG}" --source-sha "${SOURCE_SHA}" \
-            --manifest-sha256 "${FINAL_MANIFEST_SHA256}" \
-            --repository "${GITHUB_REPOSITORY}"
-          ESCAPED_TAG="$(python3 -c 'import os,re; print(re.escape(os.environ["TAG"]))')"
-          IDENTITY_RE="^https://github\.com/${GITHUB_REPOSITORY}/\.github/workflows/release-cli\.yml@refs/tags/${ESCAPED_TAG}$"
-          cosign verify-blob \
             --bundle "${FINAL_ASSETS}/provenance.intoto.jsonl.bundle" \
-            --certificate-identity-regexp "${IDENTITY_RE}" \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            "${FINAL_ASSETS}/provenance.intoto.jsonl"
+            --tag "${TAG}" --source-sha "${SOURCE_SHA}" \
+            --manifest-sha256 "${FINAL_MANIFEST_SHA256}"
+          python3 - "${FINAL_ASSETS}/release-manifest.json" <<'PY' | while IFS= read -r name; do
+          import json
+          import sys
+          for artifact in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]:
+              print(artifact["name"])
+          PY
+            gh attestation verify "${FINAL_ASSETS}/${name}" \
+              --bundle "${FINAL_ASSETS}/provenance.intoto.jsonl.bundle" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-slsa3.yml" \
+              --source-ref "refs/tags/${TAG}" --source-digest "${SOURCE_SHA}" \
+              --cert-oidc-issuer "https://token.actions.githubusercontent.com"
+          done
           gh release edit "${TAG}" --repo HuGR-Labs/corelink-cli --draft=false
