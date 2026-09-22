@@ -10783,7 +10783,8 @@ verify: |
   o=crates/corelink-container/src/byok_orchestrator.rs
   r=crates/corelink-container/src/routes/byok_admin.rs
   t=crates/corelink-container/tests/byok_orchestrator.rs
-  [ -f "$d" ] && [ -f "$c" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
+  e=scripts/verify_b083_kms_lifecycle_evidence.py
+  [ -f "$d" ] && [ -f "$c" ] && [ -f "$e" ] || { echo "FALHA: arquivo sumiu — reavalie o item."; exit 1; }
   buildline=$(awk '\''
   /^[[:space:]]*cargo build[^#]*-p corelink-server/ {
     line=$0
@@ -10822,6 +10823,7 @@ verify: |
   ! grep -qE "^[^#/*-]*(IN_MEMORY_FAKE_MASK|struct InMemoryFake|Ok\\(Arc::new\\(InMemoryFake)" "$o" || { echo "FALHA: XOR provider remains in production orchestrator"; exit 1; }
   grep -q "make_provider().await" "$r" || { echo "FALHA: activation does not construct KMS before mutation"; exit 1; }
   grep -q "check_access(&key_id).await" "$r" || { echo "FALHA: activation does not prove CMK access before mutation"; exit 1; }
+  python3 "$e" || { echo "FALHA: lifecycle evidence blocker is incomplete or overstates KMS proof"; exit 1; }
   grep -q "^[^#/*-]*no_provider_feature_fails_closed_without_crypto_fallback" "$t" || { echo "FALHA: adversarial no-provider regression missing"; exit 1; }
   bait=$(mktemp)
   printf "%s\n" "// ActiveProvider::Unavailable" > "$bait"

@@ -424,6 +424,7 @@ def _inventory_fixture(tmp_path: Path, *, replacement: bool = False,
                                     ]}), encoding="utf-8")
     actual_manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest()
     statement = {
+        "predicateType": "https://slsa.dev/provenance/v1",
         "subject": [{"name": name, "digest": {"sha256": hashlib.sha256((directory / name).read_bytes()).hexdigest()}}
                     for name in (asset.name, sidecar.name, checksums.name)],
         "predicate": {"buildDefinition": {"runDetails": {"builder": {
@@ -434,7 +435,14 @@ def _inventory_fixture(tmp_path: Path, *, replacement: bool = False,
         statement["subject"].append({"name": asset.name, "digest": {"sha256": digest}})
     provenance = directory / "provenance.intoto.jsonl"
     provenance.write_text(json.dumps(statement) + "\n", encoding="utf-8")
-    (directory / "provenance.intoto.jsonl.bundle").write_text("{}", encoding="utf-8")
+    bundle = {
+        "dsseEnvelope": {
+            "payload": base64.b64encode(json.dumps(statement).encode()).decode(),
+        },
+    }
+    (directory / "provenance.intoto.jsonl.bundle").write_text(
+        json.dumps(bundle), encoding="utf-8"
+    )
     api = tmp_path / "api.json"
     api.write_text(json.dumps({"assets": [{"name": name} for name in (
         asset.name, sidecar.name, checksums.name, "release-manifest.json", "provenance.intoto.jsonl",
@@ -444,11 +452,12 @@ def _inventory_fixture(tmp_path: Path, *, replacement: bool = False,
 
 def _run_inventory(tmp_path: Path, **kwargs: bool) -> subprocess.CompletedProcess[str]:
     api, directory, manifest, provenance, manifest_sha = _inventory_fixture(tmp_path, **kwargs)
+    bundle = directory / "provenance.intoto.jsonl.bundle"
     return _run(
         INVENTORY, "--api-json", str(api), "--directory", str(directory),
         "--manifest", str(manifest), "--provenance", str(provenance),
+        "--bundle", str(bundle),
         "--tag", TAG, "--source-sha", SOURCE, "--manifest-sha256", manifest_sha,
-        "--repository", REPOSITORY,
     )
 
 
@@ -472,8 +481,8 @@ def test_inventory_verifier_rejects_false_checksum_file(tmp_path: Path):
     result = _run(
         INVENTORY, "--api-json", str(api), "--directory", str(directory),
         "--manifest", str(manifest), "--provenance", str(provenance),
+        "--bundle", str(directory / "provenance.intoto.jsonl.bundle"),
         "--tag", TAG, "--source-sha", SOURCE, "--manifest-sha256", manifest_sha,
-        "--repository", REPOSITORY,
     )
     assert result.returncode != 0
     assert "checksum" in (result.stdout + result.stderr).lower()

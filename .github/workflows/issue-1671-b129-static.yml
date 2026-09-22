@@ -1,0 +1,36 @@
+name: issue-1671 B-129 static contract
+
+on:
+  pull_request:
+    paths:
+      - "scripts/probe_i1671_b129.py"
+      - "tests/test_probe_i1671_b129.py"
+      - ".github/workflows/issue-1671-b129-static.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1671-b129-static-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Run credentialless B-129 contract tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/probe_i1671_b129.py tests/test_probe_i1671_b129.py
+          python3 -m unittest -v tests/test_probe_i1671_b129.py

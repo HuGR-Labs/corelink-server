@@ -1,156 +1,182 @@
 ---
-title: "B-086 D1 residency read-only evidence"
-status: "READ_ONLY_CAPTURE"
-captured_at: "2026-09-09T06:10:15Z"
-owner_decision: "UNRESOLVED"
+title: "B-086 D1 residency and contract decision packet"
+status: "OPEN_EXTERNAL_DECISION"
+issue: 1654
+backlog_id: "B-086"
+credentialless: true
+network_calls: false
+mutating_actions: false
 ---
 
-# B-086 — D1 residency read-only evidence
+# B-086 — D1 residency and contract decision packet
 
-This is an evidence capture, not a legal opinion and not a production change.
-It records the distinction between Cloudflare API facts, repository bindings,
-and the owner/counsel decision required by B-086. No D1 database, Worker
-binding, DPA text, or signed instrument was mutated while collecting it.
+This is a source review and decision packet. It is not legal advice, an
+executed amendment, provider evidence, or a production change. It records
+what the repository can prove and the owner/counsel decision that remains.
 
-## Result
+## Decision status
 
-The local Cloudflare OAuth profile is usable for read-only inspection. It is
-also authorized for D1 writes, so the credential must not be used to create or
-rebind a database without an explicit owner/provider change window. The
-existing production D1 is one global database:
+**OPEN — owner/counsel decision required.** The five production Workers bind
+the same D1 database, while the active DPA amendment's Cloudflare row includes
+D1 in the services whose region scope is `Tenant-pinned (Section 7)`.
 
-- Wrangler inventory: `corelink-prod-d1`,
-  `d64742ea-e102-40b2-a844-ff02e3f94562`.
-- `wrangler d1 info`: `running_in_region=ENAM`, `jurisdiction=null`,
-  `num_tables=110`, `database_size=242 MB`, `read_replication.mode=auto`.
-- Cloudflare D1 inventory reported the same UUID once and no jurisdiction for
-  the database.
-- The repository verifier found five production `CONFIG_DB` bindings and one
-  distinct `database_id`; the DPA table still contains the active
-  `Infrastructure: Workers, R2, D1, KV, Durable Objects, Custom Domains` /
-  `Tenant-pinned (Section 7)` claim.
-- A read-only aggregate over `tenant.primary_region` returned `apac=1`,
-  `enam=155`, `wnam=108`; this is an application row distribution, not proof
-  of physical or legal residency.
+The repository cannot choose between these two closure paths:
 
-Therefore B-086 remains `open`/`unresolved`. The API can provision a new D1
-with `--jurisdiction eu` (or `fedramp`), but a production alignment still
-requires an owner/counsel choice between a jurisdictional D1 cutover and an
-executed legal amendment. Neither choice is made by this evidence.
+1. provision jurisdictional D1 databases and perform an approved data/control
+   plane migration; or
+2. execute a reviewed amendment that expressly discloses the global D1 control
+   plane and its transfer safeguards, and reconciles the residency and failover
+   promises.
 
-## Repository measurement
+Until one path has an owner/counsel or provider artifact, B-086 stays open.
+No draft, source verifier, or this packet converts `PENDING LEGAL REVIEW` into
+an executed obligation.
 
-The five active production environments are `prod`, `prod-sam`, `prod-lhr`,
-`prod-nrt`, and `prod-syd`. Each binds `CONFIG_DB` to the same UUID. The
-jurisdiction keys in `wrangler.toml` are two R2 bindings (`prod-lhr`), not D1
-bindings. The DPA amendment is explicitly `PENDING_LEGAL_REVIEW` and its
-Cloudflare row still says `Tenant-pinned (Section 7)`.
+## Measured repository topology
 
-Related legal surfaces are not interchangeable: the active registry in
-`legal/sub-processors.md` explicitly discloses “D1 control-plane metadata
-global under SCC/TIA safeguards”, while `legal/dpa/SUB-PROCESSOR-COMMITMENTS.md`
-and `legal/tia-template.md` describe Cloudflare’s service as tenant-pinned
-without a D1-specific qualification. This evidence records those texts; it
-does not select which instrument controls or silently amend any of them.
+| Production environment | Binding | Database name | `database_id` | Jurisdiction key |
+|---|---|---|---|---|
+| `prod` | `CONFIG_DB` | `corelink-config-prod` | `d64742ea-e102-40b2-a844-ff02e3f94562` | absent |
+| `prod-sam` | `CONFIG_DB` | `corelink-config-prod` | same | absent |
+| `prod-lhr` | `CONFIG_DB` | `corelink-config-prod` | same | absent |
+| `prod-nrt` | `CONFIG_DB` | `corelink-config-prod` | same | absent |
+| `prod-syd` | `CONFIG_DB` | `corelink-config-prod` | same | absent |
 
-Focused checks run against the current tree:
+These are the active bindings at `wrangler.toml:528-532`, `726-730`,
+`902-906`, `1072-1076`, and `1238-1242`. The only active `jurisdiction =
+"eu"` keys are R2 bucket bindings under `prod-lhr` (`wrangler.toml:824-840`);
+they do not apply to `CONFIG_DB`. The repository therefore proves five
+bindings and one D1 identity. It does not prove the physical location of the
+D1 primary or its replicas.
 
-```text
-B-086 open: production_d1_bindings=5, distinct_database_ids=1,
-active_dpa_d1_tenant_pinned_claims=1, jurisdiction_keys=2 (R2 only);
-owner/counsel evidence remains pending
-owner-action packet: PASS: 29 item(s), closed population verified
-```
+The shared D1 is material to the decision. The schema contains tenant and
+control-plane records, including `tenant`, PAT and membership records, billing
+and quota state, and audit outbox state. See the D1 migrations under
+`migrations/d1/` (for example `0023_residency_check_constraints.sql` and the
+tables enumerated by the DSR D1 adapter). A region label on a row is an
+application routing value; it is not proof that the D1 row is physically or
+legally resident in that region.
 
-## Cloudflare/D1 read-only observations
+## Tenant selection and routing
 
-The commands below were run with Wrangler `4.111.0` and the local OAuth
-profile. They expose no token, email, tenant ID, or row-level personal data.
-`wrangler d1 execute` was limited to `sqlite_master`, `PRAGMA table_info`, and
-an aggregate `GROUP BY`; all returned `changed_db=false` and
-`rows_written=0`.
+The deployed edge path takes the tenant from authenticated state, not from a
+client-supplied residency field:
 
-```text
-CI=1 pnpm exec wrangler whoami
-Account ID: 6a1fc1c626fc2628823e60b9db01f5cd
-Token D1 scope: write (credential capability; not exercised)
+1. `worker/src/index_auth_stage.ts` resolves `auth.tenantId` into
+   `resolvedTenantId`.
+2. `worker/src/index_routing_stage.ts:50-92` resolves that tenant's
+   `tenant.primary_region` through `CONFIG_DB`, with L1 isolate and L2 KV
+   caching, then stamps the trusted `x-corelink-primary-region` header.
+3. `worker/src/index_routing_stage.ts:104-134` fans out non-IAD tenants to
+   the matching regional Service Binding; an absent binding or unknown region
+   returns `503 RESIDENCY_UNAVAILABLE`.
+4. `crates/corelink-container/src/routes/residency.rs:63-110` rejects a
+   trusted region/container mismatch with `409 residency_violation` before
+   handler storage I/O.
 
-CI=1 pnpm exec wrangler d1 list
-6011a014-718d-4901-928a-1c9ac3acb558  corelink-t9w1-authority-20260907-0047  jurisdiction=""
-d7fe391f-9fe0-4544-a1fb-64747bcd2639  corelink-analytics-prod               jurisdiction=""
-d64742ea-e102-40b2-a844-ff02e3f94562  corelink-prod-d1                       jurisdiction=""
-...
+This protects the R2/data-plane route when a valid tenant row and binding are
+available. A missing tenant row or null `primary_region` is deliberately
+treated as the existing IAD-local fall-through in
+`worker/src/lib/tenant_residency_cache.ts:266-271`; that behavior must not be
+advertised as a tenant residency guarantee without a separate product/legal
+decision.
 
-CI=1 pnpm exec wrangler d1 info corelink-prod-d1
-running_in_region     ENAM
-jurisdiction          null
-num_tables            110
-database_size         242 MB
-read_queries_24h      241
-write_queries_24h     0
-rows_written          0 (on the read-only request)
-read_replication.mode auto
+## Migration promise versus deployed path
 
-SELECT primary_region, COUNT(*) AS tenant_count
-FROM tenant GROUP BY primary_region ORDER BY primary_region
-apac  1
-enam  155
-wnam  108
-```
+The DPA says the tenant's `primary_region` may change only through
+customer-initiated migration with 30 days' advance notice
+(`legal/dpa-residency-amendment.md:122-145`). The repository has supporting
+schema and pure logic:
 
-The `sqlite_master` read showed control-plane tables including `tenant`,
-`team_member`, `pat`, `tenant_billing`, `tenant_quota`, and `audit_outbox`.
-This confirms that the D1 scope is material to the residency decision; it does
-not establish where every row is physically stored.
+- `migrations/d1/0028_tenant_primary_region.sql:48-59` rejects direct changes
+  after insert and requires a canonical region;
+- `migrations/d1/0023_residency_check_constraints.sql:89-105` creates
+  `region_migration_request` with status and a 30-day application-layer
+  cooldown;
+- `crates/corelink-privacy/src/residency/migration.rs:63-92` models the
+  request and cooldown.
 
-## Feasibility and safe next action
+The migration crate is not a deployed production dependency, and its request
+path is a doc-comment/pure in-memory surface rather than a production D1
+workflow. Therefore the repository proves **immutable pinning and write
+guards**, but does not prove that a customer can complete the promised
+customer-initiated migration. Counsel/product must either (a) block or amend
+that promise until the production workflow exists, or (b) authorize a
+separate implementation and its review.
 
-The installed CLI exposes the following remote create options:
+## Failover behavior and residency boundary
 
-```text
-wrangler d1 create <name> --location <weur|eeur|apac|oc|wnam|enam>
-                       --jurisdiction <eu|fedramp>
-```
+The DPA permits WEUR read-replica failover only within WEUR and APAC read
+failover only where provisioned (`legal/dpa-residency-amendment.md:136-148`).
+The live container middleware behaves as follows:
 
-Cloudflare states in the CLI help that a jurisdiction restricts where the D1
-runs and stores data, and that a jurisdiction overrides the location hint.
-The create command is remote and has no dry-run flag. It was **not** run.
-The corresponding Cloudflare documentation says jurisdiction is set only at
-database creation and cannot be added or updated later:
-<https://developers.cloudflare.com/d1/configuration/data-location/>.
+- writes in a degraded region are rejected with `503 failover_readonly`
+  (`crates/corelink-container/src/routes/failover.rs:660-677`);
+- reads continue through the local handler and receive
+  `x-corelink-failover-read-region` and `x-corelink-failover-active` hints
+  (`crates/corelink-container/src/routes/failover.rs:679-691`);
+- no Worker or JavaScript consumer of `x-corelink-failover-read-region` is
+  present in this repository. The hint therefore does not establish that a
+  read was routed to a replica. The current behavior is local-read plus an
+  unconsumed hint, while the intended transparent reroute remains a separate
+  design claim.
 
-After counsel/owner selects `jurisdictional_d1`, the reversible preparation
-sequence is:
+This distinction matters for the contract: a WEUR tenant cannot be promised
+that the current failover path performs an actual read replica transfer. If a
+future edge consumer is added, its cross-jurisdiction policy and approval gate
+must be reviewed before deployment; this packet does not authorize one.
 
-1. Create a separately named, jurisdiction-scoped shadow D1 only in an
-   approved provider change window (`--jurisdiction eu` for WEUR).
-2. Apply and verify the reviewed migration set against the shadow database;
-   do not point a production Worker at it yet.
-3. Produce a row-count/schema/DSR and audit-integrity comparison without
-   exporting row-level personal data.
-4. Submit a reviewed binding/cutover change with an explicit rollback to the
-   current UUID before any write path is switched. Record the effective date,
-   provider case, and owner approval.
+## Failure and downgrade behavior
 
-Creating the shadow database is an external mutation and therefore remains
-pending. If counsel chooses `legal_amendment`, no D1 provisioning is needed;
-the executed superseding instrument and its effective date must be captured
-instead. A draft or this read-only receipt cannot close B-086.
+The current source behavior is:
 
-## Source links and hashes
+| Condition | Current result | Contract significance |
+|---|---|---|
+| D1 lookup fails with no cached region | `503 RESIDENCY_UNAVAILABLE` | fail-closed for an unknown placement |
+| D1 lookup fails with a cached region | cached route is used | bounded stale routing; container backstop can return `409` |
+| regional Service Binding missing | `503 RESIDENCY_UNAVAILABLE` | no silent IAD fallback for a known non-IAD region |
+| direct request lands on wrong regional container | `409 residency_violation` | no handler storage I/O |
+| degraded region write | `503 failover_readonly` | write availability is sacrificed |
+| degraded region read | local read plus unconsumed failover hint | no evidence of transparent replica routing |
+| tenant has no row or no region | IAD-local fall-through | not sufficient evidence for a tenant residency promise |
 
-The evidence is bound to these source files at capture time:
+These outcomes are operational behavior, not legal approval. A commercial
+downgrade or outage policy must state whether a tenant receives an error,
+local service, or a legally reviewed transfer path.
 
-```text
-wrangler.toml                                      a7230342badb5dfedabc8bce6911a7c6926caa2730c27f4316f740a172f75ec2
-legal/dpa-residency-amendment.md                   380667ad98b644fe9ed1e2057353c3ba11f687f9420ab9cdc496e705a83965fb
-scripts/verify_b086_d1_residency.py                6b364b3453b3dd7efc2382929ee2b56f06470ae0f48353389954082fdf10a9c1
-docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
-                                                     c4d47f039beef033564029ee32a785cddae73c3700b86ead6e7c1452fc0d0f8e
-legal/sub-processors.md                             a3c5f278d8678b7a4aaa9bfad893760b2ec998374c5ce328458f0af34225e491
-legal/dpa/SUB-PROCESSOR-COMMITMENTS.md               c0c7f3ddd648bf823c66fdf83bbada0f88e5072bb71c37c4b2c33497c8be7350
-legal/tia-template.md                                f4966b0697fb63bc80cb79314da2f5a60f26a6507b3cdb2aff0552c3d27cb733
-```
+## Contract surfaces that must be reconciled
 
-The corresponding structured receipt is
-`evidence/owner-actions/B-086/d1-residency-resolution.json`.
+- `legal/dpa-residency-amendment.md:124-148` promises per-tenant region
+  storage/processing and restricts failover; Section 8.1 names D1 among the
+  tenant-pinned Cloudflare services. The file is explicitly `PENDING LEGAL
+  REVIEW` (`:402`).
+- `legal/sub-processors.md:14,173` currently describes R2/DO as tenant-pinned
+  but D1 control-plane metadata as global under SCC/TIA safeguards.
+- `legal/tia-template.md:127-130,189` describes provisioned-region handling
+  and the DPA commitment without resolving the shared D1 control plane.
+
+Those texts are inconsistent. No source file can determine which legal
+position controls. The owner/counsel decision must name the controlling,
+executed instrument and effective date.
+
+## Required closure evidence
+
+### Path A — jurisdictional D1
+
+Provide provider-backed, read-only evidence for each production binding and an
+approved migration record showing the control-plane data set, cutover,
+rollback, tenant mapping, replicas, DSR/audit handling, and effective date.
+The provider evidence must establish the jurisdictional binding; a region
+label in D1 or an R2 bucket name is insufficient.
+
+### Path B — legal amendment
+
+Provide the executed superseding instrument and counsel's transfer-impact
+decision. It must explicitly identify the global D1 control plane, affected
+data categories, applicable SCC/TIA safeguards, migration limitations,
+failover read behavior, outage/downgrade responses, and effective date.
+
+The existing `evidence/i1654/d1-residency-contract-manifest.json` and
+`scripts/verify_b086_d1_residency.py` are credentialless source checks. They
+correctly keep B-086 open and detect the current five-bindings/one-ID versus
+tenant-pinned claim mismatch; they do not close either external decision.

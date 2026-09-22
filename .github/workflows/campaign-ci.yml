@@ -280,6 +280,7 @@ jobs:
           set -euo pipefail
           {
             python3 -m pytest -q tests/test_audit_outbox_residency_runtime.py
+            python3 -m pytest -q tests/test_probe_i1669_readonly.py
             python3 scripts/verify_b071_fence.py
           } 2>&1 | tee artifacts/campaign-ci/i1669.log
 
