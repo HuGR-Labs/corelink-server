@@ -4,6 +4,99 @@ use crate::clock::InMemoryFakeMatClock;
 use crate::d1::InMemoryBillingD1;
 use crate::tier::InMemoryTierSelector;
 use corelink_tier_selection::tier::TierKind;
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+#[derive(Debug, Default)]
+struct TestCurrentSubscriptionAuthority {
+    snapshots: Mutex<HashMap<String, crate::CurrentSubscription>>,
+    customer_snapshots: Mutex<HashMap<String, Vec<crate::CurrentSubscription>>>,
+}
+
+impl TestCurrentSubscriptionAuthority {
+    fn set(&self, subscription_id: &str, status: &str, price_id: &str) {
+        self.snapshots.lock().unwrap().insert(
+            subscription_id.to_owned(),
+            crate::CurrentSubscription::new(subscription_id, status, price_id, 1_700_000_000_000),
+        );
+    }
+
+    fn set_with_created_at_ms(
+        &self,
+        subscription_id: &str,
+        status: &str,
+        price_id: &str,
+        subscription_created_at_ms: u64,
+    ) {
+        self.snapshots.lock().unwrap().insert(
+            subscription_id.to_owned(),
+            crate::CurrentSubscription::new(
+                subscription_id,
+                status,
+                price_id,
+                subscription_created_at_ms,
+            ),
+        );
+    }
+
+    fn set_authority_for(
+        &self,
+        requested_subscription_id: &str,
+        authoritative_subscription_id: &str,
+        status: &str,
+        price_id: &str,
+        subscription_created_at_ms: u64,
+    ) {
+        self.snapshots.lock().unwrap().insert(
+            requested_subscription_id.to_owned(),
+            crate::CurrentSubscription::new(
+                authoritative_subscription_id,
+                status,
+                price_id,
+                subscription_created_at_ms,
+            ),
+        );
+    }
+
+    fn set_customer_snapshots(
+        &self,
+        requested_subscription_id: &str,
+        snapshots: Vec<crate::CurrentSubscription>,
+    ) {
+        self.customer_snapshots
+            .lock()
+            .unwrap()
+            .insert(requested_subscription_id.to_owned(), snapshots);
+    }
+}
+
+impl crate::CurrentSubscriptionAuthority for TestCurrentSubscriptionAuthority {
+    fn current_subscription(
+        &self,
+        subscription_id: &str,
+    ) -> Result<crate::CurrentSubscription, String> {
+        self.snapshots
+            .lock()
+            .map_err(|e| format!("test current-subscription mutex poisoned: {e}"))?
+            .get(subscription_id)
+            .cloned()
+            .ok_or_else(|| format!("no current snapshot for {subscription_id}"))
+    }
+
+    fn current_customer_subscriptions(
+        &self,
+        subscription_id: &str,
+    ) -> Result<Vec<crate::CurrentSubscription>, String> {
+        let customer_snapshots = self.customer_snapshots.lock().map_err(|e| {
+            format!("test current-customer-subscription mutex poisoned: {e}")
+        })?;
+        if let Some(snapshots) = customer_snapshots.get(subscription_id) {
+            return Ok(snapshots.clone());
+        }
+        drop(customer_snapshots);
+        Ok(vec![self.current_subscription(subscription_id)?])
+    }
+}
 
 fn fixture() -> (
     D1SubscriptionStateHandler,
@@ -160,6 +253,7 @@ fn fixture_with_runners() -> (
     D1SubscriptionStateHandler,
     Arc<InMemoryBillingD1>,
     Arc<InMemoryBillingAuditEmitter>,
+    Arc<TestCurrentSubscriptionAuthority>,
 ) {
     let (handler, d1, audit) = fixture();
     let resolver = Arc::new(
@@ -171,12 +265,21 @@ fn fixture_with_runners() -> (
             },
         ),
     );
-    (handler.with_runners_resolver(resolver), d1, audit)
+    let authority = Arc::new(TestCurrentSubscriptionAuthority::default());
+    (
+        handler
+            .with_runners_resolver(resolver)
+            .with_current_subscription_authority(authority.clone()),
+        d1,
+        audit,
+        authority,
+    )
 }
 
 #[test]
 fn runners_subscription_seeds_entitlement_not_tier() {
-    let (handler, d1, audit) = fixture_with_runners();
+    let (handler, d1, audit, authority) = fixture_with_runners();
+    authority.set("sub_run", "active", "price_runner_team");
     let e = env(
         "evt_run",
         "customer.subscription.updated",
@@ -202,7 +305,8 @@ fn runners_subscription_seeds_entitlement_not_tier() {
 #[test]
 fn runners_price_with_non_granting_status_does_not_seed() {
     for non_granting in ["past_due", "unpaid", "canceled"] {
-        let (handler, d1, _audit) = fixture_with_runners();
+        let (handler, d1, _audit, authority) = fixture_with_runners();
+        authority.set("sub_run", non_granting, "price_runner_team");
         let e = env(
             "evt_run",
             "customer.subscription.updated",
@@ -232,7 +336,8 @@ fn runners_updated_non_granting_status_revokes_prior_entitlement() {
     // `runners_entitlement_revoked.v1`, symmetric to the seed — never leave a
     // stale grant.
     for non_granting in ["canceled", "past_due", "unpaid"] {
-        let (handler, d1, audit) = fixture_with_runners();
+        let (handler, d1, audit, authority) = fixture_with_runners();
+        authority.set("sub_run", "active", "price_runner_team");
         // Seed first via a granting `active` event.
         let seed = env(
             "evt_seed",
@@ -249,8 +354,10 @@ fn runners_updated_non_granting_status_revokes_prior_entitlement() {
         handler.on_subscription_updated(&seed).unwrap();
         assert_eq!(d1.runners_entitlement_of("ten_run"), Some((80, 600)));
 
+        authority.set("sub_run", non_granting, "price_runner_team");
+
         // Now the subscription goes non-granting → revoke.
-        let e = env(
+        let mut e = env(
             "evt_revoke",
             "customer.subscription.updated",
             serde_json::json!({
@@ -262,6 +369,10 @@ fn runners_updated_non_granting_status_revokes_prior_entitlement() {
                 }
             }),
         );
+        // This represents the later provider revision. Equal timestamps use
+        // event identity as the deterministic final tie-breaker, so ordinary
+        // state transitions retain their provider chronology explicitly.
+        e.created = 1_700_000_001;
         handler.on_subscription_updated(&e).unwrap();
         assert_eq!(
             d1.runners_entitlement_of("ten_run"),
@@ -281,7 +392,8 @@ fn runners_subscription_deleted_revokes_entitlement() {
     // WP4: a `customer.subscription.deleted` for a Runners-price sub must
     // route through the runner REVOKE (not the cache-tier downgrade) and
     // remove `runners_entitlement`.
-    let (handler, d1, audit) = fixture_with_runners();
+    let (handler, d1, audit, authority) = fixture_with_runners();
+    authority.set("sub_run", "active", "price_runner_team");
     // Seed the entitlement first.
     let seed = env(
         "evt_seed",
@@ -298,8 +410,10 @@ fn runners_subscription_deleted_revokes_entitlement() {
     handler.on_subscription_updated(&seed).unwrap();
     assert_eq!(d1.runners_entitlement_of("ten_run"), Some((80, 600)));
 
+    authority.set("sub_run", "canceled", "price_runner_team");
+
     // Now delete the subscription (a Runners-price sub).
-    let del = env(
+    let mut del = env(
         "evt_del",
         "customer.subscription.deleted",
         serde_json::json!({
@@ -311,6 +425,7 @@ fn runners_subscription_deleted_revokes_entitlement() {
             }
         }),
     );
+    del.created = 1_700_000_001;
     handler.on_subscription_deleted(&del).unwrap();
     assert_eq!(
         d1.runners_entitlement_of("ten_run"),
@@ -333,7 +448,8 @@ fn cache_subscription_deleted_does_not_touch_runners_entitlement() {
     // (nor emit a runner revoke audit). We independently seed a runner
     // entitlement for the SAME tenant to prove the cache cancel leaves it
     // intact.
-    let (handler, d1, audit) = fixture_with_runners();
+    let (handler, d1, audit, authority) = fixture_with_runners();
+    authority.set("sub_cache", "canceled", "plan_pro");
     d1.upsert_tier("ten_cache", "pro", 1_700_000_000_000, "init")
         .unwrap();
     // An unrelated runner grant exists for this tenant.
@@ -370,7 +486,8 @@ fn cache_subscription_deleted_does_not_touch_runners_entitlement() {
 fn extract_plan_id_falls_back_to_items_price_id() {
     // F-MP-3: a modern Stripe subscription with NO legacy plan.id but a
     // nested items.data[0].price.id must still resolve (tier + runners).
-    let (handler, d1, _audit) = fixture_with_runners();
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    authority.set("sub_items", "active", "price_runner_team");
     let e = env(
         "evt_items",
         "customer.subscription.updated",
@@ -392,7 +509,8 @@ fn extract_plan_id_falls_back_to_items_price_id() {
 fn cache_price_still_routes_to_tier_when_runners_resolver_present() {
     // A wired resolver must NOT divert cache-tier subscriptions: a
     // non-Runners price (plan_pro) still reconciles tier_selections.
-    let (handler, d1, _audit) = fixture_with_runners();
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    authority.set("sub_cache", "active", "plan_pro");
     let e = env(
         "evt_cache",
         "customer.subscription.updated",
@@ -408,4 +526,347 @@ fn cache_price_still_routes_to_tier_when_runners_resolver_present() {
     handler.on_subscription_updated(&e).unwrap();
     assert_eq!(d1.tier_for("ten_cache"), Some("pro".to_string()));
     assert_eq!(d1.runners_entitlement_of("ten_cache"), None);
+}
+
+#[test]
+fn stale_runner_update_and_delete_converge_to_current_active_subscription() {
+    // Stripe can deliver distinct `updated` / `deleted` snapshots after the
+    // subscription recovered. The provider's current object remains the
+    // authority, while the provider event facts advance the durable fence.
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    authority.set("sub_run", "active", "price_runner_team");
+
+    let current = env(
+        "evt_current",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": {
+                "id": "sub_run", "status": "active",
+                "metadata": { "tenant_id": "ten_run" },
+                "plan": { "id": "price_runner_team" }
+            }
+        }),
+    );
+    handler.on_subscription_updated(&current).unwrap();
+
+    let mut stale_update = env(
+        "evt_stale_update",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": {
+                "id": "sub_run", "status": "past_due",
+                "metadata": { "tenant_id": "ten_run" },
+                "plan": { "id": "plan_pro" }
+            }
+        }),
+    );
+    stale_update.created = 1_700_000_001;
+    let mut stale_delete = env(
+        "evt_stale_delete",
+        "customer.subscription.deleted",
+        serde_json::json!({
+            "object": {
+                "id": "sub_run", "status": "canceled",
+                "metadata": { "tenant_id": "ten_run" },
+                "plan": { "id": "plan_pro" }
+            }
+        }),
+    );
+    stale_delete.created = 1_700_000_002;
+    handler.on_subscription_updated(&stale_update).unwrap();
+    handler.on_subscription_deleted(&stale_delete).unwrap();
+
+    assert_eq!(d1.runners_entitlement_of("ten_run"), Some((80, 600)));
+}
+
+#[test]
+fn replaced_subscription_identity_is_tenant_authority() {
+    // A replacement keeps the tenant's entitlement authority while Stripe
+    // changes the subscription id. Provider creation times must still converge in
+    // either delivery order: the successor grant replaces the predecessor
+    // revoke, and the predecessor revoke cannot replace the successor grant.
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    authority.set_with_created_at_ms("sub_predecessor", "canceled", "price_runner_team", 1_700_000_000_000);
+    authority.set_with_created_at_ms("sub_successor", "active", "price_runner_team", 1_700_000_001_000);
+
+    let predecessor = env(
+        "evt_predecessor_cancel",
+        "customer.subscription.deleted",
+        serde_json::json!({
+            "object": { "id": "sub_predecessor", "status": "canceled",
+                "metadata": { "tenant_id": "ten_replaced" },
+                "plan": { "id": "price_runner_team" } }
+        }),
+    );
+    let successor = env(
+        "evt_successor_active",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": { "id": "sub_successor", "status": "active",
+                "metadata": { "tenant_id": "ten_replaced" },
+                "plan": { "id": "price_runner_team" } }
+        }),
+    );
+
+    handler.on_subscription_deleted(&predecessor).unwrap();
+    assert_eq!(d1.runners_entitlement_of("ten_replaced"), None);
+    handler.on_subscription_updated(&successor).unwrap();
+    handler.on_subscription_updated(&successor).unwrap();
+    assert_eq!(d1.runners_entitlement_of("ten_replaced"), Some((80, 600)));
+    assert_eq!(
+        d1.runner_fence_of("ten_replaced"),
+        Some(("sub_successor".to_owned(), 1_700_000_001_000, 1_700_000_000_000, "evt_successor_active".to_owned(), true))
+    );
+
+    // Reverse delivery is the failure mode from #1844: once the successor
+    // owns the tenant fence, the predecessor cannot revoke it.
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    authority.set_with_created_at_ms("sub_predecessor", "canceled", "price_runner_team", 1_700_000_000_000);
+    authority.set_with_created_at_ms("sub_successor", "active", "price_runner_team", 1_700_000_001_000);
+    handler.on_subscription_updated(&successor).unwrap();
+    assert!(matches!(
+        handler.on_subscription_deleted(&predecessor),
+        Err(MaterializerError::Transient(_))
+    ));
+    assert_eq!(d1.runners_entitlement_of("ten_replaced"), Some((80, 600)));
+    assert_eq!(
+        d1.runner_fence_of("ten_replaced"),
+        Some(("sub_successor".to_owned(), 1_700_000_001_000, 1_700_000_000_000, "evt_successor_active".to_owned(), true))
+    );
+}
+
+#[test]
+fn same_second_reversed_id_predecessor_webhook_uses_current_provider_identity() {
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    // The old identity sorts after the successor. The test authority models the
+    // provider customer list resolving the unique active successor for either
+    // delivery; lexical subscription-id order must not influence the outcome.
+    authority.set_authority_for(
+        "sub_zzz_predecessor",
+        "sub_aaa_successor",
+        "active",
+        "price_runner_team",
+        1_700_000_000_000,
+    );
+    authority.set_with_created_at_ms(
+        "sub_aaa_successor",
+        "active",
+        "price_runner_team",
+        1_700_000_000_000,
+    );
+    let old_cancel = env(
+        "evt_old_cancel",
+        "customer.subscription.deleted",
+        serde_json::json!({
+            "object": { "id": "sub_zzz_predecessor", "status": "canceled",
+                "metadata": { "tenant_id": "ten_same_second" },
+                "plan": { "id": "price_runner_team" } }
+        }),
+    );
+    handler.on_subscription_deleted(&old_cancel).unwrap();
+    assert_eq!(d1.runners_entitlement_of("ten_same_second"), Some((80, 600)));
+    assert_eq!(
+        d1.runner_fence_of("ten_same_second"),
+        Some(("sub_aaa_successor".to_owned(), 1_700_000_000_000, 1_700_000_000_000, "evt_old_cancel".to_owned(), true)),
+    );
+}
+
+#[test]
+fn active_runner_event_absent_from_provider_customer_list_cannot_grant() {
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    authority.set("sub_absent", "active", "price_runner_team");
+    // The webhook object is readable, but Stripe's current customer state has
+    // no active/trialing Runners identity. The native path must not append the
+    // webhook object and treat it as authority.
+    authority.set_customer_snapshots("sub_absent", Vec::new());
+    let active = env(
+        "evt_absent_active",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": { "id": "sub_absent", "status": "active",
+                "metadata": { "tenant_id": "ten_absent" },
+                "plan": { "id": "price_runner_team" } }
+        }),
+    );
+    assert!(matches!(
+        handler.on_subscription_updated(&active),
+        Err(MaterializerError::Transient(_))
+    ));
+    assert_eq!(d1.runners_entitlement_of("ten_absent"), None);
+}
+
+#[test]
+fn runner_create_reconciles_the_current_snapshot() {
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    authority.set("sub_run", "active", "price_runner_team");
+    let stale_create = env(
+        "evt_stale_create",
+        "customer.subscription.created",
+        serde_json::json!({
+            "object": {
+                "id": "sub_run", "status": "past_due",
+                "metadata": { "tenant_id": "ten_run" },
+                "plan": { "id": "price_runner_team" }
+            }
+        }),
+    );
+
+    handler
+        .materialize_echo(
+            CanonicalWebhookEventType::SubscriptionCreated,
+            &stale_create,
+        )
+        .unwrap();
+    assert_eq!(d1.runners_entitlement_of("ten_run"), Some((80, 600)));
+}
+
+#[test]
+fn configured_runner_path_fails_closed_without_current_authority() {
+    let (handler, d1, audit) = fixture();
+    let resolver = Arc::new(
+        crate::runners::InMemoryRunnersEntitlementResolver::new().with_price(
+            "price_runner_team",
+            crate::runners::RunnersEntitlement {
+                max_concurrency: 80,
+                max_vcpu_h: 600,
+            },
+        ),
+    );
+    let handler = handler.with_runners_resolver(resolver);
+    let event = env(
+        "evt_no_authority",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": {
+                "id": "sub_run", "status": "active",
+                "metadata": { "tenant_id": "ten_run" },
+                "plan": { "id": "price_runner_team" }
+            }
+        }),
+    );
+
+    assert!(matches!(
+        handler.on_subscription_updated(&event),
+        Err(MaterializerError::Transient(_))
+    ));
+    assert_eq!(d1.runners_entitlement_of("ten_run"), None);
+    assert_eq!(
+        audit.count_event("corelink.tenant.runners_entitlement_seeded.v1"),
+        0
+    );
+}
+
+#[test]
+fn duplicate_runner_delivery_is_convergent() {
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    authority.set("sub_run", "active", "price_runner_team");
+    let event = env(
+        "evt_duplicate",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": { "id": "sub_run", "status": "active", "metadata": { "tenant_id": "ten_run" },
+                "plan": { "id": "price_runner_team" } }
+        }),
+    );
+    handler.on_subscription_updated(&event).unwrap();
+    handler.on_subscription_updated(&event).unwrap();
+    assert_eq!(d1.runners_entitlement_of("ten_run"), Some((80, 600)));
+}
+
+#[test]
+fn stale_provider_revision_fails_closed_before_runner_mutation() {
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    authority.set_with_created_at_ms("sub_run", "active", "price_runner_team", 1_700_000_000_000);
+    let event = env(
+        "evt_newer",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": { "id": "sub_run", "status": "active", "metadata": { "tenant_id": "ten_run" },
+                "plan": { "id": "price_runner_team" } }
+        }),
+    );
+    handler.on_subscription_updated(&event).unwrap();
+    authority.set_with_created_at_ms("sub_run", "active", "price_runner_team", 1_700_000_000_000);
+    let mut stale = env(
+        "evt_old",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": { "id": "sub_run", "status": "active", "metadata": { "tenant_id": "ten_run" },
+                "plan": { "id": "price_runner_team" } }
+        }),
+    );
+    stale.created = 1_699_999_999;
+    assert!(matches!(
+        handler.on_subscription_updated(&stale),
+        Err(MaterializerError::Transient(_))
+    ));
+    assert_eq!(d1.runners_entitlement_of("ten_run"), Some((80, 600)));
+}
+
+#[test]
+fn authority_mismatch_and_non_runner_fail_closed() {
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    authority.snapshots.lock().unwrap().insert(
+        "sub_run".into(),
+        crate::CurrentSubscription::new("sub_other", "active", "price_runner_team", 1_700_000_000_000),
+    );
+    let event = env(
+        "evt_authority",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": { "id": "sub_run", "status": "active", "metadata": { "tenant_id": "ten_run" }, "plan": { "id": "price_runner_team" } }
+        }),
+    );
+    assert!(matches!(
+        handler.on_subscription_updated(&event),
+        Err(MaterializerError::Transient(_))
+    ));
+    authority.set("sub_run", "active", "plan_pro");
+    assert!(matches!(
+        handler.on_subscription_updated(&event),
+        Err(MaterializerError::Transient(_))
+    ));
+    assert_eq!(d1.runners_entitlement_of("ten_run"), None);
+}
+
+#[test]
+fn missing_price_on_created_or_deleted_fails_closed() {
+    for deleted in [false, true] {
+        let (handler, d1, _audit, _authority) = fixture_with_runners();
+        let event = env(
+            if deleted {
+                "evt_missing_delete"
+            } else {
+                "evt_missing_create"
+            },
+            if deleted {
+                "customer.subscription.deleted"
+            } else {
+                "customer.subscription.created"
+            },
+            serde_json::json!({ "object": { "id": "sub_missing", "status": "active",
+                "metadata": { "tenant_id": "ten_missing" } } }),
+        );
+        let result = if deleted {
+            handler.on_subscription_deleted(&event)
+        } else {
+            handler.materialize_echo(CanonicalWebhookEventType::SubscriptionCreated, &event)
+        };
+        assert!(matches!(result, Err(MaterializerError::InvalidPayload(_))));
+        assert_eq!(d1.runners_entitlement_of("ten_missing"), None);
+    }
+}
+
+#[test]
+fn current_subscription_round_trips_json() {
+    let snapshot = crate::CurrentSubscription::new("sub_run", "active", "price_runner_team", 1_700_000_000_000);
+    let json = serde_json::to_string(&snapshot).unwrap();
+    assert_eq!(
+        json,
+        r#"{"subscription_id":"sub_run","status":"active","price_id":"price_runner_team","subscription_created_at_ms":1700000000000}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<crate::CurrentSubscription>(&json).unwrap(),
+        snapshot
+    );
 }

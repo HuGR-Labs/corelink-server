@@ -27,6 +27,7 @@ COMPARATOR = "scripts/load-test-baseline-check.py"
 SANITIZER = "scripts/sanitize_k6_summary.py"
 OPERATOR_README = "tests/load/README.md"
 COMPARE_STEP = "compare median vs stored baseline"
+POPULATION_STEP = "classify scenario population"
 CANONICAL_STAGING_HOST = "staging.corelink.humangr.com"
 CANONICAL_STAGING_URL = f"https://{CANONICAL_STAGING_HOST}"
 STALE_STAGING_HOST = "api-staging.corelink.humangr.com"
@@ -613,6 +614,24 @@ def assess(root: Path, *, expect: str) -> list[str]:
     if "actions/cache/restore@" not in workflow or "restore-keys:" not in workflow:
         gaps.append("previous baseline is not restored by cache prefix")
     steps = _yaml_steps(workflow)
+    population_steps = [step for step in steps if step.name == POPULATION_STEP]
+    if len(population_steps) != 1 or len(population_steps[0].runs) != 1:
+        gaps.append("workflow must contain exactly one literal scenario population classifier")
+    else:
+        population_run = population_steps[0].runs[0]
+        population_commands = _active_shell_commands(population_run)
+        if not any(command[:2] == ("exit", "1") for command in population_commands):
+            gaps.append("scenario population classifier must fail closed")
+        if "duplicate scenario" not in population_run:
+            gaps.append("scenario population classifier does not reject duplicates")
+        if "partial dispatches are invalid" not in population_run:
+            gaps.append("scenario population classifier does not reject partial input")
+        if "non-empty comma-separated population" not in population_run:
+            gaps.append("scenario population classifier does not reject empty input")
+        if any(command[:2] == ("sort", "-u") for command in population_commands):
+            gaps.append("scenario population classifier collapses duplicate input")
+        if "full=false" in population_run or "diagnostic-only" in population_run:
+            gaps.append("partial scenario input remains a green diagnostic path")
     compare_steps = [step for step in steps if step.name == COMPARE_STEP]
     if len(compare_steps) != 1 or len(compare_steps[0].runs) != 1:
         gaps.append("workflow must contain exactly one literal comparator run block")
