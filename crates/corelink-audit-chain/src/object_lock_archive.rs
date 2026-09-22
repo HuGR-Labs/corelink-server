@@ -561,10 +561,18 @@ impl InMemoryObjectLockArchive {
 
 impl ObjectLockArchiveAdapter for InMemoryObjectLockArchive {
     fn negotiate_capabilities(&self) -> Result<ObjectLockCapabilityReport, ObjectLockArchiveError> {
+        let capabilities = if self.delete_is_denied {
+            ObjectLockCapabilities::required()
+        } else {
+            ObjectLockCapabilities {
+                delete_denial: false,
+                ..ObjectLockCapabilities::required()
+            }
+        };
         Ok(ObjectLockCapabilityReport {
             contract_version: OBJECT_LOCK_ARCHIVE_CONTRACT_VERSION,
             backend: self.identity.clone(),
-            capabilities: ObjectLockCapabilities::required(),
+            capabilities,
             evidence_reference: "in-memory conformance fixture".to_string(),
         })
     }
@@ -695,20 +703,13 @@ mod tests {
 
     #[test]
     fn mutable_backend_cannot_pass_as_a_worm_archive() {
-        let archive = VerifiedObjectLockArchive::connect(
+        let error = VerifiedObjectLockArchive::connect(
             InMemoryObjectLockArchive::mutable_for_test(identity(), residency()),
         )
-        .expect("negative fake negotiates so delete is tested");
-        let request = request();
-        archive
-            .put_immutable(&request)
-            .expect("write succeeds in fake");
-        let error = archive
-            .assert_delete_denied(&request.object_key)
-            .expect_err("mutable backend must fail conformance");
+        .expect_err("mutable backend must fail negotiation before an immutable put");
         assert_eq!(
             error,
-            ObjectLockArchiveError::DeleteWasAllowed(request.object_key)
+            ObjectLockArchiveError::RequiredCapabilityMissing(vec!["delete_denial"])
         );
     }
 }
