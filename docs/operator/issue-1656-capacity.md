@@ -22,7 +22,7 @@ instance type, or changes the reservation arithmetic.
 
 Provider mode accepts an operator captured JSON readback with
 `--provider-readback`. The evidence must be marked `read_only`, carry the
-account `total_vcpu`, match the runner contract's `vcpu_per_deployment`, and
+account `total_vcpu`, match the declared `runner.vcpu_per_instance`, and
 include a positive `total_memory_mib` field. A missing, malformed, boolean, or
 mismatched readback is a failure. Until that readback exists, the verifier
 reports the repository declaration as `UNVERIFIED` and does not claim that
