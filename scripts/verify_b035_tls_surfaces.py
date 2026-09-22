@@ -74,6 +74,37 @@ PROVIDER_BOUNDARIES = (
     {"name": "future-byok", "kind": "provider", "surface": "AWS KMS, GCP KMS, Azure Key Vault, HashiCorp Vault", "source": "legal/dpa-residency-amendment.md", "status": "future_only_not_active"},
 )
 
+# The surface list is deliberately source-backed.  The line-number hints in
+# NAMED_SURFACES make review easy, while these active declaration rules make a
+# route or endpoint rename/removal fail closed instead of leaving a stale
+# comment or duplicate marker green.  Expected counts cover repeated vars in
+# the regional manifests; ``comment_count`` is used only for the operator-
+# managed admin route, which has no active declaration in this repository.
+SURFACE_SOURCE_RULES: dict[str, dict[str, Any]] = {
+    "corelink-api": {"path": "wrangler.toml", "key": "pattern", "value": "corelink-api.humangr.com/*", "active_count": 1},
+    "corelink-oci": {"path": "wrangler.toml", "key": "pattern", "value": "corelink-oci.humangr.com/*", "active_count": 1},
+    "regional-api-sam": {"path": "wrangler.toml", "key": "pattern", "value": "sam.corelink-api.humangr.com", "active_count": 1},
+    "regional-api-lhr": {"path": "wrangler.toml", "key": "pattern", "value": "lhr.corelink-api.humangr.com", "active_count": 1},
+    "regional-api-nrt": {"path": "wrangler.toml", "key": "pattern", "value": "nrt.corelink-api.humangr.com", "active_count": 1},
+    "regional-api-syd": {"path": "wrangler.toml", "key": "pattern", "value": "syd.corelink-api.humangr.com", "active_count": 1},
+    "signup-worker": {"path": "apps/signup-worker/wrangler.toml", "key": "pattern", "value": "corelink-signup.humangr.com/*", "active_count": 1},
+    "get-worker": {"path": "apps/get-corelink-worker/wrangler.toml", "key": "pattern", "value": "corelink-get.humangr.com/*", "active_count": 1},
+    "analytics-worker": {"path": "apps/analytics-worker/wrangler.toml", "key": "pattern", "value": "corelink-analytics.humangr.com", "active_count": 1},
+    "docs-route": {"path": "apps/docs/wrangler.toml", "key": "pattern", "value": "corelink-docs.humangr.com/*", "active_count": 1},
+    "docs-apex-bare": {"path": "apps/docs/wrangler.toml", "key": "pattern", "value": "humangr.com/corelink/docs", "marker": 'pattern = "humangr.com/corelink/docs"', "active_count": 1},
+    "docs-apex-wildcard": {"path": "apps/docs/wrangler.toml", "key": "pattern", "value": "humangr.com/corelink/docs/*", "active_count": 1},
+    "admin-apex": {"path": "apps/admin-ui/wrangler.toml", "key": None, "value": "humangr.com/corelink/*", "active_count": 0, "comment_count": 1},
+    "synthetic-pager-staging": {"path": "apps/synthetic-pager-worker/wrangler.toml", "key": "pattern", "value": "staging.corelink.humangr.com/v1/webhooks/pagerduty", "active_count": 1},
+    "api-apex-terraform": {"path": "infra/terraform/modules/cloudflare-base/main.tf", "key": "pattern", "value": "${var.api_subdomain}.${var.zone_name}/*", "active_count": 1},
+    "regional-api-terraform": {"path": "infra/terraform/modules/corelink-region/main.tf", "key": "pattern", "value": "${var.region_name}.api.humangr.com/*", "active_count": 1},
+    "clerk-issuer": {"path": "wrangler.toml", "key": "CLERK_ISSUER_URL", "value": "https://clerk.corelink-app.humangr.com", "active_count": 1},
+    "fabric-authority": {"path": "wrangler.toml", "key": "FABRIC_CREDENTIAL_AUTHORITY_URL", "value": "https://corelink-fabricd.gmhelmold.workers.dev", "active_count": 5},
+    "pagerduty-events": {"path": "apps/synthetic-pager-worker/wrangler.toml", "key": "PAGERDUTY_EVENTS_URL", "value": "https://events.pagerduty.com/v2/enqueue", "active_count": 3},
+    "github-release-origin": {"path": "apps/get-corelink-worker/wrangler.toml", "key": "RELEASE_ORIGIN", "value": "https://github.com/HuGR-Labs/corelink-cli/releases/latest/download", "active_count": 2},
+    "r2-global": {"path": "wrangler.toml", "key": "R2_S3_ENDPOINT", "value": "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", "active_count": 4},
+    "r2-eu": {"path": "wrangler.toml", "key": "R2_S3_ENDPOINT", "value": "https://6a1fc1c626fc2628823e60b9db01f5cd.eu.r2.cloudflarestorage.com", "active_count": 1},
+}
+
 
 class VerificationError(RuntimeError):
     """Raised when a repository contract input is missing or ambiguous."""
@@ -118,6 +149,47 @@ def _line_number(text: str, match: re.Match[str]) -> int:
     return text.count("\n", 0, match.start()) + 1
 
 
+def _validate_surface_sources(root: Path) -> list[str]:
+    """Fail closed when an active route or endpoint differs from its source."""
+    expected = {surface["name"] for surface in NAMED_SURFACES}
+    mapped = set(SURFACE_SOURCE_RULES)
+    errors = [f"missing source mapping: {name}" for name in sorted(expected - mapped)]
+    errors.extend(f"orphan source mapping: {name}" for name in sorted(mapped - expected))
+    for name, rule in SURFACE_SOURCE_RULES.items():
+        try:
+            text = _read(root, rule["path"])
+        except VerificationError as exc:
+            errors.append(f"{name}: {exc}")
+            continue
+        active_count = 0
+        comment_count = 0
+        assignment = rule["key"]
+        for raw_line in text.splitlines():
+            stripped = raw_line.lstrip()
+            is_comment = stripped.startswith(("#", "//", "/*", "*", "*/"))
+            code = raw_line.split("#", 1)[0]
+            if rule.get("marker", rule["value"]) not in code:
+                continue
+            if is_comment:
+                comment_count += 1
+                continue
+            if assignment is None or re.search(
+                rf"(?<![\w.-]){re.escape(assignment)}\s*=", code
+            ):
+                active_count += 1
+        if active_count != rule["active_count"]:
+            errors.append(
+                f"{name}: expected {rule['active_count']} active declaration(s), "
+                f"found {active_count} in {rule['path']}"
+            )
+        if "comment_count" in rule and comment_count != rule["comment_count"]:
+            errors.append(
+                f"{name}: expected {rule['comment_count']} comment marker(s), "
+                f"found {comment_count} in {rule['path']}"
+            )
+    return errors
+
+
 def inventory(root: Path = ROOT) -> dict[str, Any]:
     """Return the complete eight-line inventory and its fail-closed status."""
     rows: list[dict[str, Any]] = []
@@ -136,9 +208,10 @@ def inventory(root: Path = ROOT) -> dict[str, Any]:
             }
         )
 
+    source_errors = _validate_surface_sources(root)
     complete = len(rows) == 8 and all(
         row["claim_count"] == 1 and row["claim_matches_expected"] for row in rows
-    )
+    ) and not source_errors
     return {
         "instrument_count": len(rows),
         "instruments": rows,
@@ -151,6 +224,10 @@ def inventory(root: Path = ROOT) -> dict[str, Any]:
             "cipher_policy": CIPHER_POLICY,
             "source": "ADR-0072 + scripts/check_tls_floor.py",
             "named_surfaces": [dict(surface) for surface in NAMED_SURFACES],
+            "source_validation": {
+                "status": "all_markers_match" if not source_errors else "drift_or_incomplete",
+                "errors": source_errors,
+            },
             "provider_boundaries": [dict(boundary) for boundary in PROVIDER_BOUNDARIES],
             "downgrade_probe": {
                 "status": "provider_read_only_setting_only",

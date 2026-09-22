@@ -58,6 +58,41 @@ class B035TlsSurfaceTests(unittest.TestCase):
             all(boundary["status"] for boundary in verify.PROVIDER_BOUNDARIES)
         )
 
+    def test_commenting_active_surface_declaration_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for instrument in verify.INSTRUMENTS:
+                target = root / instrument.path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(verify.ROOT / instrument.path, target)
+            copied: set[str] = set()
+            for rule in verify.SURFACE_SOURCE_RULES.values():
+                relative = rule["path"]
+                if relative in copied:
+                    continue
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(verify.ROOT / relative, target)
+                copied.add(relative)
+
+            self.assertEqual(verify.inventory(root)["status"], "open_exact_inventory")
+            route_file = root / "wrangler.toml"
+            route_file.write_text(
+                route_file.read_text(encoding="utf-8").replace(
+                    'pattern = "corelink-api.humangr.com/*"',
+                    '# pattern = "corelink-api.humangr.com/*"',
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            report = verify.inventory(root)
+
+        self.assertEqual(report["status"], "drift_or_incomplete")
+        self.assertEqual(
+            report["external_surface"]["source_validation"]["status"],
+            "drift_or_incomplete",
+        )
+
     def test_each_instrument_is_required_and_missing_file_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
