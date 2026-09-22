@@ -21,6 +21,7 @@ on:
           - i1687
           - i1688
           - i1663
+          - i1674
 
 permissions:
   contents: read
@@ -36,7 +37,7 @@ env:
 jobs:
   campaign:
     name: campaign ${{ inputs.suite }}
-    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1380335483' }}
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -186,6 +187,19 @@ jobs:
           test_name='adapter_cache::tests::put_records_the_store_phase_exactly_once'
           cargo test --locked -p corelink-container --lib "$test_name" -- --exact --nocapture 2>&1 | tee artifacts/campaign-ci/i1663.log
           grep -F "test ${test_name} ... ok" artifacts/campaign-ci/i1663.log
+
+      - name: i1674 exact B-132 and B-142 hosted contract suites
+        if: ${{ inputs.suite == 'i1674' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            python3 -S scripts/verify_b142_workflows.py
+            python3 -m unittest -q \
+              tests/test_b132_secrets_evidence.py \
+              tests/test_b142_codeql_selfhost.py \
+              tests/test_b142_workflow_predicate.py
+          } 2>&1 | tee artifacts/campaign-ci/i1674.log
 
       - name: Upload compact campaign logs
         if: ${{ always() }}
