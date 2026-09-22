@@ -16,6 +16,7 @@ from pathlib import Path
 WORKFLOW = Path(".github/workflows/issue-2050-cli-release-dry-run.yml")
 ALLOWED_FILES = {
     ".github/workflows/issue-2050-cli-release-dry-run.yml",
+    ".github/workflows/issue-1724-cli-provenance.yml",
     "scripts/verify_i2050_release_dryrun_contract.py",
 }
 TARGETS = {
@@ -42,6 +43,20 @@ def contract() -> None:
     ).stdout.splitlines()
     if set(changed) != ALLOWED_FILES:
         fail(f"PR changes outside this isolated slice: {sorted(set(changed) ^ ALLOWED_FILES)}")
+    hosted_contract = Path(".github/workflows/issue-1724-cli-provenance.yml").read_text(
+        encoding="utf-8"
+    )
+    for token in (
+        '".github/workflows/issue-2050-cli-release-dry-run.yml"',
+        '"scripts/verify_i2050_release_dryrun_contract.py"',
+        "fetch-depth: 0",
+        "persist-credentials: false",
+        "python3 -S scripts/verify_i2050_release_dryrun_contract.py contract",
+    ):
+        if token not in hosted_contract:
+            fail(f"the existing read-only hosted PR lane does not run the contract: {token}")
+    if "id-token: write" in hosted_contract or "contents: write" in hosted_contract:
+        fail("the PR contract lane has signing or write permission")
     for token in ("pull_request:", "workflow_dispatch:", "refs/heads/main", "github.ref_protected"):
         if token not in text:
             fail(f"required event or protected-ref guard is missing: {token}")
@@ -91,7 +106,7 @@ def contract() -> None:
     ):
         if token.lower() not in text.lower():
             fail(f"required release proof is missing: {token}")
-    print("PASS: only the new workflow and its contract checker changed")
+    print("PASS: only the new dry-run workflow, its checker, and read-only PR test wiring changed")
     print("PASS: manual protected-main lane, no release/tag/cross-repo write path")
     print("PASS: five targets, pinned cross-toolchain, CycloneDX, Rekor, and SLSA provenance")
 
