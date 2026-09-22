@@ -8,6 +8,7 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -318,6 +319,40 @@ class B098VerifierTests(unittest.TestCase):
         mutated = claude.replace(census, f"{census}\n{census}", 1)
         with self.assertRaises(verifier.VerificationError):
             verifier.audit(ROOT, claude_text=mutated)
+
+    def test_cargo_metadata_package_ids_are_unique_and_well_formed(self) -> None:
+        def mocked_metadata(packages: object):
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"packages": packages}),
+                stderr="",
+            )
+
+        cases = {
+            "duplicate ids": [
+                {"id": "path+first#1.0.0"},
+                {"id": "path+first#1.0.0"},
+            ],
+            "missing id": [{"name": "first"}],
+            "non-string id": [{"id": 1}],
+            "non-object package": ["path+first#1.0.0"],
+        }
+        for label, packages in cases.items():
+            with self.subTest(label=label), patch.object(
+                verifier.subprocess, "run", return_value=mocked_metadata(packages)
+            ):
+                with self.assertRaises(verifier.VerificationError):
+                    verifier.package_count(ROOT)
+
+        unique = [
+            {"id": "path+first#1.0.0"},
+            {"id": "path+second#1.0.0"},
+            {"id": "registry+https://github.com/rust-lang/crates.io-index#third@1.0.0"},
+        ]
+        with patch.object(
+            verifier.subprocess, "run", return_value=mocked_metadata(unique)
+        ):
+            self.assertEqual(verifier.package_count(ROOT), len(unique))
 
     def test_cli_reports_open_without_mutating_refs(self) -> None:
         before = subprocess.check_output(["git", "show-ref", "--tags"], cwd=ROOT, text=True)
