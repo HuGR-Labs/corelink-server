@@ -106,20 +106,56 @@ jobs:
         continue-on-error: true
         run: scripts/terraform_drift_plan.sh "${{ matrix.region }}" "infra/terraform/regions/${{ matrix.region }}"
 
-      # ----------------------------------------------------------------
-      # 5. Upload plan artifact (always — compliance evidence)
-      # ----------------------------------------------------------------
-      - name: Upload plan artifact — ${{ matrix.region }}
+      - name: Sanitize Terraform drift evidence — ${{ matrix.region }}
         if: always()
-        # actions/upload-artifact@v4.5.0
+        env:
+          PLAN_EXIT: ${{ steps.plan.outputs.terraform_exitcode }}
+        run: |
+          set -euo pipefail
+          region="${{ matrix.region }}"
+          root="infra/terraform/regions/${region}"
+          plan_json="${GITHUB_WORKSPACE}/terraform-plan-${region}.json"
+          summary_file="${GITHUB_WORKSPACE}/terraform-drift-summary-${region}.json"
+          trap 'rm -f "${plan_json}" "${root}/plan-${region}.tfplan" "${root}/plan-${region}.log"' EXIT
+          exit_code="${PLAN_EXIT:-1}"
+
+          if [[ "${exit_code}" == 0 || "${exit_code}" == 2 ]]; then
+            if ! terraform -chdir="${root}" show -json "plan-${region}.tfplan" >"${plan_json}" 2>/dev/null; then
+              exit_code=1
+            fi
+          fi
+
+          if [[ "${exit_code}" == 0 || "${exit_code}" == 2 ]]; then
+            python3 scripts/sanitize_terraform_drift.py \
+              --region "${region}" \
+              --run-id "${GITHUB_RUN_ID}" \
+              --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+              --detected-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --exit-code "${exit_code}" \
+              --plan-json "${plan_json}" \
+              --output "${summary_file}"
+          else
+            python3 scripts/sanitize_terraform_drift.py \
+              --region "${region}" \
+              --run-id "${GITHUB_RUN_ID}" \
+              --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+              --detected-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --exit-code 1 \
+              --output "${summary_file}"
+          fi
+
+
+      # ----------------------------------------------------------------
+      # 5. Upload sanitized summary (always — bounded evidence)
+      # ----------------------------------------------------------------
+      - name: Upload sanitized drift summary — ${{ matrix.region }}
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: terraform-plan-${{ matrix.region }}-${{ github.run_id }}
-          path: |
-            infra/terraform/regions/${{ matrix.region }}/plan-${{ matrix.region }}.log
-            infra/terraform/regions/${{ matrix.region }}/plan-${{ matrix.region }}.tfplan
-          retention-days: 30
-          if-no-files-found: warn
+          name: terraform-drift-summary-${{ matrix.region }}-${{ github.run_id }}
+          path: terraform-drift-summary-${{ matrix.region }}.json
+          retention-days: 7
+          if-no-files-found: error
 
       # ----------------------------------------------------------------
       # 6a. SEV-3 alert — drift detected (exit code 2)

@@ -53,18 +53,9 @@ terraform -chdir="$root" plan \
   -detailed-exitcode \
   -out="plan-${region}.tfplan" \
   -input=false \
-  2>&1 | tee "$plan_log"
-plan_status=("${PIPESTATUS[@]}")
-terraform_exitcode="${plan_status[0]}"
-tee_exitcode="${plan_status[1]}"
+  >"$plan_log" 2>&1
+terraform_exitcode="$?"
 set -e
-
-# A broken artifact sink is an operational error even if Terraform returned 0.
-if [[ "$tee_exitcode" != 0 ]]; then
-  printf '::error::Terraform plan log sink failed for region %s\n' "$region" >&2
-  write_output 1 "$terraform_exitcode" error false
-  exit 1
-fi
 
 case "$terraform_exitcode" in
   0)
