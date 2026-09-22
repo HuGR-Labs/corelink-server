@@ -55,8 +55,8 @@ if [[ -z "$published_tgz" ]]; then
   exit 1
 fi
 cp -R sdks/js "$work/js"
-(cd "$work/js" && npm install --no-save --silent typescript @types/node >/dev/null 2>&1 \
-  && npx tsc -p tsconfig.build.json >/dev/null && npm pack --silent >/dev/null)
+(cd "$work/js" && npm install --no-save typescript @types/node \
+  && npx tsc -p tsconfig.build.json && npm pack)
 rebuilt_tgz="$(find "$work/js" -maxdepth 1 -name '*.tgz' -print -quit)"
 
 if [[ "$(basename "$published_tgz")" != "$(basename "$rebuilt_tgz")" ]]; then
