@@ -40,18 +40,35 @@ def test_write_identity_gate_requires_request_and_colo_receipts(tmp_path: Path) 
     _write_artifact(artifact, identities=True)
     verify_writes(artifact, require_identities=True)
 
-    _write_artifact(artifact)
-    with pytest.raises(TimingError, match="request/colo identity"):
-        verify_writes(artifact, require_identities=True)
-
+def test_write_identity_gate_rejects_missing_request_id(tmp_path: Path) -> None:
+    artifact = tmp_path / "writes.txt"
     _write_artifact(artifact, identities=True)
     artifact.write_text(
-        artifact.read_text(encoding="utf-8").replace("cf_ray=abc123-SJC", "cf_ray=invalid/value"),
+        artifact.read_text(encoding="utf-8").replace("request_id=req-123 ", ""),
         encoding="utf-8",
     )
     with pytest.raises(TimingError):
         verify_writes(artifact, require_identities=True)
 
+def test_write_identity_gate_rejects_missing_cf_ray(tmp_path: Path) -> None:
+    artifact = tmp_path / "writes.txt"
+    _write_artifact(artifact, identities=True)
+    artifact.write_text(
+        artifact.read_text(encoding="utf-8").replace(" cf_ray=abc123-SJC", ""),
+        encoding="utf-8",
+    )
+    with pytest.raises(TimingError):
+        verify_writes(artifact, require_identities=True)
+
+def test_write_identity_gate_rejects_malformed_request_id(tmp_path: Path) -> None:
+    artifact = tmp_path / "writes.txt"
+    _write_artifact(artifact, identities=True)
+    artifact.write_text(
+        artifact.read_text(encoding="utf-8").replace("request_id=req-123", "request_id=invalid/value"),
+        encoding="utf-8",
+    )
+    with pytest.raises(TimingError):
+        verify_writes(artifact, require_identities=True)
 
 def test_write_phase_mutation_is_red(tmp_path: Path) -> None:
     artifact = tmp_path / "writes.txt"
