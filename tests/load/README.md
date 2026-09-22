@@ -144,3 +144,19 @@ missing teardown is a failed run and must be investigated before another run.
 Bump the suite version (and re-baseline the operator comparison budget) when
 the SLO catalog floors change. The current version is **r3-prep v1** —
 matches HEAD of `wt/r3-prep-load-tests`.
+
+## Hosted CI dispatch command manifest
+
+The bounded lane is dispatched manually from the repository root with the exact
+command below. The confirmation literal is required; omit secrets from the
+command because GitHub resolves them from the protected `staging` environment.
+
+```bash
+gh workflow run load-test-nightly.yml --repo HuGR-dev/corelink-server --ref main \
+  --field confirm=run-bounded-load \
+  --field scenarios=signup,webhook,dsr,cas,byok
+```
+
+The operator must inspect the workflow run URL and uploaded target receipt after
+GitHub accepts the dispatch. A missing receipt, invalid target, expired receipt,
+missing teardown token, or teardown failure must leave the run failed closed.
