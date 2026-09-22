@@ -174,9 +174,9 @@ LANES = (
         ".github/workflows/fuzz-nightly.yml",
         "fuzz-matrix-expansion",
         (
-            "runs-on: [self-hosted, mac, corelink-builder]",
+            "runs-on: ubuntu-latest",
             "timeout-minutes: 40",
-            "RUSTUP_TOOLCHAIN: nightly-x86_64-apple-darwin",
+            "RUSTUP_TOOLCHAIN: nightly",
             'CARGO_HOME="${RUNNER_TEMP}/corelink-fuzz-cargo/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${FUZZ_CRATE}/${FUZZ_TARGET}"',
             'CARGO_TARGET_DIR="${RUNNER_TEMP}/corelink-fuzz-target/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${FUZZ_CRATE}/${FUZZ_TARGET}"',
             "-max_total_time=${{ env.FUZZ_DURATION }}",
@@ -303,7 +303,7 @@ def assert_yaml_lane_shape(parsed: dict, lane: Lane) -> None:
             )
     if lane.name == "fuzz-nightly":
         env = job.get("env")
-        if not isinstance(env, dict) or env.get("RUSTUP_TOOLCHAIN") != "nightly-x86_64-apple-darwin":
+        if not isinstance(env, dict) or env.get("RUSTUP_TOOLCHAIN") != "nightly":
             raise VerificationError("fuzz-nightly: nightly toolchain selection is not executable job env")
         if env.get("FUZZ_CRATE") != "${{ matrix.crate }}" or env.get("FUZZ_TARGET") != "${{ matrix.target }}":
             raise VerificationError("fuzz-nightly: matrix identity is not bound into isolated Cargo paths")
