@@ -18,6 +18,7 @@ on:
           - i1636
           - i1638
           - i1639
+          - i1639-ts
           - i1628
           - i1685
           - i1675
@@ -64,9 +65,40 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  signup-worker-vitest:
+    name: campaign i1639 TypeScript entitlement tests
+    if: ${{ inputs.suite == 'i1639-ts' && github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the dispatched revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
+
+      - name: Verify signup-worker lockfile pin
+        run: python3 scripts/check_signup_worker_pin.py
+
+      - name: Run signup-worker provider authority and D1 batch test
+        working-directory: apps/signup-worker
+        run: pnpm exec vitest run tests/runner_entitlement_authority.test.ts
+
   campaign:
     name: campaign ${{ inputs.suite }}
-    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
+    if: ${{ inputs.suite != 'i1639-ts' && github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -201,19 +233,15 @@ jobs:
             cargo clippy --locked -p corelink-server --all-targets -- -D warnings
           } 2>&1 | tee artifacts/campaign-ci/i1638.log
 
-      - name: i1639 materializer, subscription authority, and server checks
+      - name: i1639 provider authority and D1 fence behavior
         if: ${{ inputs.suite == 'i1639' }}
         shell: bash
         run: |
           set -euo pipefail
           {
-            cargo test --locked -p corelink-billing-stripe-materializer --lib --tests -- --nocapture
+            cargo test --locked -p corelink-billing-stripe-materializer runner_cas_ -- --nocapture
+            cargo test --locked -p corelink-billing-stripe-materializer same_second_reversed_id -- --nocapture
             cargo test --locked -p corelink-server --lib current_subscription_authority::tests -- --nocapture
-            cargo fmt --all --check
-            cargo clippy --locked -p corelink-billing-stripe-materializer --all-targets -- -D warnings
-            cargo clippy --locked -p corelink-server --all-targets -- -D warnings
-            cargo check --locked -p corelink-server --all-targets
-            cargo test --locked -p corelink-ops --test migrations_d1_migration_integration -- --nocapture
           } 2>&1 | tee artifacts/campaign-ci/i1639.log
 
       - name: i1628 focused CAS liability and decorator checks

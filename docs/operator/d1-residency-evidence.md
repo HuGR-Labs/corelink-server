@@ -42,9 +42,9 @@ an executed obligation.
 | `prod-nrt` | `CONFIG_DB` | `corelink-config-prod` | same | absent |
 | `prod-syd` | `CONFIG_DB` | `corelink-config-prod` | same | absent |
 
-These are the active bindings at `wrangler.toml:528-532`, `726-730`,
-`902-906`, `1072-1076`, and `1238-1242`. The only active `jurisdiction =
-"eu"` keys are R2 bucket bindings under `prod-lhr` (`wrangler.toml:824-840`);
+These are the active bindings at `wrangler.toml:546-550`, `745-749`,
+`922-926`, `1093-1097`, and `1260-1264`. The only active `jurisdiction =
+"eu"` keys are R2 bucket bindings under `prod-lhr` (`wrangler.toml:841-860`);
 they do not apply to `CONFIG_DB`. The repository therefore proves five
 bindings and one D1 identity. It does not prove the physical location of the
 D1 primary or its replicas.

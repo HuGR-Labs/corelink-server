@@ -39,6 +39,15 @@ class EvidenceError(ValueError):
     """Raised when a B-083 evidence record could overstate KMS proof."""
 
 
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    record: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in record:
+            raise EvidenceError(f"duplicate JSON key: {key}")
+        record[key] = value
+    return record
+
+
 def _exact_keys(value: Any, expected: frozenset[str], label: str) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != expected:
         actual = sorted(value) if isinstance(value, dict) else type(value).__name__
@@ -146,7 +155,7 @@ def _read_record(path: Path) -> Any:
     if not path.is_file() or path.is_symlink():
         raise EvidenceError(f"evidence path must be a regular file: {path}")
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_keys)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise EvidenceError(f"invalid JSON evidence: {exc}") from exc
 
