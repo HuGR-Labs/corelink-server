@@ -59,7 +59,8 @@ name: billing-aggregate-runner
 #   - CORELINK_BILLING_D1_DATABASE_ID  — the prod billing/usage D1 (corelink-prod-d1
 #                                       = CONFIG_DB); same secret the reconcile cron
 #                                       uses. EXISTS once reconcile was wired.
-#   Also: migrations 0094/0095/0096 and 0132 (immutable terms + event claims)
+#   Also: migrations 0094/0095/0096 and PENDING_1630 (immutable terms + event
+#   claims; assign its ordinal after the active migration queue is serialized)
 #   MUST be applied to the prod D1 first, and
 #   the container roll that activates the 0095 ingest MUST have shipped (so staged
 #   rows carry `qty`), and every billable tenant-period needs an immutable
@@ -322,7 +323,7 @@ jobs:
                   raise RuntimeError(f"period={period}: Conflict watermark without durable claim; no accounting mutation")
               def exact_winner(w):
                   e = expected[(w["tenant_id"], w["request_id"])]
-                  return (w["claim_fingerprint"] == e["claim_fingerprint"] and w["aggregate_batch_id"] == e["aggregate_batch_id"] and w["billing_period"] == e["billing_period"] and w["terms_snapshot_ref"] == e["terms_snapshot_ref"] and w["terms_snapshot_digest_hex"] == e["terms_snapshot_digest_hex"] and w["evidence_ref"] == e["evidence_ref"] and w["evidence_digest_hex"] == e["evidence_digest_hex"] and w["claimed_at_ms"] == e["claimed_at_ms"] and w["runner_aggregated_at"] is not None)
+                  return (w["claim_fingerprint"] == e["claim_fingerprint"] and w["aggregate_batch_id"] == e["aggregate_batch_id"] and w["billing_period"] == e["billing_period"] and w["terms_snapshot_ref"] == e["terms_snapshot_ref"] and w["terms_snapshot_digest_hex"] == e["terms_snapshot_digest_hex"] and w["evidence_ref"] == e["evidence_ref"] and w["evidence_digest_hex"] == e["evidence_digest_hex"] and w["runner_aggregated_at"] is not None)
               if any(w["claim_fingerprint"] is not None for w in winners):
                   exact = len(winners) == len(events) and all(exact_winner(w) for w in winners)
                   if exact: print(f"period={period}: Deduped durable batch; no replay."); continue
