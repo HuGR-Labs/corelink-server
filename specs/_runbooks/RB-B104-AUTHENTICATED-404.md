@@ -12,6 +12,7 @@ selected tenant is required as `PROBE_TOKEN`; it is written to a mode `0600`
 temporary header file and is never printed or passed as a process argument.
 
 ```sh
+export PROBE_BASE=https://<approved-staging-origin>
 export PROBE_VERSION=<deployed-version-or-sha>
 export PROBE_TOKEN=<read-capable-pat>
 PROBE_SAMPLES=10 ./scripts/probe-authenticated-404.sh
@@ -20,6 +21,16 @@ PROBE_SAMPLES=10 ./scripts/probe-authenticated-404.sh
 The probe refuses to run without a version, a UUID tenant, at least ten
 samples, an HTTPS origin, and a PAT. It reports `INDETERMINATE` on transport,
 timeout, empty-body, malformed status/timing, or missing attribution.
+
+The canonical hosted lane is the manual
+`.github/workflows/issue-1660-b104-authenticated-404.yml` workflow. It is
+bound to protected `main` and the `staging` environment, accepts only an
+HTTPS origin whose host identifies `staging`, `stage`, or `stg`, and requires
+the environment secret `CORELINK_B104_STAGING_PAT`. The dispatch requires the
+deployed version and both exact read-only acknowledgements. If staging or its
+PAT is unavailable, the lane fails closed; production is not an acceptable
+substitute. The retained log labels the target `staging-origin-redacted` and
+does not retain the PAT, generated object keys, headers, or response bodies.
 
 ## Controls and population
 
@@ -61,7 +72,9 @@ storage read.
 
 The timing pad is a security control and must remain enabled. It means `total`
 is not a raw server execution profile; the unpadded attribution phases are the
-repository-owned evidence used to separate auth, routing, and miss work.
+repository-owned evidence used to separate auth, routing, and miss work. The
+probe reports median and nearest-rank p90 for end-to-end wall time plus every
+present timing phase.
 
 ## Closure gate
 

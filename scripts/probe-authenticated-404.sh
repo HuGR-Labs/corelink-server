@@ -9,7 +9,7 @@
 set -euo pipefail
 umask 077
 
-PROBE_BASE="${PROBE_BASE:-https://corelink-api.humangr.com}"
+PROBE_BASE="${PROBE_BASE:-}"
 PROBE_TENANT="${PROBE_TENANT:-ee30f7ba-fc25-4d71-939e-ebe130b4c6a3}"
 PROBE_SAMPLES="${PROBE_SAMPLES:-10}"
 PROBE_TIMEOUT="${PROBE_TIMEOUT:-15}"
@@ -21,6 +21,7 @@ die() {
 
 [ -n "${PROBE_TOKEN:-}" ] || die "PROBE_TOKEN is required; no measurement was taken"
 [ -n "${PROBE_VERSION:-}" ] || die "PROBE_VERSION is required; deployed version is unknown"
+[ -n "${PROBE_BASE}" ] || die "PROBE_BASE is required; choose an approved HTTPS origin"
 [[ "${PROBE_VERSION}" =~ ^[A-Za-z0-9._-]{1,128}$ ]] || die "PROBE_VERSION has an invalid shape"
 [[ "${PROBE_TENANT}" =~ ^[0-9a-fA-F-]{36}$ ]] || die "PROBE_TENANT must be a UUID"
 [[ "${PROBE_SAMPLES}" =~ ^[0-9]+$ ]] || die "PROBE_SAMPLES is not an integer"
@@ -141,8 +142,11 @@ phase_stats() {
 }
 
 printf 'B-104 authenticated 404 probe\n'
-printf 'version=%s samples=%s target=%s/cargo/<tenant>/<random-key>\n' \
-  "${PROBE_VERSION}" "${PROBE_SAMPLES}" "${PROBE_BASE}"
+# Keep the origin out of the retained log. The workflow artifact is safe to
+# share with the issue, while the operator still supplies the exact staging
+# origin through the private workflow environment.
+printf 'version=%s samples=%s target=staging-origin-redacted/cargo/<tenant>/<random-key>\n' \
+  "${PROBE_VERSION}" "${PROBE_SAMPLES}"
 
 if ! request "${PROBE_BASE}/health" no; then
   die "health control failed (transport, timeout, empty, or malformed response)"
@@ -173,8 +177,9 @@ while [ "${sample_no}" -le "${PROBE_SAMPLES}" ]; do
     die "authenticated sample has malformed Server-Timing"
   [ -n "${timing_output}" ] || die "authenticated sample has no Server-Timing attribution"
   printf '%s\n' "${timing_output}" >>"${TIMING_ROWS}"
-  printf 'sample=%s status=404 wall_ms=%s\n' "${sample_no}" \
-    "$(awk -v seconds="${REQUEST_TIME}" 'BEGIN { printf "%.0f", seconds * 1000 }')"
+  wall_ms="$(awk -v seconds="${REQUEST_TIME}" 'BEGIN { printf "%.0f", seconds * 1000 }')"
+  printf '%s\twall\t%s\n' "${sample_no}" "${wall_ms}" >>"${TIMING_ROWS}"
+  printf 'sample=%s status=404 wall_ms=%s\n' "${sample_no}" "${wall_ms}"
   sample_no=$((sample_no + 1))
 done
 
@@ -184,7 +189,7 @@ for required_phase in auth wdb origin opat ohandler total; do
     die "required Server-Timing phase '${required_phase}' missing from one or more samples"
 done
 
-for phase in auth wdb qtier qbatch qresid origin ohop opat oquota ostore oaccounting ohandler total; do
+for phase in wall auth wdb qtier qbatch qresid origin ohop opat oquota ostore oaccounting ohandler total; do
   phase_stats "${phase}"
 done
 printf 'result=MEASURED (all controls, 404 statuses, and attribution phases passed)\n'
