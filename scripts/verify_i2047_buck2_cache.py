@@ -47,6 +47,16 @@ def _require_once(text: str, marker: str, label: str) -> None:
         raise ContractError(f"{label}: expected one {marker!r}, found {count}")
 
 
+def _require_before(text: str, earlier: str, later: str, label: str) -> None:
+    try:
+        earlier_index = text.index(earlier)
+        later_index = text.index(later)
+    except ValueError as exc:
+        raise ContractError(f"{label}: missing ordering marker") from exc
+    if earlier_index >= later_index:
+        raise ContractError(f"{label}: {earlier!r} must precede {later!r}")
+
+
 def _job(workflow: str, name: str) -> str:
     match = re.search(
         rf"(?ms)^  {re.escape(name)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
@@ -118,6 +128,18 @@ def verify(
     _require_cache_pair(build, "runtime workflow/build", restore=True)
     _require_cache_pair(build, "runtime workflow/build", restore=False, save=True)
     _require_cache_pair(benchmark_job, "runtime workflow/benchmark", restore=True)
+    _require_before(
+        build,
+        "id: validate-pat",
+        "name: Install Buck2 latest stable",
+        "runtime workflow/build/authentication order",
+    )
+    _require_before(
+        benchmark_job,
+        "name: Validate CORELINK_PAT before benchmark",
+        "name: Install Buck2",
+        "runtime workflow/benchmark/authentication order",
+    )
 
     for marker in (
         "id: validate-pat",

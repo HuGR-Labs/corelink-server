@@ -131,6 +131,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      # Refuse the lane before any Buck2 binary invocation, including the
+      # installer version smoke check below.
+      - name: Validate CORELINK_PAT secret is set
+        id: validate-pat
+        run: |
+          if [[ -z "${CORELINK_PAT:-}" ]]; then
+            echo "ERROR: CORELINK_PAT secret is not configured." >&2
+            echo "Set it in: Settings → Secrets → Actions → CORELINK_PAT" >&2
+            exit 1
+          fi
+          echo "CORELINK_PAT is set (length=${#CORELINK_PAT})"
+          echo "present=true" >> "${GITHUB_OUTPUT}"
+        env:
+          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
+
       # ── install Buck2 ─────────────────────────────────────────────────────
       - name: Install Buck2 latest stable
         id: install_buck2
@@ -187,20 +202,6 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             clang-14 libc++-14-dev libc++abi-14-dev
-
-      # ── validate PAT secret ────────────────────────────────────────────────
-      - name: Validate CORELINK_PAT secret is set
-        id: validate-pat
-        run: |
-          if [[ -z "${CORELINK_PAT:-}" ]]; then
-            echo "ERROR: CORELINK_PAT secret is not configured." >&2
-            echo "Set it in: Settings → Secrets → Actions → CORELINK_PAT" >&2
-            exit 1
-          fi
-          echo "CORELINK_PAT is set (length=${#CORELINK_PAT})"
-          echo "present=true" >> "${GITHUB_OUTPUT}"
-        env:
-          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
 
       # This cache is only a runner-local acceleration layer for the pinned
       # Buck2 release.  The full repository and exact commit are part of the
@@ -475,6 +476,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Validate CORELINK_PAT before benchmark
+        run: |
+          set -euo pipefail
+          if [[ -z "${CORELINK_PAT:-}" ]]; then
+            echo "ERROR: refusing benchmark without CORELINK_PAT; no unauthenticated cache writes are allowed." >&2
+            exit 1
+          fi
+          echo "CORELINK_PAT is set (length=${#CORELINK_PAT})"
+        env:
+          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
+
       - name: Restore exact Buck2 cache namespace
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -537,17 +549,6 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends clang-14 libc++-14-dev libc++abi-14-dev
-
-      - name: Validate CORELINK_PAT before benchmark
-        run: |
-          set -euo pipefail
-          if [[ -z "${CORELINK_PAT:-}" ]]; then
-            echo "ERROR: refusing benchmark without CORELINK_PAT; no unauthenticated cache writes are allowed." >&2
-            exit 1
-          fi
-          echo "CORELINK_PAT is set (length=${#CORELINK_PAT})"
-        env:
-          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
 
       - name: Run benchmark script
         working-directory: examples/buck2-starter
