@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Capture one bounded Cloudflare Containers capacity readback.
+"""Capture a bounded Cloudflare Containers capacity observation.
 
 This probe deliberately has no account or URL arguments.  It performs exactly
 one GET against the canonical account endpoint, requires a dedicated
-read-only token, and writes only an aggregate, redacted receipt.
+read-only token, and writes only an aggregate, redacted receipt.  The
+``--topology-output`` discovery mode records JSON paths and JSON types only;
+it never records a provider value, an HTTP-header value, or a token.
 """
 
 from __future__ import annotations
@@ -30,6 +32,11 @@ ENDPOINT = (
 ACCOUNT_REDACTED = f"{CANONICAL_ACCOUNT_ID[:4]}...{CANONICAL_ACCOUNT_ID[-4:]}"
 MAX_RESPONSE_BYTES = 1_048_576
 ACCOUNT_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+SAFE_SCHEMA_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+OPAQUE_IDENTIFIER_KEY_RE = re.compile(r"^(?:[0-9a-f]{16,}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$", re.IGNORECASE)
+SENSITIVE_KEY_RE = re.compile(r"(?:api[_-]?key|authorization|credential|pass(?:word)?|secret|token)", re.IGNORECASE)
+MAX_TOPOLOGY_DEPTH = 8
+MAX_TOPOLOGY_NODES = 256
 
 
 class ProbeError(RuntimeError):
@@ -67,11 +74,19 @@ def _request(token: str) -> tuple[dict[str, Any], str]:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ProbeError("capacity response was not valid JSON") from exc
+    _validate_provider_envelope(payload)
+    return payload, hashlib.sha256(raw).hexdigest()
+
+
+def _validate_provider_envelope(payload: object) -> None:
+    """Accept only the explicit successful Cloudflare API envelope."""
+
     if not isinstance(payload, dict):
         raise ProbeError("capacity response must be a JSON object")
-    if payload.get("success") is False:
-        raise ProbeError("capacity endpoint reported failure")
-    return payload, hashlib.sha256(raw).hexdigest()
+    if payload.get("success") is not True:
+        raise ProbeError("capacity endpoint must report success=true")
+    if payload.get("errors") != []:
+        raise ProbeError("capacity endpoint must report an empty errors array")
 
 
 def _source(payload: dict[str, Any]) -> dict[str, Any]:
@@ -79,6 +94,70 @@ def _source(payload: dict[str, Any]) -> dict[str, Any]:
     if isinstance(result, dict):
         return result
     return payload
+
+
+def _json_type(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    raise ProbeError("capacity response contains a non-JSON value")
+
+
+def _is_static_schema_key(key: str) -> bool:
+    """Allow a small human-readable vocabulary; redact dynamic object keys."""
+
+    return (
+        SAFE_SCHEMA_KEY_RE.fullmatch(key) is not None
+        and OPAQUE_IDENTIFIER_KEY_RE.fullmatch(key) is None
+        and SENSITIVE_KEY_RE.search(key) is None
+    )
+
+
+def _json_pointer_segment(segment: str) -> str:
+    return segment.replace("~", "~0").replace("/", "~1")
+
+
+def _key_type_topology(payload: dict[str, Any]) -> dict[str, str]:
+    """Return a bounded JSON key/type map without retaining any value.
+
+    Arrays are intentionally terminal nodes. Their elements can contain
+    account-specific identifiers, so nested array paths would add no capacity
+    schema evidence while widening the retention surface.
+    """
+
+    topology: dict[str, str] = {}
+
+    def visit(value: object, path: str, depth: int) -> None:
+        if len(topology) >= MAX_TOPOLOGY_NODES:
+            raise ProbeError("capacity topology exceeds the bounded node limit")
+        topology[path] = _json_type(value)
+        if isinstance(value, dict):
+            if depth >= MAX_TOPOLOGY_DEPTH:
+                raise ProbeError("capacity topology exceeds the bounded depth")
+            dynamic_key_count = 0
+            for key in sorted(value):
+                if not isinstance(key, str) or not key:
+                    raise ProbeError("capacity topology contains an invalid JSON key")
+                if _is_static_schema_key(key):
+                    segment = _json_pointer_segment(key)
+                else:
+                    dynamic_key_count += 1
+                    # The ordinal distinguishes sibling fields without retaining
+                    # an identifier, numeric key, or secret-bearing key name.
+                    segment = f"~dynamic-key-{dynamic_key_count}"
+                visit(value[key], f"{path}/{segment}", depth + 1)
+
+    visit(payload, "", 0)
+    return topology
 
 
 def _number(source: dict[str, Any], *paths: tuple[str, ...]) -> float:
@@ -119,6 +198,29 @@ def _write(path: Path, receipt: dict[str, object]) -> None:
         except FileNotFoundError:
             pass
         raise
+
+
+def run_topology(token: str, output: Path) -> int:
+    """Capture provider schema metadata without retaining response values."""
+
+    if not ACCOUNT_ID_RE.fullmatch(CANONICAL_ACCOUNT_ID):
+        raise ProbeError("canonical account identity is malformed")
+    payload, _response_sha256 = _request(token)
+    _write(
+        output,
+        {
+            "schema_version": 1,
+            "schema": "corelink.issue-2044.capacity-key-type-topology.v1",
+            "issue": 2044,
+            "read_only": True,
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "account_id_redacted": ACCOUNT_REDACTED,
+            "endpoint": "GET /accounts/{account}/containers/me",
+            "provider_api_version": "v4",
+            "key_type_topology": _key_type_topology(payload),
+        },
+    )
+    return 0
 
 
 def run(token: str, output: Path) -> int:
@@ -170,9 +272,13 @@ def run(token: str, output: Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, required=True)
+    outputs = parser.add_mutually_exclusive_group(required=True)
+    outputs.add_argument("--output", type=Path)
+    outputs.add_argument("--topology-output", type=Path)
     args = parser.parse_args()
     try:
+        if args.topology_output is not None:
+            return run_topology(os.environ.get("CLOUDFLARE_CAPACITY_READ_TOKEN", ""), args.topology_output)
         return run(os.environ.get("CLOUDFLARE_CAPACITY_READ_TOKEN", ""), args.output)
     except ProbeError as exc:
         print(f"issue-1656 capacity readback: FAIL-CLOSED: {exc}", flush=True)

@@ -1,7 +1,7 @@
-name: issue-1656 capacity refresh
+name: issue-1656 capacity schema observation
 
 # Protected owner lane.  The probe performs one GET only and emits an
-# aggregate receipt; it never deploys, patches, lists, or changes quota.
+# JSON key/type topology; it never deploys, patches, lists, or changes quota.
 on:
   workflow_dispatch:
     inputs:
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   readback:
-    name: "issue #1656 bounded capacity readback"
+    name: "issue #2044 bounded capacity schema observation"
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: production-capacity-read
@@ -41,7 +41,7 @@ jobs:
           test "$CONFIRM" = run-1656-read-only
           mkdir -p artifacts
 
-      - name: Capture one GET-only redacted receipt
+      - name: Capture one GET-only redacted key/type topology
         env:
           # This repository-level token remains opaque to the runner log.  The
           # protected, main-only environment and the probe's fixed single GET
@@ -51,22 +51,22 @@ jobs:
         run: |
           set +e
           python3 scripts/probe_i1656_capacity_readonly.py \
-            --output artifacts/issue-1656-capacity-read-only-receipt.json \
+            --topology-output artifacts/issue-2044-capacity-key-type-topology.json \
             2>&1 | tee "$RUNNER_TEMP/issue-1656-capacity-read-only.log"
           status=${PIPESTATUS[0]}
-          if [[ -f artifacts/issue-1656-capacity-read-only-receipt.json ]]; then
-            sha256sum artifacts/issue-1656-capacity-read-only-receipt.json > artifacts/issue-1656-capacity-read-only-receipt.sha256
+          if [[ -f artifacts/issue-2044-capacity-key-type-topology.json ]]; then
+            sha256sum artifacts/issue-2044-capacity-key-type-topology.json > artifacts/issue-2044-capacity-key-type-topology.sha256
           fi
           exit "$status"
 
-      - name: Upload redacted receipt and bounded log
+      - name: Upload redacted topology and bounded log
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: issue-1656-capacity-read-only-${{ github.run_id }}
+          name: issue-2044-capacity-key-type-topology-${{ github.run_id }}
           path: |
-            artifacts/issue-1656-capacity-read-only-receipt.json
-            artifacts/issue-1656-capacity-read-only-receipt.sha256
+            artifacts/issue-2044-capacity-key-type-topology.json
+            artifacts/issue-2044-capacity-key-type-topology.sha256
             ${{ runner.temp }}/issue-1656-capacity-read-only.log
           if-no-files-found: error
           retention-days: 30
