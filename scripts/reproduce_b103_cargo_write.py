@@ -91,6 +91,8 @@ def request(
     }
     if method == "PROPFIND":
         headers["Depth"] = "0"
+    if method == "PUT":
+        headers["Content-Type"] = "application/octet-stream"
     started = time.monotonic()
     status: int | None = None
     response_headers: dict[str, str] = {}
