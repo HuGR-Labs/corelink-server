@@ -10,6 +10,8 @@ account ID, zone ID, or provider resource ID into its receipt.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+from fnmatch import fnmatchcase
 import json
 import os
 import sys
@@ -89,6 +91,47 @@ def name_present(result: Any, expected: str, field: str) -> bool:
 def result_items(result: Any) -> list[dict[str, Any]]:
     items = result if isinstance(result, list) else result.get("result", []) if isinstance(result, dict) else []
     return [item for item in items if isinstance(item, dict)]
+
+
+def expected_staging_route_pairs(cloudflare: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    """Return the two route/script pairs that may serve the staging hostname."""
+    return (
+        (f"{HOSTNAME}/*", cloudflare["root_worker"]),
+        (
+            f"{HOSTNAME}/v1/webhooks/pagerduty",
+            cloudflare["synthetic_receiver_worker"],
+        ),
+    )
+
+
+def normalized_staging_route_pairs(routes: Any) -> list[tuple[str, str]]:
+    """Normalize provider routes that can serve the canonical staging host.
+
+    Cloudflare returns one zone-wide route list.  This deliberately reduces it
+    to only patterns whose host glob matches ``HOSTNAME`` and strips provider
+    presentation differences from the host portion.  The receipt never keeps
+    these provider values; callers use the resulting pairs only for an exact
+    set comparison.
+    """
+    pairs: list[tuple[str, str]] = []
+    for route in result_items(routes):
+        pattern = route.get("pattern")
+        if not isinstance(pattern, str):
+            continue
+        raw_pattern = pattern.strip()
+        host, separator, path = raw_pattern.partition("/")
+        normalized_host = host.rstrip(".").lower()
+        if not fnmatchcase(HOSTNAME, normalized_host):
+            continue
+        normalized_pattern = normalized_host + separator + path
+        script = route.get("script")
+        pairs.append((normalized_pattern, script.strip() if isinstance(script, str) else ""))
+    return pairs
+
+
+def has_exact_staging_route_pairs(routes: Any, cloudflare: dict[str, Any]) -> bool:
+    """Require the exact two allowed staging route/script pairs, once each."""
+    return Counter(normalized_staging_route_pairs(routes)) == Counter(expected_staging_route_pairs(cloudflare))
 
 
 def main() -> int:
@@ -171,16 +214,14 @@ def main() -> int:
     routes_ok, routes_result = provider_get(token, f"zones/{zone}/workers/routes")
     checks["worker-routes-read"] = {"ok": routes_ok}
     if routes_ok:
-        # Cloudflare exposes routes only as a zone-wide list. This receipt
-        # discards it and retains the truth of the exact staging pair only.
-        route_present = any(
-            item.get("pattern") == f"{HOSTNAME}/*"
-            and item.get("script") == cloudflare["root_worker"]
-            for item in result_items(routes_result)
-        )
-        checks["staging-worker-route"] = {
-            "ok": route_present,
-            "state": "present" if route_present else "absent",
+        # Cloudflare exposes routes only as a zone-wide list. Retain only the
+        # boolean/state of the exact two permitted staging pairs.  Any absent,
+        # extra, duplicate, or mismapped route that can serve HOSTNAME blocks
+        # postflight without serializing provider route data into the receipt.
+        routes_exact = has_exact_staging_route_pairs(routes_result, cloudflare)
+        checks["staging-worker-routes"] = {
+            "ok": routes_exact,
+            "state": "exact" if routes_exact else "invalid",
         }
     else:
         checks["worker-routes-read"]["error"] = routes_result

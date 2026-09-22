@@ -4,6 +4,14 @@ name: staging bootstrap (#1700)
 # the separately protected staging environment. Both config phases are rendered
 # from the frozen topology into RUNNER_TEMP; none are checked into the repo.
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/staging-bootstrap.yml'
+      - 'scripts/plan_staging_provider.py'
+      - 'scripts/render_staging_wrangler.py'
+      - 'tests/test_plan_staging_provider.py'
+      - 'tests/test_render_staging_wrangler.py'
+      - 'tests/test_staging_bootstrap_workflow.py'
   workflow_dispatch:
     inputs:
       confirm:
@@ -19,6 +27,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    name: staging bootstrap static validation
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pull request without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Validate renderer, provider route gate, and workflow contract
+        run: |
+          set -euo pipefail
+          python3 -S -m unittest -v \
+            tests/test_render_staging_wrangler.py \
+            tests/test_plan_staging_provider.py \
+            tests/test_staging_bootstrap_workflow.py
+
   staging:
     name: isolated staging bootstrap
     if: >-
