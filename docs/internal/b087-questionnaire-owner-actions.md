@@ -24,6 +24,26 @@ shipped posture, with a closed population and mutation tests.
 This packet records decisions still outside the engineering-closeable portion;
 it is not evidence that an owner, customer, prospect, or regulator was contacted.
 
+## Version and status crosswalk
+
+This is a repository snapshot for the owner review. A versioned file proves
+what text is present in this checkout; it does not prove that a customer
+received it, accepted it, or was notified of a later change.
+
+| Surface | Repository record | Status proved here | What remains external |
+|---|---|---|---|
+| DPA | [`legal/dpa/v1.0.0.en-US.md`](../../legal/dpa/v1.0.0.en-US.md) (`notice_version: 1.0.0`, effective `2026-05-14`) | Approved repository template; contains the historical Object Lock and BYOK language named above | Legal must reconcile any executed customer copy and record the disposition; no amendment is inferred |
+| SLA | [`legal/sla/v1.0.0.md`](../../legal/sla/v1.0.0.md) (`sla_version: 1.0.0`, effective `2026-05-14`) | Approved repository version; contains the historical Enterprise BYOK and credit language named above | Legal/Finance must decide treatment of executed instruments and record the disposition |
+| Residency amendment | [`legal/dpa-residency-amendment.md`](../../legal/dpa-residency-amendment.md) (`version: 1.0.0`) | `PENDING_LEGAL_REVIEW`; not an effective amendment | Legal must approve, version, execute, and identify affected customers if applicable |
+| Correction drafts | [`docs/internal/legal-drafts/2026-09-08-dpa-v1.0.1-draft.md`](legal-drafts/2026-09-08-dpa-v1.0.1-draft.md), [`docs/internal/legal-drafts/2026-09-08-sla-v1.0.1-draft.md`](legal-drafts/2026-09-08-sla-v1.0.1-draft.md) | `DRAFT — NOT EFFECTIVE`; `effective_date: null`; `supersedes: null` | Counsel/Finance approval, final identifier, effective date, signed artifact, and notice decision |
+| Questionnaire copies | [`CAIQ-V4-pre-filled.md`](../../marketing/sales/legal-questionnaires/CAIQ-V4-pre-filled.md) (`1.0.0`, `DRAFT`) and [`SIG-LITE-2026-pre-filled.md`](../../marketing/sales/legal-questionnaires/SIG-LITE-2026-pre-filled.md) (`1.0.0`, `DRAFT`) | Current bounded answer banks; both front matters say `supersedes: null` and `superseded_by: null` | Sales/Legal must identify the recipient population from CRM/mail records and decide whether notice is required |
+| Response-pack scaffolding | [`VENDOR-QUESTIONNAIRE-RESPONSE-TEMPLATE.md`](../../marketing/sales/legal-questionnaires/VENDOR-QUESTIONNAIRE-RESPONSE-TEMPLATE.md) (`1.1.0`, `DRAFT`) and [`EVIDENCE-PACK-INDEX.md`](../../marketing/sales/legal-questionnaires/EVIDENCE-PACK-INDEX.md) (`1.1.0`, `DRAFT`) | Reusable scaffolding; both front matters say `supersedes: null` and `superseded_by: null` | Sales/Legal must map any sent copy to a recipient and source version; repository presence is not delivery evidence |
+| Public legal claims | [`docs/internal/2026-08-24-published-claims-audit.md`](../../docs/internal/2026-08-24-published-claims-audit.md) and public Trust Center sources such as [`compliance.mdx`](../../apps/docs/docs/trust/compliance.mdx) | Audit records unresolved public DPA/BYOK/Object Lock and operational claims; public pages do not provide customer receipt data | Legal/owner must decide the effective wording and any customer notice; no public-page text is treated as approval or receipt |
+
+No recipient or supersession ledger is present in this repository. The absence
+of that ledger is a blocker to claiming that a prior copy was superseded for a
+particular recipient, or that any notification was sent or received.
+
 ## Evidence handoff locations
 
 Owners must attach the three independent records below without placing secrets,
@@ -36,6 +56,11 @@ contract bytes, or recipient PII in this repository:
 - `reports/owner-actions/b170-recipient-notification-decision.md` — Sales/Legal
   decision and, if applicable, redacted notification evidence for superseded
   copies.
+
+Each record must include the decision owner, decision timestamp, exact source
+version(s), and a redacted receipt or authority reference where an external act
+is claimed. A decision record may explicitly say “no action required”; it must
+not say approved, sent, delivered, or received without that supporting receipt.
 
 The B-170 guard treats missing records as `open` and turns red when all three
 appear, forcing content review before the backlog item can be closed.
