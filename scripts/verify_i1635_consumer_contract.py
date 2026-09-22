@@ -30,7 +30,7 @@ def main(path: str) -> None:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict) or set(payload) != TOP_KEYS:
         fail("acknowledgement must contain exactly the version, batch, outcomes, and settlement fields")
-    if payload["schema_version"] != 1:
+    if type(payload["schema_version"]) is not int or payload["schema_version"] != 1:
         fail("unsupported acknowledgement schema version")
     if not isinstance(payload["batch_id"], str) or not payload["batch_id"]:
         fail("batch_id must be a non-empty string")
