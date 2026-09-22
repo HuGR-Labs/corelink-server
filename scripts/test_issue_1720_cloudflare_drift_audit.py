@@ -108,7 +108,7 @@ def verify_drift_workflow(source: str) -> None:
     if re.search(r"(?m)^\s*terraform apply(?:\s|$)", source):
         raise AssertionError("Terraform drift must remain plan-only")
     for marker in (
-        "expected_sha:",
+        "      expected_sha:\n        description:",
         "Verify expected dispatch revision",
         "if: github.event_name == 'workflow_dispatch'",
         'EXPECTED_SHA: ${{ inputs.expected_sha }}',
