@@ -23,8 +23,8 @@
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
       "canonical_record": "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md",
-      "record_kind": "repository_template",
-      "evidence_status": "template_pending_external_review",
+      "record_kind": "public_source_assessment_only",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
         "specs/_compliance/vendor-dd/DD-CLOUDFLARE.md",
@@ -74,8 +74,8 @@
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
       "canonical_record": "docs/compliance/vendor-reviews/stripe-dpa-review-2026-04.md",
-      "record_kind": "repository_template",
-      "evidence_status": "template_pending_external_review",
+      "record_kind": "public_source_assessment_only",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
         "specs/_compliance/vendor-dd/DD-STRIPE.md",
@@ -125,8 +125,8 @@
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
       "canonical_record": "docs/compliance/vendor-reviews/clerk-dpa-review-2026-04.md",
-      "record_kind": "repository_template",
-      "evidence_status": "template_pending_external_review",
+      "record_kind": "public_source_assessment_only",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
         "specs/_compliance/vendor-dd/DD-CLERK.md",
@@ -175,12 +175,13 @@
       "last_review": "2026-05-15",
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
-      "canonical_record": null,
-      "record_kind": "external_drata_or_aws_artifact",
-      "evidence_status": "external_evidence_required",
+      "canonical_record": "docs/compliance/vendor-reviews/aws-kms-review-2026-09.md",
+      "record_kind": "public_source_assessment_only",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
-        "specs/_compliance/vendor-dd/DD-AWS-KMS.md"
+        "specs/_compliance/vendor-dd/DD-AWS-KMS.md",
+        "docs/compliance/vendor-reviews/aws-kms-review-2026-09.md"
       ],
       "refresh_packet": {
         "scope": {
@@ -225,12 +226,13 @@
       "last_review": "2026-05-15",
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
-      "canonical_record": null,
-      "record_kind": "external_drata_or_google_compliance_reports_manager",
-      "evidence_status": "external_evidence_required",
+      "canonical_record": "docs/compliance/vendor-reviews/gcp-kms-review-2026-09.md",
+      "record_kind": "public_source_assessment_only",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
-        "specs/_compliance/vendor-dd/DD-GCP-KMS.md"
+        "specs/_compliance/vendor-dd/DD-GCP-KMS.md",
+        "docs/compliance/vendor-reviews/gcp-kms-review-2026-09.md"
       ],
       "refresh_packet": {
         "scope": {
@@ -275,12 +277,13 @@
       "last_review": "2026-05-15",
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
-      "canonical_record": null,
-      "record_kind": "external_drata_or_service_trust_portal",
-      "evidence_status": "external_evidence_required",
+      "canonical_record": "docs/compliance/vendor-reviews/azure-key-vault-review-2026-09.md",
+      "record_kind": "public_source_assessment_only",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
-        "specs/_compliance/vendor-dd/DD-AZURE-KEYVAULT.md"
+        "specs/_compliance/vendor-dd/DD-AZURE-KEYVAULT.md",
+        "docs/compliance/vendor-reviews/azure-key-vault-review-2026-09.md"
       ],
       "refresh_packet": {
         "scope": {
@@ -325,12 +328,13 @@
       "last_review": "2026-05-15",
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
-      "canonical_record": null,
-      "record_kind": "external_drata_vendor_module",
-      "evidence_status": "external_credential_and_workspace_export_required",
+      "canonical_record": "docs/compliance/vendor-reviews/drata-review-2026-09.md",
+      "record_kind": "public_source_assessment_only",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
-        "specs/_compliance/vendor-dd/DD-DRATA.md"
+        "specs/_compliance/vendor-dd/DD-DRATA.md",
+        "docs/compliance/vendor-reviews/drata-review-2026-09.md"
       ],
       "refresh_packet": {
         "scope": {
@@ -370,12 +374,12 @@
     }
   ],
   "non_claims": [
-    "No review, signature, approval, SOC 2 report, ISO certificate, or Drata export is claimed.",
-    "Repository templates are structural packets only and are not completed reviews.",
+    "No executed CoreLink agreement, human approval, signature, SOC 2 report, ISO certificate, or Drata workspace export is claimed.",
+    "Vendor-public statements are context only and are not CoreLink-specific completed reviews.",
     "Public vendor pages do not close the Critical review cadence item.",
     "The manifest does not authorize editing effective legal or contractual text."
   ],
-  "next_external_action": "Owner supplies an authorized Drata credential or workspace export; VP-Sec/Compliance records current evidence and dated review outcomes in the canonical system of record.",
+  "next_external_action": "Owner authorizes retrieval of current customer-restricted/vendor-account evidence (including the Drata workspace export); VP-Sec and Legal/Privacy then complete and sign dated reviews in the canonical system of record. Public-source assessments do not reset the formal 2026-08-15 due date.",
   "refresh_packet_schema": {
     "required_fields": [
       "scope",
