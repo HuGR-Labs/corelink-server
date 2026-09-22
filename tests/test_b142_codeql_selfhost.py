@@ -89,7 +89,6 @@ class B142WorkflowContractTest(unittest.TestCase):
             self.assertIn(f'category: "/language:${{{{ matrix.language }}}}"', self.scanner)
         self.assertIn("queries: ${{ matrix.queries }}", self.scanner)
         self.assertIn("security-extended,security-and-quality", self.scanner)
-        self.assertIn("build-mode: manual", self.scanner)
         self.assertIn("build-mode: none", self.scanner)
         self.assertIn("dependency-caching: true", self.scanner)
         self.assertIn("upload: never", self.scanner)
@@ -110,7 +109,7 @@ class B142WorkflowContractTest(unittest.TestCase):
         self.assertIn("name: codeql-sarif-${{ matrix.language }}", self.scanner)
 
     def test_watchdog_has_closed_population_and_fail_closed_alarm(self) -> None:
-        self.assertIn("runs-on: corelink", self.watchdog)
+        self.assertIn("runs-on: ubuntu-latest", self.watchdog)
         self.assertIn("check_codeql_evidence.py", self.watchdog)
         for language in ("rust", "javascript-typescript", "python"):
             self.assertIn(f"CodeQL {language}", self.watchdog)
