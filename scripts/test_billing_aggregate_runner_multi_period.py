@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SQLite seam oracle for #1631's bounded runner aggregate workflow.
+"""SQLite seam oracle for #1630's bounded runner aggregate workflow.
 
 Success/DoD: the real discovery and commit SQL shape preserves period order,
 caps, immutable terms, exact claims, and all-or-nothing accounting.  Invariants:

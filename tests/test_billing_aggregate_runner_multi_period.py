@@ -1,4 +1,4 @@
-"""Regression net for the #1631 local SQLite workflow seam."""
+"""Regression net for the #1630 local SQLite workflow seam."""
 
 import importlib.util
 from pathlib import Path
