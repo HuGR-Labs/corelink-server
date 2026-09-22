@@ -43,7 +43,11 @@ jobs:
 
       - name: Capture one GET-only redacted receipt
         env:
-          CLOUDFLARE_CAPACITY_READ_TOKEN: ${{ secrets.CLOUDFLARE_CAPACITY_READ_TOKEN }}
+          # This repository-level token remains opaque to the runner log.  The
+          # protected, main-only environment and the probe's fixed single GET
+          # bind its use to this bounded readback until the dedicated
+          # read-only token is rotated in.
+          CLOUDFLARE_CAPACITY_READ_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           set +e
           python3 scripts/probe_i1656_capacity_readonly.py \
