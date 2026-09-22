@@ -8,6 +8,7 @@
 # Output:
 #   STDOUT: summary table (median + p95 + cache-hit ratio)
 #   FILE:   BENCHMARK.md updated with new run results (default: ../BENCHMARK.md)
+#           and a numeric BENCHMARK.json receipt alongside it
 #
 # Requirements: buck2, python3, bc, date
 #
@@ -26,6 +27,7 @@ REPORT_PARSER="${REPO_ROOT}/scripts/parse_buck2_build_report.py"
 # ── defaults ────────────────────────────────────────────────────────────────
 ITERATIONS=10
 OUTPUT_MD="${STARTER_DIR}/BENCHMARK.md"
+OUTPUT_JSON=""
 TARGET=":hello"
 HIT_THRESHOLD=80  # percent; matches WI-S15-003 AC §8
 
@@ -37,6 +39,12 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown flag: $1" >&2; exit 1 ;;
     esac
 done
+
+if [[ "${OUTPUT_MD}" == *.md ]]; then
+    OUTPUT_JSON="${OUTPUT_MD%.md}.json"
+else
+    OUTPUT_JSON="${OUTPUT_MD}.json"
+fi
 
 # ── dependency check ─────────────────────────────────────────────────────────
 for cmd in buck2 python3 bc; do
@@ -191,7 +199,54 @@ $(echo "scale=1; ${cold_median} / (${warm_median} + 1)" | bc)× median speedup (
 See \`docs/integrations/bazel-vs-buck2.md\` for apples-to-apples comparison methodology.
 EOF
 
+# Keep a machine-readable, credential-free receipt beside the human report.
+# Every value is derived from the same run that produced BENCHMARK.md; a
+# missing or non-numeric value must fail before this receipt is published.
+[[ "${cold_median}" =~ ^[0-9]+$ ]]
+[[ "${cold_p95}" =~ ^[0-9]+$ ]]
+[[ "${warm_median}" =~ ^[0-9]+$ ]]
+[[ "${warm_p95}" =~ ^[0-9]+$ ]]
+[[ "${total_hits}" =~ ^[0-9]+$ ]]
+[[ "${total_actions}" =~ ^[1-9][0-9]*$ ]]
+[[ "${cache_ratio}" =~ ^[0-9]+$ ]]
+ITERATIONS_VALUE="${ITERATIONS}" \
+COLD_MEDIAN_VALUE="${cold_median}" \
+COLD_P95_VALUE="${cold_p95}" \
+WARM_MEDIAN_VALUE="${warm_median}" \
+WARM_P95_VALUE="${warm_p95}" \
+CACHE_HITS_VALUE="${total_hits}" \
+DECLARED_ACTIONS_VALUE="${total_actions}" \
+CACHE_RATIO_VALUE="${cache_ratio}" \
+THRESHOLD_VALUE="${HIT_THRESHOLD}" \
+python3 - "${OUTPUT_JSON}" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+output = Path(sys.argv[1])
+receipt = {
+    "schema": "buck2-benchmark-receipt-v1",
+    "target": ":hello",
+    "iterations": int(os.environ["ITERATIONS_VALUE"]),
+    "cold_median_ms": int(os.environ["COLD_MEDIAN_VALUE"]),
+    "cold_p95_ms": int(os.environ["COLD_P95_VALUE"]),
+    "warm_median_ms": int(os.environ["WARM_MEDIAN_VALUE"]),
+    "warm_p95_ms": int(os.environ["WARM_P95_VALUE"]),
+    "cache_hits": int(os.environ["CACHE_HITS_VALUE"]),
+    "declared_actions": int(os.environ["DECLARED_ACTIONS_VALUE"]),
+    "cache_hit_ratio_percent": int(os.environ["CACHE_RATIO_VALUE"]),
+    "threshold_percent": int(os.environ["THRESHOLD_VALUE"]),
+}
+if receipt["cache_hits"] > receipt["declared_actions"]:
+    raise SystemExit("cache_hits cannot exceed declared_actions")
+if receipt["cache_hit_ratio_percent"] < receipt["threshold_percent"]:
+    raise SystemExit("cache hit ratio is below the admission threshold")
+output.write_text(json.dumps(receipt, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
 echo "BENCHMARK.md written to: ${OUTPUT_MD}"
+echo "BENCHMARK.json written to: ${OUTPUT_JSON}"
 
 # ── exit code based on threshold ─────────────────────────────────────────────
 if (( cache_ratio < HIT_THRESHOLD )); then
