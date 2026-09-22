@@ -84,7 +84,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          EXPECTED_MINGW_W64_VERSION=14.0.0
+          # The pinned Homebrew formula declares source version 14.0.0 and
+          # revision 3, so `brew list --versions` reports 14.0.0_3.
+          EXPECTED_MINGW_W64_VERSION=14.0.0_3
           EXPECTED_DLLTOOL_VERSION='GNU dlltool (GNU Binutils) 2.47'
           EXPECTED_MINGW_W64_FORMULA_SHA256=4b5f53d8ff341875f158092cbdcd5536ce3d6d5136de1672ecf687564dae07f9
           MINGW_W64_FORMULA_URL=https://raw.githubusercontent.com/Homebrew/homebrew-core/00e77a1611f627f2ea8f876fad0468f2c4b3ed20/Formula/m/mingw-w64.rb
