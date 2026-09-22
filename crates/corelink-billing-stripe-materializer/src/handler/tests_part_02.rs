@@ -87,6 +87,7 @@ fn subscription_deleted_marks_canceled_and_preserves_historical_tier() {
                 "id": "sub_1",
                 "status": "canceled",
                 "metadata": { "tenant_id": "ten_1" },
+                "plan": { "id": "plan_pro" },
             }
         }),
     );
@@ -184,19 +185,6 @@ impl BillingD1Writer for TierPathRecordingD1 {
         self.inner
             .downgrade_tier(tenant_id, tier_wire, now_ms, correlation_id)
     }
-    fn upsert_runners_entitlement(
-        &self,
-        tenant_id: &str,
-        max_concurrency: u32,
-        max_vcpu_h: u32,
-        now_ms: i64,
-    ) -> Result<(), BillingD1Error> {
-        self.inner
-            .upsert_runners_entitlement(tenant_id, max_concurrency, max_vcpu_h, now_ms)
-    }
-    fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error> {
-        self.inner.delete_runners_entitlement(tenant_id)
-    }
 }
 
 #[test]
@@ -229,6 +217,7 @@ fn subscription_deleted_takes_downgrade_path_not_grant_path() {
                 "id": "sub_1",
                 "status": "canceled",
                 "metadata": { "tenant_id": "ten_1" },
+                "plan": { "id": "plan_pro" },
             }
         }),
     );
@@ -386,18 +375,23 @@ fn refunds_follow_the_durable_product_axis_and_leave_unknowns_pending() {
         )
     };
 
-    handler.on_invoice_paid(&invoice("in_runner", "sub_runner")).unwrap();
     handler
-        .on_charge_refunded(&refund("evt_runner_full", "in_runner", 100, 100))
+        .on_invoice_paid(&invoice("in_runner", "sub_runner"))
         .unwrap();
-    assert_eq!(d1.runners_entitlement_of("ten_1"), None);
+    assert!(matches!(
+        handler.on_charge_refunded(&refund("evt_runner_full", "in_runner", 100, 100)),
+        Err(MaterializerError::Transient(_))
+    ));
+    assert_eq!(d1.runners_entitlement_of("ten_1"), Some((40, 240)));
     assert_eq!(d1.tier_for("ten_1").as_deref(), Some("pro"));
     assert_eq!(audit.count_event("corelink.tenant.tier_changed.v1"), 0);
 
     d1.upsert_runners_entitlement("ten_1", 40, 240, 1_700_000_000_000)
         .unwrap();
     d1.record_runners_purchase("ten_1", "sub_runner");
-    handler.on_invoice_paid(&invoice("in_cache", "sub_cache")).unwrap();
+    handler
+        .on_invoice_paid(&invoice("in_cache", "sub_cache"))
+        .unwrap();
     handler
         .on_charge_refunded(&refund("evt_cache_partial", "in_cache", 100, 25))
         .unwrap();
@@ -416,7 +410,9 @@ fn refunds_follow_the_durable_product_axis_and_leave_unknowns_pending() {
     handler
         .on_charge_refunded(&refund("evt_out_of_order", "in_late", 100, 100))
         .unwrap();
-    handler.on_invoice_paid(&invoice("in_late", "sub_runner")).unwrap();
+    handler
+        .on_invoice_paid(&invoice("in_late", "sub_runner"))
+        .unwrap();
     assert_eq!(d1.runners_entitlement_of("ten_1"), Some((40, 240)));
     let pending = d1
         .snapshot()
