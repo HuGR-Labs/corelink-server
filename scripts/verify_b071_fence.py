@@ -15,6 +15,7 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations/d1/0115_gc_purge_fence.sql"
+CONTROL_MIGRATION = ROOT / "migrations/d1/0118_gc_accounting_legal_hold.sql"
 CAS_QUERY = ROOT / "crates/corelink-meta/src/cas_query.rs"
 CAS_FENCE = ROOT / "crates/corelink-container/src/storage/cas_write_fence.rs"
 CAS_OPS = ROOT / "crates/corelink-container/src/storage/r2_s3_parts/cas_write.rs"
@@ -45,12 +46,26 @@ def make_db() -> sqlite3.Connection:
           payload_json TEXT NOT NULL, enqueued_at INTEGER NOT NULL, region TEXT NOT NULL,
           UNIQUE(request_id, event_type)
         );
+        CREATE TABLE tenant_legal_hold (
+          tenant_id TEXT PRIMARY KEY, reason TEXT NOT NULL, held_at_ms INTEGER NOT NULL
+        );
+        CREATE TABLE tenant_storage_state (
+          tenant_id TEXT NOT NULL, region TEXT NOT NULL, bytes_used INTEGER NOT NULL,
+          bytes_quota INTEGER NOT NULL, bytes_used_updated_at_ms INTEGER NOT NULL,
+          last_synced_at_ms INTEGER NOT NULL, last_evict_at_ms INTEGER,
+          bytes_reclaimed_lifetime INTEGER NOT NULL, created_at_ms INTEGER NOT NULL,
+          updated_at_ms INTEGER NOT NULL, PRIMARY KEY (tenant_id, region)
+        );
         """
     )
     db.executescript(MIGRATION.read_text())
+    db.executescript(CONTROL_MIGRATION.read_text())
     # Forward migration is safe to replay during a staged deployment.
     db.executescript(MIGRATION.read_text())
     db.execute("INSERT INTO tenant VALUES ('t1', 'wnam')")
+    db.execute(
+        "INSERT INTO tenant_storage_state VALUES ('t1', 'wnam', 10, 100, 1, 1, NULL, 0, 1, 1)"
+    )
     db.execute(
         "INSERT INTO blob_meta VALUES ('t1', ?, 10, 0, 1, 1, 1, 'wnam')",
         (CANONICAL_DIGEST,),
@@ -203,6 +218,7 @@ def main() -> None:
     wiring = CAS_WIRING.read_text()
     gc = GC_SWEEP.read_text()
     migration = MIGRATION.read_text()
+    control_migration = CONTROL_MIGRATION.read_text()
     assert not live_wiring_errors(ops, wiring, gc), live_wiring_errors(ops, wiring, gc)
     for token in (
         "trg_gc_purge_reclaim_stale_cas_writer",
@@ -214,6 +230,16 @@ def main() -> None:
         "trg_gc_candidates_digest_canonical_insert",
     ):
         assert token in migration, f"migration missing B071 adjudicated invariant: {token}"
+    for token in (
+        "trg_gc_purge_legal_hold_guard",
+        "gc_purge_blocked_by_legal_hold",
+        "trg_gc_purge_accounting_required",
+        "gc_purge_accounting_state_missing",
+        "trg_gc_purge_finalize_accounting",
+        "bytes_reclaimed_lifetime",
+        "MAX(0, bytes_used - OLD.size_bytes)",
+    ):
+        assert token in control_migration, f"GC control migration missing {token}"
     assert "algorithm-tagged digest" not in fence, \
         "writer fence still requires an algorithm prefix at the metadata boundary"
     assert "&canonical_meta_digest(&req.claimed_hash)" in ops, \
@@ -330,6 +356,36 @@ def main() -> None:
     assert db.execute("SELECT COUNT(*) FROM audit_outbox").fetchone()[0] == 1
     assert db.execute("SELECT status FROM gc_candidates").fetchone()[0] == "physically_deleted"
     assert db.execute("SELECT state FROM gc_purge_intent").fetchone()[0] == "finalized"
+    assert db.execute(
+        "SELECT bytes_used, bytes_reclaimed_lifetime FROM tenant_storage_state"
+    ).fetchone() == (0, 10)
+
+    # A hold placed after acquisition still blocks the irreversible D1
+    # boundary.  The intent remains recoverable and the metadata/accounting
+    # rows remain untouched.
+    held = make_db()
+    held.execute("UPDATE blob_meta SET deleted_at=1, refcount=0")
+    assert acquire(held) == 1
+    held.execute(
+        "INSERT INTO tenant_legal_hold VALUES ('t1', 'case-1651', 20000)"
+    )
+    held.execute("UPDATE gc_purge_intent SET state='r2_deleted', updated_at=20000")
+    try:
+        held.execute(
+            """DELETE FROM blob_meta WHERE tenant_id='t1' AND digest=?
+               AND refcount=0 AND deleted_at IS NOT NULL
+               AND EXISTS (SELECT 1 FROM gc_purge_intent WHERE tenant_id='t1'
+                 AND digest=? AND state='r2_deleted')""",
+            (CANONICAL_DIGEST, CANONICAL_DIGEST),
+        )
+    except sqlite3.IntegrityError as error:
+        assert "legal_hold" in str(error), f"unexpected hold rejection: {error}"
+    else:
+        raise AssertionError("GC finalized a blob under an active legal hold")
+    assert held.execute("SELECT 1 FROM blob_meta").fetchone() is not None
+    assert held.execute(
+        "SELECT bytes_used FROM tenant_storage_state"
+    ).fetchone()[0] == 10
 
     # A replay cannot delete or emit a second event.
     db.execute(

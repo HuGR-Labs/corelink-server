@@ -33,6 +33,14 @@ use crate::storage::d1_http::{D1HttpClient, D1Row};
 use crate::storage::r2_s3::{validate_cas_bucket_for_region, R2S3Client};
 use crate::storage::StorageEnv;
 
+/// Hard upper bound for one native observation/finalization attempt.
+///
+/// The mark phase and D1 batch contract use the same 250-row ceiling.  The
+/// production adapter refuses a larger run instead of silently sampling it;
+/// a report therefore always describes the complete deterministic candidate
+/// set it was authorized to inspect.
+pub const MAX_PRODUCTION_CANDIDATES: u64 = 250;
+
 /// Runtime configuration for one tenant/region sweep.
 #[derive(Clone)]
 #[non_exhaustive]
@@ -200,9 +208,21 @@ pub async fn run_production(
     }
     let d1 = Arc::new(D1HttpClient::new(storage)?);
     validate_cas_bucket_for_region(&config.bucket, config.region.as_str())?;
-    let r2 = Arc::new(R2S3Client::new(storage, config.bucket.clone()).await?);
     let runs = Arc::new(D1GcRunStore::new(Arc::clone(&d1)));
     let candidates = Arc::new(D1GcCandidatesStore::new(Arc::clone(&d1), config.region));
+    // Check the durable hold immediately before constructing any R2 adapter.
+    // The finalization trigger repeats this check inside D1, covering a hold
+    // placed after this read and before a worker's irreversible boundary.
+    let held = query_sync(
+        &d1,
+        "SELECT 1 AS held FROM tenant_legal_hold WHERE tenant_id = ?1 LIMIT 1",
+        &[json!(config.tenant_id.to_string())],
+    )
+    .map_err(|error| format!("legal-hold check failed closed: {error}"))?;
+    if !held.is_empty() {
+        return Err("GC refused: tenant is under an active legal hold".to_owned());
+    }
+    let r2 = Arc::new(R2S3Client::new(storage, config.bucket.clone()).await?);
     let blob_meta = Arc::new(D1BlobMetaPurgeStore::new(
         Arc::clone(&d1),
         config.region,
@@ -244,6 +264,14 @@ pub async fn run_production(
             "gc_run {run_id} is not sweepable: status={} phase={}",
             run.status.as_str(),
             run.phase.as_str()
+        ));
+    }
+    let candidate_count = candidates
+        .count_for_run(config.tenant_id, run_id)
+        .map_err(|error| format!("candidate bound check failed closed: {error}"))?;
+    if candidate_count > MAX_PRODUCTION_CANDIDATES {
+        return Err(format!(
+            "gc_run {run_id} exceeds bounded candidate ceiling: {candidate_count} > {MAX_PRODUCTION_CANDIDATES}"
         ));
     }
     let runner = GcSweepRunner::with_defaults(

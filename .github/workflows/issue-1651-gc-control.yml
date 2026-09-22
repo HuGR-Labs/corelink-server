@@ -1,0 +1,37 @@
+name: issue-1651-gc-control
+
+# Repository-only guard for the bounded GC/eviction foundation.  This job
+# never receives Cloudflare credentials, never invokes a binary, and never
+# talks to D1 or R2.  Live reclaim remains owner-gated evidence work.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-1651-gc-control.yml"
+      - "crates/corelink-container/src/gc_sweep.rs"
+      - "crates/corelink-container/src/gc_sweep/**"
+      - "migrations/d1/0115_gc_purge_fence.sql"
+      - "migrations/d1/0118_gc_accounting_legal_hold.sql"
+      - "scripts/verify_b071_fence.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: B-071 bounded GC control
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify fenced accounting and hold controls
+        env:
+          CLOUDFLARE_API_TOKEN: ""
+          CLOUDFLARE_ACCOUNT_ID: ""
+          R2_TDK_HEX: ""
+        run: python3 scripts/verify_b071_fence.py
