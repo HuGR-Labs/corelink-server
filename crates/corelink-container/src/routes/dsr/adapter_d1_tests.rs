@@ -327,6 +327,77 @@ fn tenant_linked_pii_tables_are_in_the_erase_set() {
     }
 }
 
+/// #1889: classify every tenant-keyed table introduced by the runner billing
+/// migrations. Conflict/checkout rows are operational and erased; immutable
+/// terms/claim rows are historical billing authority and retained under the
+/// existing ADR-S11-013 fiscal/billing-reconciliation basis. Each assertion
+/// also checks the exact-one-bucket invariant so a future edit cannot silently
+/// move one table out of the DSR registry.
+#[test]
+fn runner_billing_tables_have_exact_dsr_dispositions() {
+    for table in ["usage_event_staging_conflicts", "runner_checkout_attempts"] {
+        assert!(ALL_TENANT_KEYED_TABLES.contains(&table));
+        assert!(
+            TENANT_ID_TABLES.contains(&table),
+            "{table} must be erased by tenant_id"
+        );
+        assert!(
+            !RETAIN_SET.contains(&table),
+            "{table} has no retention basis"
+        );
+        assert_eq!(classification_count(table), 1);
+    }
+    for table in [
+        "runner_period_terms_snapshot",
+        "runner_aggregate_event_claim",
+    ] {
+        assert!(ALL_TENANT_KEYED_TABLES.contains(&table));
+        assert!(RETAIN_SET.contains(&table), "{table} must be retained");
+        assert!(
+            !TENANT_ID_TABLES.contains(&table),
+            "{table} is retained billing evidence"
+        );
+        assert_eq!(classification_count(table), 1);
+    }
+}
+
+/// Pin the four row-bearing migrations to the registry and their tenant scope.
+/// The broad migration drift test catches future tables; this named regression
+/// catches removal or reclassification of any #1889 table directly.
+#[test]
+fn runner_billing_migration_tables_remain_classified() {
+    for (migration, tables) in [
+        (
+            "0133_usage_event_staging_conflicts.sql",
+            ["usage_event_staging_conflicts"].as_slice(),
+        ),
+        (
+            "0134_runner_aggregate_durable_state.sql",
+            [
+                "runner_period_terms_snapshot",
+                "runner_aggregate_event_claim",
+            ]
+            .as_slice(),
+        ),
+        (
+            "0136_runner_checkout_attempts.sql",
+            ["runner_checkout_attempts"].as_slice(),
+        ),
+    ] {
+        let path = format!(
+            "{}/../../migrations/d1/{migration}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let sql = std::fs::read_to_string(path).unwrap();
+        for table in tables {
+            assert!(sql.contains(&format!("CREATE TABLE IF NOT EXISTS {table}")));
+            assert!(sql.contains("tenant_id TEXT NOT NULL"));
+            assert!(ALL_TENANT_KEYED_TABLES.contains(&table));
+            assert_eq!(classification_count(table), 1);
+        }
+    }
+}
+
 /// B-089 retention guard. These rows are keyed by `tenant_id`, but they are
 /// contractual billing evidence rather than operational tenant state:
 /// observations feed the published report, measurements freeze the

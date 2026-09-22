@@ -98,6 +98,10 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     "tenant_storage_state",
     "tenant_offboarding_state",
     "usage_event_staging",
+    // Ingest conflict quarantine is tenant-owned operational staging state
+    // (migr. 0133), with no fiscal or audit retention basis. Existing rows are
+    // deleted by the same tenant_id sweep and included in post-erase counts.
+    "usage_event_staging_conflicts",
     "dpa_acceptance_pending",
     "tenant_config",
     "hot_blobs",
@@ -175,6 +179,10 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // as `tenant_billing` / `stripe_checkout_sessions` above → ERASE per
     // ADR-S11-013 (`DELETE ... WHERE tenant_id = ?`; the tenant_id index covers it).
     "runner_billing",
+    // Runner checkout attempts are recoverable provider-intent state (migr.
+    // 0136), analogous to stripe_checkout_sessions. They are not the fiscal
+    // invoice/customer/subscription records retained by ADR-S11-013.
+    "runner_checkout_attempts",
     // GC run + candidate state, `tenant_id`-keyed (migr. 0006/0007). Operational
     // storage-GC bookkeeping over the tenant's own blobs → ERASE.
     "gc_run",
@@ -310,6 +318,12 @@ pub(super) const RETAIN_SET: &[&str] = &[
     // `tier_select_audit_events` — erasing it would defeat the guarantee it
     // exists for → RETAIN (Art.5(2)).
     "stripe_billing_audit_events",
+    // Historical runner billing authority (migr. 0134). The immutable terms
+    // snapshot and per-event claim bind the accounting result to the exact
+    // terms/evidence used; they are retained billing evidence under the
+    // existing ADR-S11-013 fiscal/billing-reconciliation basis.
+    "runner_period_terms_snapshot",
+    "runner_aggregate_event_claim",
     // B-089 SLA-credit settlement evidence (migr. 0117). The observation is
     // the provider's canonical monthly report input, the measurement is the
     // immutable eligibility/decision record, and the credit ledger is the
