@@ -1,6 +1,7 @@
 name: Terraform Drift Detection
 
-# WI-S13-004 / #1721 — one independent Terraform root and remote state key
+# WI-S13-004 / #1720 / #1721 / #1722 — one independent Terraform root and
+# remote state key per region, with provider auth and bounded evidence.
 # per region. Every root declares an S3 backend with native R2 lock files.
 # Exit code 0 = no diff; 2 = drift; 1 = Terraform/configuration error.
 # Auto-apply is forbidden; this workflow only initializes and plans.
@@ -193,7 +194,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": ":memo: *Runbook:* <https://github.com/${{ github.repository }}/blob/main/specs/05_runbooks/RB-FM-206.md|RB-FM-206 — Terraform Drift>\n:file_folder: *Plan artifact:* <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run artifacts>"
+                    "text": ":memo: *Runbook:* <https://github.com/${{ github.repository }}/blob/main/specs/05_quality/runbooks/RB-FM-206-terraform-drift.md|RB-FM-206 — Terraform Drift>\n:file_folder: *Sanitized summary:* <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run artifacts>"
                   }
                 },
                 {
@@ -299,7 +300,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "One or more regions reported drift or errors in run `${{ github.run_id }}`. Check per-region alerts above + <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|view all artifacts>.\n\n*Runbook:* <https://github.com/${{ github.repository }}/blob/main/specs/05_runbooks/RB-FM-206.md|RB-FM-206>"
+                    "text": "One or more regions reported drift or errors in run `${{ github.run_id }}`. Check per-region alerts above + <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|view sanitized summaries>.\n\n*Runbook:* <https://github.com/${{ github.repository }}/blob/main/specs/05_quality/runbooks/RB-FM-206-terraform-drift.md|RB-FM-206>"
                   }
                 }
               ]

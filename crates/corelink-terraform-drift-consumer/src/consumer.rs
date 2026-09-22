@@ -184,7 +184,7 @@ mod tests {
     fn clean_run_inserts_none_severity_row() {
         let mut consumer = make_consumer();
         let finding = consumer
-            .process_plan_event(&make_event("us-east", 0, 0))
+            .process_plan_event(&make_event("wnam", 0, 0))
             .unwrap();
         assert_eq!(finding.severity, DriftSeverity::None);
         assert_eq!(consumer.store().open_findings().len(), 1);
@@ -196,7 +196,7 @@ mod tests {
     fn drift_detected_inserts_medium_severity() {
         let mut consumer = make_consumer();
         let finding = consumer
-            .process_plan_event(&make_event("eu-west", 2, 5))
+            .process_plan_event(&make_event("weur", 2, 5))
             .unwrap();
         assert_eq!(finding.severity, DriftSeverity::Medium);
         assert_eq!(
@@ -215,7 +215,7 @@ mod tests {
             FailingDriftAuditSink,
             InMemoryDriftFindingStore::default(),
         );
-        let result = consumer.process_plan_event(&make_event("us-west", 2, 3));
+        let result = consumer.process_plan_event(&make_event("enam", 2, 3));
         assert!(
             matches!(result, Err(DriftConsumerError::AuditFailed(_))),
             "audit failure must propagate"

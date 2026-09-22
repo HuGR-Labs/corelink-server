@@ -43,7 +43,7 @@ tags: ["wi", "s13", "admin-plane", "terraform-drift", "drift-detection", "rb-fm-
 
 ## 1. Intent
 
-Implementar terraform drift detection daily para mitigar **FM-206** (Terraform drift — estado real ≠ definido em IaC): (1) **GitHub Action daily cron** 03:00 UTC; (2) `terraform plan` per region (currently CoreLink targets Cloudflare Workers + R2 + D1 + Neon Postgres em ~5 regiões + global config); (3) if `terraform plan` diff count > 0 → **SEV-3 alert** posted em Slack #infra-drift channel com diff summary + um artefato de resumo sanitizado; (4) **RB-FM-206 manual remediation runbook** (`specs/05_runbooks/RB-FM-206.md`) com decision tree: (a) apply changes (drift legitimate; reconcile to IaC), (b) investigate (drift unexpected; investigate root cause), (c) revert manual change (drift via manual edit; revert to IaC); (5) **auto-apply forbidden** — `terraform apply` requires manual human approval; CI Action only runs `terraform plan`; mitigates FM-206 catastrophic auto-apply incidents (e.g., AWS console manual change reverted by CI = production down).
+Implementar terraform drift detection daily para mitigar **FM-206** (Terraform drift — estado real ≠ definido em IaC): (1) **GitHub Action daily cron** 03:00 UTC; (2) `terraform plan` per region across the four production roots (`wnam`, `enam`, `weur`, `sam`); (3) if `terraform plan` diff count > 0 → **SEV-3 alert** posted em Slack #infra-drift channel com diff summary + um artefato de resumo sanitizado; (4) **RB-FM-206 manual remediation runbook** (`specs/05_quality/runbooks/RB-FM-206-terraform-drift.md`) com decision tree: (a) apply changes (drift legitimate; reconcile to IaC), (b) investigate (drift unexpected; investigate root cause), (c) revert manual change (drift via manual edit; revert to IaC); (5) **auto-apply forbidden** — `terraform apply` requires manual human approval; CI Action only runs `terraform plan`; mitigates FM-206 catastrophic auto-apply incidents (e.g., AWS console manual change reverted by CI = production down).
 
 ```yaml
 # .github/workflows/terraform-drift.yml (forward; documented spec only — NO code in this WI)
@@ -57,11 +57,10 @@ jobs:
   drift-check:
     strategy:
       matrix:
-        region: [us-east, us-west, eu-west, ap-southeast, sa-east]
+        region: [wnam, enam, weur, sam]
     runs-on: ubuntu-22.04
     permissions:
       contents: read
-      id-token: write   # OIDC para Cloudflare API auth
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -122,7 +121,7 @@ Terraform drift é root cause comum de incidentes: estado real (Cloudflare conso
 
 6. **Terraform state file corruption**: backend state file corrupted; `terraform plan` returns false drift. Mitigação: backend state versioning (S3 versioning equivalent); backup state file daily; recovery procedure in RB-FM-206.
 
-7. **Permission escalation via terraform**: attacker compromises CI credentials; modifies IaC + auto-apply; resources tampered. Mitigação: NO auto-apply; OIDC-bound credentials (no long-lived secrets); CODEOWNERS for `infra/terraform/`; required PR reviews.
+7. **Permission escalation via terraform**: attacker compromises CI credentials; modifies IaC + auto-apply; resources tampered. Mitigação: NO auto-apply; dedicated read-only provider and R2 credentials; CODEOWNERS for `infra/terraform/`; required PR reviews.
 
 8. **Cross-region drift correlation**: drift em region X correlates with drift em region Y (e.g., shared module change); separate alerts mask root cause. Mitigação: matrix workflow runs all regions; aggregator step posts summary if multi-region drift detected.
 
@@ -132,7 +131,7 @@ Terraform drift é root cause comum de incidentes: estado real (Cloudflare conso
 
 - **Terraform state file tampering**: attacker modifies state file in backend; `terraform plan` reports false-clean. Mitigação: state file integrity check (SHA-256 vs last known-good); alert SEV-2 if hash mismatch.
 
-- **CI credential exfiltration + auto-apply attempt**: attacker steals GitHub Actions OIDC token; tries `terraform apply`; workflow lacks apply step (only plan); apply requires separate manual workflow with additional approval.
+- **CI credential exfiltration + auto-apply attempt**: attacker steals a runtime credential; tries `terraform apply`; workflow lacks apply step (only plan); apply requires separate manual workflow with additional approval.
 
 **Risk justification HIGH_RISK**:
 
@@ -177,22 +176,22 @@ CI workflow + runbook + D1 audit; HIGH_RISK; FF-HR-005.
 1. **`.github/workflows/terraform-drift.yml`** (forward; documented spec only):
    - Daily cron 03:00 UTC.
    - Manual `workflow_dispatch` for ad-hoc check.
-   - Matrix over 5 regions: us-east, us-west, eu-west, ap-southeast, sa-east.
+   - Matrix over 4 regions: wnam, enam, weur, sam.
    - Steps: `terraform init` (backend per-region) → local `terraform plan -detailed-exitcode -out=plan.tfplan` → allow-listed summary generation; local plan is removed before upload.
    - Exit code handling: 0 = no diff; 1 = error; 2 = diff exists.
    - On exit code 2: post Slack SEV-3 alert + upload the sanitized summary artifact.
    - On exit code 1: post Slack SEV-2 alert (terraform error) + upload the sanitized error summary.
    - Sanitized summary retention is 7 days; compliance retention remains on the D1 audit row (7 years).
    - **NO `terraform apply` step** (security property; auto-apply forbidden).
-   - Permissions: `contents: read` + `id-token: write` (OIDC for Cloudflare API auth).
-   - OIDC-bound credentials only (no long-lived AWS/CF secrets in workflow).
+   - Permissions: `contents: read`; no `id-token: write` claim is requested.
+   - Provider auth uses the dedicated `CF_TERRAFORM_DRIFT_API_TOKEN`; R2 backend auth uses separate `TF_BACKEND_ACCESS_KEY_ID` and `TF_BACKEND_SECRET_ACCESS_KEY` secrets mapped at runtime. No credential is embedded in HCL, command arguments, artifacts, or logs.
 
 2. **D1 schema migration `terraform_drift_findings`** (vide §1):
    - Per-run row inserted (even if 0 drift) for cron health check.
    - Index `idx_terraform_drift_open` for fast query of open findings.
    - Trigger entry from GitHub Actions via webhook → Worker → D1.
 
-3. **`specs/05_runbooks/RB-FM-206.md` runbook**:
+3. **`specs/05_quality/runbooks/RB-FM-206-terraform-drift.md` runbook**:
    - Decision tree (apply / investigate / revert).
    - Investigation procedure (cross-reference Cloudflare audit log + admin changes log).
    - Revert procedure (`terraform apply` after manual change with dual-approval gate).
@@ -232,7 +231,7 @@ CI workflow + runbook + D1 audit; HIGH_RISK; FF-HR-005.
    - Manual remediation drift: admin applies Cloudflare console change; subsequent cron detects re-drift; runbook decision tree triggered.
 
 9. **Integration test E2E**:
-   - Trigger workflow_dispatch in staging; verify `terraform plan` runs for all 5 regions in parallel.
+   - Trigger workflow_dispatch in staging; verify `terraform plan` runs for all 4 regions in parallel.
    - Inject synthetic drift; verify SEV-3 alert posted + D1 row inserted.
    - Manual remediation flow: admin invokes admin API `POST /v1/admin/ops` with op_type=`TerraformDriftRemediate` (composed WI-S13-002 dual-approval); D1 row updated to status=remediated.
 
@@ -258,7 +257,7 @@ CI workflow + runbook + D1 audit; HIGH_RISK; FF-HR-005.
 - Skip cron daily cadence (drift detection MTTD bound mandatory).
 - Skip D1 audit log (compliance evidence mandatory).
 - Skip RB-FM-206 manual remediation runbook.
-- Long-lived AWS/CF secrets em CI (OIDC only).
+- Embedding provider or R2 credentials in HCL, command arguments, artifacts, or logs.
 - Skip CODEOWNERS for `infra/terraform/`.
 - Skip required PR reviews for terraform changes.
 - Bash automation > 30 lines (Rust binary preferred for harness; runbook is Markdown).
@@ -273,25 +272,25 @@ Feature: Terraform drift detection daily + RB-FM-206
 
   Background:
     Given GitHub Actions workflow terraform-drift.yml configured
-    And matrix over 5 regions
+    And matrix over 4 regions
     And D1 terraform_drift_findings table operational
     And Slack #infra-drift channel configured
 
   Scenario: Daily cron 03:00 UTC runs successfully (no drift)
     Given no drift in any region
     When cron triggers
-    Then terraform plan runs per region (5 parallel jobs)
+    Then terraform plan runs per region (4 parallel jobs)
     And exit code = 0 (no diff)
     And D1 row inserted (severity="none", status="open" but auto-closed)
     And metric corelink_admin_terraform_cron_runs_total{outcome="ok"} incremented
 
   Scenario: Drift detected → SEV-3 Slack alert
-    Given Cloudflare console manual change in region us-east (Worker config modified)
+    Given Cloudflare console manual change in region wnam (Worker config modified)
     When cron triggers
-    Then terraform plan detects diff in us-east (exit code = 2)
+    Then terraform plan detects diff in wnam (exit code = 2)
     And Slack #infra-drift posts SEV-3 message with action summary + sanitized artifact URL
-    And D1 row inserted (region="us-east", severity="medium", status="open")
-    And metric corelink_admin_terraform_drift_findings_total{region="us-east",severity="medium"} incremented
+    And D1 row inserted (region="wnam", severity="medium", status="open")
+    And metric corelink_admin_terraform_drift_findings_total{region="wnam",severity="medium"} incremented
     And audit "admin.terraform_drift.detected" emitted
 
   Scenario: Auto-apply forbidden (workflow definition has no apply step)
@@ -306,7 +305,7 @@ Feature: Terraform drift detection daily + RB-FM-206
     And metric corelink_admin_terraform_cron_runs_total{outcome="workflow_failed"} incremented
 
   Scenario: Manual remediation via admin API (dual-approval gated)
-    Given drift finding open (region="us-east")
+    Given drift finding open (region="wnam")
     When admin POST /v1/admin/ops body={op_type: "TerraformDriftRemediate", finding_id, decision: "apply"}
       And X-Dual-Approver: B + valid HMAC signature
     Then dual-approval verified (composed WI-S13-002)
@@ -333,7 +332,7 @@ Feature: Terraform drift detection daily + RB-FM-206
     And no false-positive alert
 
   Scenario: Cross-region drift aggregation
-    Given drift detected in us-east + us-west simultaneously
+    Given drift detected in wnam + enam simultaneously
     When matrix workflow completes
     Then aggregator step posts summary alert (multi-region pattern)
     And D1 rows inserted per region
@@ -350,7 +349,7 @@ Feature: Terraform drift detection daily + RB-FM-206
 ### 9.1 Why daily cron 03:00 UTC
 
 - 03:00 UTC = lowest customer activity globally; minimal impact if cron causes load spike.
-- Daily cadence balances: detection MTTD (24h bound) vs CI cost (~$1/dia per region × 5 regions × 30 = $150/mês).
+- Daily cadence balances: detection MTTD (24h bound) vs CI cost (~$1/dia per region × 4 regions × 30 = $150/mês).
 - Industry standard (AWS CloudFormation drift detection cron daily).
 
 ### 9.2 Why `terraform plan` only (NÃO apply)
@@ -361,8 +360,8 @@ Feature: Terraform drift detection daily + RB-FM-206
 
 ### 9.3 Why matrix per-region (NÃO single global plan)
 
-- Per-region failure isolation: drift em us-east não blocks detection em us-west.
-- Parallel execution faster (5 jobs ~3 min each = 3 min total wall).
+- Per-region failure isolation: drift em wnam não blocks detection em enam.
+- Parallel execution faster (4 jobs ~3 min each = 3 min total wall).
 - Per-region backend state (separate state files).
 
 ### 9.4 Why RB-FM-206 manual remediation (NÃO auto-investigate)
@@ -383,11 +382,14 @@ Feature: Terraform drift detection daily + RB-FM-206
 - Query-able for monthly trend reports + audit access.
 - Index `idx_terraform_drift_open` enables fast query of open findings.
 
-### 9.7 Why OIDC-bound credentials (NÃO long-lived secrets)
+### 9.7 Why separate runtime credentials
 
-- Industry trend: GitHub Actions OIDC = short-lived cert per workflow.
-- Eliminates threat class secret exfiltration via CI compromise.
-- Cloudflare API supports OIDC federation.
+- Cloudflare drift uses a dedicated token with exactly the six read-only scopes
+  required by the provider contract.
+- R2 backend credentials are separate from Cloudflare credentials and are
+  mapped only through runtime environment variables.
+- Neither provider nor backend credential is written to HCL, command
+  arguments, artifacts, or logs; the workflow does not request GitHub OIDC.
 
 ### 9.8 Why post-mortem trigger > 7d sustained
 
@@ -404,7 +406,7 @@ Feature: Terraform drift detection daily + RB-FM-206
 
 - [ ] **10.s13.004.1** GitHub Actions workflow `terraform-drift.yml` documented spec + matrix per region (EVT-027).
 - [ ] **10.s13.004.2** D1 `terraform_drift_findings` schema migration applied (EVT-018).
-- [ ] **10.s13.004.3** RB-FM-206 runbook committed em `specs/05_runbooks/RB-FM-206.md` com decision tree (EVT-017).
+- [ ] **10.s13.004.3** RB-FM-206 runbook committed em `specs/05_quality/runbooks/RB-FM-206-terraform-drift.md` com decision tree (EVT-017).
 - [ ] **10.s13.004.4** Slack #infra-drift alert template tested (synthetic drift injection) (EVT-013).
 - [ ] **10.s13.004.5** Métricas (4 listadas §6.1.5) emitting em staging (EVT-013).
 - [ ] **10.s13.004.6** Adversarial test: synthetic drift injection + cron skip + state file tampering + acceptable drift filter (EVT-040).
@@ -423,7 +425,7 @@ Feature: Terraform drift detection daily + RB-FM-206
 - [ ] Trace spans em OTel.
 - [ ] CODEOWNERS for `infra/terraform/` configured.
 - [ ] CI gate forbids `terraform apply` step in workflow (custom lint).
-- [ ] OIDC credentials configured (no long-lived secrets).
+- [ ] Dedicated Cloudflare and R2 runtime secrets configured with the exact read-only scopes.
 - [ ] Adversarial regression tests green.
 - [ ] Integration test E2E green em staging.
 - [ ] Code review (SRE Lead + Architect + AppSec).
@@ -449,7 +451,7 @@ TLA+ alignment: não-aplicável (CI cron + audit emission; sem state machine cri
 |---|---|---|
 | Terraform drift workflow | `.github/workflows/terraform-drift.yml` | YAML (GitHub Actions) |
 | D1 migration `terraform_drift_findings` | `migrations/0XX_terraform_drift_findings.sql` | SQL |
-| RB-FM-206 runbook | `specs/05_runbooks/RB-FM-206.md` | Markdown |
+| RB-FM-206 runbook | `specs/05_quality/runbooks/RB-FM-206-terraform-drift.md` | Markdown |
 | Slack alert template | `infra/slack/terraform-drift-template.json` | JSON |
 | Sanitized evidence generator | `scripts/sanitize_terraform_drift.py` | Python (fixed schema; no raw payload) |
 | Evidence boundary tests | `scripts/test_sanitize_terraform_drift.py` | Python (canary + mutation-sensitive) |
@@ -464,14 +466,14 @@ TLA+ alignment: não-aplicável (CI cron + audit emission; sem state machine cri
 - **14.s13.004.1** Zero `unsafe`; zero `unwrap` em src/.
 - **14.s13.004.2** Workflow YAML lint passing (actionlint).
 - **14.s13.004.3** Test coverage drift consumer Worker ≥ 90%.
-- **14.s13.004.4** Latência: cron run completion ≤ 5 min wall (matrix 5 regions parallel).
+- **14.s13.004.4** Latência: cron run completion ≤ 5 min wall (matrix 4 regions parallel).
 - **14.s13.004.5** SAST: cargo-audit + cargo-deny + clippy clean for consumer Worker; actionlint for YAML.
 - **14.s13.004.6** Métricas RED + age tracking.
 - **14.s13.004.7** Runbook RB-FM-206 dry-run cadence monthly.
 - **14.s13.004.8** Breaking changes em D1 schema = bump major + migration plan.
 - **14.s13.004.9** Memory bounded em consumer Worker.
 - **14.s13.004.10** Cost regression gate em CI.
-- **14.s13.004.11** OIDC-bound credentials only.
+- **14.s13.004.11** Dedicated read-only provider and R2 credentials are runtime-only.
 - **14.s13.004.12** CODEOWNERS for `infra/terraform/`.
 
 ## 15. Chaos Experiments
@@ -488,7 +490,7 @@ TLA+ alignment: não-aplicável (CI cron + audit emission; sem state machine cri
 
 6. **Multi-region drift**: inject drift in 2 regions simultaneously; verify aggregator summary alert.
 
-7. **CI credential exfiltration simulation**: red team validates OIDC-bound credentials are short-lived (≤ 1h).
+7. **CI credential exfiltration simulation**: red team validates that provider and backend values never appear in workflow output or uploaded evidence.
 
 8. **Manual remediation drift**: admin manually applies Cloudflare console change; subsequent cron detects re-drift; RB-FM-206 decision tree triggered.
 
@@ -512,7 +514,7 @@ PRR HIGH_RISK 11 sign-offs canonical (S-13 ship gate é WI-S13-006; este WI pass
 | ID | Sub-task | Estimativa |
 |---|---|---|
 | ST-001 | Workflow `.github/workflows/terraform-drift.yml` skeleton | 1.5h |
-| ST-002 | Matrix per-region + OIDC credentials | 1h |
+| ST-002 | Matrix per-region + runtime provider/backend credentials | 1h |
 | ST-003 | Slack alert posting + template | 1.5h |
 | ST-004 | D1 migration `terraform_drift_findings` | 1h |
 | ST-005 | Drift consumer Worker (GitHub webhook → D1) | 2h |
@@ -531,7 +533,7 @@ PRR HIGH_RISK 11 sign-offs canonical (S-13 ship gate é WI-S13-006; este WI pass
 ### Hard blockers
 
 - **WI-S13-002 SEALED** (admin API + dual-approval gate for manual remediation flow `TerraformDriftRemediate` op type composed).
-- Cloudflare OIDC federation operational (platform-level; not blocker for spec).
+- Dedicated Cloudflare drift token and R2 backend credentials provisioned and validated by the owner (external operational prerequisite).
 
 ### Soft blockers
 
@@ -562,9 +564,9 @@ Dashboard widget DASH-ADMIN:
 
 ## 22. Cost Analysis
 
-- GitHub Actions: 5 regions × 1 run/dia × 5 min × $0.008/min = $1.20/dia = $36/mês.
+- GitHub Actions: 4 regions × 1 run/dia × 5 min × $0.008/min = $0.16/dia = $4.80/mês.
 - Slack notifications: free (within plan).
-- D1 writes: ~5 rows/dia × 30 = 150 rows/mês × 1 KB = 150 KB; ~$0.10/mês.
+- D1 writes: ~4 rows/dia × 30 = 120 rows/mês × 1 KB = 120 KB; ~$0.10/mês.
 - **Total custo direto WI-S13-004**: ~$36/mês = $432/yr. Bounded vs cloud-native drift detection (AWS Config $2/resource/mês × 100 resources = $200/mês).
 
 ## 23. API Contract
@@ -588,7 +590,7 @@ Não-aplicável (este WI é CI workflow + runbook + D1 audit). Admin API for rem
 ## 26. Security & Privacy
 
 **STRIDE delta**:
-- **Spoofing**: OIDC-bound credentials short-lived; no long-lived secret exfiltration vector.
+- **Spoofing**: dedicated read-only provider and backend credentials are runtime-only and separate; no credential value is emitted to logs or evidence.
 - **Tampering**: state file integrity check + CODEOWNERS + required reviews.
 - **Repudiation**: D1 audit log + 7y retention.
 - **Information disclosure**: raw plan files, plan JSON, and terminal logs never leave the runner; only an allow-listed summary is uploaded.
@@ -620,7 +622,7 @@ Não-aplicável (este WI é CI workflow + runbook + D1 audit). Admin API for rem
 | R-004 | Drift > 7d sem remediation | L | M | HIGH | M | LOW | Post-mortem trigger spec contract §18 |
 | R-005 | Manual remediation creates new drift | M | L | MEDIUM | L | LOW | RB-FM-206 decision tree mandates terraform apply |
 | R-006 | State file corruption | L | M | HIGH | L | LOW | Backend versioning + integrity check + restore procedure |
-| R-007 | CI credential exfiltration | L | H | CRITICAL | L | LOW | OIDC short-lived only; no long-lived secrets |
+| R-007 | CI credential exfiltration | L | H | CRITICAL | L | LOW | Separate read-only runtime credentials; no values in logs or evidence |
 | R-008 | Cross-region drift correlation missed | M | L | MEDIUM | L | LOW | Aggregator step posts summary if multi-region |
 | R-009 | Slack outage | L | L | LOW | L | LOW | D1 audit log persistent; PagerDuty fallback for SEV-2+ |
 | R-010 | Cost regression em CI | L | L | LOW | L | LOW | Cost gate + matrix bounded |
@@ -663,7 +665,7 @@ Não-aplicável (este WI é CI workflow + runbook + D1 audit). Admin API for rem
 - Skip cron daily cadence.
 - Skip D1 audit log.
 - Skip RB-FM-206 manual remediation runbook.
-- Long-lived AWS/CF secrets em CI (OIDC only).
+- Embedding provider or R2 credentials in HCL, command arguments, artifacts, or logs.
 - Skip CODEOWNERS for `infra/terraform/`.
 - Skip required PR reviews for terraform changes.
 - Bash automation > 30 lines.
