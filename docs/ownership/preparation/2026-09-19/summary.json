@@ -1,0 +1,41 @@
+{
+  "repository_id": "1232040291",
+  "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5",
+  "workspace_packages": 95,
+  "independent_fuzz_packages": 10,
+  "eligible_packages": 105,
+  "tracked_manifests": 107,
+  "targets": 631,
+  "main_workspace_targets": 608,
+  "declared_internal_edges": 235,
+  "main_workspace_internal_edges": 222,
+  "own_rust_files": 2111,
+  "packages_with_direct_okf": 60,
+  "source_packets": 105,
+  "seeds": 105,
+  "metadata_commands_succeeded": 0,
+  "lock_unchanged": true,
+  "checkout_status": "",
+  "head_after": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5",
+  "issues_snapshot_count": 194,
+  "new_crate_issues": 0,
+  "cargo_builds_or_tests": 0,
+  "runtime_verified": false,
+  "source_graph_resolved": false,
+  "scope_exclusions": [
+    {
+      "manifest": "Cargo.toml",
+      "package": null,
+      "classification": "workspace_only_no_package",
+      "reason": "Virtual root: no package target.",
+      "evidence": "Cargo.toml"
+    },
+    {
+      "manifest": "_archive/wi-s11-002-partial/Cargo.toml",
+      "package": "corelink-erasure",
+      "classification": "historical_archive",
+      "reason": "Historical partial implementation mined for taxonomy; canonical successors are privacy-erasure-worker and privacy-pseudonymize, per source spec. No inbound Cargo path dependency found in any of 105 active package metadata records.",
+      "evidence": "specs/04_sprints/S11/_spec_contract.md:485"
+    }
+  ]
+}
