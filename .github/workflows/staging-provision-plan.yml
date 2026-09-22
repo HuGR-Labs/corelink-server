@@ -22,7 +22,154 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  r2-state-bootstrap:
+    # Temporary dispatch-only job on codex/i1721-live-r2-bootstrap. It is
+    # deliberately isolated from the default branch workflow and is removed
+    # with that branch after #1721 has an operational receipt.
+    if: inputs.confirm == 'bootstrap-r2-1721'
+    name: R2 Terraform-state bootstrap and lock probe
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
+      GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
+      STATE_BUCKET: corelink-terraform-staging-state
+      STATE_KEY: corelink/wnam/terraform.tfstate
+    steps:
+      - name: Validate non-secret prerequisites
+        run: |
+          set -euo pipefail
+          required=(CF_API_TOKEN CF_ACCOUNT_ID CF_ZONE_ID GH_TOKEN)
+          missing=()
+          for name in "${required[@]}"; do [[ -n "${!name:-}" ]] || missing+=("$name"); done
+          if (( ${#missing[@]} )); then
+            echo "::error::missing required credential bindings: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      - name: Create scoped R2 API token and install backend bindings
+        id: credentials
+        env:
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/r2-state-receipt.json"
+          token_id=""
+          installed=false
+          cleanup() {
+            status=$?
+            if [[ "$installed" != true && -n "$token_id" ]]; then
+              curl --silent --show-error --fail-with-body --request DELETE \
+                --header "Authorization: Bearer $CF_API_TOKEN" \
+                "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/tokens/$token_id" >/dev/null || true
+            fi
+            jq -n --arg bucket "$STATE_BUCKET" --arg key "$STATE_KEY" \
+              --arg token_created "$([[ -n "$token_id" ]] && echo true || echo false)" \
+              --arg installed "$installed" --argjson status "$status" \
+              '{schema:1,bucket:$bucket,state_key:$key,token_created:($token_created=="true"),backend_secrets_installed:($installed=="true"),exit_status:$status}' \
+              >"$receipt"
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          api() {
+            curl --silent --show-error --fail-with-body \
+              --header "Authorization: Bearer $CF_API_TOKEN" \
+              --header 'Content-Type: application/json' "$@"
+          }
+          if ! api "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/r2/buckets/$STATE_BUCKET" >"$RUNNER_TEMP/bucket.json" 2>"$RUNNER_TEMP/bucket.err"; then
+            if ! api --request POST --data "{\"name\":\"$STATE_BUCKET\",\"locationHint\":\"wnam\"}" \
+              "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/r2/buckets" >"$RUNNER_TEMP/bucket.json"; then
+              echo '::error::Cloudflare denied staging R2 bucket lookup/creation.'
+              exit 1
+            fi
+          fi
+          groups="$(api 'https://api.cloudflare.com/client/v4/user/tokens/permission_groups')"
+          group_id="$(jq -r '.result[] | select(.name == "Workers R2 Storage Bucket Item Write") | .id' <<<"$groups" | head -n1)"
+          [[ -n "$group_id" && "$group_id" != null ]] || { echo '::error::R2 bucket-item-write permission group unavailable.'; exit 1; }
+          policy="$(jq -nc --arg account "$CF_ACCOUNT_ID" --arg bucket "$STATE_BUCKET" --arg group "$group_id" '{name:"corelink-terraform-staging-state-1721",policies:[{effect:"allow",resources:{("com.cloudflare.edge.r2.bucket." + $account + "_default_" + $bucket):"*"},permission_groups:[{id:$group}]}]}')"
+          token="$(api --request POST --data "$policy" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/tokens")"
+          token_id="$(jq -r '.result.id // empty' <<<"$token")"
+          token_value="$(jq -r '.result.value // empty' <<<"$token")"
+          [[ -n "$token_id" && -n "$token_value" ]] || { echo '::error::Cloudflare returned no R2 token material.'; exit 1; }
+          access_secret="$(printf %s "$token_value" | sha256sum | awk '{print $1}')"
+          endpoint="https://${CF_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          printf %s "$token_id" | gh secret set TF_BACKEND_ACCESS_KEY_ID --repo "$GH_REPO"
+          printf %s "$access_secret" | gh secret set TF_BACKEND_SECRET_ACCESS_KEY --repo "$GH_REPO"
+          printf %s "$STATE_BUCKET" | gh secret set TF_BACKEND_BUCKET --repo "$GH_REPO"
+          printf %s "$endpoint" | gh secret set TF_BACKEND_ENDPOINT --repo "$GH_REPO"
+          {
+            printf 'AWS_ACCESS_KEY_ID=%s\n' "$token_id"
+            printf 'AWS_SECRET_ACCESS_KEY=%s\n' "$access_secret"
+          } >> "$GITHUB_ENV"
+          installed=true
+          echo 'created_and_installed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Setup Terraform 1.11.4
+        if: steps.credentials.outputs.created_and_installed == 'true'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        with:
+          terraform_version: '1.11.4'
+          terraform_wrapper: false
+
+      - name: Read state and prove same-key contention then release
+        if: steps.credentials.outputs.created_and_installed == 'true'
+        env:
+          AWS_DEFAULT_REGION: auto
+          TF_VAR_cf_account_id: ${{ secrets.CF_ACCOUNT_ID }}
+          TF_VAR_cf_zone_id: ${{ vars.CF_ZONE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          endpoint="https://${CF_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          root=infra/terraform/regions/wnam
+          terraform -chdir="$root" init -input=false -reconfigure \
+            -backend-config="bucket=$STATE_BUCKET" -backend-config='region=auto' \
+            -backend-config="endpoints={s3=\"$endpoint\"}" -backend-config='use_lockfile=true'
+          terraform -chdir="$root" state pull >/dev/null
+          lock_key="${STATE_KEY}.tflock"
+          jq -n --arg path "$STATE_KEY" '{ID:"i1721-bounded-lock",Operation:"OperationTypePlan",Who:"github-actions",Version:"1.11.4",Created:"2026-09-22T00:00:00Z",Path:$path}' >"$RUNNER_TEMP/lock.json"
+          aws s3api put-object --bucket "$STATE_BUCKET" --key "$lock_key" --body "$RUNNER_TEMP/lock.json" --if-none-match '*' --endpoint-url "$endpoint" >/dev/null
+          set +e
+          terraform -chdir="$root" plan -refresh=false -input=false -lock-timeout=10s >/dev/null 2>"$RUNNER_TEMP/contention.err"
+          contention_status=$?
+          set -e
+          grep -q 'Error acquiring the state lock' "$RUNNER_TEMP/contention.err" && [[ "$contention_status" -ne 0 ]] || { echo '::error::same-key lock contention was not safely rejected.'; exit 1; }
+          aws s3api delete-object --bucket "$STATE_BUCKET" --key "$lock_key" --endpoint-url "$endpoint" >/dev/null
+          set +e
+          terraform -chdir="$root" plan -refresh=false -input=false -lock-timeout=30s >/dev/null
+          plan_status=$?
+          set -e
+          [[ "$plan_status" == 0 || "$plan_status" == 2 ]] || { echo '::error::post-release Terraform plan failed.'; exit 1; }
+          if aws s3api head-object --bucket "$STATE_BUCKET" --key "$lock_key" --endpoint-url "$endpoint" >/dev/null 2>&1; then
+            echo '::error::Terraform failed to release its native lockfile.'
+            exit 1
+          fi
+          jq -n --arg bucket "$STATE_BUCKET" --arg key "$STATE_KEY" --arg plan "$plan_status" \
+            '{schema:1,bucket:$bucket,state_key:$key,state_readback:true,contention_rejected:true,post_release_plan_exit:($plan|tonumber),lock_absent_after_plan:true}' \
+            >"$RUNNER_TEMP/r2-lock-receipt.json"
+
+      - name: Upload secret-free receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: issue-1721-r2-state-receipt-${{ github.run_id }}
+          path: ${{ runner.temp }}/*receipt.json
+          retention-days: 30
+          if-no-files-found: warn
+
   plan:
+    if: inputs.confirm == 'plan-staging-1700'
     name: read-only Cloudflare staging plan
     # This plan holds repository-scoped Cloudflare secrets. It therefore runs
     # on GitHub-hosted infrastructure, never on the retired corelink label.
