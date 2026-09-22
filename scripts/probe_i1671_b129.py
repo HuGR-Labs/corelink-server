@@ -24,9 +24,10 @@ from datetime import datetime, timezone
 SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")
 TOKEN = re.compile(r"^[A-Za-z0-9._~:-]{1,180}$")
+QUOTED_STRING = r'"(?:[\t !#-\[\]\x5d-\x7e\x80-\xff]|\\[\t -~\x80-\xff])*"'
 PHASE = re.compile(
-    r"^\s*(?P<n>[a-z][a-z0-9_-]*)\s*;\s*dur=(?P<d>[0-9]+(?:\.[0-9]+)?)"
-    r"(?:\s*;[^,]*)?\s*$"
+    rf"^\s*(?P<n>[a-z][a-z0-9_-]*)\s*;\s*dur\s*=\s*(?P<d>[0-9]+(?:\.[0-9]+)?)"
+    rf"(?:\s*;\s*desc\s*=\s*{QUOTED_STRING})?\s*$"
 )
 Q = ("qtier", "qdo", "qbatch", "qresid", "qcontrol")
 ORIGIN = ("opat", "oquota", "ostore", "oaccounting", "oargon", "opermit", "ortier", "oaudit", "oratelimit", "ohandler")
@@ -49,7 +50,7 @@ def timing(raw: str) -> dict[str, float]:
     for part in raw.split(","):
         match = PHASE.fullmatch(part)
         if match is None:
-            if ";dur=" in part:
+            if re.search(r";\s*dur\s*=", part):
                 fail("malformed Server-Timing phase")
             continue
         name, value = match.group("n"), float(match.group("d"))

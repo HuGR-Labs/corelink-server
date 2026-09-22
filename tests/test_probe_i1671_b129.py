@@ -63,6 +63,10 @@ class ProbeContractTests(unittest.TestCase):
             "wdb;dur=5junk",
             "prefix wdb;dur=5",
             "wdb;dur=5 trailing",
+            "wdb;dur=5;desc=worker database",
+            'wdb;dur=5;desc="unterminated',
+            'wdb;dur=5;desc="worker"garbage',
+            'wdb;dur=5;desc="worker";extra="value"',
         ):
             with self.subTest(header=malformed), self.assertRaises(RuntimeError):
                 PROBE.timing(malformed)
