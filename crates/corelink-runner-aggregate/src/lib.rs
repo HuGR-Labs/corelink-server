@@ -1117,6 +1117,114 @@ mod tests {
         assert_eq!(duplicate.shadow_ledger, once.shadow_ledger);
     }
 
+    // This is intentionally an independent integer oracle. It does not call
+    // the production money helper or cumulative charge function, so a shared
+    // allowance/rounding mistake cannot make this property vacuously green.
+    fn full_period_oracle(total: u128, allowance: u128, rate: u64) -> u128 {
+        total.saturating_sub(allowance) * u128::from(rate) * 1000
+            / u128::from(SECONDS_PER_VCPU_HOUR)
+    }
+
+    #[test]
+    fn deterministic_random_partitions_match_the_full_period_oracle() {
+        let tenant_id = tenant(42);
+        let regions = ["iad", "fra", "nrt", "syd", "gru"];
+        let mut state = 0x1630_cafe_u64;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            state
+        };
+
+        for case_id in 0..64_u8 {
+            let rate = (next() % 97) + 1;
+            let terms = terms_for(tenant_id, 100 * 3600, rate);
+            let events: Vec<_> = (0..24_u8)
+                .map(|event_id| StagedRunnerEvent {
+                    tenant_id,
+                    region: regions[(next() as usize) % regions.len()].to_string(),
+                    qty_vcpu_seconds: u128::from(1_000 + next() % 30_000),
+                    idem_key_hex: ik(case_id.wrapping_add(event_id)),
+                    time_ms: next(),
+                })
+                .collect();
+            let full_total: u128 = events.iter().map(|event| event.qty_vcpu_seconds).sum();
+            let expected = full_period_oracle(full_total, terms.allowance_vcpu_seconds, rate);
+
+            let mut one_input = base_input(events.clone());
+            one_input.tenant_period_terms.insert(tenant_id, terms.clone());
+            let one = aggregate_runner_usage(&one_input).unwrap();
+            assert_eq!(
+                one.shadow_ledger[0].cumulative_shadow_charge_millicents, expected,
+                "case {case_id}: one batch must match the independent full-period oracle"
+            );
+
+            let mut offset = 0_usize;
+            let mut consumed = 0_u128;
+            let mut partition_charge = 0_u128;
+            while offset < events.len() {
+                let width = ((next() % 5) + 1) as usize;
+                let end = (offset + width).min(events.len());
+                let mut partition_input = base_input(events[offset..end].to_vec());
+                partition_input
+                    .tenant_period_terms
+                    .insert(tenant_id, terms.clone());
+                if consumed != 0 {
+                    partition_input
+                        .prior_consumption
+                        .insert(tenant_id, prior_consumption(&terms, consumed));
+                }
+                let output = aggregate_runner_usage(&partition_input).unwrap();
+                let line = &output.shadow_ledger[0];
+                partition_charge += line.charge_delta_millicents;
+                consumed = line.cumulative_vcpu_seconds;
+                offset = end;
+            }
+            assert_eq!(consumed, full_total, "case {case_id}: all regions converge");
+            assert_eq!(
+                partition_charge, expected,
+                "case {case_id}: arbitrary partitions must preserve the canonical shadow charge"
+            );
+        }
+    }
+
+    #[test]
+    fn late_event_uses_the_fixed_period_snapshot_and_existing_consumption() {
+        let tenant_id = tenant(42);
+        let terms = terms_for(tenant_id, 100 * 3600, 20);
+        let first = aggregate_runner_usage(&starter_input_with_prior(
+            0,
+            vec![StagedRunnerEvent {
+                tenant_id,
+                region: "iad".to_string(),
+                qty_vcpu_seconds: 99 * 3600,
+                idem_key_hex: ik(0xa1),
+                time_ms: 20,
+            }],
+        ))
+        .unwrap();
+        assert_eq!(first.shadow_ledger[0].charge_delta_millicents, 0);
+
+        let late = aggregate_runner_usage(&starter_input_with_prior(
+            99 * 3600,
+            vec![StagedRunnerEvent {
+                tenant_id,
+                region: "fra".to_string(),
+                qty_vcpu_seconds: 2 * 3600,
+                idem_key_hex: ik(0xa2),
+                // It arrives after the first drain but was emitted earlier.
+                time_ms: 10,
+            }],
+        ))
+        .unwrap();
+        let line = &late.shadow_ledger[0];
+        assert_eq!(line.terms_snapshot_ref, terms.terms_snapshot_ref);
+        assert_eq!(line.cumulative_vcpu_seconds, 101 * 3600);
+        assert_eq!(line.charge_delta_millicents, 20_000);
+        assert_eq!(line.cumulative_shadow_charge_millicents, 20_000);
+    }
+
     #[test]
     fn rejects_wrong_contract_or_prior_scope_and_overflow() {
         let t = tenant(42);
