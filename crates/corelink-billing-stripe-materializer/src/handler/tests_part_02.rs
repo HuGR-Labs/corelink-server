@@ -185,19 +185,6 @@ impl BillingD1Writer for TierPathRecordingD1 {
         self.inner
             .downgrade_tier(tenant_id, tier_wire, now_ms, correlation_id)
     }
-    fn upsert_runners_entitlement(
-        &self,
-        tenant_id: &str,
-        max_concurrency: u32,
-        max_vcpu_h: u32,
-        now_ms: i64,
-    ) -> Result<(), BillingD1Error> {
-        self.inner
-            .upsert_runners_entitlement(tenant_id, max_concurrency, max_vcpu_h, now_ms)
-    }
-    fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error> {
-        self.inner.delete_runners_entitlement(tenant_id)
-    }
 }
 
 #[test]
@@ -391,10 +378,11 @@ fn refunds_follow_the_durable_product_axis_and_leave_unknowns_pending() {
     handler
         .on_invoice_paid(&invoice("in_runner", "sub_runner"))
         .unwrap();
-    handler
-        .on_charge_refunded(&refund("evt_runner_full", "in_runner", 100, 100))
-        .unwrap();
-    assert_eq!(d1.runners_entitlement_of("ten_1"), None);
+    assert!(matches!(
+        handler.on_charge_refunded(&refund("evt_runner_full", "in_runner", 100, 100)),
+        Err(MaterializerError::Transient(_))
+    ));
+    assert_eq!(d1.runners_entitlement_of("ten_1"), Some((40, 240)));
     assert_eq!(d1.tier_for("ten_1").as_deref(), Some("pro"));
     assert_eq!(audit.count_event("corelink.tenant.tier_changed.v1"), 0);
 

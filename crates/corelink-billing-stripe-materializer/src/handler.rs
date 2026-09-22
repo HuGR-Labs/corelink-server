@@ -708,6 +708,7 @@ impl D1SubscriptionStateHandler {
                 subscription_id,
                 subscription_created_at_ms,
                 stripe_event_created_at_ms,
+                &env.id,
                 entitlement,
                 now_ms as i64,
             )
@@ -1010,12 +1011,19 @@ impl D1SubscriptionStateHandler {
                     self.persist_tier_downgrade(&tenant_id, TierKind::Free, env, now_ms)?;
                 }
                 Some(purchase) if purchase.product == crate::d1::RefundedProduct::Runners => {
-                    self.d1
-                        .revoke_refunded_runners_entitlement(
-                            &tenant_id,
-                            &purchase.stripe_subscription_id,
-                        )
-                        .map_err(d1_to_mat)?;
+                    let current = self
+                        .current_subscription(&purchase.stripe_subscription_id)?
+                        .ok_or_else(|| MaterializerError::Transient(
+                            "Runners refund cannot bypass provider entitlement authority".to_owned(),
+                        ))?;
+                    self.apply_runner_cas(
+                        &tenant_id,
+                        &purchase.stripe_subscription_id,
+                        current.subscription_created_at_ms,
+                        event_created_at_ms(env)?,
+                        None,
+                        now_ms,
+                    )?;
                 }
                 Some(_) | None => {}
             }

@@ -17,6 +17,7 @@ import {
   resolveSubscriptionTier,
   runnerEntitlementFromSubscriptionPrice,
   runnerTierFromMetadata,
+  subscriptionCreatedAtMs,
   subscriptionStatusGrantsAccess,
   tenantIdFromMetadata,
   tierFromMetadata,
@@ -31,14 +32,12 @@ import {
   markRunnerBillingStatusBySubscription,
   queueCheckoutActivation,
   reactivateTierSelectionBySubscription,
-  revokeRunnersEntitlementBySubscription,
+  reconcileRunnersEntitlement,
   updateBillingStatus,
   updateBillingSubscription,
   updateTierSelectionTierByCustomer,
   upsertBillingPaid,
   upsertRunnerBilling,
-  upsertRunnersEntitlementBySubscription,
-  upsertRunnersEntitlementByTenant,
 } from "./stripe_persistence.js";
 import type { D1DatabaseLike } from "./billing_checkout";
 
@@ -88,7 +87,14 @@ interface StripeEventData {
 interface StripeEvent {
     id: string;
     type: string;
+    created?: unknown;
     data: StripeEventData;
+}
+
+function stripeEventCreatedAtMs(event: StripeEvent): number | null {
+    return typeof event.created === "number" && Number.isFinite(event.created) && event.created > 0
+        ? event.created * 1000
+        : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -553,38 +559,15 @@ export async function handleStripeWebhook(
                                 nowMs,
                             }));
                     }
-                    // Seed on a granting status, revoke otherwise. Both resolve
-                    // the tenant through runner_billing (subscription id → tenant)
-                    // and are idempotent, so a redelivery converges.
-                    if (grantsAccess) {
-                        // Seed by tenant id DIRECTLY when we hold it (from the
-                        // subscription metadata) — race-free. The subscription-
-                        // correlated variant `SELECT`s FROM `runner_billing`, which
-                        // is now executed before the next queued write, so it
-                        // cannot lose the race and silently
-                        // seed 0 rows — a paying customer with no capacity. Fall
-                        // back to correlation only on the no-metadata path, where
-                        // `runner_billing` was mapped by a prior event.
-                        requiredWrites.push(() =>
-                            tenantId
-                                ? upsertRunnersEntitlementByTenant(db, {
-                                      tenantId,
-                                      maxConcurrency: runnerEnt.maxConcurrency,
-                                      maxVcpuH: runnerEnt.maxVcpuH,
-                                      nowMs,
-                                  })
-                                : upsertRunnersEntitlementBySubscription(db, {
-                                      runnerSubscriptionId: stripeSubscriptionId,
-                                      maxConcurrency: runnerEnt.maxConcurrency,
-                                      maxVcpuH: runnerEnt.maxVcpuH,
-                                      nowMs,
-                                  }),
-                        );
-                    } else {
-                        requiredWrites.push(() => revokeRunnersEntitlementBySubscription(db, {
-                                runnerSubscriptionId: stripeSubscriptionId,
-                            }));
-                    }
+                    requiredWrites.push(() => reconcileRunnersEntitlement(db, {
+                        tenantId,
+                        runnerSubscriptionId: stripeSubscriptionId,
+                        subscriptionCreatedAtMs: subscriptionCreatedAtMs(obj),
+                        stripeEventCreatedAtMs: stripeEventCreatedAtMs(event),
+                        stripeEventId: event.id,
+                        entitlement: grantsAccess ? runnerEnt : null,
+                        nowMs,
+                    }));
                 }
             }
 
@@ -675,35 +658,15 @@ export async function handleStripeWebhook(
                                 nowMs,
                             }));
                     }
-                    if (grantsAccess) {
-                        // Seed by tenant id DIRECTLY when we hold it (from the
-                        // subscription metadata) — race-free. The subscription-
-                        // correlated variant `SELECT`s FROM `runner_billing`, which
-                        // is now executed before the next queued write, so it
-                        // cannot lose the race and silently
-                        // seed 0 rows — a paying customer with no capacity. Fall
-                        // back to correlation only on the no-metadata path, where
-                        // `runner_billing` was mapped by a prior event.
-                        requiredWrites.push(() =>
-                            tenantId
-                                ? upsertRunnersEntitlementByTenant(db, {
-                                      tenantId,
-                                      maxConcurrency: runnerEnt.maxConcurrency,
-                                      maxVcpuH: runnerEnt.maxVcpuH,
-                                      nowMs,
-                                  })
-                                : upsertRunnersEntitlementBySubscription(db, {
-                                      runnerSubscriptionId: stripeSubscriptionId,
-                                      maxConcurrency: runnerEnt.maxConcurrency,
-                                      maxVcpuH: runnerEnt.maxVcpuH,
-                                      nowMs,
-                                  }),
-                        );
-                    } else {
-                        requiredWrites.push(() => revokeRunnersEntitlementBySubscription(db, {
-                                runnerSubscriptionId: stripeSubscriptionId,
-                            }));
-                    }
+                    requiredWrites.push(() => reconcileRunnersEntitlement(db, {
+                        tenantId,
+                        runnerSubscriptionId: stripeSubscriptionId,
+                        subscriptionCreatedAtMs: subscriptionCreatedAtMs(obj),
+                        stripeEventCreatedAtMs: stripeEventCreatedAtMs(event),
+                        stripeEventId: event.id,
+                        entitlement: grantsAccess ? runnerEnt : null,
+                        nowMs,
+                    }));
                 }
             }
             break;
@@ -778,19 +741,12 @@ export async function handleStripeWebhook(
                         stripeSubscriptionId,
                     }));
 
-                // 3. RUNNER entitlement revocation. The invoice carries NO price,
-                // so we CANNOT tell a runner-sub failure from a cache-sub failure
-                // from the payload — this is exactly why runner_billing exists
-                // (migration 0087): both writers resolve the subscription id
-                // THROUGH runner_billing, so they are inherent no-ops when the id
-                // is a cache subscription (the DELETE subquery / the UPDATE match
-                // no runner_billing row). We therefore issue them unconditionally:
-                // if this WAS a runner subscription, its entitlement is revoked
-                // and its billing mirror marked past_due; otherwise, nothing
-                // happens. Idempotent on redelivery (DELETE of an absent row).
-                requiredWrites.push(() => revokeRunnersEntitlementBySubscription(db, {
-                        runnerSubscriptionId: stripeSubscriptionId,
-                    }));
+                // The invoice has no subscription creation timestamp, so it lacks
+                // the provider tuple required by the durable entitlement fence.
+                // Record its runner mirror status only. The accompanying/current
+                // subscription event carries the complete tuple and performs the
+                // fenced revoke; inventing a local revision here could cancel a
+                // successor identity.
                 requiredWrites.push(() => markRunnerBillingStatusBySubscription(db, {
                         runnerSubscriptionId: stripeSubscriptionId,
                         status: "past_due",
@@ -843,18 +799,19 @@ export async function handleStripeWebhook(
                         stripeSubscriptionId,
                     }));
 
-                // RUNNER entitlement revocation on cancel. Same disambiguation as
-                // invoice.payment_failed: the deleted subscription object may
-                // carry no runner-identifying price, so we resolve THROUGH
-                // runner_billing (migration 0087). Both writers are inherent
-                // no-ops for a cache subscription (no runner_billing row maps its
-                // id) and idempotent on redelivery, so we issue them
-                // unconditionally: a canceled runner subscription loses its
-                // entitlement and its billing mirror is marked 'canceled';
-                // a cache cancel is untouched.
-                requiredWrites.push(() => revokeRunnersEntitlementBySubscription(db, {
-                        runnerSubscriptionId: stripeSubscriptionId,
-                    }));
+                // `customer.subscription.deleted` carries the provider creation
+                // time, so it can revoke through the exact same fenced CAS as a
+                // granting update. A cache subscription has no runner_billing row;
+                // its batch therefore cannot advance a runner fence or delete one.
+                requiredWrites.push(() => reconcileRunnersEntitlement(db, {
+                    tenantId,
+                    runnerSubscriptionId: stripeSubscriptionId,
+                    subscriptionCreatedAtMs: subscriptionCreatedAtMs(obj),
+                    stripeEventCreatedAtMs: stripeEventCreatedAtMs(event),
+                    stripeEventId: event.id,
+                    entitlement: null,
+                    nowMs,
+                }));
                 requiredWrites.push(() => markRunnerBillingStatusBySubscription(db, {
                         runnerSubscriptionId: stripeSubscriptionId,
                         status: "canceled",

@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-type RunnerFence = (String, u64, u64, bool);
+type RunnerFence = (String, u64, u64, String, bool);
 
 /// Error category surfaced by [`BillingD1Writer`].
 ///
@@ -162,10 +162,6 @@ pub const SQL_FIND_INVOICE_SUBSCRIPTION: &str = "SELECT json_extract(payload_jso
 /// Resolve a subscription against the two durable purchase maps.  Returning
 /// more than one row is deliberately treated as ambiguous by the writer.
 pub const SQL_RESOLVE_REFUND_PRODUCT: &str = "SELECT 'runners' AS product_axis FROM runner_billing WHERE tenant_id = ? AND runner_subscription_id = ? UNION ALL SELECT 'cache' AS product_axis FROM tenant_billing WHERE tenant_id = ? AND stripe_subscription_id = ? LIMIT 2";
-/// Revoke Runners only when every active runner subscription is represented by
-/// a full-refund materialization.  The refunded subscription itself is always
-/// excluded, so one full refund cannot revoke a separately-paid runner SKU.
-pub const SQL_REVOKE_REFUNDED_RUNNERS_ENTITLEMENT: &str = "DELETE FROM runners_entitlement WHERE tenant_id = ? AND NOT EXISTS (SELECT 1 FROM runner_billing rb WHERE rb.tenant_id = ? AND rb.status IN ('active', 'trialing') AND rb.runner_subscription_id != ? AND NOT EXISTS (SELECT 1 FROM stripe_refunds sr WHERE sr.tenant_id = rb.tenant_id AND json_extract(sr.payload_json, '$.stripe_subscription_id') = rb.runner_subscription_id AND json_extract(sr.payload_json, '$.fully_refunded') = 1))";
 /// Idempotency dedup INSERT into `stripe_webhook_events_processed`
 /// (migration 0044). This table is UN-tenanted — its PRIMARY KEY is the
 /// globally-unique Stripe `event_id`; there is NO `tenant_id` column.
@@ -343,15 +339,15 @@ pub const SQL_DELETE_RUNNERS_ENTITLEMENT: &str =
 /// predecessor cancellation from revoking a successor entitlement when Stripe
 /// replaces a subscription within one billing period. The fence row is
 /// retained after revoke so an old grant cannot be reinserted after restart.
-pub const SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE: &str = "INSERT INTO runner_entitlement_reconcile_fence (tenant_id, stripe_subscription_id, subscription_created_at_ms, stripe_event_created_at_ms, is_granting, applied_at_ms) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET stripe_subscription_id = excluded.stripe_subscription_id, subscription_created_at_ms = excluded.subscription_created_at_ms, stripe_event_created_at_ms = excluded.stripe_event_created_at_ms, is_granting = excluded.is_granting, applied_at_ms = excluded.applied_at_ms WHERE excluded.subscription_created_at_ms > runner_entitlement_reconcile_fence.subscription_created_at_ms OR (excluded.stripe_subscription_id = runner_entitlement_reconcile_fence.stripe_subscription_id AND excluded.stripe_event_created_at_ms > runner_entitlement_reconcile_fence.stripe_event_created_at_ms) RETURNING stripe_subscription_id";
+pub const SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE: &str = "INSERT INTO runner_entitlement_reconcile_fence (tenant_id, stripe_subscription_id, subscription_created_at_ms, stripe_event_created_at_ms, stripe_event_id, is_granting, applied_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET stripe_subscription_id = excluded.stripe_subscription_id, subscription_created_at_ms = excluded.subscription_created_at_ms, stripe_event_created_at_ms = excluded.stripe_event_created_at_ms, stripe_event_id = excluded.stripe_event_id, is_granting = excluded.is_granting, applied_at_ms = excluded.applied_at_ms WHERE excluded.subscription_created_at_ms > runner_entitlement_reconcile_fence.subscription_created_at_ms OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms AND excluded.stripe_subscription_id > runner_entitlement_reconcile_fence.stripe_subscription_id) OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms AND excluded.stripe_subscription_id = runner_entitlement_reconcile_fence.stripe_subscription_id AND excluded.stripe_event_created_at_ms > runner_entitlement_reconcile_fence.stripe_event_created_at_ms) OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms AND excluded.stripe_subscription_id = runner_entitlement_reconcile_fence.stripe_subscription_id AND excluded.stripe_event_created_at_ms = runner_entitlement_reconcile_fence.stripe_event_created_at_ms AND excluded.stripe_event_id > runner_entitlement_reconcile_fence.stripe_event_id) RETURNING stripe_subscription_id";
 /// Apply a grant only when this operation owns the current durable fence row.
-pub const SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT: &str = "INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h) SELECT ?, ?, 'runners', ?, ? WHERE EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ? AND stripe_subscription_id = ? AND subscription_created_at_ms = ? AND stripe_event_created_at_ms = ?) ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency = excluded.max_concurrency, max_vcpu_h = excluded.max_vcpu_h";
+pub const SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT: &str = "INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h) SELECT ?, ?, 'runners', ?, ? WHERE EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ? AND stripe_subscription_id = ? AND subscription_created_at_ms = ? AND stripe_event_created_at_ms = ? AND stripe_event_id = ?) ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency = excluded.max_concurrency, max_vcpu_h = excluded.max_vcpu_h";
 /// Apply a revoke only when this operation owns the current durable fence row.
-pub const SQL_CAS_DELETE_RUNNERS_ENTITLEMENT: &str = "DELETE FROM runners_entitlement WHERE tenant_id = ? AND EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ? AND stripe_subscription_id = ? AND subscription_created_at_ms = ? AND stripe_event_created_at_ms = ?)";
+pub const SQL_CAS_DELETE_RUNNERS_ENTITLEMENT: &str = "DELETE FROM runners_entitlement WHERE tenant_id = ? AND EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ? AND stripe_subscription_id = ? AND subscription_created_at_ms = ? AND stripe_event_created_at_ms = ? AND stripe_event_id = ?)";
 /// Read back the fence in the same D1 transaction to classify equal-key,
 /// equal-identity retries (idempotent duplicate) versus a rejected operation.
 pub const SQL_READ_RUNNER_ENTITLEMENT_FENCE: &str =
-    "SELECT stripe_subscription_id, subscription_created_at_ms, stripe_event_created_at_ms FROM runner_entitlement_reconcile_fence WHERE tenant_id = ?";
+    "SELECT stripe_subscription_id, subscription_created_at_ms, stripe_event_created_at_ms, stripe_event_id FROM runner_entitlement_reconcile_fence WHERE tenant_id = ?";
 
 /// Canonical billing-D1 writer trait.
 ///
@@ -439,29 +435,6 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
         correlation_id: &str,
     ) -> Result<(), BillingD1Error>;
 
-    /// UPSERT a tenant's Runners entitlement (`runners_entitlement`; the
-    /// SEPARATE axis from `tier_selections`). Seeded when a Runners-tier Stripe
-    /// subscription activates. Binds (tenant_id, max_concurrency, now_ms as
-    /// created_at_ms, max_vcpu_h) into [`SQL_UPSERT_RUNNERS_ENTITLEMENT`].
-    /// Idempotent (ON CONFLICT overwrites the cap/ceiling). `max_concurrency`
-    /// is `> 0` by construction (only known tiers are seeded).
-    fn upsert_runners_entitlement(
-        &self,
-        tenant_id: &str,
-        max_concurrency: u32,
-        max_vcpu_h: u32,
-        now_ms: i64,
-    ) -> Result<(), BillingD1Error>;
-
-    /// REVOKE a tenant's Runners entitlement (`runners_entitlement`; the SEPARATE
-    /// axis from `tier_selections`). The symmetric twin of
-    /// [`Self::upsert_runners_entitlement`]: deletes the tenant's row via
-    /// [`SQL_DELETE_RUNNERS_ENTITLEMENT`] (bind `?1` = `tenant_id`) when a
-    /// Runners-tier subscription reaches a NON-granting status or is
-    /// `customer.subscription.deleted`, so a canceled/lapsed tenant never keeps a
-    /// stale entitlement. Idempotent (revoking an absent entitlement is a no-op).
-    fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error>;
-
     /// Resolve a subscription id through the durable Cache/Runners purchase
     /// maps. `None` means unknown or ambiguous ownership and MUST NOT select a
     /// product by tenant identity alone.
@@ -484,39 +457,23 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
         Ok(None)
     }
 
-    /// Revoke the refunded Runners subscription without touching Cache or a
-    /// separately-active Runners subscription. The default is intentionally a
-    /// no-op because a writer that cannot prove this relation must not delete a
-    /// tenant-wide entitlement.
-    fn revoke_refunded_runners_entitlement(
-        &self,
-        _tenant_id: &str,
-        _stripe_subscription_id: &str,
-    ) -> Result<(), BillingD1Error> {
-        Ok(())
-    }
-
     /// Atomically compare the provider authority key and mutate the Runner
-    /// entitlement. Production D1 implementations keep the fence and
-    /// entitlement mutation in one transaction. The default preserves the
-    /// legacy seam for test doubles that do not model persistent fencing.
+    /// entitlement. Every production writer implements this transaction; there
+    /// is deliberately no unfenced default writer.
     fn cas_runners_entitlement(
         &self,
         tenant_id: &str,
         _subscription_id: &str,
         _subscription_created_at_ms: u64,
         _stripe_event_created_at_ms: u64,
+        _stripe_event_id: &str,
         entitlement: Option<(u32, u32)>,
         now_ms: i64,
     ) -> Result<EntitlementCasOutcome, BillingD1Error> {
-        match entitlement {
-            Some((max_concurrency, max_vcpu_h)) => self
-                .upsert_runners_entitlement(tenant_id, max_concurrency, max_vcpu_h, now_ms)
-                .map(|()| EntitlementCasOutcome::Applied),
-            None => self
-                .delete_runners_entitlement(tenant_id)
-                .map(|()| EntitlementCasOutcome::Applied),
-        }
+        let _ = (tenant_id, entitlement, now_ms);
+        Err(BillingD1Error::Transient(
+            "runner entitlement CAS is required for this writer".to_owned(),
+        ))
     }
 }
 
@@ -592,7 +549,7 @@ impl InMemoryBillingD1 {
 
     /// Read the tenant's durable entitlement fence for acceptance tests.
     #[must_use]
-    pub fn runner_fence_of(&self, tenant_id: &str) -> Option<(String, u64, u64, bool)> {
+    pub fn runner_fence_of(&self, tenant_id: &str) -> Option<(String, u64, u64, String, bool)> {
         match self.runner_fences.lock() {
             Ok(g) => g.get(tenant_id).cloned(),
             Err(p) => p.into_inner().get(tenant_id).cloned(),
@@ -654,6 +611,34 @@ impl InMemoryBillingD1 {
                 RefundedProduct::Runners,
             );
         }
+    }
+
+    /// Test-only fixture setup that bypasses production writer wiring.
+    pub fn upsert_runners_entitlement(
+        &self,
+        tenant_id: &str,
+        max_concurrency: u32,
+        max_vcpu_h: u32,
+        _now_ms: i64,
+    ) -> Result<(), BillingD1Error> {
+        self.check_armed()?;
+        let mut g = self
+            .runners
+            .lock()
+            .map_err(|e| BillingD1Error::Transient(format!("runners mutex poisoned: {e}")))?;
+        g.insert(tenant_id.to_string(), (max_concurrency, max_vcpu_h));
+        Ok(())
+    }
+
+    /// Test-only fixture cleanup that bypasses production writer wiring.
+    pub fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error> {
+        self.check_armed()?;
+        let mut g = self
+            .runners
+            .lock()
+            .map_err(|e| BillingD1Error::Transient(format!("runners mutex poisoned: {e}")))?;
+        g.remove(tenant_id);
+        Ok(())
     }
 
     fn check_armed(&self) -> Result<(), BillingD1Error> {
@@ -797,34 +782,6 @@ impl BillingD1Writer for InMemoryBillingD1 {
         Ok(())
     }
 
-    fn upsert_runners_entitlement(
-        &self,
-        tenant_id: &str,
-        max_concurrency: u32,
-        max_vcpu_h: u32,
-        _now_ms: i64,
-    ) -> Result<(), BillingD1Error> {
-        self.check_armed()?;
-        let mut g = self
-            .runners
-            .lock()
-            .map_err(|e| BillingD1Error::Transient(format!("runners mutex poisoned: {e}")))?;
-        g.insert(tenant_id.to_string(), (max_concurrency, max_vcpu_h));
-        Ok(())
-    }
-
-    fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error> {
-        self.check_armed()?;
-        let mut g = self
-            .runners
-            .lock()
-            .map_err(|e| BillingD1Error::Transient(format!("runners mutex poisoned: {e}")))?;
-        // Idempotent revoke: removing an absent entry is a no-op, mirroring the
-        // production `DELETE … WHERE tenant_id = ?` semantics (0 rows affected).
-        g.remove(tenant_id);
-        Ok(())
-    }
-
     fn resolve_refunded_purchase_by_subscription(
         &self,
         tenant_id: &str,
@@ -870,32 +827,13 @@ impl BillingD1Writer for InMemoryBillingD1 {
         }
     }
 
-    fn revoke_refunded_runners_entitlement(
-        &self,
-        tenant_id: &str,
-        stripe_subscription_id: &str,
-    ) -> Result<(), BillingD1Error> {
-        self.check_armed()?;
-        let mut purchases = self.refund_purchases.lock().map_err(|e| {
-            BillingD1Error::Transient(format!("refund purchases mutex poisoned: {e}"))
-        })?;
-        purchases.remove(&(tenant_id.to_owned(), stripe_subscription_id.to_owned()));
-        let has_other_runner = purchases.iter().any(|((tenant, _), product)| {
-            tenant == tenant_id && *product == RefundedProduct::Runners
-        });
-        drop(purchases);
-        if !has_other_runner {
-            self.delete_runners_entitlement(tenant_id)?;
-        }
-        Ok(())
-    }
-
     fn cas_runners_entitlement(
         &self,
         tenant_id: &str,
         subscription_id: &str,
         subscription_created_at_ms: u64,
         stripe_event_created_at_ms: u64,
+        stripe_event_id: &str,
         entitlement: Option<(u32, u32)>,
         _now_ms: i64,
     ) -> Result<EntitlementCasOutcome, BillingD1Error> {
@@ -904,6 +842,7 @@ impl BillingD1Writer for InMemoryBillingD1 {
             || subscription_id.trim().is_empty()
             || subscription_created_at_ms == 0
             || stripe_event_created_at_ms == 0
+            || stripe_event_id.trim().is_empty()
         {
             return Err(BillingD1Error::InvalidPayload(
                 "runner entitlement CAS requires non-empty identity and provider timestamps"
@@ -919,34 +858,49 @@ impl BillingD1Writer for InMemoryBillingD1 {
             .runner_fences
             .lock()
             .map_err(|e| BillingD1Error::Transient(format!("runner fence mutex poisoned: {e}")))?;
+        // Provider facts form one total order: creation generation, immutable
+        // subscription identity, provider event time, then provider event id.
+        // The identity tie-breaker handles Stripe's whole-second creation clock.
+        let candidate = (
+            subscription_created_at_ms,
+            subscription_id,
+            stripe_event_created_at_ms,
+            stripe_event_id,
+        );
         let outcome = match fences.get(tenant_id) {
-            Some((current_subscription, current_created, current_event, _))
-                if current_subscription == subscription_id
-                    && *current_created == subscription_created_at_ms
-                    && *current_event > stripe_event_created_at_ms =>
-            {
-                EntitlementCasOutcome::Stale
+            Some((current_subscription, current_created, current_event, current_event_id, _)) => {
+                let current = (
+                    *current_created,
+                    current_subscription.as_str(),
+                    *current_event,
+                    current_event_id.as_str(),
+                );
+                if current > candidate {
+                    EntitlementCasOutcome::Stale
+                } else if current == candidate {
+                    EntitlementCasOutcome::Duplicate
+                } else {
+                    fences.insert(
+                        tenant_id.to_owned(),
+                        (
+                            subscription_id.to_owned(),
+                            subscription_created_at_ms,
+                            stripe_event_created_at_ms,
+                            stripe_event_id.to_owned(),
+                            entitlement.is_some(),
+                        ),
+                    );
+                    EntitlementCasOutcome::Applied
+                }
             }
-            Some((current_subscription, current_created, current_event, _))
-                if current_subscription == subscription_id
-                    && *current_created == subscription_created_at_ms
-                    && *current_event == stripe_event_created_at_ms =>
-            {
-                EntitlementCasOutcome::Duplicate
-            }
-            Some((current_subscription, current_created, _, _))
-                if current_subscription != subscription_id
-                    && *current_created >= subscription_created_at_ms =>
-            {
-                EntitlementCasOutcome::Stale
-            }
-            _ => {
+            None => {
                 fences.insert(
                     tenant_id.to_owned(),
                     (
                         subscription_id.to_owned(),
                         subscription_created_at_ms,
                         stripe_event_created_at_ms,
+                        stripe_event_id.to_owned(),
                         entitlement.is_some(),
                     ),
                 );

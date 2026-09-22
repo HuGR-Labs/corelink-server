@@ -563,7 +563,7 @@ fn replaced_subscription_identity_is_tenant_authority() {
     assert_eq!(d1.runners_entitlement_of("ten_replaced"), Some((80, 600)));
     assert_eq!(
         d1.runner_fence_of("ten_replaced"),
-        Some(("sub_successor".to_owned(), 1_700_000_001_000, 1_700_000_000_000, true))
+        Some(("sub_successor".to_owned(), 1_700_000_001_000, 1_700_000_000_000, "evt_successor_active".to_owned(), true))
     );
 
     // Reverse delivery is the failure mode from #1844: once the successor
@@ -579,7 +579,7 @@ fn replaced_subscription_identity_is_tenant_authority() {
     assert_eq!(d1.runners_entitlement_of("ten_replaced"), Some((80, 600)));
     assert_eq!(
         d1.runner_fence_of("ten_replaced"),
-        Some(("sub_successor".to_owned(), 1_700_000_001_000, 1_700_000_000_000, true))
+        Some(("sub_successor".to_owned(), 1_700_000_001_000, 1_700_000_000_000, "evt_successor_active".to_owned(), true))
     );
 }
 

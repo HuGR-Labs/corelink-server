@@ -41,106 +41,117 @@ export async function upsertRunnerBilling(
         .run();
 }
 /**
- * SEED the tenant's Runners entitlement (`runners_entitlement`, migrations
- * 0070/0072) from the runner subscription. Resolves the tenant through
- * `runner_billing` (subscription id → tenant id) via a correlated SELECT, so it
- * is a no-op if `upsertRunnerBilling` has not yet mapped the subscription (never
- * seeds an entitlement for an unknown subscription). Idempotent ON CONFLICT
- * (tenant_id) — a redelivery re-writes the same caps. `plan` is the fixed
- * 'runners' source label (matching migration 0070's informational `plan`
- * column). max_concurrency is always > 0 for every tier, satisfying the 0070
- * CHECK.
- */
-export async function upsertRunnersEntitlementBySubscription(
-    db: D1DatabaseLike,
-    opts: {
-        runnerSubscriptionId: string;
-        maxConcurrency: number;
-        maxVcpuH: number;
-        nowMs: number;
-    },
-): Promise<void> {
-    await db
-        .prepare(
-            `INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h)
-             SELECT tenant_id, ?1, 'runners', ?2, ?3 FROM runner_billing WHERE runner_subscription_id = ?4
-             ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency=excluded.max_concurrency, max_vcpu_h=excluded.max_vcpu_h`,
-        )
-        .bind(opts.maxConcurrency, opts.nowMs, opts.maxVcpuH, opts.runnerSubscriptionId)
-        .run();
-}
-
-/**
- * Seed the runner entitlement for a KNOWN tenant id — race-free.
+ * Apply a Runners entitlement through the shared durable fence.
  *
- * WHY (money-path bug fix): the caller pushes both `upsertRunnerBilling` (the
- * `runner_billing` INSERT) and the entitlement seed onto `requiredWrites`, which
- * the handler executes in declaration order. The mapping therefore commits
- * before the entitlement seed and cannot race its lookup.
- * [`upsertRunnersEntitlementBySubscription`] variant (which `SELECT`s the tenant
- * FROM `runner_billing`) can race AHEAD of the `runner_billing` INSERT, read no
- * row, and silently seed 0 rows. A paying runner customer then gets NO capacity
- * (acquire stays 429) — non-deterministically, whoever wins the race. On the
- * `customer.subscription.{created,updated}` path we ALREADY hold the tenant id
- * (from the subscription's `metadata.tenant_id`), so seed DIRECTLY by tenant and
- * drop the dependency on the concurrent `runner_billing` write entirely. The
- * subscription-correlated variant above is retained ONLY for the no-metadata
- * path, where `runner_billing` was mapped by a PRIOR event and already exists.
+ * The provider tuple is `(subscription.created, subscription.id,
+ * event.created, event.id)`. Every coordinate is supplied by Stripe; the
+ * subscription id resolves the documented same-second replacement ambiguity.
+ * D1 `batch` is a transaction, so the fence advancement and guarded mutation
+ * cannot interleave with the materializer's identical CAS.
  */
-export async function upsertRunnersEntitlementByTenant(
+export async function reconcileRunnersEntitlement(
     db: D1DatabaseLike,
     opts: {
-        tenantId: string;
-        maxConcurrency: number;
-        maxVcpuH: number;
+        tenantId: string | null;
+        runnerSubscriptionId: string;
+        subscriptionCreatedAtMs: number | null;
+        stripeEventCreatedAtMs: number | null;
+        stripeEventId: string;
+        entitlement: { maxConcurrency: number; maxVcpuH: number } | null;
         nowMs: number;
     },
 ): Promise<void> {
-    await db
-        .prepare(
-            `INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h)
-             VALUES (?1, ?2, 'runners', ?3, ?4)
-             ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency=excluded.max_concurrency, max_vcpu_h=excluded.max_vcpu_h`,
-        )
-        .bind(opts.tenantId, opts.maxConcurrency, opts.nowMs, opts.maxVcpuH)
-        .run();
-}
-
-/**
- * REVOKE the tenant's Runners entitlement for a cancelled/lapsed subscription.
- * Resolves the tenant through `runner_billing` (subscription id → tenant id) and
- * deletes the `runners_entitlement` row ONLY when the tenant retains no other
- * active/trialing runner subscription (see the inline note — avoids nuking a
- * still-paying tenant). An ABSENT row means "no Runners entitlement" (migration
- * 0070 fail-CLOSED semantics). Idempotent: a redelivery deletes an already-absent
- * row (0 rows affected). Safe no-op if the subscription maps no billing row.
- */
-export async function revokeRunnersEntitlementBySubscription(
-    db: D1DatabaseLike,
-    opts: { runnerSubscriptionId: string },
-): Promise<void> {
-    // Launch-audit finding (MED): `runners_entitlement` is ONE row per tenant, but
-    // `runner_billing` is per-subscription. A blind tenant-keyed DELETE would nuke
-    // the whole entitlement even when the tenant still holds ANOTHER active runner
-    // subscription — over-revoking a still-paying tenant. So DELETE only when NO
-    // OTHER active/trialing runner sub remains for the tenant. The
-    // `runner_subscription_id != ?1` self-exclusion means a SINGLE-sub cancel (the
-    // common case) always sees an empty "other active" set and DELETEs — revoke
-    // stays fail-CLOSED — and it is robust whether or not this sub's own
-    // `runner_billing.status` has already advanced to 'canceled'/'past_due'.
-    // (Normally prevented upstream by the checkout `AlreadyActive` guard that blocks
-    // a 2nd runner purchase; this is the defense-in-depth backstop.)
-    await db
-        .prepare(
-            `DELETE FROM runners_entitlement WHERE tenant_id IN
-               (SELECT tenant_id FROM runner_billing WHERE runner_subscription_id = ?1)
-             AND tenant_id NOT IN
-               (SELECT tenant_id FROM runner_billing
-                  WHERE status IN ('active', 'trialing')
-                    AND runner_subscription_id != ?1)`,
-        )
-        .bind(opts.runnerSubscriptionId)
-        .run();
+    if (!db.batch) throw new Error("D1 batch support is required for runner entitlement CAS");
+    if (!opts.runnerSubscriptionId || !opts.stripeEventId ||
+        !Number.isFinite(opts.subscriptionCreatedAtMs) || (opts.subscriptionCreatedAtMs ?? 0) <= 0 ||
+        !Number.isFinite(opts.stripeEventCreatedAtMs) || (opts.stripeEventCreatedAtMs ?? 0) <= 0) {
+        throw new Error("runner entitlement CAS requires complete Stripe ordering facts");
+    }
+    if (opts.entitlement && opts.entitlement.maxConcurrency <= 0) {
+        throw new Error("runner entitlement CAS max concurrency must be positive");
+    }
+    const tenantSource = opts.tenantId
+        ? { sql: "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", binds: [opts.tenantId] }
+        : { sql: "SELECT tenant_id, ?1, ?2, ?3, ?4, ?5, ?6 FROM runner_billing WHERE runner_subscription_id = ?1", binds: [] as unknown[] };
+    const fence = db.prepare(
+        `INSERT INTO runner_entitlement_reconcile_fence
+           (tenant_id, stripe_subscription_id, subscription_created_at_ms,
+            stripe_event_created_at_ms, stripe_event_id, is_granting, applied_at_ms)
+         ${tenantSource.sql}
+         ON CONFLICT(tenant_id) DO UPDATE SET
+           stripe_subscription_id=excluded.stripe_subscription_id,
+           subscription_created_at_ms=excluded.subscription_created_at_ms,
+           stripe_event_created_at_ms=excluded.stripe_event_created_at_ms,
+           stripe_event_id=excluded.stripe_event_id,
+           is_granting=excluded.is_granting, applied_at_ms=excluded.applied_at_ms
+         WHERE excluded.subscription_created_at_ms > runner_entitlement_reconcile_fence.subscription_created_at_ms
+            OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms
+                AND excluded.stripe_subscription_id > runner_entitlement_reconcile_fence.stripe_subscription_id)
+            OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms
+                AND excluded.stripe_subscription_id = runner_entitlement_reconcile_fence.stripe_subscription_id
+                AND excluded.stripe_event_created_at_ms > runner_entitlement_reconcile_fence.stripe_event_created_at_ms)
+            OR (excluded.subscription_created_at_ms = runner_entitlement_reconcile_fence.subscription_created_at_ms
+                AND excluded.stripe_subscription_id = runner_entitlement_reconcile_fence.stripe_subscription_id
+                AND excluded.stripe_event_created_at_ms = runner_entitlement_reconcile_fence.stripe_event_created_at_ms
+                AND excluded.stripe_event_id > runner_entitlement_reconcile_fence.stripe_event_id)
+         RETURNING stripe_subscription_id`,
+    ).bind(
+        ...(tenantSource.binds), opts.runnerSubscriptionId, opts.subscriptionCreatedAtMs,
+        opts.stripeEventCreatedAtMs, opts.stripeEventId, opts.entitlement ? 1 : 0, opts.nowMs,
+    );
+    const mutation = opts.entitlement
+        ? opts.tenantId
+            ? db.prepare(
+                `INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h)
+                 SELECT ?1, ?2, 'runners', ?3, ?4
+                 WHERE EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence
+                   WHERE tenant_id = ?5 AND stripe_subscription_id = ?6
+                     AND subscription_created_at_ms = ?7 AND stripe_event_created_at_ms = ?8
+                     AND stripe_event_id = ?9)
+                 ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency=excluded.max_concurrency, max_vcpu_h=excluded.max_vcpu_h`,
+              ).bind(opts.tenantId, opts.entitlement.maxConcurrency, opts.nowMs,
+                opts.entitlement.maxVcpuH, opts.tenantId, opts.runnerSubscriptionId,
+                opts.subscriptionCreatedAtMs, opts.stripeEventCreatedAtMs, opts.stripeEventId)
+            : db.prepare(
+                `INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h)
+                 SELECT rb.tenant_id, ?1, 'runners', ?2, ?3 FROM runner_billing rb
+                 WHERE rb.runner_subscription_id = ?4 AND EXISTS
+                   (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = rb.tenant_id
+                     AND stripe_subscription_id = ?4 AND subscription_created_at_ms = ?5
+                     AND stripe_event_created_at_ms = ?6 AND stripe_event_id = ?7)
+                 ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency=excluded.max_concurrency, max_vcpu_h=excluded.max_vcpu_h`,
+              ).bind(opts.entitlement.maxConcurrency, opts.nowMs, opts.entitlement.maxVcpuH,
+                opts.runnerSubscriptionId, opts.subscriptionCreatedAtMs,
+                opts.stripeEventCreatedAtMs, opts.stripeEventId)
+        : opts.tenantId
+            ? db.prepare(
+                `DELETE FROM runners_entitlement WHERE tenant_id = ?1 AND EXISTS
+                   (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ?1
+                     AND stripe_subscription_id = ?2 AND subscription_created_at_ms = ?3
+                     AND stripe_event_created_at_ms = ?4 AND stripe_event_id = ?5)`,
+              ).bind(opts.tenantId, opts.runnerSubscriptionId, opts.subscriptionCreatedAtMs,
+                opts.stripeEventCreatedAtMs, opts.stripeEventId)
+            : db.prepare(
+                `DELETE FROM runners_entitlement WHERE tenant_id =
+                   (SELECT tenant_id FROM runner_billing WHERE runner_subscription_id = ?1)
+                   AND EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE
+                     tenant_id = (SELECT tenant_id FROM runner_billing WHERE runner_subscription_id = ?1)
+                     AND stripe_subscription_id = ?1 AND subscription_created_at_ms = ?2
+                     AND stripe_event_created_at_ms = ?3 AND stripe_event_id = ?4)`,
+              ).bind(opts.runnerSubscriptionId, opts.subscriptionCreatedAtMs,
+                opts.stripeEventCreatedAtMs, opts.stripeEventId);
+    const readFence = db.prepare(
+        `SELECT stripe_subscription_id, subscription_created_at_ms, stripe_event_created_at_ms, stripe_event_id
+         FROM runner_entitlement_reconcile_fence WHERE tenant_id = ${opts.tenantId ? "?1" : "(SELECT tenant_id FROM runner_billing WHERE runner_subscription_id = ?1)"}`,
+    ).bind(opts.tenantId ?? opts.runnerSubscriptionId);
+    const results = await db.batch([fence, mutation, readFence]);
+    if (results[0]?.results?.length) return;
+    const current = results[2]?.results?.[0];
+    if (current?.["stripe_subscription_id"] === opts.runnerSubscriptionId &&
+        current["subscription_created_at_ms"] === opts.subscriptionCreatedAtMs &&
+        current["stripe_event_created_at_ms"] === opts.stripeEventCreatedAtMs &&
+        current["stripe_event_id"] === opts.stripeEventId) return;
+    throw new Error("stale runner entitlement authority rejected");
 }
 
 /**

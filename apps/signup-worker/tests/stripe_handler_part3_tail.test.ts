@@ -365,16 +365,12 @@ describe("handleStripeWebhook", () => {
         const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
         expect(res.status).toBe(200);
 
-        // Entitlement DELETEd (resolved through runner_billing subquery).
+        // Entitlement DELETEd through the shared durable fence batch.
         const del = db.runCalls.find((c) => c.sql.includes("DELETE FROM runners_entitlement"));
         expect(del).toBeDefined();
         expect(del!.params).toContain("sub_runner_deleted_1");
-        expect(del!.sql).toContain("SELECT tenant_id FROM runner_billing");
-        // Defense-in-depth (launch-audit): the DELETE is guarded so it does NOT
-        // over-revoke a tenant that still holds ANOTHER active/trialing runner sub,
-        // while a single-sub cancel still deletes (self-exclusion by subscription id).
-        expect(del!.sql).toContain("status IN ('active', 'trialing')");
-        expect(del!.sql).toContain("runner_subscription_id != ?1");
+        expect(db.batch).toHaveBeenCalledTimes(1);
+        expect(db.batch.mock.calls[0]![0]).toHaveLength(3);
         // runner_billing marked canceled (status-only).
         const rb = db.runCalls.find(
             (c) => c.sql.includes("UPDATE runner_billing") && c.params.includes("canceled"),
@@ -403,11 +399,10 @@ describe("handleStripeWebhook", () => {
         const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
         expect(res.status).toBe(200);
 
-        // Runner entitlement revoked (disambiguated THROUGH runner_billing —
-        // the invoice carries no price, which is exactly why the table exists).
-        const del = db.runCalls.find((c) => c.sql.includes("DELETE FROM runners_entitlement"));
-        expect(del).toBeDefined();
-        expect(del!.params).toContain("sub_runner_pf_1");
+        // An invoice omits subscription.created, so it cannot manufacture a
+        // provider ordering tuple. It updates the mirror and lets the current
+        // subscription event issue the fenced revoke.
+        expect(db.runCalls.find((c) => c.sql.includes("DELETE FROM runners_entitlement"))).toBeUndefined();
         // runner_billing status → past_due.
         const rb = db.runCalls.find(
             (c) => c.sql.includes("UPDATE runner_billing") && c.params.includes("past_due"),
