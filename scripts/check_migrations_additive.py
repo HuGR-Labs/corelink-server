@@ -87,6 +87,16 @@ ALLOW_PATTERN = re.compile(
     r"^--\s*additive-allowed\s*:\s*ADR-\d{4}\b\s+\S", re.IGNORECASE
 )
 
+# This is the sole trigger-replacement exception. It is intentionally bound to
+# one forward migration and the two B-071 accounting trigger identifiers.
+TRIGGER_REPLACEMENT_FILE = "migrations/d1/0143_gc_accounting_region_upgrade.sql"
+TRIGGER_REPLACEMENTS = {
+    "DROP TRIGGER IF EXISTS trg_gc_purge_accounting_required;":
+        "-- additive-allowed: ADR-0103 replace the deployed B-071 accounting guard",
+    "DROP TRIGGER IF EXISTS trg_gc_purge_finalize_accounting;":
+        "-- additive-allowed: ADR-0103 replace the deployed B-071 accounting finalizer",
+}
+
 def iter_migration_files() -> list[Path]:
     files: list[Path] = []
     for d in MIGRATION_DIRS:
@@ -147,31 +157,90 @@ def valid_line_waiver(raw_line: str, sql_code: str, comment_start: int) -> bool:
     )
 
 
-def scan_sql(raw: str) -> list[tuple[int, str, str]]:
+def valid_trigger_replacement(
+    raw_line: str, sql_code: str, comment_start: int, migration_path: str | None
+) -> bool:
+    if migration_path != TRIGGER_REPLACEMENT_FILE:
+        return False
+    statement = sql_code.strip().upper()
+    if statement not in {item.upper() for item in TRIGGER_REPLACEMENTS}:
+        return False
+    expected_statement = next(
+        item for item in TRIGGER_REPLACEMENTS if item.upper() == statement
+    )
+    expected_comment = TRIGGER_REPLACEMENTS[expected_statement]
+    comment = raw_line[comment_start:].strip()
+    return comment.lower() == expected_comment.lower()
+
+
+def scan_sql(raw: str, migration_path: str | None = None) -> list[tuple[int, str, str]]:
     """Return destructive SQL tokens not covered by a valid audited waiver."""
     violations: list[tuple[int, str, str]] = []
     in_block_comment = False
     quote: str | None = None
-    for line_no, raw_line in enumerate(raw.splitlines(), start=1):
+    executable_lines: list[str] = []
+    authorized_replacements: list[str] = []
+    raw_lines = raw.splitlines()
+    for line_no, raw_line in enumerate(raw_lines, start=1):
         scan_line, comment_start, in_block_comment, quote = lex_sql_line(
             raw_line, in_block_comment, quote
         )
         # Waivers are accepted only in a real SQL line comment, after exactly
         # one terminated statement. Strings, block comments, adjacent SQL, and
         # missing reasons cannot suppress the gate.
-        if comment_start is not None and valid_line_waiver(
-            raw_line, scan_line, comment_start
+        is_target_migration = migration_path == TRIGGER_REPLACEMENT_FILE
+        trigger_replacement = comment_start is not None and valid_trigger_replacement(
+            raw_line, scan_line, comment_start, migration_path
+        )
+        if trigger_replacement:
+            authorized_replacements.append(scan_line.strip().upper())
+        if comment_start is not None and (
+            trigger_replacement
+            or (
+                not is_target_migration
+                and "ADR-0103" not in raw_line.upper()
+                and valid_line_waiver(raw_line, scan_line, comment_start)
+            )
         ):
+            executable_lines.append(" " * len(scan_line))
             continue
+        executable_lines.append(scan_line)
         for label, pattern in BANNED_PATTERNS:
             if pattern.search(scan_line):
                 violations.append((line_no, label, raw_line.rstrip()))
+
+    # The line-oriented lexer above reports normal violations with precise
+    # locations. Scan the joined executable SQL as well so newline-separated
+    # destructive statements cannot evade the name-scoped exception.
+    joined = "\n".join(executable_lines)
+    already_reported = {(line, label) for line, label, _ in violations}
+    for label, pattern in BANNED_PATTERNS:
+        for match in pattern.finditer(joined):
+            line_no = joined.count("\n", 0, match.start()) + 1
+            if (line_no, label) not in already_reported:
+                violations.append(
+                    (line_no, label, raw_lines[line_no - 1].rstrip())
+                )
+                already_reported.add((line_no, label))
+
+    if migration_path == TRIGGER_REPLACEMENT_FILE:
+        expected = sorted(statement.upper() for statement in TRIGGER_REPLACEMENTS)
+        if sorted(authorized_replacements) != expected:
+            violations.append(
+                (
+                    1,
+                    "B-071 trigger replacement set",
+                    "expected each named accounting trigger DROP exactly once",
+                )
+            )
     return violations
 
 
 def scan_file(path: Path) -> list[tuple[int, str, str]]:
     """Scan a migration file for non-additive statements."""
-    return scan_sql(path.read_text(encoding="utf-8"))
+    return scan_sql(
+        path.read_text(encoding="utf-8"), path.relative_to(REPO_ROOT).as_posix()
+    )
 
 
 def self_test() -> int:
@@ -190,6 +259,47 @@ def self_test() -> int:
     for attack in attacks:
         if not scan_sql(attack):
             print(f"FAIL: waiver bypass was accepted: {attack}")
+            return 1
+    path = TRIGGER_REPLACEMENT_FILE
+    valid_triggers = "\n".join(
+        f"{statement} {comment}" for statement, comment in TRIGGER_REPLACEMENTS.items()
+    )
+    if scan_sql(valid_triggers, path):
+        print("FAIL: the exact B-071 trigger replacement was rejected")
+        return 1
+    mutations = (
+        (
+            valid_triggers
+            + "\nDROP TABLE tenant; -- additive-allowed: ADR-0103 narrowly scoped",
+            path,
+        ),
+        (
+            valid_triggers
+            + "\nDROP TRIGGER IF EXISTS trg_other; -- additive-allowed: ADR-0103 replacement",
+            path,
+        ),
+        (valid_triggers.replace("trg_gc_purge_accounting_required", "trg_other"), path),
+        (valid_triggers, "migrations/d1/0144_unrelated.sql"),
+        ("DROP\nTRIGGER IF EXISTS trg_other; -- additive-allowed: ADR-0103 replacement", path),
+        (
+            valid_triggers
+            + "\nDROP TRIGGER IF EXISTS trg_gc_purge_accounting_required; "
+            + TRIGGER_REPLACEMENTS[
+                "DROP TRIGGER IF EXISTS trg_gc_purge_accounting_required;"
+            ],
+            path,
+        ),
+        (
+            valid_triggers.replace(
+                "DROP TRIGGER IF EXISTS trg_gc_purge_accounting_required;",
+                "DROP\nTRIGGER IF EXISTS trg_gc_purge_accounting_required;",
+            ),
+            path,
+        ),
+    )
+    for mutation, migration_path in mutations:
+        if not scan_sql(mutation, migration_path):
+            print("FAIL: out-of-scope trigger replacement was accepted")
             return 1
     print("OK: migration waiver lexer self-test passed")
     return 0
@@ -251,6 +361,8 @@ def check_ordinals() -> int:
 
 
 def main() -> int:
+    if self_test() != 0:
+        return 1
     files = iter_migration_files()
     if not files:
         print("warn: no migration files found under migrations/ or migrations/d1/")

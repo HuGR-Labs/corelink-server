@@ -11,6 +11,7 @@ on:
       - "crates/corelink-container/src/gc_sweep/**"
       - "migrations/d1/0115_gc_purge_fence.sql"
       - "migrations/d1/0142_gc_accounting_legal_hold.sql"
+      - "migrations/d1/0143_gc_accounting_region_upgrade.sql"
       - "scripts/verify_b071_fence.py"
   workflow_dispatch:
 

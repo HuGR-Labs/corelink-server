@@ -128,6 +128,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [ADR-0098 — erasure region-CHECK widening via additive table rebuild (migration 0098)](/adr/adr-0098-erasure-region-check-widen-rebuild.md)
 - [ADR-0100 — Object-Lock capability gate for Compliance retention](/adr/adr-0100-r2-object-lock-capability-gate.md)
 - [ADR-0101 — Provider-neutral Object-Lock archive adapter contract](/adr/adr-0101-object-lock-archive-adapter-contract.md)
+- [ADR-0103 — Name-scoped B-071 accounting trigger replacement](/adr/adr-0103-b071-trigger-replacement-waiver.md)
 - [ADR-MULTI-REGION-V1 — Multi-region container deployments v1 (per-region worker envs)](/adr/adr-multi-region-v1.md)
 - [ADR-S11-001 — MFA step-up required only on destructive DSR arms](/adr/adr-s11-001-mfa-step-up-destructive-arms-only.md)
 - [ADR-S11-002 — Split-tier audit fail-CLOSED discipline (S-11 privacy)](/adr/adr-s11-002-split-tier-audit-fail-closed.md)
