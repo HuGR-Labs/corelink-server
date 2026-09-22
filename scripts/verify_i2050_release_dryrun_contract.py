@@ -32,6 +32,11 @@ UNSUPPORTED_ZIGBUILD_VERSION_PROBES = (
     "cargo zigbuild --version",
     "cargo zigbuild -V",
 )
+MINGW_W64_FORMULA_URL = (
+    "https://raw.githubusercontent.com/Homebrew/homebrew-core/"
+    "00e77a1611f627f2ea8f876fad0468f2c4b3ed20/Formula/m/mingw-w64.rb"
+)
+DLLTOOL_PATH = "$(brew --prefix mingw-w64)/bin/x86_64-w64-mingw32-dlltool"
 
 
 def fail(message: str) -> None:
@@ -92,6 +97,52 @@ def _slice_routing_mutation_self_test() -> None:
 
     if _verify_i2050_pr_slice({"Cargo.lock"}):
         fail("an unrelated-only change was incorrectly routed into the CLI slice")
+
+
+def _verify_dlltool_contract(text: str) -> None:
+    windows_target = text.find("if [ \"${target}\" = \"x86_64-pc-windows-gnu\" ]; then")
+    windows_build = text.find('cargo zigbuild -p corelink-cli --release --locked --target "${target}"')
+    if windows_target < 0 or windows_build < 0 or windows_target > windows_build:
+        fail("Windows GNU build must be gated by its dlltool probe")
+    for token in (
+        "Install and verify pinned MinGW-w64 dlltool",
+        "EXPECTED_MINGW_W64_VERSION=14.0.0",
+        "EXPECTED_DLLTOOL_VERSION='GNU dlltool (GNU Binutils) 2.47'",
+        MINGW_W64_FORMULA_URL,
+        'brew install "${MINGW_W64_FORMULA_URL}"',
+        'brew list --versions mingw-w64',
+        'if [ "${ACTUAL_MINGW_W64_VERSION}" != "${EXPECTED_MINGW_W64_VERSION}" ]; then',
+        DLLTOOL_PATH,
+        'if [ ! -x "${DLLTOOL_PATH}" ]; then',
+        '"${DLLTOOL_PATH}" --version | sed -n \'1p\'',
+        'if [ "${ACTUAL_DLLTOOL_VERSION}" != "${EXPECTED_DLLTOOL_VERSION}" ]; then',
+        'echo "$(dirname "${DLLTOOL_PATH}")" >> "${GITHUB_PATH}"',
+        "command -v x86_64-w64-mingw32-dlltool",
+        "x86_64-w64-mingw32-dlltool --version | sed -n '1p'",
+    ):
+        if token not in text:
+            fail(f"pinned fail-closed Windows dlltool contract is missing: {token}")
+
+
+def _dlltool_contract_mutation_self_test(text: str) -> None:
+    for token, replacement in (
+        (MINGW_W64_FORMULA_URL, "https://example.invalid/mingw-w64.rb"),
+        ('if [ ! -x "${DLLTOOL_PATH}" ]; then', "# dlltool executable check removed"),
+        (
+            'if [ "${ACTUAL_DLLTOOL_VERSION}" != "${EXPECTED_DLLTOOL_VERSION}" ]; then',
+            "# dlltool version check removed",
+        ),
+        (
+            "command -v x86_64-w64-mingw32-dlltool",
+            "# Windows build-time dlltool probe removed",
+        ),
+    ):
+        mutated = text.replace(token, replacement, 1)
+        try:
+            _verify_dlltool_contract(mutated)
+        except SystemExit:
+            continue
+        fail(f"dlltool contract mutation survived: {token}")
 
 
 def contract() -> None:
@@ -206,6 +257,9 @@ def contract() -> None:
     _verify_zigbuild_version_probe(text)
     _zigbuild_version_probe_mutation_self_test(text)
     print("PASS: workflow-only, verifier-only, both, mixed, and unrelated-only routing cases")
+    _verify_dlltool_contract(text)
+    _dlltool_contract_mutation_self_test(text)
+    print("PASS: pinned MinGW-w64 toolchain, dlltool path/version probes, and mutation checks")
     print("PASS: manual protected-main lane, no release/tag/cross-repo write path")
     print("PASS: five targets, pinned cross-toolchain, CycloneDX, Rekor, and SLSA provenance")
 
