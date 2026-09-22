@@ -1,0 +1,244 @@
+name: staging bootstrap (#1700)
+
+# Pull requests run only credentialless contract checks. Provider mutation is a
+# manual operation on protected main behind the existing staging environment.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/staging-bootstrap.yml'
+      - 'scripts/render_staging_wrangler.py'
+      - 'scripts/staging_bootstrap_provider.py'
+      - 'tests/test_render_staging_wrangler.py'
+      - 'tests/test_staging_bootstrap_provider.py'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "bootstrap-staging-1700" to deploy the isolated staging target'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: credentialless staging plan and contract
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Validate topology and rendered Worker contract
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_staging_target.py
+          python3 scripts/verify_staging_topology_contract.py --expect ready
+          python3 -S -m unittest -v \
+            tests/test_render_staging_wrangler.py \
+            tests/test_staging_bootstrap_provider.py
+
+  bootstrap:
+    name: protected staging bootstrap
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' && github.ref_protected
+    needs: contract
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.STAGING_CF_API_TOKEN }}
+      STAGING_CF_API_TOKEN: ${{ secrets.STAGING_CF_API_TOKEN }}
+      STAGING_CF_ACCOUNT_ID: ${{ secrets.STAGING_CF_ACCOUNT_ID }}
+      STAGING_CF_WORKER_API_TOKEN: ${{ secrets.STAGING_CF_WORKER_API_TOKEN }}
+      CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
+      STAGING_R2_S3_ENDPOINT: ${{ secrets.STAGING_R2_S3_ENDPOINT }}
+      CLERK_ISSUER_URL: ${{ secrets.STAGING_CLERK_ISSUER_URL }}
+      CLERK_SECRET_KEY: ${{ secrets.STAGING_CLERK_SECRET_KEY }}
+      CLERK_WEBHOOK_SECRET: ${{ secrets.STAGING_CLERK_WEBHOOK_SECRET }}
+      ERASURE_SALT_KEY: ${{ secrets.STAGING_ERASURE_SALT_KEY }}
+      PAGERDUTY_ROUTING_KEY: ${{ secrets.STAGING_PAGERDUTY_ROUTING_KEY }}
+      PAGERDUTY_SYNTHETIC_ROUTING_KEY: ${{ secrets.STAGING_PAGERDUTY_SYNTHETIC_ROUTING_KEY }}
+      PAGERDUTY_WEBHOOK_SECRET: ${{ secrets.STAGING_PAGERDUTY_WEBHOOK_SECRET }}
+      R2_S3_ACCESS_KEY_ID: ${{ secrets.STAGING_R2_S3_ACCESS_KEY_ID }}
+      R2_S3_SECRET_ACCESS_KEY: ${{ secrets.STAGING_R2_S3_SECRET_ACCESS_KEY }}
+      K6_STAGING_BYOK_CMK_ID: ${{ secrets.K6_STAGING_BYOK_CMK_ID }}
+      K6_STAGING_MFA_STUB: ${{ secrets.K6_STAGING_MFA_STUB }}
+      K6_STAGING_PAT: ${{ secrets.K6_STAGING_PAT }}
+      K6_STAGING_STRIPE_WHSEC: ${{ secrets.K6_STAGING_STRIPE_WHSEC }}
+      K6_STAGING_TEARDOWN_TOKEN: ${{ secrets.K6_STAGING_TEARDOWN_TOKEN }}
+      K6_TARGET_IDENTITY_RECEIPT: ${{ secrets.K6_TARGET_IDENTITY_RECEIPT }}
+      K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}
+
+    steps:
+      - name: Confirm the bounded staging operation
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRM" = "bootstrap-staging-1700"
+
+      - name: Checkout the protected dispatch commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify the canonical staging boundary and all required input names
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_staging_target.py
+          python3 scripts/verify_staging_topology_contract.py --expect ready
+          test "$(jq -r '.deployment_state' infra/staging/topology.json)" = unprovisioned
+          test "$K6_TARGET_HOST" = 'https://staging.corelink.humangr.com'
+          required=(
+            STAGING_CF_API_TOKEN STAGING_CF_ACCOUNT_ID STAGING_CF_WORKER_API_TOKEN
+            CF_ZONE_ID STAGING_R2_S3_ENDPOINT CLERK_ISSUER_URL CLERK_SECRET_KEY
+            CLERK_WEBHOOK_SECRET ERASURE_SALT_KEY PAGERDUTY_ROUTING_KEY
+            PAGERDUTY_SYNTHETIC_ROUTING_KEY PAGERDUTY_WEBHOOK_SECRET
+            R2_S3_ACCESS_KEY_ID R2_S3_SECRET_ACCESS_KEY K6_STAGING_BYOK_CMK_ID
+            K6_STAGING_MFA_STUB K6_STAGING_PAT K6_STAGING_STRIPE_WHSEC
+            K6_STAGING_TEARDOWN_TOKEN K6_TARGET_IDENTITY_RECEIPT K6_TARGET_HOST
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then missing+=("$name"); fi
+          done
+          if ((${#missing[@]})); then
+            printf '::error::Missing required staging input names: %s\n' "${missing[*]}"
+            exit 1
+          fi
+          if [[ "$STAGING_CF_API_TOKEN" == "$STAGING_CF_WORKER_API_TOKEN" ]]; then
+            echo '::error::provider and Worker runtime Cloudflare tokens must be distinct'
+            exit 1
+          fi
+          echo 'Required staging input names are present.'
+
+      - name: Install locked Wrangler dependencies
+        run: |
+          set -euo pipefail
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Confirm provider ownership and an empty staging route set
+        run: |
+          set -euo pipefail
+          python3 scripts/staging_bootstrap_provider.py --phase preflight
+
+      - name: Render the three isolated no-route Worker configs
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/staging-config"
+          for worker in root signup synthetic; do
+            python3 scripts/render_staging_wrangler.py \
+              --phase bootstrap --worker "$worker" \
+              --output "$RUNNER_TEMP/staging-config/$worker.toml"
+            python3 - "$RUNNER_TEMP/staging-config/$worker.toml" <<'PY'
+          import sys, tomllib
+          config = tomllib.load(open(sys.argv[1], "rb"))
+          if not config.get("name", "").endswith("-staging"):
+              raise SystemExit("bootstrap config is not staging scoped")
+          if config.get("workers_dev") is not False:
+              raise SystemExit("bootstrap config must disable workers.dev")
+          if any(key in config for key in ("routes", "route", "custom_domain")):
+              raise SystemExit("bootstrap config must have no public routes")
+          PY
+          done
+
+      - name: Deploy all three Workers into quarantine
+        run: |
+          set -euo pipefail
+          for worker in synthetic root signup; do
+            pnpm exec wrangler deploy --config "$RUNNER_TEMP/staging-config/$worker.toml"
+          done
+
+      - name: Confirm the deployed Workers remain quarantined and route free
+        run: |
+          set -euo pipefail
+          python3 scripts/staging_bootstrap_provider.py --phase quarantine
+
+      - name: Bind and read back only staging Worker secrets
+        run: |
+          set -euo pipefail
+          umask 077
+          material="$RUNNER_TEMP/staging-generated"
+          mkdir -m 700 "$material"
+          trap 'find "$material" -type f -exec shred -u -- {} + 2>/dev/null || true' EXIT
+          for name in CORELINK_INTERNAL_AUTH_KEY CORELINK_ERASE_AUTH_KEY CORELINK_ADMIN_AUTH_KEY PAT_SIGNING_KEY; do
+            openssl rand -hex 32 > "$material/$name"
+          done
+          bind_env_secret() {
+            local config="$1" name="$2" variable="$3"
+            printf '%s' "${!variable}" | pnpm exec wrangler secret put "$name" \
+              --config "$config" >/dev/null
+          }
+          bind_generated_secret() {
+            local config="$1" name="$2"
+            pnpm exec wrangler secret put "$name" --config "$config" \
+              < "$material/$name" >/dev/null
+          }
+          root="$RUNNER_TEMP/staging-config/root.toml"
+          signup="$RUNNER_TEMP/staging-config/signup.toml"
+          receiver="$RUNNER_TEMP/staging-config/synthetic.toml"
+          for name in CORELINK_INTERNAL_AUTH_KEY CORELINK_ADMIN_AUTH_KEY CORELINK_ERASE_AUTH_KEY PAT_SIGNING_KEY; do
+            bind_generated_secret "$root" "$name"
+          done
+          bind_generated_secret "$signup" CORELINK_INTERNAL_AUTH_KEY
+          bind_generated_secret "$signup" CORELINK_ERASE_AUTH_KEY
+          bind_env_secret "$root" CF_API_TOKEN STAGING_CF_WORKER_API_TOKEN
+          bind_env_secret "$root" CLOUDFLARE_ACCOUNT_ID STAGING_CF_ACCOUNT_ID
+          for item in \
+            "$root:CLERK_ISSUER_URL:CLERK_ISSUER_URL" \
+            "$root:CLERK_SECRET_KEY:CLERK_SECRET_KEY" \
+            "$root:R2_S3_ACCESS_KEY_ID:R2_S3_ACCESS_KEY_ID" \
+            "$root:R2_S3_SECRET_ACCESS_KEY:R2_S3_SECRET_ACCESS_KEY" \
+            "$signup:CLERK_SECRET_KEY:CLERK_SECRET_KEY" \
+            "$signup:CLERK_WEBHOOK_SECRET:CLERK_WEBHOOK_SECRET" \
+            "$signup:ERASURE_SALT_KEY:ERASURE_SALT_KEY" \
+            "$signup:PAGERDUTY_ROUTING_KEY:PAGERDUTY_ROUTING_KEY" \
+            "$receiver:PAGERDUTY_SYNTHETIC_ROUTING_KEY:PAGERDUTY_SYNTHETIC_ROUTING_KEY" \
+            "$receiver:PAGERDUTY_WEBHOOK_SECRET:PAGERDUTY_WEBHOOK_SECRET"; do
+            IFS=: read -r config name variable <<< "$item"
+            bind_env_secret "$config" "$name" "$variable"
+          done
+          verify_names() {
+            local config="$1" expected="$2" worker_names="$RUNNER_TEMP/secret-names.json"
+            pnpm exec wrangler secret list --config "$config" > "$worker_names"
+            jq -r '.[].name' "$worker_names" | sort -u > "$RUNNER_TEMP/actual-secret-names.txt"
+            printf '%s\n' "$expected" | sort -u > "$RUNNER_TEMP/expected-secret-names.txt"
+            diff -u "$RUNNER_TEMP/expected-secret-names.txt" "$RUNNER_TEMP/actual-secret-names.txt"
+          }
+          verify_names "$root" $'CF_API_TOKEN\nCLERK_ISSUER_URL\nCLERK_SECRET_KEY\nCLOUDFLARE_ACCOUNT_ID\nCORELINK_ADMIN_AUTH_KEY\nCORELINK_ERASE_AUTH_KEY\nCORELINK_INTERNAL_AUTH_KEY\nPAT_SIGNING_KEY\nR2_S3_ACCESS_KEY_ID\nR2_S3_SECRET_ACCESS_KEY'
+          verify_names "$signup" $'CLERK_SECRET_KEY\nCLERK_WEBHOOK_SECRET\nCORELINK_ERASE_AUTH_KEY\nCORELINK_INTERNAL_AUTH_KEY\nERASURE_SALT_KEY\nPAGERDUTY_ROUTING_KEY'
+          verify_names "$receiver" $'PAGERDUTY_SYNTHETIC_ROUTING_KEY\nPAGERDUTY_WEBHOOK_SECRET'
+
+      - name: Reconfirm exact staging bindings and empty routes before publication
+        run: |
+          set -euo pipefail
+          python3 scripts/staging_bootstrap_provider.py --phase quarantine
+
+      - name: Publish only the two canonical staging routes last
+        run: |
+          set -euo pipefail
+          # The pager path is more specific and is attached before the root
+          # wildcard. Signup has service binding only and receives no route.
+          for worker in synthetic root; do
+            config="$RUNNER_TEMP/staging-config/final-$worker.toml"
+            python3 scripts/render_staging_wrangler.py \
+              --phase final --worker "$worker" --output "$config"
+            pnpm exec wrangler deploy --config "$config"
+          done
+
+      - name: Read back the exact canonical staging route set
+        if: success()
+        run: |
+          set -euo pipefail
+          python3 scripts/staging_bootstrap_provider.py --phase postflight
