@@ -7,9 +7,14 @@ import pytest
 from scripts.verify_d03_timing_artifact import TimingError, verify_reads, verify_writes
 
 
-def _write_artifact(path: Path, *, reads: bool = False) -> None:
+def _write_artifact(path: Path, *, reads: bool = False, identities: bool = False) -> None:
     if not reads:
-        rows = [f"ordinal={i} status=200 bytes=1024 wall_s=0.020\nServer-Timing: ostore;dur=2, oaccounting;dur=3" for i in range(1, 4)]
+        identity = " request_id=req-123 cf_ray=abc123-SJC" if identities else ""
+        rows = [
+            f"ordinal={i} status=200 bytes=1024 wall_s=0.020{identity}\n"
+            "Server-Timing: ostore;dur=2, oaccounting;dur=3"
+            for i in range(1, 4)
+        ]
     else:
         header = (
             "Server-Timing: qtier;dur=1, qdo;dur=2, qbatch;dur=3, qresid;dur=4, "
@@ -28,6 +33,24 @@ def test_valid_write_and_read_artifacts(tmp_path: Path) -> None:
     _write_artifact(reads, reads=True)
     verify_writes(writes)
     verify_reads(reads)
+
+
+def test_write_identity_gate_requires_request_and_colo_receipts(tmp_path: Path) -> None:
+    artifact = tmp_path / "writes.txt"
+    _write_artifact(artifact, identities=True)
+    verify_writes(artifact, require_identities=True)
+
+    _write_artifact(artifact)
+    with pytest.raises(TimingError, match="request/colo identity"):
+        verify_writes(artifact, require_identities=True)
+
+    _write_artifact(artifact, identities=True)
+    artifact.write_text(
+        artifact.read_text(encoding="utf-8").replace("cf_ray=abc123-SJC", "cf_ray=invalid/value"),
+        encoding="utf-8",
+    )
+    with pytest.raises(TimingError):
+        verify_writes(artifact, require_identities=True)
 
 
 def test_write_phase_mutation_is_red(tmp_path: Path) -> None:
