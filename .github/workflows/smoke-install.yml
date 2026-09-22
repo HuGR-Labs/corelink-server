@@ -1,4 +1,4 @@
-# i1672 — hosted/manual install boundary observation; credential-free.
+# i1672 — manual CoreLink-fleet boundary observation; credential-free.
 name: smoke-install
 
 on:
@@ -51,7 +51,7 @@ jobs:
         env:
           I1672_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
           timeout="${I1672_TIMEOUT_SECONDS:-2}"
           python3 scripts/smoke_install_observe.py \
             --timeout-seconds "${timeout}" \
