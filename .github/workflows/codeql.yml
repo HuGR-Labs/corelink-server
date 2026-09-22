@@ -108,6 +108,37 @@ jobs:
           persist-credentials: false
 
       # -----------------------------------------------------------------
+      # GHAS preflight distinguishes the documented disabled response from
+      # auth/network/API failures. Only the former is a permitted disabled
+      # state; all other failures fail closed rather than skipping analysis.
+      # -----------------------------------------------------------------
+      - name: GHAS code-scanning preflight
+        id: preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          err_file="$(mktemp)"
+          trap 'rm -f "${err_file}"' EXIT
+          set +e
+          gh api "repos/${REPOSITORY}/code-scanning/alerts" \
+            --jq 'length' > /dev/null 2>"${err_file}"
+          rc=$?
+          set -e
+          if [ "${rc}" -eq 0 ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Code scanning is enabled — CodeQL will run."
+          elif grep -Eiq 'advanced security.*(must be enabled|not enabled|disabled)|code[- ]scanning.*(not enabled|disabled)' "${err_file}"; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Code scanning is disabled for this repository — CodeQL will run and retain local evidence."
+          else
+            redacted="$(sed -E 's/(token|authorization|bearer|ghs_[[:alnum:]_-]+)/[REDACTED]/Ig' "${err_file}" | tr '\n' ' ' | cut -c1-400)"
+            echo "::error::GHAS code-scanning preflight failed (auth/network/API); refusing to classify it as disabled. ${redacted}"
+            exit 1
+          fi
+
+      # -----------------------------------------------------------------
       # Rust build prerequisites (only for the `rust` matrix leg).
       # CodeQL Rust analyser instruments cargo build artefacts.
       # -----------------------------------------------------------------
@@ -168,7 +199,6 @@ jobs:
           mkdir -p codeql-results
           shopt -s nullglob
           sarif_files=(codeql-results/*.sarif)
-          scan_status="${{ steps.analyze.outcome }}"
           if (( ${#sarif_files[@]} == 0 )); then
             echo "::error::CodeQL emitted no SARIF for ${MATRIX_LANGUAGE}; scan evidence is missing."
             evidence_status=missing
@@ -176,24 +206,37 @@ jobs:
             echo "CodeQL emitted ${#sarif_files[@]} SARIF file(s) for ${MATRIX_LANGUAGE}."
             evidence_status=present
           fi
-          cat > codeql-results/run-manifest.json <<EOF
-          {
-            "schema_version": "1",
-            "workflow": "codeql.yml",
-            "language": "${MATRIX_LANGUAGE}",
-            "event": "${{ github.event_name }}",
-            "run_id": "${{ github.run_id }}",
-            "ref": "${{ github.ref }}",
-            "scan_status": "${scan_status}",
-            "evidence_status": "${evidence_status}"
+          export EVIDENCE_STATUS="${evidence_status}"
+          python3 - <<'PYEOF' > codeql-results/run-manifest.json
+          import json
+          import os
+          import sys
+
+          manifest = {
+              "schema_version": "1",
+              "workflow": "codeql.yml",
+              "language": os.environ["MATRIX_LANGUAGE"],
+              "event": os.environ["EVENT_NAME"],
+              "run_id": os.environ["RUN_ID"],
+              "ref": os.environ["REF"],
+              "scan_status": os.environ["ANALYZE_OUTCOME"],
+              "evidence_status": os.environ["EVIDENCE_STATUS"],
+              "ghas_enabled": os.environ["GHAS_ENABLED"],
           }
-          EOF
+          json.dump(manifest, sys.stdout, indent=2)
+          sys.stdout.write("\n")
+          PYEOF
           echo "evidence_status=${evidence_status}" >> "$GITHUB_OUTPUT"
           if [[ "${evidence_status}" != present ]]; then
             exit 1
           fi
         env:
           MATRIX_LANGUAGE: ${{ matrix.language }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_ID: ${{ github.run_id }}
+          REF: ${{ github.ref }}
+          ANALYZE_OUTCOME: ${{ steps.analyze.outcome }}
+          GHAS_ENABLED: ${{ steps.preflight.outputs.enabled }}
 
       - name: Upload SARIF to GitHub Security tab
         # github/codeql-action/upload-sarif@v4.37.1 — same verified SHA pin as
@@ -224,7 +267,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          upload_outcome="${{ steps.upload.outcome }}"
+          upload_outcome="${UPLOAD_OUTCOME}"
           {
             echo "## CodeQL evidence"
             echo ""
@@ -241,6 +284,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
         env:
           MATRIX_LANGUAGE: ${{ matrix.language }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
 
       # -----------------------------------------------------------------
       # Severity gate — fail the PR if any finding ≥ HIGH (security-severity
