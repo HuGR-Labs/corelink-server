@@ -1,6 +1,9 @@
 name: issue #2092 DSR classification contract
 
 on:
+  push:
+    branches:
+      - fix/issue-2092-dsr-classification
   pull_request:
     paths:
       - '.github/workflows/issue-2092-dsr-classification.yml'
