@@ -5578,7 +5578,8 @@ verify: |
 verify-means: |
   parked — focused source tests and mutation gates prove the DLQ consumer accepts
   only PagerDuty HTTP 202 as delivery, retains the DLQ delivery when paging is
-  missing/rejected, redacts transport errors, and permits only one main-queue
+  missing/rejected, records privacy-minimized durable lifecycle receipts before
+  queue disposition, redacts transport errors, and permits only one main-queue
   re-enqueue. Runtime/owner packet
   `docs/internal/b215-b230-runtime-owner-actions.md` remains: verify the deployed
   consumer, an accepted on-call delivery, and one controlled exhausted-message
