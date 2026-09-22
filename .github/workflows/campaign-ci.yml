@@ -14,6 +14,7 @@ on:
           - i1629
           - i1631
           - i1632
+          - i1636
           - i1638
           - i1639
           - i1628
@@ -106,6 +107,17 @@ jobs:
             cargo clippy --locked -p corelink-stripe-real --all-targets -- -D warnings
             cargo check --locked -p corelink-server --all-targets
           } 2>&1 | tee artifacts/campaign-ci/i1632.log
+
+      - name: i1636 billing ingest domain checks
+        if: ${{ inputs.suite == 'i1636' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            cargo fmt --all --check
+            cargo test --locked -p corelink-server --lib billing_ingest::tests_ -- --nocapture
+            cargo clippy --locked -p corelink-server --all-targets -- -D warnings
+          } 2>&1 | tee artifacts/campaign-ci/i1636.log
 
       - name: i1638 materializer, E2E, billing D1, and clippy checks
         if: ${{ inputs.suite == 'i1638' }}
