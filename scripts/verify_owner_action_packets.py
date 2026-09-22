@@ -1278,7 +1278,8 @@ def check_data(
         if item_id in seen:
             raise PacketError(f"duplicate item: {item_id}")
         seen.add(str(item_id))
-        _check_item(item, str(item_id), backlog_contracts, workflow_contracts)
+        if identifier is None or str(item_id) == identifier:
+            _check_item(item, str(item_id), backlog_contracts, workflow_contracts)
         evidence_path = str(item["evidence"]["path"])
         if evidence_path in evidence_paths:
             raise PacketError(f"duplicate canonical evidence path: {evidence_path}")
