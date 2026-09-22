@@ -1,12 +1,12 @@
 -- CoreLink D1 — upgrade the already-deployed GC accounting trigger bodies.
 --
--- 0118_gc_accounting_legal_hold.sql originally keyed accounting with
+-- The historical 0118 accounting migration originally keyed accounting with
 -- blob_meta.region.  That value is macro residency (for example, `wnam`),
 -- whereas tenant_storage_state uses the five-region GC partition.  The
 -- authoritative partition is already fenced in gc_purge_intent.gc_region.
 --
 -- SQLite's CREATE TRIGGER IF NOT EXISTS preserves an existing trigger body,
--- so deployments that applied the original 0118 need this forward migration.
+-- so deployments that applied historical 0118 need this forward migration.
 -- Only the two accounting triggers are replaced; the legal-hold guard and
 -- B-071 finalization trigger remain in force throughout this transaction.
 

@@ -26,8 +26,8 @@ GC_SWEEP = ROOT / "crates/corelink-container/src/gc_sweep/part-03.rs"
 CANONICAL_DIGEST = "d" * 64
 
 
-def legacy_control_migration() -> str:
-    """Return the deployed 0118 trigger bodies before the gc-region repair."""
+def legacy_0118_control_migration() -> str:
+    """Return historical 0118 trigger bodies before the gc-region repair."""
     current = CONTROL_MIGRATION.read_text()
     legacy, replacements = re.subn(
         r"""region = \(
@@ -39,7 +39,7 @@ def legacy_control_migration() -> str:
         "region = OLD.region",
         current,
     )
-    assert replacements == 2, "0118 legacy trigger fixture drifted"
+    assert replacements == 2, "historical 0118 trigger fixture drifted"
     return legacy
 
 
@@ -299,8 +299,8 @@ def main() -> None:
         ".with_cas_write_fence(cas_write_fence)", "", 1
     ), "fence wiring appears more than once"
 
-    # Fresh installs execute the corrected 0118 followed by 0143. Existing
-    # installs execute the historic 0118 bodies followed by 0143. Exercise
+    # Fresh installs execute corrected 0142 followed by 0143. Existing
+    # deployments can carry historic 0118 bodies, then execute 0143. Exercise
     # the latter sequence below because it is the deployed-upgrade seam.
     fresh = make_db()
     for trigger in (
@@ -313,7 +313,7 @@ def main() -> None:
         assert "gc_region" in trigger_sql and "OLD.region" not in trigger_sql, \
             f"fresh install retained the obsolete {trigger} body"
 
-    db = make_db(legacy_control_migration())
+    db = make_db(legacy_0118_control_migration())
     # The purge acquisition boundary is transactional: a lease older than the
     # bounded TTL is deleted by the migration trigger in the same transaction
     # that creates epoch 1, while a lease exactly at the boundary still wins
