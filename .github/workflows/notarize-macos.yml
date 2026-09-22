@@ -87,7 +87,7 @@ jobs:
     # `notarize` job below (which already correctly targets the mac fleet), so
     # it must actually execute on a pool that exists — reusing the mac fleet is
     # simplest since that's the only self-hosted pool this repo has.
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: macos-14
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
@@ -117,7 +117,7 @@ jobs:
     needs: apple-cert-present
     if: >-
       needs.apple-cert-present.outputs.ready == 'true'
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: macos-14
     env:
       # These are deterministic per-run values. Job scope avoids treating any
       # secret-derived value as a GITHUB_ENV assignment.

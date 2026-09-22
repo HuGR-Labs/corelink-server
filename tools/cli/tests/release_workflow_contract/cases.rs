@@ -30,6 +30,22 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         std::panic::catch_unwind(|| assert_release_contract(&no_final_slsa)).is_err(),
         "SLSA must remain a terminal chained stage before publication"
     );
+    let slsa_without_release = workflow.replace(
+        "needs: [final-manifest, release-readiness, release]",
+        "needs: [final-manifest, release-readiness]",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_release_contract(&slsa_without_release)).is_err(),
+        "provenance must directly depend on the staged release"
+    );
+    let publish_without_release = workflow.replace(
+        "needs: [release-slsa3, release-readiness, final-manifest, release]",
+        "needs: [release-slsa3, release-readiness, final-manifest]",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_release_contract(&publish_without_release)).is_err(),
+        "publication must directly depend on the staged release"
+    );
     let missing_caller_oidc = workflow.replace(
         "      id-token: write\n    uses: ./.github/workflows/release-slsa3.yml",
         "      OIDC permission removed\n    uses: ./.github/workflows/release-slsa3.yml",
@@ -166,7 +182,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
     );
 
     let public_unsigned_windows = load_workflow("sign-windows.yml")?.replace(
-        "cp \"./assets/extracted/corelink.exe\" \"./assets/corelink-windows-x86_64.exe\"",
+        "Copy-Item ./assets/extracted/corelink.exe ./assets/corelink-windows-x86_64.exe -Force",
         "raw Windows asset copy removed",
     );
     assert!(

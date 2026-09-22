@@ -96,7 +96,7 @@ def test_b112_root_cause_guard_rejects_fake_done_claim_in_parked_means(tmp_path:
     [
         ("cache export", lambda text: text.replace("CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}", "CARGO_ZIGBUILD_CACHE_MUTATED=${ZIGBUILD_CACHE}", 1)),
         ("prebuilt installer", lambda text: text.replace("taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b", "actions/checkout@deadbeef", 1)),
-        ("cli trigger", lambda text: text.replace('      - "cli-v*"\n', "", 1)),
+        ("manual trigger", lambda text: text.replace("  workflow_dispatch:", "  # dispatch removed", 1)),
         ("draft retry classification", lambda text: text.replace("gh api --include --silent", "gh api --silent", 1)),
         ("published release refusal", lambda text: text.replace('release.get("published_at") is not None', 'False', 1)),
     ],
@@ -261,24 +261,12 @@ def test_b112_root_cause_guard_rejects_unclosed_heredoc(tmp_path: Path):
 @pytest.mark.parametrize(
     ("label", "mutate"),
     [
-        ("runs-on echo bait", lambda text: text.replace(
-            "runs-on: [self-hosted, mac, corelink-builder]",
-            "runs-on: [self-hosted, mac, wrong-label]", 1
-        ).replace(
-            "          cargo zigbuild --version\n",
-            "          echo 'runs-on: [self-hosted, mac, corelink-builder]'\n"
-            "          cargo zigbuild --version\n", 1
-        )),
-        ("max-parallel echo bait", lambda text: text.replace(
-            "      max-parallel: 3\n", "      # max-parallel removed\n", 1
-        ).replace(
-            "          cargo zigbuild --version\n",
-            "          echo 'max-parallel: 3'\n"
-            "          cargo zigbuild --version\n", 1
+        ("hosted runner bait", lambda text: text.replace(
+            "runner: windows-2022", "runner: self-hosted", 1
         )),
         ("toolchain echo bait", lambda text: text.replace(
-            '        run: bash scripts/ci-use-host-toolchain.sh "${TARGET_TRIPLE}"\n',
-            "        run: echo 'bash scripts/ci-use-host-toolchain.sh ${TARGET_TRIPLE}'\n", 1
+            "        run: bash scripts/ci-assert-pinned-toolchain.sh\n",
+            "        run: echo 'bash scripts/ci-assert-pinned-toolchain.sh'\n", 1
         )),
         ("zig pin echo bait", lambda text: text.replace(
             "          EXPECTED_ZIG_VERSION=0.16.0\n",
@@ -505,7 +493,7 @@ def test_release_chain_inputs_are_in_complete_ci_trigger_populations():
     assert python_tests.count("- 'tests/*.py'") == 2
     assert python_tests.count("- 'BACKLOG.md'") == 2
     assert python_tests.count("- '.github/workflows/release-cli.yml'") == 2
-    assert python_tests.count("- '.github/workflows/cosign-sign.yml'") == 2
+    assert python_tests.count("- '.github/workflows/cosign-sign.yml'") == 0
     for source in (
         "scripts/cli_release_manifest.py",
         "scripts/verify_cli_rekor_bundle.py",

@@ -64,7 +64,7 @@ env:
 jobs:
   gpg-key-present:
     name: gate — GPG key present
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
@@ -89,7 +89,7 @@ jobs:
     needs: gpg-key-present
     if: >-
       needs.gpg-key-present.outputs.ready == 'true'
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       # Matrix legs each rewrite the aggregate release checksum; serialize them.
