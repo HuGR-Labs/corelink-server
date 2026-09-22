@@ -411,7 +411,7 @@ impl D1HttpTierSelectStore {
             tenant_id,
             now_ms,
         )
-            .await
+        .await
     }
 
     async fn finish_runner_attempt(
