@@ -56,6 +56,10 @@ on:
   # target, and this workflow remains operator-dispatched pending provisioning.
   workflow_dispatch:
     inputs:
+      confirm:
+        description: 'Type "run-bounded-load" to dispatch the staging lane'
+        required: true
+        type: string
       scenarios:
         description: 'Comma-sep list of scenarios to run (default: all)'
         required: false
@@ -107,12 +111,29 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: confirm bounded dispatch
+        env:
+          CONFIRM: ${{ github.event.inputs.confirm }}
+        run: test "${CONFIRM}" = "run-bounded-load"
+
       - name: filter scenarios
         id: filter
         env:
           REQUESTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
         run: |
+          set -euo pipefail
           REQUESTED="${REQUESTED_SCENARIOS}"
+          IFS=',' read -ra SELECTED <<<"${REQUESTED}"
+          test "${#SELECTED[@]}" -ge 1 -a "${#SELECTED[@]}" -le 5 || {
+            echo "::error::scenarios must contain between 1 and 5 canonical entries"
+            exit 1
+          }
+          for scenario in "${SELECTED[@]}"; do
+            case "${scenario}" in
+              signup|webhook|dsr|cas|byok) ;;
+              *) echo "::error::unsupported scenario: ${scenario}"; exit 1 ;;
+            esac
+          done
           if [[ ",$REQUESTED," == *",${{ matrix.scenario.id }},"* ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
@@ -145,6 +166,7 @@ jobs:
         id: target_host
         env:
           K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}
+          K6_TARGET_IDENTITY_RECEIPT: ${{ secrets.K6_TARGET_IDENTITY_RECEIPT }}
         run: |
           set -euo pipefail
           if [[ -z "${K6_TARGET_HOST:-}" ]]; then
@@ -159,12 +181,20 @@ jobs:
             echo "::error::K6_TARGET_HOST must equal $CANONICAL_TARGET (optional trailing slash only)"
             exit 1
           fi
+          python3 scripts/validate_load_target_receipt.py \
+            --target "$TARGET_HOST" \
+            --output "${RUNNER_TEMP}/target-receipt.json" \
+            --github-output "$GITHUB_OUTPUT"
           echo "target_host=$TARGET_HOST" >> "$GITHUB_OUTPUT"
-          echo "Target: $TARGET_HOST"
+          echo "Target: $TARGET_HOST deployment_sha=$(sed -n 's/.*"deployment_sha": "\([0-9a-f]*\)".*/\1/p' "${RUNNER_TEMP}/target-receipt.json")"
 
       - name: prepare results dir
         if: steps.filter.outputs.enabled == 'true'
-        run: mkdir -p tests/load/results/${{ matrix.scenario.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p tests/load/results/${{ matrix.scenario.id }}
+          cp "${RUNNER_TEMP}/target-receipt.json" \
+            tests/load/results/${{ matrix.scenario.id }}/target-receipt.json
 
       - name: run k6 scenario
         if: steps.filter.outputs.enabled == 'true'
@@ -207,9 +237,32 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+      - name: teardown synthetic staging state
+        if: steps.filter.outputs.enabled == 'true' && steps.target_host.outcome == 'success' && always()
+        env:
+          K6_TARGET_HOST: ${{ steps.target_host.outputs.target_host }}
+          K6_STAGING_TEARDOWN_TOKEN: ${{ secrets.K6_STAGING_TEARDOWN_TOKEN }}
+          SCENARIO: ${{ matrix.scenario.id }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          test -n "${K6_STAGING_TEARDOWN_TOKEN:-}" || {
+            echo "::error::K6_STAGING_TEARDOWN_TOKEN is required; refusing to leave synthetic state unmanaged"
+            exit 1
+          }
+          payload=$(printf '{"run_id":"%s","scenario":"%s"}' "$GITHUB_RUN_ID" "$SCENARIO")
+          timeout 30s curl --fail --silent --show-error --location \
+            --request POST \
+            --header "Authorization: Bearer ${K6_STAGING_TEARDOWN_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data "$payload" \
+            "${K6_TARGET_HOST}/_internal/load-test/teardown" \
+            --output /dev/null
+
   baseline-regression:
     name: baseline regression check (median ≤ +20% vs stored baseline)
     runs-on: corelink
+    timeout-minutes: 10
     needs: k6-staging
     if: always()
     permissions:
