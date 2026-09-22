@@ -28,6 +28,7 @@ from typing import Any, NoReturn
 
 
 CANONICAL_REGIONS = ("wnam", "enam", "weur", "sam", "apac", "afr")
+PUBLIC_NAMESPACE = "_public"
 _REGIONS_SQL = ", ".join(f"'{region}'" for region in CANONICAL_REGIONS)
 
 # ``EXISTS`` is intentional: an erased tenant can have one row per erased
@@ -40,6 +41,10 @@ WITH classified AS (
         a.region AS audit_region,
         t.tenant_id AS joined_tenant_id,
         CASE
+            WHEN a.tenant_id = '{PUBLIC_NAMESPACE}' AND a.region = 'wnam'
+                THEN 'satisfied'
+            WHEN a.tenant_id = '{PUBLIC_NAMESPACE}'
+                THEN 'violated'
             WHEN t.tenant_id IS NULL
               OR a.region IS NULL
               OR t.primary_region IS NULL
@@ -49,7 +54,18 @@ WITH classified AS (
             WHEN a.region = t.primary_region THEN 'satisfied'
             ELSE 'violated'
         END AS residency_state,
+        CASE WHEN a.tenant_id = '{PUBLIC_NAMESPACE}' THEN 1 ELSE 0 END
+            AS public_namespace_rows,
+        CASE WHEN a.tenant_id = '{PUBLIC_NAMESPACE}' AND a.region = 'wnam'
+             THEN 1 ELSE 0 END AS system_scope_rows,
+        CASE WHEN a.tenant_id = '{PUBLIC_NAMESPACE}'
+                  AND (a.region IS NULL OR a.region <> 'wnam')
+             THEN 1 ELSE 0 END AS invalid_system_scope_rows,
         CASE WHEN t.tenant_id IS NULL
+                  AND a.tenant_id <> '{PUBLIC_NAMESPACE}'
+             THEN 1 ELSE 0 END AS unknown_tenant_row,
+        CASE WHEN t.tenant_id IS NULL
+                  AND a.tenant_id <> '{PUBLIC_NAMESPACE}'
                   AND EXISTS (
                       SELECT 1 FROM dsr_erasure_log AS d
                       WHERE d.tenant_id = a.tenant_id
@@ -63,18 +79,26 @@ SELECT
     SUM(residency_state = 'satisfied') AS satisfied_rows,
     SUM(residency_state = 'violated') AS violated_rows,
     SUM(residency_state = 'unevaluable') AS unevaluable_rows,
-    SUM(joined_tenant_id IS NULL) AS orphan_rows,
-    COUNT(DISTINCT CASE WHEN joined_tenant_id IS NULL THEN tenant_id END)
+    SUM(public_namespace_rows) AS public_namespace_rows,
+    SUM(system_scope_rows) AS system_scope_rows,
+    SUM(invalid_system_scope_rows) AS invalid_system_scope_rows,
+    SUM(unknown_tenant_row) AS unknown_tenant_rows,
+    COUNT(DISTINCT CASE WHEN unknown_tenant_row = 1 THEN tenant_id END)
+        AS unknown_tenants,
+    -- Keep the historical names in the evidence shape while making the
+    -- unknown tenant bucket explicit to callers.
+    SUM(unknown_tenant_row) AS orphan_rows,
+    COUNT(DISTINCT CASE WHEN unknown_tenant_row = 1 THEN tenant_id END)
         AS orphan_tenants,
     SUM(erased_orphan) AS erased_orphan_rows,
     COUNT(DISTINCT CASE WHEN erased_orphan = 1 THEN tenant_id END)
         AS erased_orphan_tenants,
-    SUM(joined_tenant_id IS NULL) - SUM(erased_orphan)
+    SUM(unknown_tenant_row) - SUM(erased_orphan)
         AS unexplained_orphan_rows,
-    COUNT(DISTINCT CASE WHEN joined_tenant_id IS NULL AND erased_orphan = 0
+    COUNT(DISTINCT CASE WHEN unknown_tenant_row = 1 AND erased_orphan = 0
                         THEN tenant_id END) AS unexplained_orphan_tenants,
     SUM(audit_region = 'weur') AS weur_audit_rows,
-    SUM(audit_region = 'weur' AND joined_tenant_id IS NULL) AS weur_orphan_rows,
+    SUM(audit_region = 'weur' AND unknown_tenant_row = 1) AS weur_orphan_rows,
     (SELECT COUNT(*) FROM tenant WHERE primary_region = 'weur') AS weur_tenants,
     (SELECT COUNT(*) FROM dsr_erasure_log) AS erasure_log_rows
 FROM classified
@@ -85,6 +109,11 @@ COUNT_FIELDS = (
     "satisfied_rows",
     "violated_rows",
     "unevaluable_rows",
+    "public_namespace_rows",
+    "system_scope_rows",
+    "invalid_system_scope_rows",
+    "unknown_tenant_rows",
+    "unknown_tenants",
     "orphan_rows",
     "orphan_tenants",
     "erased_orphan_rows",
@@ -108,6 +137,11 @@ class Counts:
     satisfied_rows: int
     violated_rows: int
     unevaluable_rows: int
+    public_namespace_rows: int
+    system_scope_rows: int
+    invalid_system_scope_rows: int
+    unknown_tenant_rows: int
+    unknown_tenants: int
     orphan_rows: int
     orphan_tenants: int
     erased_orphan_rows: int
@@ -152,6 +186,16 @@ def assess(counts: Counts, *, environment: str) -> tuple[str, str]:
         raise Indeterminate("three-state partition does not equal the full audit_outbox population")
     if counts.orphan_rows > counts.unevaluable_rows:
         raise Indeterminate("orphan rows escaped the unevaluable bucket")
+    if counts.unknown_tenant_rows != counts.orphan_rows:
+        raise Indeterminate("unknown tenant and orphan buckets disagree")
+    if counts.unknown_tenants != counts.orphan_tenants:
+        raise Indeterminate("unknown tenant and orphan tenant buckets disagree")
+    if counts.system_scope_rows + counts.invalid_system_scope_rows != counts.public_namespace_rows:
+        raise Indeterminate("public namespace rows do not partition by system scope")
+    if counts.system_scope_rows > counts.satisfied_rows:
+        raise Indeterminate("system scope rows escaped the satisfied bucket")
+    if counts.invalid_system_scope_rows > counts.violated_rows:
+        raise Indeterminate("invalid system scope rows escaped the violated bucket")
     if counts.erased_orphan_rows > counts.orphan_rows:
         raise Indeterminate("erased-orphan rows exceed the orphan denominator")
     if counts.erased_orphan_tenants > counts.orphan_tenants:

@@ -156,7 +156,7 @@ BEGIN
         'corelink.cas.reconciliation_required',
         '{"event_type":"corelink.cas.reconciliation_required","tenant_id":"' || NEW.tenant_id || '","digest":"' || NEW.digest || '","surface":"' || NEW.surface || '","reason":"' || NEW.reason || '","physical_r2_key":"' || NEW.physical_r2_key || '"}',
         NEW.created_at_ms,
-        COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = NEW.tenant_id), 'wnam')
+        (SELECT primary_region FROM tenant WHERE tenant_id = NEW.tenant_id)
     );
 END;
 

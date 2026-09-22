@@ -27,6 +27,11 @@ def response(**overrides: int) -> dict:
         "satisfied_rows": 10,
         "violated_rows": 0,
         "unevaluable_rows": 0,
+        "public_namespace_rows": 0,
+        "system_scope_rows": 0,
+        "invalid_system_scope_rows": 0,
+        "unknown_tenant_rows": 0,
+        "unknown_tenants": 0,
         "orphan_rows": 0,
         "orphan_tenants": 0,
         "erased_orphan_rows": 0,
@@ -51,6 +56,8 @@ def sql_counts(
     include_mismatch: bool = False,
     include_orphan: bool = False,
     malformed_region: bool = False,
+    include_public: bool = False,
+    invalid_public_region: bool = False,
 ) -> dict:
     """Execute the actual aggregate against a minimal D1-compatible SQLite schema."""
     connection = sqlite3.connect(":memory:")
@@ -71,6 +78,10 @@ def sql_counts(
         connection.execute("INSERT INTO audit_outbox VALUES ('erased-tenant', 'weur')")
     if malformed_region:
         connection.execute("INSERT INTO audit_outbox VALUES ('tenant-e', 'unknown-region')")
+    if include_public:
+        connection.execute("INSERT INTO audit_outbox VALUES ('_public', 'wnam')")
+    if invalid_public_region:
+        connection.execute("INSERT INTO audit_outbox VALUES ('_public', 'enam')")
     row = connection.execute(verifier.RESIDENCY_SQL).fetchone()
     assert row is not None
     return dict(zip((field[0] for field in connection.execute(verifier.RESIDENCY_SQL).description), row, strict=True))
@@ -111,11 +122,49 @@ def test_sql_classifies_unknown_region_as_unevaluable_not_satisfied() -> None:
     assert counts["unevaluable_rows"] == 1
 
 
+def test_sql_classifies_explicit_public_scope_without_joining_a_tenant() -> None:
+    counts = sql_counts(include_public=True)
+    assert counts["total_rows"] == 2
+    assert counts["satisfied_rows"] == 2
+    assert counts["system_scope_rows"] == 1
+    assert counts["public_namespace_rows"] == 1
+    assert counts["unknown_tenant_rows"] == 0
+    assert counts["orphan_rows"] == 0
+
+
+def test_sql_rejects_invalid_public_scope_and_counts_unknown_tenants_separately() -> None:
+    counts = sql_counts(include_orphan=True, invalid_public_region=True)
+    assert counts["public_namespace_rows"] == 1
+    assert counts["invalid_system_scope_rows"] == 1
+    assert counts["unknown_tenant_rows"] == 1
+    assert counts["orphan_rows"] == 1
+    assert counts["unevaluable_rows"] == 1
+    assert counts["violated_rows"] == 1
+    assert assess(
+        response(
+            total_rows=11,
+            satisfied_rows=9,
+            violated_rows=1,
+            unevaluable_rows=1,
+            public_namespace_rows=1,
+            invalid_system_scope_rows=1,
+            unknown_tenant_rows=1,
+            unknown_tenants=1,
+            orphan_rows=1,
+            orphan_tenants=1,
+            unexplained_orphan_rows=1,
+            unexplained_orphan_tenants=1,
+        )
+    )[0] == "FAILED"
+
+
 def test_retained_dsr_orphan_is_unevaluable_and_fails() -> None:
     # The erased row remains RETAIN evidence, but must not be collapsed to pass.
     payload = response(
         satisfied_rows=9,
         unevaluable_rows=1,
+        unknown_tenant_rows=1,
+        unknown_tenants=1,
         orphan_rows=1,
         orphan_tenants=1,
         erased_orphan_rows=1,
@@ -128,6 +177,8 @@ def test_unexplained_orphan_and_weur_orphan_remain_in_the_denominator() -> None:
     payload = response(
         satisfied_rows=9,
         unevaluable_rows=1,
+        unknown_tenant_rows=1,
+        unknown_tenants=1,
         orphan_rows=1,
         orphan_tenants=1,
         unexplained_orphan_rows=1,
@@ -203,3 +254,4 @@ def test_query_uses_left_join_exists_and_three_explicit_states() -> None:
     assert "exists (" in sql
     assert "'satisfied'" in sql and "'violated'" in sql and "'unevaluable'" in sql
     assert "join dsr_erasure_log" not in sql
+    assert "a.tenant_id = '_public'" in sql
