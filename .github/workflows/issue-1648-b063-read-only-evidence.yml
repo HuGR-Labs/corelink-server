@@ -85,7 +85,7 @@ jobs:
         with:
           toolchain: 1.91.1
       - name: Verify immutable prefix replay, idempotency, watermark, and quarantine contracts
-        run: cargo test --locked -p corelink-server routes::audit_archive::tests:: -- --nocapture
+        run: "cargo test --locked -p corelink-server routes::audit_archive::tests:: -- --nocapture"
 
   live-read-only:
     if: >-
