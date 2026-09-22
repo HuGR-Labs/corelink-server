@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-22T20:13:31Z",
+  "provider": "aws-kms",
+  "scope": {
+    "environment": "isolated_nonproduction",
+    "region": "us-east-1",
+    "resource_identifiers": "NONE_RETAINED"
+  },
+  "identity_boundary": {
+    "grant_operations": ["Decrypt", "DescribeKey", "Encrypt"],
+    "persistent_credentials": "NOT_CREATED",
+    "temporary_role": "DELETED"
+  },
+  "observations": {
+    "customer_create": {
+      "status": "PASS",
+      "audit_receipts": ["audit://cloudtrail/sha256:09441c4db6a4b48e84cecc16d514c0fa96e4cead9230fbc6adc47abcf5cd0900"],
+      "detail": "A tagged isolated nonproduction symmetric CMK was created.",
+      "blocker": null
+    },
+    "grant_boundary": {
+      "status": "PASS",
+      "audit_receipts": ["audit://cloudtrail/sha256:aecc672c25009fe73f0a8c7a7b2cf3f906cc8bc48998f1879f03d72c6a1df9c9"],
+      "detail": "A temporary role received only Encrypt, Decrypt, and DescribeKey by KMS grant.",
+      "blocker": null
+    },
+    "wrap_unwrap": {
+      "status": "PASS",
+      "audit_receipts": ["audit://cloudtrail/sha256:f050d0da1cb00b515ced97e1a9cf5d28f49dedb52d82468b8bfc17b3b38513de", "audit://cloudtrail/sha256:5a36a467c710fc707f349696c93af37d3976c56165f876c43b57d6314b1f610a"],
+      "detail": "The grant-only role completed a symmetric encrypt/decrypt round trip in the selected region.",
+      "blocker": null
+    },
+    "context_rejection": {
+      "status": "PASS",
+      "audit_receipts": ["audit://cloudtrail/sha256:15ded32864b00d8bb7f31857ccdb737307ff8f031ff3e80b2aeef027d648c506"],
+      "detail": "A distinct tenant encryption context was rejected with InvalidCiphertextException.",
+      "blocker": null
+    },
+    "disabled_rejection": {
+      "status": "PASS",
+      "audit_receipts": ["audit://cloudtrail/sha256:2827f54c020e0e62833e668a5bf714a5b7df972f819836f6bf11e745982e3a73"],
+      "detail": "Encrypt was rejected with DisabledException while the disposable CMK was disabled.",
+      "blocker": null
+    },
+    "propagation_retry": {
+      "status": "PASS",
+      "audit_receipts": ["audit://cloudtrail/sha256:fd2e4caea57203e56ab738bbfe977a79c341d002da2f1da967036e0ba40baf66"],
+      "detail": "The first grant was rejected during IAM principal propagation; a bounded retry later created the grant boundary.",
+      "blocker": null
+    },
+    "rotation": {
+      "status": "NOT_COMPLETED",
+      "audit_receipts": [],
+      "detail": "On-demand rotation readback is asynchronous and was not complete before cleanup.",
+      "blocker": "A probe must poll for completed provider rotation before it can issue a receipt."
+    },
+    "revocation": {
+      "status": "NOT_COMPLETED",
+      "audit_receipts": [],
+      "detail": "The grant-revocation assertion was not reached after asynchronous rotation readback stopped the probe.",
+      "blocker": "A subsequent isolated probe must verify AccessDeniedException after grant revocation."
+    },
+    "deletion_schedule": {
+      "status": "OBSERVED_WITHOUT_REDACTED_RECEIPT",
+      "audit_receipts": [],
+      "detail": "Both disposable CMKs were read back in PendingDeletion and the temporary roles were deleted.",
+      "blocker": "No redacted correlation receipt was retained for deletion scheduling."
+    }
+  },
+  "runtime_binding": {
+    "status": "NOT_PROVISIONED",
+    "blocker": "No protected CoreLink image, tenant, operator route, or durable audit sink was provisioned for this isolated provider probe."
+  },
+  "conclusion": {
+    "state": "PARTIAL_PROVIDER_PROBE",
+    "closure_eligibility": "INELIGIBLE",
+    "reason": "Provider boundary observations do not complete rotation, revocation, audit correlation, or CoreLink runtime lifecycle acceptance."
+  }
+}
