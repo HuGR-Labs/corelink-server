@@ -36,6 +36,10 @@ def verify_workflow(text: str) -> list[str]:
         errors.append("runtime does not consume the checked target output")
     if "K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}" not in text:
         errors.append("preflight does not read the environment secret")
+    if "VUS:                        '50'" not in text:
+        errors.append("runtime population is not pinned to 50 VUs")
+    if '"vus": int(os.environ["VUS"])' not in text:
+        errors.append("receipt does not bind the effective VU population")
     timeout = re.search(r"timeout-minutes:\s*(\d+)", text)
     if timeout is None or int(timeout.group(1)) > 145:
         errors.append("job timeout is absent or exceeds the 145 minute bound")

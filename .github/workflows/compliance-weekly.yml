@@ -37,9 +37,8 @@ on:
         type: boolean
 
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read
+  actions: read
 
 concurrency:
   group: compliance-weekly-${{ github.ref }}

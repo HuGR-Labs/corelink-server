@@ -3,8 +3,12 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Canonical set of CoreLink regions for terraform matrix.
-pub const REGIONS: &[&str] = &["us-east", "us-west", "eu-west", "ap-southeast", "sa-east"];
+/// Canonical set of CoreLink production regions for the Terraform matrix.
+///
+/// This list is shared by the workflow, Terraform roots, and the D1 drift
+/// contract. Keep legacy region names out of new events; historical D1 rows
+/// remain readable through the compatibility migration.
+pub const REGIONS: &[&str] = &["wnam", "enam", "weur", "sam"];
 
 /// Returns whether an evidence link can identify only a sanitized summary.
 ///

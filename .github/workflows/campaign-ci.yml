@@ -241,6 +241,7 @@ jobs:
           {
             cargo test --locked -p corelink-billing-stripe-materializer runner_cas_ -- --nocapture
             cargo test --locked -p corelink-billing-stripe-materializer same_second_reversed_id -- --nocapture
+            cargo test --locked -p corelink-billing-stripe-materializer authority_mismatch_and_non_runner_fail_closed -- --exact --nocapture
             cargo test --locked -p corelink-server --lib current_subscription_authority::tests -- --nocapture
           } 2>&1 | tee artifacts/campaign-ci/i1639.log
 
@@ -380,6 +381,7 @@ jobs:
         run: |
           set -euo pipefail
           {
+            python3 scripts/test_terraform_drift_region_contract.py
             python3 scripts/test_terraform_drift_state_contract.py
             bash -n scripts/terraform_drift_plan.sh
           } 2>&1 | tee artifacts/campaign-ci/i1721.log
