@@ -180,37 +180,25 @@ fi
 $LIVE && warn "LIVE MODE: this mutates enabled_events on a LIVE Stripe endpoint."
 log ""
 
-# ── Fetch endpoints ──────────────────────────────────────────────────────────
-
-ENDPOINTS_JSON="$(stripe_cli get /v1/webhook_endpoints -d "limit=100" 2>/dev/null || true)"
-if [[ -z "$ENDPOINTS_JSON" ]]; then
-    err "failed to list webhook endpoints (auth? mode? network?). Aborting."
+# ── Fetch every endpoint page ────────────────────────────────────────────────
+# v1 uses has_more + starting_after; v2 uses next_page_url. Keep both complete
+# before reporting inventory so an endpoint after page 1 cannot be mistaken for
+# absence. The helper performs GETs only and rejects v2 cursors outside Stripe.
+INVENTORY_ARGS=()
+for flag in "${STRIPE_FLAGS[@]}"; do INVENTORY_ARGS+=(--stripe-flag "$flag"); done
+INVENTORY_JSON="$(python3 "$REPO_ROOT/scripts/ops/stripe_webhook_inventory.py" \
+    --stripe-bin "$STRIPE_BIN" "${INVENTORY_ARGS[@]}" 2>/dev/null || true)"
+if [[ -z "$INVENTORY_JSON" ]] || ! printf '%s' "$INVENTORY_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+sys.exit(0 if isinstance(d.get("v1",{}).get("data"),list) else 1)
+' 2>/dev/null; then
+    err "failed to list webhook endpoints through every v1 page (auth? mode? network?). Aborting."
     exit 1
 fi
-
-# ── v2 event destinations (the blind spot — see the 2026-08-03 correction) ───
-#
-# `/v1/webhook_endpoints` and `/v2/core/event_destinations` are DIFFERENT API
-# resources. A v2 event destination (the ones that carry a `thin` payload and an
-# auto-generated `adjective-noun-thin` name) is NEVER returned by the v1 list, so
-# a sweep that only reads v1 reports "no strays" while a v2 destination sits
-# Active on a production URL. That is exactly what happened: on 2026-07-03 a v1
-# enumeration returned 3 endpoints and the stray `exquisite-rhythm-thin` was
-# declared non-existent — it was still Active a month later.
-#
-# Fetch is best-effort BUT NEVER SILENT: if the CLI cannot enumerate v2, we set
-# V2_SWEEP_OK=false and the script exits non-zero at the end with a loud
-# INCOMPLETE banner. A detector that cannot look must never report "none found".
-V2_SWEEP_OK=true
-V2_JSON="$(stripe_cli get /v2/core/event_destinations -d "limit=100" 2>/dev/null || true)"
-if [[ -z "$V2_JSON" ]] || ! printf '%s' "$V2_JSON" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-sys.exit(0 if isinstance(d.get('data'), list) else 1)
-" 2>/dev/null; then
-    V2_SWEEP_OK=false
-    V2_JSON='{"data": []}'
-fi
+ENDPOINTS_JSON="$(INVENTORY_JSON="$INVENTORY_JSON" python3 -c 'import json,os; print(json.dumps(json.loads(os.environ["INVENTORY_JSON"]).get("v1",{"data":[]})))')"
+V2_JSON="$(INVENTORY_JSON="$INVENTORY_JSON" python3 -c 'import json,os; print(json.dumps(json.loads(os.environ["INVENTORY_JSON"]).get("v2",{"data":[]})))')"
+V2_SWEEP_OK="$(INVENTORY_JSON="$INVENTORY_JSON" python3 -c 'import json,os; print("true" if json.loads(os.environ["INVENTORY_JSON"]).get("v2_sweep_ok") is True else "false")')"
 
 # Report ALL humangr.com destinations (v1 endpoints + v2 event destinations) and
 # flag ANY url carrying more than one. Purely informational — never mutated.
@@ -292,8 +280,10 @@ for _id, url, st, nm in disabled_rows:
           f"want it gone from the account entirely.")
 PY
 
-if ! $V2_SWEEP_OK; then
+if [[ "$V2_SWEEP_OK" != "true" ]]; then
+    V2_ERROR="$(INVENTORY_JSON="$INVENTORY_JSON" python3 -c 'import json,os; print(json.loads(os.environ["INVENTORY_JSON"]).get("v2_error") or "unknown pagination error")')"
     err "v2 event-destination sweep FAILED (\`stripe get /v2/core/event_destinations\` returned"
+    err "reason: $V2_ERROR"
     err "nothing usable — CLI too old, or the key lacks v2 read scope). The v1 listing above is"
     err "therefore INCOMPLETE: a thin-payload v2 destination on a production URL would not appear."
     err "Do NOT read this run as 'no strays found'. Re-run with a CLI/key that can read v2."
@@ -307,7 +297,7 @@ log ""
 # read v2. But a ZERO exit from this script has, since 2026-07-03, been read as
 # "and there are no strays". That reading is what buried a live destination for a
 # month, so a run whose stray sweep could not look never exits 0 again.
-trap 'if [[ $? -eq 0 ]] && ! $V2_SWEEP_OK; then
+trap 'if [[ $? -eq 0 ]] && [[ "$V2_SWEEP_OK" != "true" ]]; then
         err "EXIT 3 — the reconcile finished, but the STRAY SWEEP WAS INCOMPLETE (see above)."
         err "This run is NOT evidence that no stray destination exists."
         exit 3
