@@ -1,0 +1,25 @@
+name: issue-1644 vendor review manifest
+
+on:
+  pull_request:
+    paths:
+      - 'docs/handoff/2026-09-22-1644-critical-vendor-review-manifest.json'
+      - 'scripts/verify_1644_vendor_review_manifest.py'
+      - 'scripts/compliance-weekly-digest.py'
+      - 'specs/_compliance/VENDOR-RISK-REGISTER.md'
+      - 'specs/_compliance/vendor-dd/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify pending Critical-vendor packets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Verify manifest structure and approval boundary
+        run: python3 scripts/verify_1644_vendor_review_manifest.py
