@@ -616,6 +616,13 @@ jobs:
       - name: Install docs deps
         run: pnpm install --filter @corelink/docs --frozen-lockfile=false
 
+      # The hosted Ubuntu image does not include the shell/hash tools exercised
+      # by the cross-platform raw-curl fixtures.
+      - name: Install REAPI fixture tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends b3sum zsh
+
       - name: Typecheck
         run: pnpm --filter @corelink/docs typecheck
 
