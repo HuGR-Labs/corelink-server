@@ -1,6 +1,16 @@
 load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")
+load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain")
 
 system_cxx_toolchain(
     name = "cxx",
+    visibility = ["PUBLIC"],
+)
+
+# The bundled C++ prelude uses Python bootstrap helpers during analysis.
+# Keep the default target name expected by those helpers and resolve the
+# interpreter from the hosted or local system without importing Meta-only
+# toolchain state.
+system_python_bootstrap_toolchain(
+    name = "python_bootstrap",
     visibility = ["PUBLIC"],
 )
