@@ -44,6 +44,25 @@ def _shape(value: object) -> tuple[str, list[str], int]:
     return "object", sorted(keys & SCHEMA_KEYS), len(keys - SCHEMA_KEYS)
 
 
+def _error_entry(document: object) -> object:
+    """Accept both D1 `errors[]` and Wrangler's singular top-level `error`."""
+    if not isinstance(document, dict):
+        return None
+    errors = document.get("errors")
+    if isinstance(errors, list) and errors:
+        return errors[0]
+    if "error" in document:
+        return document["error"]
+    result = document.get("result")
+    if isinstance(result, dict):
+        errors = result.get("errors")
+        if isinstance(errors, list) and errors:
+            return errors[0]
+        if "error" in result:
+            return result["error"]
+    return None
+
+
 def _schema(stdout: str, stdout_truncated: bool, stderr_truncated: bool) -> dict[str, object]:
     if not stdout.strip():
         document, fmt = None, "empty"
@@ -56,8 +75,7 @@ def _schema(stdout: str, stdout_truncated: bool, stderr_truncated: bool) -> dict
     result = document.get("result") if isinstance(document, dict) else None
     if isinstance(document, list) and document:
         result = document[0]
-    error = document.get("errors") if isinstance(document, dict) else None
-    error = error[0] if isinstance(error, list) and error else None
+    error = _error_entry(document)
     shaped = {"format": fmt, "stdout_truncated": stdout_truncated, "stderr_truncated": stderr_truncated}
     for name, value in (("root", document), ("result", result), ("error_entry", error)):
         kind, keys, unknown = root if name == "root" else _shape(value)
@@ -92,10 +110,10 @@ def make_provider_diagnostic(
         else:
             error_class = "PROVIDER_ERROR" if combined.strip() else "UNKNOWN_ERROR"
     try:
-        errors = json.loads(stdout).get("errors", [])
-    except (json.JSONDecodeError, AttributeError, UnicodeError):
-        errors = []
-    code = errors[0].get("code") if isinstance(errors, list) and errors and isinstance(errors[0], dict) else None
+        error = _error_entry(json.loads(stdout))
+    except (json.JSONDecodeError, UnicodeError):
+        error = None
+    code = error.get("code") if isinstance(error, dict) else None
     provider_code = str(code) if isinstance(code, (int, str)) and not isinstance(code, bool) else None
     if provider_code is not None and not PROVIDER_CODE.fullmatch(provider_code):
         provider_code = None
