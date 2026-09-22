@@ -137,11 +137,44 @@ jobs:
             [[ "$sql" != *';'* ]] || fail_closed "query_contains_statement_separator_${id}"
             [[ ! "$sql" =~ (INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|CREATE|PRAGMA|ATTACH|DETACH) ]] || fail_closed "query_contains_write_or_pragma_${id}"
             raw="$raw_dir/$id.json"
+            stderr="$raw_dir/$id.stderr"
             set +e
-            CI=1 pnpm --silent dlx wrangler@4.111.0 d1 execute "$D1_DATABASE_ID" --remote --command "$sql" --json >"$raw"
+            CI=1 pnpm --silent dlx wrangler@4.111.0 d1 execute "$D1_DATABASE_ID" --remote --command "$sql" --json >"$raw" 2>"$stderr"
             status=$?
             set -e
-            [[ "$status" -eq 0 ]] || fail_closed "wrangler_query_failed_${id}_${status}"
+            if [[ "$status" -ne 0 ]]; then
+              # Preserve a bounded provider diagnostic in the receipt. Redact
+              # credential-shaped values before JSON serialization; raw stderr
+              # stays in RUNNER_TEMP and is never uploaded.
+              python3 - "$receipt" "$id" "$status" "$stderr" <<'PY'
+          import hashlib, json, re, sys
+          receipt_path, query_id, status, stderr_path = sys.argv[1:]
+          try:
+              raw = open(stderr_path, encoding="utf-8", errors="replace").read()
+          except OSError:
+              raw = ""
+          redacted = re.sub(
+              r"(?i)\b(api[_ -]?token|authorization|bearer|password|secret|private[_ -]?key|access[_ -]?key)\b\s*(?:[:=]\s*|\s+)[^\s,;]+",
+              lambda match: match.group(1) + "=[REDACTED]",
+              raw,
+          )
+          redacted = re.sub(r"(?i)bearer\s+[^\s,;]+", "Bearer [REDACTED]", redacted)
+          redacted = "".join(char if char in "\n\t" or ord(char) >= 32 else " " for char in redacted)
+          redacted = redacted[-2000:] or "[no provider stderr]"
+          with open(receipt_path, encoding="utf-8") as stream:
+              receipt = json.load(stream)
+          receipt.setdefault("provider_failures", []).append({
+              "query_id": query_id,
+              "exit_code": int(status),
+              "stderr": redacted,
+              "stderr_sha256": hashlib.sha256(raw.encode("utf-8", "replace")).hexdigest(),
+          })
+          with open(receipt_path, "w", encoding="utf-8") as stream:
+              json.dump(receipt, stream, indent=2, sort_keys=True)
+              stream.write("\n")
+          PY
+              fail_closed "wrangler_query_failed_${id}_${status}"
+            fi
             [[ -s "$raw" ]] || fail_closed "empty_wrangler_response_${id}"
             if ! python3 - "$receipt" "$raw" "$id" "$sql" <<'PY'
           import hashlib, json, sys

@@ -1,0 +1,38 @@
+name: B-125 diagnostic receipt contract
+
+# Credentialless PR gate for the #1668 provider-diagnostic seam. It inspects
+# the workflow source only and never dispatches the remote D1 read lane.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/b125-audit-throughput-read-only.yml"
+      - ".github/workflows/b125-diagnostic-contract.yml"
+      - "tests/test_b125_diagnostic_receipt.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b125-diagnostic-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnostic-receipt:
+    name: B-125 hosted diagnostic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install the pinned focused test runner
+        run: python -m pip install --disable-pip-version-check --no-input pytest==9.0.2
+      - name: Verify the B-125 diagnostic contract
+        run: python -m pytest -q tests/test_b125_diagnostic_receipt.py
