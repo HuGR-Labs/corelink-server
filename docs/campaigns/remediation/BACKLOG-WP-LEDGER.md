@@ -28,9 +28,9 @@ the ledger base in the same reviewed change.
 base-ref: 0f90d89e0710e88e297d39b16e0fdad390bdcafc
 base-sha: 0f90d89e0710e88e297d39b16e0fdad390bdcafc
 observed-at: 2026-09-22
-item-count: 373
+item-count: 374
 open-count: 13
-done-count: 328
+done-count: 329
 parked-count: 32
 catalog-counts: B001-B045=4,B046-B090=3,B091-B130=2,B131-B373=4
 ```

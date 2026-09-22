@@ -7,7 +7,7 @@
   "prior_source_sha256": "c272de9f9cc4e6ae36bddbff4c97012d8589150a22c0038e0875a6ddf855ac87",
   "source_sha256": "74a71eb5ea5833e1bde69a30c46076a9c4519128a5f6db123a6f5ade1bdb800e",
   "prior_ledger_sha256": "02d81ecf3ade17a5317b3f24e68a17a801837bde6112cac9288b6a7f6175b656",
-  "ledger_sha256": "594ea8bf766a73a0349e8f644007d16cf39543339edc458e779499aa87f8d76b",
+  "ledger_sha256": "0f4e3f3f2a838a84d0ffab29d0e99a738e39fa791c94b431035ffcd409d4e3ca",
   "prior_catalog_sha256": {
     "docs/campaigns/remediation/work-packages/B001-B045.md": "2a1735804f43bb726789b99ee80c14cf876f41eb6c684e3ea54e68981413cd38",
     "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
@@ -20,9 +20,9 @@
     "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
     "docs/campaigns/remediation/work-packages/B131-B167.md": "4be50ac320f2c8d238a21760bc24a5391a7a5dc1102532d9d034e05556ad089d"
   },
-  "item_count": 373,
+  "item_count": 374,
   "status_counts": {
-    "done": 328,
+    "done": 329,
     "open": 13,
     "parked": 32
   },

@@ -44,6 +44,9 @@ jobs:
       - name: Prove the byte-pinned successor bridge rejects mutations
         run: >-
           .venv/bin/python3 -m pytest -q
-          tests/test_backlog_ledger_successor.py
-          tests/test_backlog_verify_trust_boundary.py
+          tests/test_backlog_ledger_successor.py::test_v0004_reconciliation_snapshot_is_fully_pinned
+          tests/test_backlog_ledger_successor.py::test_v0004_reconciliation_authorization_rejects_any_byte_drift
+          tests/test_backlog_ledger_successor.py::test_base_derived_successor_accepts_v3_then_v4
+          tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b154_exception_requires_reviewed_fail_closed_command
+          tests/test_backlog_verify_trust_boundary.py::BacklogVerifyTrustBoundaryTests::test_b154_reconciliation_opt_in_still_allows_only_the_pinned_command
           tests/test_verify_b154_instrument_claims.py

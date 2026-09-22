@@ -82,7 +82,7 @@ V0004_RECONCILIATION = {
     "prior_source_sha256": "c272de9f9cc4e6ae36bddbff4c97012d8589150a22c0038e0875a6ddf855ac87",
     "source_sha256": "74a71eb5ea5833e1bde69a30c46076a9c4519128a5f6db123a6f5ade1bdb800e",
     "prior_ledger_sha256": "02d81ecf3ade17a5317b3f24e68a17a801837bde6112cac9288b6a7f6175b656",
-    "ledger_sha256": "594ea8bf766a73a0349e8f644007d16cf39543339edc458e779499aa87f8d76b",
+    "ledger_sha256": "0f4e3f3f2a838a84d0ffab29d0e99a738e39fa791c94b431035ffcd409d4e3ca",
     "changed_ids": ["B-098", "B-154"],
     "catalog_sha256": {
         "docs/campaigns/remediation/work-packages/B001-B045.md": "2a1735804f43bb726789b99ee80c14cf876f41eb6c684e3ea54e68981413cd38",
@@ -94,8 +94,8 @@ V0004_RECONCILIATION = {
         "open",
         "a6045afb801b3b6a61ff09d97b6e77ba5fa4f7e1c4f9ed0fde8554957484264e",
         "b86a04ff5d4ca729279b39631764e85c01c934e459c2db2ac23d0900587de590",
-        "8d7fb8611da55cf7db8198fdf67b3cf3884eca09785b5f90871fb4792a3e59f0",
         "f3434222e0ed605f801a03a34f112e978c242a42f8c4470fda666e267939da35",
+        "8d7fb8611da55cf7db8198fdf67b3cf3884eca09785b5f90871fb4792a3e59f0",
     ),
 }
 
