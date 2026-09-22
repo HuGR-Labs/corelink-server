@@ -369,20 +369,35 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
       ]);
     });
 
-    it("refuses the split when the container's phases exceed origin", () => {
-      // Clock skew across the boundary, or a stale/incoherent report. Publishing
-      // it would need a negative `ohop`; publishing it clamped would break the
-      // sum. Say so instead.
+    it("keeps valid components when the container's phases exceed origin", () => {
+      // Clock skew across the boundary, or an overlapping scope, makes a
+      // negative `ohop` impossible. Keep the critical-path fallback explicit
+      // while retaining the components that are still individually readable.
       const out = originSubPhases(50, "opat;dur=40, oquota;dur=30, ohandler;dur=5");
-      expect(out).toEqual(['ohop;dur=50;desc="unreconciled"']);
+      expect(out).toEqual([
+        'ohop;dur=50;desc="unreconciled"',
+        "opat;dur=40",
+        "oquota;dur=30",
+        "ohandler;dur=5",
+      ]);
     });
 
     it("refuses the split when a phase it consumes has an unreadable duration", () => {
       // The dangerous case: `ostore` is a name we ATTRIBUTE, so dropping it
       // quietly would move its milliseconds into `ohop` and blame the network
-      // for the storage layer. The whole report is refused instead.
+      // for the storage layer. Keep the readable component and mark the
+      // critical-path fallback instead.
       const out = originSubPhases(300, "opat;dur=97, ostore;dur=abc, ohandler;dur=4");
-      expect(out).toEqual(['ohop;dur=300;desc="unreconciled"']);
+      expect(out).toEqual([
+        'ohop;dur=300;desc="unreconciled"',
+        "opat;dur=97",
+      ]);
+    });
+
+    it("keeps the critical-path marker when the only known phase is malformed", () => {
+      expect(originSubPhases(300, "ostore;dur=abc")).toEqual([
+        'ohop;dur=300;desc="unreconciled"',
+      ]);
     });
 
     it("ignores metrics outside the origin group without refusing the split", () => {
@@ -440,7 +455,7 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
         ]) {
           const header = `opat;dur=${pat}, oquota;dur=${quota}, ostore;dur=${store}, ohandler;dur=${other}`;
           const out = originSubPhases(originMs, header);
-          if (out.length === 1) {
+          if (out[0]?.includes('desc="unreconciled"')) {
             expect(out[0]).toBe(`ohop;dur=${originMs};desc="unreconciled"`);
             continue;
           }
