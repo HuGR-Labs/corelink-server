@@ -469,10 +469,12 @@ Security witness deployment run, account/domain/DO identity proof,
 pre-provisioned secret-name readback, exact-main deployment receipt, or live
 append/retry/stale/divergent/latest receipt set with independent signature
 verification. The repository deployment workflow and in-process tests prove
-implementation readiness only. These observations do not prove that a hidden
-environment, local credential, or eligible custodian is absent; they leave the
-independent witness, deployed bindings, and live receipts unverified. Distinct
-credential names or repository-only archive proof alone do not close B-054.
+implementation readiness only; a workflow definition or successful fixture run
+is not a deployment or receipt readback. These observations do not prove that
+a hidden environment, local credential, or eligible custodian is absent; they
+leave the independent witness, deployed bindings, and live receipts unverified.
+Distinct credential names or repository-only archive proof alone do not close
+B-054.
 
 ## References
 
