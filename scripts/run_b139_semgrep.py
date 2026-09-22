@@ -54,6 +54,7 @@ UNORDERED_ARRAY_KEYS = {
     "tags",
     "taxonomies",
 }
+_ROOT_URI = re.compile(r"^%B139_ROOT_(\d+)%/(.+)$")
 
 
 def _json_key(value: Any) -> str:
@@ -95,8 +96,17 @@ def _normalize_value(
             normalized.sort(key=_json_key)
         return normalized
     if isinstance(value, str):
+        artifact_uri_path = path[-2:] == ("artifactLocation", "uri")
         for original, replacement in replacements:
-            value = value.replace(original, replacement)
+            if artifact_uri_path and value.startswith(original):
+                # Artifact URIs are canonicalized from the first root prefix
+                # only. A source path can legitimately contain the root name
+                # again (for example ``/src/src/file.py``); replacing every
+                # occurrence would create adjacent synthetic root labels that
+                # the SARIF resolver must reject.
+                value = replacement + value[len(original) :]
+            else:
+                value = value.replace(original, replacement)
         # Semgrep may encode a temporary absolute config path as a dotted
         # rule ID (``<absolute-dotted-rules-dir>.<config>.<rule>``), so the slash
         # replacement above cannot see it. Restrict this substitution to rule
@@ -142,6 +152,89 @@ def _normalize_value(
     return value
 
 
+def _repository_uri(
+    uri: str,
+    *,
+    roots: dict[str, Path],
+    repository_root: Path,
+) -> str:
+    """Return a SARIF artifact URI relative to the checked-out repository.
+
+    Semgrep emits absolute source paths.  ``_normalize_value`` replaces those
+    paths with stable labels for reproducible evidence, but GitHub's SARIF
+    endpoint does not resolve those labels when they occur in an
+    ``artifactLocation`` URI.  Resolve the label against the root captured at
+    scan time, then emit only a repository-relative POSIX path.
+    """
+
+    if not isinstance(uri, str) or not uri:
+        raise VerificationError("SARIF artifactLocation has no URI")
+    if "\\" in uri or "?" in uri or "#" in uri:
+        raise VerificationError(f"SARIF artifactLocation URI is not a path: {uri!r}")
+
+    match = _ROOT_URI.fullmatch(uri)
+    if uri.startswith("%B139_ROOT_"):
+        if match is None:
+            raise VerificationError(f"SARIF artifactLocation has malformed root: {uri!r}")
+        label = f"%B139_ROOT_{match.group(1)}%"
+        root = roots.get(label)
+        if root is None:
+            raise VerificationError(f"SARIF artifactLocation has unresolved root: {label}")
+        candidate = (root / match.group(2)).resolve()
+    else:
+        # Any absolute path should have been covered by one of the explicit
+        # roots above.  Reject it instead of leaking a runner path into SARIF.
+        if uri.startswith("/") or re.match(r"^[A-Za-z]:/", uri) or "://" in uri:
+            raise VerificationError(f"SARIF artifactLocation has unresolvable path: {uri!r}")
+        candidate = (repository_root / uri).resolve()
+
+    try:
+        relative = candidate.relative_to(repository_root)
+    except ValueError as exc:
+        raise VerificationError(
+            f"SARIF artifactLocation escapes repository root: {uri!r}"
+        ) from exc
+    if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+        raise VerificationError(f"SARIF artifactLocation has invalid relative path: {uri!r}")
+    return relative.as_posix()
+
+
+def _normalize_artifact_locations(
+    value: Any,
+    *,
+    roots: dict[str, Path],
+    repository_root: Path,
+) -> None:
+    """Rewrite every SARIF artifactLocation URI and reject unresolved roots."""
+
+    if isinstance(value, dict):
+        artifact = value.get("artifactLocation")
+        if isinstance(artifact, dict) and "uri" in artifact:
+            artifact["uri"] = _repository_uri(
+                artifact["uri"], roots=roots, repository_root=repository_root
+            )
+            # Once the URI is repository relative, the synthetic base ID is no
+            # longer meaningful and can make Code Scanning resolve it twice.
+            if artifact.get("uriBaseId") == "%SRCROOT%":
+                del artifact["uriBaseId"]
+            elif isinstance(artifact.get("uriBaseId"), str) and artifact[
+                "uriBaseId"
+            ].startswith("%B139_ROOT_"):
+                raise VerificationError(
+                    "SARIF artifactLocation has unresolved URI base: "
+                    f"{artifact['uriBaseId']}"
+                )
+        for child in value.values():
+            _normalize_artifact_locations(
+                child, roots=roots, repository_root=repository_root
+            )
+    elif isinstance(value, list):
+        for child in value:
+            _normalize_artifact_locations(
+                child, roots=roots, repository_root=repository_root
+            )
+
+
 def _canonical_json(
     path: Path, *volatile_roots: Path, dotted_rule_root: Path | None = None
 ) -> None:
@@ -163,8 +256,12 @@ def _canonical_json(
         if not isinstance(run, dict) or not isinstance(run.get("results"), list):
             raise VerificationError(f"SARIF has malformed run: {path}")
     root_labels: dict[str, str] = {}
+    root_paths: dict[str, Path] = {}
     for index, root in enumerate(volatile_roots):
-        root_labels.setdefault(str(root.resolve()), f"%B139_ROOT_{index}%")
+        resolved = root.resolve()
+        label = f"%B139_ROOT_{index}%"
+        root_labels.setdefault(str(resolved), label)
+        root_paths.setdefault(label, resolved)
     replacements = tuple(
         sorted(root_labels.items(), key=lambda item: (-len(item[0]), item[1]))
     )
@@ -184,6 +281,14 @@ def _canonical_json(
         key=None,
         replacements=replacements,
         dotted_rule_prefix=dotted_rule_prefix,
+    )
+    repository_root = volatile_roots[0].resolve()
+    if not isinstance(normalized, dict):
+        raise VerificationError(f"SARIF root is not an object: {path}")
+    _normalize_artifact_locations(
+        normalized,
+        roots=root_paths,
+        repository_root=repository_root,
     )
     path.write_text(
         json.dumps(normalized, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
