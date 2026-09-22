@@ -10,6 +10,8 @@ identity, canonical target, lifecycle checkpoints, a 30 second heartbeat, and
 SHA-256 digests for result artifacts. The k6 command has a 130 minute graceful
 timeout inside the 145 minute job bound. The receipt and teardown checkpoint
 run with `if: always()` so a timeout or runner failure remains attributable.
+The workflow pins the endurance population to 50 VUs, the scenario rejects any
+population above that ceiling, and the receipt records the effective VU count.
 
 Contract and mutation checks:
 
@@ -29,6 +31,7 @@ retains the resulting receipt.
 | Trigger | `workflow_dispatch` only; no schedule or PR trigger |
 | Dispatch ref | canonical repository, protected `refs/heads/main` only |
 | Input | `duration`: `30s` or `2h` (default `2h`) |
+| Population | 50 VUs, pinned by the workflow and recorded in the receipt |
 | Job / runner | `endurance-2h` / `corelink` |
 | Environment | `staging` |
 | Permissions | `contents: read`, `actions: read`, `id-token: none` |

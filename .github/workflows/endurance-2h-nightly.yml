@@ -116,6 +116,7 @@ jobs:
         id: prepare_results
         env:
           DURATION: ${{ github.event.inputs.duration || '2h' }}
+          VUS: '50'
         run: |
           set -euo pipefail
           mkdir -p tests/load/results/endurance-2h
@@ -136,6 +137,7 @@ jobs:
             "runner_arch": "${RUNNER_ARCH}",
             "target": "https://staging.corelink.humangr.com",
             "duration": "${DURATION:-2h}",
+            "vus": ${VUS},
             "phase": "prepared"
           }
           EOF
@@ -147,6 +149,7 @@ jobs:
           K6_AUTH_BEARER:             ${{ secrets.K6_STAGING_PAT }}
           K6_PROMETHEUS_RW_SERVER_URL: ${{ secrets.K6_PROMETHEUS_RW_SERVER_URL }}
           DURATION:                   ${{ github.event.inputs.duration || '2h' }}
+          VUS:                        '50'
           K6_ENDURANCE_CONFIRM:       'yes'
         run: |
           set -euo pipefail
@@ -188,6 +191,7 @@ jobs:
         env:
           TARGET_HOST: ${{ steps.target_host.outputs.target_host }}
           DURATION: ${{ github.event.inputs.duration || '2h' }}
+          VUS: '50'
         run: |
           set -euo pipefail
           RESULTS_DIR=tests/load/results/endurance-2h
@@ -224,6 +228,7 @@ jobs:
               "runner_arch": os.environ["RUNNER_ARCH"],
               "target": os.environ.get("TARGET_HOST", ""),
               "duration": os.environ["DURATION"],
+              "vus": int(os.environ["VUS"]),
               "status": os.environ["STATUS"],
               "artifact_sha256": hashes,
               "checkpoints": sorted(name for name in os.listdir(receipt_dir) if name.startswith("checkpoint-")),

@@ -94,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/run_i1675_live_probe.py --arm timeout --target "$TARGET" \
-            --run-id "$RUN_ID" --job-id "$JOB_ID" --timeout-seconds 30 \
+            --run-id "$RUN_ID" --job-id "$JOB_ID" --head-sha "$GITHUB_SHA" --timeout-seconds 30 \
             --output artifacts/i1675/declared-timeout.json
 
       - name: Run runner communication-loss arm once
@@ -106,7 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/run_i1675_live_probe.py --arm runner_communication_loss --target "$TARGET" \
-            --run-id "$RUN_ID" --job-id "$JOB_ID" --timeout-seconds 30 \
+            --run-id "$RUN_ID" --job-id "$JOB_ID" --head-sha "$GITHUB_SHA" --timeout-seconds 30 \
             --output artifacts/i1675/runner-communication-loss.json
 
       - name: Revoke disposable probe state
@@ -129,7 +129,7 @@ jobs:
         run: |
           set -euo pipefail
           {
-            printf '{"schema":"corelink.actions-job-observer.v1","issue":1675,"run_id":%s,"job_id":%s,' "$GITHUB_RUN_ID" "${JOB_ID:-0}"
+            printf '{"schema":"corelink.actions-job-observer.v1","issue":1675,"head_sha":"%s","run_id":%s,"job_id":%s,' "$GITHUB_SHA" "$GITHUB_RUN_ID" "${JOB_ID:-0}"
             printf '"run_url":"https://github.com/%s/actions/runs/%s",' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
             printf '"job_url":"https://github.com/%s/actions/runs/%s/job/%s",' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "${JOB_ID:-0}"
             printf '"receipts":['

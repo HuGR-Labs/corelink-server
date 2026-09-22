@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -25,6 +26,7 @@ PATHS = {
     "timeout": "/_internal/i1675/timeout",
     "runner_communication_loss": "/_internal/i1675/runner-communication-loss",
 }
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def main() -> int:
@@ -33,6 +35,7 @@ def main() -> int:
     parser.add_argument("--target", required=True)
     parser.add_argument("--run-id", type=int, required=True)
     parser.add_argument("--job-id", type=int, required=True)
+    parser.add_argument("--head-sha", required=True)
     parser.add_argument("--timeout-seconds", type=int, default=30)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -40,6 +43,9 @@ def main() -> int:
     token = os.environ.get("K6_STAGING_PAT", "")
     if not token:
         print("::error::K6_STAGING_PAT is unavailable", file=sys.stderr)
+        return 2
+    if not SHA_RE.fullmatch(args.head_sha):
+        print("::error::head SHA must be a 40-character lowercase commit SHA", file=sys.stderr)
         return 2
     payload = {
         "arm": args.arm,
@@ -92,6 +98,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+    receipt["head_sha"] = args.head_sha
     args.output.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print(f"i1675 {args.arm}: {receipt['classification']} run={args.run_id} job={args.job_id}")
     return 0

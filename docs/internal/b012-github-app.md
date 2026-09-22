@@ -82,6 +82,12 @@ require the normal human review and branch protection rules. App installation
 or repository secret changes are owner actions and are not performed by this
 repository change.
 
+The `pull_request` drift checks in `api-reference-sync.yml` and
+`subprocessors-sync.yml` are fork-safe read-only jobs. Their default
+`GITHUB_TOKEN` has no pull-request write permission, and checkout does not
+persist credentials. The trusted post-merge/scheduled creator jobs use the
+short-lived App token for every write.
+
 ## Rotation and revocation
 
 Rotate the App private key at least every 90 days, or immediately on suspected
