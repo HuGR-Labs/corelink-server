@@ -157,8 +157,8 @@ def main() -> int:
         (ROOT / "crates/corelink-container/src/origin_timing.rs")
         .read_text(encoding="utf-8")
         .replace(
-            'parts.push(format!("ohandler;dur={handler_ms}"));',
-            'parts.push(format!("ohandler;dur={handler_ms}"));\n        parts.push(format!("ohandler;dur={handler_ms}"));',
+            'parts.push(format!("ohandler;dur={handler_ms}{handler_suffix}"));',
+            'parts.push(format!("ohandler;dur={handler_ms}{handler_suffix}"));\n        parts.push(format!("ohandler;dur={handler_ms}{handler_suffix}"));',
             1,
         ),
         "duplicate ohandler emission",
