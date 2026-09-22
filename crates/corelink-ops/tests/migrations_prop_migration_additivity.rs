@@ -188,14 +188,50 @@ fn valid_line_waiver(line: &str, comment_start: usize) -> bool {
 
 /// Normalize a SQL fragment for keyword detection: apply audited line-local
 /// waivers, strip comments, uppercase, and collapse whitespace.
+const B071_TRIGGER_REPLACEMENT_FILE: &str =
+    "migrations/d1/0143_gc_accounting_region_upgrade.sql";
+
+fn valid_b071_trigger_replacement(
+    line: &str,
+    comment_start: usize,
+    migration_path: Option<&str>,
+) -> bool {
+    if migration_path != Some(B071_TRIGGER_REPLACEMENT_FILE) {
+        return false;
+    }
+    let sql = line[..comment_start].trim().to_ascii_uppercase();
+    let comment = line[comment_start + 2..].trim().to_ascii_lowercase();
+    matches!(
+        (sql.as_str(), comment.as_str()),
+        (
+            "DROP TRIGGER IF EXISTS TRG_GC_PURGE_ACCOUNTING_REQUIRED;",
+            "additive-allowed: adr-0103 replace the deployed b-071 accounting guard"
+        ) | (
+            "DROP TRIGGER IF EXISTS TRG_GC_PURGE_FINALIZE_ACCOUNTING;",
+            "additive-allowed: adr-0103 replace the deployed b-071 accounting finalizer"
+        )
+    )
+}
+
 fn normalize_for_scan(sql: &str) -> String {
+    normalize_for_migration(sql, None)
+}
+
+fn normalize_for_migration(sql: &str, migration_path: Option<&str>) -> String {
     let mut in_block_comment = false;
     let mut quote = None;
     let waiver_filtered = sql
         .lines()
         .map(|line| {
             let comment_start = line_comment_start(line, &mut in_block_comment, &mut quote);
-            if comment_start.is_some_and(|start| valid_line_waiver(line, start)) {
+            if comment_start.is_some_and(|start| {
+                valid_b071_trigger_replacement(line, start, migration_path)
+                    || (migration_path != Some(B071_TRIGGER_REPLACEMENT_FILE)
+                        && !line[start + 2..]
+                            .to_ascii_uppercase()
+                            .contains("ADR-0103")
+                        && valid_line_waiver(line, start))
+            }) {
                 ""
             } else {
                 line
@@ -236,6 +272,7 @@ fn find_violations(canonical_sql: &str) -> Vec<String> {
             // SQLite spells a table swap `ALTER TABLE <name> RENAME TO`; the
             // rename token is therefore not at statement offset zero.
             let forbidden = trimmed.starts_with(prefix)
+                || (*prefix == "DROP COLUMN" && trimmed.contains("DROP COLUMN"))
                 || (*prefix == "RENAME TO" && trimmed.contains("RENAME TO"));
             if forbidden {
                 // Truncate excerpt.
@@ -291,7 +328,8 @@ proptest! {
         let idx = rng.random_range(0..corpus.len());
         let (name, raw) = &corpus[idx];
 
-        let canonical = normalize_for_scan(raw);
+        let path = format!("migrations/d1/{name}");
+        let canonical = normalize_for_migration(raw, Some(&path));
         let violations = find_violations(&canonical);
         prop_assert!(
             violations.is_empty(),
@@ -473,6 +511,43 @@ fn adr_waiver_is_line_local_and_requires_a_reason() {
     assert!(!find_violations(&normalize_for_scan(two_statement_bypass)).is_empty());
 }
 
+#[test]
+fn b071_trigger_replacement_waiver_is_name_and_file_scoped() {
+    let valid = concat!(
+        "DROP TRIGGER IF EXISTS trg_gc_purge_accounting_required; ",
+        "-- additive-allowed: ADR-0103 replace the deployed B-071 accounting guard\n",
+        "DROP TRIGGER IF EXISTS trg_gc_purge_finalize_accounting; ",
+        "-- additive-allowed: ADR-0103 replace the deployed B-071 accounting finalizer"
+    );
+    let target = normalize_for_migration(valid, Some(B071_TRIGGER_REPLACEMENT_FILE));
+    assert!(find_violations(&target).is_empty());
+
+    let wrong_file = normalize_for_migration(valid, Some("migrations/d1/0144_other.sql"));
+    assert!(!find_violations(&wrong_file).is_empty());
+
+    let wrong_trigger = valid.replace(
+        "trg_gc_purge_accounting_required",
+        "trg_gc_purge_other_trigger",
+    );
+    let wrong_name = normalize_for_migration(&wrong_trigger, Some(B071_TRIGGER_REPLACEMENT_FILE));
+    assert!(!find_violations(&wrong_name).is_empty());
+
+    for destructive in [
+        "DROP TABLE tenant; -- additive-allowed: ADR-0103 unrelated drop",
+        "DROP INDEX IF EXISTS idx_unrelated; -- additive-allowed: ADR-0103 unrelated drop",
+        "ALTER TABLE tenant DROP COLUMN name; -- additive-allowed: ADR-0103 unrelated drop",
+        "DROP TRIGGER IF EXISTS trg_unrelated; -- additive-allowed: ADR-0103 unrelated trigger",
+        "DROP\nTRIGGER IF EXISTS trg_unrelated; -- additive-allowed: ADR-0103 multiline trigger",
+    ] {
+        let mutation = format!("{valid}\n{destructive}");
+        let canonical = normalize_for_migration(&mutation, Some(B071_TRIGGER_REPLACEMENT_FILE));
+        assert!(
+            !find_violations(&canonical).is_empty(),
+            "out-of-scope migration replacement was accepted: {destructive}"
+        );
+    }
+}
+
 /// Unit canary: comment-aware lexer prevents false positives from
 /// `-- DROP this later` and `/* DROP */` fragments.
 #[test]
@@ -500,13 +575,8 @@ fn forbidden_detector_catches_real_drop_column() {
     let sql = "ALTER TABLE foo DROP COLUMN bar;";
     let canon = normalize_for_scan(sql);
     let viol = find_violations(&canon);
-    // Our detector matches the LEADING statement keyword; ALTER TABLE ...
-    // DROP COLUMN does not start with "DROP COLUMN" — it starts with
-    // "ALTER TABLE". To catch this we'd need a richer lexer. Document
-    // the gap explicitly: the property covers leading-keyword DROPs
-    // (the dominant pattern in real-world non-additive migrations) and
-    // is silent on the deep-substring form. The runtime test
-    // `every_migration_replays_against_in_memory_sqlite` catches the
-    // semantic regression via FK + ordering checks.
-    let _ = viol; // tolerate: this canary documents the known gap.
+    assert!(
+        !viol.is_empty(),
+        "ALTER TABLE ... DROP COLUMN was not detected"
+    );
 }
