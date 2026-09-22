@@ -129,7 +129,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn operation_pin_keeps_rotation_snapshot_and_rejects_cross_tenant_reuse() {
         let gate = Arc::new(PinGate {
             config: Mutex::new(active_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
