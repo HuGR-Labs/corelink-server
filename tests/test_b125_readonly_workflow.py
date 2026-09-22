@@ -157,6 +157,33 @@ def test_failure_receipt_is_bounded_data_free_and_keeps_provider_shape(tmp_path:
     assert len(json.dumps(recorded)) < 2000
 
 
+def test_singular_wrangler_error_is_classified_without_retaining_message() -> None:
+    diagnostic = make_provider_diagnostic(
+        "hourly",
+        1,
+        json.dumps({"error": {"code": 7500, "message": "SQLITE_ERROR: private query data"}}),
+        "",
+    )
+    validate_provider_diagnostic(diagnostic)
+    assert diagnostic["error_class"] == "SQLITE_ERROR"
+    assert diagnostic["provider_code"] == "7500"
+    assert diagnostic["schema_shape"]["root_keys"] == ["error"]
+    assert diagnostic["schema_shape"]["error_entry_keys"] == ["code", "message"]
+    assert "private query data" not in json.dumps(diagnostic)
+
+
+def test_singular_string_error_keeps_only_its_shape() -> None:
+    diagnostic = make_provider_diagnostic(
+        "hourly", 1, '{"error":"SQLITE_ERROR: private column name"}', ""
+    )
+    validate_provider_diagnostic(diagnostic)
+    assert diagnostic["error_class"] == "SQLITE_ERROR"
+    assert diagnostic["provider_code"] is None
+    assert diagnostic["schema_shape"]["error_entry_kind"] == "string"
+    assert diagnostic["schema_shape"]["error_entry_keys"] == []
+    assert "private column name" not in json.dumps(diagnostic)
+
+
 def test_diagnostic_mutations_that_add_values_or_identifiers_are_rejected() -> None:
     diagnostic = make_provider_diagnostic(
         "hourly",
