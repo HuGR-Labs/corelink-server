@@ -20,6 +20,7 @@
 
 [cell_aliases]
     config = prelude
+    fbsource = root
 
 [external_cells]
     prelude = bundled

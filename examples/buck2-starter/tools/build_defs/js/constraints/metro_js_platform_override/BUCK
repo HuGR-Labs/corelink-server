@@ -1,0 +1,38 @@
+# Public compatibility targets required by the bundled Buck2 2026-08-01
+# prelude.  These labels provide configuration values only; they do not
+# import Meta-internal build targets.
+
+constraint_setting(
+    name = "metro_js_platform_override",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "android",
+    constraint_setting = ":metro_js_platform_override",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "ios",
+    constraint_setting = ":metro_js_platform_override",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "macos",
+    constraint_setting = ":metro_js_platform_override",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "vr",
+    constraint_setting = ":metro_js_platform_override",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "windows",
+    constraint_setting = ":metro_js_platform_override",
+    visibility = ["PUBLIC"],
+)
