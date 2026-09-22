@@ -46,7 +46,7 @@
 import type { Env } from "../index.js";
 import { requireConsumerAuth } from "./internal_auth.js";
 import { mintScopedPat, MintGrant, canonicalizePatScope } from "./session_exchange.js";
-import { patRowKvKey } from "./pat_verify_cache.js";
+import { invalidatePatVerifyCache, patRowKvKey } from "./pat_verify_cache.js";
 
 /**
  * Default lifetime (seconds) of the rotated PAT when the OLD PAT's remaining
@@ -335,6 +335,7 @@ export async function handleAuthRotate(
     )
       .bind(Date.now(), patId)
       .run();
+    invalidatePatVerifyCache(oldRow.token_id);
     // The D1 revoke is authoritative; evict the edge positive row immediately
     // so auth_rotate has the same propagation guarantee as runner/customer
     // revokes. KV is only a latency cache, therefore deletion failure is logged
