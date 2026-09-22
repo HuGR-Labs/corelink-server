@@ -8,12 +8,16 @@ on:
       - ".github/workflows/issue-1650-real-integration-contract.yml"
       - ".github/workflows/real-ignored-harnesses.yml"
       - "scripts/run-real-ignored-harnesses.sh"
+      - "scripts/real-ignored-harness-manifest.json"
       - "scripts/verify_real_ignored_harnesses.py"
+      - "crates/corelink-pat/tests/emit_e2e_seed.rs"
       - "crates/corelink-container/src/routes/tier_select_store.rs"
       - "crates/corelink-container/src/storage/d1_http.rs"
       - "crates/corelink-container/src/storage/d1_audit_sink/tests_phase_attribution.rs"
       - "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs"
       - "crates/corelink-container/src/storage/r2_s3_parts/tests_2.rs"
+      - "crates/corelink-stripe-real/tests/live_integration.rs"
+      - "crates/corelink-audit-chain/tests/neon_shadow_real.rs"
 
 permissions:
   contents: read

@@ -89,6 +89,16 @@ SOURCE_SHA256 = {
     "crates/corelink-audit-chain/tests/neon_shadow_real.rs": "dfd22738e96d82695b40addf64b3dbaf611fbd8026346f0b4e33b28f10fe79eb",
 }
 
+CONTRACT_TRIGGER_INPUTS = (
+    ".github/workflows/issue-1650-real-integration-contract.yml",
+    ".github/workflows/real-ignored-harnesses.yml",
+    "scripts/run-real-ignored-harnesses.sh",
+    "scripts/real-ignored-harness-manifest.json",
+    "scripts/verify_real_ignored_harnesses.py",
+    "crates/corelink-pat/tests/emit_e2e_seed.rs",
+    *SOURCE_SHA256.keys(),
+)
+
 
 def code_lines(text: str) -> list[str]:
     """Return non-blank, non-comment lines.
@@ -573,6 +583,10 @@ def assert_hosted_contract_workflow(workflow: str) -> None:
         fail("credentialless contract checkout must not persist credentials")
     if "python3 scripts/verify_real_ignored_harnesses.py" not in active:
         fail("credentialless contract does not run the static/mutation verifier")
+    triggered_paths = set(re.findall(r'(?m)^\s{6}- "([^\"]+)"\s*$', active))
+    missing = [path for path in CONTRACT_TRIGGER_INPUTS if path not in triggered_paths]
+    if missing:
+        fail(f"credentialless contract PR path filter omits verifier inputs: {', '.join(missing)}")
 
 
 def expect_rejected(label: str, workflow: str, runner: str) -> None:
@@ -615,6 +629,17 @@ def mutation_checks(workflow: str, runner: str, contract_workflow: str) -> None:
         pass
     else:
         fail("credentialed hosted contract mutation was accepted")
+    for path in CONTRACT_TRIGGER_INPUTS:
+        path_entry = f'      - "{path}"\n'
+        if path_entry not in contract_workflow:
+            fail(f"path-trigger mutation setup is missing input: {path}")
+        mutated = contract_workflow.replace(path_entry, "", 1)
+        try:
+            assert_hosted_contract_workflow(mutated)
+        except AssertionError:
+            pass
+        else:
+            fail(f"PR path-filter omission was accepted for verifier input: {path}")
     # Comment bait: a commented-out command is not executable coverage.
     target = REQUIRED_D1[0]
     expect_rejected("commented target", workflow, runner.replace(f"run_cargo d1 {target} --package corelink-server --lib", f"# run_cargo d1 {target} --package corelink-server --lib", 1))
