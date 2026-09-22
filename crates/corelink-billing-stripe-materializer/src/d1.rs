@@ -354,9 +354,13 @@ pub const SQL_READ_RUNNER_ENTITLEMENT_FENCE: &str =
 /// order, so no local clock or synthesized authority participates.
 #[derive(Clone, Copy, Debug)]
 pub struct RunnerEntitlementRevision<'a> {
+    /// Immutable provider subscription identity.
     pub subscription_id: &'a str,
+    /// Provider subscription creation time in milliseconds.
     pub subscription_created_at_ms: u64,
+    /// Stripe event creation time in milliseconds.
     pub stripe_event_created_at_ms: u64,
+    /// Immutable Stripe event identity, the final tie-breaker.
     pub stripe_event_id: &'a str,
 }
 
