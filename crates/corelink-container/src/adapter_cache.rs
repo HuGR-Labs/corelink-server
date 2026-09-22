@@ -620,6 +620,20 @@ mod tests {
             "ostore ({store_us} us) is far below the handler's 30 ms — the \
              blocking ledger bridge stopped covering the R2 write"
         );
+        assert_eq!(
+            ledger.recordings_for_test(crate::origin_timing::Phase::Store),
+            1,
+            "the blocking write must close one shared Store window"
+        );
+        let header = ledger.server_timing_value_with(wall_us, true);
+        assert!(
+            header.contains("ostore;dur="),
+            "write header omitted ostore: {header}"
+        );
+        assert!(
+            header.contains("oaccounting;dur="),
+            "write header omitted the URL-map accounting phase: {header}"
+        );
     }
 
     /// The read-side `spawn_blocking` seam must carry the ledger too. This is
