@@ -1,0 +1,227 @@
+name: B-125 audit throughput read-only evidence
+
+# Refs #1668. B-125 remains open until a fresh, reproducible production read proves the
+# post-repair drain behaviour. This lane only observes D1; it never deploys,
+# mutates D1, or edits the issue/campaign.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "run-b125-read-only" to authorize the bounded read'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b125-audit-throughput-read-only
+  cancel-in-progress: false
+
+jobs:
+  read-only-evidence:
+    name: B-125 six-hour D1 read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node for the pinned Wrangler CLI
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Run the allowlisted SELECT-only read and write a receipt
+        id: read
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          BILLING_D1_DATABASE_ID: ${{ secrets.CORELINK_BILLING_D1_DATABASE_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          receipt="artifacts/b125-audit-throughput-receipt.json"
+          raw_dir="$RUNNER_TEMP/b125-d1"
+          mkdir -p "$raw_dir"
+
+          # Keep a non-empty failure receipt even when credentials or the
+          # canonical database identity are unavailable.
+          python3 - "$receipt" <<'PY'
+          import json, sys
+          from datetime import datetime, timezone
+          path = sys.argv[1]
+          payload = {
+              "schema_version": 1,
+              "issue": 1668,
+              "backlog_id": "B-125",
+              "captured_at": datetime.now(timezone.utc).isoformat(),
+              "window_hours": 6,
+              "queries": [],
+              "valid": False,
+              "failure_reasons": ["read_not_started"],
+          }
+          with open(path, "w", encoding="utf-8") as stream:
+              json.dump(payload, stream, indent=2, sort_keys=True)
+              stream.write("\n")
+          PY
+
+          fail_closed() {
+            reason="$1"
+            python3 - "$receipt" "$reason" <<'PY'
+          import json, sys
+          path, reason = sys.argv[1:]
+          with open(path, encoding="utf-8") as stream:
+              payload = json.load(stream)
+          payload["valid"] = False
+          reasons = payload.setdefault("failure_reasons", [])
+          if reason not in reasons:
+              reasons.append(reason)
+          with open(path, "w", encoding="utf-8") as stream:
+              json.dump(payload, stream, indent=2, sort_keys=True)
+              stream.write("\n")
+          PY
+            echo "::error::B-125 read-only lane failed closed: $reason"
+            exit 1
+          }
+
+          [[ "$CONFIRM" == "run-b125-read-only" ]] || fail_closed "confirmation_mismatch"
+          [[ -n "${CF_ACCOUNT_ID:-}" ]] || fail_closed "CF_ACCOUNT_ID_missing"
+          [[ -n "${CF_API_TOKEN:-}" ]] || fail_closed "CF_API_TOKEN_missing"
+          echo "::add-mask::${CF_API_TOKEN}"
+
+          # The canonical production UUID is source-derived. If the optional
+          # repo secret is present it must match; a mismatch can never select a
+          # different database. If source derivation ever disappears, the
+          # secret becomes mandatory and this lane stays red until restored.
+          canonical_ids="$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+          text = Path("apps/signup-worker/wrangler.toml").read_text(encoding="utf-8")
+          ids = sorted(set(re.findall(r'^database_id\s*=\s*"([0-9a-f-]{36})"\s*$', text, re.M)))
+          if len(ids) != 1:
+              raise SystemExit("expected exactly one canonical signup-worker D1 UUID")
+          print(ids[0])
+          PY
+          )" || fail_closed "canonical_database_uuid_not_derived"
+          if [[ -n "${BILLING_D1_DATABASE_ID:-}" && "$BILLING_D1_DATABASE_ID" != "$canonical_ids" ]]; then
+            fail_closed "database_secret_does_not_match_canonical_uuid"
+          fi
+          D1_DATABASE_ID="${BILLING_D1_DATABASE_ID:-$canonical_ids}"
+          [[ "$D1_DATABASE_ID" =~ ^[0-9a-f-]{36}$ ]] || fail_closed "database_uuid_invalid"
+
+          corepack enable
+          export CLOUDFLARE_API_TOKEN="$CF_API_TOKEN"
+          export CLOUDFLARE_ACCOUNT_ID="$CF_ACCOUNT_ID"
+
+          # Every query is fixed here. The guards below reject any accidental
+          # non-SELECT token, semicolon, or second statement before Wrangler.
+          declare -A SQL
+          SQL[population]='SELECT COUNT(*) AS total_rows, SUM(CASE WHEN emitted_at IS NOT NULL THEN 1 ELSE 0 END) AS sealed_rows, SUM(CASE WHEN emitted_at IS NULL THEN 1 ELSE 0 END) AS unsealed_rows, MAX(CASE WHEN emitted_at IS NULL THEN (strftime("%s", "now") * 1000) - enqueued_at ELSE 0 END) AS oldest_unsealed_age_ms FROM audit_outbox'
+          SQL[hourly]='SELECT strftime("%Y-%m-%dT%H:00:00Z", (strftime("%s", "now") - (b.hour_offset + 1) * 3600), "unixepoch") AS window_start_utc, strftime("%Y-%m-%dT%H:00:00Z", (strftime("%s", "now") - b.hour_offset * 3600), "unixepoch") AS window_end_utc, (SELECT COUNT(*) FROM audit_outbox o WHERE o.enqueued_at >= (strftime("%s", "now") - (b.hour_offset + 1) * 3600) * 1000 AND o.enqueued_at < (strftime("%s", "now") - b.hour_offset * 3600) * 1000) AS arrivals, (SELECT COUNT(*) FROM audit_outbox o WHERE o.emitted_at >= (strftime("%s", "now") - (b.hour_offset + 1) * 3600) * 1000 AND o.emitted_at < (strftime("%s", "now") - b.hour_offset * 3600) * 1000) AS sealed_rows FROM (SELECT 0 AS hour_offset UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) b ORDER BY b.hour_offset DESC'
+          SQL[latency]='SELECT COUNT(*) AS valid_latency_rows, MIN(emitted_at - enqueued_at) AS min_latency_ms, AVG(emitted_at - enqueued_at) AS mean_latency_ms, MAX(emitted_at - enqueued_at) AS max_latency_ms, (SELECT latency_ms FROM (SELECT emitted_at - enqueued_at AS latency_ms, ROW_NUMBER() OVER (ORDER BY emitted_at - enqueued_at) AS row_number, COUNT(*) OVER () AS sample_size FROM audit_outbox WHERE emitted_at IS NOT NULL AND enqueued_at >= (strftime("%s", "now") - 21600) * 1000 AND emitted_at >= enqueued_at) ranked WHERE row_number = CAST((sample_size + 1) / 2 AS INTEGER)) AS median_latency_ms, (SELECT latency_ms FROM (SELECT emitted_at - enqueued_at AS latency_ms, ROW_NUMBER() OVER (ORDER BY emitted_at - enqueued_at) AS row_number, COUNT(*) OVER () AS sample_size FROM audit_outbox WHERE emitted_at IS NOT NULL AND enqueued_at >= (strftime("%s", "now") - 21600) * 1000 AND emitted_at >= enqueued_at) ranked WHERE row_number = CAST((sample_size * 90 + 99) / 100 AS INTEGER)) AS p90_latency_ms FROM audit_outbox WHERE emitted_at IS NOT NULL AND enqueued_at >= (strftime("%s", "now") - 21600) * 1000 AND emitted_at >= enqueued_at'
+          SQL[heads]='SELECT COUNT(*) AS chain_heads, SUM(CASE WHEN head_signature IS NOT NULL AND length(trim(head_signature)) > 0 THEN 1 ELSE 0 END) AS signed_heads FROM audit_chain_head'
+
+          run_query() {
+            id="$1"
+            sql="${SQL[$id]:-}"
+            [[ -n "$sql" ]] || fail_closed "query_not_allowlisted_${id}"
+            [[ "$sql" =~ ^[[:space:]]*SELECT[[:space:]] ]] || fail_closed "query_not_select_${id}"
+            [[ "$sql" != *';'* ]] || fail_closed "query_contains_statement_separator_${id}"
+            [[ ! "$sql" =~ (INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|CREATE|PRAGMA|ATTACH|DETACH) ]] || fail_closed "query_contains_write_or_pragma_${id}"
+            raw="$raw_dir/$id.json"
+            set +e
+            CI=1 pnpm --silent dlx wrangler@4.111.0 d1 execute "$D1_DATABASE_ID" --remote --command "$sql" --json >"$raw"
+            status=$?
+            set -e
+            [[ "$status" -eq 0 ]] || fail_closed "wrangler_query_failed_${id}_${status}"
+            [[ -s "$raw" ]] || fail_closed "empty_wrangler_response_${id}"
+            if ! python3 - "$receipt" "$raw" "$id" "$sql" <<'PY'
+          import hashlib, json, sys
+          receipt_path, raw_path, query_id, sql = sys.argv[1:]
+          with open(raw_path, encoding="utf-8") as stream:
+              document = json.load(stream)
+          blocks = document if isinstance(document, list) else document.get("result", document.get("results", []))
+          if isinstance(blocks, dict):
+              blocks = [blocks]
+          if not isinstance(blocks, list) or not blocks:
+              raise SystemExit(f"{query_id}: missing D1 result blocks")
+          rows = []
+          for block in blocks:
+              if not isinstance(block, dict) or block.get("success") is False:
+                  raise SystemExit(f"{query_id}: D1 result was unsuccessful")
+              rows.extend(block.get("results") or [])
+          if not rows:
+              raise SystemExit(f"{query_id}: empty D1 result set")
+          with open(receipt_path, encoding="utf-8") as stream:
+              receipt = json.load(stream)
+          receipt["queries"].append({
+              "id": query_id,
+              "sql_sha256": hashlib.sha256(sql.encode()).hexdigest(),
+              "rows": rows,
+          })
+          with open(receipt_path, "w", encoding="utf-8") as stream:
+              json.dump(receipt, stream, indent=2, sort_keys=True)
+              stream.write("\n")
+          PY
+            then
+              fail_closed "invalid_d1_response_${id}"
+            fi
+          }
+
+          for query_id in population hourly latency heads; do
+            run_query "$query_id"
+          done
+
+          python3 - "$receipt" <<'PY'
+          import json, sys
+          from datetime import datetime, timezone
+          path = sys.argv[1]
+          with open(path, encoding="utf-8") as stream:
+              receipt = json.load(stream)
+          by_id = {query["id"]: query["rows"] for query in receipt["queries"]}
+          if any(len(by_id.get(key, [])) == 0 for key in ("population", "hourly", "latency", "heads")):
+              raise SystemExit("one or more required query results are empty")
+          hourly = by_id["hourly"]
+          if len(hourly) != 6:
+              raise SystemExit(f"expected six hourly rows, got {len(hourly)}")
+          population = by_id["population"][0]
+          latency = by_id["latency"][0]
+          heads = by_id["heads"][0]
+          failures = []
+          if int(population.get("total_rows") or 0) <= 0:
+              failures.append("population_control_empty")
+          if int(heads.get("chain_heads") or 0) <= 0:
+              failures.append("chain_head_control_empty")
+          if int(heads.get("signed_heads") or 0) != int(heads.get("chain_heads") or 0):
+              failures.append("unsigned_chain_head_detected")
+          if sum(int(row.get("arrivals") or 0) for row in hourly) <= 0:
+              failures.append("six_hour_window_has_no_arrivals")
+          if sum(int(row.get("sealed_rows") or 0) for row in hourly) <= 0:
+              failures.append("six_hour_window_has_no_seals")
+          if int(latency.get("valid_latency_rows") or 0) <= 0:
+              failures.append("six_hour_latency_sample_empty")
+          receipt["captured_at"] = datetime.now(timezone.utc).isoformat()
+          receipt["window"] = {"hours": 6, "basis": "SQLite now, six complete preceding UTC buckets"}
+          receipt["measurements"] = {"hourly": hourly, "population": population, "latency": latency, "chain_heads": heads}
+          receipt["failure_reasons"] = failures
+          receipt["valid"] = not failures
+          with open(path, "w", encoding="utf-8") as stream:
+              json.dump(receipt, stream, indent=2, sort_keys=True)
+              stream.write("\n")
+          if failures:
+              raise SystemExit(";".join(failures))
+          PY
+
+      - name: Publish the non-empty redacted receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b125-audit-throughput-read-only-${{ github.run_id }}
+          path: artifacts/b125-audit-throughput-receipt.json
+          if-no-files-found: error
+          retention-days: 30

@@ -2,8 +2,8 @@
   "schema_version": 1,
   "receipt_type": "b098_ga_release_governance_blocker",
   "backlog_id": "B-098",
-  "captured_at": "2026-09-09T15:13:33Z",
-  "checkpoint_sha": "404e17ef1dc7d205da97e65c6dc18f1225452405",
+  "captured_at": "2026-09-22T05:05:26Z",
+  "checkpoint_sha": "1126e25d294ae16e73efa70004642e34f223285d",
   "status": "BLOCKED",
   "release_tag": "v1.0.0-GA",
   "repository_hygiene": {
@@ -80,12 +80,12 @@
   ],
   "census_binding": {
     "path": "docs/handoff/2026-09-09-b098-ops-authority-census.md",
-    "sha256": "32c4ec73090d306f5c3b40a378f88571dc0a2c55d63c9929ad62902f29e42e47",
-    "checkpoint_sha": "404e17ef1dc7d205da97e65c6dc18f1225452405",
+    "sha256": "021196e75aca0396a36ba66b0ea6ef373f877900337e629bda791bdcdc0f14ca",
+    "checkpoint_sha": "1126e25d294ae16e73efa70004642e34f223285d",
     "provenance": "AUTHORED",
     "capture_scope": "current-tree",
     "remote_status": "ABSENT",
-    "timestamp": "2026-09-09T15:13:33Z"
+    "timestamp": "2026-09-22T05:05:26Z"
   },
   "non_claims": [
     "No independent Ops signoff exists.",

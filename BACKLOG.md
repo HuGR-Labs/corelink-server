@@ -11988,11 +11988,12 @@ não apagadas), 87 remotas, e a seção `[Unreleased]` do CHANGELOG com 9.911 li
 uma release jamais tenha sido cortada — zero tags semver, versão do workspace em `0.1.0`.
 Isto explica parte de [B-091]: a lane `cosign-sign` dispara em tag `v*`, e nunca houve uma.
 
-Itens menores que o mandato de impecabilidade cobre: o `CLAUDE.md` diz "~73 crates" (são
-75), "160 conceitos OKF" (são 165) e "485 specs" (são 486); a conta `gmhelmold` tem token
-inválido no keyring e está marcada como ativa no `gh`; e `corelink-runbook-tracker` é o
-único crate cujos lints copiados divergiram do workspace — faltam `print_stdout` e
-`print_stderr`.
+Itens menores que o mandato de impecabilidade cobre: a conta `gmhelmold` tem token
+inválido no keyring e está marcada como ativa no `gh`; e `corelink-runbook-tracker` era o
+único crate cujos lints copiados divergiam do workspace — faltavam `print_stdout` e
+`print_stderr`. A fonte dinâmica atual (verificada em 2026-09-22) reporta 95 pacotes Rust,
+75 diretórios de crate, 170 conceitos OKF e 481 specs com schema mais 11 somente com YAML
+(492 no total); esses valores estão documentados em `CLAUDE.md` e vinculados ao verificador.
 
 ```backlog
 id: B-098
@@ -12013,9 +12014,11 @@ verify-means: |
   placeholders. O cut script exige SHA completo, framework FROZEN assinado,
   execução real do cutover, readback de deploy e dois commits de sign-off com
   identidades e chaves distintas. Qualquer fonte ausente, saída malformada,
-  drift, tag local/lightweight/unsigned ou evidência stale falha fechado. A
-  ausência esperada da tag mantém o item aberto e retorna exit 0, para que o
-  backlog continue verificável.
+  drift, tag local/lightweight/unsigned ou evidência stale falha fechado. O modo padrão
+  é determinístico e avalia somente a árvore versionada; `--verify-origin` acrescenta a
+  leitura bounded de `origin` e aplica a validade temporal do recibo de ausência. A
+  ausência esperada da tag mantém o item aberto e retorna exit 0, para que o backlog
+  continue verificável.
 
   Deliberadamente NÃO gateia as worktrees em `/private/tmp` nem a contagem de branches: são
   estado da máquina do desenvolvedor, não do repositório, e um `verify` que os medisse
@@ -12024,7 +12027,7 @@ verify-means: |
 
   O que este comando decide é a parte que vive no repositório e é verificável em qualquer
   clone. A parte das worktrees exige ação humana na máquina e está registrada acima.
-last-verified: 2026-09-09
+last-verified: 2026-09-22
 ```
 
 ### B-099 — o `CODEOWNERS` atribuía revisão a dez times que o próprio arquivo admitia não existirem — FECHADO, e a reverificação CONFIRMOU zero times

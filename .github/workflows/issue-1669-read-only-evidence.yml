@@ -1,0 +1,90 @@
+name: issue-1669 read-only residency evidence
+
+# Manual owner lane for #1669.  It runs only aggregate SELECT statements from
+# scripts/probe_i1669_readonly.py.  It never performs a backfill, migration,
+# DSR operation, audit rewrite, deploy, or issue mutation.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "run-1669-read-only" to authorize this one read'
+        required: true
+        type: string
+      cloudflare_account_id:
+        description: "Explicit 32-hex Cloudflare account ID"
+        required: true
+        type: string
+      d1_database_id:
+        description: "Explicit production D1 UUID"
+        required: true
+        type: string
+      no_backfill_ack:
+        description: 'Type "no-backfill-no-write" to confirm the lane is read-only'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1669-read-only-evidence
+  cancel-in-progress: false
+
+jobs:
+  readback:
+    name: "issue #1669 bounded production readback"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Require the protected manual read contract
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          ACCOUNT_ID: ${{ inputs.cloudflare_account_id }}
+          DATABASE_ID: ${{ inputs.d1_database_id }}
+          NO_BACKFILL_ACK: ${{ inputs.no_backfill_ack }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REPOSITORY" = HuGR-dev/corelink-server
+          test "$GITHUB_REF" = refs/heads/main
+          test "$CONFIRM" = run-1669-read-only
+          test "$NO_BACKFILL_ACK" = no-backfill-no-write
+          [[ "$ACCOUNT_ID" =~ ^[0-9a-fA-F]{32}$ ]]
+          [[ "$DATABASE_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]
+          mkdir -p artifacts
+
+      - name: Run allowlisted D1 read and emit redacted receipt
+        id: readback
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          ACCOUNT_ID: ${{ inputs.cloudflare_account_id }}
+          DATABASE_ID: ${{ inputs.d1_database_id }}
+        run: |
+          set +e
+          python3 scripts/probe_i1669_readonly.py \
+            --account-id "$ACCOUNT_ID" --database-id "$DATABASE_ID" \
+            --output artifacts/issue-1669-read-only-receipt.json \
+            2>&1 | tee "$RUNNER_TEMP/issue-1669-read-only.log"
+          status=${PIPESTATUS[0]}
+          if [[ -f artifacts/issue-1669-read-only-receipt.json ]]; then
+            sha256sum artifacts/issue-1669-read-only-receipt.json > artifacts/issue-1669-read-only-receipt.sha256
+          fi
+          exit "$status"
+
+      - name: Upload redacted receipt and bounded log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-1669-read-only-evidence-${{ github.run_id }}
+          path: |
+            artifacts/issue-1669-read-only-receipt.json
+            artifacts/issue-1669-read-only-receipt.sha256
+            ${{ runner.temp }}/issue-1669-read-only.log
+          if-no-files-found: error
+          retention-days: 30
