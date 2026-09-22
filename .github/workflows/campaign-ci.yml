@@ -644,14 +644,22 @@ jobs:
               'CONCURRENCIES = (4, 16, 64)',
               'TARGET = "https://staging.corelink.humangr.com"',
               'WEBDAV_METHODS = ("GET", "HEAD", "PROPFIND", "MKCOL", "PUT", "DELETE")',
+              'body = f"b103-diagnostic:{key}".encode("ascii")',
+              'request_body_sha256',
               '"put_only"',
               '"webdav_sequence"',
+              '"warm_sequence": ["PUT", "PUT", "PUT"]',
+              'warm_sequence = run_warm_sequence(',
+              '"warm_sequence": warm_sequence',
+              'int(warm_sequence["failed_requests"])',
           )
           for marker in required:
               if marker not in source:
                   raise SystemExit(f"missing B-103 contract marker: {marker}")
           if not any(isinstance(node, ast.FunctionDef) and node.name == "run_arm" for node in tree.body):
               raise SystemExit("missing B-103 run_arm contract")
+          if not any(isinstance(node, ast.FunctionDef) and node.name == "run_warm_sequence" for node in tree.body):
+              raise SystemExit("missing B-103 warm sequence contract")
           if not any(isinstance(node, ast.FunctionDef) and node.name == "request" for node in tree.body):
               raise SystemExit("missing B-103 request contract")
           print("B-103 reproducer dry contract: PASS (no staging requests made)")
