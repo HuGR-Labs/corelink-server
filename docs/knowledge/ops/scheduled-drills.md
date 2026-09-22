@@ -44,7 +44,7 @@ payload carries the runbook's non-secret PagerDuty contract:
 semantic `synthetic_severity=sev2_synthetic`, a four-week region selector, and
 the `PAT-CORRELATION-ID-001` correlation prefix. Weeks 0–2 are immediate
 handoffs. Week 3 (`boundary_handoff`) is deliberately not emitted at the
-the trigger time: the payload retains the actual `scheduled_at_ms`, sets
+trigger time: the payload retains the actual `scheduled_at_ms`, sets
 `delivery_mode=deferred`, and sets `emit_at_ms` to the following Sunday at
 23:59:00 UTC. A receiver must schedule that effective timestamp and must not
 send the PagerDuty event immediately. The receiver owns the actual
