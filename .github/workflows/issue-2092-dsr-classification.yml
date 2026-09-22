@@ -4,9 +4,12 @@ on:
   pull_request:
     paths:
       - '.github/workflows/issue-2092-dsr-classification.yml'
+      - 'crates/corelink-container/src/main_tests.rs'
       - 'crates/corelink-container/src/routes/dsr/adapter_d1.rs'
+      - 'crates/corelink-container/src/routes/dsr/adapter_d1/**'
       - 'crates/corelink-container/src/routes/dsr/adapter_d1_registry.rs'
       - 'crates/corelink-container/src/routes/dsr/adapter_d1_tests.rs'
+      - 'scripts/verify_b126_t1_refactor.py'
 
 permissions:
   contents: read
@@ -36,6 +39,9 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Run B-126 line-cap and mutation gate
+        run: python3 -S scripts/verify_b126_t1_refactor.py --self-test
+
       - name: Run DSR classification and adversarial contracts
         shell: bash
         run: |
@@ -44,3 +50,6 @@ jobs:
           cargo test --locked -p corelink-server --lib \
             routes::dsr::adapter_d1::tests:: 2>&1 | tee "${log}"
           grep -Eq 'test result: ok\. [1-9][0-9]* passed;' "${log}"
+
+      - name: Run B-126 source-size regression tests
+        run: cargo test --locked -p corelink-server --bin corelink-server b126_t1_
