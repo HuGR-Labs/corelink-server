@@ -1,33 +1,36 @@
 {
-  "schema_version": 1,
-  "captured_at": "2026-09-09T04:30:00Z",
+  "schema_version": 2,
+  "captured_at": "2026-09-22T00:00:00Z",
+  "evidence_state": "BLOCKED",
   "tenant_redacted": "NOT_PROVISIONED",
-  "image_digest": null,
-  "kms_provider": "aws",
-  "check_access": "BLOCKED",
-  "activation": {
-    "status": "NOT_EXECUTED",
-    "audit_event_reference": null,
-    "completed_at": null,
-    "blocker": "No protected test tenant, AWS CMK, least-privilege role, or operator credential was provisioned."
+  "runtime": {
+    "provider": "aws",
+    "image_digest": null,
+    "execution_region": null
   },
-  "cas_ac_round_trip": {
-    "status": "NOT_EXECUTED",
-    "audit_event_reference": null,
-    "completed_at": null,
-    "blocker": "Activation did not run, so encrypted CAS/AC round-trip evidence cannot be claimed."
+  "external_prerequisites": {
+    "isolated_test_tenant": "MISSING",
+    "customer_controlled_cmk": "MISSING",
+    "least_privilege_runtime_identity": "MISSING",
+    "protected_operator_authorization": "MISSING",
+    "durable_audit_receipt_sink": "MISSING"
   },
-  "revocation": {
-    "status": "NOT_EXECUTED",
-    "audit_event_reference": null,
-    "completed_at": null,
-    "blocker": "The protected runtime and activated test tenant required for POST /v1/admin/byok/deactivate were absent."
+  "custody_policy": {
+    "create_or_import": "customer_controlled",
+    "deletion_scheduling": "customer_controlled",
+    "service_permissions": "wrap_unwrap_check_access_only"
   },
-  "run_loop": {
-    "status": "NOT_EXECUTED",
-    "audit_event_reference": null,
-    "completed_at": null,
-    "blocker": "No real KMS lifecycle was started; the local revocation wiring check is not a runtime transition receipt."
+  "lifecycle": {
+    "customer_create_or_import": {"status": "NOT_EXECUTED", "receipt_reference": null, "completed_at": null, "blocker": "Customer-controlled CMK test resource has not been created or imported."},
+    "provider_access": {"status": "NOT_EXECUTED", "receipt_reference": null, "completed_at": null, "blocker": "No least-privilege runtime identity can call the provider check_access boundary."},
+    "wrap_unwrap": {"status": "NOT_EXECUTED", "receipt_reference": null, "completed_at": null, "blocker": "No protected test tenant or CMK-wrapped TCS exists for an envelope round trip."},
+    "revoke_restore": {"status": "NOT_EXECUTED", "receipt_reference": null, "completed_at": null, "blocker": "No activated disposable tenant exists for the revocation and restoration transition."},
+    "rotate": {"status": "NOT_EXECUTED", "receipt_reference": null, "completed_at": null, "blocker": "No disposable customer-controlled CMK version is provisioned for a rotation receipt."},
+    "deletion_schedule": {"status": "NOT_EXECUTED", "receipt_reference": null, "completed_at": null, "blocker": "No customer-owned disposable CMK exists for a deletion-scheduling receipt."},
+    "audit_receipts": {"status": "NOT_EXECUTED", "receipt_reference": null, "completed_at": null, "blocker": "No protected audit receipt sink is provisioned for the lifecycle correlation references."},
+    "tenant_isolation": {"status": "NOT_EXECUTED", "receipt_reference": null, "completed_at": null, "blocker": "No pair of isolated disposable tenants is provisioned for cross-tenant rejection evidence."},
+    "failure_retry": {"status": "NOT_EXECUTED", "receipt_reference": null, "completed_at": null, "blocker": "No protected runtime is available to capture a provider failure and bounded retry receipt."},
+    "residency": {"status": "NOT_EXECUTED", "receipt_reference": null, "completed_at": null, "blocker": "No region-pinned protected runtime and CMK are provisioned for residency evidence."}
   },
   "operator": "codex-focused-checks",
   "repository_checks": [

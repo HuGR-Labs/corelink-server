@@ -21,6 +21,7 @@ GIT_DIR = subprocess.run(
 INPUTS = (
     Path("BACKLOG.md"),
     Path("Dockerfile"),
+    Path("scripts/verify_b083_kms_lifecycle_evidence.py"),
     Path("scripts/verify_owner_action_packets.py"),
     Path("docs/handoff/2026-09-05-owner-action-packets-b008-b154.json"),
     # The owner-packet verifier validates the B-111 workflow/release-chain
