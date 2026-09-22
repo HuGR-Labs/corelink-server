@@ -8,9 +8,10 @@
 # again. It is fast (fmt needs no build) and its ONLY job is the format check,
 # so it stays green in seconds.
 #
-# `paths:` (CI cost diet 2026-08-01): the door stays welded, but ONLY because
-# the filter below is the COMPLETE input surface of `cargo fmt --all --check`,
-# not a convenient subset. That verdict depends on four inputs, all filtered:
+# The check runs for every pull request so the required status is always
+# reported, including for docs-only and workflow-only changes. The formatting
+# command still evaluates the whole workspace. Its verdict depends on four
+# inputs:
 #   1. Rust source                -> `**.rs`
 #   2. the rustfmt config         -> `**rustfmt.toml`  (also matches
 #                                    `.rustfmt.toml`, at any depth INCLUDING
@@ -21,15 +22,8 @@
 #                                 -> `**Cargo.toml`   (root + every member)
 #   4. the rustfmt VERSION, pinned by the toolchain file
 #                                 -> `rust-toolchain.toml`
-# NOTE the glob form: GitHub's `paths:` `**/` requires at least one slash, so
-# `**/*.rs` / `**/rustfmt.toml` / `**/Cargo.toml` would MISS a root-level file.
-# `**.rs` / `**rustfmt.toml` / `**Cargo.toml` is the form GitHub documents for
-# "any depth, including the root" — the same form `mutation-pr.yml` uses.
-# (The original "no paths: filter" wording was aimed at per-CRATE path lists,
-# which DO leave un-filtered Rust paths uncovered; this filter does not.)
-# What this buys: the job installs a Rust toolchain before it can run, so every
-# docs-only, spec-only or workflow-only PR was paying a hosted minute to
-# format-check a tree with no Rust in the diff (~110 runs/month measured).
+# The push trigger remains path-filtered because branch protection applies to
+# pull requests; every pull request must emit this required context.
 name: rustfmt
 
 on:
@@ -39,8 +33,7 @@ on:
   # `main` then sat rustfmt-red with nothing to report it. The next PR author
   # inherits a red gate they did not cause. This is not a cron (CLAUDE.md's rule
   # stands: formatting changes only when code changes), it is the push half of
-  # the same trigger, on the same `paths:` filter and the same self-hosted
-  # runner, so it costs nothing extra per merge.
+  # the same trigger, on the same `paths:` filter.
   push:
     branches: [main]
     paths:
@@ -50,9 +43,11 @@ on:
       - 'rust-toolchain.toml'
       - '.github/workflows/rustfmt.yml'
   pull_request:
+    # Keep the required context present for docs-only and workflow-only PRs.
     paths:
+      - '**'
       - '**.rs'
-      - '**rustfmt.toml'  # path-filter-allow: repo has no rustfmt.toml today; a future one MUST trigger fmt (see header note 2)
+      - '**rustfmt.toml'  # path-filter-allow: repo has no rustfmt.toml today; a future one MUST trigger fmt
       - '**Cargo.toml'
       - 'rust-toolchain.toml'
       - '.github/workflows/rustfmt.yml'
@@ -68,23 +63,11 @@ concurrency:
 jobs:
   fmt:
     name: cargo fmt --all --check
-    # Runner: `corelink` — the product's own ephemeral runner fabric (wave 2 of
-    # the migration off GitHub-hosted runners, 2026-08-03; wave 1 moved gitleaks
-    # + trivy). This lane is the cheapest possible tenant of that fabric: it
-    # never compiles, so it holds a box for well under a minute.
+    # Formatting is CPU-light and self-contained; use a hosted runner so the
+    # required context cannot queue behind the local runner fleet.
     #
-    # ⚠️ Ephemeral-runner reality — a box is minted per job and destroyed after,
-    # so nothing is cached between runs. This job cached nothing to begin with.
-    # The real exposure is the opposite one: if the fabric refuses or drops the
-    # spawn, the job sits QUEUED, and `timeout-minutes` does NOT apply to queued
-    # time (it starts counting once a job is RUNNING). GitHub cancels a job left
-    # queued for 24 h. That is a stall, not a false pass:
-    # `scripts/pre-merge-gate-check.sh` scores a pending check as ⛔ DO NOT MERGE
-    # (`order = {"fail": 0, "cancel": 0, "pending": 1, …}`), so a stranded box
-    # blocks the PR rather than waving it through.
-    runs-on: corelink
-    # Bound the job: a job with no timeout inherits GitHub's 360-min default, so
-    # one wedged run can burn 6h. Measured runs are under a minute; generous.
+    runs-on: ubuntu-latest
+    # Bound the job; measured runs are under a minute.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
