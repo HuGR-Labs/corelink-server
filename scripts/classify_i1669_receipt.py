@@ -9,6 +9,7 @@ import importlib.util
 import json
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,22 @@ SPEC.loader.exec_module(PROBE)
 
 class ReceiptError(ValueError):
     """The saved aggregate receipt cannot support a trustworthy classification."""
+
+
+RECEIPT_FIELDS = {
+    "schema",
+    "issue",
+    "mode",
+    "captured_at",
+    "account_id_sha256",
+    "database_id_sha256",
+    "queries",
+    "counts",
+    "status",
+    "reason",
+    "receipt_sha256",
+}
+QUERY_FIELDS = {"name", "query_sha256", "response_sha256", "row_count"}
 
 
 def _canonical(value: object) -> bytes:
@@ -47,6 +64,8 @@ def _nonnegative_fields(value: object, fields: tuple[str, ...], label: str) -> d
 def classify(receipt: object) -> dict[str, Any]:
     if not isinstance(receipt, dict):
         raise ReceiptError("receipt is not an object")
+    if set(receipt) != RECEIPT_FIELDS:
+        raise ReceiptError("receipt fields are missing or unexpected")
     unsigned = dict(receipt)
     digest = unsigned.pop("receipt_sha256", None)
     expected = hashlib.sha256(_canonical(unsigned)).hexdigest()
@@ -58,17 +77,38 @@ def classify(receipt: object) -> dict[str, Any]:
         or receipt.get("mode") != "production_read_only"
     ):
         raise ReceiptError("receipt schema, issue, or evidence mode is unexpected")
+    captured_at = receipt.get("captured_at")
+    try:
+        timestamp = datetime.fromisoformat(captured_at.replace("Z", "+00:00"))
+    except (AttributeError, ValueError) as exc:
+        raise ReceiptError("receipt capture time is malformed") from exc
+    if timestamp.tzinfo is None:
+        raise ReceiptError("receipt capture time must include a timezone")
+    for name in ("account_id_sha256", "database_id_sha256"):
+        if not isinstance(receipt[name], str) or not re.fullmatch(r"[0-9a-f]{64}", receipt[name]):
+            raise ReceiptError(f"receipt {name} is malformed")
 
     queries = receipt.get("queries")
     expected_names = tuple(PROBE.QUERY_ALLOWLIST)
     if not isinstance(queries, list) or len(queries) != len(expected_names):
         raise ReceiptError("receipt does not contain the complete query allowlist")
     for item, name in zip(queries, expected_names, strict=True):
-        if not isinstance(item, dict) or item.get("name") != name:
+        if not isinstance(item, dict) or set(item) != QUERY_FIELDS:
+            raise ReceiptError(f"receipt query {name} fields are missing or unexpected")
+        if item.get("name") != name:
             raise ReceiptError("receipt query order or name is unexpected")
         if item.get("query_sha256") != PROBE._hash(PROBE.QUERY_ALLOWLIST[name]):
             raise ReceiptError(f"receipt query hash does not match {name}")
-        if item.get("row_count") != 1:
+        if not isinstance(item.get("query_sha256"), str) or not re.fullmatch(
+            r"[0-9a-f]{64}", item["query_sha256"]
+        ):
+            raise ReceiptError(f"receipt query hash is malformed for {name}")
+        if not isinstance(item.get("response_sha256"), str) or not re.fullmatch(
+            r"[0-9a-f]{64}", item["response_sha256"]
+        ):
+            raise ReceiptError(f"receipt response hash is malformed for {name}")
+        row_count = item.get("row_count")
+        if isinstance(row_count, bool) or not isinstance(row_count, int) or row_count != 1:
             raise ReceiptError(f"receipt query {name} is not a single aggregate row")
 
     counts = receipt.get("counts")
@@ -80,6 +120,12 @@ def classify(receipt: object) -> dict[str, Any]:
         counts["backfill_completeness"], PROBE.BACKFILL_FIELDS, "backfill_completeness"
     )
     model = PROBE.RESIDENCY.Counts(**residency)
+    if (
+        model.orphan_tenants > model.orphan_rows
+        or model.erased_orphan_tenants > model.erased_orphan_rows
+        or model.unexplained_orphan_tenants > model.unexplained_orphan_rows
+    ):
+        raise ReceiptError("tenant counts exceed their orphan row counts")
     try:
         state, reason = PROBE.RESIDENCY.assess(model, environment="production")
     except PROBE.RESIDENCY.Indeterminate as exc:
@@ -156,7 +202,9 @@ def classify(receipt: object) -> dict[str, Any]:
         "source_status": state,
         "source_reason": reason,
         "classification_scope": "aggregate_counts_only",
-        "tenant_identity_dispositions_complete": model.unexplained_orphan_rows == 0,
+        "tenant_identity_dispositions_complete": (
+            model.unexplained_orphan_rows == 0 and model.unexplained_orphan_tenants == 0
+        ),
         "classes": classes,
         "overall_disposition": "COMPLIANT" if state == "COMPLIANT" else "KEEP_OPEN",
     }

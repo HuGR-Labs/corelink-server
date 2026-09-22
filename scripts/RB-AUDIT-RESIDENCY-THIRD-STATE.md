@@ -62,8 +62,9 @@ python3 scripts/classify_i1669_receipt.py \
   --sha256 /restricted/path/issue-1669-read-only-receipt.sha256
 ```
 
-The command validates the artifact checksum, receipt digest, exact query hashes, all three
-population partitions, and the fail-closed verdict. Its disjoint classes give
+The command validates the artifact checksum, receipt digest, exact receipt and
+query schemas, query hashes, tenant-to-row cardinalities, all three population
+partitions, and the fail-closed verdict. Its disjoint classes give
 every row an aggregate disposition: satisfied, violated, retained DSR orphan,
 unexplained orphan, other unevaluable customer row, valid `_public`, or invalid
 `_public`. Retained DSR orphans are marked **preserve**; unexplained orphans are

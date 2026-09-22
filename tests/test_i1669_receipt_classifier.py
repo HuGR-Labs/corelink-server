@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
-import json
 import sys
 import tempfile
 import unittest
@@ -78,6 +77,11 @@ def receipt_fixture() -> dict:
     return receipt
 
 
+def resign(receipt: dict) -> None:
+    receipt.pop("receipt_sha256", None)
+    receipt["receipt_sha256"] = classifier.PROBE._hash(receipt)
+
+
 class ReceiptClassifierTests(unittest.TestCase):
     def test_classifies_orphans_with_preserve_or_owner_hold_disposition(self) -> None:
         report = classifier.classify(receipt_fixture())
@@ -123,6 +127,62 @@ class ReceiptClassifierTests(unittest.TestCase):
             sidecar.write_text(f"{'0' * 64}  artifacts/{receipt.name}\n", encoding="utf-8")
             with self.assertRaisesRegex(classifier.ReceiptError, "artifact checksum"):
                 classifier.verify_sidecar(receipt, sidecar)
+
+    def test_rejects_redigested_row_identity_field(self) -> None:
+        receipt = receipt_fixture()
+        receipt["tenant_id"] = "private-row-identity"
+        resign(receipt)
+
+        with self.assertRaisesRegex(classifier.ReceiptError, "fields are missing or unexpected"):
+            classifier.classify(receipt)
+
+    def test_rejects_redigested_query_payload_field(self) -> None:
+        receipt = receipt_fixture()
+        receipt["queries"][0]["payload"] = {"email": "private-row-payload"}
+        resign(receipt)
+
+        with self.assertRaisesRegex(classifier.ReceiptError, "query residency fields"):
+            classifier.classify(receipt)
+
+    def test_rejects_boolean_aggregate_row_count(self) -> None:
+        receipt = receipt_fixture()
+        receipt["queries"][0]["row_count"] = True
+        resign(receipt)
+
+        with self.assertRaisesRegex(classifier.ReceiptError, "single aggregate row"):
+            classifier.classify(receipt)
+
+    def test_rejects_zero_orphan_rows_with_positive_tenant_count(self) -> None:
+        receipt = receipt_fixture()
+        counts = receipt["counts"]
+        residency = counts["residency"]
+        residency.update(
+            {
+                "satisfied_rows": 3,
+                "violated_rows": 1,
+                "unevaluable_rows": 0,
+                "customer_unevaluable_rows": 0,
+                "orphan_rows": 0,
+                "orphan_tenants": 1,
+                "erased_orphan_rows": 0,
+                "erased_orphan_tenants": 0,
+                "unexplained_orphan_rows": 0,
+                "unexplained_orphan_tenants": 1,
+                "weur_audit_rows": 0,
+                "weur_orphan_rows": 0,
+            }
+        )
+        counts["backfill_completeness"].update(
+            {"orphan_rows": 0, "joinable_rows": 4, "erased_orphan_rows": 0}
+        )
+        receipt["status"] = "COMPLIANT"
+        receipt["reason"] = (
+            "all customer rows are satisfied and all public rows meet the reserved-namespace contract"
+        )
+        resign(receipt)
+
+        with self.assertRaisesRegex(classifier.ReceiptError, "tenant counts exceed"):
+            classifier.classify(receipt)
 
 
 if __name__ == "__main__":
