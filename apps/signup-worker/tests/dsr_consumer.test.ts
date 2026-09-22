@@ -11,6 +11,8 @@ import {
   type QueueMessageBatch,
   type QueueMessage,
   type DsrDlqBody,
+  type DsrDlqReceipt,
+  type DsrDlqReceiptStore,
 } from "../src/webhooks/dsr_consumer.js";
 import type { DsrQueuedV1 } from "../src/webhooks/clerk.js";
 
@@ -149,13 +151,49 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     retry: ReturnType<typeof vi.fn<() => void>>;
   };
 
-  function fakeDlq(body: DsrDlqBody): MockQueueMessage<DsrDlqBody> {
-    return { body, ack: vi.fn<() => void>(), retry: vi.fn<() => void>() };
+  function fakeDlq(body: DsrDlqBody, attempts?: number): MockQueueMessage<DsrDlqBody> {
+    return { body, attempts, ack: vi.fn<() => void>(), retry: vi.fn<() => void>() };
   }
 
-  function pagedEnv(send: (message: unknown) => Promise<void>) {
+  class MemoryReceipts implements DsrDlqReceiptStore {
+    readonly rows = new Map<string, DsrDlqReceipt>();
+    readonly writes: Array<{ eventId: string; status: string }> = [];
+    failWrites = false;
+
+    async find(eventId: string): Promise<DsrDlqReceipt | null> {
+      return this.rows.get(eventId) ?? null;
+    }
+
+    async record(eventId: string, status: DsrDlqReceipt["status"]): Promise<void> {
+      if (this.failWrites) throw new Error("d1 unavailable");
+      this.writes.push({ eventId, status });
+      const prior = this.rows.get(eventId);
+      this.rows.set(eventId, {
+        status,
+        paging_claimed: status === "paging_retry" ? 0 : prior?.paging_claimed ?? 0,
+        requeue_claimed: prior?.requeue_claimed ?? 0,
+      });
+    }
+
+    async claimPaging(eventId: string): Promise<boolean> {
+      const prior = this.rows.get(eventId);
+      if (!prior || prior.paging_claimed) return false;
+      this.rows.set(eventId, { ...prior, status: "paging_claimed", paging_claimed: 1 });
+      return true;
+    }
+
+    async claimRequeue(eventId: string): Promise<boolean> {
+      const prior = this.rows.get(eventId);
+      if (!prior || prior.requeue_claimed) return false;
+      this.rows.set(eventId, { ...prior, status: "requeue_claimed", requeue_claimed: 1 });
+      return true;
+    }
+  }
+
+  function pagedEnv(send: (message: unknown) => Promise<void>, receipts = new MemoryReceipts()) {
     return {
       DSR_QUEUE: { send },
+      DSR_DLQ_RECEIPTS: receipts,
       PAGERDUTY_ROUTING_KEY: "routing-key",
       PAGERDUTY_FETCH: vi.fn<typeof fetch>(async () => new Response("accepted", { status: 202 })),
     };
@@ -180,13 +218,14 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     const alert = JSON.parse(String(errorCalls[0]?.[0])) as Record<string, unknown>;
     expect(alert).toMatchObject({
       event: "dsr.erasure.dead_letter",
-      event_id: "dsr-erasure-dlq:dlq-1:0",
       exhausted: true,
       action: "requeue_once",
       requeue_count: 1,
       paging_status: "delivered",
       paging_configured: true,
     });
+    expect(String(alert.event_id)).toMatch(/^dsr-erasure-dlq:[0-9a-f]{64}$/);
+    expect(JSON.stringify(alert)).not.toContain("dlq-1");
   });
 
   it("leaves an already requeued message dead and alerts without looping", async () => {
@@ -208,16 +247,16 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     expect(alert).toMatchObject({
       event: "dsr.erasure.dead_letter",
       severity: "critical",
-      event_id: "dsr-erasure-dlq:dlq-2:1",
       exhausted: true,
       requeue_count: 1,
       action: "left_dead",
       paging_status: "delivered",
       paging_configured: true,
     });
+    expect(String(alert.event_id)).toMatch(/^dsr-erasure-dlq:[0-9a-f]{64}$/);
   });
 
-  it("retains the DLQ copy when the bounded requeue fails", async () => {
+  it("records an ambiguous requeue instead of issuing a duplicate send", async () => {
     const send = vi.fn<(message: unknown) => Promise<void>>(async () => { throw new Error("routing_key=secret-provider-detail"); });
     const m = fakeDlq(msg("dlq-3"));
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -225,34 +264,68 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       await handleErasureDlqBatch({ messages: [m] }, pagedEnv(send));
       expect(String(error.mock.calls[0]?.[0])).not.toContain("secret-provider-detail");
       expect(JSON.parse(String(error.mock.calls[0]?.[0]))).toMatchObject({
-        action: "retry_requeue",
+        action: "requeue_ambiguous",
         requeue_error: "transport_error",
       });
     } finally {
       error.mockRestore();
     }
     expect(send).toHaveBeenCalledOnce();
-    expect(m.retry).toHaveBeenCalledOnce();
-    expect(m.ack).not.toHaveBeenCalled();
+    expect(m.ack).toHaveBeenCalledOnce();
+    expect(m.retry).not.toHaveBeenCalled();
   });
 
-  it("keeps a stable correlation id across redelivery of the same DLQ generation", async () => {
+  it("uses a durable receipt to prevent duplicate page and requeue side effects", async () => {
     const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
     const first = fakeDlq(msg("stable-id"));
     const second = fakeDlq(msg("stable-id"));
+    const receipts = new MemoryReceipts();
+    const env = pagedEnv(send, receipts);
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      await handleErasureDlqBatch({ messages: [first] }, pagedEnv(send));
-      await handleErasureDlqBatch({ messages: [second] }, pagedEnv(send));
+      await handleErasureDlqBatch({ messages: [first] }, env);
+      await handleErasureDlqBatch({ messages: [second] }, env);
     } finally {
       const alerts = error.mock.calls.map((call) => JSON.parse(String(call[0])) as Record<string, unknown>);
       error.mockRestore();
-      expect(alerts[0]?.event_id).toBe(alerts[1]?.event_id);
+      expect(alerts).toHaveLength(1);
     }
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledOnce();
+    expect(env.PAGERDUTY_FETCH).toHaveBeenCalledOnce();
+    expect(second.ack).toHaveBeenCalledOnce();
   });
 
-  it("fails closed when PagerDuty rejects the page and retains the DLQ copy", async () => {
+  it("does not page twice after a crash between the durable paging claim and provider receipt", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const receipts = new MemoryReceipts();
+    const first = fakeDlq(msg("paging-claim-crash"));
+    const second = fakeDlq(msg("paging-claim-crash"));
+    let calls = 0;
+    const pagerFetch = vi.fn<typeof fetch>(async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("provider timeout after send");
+      return new Response("accepted", { status: 202 });
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await handleErasureDlqBatch(
+        { messages: [first] },
+        { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: receipts, PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: pagerFetch },
+      );
+      await handleErasureDlqBatch(
+        { messages: [second] },
+        { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: receipts, PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: pagerFetch },
+      );
+    } finally {
+      error.mockRestore();
+    }
+    expect(pagerFetch).toHaveBeenCalledOnce();
+    expect(send).not.toHaveBeenCalled();
+    expect(second.ack).toHaveBeenCalledOnce();
+    expect([...receipts.rows.values()][0]?.status).toBe("paging_ambiguous");
+  });
+
+  it("records an ambiguous operator disposition when PagerDuty transport outcome is unknown", async () => {
     const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
     const m = fakeDlq(msg("pager-fail"));
     const pagerFetch = vi.fn<typeof fetch>(async () => {
@@ -264,27 +337,28 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
         { messages: [m] },
         {
           DSR_QUEUE: { send },
+          DSR_DLQ_RECEIPTS: new MemoryReceipts(),
           PAGERDUTY_ROUTING_KEY: "routing-key",
           PAGERDUTY_FETCH: pagerFetch,
         },
       );
       const alert = JSON.parse(String(error.mock.calls[0]?.[0])) as Record<string, unknown>;
       expect(alert).toMatchObject({
-        event_id: "dsr-erasure-dlq:pager-fail:0",
         exhausted: true,
         requeue_count: 0,
-        action: "retry_paging",
+        action: "paging_ambiguous",
         paging_status: "failed",
         paging_error: "transport_error",
       });
+      expect(String(alert.event_id)).toMatch(/^dsr-erasure-dlq:[0-9a-f]{64}$/);
       expect(String(error.mock.calls[0]?.[0])).not.toContain("secret-provider-detail");
     } finally {
       error.mockRestore();
     }
     expect(pagerFetch).toHaveBeenCalledOnce();
     expect(send).not.toHaveBeenCalled();
-    expect(m.retry).toHaveBeenCalledOnce();
-    expect(m.ack).not.toHaveBeenCalled();
+    expect(m.ack).toHaveBeenCalledOnce();
+    expect(m.retry).not.toHaveBeenCalled();
   });
 
   it("fails closed when the PagerDuty route is absent", async () => {
@@ -292,13 +366,13 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     const m = fakeDlq(msg("pager-unconfigured"));
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send } });
+      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: new MemoryReceipts() });
       expect(JSON.parse(String(error.mock.calls[0]?.[0]))).toMatchObject({
-        event_id: "dsr-erasure-dlq:pager-unconfigured:0",
         action: "retry_paging",
         paging_status: "not_configured",
         paging_error: "route_not_configured",
       });
+      expect(String((JSON.parse(String(error.mock.calls[0]?.[0])) as Record<string, unknown>).event_id)).toMatch(/^dsr-erasure-dlq:[0-9a-f]{64}$/);
     } finally {
       error.mockRestore();
     }
@@ -316,6 +390,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
         { messages: [m] },
         {
           DSR_QUEUE: { send },
+          DSR_DLQ_RECEIPTS: new MemoryReceipts(),
           PAGERDUTY_ROUTING_KEY: "routing-key",
           PAGERDUTY_FETCH: vi.fn<typeof fetch>(async () => new Response("proxy page", { status: 200 })),
         },
@@ -349,6 +424,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
         { messages: [m] },
         {
           DSR_QUEUE: { send },
+          DSR_DLQ_RECEIPTS: new MemoryReceipts(),
           PAGERDUTY_ROUTING_KEY: "routing-key",
           PAGERDUTY_FETCH: pagerFetch,
         },
@@ -361,18 +437,141 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     expect(payload).toMatchObject({
       routing_key: "routing-key",
       event_action: "trigger",
-      dedup_key: "dsr-erasure-dlq:pager-ok:0",
       payload: {
         severity: "critical",
         custom_details: {
-          event_id: "dsr-erasure-dlq:pager-ok:0",
           exhausted: true,
           requeue_count: 0,
         },
       },
     });
+    expect(String(payload.dedup_key)).toMatch(/^dsr-erasure-dlq:[0-9a-f]{64}$/);
+    expect(String(payload.payload.custom_details.event_id)).toBe(payload.dedup_key);
+    expect(JSON.stringify(payload)).not.toContain("pager-ok");
     expect(m.ack).toHaveBeenCalledOnce();
     expect(m.retry).not.toHaveBeenCalled();
+  });
+
+  it("does not page or acknowledge when durable receipt storage is unavailable", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const m = fakeDlq(msg("receipt-unavailable"));
+    const receipts = new MemoryReceipts();
+    receipts.failWrites = true;
+    const env = pagedEnv(send, receipts);
+    await handleErasureDlqBatch({ messages: [m] }, env);
+    expect(env.PAGERDUTY_FETCH).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(m.retry).toHaveBeenCalledOnce();
+    expect(m.ack).not.toHaveBeenCalled();
+  });
+
+  for (const [name, makeReceipts, receiptBoundary] of [
+    ["is absent", () => undefined, "not_configured"],
+    ["cannot write", () => {
+      const receipts = new MemoryReceipts();
+      receipts.failWrites = true;
+      return receipts;
+    }, "storage_error"],
+    ["is malformed", () => ({
+      find: async () => ({ status: "invalid" as DsrDlqReceipt["status"], paging_claimed: 0, requeue_claimed: 0 }),
+      record: async () => undefined,
+      claimPaging: async () => true,
+      claimRequeue: async () => true,
+    } satisfies DsrDlqReceiptStore), "malformed"],
+  ] as const) {
+    it(`emits a privacy-safe terminal alert when the receipt boundary ${name}`, async () => {
+      const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+      const m = fakeDlq(msg("receipt-terminal"), 3);
+      const pagerFetch = vi.fn<typeof fetch>(async () => new Response("accepted", { status: 202 }));
+      const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      try {
+        await handleErasureDlqBatch(
+          { messages: [m] },
+          {
+            DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: makeReceipts(),
+            PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: pagerFetch,
+          },
+        );
+        const alert = JSON.parse(String(error.mock.calls[0]?.[0])) as Record<string, unknown>;
+        expect(alert).toMatchObject({
+          action: "receipt_boundary_exhausted", receipt_boundary: receiptBoundary,
+          exhausted: true, requeue_count: 0,
+        });
+        expect(String(alert.event_id)).toMatch(/^dsr-erasure-dlq:[0-9a-f]{64}$/);
+        expect(JSON.stringify(alert)).not.toContain("receipt-terminal");
+      } finally {
+        error.mockRestore();
+      }
+      expect(pagerFetch).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+      expect(m.ack).toHaveBeenCalledOnce();
+      expect(m.retry).not.toHaveBeenCalled();
+    });
+  }
+
+  it("fails closed when a durable receipt row is malformed", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const m = fakeDlq(msg("receipt-malformed"));
+    const receipts: DsrDlqReceiptStore = {
+      find: async () => ({ status: "invalid" as DsrDlqReceipt["status"], paging_claimed: 0, requeue_claimed: 0 }),
+      record: async () => undefined,
+      claimPaging: async () => true,
+      claimRequeue: async () => true,
+    };
+    const env = pagedEnv(send, receipts);
+    await handleErasureDlqBatch({ messages: [m] }, env);
+    expect(env.PAGERDUTY_FETCH).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(m.retry).toHaveBeenCalledOnce();
+    expect(m.ack).not.toHaveBeenCalled();
+  });
+
+  it("writes a durable exhaustion receipt before consuming the final paging attempt", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const m = fakeDlq(msg("paging-exhausted"), 3);
+    const receipts = new MemoryReceipts();
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await handleErasureDlqBatch(
+        { messages: [m] },
+        {
+          DSR_QUEUE: { send },
+          DSR_DLQ_RECEIPTS: receipts,
+          PAGERDUTY_ROUTING_KEY: "routing-key",
+          PAGERDUTY_FETCH: vi.fn<typeof fetch>(async () => new Response("unavailable", { status: 503 })),
+        },
+      );
+    } finally {
+      error.mockRestore();
+    }
+    expect(receipts.writes.at(-1)?.status).toBe("delivery_exhausted");
+    expect(m.ack).toHaveBeenCalledOnce();
+    expect(m.retry).not.toHaveBeenCalled();
+  });
+
+  it("records a paging recovery after a retained delivery later receives HTTP 202", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const receipts = new MemoryReceipts();
+    const failed = fakeDlq(msg("paging-recovery"), 1);
+    const recovered = fakeDlq(msg("paging-recovery"), 2);
+    const reject = vi.fn<typeof fetch>(async () => new Response("unavailable", { status: 503 }));
+    const accepted = vi.fn<typeof fetch>(async () => new Response("accepted", { status: 202 }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await handleErasureDlqBatch(
+        { messages: [failed] },
+        { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: receipts, PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: reject },
+      );
+      await handleErasureDlqBatch(
+        { messages: [recovered] },
+        { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: receipts, PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: accepted },
+      );
+    } finally {
+      error.mockRestore();
+    }
+    expect(failed.retry).toHaveBeenCalledOnce();
+    expect(recovered.ack).toHaveBeenCalledOnce();
+    expect(receipts.writes.some((entry) => entry.status === "paging_recovered")).toBe(true);
   });
 
   it("fails closed on malformed or oversized requeue markers instead of looping", async () => {
@@ -383,11 +582,11 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       await handleErasureDlqBatch({ messages: [m] }, pagedEnv(send));
       const alert = JSON.parse(String(error.mock.calls[0]?.[0])) as Record<string, unknown>;
       expect(alert).toMatchObject({
-        event_id: "dsr-erasure-dlq:poison-marker:1",
         exhausted: true,
         action: "left_dead",
         requeue_count: 1,
       });
+      expect(String(alert.event_id)).toMatch(/^dsr-erasure-dlq:[0-9a-f]{64}$/);
     } finally {
       error.mockRestore();
     }

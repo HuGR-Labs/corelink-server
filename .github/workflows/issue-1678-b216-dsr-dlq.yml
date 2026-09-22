@@ -1,0 +1,39 @@
+name: issue-1678 B-216 DSR DLQ receipt contract
+
+on:
+  pull_request:
+    paths:
+      - "apps/signup-worker/src/webhooks/dsr_consumer.ts"
+      - "apps/signup-worker/tests/dsr_consumer.test.ts"
+      - "migrations/d1/0137_dsr_dlq_delivery_receipts.sql"
+      - "docs/internal/b215-b230-runtime-owner-actions.md"
+      - "BACKLOG.md"
+      - ".github/workflows/issue-1678-b216-dsr-dlq.yml"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dlq-receipt-contract:
+    # This intentionally stays on GitHub-hosted infrastructure: it validates
+    # only the B-216 consumer contract and has no Cloudflare credentials.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup-pnpm
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Install pinned signup-worker dependencies
+        run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
+      - name: Exercise B-216 DSR DLQ receipt contract
+        run: pnpm --dir apps/signup-worker exec vitest run tests/dsr_consumer.test.ts

@@ -210,6 +210,29 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
+### B-1630 — runner shadow charge fences cumulative consumption and region heads
+
+The cumulative shadow-charge correction for [issue #1630](https://github.com/HuGR-dev/corelink-server/issues/1630) is merged in PR #1923. The writer now fences the durable tenant-period consumption and per-region hash-chain coordinates before claims, counters, heads, or source watermarks; a stale batch aborts atomically and retries from fresh state. The implementation remains shadow-only and does not activate Stripe billing.
+
+```backlog
+id: B-1630
+repo: corelink-server
+owner: tl
+status: done
+verify: manual
+verify-means: |
+  done — PR #1923 (`971c9e63b30c7e701ea749fc2a1227ee5fb1093c`) merged the
+  cumulative-coordinate fence. Hosted i1630 run
+  `35700316381` passed the seven-test Python seam, the Rust aggregate suite
+  (including allowance-boundary, partition-invariant delta, retry/idempotency,
+  stale-coordinate, multi-region, missing-terms and chain-resume cases), the
+  three aggregate-binary tests, clippy and rustfmt. The run uploaded the
+  compact campaign log artifact. Reopen if the fence no longer precedes
+  claims/accounting/watermarks, partitioning can change the cumulative result,
+  retries duplicate accounting, or Stripe submission is activated by this path.
+last-verified: 2026-09-22
+```
+
 ### B-364 — o probe de latência comparava RTT remoto com budget interno — FECHADO
 
 Descoberto ao completar B-165: `curl time_total` mistura processamento do serviço,
@@ -5555,7 +5578,8 @@ verify: |
 verify-means: |
   parked — focused source tests and mutation gates prove the DLQ consumer accepts
   only PagerDuty HTTP 202 as delivery, retains the DLQ delivery when paging is
-  missing/rejected, redacts transport errors, and permits only one main-queue
+  missing/rejected, records privacy-minimized durable lifecycle receipts before
+  queue disposition, redacts transport errors, and permits only one main-queue
   re-enqueue. Runtime/owner packet
   `docs/internal/b215-b230-runtime-owner-actions.md` remains: verify the deployed
   consumer, an accepted on-call delivery, and one controlled exhausted-message
