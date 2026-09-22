@@ -84,8 +84,9 @@ def declared_budget() -> dict[str, object]:
     if reservation != expected or reservation > account_limit:
         raise CapacityError(f"reservation arithmetic drifted: {reservation} vCPU")
     return {"account_limit_vcpu": account_limit, "cache_reservation_vcpu": cache_reservation,
-            "runner_reservation_vcpu": runner_reservation, "reservation_vcpu": reservation,
-            "headroom_vcpu": account_limit - reservation, "environments": actual}
+            "runner_vcpu_per_instance": runner_vcpu, "runner_reservation_vcpu": runner_reservation,
+            "reservation_vcpu": reservation, "headroom_vcpu": account_limit - reservation,
+            "environments": actual}
 
 
 def verify_provider(path: Path, model: dict[str, object]) -> None:
@@ -95,8 +96,11 @@ def verify_provider(path: Path, model: dict[str, object]) -> None:
     if evidence.get("total_vcpu") != model["account_limit_vcpu"]:
         raise CapacityError("provider total_vcpu does not match the budget model")
     for key in ("vcpu_per_deployment", "total_memory_mib"):
-        if not isinstance(evidence.get(key), (int, float)) or evidence[key] <= 0:
+        value = evidence.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
             raise CapacityError(f"provider field missing or invalid: {key}")
+    if evidence["vcpu_per_deployment"] != model["runner_vcpu_per_instance"]:
+        raise CapacityError("provider vcpu_per_deployment does not match the runner contract")
 
 
 def main(argv: list[str] | None = None) -> int:

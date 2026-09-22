@@ -8,6 +8,7 @@ on:
     paths:
       - 'evidence/i1641/pagerduty-contract-manifest.json'
       - 'scripts/verify_i1641_pagerduty_contract.py'
+      - 'tests/test_i1641_pagerduty_contract.py'
       - 'worker/src/index_schedule.ts'
       - 'worker/src/index_common.ts'
       - 'apps/synthetic-pager-worker/src/**'
@@ -21,6 +22,7 @@ on:
     paths:
       - 'evidence/i1641/pagerduty-contract-manifest.json'
       - 'scripts/verify_i1641_pagerduty_contract.py'
+      - 'tests/test_i1641_pagerduty_contract.py'
       - 'worker/src/index_schedule.ts'
       - 'worker/src/index_common.ts'
       - 'apps/synthetic-pager-worker/src/**'
@@ -52,3 +54,5 @@ jobs:
           persist-credentials: false
       - name: Verify credentialless event, receipt, escalation, and redaction contract
         run: python3 -S scripts/verify_i1641_pagerduty_contract.py
+      - name: Verify manifest mutations fail closed
+        run: python3 -S -m unittest tests/test_i1641_pagerduty_contract.py
