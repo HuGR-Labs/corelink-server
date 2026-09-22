@@ -1,6 +1,6 @@
 name: issue-2050-cli-release-dry-run
 
-on:
+"on":
   pull_request:
     paths:
       - ".github/workflows/issue-2050-cli-release-dry-run.yml"
@@ -180,7 +180,8 @@ jobs:
           name: cli-release-dry-run-inputs-${{ github.run_id }}
           path: dist/
       - name: Verify inventory before signing
-        run: python3 - <<'PY'
+        run: |
+          python3 - <<'PY'
           from pathlib import Path
           import json
           import hashlib

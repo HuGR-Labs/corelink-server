@@ -57,6 +57,8 @@ def contract() -> None:
             fail(f"the existing read-only hosted PR lane does not run the contract: {token}")
     if "id-token: write" in hosted_contract or "contents: write" in hosted_contract:
         fail("the PR contract lane has signing or write permission")
+    if not re.search(r'^"on":\s*$', text, re.MULTILINE):
+        fail('event map must use the quoted "on" key')
     for token in ("pull_request:", "workflow_dispatch:", "refs/heads/main", "github.ref_protected"):
         if token not in text:
             fail(f"required event or protected-ref guard is missing: {token}")
@@ -85,6 +87,17 @@ def contract() -> None:
             fail(f"forbidden publication capability appears: {token}")
     if "secrets.GPG_KEY_FINGERPRINT" not in text:
         fail("optional fingerprint-only GPG check was removed")
+    hosted_workflow = Path(".github/workflows/issue-1724-cli-provenance.yml").read_text(
+        encoding="utf-8"
+    )
+    for token in (
+        "actionlint_1.7.12_linux_amd64.tar.gz",
+        "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+        "Validate the dry-run trigger and workflow schema",
+        "-color .github/workflows/issue-2050-cli-release-dry-run.yml",
+    ):
+        if token not in hosted_workflow:
+            fail(f"hosted actionlint protection is missing or unpinned: {token}")
     if "persist-credentials: false" not in text:
         fail("checkout credentials are persisted")
     if not re.search(r"retention-days:\s*1\b", text):

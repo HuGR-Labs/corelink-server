@@ -37,3 +37,18 @@ jobs:
         run: cargo test --locked -p corelink-cli --test release_workflow_contract -- --nocapture
       - name: Verify issue 2050's nonpublishing release dry-run contract
         run: python3 -S scripts/verify_i2050_release_dryrun_contract.py contract
+      - name: Install checksum-pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          "${RUNNER_TEMP}/actionlint/actionlint" -version
+      - name: Validate the dry-run trigger and workflow schema
+        run: "${RUNNER_TEMP}/actionlint/actionlint -color .github/workflows/issue-2050-cli-release-dry-run.yml"
