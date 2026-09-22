@@ -4,7 +4,7 @@
 This runner deliberately does not synthesize either side of the D02/D03
 identity comparison. Both retained inputs must exist before Cargo runs. The
 output is written atomically only after the identity comparison, exact test,
-sample count, fixture boundary, and strict p99 limit all pass.
+sample count, fixture boundary, and inclusive p99 limit all pass.
 """
 
 from __future__ import annotations
