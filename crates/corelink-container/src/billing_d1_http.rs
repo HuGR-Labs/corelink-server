@@ -43,7 +43,8 @@
 //!   `serde_json::Value` bind (no string interpolation).
 //! - **Fail-CLOSED:** any D1 transport / non-2xx / decode error maps to
 //!   [`BillingD1Error::Transient`] (→ dispatcher HTTP 500 → Stripe
-//!   retries; the dedup row prevents double-materialization). A malformed
+//!   retries; the fenced pending-effect witness decides whether recovery may
+//!   materialize again). A malformed
 //!   row (missing a NOT-NULL value the schema requires) maps to
 //!   [`BillingD1Error::InvalidPayload`] (→ HTTP 422, Stripe stops).
 //! - **Secrets never logged:** the CF API bearer token lives inside

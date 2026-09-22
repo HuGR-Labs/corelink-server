@@ -1,5 +1,6 @@
 use super::*;
 use crate::webhook::compute_signature;
+use std::sync::Mutex;
 
 const SECRET: &[u8] = b"whsec_prod_dispatch_unit";
 const FIXED_TS: u64 = 1_715_000_000;
@@ -42,6 +43,185 @@ fn signed_envelope(id: &str, kind: &str, ts: u64) -> (Vec<u8>, String) {
     (body, header)
 }
 
+#[derive(Debug, Default)]
+struct LostAckInbox {
+    state: Mutex<LostAckInboxState>,
+}
+
+#[derive(Debug, Default)]
+struct LostAckInboxState {
+    claimed: bool,
+    terminal: bool,
+    reserved: bool,
+    fail_after_commit: bool,
+}
+
+impl LostAckInbox {
+    fn fail_after_next_commit(&self) {
+        self.state.lock().unwrap().fail_after_commit = true;
+    }
+}
+
+impl DurableWebhookInbox for LostAckInbox {
+    fn receive(
+        &self,
+        _event: &DurableWebhookEvent,
+        _now_ms: u64,
+    ) -> Result<InboxReceiveOutcome, String> {
+        let state = self.state.lock().unwrap();
+        if state.terminal {
+            Ok(InboxReceiveOutcome::Terminal)
+        } else {
+            Ok(InboxReceiveOutcome::Received)
+        }
+    }
+
+    fn claim(
+        &self,
+        event_id: &str,
+        _owner: &str,
+        _now_ms: u64,
+        _lease_ms: u64,
+    ) -> Result<Option<InboxClaim>, String> {
+        let mut state = self.state.lock().unwrap();
+        if state.claimed {
+            Ok(None)
+        } else {
+            state.claimed = true;
+            Ok(Some(InboxClaim::new(event_id.to_owned(), 1)))
+        }
+    }
+
+    fn finish(
+        &self,
+        _claim: &InboxClaim,
+        _owner: &str,
+        _state: InboxTerminalState,
+        _error: Option<&str>,
+        _now_ms: u64,
+    ) -> Result<bool, String> {
+        Ok(false)
+    }
+
+    fn reserve_effect(
+        &self,
+        _claim: &InboxClaim,
+        _owner: &str,
+        _event: &DurableWebhookEvent,
+        _effect_key: &str,
+        _effect_kind: &str,
+        _now_ms: u64,
+    ) -> Result<EffectReservation, String> {
+        let mut state = self.state.lock().unwrap();
+        if state.terminal {
+            Ok(EffectReservation::Applied)
+        } else if state.reserved {
+            Ok(EffectReservation::PendingRecovery)
+        } else {
+            state.reserved = true;
+            Ok(EffectReservation::Reserved)
+        }
+    }
+
+    fn abort_reserved_effect(
+        &self,
+        _claim: &InboxClaim,
+        _owner: &str,
+        _event: &DurableWebhookEvent,
+        _effect_key: &str,
+        _effect_kind: &str,
+        _now_ms: u64,
+    ) -> Result<bool, String> {
+        self.state.lock().unwrap().reserved = false;
+        Ok(true)
+    }
+
+    fn commit_effect(
+        &self,
+        _claim: &InboxClaim,
+        _owner: &str,
+        _event: &DurableWebhookEvent,
+        _effect_key: &str,
+        _effect_kind: &str,
+        _now_ms: u64,
+    ) -> Result<bool, String> {
+        let mut state = self.state.lock().unwrap();
+        state.terminal = true;
+        if state.fail_after_commit {
+            state.fail_after_commit = false;
+            return Err("simulated lost D1 response after atomic commit".to_owned());
+        }
+        Ok(true)
+    }
+}
+
+#[test]
+fn lost_ack_after_effect_commit_retries_as_terminal_without_reapplying() {
+    let idem = Arc::new(InMemoryIdempotencyStore::new());
+    let materializer = Arc::new(RecordingStateMaterializer::new());
+    let inbox = Arc::new(LostAckInbox::default());
+    inbox.fail_after_next_commit();
+    let materializer_for_dispatch: Arc<dyn StateMaterializer> = materializer.clone();
+    let dispatcher = WebhookDispatcher::new(
+        SECRET.to_vec(),
+        idem,
+        materializer_for_dispatch,
+        Arc::new(RecordingAuditEmitter::new()),
+        Arc::new(RecordingSliRecorder::new()),
+        Arc::new(FixedClock::new(FIXED_TS, 0.123)),
+    )
+    .with_durable_inbox(inbox);
+    let (body, header) = signed_envelope("evt_lost_ack", "invoice.paid", FIXED_TS);
+
+    assert_eq!(
+        dispatcher.process(&body, Some(&header)),
+        DispatchResponse::InternalError500,
+        "a lost response remains retryable"
+    );
+    assert_eq!(
+        dispatcher.process(&body, Some(&header)),
+        DispatchResponse::Ok200,
+        "only the durable terminal retry is acknowledged"
+    );
+    assert_eq!(
+        materializer.call_count(),
+        1,
+        "the committed effect is never re-applied after a lost ACK"
+    );
+}
+#[test]
+fn post_mutation_failure_seals_pending_effect_without_a_second_apply() {
+    let idem = Arc::new(InMemoryIdempotencyStore::new());
+    let materializer = Arc::new(RecordingStateMaterializer::new());
+    materializer.arm_error_after_record(MaterializerError::AppliedButUnconfirmed(
+        "injected after durable business mutation".to_owned(),
+    ));
+    let materializer_for_dispatch: Arc<dyn StateMaterializer> = materializer.clone();
+    let dispatcher = WebhookDispatcher::new(
+        SECRET.to_vec(),
+        idem,
+        materializer_for_dispatch,
+        Arc::new(RecordingAuditEmitter::new()),
+        Arc::new(RecordingSliRecorder::new()),
+        Arc::new(FixedClock::new(FIXED_TS, 0.123)),
+    )
+    .with_durable_inbox(Arc::new(LostAckInbox::default()));
+    let (body, header) = signed_envelope("evt_post_mutation", "invoice.paid", FIXED_TS);
+
+    assert_eq!(
+        dispatcher.process(&body, Some(&header)),
+        DispatchResponse::InternalError500
+    );
+    assert_eq!(
+        dispatcher.process(&body, Some(&header)),
+        DispatchResponse::Ok200
+    );
+    assert_eq!(
+        materializer.call_count(),
+        1,
+        "pending witness fences replay"
+    );
+}
 #[test]
 fn happy_path_subscription_deleted_dispatches_audits_emits_sli() {
     let (d, idem, mat, audit, sli) = fixture();

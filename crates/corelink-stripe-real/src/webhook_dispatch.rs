@@ -108,9 +108,9 @@ use crate::webhook::{verify_webhook_signature, DEFAULT_TOLERANCE_SECONDS};
 
 pub use corelink_billing_stripe_traits::{
     AuditEmitter, AuditOutcome, AuditRecord, CanonicalWebhookEventType, DispatchResponse,
-    DurableWebhookEvent, DurableWebhookInbox, IdempotencyOutcome, IdempotencyStore,
-    IdempotencyToken, InboxClaim, InboxReceiveOutcome, InboxTerminalState, MaterializerError,
-    SliObservation, SliRecorder, StateMaterializer, StripeWebhookEnvelope,
+    DurableWebhookEvent, DurableWebhookInbox, EffectReservation, IdempotencyOutcome,
+    IdempotencyStore, IdempotencyToken, InboxClaim, InboxReceiveOutcome, InboxTerminalState,
+    MaterializerError, SliObservation, SliRecorder, StateMaterializer, StripeWebhookEnvelope,
     SLI_BILLING_STRIPE_EVENT_SECONDS,
 };
 
@@ -184,6 +184,7 @@ impl IdempotencyStore for InMemoryIdempotencyStore {
 pub struct RecordingStateMaterializer {
     calls: Arc<Mutex<Vec<(CanonicalWebhookEventType, String)>>>,
     force_error: Arc<Mutex<Option<MaterializerError>>>,
+    force_error_after_record: Arc<Mutex<Option<MaterializerError>>>,
 }
 
 impl RecordingStateMaterializer {
@@ -196,6 +197,13 @@ impl RecordingStateMaterializer {
     /// Force the next call to return `Err(err)`. Cleared after one use.
     pub fn arm_error(&self, err: MaterializerError) {
         if let Ok(mut g) = self.force_error.lock() {
+            *g = Some(err);
+        }
+    }
+
+    /// Force the next call to fail after recording its business mutation.
+    pub fn arm_error_after_record(&self, err: MaterializerError) {
+        if let Ok(mut g) = self.force_error_after_record.lock() {
             *g = Some(err);
         }
     }
@@ -230,6 +238,12 @@ impl RecordingStateMaterializer {
             .lock()
             .map_err(|e| MaterializerError::Transient(format!("mutex poisoned: {e}")))?;
         g.push((ty, env.id.clone()));
+        drop(g);
+        if let Ok(mut g) = self.force_error_after_record.lock() {
+            if let Some(err) = g.take() {
+                return Err(err);
+            }
+        }
         Ok(())
     }
 }
@@ -810,6 +824,23 @@ impl WebhookDispatcher {
                 self.quarantine_transient(body, &env, canon, &token, &msg, now_ms);
                 DispatchResponse::Unprocessable422
             }
+            Err(MaterializerError::AppliedButUnconfirmed(msg)) => {
+                self.emit_audit_and_sli(
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        env.id.clone(),
+                        canon,
+                        AuditOutcome::MaterializerFailed,
+                        Some(token.to_hex()),
+                        now_ms,
+                        Some(msg),
+                    ),
+                    canon,
+                    AuditOutcome::MaterializerFailed,
+                    start,
+                );
+                DispatchResponse::InternalError500
+            }
             // `MaterializerError` is `#[non_exhaustive]` in the leaf traits
             // crate; treat any future variants as transient so the
             // dispatcher returns 500 (Stripe retries) rather than panicking.
@@ -891,6 +922,36 @@ impl WebhookDispatcher {
             Ok(Some(claim)) => claim,
             Ok(None) | Err(_) => return DispatchResponse::InternalError500,
         };
+        let effect_key = format!("stripe-webhook-effect:{}", context.token.to_hex());
+        match context.inbox.reserve_effect(
+            &claim,
+            OWNER,
+            &event,
+            &effect_key,
+            context.canon.label(),
+            context.now_ms,
+        ) {
+            Ok(EffectReservation::Reserved) => {}
+            Ok(EffectReservation::Applied) => {
+                return if matches!(
+                    context.inbox.finish(
+                        &claim,
+                        OWNER,
+                        InboxTerminalState::Completed,
+                        None,
+                        context.now_ms,
+                    ),
+                    Ok(true)
+                ) {
+                    DispatchResponse::Ok200
+                } else {
+                    DispatchResponse::InternalError500
+                };
+            }
+            Ok(EffectReservation::PendingRecovery) | Err(_) => {
+                return DispatchResponse::InternalError500;
+            }
+        }
         let dispatch_result = match context.canon {
             CanonicalWebhookEventType::SubscriptionDeleted => {
                 self.materializer.on_subscription_deleted(context.env)
@@ -941,12 +1002,13 @@ impl WebhookDispatcher {
                     )
                     .is_some()
                     || !matches!(
-                        context.inbox.finish(
+                        context.inbox.commit_effect(
                             &claim,
                             OWNER,
-                            InboxTerminalState::Completed,
-                            None,
-                            context.now_ms
+                            &event,
+                            &effect_key,
+                            context.canon.label(),
+                            context.now_ms,
                         ),
                         Ok(true)
                     )
@@ -954,6 +1016,35 @@ impl WebhookDispatcher {
                     return DispatchResponse::InternalError500;
                 }
                 DispatchResponse::Ok200
+            }
+            Err(MaterializerError::AppliedButUnconfirmed(message)) => {
+                let sealed = matches!(
+                    context.inbox.commit_effect(
+                        &claim,
+                        OWNER,
+                        &event,
+                        &effect_key,
+                        context.canon.label(),
+                        context.now_ms,
+                    ),
+                    Ok(true)
+                );
+                self.emit_audit_and_sli(
+                    AuditRecord::new(
+                        "corelink.billing.stripe_event_processed.v1",
+                        context.env.id.clone(),
+                        context.canon,
+                        AuditOutcome::MaterializerFailed,
+                        Some(context.token.to_hex()),
+                        context.now_ms,
+                        Some(message),
+                    ),
+                    context.canon,
+                    AuditOutcome::MaterializerFailed,
+                    context.start,
+                );
+                let _ = sealed;
+                DispatchResponse::InternalError500
             }
             Err(error) => {
                 let (outcome, status, message) = match error {
@@ -974,6 +1065,14 @@ impl WebhookDispatcher {
                     ),
                 };
                 let quarantined = self.quarantine_owned(&context, &claim, &message);
+                let _ = context.inbox.abort_reserved_effect(
+                    &claim,
+                    OWNER,
+                    &event,
+                    &effect_key,
+                    context.canon.label(),
+                    context.now_ms,
+                );
                 self.emit_audit_and_sli(
                     AuditRecord::new(
                         "corelink.billing.stripe_event_processed.v1",

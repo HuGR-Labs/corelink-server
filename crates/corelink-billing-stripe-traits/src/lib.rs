@@ -335,6 +335,17 @@ pub enum InboxTerminalState {
     Quarantined,
 }
 
+/// State of the durable effect witness attached to a fenced inbox claim.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectReservation {
+    /// This claim reserved a pending witness and may apply the effect once.
+    Reserved,
+    /// A prior owner may have applied the effect; recovery must not replay it.
+    PendingRecovery,
+    /// The effect is durably witnessed and only terminalization remains.
+    Applied,
+}
+
 /// Restart-safe persistence and ownership seam for authenticated webhooks.
 pub trait DurableWebhookInbox: fmt::Debug + Send + Sync {
     /// Persist an authenticated event before any effect occurs.
@@ -360,6 +371,44 @@ pub trait DurableWebhookInbox: fmt::Debug + Send + Sync {
         error: Option<&str>,
         now_ms: u64,
     ) -> Result<bool, String>;
+    /// Reserve a pending effect witness before invoking the materializer.
+    fn reserve_effect(
+        &self,
+        claim: &InboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+    ) -> Result<EffectReservation, String>;
+    /// Remove a pending witness only when the materializer proved no business
+    /// mutation happened. Ownership loss is retryable and must not delete it.
+    fn abort_reserved_effect(
+        &self,
+        claim: &InboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+    ) -> Result<bool, String>;
+    /// Atomically persist the idempotent business-effect witness and mark only
+    /// this live, fenced claim completed. A `false` result is never an
+    /// acknowledgement: the caller must return a retryable failure.
+    ///
+    /// `effect_key` is deterministic for the event. Implementations must bind
+    /// it to `event_id`, `payload_sha256`, and `claim.fence`, so a stale owner
+    /// or a changed authenticated body can neither create nor acknowledge an
+    /// effect.
+    fn commit_effect(
+        &self,
+        claim: &InboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+    ) -> Result<bool, String>;
 }
 
 // =========================================================================
@@ -377,6 +426,10 @@ pub enum MaterializerError {
     /// field missing, etc.). Dispatcher returns HTTP 422 → Stripe
     /// stops retrying.
     InvalidPayload(String),
+    /// The business mutation committed, but the materializer could not report
+    /// success. The dispatcher must seal the already-reserved effect and make
+    /// the HTTP response retryable; a retry must never invoke it again.
+    AppliedButUnconfirmed(String),
 }
 
 impl fmt::Display for MaterializerError {
@@ -384,6 +437,9 @@ impl fmt::Display for MaterializerError {
         match self {
             Self::Transient(s) => write!(f, "transient backend error: {s}"),
             Self::InvalidPayload(s) => write!(f, "invalid payload: {s}"),
+            Self::AppliedButUnconfirmed(s) => {
+                write!(f, "business mutation applied but unconfirmed: {s}")
+            }
         }
     }
 }
