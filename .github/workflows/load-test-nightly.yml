@@ -291,7 +291,10 @@ jobs:
     runs-on: corelink
     timeout-minutes: 10
     needs: k6-staging
-    if: always()
+    # Keep the post-load comparator inside the same canonical protected-main
+    # boundary as the matrix. A skipped matrix must not leave an unguarded
+    # baseline/cache job reachable from an arbitrary dispatch ref.
+    if: always() && github.repository == 'HuGR-dev/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
     permissions:
       contents: read
       actions: read

@@ -109,6 +109,11 @@ env:
   # never actually ran successfully even after it started executing).
   # Update via PR when a new Buck2 stable is available; CI catches regressions.
   BUCK2_VERSION: "2026-08-01"
+  # The 2026-08-01 release asset embeds the preceding build date in its
+  # version string (observed in run 35743969492). Keep the release tag and the
+  # binary's reported build version explicit so the smoke check validates the
+  # exact pinned artifact without conflating those two identifiers.
+  BUCK2_BUILD_VERSION: "2026-07-31"
   # Digest of buck2-x86_64-unknown-linux-gnu.zst for BUCK2_VERSION.  The
   # dated URL is immutable in practice, but the digest is the enforceable
   # supply-chain boundary (a changed asset must not become executable).
@@ -171,7 +176,7 @@ jobs:
           echo "${BUCK2_INSTALL_DIR}" >> "${GITHUB_PATH}"
           VERSION_OUTPUT="$("${BUCK2_INSTALL_DIR}/buck2" --version)"
           printf '%s\n' "${VERSION_OUTPUT}"
-          grep -F -- "${BUCK2_VERSION}" <<<"${VERSION_OUTPUT}" || {
+          grep -F -- "${BUCK2_BUILD_VERSION}" <<<"${VERSION_OUTPUT}" || {
             echo "::error::Buck2 reported an unexpected version: ${VERSION_OUTPUT}" >&2
             exit 1
           }

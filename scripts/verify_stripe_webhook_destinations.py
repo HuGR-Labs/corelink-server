@@ -194,11 +194,10 @@ def print_inventory(rows: Sequence[Destination]) -> None:
         if row.url:
             parsed = urlparse(row.url)
             url = parsed._replace(query="", fragment="").geturl()
-        name = f" name={row.name}" if row.name else ""
         print(
             f"[{row.api}] id={mask_id(row.id)} status={row.status} "
             f"types={','.join(row.event_types)} payload={row.event_payload or 'snapshot'} "
-            f"url={url} created={row.created!s} updated={row.updated!s}{name}"
+            f"url={url} created={row.created!s} updated={row.updated!s}"
         )
 
 

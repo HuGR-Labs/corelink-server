@@ -411,10 +411,27 @@ where
         &self,
         object_key: &str,
     ) -> Result<DeleteDenialReceipt, ObjectLockArchiveError> {
+        if object_key.trim().is_empty() {
+            return Err(ObjectLockArchiveError::ReadbackMismatch(
+                "delete-denial proof requires a non-empty object key".to_string(),
+            ));
+        }
         match self.adapter.attempt_delete(object_key)? {
-            DeleteAttempt::Denied { object_key, reason } if !reason.trim().is_empty() => {
-                Ok(DeleteDenialReceipt { object_key, reason })
+            DeleteAttempt::Denied {
+                object_key: denied_object_key,
+                reason,
+            } if denied_object_key == object_key && !reason.trim().is_empty() => {
+                Ok(DeleteDenialReceipt {
+                    object_key: denied_object_key,
+                    reason,
+                })
             }
+            DeleteAttempt::Denied {
+                object_key: denied_object_key,
+                ..
+            } if denied_object_key != object_key => Err(ObjectLockArchiveError::ReadbackMismatch(
+                "delete denial covered a different object than requested".to_string(),
+            )),
             DeleteAttempt::Denied { .. } => Err(ObjectLockArchiveError::ReadbackMismatch(
                 "delete denial did not include a provider reason".to_string(),
             )),
@@ -645,6 +662,43 @@ impl ObjectLockArchiveAdapter for InMemoryObjectLockArchive {
 mod tests {
     use super::*;
 
+    #[derive(Debug)]
+    struct WrongObjectDeleteDenialAdapter {
+        inner: InMemoryObjectLockArchive,
+    }
+
+    impl ObjectLockArchiveAdapter for WrongObjectDeleteDenialAdapter {
+        fn negotiate_capabilities(
+            &self,
+        ) -> Result<ObjectLockCapabilityReport, ObjectLockArchiveError> {
+            self.inner.negotiate_capabilities()
+        }
+
+        fn put_immutable(
+            &self,
+            request: &ImmutableArchivePut,
+        ) -> Result<ImmutableArchiveWriteReceipt, ObjectLockArchiveError> {
+            self.inner.put_immutable(request)
+        }
+
+        fn read_retention(
+            &self,
+            object_key: &str,
+        ) -> Result<ObjectLockRetentionReadback, ObjectLockArchiveError> {
+            self.inner.read_retention(object_key)
+        }
+
+        fn attempt_delete(
+            &self,
+            _object_key: &str,
+        ) -> Result<DeleteAttempt, ObjectLockArchiveError> {
+            Ok(DeleteAttempt::Denied {
+                object_key: "audit/other-object.ndjson".to_string(),
+                reason: "retention_or_legal_hold".to_string(),
+            })
+        }
+    }
+
     fn identity() -> ObjectLockBackendIdentity {
         ObjectLockBackendIdentity::new(ObjectLockBackendFamily::S3, "test-s3", "audit-worm-eu")
     }
@@ -710,6 +764,43 @@ mod tests {
         assert_eq!(
             error,
             ObjectLockArchiveError::RequiredCapabilityMissing(vec!["delete_denial"])
+        );
+    }
+
+    #[test]
+    fn delete_denial_must_cover_the_requested_object() {
+        let archive = VerifiedObjectLockArchive::connect(WrongObjectDeleteDenialAdapter {
+            inner: InMemoryObjectLockArchive::new(identity(), residency()),
+        })
+        .expect("complete fake negotiates");
+
+        let error = archive
+            .assert_delete_denied("audit/requested-object.ndjson")
+            .expect_err("a denial for another object cannot prove retention");
+        assert_eq!(
+            error,
+            ObjectLockArchiveError::ReadbackMismatch(
+                "delete denial covered a different object than requested".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn delete_denial_rejects_an_empty_object_key() {
+        let archive = VerifiedObjectLockArchive::connect(InMemoryObjectLockArchive::new(
+            identity(),
+            residency(),
+        ))
+        .expect("complete fake negotiates");
+
+        let error = archive
+            .assert_delete_denied("  ")
+            .expect_err("delete proof must identify an object");
+        assert_eq!(
+            error,
+            ObjectLockArchiveError::ReadbackMismatch(
+                "delete-denial proof requires a non-empty object key".to_string()
+            )
         );
     }
 }

@@ -92,3 +92,12 @@ def test_v1_and_v2_pagination_are_both_walked(monkeypatch: pytest.MonkeyPatch) -
     assert len(MODULE.list_v2("stripe", [])) == 2
     assert any("starting_after=we_page_one" in command for command in calls)
     assert any("page=v2_page_two" in command for command in calls)
+
+
+def test_inventory_does_not_print_provider_destination_name(capsys: pytest.CaptureFixture[str]) -> None:
+    row = MODULE.normalize_destination(
+        {**v1_row("we_1234567890", "https://signup.humangr.com/stripe"), "name": "billing owner email"},
+        "v1",
+    )
+    MODULE.print_inventory([row])
+    assert "billing owner email" not in capsys.readouterr().out

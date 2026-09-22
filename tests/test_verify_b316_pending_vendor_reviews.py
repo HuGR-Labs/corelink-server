@@ -51,6 +51,25 @@ def test_action_packet_population_is_closed(texts: dict[str, str]):
         verifier.assess(changed)
 
 
+def test_action_packet_authority_must_remain_legal(texts: dict[str, str]):
+    changed = copy.deepcopy(texts)
+    packet = json.loads(changed[verifier.ACTION_PACKET])
+    packet["authority"] = "Automated"
+    changed[verifier.ACTION_PACKET] = json.dumps(packet)
+    with pytest.raises(verifier.ReviewError, match="authority drifted"):
+        verifier.assess(changed)
+
+
+@pytest.mark.parametrize("index", range(len(verifier.EXPECTED_NON_CLAIMS)))
+def test_each_action_packet_non_claim_is_bound(texts: dict[str, str], index: int):
+    changed = copy.deepcopy(texts)
+    packet = json.loads(changed[verifier.ACTION_PACKET])
+    packet["non_claims"][index] = f"Drifted non-claim {index + 1}."
+    changed[verifier.ACTION_PACKET] = json.dumps(packet)
+    with pytest.raises(verifier.ReviewError, match="non-claims drifted"):
+        verifier.assess(changed)
+
+
 def test_evidence_path_must_be_exact(texts: dict[str, str]):
     changed = copy.deepcopy(texts)
     changed[verifier.LEGAL] = changed[verifier.LEGAL].replace(
