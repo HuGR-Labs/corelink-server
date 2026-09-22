@@ -123,8 +123,9 @@ async function start(): Promise<void> {
     modules: true,
     compatibilityDate: "2026-04-01",
     d1Databases: { AUDIT_HARNESS_DB: "disposable-keyed-epoch" },
-    defaultPersistRoot: persistRoot,
-    d1Persist: true,
+    // Bind D1 persistence to the disposable partition explicitly so a fresh
+    // Miniflare/workerd instance resumes the same database after restart.
+    d1Persist: persistRoot ? join(persistRoot, "d1") : false,
   });
 }
 async function call(path: string): Promise<Response> {
