@@ -1,9 +1,6 @@
 name: issue #2092 DSR classification contract
 
 on:
-  push:
-    branches:
-      - fix/issue-2092-dsr-classification
   pull_request:
     paths:
       - '.github/workflows/issue-2092-dsr-classification.yml'
@@ -42,4 +39,4 @@ jobs:
       - name: Run DSR classification and adversarial contracts
         run: >-
           cargo test --locked -p corelink-server --lib
-          routes::dsr::adapter_d1_tests::
+          routes::dsr::adapter_d1::tests::
