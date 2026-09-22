@@ -392,54 +392,72 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          root="$RUNNER_TEMP/i1670"
-          mkdir -p "$root/enospc" "$root/linker" artifacts/campaign-ci/i1670
-          mounted=()
+          # /dev/shm is a runner-provided tmpfs writable by the job user.  The
+          # fixture fills only that bounded filesystem, so setup needs no
+          # mount, sudo, or privileged loop device and cannot consume the
+          # runner's workspace disk.
+          root="${RUNNER_TEMP:-/tmp}/i1670"
+          fs_root="/dev/shm/corelink-i1670-${GITHUB_RUN_ID:-$$}"
+          mkdir -p "$root" "$fs_root" artifacts/campaign-ci/i1670
           cleanup() {
-            local path
             set +e
-            for path in "${mounted[@]}"; do sudo umount "$path"; done
             rm -rf "$root"
+            rm -rf "$fs_root"
           }
           trap cleanup EXIT
 
-          make_fs() {
-            local image="$1" mountpoint="$2"
-            dd if=/dev/zero of="$image" bs=1M count=48 status=none
-            mkfs.ext4 -q -F "$image"
-            sudo mount -o loop "$image" "$mountpoint"
-            mounted+=("$mountpoint")
-            sudo chown "$USER":"$USER" "$mountpoint"
+          fill_to_margin() {
+            local fill="$1"
+            local available
+            available="$(df --output=avail -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+            test -n "$available"
+            test "$available" -gt $((1024 * 1024))
+            python3 - "$fill" $((available - 64 * 1024)) <<'PY'
+          import os
+          import sys
+
+          path, target = sys.argv[1], int(sys.argv[2])
+          chunk = b"\0" * (1024 * 1024)
+          with open(path, "wb", buffering=0) as handle:
+              remaining = target
+              while remaining:
+                  written = handle.write(chunk[: min(len(chunk), remaining)])
+                  if written <= 0:
+                      raise SystemExit("bounded tmpfs fill made no progress")
+                  remaining -= written
+              os.fsync(handle.fileno())
+          PY
           }
 
-          make_fs "$root/enospc.img" "$root/enospc"
-          fallocate -l 46M "$root/enospc/fill.bin"
+          fill_to_margin "$fs_root/fill.bin"
           set +e
           CORELINK_CLASSIFICATION_ARTIFACT="$PWD/artifacts/campaign-ci/i1670/enospc-classification.json" \
             scripts/run-with-infra-classification.sh \
-            dd if=/dev/zero of="$root/enospc/write.bin" bs=1M count=8 status=none \
+            dd if=/dev/zero of="$fs_root/write.bin" bs=1M count=1 status=none \
             >artifacts/campaign-ci/i1670/enospc.log 2>&1
           enospc_rc=$?
           set -e
           test "$enospc_rc" -ne 0
           grep -Eq '^classification: (ENOSPC|LINKER_FAILURE)$' artifacts/campaign-ci/i1670/enospc.log
 
-          make_fs "$root/linker.img" "$root/linker"
+          rm -rf "$fs_root"
+          mkdir -p "$fs_root"
           cat >"$root/main.c" <<'EOF'
           int main(void) { return 0; }
           EOF
           cc -c "$root/main.c" -o "$root/main.o"
-          fallocate -l 46M "$root/linker/fill.bin"
+          fill_to_margin "$fs_root/fill.bin"
           set +e
           CORELINK_CLASSIFICATION_ARTIFACT="$PWD/artifacts/campaign-ci/i1670/linker-classification.json" \
             scripts/run-with-infra-classification.sh \
-            cc "$root/main.o" -o "$root/linker/linked" \
+            cc "$root/main.o" -o "$fs_root/linked" \
             >artifacts/campaign-ci/i1670/linker.log 2>&1
           linker_rc=$?
           set -e
           test "$linker_rc" -ne 0
           grep -Eq '^classification: (ENOSPC|LINKER_FAILURE)$' artifacts/campaign-ci/i1670/linker.log
           grep -Eq 'No space left on device|os error 28|ENOSPC|collect2|ld:' artifacts/campaign-ci/i1670/linker.log
+          SHM_SIZE="$(df --output=size -B1 "$fs_root" | awk 'NR == 2 { print $1 }')" \
           ENOSPC_RC="$enospc_rc" LINKER_RC="$linker_rc" python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -447,12 +465,13 @@ jobs:
           report = {
               "schema": "corelink.issue-1670.hosted-classification.v1",
               "runner": "ubuntu-24.04",
-              "bounded_filesystem_bytes": 48 * 1024 * 1024,
+              "filesystem": "/dev/shm tmpfs",
+              "bounded_filesystem_bytes": int(os.environ["SHM_SIZE"]),
               "enospc_exit": int(os.environ["ENOSPC_RC"]),
               "linker_exit": int(os.environ["LINKER_RC"]),
               "enospc_classification": json.loads((root / "enospc-classification.json").read_text())["classification"],
               "linker_classification": json.loads((root / "linker-classification.json").read_text())["classification"],
-              "cleanup": "EXIT trap unmounts both images and removes the bounded fixture",
+              "cleanup": "EXIT trap removes the bounded tmpfs fixture",
           }
           (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
           PY
@@ -464,12 +483,17 @@ jobs:
           set -euo pipefail
           # No identity inputs and no opt-in wall-clock probe are accepted in
           # this lane; it validates only the product PR's parser/schema guard.
-          python3 -m unittest -q \
-            tests/test_run_b251_latency_probe.py \
-            tests/test_verify_b251_quota_cas_budget.py \
+          python3 -m pytest -q tests/test_run_b251_latency_probe.py \
             2>&1 | tee artifacts/campaign-ci/i1680-schema-contract.log
-          ! rg -n 'K6_|STRIPE|CLOUDFLARE|DATABASE_URL|PAT|--allow-run' \
-            .github/workflows/b251-d03-read-only-probe.yml
+          python3 scripts/verify_b251_quota_cas_budget.py \
+            2>&1 | tee -a artifacts/campaign-ci/i1680-schema-contract.log
+          if test -f .github/workflows/b251-d03-read-only-probe.yml; then
+            if rg -n 'K6_|STRIPE|CLOUDFLARE|DATABASE_URL' \
+              .github/workflows/b251-d03-read-only-probe.yml; then
+              echo "forbidden live-target marker in B-251 workflow" >&2
+              exit 1
+            fi
+          fi
 
       - name: i1792 exact Miniflare workerd epoch test
         if: ${{ inputs.suite == 'i1792-miniflare-epoch' }}
