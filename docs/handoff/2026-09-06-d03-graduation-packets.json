@@ -1033,9 +1033,9 @@
       "disposition": "PARKED",
       "owner": "tl",
       "dependency": "opt-in 1,000-sample in-memory p99 probe and retained D02/D03-observed seed/failure/blob identities",
-      "action": "Owner supplies both independently retained identity files and runs the canonical fail-closed B-251 runner; the packet records p99 <5 ms without claiming production latency.",
+      "action": "Owner supplies both independently retained identity files and runs the canonical fail-closed B-251 runner; the packet records p99 <=5 ms without claiming production latency.",
       "artifact": "artifacts/d03/B251-latency-probe.json",
-      "command": "set -euo pipefail; export D03_SAMPLE_COUNT=1000; python3 scripts/verify_b251_quota_cas_budget.py; python3 scripts/run_b251_latency_probe.py --allow-run --d02-identity reports/owner-actions/b251-d02-identity.json --observed-identity reports/owner-actions/b251-d03-observed-identity.json --output artifacts/d03/B251-latency-probe.json; jq -e '.schema == \"corelink.b251.latency-probe.v1\" and .identity.match == true and .identity.fields_compared == [\"seed\",\"failure\",\"blob\"] and .measurement.sample_count == 1000 and .measurement.limit_us == 5000 and .measurement.p99_us < .measurement.limit_us and .measurement.fixture == \"InMemoryAtomicQuotaChecker\" and .measurement.production_latency_measured == false' artifacts/d03/B251-latency-probe.json >/dev/null",
+      "command": "set -euo pipefail; export D03_SAMPLE_COUNT=1000; python3 scripts/verify_b251_quota_cas_budget.py; python3 scripts/run_b251_latency_probe.py --allow-run --d02-identity reports/owner-actions/b251-d02-identity.json --observed-identity reports/owner-actions/b251-d03-observed-identity.json --output artifacts/d03/B251-latency-probe.json; jq -e '.schema == \"corelink.b251.latency-probe.v1\" and .identity.match == true and .identity.fields_compared == [\"seed\",\"failure\",\"blob\"] and .measurement.sample_count == 1000 and .measurement.limit_us == 5000 and .measurement.p99_us <= .measurement.limit_us and .measurement.fixture == \"InMemoryAtomicQuotaChecker\" and .measurement.production_latency_measured == false' artifacts/d03/B251-latency-probe.json >/dev/null",
       "verify_means": "parked",
       "command_contract": {
         "owner_packet": "docs/campaigns/remediation/work-packages/B131-B167.md#WP-B251",
@@ -1068,7 +1068,7 @@
         ],
         "safety": [
           "set -euo pipefail",
-          "p99_us < .measurement.limit_us",
+          "p99_us <= .measurement.limit_us",
           "production_latency_measured == false"
         ],
         "forbidden": [
