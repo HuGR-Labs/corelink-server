@@ -161,7 +161,7 @@ def test_b251_identity_and_fixture_truth_mutations_are_red() -> None:
         ".identity.match == true": ".identity.match == false",
         '[\"seed\",\"failure\",\"blob\"]': '[\"seed\",\"blob\"]',
         ".measurement.sample_count == 1000": ".measurement.sample_count == 999",
-        ".measurement.p99_us < .measurement.limit_us": ".measurement.p99_us <= .measurement.limit_us",
+        ".measurement.p99_us <= .measurement.limit_us": ".measurement.p99_us < .measurement.limit_us",
         '.measurement.fixture == \"InMemoryAtomicQuotaChecker\"': '.measurement.fixture == \"production\"',
         ".measurement.production_latency_measured == false": ".measurement.production_latency_measured == true",
     }
@@ -231,8 +231,8 @@ def test_b216_b251_reject_exact_inert_jq_comment_and_string_mutations() -> None:
         ),
         (
             "B-251",
-            ".measurement.p99_us < .measurement.limit_us",
-            "true | if false then \".measurement.p99_us < .measurement.limit_us\" else . end",
+            ".measurement.p99_us <= .measurement.limit_us",
+            "true | if false then \".measurement.p99_us <= .measurement.limit_us\" else . end",
         ),
     )
     for item, needle, replacement in mutations:
