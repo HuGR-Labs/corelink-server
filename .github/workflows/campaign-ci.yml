@@ -32,7 +32,7 @@ env:
 jobs:
   campaign:
     name: campaign ${{ inputs.suite }}
-    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1380335483' }}
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
