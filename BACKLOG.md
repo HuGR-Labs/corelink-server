@@ -11181,9 +11181,9 @@ verify-means: |
 last-verified: 2026-08-31
 ```
 
-### B-086 — um único D1 global atende as cinco regiões, enquanto o instrumento assinado nomeia o D1 entre os serviços fixados por tenant
+### B-086 — um único D1 global atende as cinco regiões, enquanto o rascunho do instrumento nomeia o D1 entre os serviços fixados por tenant
 
-Os cinco blocos de produção do `wrangler.toml` — linhas 540, 870, 1036, 1196 e 1352 —
+Os cinco blocos de produção do `wrangler.toml` — linhas 546, 745, 922, 1093 e 1260 —
 ligam o **mesmo** `database_id = "d64742ea-e102-40b2-a844-ff02e3f94562"`. O que vive nesse
 banco inclui `tenant`, `team_member` (identificador Clerk em claro e hash de e-mail),
 `pat`, quotas, estado de cobrança e o outbox de auditoria.
@@ -11194,7 +11194,7 @@ Domains | … | **Tenant-pinned (Section 7)**"*. E a linha 144: *"WEUR data NEVE
 outside the EU jurisdiction. This restriction is enforced at the infrastructure level
 (Cloudflare DO `jurisdictional_restriction`)."*
 
-As únicas chaves `jurisdiction = "eu"` em toda a configuração estão nas linhas 958 e 971
+As únicas chaves `jurisdiction = "eu"` em toda a configuração estão nas linhas 841 e 860
 do `wrangler.toml`, e ambas são bindings de **bucket R2**. O binding do D1 não tem chave
 de jurisdição alguma.
 
