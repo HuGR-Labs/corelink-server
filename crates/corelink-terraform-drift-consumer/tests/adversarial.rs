@@ -6,7 +6,7 @@
 //! 3. Auto-apply attempt: no apply surface in consumer (compile-time + runtime check).
 //! 4. State file tampering simulation: corrupted exit code → error handling.
 //! 5. Acceptable drift filter: diff_count = 0 → no alert (clean run row only).
-//! 6. Multi-region drift: parallel events all 5 regions → 5 findings.
+//! 6. Multi-region drift: parallel events all 4 regions → 4 findings.
 //! 7. Fail-CLOSED audit: failing sink blocks store write.
 //! 8. Append-only violation: attempt to mutate immutable fields → error.
 //! 9. Unknown region hardening: unknown region rejected at classifier boundary.
@@ -57,14 +57,14 @@ fn make_consumer(
 #[test]
 fn adv_01_synthetic_drift_medium() {
     let mut consumer = make_consumer();
-    // Inject: 5 resources changed in eu-west
+    // Inject: 5 resources changed in weur
     let finding = consumer
-        .process_plan_event(&make_event("eu-west", 2, 5))
+        .process_plan_event(&make_event("weur", 2, 5))
         .unwrap();
 
     assert_eq!(finding.severity, DriftSeverity::Medium);
     assert_eq!(finding.plan_diff_count, 5);
-    assert_eq!(finding.region, "eu-west");
+    assert_eq!(finding.region, "weur");
     assert_eq!(finding.status, DriftStatus::Open);
     assert_eq!(finding.runbook_ref, "RB-FM-206");
 
@@ -88,7 +88,7 @@ fn adv_01_synthetic_drift_medium() {
 fn adv_01_synthetic_drift_high() {
     let mut consumer = make_consumer();
     let finding = consumer
-        .process_plan_event(&make_event("us-east", 2, 15))
+        .process_plan_event(&make_event("wnam", 2, 15))
         .unwrap();
     assert_eq!(finding.severity, DriftSeverity::High);
 }
@@ -108,7 +108,7 @@ fn adv_02_cron_skip_outcome_recorded() {
     // Also test that a terraform error (exit 1) records correctly
     // Terraform error still inserts a row (cron health tracking) with severity=none
     let finding = consumer
-        .process_plan_event(&make_event("us-west", 1, 0))
+        .process_plan_event(&make_event("enam", 1, 0))
         .unwrap();
     // Exit code 1 with diff_count 0 → severity None
     assert_eq!(finding.severity, DriftSeverity::None);
@@ -138,7 +138,7 @@ fn adv_03_auto_apply_forbidden_invariant() {
     // Runtime: no process_plan_event call ever results in apply
     let mut consumer = make_consumer();
     let finding = consumer
-        .process_plan_event(&make_event("sa-east", 2, 20))
+        .process_plan_event(&make_event("sam", 2, 20))
         .unwrap();
     // Finding status = Open; no apply triggered
     assert_eq!(finding.status, DriftStatus::Open);
@@ -156,7 +156,7 @@ fn adv_03_auto_apply_forbidden_invariant() {
 fn adv_04_corrupted_exit_code_rejected() {
     let mut consumer = make_consumer();
     // Exit code 3 = unrecognised (tampered or CI bug)
-    let result = consumer.process_plan_event(&make_event("ap-southeast", 3, 0));
+    let result = consumer.process_plan_event(&make_event("sam", 3, 0));
     assert!(
         matches!(result, Err(DriftConsumerError::UnrecognisedExitCode(3))),
         "corrupted exit code must be rejected"
@@ -169,7 +169,7 @@ fn adv_04_corrupted_exit_code_rejected() {
 #[test]
 fn adv_04_negative_exit_code_rejected() {
     let mut consumer = make_consumer();
-    let result = consumer.process_plan_event(&make_event("us-east", -1, 0));
+    let result = consumer.process_plan_event(&make_event("wnam", -1, 0));
     assert!(matches!(
         result,
         Err(DriftConsumerError::UnrecognisedExitCode(-1))
@@ -179,7 +179,7 @@ fn adv_04_negative_exit_code_rejected() {
 #[test]
 fn adv_11_raw_plan_artifact_url_rejected() {
     let mut consumer = make_consumer();
-    let mut event = make_event("us-east", 2, 1);
+    let mut event = make_event("wnam", 2, 1);
     event.plan_summary_artifact_url = Some("https://ci.example.com/plan.tfplan".to_owned());
     let result = consumer.process_plan_event(&event);
     assert!(matches!(result, Err(DriftConsumerError::UnsafeEvidenceUrl)));
@@ -195,7 +195,7 @@ fn adv_11_raw_plan_artifact_url_rejected() {
 fn adv_05_clean_run_no_drift_alert() {
     let mut consumer = make_consumer();
     let finding = consumer
-        .process_plan_event(&make_event("us-east", 0, 0))
+        .process_plan_event(&make_event("wnam", 0, 0))
         .unwrap();
 
     // Row inserted for cron health tracking
@@ -219,11 +219,11 @@ fn adv_05_clean_run_no_drift_alert() {
 }
 
 // -----------------------------------------------------------------------
-// Scenario 6: Multi-region drift — all 5 regions inject drift
+// Scenario 6: Multi-region drift — all 4 regions inject drift
 // -----------------------------------------------------------------------
 
 #[test]
-fn adv_06_multi_region_drift_all_5() {
+fn adv_06_multi_region_drift_all_4() {
     let mut consumer = make_consumer();
 
     for region in REGIONS {
@@ -233,15 +233,25 @@ fn adv_06_multi_region_drift_all_5() {
     }
 
     let open = consumer.store().open_findings();
-    assert_eq!(open.len(), 5, "all 5 regions must have findings");
+    assert_eq!(
+        open.len(),
+        REGIONS.len(),
+        "all 4 regions must have findings"
+    );
 
     let regions: Vec<&str> = open.iter().map(|f| f.region.as_str()).collect();
     for r in REGIONS {
         assert!(regions.contains(r), "region {r} must be in findings");
     }
 
-    assert_eq!(consumer.metrics().total_cron_runs_count(), 5);
-    assert_eq!(consumer.metrics().total_findings_count(), 5);
+    assert_eq!(
+        consumer.metrics().total_cron_runs_count(),
+        REGIONS.len() as u64
+    );
+    assert_eq!(
+        consumer.metrics().total_findings_count(),
+        REGIONS.len() as u64
+    );
 }
 
 // -----------------------------------------------------------------------
@@ -256,7 +266,7 @@ fn adv_07_failing_audit_blocks_store() {
         InMemoryDriftFindingStore::default(),
     );
 
-    let result = consumer.process_plan_event(&make_event("us-east", 2, 5));
+    let result = consumer.process_plan_event(&make_event("wnam", 2, 5));
     assert!(
         matches!(result, Err(DriftConsumerError::AuditFailed(_))),
         "audit failure must propagate"
@@ -275,7 +285,7 @@ fn adv_07_failing_audit_blocks_store() {
 fn adv_08_remediation_preserves_immutable_fields() {
     let mut consumer = make_consumer();
     let finding = consumer
-        .process_plan_event(&make_event("eu-west", 2, 7))
+        .process_plan_event(&make_event("weur", 2, 7))
         .unwrap();
 
     let finding_id = finding.finding_id;
@@ -347,7 +357,7 @@ fn adv_09_unknown_region_rejected() {
 fn adv_10_remediation_decision_tree_apply() {
     let mut consumer = make_consumer();
     let finding = consumer
-        .process_plan_event(&make_event("us-east", 2, 3))
+        .process_plan_event(&make_event("wnam", 2, 3))
         .unwrap();
     consumer
         .store_mut()
@@ -368,7 +378,7 @@ fn adv_10_remediation_decision_tree_apply() {
 fn adv_10_remediation_decision_tree_investigate() {
     let mut consumer = make_consumer();
     let finding = consumer
-        .process_plan_event(&make_event("us-west", 2, 2))
+        .process_plan_event(&make_event("enam", 2, 2))
         .unwrap();
     consumer
         .store_mut()
@@ -392,7 +402,7 @@ fn adv_10_remediation_decision_tree_investigate() {
 fn adv_10_remediation_decision_tree_revert() {
     let mut consumer = make_consumer();
     let finding = consumer
-        .process_plan_event(&make_event("ap-southeast", 2, 1))
+        .process_plan_event(&make_event("sam", 2, 1))
         .unwrap();
     consumer
         .store_mut()
@@ -420,7 +430,7 @@ fn all_valid_exit_codes_produce_findings() {
     let exit_codes = [0i32, 1, 2];
     for code in &exit_codes {
         let mut consumer = make_consumer();
-        let result = consumer.process_plan_event(&make_event("us-east", *code, 0));
+        let result = consumer.process_plan_event(&make_event("wnam", *code, 0));
         assert!(
             result.is_ok(),
             "exit code {code} must produce a valid finding"
@@ -455,7 +465,7 @@ mod prop_tests {
         #[test]
         fn prop_severity_monotone_with_diff_count(diff_count in 0u32..=1000) {
             let mut consumer = make_consumer();
-            let event = make_event("us-east", 2, diff_count);
+            let event = make_event("wnam", 2, diff_count);
             let finding = consumer.process_plan_event(&event).unwrap();
             let expected = match diff_count {
                 0 => DriftSeverity::None,
@@ -468,7 +478,7 @@ mod prop_tests {
 
         #[test]
         fn prop_all_valid_regions_accepted(
-            region_idx in 0usize..5,
+            region_idx in 0usize..REGIONS.len(),
             diff_count in 0u32..=20,
         ) {
             let region = REGIONS.get(region_idx).expect("valid region index");
@@ -481,7 +491,7 @@ mod prop_tests {
         fn prop_audit_always_emitted_before_store(diff_count in 1u32..=50) {
             // For every successful process, audit count == store count
             let mut consumer = make_consumer();
-            consumer.process_plan_event(&make_event("eu-west", 2, diff_count)).unwrap();
+            consumer.process_plan_event(&make_event("weur", 2, diff_count)).unwrap();
             prop_assert_eq!(
                 consumer.audit_sink().records.len(),
                 consumer.store().all_findings().len(),
@@ -495,7 +505,7 @@ mod prop_tests {
             diff_count in 0u32..=5,
         ) {
             let mut consumer = make_consumer();
-            consumer.process_plan_event(&make_event("sa-east", exit_code, diff_count)).unwrap();
+            consumer.process_plan_event(&make_event("sam", exit_code, diff_count)).unwrap();
             prop_assert_eq!(consumer.metrics().total_cron_runs_count(), 1);
         }
     }

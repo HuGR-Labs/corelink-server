@@ -74,6 +74,33 @@ class B012BotPrAuthTests(unittest.TestCase):
             # exercises the PR-creation credential itself.
             self.assertTrue(any("api-reference-sync.yml" in e for e in verify(candidate)))
 
+    def test_pull_request_creators_are_fork_safe(self):
+        for name in ("api-reference-sync.yml", "subprocessors-sync.yml"):
+            with self.subTest(workflow=name):
+                tmp, candidate = self._candidate()
+                self.addCleanup(tmp.cleanup)
+                path = candidate / ".github/workflows" / name
+                text = path.read_text(encoding="utf-8")
+                path.write_text(
+                    text.replace(
+                        "permissions:\n  contents: read\n",
+                        "permissions:\n  contents: read\n  pull-requests: write\n",
+                        1,
+                    ),
+                    encoding="utf-8",
+                )
+                self.assertTrue(any("pull-requests: write" in e for e in verify(candidate)))
+
+    def test_pull_request_checkout_does_not_persist_credentials(self):
+        tmp, candidate = self._candidate()
+        self.addCleanup(tmp.cleanup)
+        path = candidate / ".github/workflows/api-reference-sync.yml"
+        text = path.read_text(encoding="utf-8").replace(
+            "          persist-credentials: false\n", "", 1
+        )
+        path.write_text(text, encoding="utf-8")
+        self.assertTrue(any("persist GITHUB_TOKEN" in e for e in verify(candidate)))
+
     def test_new_sixth_pr_creator_is_rejected(self):
         tmp, candidate = self._candidate()
         self.addCleanup(tmp.cleanup)

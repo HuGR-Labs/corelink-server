@@ -44,8 +44,9 @@ sla_remediate: "≤ 7d"
 
 The GitHub Actions workflow `.github/workflows/terraform-drift.yml` runs daily at 03:00 UTC and on `workflow_dispatch`.
 
-For each of 5 regions (`us-east`, `us-west`, `eu-west`, `ap-southeast`, `sa-east`):
-1. `terraform init -backend-config=backend-<region>.hcl`
+For each of the four production regions (`wnam`, `enam`, `weur`, `sam`):
+1. `terraform -chdir=infra/terraform/regions/<region> init` against the
+   region's declared S3 backend and state key
 2. `terraform plan -detailed-exitcode` creates a runner-local plan for classification; it is removed before the job ends.
 
 The workflow suppresses Terraform's human-readable output and converts the local plan to a
@@ -68,9 +69,11 @@ gh workflow run terraform-drift.yml
 
 Or run locally (requires Cloudflare credentials):
 ```sh
-cd infra/terraform
-terraform init -backend-config=backend-us-east.hcl
-terraform plan -detailed-exitcode
+terraform -chdir=infra/terraform/regions/wnam init \
+  -backend-config="bucket=$TF_BACKEND_BUCKET" \
+  -backend-config="endpoints={s3=\"$TF_BACKEND_ENDPOINT\"}" \
+  -backend-config="use_lockfile=true"
+terraform -chdir=infra/terraform/regions/wnam plan -detailed-exitcode
 ```
 
 ### 1.3 Cron skip detection
@@ -279,7 +282,16 @@ The D1 row update (`status`, `remediation_decision`, `remediated_at_ms`, `remedi
 - CI runs `terraform plan` on every PR touching `.tf` files.
 - CODEOWNERS for `infra/terraform/` — changes require senior review.
 - Required PR reviews before merge to `main`.
-- No long-lived Cloudflare API credentials (OIDC-bound tokens only; WI-S13-004 §6.1).
+- Cloudflare uses the dedicated read-only `CF_TERRAFORM_DRIFT_API_TOKEN` plus
+  `CF_ACCOUNT_ID` and `CF_ZONE_ID`; this workflow does not request or exchange
+  an OIDC token.
+- R2 state uses separate `TF_BACKEND_ACCESS_KEY_ID` and
+  `TF_BACKEND_SECRET_ACCESS_KEY` credentials, mapped at runtime to Terraform's
+  `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. They are never written to
+  HCL, command arguments, artifacts, or logs.
+- The four regional roots use distinct state keys and `use_lockfile=true`.
+  A live R2 lock contention test is an external prerequisite and must be
+  recorded before declaring the drift signal operational.
 - `terraform apply` via CI is **FORBIDDEN** (CI lint gate: `scripts/lint_no_terraform_apply.py`).
 - Acceptable drift patterns documented in ADR + enforced via `lifecycle.ignore_changes`.
 - Backend state file versioning enabled (R2 object versioning).

@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn clean_run_is_none_severity() {
         let c = DefaultDriftClassifier;
-        let ev = make_event("us-east", 0, 0);
+        let ev = make_event("wnam", 0, 0);
         assert_eq!(c.classify(&ev).unwrap(), DriftSeverity::None);
     }
 
@@ -83,11 +83,11 @@ mod tests {
     fn low_severity_boundary() {
         let c = DefaultDriftClassifier;
         assert_eq!(
-            c.classify(&make_event("eu-west", 2, 1)).unwrap(),
+            c.classify(&make_event("weur", 2, 1)).unwrap(),
             DriftSeverity::Low
         );
         assert_eq!(
-            c.classify(&make_event("eu-west", 2, 2)).unwrap(),
+            c.classify(&make_event("weur", 2, 2)).unwrap(),
             DriftSeverity::Low
         );
     }
@@ -96,11 +96,11 @@ mod tests {
     fn medium_severity_boundary() {
         let c = DefaultDriftClassifier;
         assert_eq!(
-            c.classify(&make_event("us-west", 2, 3)).unwrap(),
+            c.classify(&make_event("enam", 2, 3)).unwrap(),
             DriftSeverity::Medium
         );
         assert_eq!(
-            c.classify(&make_event("us-west", 2, 10)).unwrap(),
+            c.classify(&make_event("enam", 2, 10)).unwrap(),
             DriftSeverity::Medium
         );
     }
@@ -109,11 +109,11 @@ mod tests {
     fn high_severity_boundary() {
         let c = DefaultDriftClassifier;
         assert_eq!(
-            c.classify(&make_event("ap-southeast", 2, 11)).unwrap(),
+            c.classify(&make_event("sam", 2, 11)).unwrap(),
             DriftSeverity::High
         );
         assert_eq!(
-            c.classify(&make_event("sa-east", 2, 999)).unwrap(),
+            c.classify(&make_event("sam", 2, 999)).unwrap(),
             DriftSeverity::High
         );
     }
@@ -131,7 +131,7 @@ mod tests {
     #[test]
     fn unrecognised_exit_code_rejected() {
         let c = DefaultDriftClassifier;
-        let ev = make_event("us-east", 3, 0);
+        let ev = make_event("wnam", 3, 0);
         assert!(matches!(
             c.classify(&ev),
             Err(DriftConsumerError::UnrecognisedExitCode(3))

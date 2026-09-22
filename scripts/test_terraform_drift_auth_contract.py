@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/terraform-drift.yml"
+PLAN_SCRIPT = ROOT / "scripts/terraform_drift_plan.sh"
 SECRETS_CHECKLIST = ROOT / "docs/internal/secrets-checklist.md"
 ACTIVE_TERRAFORM_FILES = (
     "infra/terraform/README.md",
@@ -89,27 +90,19 @@ class TerraformDriftAuthContractTests(unittest.TestCase):
                 self.assertEqual(plan_env.get(name), secret)
 
         plan_step = workflow_step(workflow, "Terraform plan")
+        plan_script = PLAN_SCRIPT.read_text(encoding="utf-8")
         for required in (
-            '"${CLOUDFLARE_API_TOKEN:-}"',
-            '"${TF_VAR_cf_account_id:-}"',
-            '"${TF_VAR_cf_zone_id:-}"',
+            '"${!name:-}"',
+            "Required Terraform inputs missing before plan",
+            'case "$terraform_exitcode" in',
+            "write_output 0 0 none false",
+            "write_output 2 2 medium true",
+            'write_output 1 "$terraform_exitcode" error false',
         ):
-            self.assertIn(required, plan_step)
-        self.assertIn("CF_ZONE_ID repository variable", plan_step)
-        self.assertIn('echo "::error::Required Cloudflare inputs missing', plan_step)
-        self.assertIn("TF_EXIT=1", plan_step)
-        self.assertIn('case "${TF_EXIT}" in', plan_step)
-        plan_run = plan_step.partition("        run: |\n")[2]
-        self.assertTrue(plan_run, "Terraform plan step must have a run script")
-        script_lines = [
-            line[10:]
-            for line in plan_run.splitlines()
-            if line.startswith("          ")
-        ]
-        self.assertEqual(
-            script_lines[-1].strip(),
-            'exit "${TF_EXIT}"',
-            "Terraform plan must propagate its final exit code",
+            self.assertIn(required, plan_script)
+        self.assertIn(
+            'run: scripts/terraform_drift_plan.sh "${{ matrix.region }}"',
+            plan_step,
         )
 
         init_env = step_input_envs(workflow, "Terraform init")
@@ -133,7 +126,8 @@ class TerraformDriftAuthContractTests(unittest.TestCase):
 
     def test_workflow_stays_plan_only(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertRegex(workflow, r"(?m)^\s*terraform plan\s*\\")
+        plan_script = PLAN_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('terraform -chdir="$root" plan \\', plan_script)
         self.assertNotRegex(workflow, r"(?m)^\s*terraform apply(?:\s|$)")
 
     def test_active_terraform_files_do_not_claim_cloudflare_uses_github_oidc(self) -> None:

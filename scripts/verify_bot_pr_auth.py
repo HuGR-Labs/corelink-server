@@ -27,6 +27,14 @@ CREATOR_WORKFLOWS = (
     "release-notes.yml",
 )
 
+# These creators also run a read-only drift check on pull requests. That job
+# may execute fork-controlled code, so its default GITHUB_TOKEN must not have
+# write permission and checkout must not persist credentials into the worktree.
+FORK_SAFE_PR_WORKFLOWS = (
+    "api-reference-sync.yml",
+    "subprocessors-sync.yml",
+)
+
 AUTO_PR_HEAD_MARKERS = (
     "bot/subprocessors-sync-",
     "auto/okf-reconcile-",
@@ -152,6 +160,22 @@ def verify(root: Path = ROOT) -> list[str]:
             errors.append(f"{name}: legacy BOT_PR_TOKEN path remains")
         if "gh pr create" not in text:
             errors.append(f"{name}: no gh pr create command found")
+
+        if name in FORK_SAFE_PR_WORKFLOWS:
+            if re.search(r"(?m)^  pull-requests:\s*write\s*$", text):
+                errors.append(
+                    f"{name}: pull_request jobs must not request pull-requests: write"
+                )
+            pr_job = text.split("\n  regenerate-and-pr:", 1)[0]
+            pr_checkouts = re.findall(
+                r"uses: actions/checkout@.*?(?=\n\s*- name:|\Z)",
+                pr_job,
+                re.S,
+            )
+            if not any("persist-credentials: false" in block for block in pr_checkouts):
+                errors.append(
+                    f"{name}: pull_request checkout must not persist GITHUB_TOKEN credentials"
+                )
 
         step = _pr_step(text)
         if "BOT_APP_TOKEN" not in step or APP_TOKEN_OUTPUT not in step:
