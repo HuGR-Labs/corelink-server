@@ -19,6 +19,16 @@ EXPECTED = {
     "azure-key-vault": "Microsoft Corporation (Azure)",
     "drata": "Drata, Inc.",
 }
+REQUIRED_REFRESH_FIELDS = {
+    "scope",
+    "subprocessors",
+    "residency",
+    "security_changes",
+    "dpa_changes",
+    "renewal_date",
+    "human_decision",
+    "signer",
+}
 
 
 def verify() -> dict[str, object]:
@@ -53,6 +63,28 @@ def verify() -> dict[str, object]:
             raise ValueError(f"unsafe canonical record path: {vendor.get('id')}")
         if vendor.get("id") in {"aws-kms", "gcp-kms", "azure-key-vault", "drata"} and record is not None:
             raise ValueError(f"external-only record unexpectedly claimed local path: {vendor.get('id')}")
+        evidence = vendor.get("current_repo_evidence")
+        if not isinstance(evidence, list) or not evidence or any(
+            not isinstance(path, str)
+            or path.startswith("/")
+            or ".." in path.split("/")
+            or not (ROOT / path).is_file()
+            for path in evidence
+        ):
+            raise ValueError(f"current repository evidence is missing or unsafe: {vendor.get('id')}")
+        packet = vendor.get("refresh_packet")
+        if not isinstance(packet, dict) or set(packet) != REQUIRED_REFRESH_FIELDS:
+            raise ValueError(f"refresh packet fields drifted: {vendor.get('id')}")
+        for field in REQUIRED_REFRESH_FIELDS:
+            if not isinstance(packet[field], dict) or packet[field].get("status") not in {
+                "pending_external", "pending_human_review"
+            }:
+                raise ValueError(f"refresh packet status must remain pending: {vendor.get('id')} {field}")
+        if packet["human_decision"].get("decision") is not None:
+            raise ValueError(f"unapproved decision claimed: {vendor.get('id')}")
+        signer = packet["signer"]
+        if signer.get("name") is not None or signer.get("signed_at") is not None:
+            raise ValueError(f"unapproved signature claimed: {vendor.get('id')}")
     non_claims = packet.get("non_claims")
     if not isinstance(non_claims, list) or len(non_claims) != 4:
         raise ValueError("non-claim boundary drifted")
