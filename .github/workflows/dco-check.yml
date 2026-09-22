@@ -40,6 +40,15 @@ jobs:
 
           fail=0
           while IFS= read -r sha; do
+            # GitHub's update-branch operation creates a merge commit that has
+            # no patch beyond its two signed parents. Require DCO on the
+            # authored commits, while allowing that generated merge commit.
+            parent_count=$(git show -s --format='%P' "$sha" | wc -w | tr -d ' ')
+            if [ "$parent_count" -gt 1 ]; then
+              echo "::notice::skipping merge commit $sha; its introduced commits are checked individually."
+              continue
+            fi
+
             author=$(git show -s --format='%an <%ae>' "$sha")
             signoff=$(git show -s --format='%(trailers:key=Signed-off-by,valueonly)' "$sha")
 

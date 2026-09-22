@@ -20,6 +20,23 @@
 | Conditions / follow-ups | `VR-9 — Legal must obtain and record the signed-copy DPA and attestation disposition.` |
 | Next review due | `TBD (YYYY-MM-DD)` |
 
+## Repository-verified technical and data-flow scope
+
+- **Role:** uptime/status monitoring, synthetic probes, and public status page
+  hosting.
+- **Runtime flow:** `monitoring/synthetic/probes.yml` defines seven HTTP health
+  probes against CoreLink's own public endpoints. The docs StatusPill fetches
+  the vendor status page's `index.json` with `GET` and `credentials: omit`,
+  then renders status data; it does not send visitor data, cookies, or
+  fingerprints to the vendor.
+- **Data boundary:** probe results are HTTP status codes and JSON assertions;
+  the repository classifies this stream as `telemetry` and records no customer
+  PII or content transfer.
+- **Repository sources:** `monitoring/synthetic/probes.yml`,
+  `apps/docs/src/components/StatusPill/StatusPill.tsx`,
+  `apps/docs/src/statuspage-url.ts`, and registry row 22 in
+  `specs/_compliance/VENDOR-RISK-REGISTER.md`.
+
 ## Notes
 
 No signature, named review, transfer assessment, certification, or approval is

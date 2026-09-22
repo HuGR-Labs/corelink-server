@@ -20,6 +20,20 @@
 | Conditions / follow-ups | `VR-8 — Legal must obtain and record the signed-copy DPA and attestation disposition.` |
 | Next review due | `TBD (YYYY-MM-DD)` |
 
+## Repository-verified technical and data-flow scope
+
+- **Role:** cookieless web analytics for the docs-site marketing funnel.
+- **Runtime flow:** `apps/docs/docusaurus.config.ts` injects the external
+  `https://plausible.io/js/script.js` with `data-domain:
+  corelink-docs.humangr.com`. The repository records this as aggregate page
+  view telemetry and documents the no-cookie/no-fingerprinting configuration.
+- **Optional server flow:** `apps/analytics-worker/wrangler.toml` declares
+  `PLAUSIBLE_API_KEY` as an optional secret for the weekly digest; absence of
+  that secret omits Plausible totals rather than failing the cron path.
+- **Repository sources:** `apps/docs/docusaurus.config.ts`,
+  `apps/analytics-worker/wrangler.toml`, and registry row 21 in
+  `specs/_compliance/VENDOR-RISK-REGISTER.md`.
+
 ## Notes
 
 No signature, named review, transfer assessment, certification, or approval is
