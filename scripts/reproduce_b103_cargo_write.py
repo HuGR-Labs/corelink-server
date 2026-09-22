@@ -10,9 +10,11 @@ memory. Each operation also uses a payload derived from its unique key; that
 keeps independent writes on independent content-hash accounting locks instead
 of making the harness serialize them on one synthetic blob.
 
-The fixed concurrency levels and method order are intentional.  A run with a
-429 or another unexpected response is written to the artifact and exits 2 so
-CI cannot turn the observation into a green result by ignoring failures.
+The three sequential warm PUTs run first so the burst is measured on the hot
+authenticated path. The fixed concurrency levels and method order are
+intentional. A run with a 429 or another unexpected response is written to the
+artifact and exits 2 so CI cannot turn the observation into a green result by
+ignoring failures.
 """
 
 from __future__ import annotations
@@ -177,6 +179,29 @@ def run_arm(base: str, tenant: str, token: str, mode: str, concurrency: int) -> 
     }
 
 
+def run_warm_sequence(base: str, tenant: str, token: str) -> dict[str, object]:
+    """Capture three sequential writes before opening the concurrency arms.
+
+    The sequence warms the same tenant/PAT path that the burst exercises while
+    keeping every payload independent.  Reusing one content hash would measure
+    CAS idempotency, not the hot authenticated write path.
+    """
+    responses: list[dict[str, object]] = []
+    for _ in range(3):
+        key = uuid.uuid4().hex * 2
+        body = f"b103-warm:{key}".encode("ascii")
+        responses.append(request(base, tenant, token, "PUT", key, body))
+    failures = [row for row in responses if row["ok"] is not True]
+    return {
+        "method": "PUT",
+        "requests": len(responses),
+        "successful_requests": len(responses) - len(failures),
+        "failed_requests": len(failures),
+        "responses_sha256": sha256(json.dumps(responses, sort_keys=True, separators=(",", ":")).encode()),
+        "responses": responses,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default=os.environ.get("B103_TARGET_HOST", ""))
@@ -194,6 +219,7 @@ def main() -> int:
     if not re.fullmatch(r"[0-9a-f]{40}", args.deployment_sha):
         raise SystemExit("B103_DEPLOYMENT_SHA must be the target receipt's 40-character SHA")
 
+    warm_sequence = run_warm_sequence(args.base.rstrip("/"), args.tenant, token)
     arms: list[dict[str, object]] = []
     for mode in ("put_only", "webdav_sequence"):
         for concurrency in CONCURRENCIES:
@@ -207,12 +233,16 @@ def main() -> int:
         "captured_at": now(),
         "concurrency_levels": list(CONCURRENCIES),
         "method_contract": {
+            "warm_sequence": ["PUT", "PUT", "PUT"],
             "put_only": ["PUT"],
             "webdav_sequence": list(WEBDAV_METHODS),
             "expected_statuses": {method: sorted(statuses) for method, statuses in EXPECTED.items()},
         },
+        "warm_sequence": warm_sequence,
         "arms": arms,
-        "failed_assertions": sum(int(arm["failed_requests"]) for arm in arms),
+        "failed_assertions": int(warm_sequence["failed_requests"]) + sum(
+            int(arm["failed_requests"]) for arm in arms
+        ),
     }
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     # A diagnostic artifact is useful whether the system is healthy or broken;
