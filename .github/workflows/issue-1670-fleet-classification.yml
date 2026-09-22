@@ -1,0 +1,135 @@
+name: issue-1670-fleet-classification
+
+# The CoreLink runner admission hook must pre-provision the exact private tmpfs
+# mount before this job begins. This workflow never creates or falls back to a mount.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "run-1670-fleet-enospc-linker" to authorize one bounded fixture'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1670-fleet-classification
+  cancel-in-progress: false
+
+jobs:
+  classify-bounded-disk-failures:
+    if: github.repository_id == '1232040291' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected && inputs.confirm == 'run-1670-fleet-enospc-linker'
+    runs-on: corelink
+    timeout-minutes: 10
+    env:
+      I1670_FLEET_LABEL: corelink
+      I1670_RUNNER_NAME: ${{ runner.name }}
+      I1670_RUNNER_OS: ${{ runner.os }}
+      I1670_RUNNER_ARCH: ${{ runner.arch }}
+      CORELINK_I1670_FIXTURE_MOUNT: /mnt/corelink-i1670/${{ github.run_id }}
+      CORELINK_I1670_FIXTURE_MAX_BYTES: '134217728'
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Induce and classify isolated ENOSPC plus linker failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$I1670_FLEET_LABEL" = corelink
+          test -n "$I1670_RUNNER_NAME" -a -n "$I1670_RUNNER_OS" -a -n "$I1670_RUNNER_ARCH"
+          test "$CORELINK_I1670_FIXTURE_MAX_BYTES" -gt $((16 * 1024 * 1024))
+          test "$CORELINK_I1670_FIXTURE_MAX_BYTES" -le $((128 * 1024 * 1024))
+          expected_fixture_mount="/mnt/corelink-i1670/${GITHUB_RUN_ID}"
+          fixture_mount="$CORELINK_I1670_FIXTURE_MOUNT"
+          test "$fixture_mount" = "$expected_fixture_mount"
+          test -d "$fixture_mount"
+          fixture_mount_target="$(findmnt --noheadings --output TARGET --target "$fixture_mount" | xargs)"
+          fixture_fs_type="$(findmnt --noheadings --output FSTYPE --target "$fixture_mount" | xargs)"
+          fixture_options="$(findmnt --noheadings --output OPTIONS --target "$fixture_mount" | xargs)"
+          test "$fixture_mount_target" = "$fixture_mount"
+          test "$fixture_fs_type" = tmpfs
+          case ",$fixture_options," in *,size=[1-9]*[kKmMgG],*|*,size=[1-9]*,*) ;; *) exit 1 ;; esac
+          fixture_bytes="$(df --output=size -B1 "$fixture_mount" | awk 'NR == 2 { print $1 }')"
+          test "$fixture_bytes" -gt 0
+          test "$fixture_bytes" -le "$CORELINK_I1670_FIXTURE_MAX_BYTES"
+          test "$(stat -c '%u' "$fixture_mount")" = "$(id -u)"
+          test -w "$fixture_mount"
+
+          root="${RUNNER_TEMP:-/tmp}/issue-1670"
+          mkdir -p "$root"
+          clear_fixture() {
+            rm -rf -- "$fixture_mount/out" "$fixture_mount/fill.bin" "$fixture_mount/drain.bin" "$fixture_mount/write.bin"
+          }
+          cleanup() { clear_fixture; rm -rf -- "$root"; }
+          trap cleanup EXIT
+          fill_and_drain() {
+            local output="$1" available block
+            shift
+            available="$(df --output=avail -B1 "$fixture_mount" | awk 'NR == 2 { print $1 }')"
+            test "$available" -gt $((1024 * 1024))
+            python3 - "$fixture_mount/fill.bin" $((available - 64 * 1024)) <<'PY'
+          import sys
+          with open(sys.argv[1], "wb", buffering=0) as stream:
+              stream.write(b"\0" * int(sys.argv[2]))
+          PY
+            block="$(stat -fc '%S' "$fixture_mount")"
+            set +e
+            timeout --signal=TERM 30s dd if=/dev/zero of="$fixture_mount/drain.bin" bs="$block" count=$((available / block + 2)) status=none
+            test $? -le 1
+            set -e
+            test "$(df --output=avail -B1 "$fixture_mount" | awk 'NR == 2 { print $1 }')" -lt "$block"
+            set +e
+            GITHUB_STEP_SUMMARY=/dev/null CORELINK_CLASSIFICATION_ARTIFACT="$root/$output.json" scripts/run-with-infra-classification.sh "$@" >"$root/$output.raw.log" 2>&1
+            printf '%s' "$?" >"$root/$output.rc"
+            set -e
+          }
+
+          mkdir -p "$fixture_mount/out"
+          fill_and_drain enospc dd if=/dev/zero of="$fixture_mount/write.bin" bs=1M count=1 status=none
+          clear_fixture
+          mkdir -p "$fixture_mount/out"
+          printf 'int main(void) { return 0; }\n' >"$root/main.c"
+          cc -c "$root/main.c" -o "$root/main.o"
+          fill_and_drain linker cc "$root/main.o" -o "$fixture_mount/out/linked"
+          enospc_rc="$(cat "$root/enospc.rc")"
+          linker_rc="$(cat "$root/linker.rc")"
+          enospc_class="$(sed -n 's/^classification: //p' "$root/enospc.raw.log" | tail -1)"
+          linker_class="$(sed -n 's/^classification: //p' "$root/linker.raw.log" | tail -1)"
+          test "$enospc_rc" -ne 0 -a "$linker_rc" -ne 0
+          test -n "$enospc_class" -a -n "$linker_class"
+          [[ "$enospc_class" == ENOSPC || "$enospc_class" == LINKER_FAILURE ]]
+          [[ "$linker_class" == ENOSPC || "$linker_class" == LINKER_FAILURE ]]
+          clear_fixture
+          test -z "$(find "$fixture_mount" -xdev -mindepth 1 -maxdepth 1 -print -quit)"
+
+          python3 - "$GITHUB_WORKSPACE/issue-1670-report.json" "$fixture_bytes" "$enospc_rc" "$enospc_class" "$linker_rc" "$linker_class" <<'PY'
+          import hashlib, json, os, sys
+          identity = "\0".join(os.environ[key] for key in ("I1670_FLEET_LABEL", "I1670_RUNNER_NAME", "I1670_RUNNER_OS", "I1670_RUNNER_ARCH"))
+          json.dump({"issue": 1670, "runner_identity_sha256": hashlib.sha256(identity.encode()).hexdigest(),
+                     "fixture": {"kind": "job-exclusive-size-capped-tmpfs", "capacity_bytes": int(sys.argv[2])},
+                     "enospc": {"exit_code": int(sys.argv[3]), "classification": sys.argv[4]},
+                     "linker": {"exit_code": int(sys.argv[5]), "classification": sys.argv[6]},
+                     "cleanup_readback": {"fixture_empty": True}}, open(sys.argv[1], "w"), indent=2)
+          PY
+          printf 'classification=%s\nexit_code=%s\nannotation=infrastructure_failure\n' "$enospc_class" "$enospc_rc" >"$GITHUB_WORKSPACE/issue-1670-enospc-sanitized.log"
+          printf 'classification=%s\nexit_code=%s\nannotation=infrastructure_failure\n' "$linker_class" "$linker_rc" >"$GITHUB_WORKSPACE/issue-1670-linker-sanitized.log"
+          {
+            echo "## Issue #1670 CoreLink fleet evidence"
+            echo "- runner: opaque SHA-256 receipt"
+            echo "- fixture: job-exclusive size-capped tmpfs"
+            echo "- ENOSPC: exit=$enospc_rc classification=$enospc_class"
+            echo "- linker: exit=$linker_rc classification=$linker_class"
+            echo "- cleanup readback: fixture empty"
+          } >>"$GITHUB_STEP_SUMMARY"
+      - name: Upload sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-1670-fleet-classification
+          path: |
+            issue-1670-report.json
+            issue-1670-enospc-sanitized.log
+            issue-1670-linker-sanitized.log
+          if-no-files-found: error

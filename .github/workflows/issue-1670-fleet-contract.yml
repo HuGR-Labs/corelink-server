@@ -1,0 +1,23 @@
+name: issue-1670-fleet-contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-1670-fleet-classification.yml"
+      - ".github/workflows/issue-1670-fleet-contract.yml"
+      - "tests/test_i1670_fleet_workflow_contract.py"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    if: github.repository_id == '1232040291'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Reject unsafe CoreLink fixture, identity, and artifact mutations
+        run: python3 tests/test_i1670_fleet_workflow_contract.py
