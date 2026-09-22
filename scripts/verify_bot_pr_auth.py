@@ -51,10 +51,11 @@ APP_TOKEN_OUTPUT = "steps.app-token.outputs.token"
 B012_BACKLOG_REQUIRED = (
     "approval-required",
     "Dependabot PRs can trigger workflows",
-    "status: open",
+    "status: done",
     "expected jobs actually complete",
-    "offline/missing runner labelled `corelink`",
-    "Check/status presence or a zero-job workflow run does not close it",
+    "offline/missing runner labelled\n`corelink`",
+    "zero-job workflow run is not execution evidence",
+    "rustfmt jobs completed successfully without approval",
 )
 
 

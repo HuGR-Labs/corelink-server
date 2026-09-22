@@ -45,16 +45,17 @@ class B012BotPrAuthTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             candidate = Path(tmp)
             text = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
-            self.assertIn("Check/status presence or a zero-job workflow run does not close it", text)
+            self.assertIn("zero-job workflow run is not execution evidence", text)
             (candidate / "BACKLOG.md").write_text(
                 text.replace(
-                    "Check/status presence or a zero-job workflow run does not close it",
-                    "Check/status presence closes it",
+                    "zero-job workflow run is not execution evidence",
+                    "zero-job workflow run is execution evidence",
                     1,
                 ),
                 encoding="utf-8",
             )
-            self.assertTrue(any("Check/status presence" in error for error in verify_b012_backlog(candidate)))
+            self.assertTrue(any("zero-job workflow run is not execution evidence" in error
+                                for error in verify_b012_backlog(candidate)))
 
     def test_mutating_pr_step_back_to_github_token_is_detected(self):
         with tempfile.TemporaryDirectory() as tmp:

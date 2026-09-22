@@ -17,6 +17,7 @@ on:
       - scripts/verify_owner_action_packets.py
       - scripts/verify_b012_bot_pr_evidence.py
       - scripts/verify_bot_pr_auth.py
+      - scripts/verify_bot_pr_auth.py
       - tests/test_b012_bot_pr_evidence.py
       - tests/test_b012_bot_pr_auth.py
       - tests/test_owner_action_packets.py

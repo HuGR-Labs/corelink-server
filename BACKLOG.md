@@ -7476,6 +7476,7 @@ write-authorized human can approve them. Dependabot PRs can trigger workflows
 independently. Therefore neither bot authorship nor a zero-job
 `startup_failure` proves token suppression. A present run, check, or status
 also does not prove that CI executed or passed.
+A present check/status or zero-job workflow run is not execution evidence.
 
 The five active auto-PR creators mint a repository-scoped, one-hour GitHub App
 installation token per job from `CORELINK_BOT_APP_ID` and
@@ -7495,8 +7496,8 @@ https://github.com/HuGR-dev/corelink-server/issues/1642#issuecomment-5785376771.
 This proves those hosted checks can run for an App-authored PR. It does not
 claim that the five automatic creator workflows or the separate self-hosted
 `corelink` runner were exercised. The bot credential cannot repair Actions
-startup failure, hosted-billing limits, or an offline/missing `corelink`
-runner.
+startup failure, hosted-billing limits, or an offline/missing runner labelled
+`corelink`.
 
 **Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
 today, what each option costs, and what happens if the answer is "not now".
@@ -7519,7 +7520,8 @@ verify-means: |
   rustfmt jobs completed successfully without approval. The verifier rejects
   credential material, installation-ID fields, scope expansion, missing/failed
   jobs, and a present legacy BOT_PR_TOKEN. This does not claim creator workflow
-  or self-hosted corelink-runner execution.
+  or self-hosted corelink-runner execution; the expected jobs actually complete
+  on the hosted runner. A zero-job workflow run is not execution evidence.
 last-verified: 2026-09-22
 ```
 
