@@ -24,6 +24,7 @@ from pathlib import Path
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ".github/workflows/load-test-nightly.yml"
 COMPARATOR = "scripts/load-test-baseline-check.py"
+SANITIZER = "scripts/sanitize_k6_summary.py"
 OPERATOR_README = "tests/load/README.md"
 COMPARE_STEP = "compare median vs stored baseline"
 CANONICAL_STAGING_HOST = "staging.corelink.humangr.com"
@@ -583,9 +584,24 @@ def assess(root: Path, *, expect: str) -> list[str]:
     try:
         workflow = workflow_path.read_text(encoding="utf-8")
         comparator = comparator_path.read_text(encoding="utf-8")
+        sanitizer = (root / SANITIZER).read_text(encoding="utf-8")
         readme = readme_path.read_text(encoding="utf-8")
     except OSError as exc:
         return [f"instrument error: {exc}"]
+
+    if "BASELINE_SCHEMA = 2" not in comparator or 'BASELINE_VERSION = "k6-baseline-v2"' not in comparator:
+        gaps.append("baseline schema/version is not explicit")
+    if 'DEFAULT_REGRESSION_THRESHOLD = 1.20' not in comparator or "threshold_multiplier" not in comparator:
+        gaps.append("baseline threshold is not explicit")
+    if 'SUITE_VERSION = "r3-prep-v2"' not in comparator or 'SUITE_VERSION = "r3-prep-v2"' not in sanitizer:
+        gaps.append("load suite version is not explicit")
+    for needle in (
+        "sanitize_k6_summary.py",
+        "summary.raw.json",
+        "--summary-export tests/load/results/${{ matrix.scenario.id }}/summary.raw.json",
+    ):
+        if needle not in workflow:
+            gaps.append(f"workflow does not require sanitized summaries: {needle}")
 
     gaps.extend(_hostname_gaps(root))
 
@@ -659,7 +675,17 @@ def assess(root: Path, *, expect: str) -> list[str]:
     else:
         current_fn = _function(tree, "collect_current")
         statuses_fn = _function(tree, "collect_statuses")
-        baseline_fn = _function(tree, "load_baseline")
+        # The identity-bound comparator's executable loader is
+        # ``load_baseline_record``.  Keep accepting the compatibility
+        # ``load_baseline`` view for older trees, but inspect and require the
+        # record loader whenever it is present so the target identity and
+        # threshold checks remain part of the verified path.
+        baseline_name = (
+            "load_baseline_record"
+            if _function(tree, "load_baseline_record") is not None
+            else "load_baseline"
+        )
+        baseline_fn = _function(tree, baseline_name)
         main_fn = _function(tree, "main")
         if current_fn is None:
             gaps.append("comparator has no executable collect_current function")
@@ -680,7 +706,7 @@ def assess(root: Path, *, expect: str) -> list[str]:
             if "success" not in statuses_strings or not _set_population_check(statuses_fn, "statuses"):
                 gaps.append("collect_statuses does not require an exact successful population")
         if baseline_fn is None:
-            gaps.append("comparator has no executable load_baseline function")
+            gaps.append(f"comparator has no executable {baseline_name} function")
         else:
             if not _raises(baseline_fn, "BaselineError"):
                 gaps.append("missing or malformed baseline is not fail-closed")
@@ -690,7 +716,8 @@ def assess(root: Path, *, expect: str) -> list[str]:
         if main_fn is None:
             gaps.append("comparator has no executable main function")
         else:
-            for call in ("collect_statuses", "collect_current", "load_baseline"):
+            required_calls = ("collect_statuses", "collect_current", baseline_name)
+            for call in required_calls:
                 if not _calls(main_fn, call):
                     gaps.append(f"main does not execute {call}")
             main_names = {

@@ -69,7 +69,7 @@ impl CasDeleteHandler for R2CasHandler {
             ))
             .map_err(CasHandlerError::AuditFailed)?;
 
-        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Delete)?;
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Delete, None)?;
 
         // CRITICAL — `block_in_place`: see `read` above.
         let handle = tokio::runtime::Handle::current();
@@ -342,7 +342,7 @@ impl CasListHandler for R2CasHandler {
             req.at_unix_ms,
         ));
         let mut byok_guard = if audit_result.is_ok() {
-            self.acquire_byok_data(&req.tenant, DataOperation::Read)?
+            self.acquire_byok_data(&req.tenant, DataOperation::Read, None)?
         } else {
             None
         };

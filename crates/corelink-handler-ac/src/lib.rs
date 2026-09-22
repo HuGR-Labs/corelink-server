@@ -28,6 +28,7 @@ pub use error::AcHandlerError;
 pub use handler::{
     AcDeleteHandler, AcDeleteRequest, AcDeleteResponse, AcListHandler, AcListRequest,
     AcListResponse, AcLookupHandler, AcLookupRequest, AcLookupResponse, AcRefEntry,
-    AcUpdateHandler, AcUpdateRequest, AcUpdateResponse, InMemoryAcHandler,
+    AcUpdateHandler, AcUpdateOperationContext, AcUpdateRequest, AcUpdateResponse,
+    InMemoryAcHandler,
 };
 pub use observer::{InMemorySliObserver, Sli, SliObservation, SliObserver};

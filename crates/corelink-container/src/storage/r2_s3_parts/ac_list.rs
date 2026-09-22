@@ -43,7 +43,7 @@ impl corelink_handler_ac::AcListHandler for R2AcHandler {
             self.emit_list_sli(true, elapsed_us(started));
             return Err(AcHandlerError::AuditFailed(e));
         }
-        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Read)?;
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Read, None)?;
 
         if let Some(guard) = byok_guard.as_ref().filter(|guard| {
             guard

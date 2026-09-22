@@ -404,6 +404,20 @@ impl RuntimeDataIntent {
                 .then_some(config.crypto_mode.as_str())
         })
     }
+
+    #[cfg(test)]
+    /// Construct an authoritative operation snapshot for an in-process gate fake.
+    pub(crate) fn for_test(
+        tenant_id: &str,
+        config: Option<TenantByokConfig>,
+        tcs_version: Option<i64>,
+    ) -> Self {
+        Self {
+            intent: DataIntent::for_test(tenant_id, DataOperation::Write),
+            config,
+            tcs_version,
+        }
+    }
 }
 
 /// Owns a data intent through the final storage/crypto return boundary and

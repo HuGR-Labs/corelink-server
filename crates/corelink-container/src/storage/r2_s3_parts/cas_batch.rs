@@ -88,7 +88,7 @@ impl R2CasHandler {
 
         let mut guards = reqs
             .iter()
-            .map(|req| self.acquire_byok_data(&req.tenant, DataOperation::Read))
+            .map(|req| self.acquire_byok_data(&req.tenant, DataOperation::Read, None))
             .collect::<Result<Vec<_>, _>>()?;
 
         // Probes may still overlap with each other, but only after the

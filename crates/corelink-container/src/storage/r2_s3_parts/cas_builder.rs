@@ -83,79 +83,13 @@ pub async fn build_r2_cas_handler_from_env(
     // observation in a `Vec` for the life of the container process, with
     // no production reader of `snapshot()`/`count()` anywhere.
     let sli = crate::sli_aggregate::shared();
-    let rollout_d1 = match D1HttpClient::new(&env) {
-        Ok(d1) => Arc::new(d1),
-        Err(error) => return Some(Err(format!("CAS BYOK rollout probe unavailable: {error}"))),
-    };
-    let runtime_gate =
-        match crate::storage::byok_generation_catalog::runtime_gate_after_rollout_probe(rollout_d1)
-            .await
-        {
-            Ok(gate) => gate,
-            Err(error) => return Some(Err(format!("CAS BYOK runtime gate unavailable: {error}"))),
-        };
-    let mut handler = R2CasHandler::new(client, cas_region, Some(tdk_bytes), audit, sli)
+    let handler = R2CasHandler::new(client, cas_region, Some(tdk_bytes), audit, sli)
         .with_async_audit(audit_concrete)
         .with_cas_write_fence(cas_write_fence);
-    if let Some(gate) = runtime_gate {
-        handler = handler.with_byok_runtime_gate(gate);
-    }
 
-    // B-083: a real-provider image MUST attach the same real KMS boundary to
-    // the CAS data path before an operator can activate a tenant.  Leaving
-    // these collaborators unset makes `resolve_byok` select its legacy
-    // plaintext branch even after `tenant_byok_config.state` becomes active.
-    // Provider/D1 construction errors are therefore fatal on the production
-    // storage path; there is no plaintext fallback in a BYOK-enabled image.
-    #[cfg(any(
-        feature = "byok-aws-real",
-        feature = "byok-gcp-real",
-        feature = "byok-azure-real",
-        feature = "byok-vault-real"
-    ))]
-    {
-        return Some(
-            async {
-                let byok_d1 = Arc::new(D1HttpClient::new(&env).map_err(|error| {
-                    format!("CAS BYOK D1 client unavailable (fail-closed): {error}")
-                })?);
-                let provider =
-                    crate::byok_orchestrator::make_provider()
-                        .await
-                        .map_err(|error| {
-                            format!("CAS BYOK provider unavailable (fail-closed): {error}")
-                        })?;
-                let config = Arc::new(ByokConfigCache::with_default_ttl(Arc::new(
-                    crate::customer_d1::D1ByokConfigReader::new(Arc::clone(&byok_d1)),
-                )));
-                let tcs = Arc::new(
-                    TcsResolver::with_default_ttl(
-                        Arc::new(super::byok_cas::D1ByokSecretReader::new(Arc::clone(
-                            &byok_d1,
-                        ))),
-                        Arc::clone(&provider),
-                    )
-                    .map_err(|error| format!("CAS BYOK Tcs resolver unavailable: {error}"))?,
-                );
-                let mode_b = Arc::new(
-                    ModeBEncryptor::with_default_ttl(
-                        provider,
-                        Arc::new(super::byok_cas::D1ByokEnvelopeStore::new(byok_d1)),
-                    )
-                    .map_err(|error| format!("CAS BYOK Mode-B unavailable: {error}"))?,
-                );
-                Ok(handler.with_byok(config, tcs).with_byok_random(mode_b))
-            }
-            .await,
-        );
-    }
-
-    #[cfg(not(any(
-        feature = "byok-aws-real",
-        feature = "byok-gcp-real",
-        feature = "byok-azure-real",
-        feature = "byok-vault-real"
-    )))]
+    // Router assembly attaches the one DataPlaneByok instance, including its
+    // operation gate. Do not create a handler-local gate here: reservation and
+    // storage must consume the same request-scoped authority.
     Some(Ok(handler))
 }
 
