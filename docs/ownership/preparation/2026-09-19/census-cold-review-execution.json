@@ -1,0 +1,6 @@
+{
+  "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5",
+  "review_exists": false,
+  "scope": "no_independent_review_claimed",
+  "hosted_verifier": "verify_current_provenance.py"
+}

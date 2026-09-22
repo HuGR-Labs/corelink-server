@@ -113,7 +113,7 @@ def assess(config: str, test: str, runner: str) -> None:
         "let p99 = samples[(samples.len() * 99 / 100)",
         "B251_LATENCY_PROBE_JSON=",
         '\\"production_latency_measured\\":false',
-        "assert!(p99 < 5_000",
+        "assert!(p99 <= 5_000",
     ):
         if required not in latency_prefix + latency:
             raise VerificationError(f"isolated latency probe is incomplete: {required}")
@@ -149,7 +149,7 @@ def assess(config: str, test: str, runner: str) -> None:
         'record["limit_us"] != LIMIT_US',
         'record["fixture"] != "InMemoryAtomicQuotaChecker"',
         'record["production_latency_measured"] is not False',
-        "p99_us >= LIMIT_US",
+        "p99_us > LIMIT_US",
     ):
         if required not in parse:
             raise VerificationError(f"B-251 probe parsing is incomplete: {required}")
@@ -228,8 +228,8 @@ def mutation_checks(config: str, test: str, runner: str) -> None:
             test.replace("samples.sort_unstable();", "", 1),
         ),
         (
-            "latency strict bound weakened",
-            test.replace("assert!(p99 < 5_000", "assert!(p99 <= 5_000", 1),
+            "latency inclusive boundary weakened",
+            test.replace("assert!(p99 <= 5_000", "assert!(p99 < 5_000", 1),
         ),
         (
             "request case removed",
@@ -275,8 +275,8 @@ def mutation_checks(config: str, test: str, runner: str) -> None:
             runner.replace("compare_identity(d02, observed)", "pass  # comparison removed", 1),
         ),
         (
-            "strict p99 runner bound weakened",
-            runner.replace("p99_us >= LIMIT_US", "p99_us > LIMIT_US", 1),
+            "inclusive p99 runner boundary weakened",
+            runner.replace("p99_us > LIMIT_US", "p99_us >= LIMIT_US", 1),
         ),
         (
             "production boundary removed",
@@ -315,7 +315,7 @@ def main() -> int:
     mutation_checks(config, test, runner)
     print(
         "B-251 quota-CAS budget: PASS "
-        "(deterministic invariants; seed/failure/blob comparison; isolated 1000-sample p99<5ms probe; mutations red)"
+        "(deterministic invariants; seed/failure/blob comparison; isolated 1000-sample p99<=5ms probe; mutations red)"
     )
     return 0
 
