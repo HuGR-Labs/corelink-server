@@ -2,11 +2,14 @@
 
 import unittest
 from pathlib import Path
+import sys
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 from scripts.verify_i1666_mutants_evidence import verify
 
 
-WORKFLOW = Path(".github/workflows/issue-1863-mutants-hosted.yml")
+WORKFLOW = ROOT / ".github/workflows/issue-1863-mutants-hosted.yml"
 
 
 class HostedMutantsEvidenceContractTest(unittest.TestCase):
