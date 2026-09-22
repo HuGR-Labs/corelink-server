@@ -29,31 +29,25 @@ fn block_on_accrue(
     tokio::task::block_in_place(|| handle.block_on(acc.accrue(tenant, bytes, quota_seed)))
 }
 
-/// Compute the **committed (stored) byte size** the accountant must reserve and
-/// release for a write — the size that actually lands in R2, so reserve ==
-/// release == the eventual delete-release (which measures the real R2 object)
-/// and `bytes_used` can NEVER drift (audit C3 CRITICAL).
-///
-/// For a BYOK-ENCRYPTING tenant the stored object is the `CLB1` convergent blob
-/// = `plaintext_len + BYOK_CLB1_OVERHEAD` (32 B). Such a tenant is detected via
-/// the SAME [`ByokConfigCache`] the storage handlers use — engagement
-/// [`ByokEngagement::Encrypt`] for a non-`_public` tenant — so a write that
-/// stores ciphertext is accounted at its ciphertext size on BOTH the reserve and
-/// (on rollback) the release.
-///
-/// - `cache == None` (today's production / tests) ⇒ plaintext size — byte-for-
-///   byte the legacy behaviour, zero change for every non-BYOK deployment.
-/// - `_public`, not configured, or `Plaintext` engagement ⇒ plaintext size.
-/// - `FailClosed` engagement (Mode B / partial) ⇒ plaintext size: the inner
-///   storage write fails closed and stores NOTHING, so the (plaintext-sized)
-///   reservation is rolled back net-zero — no ciphertext is ever committed.
-/// - `Encrypt` ⇒ `plaintext_len + BYOK_CLB1_OVERHEAD`.
-///
-/// FAIL-CLOSED: a config-cache read error returns `Err` — the caller maps it to
-/// the 503 fail-closed sentinel. We must NEVER under-reserve an active tenant on
-/// an undetermined config (and the shared cache means the inner handler would
-/// fail closed on the same error anyway).
-fn byok_committed_len(
+/// Freeze a BYOK operation before its reservation. The returned pin owns the
+/// exact transition capability and configuration snapshot consumed by R2; its
+/// `committed_len` is therefore the physical-byte basis for both accounting and
+/// the stored object. There is no second config lookup after this point.
+fn pin_byok_operation(
+    byok: Option<&Arc<crate::storage::byok_cas::DataPlaneByok>>,
+    tenant: &str,
+    plaintext_len: i64,
+) -> Result<Option<Arc<crate::storage::byok_cas::ByokOperationPin>>, String> {
+    match byok {
+        Some(byok) => byok.pin_write(tenant, plaintext_len),
+        None => Ok(None),
+    }
+}
+
+// Compatibility oracle for the legacy unit fixtures. Production accounting
+// never calls this path: it always carries a `ByokOperationPin` into R2.
+#[cfg(test)]
+pub(crate) fn byok_committed_len_for_test(
     cache: Option<&Arc<ByokConfigCache>>,
     tenant: &str,
     plaintext_len: i64,
@@ -61,38 +55,22 @@ fn byok_committed_len(
     let Some(cache) = cache else {
         return Ok(plaintext_len);
     };
-    // `_public` is deterministic public content — never encrypted (dedup), so it
-    // is byte-identical to today (frozen policy: non-BYOK + `_public` unchanged).
     if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
         return Ok(plaintext_len);
     }
     let handle = tokio::runtime::Handle::current();
     let cfg = tokio::task::block_in_place(|| handle.block_on(cache.get(tenant)))
-        .map_err(|e| format!("byok config read (accounting): {e}"))?;
+        .map_err(|error| format!("byok config read (test oracle): {error}"))?;
     let Some(cfg) = cfg else {
         return Ok(plaintext_len);
     };
     match engagement_for(&cfg) {
-        // Mode A (convergent) stores `CLB1` (+32 B); Mode B (random) stores `CLB2`
-        // (+20 B — the nonce lives in `byok_envelope`, not inline). Account the
-        // committed CIPHERTEXT size so the reservation matches the real R2 object.
-        ByokEngagement::Encrypt(ByokCryptoMode::Convergent) => {
-            Ok(plaintext_len.saturating_add(i64::try_from(BYOK_CLB1_OVERHEAD).unwrap_or(i64::MAX)))
-        }
-        ByokEngagement::Encrypt(ByokCryptoMode::Random) => {
-            Ok(plaintext_len.saturating_add(i64::try_from(BYOK_CLB2_OVERHEAD).unwrap_or(i64::MAX)))
-        }
+        ByokEngagement::Encrypt(ByokCryptoMode::Convergent) => Ok(plaintext_len
+            .saturating_add(i64::try_from(BYOK_CLB1_OVERHEAD).unwrap_or(i64::MAX))),
+        ByokEngagement::Encrypt(ByokCryptoMode::Random) => Ok(plaintext_len
+            .saturating_add(i64::try_from(BYOK_CLB2_OVERHEAD).unwrap_or(i64::MAX))),
         ByokEngagement::Plaintext | ByokEngagement::FailClosed(_) => Ok(plaintext_len),
     }
-}
-
-#[cfg(test)]
-pub(crate) fn byok_committed_len_for_test(
-    cache: Option<&Arc<ByokConfigCache>>,
-    tenant: &str,
-    plaintext_len: i64,
-) -> Result<i64, String> {
-    byok_committed_len(cache, tenant, plaintext_len)
 }
 
 /// Bridge an async release call onto the sync handler trait (see [`block_on_accrue`]).
@@ -250,12 +228,11 @@ pub struct AccountingCasHandler {
     accountant: Arc<ByteAccountant>,
     /// Fixed, memory-bounded shard array of per-`(tenant, hash)` async locks.
     key_locks: Arc<Vec<Arc<tokio::sync::Mutex<()>>>>,
-    /// BYOK Wave 3b (GATED-INERT): the SAME per-tenant config cache the storage
-    /// handlers use. `None` ⇒ plaintext-size accounting (today's behaviour). When
-    /// `Some` AND a tenant is BYOK-`active`, the reserve/release size is the
-    /// committed CIPHERTEXT size (`plaintext + BYOK_CLB1_OVERHEAD`) so it matches
-    /// the on-disk object the delete path releases (audit C3 — no drift).
-    byok_config_cache: Option<Arc<ByokConfigCache>>,
+    /// The one data-plane collaborator set. Each write derives one operation
+    /// pin from it and passes that pin through to the R2 handler.
+    byok: Option<Arc<crate::storage::byok_cas::DataPlaneByok>>,
+    #[cfg(test)]
+    test_byok_config_cache: Option<Arc<ByokConfigCache>>,
 }
 
 impl core::fmt::Debug for AccountingCasHandler {
@@ -283,25 +260,33 @@ impl AccountingCasHandler {
             delete_inner,
             accountant,
             key_locks: Arc::new(key_locks),
-            byok_config_cache: None,
+            byok: None,
+            #[cfg(test)]
+            test_byok_config_cache: None,
         }
     }
 
-    /// Attach the BYOK Wave-3b config cache so a BYOK-`active` tenant is
-    /// reserved/released at its committed CIPHERTEXT size (audit C3). Mirrors
-    /// [`crate::storage::r2_s3::R2CasHandler::with_byok`]'s gating; pass the SAME
-    /// `ByokConfigCache` Arc the storage handler holds so the active-ness lookup
-    /// is a shared in-memory cache HIT (one D1 hop total). `None` (the default)
-    /// keeps the exact plaintext-size accounting.
+    /// Attach the one BYOK data plane that also owns the inner R2 gate.
     #[must_use]
-    pub fn with_byok(mut self, byok_config_cache: Arc<ByokConfigCache>) -> Self {
-        self.byok_config_cache = Some(byok_config_cache);
+    pub fn with_byok(mut self, byok: Arc<crate::storage::byok_cas::DataPlaneByok>) -> Self {
+        self.byok = Some(byok);
         self
     }
 
     #[cfg(test)]
+    pub(crate) fn with_byok_cache_for_test(mut self, cache: Arc<ByokConfigCache>) -> Self {
+        self.test_byok_config_cache = Some(cache);
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn byok_for_test(&self) -> Option<&Arc<crate::storage::byok_cas::DataPlaneByok>> {
+        self.byok.as_ref()
+    }
+
+    #[cfg(test)]
     pub(crate) fn byok_config_cache_for_test(&self) -> Option<&Arc<ByokConfigCache>> {
-        self.byok_config_cache.as_ref()
+        self.test_byok_config_cache.as_ref()
     }
 }
 
@@ -353,23 +338,38 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
         // releases the real R2 object size) → reserve == release, no drift. A
         // config read error fails CLOSED (503). `None` cache / non-BYOK tenant ⇒
         // `byte_len == plaintext_len`, byte-identical to today.
-        let committed_len = {
+        let pin = {
             let _scope =
                 crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Accounting);
-            byok_committed_len(
-                self.byok_config_cache.as_ref(),
-                &storage_namespace,
-                plaintext_len,
-            )
+            pin_byok_operation(self.byok.as_ref(), &storage_namespace, plaintext_len)
         };
-        let byte_len = match committed_len {
-            Ok(n) => n,
+        let pin = match pin {
+            Ok(pin) => pin,
             Err(e) => {
-                tracing::error!(error = %e, "cas: byok committed-size lookup failed; failing closed");
+                tracing::error!(error = %e, "cas: BYOK operation pin failed; failing closed");
                 return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
                     "{ACCT_UNAVAILABLE_SENTINEL}{e}"
                 ))));
             }
+        };
+        let byte_len = pin
+            .as_ref()
+            .map_or(plaintext_len, |pin| pin.committed_len());
+        #[cfg(test)]
+        let byte_len = match pin.as_ref() {
+            Some(pin) => pin.committed_len(),
+            None => match byok_committed_len_for_test(
+                self.test_byok_config_cache.as_ref(),
+                &storage_namespace,
+                plaintext_len,
+            ) {
+                Ok(byte_len) => byte_len,
+                Err(error) => {
+                    return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
+                        "{ACCT_UNAVAILABLE_SENTINEL}{error}"
+                    ))));
+                }
+            },
         };
         // RESERVE before the R2 PUT (cluster-C): an over-cap / indeterminate
         // reservation is rejected here, so the inner write — the durable R2 PUT
@@ -413,7 +413,13 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                 "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
             ))));
         }
-        match self.write_inner.write_with_effect(req) {
+        let context = pin.as_ref().map(|pin| {
+            Arc::clone(pin) as Arc<dyn corelink_handler_cas::CasWriteOperationContext>
+        });
+        match self
+            .write_inner
+            .write_with_effect_and_context(req, context.as_deref())
+        {
             Ok(resp) => {
                 // An idempotent re-write stored NOTHING new (`durable == false`),
                 // so roll the reservation back to avoid double-counting.

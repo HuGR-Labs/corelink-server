@@ -31,7 +31,7 @@ pub(crate) fn attach_byok_to_cas_accounting(
     byok: Option<&crate::storage::byok_cas::DataPlaneByok>,
 ) -> crate::byte_accounting::AccountingCasHandler {
     match byok {
-        Some(byok) => handler.with_byok(byok.config_cache()),
+        Some(byok) => handler.with_byok(Arc::new(byok.clone())),
         None => handler,
     }
 }
@@ -42,7 +42,7 @@ pub(crate) fn attach_byok_to_ac_accounting(
     byok: Option<&crate::storage::byok_cas::DataPlaneByok>,
 ) -> crate::byte_accounting::AccountingAcHandler {
     match byok {
-        Some(byok) => handler.with_byok(byok.config_cache()),
+        Some(byok) => handler.with_byok(Arc::new(byok.clone())),
         None => handler,
     }
 }

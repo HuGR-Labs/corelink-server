@@ -66,7 +66,7 @@ impl ByokConfigSource for MutableCfgSrc {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn committed_len_is_plaintext_when_cache_absent() {
     // `None` cache (today's production / tests) ⇒ plaintext size verbatim.
-    assert_eq!(byok_committed_len(None, TENANT, 1000).unwrap(), 1000);
+    assert_eq!(byok_committed_len_for_test(None, TENANT, 1000).unwrap(), 1000);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -76,7 +76,7 @@ async fn committed_len_adds_overhead_only_for_active_convergent() {
         false,
     );
     assert_eq!(
-        byok_committed_len(Some(&active), TENANT, 1000).unwrap(),
+        byok_committed_len_for_test(Some(&active), TENANT, 1000).unwrap(),
         1000 + BYOK_CLB1_OVERHEAD as i64,
         "an active convergent tenant stores ciphertext ⇒ reserve plaintext + 32"
     );
@@ -89,12 +89,12 @@ async fn committed_len_is_plaintext_for_inactive_and_unconfigured() {
         false,
     );
     assert_eq!(
-        byok_committed_len(Some(&inactive), TENANT, 1000).unwrap(),
+        byok_committed_len_for_test(Some(&inactive), TENANT, 1000).unwrap(),
         1000
     );
     let unconfigured = cache(None, false);
     assert_eq!(
-        byok_committed_len(Some(&unconfigured), TENANT, 1000).unwrap(),
+        byok_committed_len_for_test(Some(&unconfigured), TENANT, 1000).unwrap(),
         1000
     );
 }
@@ -107,7 +107,7 @@ async fn committed_len_is_plaintext_for_public_namespace() {
         false,
     );
     assert_eq!(
-        byok_committed_len(Some(&active), crate::adapter_cache::PUBLIC_NAMESPACE, 1000).unwrap(),
+        byok_committed_len_for_test(Some(&active), crate::adapter_cache::PUBLIC_NAMESPACE, 1000).unwrap(),
         1000,
         "_public is never encrypted ⇒ plaintext-size accounting"
     );
@@ -120,7 +120,7 @@ async fn committed_len_adds_clb2_overhead_for_active_random() {
     // must reflect the committed ciphertext size.
     let mode_b = cache(Some(cfg(ByokCryptoMode::Random, ByokState::Active)), false);
     assert_eq!(
-        byok_committed_len(Some(&mode_b), TENANT, 1000).unwrap(),
+        byok_committed_len_for_test(Some(&mode_b), TENANT, 1000).unwrap(),
         1000 + BYOK_CLB2_OVERHEAD as i64,
         "an active random tenant stores CLB2 ciphertext ⇒ reserve plaintext + 20"
     );
@@ -136,12 +136,12 @@ async fn committed_len_is_plaintext_for_failclosed_modes() {
         false,
     );
     assert_eq!(
-        byok_committed_len(Some(&partial), TENANT, 1000).unwrap(),
+        byok_committed_len_for_test(Some(&partial), TENANT, 1000).unwrap(),
         1000
     );
     let partial_random = cache(Some(cfg(ByokCryptoMode::Random, ByokState::Partial)), false);
     assert_eq!(
-        byok_committed_len(Some(&partial_random), TENANT, 1000).unwrap(),
+        byok_committed_len_for_test(Some(&partial_random), TENANT, 1000).unwrap(),
         1000
     );
 }
@@ -150,7 +150,7 @@ async fn committed_len_is_plaintext_for_failclosed_modes() {
 async fn committed_len_fails_closed_on_config_error() {
     // A config-read error must NOT under-reserve an active tenant → Err (503).
     let broken = cache(None, true);
-    assert!(byok_committed_len(Some(&broken), TENANT, 1000).is_err());
+    assert!(byok_committed_len_for_test(Some(&broken), TENANT, 1000).is_err());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -165,21 +165,21 @@ async fn config_transition_and_failure_change_the_same_reservation_decision() {
         )))),
     });
     let shared = Arc::new(ByokConfigCache::new(source.clone(), 0));
-    assert_eq!(byok_committed_len(Some(&shared), TENANT, 1000).unwrap(), 1000);
+    assert_eq!(byok_committed_len_for_test(Some(&shared), TENANT, 1000).unwrap(), 1000);
 
     *source.result.lock().unwrap() = Ok(Some(cfg(
         ByokCryptoMode::Convergent,
         ByokState::Active,
     )));
     assert_eq!(
-        byok_committed_len(Some(&shared), TENANT, 1000).unwrap(),
+        byok_committed_len_for_test(Some(&shared), TENANT, 1000).unwrap(),
         1000 + BYOK_CLB1_OVERHEAD as i64,
         "active transition reserves the physical CLB1 size"
     );
 
     *source.result.lock().unwrap() = Err(ByokConfigError::Transport("D1 down".to_owned()));
     assert!(
-        byok_committed_len(Some(&shared), TENANT, 1000).is_err(),
+        byok_committed_len_for_test(Some(&shared), TENANT, 1000).is_err(),
         "an indeterminate transition cannot under-reserve an active object"
     );
 }
@@ -248,7 +248,7 @@ async fn active_byok_write_then_delete_nets_to_zero_at_committed_size() {
         inner as Arc<dyn CasDeleteHandler>,
         acc,
     )
-    .with_byok(cache(
+    .with_byok_cache_for_test(cache(
         Some(cfg(ByokCryptoMode::Convergent, ByokState::Active)),
         false,
     ));
@@ -296,7 +296,7 @@ async fn inactive_tenant_with_cache_wired_is_unchanged_plaintext_accounting() {
         inner as Arc<dyn CasDeleteHandler>,
         acc,
     )
-    .with_byok(cache(
+    .with_byok_cache_for_test(cache(
         Some(cfg(ByokCryptoMode::Convergent, ByokState::Inactive)),
         false,
     ));
@@ -332,7 +332,7 @@ async fn active_random_dedup_put_and_other_delete_preserve_physical_bytes() {
         inner as Arc<dyn CasDeleteHandler>,
         acc,
     )
-    .with_byok(cache(Some(cfg(ByokCryptoMode::Random, ByokState::Active)), false));
+    .with_byok_cache_for_test(cache(Some(cfg(ByokCryptoMode::Random, ByokState::Active)), false));
     let first = vec![b'a'; 100];
     let second = vec![b'b'; 250];
     let first_physical = first.len() as i64 + BYOK_CLB2_OVERHEAD as i64;

@@ -42,6 +42,7 @@ jobs:
             byte_accounting::byok_accounting_tests::active_byok_write_then_delete_nets_to_zero_at_committed_size \
             byte_accounting::byok_accounting_tests::active_random_dedup_put_and_other_delete_preserve_physical_bytes \
             byte_accounting::byok_accounting_tests::config_transition_and_failure_change_the_same_reservation_decision \
+            storage::byok_cas::tests::operation_pin_keeps_rotation_snapshot_and_rejects_cross_tenant_reuse \
             byte_accounting::byok_accounting_tests::committed_len_is_plaintext_for_public_namespace \
             storage::r2_s3::implementation::tests::router_factory_attachments_share_cache_across_storage_and_accounting \
             byte_accounting::decorator_tests::ac::post_publish_ac_error_retains_reconcilable_liability

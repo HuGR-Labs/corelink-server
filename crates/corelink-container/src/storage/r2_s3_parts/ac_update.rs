@@ -1,7 +1,8 @@
-impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
-    fn update(
+impl R2AcHandler {
+    fn update_with_byok_operation_context(
         &self,
         req: corelink_handler_ac::AcUpdateRequest,
+        context: Option<&dyn corelink_handler_ac::AcUpdateOperationContext>,
     ) -> Result<corelink_handler_ac::AcUpdateResponse, corelink_handler_ac::AcHandlerError> {
         let started = Instant::now();
         use corelink_handler_ac::{
@@ -43,7 +44,7 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
                 self.emit_update_sli(true, elapsed_us(started));
                 AcHandlerError::AuditFailed(e)
             })?;
-        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Write)?;
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Write, context)?;
 
         // CRITICAL — `block_in_place` rationale: see the matching
         // comment in `<R2AcHandler as AcLookupHandler>::lookup` above.
@@ -331,5 +332,22 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
                 Err(AcHandlerError::Internal(e))
             }
         }
+    }
+}
+
+impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
+    fn update(
+        &self,
+        req: corelink_handler_ac::AcUpdateRequest,
+    ) -> Result<corelink_handler_ac::AcUpdateResponse, corelink_handler_ac::AcHandlerError> {
+        self.update_with_byok_operation_context(req, None)
+    }
+
+    fn update_with_operation_context(
+        &self,
+        req: corelink_handler_ac::AcUpdateRequest,
+        context: Option<&dyn corelink_handler_ac::AcUpdateOperationContext>,
+    ) -> Result<corelink_handler_ac::AcUpdateResponse, corelink_handler_ac::AcHandlerError> {
+        self.update_with_byok_operation_context(req, context)
     }
 }

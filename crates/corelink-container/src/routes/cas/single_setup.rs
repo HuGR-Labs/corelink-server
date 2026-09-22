@@ -51,9 +51,15 @@ pub(crate) fn attach_byok_to_r2_handler(
     byok: Option<&crate::storage::byok_cas::DataPlaneByok>,
 ) -> crate::storage::r2_s3::R2CasHandler {
     match byok {
-        Some(byok) => handler
-            .with_byok(byok.config_cache(), byok.tcs_resolver())
-            .with_byok_random(byok.mode_b()),
+        Some(byok) => {
+            let handler = handler
+                .with_byok(byok.config_cache(), byok.tcs_resolver())
+                .with_byok_random(byok.mode_b());
+            match byok.runtime_gate() {
+                Some(gate) => handler.with_byok_runtime_gate(gate),
+                None => handler,
+            }
+        }
         None => handler,
     }
 }

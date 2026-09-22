@@ -88,8 +88,23 @@ impl R2AcHandler {
         &self,
         tenant: &str,
         operation: DataOperation,
+        context: Option<&dyn corelink_handler_ac::AcUpdateOperationContext>,
     ) -> Result<Option<ByokDataGuard>, corelink_handler_ac::AcHandlerError> {
         use corelink_handler_ac::AcHandlerError;
+        if let Some(context) = context {
+            let pin = context
+                .as_any()
+                .downcast_ref::<crate::storage::byok_cas::ByokOperationPin>()
+                .ok_or_else(|| {
+                    AcHandlerError::Internal(
+                        "unsupported AC operation context on R2 BYOK update".to_owned(),
+                    )
+                })?;
+            return pin
+                .take_guard(tenant)
+                .map(Some)
+                .map_err(|error| AcHandlerError::Internal(format!("BYOK operation pin: {error}")));
+        }
         if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
             return Ok(None);
         }

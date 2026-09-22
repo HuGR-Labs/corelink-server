@@ -163,6 +163,32 @@ pub trait CasWriteHandler: Send + Sync + core::fmt::Debug {
     fn write_with_effect(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasWriteFailure> {
         self.write(req).map_err(CasWriteFailure::unknown)
     }
+
+    /// Serve one CAS write using an operation-owned storage context.
+    ///
+    /// The context is deliberately opaque to the shared handler contract. A
+    /// composed storage implementation may downcast the context it owns, while
+    /// every other implementation retains the legacy behaviour. This lets an
+    /// outer decorator carry one operation-pinned authority through quota
+    /// reservation and the durable write without a process-global mutable pin.
+    fn write_with_effect_and_context(
+        &self,
+        req: CasWriteRequest,
+        context: Option<&dyn CasWriteOperationContext>,
+    ) -> Result<CasWriteResponse, CasWriteFailure> {
+        let _ = context;
+        self.write_with_effect(req)
+    }
+}
+
+/// Opaque, operation-scoped context for one CAS write.
+///
+/// Implementations must accept only contexts they created. The shared contract
+/// carries no crypto material or tenant policy; concrete data planes retain
+/// those details behind this downcast seam.
+pub trait CasWriteOperationContext: Send + Sync + core::fmt::Debug {
+    /// Expose the concrete context only to its owning storage implementation.
+    fn as_any(&self) -> &dyn core::any::Any;
 }
 
 /// Trait every concrete CAS delete handler implements (D-8).

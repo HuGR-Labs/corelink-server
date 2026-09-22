@@ -168,7 +168,22 @@ impl R2CasHandler {
         &self,
         tenant: &str,
         operation: DataOperation,
+        context: Option<&dyn corelink_handler_cas::CasWriteOperationContext>,
     ) -> Result<Option<ByokDataGuard>, CasHandlerError> {
+        if let Some(context) = context {
+            let pin = context
+                .as_any()
+                .downcast_ref::<crate::storage::byok_cas::ByokOperationPin>()
+                .ok_or_else(|| {
+                    CasHandlerError::Internal(
+                        "unsupported CAS operation context on R2 BYOK write".to_owned(),
+                    )
+                })?;
+            return pin
+                .take_guard(tenant)
+                .map(Some)
+                .map_err(|error| CasHandlerError::Internal(format!("BYOK operation pin: {error}")));
+        }
         if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
             return Ok(None);
         }

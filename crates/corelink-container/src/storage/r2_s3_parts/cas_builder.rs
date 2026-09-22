@@ -83,29 +83,13 @@ pub async fn build_r2_cas_handler_from_env(
     // observation in a `Vec` for the life of the container process, with
     // no production reader of `snapshot()`/`count()` anywhere.
     let sli = crate::sli_aggregate::shared();
-    let rollout_d1 = match D1HttpClient::new(&env) {
-        Ok(d1) => Arc::new(d1),
-        Err(error) => return Some(Err(format!("CAS BYOK rollout probe unavailable: {error}"))),
-    };
-    let runtime_gate =
-        match crate::storage::byok_generation_catalog::runtime_gate_after_rollout_probe(rollout_d1)
-            .await
-        {
-            Ok(gate) => gate,
-            Err(error) => return Some(Err(format!("CAS BYOK runtime gate unavailable: {error}"))),
-        };
-    let mut handler = R2CasHandler::new(client, cas_region, Some(tdk_bytes), audit, sli)
+    let handler = R2CasHandler::new(client, cas_region, Some(tdk_bytes), audit, sli)
         .with_async_audit(audit_concrete)
         .with_cas_write_fence(cas_write_fence);
-    if let Some(gate) = runtime_gate {
-        handler = handler.with_byok_runtime_gate(gate);
-    }
 
-    // BYOK crypto collaborators are deliberately attached at router assembly,
-    // where CAS, AC, and both accounting decorators receive clones of the one
-    // authoritative config-cache Arc. Do not construct a handler-local cache
-    // here: a config transition could otherwise split physical encryption from
-    // its byte reservation.
+    // Router assembly attaches the one DataPlaneByok instance, including its
+    // operation gate. Do not create a handler-local gate here: reservation and
+    // storage must consume the same request-scoped authority.
     Some(Ok(handler))
 }
 

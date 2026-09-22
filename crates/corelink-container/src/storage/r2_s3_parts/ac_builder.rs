@@ -55,27 +55,11 @@ pub async fn build_r2_ac_handler_from_env(
     // B-057, AC twin of the CAS builder above: constant-memory aggregate
     // instead of a Vec that grew for the life of the container.
     let sli = crate::sli_aggregate::shared();
-    let rollout_d1 = match D1HttpClient::new(&env) {
-        Ok(d1) => Arc::new(d1),
-        Err(error) => return Some(Err(format!("AC BYOK rollout probe unavailable: {error}"))),
-    };
-    let runtime_gate =
-        match crate::storage::byok_generation_catalog::runtime_gate_after_rollout_probe(rollout_d1)
-            .await
-        {
-            Ok(gate) => gate,
-            Err(error) => return Some(Err(format!("AC BYOK runtime gate unavailable: {error}"))),
-        };
-    let mut handler = R2AcHandler::new(client, ac_region, Some(tdk_bytes), audit, sli)
+    let handler = R2AcHandler::new(client, ac_region, Some(tdk_bytes), audit, sli)
         .with_async_audit(audit_concrete);
-    if let Some(gate) = runtime_gate {
-        handler = handler.with_byok_runtime_gate(gate);
-    }
 
-    // Router assembly owns the BYOK collaborator set so CAS, AC, and both
-    // accounting decorators share one authoritative config cache. A
-    // handler-local cache here would let a transition desynchronise physical
-    // encryption from byte accounting.
+    // Router assembly owns the one BYOK collaborator set and attaches its
+    // transition gate alongside crypto; no handler-local authority is allowed.
     Some(Ok(handler))
 }
 

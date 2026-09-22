@@ -278,21 +278,25 @@
         for attached in [
             cas.byok_config_cache_for_test().expect("CAS cache"),
             ac.byok_config_cache_for_test().expect("AC cache"),
-            cas_accounting
-                .byok_config_cache_for_test()
-                .expect("CAS accounting cache"),
-            ac_accounting
-                .byok_config_cache_for_test()
-                .expect("AC accounting cache"),
         ] {
             assert!(Arc::ptr_eq(&cache, attached));
         }
+        let cas_accounting_cache = cas_accounting
+            .byok_for_test()
+            .expect("CAS accounting data plane")
+            .config_cache();
+        let ac_accounting_cache = ac_accounting
+            .byok_for_test()
+            .expect("AC accounting data plane")
+            .config_cache();
+        assert!(Arc::ptr_eq(&cache, &cas_accounting_cache));
+        assert!(Arc::ptr_eq(&cache, &ac_accounting_cache));
 
         let cas_request = write_req(BYOK_TENANT, b"factory transition".to_vec());
         assert!(cas.byok_encrypt_for_write(&cas_request).await.unwrap().is_none());
         assert_eq!(
             crate::byte_accounting::byok_committed_len_for_test(
-                cas_accounting.byok_config_cache_for_test(),
+                Some(&cas_accounting_cache),
                 BYOK_TENANT,
                 cas_request.bytes.len() as i64,
             )
@@ -310,7 +314,7 @@
         assert!(cas.byok_encrypt_for_write(&cas_request).await.unwrap().is_some());
         assert_eq!(
             crate::byte_accounting::byok_committed_len_for_test(
-                ac_accounting.byok_config_cache_for_test(),
+                Some(&ac_accounting_cache),
                 BYOK_TENANT,
                 cas_request.bytes.len() as i64,
             )
@@ -326,7 +330,7 @@
         ));
         assert!(cas.byok_encrypt_for_write(&cas_request).await.is_err());
         assert!(crate::byte_accounting::byok_committed_len_for_test(
-            cas_accounting.byok_config_cache_for_test(),
+            Some(&cas_accounting_cache),
             BYOK_TENANT,
             cas_request.bytes.len() as i64,
         )
