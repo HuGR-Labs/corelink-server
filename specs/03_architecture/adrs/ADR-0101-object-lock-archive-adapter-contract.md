@@ -91,3 +91,5 @@ verification. It is not provider evidence and never authorizes a WORM claim.
   https://developers.cloudflare.com/r2/api/s3/api/
 - `crates/corelink-audit-chain/src/object_lock_archive.rs` — portable contract,
   R2 failure adapter, and CI conformance fake.
+- `.github/workflows/object-lock-archive-contract.yml` — GitHub Actions-only
+  conformance execution for the contract.
