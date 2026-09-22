@@ -1,5 +1,7 @@
--- PROVISIONAL #1630 migration: assign its ordinal only after the active
--- 0133–0137 migration queue has been serialized.
+-- Compatibility no-op for the stacked #1630 history: migration 0134 is the
+-- authoritative durable shadow schema. The idempotent definitions below
+-- remain in the serialized stack and must run after 0134.
+-- D1 ordinal 0139 — #1630, serialized after the 0133–0137 queue.
 -- Durable, immutable authority for historical runner aggregation. The writer
 -- reads terms from this table and claims every staged event in the same D1
 -- batch that advances counters, heads, and the source watermark.
