@@ -7,6 +7,9 @@ on:
       - "config/capacity/**"
       - "scripts/verify_regional_capacity.py"
       - "scripts/test_verify_regional_capacity.py"
+      - "scripts/probe_i1656_capacity_readonly.py"
+      - "scripts/test_probe_i1656_capacity_readonly.py"
+      - ".github/workflows/issue-1656-capacity-refresh.yml"
       - ".github/workflows/issue-1656-capacity.yml"
   push:
     branches: [main]
@@ -15,6 +18,9 @@ on:
       - "config/capacity/**"
       - "scripts/verify_regional_capacity.py"
       - "scripts/test_verify_regional_capacity.py"
+      - "scripts/probe_i1656_capacity_readonly.py"
+      - "scripts/test_probe_i1656_capacity_readonly.py"
+      - ".github/workflows/issue-1656-capacity-refresh.yml"
 
 permissions:
   contents: read
@@ -27,4 +33,4 @@ jobs:
       - name: Verify repository budget
         run: python3 scripts/verify_regional_capacity.py
       - name: Exercise fail-closed tests
-        run: python3 -m unittest scripts/test_verify_regional_capacity.py
+        run: python3 -m unittest scripts/test_verify_regional_capacity.py scripts/test_probe_i1656_capacity_readonly.py
