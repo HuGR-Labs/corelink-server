@@ -100,7 +100,7 @@ E piora. Mesmo se o cron chegasse:
 
 **Evidência bruta** (`wrangler.toml`, bloco `[env.prod]`, tracked no git):
 ```toml
-vars = { ..., AUDIT_CHAIN_SIGNING_SEED_HEX = "c4bdb99f8170a53ec56cfd7d5fa9579465d07d5fe0e49af3c8980b41191d7141", ... }
+vars = { ..., AUDIT_CHAIN_SIGNING_SEED_HEX = "<REDACTED-64-HEX>", ... }
 ```
 
 **Git archaeology:** `git log -S "<valor>" --all` → o valor entrou em **`0a5e3349`, que é o HEAD atual** ("feat(remediation): enable infrastructure for 6 gated enterprise/compliance features"). Ou seja: vazou no commit mais recente, está fresco no histórico.
