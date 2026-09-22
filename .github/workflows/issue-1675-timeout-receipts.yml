@@ -1,0 +1,46 @@
+name: Issue 1675 — timeout receipt contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/issue-1675-timeout-receipts.yml'
+      - '.github/workflows/campaign-ci.yml'
+      - 'scripts/classify_timeout_receipt.py'
+      - 'scripts/test_i1675_timeout_receipts.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/issue-1675-timeout-receipts.yml'
+      - '.github/workflows/campaign-ci.yml'
+      - 'scripts/classify_timeout_receipt.py'
+      - 'scripts/test_i1675_timeout_receipts.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  receipt-contract:
+    name: Verify timeout and runner-loss evidence classification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Run receipt contract and mutation matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/test_i1675_timeout_receipts.py 2>&1 | tee "$RUNNER_TEMP/i1675-timeout-contract.log"
+          echo "This contract verifies typed classification only; it is not live runner-loss evidence." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain focused verifier output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: i1675-timeout-receipt-contract
+          path: ${{ runner.temp }}/i1675-timeout-contract.log
+          if-no-files-found: ignore
+          retention-days: 14
