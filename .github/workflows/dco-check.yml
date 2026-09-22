@@ -19,21 +19,10 @@ concurrency:
 
 jobs:
   dco:
-    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01). The old
-    # "Blacksmith not provisioning" reason is stale, and this job is a pure
-    # git/bash trailer walk over the PR commit range — no toolchain, no
-    # network. It runs on EVERY PR (673 runs in June 2026), and hosted
-    # minutes bill with a 1-MINUTE-PER-JOB FLOOR, so a ~15s check costs a
-    # full paid minute each time; on the fleet it costs $0. Verified
-    # natively on the fleet host (git 2.51 supports %(trailers:...), bash
-    # 5.3 supports the process substitution below).
-    # zero-hosted (WP-CI): git + bash apenas
-    runs-on: corelink
-    # Bound the job (CI cost diet 2026-08-01): a self-hosted job with no
-    # timeout inherits GitHub's 360-min default, so one wedged run can hold
-    # 1 of the 4 `corelink-builder` runners for 6h and stall
-    # `scripts/pre-merge-gate-check.sh` (the mandatory merge gate) for every
-    # other PR. This check is sub-minute.
+    # Git and bash are the only requirements; keep this mandatory check on a
+    # GitHub-hosted runner so it cannot queue behind the local runner fleet.
+    runs-on: ubuntu-latest
+    # This check is sub-minute; bound a wedged hosted job explicitly.
     timeout-minutes: 5
     steps:
       - name: Checkout PR head
@@ -51,6 +40,15 @@ jobs:
 
           fail=0
           while IFS= read -r sha; do
+            # GitHub's update-branch operation creates a merge commit that has
+            # no patch beyond its two signed parents. Require DCO on the
+            # authored commits, while allowing that generated merge commit.
+            parent_count=$(git show -s --format='%P' "$sha" | wc -w | tr -d ' ')
+            if [ "$parent_count" -gt 1 ]; then
+              echo "::notice::skipping merge commit $sha; its introduced commits are checked individually."
+              continue
+            fi
+
             author=$(git show -s --format='%an <%ae>' "$sha")
             signoff=$(git show -s --format='%(trailers:key=Signed-off-by,valueonly)' "$sha")
 

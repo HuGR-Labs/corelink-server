@@ -1,0 +1,68 @@
+name: staging provision plan (#1700)
+
+# This is the only staging provisioning entrypoint until a plan has proven both
+# the isolated resource surface and the DNS/route authority.  It contains no
+# write endpoint and cannot deploy, create DNS, alter a route, or run load.
+# A successful receipt is the prerequisite for a separately reviewed apply
+# change that also verifies the required staging-only secret bindings.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "plan-staging-1700" to run the read-only staging plan'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-provision-plan
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: read-only Cloudflare staging plan
+    # This plan holds repository-scoped Cloudflare secrets. It therefore runs
+    # on GitHub-hosted infrastructure, never on the retired corelink label.
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
+    steps:
+      - name: Confirm bounded plan
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRM" = "plan-staging-1700"
+
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Verify frozen staging boundary
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_staging_target.py
+          python3 scripts/verify_staging_topology_contract.py --expect ready
+
+      - name: Create redacted provider plan
+        run: |
+          set -euo pipefail
+          python3 scripts/plan_staging_provider.py \
+            --receipt "$RUNNER_TEMP/staging-read-only-plan.json"
+
+      - name: Upload plan receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-read-only-plan-${{ github.run_id }}
+          path: ${{ runner.temp }}/staging-read-only-plan.json
+          retention-days: 30
+          if-no-files-found: warn

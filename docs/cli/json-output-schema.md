@@ -156,7 +156,7 @@ Exit code: `0` if all checks ok/skip, `1` if any check fails.
 
 ```json
 {
-  "version": "0.1.0",
+  "version": "0.1.2",
   "git_rev": "unknown",
   "build_timestamp": "unknown",
   "target_triple": "x86_64"
