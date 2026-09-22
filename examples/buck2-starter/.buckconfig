@@ -32,47 +32,27 @@
     target_platform_detector_spec = target:root//...->prelude//platforms:default
 
 [buck2]
-    execution_platforms = prelude//platforms:default
+    execution_platforms = root//platforms:corelink-cache
+    digest_algorithms = SHA256
     # The documented build report metrics are opt-in in the pinned Buck2
     # release.  Keep the report's cache counters available to CI and the
     # benchmark without changing remote-cache reads, writes, or retry policy.
     detailed_aggregated_metrics = true
 
 [build]
-    execution_platforms = prelude//platforms:default
+    execution_platforms = root//platforms:corelink-cache
 
-[remote_cache]
-    # CoreLink CAS HTTP endpoint (REAPI v2).
-    # Override per-environment by setting CORELINK_REMOTE_CACHE_URL.
-    url = https://corelink-api.humangr.com/bazel/cache
-
-    # PAT injected from environment — never hardcode.
-    http_headers = Authorization: Bearer ${CORELINK_PAT}
-
-    # Enable both reads and writes by default.
-    read = true
-    write = true
-
-    # Retry transient errors (FM-150 pattern).
-    retry_timeout_secs = 60
-    max_retries = 3
-
-    # Compress uploads to minimise network usage.
-    http_header_prefix = x-corelink-client-version: buck2
+[corelink]
+    provenance = $CORELINK_CACHE_PROVENANCE
 
 [buck2_re_client]
-    # REAPI v2 endpoint — same CAS backing store as [remote_cache].
-    remote_cache_address = https://corelink-api.humangr.com/bazel/cache
-
-    # Auth header injected from environment.
-    http_headers = Authorization: Bearer ${CORELINK_PAT}
-
-    # TLS — required for production.
-    tls_cert_path =
-    tls_key_path =
-    tls_ca_cert_path =
+    engine_address = $CORELINK_REAPI_ENDPOINT
+    action_cache_address = $CORELINK_REAPI_ENDPOINT
+    cas_address = $CORELINK_REAPI_ENDPOINT
+    instance_name = $CORELINK_TENANT_ID
+    http_headers = Authorization: Bearer $CORELINK_PAT
 
 [client]
     # Enable BLAKE3 digest verification on every downloaded artifact.
     # Maps to CoreLink CTRL-CAS-002 (client-verify default-on).
-    hash_algorithm = BLAKE3
+    hash_algorithm = SHA256

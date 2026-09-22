@@ -397,7 +397,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // carries larger build artifacts) sets its own larger per-route limit inside
     // `turbo_v8::router()` and is NOT constrained by this global default.
     const GLOBAL_BODY_LIMIT_BYTES: usize = 10 * 1024 * 1024; // 10 MiB
-    let mut app = routes::build_with_factory_and_byok(shadow_factory, byok_data_plane)
+    let (mut app, reapi_deps) = routes::build_with_factory_and_byok_with_reapi(
+        shadow_factory,
+        byok_data_plane,
+    );
+    if let (Some(cas), Some(byte_stream), Some(action_cache)) = (
+        corelink_server::grpc_reapi::CasService::from_deps(&reapi_deps),
+        corelink_server::grpc_reapi::ByteStreamService::from_deps(&reapi_deps),
+        corelink_server::grpc_reapi::ActionCacheService::from_deps(&reapi_deps),
+    ) {
+        let grpc = tonic::service::Routes::new(cas.into_server())
+            .add_service(byte_stream.into_server())
+            .add_service(action_cache.into_server())
+            .add_service(corelink_server::grpc_reapi::CapabilitiesService.into_server())
+            .into_axum_router();
+        app = app.merge(grpc);
+        info!("gRPC REAPI cache ingress mounted (CAS, ByteStream, ActionCache)");
+    } else {
+        warn!("gRPC REAPI ingress NOT mounted: PAT verifier is unavailable (fail closed)");
+    }
+    app = app
         // The failover heartbeat is deliberately a separate authenticated
         // internal route. Public `/_health` readiness probes never refresh
         // failover state and therefore cannot spoof liveness anonymously.

@@ -1,0 +1,3 @@
+load(":defs.bzl", "corelink_cache_platforms")
+
+corelink_cache_platforms(name = "corelink-cache")
