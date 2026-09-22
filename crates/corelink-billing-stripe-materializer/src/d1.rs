@@ -335,18 +335,21 @@ pub const SQL_UPSERT_RUNNERS_ENTITLEMENT: &str = "INSERT INTO runners_entitlemen
 pub const SQL_DELETE_RUNNERS_ENTITLEMENT: &str =
     "DELETE FROM runners_entitlement WHERE tenant_id = ?";
 
-/// Advance the durable Runner entitlement fence only when the provider key is
-/// newer. The fence row is retained after revoke so an old grant cannot be
-/// reinserted after a process restart.
-pub const SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE: &str = "INSERT INTO runner_entitlement_reconcile_fence (tenant_id, stripe_subscription_id, authority_key, applied_at_ms) VALUES (?, ?, ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET stripe_subscription_id = excluded.stripe_subscription_id, authority_key = excluded.authority_key, applied_at_ms = excluded.applied_at_ms WHERE runner_entitlement_reconcile_fence.authority_key < excluded.authority_key RETURNING authority_key";
+/// Advance the durable Runner entitlement fence for a newer snapshot of the
+/// same subscription. A different subscription id is a replacement boundary:
+/// only a successor grant may replace a predecessor revoke. This keeps a
+/// predecessor cancellation from revoking a successor entitlement when Stripe
+/// replaces a subscription within one billing period. The fence row is
+/// retained after revoke so an old grant cannot be reinserted after restart.
+pub const SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE: &str = "INSERT INTO runner_entitlement_reconcile_fence (tenant_id, stripe_subscription_id, authority_key, is_granting, applied_at_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET stripe_subscription_id = excluded.stripe_subscription_id, authority_key = excluded.authority_key, is_granting = excluded.is_granting, applied_at_ms = excluded.applied_at_ms WHERE (runner_entitlement_reconcile_fence.stripe_subscription_id = excluded.stripe_subscription_id AND runner_entitlement_reconcile_fence.authority_key < excluded.authority_key) OR (runner_entitlement_reconcile_fence.stripe_subscription_id <> excluded.stripe_subscription_id AND runner_entitlement_reconcile_fence.is_granting = 0 AND excluded.is_granting = 1) RETURNING authority_key";
 /// Apply a grant only when this operation owns the current durable fence row.
-pub const SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT: &str = "INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h) SELECT ?, ?, 'runners', ?, ? WHERE EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ? AND authority_key = ?) ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency = excluded.max_concurrency, max_vcpu_h = excluded.max_vcpu_h";
+pub const SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT: &str = "INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h) SELECT ?, ?, 'runners', ?, ? WHERE EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ? AND authority_key = ? AND stripe_subscription_id = ?) ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency = excluded.max_concurrency, max_vcpu_h = excluded.max_vcpu_h";
 /// Apply a revoke only when this operation owns the current durable fence row.
-pub const SQL_CAS_DELETE_RUNNERS_ENTITLEMENT: &str = "DELETE FROM runners_entitlement WHERE tenant_id = ? AND EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ? AND authority_key = ?)";
-/// Read back the fence in the same D1 transaction to classify equal-key
-/// retries (idempotent duplicate) versus an older rejected operation.
+pub const SQL_CAS_DELETE_RUNNERS_ENTITLEMENT: &str = "DELETE FROM runners_entitlement WHERE tenant_id = ? AND EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ? AND authority_key = ? AND stripe_subscription_id = ?)";
+/// Read back the fence in the same D1 transaction to classify equal-key,
+/// equal-identity retries (idempotent duplicate) versus a rejected operation.
 pub const SQL_READ_RUNNER_ENTITLEMENT_FENCE: &str =
-    "SELECT authority_key FROM runner_entitlement_reconcile_fence WHERE tenant_id = ?";
+    "SELECT authority_key, stripe_subscription_id FROM runner_entitlement_reconcile_fence WHERE tenant_id = ?";
 
 /// Canonical billing-D1 writer trait.
 ///
@@ -535,9 +538,9 @@ pub struct InMemoryBillingD1 {
     /// (`tenant_id`, `subscription_id`) → purchased product. Test-only mirror
     /// of `tenant_billing` and `runner_billing` used by refund routing tests.
     refund_purchases: Arc<Mutex<HashMap<(String, String), RefundedProduct>>>,
-    /// `tenant_id` → (`authority_key`, `stripe_subscription_id`) durable-fence
+    /// `tenant_id` → (`authority_key`, `stripe_subscription_id`, `is_granting`) durable-fence
     /// mirror used by native concurrency tests.
-    runner_fences: Arc<Mutex<HashMap<String, (String, String)>>>,
+    runner_fences: Arc<Mutex<HashMap<String, (String, String, bool)>>>,
     /// If set, every write returns this error (drives fail-CLOSED tests).
     fail_with: Arc<Mutex<Option<BillingD1Error>>>,
 }
@@ -581,6 +584,15 @@ impl InMemoryBillingD1 {
         match self.runners.lock() {
             Ok(g) => g.get(tenant_id).copied(),
             Err(p) => p.into_inner().get(tenant_id).copied(),
+        }
+    }
+
+    /// Read the tenant's durable entitlement fence for acceptance tests.
+    #[must_use]
+    pub fn runner_fence_of(&self, tenant_id: &str) -> Option<(String, String, bool)> {
+        match self.runner_fences.lock() {
+            Ok(g) => g.get(tenant_id).cloned(),
+            Err(p) => p.into_inner().get(tenant_id).cloned(),
         }
     }
 
@@ -903,14 +915,30 @@ impl BillingD1Writer for InMemoryBillingD1 {
             .lock()
             .map_err(|e| BillingD1Error::Transient(format!("runner fence mutex poisoned: {e}")))?;
         let outcome = match fences.get(tenant_id) {
-            Some((current, _)) if current.as_str() > authority_key => EntitlementCasOutcome::Stale,
-            Some((current, _)) if current.as_str() == authority_key => {
+            Some((current, current_subscription, _))
+                if current_subscription == subscription_id && current.as_str() > authority_key =>
+            {
+                EntitlementCasOutcome::Stale
+            }
+            Some((current, current_subscription, _))
+                if current_subscription == subscription_id && current.as_str() == authority_key =>
+            {
                 EntitlementCasOutcome::Duplicate
+            }
+            Some((_, current_subscription, current_is_granting))
+                if current_subscription != subscription_id
+                    && !(entitlement.is_some() && !current_is_granting) =>
+            {
+                EntitlementCasOutcome::Stale
             }
             _ => {
                 fences.insert(
                     tenant_id.to_owned(),
-                    (authority_key.to_owned(), subscription_id.to_owned()),
+                    (
+                        authority_key.to_owned(),
+                        subscription_id.to_owned(),
+                        entitlement.is_some(),
+                    ),
                 );
                 EntitlementCasOutcome::Applied
             }
