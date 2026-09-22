@@ -65,10 +65,12 @@ pub(crate) fn byok_committed_len_for_test(
         return Ok(plaintext_len);
     };
     match engagement_for(&cfg) {
-        ByokEngagement::Encrypt(ByokCryptoMode::Convergent) => Ok(plaintext_len
-            .saturating_add(i64::try_from(BYOK_CLB1_OVERHEAD).unwrap_or(i64::MAX))),
-        ByokEngagement::Encrypt(ByokCryptoMode::Random) => Ok(plaintext_len
-            .saturating_add(i64::try_from(BYOK_CLB2_OVERHEAD).unwrap_or(i64::MAX))),
+        ByokEngagement::Encrypt(ByokCryptoMode::Convergent) => {
+            Ok(plaintext_len.saturating_add(i64::try_from(BYOK_CLB1_OVERHEAD).unwrap_or(i64::MAX)))
+        }
+        ByokEngagement::Encrypt(ByokCryptoMode::Random) => {
+            Ok(plaintext_len.saturating_add(i64::try_from(BYOK_CLB2_OVERHEAD).unwrap_or(i64::MAX)))
+        }
         ByokEngagement::Plaintext | ByokEngagement::FailClosed(_) => Ok(plaintext_len),
     }
 }
@@ -95,13 +97,7 @@ fn block_on_record_liability(
     let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Accounting);
     let handle = tokio::runtime::Handle::current();
     tokio::task::block_in_place(|| {
-        handle.block_on(acc.record_mutation_liability(
-            tenant,
-            logical_key,
-            bytes,
-            state,
-            intent_id,
-        ))
+        handle.block_on(acc.record_mutation_liability(tenant, logical_key, bytes, state, intent_id))
     })
 }
 
@@ -138,10 +134,16 @@ fn classify_mutation_failure(
         corelink_handler_cas::MutationEffect::Pending { intent_id } => {
             (MutationLiabilityState::Pending, Some(*intent_id), false)
         }
-        corelink_handler_cas::MutationEffect::Unknown => {
-            (MutationLiabilityState::Unknown, Some(unknown_intent_id), false)
-        }
-        _ => (MutationLiabilityState::Unknown, Some(unknown_intent_id), false),
+        corelink_handler_cas::MutationEffect::Unknown => (
+            MutationLiabilityState::Unknown,
+            Some(unknown_intent_id),
+            false,
+        ),
+        _ => (
+            MutationLiabilityState::Unknown,
+            Some(unknown_intent_id),
+            false,
+        ),
     }
 }
 
@@ -301,18 +303,19 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
     fn write_with_effect(
         &self,
         req: corelink_handler_cas::CasWriteRequest,
-    ) -> Result<corelink_handler_cas::CasWriteResponse, corelink_handler_cas::CasWriteFailure>
-    {
+    ) -> Result<corelink_handler_cas::CasWriteResponse, corelink_handler_cas::CasWriteFailure> {
         use corelink_handler_cas::{CasHandlerError, CasWriteFailure};
         // Reject a forged physical/accounting pairing before touching the
         // quota ledger.  The inner handler repeats the gate (and emits the
         // canonical denial audit), but the decorator must not even transiently
         // reserve another tenant's bytes for a malformed request.
         if !req.is_authorized_for_caller() {
-            return Err(CasWriteFailure::not_written(CasHandlerError::CrossTenantDenied {
-                caller: req.caller_tenant,
-                requested_tenant: req.tenant,
-            }));
+            return Err(CasWriteFailure::not_written(
+                CasHandlerError::CrossTenantDenied {
+                    caller: req.caller_tenant,
+                    requested_tenant: req.tenant,
+                },
+            ));
         }
         // `tenant` is the physical storage namespace (and BYOK namespace),
         // while `accounting_tenant` is the authenticated tenant whose quota
@@ -347,11 +350,12 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
             Ok(pin) => pin,
             Err(e) => {
                 tracing::error!(error = %e, "cas: BYOK operation pin failed; failing closed");
-                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
-                    "{ACCT_UNAVAILABLE_SENTINEL}{e}"
-                ))));
+                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(
+                    format!("{ACCT_UNAVAILABLE_SENTINEL}{e}"),
+                )));
             }
         };
+        #[cfg(not(test))]
         let byte_len = pin
             .as_ref()
             .map_or(plaintext_len, |pin| pin.committed_len());
@@ -365,9 +369,9 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
             ) {
                 Ok(byte_len) => byte_len,
                 Err(error) => {
-                    return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
-                        "{ACCT_UNAVAILABLE_SENTINEL}{error}"
-                    ))));
+                    return Err(CasWriteFailure::not_written(CasHandlerError::Internal(
+                        format!("{ACCT_UNAVAILABLE_SENTINEL}{error}"),
+                    )));
                 }
             },
         };
@@ -377,9 +381,9 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
         match block_on_accrue(&self.accountant, &accounting_tenant, byte_len, quota_seed) {
             Ok(AccrueOutcome::Accrued) => {}
             Ok(AccrueOutcome::OverCap) => {
-                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
-                    "{OVER_CAP_SENTINEL}cas write would exceed storage cap"
-                ))));
+                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(
+                    format!("{OVER_CAP_SENTINEL}cas write would exceed storage cap"),
+                )));
             }
             Ok(AccrueOutcome::Indeterminate) => {
                 // Fresh/unsynced tenant + no resolved cap → we refuse to seed an
@@ -388,15 +392,17 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                     tenant = %accounting_tenant,
                     "cas: storage cap indeterminate for an unseeded tenant; failing closed"
                 );
-                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
+                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(
+                    format!(
                     "{ACCT_UNAVAILABLE_SENTINEL}storage cap indeterminate (no row, no resolved cap)"
-                ))));
+                ),
+                )));
             }
             Err(e) => {
                 tracing::error!(error = %e, "cas: byte reservation failed; failing closed");
-                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
-                    "{ACCT_UNAVAILABLE_SENTINEL}{e}"
-                ))));
+                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(
+                    format!("{ACCT_UNAVAILABLE_SENTINEL}{e}"),
+                )));
             }
         }
         let logical_key = req.claimed_hash.clone();
@@ -409,13 +415,13 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
             None,
         ) {
             block_on_release(&self.accountant, &accounting_tenant, byte_len);
-            return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
-                "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
-            ))));
+            return Err(CasWriteFailure::not_written(CasHandlerError::Internal(
+                format!("{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"),
+            )));
         }
-        let context = pin.as_ref().map(|pin| {
-            Arc::clone(pin) as Arc<dyn corelink_handler_cas::CasWriteOperationContext>
-        });
+        let context = pin
+            .as_ref()
+            .map(|pin| Arc::clone(pin) as Arc<dyn corelink_handler_cas::CasWriteOperationContext>);
         match self
             .write_inner
             .write_with_effect_and_context(req, context.as_deref())
@@ -430,9 +436,9 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                         &logical_key,
                         MutationLiabilityResolution::NotWritten,
                     ) {
-                        return Err(CasWriteFailure::unknown(CasHandlerError::Internal(format!(
-                            "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
-                        ))));
+                        return Err(CasWriteFailure::unknown(CasHandlerError::Internal(
+                            format!("{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"),
+                        )));
                     }
                 } else if let Err(e) = block_on_record_liability(
                     &self.accountant,
@@ -442,9 +448,9 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                     MutationLiabilityState::Committed,
                     None,
                 ) {
-                    return Err(CasWriteFailure::committed(CasHandlerError::Internal(format!(
-                        "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
-                    ))));
+                    return Err(CasWriteFailure::committed(CasHandlerError::Internal(
+                        format!("{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"),
+                    )));
                 }
                 Ok(resp)
             }
@@ -458,9 +464,9 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                         &logical_key,
                         MutationLiabilityResolution::NotWritten,
                     ) {
-                        return Err(CasWriteFailure::unknown(CasHandlerError::Internal(format!(
-                            "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
-                        ))));
+                        return Err(CasWriteFailure::unknown(CasHandlerError::Internal(
+                            format!("{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"),
+                        )));
                     }
                 } else if let Err(e) = block_on_record_liability(
                     &self.accountant,
@@ -470,9 +476,9 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                     state,
                     intent_id,
                 ) {
-                    return Err(CasWriteFailure::unknown(CasHandlerError::Internal(format!(
-                        "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
-                    ))));
+                    return Err(CasWriteFailure::unknown(CasHandlerError::Internal(
+                        format!("{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"),
+                    )));
                 }
                 Err(failure)
             }

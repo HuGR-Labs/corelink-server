@@ -149,6 +149,7 @@ impl corelink_handler_ac::AcUpdateHandler for AccountingAcHandler {
                 )));
             }
         };
+        #[cfg(not(test))]
         let byte_len = pin
             .as_ref()
             .map_or(plaintext_len, |pin| pin.committed_len());
@@ -208,9 +209,9 @@ impl corelink_handler_ac::AcUpdateHandler for AccountingAcHandler {
                 "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
             )));
         }
-        let context = pin.as_ref().map(|pin| {
-            Arc::clone(pin) as Arc<dyn corelink_handler_ac::AcUpdateOperationContext>
-        });
+        let context = pin
+            .as_ref()
+            .map(|pin| Arc::clone(pin) as Arc<dyn corelink_handler_ac::AcUpdateOperationContext>);
         match self
             .update_inner
             .update_with_operation_context(req, context.as_deref())
