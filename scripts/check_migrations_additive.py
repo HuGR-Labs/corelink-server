@@ -32,8 +32,10 @@ Banned patterns (case-insensitive; anchored on a SQL token boundary):
 - `RENAME COLUMN` / `RENAME TABLE` / `RENAME TO` (forces dual-write
   windows; defer to additive copy + read shim)
 
-Allowed exception comments (line-local):
-    `-- additive-allowed: <ADR-NNNN reason>`
+The historic rebuild exceptions below are fixed by path, SQL statement, and
+ADR.  New destructive SQL cannot be approved by copying an annotation.  The
+only forward trigger replacement is likewise fixed to the two B-071 trigger
+names in migration 0143 and ADR-0143.
 
 Exit codes:
     0 — every migration file passes the additive check.
@@ -81,10 +83,60 @@ BANNED_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("RENAME TO", re.compile(r"\bRENAME\s+TO\b", re.IGNORECASE)),
 ]
 
-# An `additive-allowed: ADR-NNNN` annotation on the same line suppresses
-# the violation. The reason text is mandatory so reviewers can see why.
+# Existing table-rebuild decisions carry an ADR annotation on the same line.
+# The annotation alone is deliberately insufficient: each legacy statement is
+# also pinned below so a new migration cannot create a generic bypass.
 ALLOW_PATTERN = re.compile(
     r"^--\s*additive-allowed\s*:\s*ADR-\d{4}\b\s+\S", re.IGNORECASE
+)
+
+LEGACY_WAIVERS: dict[str, tuple[str, frozenset[str]]] = {
+    "migrations/d1/0064_tenant_tier_max.sql": (
+        "ADR-0064",
+        frozenset(
+            {
+                "DROP TABLE tenant;",
+                "ALTER TABLE tenant_new RENAME TO tenant;",
+            }
+        ),
+    ),
+    "migrations/d1/0098_widen_erasure_region_check_apac.sql": (
+        "ADR-0098",
+        frozenset(
+            {
+                "DROP TABLE erasure_attestations;",
+                "ALTER TABLE erasure_attestations_new RENAME TO erasure_attestations;",
+                "DROP TABLE erasure_public_keys;",
+                "ALTER TABLE erasure_public_keys_new RENAME TO erasure_public_keys;",
+            }
+        ),
+    ),
+    "migrations/d1/0126_b083_common_purge_r2_absent_quarantine.sql": (
+        "ADR-0031",
+        frozenset(
+            {"DROP TRIGGER IF EXISTS trg_byok_object_purge_forward_only;"},
+        ),
+    ),
+    "migrations/d1/0141_terraform_drift_region_contract.sql": (
+        "ADR-0102",
+        frozenset(
+            {
+                "DROP TABLE terraform_drift_findings;",
+                "ALTER TABLE terraform_drift_findings_new RENAME TO terraform_drift_findings;",
+            }
+        ),
+    ),
+}
+
+B071_TRIGGER_REPLACEMENT_PATH = "migrations/d1/0143_gc_accounting_region_upgrade.sql"
+B071_TRIGGER_REPLACEMENTS = frozenset(
+    {
+        "DROP TRIGGER IF EXISTS trg_gc_purge_accounting_required;",
+        "DROP TRIGGER IF EXISTS trg_gc_purge_finalize_accounting;",
+    }
+)
+B071_TRIGGER_REPLACEMENT_COMMENT = (
+    "-- additive-trigger-replacement: ADR-0143 B-071 historic accounting body"
 )
 
 def iter_migration_files() -> list[Path]:
@@ -137,17 +189,41 @@ def lex_sql_line(
     return "".join(code), None, in_block_comment, quote
 
 
-def valid_line_waiver(raw_line: str, sql_code: str, comment_start: int) -> bool:
-    """Accept one terminated SQL statement plus an audited, reasoned waiver."""
+def normalized_sql(sql_code: str) -> str:
+    """Make whitespace irrelevant while retaining the complete statement."""
+    return " ".join(sql_code.split())
+
+
+def valid_legacy_waiver(
+    raw_line: str, sql_code: str, comment_start: int, relative_path: str | None
+) -> bool:
+    """Accept only a pre-recorded rebuild statement at its original location."""
+    if relative_path is None or relative_path not in LEGACY_WAIVERS:
+        return False
     comment = raw_line[comment_start:]
+    adr, statements = LEGACY_WAIVERS[relative_path]
     return (
         sql_code.count(";") == 1
         and sql_code.rstrip().endswith(";")
+        and normalized_sql(sql_code) in statements
         and ALLOW_PATTERN.search(comment) is not None
+        and re.search(rf"\b{re.escape(adr)}\b", comment, re.IGNORECASE) is not None
     )
 
 
-def scan_sql(raw: str) -> list[tuple[int, str, str]]:
+def valid_b071_trigger_replacement(
+    raw_line: str, sql_code: str, comment_start: int, relative_path: str | None
+) -> bool:
+    """Permit exactly the two ADR-0143 B-071 trigger-body replacements."""
+    return (
+        relative_path == B071_TRIGGER_REPLACEMENT_PATH
+        and sql_code.count(";") == 1
+        and normalized_sql(sql_code) in B071_TRIGGER_REPLACEMENTS
+        and raw_line[comment_start:].strip() == B071_TRIGGER_REPLACEMENT_COMMENT
+    )
+
+
+def scan_sql(raw: str, relative_path: str | None = None) -> list[tuple[int, str, str]]:
     """Return destructive SQL tokens not covered by a valid audited waiver."""
     violations: list[tuple[int, str, str]] = []
     in_block_comment = False
@@ -156,26 +232,38 @@ def scan_sql(raw: str) -> list[tuple[int, str, str]]:
         scan_line, comment_start, in_block_comment, quote = lex_sql_line(
             raw_line, in_block_comment, quote
         )
-        # Waivers are accepted only in a real SQL line comment, after exactly
-        # one terminated statement. Strings, block comments, adjacent SQL, and
-        # missing reasons cannot suppress the gate.
-        if comment_start is not None and valid_line_waiver(
-            raw_line, scan_line, comment_start
-        ):
-            continue
         for label, pattern in BANNED_PATTERNS:
-            if pattern.search(scan_line):
-                violations.append((line_no, label, raw_line.rstrip()))
+            if not pattern.search(scan_line):
+                continue
+            # Waivers are accepted only in a real SQL line comment, after one
+            # complete statement and only for a statement already approved by
+            # an ADR. Strings, block comments, adjacent SQL, wrong paths, and
+            # a different destructive operation cannot suppress the gate.
+            if comment_start is not None and (
+                valid_legacy_waiver(
+                    raw_line, scan_line, comment_start, relative_path
+                )
+                or (
+                    label == "DROP TRIGGER"
+                    and valid_b071_trigger_replacement(
+                        raw_line, scan_line, comment_start, relative_path
+                    )
+                )
+            ):
+                continue
+            violations.append((line_no, label, raw_line.rstrip()))
     return violations
 
 
 def scan_file(path: Path) -> list[tuple[int, str, str]]:
     """Scan a migration file for non-additive statements."""
-    return scan_sql(path.read_text(encoding="utf-8"))
+    return scan_sql(
+        path.read_text(encoding="utf-8"), path.relative_to(REPO_ROOT).as_posix()
+    )
 
 
 def self_test() -> int:
-    """Exercise waiver parsing against quoted, block, and adjacent-SQL bypasses."""
+    """Exercise fixed waiver identities and trigger-replacement mutations."""
     valid = "DROP TABLE tenant; -- additive-allowed: ADR-0064 widening rebuild"
     attacks = (
         "SELECT '-- additive-allowed: ADR-0064 approved'; DROP TABLE tenant;",
@@ -184,12 +272,33 @@ def self_test() -> int:
         "DROP TABLE tenant; -- additive-allowed: ADR-0064",
         "DROP TABLE tenant;\n-- additive-allowed: ADR-0064 wrong line",
     )
-    if scan_sql(valid):
+    if scan_sql(valid, "migrations/d1/0064_tenant_tier_max.sql"):
         print("FAIL: valid audited waiver was rejected")
         return 1
     for attack in attacks:
-        if not scan_sql(attack):
+        if not scan_sql(attack, "migrations/d1/0064_tenant_tier_max.sql"):
             print(f"FAIL: waiver bypass was accepted: {attack}")
+            return 1
+    b071_valid = (
+        "DROP TRIGGER IF EXISTS trg_gc_purge_accounting_required; "
+        + B071_TRIGGER_REPLACEMENT_COMMENT
+    )
+    if scan_sql(b071_valid, B071_TRIGGER_REPLACEMENT_PATH):
+        print("FAIL: exact B-071 trigger replacement was rejected")
+        return 1
+    b071_mutations = (
+        (b071_valid.replace("accounting_required", "legal_hold_guard"), B071_TRIGGER_REPLACEMENT_PATH),
+        (b071_valid.replace("DROP TRIGGER", "DROP TABLE"), B071_TRIGGER_REPLACEMENT_PATH),
+        (b071_valid, "migrations/d1/0143_irrelevant.sql"),
+        (
+            "DROP TRIGGER IF EXISTS trg_gc_purge_finalize_accounting; "
+            "-- additive-allowed: ADR-0143 copied generic waiver",
+            B071_TRIGGER_REPLACEMENT_PATH,
+        ),
+    )
+    for mutation, mutation_path in b071_mutations:
+        if not scan_sql(mutation, mutation_path):
+            print(f"FAIL: B-071 mutation bypass was accepted: {mutation}")
             return 1
     print("OK: migration waiver lexer self-test passed")
     return 0
