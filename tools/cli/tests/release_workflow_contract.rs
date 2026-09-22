@@ -30,14 +30,14 @@ fn assert_managed_cli_provenance_contract(caller: &str, generator: &str) {
         "GitHub's provenance action must be pinned to a full commit SHA"
     );
     for required in [
+        "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
         "provenance.intoto.jsonl",
         "provenance.intoto.jsonl.bundle",
-        "https://token.actions.githubusercontent.com",
-        "--cert-oidc-issuer",
-        "--signer-workflow",
+        "--cert-oidc-issuer \"https://token.actions.githubusercontent.com\"",
+        "--signer-workflow \"${REPO}/.github/workflows/release-slsa3.yml\"",
         "--source-ref",
         "--source-digest",
-        "subject-checksums",
+        "subject-checksums: provenance-subjects.sha256",
         "subject-list",
         "release-manifest.json",
     ] {
@@ -73,11 +73,17 @@ fn cli_provenance_uses_managed_generator_and_exact_release_identity() -> Result<
             "unpinned generator",
         ),
         (
-            generator.replace("--signer-workflow", "--owner"),
-            "wrong caller identity verifier",
+            generator.replace(
+                "--signer-workflow \"${REPO}/.github/workflows/release-slsa3.yml\"",
+                "--signer-workflow \"${REPO}/.github/workflows/release-cli.yml\"",
+            ),
+            "wrong signer workflow identity",
         ),
         (
-            generator.replace("release-manifest.json", "wrong-subject.json"),
+            generator.replace(
+                "subject-checksums: provenance-subjects.sha256",
+                "subject-checksums: wrong-subjects.sha256",
+            ),
             "tampered subject",
         ),
         (

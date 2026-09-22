@@ -143,6 +143,7 @@ jobs:
           print(sum(asset.get("name") == "staging-manifest.json" for asset in release.get("assets", [])))
           PY
           )"
+          test "${STAGING_ASSET_COUNT}" = "0"
           while IFS='  ' read -r digest name; do
             test -n "${digest}" && test -n "${name}"
             gh attestation verify "release-assets/${name}" \

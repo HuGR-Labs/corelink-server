@@ -92,6 +92,17 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
             .is_err(),
         "an authenticated release API failure must not be ignored"
     );
+    let wrong_publication_identity = workflow.replace(
+        "--signer-workflow \"${GITHUB_REPOSITORY}/.github/workflows/release-slsa3.yml\"",
+        "--signer-workflow \"${GITHUB_REPOSITORY}/.github/workflows/release-cli.yml\"",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_publication_inventory_contract(
+            &wrong_publication_identity
+        ))
+        .is_err(),
+        "the final publication verifier must require the exact signer workflow identity"
+    );
     assert!(
         std::panic::catch_unwind(|| assert_release_contract(&no_readback)).is_err(),
         "removing published-artifact digest verification must fail the control"
@@ -272,10 +283,21 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         std::panic::catch_unwind(|| assert_slsa_contract(&unpinned_slsa_action)).is_err(),
         "the GitHub provenance action must remain SHA-pinned"
     );
-    let unbound_signer = slsa.replace("--signer-workflow", "--owner");
+    let unbound_signer = slsa.replace(
+        "--signer-workflow \"${REPO}/.github/workflows/release-slsa3.yml\"",
+        "--signer-workflow \"${REPO}/.github/workflows/release-cli.yml\"",
+    );
     assert!(
         std::panic::catch_unwind(|| assert_slsa_contract(&unbound_signer)).is_err(),
         "the GitHub attestation signer identity must remain exact"
+    );
+    let reintroduced_staging_manifest = slsa.replace(
+        "test \"${STAGING_ASSET_COUNT}\" = \"0\"",
+        "staging inventory check removed",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_slsa_contract(&reintroduced_staging_manifest)).is_err(),
+        "the provenance generator must reject a staging manifest in its exact inventory"
     );
     let inventory_helper = load_script("verify_cli_release_inventory.py")?;
     assert_inventory_helper_contract(&inventory_helper);
