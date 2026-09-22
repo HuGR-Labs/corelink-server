@@ -71,7 +71,7 @@ pub(super) fn assert_release_contract(workflow: &str) {
         "uses: ./.github/workflows/sign-linux.yml",
         "uses: ./.github/workflows/sign-windows.yml",
         "uses: ./.github/workflows/notarize-macos.yml",
-        "tag: ${{ github.ref_name }}",
+        "tag: ${{ inputs.release_tag }}",
     ] {
         assert!(
             workflow.contains(required),
