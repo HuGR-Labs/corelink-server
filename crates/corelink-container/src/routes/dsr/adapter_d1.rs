@@ -234,6 +234,7 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     "gc_purge_intent",
     "cas_write_intent",
     "cas_reconciliation_intent",
+    "storage_mutation_liability",
 ];
 
 /// Erase-set tables keyed by a `namespace` column. The bound value is the

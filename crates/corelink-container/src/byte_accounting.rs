@@ -69,6 +69,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use uuid::Uuid;
 
 use crate::customer_d1::ByokCryptoMode;
 use crate::storage::byok_cas::{

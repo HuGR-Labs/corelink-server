@@ -58,6 +58,65 @@ pub enum AccrueOutcome {
     Indeterminate,
 }
 
+/// Durable state for one accounted CAS mutation liability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+#[allow(missing_docs)]
+pub enum MutationLiabilityState {
+    Reserved,
+    Committed,
+    Pending,
+    Unknown,
+    Released,
+}
+
+impl MutationLiabilityState {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Reserved => "reserved",
+            Self::Committed => "committed",
+            Self::Pending => "pending",
+            Self::Unknown => "unknown",
+            Self::Released => "released",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct MutationLiability<'a> {
+    pub tenant_id: &'a str,
+    pub region: &'a str,
+    pub logical_key: &'a str,
+    pub bytes_reserved: i64,
+    pub state: MutationLiabilityState,
+    pub intent_id: Option<Uuid>,
+    pub now_ms: i64,
+}
+
+/// Authoritative result used to settle a previously retained mutation liability.
+///
+/// A reconciler may release bytes only after proving [`Self::NotWritten`]. A
+/// durable write stays charged when it is settled as [`Self::Committed`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MutationLiabilityResolution {
+    /// Reconciliation proved the underlying storage mutation did not persist.
+    NotWritten,
+    /// Reconciliation proved the underlying storage mutation persisted.
+    Committed,
+}
+
+/// Result of one idempotent mutation-liability settlement attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MutationLiabilitySettlement {
+    /// This call performed the terminal state transition.
+    Applied,
+    /// The liability was already terminal, so this call changed no counter.
+    AlreadySettled,
+}
+
 /// Backing store for the per-tenant byte counter.
 ///
 /// Abstracted as a trait so the security-critical accrual logic can be
@@ -106,6 +165,27 @@ pub trait ByteStore: std::fmt::Debug + Send + Sync {
         bytes: i64,
         now_ms: i64,
     ) -> Result<(), String>;
+
+    /// Upsert the durable ownership record for an accounted CAS mutation.
+    async fn record_mutation_liability(
+        &self,
+        _liability: MutationLiability<'_>,
+    ) -> Result<(), String> {
+        Err("byte store does not support mutation-liability persistence".to_owned())
+    }
+
+    /// Atomically settle an active CAS liability and, only for a proved
+    /// non-write, release its reservation exactly once.
+    async fn settle_mutation_liability(
+        &self,
+        _tenant_id: &str,
+        _region: &str,
+        _logical_key: &str,
+        _resolution: MutationLiabilityResolution,
+        _now_ms: i64,
+    ) -> Result<MutationLiabilitySettlement, String> {
+        Err("byte store does not support mutation-liability settlement".to_owned())
+    }
 }
 
 /// The per-tenant storage byte accountant.
@@ -174,6 +254,49 @@ impl ByteAccountant {
         let now_ms = current_unix_ms();
         self.store
             .release(tenant, &self.region, bytes, now_ms)
+            .await
+    }
+
+    async fn record_mutation_liability(
+        &self,
+        tenant: &str,
+        logical_key: &str,
+        bytes_reserved: i64,
+        state: MutationLiabilityState,
+        intent_id: Option<Uuid>,
+    ) -> Result<(), String> {
+        self.store
+            .record_mutation_liability(MutationLiability {
+                tenant_id: tenant,
+                region: &self.region,
+                logical_key,
+                bytes_reserved,
+                state,
+                intent_id,
+                now_ms: current_unix_ms(),
+            })
+            .await
+    }
+
+    /// Settle a durable CAS mutation liability after reconciliation.
+    ///
+    /// This operation is idempotent: only the first proved [`
+    /// MutationLiabilityResolution::NotWritten`] changes `bytes_used`; a later
+    /// retry observes the terminal liability and leaves the counter unchanged.
+    pub async fn settle_mutation_liability(
+        &self,
+        tenant: &str,
+        logical_key: &str,
+        resolution: MutationLiabilityResolution,
+    ) -> Result<MutationLiabilitySettlement, String> {
+        self.store
+            .settle_mutation_liability(
+                tenant,
+                &self.region,
+                logical_key,
+                resolution,
+                current_unix_ms(),
+            )
             .await
     }
 }
@@ -439,6 +562,113 @@ impl ByteStore for D1ByteStore {
             )
             .await?;
         Ok(())
+    }
+
+    async fn record_mutation_liability(
+        &self,
+        liability: MutationLiability<'_>,
+    ) -> Result<(), String> {
+        let _ = self.client.query(
+            "INSERT INTO storage_mutation_liability \
+               (tenant_id, region, surface, logical_key, bytes_reserved, state, intent_id, \
+                attempts, created_at_ms, updated_at_ms) \
+             VALUES (?1, ?2, 'cas', ?3, ?4, ?5, ?6, 0, ?7, ?7) \
+             ON CONFLICT(tenant_id, region, surface, logical_key) DO UPDATE SET \
+               bytes_reserved = excluded.bytes_reserved, state = excluded.state, \
+               intent_id = excluded.intent_id, attempts = attempts + 1, \
+               updated_at_ms = excluded.updated_at_ms",
+            &[
+                serde_json::Value::String(liability.tenant_id.to_owned()),
+                serde_json::Value::String(liability.region.to_owned()),
+                serde_json::Value::String(liability.logical_key.to_owned()),
+                serde_json::Value::from(liability.bytes_reserved),
+                serde_json::Value::String(liability.state.as_str().to_owned()),
+                liability.intent_id.map_or(serde_json::Value::Null, |id| {
+                    serde_json::Value::String(id.to_string())
+                }),
+                serde_json::Value::from(liability.now_ms),
+            ],
+        ).await?;
+        Ok(())
+    }
+
+    async fn settle_mutation_liability(
+        &self,
+        tenant_id: &str,
+        region: &str,
+        logical_key: &str,
+        resolution: MutationLiabilityResolution,
+        now_ms: i64,
+    ) -> Result<MutationLiabilitySettlement, String> {
+        let common = [
+            serde_json::Value::String(tenant_id.to_owned()),
+            serde_json::Value::String(region.to_owned()),
+            serde_json::Value::String(logical_key.to_owned()),
+        ];
+        let active = "state IN ('reserved', 'pending', 'unknown')";
+        match resolution {
+            MutationLiabilityResolution::Committed => {
+                let rows = self.client.query(
+                    &format!(
+                        "UPDATE storage_mutation_liability \
+                           SET state = 'committed', intent_id = NULL, attempts = attempts + 1, \
+                               updated_at_ms = ?4 \
+                         WHERE tenant_id = ?1 AND region = ?2 AND surface = 'cas' \
+                           AND logical_key = ?3 AND {active} \
+                         RETURNING state"
+                    ),
+                    &[
+                        common[0].clone(), common[1].clone(), common[2].clone(),
+                        serde_json::Value::from(now_ms),
+                    ],
+                ).await?;
+                Ok(if rows.is_empty() {
+                    MutationLiabilitySettlement::AlreadySettled
+                } else {
+                    MutationLiabilitySettlement::Applied
+                })
+            }
+            MutationLiabilityResolution::NotWritten => {
+                // The batch is one D1 transaction. The counter decrement runs
+                // only while the ownership row is active; the following terminal
+                // transition makes a retry's decrement predicate false.
+                let results = self.client.batch(vec![
+                    crate::storage::d1_http::D1BatchStatement::new(
+                        format!(
+                            "UPDATE tenant_storage_state \
+                               SET bytes_used = MAX(0, bytes_used - ( \
+                                   SELECT bytes_reserved FROM storage_mutation_liability \
+                                    WHERE tenant_id = ?1 AND region = ?2 AND surface = 'cas' \
+                                      AND logical_key = ?3 AND {active} \
+                               )), bytes_used_updated_at_ms = ?4, updated_at_ms = ?4 \
+                             WHERE tenant_id = ?1 AND region = ?2 AND EXISTS ( \
+                                   SELECT 1 FROM storage_mutation_liability \
+                                    WHERE tenant_id = ?1 AND region = ?2 AND surface = 'cas' \
+                                      AND logical_key = ?3 AND {active} \
+                             )"
+                        ),
+                        vec![common[0].clone(), common[1].clone(), common[2].clone(), serde_json::Value::from(now_ms)],
+                    ),
+                    crate::storage::d1_http::D1BatchStatement::new(
+                        format!(
+                            "UPDATE storage_mutation_liability \
+                               SET state = 'released', intent_id = NULL, attempts = attempts + 1, \
+                                   updated_at_ms = ?4 \
+                             WHERE tenant_id = ?1 AND region = ?2 AND surface = 'cas' \
+                               AND logical_key = ?3 AND {active} \
+                             RETURNING state"
+                        ),
+                        vec![common[0].clone(), common[1].clone(), common[2].clone(), serde_json::Value::from(now_ms)],
+                    ),
+                ]).await.map_err(|error| error.message)?;
+                let settled = results.get(1).is_some_and(|rows| !rows.is_empty());
+                Ok(if settled {
+                    MutationLiabilitySettlement::Applied
+                } else {
+                    MutationLiabilitySettlement::AlreadySettled
+                })
+            }
+        }
     }
 }
 

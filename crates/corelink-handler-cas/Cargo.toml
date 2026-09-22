@@ -19,6 +19,7 @@ corelink-slo = { workspace = true }
 # faithful to the `DigestAlgo::Sha256` path.
 sha2 = { workspace = true }
 hex = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

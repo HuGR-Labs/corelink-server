@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::audit::{AuditEvent, AuditEventKind, AuditSink};
-use crate::error::CasHandlerError;
+use crate::error::{CasHandlerError, CasWriteFailure};
 use crate::observer::{Sli, SliObservation, SliObserver};
 use crate::request::{
     CasBlobEntry, CasDeleteRequest, CasDeleteResponse, CasListRequest, CasListResponse,
@@ -144,6 +144,25 @@ pub trait CasWriteHandler: Send + Sync + core::fmt::Debug {
     /// Returns variants of [`CasHandlerError`] per the trait
     /// contract (see crate-level invariants).
     fn write(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError>;
+
+    /// Serve one CAS write and report what the implementation can prove about
+    /// any failed durable mutation.
+    ///
+    /// The default keeps existing implementors source-compatible.  A legacy
+    /// [`Self::write`] error does not prove the R2 request had no effect and
+    /// has no durable reconciliation intent, so it is reported as
+    /// [`crate::MutationEffect::Unknown`]. Production implementations and
+    /// accounting decorators MUST override this method before using the effect
+    /// to settle a reservation. [`crate::MutationEffect::Pending`] is reserved
+    /// for an implementation that has already persisted the exact intent ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CasWriteFailure`], preserving the legacy error in
+    /// [`CasWriteFailure::cause`] and attaching its proved mutation effect.
+    fn write_with_effect(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasWriteFailure> {
+        self.write(req).map_err(CasWriteFailure::unknown)
+    }
 }
 
 /// Trait every concrete CAS delete handler implements (D-8).

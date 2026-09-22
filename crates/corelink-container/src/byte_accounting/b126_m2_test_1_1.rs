@@ -15,6 +15,14 @@ pub struct Row {
     pub quota: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub struct Liability {
+    pub bytes_reserved: i64,
+    pub state: MutationLiabilityState,
+    pub intent_id: Option<Uuid>,
+}
+
 /// Hermetic in-memory [`ByteStore`] — models the D1 `(tenant, region)` row
 /// with an in-process `Mutex` so the read-modify-write is atomic exactly as
 /// the D1 `bytes_used = bytes_used + ?` increment is.
@@ -22,6 +30,7 @@ pub struct Row {
 #[non_exhaustive]
 pub struct InMemoryByteStore {
     rows: Mutex<HashMap<(String, String), Row>>,
+    liabilities: Mutex<HashMap<(String, String, String), Liability>>,
 }
 
 impl InMemoryByteStore {
@@ -30,6 +39,7 @@ impl InMemoryByteStore {
     pub fn new() -> Self {
         Self {
             rows: Mutex::new(HashMap::new()),
+            liabilities: Mutex::new(HashMap::new()),
         }
     }
 
@@ -64,6 +74,20 @@ impl InMemoryByteStore {
                     .map(|row| row.quota)
             })
             .unwrap_or(0)
+    }
+
+    pub fn liability(&self, tenant: &str, region: &str, logical_key: &str) -> Option<Liability> {
+        self.liabilities
+            .lock()
+            .ok()
+            .and_then(|rows| {
+                rows.get(&(
+                    tenant.to_owned(),
+                    region.to_owned(),
+                    logical_key.to_owned(),
+                ))
+                .cloned()
+            })
     }
 }
 
@@ -160,6 +184,71 @@ impl ByteStore for InMemoryByteStore {
             row.used = (row.used - bytes).max(0);
         }
         Ok(())
+    }
+
+    async fn record_mutation_liability(
+        &self,
+        liability: MutationLiability<'_>,
+    ) -> Result<(), String> {
+        let mut rows = self.liabilities.lock().map_err(|_| "liability lock poisoned".to_owned())?;
+        let key = (
+            liability.tenant_id.to_owned(),
+            liability.region.to_owned(),
+            liability.logical_key.to_owned(),
+        );
+        if let Some(row) = rows.get_mut(&key) {
+            row.bytes_reserved = liability.bytes_reserved;
+            row.state = liability.state;
+            row.intent_id = liability.intent_id;
+        } else {
+            rows.insert(key, Liability {
+                bytes_reserved: liability.bytes_reserved,
+                state: liability.state,
+                intent_id: liability.intent_id,
+            });
+        }
+        Ok(())
+    }
+
+    async fn settle_mutation_liability(
+        &self,
+        tenant_id: &str,
+        region: &str,
+        logical_key: &str,
+        resolution: MutationLiabilityResolution,
+        _now_ms: i64,
+    ) -> Result<MutationLiabilitySettlement, String> {
+        // Hold ownership while applying the counter transition, so a concurrent
+        // repeat cannot observe the liability active and refund it twice.
+        let mut liabilities = self
+            .liabilities
+            .lock()
+            .map_err(|_| "liability lock poisoned".to_owned())?;
+        let key = (tenant_id.to_owned(), region.to_owned(), logical_key.to_owned());
+        let Some(liability) = liabilities.get_mut(&key) else {
+            return Ok(MutationLiabilitySettlement::AlreadySettled);
+        };
+        if matches!(liability.state, MutationLiabilityState::Released | MutationLiabilityState::Committed) {
+            return Ok(MutationLiabilitySettlement::AlreadySettled);
+        }
+        match resolution {
+            MutationLiabilityResolution::Committed => {
+                liability.state = MutationLiabilityState::Committed;
+                liability.intent_id = None;
+            }
+            MutationLiabilityResolution::NotWritten => {
+                let mut rows = self
+                    .rows
+                    .lock()
+                    .map_err(|_| "InMemoryByteStore: poisoned lock".to_owned())?;
+                if let Some(row) = rows.get_mut(&(tenant_id.to_owned(), region.to_owned())) {
+                    row.used = (row.used - liability.bytes_reserved).max(0);
+                }
+                liability.state = MutationLiabilityState::Released;
+                liability.intent_id = None;
+            }
+        }
+        Ok(MutationLiabilitySettlement::Applied)
     }
 }
 
