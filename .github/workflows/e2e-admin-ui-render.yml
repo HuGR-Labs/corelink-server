@@ -61,7 +61,7 @@ jobs:
 
       - name: Ensure Chromium for Playwright
         working-directory: apps/admin-ui
-        run: pnpm exec playwright install chromium
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Run render smoke
         id: smoke
