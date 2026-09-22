@@ -15,8 +15,8 @@ permissions:
 
 jobs:
   observe:
-    name: hosted smoke observation
-    runs-on: ubuntu-latest
+    name: fleet smoke observation
+    runs-on: corelink
     timeout-minutes: 5
     steps:
       - name: Checkout tested tree

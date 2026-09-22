@@ -4,7 +4,7 @@
   "issue": 1672,
   "kind": "contract-only",
   "workflow": ".github/workflows/smoke-install.yml",
-  "runner": "ubuntu-latest",
+  "runner": "corelink",
   "trigger": "workflow_dispatch",
   "helper": "scripts/smoke_install_observe.py",
   "tests": [
