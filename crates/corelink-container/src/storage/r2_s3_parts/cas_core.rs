@@ -127,10 +127,10 @@ impl R2CasHandler {
     ///
     /// GATED-INERT: encryption engages ONLY for a tenant whose
     /// `tenant_byok_config.state == 'active'`; every other tenant (and the
-    /// `_public` namespace) keeps the exact plaintext path. The production
-    /// builder ([`build_r2_cas_handler_from_env`]) calls this when exactly one
-    /// real KMS feature is compiled. The default no-provider build remains on
-    /// the unchanged plaintext path and activation itself returns 501.
+    /// `_public` namespace) keeps the exact plaintext path. Production router
+    /// assembly calls this only after it has constructed the one real-provider
+    /// [`DataPlaneByok`](crate::storage::byok_cas::DataPlaneByok) set; the
+    /// default build has no such provider and remains plaintext.
     #[must_use]
     pub fn with_byok(
         mut self,
@@ -152,6 +152,11 @@ impl R2CasHandler {
         self
     }
 
+    #[cfg(test)]
+    pub(crate) fn byok_config_cache_for_test(&self) -> Option<&Arc<ByokConfigCache>> {
+        self.byok_config_cache.as_ref()
+    }
+
     /// Attach the mandatory production data-plane gate/catalog pair.
     #[must_use]
     pub fn with_byok_runtime_gate(mut self, gate: Arc<dyn ByokRuntimeGate>) -> Self {
@@ -163,7 +168,22 @@ impl R2CasHandler {
         &self,
         tenant: &str,
         operation: DataOperation,
+        context: Option<&dyn corelink_handler_cas::CasWriteOperationContext>,
     ) -> Result<Option<ByokDataGuard>, CasHandlerError> {
+        if let Some(context) = context {
+            let pin = context
+                .as_any()
+                .downcast_ref::<crate::storage::byok_cas::ByokOperationPin>()
+                .ok_or_else(|| {
+                    CasHandlerError::Internal(
+                        "unsupported CAS operation context on R2 BYOK write".to_owned(),
+                    )
+                })?;
+            return pin
+                .take_guard(tenant)
+                .map(Some)
+                .map_err(|error| CasHandlerError::Internal(format!("BYOK operation pin: {error}")));
+        }
         if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
             return Ok(None);
         }

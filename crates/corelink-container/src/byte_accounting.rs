@@ -71,7 +71,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use uuid::Uuid;
 
+#[cfg(test)]
 use crate::customer_d1::ByokCryptoMode;
+#[cfg(test)]
 use crate::storage::byok_cas::{
     engagement_for, ByokConfigCache, ByokEngagement, BYOK_CLB1_OVERHEAD, BYOK_CLB2_OVERHEAD,
 };

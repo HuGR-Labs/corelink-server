@@ -79,7 +79,7 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
                 self.emit_update_sli(true, elapsed_us(started));
                 AcHandlerError::AuditFailed(e)
             })?;
-        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Delete)?;
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Delete, None)?;
 
         // Byte-accounting (finding #1 / cluster-C) + concurrent double-DELETE
         // over-release (rt-nuclear #6/#10/#14): `delete_if_present` serializes the

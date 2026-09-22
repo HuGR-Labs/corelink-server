@@ -345,6 +345,26 @@ pub trait AcUpdateHandler: Send + Sync + core::fmt::Debug {
     ///
     /// See [`AcHandlerError`].
     fn update(&self, req: AcUpdateRequest) -> Result<AcUpdateResponse, AcHandlerError>;
+
+    /// Serve one AC update using an operation-owned storage context.
+    ///
+    /// The context is opaque to this reusable handler contract. A concrete
+    /// storage implementation may consume a context it created; other
+    /// implementations preserve their existing update behaviour.
+    fn update_with_operation_context(
+        &self,
+        req: AcUpdateRequest,
+        context: Option<&dyn AcUpdateOperationContext>,
+    ) -> Result<AcUpdateResponse, AcHandlerError> {
+        let _ = context;
+        self.update(req)
+    }
+}
+
+/// Opaque, operation-scoped context for one AC update.
+pub trait AcUpdateOperationContext: Send + Sync + core::fmt::Debug {
+    /// Expose the concrete context only to its owning storage implementation.
+    fn as_any(&self) -> &dyn core::any::Any;
 }
 
 /// Trait every AC delete handler implements (D-1).

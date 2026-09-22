@@ -52,7 +52,7 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
             self.emit_lookup_sli(true, elapsed_us(started));
             return Err(AcHandlerError::AuditFailed(e));
         }
-        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Read)?;
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Read, None)?;
 
         let resolved = match tokio::task::block_in_place(|| {
             handle.block_on(self.resolve_byok_with_guard(

@@ -23,10 +23,11 @@ pub struct AccountingAcHandler {
     /// Fixed, memory-bounded shard array of per-`(tenant, action_digest)` async
     /// locks (mirrors [`AccountingCasHandler::key_locks`]).
     key_locks: Arc<Vec<Arc<tokio::sync::Mutex<()>>>>,
-    /// BYOK Wave 3b (GATED-INERT): the SAME per-tenant config cache the AC
-    /// storage handler uses — see [`AccountingCasHandler::byok_config_cache`].
-    /// `None` ⇒ plaintext-size accounting (today's behaviour).
-    byok_config_cache: Option<Arc<ByokConfigCache>>,
+    /// The one data-plane collaborator set. Each update pins one exact BYOK
+    /// operation and transfers the pin to the inner R2 handler.
+    byok: Option<Arc<crate::storage::byok_cas::DataPlaneByok>>,
+    #[cfg(test)]
+    test_byok_config_cache: Option<Arc<ByokConfigCache>>,
 }
 
 impl core::fmt::Debug for AccountingAcHandler {
@@ -54,18 +55,33 @@ impl AccountingAcHandler {
             delete_inner,
             accountant,
             key_locks: Arc::new(key_locks),
-            byok_config_cache: None,
+            byok: None,
+            #[cfg(test)]
+            test_byok_config_cache: None,
         }
     }
 
-    /// Attach the BYOK Wave-3b config cache so a BYOK-`active` tenant is
-    /// reserved/released at its committed CIPHERTEXT size (audit C3); mirror of
-    /// [`AccountingCasHandler::with_byok`]. `None` (the default) keeps the exact
-    /// plaintext-size accounting.
+    /// Attach the one BYOK data plane that also owns the inner R2 gate.
     #[must_use]
-    pub fn with_byok(mut self, byok_config_cache: Arc<ByokConfigCache>) -> Self {
-        self.byok_config_cache = Some(byok_config_cache);
+    pub fn with_byok(mut self, byok: Arc<crate::storage::byok_cas::DataPlaneByok>) -> Self {
+        self.byok = Some(byok);
         self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_byok_cache_for_test(mut self, cache: Arc<ByokConfigCache>) -> Self {
+        self.test_byok_config_cache = Some(cache);
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn byok_for_test(&self) -> Option<&Arc<crate::storage::byok_cas::DataPlaneByok>> {
+        self.byok.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn byok_config_cache_for_test(&self) -> Option<&Arc<ByokConfigCache>> {
+        self.test_byok_config_cache.as_ref()
     }
 
     /// Acquire the per-`(tenant, action_digest)` serialization guard (the shard
@@ -124,18 +140,34 @@ impl corelink_handler_ac::AcUpdateHandler for AccountingAcHandler {
         // BYOK_CLB1_OVERHEAD); reserve THAT so it matches the real R2 object the
         // delete path releases → no drift. Config error ⇒ fail CLOSED (503).
         // `None` cache / non-BYOK ⇒ `byte_len == plaintext_len` (unchanged).
-        let byte_len = match byok_committed_len(
-            self.byok_config_cache.as_ref(),
-            &tenant,
-            plaintext_len,
-        ) {
-            Ok(n) => n,
+        let pin = match pin_byok_operation(self.byok.as_ref(), &tenant, plaintext_len) {
+            Ok(pin) => pin,
             Err(e) => {
-                tracing::error!(error = %e, "ac: byok committed-size lookup failed; failing closed");
+                tracing::error!(error = %e, "ac: BYOK operation pin failed; failing closed");
                 return Err(AcHandlerError::Internal(format!(
                     "{ACCT_UNAVAILABLE_SENTINEL}{e}"
                 )));
             }
+        };
+        #[cfg(not(test))]
+        let byte_len = pin
+            .as_ref()
+            .map_or(plaintext_len, |pin| pin.committed_len());
+        #[cfg(test)]
+        let byte_len = match pin.as_ref() {
+            Some(pin) => pin.committed_len(),
+            None => match byok_committed_len_for_test(
+                self.test_byok_config_cache.as_ref(),
+                &tenant,
+                plaintext_len,
+            ) {
+                Ok(byte_len) => byte_len,
+                Err(error) => {
+                    return Err(AcHandlerError::Internal(format!(
+                        "{ACCT_UNAVAILABLE_SENTINEL}{error}"
+                    )));
+                }
+            },
         };
         match block_on_accrue(&self.accountant, &tenant, byte_len, quota_seed) {
             Ok(AccrueOutcome::Accrued) => {}
@@ -160,17 +192,71 @@ impl corelink_handler_ac::AcUpdateHandler for AccountingAcHandler {
                 )));
             }
         }
-        match self.update_inner.update(req) {
+        // AC has no mutation-effect result channel. A storage implementation
+        // can publish then fail its trailing durable audit, so an `Err` is
+        // ambiguous and must retain a reconcilable liability rather than refund.
+        let logical_key = req.action_digest.clone();
+        if let Err(e) = block_on_record_liability(
+            &self.accountant,
+            &tenant,
+            &logical_key,
+            byte_len,
+            MutationLiabilityState::Reserved,
+            None,
+        ) {
+            block_on_release(&self.accountant, &tenant, byte_len);
+            return Err(AcHandlerError::Internal(format!(
+                "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
+            )));
+        }
+        let context = pin
+            .as_ref()
+            .map(|pin| Arc::clone(pin) as Arc<dyn corelink_handler_ac::AcUpdateOperationContext>);
+        match self
+            .update_inner
+            .update_with_operation_context(req, context.as_deref())
+        {
             Ok(resp) => {
                 // Idempotent / divergent-refused AC writes that stored nothing
                 // new (`durable == false`) roll the reservation back.
                 if !resp.durable {
-                    block_on_release(&self.accountant, &tenant, byte_len);
+                    if let Err(e) = block_on_settle_liability(
+                        &self.accountant,
+                        &tenant,
+                        &logical_key,
+                        MutationLiabilityResolution::NotWritten,
+                    ) {
+                        return Err(AcHandlerError::Internal(format!(
+                            "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
+                        )));
+                    }
+                } else if let Err(e) = block_on_record_liability(
+                    &self.accountant,
+                    &tenant,
+                    &logical_key,
+                    byte_len,
+                    MutationLiabilityState::Committed,
+                    None,
+                ) {
+                    return Err(AcHandlerError::Internal(format!(
+                        "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
+                    )));
                 }
                 Ok(resp)
             }
             Err(e) => {
-                block_on_release(&self.accountant, &tenant, byte_len);
+                if let Err(liability_error) = block_on_record_liability(
+                    &self.accountant,
+                    &tenant,
+                    &logical_key,
+                    byte_len,
+                    MutationLiabilityState::Unknown,
+                    Some(uuid::Uuid::new_v4()),
+                ) {
+                    return Err(AcHandlerError::Internal(format!(
+                        "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {liability_error}"
+                    )));
+                }
                 Err(e)
             }
         }
