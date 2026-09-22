@@ -16,6 +16,7 @@
 [cells]
     root = .
     prelude = prelude
+    toolchains = toolchains
 
 [cell_aliases]
     config = prelude
