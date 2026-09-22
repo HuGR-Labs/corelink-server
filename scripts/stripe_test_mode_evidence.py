@@ -92,6 +92,19 @@ def assert_test_mode(payload: dict[str, Any], label: str) -> None:
         raise ProbeError(f"{label} did not assert livemode=false")
 
 
+def assert_account_identity(payload: dict[str, Any]) -> None:
+    """Validate the Account shape; Stripe Account objects do not expose livemode."""
+    account_id = payload.get("id")
+    if (
+        payload.get("object") != "account"
+        or not isinstance(account_id, str)
+        or not account_id.startswith("acct_")
+    ):
+        raise ProbeError(
+            "Stripe account response did not contain the expected account identity"
+        )
+
+
 def require_restricted_test_key(key: str) -> None:
     """Reject unrestricted and live keys before any provider request."""
     if not key.startswith("rk_test_"):
@@ -111,7 +124,7 @@ def run_probe(key: str, run_id: str, output: Path) -> int:
         "schema": "corelink.stripe-test-mode-evidence.v1",
         "issue": 1649,
         "mode": "test",
-        "livemode": False,
+        "livemode": None,
         "idempotency_replayed": False,
         "ordering": [],
         "cleanup": {"attempted": False, "succeeded": False},
@@ -122,8 +135,8 @@ def run_probe(key: str, run_id: str, output: Path) -> int:
         account_status, account = request_json(key, "GET", "/v1/account")
         if account_status != 200:
             raise ProbeError("Stripe account read failed")
-        assert_test_mode(account, "account")
-        steps.append("account_livemode_checked")
+        assert_account_identity(account)
+        steps.append("account_identity_checked")
 
         create_form = {
             "description": f"corelink i1649 evidence {run_id}",
@@ -133,6 +146,7 @@ def run_probe(key: str, run_id: str, output: Path) -> int:
             key, "POST", "/v1/customers", form=create_form, idempotency_key=idempotency_key
         )
         assert_test_mode(first, "created customer")
+        receipt["livemode"] = False
         customer_id = first.get("id")
         if not isinstance(customer_id, str) or not customer_id.startswith("cus_"):
             raise ProbeError("Stripe customer response did not contain a customer id")
@@ -172,7 +186,7 @@ def run_probe(key: str, run_id: str, output: Path) -> int:
         output.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     if steps != [
-        "account_livemode_checked",
+        "account_identity_checked",
         "customer_created",
         "same_request_replayed",
         "customer_retrieved_after_create",

@@ -3,8 +3,8 @@ name: issue 1649 Stripe test-mode evidence
 # Bounded, manual-only Stripe test-mode evidence. The PR path runs only the
 # credentialless contract check. The dispatch path requires an explicit phrase,
 # main, a protected environment, and STRIPE_SECRET_KEY beginning with rk_test_.
-# It never calls a CoreLink or production endpoint. The probe asserts
-# `livemode=false` for the account and disposable Customer.
+# It never calls a CoreLink or production endpoint. The probe validates the
+# Account identity, then asserts `livemode=false` on the disposable Customer.
 #
 # Required protected-environment secret:
 #   STRIPE_SECRET_KEY — Stripe test restricted key (rk_test_...) with only
