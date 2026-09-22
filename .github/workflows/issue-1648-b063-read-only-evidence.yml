@@ -1,0 +1,196 @@
+name: issue-1648-b063-read-only-evidence
+
+# B-063/#1648 evidence lane. The pull_request job is a hosted static contract
+# check. The manual job is the only live path and performs SELECT-only D1 reads;
+# it never invokes the archive route or writes a row.
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-1648-b063-read-only-evidence.yml"
+      - "scripts/verify_b063_hosted_evidence_workflow.py"
+  workflow_dispatch:
+    inputs:
+      read_only:
+        description: "Safety gate; must remain true"
+        required: true
+        default: "true"
+        type: choice
+        options: ["true"]
+      lag_hours:
+        description: "Age threshold used by the runbook predicate"
+        required: true
+        default: "3"
+        type: choice
+        options: ["3"]
+      environment:
+        description: "Authorized D1 environment"
+        required: true
+        default: "production"
+        type: choice
+        options: ["production", "staging"]
+      run_live:
+        description: "Enable the live D1 read lane only after owner approval"
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1648-b063-read-only-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AUDIT_D1_DATABASE_ID: "d64742ea-e102-40b2-a844-ff02e3f94562"
+
+jobs:
+  hosted-contract:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.run_live == 'false')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Verify fail-closed read-only contract
+        run: python3 scripts/verify_b063_hosted_evidence_workflow.py
+
+  live-read-only:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_live == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      READ_ONLY: ${{ inputs.read_only }}
+      LAG_HOURS: ${{ inputs.lag_hours }}
+      EVIDENCE_ENVIRONMENT: ${{ inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Verify approved read-only prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${READ_ONLY}" == "true" ]] || { echo "READ_ONLY != \"true\"" >&2; exit 1; }
+          [[ "${EVIDENCE_ENVIRONMENT}" == "production" || "${EVIDENCE_ENVIRONMENT}" == "staging" ]] || exit 1
+          [[ "${LAG_HOURS}" == "3" ]] || exit 1
+          : "${CF_ACCOUNT_ID:?CF_ACCOUNT_ID is required (fail-closed)}"
+          : "${CF_API_TOKEN:?CF_API_TOKEN is required (fail-closed)}"
+          echo "::add-mask::${CF_API_TOKEN}"
+
+      - name: Capture three independent SELECT-only partition reads
+        id: evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import time
+          from datetime import datetime, timezone
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+
+          account = os.environ["CF_ACCOUNT_ID"]
+          database = os.environ["AUDIT_D1_DATABASE_ID"]
+          token = os.environ["CF_API_TOKEN"]
+          lag_hours = int(os.environ["LAG_HOURS"])
+          endpoint = f"https://api.cloudflare.com/client/v4/accounts/{account}/d1/database/{database}/query"
+          headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+          def query(sql: str) -> list[dict[str, object]]:
+              request = Request(endpoint, data=json.dumps({"sql": sql, "params": []}).encode(), headers=headers, method="POST")
+              try:
+                  with urlopen(request, timeout=60) as response:
+                      body = json.load(response)
+              except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+                  print(f"D1 read failed closed: {type(exc).__name__}", file=sys.stderr)
+                  raise SystemExit(3)
+              if body.get("success") is not True:
+                  print("D1 response success!=true; failed closed", file=sys.stderr)
+                  raise SystemExit(3)
+              rows: list[dict[str, object]] = []
+              for block in body.get("result") or []:
+                  rows.extend(block.get("results") or [])
+              return rows
+
+          reads = []
+          for sample in range(3):
+              now_ms = int(time.time() * 1000)
+              cutoff = now_ms - lag_hours * 3600 * 1000
+              sql = (
+                  "SELECT o.tenant_id, o.region, COUNT(*) AS pending_old, "
+                  "MIN(o.enqueued_at) AS oldest_pending_ms, "
+                  "(SELECT MAX(o2.archived_at) FROM audit_outbox o2 "
+                  "WHERE o2.tenant_id = o.tenant_id AND o2.region = o.region) "
+                  "AS part_last_archived_ms FROM audit_outbox o "
+                  "WHERE o.emitted_at IS NOT NULL AND o.archived_at IS NULL "
+                  "AND o.quarantined_at IS NULL AND o.enqueued_at < " + str(cutoff) + " "
+                  "GROUP BY o.tenant_id, o.region "
+                  "HAVING part_last_archived_ms IS NULL OR part_last_archived_ms < " + str(cutoff)
+              )
+              rows = query(sql)
+              redacted = []
+              for row in rows:
+                  redacted.append({
+                      "tenant_prefix": str(row.get("tenant_id") or "")[:8],
+                      "region": row.get("region"),
+                      "pending_old": int(row.get("pending_old") or 0),
+                      "oldest_pending_ms": row.get("oldest_pending_ms"),
+                      "part_last_archived_ms": row.get("part_last_archived_ms"),
+                  })
+              reads.append({
+                  "sample": sample + 1,
+                  "captured_at": datetime.now(timezone.utc).isoformat(),
+                  "cutoff_ms": cutoff,
+                  "failed_partitions": len(redacted),
+                  "rows": redacted,
+                  "rows_written": 0,
+              })
+              if sample < 2:
+                  time.sleep(5)
+
+          receipt = {
+              "schema_version": 1,
+              "captured_at": datetime.now(timezone.utc).isoformat(),
+              "operator": "github-hosted-b063-read-only-lane",
+              "environment": os.environ["EVIDENCE_ENVIRONMENT"],
+              "database_binding": "configured D1 binding",
+              "database_id": database,
+              "query": {"shape": "per-(tenant,region) SELECT with HAVING predicate", "lag_hours": lag_hours},
+              "partition_reads": reads,
+              "replay_outcome": "not_evaluated_without_authorized_redacted_population",
+              "chain_integrity": "not_evaluated_without_authorized_redacted_population",
+              "idempotency": "not_evaluated_without_archive_invocation",
+              "rollback_cleanup": {"writes": 0, "required": False},
+              "safety": {"operations": "SELECT-only", "rows_written": 0, "archive_endpoint_invoked": False, "external_alert_invoked": False},
+              "verdict": "OK" if all(read["failed_partitions"] == 0 for read in reads) else "PAGE",
+              "redaction": {"tenant_ids": "eight-character prefix only", "payloads": "omitted", "credentials": "omitted"},
+          }
+          with open("b063-read-only-receipt.json", "w", encoding="utf-8") as output:
+              json.dump(receipt, output, indent=2, sort_keys=True)
+              output.write("\n")
+          print(json.dumps({"verdict": receipt["verdict"], "failed_partitions": [r["failed_partitions"] for r in reads]}))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"verdict={receipt['verdict']}\n")
+          if receipt["verdict"] != "OK":
+              raise SystemExit(1)
+          PY
+
+      - name: Upload redacted receipt
+        if: always()
+        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.6.2
+        with:
+          name: b063-read-only-receipt-${{ github.run_id }}
+          path: b063-read-only-receipt.json
+          if-no-files-found: error
+          retention-days: 14
