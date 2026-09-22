@@ -50,6 +50,12 @@ use std::sync::Arc;
 
 use serde_json::json;
 
+use corelink_tier_selection::runner_checkout_d1::{
+    SQL_MARK_RUNNER_CHECKOUT_ABANDONED, SQL_MARK_RUNNER_CHECKOUT_EXPIRED,
+    SQL_READ_CURRENT_RUNNER_CHECKOUT_ATTEMPT, SQL_RECORD_RUNNER_CHECKOUT_SESSION,
+    SQL_RESERVE_RUNNER_CHECKOUT_ATTEMPT,
+};
+
 use crate::routes::tier_select::{CheckoutCreated, RequestedTier, TierSelectStore};
 use crate::storage::d1_http::D1HttpClient;
 
@@ -154,6 +160,87 @@ impl D1HttpTierSelectStore {
     #[must_use]
     pub fn d1(&self) -> &D1HttpClient {
         &self.d1
+    }
+
+    /// Reserve/read one durable runner Checkout attempt. The reserve SQL is
+    /// atomic; an empty result means the caller must inspect `read` before
+    /// deciding replay, expiry, or recovery.
+    pub async fn reserve_runner_attempt(
+        &self,
+        tenant_id: &str,
+        tier: &str,
+        price_id: &str,
+        customer_id: &str,
+        idempotency_key: &str,
+        now_ms: i64,
+    ) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
+        self.d1
+            .query(
+                SQL_RESERVE_RUNNER_CHECKOUT_ATTEMPT,
+                &[
+                    json!(tenant_id), json!(tier), json!(price_id), json!(customer_id),
+                    json!(idempotency_key), json!(now_ms),
+                ],
+            )
+            .await
+    }
+
+    /// Read the current runner attempt after an atomic reserve conflict.
+    pub async fn read_runner_attempt(
+        &self,
+        tenant_id: &str,
+    ) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
+        self.d1
+            .query(SQL_READ_CURRENT_RUNNER_CHECKOUT_ATTEMPT, &[json!(tenant_id)])
+            .await
+    }
+
+    /// Attach Stripe's response to a still-reserved generation.
+    pub async fn record_runner_session(
+        &self,
+        tenant_id: &str,
+        generation: i64,
+        session_id: &str,
+        now_ms: i64,
+    ) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
+        self.d1
+            .query(
+                SQL_RECORD_RUNNER_CHECKOUT_SESSION,
+                &[json!(tenant_id), json!(generation), json!(session_id), json!(now_ms)],
+            )
+            .await
+    }
+
+    /// Mark a session expired only after Stripe confirmed the expiry.
+    pub async fn mark_runner_expired(
+        &self,
+        tenant_id: &str,
+        generation: i64,
+        session_id: &str,
+        now_ms: i64,
+    ) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
+        self.d1
+            .query(
+                SQL_MARK_RUNNER_CHECKOUT_EXPIRED,
+                &[json!(tenant_id), json!(generation), json!(session_id), json!(now_ms)],
+            )
+            .await
+    }
+
+    /// Abandon a reservation only after provider reconciliation found no
+    /// session; this is the stale pre ACK recovery boundary.
+    pub async fn mark_runner_abandoned(
+        &self,
+        tenant_id: &str,
+        generation: i64,
+        now_ms: i64,
+    ) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
+        self.d1
+            .query(
+                SQL_MARK_RUNNER_CHECKOUT_ABANDONED,
+                &[json!(tenant_id), json!(generation), json!(now_ms)],
+            )
+            .await
     }
 
     /// Test-only constructor: an INERT store over a `D1HttpClient` built
