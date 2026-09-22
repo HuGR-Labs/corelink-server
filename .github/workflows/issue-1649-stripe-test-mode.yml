@@ -2,13 +2,14 @@ name: issue 1649 Stripe test-mode evidence
 
 # Bounded, manual-only Stripe test-mode evidence. The PR path runs only the
 # credentialless contract check. The dispatch path requires an explicit phrase,
-# main, a protected environment, and STRIPE_SECRET_KEY beginning with sk_test_.
+# main, a protected environment, and STRIPE_SECRET_KEY beginning with rk_test_.
 # It never calls a CoreLink or production endpoint. The probe asserts
 # `livemode=false` for the account and disposable Customer.
 #
 # Required protected-environment secret:
-#   STRIPE_SECRET_KEY — Stripe test secret (sk_test_...). A missing secret makes
-#     the executor skip; a live key fails closed before any network call.
+#   STRIPE_SECRET_KEY — Stripe test restricted key (rk_test_...) with only
+#     Accounts: Read and Customers: Write. A missing secret makes the executor
+#     skip; any other prefix fails closed before a network call.
 # Required dispatch input:
 #   confirm = run-i1649-stripe-test-mode
 # Receipt: artifacts/issue-1649-stripe-test-mode-receipt.json (redacted only).
@@ -44,7 +45,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Verify hosted fail-closed contract
-        run: python3 scripts/stripe_test_mode_evidence.py --contract
+        run: |
+          set -euo pipefail
+          python3 scripts/stripe_test_mode_evidence.py --contract
+          python3 -m unittest discover -s tests -p 'test_stripe_test_mode_evidence.py' -v
 
   test-mode-evidence:
     name: Stripe test-mode idempotency and cleanup
