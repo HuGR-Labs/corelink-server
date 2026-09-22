@@ -52,6 +52,7 @@ export function fakeCtx(): ExecutionContext {
  */
 export function fakeDb(): {
     prepare: Mock;
+    batch: Mock;
     runCalls: Array<{ sql: string; params: unknown[] }>;
 } {
     const runCalls: Array<{ sql: string; params: unknown[] }> = [];
@@ -83,7 +84,13 @@ export function fakeDb(): {
         };
         return stmt;
     });
-    return { prepare, runCalls };
+    const batch = vi.fn(async (statements: Array<{ run(): Promise<unknown> }>) => {
+        for (const statement of statements) await statement.run();
+        // The fixture's recorded calls are structural; production D1 supplies
+        // the RETURNING row from the first statement when the fence advances.
+        return [{ results: [{}] }, {}, { results: [{}] }];
+    });
+    return { prepare, batch, runCalls };
 }
 
 /**
@@ -172,6 +179,14 @@ export async function makeStripeRequest(
     secret: string,
     nowMs?: number,
 ): Promise<Request> {
+    const created = Math.floor((nowMs ?? Date.now()) / 1000);
+    // Stripe always supplies these provider timestamps. Fixtures that are about
+    // another behavior inherit realistic values unless they pin one explicitly.
+    if (typeof event.created !== "number") event.created = created;
+    if (typeof event.type === "string" && event.type.startsWith("customer.subscription.")) {
+        const data = event.data as { object?: Record<string, unknown> } | undefined;
+        if (data?.object && typeof data.object.created !== "number") data.object.created = created;
+    }
     const body = JSON.stringify(event);
     const tsSec = Math.floor((nowMs ?? Date.now()) / 1000);
     const sig = await buildStripeSignature(secret, body, tsSec);
@@ -205,6 +220,6 @@ export const baseEnv = (db?: ReturnType<typeof fakeDb>): StripeWebhookEnv => ({
     STRIPE_PRICE_ID_RUNNER_SCALE: "price_runner_scale_r4",
     STRIPE_PRICE_ID_RUNNER_MAX: "price_runner_max_r5",
     BILLING_DB: db
-        ? { prepare: db.prepare }
+        ? { prepare: db.prepare, batch: db.batch }
         : undefined,
 });

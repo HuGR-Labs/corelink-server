@@ -15,6 +15,14 @@ export function checkoutCreatedAtMs(obj: Record<string, unknown>): number | null
         : null;
 }
 
+/** Stripe subscription creation time, retained as a provider ordering fact. */
+export function subscriptionCreatedAtMs(obj: Record<string, unknown>): number | null {
+    const created = obj["created"];
+    return typeof created === "number" && Number.isFinite(created) && created > 0
+        ? created * 1000
+        : null;
+}
+
 /** Extract clerk_user_id from Stripe metadata. Returns null if absent. */
 export function clerkUserIdFromMetadata(obj: Record<string, unknown>): string | null {
     const meta = obj["metadata"] as Record<string, unknown> | undefined;

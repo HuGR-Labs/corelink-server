@@ -58,6 +58,7 @@
 
 mod audit;
 pub mod clock;
+mod current_subscription;
 mod d1;
 mod handler;
 mod idempotency;
@@ -75,13 +76,17 @@ pub use clock::SystemMatClock;
 #[cfg(target_arch = "wasm32")]
 pub use clock::WasmWorkerMatClock;
 pub use clock::{default_mat_clock, InMemoryFakeMatClock, MatClock};
+pub use current_subscription::{CurrentSubscription, CurrentSubscriptionAuthority};
 pub use d1::{
-    BillingD1Error, BillingD1Writer, InMemoryBillingD1, MaterializedRow, RefundedProduct,
-    RefundedPurchase, WebhookOutcome, SQL_DELETE_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER,
+    BillingD1Error, BillingD1Writer, EntitlementCasOutcome, InMemoryBillingD1, MaterializedRow,
+    RefundedProduct, RefundedPurchase, RunnerEntitlementRevision, WebhookOutcome,
+    SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE, SQL_CAS_DELETE_RUNNERS_ENTITLEMENT,
+    SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT, SQL_DELETE_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER,
     SQL_FIND_INVOICE_SUBSCRIPTION, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
-    SQL_INSERT_WEBHOOK_EVENT_PROCESSED, SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER,
-    SQL_RESOLVE_REFUND_PRODUCT, SQL_REVOKE_REFUNDED_RUNNERS_ENTITLEMENT, SQL_UPSERT_CUSTOMER,
-    SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT, SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
+    SQL_INSERT_WEBHOOK_EVENT_PROCESSED, SQL_MARK_SUBSCRIPTION_CANCELED,
+    SQL_READ_RUNNER_ENTITLEMENT_FENCE, SQL_READ_TIER, SQL_RESOLVE_REFUND_PRODUCT,
+    SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT,
+    SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
 };
 pub use handler::{D1SubscriptionStateHandler, EVENT_MATERIALIZATION_MATRIX};
 pub use idempotency::D1IdempotencyStore;
