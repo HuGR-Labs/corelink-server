@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import hashlib
 import os
 import shutil
 import subprocess
@@ -181,6 +182,48 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
         self.assertNotEqual(backlog_verify.run_verify("false &&\ntrue", mode="trusted")[0], 0)
+
+    def test_b154_reconciliation_opt_in_still_allows_only_the_pinned_command(self) -> None:
+        base = self.item(
+            "B-154",
+            verify=(
+                "python3 -S scripts/verify_owner_action_packets.py --id B-154\n"
+                "bash -c 'legacy guard'\n"
+            ),
+        )
+        base.raw["verify"] = (
+            "python3 -S scripts/verify_owner_action_packets.py --id B-154\n"
+            "bash -c 'legacy guard'\n"
+        )
+        candidate = backlog_verify.Item(raw=dict(base.raw), line=base.line, id=base.id)
+        candidate.raw["verify"] = (
+            "python3 -S scripts/verify_owner_action_packets.py --id B-154 &&\n"
+            "python3 -S scripts/verify_b154_instrument_claims.py --self-test\n"
+        )
+        previous = backlog_verify.B154_LEGACY_VERIFY_SHA256
+        backlog_verify.B154_LEGACY_VERIFY_SHA256 = hashlib.sha256(
+            base.raw["verify"].encode()
+        ).hexdigest()
+        try:
+            self.assertTrue(any("immutable field 'verify' changed" in error for error in (
+                backlog_verify.validate_candidate_transitions([candidate], [base], dt.date(2026, 9, 22))
+            )))
+            self.assertEqual(
+                backlog_verify.validate_candidate_transitions(
+                    [candidate], [base], dt.date(2026, 9, 22),
+                    allow_b154_reconciliation=True,
+                ),
+                [],
+            )
+            candidate.raw["verify"] += "python3 scripts/evil.py\n"
+            self.assertTrue(any("immutable field 'verify' changed" in error for error in (
+                backlog_verify.validate_candidate_transitions(
+                    [candidate], [base], dt.date(2026, 9, 22),
+                    allow_b154_reconciliation=True,
+                )
+            )))
+        finally:
+            backlog_verify.B154_LEGACY_VERIFY_SHA256 = previous
 
     def test_workflow_style_cli_imports_with_clean_pythonpath(self) -> None:
         env = dict(os.environ)

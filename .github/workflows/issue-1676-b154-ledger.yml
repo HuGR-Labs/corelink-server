@@ -1,0 +1,40 @@
+name: issue-1676 B-154 ledger reconciliation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/issue-1676-b154-ledger.yml'
+      - 'BACKLOG.md'
+      - 'docs/campaigns/remediation/BACKLOG-WP-LEDGER.md'
+      - 'docs/campaigns/remediation/backlog-ledger-snapshot-v0004.json'
+      - 'scripts/backlog_ledger_successor.py'
+      - 'scripts/backlog_verify.py'
+      - 'scripts/verify_backlog_wp_ledger.py'
+      - 'scripts/verify_b154_instrument_claims.py'
+      - 'tests/test_backlog_ledger_successor.py'
+      - 'tests/test_backlog_verify_trust_boundary.py'
+      - 'tests/test_verify_b154_instrument_claims.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify immutable B-154 ledger bridge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Exercise the canonical fail-closed B-154 verifier
+        run: python3 -S scripts/verify_b154_instrument_claims.py --self-test
+      - name: Prove the byte-pinned successor bridge rejects mutations
+        run: >-
+          python3 -m pytest -q
+          tests/test_backlog_ledger_successor.py
+          tests/test_backlog_verify_trust_boundary.py
+          tests/test_verify_b154_instrument_claims.py

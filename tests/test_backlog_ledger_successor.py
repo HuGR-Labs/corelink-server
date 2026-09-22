@@ -173,6 +173,53 @@ def test_exact_rewrite_authorization_binds_both_sources_ids_and_fields(tmp_path,
     assert not authorized(prior, current, receipt, 3)
 
 
+def test_b154_reconciliation_snapshot_is_fully_pinned():
+    receipt = json.loads((
+        ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0004.json"
+    ).read_text())
+    pinned = successor.B154_RECONCILIATION
+    assert receipt["sequence"] == pinned["sequence"]
+    for key in (
+        "base_commit", "prior_source_sha256", "source_sha256",
+        "prior_ledger_sha256", "ledger_sha256", "changed_ids",
+    ):
+        assert receipt[key] == pinned[key]
+    assert receipt["prior_catalog_sha256"] == pinned["catalog_sha256"]
+    assert receipt["catalog_sha256"] == pinned["catalog_sha256"]
+    assert ledger._sha256((ledger.REPO_ROOT / "BACKLOG.md").read_bytes()) == pinned["source_sha256"]
+    assert ledger._sha256(ledger.LEDGER_PATH.read_bytes()) == pinned["ledger_sha256"]
+
+
+def test_b154_reconciliation_authorization_rejects_any_byte_drift():
+    policy = ledger._successor_policy()
+    pinned = successor.B154_RECONCILIATION
+    prior = {}
+    for relative in (
+        Path("BACKLOG.md"), ledger.LEDGER_RELATIVE, *policy._catalog_relatives(),
+    ):
+        prior[relative.as_posix()] = subprocess.run(
+            ["git", "show", f"{pinned['base_commit']}:{relative.as_posix()}"],
+            cwd=ledger.REPO_ROOT, check=True, capture_output=True,
+        ).stdout
+    current = policy._state_bytes(ledger.REPO_ROOT)
+    previous = json.loads((
+        ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0003.json"
+    ).read_text())
+    receipt = json.loads((
+        ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0004.json"
+    ).read_text())
+    authorized = policy._b154_reconciliation_authorized
+    assert authorized(previous, prior, current, receipt, 4)
+    assert not authorized(previous, prior, current, {**receipt, "changed_ids": []}, 4)
+    assert not authorized(
+        previous,
+        {**prior, "BACKLOG.md": prior["BACKLOG.md"] + b"\n"},
+        current,
+        receipt,
+        4,
+    )
+
+
 @pytest.mark.parametrize("old_status,new_status,mutation", [
     ("open", "parked", "verify-means"),
     ("open", "done", "verify-means"),

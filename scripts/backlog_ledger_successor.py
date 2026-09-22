@@ -69,6 +69,35 @@ SPRINT3_FIELDS = {
     ),
 }
 
+# One reviewed bridge repairs a recorded v0003 successor that was followed by
+# unrecorded, main-only BACKLOG drift. It does not rewrite v0003: it pins both
+# sides of the gap, admits only the B-154 conjunction below, and returns the
+# chain to ordinary append-only successor validation at v0004.
+B154_RECONCILIATION = {
+    "sequence": 4,
+    "previous_sequence": 3,
+    "base_commit": "80614c5e83e74099dee3c710ad126cb44a9e557f",
+    "previous_source_sha256": "41726d6c8b2f4b1dc7ff35466a78c242e147b99eaca69a956064024e04212e23",
+    "prior_source_sha256": "c272de9f9cc4e6ae36bddbff4c97012d8589150a22c0038e0875a6ddf855ac87",
+    "source_sha256": "5f9c3ecbefd8ba3fd3273782fe686a56fa4a69c0ee1e8d817f82271c717cff29",
+    "prior_ledger_sha256": "02d81ecf3ade17a5317b3f24e68a17a801837bde6112cac9288b6a7f6175b656",
+    "ledger_sha256": "74299a6b9283e60958aa1ff98cb2efcd027f70dd783d4111dc68e9e51ade86c9",
+    "changed_ids": ["B-154"],
+    "catalog_sha256": {
+        "docs/campaigns/remediation/work-packages/B001-B045.md": "2a1735804f43bb726789b99ee80c14cf876f41eb6c684e3ea54e68981413cd38",
+        "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
+        "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
+        "docs/campaigns/remediation/work-packages/B131-B167.md": "4be50ac320f2c8d238a21760bc24a5391a7a5dc1102532d9d034e05556ad089d",
+    },
+    "fields": (
+        "open",
+        "a6045afb801b3b6a61ff09d97b6e77ba5fa4f7e1c4f9ed0fde8554957484264e",
+        "b86a04ff5d4ca729279b39631764e85c01c934e459c2db2ac23d0900587de590",
+        "f3434222e0ed605f801a03a34f112e978c242a42f8c4470fda666e267939da35",
+        "f3434222e0ed605f801a03a34f112e978c242a42f8c4470fda666e267939da35",
+    ),
+}
+
 
 def install(api):
     REPO_ROOT = api.REPO_ROOT
@@ -114,6 +143,54 @@ def install(api):
             ):
                 return False
         return True
+
+    def _b154_reconciliation_authorized(
+        previous: dict[str, object], prior: dict[str, bytes], current: dict[str, bytes],
+        receipt: dict[str, object], sequence: int,
+    ) -> bool:
+        """Authorize the sole v0003-to-v0004 gap repair by complete byte binding."""
+        pinned = B154_RECONCILIATION
+        if (
+            sequence != pinned["sequence"]
+            or previous.get("sequence") != pinned["previous_sequence"]
+            or previous.get("source_sha256") != pinned["previous_source_sha256"]
+            or receipt.get("base_commit") != pinned["base_commit"]
+            or receipt.get("changed_ids") != pinned["changed_ids"]
+            or _sha256(prior["BACKLOG.md"]) != pinned["prior_source_sha256"]
+            or _sha256(current["BACKLOG.md"]) != pinned["source_sha256"]
+            or _sha256(prior[LEDGER_RELATIVE.as_posix()]) != pinned["prior_ledger_sha256"]
+            or _sha256(current[LEDGER_RELATIVE.as_posix()]) != pinned["ledger_sha256"]
+            or receipt.get("prior_source_sha256") != pinned["prior_source_sha256"]
+            or receipt.get("source_sha256") != pinned["source_sha256"]
+            or receipt.get("prior_ledger_sha256") != pinned["prior_ledger_sha256"]
+            or receipt.get("ledger_sha256") != pinned["ledger_sha256"]
+        ):
+            return False
+        catalog_hashes = {
+            path.as_posix(): _sha256(prior[path.as_posix()])
+            for path in _catalog_relatives()
+        }
+        if (
+            catalog_hashes != pinned["catalog_sha256"]
+            or {
+                path.as_posix(): _sha256(current[path.as_posix()])
+                for path in _catalog_relatives()
+            } != catalog_hashes
+            or receipt.get("prior_catalog_sha256") != catalog_hashes
+            or receipt.get("catalog_sha256") != catalog_hashes
+        ):
+            return False
+        old_items = {item.id: item.raw for item in backlog_verify.parse(prior["BACKLOG.md"].decode())}
+        new_items = {item.id: item.raw for item in backlog_verify.parse(current["BACKLOG.md"].decode())}
+        old, new = old_items.get("B-154", {}), new_items.get("B-154", {})
+        status, old_verify, new_verify, old_means, new_means = pinned["fields"]
+        return (
+            old.get("status") == new.get("status") == status
+            and _sha256(str(old.get("verify", "")).encode()) == old_verify
+            and _sha256(str(new.get("verify", "")).encode()) == new_verify
+            and _sha256(str(old.get("verify-means", "")).encode()) == old_means
+            and _sha256(str(new.get("verify-means", "")).encode()) == new_means
+        )
 
     def _catalog_relatives() -> tuple[Path, ...]:
         return tuple(path.relative_to(REPO_ROOT) for path in CATALOGS)
@@ -304,6 +381,7 @@ def install(api):
         prior: dict[str, bytes],
         current: dict[str, bytes],
         *,
+        previous: dict[str, object] | None,
         base_sha: str,
         sequence: int,
         workflow_root: Path,
@@ -357,10 +435,16 @@ def install(api):
         sprint3_rewrite = _sprint3_rewrite_authorized(
             prior, current, receipt, sequence,
         )
+        b154_reconciliation = previous is not None and _b154_reconciliation_authorized(
+            previous, prior, current, receipt, sequence,
+        )
         for item_id in changed:
             if item_id not in old_sections:
                 continue
-            if not (sprint3_rewrite and item_id in SPRINT3_CHANGED_IDS) and (
+            if not (
+                (sprint3_rewrite and item_id in SPRINT3_CHANGED_IDS)
+                or (b154_reconciliation and item_id == "B-154")
+            ) and (
                 _normative_section(old_sections[item_id], item_id)
                 != _normative_section(new_sections[item_id], item_id)
             ):
@@ -394,12 +478,18 @@ def install(api):
             backlog_verify.parse(prior["BACKLOG.md"].decode("utf-8")),
             today or backlog_verify.dt.date.today(),
             allow_sprint3_rewrite=sprint3_rewrite,
+            allow_b154_reconciliation=b154_reconciliation,
             successor_mode=True,
         )
         if transition_errors:
             raise LedgerError("candidate BACKLOG transition rejected: " + "; ".join(transition_errors))
 
-    def load_successor_chain(root: Path = REPO_ROOT) -> dict[str, object]:
+    def load_successor_chain(
+        root: Path = REPO_ROOT,
+        *,
+        pending_receipt: dict[str, object] | None = None,
+        pending_current: dict[str, bytes] | None = None,
+    ) -> dict[str, object]:
         """Replay append-only receipts against immutable delivered-main preimages."""
         previous = load_postmerge_snapshot_manifest()
         previous_path = GENESIS_SNAPSHOT_RELATIVE
@@ -454,25 +544,52 @@ def install(api):
             if _git_bytes(root, base_sha, previous_path) != previous_raw:
                 raise LedgerError(f"{path}: prior snapshot differs from immutable BASE")
             prior = _git_state_bytes(root, base_sha)
-            if _sha256(prior["BACKLOG.md"]) != previous["source_sha256"]:
-                raise LedgerError(f"{path}: prior BACKLOG differs from prior snapshot")
             current = _git_state_bytes(root, commits[0])
+            b154_reconciliation = _b154_reconciliation_authorized(
+                previous, prior, current, receipt, index + 3,
+            )
+            if (
+                _sha256(prior["BACKLOG.md"]) != previous["source_sha256"]
+                and not b154_reconciliation
+            ):
+                raise LedgerError(f"{path}: prior BACKLOG differs from prior snapshot")
             if index + 1 < len(paths):
                 next_raw = _regular_bytes(root, paths[index + 1])
                 next_receipt = _receipt(next_raw, paths[index + 1].as_posix())
-                if current != _git_state_bytes(root, next_receipt["base_commit"]):
+                next_current = _git_state_bytes(
+                    root,
+                    subprocess.run(
+                        ["git", "log", "--first-parent", "--full-history", "--format=%H", "--", paths[index + 1].as_posix()],
+                        cwd=root, check=False, capture_output=True, text=True,
+                    ).stdout.strip(),
+                )
+                next_prior = _git_state_bytes(root, next_receipt["base_commit"])
+                bridge = _b154_reconciliation_authorized(
+                    receipt, next_prior, next_current, next_receipt, index + 4,
+                )
+                if current != next_prior and not bridge:
                     raise LedgerError(
                         f"{path}: delivered state drifted before next successor"
                     )
             elif current != _state_bytes(root):
-                raise LedgerError(
-                    f"{path}: delivered state drifted after last successor"
+                bridge = (
+                    pending_receipt is not None
+                    and pending_current is not None
+                    and _b154_reconciliation_authorized(
+                        receipt, _state_bytes(root), pending_current,
+                        pending_receipt, index + 4,
+                    )
                 )
+                if not bridge:
+                    raise LedgerError(
+                        f"{path}: delivered state drifted after last successor"
+                    )
             _validate_receipt_transition(
                 receipt,
                 previous_raw,
                 prior,
                 current,
+                previous=previous,
                 base_sha=base_sha,
                 sequence=index + 3,
                 workflow_root=root,
@@ -500,7 +617,6 @@ def install(api):
         ):
             raise LedgerError("trusted BASE is not the immutable event SHA")
         base_sha = resolved
-        previous = load_successor_chain(base_root)
         base_paths = _successor_paths(base_root)
         candidate_paths = _successor_paths(candidate_root)
         next_path = (
@@ -511,6 +627,13 @@ def install(api):
             raise LedgerError(
                 "candidate must append exactly one next successor snapshot"
             )
+        raw = _regular_bytes(candidate_root, next_path)
+        receipt = _receipt(raw, next_path.as_posix())
+        previous = load_successor_chain(
+            base_root,
+            pending_receipt=receipt,
+            pending_current=_state_bytes(candidate_root),
+        )
         old_paths = (
             SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot.json",
             GENESIS_SNAPSHOT_RELATIVE,
@@ -527,19 +650,23 @@ def install(api):
             raise LedgerError("trusted BASE data differs from immutable event SHA")
         current = _state_bytes(candidate_root)
         previous_path = base_paths[-1] if base_paths else GENESIS_SNAPSHOT_RELATIVE
-        raw = _regular_bytes(candidate_root, next_path)
-        receipt = _receipt(raw, next_path.as_posix())
         _validate_receipt_transition(
             receipt,
             _regular_bytes(base_root, previous_path),
             prior,
             current,
+            previous=previous,
             base_sha=base_sha,
             sequence=len(base_paths) + 3,
             workflow_root=candidate_root,
             today=today,
         )
-        if receipt["prior_source_sha256"] != previous["source_sha256"]:
+        if (
+            receipt["prior_source_sha256"] != previous["source_sha256"]
+            and not _b154_reconciliation_authorized(
+                previous, prior, current, receipt, len(base_paths) + 3,
+            )
+        ):
             raise LedgerError("candidate predecessor is not the trusted BASE snapshot")
         trusted_items = backlog_verify.parse(prior["BACKLOG.md"].decode("utf-8"))
         backlog_verify.check_candidate_controls(
@@ -565,6 +692,7 @@ def install(api):
     return SimpleNamespace(
         _sha256=_sha256,
         _sprint3_rewrite_authorized=_sprint3_rewrite_authorized,
+        _b154_reconciliation_authorized=_b154_reconciliation_authorized,
         _normative_section=_normative_section,
         _catalog_relatives=_catalog_relatives,
         _state_bytes=_state_bytes,

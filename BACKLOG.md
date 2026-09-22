@@ -16234,25 +16234,8 @@ owner: owner
 status: open
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
 verify: |
-  python3 -S scripts/verify_owner_action_packets.py --id B-154
-  bash -c 'set -e
-  d=legal/dpa/v1.0.0.en-US.md
-  s=legal/sla/v1.0.0.md
-  b=crates/corelink-container/src/routes/byok_admin.rs
-  for f in "$d" "$s"; do [ -f "$f" ] || { echo "FALHA: $f sumiu — um instrumento executado nao some sozinho; reavalie o item."; exit 1; }; done
-  n=0; det=""
-  grep -qE "^[^#<*>-]*Object Lock" "$d" && { n=$((n+1)); det="$det dpa-afirma-object-lock"; }
-  grep -qE "^[^#<*>-]*BYOK kill-switch" "$s" && { n=$((n+1)); det="$det sla-compromete-kill-switch"; }
-  if [ -f "$b" ]; then
-    grep -qE "^[^/*]*NOT_IMPLEMENTED" "$b" || { echo "FALHA: byok_admin.rs nao devolve mais NOT_IMPLEMENTED em linha executavel — o BYOK pode ter sido construido; releia o item antes de confiar neste portao."; exit 1; }
-  else
-    echo "FALHA: $b sumiu — sem ele nao consigo sustentar que o SLA promete o que nao existe."; exit 1
-  fi
-  if [ "$n" -gt 0 ]; then
-    echo "aberto: $n de 2 instrumentos executados ainda afirmam capacidade sem evidencia (BYOK tem ramo fail-closed 501 no codigo):$det"
-  else
-    echo "aberto: nenhum instrumento publicado repete a afirmacao; o BYOK segue NOT_IMPLEMENTED e a decisao/assinatura do owner continua pendente"
-  fi'
+  python3 -S scripts/verify_owner_action_packets.py --id B-154 &&
+  python3 -S scripts/verify_b154_instrument_claims.py --self-test
 verify-means: |
   open/blocked — os dois instrumentos assinados ainda carregam as afirmações e os receipts
   versionados atuais não comprovam as capacidades: B-046 está `INDETERMINATE` antes do probe
@@ -16283,7 +16266,7 @@ verify-means: |
   Este item é `owner:` pelo critério estrito: o próximo passo é um aditivo contratual, uma
   notificação formal a quem já assinou, ou a construção da capacidade. Nenhum é executável
   sem a assinatura ou o dinheiro do owner.
-last-verified: 2026-09-05
+last-verified: 2026-09-22
 ```
 
 ### B-155 — 93 de 134 `verify` fazem `grep` de padrão não-ancorado: o comentário do arquivo alvo satisfaz o portão
