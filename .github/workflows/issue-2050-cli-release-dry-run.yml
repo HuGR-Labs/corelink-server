@@ -103,7 +103,7 @@ jobs:
             echo "::error::release dry-run needs ${EXPECTED_DLLTOOL_VERSION}, got ${ACTUAL_DLLTOOL_VERSION}." >&2
             exit 1
           fi
-          echo "$(dirname "${DLLTOOL_PATH}")" >> "${GITHUB_PATH}"
+          dirname "${DLLTOOL_PATH}" >> "${GITHUB_PATH}"
           "${DLLTOOL_PATH}" --version
       - name: Build Linux and Windows targets with cargo-zigbuild
         shell: bash

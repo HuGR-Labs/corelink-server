@@ -121,7 +121,7 @@ def _verify_dlltool_contract(text: str) -> None:
         'brew list --versions mingw-w64',
         DLLTOOL_PATH,
         '"${DLLTOOL_PATH}" --version | sed -n \'1p\'',
-        'echo "$(dirname "${DLLTOOL_PATH}")" >> "${GITHUB_PATH}"',
+        'dirname "${DLLTOOL_PATH}" >> "${GITHUB_PATH}"',
         "command -v x86_64-w64-mingw32-dlltool",
         "x86_64-w64-mingw32-dlltool --version | sed -n '1p'",
     ):
