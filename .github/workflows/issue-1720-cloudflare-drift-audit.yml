@@ -1,0 +1,151 @@
+name: issue-1720 Cloudflare drift credential audit
+
+# The dedicated token is provisioned in the owner-controlled Cloudflare and
+# GitHub Settings consoles. This bounded workflow consumes that preinstalled
+# token, records six read-only receipts, dispatches one exact-ref drift run,
+# and disables both workflows after every authorized attempt.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type issue-1720-audit-drift-token to run this bounded audit
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  audit:
+    if: github.event.inputs.confirm == 'issue-1720-audit-drift-token'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_TERRAFORM_DRIFT_API_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Verify dedicated credential inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in CLOUDFLARE_API_TOKEN CF_ACCOUNT_ID CF_ZONE_ID; do
+            [[ -n "${!key:-}" ]] || { echo "::error::Missing required $key"; exit 1; }
+          done
+          echo "::notice::Dedicated preinstalled credential is present; values remain masked."
+
+      - name: Verify six read-only Cloudflare API receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          response_dir="$RUNNER_TEMP/issue-1720"
+          mkdir -p "$response_dir"
+
+          cleanup_receipts() {
+            local status=$?
+            if ! rm -rf "$response_dir"; then
+              echo "::error::Unable to remove temporary Cloudflare receipt files."
+              status=1
+            fi
+            trap - EXIT
+            exit "$status"
+          }
+          trap cleanup_receipts EXIT
+
+          read_receipt() {
+            local label="$1" url="$2" output status codes
+            output="$response_dir/$(printf '%s' "$label" | tr ' ' '-').json"
+            if ! status="$(curl --silent --show-error --output "$output" --write-out '%{http_code}' \
+              --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$url")"; then
+              echo "::error::$label request failed without exposing the response body."
+              return 1
+            fi
+            if [[ "$status" != 2* ]] || ! jq -e '.success == true' "$output" >/dev/null; then
+              if codes="$(jq -r '[.errors[]?.code] | join(",")' "$output" 2>/dev/null)"; then
+                :
+              else
+                codes=unparseable
+              fi
+              echo "::error::$label read denied: HTTP $status provider_codes=${codes:-none}"
+              return 1
+            fi
+            echo "::notice::Read receipt PASS: $label"
+          }
+
+          declare -a reads=(
+            "Workers R2 Storage|https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/r2/buckets?per_page=1"
+            "D1|https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/d1/database?per_page=1"
+            "Workers KV Storage|https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/storage/kv/namespaces?per_page=1"
+            "Workers Scripts|https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/scripts?per_page=1"
+            "DNS|https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records?per_page=1"
+            "Workers Routes|https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/workers/routes?per_page=1"
+          )
+          for read in "${reads[@]}"; do
+            label="${read%%|*}"
+            endpoint="${read#*|}"
+            read_receipt "$label" "$endpoint"
+          done
+
+          redact_id() {
+            local value="$1"
+            printf '%s...%s' "${value:0:6}" "${value: -4}"
+          }
+          account_receipt="$(redact_id "$CF_ACCOUNT_ID")"
+          zone_receipt="$(redact_id "$CF_ZONE_ID")"
+          echo "::notice::Scope receipt: account=$account_receipt zone=$zone_receipt account_reads=4 zone_reads=2"
+
+      - name: Dispatch one exact-ref Terraform drift run
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow enable terraform-drift.yml --repo "$GITHUB_REPOSITORY"
+          gh workflow run terraform-drift.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_SHA" --field region=wnam
+          echo "::notice::Terraform Drift Detection dispatched once at exact ref $GITHUB_SHA."
+
+      - name: Disable both bounded workflows and verify readback
+        if: always()
+        shell: bash
+        env:
+          DRIFT_WORKFLOW: terraform-drift.yml
+          AUDIT_WORKFLOW: issue-1720-cloudflare-drift-audit.yml
+        run: |
+          set -euo pipefail
+          cleanup_failed=0
+
+          disable_and_verify() {
+            local workflow="$1" state
+            if ! gh api --method PUT \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/disable"; then
+              echo "::error::Failed to disable $workflow."
+              cleanup_failed=1
+            fi
+            if state="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}" --jq '.state')"; then
+              if [[ "$state" != "disabled_manually" ]]; then
+                echo "::error::$workflow readback state was $state, expected disabled_manually."
+                cleanup_failed=1
+              else
+                echo "::notice::$workflow readback state=disabled_manually."
+              fi
+            else
+              echo "::error::Unable to read back state for $workflow."
+              cleanup_failed=1
+            fi
+          }
+
+          cleanup_disable_workflows() {
+            local cleanup_status=$?
+            disable_and_verify "$DRIFT_WORKFLOW"
+            disable_and_verify "$AUDIT_WORKFLOW"
+            if (( cleanup_failed != 0 )); then
+              echo "::error::Bounded workflow cleanup failed; leaving the audit red."
+              cleanup_status=1
+            fi
+            trap - EXIT
+            exit "$cleanup_status"
+          }
+          trap cleanup_disable_workflows EXIT
+          : "cleanup is executed by the EXIT trap so prior failures remain visible"
