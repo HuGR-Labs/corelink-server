@@ -42,7 +42,7 @@ env:
 jobs:
   drift-check:
     name: Drift — ${{ matrix.region }}
-    runs-on: corelink
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -254,7 +254,7 @@ jobs:
   drift-aggregator:
     name: Drift aggregator summary
     # zero-hosted (WP-CI): hashicorp/setup-terraform — mesmo caminho do terraform-lint, que já roda aqui
-    runs-on: corelink
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: drift-check
     if: always()
@@ -315,7 +315,7 @@ jobs:
   no-apply-guard:
     name: Auto-apply forbidden check
     # zero-hosted (WP-CI): hashicorp/setup-terraform — mesmo caminho do terraform-lint, que já roda aqui
-    runs-on: corelink
+    runs-on: ubuntu-latest
     timeout-minutes: 3
     if: github.event_name != 'schedule'
 
