@@ -1,0 +1,38 @@
+name: issue-1651-gc-live-readiness
+
+# Credentialless repository/evidence audit.  This workflow never contacts
+# Cloudflare and never dispatches a reclaim run.  A BLOCKED result is expected
+# until the owner records an approved, isolated staging target and redacted
+# provider readback in evidence/staging/readiness.json.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/gc-sweep-dry-run.yml"
+      - ".github/workflows/issue-1651-gc-control.yml"
+      - ".github/workflows/issue-1651-gc-live-readiness.yml"
+      - "infra/staging/topology.json"
+      - "evidence/staging/readiness.json"
+      - "scripts/verify_i1651_gc_live_prerequisites.py"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: audit live GC prerequisites (credentialless)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Audit approved staging target and safety gates
+        env:
+          CLOUDFLARE_API_TOKEN: ""
+          CLOUDFLARE_ACCOUNT_ID: ""
+          R2_S3_ACCESS_KEY_ID: ""
+          R2_S3_SECRET_ACCESS_KEY: ""
+        run: python3 scripts/verify_i1651_gc_live_prerequisites.py
