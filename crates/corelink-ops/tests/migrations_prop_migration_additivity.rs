@@ -188,8 +188,7 @@ fn valid_line_waiver(line: &str, comment_start: usize) -> bool {
 
 /// Normalize a SQL fragment for keyword detection: apply audited line-local
 /// waivers, strip comments, uppercase, and collapse whitespace.
-const B071_TRIGGER_REPLACEMENT_FILE: &str =
-    "migrations/d1/0143_gc_accounting_region_upgrade.sql";
+const B071_TRIGGER_REPLACEMENT_FILE: &str = "migrations/d1/0143_gc_accounting_region_upgrade.sql";
 
 fn valid_b071_trigger_replacement(
     line: &str,
@@ -227,9 +226,7 @@ fn normalize_for_migration(sql: &str, migration_path: Option<&str>) -> String {
             if comment_start.is_some_and(|start| {
                 valid_b071_trigger_replacement(line, start, migration_path)
                     || (migration_path != Some(B071_TRIGGER_REPLACEMENT_FILE)
-                        && !line[start + 2..]
-                            .to_ascii_uppercase()
-                            .contains("ADR-0103")
+                        && !line[start + 2..].to_ascii_uppercase().contains("ADR-0103")
                         && valid_line_waiver(line, start))
             }) {
                 ""
