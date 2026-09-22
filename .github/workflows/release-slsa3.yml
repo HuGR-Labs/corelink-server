@@ -135,6 +135,14 @@ jobs:
           SUBJECT_LIST: ${{ steps.subjects.outputs.subject-list }}
         run: |
           set -euo pipefail
+          RELEASE_API="${RUNNER_TEMP}/corelink-attested-release.json"
+          gh api "repos/HuGR-Labs/corelink-cli/releases/tags/${TAG}" > "${RELEASE_API}"
+          STAGING_ASSET_COUNT="$(python3 - "${RELEASE_API}" <<'PY'
+          import json, sys
+          release = json.load(open(sys.argv[1], encoding="utf-8"))
+          print(sum(asset.get("name") == "staging-manifest.json" for asset in release.get("assets", [])))
+          PY
+          )"
           while IFS='  ' read -r digest name; do
             test -n "${digest}" && test -n "${name}"
             gh attestation verify "release-assets/${name}" \
