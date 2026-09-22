@@ -267,22 +267,10 @@ new_sqlite_classes = ["RequestMeterCoordinatorDO", "RequestMeterShardDO"]
 [vars]
 ENVIRONMENT = "dev"
 
-# WI-S20-006 — Synthetic page weekly drill (Mondays 14:00 UTC).
-# Triggers `corelink-synthetic-pager` to emit a synthetic SEV-2 page
-# through the dedicated PagerDuty `synthetic-drill` service routing
-# key. Region rotates across a 4-week cycle:
-#   - Week N % 4 == 0: target Americas
-#   - Week N % 4 == 1: target EMEA
-#   - Week N % 4 == 2: target APAC
-#   - Week N % 4 == 3: rotation-handoff drill (paged at 23:59 UTC
-#     Sunday so the boundary handoff is exercised)
-# Runbook: specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md.
-# SHA-pinned image: ghcr.io/HumanGuardrail/corelink-synthetic-pager@sha256:
-#   <PIN_AT_RELEASE> — pinned at PRR ship gate per supply-chain canonical.
-[triggers]
-crons = [
-    "0 14 * * 1",
-]
+# WI-S20-006 — Synthetic page weekly drill is intentionally not scheduled here.
+# The receiver, PagerDuty integration, and D1 evidence boundary remain
+# owner-gated external state. Keeping this Worker triggerless prevents a
+# source-only declaration from being mistaken for a live drill.
 
 # The root staging desired state is closed in infra/staging/topology.json.
 # It is deliberately NOT rendered here until Cloudflare has returned the
