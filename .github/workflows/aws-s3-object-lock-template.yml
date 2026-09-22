@@ -49,3 +49,7 @@ jobs:
           grep -F 'aws_s3_bucket_object_lock_configuration' "$module"
           grep -F 'aws_iam_role' "$module"
           ! grep -F '"s3:DeleteObject"' "$module"
+          ! grep -F '"s3:GetObject"' "$module"
+          ! grep -F '"s3:PutObjectLegalHold"' "$module"
+          ! grep -F '"s3:PutObjectRetention"' "$module"
+          ! grep -F '"s3:*"' "$module"

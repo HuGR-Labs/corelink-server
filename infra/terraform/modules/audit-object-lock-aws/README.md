@@ -10,7 +10,11 @@ requires the approvals and authenticated evidence in
 No credentials, account identifiers, bucket names, or retention values belong
 in this module or its documentation examples.
 
-The writer role has no `s3:DeleteObject` permission. A separately controlled
-probe identity performs the required pre-expiry delete-denial proof, and the
+The writer role cannot read object payloads, delete objects, override
+retention, or set/release legal holds. S3 applies the bucket's Compliance
+default retention to its writes. A separately controlled probe identity
+performs the required legal-hold and pre-expiry delete-denial proof, and the
 resulting redacted receipt is required before the application can expose the
-`ObjectLockArchiveAdapter` write surface.
+`ObjectLockArchiveAdapter` write surface. A future runtime adapter that needs
+per-object Object Lock headers requires a separately approved, condition-bound
+IAM policy; this module deliberately does not grant that authority.

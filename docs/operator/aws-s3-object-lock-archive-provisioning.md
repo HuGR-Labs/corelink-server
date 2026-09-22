@@ -20,7 +20,9 @@ prove any CoreLink target has the contract.
 template. It creates a new S3 bucket with Object Lock enabled, versioning,
 Compliance default retention, public-access blocks, server-side encryption,
 and a dedicated writer role. The writer role can read Object Lock state and
-write objects under `audit/*`; it has no delete permission.
+write objects under `audit/*`; it cannot read object payloads, delete objects,
+override retention, or set/release legal holds. S3 applies the bucket's
+Compliance default retention to writer puts.
 
 The module is not called from an environment root. It must stay inactive until
 the prerequisites below are approved. Terraform apply remains manual and
@@ -89,6 +91,12 @@ requested compliance retention and legal-hold settings on the object write,
 read both back, verify the expected residency, and attach a durable audit
 receipt. It must not mount an immutable archive route or perform a fallback
 write if any of those steps fails.
+
+The inactive writer policy intentionally lacks authority for per-object
+retention or legal-hold headers. Do not widen it directly. Any runtime adapter
+that needs those headers requires a separately approved, condition-bound IAM
+policy that permits `COMPLIANCE` mode and setting, but never releasing, legal
+holds; the live probe must validate that policy before the route is enabled.
 
 ## Sources
 

@@ -101,12 +101,9 @@ data "aws_iam_policy_document" "writer" {
   statement {
     effect = "Allow"
     actions = [
-      "s3:GetObject",
       "s3:GetObjectLegalHold",
       "s3:GetObjectRetention",
       "s3:PutObject",
-      "s3:PutObjectLegalHold",
-      "s3:PutObjectRetention",
     ]
     resources = [local.object_arn_prefix]
   }
