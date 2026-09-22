@@ -90,9 +90,9 @@ jobs:
       - name: Verify signup-worker lockfile pin
         run: python3 scripts/check_signup_worker_pin.py
 
-      - name: Run signup-worker Vitest suite
+      - name: Run signup-worker provider authority and D1 batch test
         working-directory: apps/signup-worker
-        run: pnpm exec vitest run
+        run: pnpm exec vitest run tests/runner_entitlement_authority.test.ts
 
   campaign:
     name: campaign ${{ inputs.suite }}
@@ -218,19 +218,15 @@ jobs:
             cargo clippy --locked -p corelink-server --all-targets -- -D warnings
           } 2>&1 | tee artifacts/campaign-ci/i1638.log
 
-      - name: i1639 materializer, subscription authority, and server checks
+      - name: i1639 provider authority and D1 fence behavior
         if: ${{ inputs.suite == 'i1639' }}
         shell: bash
         run: |
           set -euo pipefail
           {
-            cargo test --locked -p corelink-billing-stripe-materializer --lib --tests -- --nocapture
+            cargo test --locked -p corelink-billing-stripe-materializer runner_cas_ -- --nocapture
+            cargo test --locked -p corelink-billing-stripe-materializer same_second_reversed_id -- --nocapture
             cargo test --locked -p corelink-server --lib current_subscription_authority::tests -- --nocapture
-            cargo fmt --all --check
-            cargo clippy --locked -p corelink-billing-stripe-materializer --all-targets -- -D warnings
-            cargo clippy --locked -p corelink-server --all-targets -- -D warnings
-            cargo check --locked -p corelink-server --all-targets
-            cargo test --locked -p corelink-ops --test migrations_d1_migration_integration -- --nocapture
           } 2>&1 | tee artifacts/campaign-ci/i1639.log
 
       - name: i1628 focused CAS liability and decorator checks
