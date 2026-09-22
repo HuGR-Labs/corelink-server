@@ -1,0 +1,83 @@
+name: B-103 cargo write reproducer
+
+# This lane is deliberately separate from campaign-ci and has no schedule.
+# It is a bounded staging observation: six fixed arms (PUT-only and the exact
+# WebDAV sequence) at concurrency 4/16/64. A failing response is retained and
+# the run is red; the artifact is the evidence, not a closure assertion.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "run-b103-staging-reproducer" to dispatch the bounded lane'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b103-cargo-write-reproducer
+  cancel-in-progress: false
+
+jobs:
+  reproduce:
+    name: bounded /cargo write matrix
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 20
+    steps:
+      - name: checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: confirm bounded dispatch
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: test "${CONFIRM}" = "run-b103-staging-reproducer"
+
+      - name: validate canonical staging receipt
+        id: target
+        env:
+          K6_TARGET_HOST: https://staging.corelink.humangr.com
+          K6_TARGET_IDENTITY_RECEIPT: ${{ secrets.K6_TARGET_IDENTITY_RECEIPT }}
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_load_target_receipt.py \
+            --target "${K6_TARGET_HOST}" \
+            --receipt-env K6_TARGET_IDENTITY_RECEIPT \
+            --output "${RUNNER_TEMP}/b103-target-receipt.json" \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: run bounded matrix (retain red evidence)
+        id: reproduce
+        continue-on-error: true
+        env:
+          B103_TARGET_HOST: https://staging.corelink.humangr.com
+          B103_TENANT_ID: ${{ vars.B103_TENANT_ID }}
+          B103_PAT: ${{ secrets.K6_STAGING_PAT }}
+          B103_DEPLOYMENT_SHA: ${{ steps.target.outputs.deployment_sha }}
+        run: |
+          set -o pipefail
+          python3 scripts/reproduce_b103_cargo_write.py \
+            --output "${RUNNER_TEMP}/b103-cargo-write-reproducer.json"
+
+      - name: upload redacted wire evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b103-cargo-write-reproducer-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/b103-target-receipt.json
+            ${{ runner.temp }}/b103-cargo-write-reproducer.json
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: preserve red verdict
+        if: always()
+        env:
+          OUTCOME: ${{ steps.reproduce.outcome }}
+        run: |
+          set -euo pipefail
+          test "${OUTCOME}" = success
