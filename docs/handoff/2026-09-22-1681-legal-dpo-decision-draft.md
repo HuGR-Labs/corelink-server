@@ -37,11 +37,13 @@ campos de revisão e do artefato assinado, o estado deve continuar `pending`.
 
 ## Fatos verificados e limites
 
-- As quatro cópias publicadas têm uma única linha combinada
+- As quatro tabelas de transferência têm uma única linha combinada
   `PagerDuty / GitHub / Sigstore`, com `US`, `DPF + SCC + sub-processor-specific
-  posture` e `Operational metadata; no end-user PII`: os quatro caminhos estão
-  listados em `docs/handoff/2026-09-06-b314-gdpr-sigstore-transfer.json` e são
-  protegidos por `scripts/verify_b314_gdpr_sigstore.py`.
+  posture` e `Operational metadata; no end-user PII`: os quatro arquivos de
+  locale estão listados em `docs/handoff/2026-09-06-b314-gdpr-sigstore-transfer.json`
+  e são protegidos por `scripts/verify_b314_gdpr_sigstore.py`. O frontmatter da
+  cópia em inglês continua `draft: true`; este documento não trata esses
+  arquivos como uma publicação aprovada.
 - O Trust Center e o gerador descrevem Sigstore como infraestrutura de cadeia de
   suprimentos, fora dos sub-processadores de dados de clientes. A página também
   registra a remoção do antigo lane OCI em 2026-09-08, enquanto o frontmatter
