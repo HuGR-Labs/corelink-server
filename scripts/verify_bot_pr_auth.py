@@ -248,10 +248,11 @@ def verify_b012_backlog(root: Path = ROOT) -> list[str]:
     if start < 0 or end < 0:
         return ["B-012: BACKLOG section boundaries are missing"]
     section = text[start:end]
+    normalized_section = " ".join(section.split())
     errors = [
         f"B-012: BACKLOG lost {marker!r}"
         for marker in B012_BACKLOG_REQUIRED
-        if marker not in section
+        if marker not in normalized_section
     ]
     status_match = re.search(r"(?m)^status: (open|done)$", section)
     if status_match is None:

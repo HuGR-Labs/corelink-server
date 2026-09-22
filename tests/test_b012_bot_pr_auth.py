@@ -45,10 +45,11 @@ class B012BotPrAuthTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             candidate = Path(tmp)
             text = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
-            self.assertIn("Check/status presence or a zero-job workflow run is not execution evidence", text)
+            marker = "Check/status presence or a zero-job workflow run is not execution evidence"
+            self.assertIn(marker, " ".join(text.split()))
             (candidate / "BACKLOG.md").write_text(
                 text.replace(
-                    "Check/status presence or a zero-job workflow run is not execution evidence",
+                    "Check/status presence or a zero-job workflow run is\n  not execution evidence",
                     "Check/status presence is execution evidence",
                     1,
                 ),
