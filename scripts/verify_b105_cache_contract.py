@@ -117,6 +117,25 @@ def check_current_path(manifest: dict[str, Any]) -> None:
     require(workflow, "SCCACHE_IGNORE_SERVER_IO_ERROR=1", "pilot workflow")
     if "SCCACHE_MULTILEVEL_CHAIN" in workflow:
         raise ContractError("pilot workflow unexpectedly gained a local sccache chain")
+    collector = text(path="scripts/collect_b105_same_lane.py")
+    check_collector_contract(collector)
+
+
+def check_collector_contract(collector: str) -> None:
+    for needle in (
+        "namespace = f\"b105-",
+        "finally:",
+        "result[\"cleanup\"] = cleanup(purge_url, namespace, token)",
+        "CORELINK_B105_PURGE_URL",
+        "retained_bytes != 0",
+        "CORELINK_B105_RECEIPT_URL",
+        "bytes_read",
+        "bytes_written",
+        "retained_bytes",
+        "provider_receipt_id",
+        "[True, False, True, False, True, False]",
+    ):
+        require(collector, needle, "B-105 paired collector")
     recipe = text(path="apps/docs/docs/integrations/sccache-cargo.md")
     require(recipe, 'SCCACHE_MULTILEVEL_CHAIN="disk,webdav"', "customer recipe")
     require(recipe, "remote-only", "customer recipe remote-only warning")
@@ -216,6 +235,13 @@ def self_test(manifest: dict[str, Any]) -> None:
         pass
     else:
         raise ContractError("cache-chain mutation did not invalidate the current-path contract")
+    collector = text(path="scripts/collect_b105_same_lane.py")
+    try:
+        check_collector_contract(collector.replace("CORELINK_B105_PURGE_URL", "CORELINK_B105_PURGE_URL_REMOVED", 1))
+    except ContractError:
+        pass
+    else:
+        raise ContractError("purge endpoint mutation did not invalidate the collector contract")
 
 
 def main() -> int:

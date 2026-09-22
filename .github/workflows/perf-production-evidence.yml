@@ -162,6 +162,8 @@ jobs:
           CORELINK_PERF_BASE: ${{ vars.CORELINK_PERF_BASE }}
           CORELINK_PERF_TENANT: ${{ inputs.tenant_id }}
           CORELINK_PERF_PAT: ${{ secrets.CORELINK_PERF_PAT }}
+          CORELINK_B105_RECEIPT_URL: ${{ vars.CORELINK_B105_RECEIPT_URL }}
+          CORELINK_B105_PURGE_URL: ${{ vars.CORELINK_B105_PURGE_URL }}
         run: |
           set -eu
           python3 scripts/collect_b105_same_lane.py "${RUNNER_TEMP}/b105-lane.json"

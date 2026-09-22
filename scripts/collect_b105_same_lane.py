@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -19,6 +21,50 @@ COMMAND = ("cargo", "test", "--package", "corelink-reapi", "--release", "--no-ru
 
 def operation(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex}"
+
+
+def provider_receipt(url: str, token: str) -> dict[str, object]:
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            request_id = response.headers.get("x-request-id", "")
+    except (OSError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"B-105 provider receipt failed: {exc}") from exc
+    required = {"bytes_read", "bytes_written", "retained_bytes", "provider_receipt_id"}
+    if not isinstance(body, dict) or set(required) - set(body):
+        raise RuntimeError("B-105 provider receipt omitted byte quantities or receipt identity")
+    if any(not isinstance(body[key], int) or body[key] < 0 for key in ("bytes_read", "bytes_written", "retained_bytes")):
+        raise RuntimeError("B-105 provider receipt has invalid byte quantities")
+    if not isinstance(body["provider_receipt_id"], str) or not body["provider_receipt_id"]:
+        raise RuntimeError("B-105 provider receipt id is missing")
+    if not request_id:
+        raise RuntimeError("B-105 provider receipt omitted request identity")
+    return {**{key: body[key] for key in required if key != "provider_receipt_id"},
+            "provider_receipt_id": body["provider_receipt_id"],
+            "request_id": request_id}
+
+
+def cleanup(purge_url: str, namespace: str, token: str) -> dict[str, object]:
+    payload = json.dumps({"namespace": namespace}).encode("utf-8")
+    request = urllib.request.Request(
+        purge_url,
+        data=payload,
+        method="POST",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            request_id = response.headers.get("x-request-id", "")
+            if response.status < 200 or response.status >= 300 or not request_id or not isinstance(body, dict):
+                raise RuntimeError("B-105 cleanup receipt is incomplete")
+            retained = body.get("retained_bytes")
+            if not isinstance(retained, int) or retained != 0:
+                raise RuntimeError("B-105 cleanup receipt does not prove zero retained bytes")
+            return {"status": response.status, "request_id": request_id, "retained_bytes": retained}
+    except (OSError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"B-105 namespace cleanup failed: {exc}") from exc
 
 
 def stats(env: dict[str, str]) -> tuple[dict[str, int], str]:
@@ -38,7 +84,7 @@ def stats(env: dict[str, str]) -> tuple[dict[str, int], str]:
     return parsed, "sha256:" + hashlib.sha256(raw.encode()).hexdigest()
 
 
-def run(mode: str, pair: int, tenant: str, revision: str) -> dict[str, object]:
+def run(mode: str, pair: int, tenant: str, namespace: str, revision: str) -> dict[str, object]:
     if shutil.which("sccache") is None:
         raise RuntimeError("B-105 requires sccache on the runner")
     env = os.environ.copy()
@@ -50,7 +96,7 @@ def run(mode: str, pair: int, tenant: str, revision: str) -> dict[str, object]:
         token = os.environ.get("CORELINK_PERF_PAT", "")
         if not base or not token:
             raise RuntimeError("B-105 cache-on arm requires CORELINK_PERF_BASE and CORELINK_PERF_PAT")
-        env["SCCACHE_WEBDAV_ENDPOINT"] = f"{base}/cargo/{tenant}"
+        env["SCCACHE_WEBDAV_ENDPOINT"] = f"{base}/cargo/{tenant}/{namespace}"
         env["SCCACHE_WEBDAV_TOKEN"] = token
         env["SCCACHE_IGNORE_SERVER_IO_ERROR"] = "0"
         env["CARGO_INCREMENTAL"] = "0"
@@ -63,6 +109,7 @@ def run(mode: str, pair: int, tenant: str, revision: str) -> dict[str, object]:
     counters, stats_digest = stats(env)
     return {
         "tenant_id": tenant,
+        "namespace": namespace,
         "operation_id": operation(f"b105-{mode}"),
         "cache_mode": mode,
         "status": "complete",
@@ -84,23 +131,33 @@ def main() -> int:
         print("B-105 must run in the owner-triggered CI lane", file=sys.stderr)
         return 2
     tenant = os.environ.get("CORELINK_PERF_TENANT", "")
-    if not tenant:
+    base = os.environ.get("CORELINK_PERF_BASE", "").rstrip("/")
+    token = os.environ.get("CORELINK_PERF_PAT", "")
+    receipt_url = os.environ.get("CORELINK_B105_RECEIPT_URL", "")
+    purge_url = os.environ.get("CORELINK_B105_PURGE_URL", "")
+    if not tenant or not base or not token or not receipt_url or not purge_url:
         print("B-105 requires CORELINK_PERF_TENANT", file=sys.stderr)
         return 2
     revision = os.environ.get("GITHUB_SHA", "")
+    namespace = f"b105-{os.environ.get('GITHUB_RUN_ID', operation('run'))}-{revision[:12]}"
     pairs = []
-    for index in range(6):
-        control_first = index % 2 == 0
-        modes = ("disabled", "enabled") if control_first else ("enabled", "disabled")
-        arms = {mode: run(mode, index, tenant, revision) for mode in modes}
-        pairs.append({
-            "tenant_id": tenant,
-            "operation_id": operation(f"b105-pair-{index}"),
-            "control_first": control_first,
-            "control": arms["disabled"],
-            "treatment": arms["enabled"],
-        })
-    Path(sys.argv[1]).write_text(json.dumps({"schema": "corelink.b105-lane.v2", "pairs": pairs}, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    result: dict[str, object] = {"schema": "corelink.b105-lane.v3", "tenant_id": tenant, "namespace": namespace, "pairs": pairs}
+    try:
+        for index in range(6):
+            control_first = index % 2 == 0
+            modes = ("disabled", "enabled") if control_first else ("enabled", "disabled")
+            arms = {mode: run(mode, index, tenant, namespace, revision) for mode in modes}
+            if arms["disabled"]["cache_mode"] != "disabled" or arms["enabled"]["cache_mode"] != "enabled":
+                raise RuntimeError("B-105 pair cache modes are incomplete")
+            if any(arms[mode]["namespace"] != namespace or arms[mode]["revision"] != revision for mode in modes):
+                raise RuntimeError("B-105 pair identity drifted")
+            pairs.append({"tenant_id": tenant, "namespace": namespace, "operation_id": operation(f"b105-pair-{index}"), "control_first": control_first, "control": arms["disabled"], "treatment": arms["enabled"]})
+        if len(pairs) != 6 or [pair["control_first"] for pair in pairs] != [True, False, True, False, True, False]:
+            raise RuntimeError("B-105 pairs are not six alternating control-first measurements")
+        result["provider_receipt"] = provider_receipt(receipt_url, token)
+    finally:
+        result["cleanup"] = cleanup(purge_url, namespace, token)
+    Path(sys.argv[1]).write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     return 0
 
 
