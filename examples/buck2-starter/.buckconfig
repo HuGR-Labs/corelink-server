@@ -15,6 +15,10 @@
 # before it can resolve the starter's build graph.
 [cells]
     root = .
+    prelude = prelude
+
+[external_cells]
+    prelude = bundled
 
 [buck2]
     execution_platforms = prelude//platforms:default

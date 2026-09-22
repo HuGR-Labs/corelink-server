@@ -122,9 +122,25 @@ def test_buck2_contract_is_complete() -> None:
 
 def test_starter_declares_root_cell_and_bundled_execution_platform() -> None:
     config = BUCKCONFIG_PATH.read_text(encoding="utf-8")
-    assert re.search(r"(?m)^\[cells\]\n\s+root = \.\s*$", config)
+    assert "[cells]\n    root = .\n    prelude = prelude\n" in config
+    assert "[external_cells]\n    prelude = bundled\n" in config
     assert config.count("execution_platforms = prelude//platforms:default") == 2
     assert "execution_platforms = //:platforms" not in config
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    (
+        (lambda text: text.replace("    prelude = prelude\n", "", 1), "prelude cell"),
+        (lambda text: text.replace("    prelude = bundled\n", "", 1), "bundled prelude origin"),
+    ),
+)
+def test_starter_config_rejects_each_prelude_mapping_mutation(mutation, expected: str) -> None:
+    config = BUCKCONFIG_PATH.read_text(encoding="utf-8")
+    with pytest.raises(AssertionError):
+        mutated = mutation(config)
+        assert "[cells]\n    root = .\n    prelude = prelude\n" in mutated
+        assert "[external_cells]\n    prelude = bundled\n" in mutated
 
 
 @pytest.mark.parametrize(
