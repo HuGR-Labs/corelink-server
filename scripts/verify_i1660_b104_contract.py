@@ -78,7 +78,7 @@ def main() -> int:
 
     for fragment, label in (
         ("issue-1660-b104-authenticated-404.yml", "hosted lane reference"),
-        ("staging environment", "staging prerequisite"),
+        ("`staging` environment", "staging prerequisite"),
         ("median and nearest-rank p90", "percentile contract"),
         ("Server-Timing", "phase contract"),
         ("does not retain the PAT", "secret redaction"),
