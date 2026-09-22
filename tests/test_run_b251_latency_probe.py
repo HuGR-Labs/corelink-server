@@ -46,7 +46,7 @@ def test_parse_probe_output_accepts_strictly_under_limit() -> None:
     [
         ("", "exactly one"),
         (marker() + "\n" + marker(), "exactly one"),
-        (marker(5000), "not below 5ms"),
+        (marker(5000), "exceeded 5ms"),
         (marker(sample_count=999), "exactly 1,000"),
         (marker(production_latency_measured=True), "falsely claimed production"),
     ],
@@ -148,6 +148,16 @@ def test_success_writes_bound_evidence_atomically(tmp_path: Path, monkeypatch: p
         "observed_source": "D03-observed",
         "fields_compared": ["seed", "failure", "blob"],
         "match": True,
+        "baseline": {
+            "seed_sha256": "e00961cc04e55c4533144d93fda113d960b6ad37e54a86a41bbba4f031e29d92",
+            "failure_sha256": "74a450ddd95d02e196f91442f03bd07dbe5898508badc97fefbe0423725d030b",
+            "blob_sha256": "5587904b152d6111a896d8f3fa36520798ccd6912781789e9c00d808ccadd9e7",
+        },
+        "observed": {
+            "seed_sha256": "e00961cc04e55c4533144d93fda113d960b6ad37e54a86a41bbba4f031e29d92",
+            "failure_sha256": "74a450ddd95d02e196f91442f03bd07dbe5898508badc97fefbe0423725d030b",
+            "blob_sha256": "5587904b152d6111a896d8f3fa36520798ccd6912781789e9c00d808ccadd9e7",
+        },
     }
     assert persisted["measurement"]["p99_us"] == 23
     assert persisted["measurement"]["production_latency_measured"] is False

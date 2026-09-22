@@ -1,0 +1,216 @@
+name: "PR #601 hosted spawn-worker consumer validation"
+
+# Bounded operator lane for HuGR-Labs/corelink-runners PR #601.  The source
+# repository is private, so the read-only canary PAT is used only to resolve
+# and fetch the requested PR head.  The token is never placed in a remote URL,
+# is not persisted in git config, and is unset before any source tests run.
+on:
+  workflow_dispatch:
+    inputs:
+      runners_sha:
+        description: "Exact 40-character lowercase SHA to validate from PR #601"
+        required: true
+        type: string
+        default: 2a3be102ec59ea02389bb875ec4d4fdd8126950e
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-601-hosted-spawn-worker-consumer
+  cancel-in-progress: false
+
+env:
+  RUNNERS_REPOSITORY: HuGR-Labs/corelink-runners
+  RUNNERS_URL: https://github.com/HuGR-Labs/corelink-runners.git
+  RUNNERS_PR: "601"
+
+jobs:
+  hosted-consumer-validation:
+    name: "Hosted PR #601 spawn-worker consumer tests"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout canonical server without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Validate SHA and initialize redacted receipt
+        id: initialize
+        env:
+          TARGET_SHA: ${{ inputs.runners_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          receipt="artifacts/pr-601-hosted-spawn-worker-receipt.json"
+          python3 - "$receipt" "$TARGET_SHA" <<'PY'
+          import json
+          import re
+          import sys
+
+          receipt_path, target_sha = sys.argv[1:]
+          valid = bool(re.fullmatch(r"[0-9a-f]{40}", target_sha))
+          payload = {
+              "schema_version": 1,
+              "lane": "pr-601-hosted-spawn-worker-consumer",
+              "source_repository": "HuGR-Labs/corelink-runners",
+              "source_pr": 601,
+              "requested_sha": target_sha,
+              "runner": "GitHub-hosted ubuntu-24.04",
+              "access_confirmed": False,
+              "checked_out_sha": None,
+              "tests": {
+                  "package": "deploy/cloudflare",
+                  "commands": [
+                      "npm ci",
+                      "npm run typecheck",
+                      "npm run test:coverage",
+                  ],
+                  "collected": None,
+                  "status": "not_started",
+              },
+              "valid": False,
+              "failure_reason": None,
+          }
+          if not valid:
+              payload["failure_reason"] = "runners_sha_must_be_40_lowercase_hex_characters"
+          with open(receipt_path, "w", encoding="utf-8") as stream:
+              json.dump(payload, stream, indent=2, sort_keys=True)
+              stream.write("\n")
+          if not valid:
+              raise SystemExit(payload["failure_reason"])
+          PY
+          echo "receipt=$receipt" >> "$GITHUB_OUTPUT"
+
+      - name: Confirm access and fetch exact PR head
+        id: source
+        env:
+          TARGET_SHA: ${{ inputs.runners_sha }}
+          CORELINK_CANARY_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="artifacts/pr-601-hosted-spawn-worker-receipt.json"
+          source_dir="$RUNNER_TEMP/corelink-runners"
+          repo_url="${RUNNERS_URL}"
+          fail_closed() {
+            reason="$1"
+            python3 - "$receipt" "$reason" <<'PY'
+          import json
+          import sys
+
+          path, reason = sys.argv[1:]
+          with open(path, encoding="utf-8") as stream:
+              payload = json.load(stream)
+          payload["failure_reason"] = reason
+          payload["valid"] = False
+          with open(path, "w", encoding="utf-8") as stream:
+              json.dump(payload, stream, indent=2, sort_keys=True)
+              stream.write("\n")
+          PY
+            echo "::error::cross-repo validation failed closed: ${reason}"
+            exit 1
+          }
+
+          [[ -n "${CORELINK_CANARY_PAT:-}" ]] || fail_closed "CORELINK_CANARY_PAT_missing"
+          echo "::add-mask::${CORELINK_CANARY_PAT}"
+          auth_header="$(printf 'x-access-token:%s' "${CORELINK_CANARY_PAT}" | base64 | tr -d '\n')"
+          echo "::add-mask::${auth_header}"
+          export GIT_TERMINAL_PROMPT=0
+
+          # Resolve the PR head first.  This is a read-only access check and
+          # prevents a token that cannot read the private source from reaching
+          # the test phase.  Only SHA metadata is retained.
+          ref_file="$RUNNER_TEMP/pr-601-head-ref"
+          if ! git -c "http.extraHeader=Authorization: Basic ${auth_header}" \
+            ls-remote "${repo_url}" "refs/pull/${RUNNERS_PR}/head" >"${ref_file}"; then
+            fail_closed "runners_repository_access_denied"
+          fi
+          observed_sha="$(awk 'NR == 1 { print $1 }' "${ref_file}")"
+          [[ "${observed_sha}" == "${TARGET_SHA}" ]] || fail_closed "pr_601_head_sha_mismatch"
+
+          # Keep the origin URL credentialless.  The Authorization header is a
+          # process-local git option and cannot be written into .git/config.
+          mkdir -p "${source_dir}"
+          git -C "${source_dir}" init -q
+          git -C "${source_dir}" remote add origin "${repo_url}"
+          git -C "${source_dir}" \
+            -c "http.extraHeader=Authorization: Basic ${auth_header}" \
+            fetch --no-tags --depth=1 origin "refs/pull/${RUNNERS_PR}/head"
+          git -C "${source_dir}" checkout --detach --quiet "${TARGET_SHA}"
+
+          # The source is now local.  Drop the PAT before installing packages
+          # or running any source tests, then prove no credential was persisted.
+          unset CORELINK_CANARY_PAT auth_header
+          [[ "$(git -C "${source_dir}" remote get-url origin)" == "${repo_url}" ]] || \
+            fail_closed "credentialed_git_remote_detected"
+          [[ -z "$(git -C "${source_dir}" config --local --get-all http.extraHeader || true)" ]] || \
+            fail_closed "credentialed_git_config_detected"
+          checked_out_sha="$(git -C "${source_dir}" rev-parse HEAD)"
+          [[ "${checked_out_sha}" == "${TARGET_SHA}" ]] || fail_closed "checked_out_sha_mismatch"
+
+          python3 - "$receipt" "$observed_sha" "$checked_out_sha" <<'PY'
+          import json
+          import sys
+
+          path, observed_sha, checked_out_sha = sys.argv[1:]
+          with open(path, encoding="utf-8") as stream:
+              payload = json.load(stream)
+          payload["access_confirmed"] = True
+          payload["observed_pr_head_sha"] = observed_sha
+          payload["checked_out_sha"] = checked_out_sha
+          payload["tests"]["status"] = "ready"
+          with open(path, "w", encoding="utf-8") as stream:
+              json.dump(payload, stream, indent=2, sort_keys=True)
+              stream.write("\n")
+          PY
+          echo "source_dir=${source_dir}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+
+      - name: Run only spawn-worker consumer tests
+        env:
+          SOURCE_DIR: ${{ steps.source.outputs.source_dir }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${SOURCE_DIR}/deploy/cloudflare"
+          npm ci
+          npm run typecheck
+          # One bounded Vitest invocation.  The JSON reporter gives the receipt
+          # a test count while --coverage keeps the consumer's coverage floor.
+          npm run test:coverage -- --reporter=json --outputFile="${RUNNER_TEMP}/spawn-worker-vitest.json"
+          python3 - "${RUNNER_TEMP}/spawn-worker-vitest.json" "${GITHUB_WORKSPACE}/artifacts/pr-601-hosted-spawn-worker-receipt.json" <<'PY'
+          import json
+          import sys
+
+          report_path, receipt_path = sys.argv[1:]
+          with open(report_path, encoding="utf-8") as stream:
+              report = json.load(stream)
+          count = int(report.get("numTotalTests") or 0)
+          if count < 300:
+              raise SystemExit(f"spawn-worker suite collected only {count} tests; expected at least 300")
+          with open(receipt_path, encoding="utf-8") as stream:
+              payload = json.load(stream)
+          payload["tests"]["collected"] = count
+          payload["tests"]["status"] = "passed"
+          payload["valid"] = True
+          with open(receipt_path, "w", encoding="utf-8") as stream:
+              json.dump(payload, stream, indent=2, sort_keys=True)
+              stream.write("\n")
+          print(f"spawn-worker consumer tests passed: {count} tests collected")
+          PY
+
+      - name: Upload redacted validation receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-601-hosted-spawn-worker-receipt-${{ github.run_id }}
+          path: artifacts/pr-601-hosted-spawn-worker-receipt.json
+          if-no-files-found: error
+          retention-days: 30
