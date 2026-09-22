@@ -11194,7 +11194,7 @@ Domains | … | **Tenant-pinned (Section 7)**"*. E a linha 144: *"WEUR data NEVE
 outside the EU jurisdiction. This restriction is enforced at the infrastructure level
 (Cloudflare DO `jurisdictional_restriction`)."*
 
-As únicas chaves `jurisdiction = "eu"` em toda a configuração estão nas linhas 841 e 860
+As únicas chaves `jurisdiction = "eu"` em toda a configuração estão nas linhas 847 e 860
 do `wrangler.toml`, e ambas são bindings de **bucket R2**. O binding do D1 não tem chave
 de jurisdição alguma.
 
