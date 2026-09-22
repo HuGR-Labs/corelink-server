@@ -26,6 +26,25 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Retain merged PR source objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          # fetch-depth: 0 covers all objects reachable from main, but the
+          # squash source commits are reachable only from merged PR #1746's
+          # retained head ref. Pin that ref to the anchored P14 source so a
+          # changed or missing retention ref fails closed.
+          git fetch --no-tags origin \
+            '+refs/pull/1746/head:refs/remotes/origin/pr-1746-head'
+          test "$(git rev-parse refs/remotes/origin/pr-1746-head)" = \
+            59cfb2ca01c0732cede1d2a2693a3dea7ef1da59
+          for source in \
+            2963bd510ff03df932c8a60e91b1c23742fbe1b6 \
+            4e1844f7f5c644b5f4f01fc32653399e70918124 \
+            59cfb2ca01c0732cede1d2a2693a3dea7ef1da59; do
+            git cat-file -e "${source}^{commit}"
+          done
+
       - name: Verify current-main inventory and squash provenance
         id: evidence
         shell: bash
