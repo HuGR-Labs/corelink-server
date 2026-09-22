@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
-"""Capture one bounded Cloudflare Containers capacity readback.
+"""Capture a bounded, value-free Cloudflare Containers schema observation.
 
-This probe deliberately has no account or URL arguments.  It performs exactly
-one GET against the canonical account endpoint, requires a dedicated
-read-only token, and writes only an aggregate, redacted receipt.
+The request is fixed to one GET against the canonical account endpoint. The
+receipt contains only fixed, compile-time path predicates and aggregate shape
+counts. Provider keys and values are never copied into an artifact or log.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import math
 import os
-import re
 import tempfile
 import urllib.error
 import urllib.request
@@ -29,22 +26,42 @@ ENDPOINT = (
 )
 ACCOUNT_REDACTED = f"{CANONICAL_ACCOUNT_ID[:4]}...{CANONICAL_ACCOUNT_ID[-4:]}"
 MAX_RESPONSE_BYTES = 1_048_576
-ACCOUNT_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+MAX_SCHEMA_DEPTH = 8
+MAX_SCHEMA_NODES = 256
+
+# Each identifier and path below is source-controlled. The identifiers are
+# CoreLink labels; the paths are known Cloudflare envelope fields or capacity
+# fields already present in the repository's operator contract. No path is
+# obtained from the response, and no provider key is included in the receipt.
+SCHEMA_PREDICATES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("api_success", ("success",)),
+    ("api_errors", ("errors",)),
+    ("api_messages", ("messages",)),
+    ("api_result", ("result",)),
+    ("account_total_vcpu", ("total_vcpu",)),
+    ("account_vcpu_per_deployment", ("vcpu_per_deployment",)),
+    ("account_total_memory_mib", ("total_memory_mib",)),
+    ("account_usage", ("usage",)),
+    ("result_total_vcpu", ("result", "total_vcpu")),
+    ("result_vcpu_per_deployment", ("result", "vcpu_per_deployment")),
+    ("result_total_memory_mib", ("result", "total_memory_mib")),
+    ("result_usage", ("result", "usage")),
+    ("usage_used_vcpu", ("usage", "used_vcpu")),
+    ("usage_vcpu", ("usage", "vcpu")),
+    ("usage_used", ("usage", "used")),
+    ("usage_current_vcpu", ("usage", "current_vcpu")),
+    ("result_usage_used_vcpu", ("result", "usage", "used_vcpu")),
+    ("result_usage_vcpu", ("result", "usage", "vcpu")),
+    ("result_usage_used", ("result", "usage", "used")),
+    ("result_usage_current_vcpu", ("result", "usage", "current_vcpu")),
+)
 
 
 class ProbeError(RuntimeError):
     pass
 
 
-def _canonical(value: object) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(_canonical(value)).hexdigest()
-
-
-def _request(token: str) -> tuple[dict[str, Any], str]:
+def _request(token: str) -> dict[str, Any]:
     if not token:
         raise ProbeError("dedicated Cloudflare capacity read token is absent")
     request = urllib.request.Request(
@@ -67,44 +84,108 @@ def _request(token: str) -> tuple[dict[str, Any], str]:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ProbeError("capacity response was not valid JSON") from exc
-    if not isinstance(payload, dict):
-        raise ProbeError("capacity response must be a JSON object")
-    if payload.get("success") is False:
-        raise ProbeError("capacity endpoint reported failure")
-    return payload, hashlib.sha256(raw).hexdigest()
-
-
-def _source(payload: dict[str, Any]) -> dict[str, Any]:
-    result = payload.get("result")
-    if isinstance(result, dict):
-        return result
+    _validate_provider_envelope(payload)
     return payload
 
 
-def _number(source: dict[str, Any], *paths: tuple[str, ...]) -> float:
-    for path in paths:
-        value: Any = source
-        for part in path:
-            if not isinstance(value, dict):
-                break
-            value = value.get(part)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            continue
-        if not math.isfinite(value):
-            raise ProbeError(f"capacity field {'/'.join(path)} is not finite")
-        if value < 0:
-            raise ProbeError(f"capacity field {'/'.join(path)} is negative")
-        return float(value)
-    raise ProbeError(f"capacity field is absent: {'/'.join(paths[0])}")
+def _validate_provider_envelope(payload: object) -> None:
+    """Accept only a successful Cloudflare API envelope without echoing it."""
+
+    if not isinstance(payload, dict):
+        raise ProbeError("capacity response must be a JSON object")
+    # Require the documented Cloudflare API success envelope before inspecting
+    # any schema predicates. Never print or retain provider error objects.
+    if payload.get("success") is not True:
+        raise ProbeError("capacity endpoint must report success=true")
+    if payload.get("errors") != []:
+        raise ProbeError("capacity endpoint must report an empty errors array")
+
+
+def _json_type(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return "invalid"
+
+
+def _resolve_path(payload: dict[str, Any], path: tuple[str, ...]) -> object:
+    value: object = payload
+    for segment in path:
+        if not isinstance(value, dict) or segment not in value:
+            return _MISSING
+        value = value[segment]
+    return value
+
+
+_MISSING = object()
+
+
+def _schema_projection(payload: dict[str, Any]) -> dict[str, str]:
+    """Project only fixed type predicates; never return response keys."""
+
+    return {
+        label: "missing" if (value := _resolve_path(payload, path)) is _MISSING else _json_type(value)
+        for label, path in SCHEMA_PREDICATES
+    }
+
+
+def _bounded_shape_counts(payload: dict[str, Any]) -> dict[str, int]:
+    """Count topology without emitting paths, keys, values, or array contents."""
+
+    node_count = 0
+    max_depth_seen = 0
+    unknown_object_key_count = 0
+
+    def visit(value: object, depth: int, active_paths: tuple[tuple[str, ...], ...]) -> None:
+        nonlocal node_count, max_depth_seen, unknown_object_key_count
+        node_count += 1
+        if node_count > MAX_SCHEMA_NODES:
+            raise ProbeError("capacity schema exceeds the bounded node limit")
+        max_depth_seen = max(max_depth_seen, depth)
+        if depth > MAX_SCHEMA_DEPTH:
+            raise ProbeError("capacity schema exceeds the bounded depth limit")
+        if isinstance(value, dict):
+            # The allowlist contains complete paths, so only keys that are a
+            # prefix of a fixed path are considered recognized. Keys are
+            # compared in memory but never copied, sorted, or serialized.
+            for key, child in value.items():
+                if not isinstance(key, str):
+                    raise ProbeError("capacity response contains an invalid JSON object")
+                matching_paths = tuple(path[1:] for path in active_paths if path and path[0] == key)
+                if not matching_paths:
+                    unknown_object_key_count += 1
+                visit(child, depth + 1, matching_paths)
+        elif isinstance(value, list):
+            for child in value:
+                # The schema allowlist contains object member paths, not array
+                # positions. Treat object members inside arrays as unknown.
+                visit(child, depth + 1, ())
+        elif _json_type(value) == "invalid":
+            raise ProbeError("capacity response contains a non-JSON value")
+
+    # The implementation below uses only path length and fixed path segments
+    # to classify a key. It does not turn a provider key into output data.
+    visit(payload, 0, tuple(path for _label, path in SCHEMA_PREDICATES))
+    return {
+        "node_count": node_count,
+        "max_depth": max_depth_seen,
+        "unknown_object_key_count": unknown_object_key_count,
+    }
 
 
 def _write(path: Path, receipt: dict[str, object]) -> None:
     if path.is_symlink() or (path.exists() and not path.is_file()):
         raise ProbeError("receipt output must be a regular non-symlink file")
     path.parent.mkdir(parents=True, exist_ok=True)
-    unsigned = dict(receipt)
-    unsigned.pop("receipt_sha256", None)
-    receipt["receipt_sha256"] = _digest(unsigned)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -121,48 +202,20 @@ def _write(path: Path, receipt: dict[str, object]) -> None:
         raise
 
 
-def run(token: str, output: Path) -> int:
-    if not ACCOUNT_ID_RE.fullmatch(CANONICAL_ACCOUNT_ID):
-        raise ProbeError("canonical account identity is malformed")
-    payload, response_sha256 = _request(token)
-    source = _source(payload)
-    total_vcpu = _number(source, ("total_vcpu",), ("quota", "total_vcpu"), ("limits", "total_vcpu"))
-    vcpu_per_deployment = _number(
-        source, ("vcpu_per_deployment",), ("quota", "vcpu_per_deployment"), ("limits", "vcpu_per_deployment")
-    )
-    total_memory_mib = _number(source, ("total_memory_mib",), ("quota", "total_memory_mib"), ("limits", "total_memory_mib"))
-    used_vcpu = _number(
-        source,
-        ("usage", "used_vcpu"),
-        ("usage", "vcpu"),
-        ("usage", "vcpu", "used"),
-        ("usage", "used"),
-        ("usage", "current_vcpu"),
-        ("used_vcpu",),
-    )
-    if total_vcpu <= 0 or vcpu_per_deployment <= 0 or total_memory_mib <= 0 or used_vcpu > total_vcpu:
-        raise ProbeError("capacity values are invalid or exceed the account quota")
+def run_topology(token: str, output: Path) -> int:
+    payload = _request(token)
+    _validate_provider_envelope(payload)
     receipt: dict[str, object] = {
         "schema_version": 1,
-        "schema": "corelink.issue-1656.capacity-read-only.v1",
-        "issue": 1656,
+        "schema": "corelink.issue-2044.capacity-schema-predicates.v1",
+        "issue": 2044,
         "read_only": True,
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "account_id_redacted": ACCOUNT_REDACTED,
         "endpoint": "GET /accounts/{account}/containers/me",
-        "response_sha256": response_sha256,
-        "total_vcpu": total_vcpu,
-        "vcpu_per_deployment": vcpu_per_deployment,
-        "total_memory_mib": total_memory_mib,
-        "usage_vcpu": used_vcpu,
-        "headroom_vcpu": total_vcpu - used_vcpu,
-        "quota": {
-            "total_vcpu": total_vcpu,
-            "vcpu_per_deployment": vcpu_per_deployment,
-            "total_memory_mib": total_memory_mib,
-        },
-        "usage": {"used_vcpu": used_vcpu},
-        "headroom": {"provider_vcpu": total_vcpu - used_vcpu},
+        "provider_api_version": "v4",
+        "capacity_schema_predicates": _schema_projection(payload),
+        "shape_counts": _bounded_shape_counts(payload),
     }
     _write(output, receipt)
     return 0
@@ -170,12 +223,12 @@ def run(token: str, output: Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--topology-output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        return run(os.environ.get("CLOUDFLARE_CAPACITY_READ_TOKEN", ""), args.output)
+        return run_topology(os.environ.get("CLOUDFLARE_CAPACITY_READ_TOKEN", ""), args.topology_output)
     except ProbeError as exc:
-        print(f"issue-1656 capacity readback: FAIL-CLOSED: {exc}", flush=True)
+        print(f"issue-2044 capacity observation: FAIL-CLOSED: {exc}", flush=True)
         return 2
 
 

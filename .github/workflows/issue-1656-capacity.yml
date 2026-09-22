@@ -10,6 +10,7 @@ on:
       - "scripts/test_verify_regional_capacity.py"
       - "scripts/probe_i1656_capacity_readonly.py"
       - "scripts/test_probe_i1656_capacity_readonly.py"
+      - "docs/operator/issue-2044-capacity-schema.md"
       - ".github/workflows/issue-1656-capacity-refresh.yml"
       - ".github/workflows/issue-1656-capacity.yml"
   push:
@@ -21,6 +22,7 @@ on:
       - "scripts/test_verify_regional_capacity.py"
       - "scripts/probe_i1656_capacity_readonly.py"
       - "scripts/test_probe_i1656_capacity_readonly.py"
+      - "docs/operator/issue-2044-capacity-schema.md"
       - ".github/workflows/issue-1656-capacity-refresh.yml"
 
 permissions:
