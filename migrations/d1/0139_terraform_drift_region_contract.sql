@@ -49,8 +49,8 @@ SELECT
     github_run_id, runbook_ref, prev_finding_id
 FROM terraform_drift_findings;
 
-DROP TABLE terraform_drift_findings; -- additive-allowed: preserve all rows in the explicit copy above
-ALTER TABLE terraform_drift_findings_new RENAME TO terraform_drift_findings; -- additive-allowed: finalize the constraint rebuild
+DROP TABLE terraform_drift_findings; -- additive-allowed: ADR-0098 preserve all rows in the explicit copy while widening the region CHECK
+ALTER TABLE terraform_drift_findings_new RENAME TO terraform_drift_findings; -- additive-allowed: ADR-0098 finalize the rebuilt region CHECK after the 1:1 copy
 
 CREATE INDEX IF NOT EXISTS idx_terraform_drift_open
     ON terraform_drift_findings (status, detected_at_ms)
