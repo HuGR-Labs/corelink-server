@@ -44,8 +44,8 @@ jobs:
         run: |
           set -euo pipefail
           module=infra/terraform/modules/audit-object-lock-aws/main.tf
-          rg -F 'object_lock_enabled = true' "$module"
-          rg -F 'mode = "COMPLIANCE"' "$module"
-          rg -F 'aws_s3_bucket_object_lock_configuration' "$module"
-          rg -F 'aws_iam_role' "$module"
-          ! rg -F '"s3:DeleteObject"' "$module"
+          grep -F 'object_lock_enabled = true' "$module"
+          grep -F 'mode = "COMPLIANCE"' "$module"
+          grep -F 'aws_s3_bucket_object_lock_configuration' "$module"
+          grep -F 'aws_iam_role' "$module"
+          ! grep -F '"s3:DeleteObject"' "$module"
