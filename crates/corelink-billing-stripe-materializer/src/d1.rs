@@ -213,7 +213,6 @@ impl RefundedProduct {
 
 /// A product-axis decision paired with the durable Stripe subscription id.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct RefundedPurchase {
     /// The product axis selected from the purchase maps.
     pub product: RefundedProduct,
