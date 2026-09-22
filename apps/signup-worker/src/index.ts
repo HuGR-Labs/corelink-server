@@ -118,11 +118,16 @@ const baseHandler: ExportedHandler<SignupEnv> = {
           batch as unknown as QueueMessageBatch<DsrDlqBody>,
           env,
         );
-      } else {
+      } else if (batch.queue === "corelink-dsr-erasure") {
         await handleErasureQueueBatch(
           batch as unknown as QueueMessageBatch<DsrQueuedV1>,
           env,
         );
+      } else {
+        // A future or misbound queue must never inherit the destructive DSR
+        // consumer. Throwing leaves the delivery unacknowledged so the
+        // platform can redeliver while the binding/configuration is repaired.
+        throw new Error(`unknown queue binding: ${String(batch.queue)}`);
       }
     } catch (err) {
       Sentry.captureException(err);
