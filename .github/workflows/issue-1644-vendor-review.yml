@@ -3,7 +3,11 @@ name: issue-1644 vendor review manifest
 on:
   pull_request:
     paths:
+      - '.github/workflows/issue-1644-vendor-review.yml'
       - 'docs/handoff/2026-09-22-1644-critical-vendor-review-manifest.json'
+      - 'docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md'
+      - 'docs/compliance/vendor-reviews/stripe-dpa-review-2026-04.md'
+      - 'docs/compliance/vendor-reviews/clerk-dpa-review-2026-04.md'
       - 'scripts/verify_1644_vendor_review_manifest.py'
       - 'scripts/compliance-weekly-digest.py'
       - 'specs/_compliance/VENDOR-RISK-REGISTER.md'
