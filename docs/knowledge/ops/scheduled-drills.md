@@ -33,10 +33,10 @@ binding is absent, throws, or returns a non-2xx response, the handler fails and
 Cloudflare may retry the tick. It never logs or sends a PagerDuty routing key,
 and it never treats a local fake or an absent binding as delivery.
 
-The handoff includes a deterministic id derived from the cron and
-`scheduledTime`, allowing the receiving Worker to deduplicate retries. Unknown
-cron values are rejected with `noRetry()`; delivery exceptions and non-2xx
-responses remain retryable failures.
+When invoked by an owner-approved trigger, the handoff includes a deterministic
+id derived from the cron and `scheduledTime`, allowing the receiving Worker to
+deduplicate retries. Unknown cron values are rejected with `noRetry()`; delivery
+exceptions and non-2xx responses remain retryable failures.
 
 If an owner-approved non-production trigger is reintroduced, the synthetic-page
 payload carries the runbook's non-secret PagerDuty contract:

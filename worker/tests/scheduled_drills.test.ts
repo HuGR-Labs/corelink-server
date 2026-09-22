@@ -57,7 +57,7 @@ describe("scheduled drill configuration", () => {
 });
 
 describe("scheduled drill delivery", () => {
-  it("delivers the synthetic cron", async () => {
+  it("delivers an explicitly invoked synthetic drill", async () => {
     const cron = "0 14 * * 1";
     const drill = "synthetic_page";
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(null, { status: 202 }));
