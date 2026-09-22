@@ -37,7 +37,6 @@ impl TestCurrentSubscriptionAuthority {
             ),
         );
     }
-
 }
 
 impl crate::CurrentSubscriptionAuthority for TestCurrentSubscriptionAuthority {
@@ -545,7 +544,10 @@ fn runner_create_reconciles_the_current_snapshot() {
     );
 
     handler
-        .materialize_echo(CanonicalWebhookEventType::SubscriptionCreated, &stale_create)
+        .materialize_echo(
+            CanonicalWebhookEventType::SubscriptionCreated,
+            &stale_create,
+        )
         .unwrap();
     assert_eq!(d1.runners_entitlement_of("ten_run"), Some((80, 600)));
 }
@@ -590,10 +592,14 @@ fn configured_runner_path_fails_closed_without_current_authority() {
 fn duplicate_runner_delivery_is_convergent() {
     let (handler, d1, _audit, authority) = fixture_with_runners();
     authority.set("sub_run", "active", "price_runner_team");
-    let event = env("evt_duplicate", "customer.subscription.updated", serde_json::json!({
-        "object": { "id": "sub_run", "status": "active", "metadata": { "tenant_id": "ten_run" },
-            "plan": { "id": "price_runner_team" } }
-    }));
+    let event = env(
+        "evt_duplicate",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": { "id": "sub_run", "status": "active", "metadata": { "tenant_id": "ten_run" },
+                "plan": { "id": "price_runner_team" } }
+        }),
+    );
     handler.on_subscription_updated(&event).unwrap();
     handler.on_subscription_updated(&event).unwrap();
     assert_eq!(d1.runners_entitlement_of("ten_run"), Some((80, 600)));
@@ -631,13 +637,26 @@ fn stale_authority_key_fails_closed_before_runner_mutation() {
 #[test]
 fn authority_mismatch_and_non_runner_fail_closed() {
     let (handler, d1, _audit, authority) = fixture_with_runners();
-    authority.snapshots.lock().unwrap().insert("sub_run".into(), crate::CurrentSubscription::new("sub_other", "active", "price_runner_team"));
-    let event = env("evt_authority", "customer.subscription.updated", serde_json::json!({
-        "object": { "id": "sub_run", "status": "active", "metadata": { "tenant_id": "ten_run" }, "plan": { "id": "price_runner_team" } }
-    }));
-    assert!(matches!(handler.on_subscription_updated(&event), Err(MaterializerError::Transient(_))));
+    authority.snapshots.lock().unwrap().insert(
+        "sub_run".into(),
+        crate::CurrentSubscription::new("sub_other", "active", "price_runner_team"),
+    );
+    let event = env(
+        "evt_authority",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": { "id": "sub_run", "status": "active", "metadata": { "tenant_id": "ten_run" }, "plan": { "id": "price_runner_team" } }
+        }),
+    );
+    assert!(matches!(
+        handler.on_subscription_updated(&event),
+        Err(MaterializerError::Transient(_))
+    ));
     authority.set("sub_run", "active", "plan_pro");
-    assert!(matches!(handler.on_subscription_updated(&event), Err(MaterializerError::Transient(_))));
+    assert!(matches!(
+        handler.on_subscription_updated(&event),
+        Err(MaterializerError::Transient(_))
+    ));
     assert_eq!(d1.runners_entitlement_of("ten_run"), None);
 }
 
@@ -646,8 +665,16 @@ fn missing_price_on_created_or_deleted_fails_closed() {
     for deleted in [false, true] {
         let (handler, d1, _audit, _authority) = fixture_with_runners();
         let event = env(
-            if deleted { "evt_missing_delete" } else { "evt_missing_create" },
-            if deleted { "customer.subscription.deleted" } else { "customer.subscription.created" },
+            if deleted {
+                "evt_missing_delete"
+            } else {
+                "evt_missing_create"
+            },
+            if deleted {
+                "customer.subscription.deleted"
+            } else {
+                "customer.subscription.created"
+            },
             serde_json::json!({ "object": { "id": "sub_missing", "status": "active",
                 "metadata": { "tenant_id": "ten_missing" } } }),
         );
@@ -665,6 +692,12 @@ fn missing_price_on_created_or_deleted_fails_closed() {
 fn current_subscription_round_trips_json() {
     let snapshot = crate::CurrentSubscription::new("sub_run", "active", "price_runner_team");
     let json = serde_json::to_string(&snapshot).unwrap();
-    assert_eq!(json, r#"{"subscription_id":"sub_run","status":"active","price_id":"price_runner_team","authority_key":"legacy:00000000000000000000"}"#);
-    assert_eq!(serde_json::from_str::<crate::CurrentSubscription>(&json).unwrap(), snapshot);
+    assert_eq!(
+        json,
+        r#"{"subscription_id":"sub_run","status":"active","price_id":"price_runner_team","authority_key":"legacy:00000000000000000000"}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<crate::CurrentSubscription>(&json).unwrap(),
+        snapshot
+    );
 }
