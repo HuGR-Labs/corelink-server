@@ -83,7 +83,8 @@ pub mod webhook_dispatch;
 #[cfg(not(target_arch = "wasm32"))]
 pub use client::{
     StripeAuthMode, StripeClientConfig, StripeRealClient, StripeRealClientBuilder,
-    DEFAULT_HUGR_STRIPE_REF, DEFAULT_HUGR_WALLET_BASE, DEFAULT_STRIPE_API_BASE,
+    StripeRunnerCheckoutProvider, DEFAULT_HUGR_STRIPE_REF, DEFAULT_HUGR_WALLET_BASE,
+    DEFAULT_STRIPE_API_BASE,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use clock::SystemClock;

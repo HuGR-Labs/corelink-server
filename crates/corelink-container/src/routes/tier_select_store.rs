@@ -48,7 +48,20 @@
 
 use std::sync::Arc;
 
+use corelink_stripe_real::StripeRunnerCheckoutProvider;
+use corelink_tier_selection::runner_checkout_attempt::{
+    RunnerCheckoutAttempt, RunnerCheckoutAttemptState, RunnerCheckoutSessionExpiry,
+};
+use corelink_tier_selection::stripe::CheckoutSessionResponse;
+use corelink_tier_selection::tenant::TenantId;
+use corelink_tier_selection::tier::TierKind;
 use serde_json::json;
+
+use corelink_tier_selection::runner_checkout_d1::{
+    SQL_MARK_RUNNER_CHECKOUT_ABANDONED, SQL_MARK_RUNNER_CHECKOUT_EXPIRED,
+    SQL_READ_CURRENT_RUNNER_CHECKOUT_ATTEMPT, SQL_RECORD_RUNNER_CHECKOUT_SESSION,
+    SQL_RESERVE_RUNNER_CHECKOUT_ATTEMPT,
+};
 
 use crate::routes::tier_select::{CheckoutCreated, RequestedTier, TierSelectStore};
 use crate::storage::d1_http::D1HttpClient;
@@ -102,6 +115,93 @@ const HAS_PENDING_CHECKOUT_SQL: &str = "SELECT 1 FROM tier_selections t \
 const HAS_ACTIVE_PAID_CACHE_SUBSCRIPTION_SQL: &str = "SELECT 1 FROM tier_selections \
      WHERE tenant_id = ?1 AND subscription_state = 'active' AND tier != 'free' LIMIT 1";
 
+fn runner_kind(tier: RequestedTier) -> Result<TierKind, String> {
+    match tier {
+        RequestedTier::RunnerStarter => Ok(TierKind::RunnerStarter),
+        RequestedTier::RunnerPro => Ok(TierKind::RunnerPro),
+        RequestedTier::RunnerTeam => Ok(TierKind::RunnerTeam),
+        RequestedTier::RunnerScale => Ok(TierKind::RunnerScale),
+        RequestedTier::RunnerMax => Ok(TierKind::RunnerMax),
+        _ => Err("runner coordinator received a non-runner tier".to_owned()),
+    }
+}
+
+fn requested_tier(kind: TierKind) -> RequestedTier {
+    match kind {
+        TierKind::RunnerStarter => RequestedTier::RunnerStarter,
+        TierKind::RunnerPro => RequestedTier::RunnerPro,
+        TierKind::RunnerTeam => RequestedTier::RunnerTeam,
+        TierKind::RunnerScale => RequestedTier::RunnerScale,
+        TierKind::RunnerMax => RequestedTier::RunnerMax,
+        _ => RequestedTier::RunnerStarter,
+    }
+}
+
+fn runner_attempt(row: &crate::storage::d1_http::D1Row) -> Result<RunnerCheckoutAttempt, String> {
+    let text = |name: &str| {
+        row.get(name)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| format!("runner checkout row missing {name}"))
+    };
+    let tier = match text("tier")?.as_str() {
+        "runner_starter" => TierKind::RunnerStarter,
+        "runner_pro" => TierKind::RunnerPro,
+        "runner_team" => TierKind::RunnerTeam,
+        "runner_scale" => TierKind::RunnerScale,
+        "runner_max" => TierKind::RunnerMax,
+        _ => return Err("runner checkout row has invalid tier".to_owned()),
+    };
+    let state = match text("state")?.as_str() {
+        "reserved" => RunnerCheckoutAttemptState::Reserved,
+        "session_created" => RunnerCheckoutAttemptState::SessionCreated,
+        "expired" => RunnerCheckoutAttemptState::Expired,
+        "abandoned" => RunnerCheckoutAttemptState::Abandoned,
+        "completed" => RunnerCheckoutAttemptState::Completed,
+        _ => return Err("runner checkout row has invalid state".to_owned()),
+    };
+    let generation = row
+        .get("generation")
+        .and_then(serde_json::Value::as_i64)
+        .ok_or_else(|| "runner checkout row missing generation".to_owned())?;
+    let session_id = row
+        .get("session_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    Ok(RunnerCheckoutAttempt {
+        tenant_id: TenantId::new(text("tenant_id")?),
+        generation: u64::try_from(generation)
+            .map_err(|_| "runner generation is negative".to_owned())?,
+        tier,
+        price_id: text("price_id")?,
+        customer_id: text("stripe_customer_id")?,
+        idempotency_key: text("idempotency_key")?,
+        state,
+        session_id,
+    })
+}
+
+fn checkout_created(response: CheckoutSessionResponse) -> CheckoutCreated {
+    CheckoutCreated {
+        checkout_url: response.url,
+        session_id: response.session_id,
+        stripe_customer_id: response.stripe_customer_id.as_str().to_owned(),
+    }
+}
+
+async fn provider_call<T, F>(job: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(job());
+    });
+    rx.await
+        .map_err(|e| format!("runner provider thread dropped: {e}"))?
+}
+
 /// Map `RequestedTier` → the exact snake_case label the D1 `tier` CHECK
 /// constraints accept (`tier_selections` / `stripe_checkout_sessions`).
 ///
@@ -154,6 +254,285 @@ impl D1HttpTierSelectStore {
     #[must_use]
     pub fn d1(&self) -> &D1HttpClient {
         &self.d1
+    }
+
+    /// Reserve/read one durable runner Checkout attempt. The reserve SQL is
+    /// atomic; an empty result means the caller must inspect `read` before
+    /// deciding replay, expiry, or recovery.
+    pub async fn reserve_runner_attempt(
+        &self,
+        tenant_id: &str,
+        tier: &str,
+        price_id: &str,
+        customer_id: &str,
+        idempotency_key: &str,
+        now_ms: i64,
+    ) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
+        self.d1
+            .query(
+                SQL_RESERVE_RUNNER_CHECKOUT_ATTEMPT,
+                &[
+                    json!(tenant_id),
+                    json!(tier),
+                    json!(price_id),
+                    json!(customer_id),
+                    json!(idempotency_key),
+                    json!(now_ms),
+                ],
+            )
+            .await
+    }
+
+    /// Read the current runner attempt after an atomic reserve conflict.
+    pub async fn read_runner_attempt(
+        &self,
+        tenant_id: &str,
+    ) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
+        self.d1
+            .query(
+                SQL_READ_CURRENT_RUNNER_CHECKOUT_ATTEMPT,
+                &[json!(tenant_id)],
+            )
+            .await
+    }
+
+    /// Attach Stripe's response to a still-reserved generation.
+    pub async fn record_runner_session(
+        &self,
+        tenant_id: &str,
+        generation: i64,
+        session_id: &str,
+        now_ms: i64,
+    ) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
+        self.d1
+            .query(
+                SQL_RECORD_RUNNER_CHECKOUT_SESSION,
+                &[
+                    json!(tenant_id),
+                    json!(generation),
+                    json!(session_id),
+                    json!(now_ms),
+                ],
+            )
+            .await
+    }
+
+    /// Mark a session expired only after Stripe confirmed the expiry.
+    pub async fn mark_runner_expired(
+        &self,
+        tenant_id: &str,
+        generation: i64,
+        session_id: &str,
+        now_ms: i64,
+    ) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
+        self.d1
+            .query(
+                SQL_MARK_RUNNER_CHECKOUT_EXPIRED,
+                &[
+                    json!(tenant_id),
+                    json!(generation),
+                    json!(session_id),
+                    json!(now_ms),
+                ],
+            )
+            .await
+    }
+
+    /// Abandon a reservation only after provider reconciliation found no
+    /// session; this is the stale pre ACK recovery boundary.
+    pub async fn mark_runner_abandoned(
+        &self,
+        tenant_id: &str,
+        generation: i64,
+        now_ms: i64,
+    ) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
+        self.d1
+            .query(
+                SQL_MARK_RUNNER_CHECKOUT_ABANDONED,
+                &[json!(tenant_id), json!(generation), json!(now_ms)],
+            )
+            .await
+    }
+
+    /// Run the WP2 runner attempt coordinator against the durable D1 adapter.
+    /// Provider calls are isolated on a plain thread because the Stripe client
+    /// owns `reqwest::blocking`; every replacement is admitted only after the
+    /// prior provider session is replayed or confirmed expired.
+    pub async fn checkout_runner(
+        &self,
+        provider: Arc<StripeRunnerCheckoutProvider>,
+        tenant_id: &str,
+        tier: RequestedTier,
+        now_ms: i64,
+    ) -> Result<CheckoutCreated, String> {
+        let kind = runner_kind(tier)?;
+        let price_id = std::env::var(format!("STRIPE_PRICE_ID_{}", kind.as_str().to_uppercase()))
+            .map_err(|_| format!("runner price id is not configured for {}", kind.as_str()))?
+            .trim()
+            .to_owned();
+        if price_id.is_empty() {
+            return Err(format!("runner price id is empty for {}", kind.as_str()));
+        }
+        let customer_id = provider_call({
+            let provider = Arc::clone(&provider);
+            let tenant_id = tenant_id.to_owned();
+            move || {
+                provider
+                    .ensure_customer(&tenant_id)
+                    .map_err(|e| e.to_string())
+            }
+        })
+        .await?;
+        let rows = self
+            .reserve_runner_attempt(
+                tenant_id,
+                kind.as_str(),
+                &price_id,
+                &customer_id,
+                "",
+                now_ms,
+            )
+            .await?;
+        let attempt = if let Some(row) = rows.first() {
+            runner_attempt(row)?
+        } else {
+            let current = self.read_runner_attempt(tenant_id).await?;
+            let row = current
+                .first()
+                .ok_or_else(|| "runner checkout ledger conflict".to_owned())?;
+            runner_attempt(row)?
+        };
+        self.finish_runner_attempt(
+            provider,
+            attempt,
+            kind,
+            &price_id,
+            &customer_id,
+            tenant_id,
+            now_ms,
+        )
+        .await
+    }
+
+    async fn finish_runner_attempt(
+        &self,
+        provider: Arc<StripeRunnerCheckoutProvider>,
+        attempt: RunnerCheckoutAttempt,
+        kind: TierKind,
+        price_id: &str,
+        customer_id: &str,
+        tenant_id: &str,
+        now_ms: i64,
+    ) -> Result<CheckoutCreated, String> {
+        let exact = attempt.tier == kind
+            && attempt.price_id == price_id
+            && attempt.customer_id == customer_id;
+        match attempt.state {
+            RunnerCheckoutAttemptState::SessionCreated if exact => {
+                let response = provider_call({
+                    let provider = Arc::clone(&provider);
+                    let attempt = attempt.clone();
+                    move || {
+                        provider
+                            .create_response(&attempt)
+                            .map_err(|e| e.to_string())
+                    }
+                })
+                .await?;
+                Ok(checkout_created(response))
+            }
+            RunnerCheckoutAttemptState::SessionCreated => {
+                let session_id = attempt
+                    .session_id
+                    .as_deref()
+                    .ok_or_else(|| "runner session_created row has no session id".to_owned())?;
+                provider_call({
+                    let provider = Arc::clone(&provider);
+                    let attempt = attempt.clone();
+                    move || provider.expire(&attempt).map_err(|e| e.to_string())
+                })
+                .await?;
+                let expired = self
+                    .mark_runner_expired(tenant_id, attempt.generation as i64, session_id, now_ms)
+                    .await?;
+                if expired.is_empty() {
+                    let current = self.read_runner_attempt(tenant_id).await?;
+                    let confirmed = current
+                        .first()
+                        .and_then(|row| runner_attempt(row).ok())
+                        .is_some_and(|row| {
+                            row.generation == attempt.generation
+                                && row.state == RunnerCheckoutAttemptState::Expired
+                        });
+                    if !confirmed {
+                        return Err("runner expiry acknowledgement was lost".to_owned());
+                    }
+                }
+                Box::pin(self.checkout_runner(provider, tenant_id, requested_tier(kind), now_ms))
+                    .await
+            }
+            RunnerCheckoutAttemptState::Reserved => {
+                // Stripe replay with the durable key is both recovery and
+                // creation. If the process lost its ACK, this returns the
+                // original session; it cannot mint a second payable session.
+                let response = provider_call({
+                    let provider = Arc::clone(&provider);
+                    let attempt = attempt.clone();
+                    move || {
+                        provider
+                            .create_response(&attempt)
+                            .map_err(|e| e.to_string())
+                    }
+                })
+                .await?;
+                let recorded = self
+                    .record_runner_session(
+                        tenant_id,
+                        attempt.generation as i64,
+                        &response.session_id,
+                        now_ms,
+                    )
+                    .await?;
+                if recorded.is_empty() {
+                    let current = self.read_runner_attempt(tenant_id).await?;
+                    let same = current
+                        .first()
+                        .and_then(|row| runner_attempt(row).ok())
+                        .filter(|row| {
+                            row.generation == attempt.generation
+                                && row.state == RunnerCheckoutAttemptState::SessionCreated
+                                && row.session_id.as_deref() == Some(response.session_id.as_str())
+                        });
+                    if same.is_none() {
+                        return Err("runner session acknowledgement was lost".to_owned());
+                    }
+                }
+                if exact {
+                    Ok(checkout_created(response))
+                } else {
+                    Box::pin(self.finish_runner_attempt(
+                        provider,
+                        RunnerCheckoutAttempt {
+                            state: RunnerCheckoutAttemptState::SessionCreated,
+                            session_id: Some(response.session_id),
+                            ..attempt
+                        },
+                        kind,
+                        price_id,
+                        customer_id,
+                        tenant_id,
+                        now_ms,
+                    ))
+                    .await
+                }
+            }
+            RunnerCheckoutAttemptState::Expired
+            | RunnerCheckoutAttemptState::Abandoned
+            | RunnerCheckoutAttemptState::Completed => {
+                Box::pin(self.checkout_runner(provider, tenant_id, requested_tier(kind), now_ms))
+                    .await
+            }
+        }
     }
 
     /// Test-only constructor: an INERT store over a `D1HttpClient` built

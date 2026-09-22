@@ -77,6 +77,27 @@ pub async fn handle(
     let correlation_id = Uuid::now_v7().to_string();
     let now_ms = unix_millis_now();
 
+    // Runner is a separate entitlement axis. Route it through the durable
+    // WP2 attempt coordinator so a lost Stripe ACK replays its key and a plan
+    // change expires the prior session before any replacement is created.
+    if tier.is_runner() {
+        return match orchestrate_runner_tier_select(
+            &state,
+            &tenant_id,
+            tier,
+            &req.success_url,
+            &req.cancel_url,
+            &state.current_dpa_version,
+            now_ms,
+            &correlation_id,
+        )
+        .await
+        {
+            Ok(resp) => (StatusCode::OK, Json(resp)).into_response(),
+            Err(e) => e.into_response(),
+        };
+    }
+
     // The durable orchestration owns the load-bearing order (audit-before-
     // mutate → lock → DPA-first → active-sub → checkout → persist → release);
     // map its typed result to HTTP.
@@ -97,6 +118,81 @@ pub async fn handle(
         Ok(resp) => (StatusCode::OK, Json(resp)).into_response(),
         Err(e) => e.into_response(),
     }
+}
+
+async fn orchestrate_runner_tier_select(
+    state: &TierSelectRouteState,
+    tenant_id: &str,
+    tier: RequestedTier,
+    success_url: &str,
+    cancel_url: &str,
+    dpa_version: &str,
+    now_ms: i64,
+    correlation_id: &str,
+) -> Result<TierSelectResponse, TierSelectHttpError> {
+    state
+        .audit
+        .emit("tier_select_attempted", tenant_id, correlation_id)
+        .await
+        .map_err(|_| TierSelectHttpError::Internal)?;
+    if !state
+        .store
+        .acquire_lock(tenant_id, now_ms, correlation_id)
+        .await
+        .map_err(|_| TierSelectHttpError::Internal)?
+    {
+        return Err(TierSelectHttpError::LockHeld);
+    }
+    let result = async {
+        if !state
+            .store
+            .is_dpa_accepted(tenant_id, dpa_version)
+            .await
+            .map_err(|_| TierSelectHttpError::Internal)?
+        {
+            state
+                .audit
+                .emit("dpa_first_violation_attempt", tenant_id, correlation_id)
+                .await
+                .map_err(|_| TierSelectHttpError::Internal)?;
+            return Err(TierSelectHttpError::DpaRequired);
+        }
+        if state
+            .store
+            .has_active_runner_subscription(tenant_id)
+            .await
+            .map_err(|_| TierSelectHttpError::Internal)?
+        {
+            return Err(TierSelectHttpError::AlreadyActive);
+        }
+        state
+            .audit
+            .emit("stripe_checkout_reserved", tenant_id, correlation_id)
+            .await
+            .map_err(|_| TierSelectHttpError::Internal)?;
+        let provider = Arc::new(corelink_stripe_real::StripeRunnerCheckoutProvider::new(
+            Arc::clone(state.checkout.stripe()),
+            success_url,
+            cancel_url,
+        ));
+        let created = state
+            .store
+            .checkout_runner(provider, tenant_id, tier, now_ms)
+            .await
+            .map_err(|error| TierSelectHttpError::StripeUnavailable(Some(error)))?;
+        if !created.checkout_url.starts_with("https://") {
+            return Err(TierSelectHttpError::StripeUnavailable(Some(
+                "checkout url was not https".to_owned(),
+            )));
+        }
+        Ok(TierSelectResponse {
+            checkout_url: Some(created.checkout_url),
+            session_id: created.session_id,
+        })
+    }
+    .await;
+    let _ = state.store.release_lock(tenant_id, correlation_id).await;
+    result
 }
 
 /// Epoch-millisecond clock for lock expiry + audit timestamps. A pre-epoch
