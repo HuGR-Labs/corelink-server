@@ -77,10 +77,10 @@ jobs:
           # (codeql/rust-queries). Wired through `with: queries:` below.
           #
           # Rust is in experimental CodeQL support — enabled via the
-          # `--language rust` opt-in. Build mode `manual` so cargo respects
-          # the workspace toolchain pin (rust-toolchain.toml).
+          # `--language rust` opt-in. The hosted Rust analyser requires
+          # dependency-aware `none` mode for this configuration.
           - language: rust
-            build-mode: manual
+            build-mode: none
             queries: ""
           - language: javascript-typescript
             build-mode: none
@@ -128,16 +128,6 @@ jobs:
           dependency-caching: true
           threads: ${{ env.CODEQL_THREADS }}
           ram: ${{ env.CODEQL_RAM_MB }}
-
-      # -----------------------------------------------------------------
-      # Rust manual build — CodeQL traces the workspace cargo build to
-      # build its CFG/dataflow facts. We compile with --all-targets to
-      # cover bin + lib + tests + examples in one pass.
-      # -----------------------------------------------------------------
-      - name: Build Rust workspace (manual mode for CodeQL trace)
-        if: matrix.language == 'rust'
-        run: |
-          cargo build --workspace --all-targets --locked
 
       - name: Perform CodeQL Analysis
         id: analyze
