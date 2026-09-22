@@ -38,6 +38,7 @@ on:
           - i1687
           - i1688
           - i1663
+          - i1674
           - i1650-contract
           - i1649-contract
           - i1659-dry
@@ -686,6 +687,19 @@ jobs:
           # Repository guard only: Stripe remains unreachable and production
           # credit gates stay disabled.
           python3 -S scripts/verify_b089_sla_credits.py 2>&1 | tee artifacts/campaign-ci/i1655-sla-credit-contract.log
+
+      - name: i1674 exact B-132 and B-142 hosted contract suites
+        if: ${{ inputs.suite == 'i1674' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            python3 -S scripts/verify_b142_workflows.py
+            python3 -m unittest -q \
+              tests/test_b132_secrets_evidence.py \
+              tests/test_b142_codeql_selfhost.py \
+              tests/test_b142_workflow_predicate.py
+          } 2>&1 | tee artifacts/campaign-ci/i1674.log
 
       - name: Upload compact campaign logs
         if: ${{ always() }}
