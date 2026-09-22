@@ -317,7 +317,13 @@ jobs:
         # `--remap` + `--fallback-extensions` pair is what makes this gate prove
         # something (see the note above), so neither may be dropped in the move.
         #
-        # The second --remap resolves the two SDK artifact trees we publish
+        # The docs-site remaps resolve the path-mounted docs site against THIS
+        # build instead of live production. A PR's generated pages are not
+        # deployed at humangr.com yet, so checking those URLs over the network
+        # reports 404s for valid routes that are present in this artifact.
+        # External hosts remain network checked.
+        #
+        # The SDK remap resolves the two artifact trees we publish
         # ourselves (`/pypi/**`, `/npm/**`) against THIS build instead of the
         # live site. Those URLs must be absolute in the docs because a reader
         # pastes them into `pip install --extra-index-url ...`, and on a PR they
@@ -325,8 +331,9 @@ jobs:
         # PR produces. Checking them against the build is the stronger claim,
         # not the weaker one — it fails if the documented URL does not match an
         # artifact that is actually about to be served, which a live check
-        # cannot see until after the merge. Scoped to those two prefixes only;
-        # every other humangr.com link is still fetched over the network.
+        # cannot see until after the merge. Scoped to the docs mount only;
+        # every humangr.com link outside that mount is still fetched over the
+        # network.
         run: |
           set -euo pipefail
           # SC2016: the single quotes are deliberate — the `$` belongs to the
@@ -339,6 +346,7 @@ jobs:
             --fallback-extensions html \
             --remap '^file://${{ github.workspace }}/apps/docs/build/corelink/docs(/.*)?$ file://${{ github.workspace }}/apps/docs/build$1' \
             --remap '^https://humangr\.com/corelink/docs/(pypi|npm)/(.*)$ file://${{ github.workspace }}/apps/docs/build/$1/$2' \
+            --remap '^https://humangr\.com/corelink/docs(/.*)?$ file://${{ github.workspace }}/apps/docs/build$1' \
             'apps/docs/build/**/*.html'
 
   sdk-artifacts:
