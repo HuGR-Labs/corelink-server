@@ -124,7 +124,7 @@ jobs:
             echo "::error::release dry-run needs ${DLLTOOL_PATH} built from Binutils ${EXPECTED_BINUTILS_VERSION}, got ${ACTUAL_DLLTOOL_VERSION}." >&2
             exit 1
           fi
-          DLLTOOL_VERSION_SUFFIX="${ACTUAL_DLLTOOL_VERSION#${DLLTOOL_VERSION_PREFIX}}"
+          DLLTOOL_VERSION_SUFFIX="${ACTUAL_DLLTOOL_VERSION#"${DLLTOOL_VERSION_PREFIX}"}"
           if [[ -n "${DLLTOOL_VERSION_SUFFIX}" && ! "${DLLTOOL_VERSION_SUFFIX}" =~ ^(\.[0-9]+)+\.?$ ]]; then
             echo "::error::dlltool reported an invalid Binutils version suffix: ${ACTUAL_DLLTOOL_VERSION}." >&2
             exit 1
@@ -153,7 +153,7 @@ jobs:
                 echo "::error::Windows build needs ${EXPECTED_DLLTOOL_PATH} built from Binutils ${EXPECTED_BINUTILS_VERSION}, got ${ACTUAL_DLLTOOL_VERSION}." >&2
                 exit 1
               fi
-              DLLTOOL_VERSION_SUFFIX="${ACTUAL_DLLTOOL_VERSION#${DLLTOOL_VERSION_PREFIX}}"
+              DLLTOOL_VERSION_SUFFIX="${ACTUAL_DLLTOOL_VERSION#"${DLLTOOL_VERSION_PREFIX}"}"
               if [[ -n "${DLLTOOL_VERSION_SUFFIX}" && ! "${DLLTOOL_VERSION_SUFFIX}" =~ ^(\.[0-9]+)+\.?$ ]]; then
                 echo "::error::Windows build found an invalid Binutils version suffix: ${ACTUAL_DLLTOOL_VERSION}." >&2
                 exit 1
