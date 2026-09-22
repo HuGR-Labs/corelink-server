@@ -110,9 +110,33 @@ jobs:
           echo "Target: $TARGET_HOST duration=${DURATION}"
 
       - name: prepare results dir
+        id: prepare_results
+        env:
+          DURATION: ${{ github.event.inputs.duration || '2h' }}
         run: |
           set -euo pipefail
           mkdir -p tests/load/results/endurance-2h
+          DATE_TAG=$(date -u +%Y-%m-%d)
+          echo "RESULTS_DATE=${DATE_TAG}" >> "$GITHUB_ENV"
+          cat > tests/load/results/endurance-2h/lane-identity.json <<EOF
+          {
+            "schema": "corelink.endurance-lane-receipt.v1",
+            "contract_version": 1,
+            "workflow": "${GITHUB_WORKFLOW}",
+            "job": "${GITHUB_JOB}",
+            "run_id": "${GITHUB_RUN_ID}",
+            "run_attempt": "${GITHUB_RUN_ATTEMPT}",
+            "sha": "${GITHUB_SHA}",
+            "ref": "${GITHUB_REF}",
+            "runner_name": "${RUNNER_NAME}",
+            "runner_os": "${RUNNER_OS}",
+            "runner_arch": "${RUNNER_ARCH}",
+            "target": "https://staging.corelink.humangr.com",
+            "duration": "${DURATION:-2h}",
+            "phase": "prepared"
+          }
+          EOF
+          printf '%s\n' "prepared" > tests/load/results/endurance-2h/checkpoint-prepared
 
       - name: run k6 endurance 2h
         env:
@@ -123,8 +147,25 @@ jobs:
           K6_ENDURANCE_CONFIRM:       'yes'
         run: |
           set -euo pipefail
-          DATE_TAG=$(date -u +%Y-%m-%d)
-          echo "RESULTS_DATE=${DATE_TAG}" >> "$GITHUB_ENV"
+          RESULTS_DIR=tests/load/results/endurance-2h
+          HEARTBEAT_FILE="${RESULTS_DIR}/heartbeat.json"
+          heartbeat() {
+            while :; do
+              NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+              printf '{"schema":"corelink.endurance-heartbeat.v1","run_id":"%s","sha":"%s","phase":"running","at":"%s"}\n' \
+                "$GITHUB_RUN_ID" "$GITHUB_SHA" "$NOW" > "${HEARTBEAT_FILE}.tmp"
+              mv "${HEARTBEAT_FILE}.tmp" "$HEARTBEAT_FILE"
+              sleep 30
+            done
+          }
+          heartbeat &
+          HEARTBEAT_PID=$!
+          cleanup_heartbeat() {
+            kill "${HEARTBEAT_PID}" 2>/dev/null || true
+            wait "${HEARTBEAT_PID}" 2>/dev/null || true
+          }
+          trap cleanup_heartbeat EXIT
+          printf '%s\n' "running" > "$RESULTS_DIR/checkpoint-running"
           # `--out json` for the local artifact + experimental prom-rw if
           # the Prometheus remote-write endpoint is configured. The
           # prom-rw output is optional — k6 ignores it if the env var is
@@ -133,10 +174,64 @@ jobs:
           if [[ -n "${K6_PROMETHEUS_RW_SERVER_URL:-}" ]]; then
             OUTPUTS+=( "--out" "experimental-prometheus-rw" )
           fi
-          k6 run \
+          timeout --signal=TERM --kill-after=60s 130m k6 run \
             "${OUTPUTS[@]}" \
             --summary-export "tests/load/results/endurance-2h/endurance-2h-summary-${DATE_TAG}.json" \
             tests/load/k6/scenarios/endurance-24h.js
+          printf '%s\n' "completed" > "$RESULTS_DIR/checkpoint-completed"
+
+      - name: write receipt and teardown checkpoint
+        if: always()
+        env:
+          TARGET_HOST: ${{ steps.target_host.outputs.target_host }}
+          DURATION: ${{ github.event.inputs.duration || '2h' }}
+        run: |
+          set -euo pipefail
+          RESULTS_DIR=tests/load/results/endurance-2h
+          RECEIPT="$RESULTS_DIR/endurance-lane-receipt-${GITHUB_RUN_ID}.json"
+          STATUS="${{ job.status }}"
+          SHA_LINES=""
+          while IFS= read -r artifact; do
+            [[ -z "$artifact" ]] && continue
+            SHA_LINES+="$(sha256sum "$artifact")"$'\n'
+          done < <(find "$RESULTS_DIR" -maxdepth 1 -type f \( -name 'endurance-2h-summary-*.json' -o -name 'endurance-2h-results-*.json' \) -print)
+          printf '%s\n' "teardown" > "$RESULTS_DIR/checkpoint-teardown"
+          export RECEIPT STATUS TARGET_HOST DURATION SHA_LINES
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+
+          hashes = {}
+          for line in os.environ.get("SHA_LINES", "").splitlines():
+              digest, _, path = line.partition("  ")
+              if digest and path:
+                  hashes[path] = digest
+          receipt_dir = os.path.dirname(os.environ["RECEIPT"])
+          receipt = {
+              "schema": "corelink.endurance-lane-receipt.v1",
+              "contract_version": 1,
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "job": os.environ["GITHUB_JOB"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "sha": os.environ["GITHUB_SHA"],
+              "ref": os.environ["GITHUB_REF"],
+              "runner_name": os.environ["RUNNER_NAME"],
+              "runner_os": os.environ["RUNNER_OS"],
+              "runner_arch": os.environ["RUNNER_ARCH"],
+              "target": os.environ.get("TARGET_HOST", ""),
+              "duration": os.environ["DURATION"],
+              "status": os.environ["STATUS"],
+              "artifact_sha256": hashes,
+              "checkpoints": sorted(name for name in os.listdir(receipt_dir) if name.startswith("checkpoint-")),
+              "teardown_at": datetime.now(timezone.utc).isoformat(),
+          }
+          if receipt["target"] != "https://staging.corelink.humangr.com":
+              raise SystemExit("receipt target is not canonical")
+          with open(os.environ["RECEIPT"], "w", encoding="utf-8") as stream:
+              json.dump(receipt, stream, indent=2, sort_keys=True)
+              stream.write("\n")
+          PY
 
       - name: upload results
         if: always()
