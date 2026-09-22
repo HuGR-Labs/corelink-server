@@ -46,6 +46,9 @@ on:
           - i1641-pagerduty-contract
           - i1654-d1-residency-contract
           - i1655-sla-credit-contract
+          - i1670-enospc-linker
+          - i1680-schema-contract
+          - i1792-miniflare-epoch
 
 permissions:
   contents: read
@@ -88,11 +91,11 @@ jobs:
           python-version: '3.12'
 
       - name: Set up pnpm for the worker lane
-        if: ${{ inputs.suite == 'i1662' || inputs.suite == 'i1671' || inputs.suite == 'i1678' }}
+        if: ${{ inputs.suite == 'i1662' || inputs.suite == 'i1671' || inputs.suite == 'i1678' || inputs.suite == 'i1792-miniflare-epoch' }}
         uses: ./.github/actions/setup-pnpm
 
       - name: Set up Node.js for the worker lane
-        if: ${{ inputs.suite == 'i1662' || inputs.suite == 'i1671' || inputs.suite == 'i1678' }}
+        if: ${{ inputs.suite == 'i1662' || inputs.suite == 'i1671' || inputs.suite == 'i1678' || inputs.suite == 'i1792-miniflare-epoch' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -114,7 +117,7 @@ jobs:
         run: python -m pip install pytest pyyaml
 
       - name: Install protoc for the Rust lanes
-        if: ${{ inputs.suite == 'i1629' || inputs.suite == 'i1631' || inputs.suite == 'i1632' || inputs.suite == 'i1636' || inputs.suite == 'i1638' || inputs.suite == 'i1639' || inputs.suite == 'i1628' || inputs.suite == 'i1671' || inputs.suite == 'i1668' || inputs.suite == 'i1722' || inputs.suite == 'i1665' }}
+        if: ${{ inputs.suite == 'i1629' || inputs.suite == 'i1631' || inputs.suite == 'i1632' || inputs.suite == 'i1636' || inputs.suite == 'i1638' || inputs.suite == 'i1639' || inputs.suite == 'i1628' || inputs.suite == 'i1671' || inputs.suite == 'i1668' || inputs.suite == 'i1722' || inputs.suite == 'i1665' || inputs.suite == 'i1663' }}
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
 
       - name: Prepare bounded campaign log directory
@@ -383,6 +386,178 @@ jobs:
           test_name='adapter_cache::tests::put_records_the_store_phase_exactly_once'
           cargo test --locked -p corelink-server --lib "$test_name" -- --exact --nocapture 2>&1 | tee artifacts/campaign-ci/i1663.log
           grep -F "test ${test_name} ... ok" artifacts/campaign-ci/i1663.log
+
+      - name: i1670 bounded ENOSPC and linker classification
+        if: ${{ inputs.suite == 'i1670-enospc-linker' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # /dev/shm is a runner-provided tmpfs writable by the job user.  The
+          # fixture fills only that bounded filesystem, so setup needs no
+          # mount, sudo, or privileged loop device and cannot consume the
+          # runner's workspace disk.
+          root="${RUNNER_TEMP:-/tmp}/i1670"
+          fs_root="/dev/shm/corelink-i1670-${GITHUB_RUN_ID:-$$}"
+          mkdir -p "$root" "$fs_root" artifacts/campaign-ci/i1670
+          cleanup() {
+            set +e
+            rm -rf "$root"
+            rm -rf "$fs_root"
+          }
+          trap cleanup EXIT
+
+          fill_to_margin() {
+            local fill="$1"
+            local available
+            available="$(df --output=avail -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+            test -n "$available"
+            test "$available" -gt $((1024 * 1024))
+            python3 - "$fill" $((available - 64 * 1024)) <<'PY'
+          import os
+          import sys
+
+          path, target = sys.argv[1], int(sys.argv[2])
+          chunk = b"\0" * (1024 * 1024)
+          with open(path, "wb", buffering=0) as handle:
+              remaining = target
+              while remaining:
+                  written = handle.write(chunk[: min(len(chunk), remaining)])
+                  if written <= 0:
+                      raise SystemExit("bounded tmpfs fill made no progress")
+                  remaining -= written
+              os.fsync(handle.fileno())
+          PY
+          }
+
+          # The margin fill leaves setup headroom for metadata, but a tiny
+          # linker output can still fit in that margin.  Consume the measured
+          # remaining blocks with a bounded second file after every setup step;
+          # commands, objects, logs, and reports stay outside this tmpfs while
+          # the output directory metadata is created before the drain.
+          drain_remaining_blocks() {
+            local fill="$1" available block_size max_blocks drain_rc remaining
+            block_size="$(stat -fc '%S' "$fs_root")"
+            available="$(df --output=avail -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+            test "$block_size" -gt 0
+            test "$available" -ge "$block_size"
+            max_blocks=$((available / block_size + 2))
+            test "$max_blocks" -le 1048576
+            set +e
+            timeout --signal=TERM 30s \
+              dd if=/dev/zero of="$fill" bs="$block_size" count="$max_blocks" status=none
+            drain_rc=$?
+            set -e
+            remaining="$(df --output=avail -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+            case "$drain_rc" in
+              0|1) ;;
+              *) echo "bounded tmpfs drain failed with status $drain_rc" >&2; return 1 ;;
+            esac
+            test "$remaining" -lt "$block_size"
+            printf '%s\n' "$remaining"
+          }
+
+          mkdir -p "$fs_root/out"
+          fill_to_margin "$fs_root/fill.bin"
+          enospc_remaining="$(drain_remaining_blocks "$fs_root/enospc-drain.bin")"
+          set +e
+          CORELINK_CLASSIFICATION_ARTIFACT="$PWD/artifacts/campaign-ci/i1670/enospc-classification.json" \
+            scripts/run-with-infra-classification.sh \
+            dd if=/dev/zero of="$fs_root/write.bin" bs=1M count=1 status=none \
+            >artifacts/campaign-ci/i1670/enospc.log 2>&1
+          enospc_rc=$?
+          set -e
+          test "$enospc_rc" -ne 0
+          grep -Eq '^classification: (ENOSPC|LINKER_FAILURE)$' artifacts/campaign-ci/i1670/enospc.log
+
+          rm -rf "$fs_root"
+          mkdir -p "$fs_root"
+          mkdir -p "$fs_root/out"
+          cat >"$root/main.c" <<'EOF'
+          int main(void) { return 0; }
+          EOF
+          cc -c "$root/main.c" -o "$root/main.o"
+          linker_cmd="$root/linker.sh"
+          cat >"$linker_cmd" <<'EOF'
+          set -e
+          cc "$1" -o "$2"
+          EOF
+          chmod 700 "$linker_cmd"
+          fill_to_margin "$fs_root/fill.bin"
+          linker_remaining="$(drain_remaining_blocks "$fs_root/linker-drain.bin")"
+          set +e
+          CORELINK_CLASSIFICATION_ARTIFACT="$PWD/artifacts/campaign-ci/i1670/linker-classification.json" \
+            scripts/run-with-infra-classification.sh \
+            bash "$linker_cmd" "$root/main.o" "$fs_root/out/linked" \
+            >artifacts/campaign-ci/i1670/linker.log 2>&1
+          linker_rc=$?
+          set -e
+          test "$linker_rc" -ne 0
+          grep -Eq '^classification: (ENOSPC|LINKER_FAILURE)$' artifacts/campaign-ci/i1670/linker.log
+          grep -Eq 'No space left on device|os error 28|ENOSPC|collect2|ld:' artifacts/campaign-ci/i1670/linker.log
+          test -s artifacts/campaign-ci/i1670/enospc-classification.json
+          test -s artifacts/campaign-ci/i1670/linker-classification.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("artifacts/campaign-ci/i1670")
+          for name in ("enospc-classification.json", "linker-classification.json"):
+              classification = json.loads((root / name).read_text())["classification"]
+              if classification not in {"ENOSPC", "LINKER_FAILURE"}:
+                  raise SystemExit(f"unexpected classifier receipt: {classification}")
+          PY
+          SHM_SIZE="$(df --output=size -B1 "$fs_root" | awk 'NR == 2 { print $1 }')" \
+          SHM_BLOCK_SIZE="$(stat -fc '%S' "$fs_root")" \
+          ENOSPC_REMAINING="$enospc_remaining" LINKER_REMAINING="$linker_remaining" \
+          ENOSPC_RC="$enospc_rc" LINKER_RC="$linker_rc" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path("artifacts/campaign-ci/i1670")
+          report = {
+              "schema": "corelink.issue-1670.hosted-classification.v1",
+              "runner": "ubuntu-24.04",
+              "filesystem": "/dev/shm tmpfs",
+              "bounded_filesystem_bytes": int(os.environ["SHM_SIZE"]),
+              "filesystem_block_bytes": int(os.environ["SHM_BLOCK_SIZE"]),
+              "enospc_remaining_bytes": int(os.environ["ENOSPC_REMAINING"]),
+              "linker_remaining_bytes": int(os.environ["LINKER_REMAINING"]),
+              "enospc_exit": int(os.environ["ENOSPC_RC"]),
+              "linker_exit": int(os.environ["LINKER_RC"]),
+              "enospc_classification": json.loads((root / "enospc-classification.json").read_text())["classification"],
+              "linker_classification": json.loads((root / "linker-classification.json").read_text())["classification"],
+              "cleanup": "EXIT trap removes the bounded tmpfs fixture",
+          }
+          (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+          PY
+
+      - name: i1680 credentialless schema and contract checks
+        if: ${{ inputs.suite == 'i1680-schema-contract' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No identity inputs and no opt-in wall-clock probe are accepted in
+          # this lane; it validates only the product PR's parser/schema guard.
+          python3 -m pytest -q tests/test_run_b251_latency_probe.py \
+            2>&1 | tee artifacts/campaign-ci/i1680-schema-contract.log
+          python3 scripts/verify_b251_quota_cas_budget.py \
+            2>&1 | tee -a artifacts/campaign-ci/i1680-schema-contract.log
+          if test -f .github/workflows/b251-d03-read-only-probe.yml; then
+            if rg -n 'K6_|STRIPE|CLOUDFLARE|DATABASE_URL' \
+              .github/workflows/b251-d03-read-only-probe.yml; then
+              echo "forbidden live-target marker in B-251 workflow" >&2
+              exit 1
+            fi
+          fi
+
+      - name: i1792 exact Miniflare workerd epoch test
+        if: ${{ inputs.suite == 'i1792-miniflare-epoch' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --filter @corelink/worker...
+          pnpm --dir worker exec vitest run --config vitest.miniflare.config.mts \
+            tests/keyed_epoch_disposable.miniflare.test.ts \
+            2>&1 | tee artifacts/campaign-ci/i1792-miniflare-epoch.log
 
       - name: i1650 credential-free ignored-harness manifest contract
         if: ${{ inputs.suite == 'i1650-contract' }}
