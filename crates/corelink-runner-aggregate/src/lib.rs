@@ -1154,7 +1154,9 @@ mod tests {
             let expected = full_period_oracle(full_total, terms.allowance_vcpu_seconds, rate);
 
             let mut one_input = base_input(events.clone());
-            one_input.tenant_period_terms.insert(tenant_id, terms.clone());
+            one_input
+                .tenant_period_terms
+                .insert(tenant_id, terms.clone());
             let one = aggregate_runner_usage(&one_input).unwrap();
             assert_eq!(
                 one.shadow_ledger[0].cumulative_shadow_charge_millicents, expected,
@@ -1300,7 +1302,7 @@ mod tests {
         terms.terms_snapshot_digest_hex = terms.expected_snapshot_digest_hex();
         assert!(matches!(
             aggregate_runner_usage(&changed_rate),
-            Err(RunnerAggregateError::InvalidPriorConsumption { .. })
+            Err(RunnerAggregateError::InvalidTenantPeriodTerms { .. })
         ));
 
         let overflow = starter_input_with_prior(

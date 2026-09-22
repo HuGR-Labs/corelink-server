@@ -304,7 +304,8 @@ pub const SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT: &str = "INSERT INTO runners_entitl
 pub const SQL_CAS_DELETE_RUNNERS_ENTITLEMENT: &str = "DELETE FROM runners_entitlement WHERE tenant_id = ? AND EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ? AND authority_key = ?)";
 /// Read back the fence in the same D1 transaction to classify equal-key
 /// retries (idempotent duplicate) versus an older rejected operation.
-pub const SQL_READ_RUNNER_ENTITLEMENT_FENCE: &str = "SELECT authority_key FROM runner_entitlement_reconcile_fence WHERE tenant_id = ?";
+pub const SQL_READ_RUNNER_ENTITLEMENT_FENCE: &str =
+    "SELECT authority_key FROM runner_entitlement_reconcile_fence WHERE tenant_id = ?";
 
 /// Canonical billing-D1 writer trait.
 ///
