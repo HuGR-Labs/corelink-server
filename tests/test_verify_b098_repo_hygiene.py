@@ -200,7 +200,7 @@ class B098VerifierTests(unittest.TestCase):
             "63-character checkpoint": lambda value: value.__setitem__("checkpoint_sha", "a" * 63),
             "older reachable checkpoint": lambda value: value.__setitem__(
                 "checkpoint_sha", subprocess.check_output(
-                    ["git", "rev-parse", "404e17ef1dc7d205da97e65c6dc18f1225452405^"],
+                    ["git", "rev-parse", "1126e25d294ae16e73efa70004642e34f223285d^"],
                     cwd=ROOT, text=True,
                 ).strip(),
             ),
@@ -241,9 +241,9 @@ class B098VerifierTests(unittest.TestCase):
         self.assertTrue(any("census is missing" in issue for issue in issues))
 
         mutations = {
-            "all-zero checkpoint": ("checkpoint_sha: \"404e17ef1dc7d205da97e65c6dc18f1225452405\"", "checkpoint_sha: \"0000000000000000000000000000000000000000\""),
-            "unrelated checkpoint": ("checkpoint_sha: \"404e17ef1dc7d205da97e65c6dc18f1225452405\"", "checkpoint_sha: \"721e536619a487fda15db1a226941b12dc257a8a\""),
-            "future timestamp": ("timestamp: \"2026-09-09T15:13:33Z\"", "timestamp: \"2999-01-01T00:00:00Z\""),
+            "all-zero checkpoint": ("checkpoint_sha: \"1126e25d294ae16e73efa70004642e34f223285d\"", "checkpoint_sha: \"0000000000000000000000000000000000000000\""),
+            "unrelated checkpoint": ("checkpoint_sha: \"1126e25d294ae16e73efa70004642e34f223285d\"", "checkpoint_sha: \"721e536619a487fda15db1a226941b12dc257a8a\""),
+            "future timestamp": ("timestamp: \"2026-09-22T05:05:26Z\"", "timestamp: \"2999-01-01T00:00:00Z\""),
             "provenance mutation": ("provenance: \"AUTHORED\"", "provenance: \"UNTRUSTED\""),
             "object mutation": ("08fa5a6906ce4bd7895e0a75badac671651b2bb9", "0" * 40),
             "allowlist object mutation": ("dfd72d7f31980aa452bfd67628e635a769b3207f", "0" * 40),
@@ -259,7 +259,7 @@ class B098VerifierTests(unittest.TestCase):
         for length in (41, 63):
             with self.subTest(checkpoint_length=length):
                 mutated = baseline.replace(
-                    'checkpoint_sha: "404e17ef1dc7d205da97e65c6dc18f1225452405"',
+                    'checkpoint_sha: "1126e25d294ae16e73efa70004642e34f223285d"',
                     f'checkpoint_sha: "{"a" * length}"',
                     1,
                 )
@@ -268,7 +268,7 @@ class B098VerifierTests(unittest.TestCase):
         receipt_text = (ROOT / "evidence/owner-actions/B-098/release-governance-blocker-2026-09-09.json").read_text()
         for label, replacement in {
             "receipt census checkpoint drift": (
-                'checkpoint_sha: "404e17ef1dc7d205da97e65c6dc18f1225452405"',
+                'checkpoint_sha: "1126e25d294ae16e73efa70004642e34f223285d"',
                 'checkpoint_sha: "' + "a" * 40 + '"',
             ),
             "receipt census capture drift": (
