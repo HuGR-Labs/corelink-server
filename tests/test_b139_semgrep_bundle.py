@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import run_b139_semgrep as bundle_runner  # noqa: E402
-from run_b139_semgrep import OUTPUT_NAMES, run_bundle  # noqa: E402
+from run_b139_semgrep import OUTPUT_NAMES, _canonical_json, run_bundle  # noqa: E402
 from verify_b139_semgrep import (  # noqa: E402
     VerificationError,
     _sarif_counts,
@@ -466,6 +466,97 @@ def test_canonicalization_preserves_semantic_content_mutation(tmp_path: Path) ->
     bundle_runner._canonical_json(first, Path("/src"))
     bundle_runner._canonical_json(second, Path("/src"))
     assert first.read_bytes() != second.read_bytes()
+
+
+def _artifact_sarif(uri: str) -> dict:
+    return {
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {"driver": {"name": "fixture", "rules": [{
+                "id": "fixture.rule",
+                "defaultConfiguration": {"level": "warning"},
+            }]}},
+            "results": [{
+                "ruleId": "fixture.rule",
+                "level": "warning",
+                "locations": [{"physicalLocation": {
+                    "artifactLocation": {"uri": uri},
+                    "region": {"startLine": 7, "endLine": 7},
+                }}],
+            }],
+        }],
+    }
+
+
+def _canonical_artifact(tmp_path: Path, uri: str) -> dict:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    path = repository / "evidence.sarif"
+    path.write_text(json.dumps(_artifact_sarif(uri)), encoding="utf-8")
+    _canonical_json(path, repository, dotted_rule_root=repository)
+    return _load(path)
+
+
+def test_artifact_locations_are_repository_relative_and_semantics_remain(
+    tmp_path: Path,
+) -> None:
+    """Code Scanning receives paths, while rule/level/region fields survive."""
+    # This uses an explicit root in the fixture because the real scanner's
+    # absolute path is canonicalized to the corresponding B139 root label.
+    repository = tmp_path / "fixture-repository"
+    repository.mkdir()
+    data = _artifact_sarif("%B139_ROOT_0%/src/main.rs")
+    path = tmp_path / "fixture-artifact.sarif"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _canonical_json(path, repository, dotted_rule_root=repository)
+    normalized = _load(path)
+    result = normalized["runs"][0]["results"][0]  # type: ignore[index]
+    artifact = result["locations"][0]["physicalLocation"]["artifactLocation"]  # type: ignore[index]
+    assert artifact == {"uri": "src/main.rs"}
+    assert result["ruleId"] == "fixture.rule"  # type: ignore[index]
+    assert result["level"] == "warning"  # type: ignore[index]
+    assert result["locations"][0]["physicalLocation"]["region"] == {  # type: ignore[index]
+        "startLine": 7,
+        "endLine": 7,
+    }
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "%B139_ROOT_99%/src/main.rs",
+        "%B139_ROOT_%/src/main.rs",
+        "%B139_ROOT_0%/../outside.rs",
+        "/private/etc/passwd",
+        "file:///private/etc/passwd",
+    ],
+)
+def test_artifact_location_unresolvable_roots_fail_closed(tmp_path: Path, uri: str) -> None:
+    with pytest.raises(VerificationError, match="artifactLocation"):
+        _canonical_artifact(tmp_path, uri)
+
+
+def test_srcroot_base_id_is_removed_after_uri_normalization(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    path = repository / "evidence.sarif"
+    data = _artifact_sarif("%B139_ROOT_0%/src/main.rs")
+    data["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uriBaseId"] = "%SRCROOT%"  # type: ignore[index]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _canonical_json(path, repository)
+    artifact = _load(path)["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]  # type: ignore[index]
+    assert artifact == {"uri": "src/main.rs"}
+
+
+def test_unresolved_uri_base_fails_closed(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    path = repository / "evidence.sarif"
+    data = _artifact_sarif("%B139_ROOT_0%/src/main.rs")
+    data["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uriBaseId"] = "%B139_ROOT_99%"  # type: ignore[index]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(VerificationError, match="URI base"):
+        _canonical_json(path, repository)
 
 
 def _write_sarif(
