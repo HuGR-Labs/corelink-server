@@ -10,10 +10,10 @@
     "status": "PASS",
     "rust_packages": 95,
     "crate_directories": 75,
-    "okf_concepts": 170,
-    "specs_full_schema": 481,
+    "okf_concepts": 171,
+    "specs_full_schema": 485,
     "specs_yaml_only": 11,
-    "specs_total": 492,
+    "specs_total": 496,
     "lint_policy": "workspace-inherited"
   },
   "release_state": {
