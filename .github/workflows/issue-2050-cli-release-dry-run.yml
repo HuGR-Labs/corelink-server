@@ -1,6 +1,6 @@
 name: issue-2050-cli-release-dry-run
 
-on:
+"on":
   pull_request:
     paths:
       - ".github/workflows/issue-2050-cli-release-dry-run.yml"
