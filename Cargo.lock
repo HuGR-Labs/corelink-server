@@ -1027,7 +1027,7 @@ dependencies = [
 
 [[package]]
 name = "chaos-campaign"
-version = "0.1.0"
+version = "0.1.2"
 
 [[package]]
 name = "chrono"
@@ -1198,7 +1198,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "corelink-ac"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "corelink-audit",
@@ -1222,7 +1222,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-adapter-host"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum",
@@ -1260,7 +1260,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-adapters-cloud"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-cf-bindings",
  "corelink-clerk-cf",
@@ -1271,14 +1271,14 @@ dependencies = [
 
 [[package]]
 name = "corelink-adapters-vault"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-byok",
 ]
 
 [[package]]
 name = "corelink-analytics"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-eviction",
  "proptest",
@@ -1288,7 +1288,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-audit"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-analytics",
  "corelink-audit-chain",
@@ -1307,7 +1307,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-audit-chain"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "base64",
  "blake3",
@@ -1342,7 +1342,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-auth"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "argon2",
  "base64",
@@ -1368,7 +1368,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-bazel-bridge"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-handler-ac",
  "corelink-handler-cas",
@@ -1383,7 +1383,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-billing"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-billing-aggregator",
  "corelink-billing-emit",
@@ -1407,7 +1407,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-billing-aggregator"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "corelink-analytics",
@@ -1425,7 +1425,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-billing-emit"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "corelink-analytics",
@@ -1442,7 +1442,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-billing-reconcile"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-billing-aggregator",
  "corelink-billing-emit",
@@ -1458,7 +1458,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-billing-stripe"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "corelink-analytics",
@@ -1480,7 +1480,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-billing-stripe-materializer"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "corelink-audit-chain",
@@ -1501,7 +1501,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-billing-stripe-traits"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "hex",
@@ -1511,7 +1511,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-byok"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -1542,7 +1542,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-cas"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "corelink-ac",
@@ -1569,7 +1569,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-cf-bindings"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "corelink-cas",
@@ -1588,14 +1588,14 @@ dependencies = [
 
 [[package]]
 name = "corelink-chaos-scheduler"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
 name = "corelink-clerk"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "base64",
  "corelink-clerk",
@@ -1620,7 +1620,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-clerk-cf"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-audit-chain",
  "corelink-billing-stripe-materializer",
@@ -1645,7 +1645,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-cli"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1684,7 +1684,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-client-verify"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "bytes",
@@ -1703,7 +1703,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-config-do"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "hex",
@@ -1720,7 +1720,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-core"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "secrecy",
  "serde",
@@ -1732,7 +1732,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-crypto"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-client-verify",
  "corelink-erasure-attestation",
@@ -1744,7 +1744,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-dpa-acceptance"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "base64",
  "criterion",
@@ -1763,7 +1763,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-dsr"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "proptest",
  "rand 0.9.4",
@@ -1776,7 +1776,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-dsr-statuspage-scheduler"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-cf-bindings",
  "corelink-ops",
@@ -1795,7 +1795,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-dt-cli"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-dt-webhook",
  "serde",
@@ -1808,7 +1808,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-dt-reconcile"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-dt-webhook",
  "serde",
@@ -1821,7 +1821,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-dt-webhook"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "hex",
@@ -1839,7 +1839,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-dual-approval"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "hex",
  "hmac 0.13.0",
@@ -1857,7 +1857,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-enterprise-inquiry"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "base64",
  "blake3",
@@ -1869,7 +1869,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-erasure-attestation"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "base64",
  "ed25519-dalek 3.0.0",
@@ -1888,7 +1888,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-eviction"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "proptest",
  "thiserror",
@@ -1897,7 +1897,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-failover-router"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-replica-worker",
  "proptest",
@@ -1907,7 +1907,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-gc"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "proptest",
  "rand 0.9.4",
@@ -1918,7 +1918,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-go"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-client-verify",
  "tracing",
@@ -1926,7 +1926,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-handler-ac"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-slo",
  "proptest",
@@ -1935,7 +1935,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-handler-admin"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-slo",
  "proptest",
@@ -1944,7 +1944,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-handler-cas"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-slo",
  "hex",
@@ -1956,7 +1956,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-handler-cas-erase"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "proptest",
  "thiserror",
@@ -1964,7 +1964,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-handler-customer"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-slo",
  "thiserror",
@@ -1973,7 +1973,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-hash"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "bytes",
@@ -1987,7 +1987,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-meta"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-hash",
  "futures",
@@ -2000,7 +2000,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-openapi"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -2008,7 +2008,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-ops"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2055,7 +2055,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-pat"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "argon2",
  "base64",
@@ -2076,7 +2076,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-privacy"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-dpa-acceptance",
  "corelink-dsr",
@@ -2099,7 +2099,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-privacy-erasure-worker"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "corelink-dsr",
@@ -2119,7 +2119,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-privacy-pseudonymize"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "hex",
  "proptest",
@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-py"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-client-verify",
  "pyo3",
@@ -2141,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-r2-multipart"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "corelink-tenant-path",
@@ -2157,7 +2157,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-rate-headers"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "proptest",
  "thiserror",
@@ -2166,7 +2166,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-ratelimit"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-eviction",
  "proptest",
@@ -2176,7 +2176,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-reapi"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum",
@@ -2217,7 +2217,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-region"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-slo",
  "proptest",
@@ -2231,7 +2231,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-replica-worker"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-slo",
  "proptest",
@@ -2241,7 +2241,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-replication"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-failover-router",
  "corelink-region",
@@ -2257,7 +2257,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-replication-coordinator"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-failover-router",
  "corelink-replica-worker",
@@ -2268,7 +2268,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-rotation-adapters"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "proptest",
  "rand 0.9.4",
@@ -2279,7 +2279,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-runbook-tracker"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "proptest",
  "serde",
@@ -2290,7 +2290,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-runner-aggregate"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "corelink-billing-aggregator",
@@ -2305,11 +2305,11 @@ dependencies = [
 
 [[package]]
 name = "corelink-runner-overage"
-version = "0.1.0"
+version = "0.1.2"
 
 [[package]]
 name = "corelink-server"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2387,7 +2387,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-signup"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "criterion",
  "proptest",
@@ -2396,7 +2396,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-slack-real"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-enterprise-inquiry",
  "proptest",
@@ -2412,7 +2412,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-slo"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "proptest",
  "rand 0.9.4",
@@ -2422,7 +2422,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-statuspage-real"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-privacy-erasure-worker",
  "js-sys",
@@ -2440,7 +2440,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-stripe-real"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "corelink-billing-stripe-traits",
@@ -2464,7 +2464,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-telemetry"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-analytics",
  "corelink-slo",
@@ -2482,7 +2482,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-tenant-path"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "base64",
  "criterion",
@@ -2497,7 +2497,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-terraform-drift-consumer"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "proptest",
  "serde",
@@ -2508,7 +2508,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-tier-selection"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "criterion",
  "hex",
@@ -2521,7 +2521,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-tracing"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-analytics",
  "proptest",
@@ -2534,7 +2534,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-transparency-log"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64",
@@ -2550,7 +2550,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-turbo-bridge"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -2559,7 +2559,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-wasm"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-client-verify",
  "getrandom 0.3.4",
@@ -2575,7 +2575,7 @@ dependencies = [
 
 [[package]]
 name = "corelink-worker"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "argon2",
  "async-trait",
@@ -3005,7 +3005,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "e2e-billing-flow"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-billing-stripe",
  "corelink-dsr",
@@ -3019,7 +3019,7 @@ dependencies = [
 
 [[package]]
 name = "e2e-byok-revoke"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "corelink-byok",
@@ -3032,7 +3032,7 @@ dependencies = [
 
 [[package]]
 name = "e2e-chaos"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-chaos-scheduler",
  "proptest",
@@ -3040,7 +3040,7 @@ dependencies = [
 
 [[package]]
 name = "e2e-dsr"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "corelink-dsr",
@@ -3054,7 +3054,7 @@ dependencies = [
 
 [[package]]
 name = "e2e-failover-router"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-failover-router",
  "corelink-replica-worker",
@@ -3063,7 +3063,7 @@ dependencies = [
 
 [[package]]
 name = "e2e-pilot-onboarding"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "hex",
@@ -3074,7 +3074,7 @@ dependencies = [
 
 [[package]]
 name = "e2e-replication-failover"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-replica-worker",
  "corelink-replication-coordinator",
@@ -3083,7 +3083,7 @@ dependencies = [
 
 [[package]]
 name = "e2e-resilience"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "corelink-rate-headers",
  "corelink-ratelimit",
@@ -3093,7 +3093,7 @@ dependencies = [
 
 [[package]]
 name = "e2e-signup-flow"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "bytes",
@@ -3113,7 +3113,7 @@ dependencies = [
 
 [[package]]
 name = "e2e-tenant-isolation"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "corelink-audit",
@@ -3129,7 +3129,7 @@ dependencies = [
 
 [[package]]
 name = "e2e-user-journeys"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "hex",
@@ -4267,7 +4267,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
 name = "migrate-single-to-multi-region"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "corelink-region",
@@ -5507,7 +5507,7 @@ dependencies = [
 
 [[package]]
 name = "sbom-publish"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "clap",
