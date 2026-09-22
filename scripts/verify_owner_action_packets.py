@@ -41,7 +41,7 @@ EXPECTED_IDS = (
 # the other ten legacy rows remain owner-controlled until their actions are
 # evidenced and reclassified.
 LEGACY_OWNER_IDS = frozenset(EXPECTED_IDS[:12]) - {"B-013", "B-110"}
-CLOSED_PACKET_IDS = frozenset({"B-013", "B-110", "B-165"})
+CLOSED_PACKET_IDS = frozenset({"B-012", "B-013", "B-110", "B-165"})
 B089_SURFACES = (
     "legal/sla/v1.0.0.md",
     "apps/docs/src/pages/legal/terms.tsx",
@@ -1114,10 +1114,10 @@ def _check_item(
     canonical_owner, canonical_status = backlog_contracts[expected_id]
     expected_owner = "owner" if expected_id in LEGACY_OWNER_IDS else "tl"
     allowed_statuses = {"open", "parked"}
-    # B-013 closes on its owner-authorized redacted deletion record, while
-    # B-110 closes after the owner selects the already-provisioned CoreLink
-    # Linux substrate and the four workflow migrations are evidenced. Other
-    # legacy owner items remain external-action pending by contract.
+    # B-012 closes on its verified hosted DCO/rustfmt receipt; B-013 closes on
+    # its owner-authorized redacted deletion record; B-110 closes after the
+    # owner selects the already-provisioned CoreLink Linux substrate and the
+    # four workflow migrations are evidenced. Other legacy owner items remain pending.
     if expected_id in CLOSED_PACKET_IDS:
         allowed_statuses.add("done")
     if canonical_owner != expected_owner or canonical_status not in allowed_statuses:
@@ -1185,9 +1185,9 @@ def _check_item(
         required_by_step = (
             ("GitHub App", "contents:write", "pull_requests:write", "repository-scoped"),
             ("CORELINK_BOT_APP_ID", "CORELINK_BOT_APP_PRIVATE_KEY", "--body-stdin", "five creators"),
-            ("startup_failure", "online runner labelled corelink", "hosted-billing"),
+            ("startup_failure", "online runner labelled corelink", "hosted-billing", "ubuntu-latest"),
             ("approval-required", "GITHUB_TOKEN", "Dependabot"),
-            ("job URLs", "zero-job run"),
+            ("job_urls", "job_count", "zero-job run", "dco-check", "rustfmt"),
         )
         for index, required in enumerate(required_by_step):
             if any(marker not in procedure[index] for marker in required):
@@ -1198,9 +1198,19 @@ def _check_item(
             raise PacketError("B-012 bot-PR and runner-census credential scopes were conflated")
         schema = evidence["item_schema"]
         assert isinstance(schema, str)
-        if not all(marker in schema for marker in ("approval_state", "job_count", "job_urls", "runner_names")):
+        if not all(
+            marker in schema
+            for marker in (
+                "run_id", "workflow", "url", "approval_state", "job_count", "job_urls",
+                "runner_names", "runner_group", "runner_labels", "ubuntu-latest",
+                "conclusion", "started_at", "completed_at",
+            )
+        ):
             raise PacketError("B-012 evidence no longer requires job-level execution")
-        if "actual jobs completed" not in item["expected_postcondition"]:
+        if not all(
+            marker in item["expected_postcondition"]
+            for marker in ("actual jobs completed", "no approval pending", "DCO", "rustfmt")
+        ):
             raise PacketError("B-012 closure no longer requires completed jobs")
     if expected_id == "B-110":
         _check_b110_evidence(item)

@@ -10,9 +10,16 @@ on:
       - .github/workflows/release-notes.yml
       - .github/workflows/subprocessors-sync.yml
       - .github/workflows/issue-1642-b012-contract.yml
+      - BACKLOG.md
       - docs/internal/b012-github-app.md
+      - docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+      - evidence/owner-actions/B-012/**
+      - scripts/verify_owner_action_packets.py
+      - scripts/verify_b012_bot_pr_evidence.py
       - scripts/verify_bot_pr_auth.py
+      - tests/test_b012_bot_pr_evidence.py
       - tests/test_b012_bot_pr_auth.py
+      - tests/test_owner_action_packets.py
 
 permissions:
   contents: read
@@ -35,5 +42,11 @@ jobs:
       - name: Verify bot PR credential and fork-safety contract
         run: python3 -S scripts/verify_bot_pr_auth.py
 
+      - name: Verify B-012 hosted proof and canonical owner packet
+        run: |
+          set -euo pipefail
+          python3 -S scripts/verify_b012_bot_pr_evidence.py
+          python3 -S scripts/verify_owner_action_packets.py --id B-012
+
       - name: Run B-012 regression tests
-        run: python3 -S -m unittest -v tests/test_b012_bot_pr_auth.py
+        run: python3 -S -m unittest -v tests/test_b012_bot_pr_auth.py tests/test_b012_bot_pr_evidence.py tests/test_owner_action_packets.py
