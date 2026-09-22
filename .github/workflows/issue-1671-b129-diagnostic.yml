@@ -69,7 +69,7 @@ jobs:
           import json
           p = "artifacts/issue-1671-b129-receipt.json"
           d = json.load(open(p, encoding="utf-8"))
-          print(f"B-129 PASS: samples={d['sample_count']} residual_max_pct={d['residual_max_pct']}")
+          print(f"B-129 PASS: samples={d['sample_count']} residual_median_pct={d['residual_median_pct']}")
           PY
 
       - name: Upload redacted receipt

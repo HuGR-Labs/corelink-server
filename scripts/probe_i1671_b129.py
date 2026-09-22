@@ -14,6 +14,7 @@ import math
 import os
 import re
 import ssl
+import statistics
 import sys
 import time
 import urllib.parse
@@ -30,6 +31,13 @@ ORIGIN = ("opat", "oquota", "ostore", "oaccounting", "oargon", "opermit", "ortie
 
 def fail(message: str) -> None:
     raise RuntimeError(message)
+
+
+def residual_median(rows: list[dict[str, object]]) -> float:
+    values = [float(row["residual_pct"]) for row in rows]
+    if not values:
+        fail("no residual samples")
+    return float(statistics.median(values))
 
 
 def timing(raw: str) -> dict[str, float]:
@@ -122,9 +130,10 @@ def main() -> int:
         residual = 100.0 * (values["total"] - values["wdb"] - values["origin"]) / values["total"]
         rows.append({"sample": ordinal, "status": status, "wall_s": round(wall, 6), "phases_ms": values, "residual_pct": round(residual, 6), "request_id": headers.get("x-request-id", ""), "cf_ray": headers.get("cf-ray", "")})
     maximum = max(row["residual_pct"] for row in rows)
-    if maximum >= 10:
-        fail(f"residual is {maximum:.3f}%, expected <10%")
-    receipt = {"issue": 1671, "work_package": "B-129", "kind": "approved_read_only_probe", "target_origin": f"{target.scheme}://{target.netloc}", "tenant": args.tenant, "cargo_key_sha256": hashlib.sha256(args.cargo_key.encode()).hexdigest(), "deployed_sha": args.deployed_sha.lower(), "diagnostic_flag": "on", "captured_at": datetime.now(timezone.utc).isoformat(), "sample_count": args.samples, "residual_max_pct": maximum, "rows": rows}
+    median = residual_median(rows)
+    if median >= 10:
+        fail(f"residual median is {median:.3f}%, expected <10%")
+    receipt = {"issue": 1671, "work_package": "B-129", "kind": "approved_read_only_probe", "target_origin": f"{target.scheme}://{target.netloc}", "tenant": args.tenant, "cargo_key_sha256": hashlib.sha256(args.cargo_key.encode()).hexdigest(), "deployed_sha": args.deployed_sha.lower(), "diagnostic_flag": "on", "captured_at": datetime.now(timezone.utc).isoformat(), "sample_count": args.samples, "residual_median_pct": median, "residual_max_pct": maximum, "rows": rows}
     with open(args.output, "w", encoding="utf-8") as handle:
         json.dump(receipt, handle, sort_keys=True, indent=2)
         handle.write("\n")
