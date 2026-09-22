@@ -1,0 +1,78 @@
+name: issue-1658 B-102 hot cargo PUT latency
+
+# Manual, staging-only lane. It performs ten serial 1 KiB PUTs and a bounded
+# concurrency control, cleans every map key, and never targets production.
+on:
+  workflow_dispatch:
+    inputs:
+      tenant:
+        description: "Owner-approved staging tenant UUID"
+        required: true
+        type: string
+      confirm:
+        description: 'Type exactly "run-1658-b102-staging" to authorize the bounded write lane'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1658-b102-cargo-put-staging
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    if: github.repository == 'HuGR/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 10
+    steps:
+      - name: Checkout without a credential helper
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Require the protected staging write contract
+        env:
+          TENANT: ${{ inputs.tenant }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REPOSITORY" = HuGR/corelink-server
+          test "$GITHUB_REF" = refs/heads/main
+          test "$CONFIRM" = run-1658-b102-staging
+          python3 - "$TENANT" <<'PY'
+          import re, sys
+          value = sys.argv[1]
+          if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", value):
+              raise SystemExit("tenant must be a lowercase UUID v4")
+          PY
+
+      - name: Run bounded hot PUT probe
+        env:
+          B102_TARGET_HOST: https://staging.corelink.humangr.com
+          B102_TENANT_ID: ${{ inputs.tenant }}
+          B102_PAT: ${{ secrets.CORELINK_B102_STAGING_PAT }}
+        run: |
+          set +e
+          mkdir -p artifacts
+          python3 scripts/probe_i1658_cargo_put_latency.py \
+            --output artifacts/issue-1658-b102-staging.json
+          status=$?
+          sha256sum artifacts/issue-1658-b102-staging.json \
+            > artifacts/issue-1658-b102-staging.json.sha256
+          exit "$status"
+
+      - name: Upload redacted B-102 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-1658-b102-staging-${{ github.run_id }}
+          path: |
+            artifacts/issue-1658-b102-staging.json
+            artifacts/issue-1658-b102-staging.json.sha256
+          if-no-files-found: error
+          retention-days: 30
