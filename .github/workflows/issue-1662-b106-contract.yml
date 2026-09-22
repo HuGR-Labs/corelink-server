@@ -1,0 +1,33 @@
+name: issue-1662 B-106 static contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-1662-b106-cold-warm.yml"
+      - ".github/workflows/issue-1662-b106-contract.yml"
+      - "scripts/probe_i1662_b106.py"
+      - "scripts/verify_i1662_b106_contract.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/issue-1662-b106-cold-warm.yml"
+      - ".github/workflows/issue-1662-b106-contract.yml"
+      - "scripts/probe_i1662_b106.py"
+      - "scripts/verify_i1662_b106_contract.py"
+
+permissions:
+  contents: read
+
+jobs:
+  static-contract:
+    name: B-106 credentialless static contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify B-106 lane contract
+        run: python3 -S scripts/verify_i1662_b106_contract.py

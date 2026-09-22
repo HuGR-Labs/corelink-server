@@ -1,0 +1,85 @@
+name: issue 1655 B-089 SLA credit contract
+
+# Credentialless repository evidence only. This lane never contacts Stripe,
+# Cloudflare, or a customer system and cannot issue a credit or apply a
+# migration. A green run proves the source contract is present; it does not
+# prove provider behavior or a live invoice.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/issue-1655-b089-contract.yml
+      - apps/signup-worker/src/webhooks/sla_credit_cron.ts
+      - apps/signup-worker/tests/sla_credit_cron.test.ts
+      - apps/signup-worker/wrangler.toml
+      - legal/sla/v1.0.0.md
+      - migrations/d1/0117_sla_credit_ledger.sql
+      - scripts/verify_b089_sla_credits.py
+      - evidence/i1655/sla-credit-contract-manifest.json
+      - docs/operator/issue-1655-sla-credit-evidence.md
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/issue-1655-b089-contract.yml
+      - apps/signup-worker/src/webhooks/sla_credit_cron.ts
+      - apps/signup-worker/tests/sla_credit_cron.test.ts
+      - apps/signup-worker/wrangler.toml
+      - legal/sla/v1.0.0.md
+      - migrations/d1/0117_sla_credit_ledger.sql
+      - scripts/verify_b089_sla_credits.py
+      - evidence/i1655/sla-credit-contract-manifest.json
+      - docs/operator/issue-1655-sla-credit-evidence.md
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1655-b089-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: B-089 credentialless focused contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact tree without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run fail-closed repository contract guard
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/issue-1655
+          python3 -S scripts/verify_b089_sla_credits.py --json \
+            > artifacts/issue-1655/repository-contract.json
+
+      - name: Check evidence manifest boundaries
+        run: |
+          set -euo pipefail
+          python3 -S - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("evidence/i1655/sla-credit-contract-manifest.json").read_text())
+          assert manifest["issue"] == 1655
+          assert manifest["credentialless"] is True
+          assert manifest["network_calls"] is False
+          assert manifest["mutating_actions"] is False
+          assert manifest["status"] == "repository_contract_ready_external_receipt_pending"
+          assert len(manifest["external_receipts_required"]) == 4
+          assert all(item["credential_required"] is True for item in manifest["external_receipts_required"])
+          assert manifest["contract_decisions_pending"]
+          assert manifest["prohibited"]
+          print("B-089 manifest boundary check: PASS")
+          PY
+
+      - name: Upload bounded repository receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-1655-b089-contract-${{ github.run_id }}
+          path: artifacts/issue-1655/repository-contract.json
+          if-no-files-found: error
+          retention-days: 30

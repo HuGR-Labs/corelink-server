@@ -521,7 +521,7 @@ pub mod otel_layer;
 /// Router assembly (B-126): the 649-line `build_with_factory` that composes
 /// every surface, moved out so this file keeps one job — declaring the tree.
 pub mod build;
-pub use build::build_with_factory;
+pub use build::{build_with_factory, build_with_factory_and_byok};
 
 #[cfg(test)]
 #[allow(

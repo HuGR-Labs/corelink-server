@@ -69,11 +69,37 @@ def validate_workflow(text: str) -> None:
         "actions/upload-artifact@",
         "name: sbom-cdx-json",
         "path: sbom.cdx.json",
-        "./cyclonedx-cli validate",
-        "--input-file sbom.cdx.json",
     ):
         if needle not in joined:
             raise RuntimeError(f"active SBOM wiring missing: {needle}")
+    validate_starts = [
+        index for index, line in enumerate(lines)
+        if line.strip() == "./cyclonedx-cli validate \\"
+    ]
+    if len(validate_starts) != 1:
+        raise RuntimeError("active SBOM wiring must contain exactly one CycloneDX validate invocation")
+    validate_lines = [lines[validate_starts[0]].strip()]
+    while validate_lines[-1].endswith("\\"):
+        next_index = validate_starts[0] + len(validate_lines)
+        if next_index >= len(lines):
+            raise RuntimeError("CycloneDX validate invocation has a dangling continuation")
+        validate_lines.append(lines[next_index].strip())
+    validate_command = " ".join(validate_lines)
+    for needle in (
+        "./cyclonedx-cli validate",
+        "--input-file sbom.cdx.json",
+        "--input-format json",
+        "--input-version v1_5",
+        "--fail-on-errors",
+    ):
+        if needle not in validate_command:
+            raise RuntimeError(f"strict CycloneDX validate invocation missing: {needle}")
+    # CycloneDX CLI 0.27.2 validates a BOM with an explicit input format and
+    # schema version. These flags belonged to a different/older command
+    # contract and must never silently return to the release gate.
+    for unsupported in ("--minimum-required-fields", "--output-format text"):
+        if unsupported in validate_command:
+            raise RuntimeError(f"unsupported CycloneDX validate flag is active: {unsupported}")
 
 
 def self_test() -> None:
@@ -91,6 +117,8 @@ def self_test() -> None:
         ("trigger comment bait", workflow.replace("  release:\n", "  # release:\n", 1)),
         ("verify step comment bait", workflow.replace("          \"$SBOM_PYTHON\" tests/verify_rust_sbom.py --check", "          # \"$SBOM_PYTHON\" tests/verify_rust_sbom.py --check", 1)),
         ("dead SBOM job", workflow.replace("  sbom-generate:\n", "  sbom-generate:\n    if: false\n", 1)),
+        ("legacy CycloneDX minimum-fields flag", workflow.replace("            --input-format json \\\n", "            --minimum-required-fields ntia \\\n", 1)),
+        ("legacy CycloneDX output-format flag", workflow.replace("            --fail-on-errors\n", "            --output-format text\n", 1)),
     ):
         try: validate_workflow(mutation)
         except RuntimeError: pass

@@ -38,6 +38,7 @@
 // - **Deferred to Wave 4 (documented, never silently skipped):**
 //   - The `partial`/backfill dual-read state (audit H7) — fail-closed here
 //     (Wave 4).
+//   - Migration of pre-existing plaintext objects after a tenant becomes active.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -61,6 +62,9 @@ use crate::customer_d1::{
     TenantByokConfig,
 };
 use crate::storage::d1_http::D1HttpClient;
+use crate::storage::byok_generation_catalog::{
+    runtime_gate_after_rollout_probe, ByokDataGuard, ByokRuntimeGate,
+};
 
 /// The CAS surface tag bound into the convergent [`CryptoContext`] — domain
 /// separation from other cache surfaces (e.g. the AC surface, [`AC_SURFACE`]).
@@ -109,6 +113,222 @@ pub const BYOK_TCS_TTL_SECONDS: u64 = 300;
 
 /// Memory bound for the in-process per-tenant caches (mirrors `DekCache`).
 const MAX_CACHE_ENTRIES: usize = 10_000;
+
+/// The one BYOK collaborator set for a native data-plane process.
+///
+/// Router assembly creates this value once and hands clones to the CAS and AC
+/// storage handlers and to both byte-accounting decorators.  Keeping the
+/// config cache here is deliberate: a config transition must be observed
+/// consistently by the encryption decision and by the reservation size for
+/// the same physical object.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct DataPlaneByok {
+    config_cache: Arc<ByokConfigCache>,
+    tcs_resolver: Arc<TcsResolver>,
+    mode_b: Arc<ModeBEncryptor>,
+    /// The one transition gate which mints operation pins for both accounting
+    /// and storage. `None` is only permitted for an explicitly plaintext
+    /// rollout; a private write refuses to proceed without a pin.
+    runtime_gate: Option<Arc<dyn ByokRuntimeGate>>,
+}
+
+impl DataPlaneByok {
+    /// Assemble an explicit collaborator set.  This is primarily the
+    /// test/integration seam; production uses [`Self::from_env`].
+    #[must_use]
+    pub fn new(
+        config_cache: Arc<ByokConfigCache>,
+        tcs_resolver: Arc<TcsResolver>,
+        mode_b: Arc<ModeBEncryptor>,
+    ) -> Self {
+        Self {
+            config_cache,
+            tcs_resolver,
+            mode_b,
+            runtime_gate: None,
+        }
+    }
+
+    /// Attach the process's sole data-plane transition gate.
+    #[must_use]
+    pub fn with_runtime_gate(mut self, runtime_gate: Arc<dyn ByokRuntimeGate>) -> Self {
+        self.runtime_gate = Some(runtime_gate);
+        self
+    }
+
+    /// Build the production collaborator set once at boot.
+    ///
+    /// A binary with no compiled real provider has no BYOK data plane and
+    /// returns `Ok(None)`.  A real-provider binary with durable storage must
+    /// construct every collaborator or refuse boot; it never mounts a second
+    /// cache or silently leaves encryption half-wired. This constructor does
+    /// not migrate legacy plaintext objects: `partial` remains fail-closed and
+    /// the existing Mode-B reconciliation-intent path remains the recovery
+    /// authority for an ambiguous R2/D1 commit.
+    pub async fn from_env() -> Result<Option<Self>, String> {
+        if crate::byok_orchestrator::active_provider()
+            == crate::byok_orchestrator::ActiveProvider::Unavailable
+        {
+            return Ok(None);
+        }
+        let Some(env) = crate::storage::StorageEnv::from_env() else {
+            return Ok(None);
+        };
+        let provider = crate::byok_orchestrator::make_provider()
+            .await
+            .map_err(|error| format!("BYOK provider init failed: {error}"))?;
+        let d1 = Arc::new(
+            D1HttpClient::new(&env)
+                .map_err(|error| format!("BYOK D1 client init failed: {error}"))?,
+        );
+        let runtime_gate = runtime_gate_after_rollout_probe(Arc::clone(&d1))
+            .await
+            .map_err(|error| format!("BYOK runtime gate init failed: {error}"))?;
+        let config_source: Arc<dyn ByokConfigSource> =
+            Arc::new(D1ByokConfigReader::new(Arc::clone(&d1)));
+        let secret_source: Arc<dyn ByokSecretSource> =
+            Arc::new(D1ByokSecretReader::new(Arc::clone(&d1)));
+        let envelope_store: Arc<dyn ByokEnvelopeStore> =
+            Arc::new(D1ByokEnvelopeStore::new(d1));
+        let config_cache = Arc::new(ByokConfigCache::with_default_ttl(config_source));
+        let tcs_resolver = Arc::new(
+            TcsResolver::with_default_ttl(secret_source, Arc::clone(&provider))
+                .map_err(|error| format!("BYOK Tcs resolver init failed: {error}"))?,
+        );
+        let mode_b = Arc::new(
+            ModeBEncryptor::with_default_ttl(provider, envelope_store)
+                .map_err(|error| format!("BYOK Mode-B init failed: {error}"))?,
+        );
+        let data_plane = Self::new(config_cache, tcs_resolver, mode_b);
+        Ok(Some(match runtime_gate {
+            Some(runtime_gate) => data_plane.with_runtime_gate(runtime_gate),
+            None => data_plane,
+        }))
+    }
+
+    /// The authoritative per-tenant config cache shared by storage and accounting.
+    #[must_use]
+    pub fn config_cache(&self) -> Arc<ByokConfigCache> {
+        Arc::clone(&self.config_cache)
+    }
+
+    /// The process-wide Tcs resolver for Mode A.
+    #[must_use]
+    pub fn tcs_resolver(&self) -> Arc<TcsResolver> {
+        Arc::clone(&self.tcs_resolver)
+    }
+
+    /// The process-wide envelope encryptor for Mode B.
+    #[must_use]
+    pub fn mode_b(&self) -> Arc<ModeBEncryptor> {
+        Arc::clone(&self.mode_b)
+    }
+
+    /// The shared transition gate used by storage and operation-pinned
+    /// accounting. The returned Arc is a clone of one process-owned authority.
+    #[must_use]
+    pub fn runtime_gate(&self) -> Option<Arc<dyn ByokRuntimeGate>> {
+        self.runtime_gate.as_ref().map(Arc::clone)
+    }
+
+    /// Freeze one private-write configuration and transition capability before
+    /// accounting reserves bytes. The resulting pin is consumed by the inner
+    /// R2 handler, so reservation, encryption, CMK/config version, and physical
+    /// overhead all derive from one authoritative operation snapshot.
+    pub fn pin_write(
+        &self,
+        tenant: &str,
+        plaintext_len: i64,
+    ) -> Result<Option<Arc<ByokOperationPin>>, String> {
+        if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
+            return Ok(None);
+        }
+        let gate = self.runtime_gate().ok_or_else(|| {
+            "BYOK runtime gate unavailable; refusing private write without an operation pin"
+                .to_owned()
+        })?;
+        let handle = tokio::runtime::Handle::current();
+        let guard = tokio::task::block_in_place(|| {
+            handle.block_on(ByokDataGuard::acquire(
+                gate,
+                tenant,
+                crate::byok_transition_fence::DataOperation::Write,
+            ))
+        })?;
+        ByokOperationPin::new(tenant, plaintext_len, guard).map(|pin| Some(Arc::new(pin)))
+    }
+}
+
+/// One non-cloneable BYOK data authority carried from an accounting decorator
+/// into the concrete R2 mutation. It is scoped to an individual request and is
+/// never stored in a process-global registry.
+#[derive(Debug)]
+pub struct ByokOperationPin {
+    tenant: String,
+    committed_len: i64,
+    guard: Mutex<Option<ByokDataGuard>>,
+}
+
+impl ByokOperationPin {
+    fn new(tenant: &str, plaintext_len: i64, guard: ByokDataGuard) -> Result<Self, String> {
+        let config = guard.intent()?.config.clone();
+        let committed_len = committed_len_for_config(config.as_ref(), plaintext_len)?;
+        Ok(Self {
+            tenant: tenant.to_owned(),
+            committed_len,
+            guard: Mutex::new(Some(guard)),
+        })
+    }
+
+    /// Exact stored byte count derived from this pin's immutable config.
+    #[must_use]
+    pub const fn committed_len(&self) -> i64 {
+        self.committed_len
+    }
+
+    /// Consume the guard only for its original tenant. A context cannot be
+    /// replayed into another tenant's storage operation.
+    pub(crate) fn take_guard(&self, tenant: &str) -> Result<ByokDataGuard, String> {
+        if self.tenant != tenant {
+            return Err("BYOK operation pin tenant mismatch".to_owned());
+        }
+        lock(&self.guard)
+            .take()
+            .ok_or_else(|| "BYOK operation pin was already consumed".to_owned())
+    }
+}
+
+impl corelink_handler_cas::CasWriteOperationContext for ByokOperationPin {
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
+}
+
+impl corelink_handler_ac::AcUpdateOperationContext for ByokOperationPin {
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
+}
+
+fn committed_len_for_config(
+    config: Option<&TenantByokConfig>,
+    plaintext_len: i64,
+) -> Result<i64, String> {
+    let Some(config) = config else {
+        return Ok(plaintext_len);
+    };
+    match engagement_for(config) {
+        ByokEngagement::Plaintext => Ok(plaintext_len),
+        ByokEngagement::Encrypt(ByokCryptoMode::Convergent) => Ok(plaintext_len
+            .saturating_add(i64::try_from(BYOK_CLB1_OVERHEAD).unwrap_or(i64::MAX))),
+        ByokEngagement::Encrypt(ByokCryptoMode::Random) => Ok(plaintext_len
+            .saturating_add(i64::try_from(BYOK_CLB2_OVERHEAD).unwrap_or(i64::MAX))),
+        ByokEngagement::FailClosed(why) => Err(format!(
+            "BYOK configuration is not writable ({why}); refusing to reserve plaintext"
+        )),
+    }
+}
 
 /// Lock a std `Mutex` without ever panicking on poison (charter: no `unwrap`).
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {

@@ -1,5 +1,9 @@
-impl CasWriteHandler for R2CasHandler {
-    fn write(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+impl R2CasHandler {
+    fn write_with_byok_operation_context(
+        &self,
+        req: CasWriteRequest,
+        context: Option<&dyn corelink_handler_cas::CasWriteOperationContext>,
+    ) -> Result<CasWriteResponse, CasHandlerError> {
         use corelink_handler_cas::observer::Sli;
 
         // B-057: the window the latency SLI reports. Started at handler
@@ -69,7 +73,7 @@ impl CasWriteHandler for R2CasHandler {
                 actual,
             });
         }
-        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Write)?;
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Write, context)?;
 
         // B071: claim the D1 writer lease before resolving keys or touching
         // R2. GC acquisition excludes this lease, and the metadata commit
@@ -392,5 +396,20 @@ impl CasWriteHandler for R2CasHandler {
                 Err(CasHandlerError::Internal(e))
             }
         }
+    }
+}
+
+impl CasWriteHandler for R2CasHandler {
+    fn write(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+        self.write_with_byok_operation_context(req, None)
+    }
+
+    fn write_with_effect_and_context(
+        &self,
+        req: CasWriteRequest,
+        context: Option<&dyn corelink_handler_cas::CasWriteOperationContext>,
+    ) -> Result<CasWriteResponse, corelink_handler_cas::CasWriteFailure> {
+        self.write_with_byok_operation_context(req, context)
+            .map_err(corelink_handler_cas::CasWriteFailure::unknown)
     }
 }

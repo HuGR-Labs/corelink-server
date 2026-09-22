@@ -204,6 +204,139 @@
         assert_eq!(store.len(), 0, "Mode-A AC delete touches no envelope row");
     }
 
+    #[derive(Debug)]
+    struct TransitionCfgSrc {
+        result: std::sync::Mutex<Result<Option<TenantByokConfig>, ByokConfigError>>,
+    }
+
+    #[async_trait::async_trait]
+    impl ByokConfigSource for TransitionCfgSrc {
+        async fn get_byok_config(
+            &self,
+            _tenant: &str,
+        ) -> Result<Option<TenantByokConfig>, ByokConfigError> {
+            self.result
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone()
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn router_factory_attachments_share_cache_across_storage_and_accounting() {
+        // Exercise the four helpers called by router assembly with controlled
+        // R2/KMS seams. A second cache in any attachment breaks pointer identity
+        // and would observe this transition independently.
+        let source = Arc::new(TransitionCfgSrc {
+            result: std::sync::Mutex::new(Ok(Some(byok_cfg(
+                ByokCryptoMode::Convergent,
+                ByokState::Inactive,
+            )))),
+        });
+        let cache = Arc::new(ByokConfigCache::new(source.clone(), 0));
+        let resolver = Arc::new(
+            TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap(),
+        );
+        let mode_b = Arc::new(
+            ModeBEncryptor::new(
+                Arc::new(Kms { fail: false }) as Arc<dyn KmsProvider>,
+                Arc::new(MemEnvStore::default()) as Arc<dyn ByokEnvelopeStore>,
+                300,
+            )
+            .unwrap(),
+        );
+        let byok = crate::storage::byok_cas::DataPlaneByok::new(cache.clone(), resolver, mode_b);
+        let cas = Arc::new(crate::routes::cas::attach_byok_to_r2_handler(
+            make_test_handler_with_tdk("iad").await,
+            Some(&byok),
+        ));
+        let ac = Arc::new(crate::routes::ac::attach_byok_to_r2_handler(
+            make_test_ac_handler("iad").await,
+            Some(&byok),
+        ));
+        let byte_store = Arc::new(crate::byte_accounting::testing::InMemoryByteStore::new());
+        let accountant = Arc::new(crate::byte_accounting::ByteAccountant::new(
+            byte_store as Arc<dyn crate::byte_accounting::ByteStore>,
+            "iad".to_owned(),
+        ));
+        let cas_accounting = crate::routes::build::attach_byok_to_cas_accounting(
+            crate::byte_accounting::AccountingCasHandler::new(
+                cas.clone() as Arc<dyn CasWriteHandler>,
+                cas.clone() as Arc<dyn CasDeleteHandler>,
+                accountant.clone(),
+            ),
+            Some(&byok),
+        );
+        let ac_accounting = crate::routes::build::attach_byok_to_ac_accounting(
+            crate::byte_accounting::AccountingAcHandler::new(
+                ac.clone() as Arc<dyn corelink_handler_ac::AcUpdateHandler>,
+                ac.clone() as Arc<dyn corelink_handler_ac::AcDeleteHandler>,
+                accountant,
+            ),
+            Some(&byok),
+        );
+        for attached in [
+            cas.byok_config_cache_for_test().expect("CAS cache"),
+            ac.byok_config_cache_for_test().expect("AC cache"),
+        ] {
+            assert!(Arc::ptr_eq(&cache, attached));
+        }
+        let cas_accounting_cache = cas_accounting
+            .byok_for_test()
+            .expect("CAS accounting data plane")
+            .config_cache();
+        let ac_accounting_cache = ac_accounting
+            .byok_for_test()
+            .expect("AC accounting data plane")
+            .config_cache();
+        assert!(Arc::ptr_eq(&cache, &cas_accounting_cache));
+        assert!(Arc::ptr_eq(&cache, &ac_accounting_cache));
+
+        let cas_request = write_req(BYOK_TENANT, b"factory transition".to_vec());
+        assert!(cas.byok_encrypt_for_write(&cas_request).await.unwrap().is_none());
+        assert_eq!(
+            crate::byte_accounting::byok_committed_len_for_test(
+                Some(&cas_accounting_cache),
+                BYOK_TENANT,
+                cas_request.bytes.len() as i64,
+            )
+            .unwrap(),
+            cas_request.bytes.len() as i64,
+        );
+
+        *source
+            .result
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Ok(Some(byok_cfg(
+            ByokCryptoMode::Convergent,
+            ByokState::Active,
+        )));
+        assert!(cas.byok_encrypt_for_write(&cas_request).await.unwrap().is_some());
+        assert_eq!(
+            crate::byte_accounting::byok_committed_len_for_test(
+                Some(&ac_accounting_cache),
+                BYOK_TENANT,
+                cas_request.bytes.len() as i64,
+            )
+            .unwrap(),
+            cas_request.bytes.len() as i64 + BYOK_CLB1_OVERHEAD as i64,
+        );
+
+        *source
+            .result
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Err(ByokConfigError::Transport(
+            "injected control-plane failure".to_owned(),
+        ));
+        assert!(cas.byok_encrypt_for_write(&cas_request).await.is_err());
+        assert!(crate::byte_accounting::byok_committed_len_for_test(
+            Some(&cas_accounting_cache),
+            BYOK_TENANT,
+            cas_request.bytes.len() as i64,
+        )
+        .is_err());
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn ac_byok_inactive_handler_is_plaintext_passthrough() {
         // No `with_byok` ⇒ AC plaintext path, byte-identical to today.
@@ -428,3 +561,4 @@
             PriorState::Divergent
         );
     }
+use crate::storage::byok_cas::BYOK_CLB1_OVERHEAD;

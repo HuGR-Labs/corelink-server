@@ -309,6 +309,7 @@ jobs:
           set -euo pipefail
           {
             python3 scripts/verify_b139_semgrep.py --self-test
+            python3 -m pytest -q tests/test_verify_b139_prtarget_data_boundary.py
             python3 -m pytest -q tests/test_b139_semgrep_bundle.py tests/test_b139_ffi_pinned_install.py tests/test_b139_shell_a.py tests/test_b139_shell_b.py
           } 2>&1 | tee artifacts/campaign-ci/i1673.log
 
