@@ -65,21 +65,83 @@ def _secret_names(readiness: dict) -> set[str]:
 
 
 def _verify_observation_workflow(workflow_texts: dict[str, str]) -> None:
-    """Require the dedicated staging invocation, not an image-build mention."""
+    """Require one active, bounded workflow step to invoke staging GC read-only."""
     name = "issue-1651-gc-staging-observation.yml"
     workflow = workflow_texts.get(name)
     if workflow is None:
         raise Blocked(f"missing staging observation workflow: .github/workflows/{name}")
 
-    for marker in (
-        "workflow_dispatch:",
-        "environment: staging",
-        "corelink-gc-sweep-production",
-        'GC_OBSERVATION_ONLY: "true"',
-        'GC_LIVE_DELETE: "false"',
+    # Keep the accepted workflow shape deliberately narrow. Strip comments and
+    # blank lines first so prose cannot satisfy an executable contract marker.
+    lines = [
+        line.rstrip()
+        for line in workflow.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+    def block(source: list[str], header: str, indent: int) -> list[str] | None:
+        expected = " " * indent + header
+        try:
+            start = source.index(expected)
+        except ValueError:
+            return None
+        result: list[str] = []
+        for line in source[start + 1 :]:
+            if line.strip() and len(line) - len(line.lstrip()) <= indent:
+                break
+            result.append(line)
+        return result
+
+    triggers = block(lines, "on:", 0)
+    if triggers != ["  workflow_dispatch:"]:
+        raise Blocked("staging observation workflow must have only a manual workflow_dispatch trigger")
+
+    permissions = block(lines, "permissions:", 0)
+    if permissions != ["  contents: read"]:
+        raise Blocked("staging observation workflow must grant contents: read only")
+
+    jobs = block(lines, "jobs:", 0)
+    if jobs is None or [line for line in jobs if len(line) - len(line.lstrip()) == 2] != ["  observe:"]:
+        raise Blocked("staging observation workflow must define only the observe job")
+    job = block(jobs, "observe:", 2)
+    required_job_lines = (
+        "    runs-on: ubuntu-24.04",
+        "    environment: staging",
+        "    timeout-minutes: 5",
+    )
+    if job is None or any(job.count(line) != 1 for line in required_job_lines) or any(
+        line.strip().startswith("if:") for line in job
     ):
-        if marker not in workflow:
-            raise Blocked(f"staging observation workflow is missing safety marker: {marker}")
+        raise Blocked("staging observation job needs the hosted staging environment and a five-minute bound")
+
+    if job.count("    steps:") != 1:
+        raise Blocked("staging observation job must define one steps block")
+    steps = block(job, "steps:", 4)
+    step_header = "- name: Invoke production GC observation"
+    if steps is None or steps.count("      " + step_header) != 1:
+        raise Blocked("staging observation job must define one production observation step")
+    step = block(steps or [], step_header, 6)
+    if step is None or any(line.strip().startswith("if:") for line in step):
+        raise Blocked("staging observation workflow lacks an unconditional production invocation step")
+    required_step_lines = (
+        "        run: /usr/local/bin/corelink-gc-sweep-production",
+        '          GC_OBSERVATION_ONLY: "true"',
+        '          GC_LIVE_DELETE: "false"',
+    )
+    if any(step.count(line) != 1 for line in required_step_lines):
+        raise Blocked("production invocation step is missing its direct command or read-only environment flags")
+    if sum(line.strip().startswith("run:") for line in step) != 1:
+        raise Blocked("production invocation step must define one run command")
+    if step.count("        env:") != 1:
+        raise Blocked("production invocation step must define one environment block")
+    step_env = block(step, "env:", 8)
+    if step_env is None or any(step_env.count(marker) != 1 for marker in required_step_lines[1:]):
+        raise Blocked("read-only GC flags are not scoped to the production invocation step")
+    for key in ("GC_OBSERVATION_ONLY", "GC_LIVE_DELETE"):
+        if sum(line.strip().startswith(key + ":") for line in step_env) != 1:
+            raise Blocked(f"production invocation step must set {key} exactly once")
+    if any(line.strip() == "continue-on-error: true" for line in job + step):
+        raise Blocked("staging observation job and invocation step cannot suppress errors")
 
 
 def verify() -> None:
