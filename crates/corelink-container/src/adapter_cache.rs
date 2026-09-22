@@ -562,6 +562,38 @@ mod tests {
     async fn put_records_the_store_phase_exactly_once() {
         use corelink_handler_cas::{CasReadResponse, CasWriteResponse};
 
+        /// Keep the two production windows visible in this proof. The real
+        /// URL-map implementation is D1-over-HTTP, so this delay stands in
+        /// for that bounded accounting-side round trip without credentials or
+        /// network I/O. The CAS handler below provides the matching storage
+        /// window.
+        #[derive(Debug, Default)]
+        struct SlowUrlMap {
+            put_delay: std::time::Duration,
+        }
+
+        #[async_trait]
+        impl UrlMapStore for SlowUrlMap {
+            async fn get(
+                &self,
+                _namespace: &str,
+                _url_hash: &str,
+            ) -> Result<Option<String>, String> {
+                Ok(None)
+            }
+
+            async fn put(
+                &self,
+                _namespace: &str,
+                _url_hash: &str,
+                _content_hash: &str,
+                _content_len: u64,
+            ) -> Result<(), String> {
+                tokio::time::sleep(self.put_delay).await;
+                Ok(())
+            }
+        }
+
         /// A CAS handler that re-enters `Phase::Store`, as `R2CasHandler` does.
         #[derive(Debug)]
         struct ReentrantCas;
@@ -584,7 +616,9 @@ mod tests {
         let m = MoatCache::new(
             Arc::clone(&cas) as Arc<dyn CasReadHandler>,
             cas as Arc<dyn CasWriteHandler>,
-            Arc::new(FakeUrlMap::default()),
+            Arc::new(SlowUrlMap {
+                put_delay: std::time::Duration::from_millis(30),
+            }),
             fake_hash,
             "moat-test",
         );
@@ -619,6 +653,19 @@ mod tests {
             store_us >= 25_000,
             "ostore ({store_us} us) is far below the handler's 30 ms — the \
              blocking ledger bridge stopped covering the R2 write"
+        );
+
+        let accounting_us = ledger
+            .micros(crate::origin_timing::Phase::Accounting)
+            .expect("the URL-map write must have recorded an accounting window");
+        assert!(
+            accounting_us >= 25_000,
+            "oaccounting ({accounting_us} us) is far below the delayed URL-map write"
+        );
+        assert!(
+            store_us.saturating_add(accounting_us) <= wall_us,
+            "ostore ({store_us} us) + oaccounting ({accounting_us} us) must stay within \
+             the put wall clock ({wall_us} us); the two phase windows overlap"
         );
     }
 
