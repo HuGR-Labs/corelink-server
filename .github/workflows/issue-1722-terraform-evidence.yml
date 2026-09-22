@@ -14,7 +14,9 @@ permissions:
 jobs:
   sanitizer-retention:
     name: Sanitizer and retention contract
-    runs-on: corelink
+    # Hosted-runner contract: this credentialless guard must not depend on the
+    # private CoreLink runner pool or provider credentials.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout
