@@ -37,7 +37,7 @@ jobs:
     runs-on: corelink
     timeout-minutes: 5
     steps:
-      - name: Checkout
+      - name: Checkout # nosemgrep: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout # reason: PR blobs inspected as data only; ADR-0101
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # Candidate blobs are inspected by object id; no candidate code is
