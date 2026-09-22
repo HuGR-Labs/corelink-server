@@ -29,7 +29,9 @@ pub struct AuditDrainState {
     /// never make a single call exceed the edge subrequest timeout (one D1-HTTP
     /// UPDATE per row, ~0.3s each). A capped call returns `incomplete: true`; a
     /// caller (the hourly cron, or a manual loop) re-calls until `incomplete`
-    /// is false. `AUDIT_DRAIN_BATCH_LIMIT`, default 200 (~60s at 0.3s/row).
+    /// is false. `AUDIT_DRAIN_BATCH_LIMIT`, default 512. The value remains a
+    /// per-call budget; the caller's bounded sweep and the chunked writer
+    /// provide the outer backpressure limits.
     batch_limit: i64,
     /// B-038: serialize drains per `(tenant_id, region)` with a lease + seal-loop
     /// fence. SECURE-INERT DEFAULT `false`: when OFF, `drain_partition` behaves
@@ -445,15 +447,12 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
              re-signed under the current key."
         );
     }
-    // Global per-call row budget. Default 200 keeps a call ~60s at ~0.3s/row —
-    // well under the edge subrequest timeout — so a cold backlog drains over
-    // repeated calls (hourly cron or a manual loop) instead of hanging + sealing
-    // ZERO. Clamped to >= 1 (a non-positive value would seal nothing forever).
-    let batch_limit = std::env::var("AUDIT_DRAIN_BATCH_LIMIT")
-        .ok()
-        .and_then(|s| s.trim().parse::<i64>().ok())
-        .filter(|n| *n >= 1)
-        .unwrap_or(200);
+    // Global per-call row budget. The production configuration sets 512
+    // explicitly, and the same bounded value is the safe fallback when a
+    // deployment forgets to forward the variable. A non-positive value would
+    // seal nothing forever, so invalid overrides fall back to the budget too.
+    let batch_limit_raw = std::env::var("AUDIT_DRAIN_BATCH_LIMIT").ok();
+    let batch_limit = parse_audit_drain_batch_limit(batch_limit_raw.as_deref());
     // B-038 partition lease + seal-loop fence. SECURE-INERT DEFAULT OFF: absent /
     // forwarded-`""` / anything but an explicit truthy value ⇒ the drain behaves
     // exactly as before. Flipped on by an operator only after the prod probe.
@@ -476,6 +475,18 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
         batch_limit,
         lease_enabled,
     })
+}
+
+/// Resolve the drain's per-call row budget without allowing an absent or
+/// malformed deployment variable to silently restore the historical 200-row
+/// ceiling. The route remains bounded by this value and the caller's sweep
+/// budget; deployment-specific tuning still comes from the environment.
+const DEFAULT_AUDIT_DRAIN_BATCH_LIMIT: i64 = 512;
+
+fn parse_audit_drain_batch_limit(raw: Option<&str>) -> i64 {
+    raw.and_then(|value| value.trim().parse::<i64>().ok())
+        .filter(|value| *value >= 1)
+        .unwrap_or(DEFAULT_AUDIT_DRAIN_BATCH_LIMIT)
 }
 
 /// Mount `POST /_internal/audit/drain`.
