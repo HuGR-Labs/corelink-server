@@ -17,6 +17,9 @@ on:
           - i1638
           - i1639
           - i1628
+          - i1700
+          - i1687
+          - i1688
 
 permissions:
   contents: read
@@ -146,6 +149,33 @@ jobs:
             cargo clippy --locked -p corelink-billing --all-targets -- -D warnings
             cargo test --locked -p corelink-ops --test d1_migration_integration -- --nocapture
           } 2>&1 | tee artifacts/campaign-ci/i1628.log
+
+      - name: i1700 staging target contract
+        if: ${{ inputs.suite == 'i1700' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            python3 scripts/verify_staging_target.py
+            python3 scripts/verify_staging_topology_contract.py --expect ready
+            python3 -m unittest -q \
+              tests/test_verify_staging_target.py \
+              tests/test_verify_staging_topology_contract.py
+          } 2>&1 | tee artifacts/campaign-ci/i1700.log
+
+      - name: i1687 endurance lane contract
+        if: ${{ inputs.suite == 'i1687' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/test_i1687_endurance_lane.py 2>&1 | tee artifacts/campaign-ci/i1687.log
+
+      - name: i1688 bounded load lane contract
+        if: ${{ inputs.suite == 'i1688' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest -q tests/test_validate_load_target_receipt.py 2>&1 | tee artifacts/campaign-ci/i1688.log
 
       - name: Upload compact campaign logs
         if: ${{ always() }}
