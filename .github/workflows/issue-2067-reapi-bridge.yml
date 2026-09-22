@@ -1,11 +1,11 @@
 name: Issue 2067 — authenticated REAPI bridge
 
 on:
-  # This branch trigger lets the first introduction of this workflow execute
-  # its own credentialless gate. Subsequent changes are covered by PR paths.
+  # This branch trigger lets the workflow introduction execute its own
+  # credentialless gate before the workflow exists on the default branch.
   push:
     branches:
-      - "codex/i2067-reapi-bridge"
+      - "codex/issue-2067-reapi-bridge-clean-20260922"
   pull_request:
     paths:
       - ".github/workflows/issue-2067-reapi-bridge.yml"
