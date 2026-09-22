@@ -8476,8 +8476,11 @@ verify-means: |
   transaction, key custody/rotation, archive coverage, and independent
   verification proofs are provisioned. Missing key/witness or unknown version
   must remain fail-closed; this gate is not evidence that production rollout is
-  complete.
-last-verified: 2026-09-05
+  complete. The 2026-09-22 #1793 audit recorded no protected witness deployment,
+  pre-provisioned secret readback, live append/retry/rejection/latest receipts,
+  or independent signature verification; repository workflow and fixture tests
+  remain implementation readiness only.
+last-verified: 2026-09-22
 ```
 
 ### B-055 — edge-served findMissingBlobs SLI emission (resolved)

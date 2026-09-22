@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-09-09T04:30:00Z",
+  "captured_at": "2026-09-22T15:00:00Z",
   "legacy_epoch": {
     "algorithm_version": "E0/unkeyed",
     "row_count": null,
@@ -17,14 +17,17 @@
   },
   "migration_receipts": {
     "status": "NOT_EXECUTED",
-    "migrations": ["0109_audit_chain_epoch_contract.sql", "0110_audit_chain_epoch_row_metadata.sql"],
+    "migrations": [
+      "0109_audit_chain_epoch_contract.sql",
+      "0110_audit_chain_epoch_row_metadata.sql"
+    ],
     "references": [],
     "blocker": "Production D1 was not mutated; additive migrations were checked only from the repository."
   },
   "witness_receipt": {
     "status": "BLOCKED",
     "reference": null,
-    "blocker": "No independent witness endpoint or receipt contract is provisioned in the protected release environment."
+    "blocker": "Issue #1793 remains blocked: no protected deployment run or live readback was supplied for a Security-owned witness account/domain/Durable Object distinct from CoreLink production, pre-provisioned append and receipt secrets, exact-main deployment, authenticated successful append, duplicate/idempotent retry, stale predecessor rejection, divergent successor rejection, latest-state challenge, or independent receipt-signature verification. The repository workflow and disposable/in-process tests are implementation readiness only; they are not live witness evidence."
   },
   "archive_verification": {
     "status": "NOT_EXECUTED",
@@ -41,7 +44,7 @@
     "decision": "preserve E0 and do not cut over",
     "blocker": "No production epoch change occurred, so no rollback action was applicable."
   },
-  "operator": "codex-focused-checks",
+  "operator": "codex-issue-1793-audit",
   "repository_checks": [
     {
       "command": "python3 scripts/verify_b054_audit_chain_contract.py",

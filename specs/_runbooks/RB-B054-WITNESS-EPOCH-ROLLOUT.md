@@ -5,7 +5,7 @@ doc_status: "DRAFT"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-09-09"
-updated: "2026-09-09"
+updated: "2026-09-22"
 owner: "Security + SRE"
 final_approver: "Security Lead"
 reviewers: []
@@ -464,15 +464,15 @@ and recovery evidence.
 
 As of this runbook version, the authenticated keyed archive path and its
 two-credential epoch-admin gate exist in the repository but have not been
-deployed or evidenced live. Metadata inspection on 2026-09-09 observed HTTP 404
-for `audit-witness-production` under the current GitHub principal; its
-environment reviewers/secrets/variables could not be listed; organization and
-repository queries returned one visible account (`gmhelmold`); and the inspected
-profiles did not yield a validated R2 credential. These observations do not
-prove that a hidden environment, local credential, or eligible custodian is
-absent. They leave the second human custodian, independent witness account,
-deployed bindings, and live native Bucket Lock unverified. Distinct credential
-names or repository-only archive proof alone do not close B-054.
+deployed or evidenced live. The 2026-09-22 #1793 assessment has no protected
+Security witness deployment run, account/domain/DO identity proof,
+pre-provisioned secret-name readback, exact-main deployment receipt, or live
+append/retry/stale/divergent/latest receipt set with independent signature
+verification. The repository deployment workflow and in-process tests prove
+implementation readiness only. These observations do not prove that a hidden
+environment, local credential, or eligible custodian is absent; they leave the
+independent witness, deployed bindings, and live receipts unverified. Distinct
+credential names or repository-only archive proof alone do not close B-054.
 
 ## References
 
