@@ -48,7 +48,6 @@
 
 use std::sync::Arc;
 
-use serde_json::json;
 use corelink_stripe_real::StripeRunnerCheckoutProvider;
 use corelink_tier_selection::runner_checkout_attempt::{
     RunnerCheckoutAttempt, RunnerCheckoutAttemptState, RunnerCheckoutSessionExpiry,
@@ -56,6 +55,7 @@ use corelink_tier_selection::runner_checkout_attempt::{
 use corelink_tier_selection::stripe::CheckoutSessionResponse;
 use corelink_tier_selection::tenant::TenantId;
 use corelink_tier_selection::tier::TierKind;
+use serde_json::json;
 
 use corelink_tier_selection::runner_checkout_d1::{
     SQL_MARK_RUNNER_CHECKOUT_ABANDONED, SQL_MARK_RUNNER_CHECKOUT_EXPIRED,
@@ -137,9 +137,7 @@ fn requested_tier(kind: TierKind) -> RequestedTier {
     }
 }
 
-fn runner_attempt(
-    row: &crate::storage::d1_http::D1Row,
-) -> Result<RunnerCheckoutAttempt, String> {
+fn runner_attempt(row: &crate::storage::d1_http::D1Row) -> Result<RunnerCheckoutAttempt, String> {
     let text = |name: &str| {
         row.get(name)
             .and_then(serde_json::Value::as_str)
@@ -166,10 +164,14 @@ fn runner_attempt(
         .get("generation")
         .and_then(serde_json::Value::as_i64)
         .ok_or_else(|| "runner checkout row missing generation".to_owned())?;
-    let session_id = row.get("session_id").and_then(serde_json::Value::as_str).map(str::to_owned);
+    let session_id = row
+        .get("session_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
     Ok(RunnerCheckoutAttempt {
         tenant_id: TenantId::new(text("tenant_id")?),
-        generation: u64::try_from(generation).map_err(|_| "runner generation is negative".to_owned())?,
+        generation: u64::try_from(generation)
+            .map_err(|_| "runner generation is negative".to_owned())?,
         tier,
         price_id: text("price_id")?,
         customer_id: text("stripe_customer_id")?,
@@ -196,7 +198,8 @@ where
     std::thread::spawn(move || {
         let _ = tx.send(job());
     });
-    rx.await.map_err(|e| format!("runner provider thread dropped: {e}"))?
+    rx.await
+        .map_err(|e| format!("runner provider thread dropped: {e}"))?
 }
 
 /// Map `RequestedTier` → the exact snake_case label the D1 `tier` CHECK
@@ -269,8 +272,12 @@ impl D1HttpTierSelectStore {
             .query(
                 SQL_RESERVE_RUNNER_CHECKOUT_ATTEMPT,
                 &[
-                    json!(tenant_id), json!(tier), json!(price_id), json!(customer_id),
-                    json!(idempotency_key), json!(now_ms),
+                    json!(tenant_id),
+                    json!(tier),
+                    json!(price_id),
+                    json!(customer_id),
+                    json!(idempotency_key),
+                    json!(now_ms),
                 ],
             )
             .await
@@ -282,7 +289,10 @@ impl D1HttpTierSelectStore {
         tenant_id: &str,
     ) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
         self.d1
-            .query(SQL_READ_CURRENT_RUNNER_CHECKOUT_ATTEMPT, &[json!(tenant_id)])
+            .query(
+                SQL_READ_CURRENT_RUNNER_CHECKOUT_ATTEMPT,
+                &[json!(tenant_id)],
+            )
             .await
     }
 
@@ -297,7 +307,12 @@ impl D1HttpTierSelectStore {
         self.d1
             .query(
                 SQL_RECORD_RUNNER_CHECKOUT_SESSION,
-                &[json!(tenant_id), json!(generation), json!(session_id), json!(now_ms)],
+                &[
+                    json!(tenant_id),
+                    json!(generation),
+                    json!(session_id),
+                    json!(now_ms),
+                ],
             )
             .await
     }
@@ -313,7 +328,12 @@ impl D1HttpTierSelectStore {
         self.d1
             .query(
                 SQL_MARK_RUNNER_CHECKOUT_EXPIRED,
-                &[json!(tenant_id), json!(generation), json!(session_id), json!(now_ms)],
+                &[
+                    json!(tenant_id),
+                    json!(generation),
+                    json!(session_id),
+                    json!(now_ms),
+                ],
             )
             .await
     }
@@ -356,20 +376,41 @@ impl D1HttpTierSelectStore {
         let customer_id = provider_call({
             let provider = Arc::clone(&provider);
             let tenant_id = tenant_id.to_owned();
-            move || provider.ensure_customer(&tenant_id).map_err(|e| e.to_string())
+            move || {
+                provider
+                    .ensure_customer(&tenant_id)
+                    .map_err(|e| e.to_string())
+            }
         })
         .await?;
         let rows = self
-            .reserve_runner_attempt(tenant_id, kind.as_str(), &price_id, &customer_id, "", now_ms)
+            .reserve_runner_attempt(
+                tenant_id,
+                kind.as_str(),
+                &price_id,
+                &customer_id,
+                "",
+                now_ms,
+            )
             .await?;
         let attempt = if let Some(row) = rows.first() {
             runner_attempt(row)?
         } else {
             let current = self.read_runner_attempt(tenant_id).await?;
-            let row = current.first().ok_or_else(|| "runner checkout ledger conflict".to_owned())?;
+            let row = current
+                .first()
+                .ok_or_else(|| "runner checkout ledger conflict".to_owned())?;
             runner_attempt(row)?
         };
-        self.finish_runner_attempt(provider, attempt, kind, &price_id, &customer_id, tenant_id, now_ms)
+        self.finish_runner_attempt(
+            provider,
+            attempt,
+            kind,
+            &price_id,
+            &customer_id,
+            tenant_id,
+            now_ms,
+        )
             .await
     }
 
@@ -391,7 +432,11 @@ impl D1HttpTierSelectStore {
                 let response = provider_call({
                     let provider = Arc::clone(&provider);
                     let attempt = attempt.clone();
-                    move || provider.create_response(&attempt).map_err(|e| e.to_string())
+                    move || {
+                        provider
+                            .create_response(&attempt)
+                            .map_err(|e| e.to_string())
+                    }
                 })
                 .await?;
                 Ok(checkout_created(response))
@@ -433,7 +478,11 @@ impl D1HttpTierSelectStore {
                 let response = provider_call({
                     let provider = Arc::clone(&provider);
                     let attempt = attempt.clone();
-                    move || provider.create_response(&attempt).map_err(|e| e.to_string())
+                    move || {
+                        provider
+                            .create_response(&attempt)
+                            .map_err(|e| e.to_string())
+                    }
                 })
                 .await?;
                 let recorded = self
