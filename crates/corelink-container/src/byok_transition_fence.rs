@@ -295,6 +295,24 @@ impl DataIntent {
     pub fn token(&self) -> &str {
         self.token.as_str()
     }
+
+    #[cfg(test)]
+    /// Construct a deterministic live capability for an in-process gate fake.
+    pub(crate) fn for_test(tenant_id: &str, operation: DataOperation) -> Self {
+        Self {
+            tenant_id: tenant_id.to_owned(),
+            token: LeaseToken::generate(),
+            operation,
+            snapshot: ConfigSnapshot {
+                gate_epoch: 1,
+                current_generation: 1,
+                config_version: Some(1),
+                config_state: ConfigState::Active,
+                byok_status: ByokStatus::Active,
+            },
+            expires_at_ms: i64::MAX,
+        }
+    }
 }
 
 /// Exclusive capability held by one control-plane transition.

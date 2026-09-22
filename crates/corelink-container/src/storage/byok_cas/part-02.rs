@@ -25,6 +25,144 @@ mod tests {
         }
     }
 
+    /// Gate fake for the operation-pin seam. It deliberately returns a fresh
+    /// snapshot on every acquisition so a test can model a rotation occurring
+    /// while an earlier write is still reserved.
+    #[derive(Debug)]
+    struct PinGate {
+        config: Mutex<TenantByokConfig>,
+        releases: Mutex<usize>,
+    }
+
+    #[async_trait]
+    impl ByokRuntimeGate for PinGate {
+        async fn acquire_data(
+            &self,
+            tenant_id: &str,
+            _operation: crate::byok_transition_fence::DataOperation,
+        ) -> Result<crate::storage::byok_generation_catalog::RuntimeDataIntent, String> {
+            Ok(crate::storage::byok_generation_catalog::RuntimeDataIntent::for_test(
+                tenant_id,
+                Some(lock(&self.config).clone()),
+                Some(1),
+            ))
+        }
+
+        async fn release_data(
+            &self,
+            _intent: &crate::storage::byok_generation_catalog::RuntimeDataIntent,
+        ) -> Result<(), String> {
+            *lock(&self.releases) += 1;
+            Ok(())
+        }
+
+        async fn validate_for_return(
+            &self,
+            _intent: &crate::storage::byok_generation_catalog::RuntimeDataIntent,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+
+        async fn resolve_catalog(
+            &self,
+            _intent: &crate::storage::byok_generation_catalog::RuntimeDataIntent,
+            _kind: crate::storage::byok_generation_catalog::ByokObjectKind,
+            _logical_key: &str,
+        ) -> Result<Option<crate::storage::byok_generation_catalog::PublishedObject>, String> {
+            Err("not used by operation-pin sizing test".to_owned())
+        }
+
+        async fn begin_purge_attempt(
+            &self,
+            _plan: &mut crate::storage::byok_generation_catalog::ByokPurgePlan,
+        ) -> Result<(), String> {
+            Err("not used by operation-pin sizing test".to_owned())
+        }
+
+        async fn finish_purge_attempt(
+            &self,
+            _plan: &crate::storage::byok_generation_catalog::ByokPurgePlan,
+            _head_absent: bool,
+            _error: Option<&str>,
+            _envelope_reclaimed: bool,
+        ) -> Result<(), String> {
+            Err("not used by operation-pin sizing test".to_owned())
+        }
+
+        async fn allocate_catalog(
+            &self,
+            _intent: &crate::storage::byok_generation_catalog::RuntimeDataIntent,
+            _kind: crate::storage::byok_generation_catalog::ByokObjectKind,
+            _logical_key: &str,
+            _allocation_id: &str,
+            _physical_key: &str,
+            _size_bytes: u64,
+        ) -> Result<crate::storage::byok_generation_catalog::StagedObject, String> {
+            Err("not used by operation-pin sizing test".to_owned())
+        }
+
+        async fn publish_catalog(
+            &self,
+            _intent: &crate::storage::byok_generation_catalog::RuntimeDataIntent,
+            _staged: &crate::storage::byok_generation_catalog::StagedObject,
+        ) -> Result<bool, String> {
+            Err("not used by operation-pin sizing test".to_owned())
+        }
+
+        async fn tombstone_catalog(
+            &self,
+            _intent: &crate::storage::byok_generation_catalog::RuntimeDataIntent,
+            _kind: crate::storage::byok_generation_catalog::ByokObjectKind,
+            _logical_key: &str,
+        ) -> Result<Option<crate::storage::byok_generation_catalog::ByokPurgePlan>, String> {
+            Err("not used by operation-pin sizing test".to_owned())
+        }
+
+        async fn list_catalog(
+            &self,
+            _intent: &crate::storage::byok_generation_catalog::RuntimeDataIntent,
+            _kind: crate::storage::byok_generation_catalog::ByokObjectKind,
+            _limit: u32,
+            _after_logical_key: Option<&str>,
+        ) -> Result<Vec<crate::storage::byok_generation_catalog::PublishedObject>, String> {
+            Err("not used by operation-pin sizing test".to_owned())
+        }
+    }
+
+    #[tokio::test]
+    async fn operation_pin_keeps_rotation_snapshot_and_rejects_cross_tenant_reuse() {
+        let gate = Arc::new(PinGate {
+            config: Mutex::new(active_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            releases: Mutex::new(0),
+        });
+        let data_plane = DataPlaneByok::new(
+            Arc::new(ByokConfigCache::new(Arc::new(MockConfigSource::ok(None)), 60)),
+            Arc::new(
+                TcsResolver::new(
+                    Arc::new(MockSecretSource { row: None }),
+                    Arc::new(MockKms::ok()),
+                    300,
+                )
+                .unwrap(),
+            ),
+            Arc::new(mode_b_enc(Arc::new(MemEnvelopeStore::default()), false)),
+        )
+        .with_runtime_gate(gate.clone() as Arc<dyn ByokRuntimeGate>);
+        let pin = data_plane.pin_write(TENANT, 1000).unwrap().unwrap();
+        assert_eq!(pin.committed_len(), 1000 + BYOK_CLB1_OVERHEAD as i64);
+
+        // A rotation concurrently visible to a later acquisition cannot change
+        // the already-reserved operation's overhead or config identity.
+        lock(&gate.config).crypto_mode = ByokCryptoMode::Random;
+        assert_eq!(pin.committed_len(), 1000 + BYOK_CLB1_OVERHEAD as i64);
+        assert!(pin.take_guard("other-tenant").is_err());
+
+        let mut guard = pin.take_guard(TENANT).unwrap();
+        guard.finish(false).await.unwrap();
+        assert!(pin.take_guard(TENANT).is_err(), "a pin is single-use");
+        assert_eq!(*lock(&gate.releases), 1, "the exact pin is released once");
+    }
+
     // ── Mock config source ──────────────────────────────────────────────────
 
     #[derive(Debug)]
@@ -469,6 +607,28 @@ mod tests {
                 "stored len must be plaintext + CLB1 overhead for pt_len={pt_len}"
             );
         }
+    }
+
+    #[test]
+    fn data_plane_exposes_clones_of_one_authoritative_config_cache() {
+        let cache = Arc::new(ByokConfigCache::new(
+            Arc::new(MockConfigSource::ok(None)),
+            60,
+        ));
+        let resolver = Arc::new(
+            TcsResolver::new(
+                Arc::new(MockSecretSource { row: None }),
+                Arc::new(MockKms::ok()),
+                300,
+            )
+            .unwrap(),
+        );
+        let mode_b = Arc::new(mode_b_enc(Arc::new(MemEnvelopeStore::default()), false));
+        let data_plane = DataPlaneByok::new(Arc::clone(&cache), resolver, mode_b);
+        assert!(
+            Arc::ptr_eq(&cache, &data_plane.config_cache()),
+            "composition consumers must receive clones of the one cache Arc"
+        );
     }
 
     include!("part-02-tail.rs");
