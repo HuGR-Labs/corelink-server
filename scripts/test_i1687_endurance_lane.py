@@ -25,6 +25,7 @@ def test_mutations_fail_closed() -> None:
         ("CANONICAL_TARGET='https://staging.corelink.humangr.com'", "CANONICAL_TARGET='https://evil.example'"),
         ('K6_TARGET_HOST:             ${{ steps.target_host.outputs.target_host }}', 'K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}'),
         ("timeout --signal=TERM --kill-after=60s 130m k6 run", "k6 run"),
+        ("VUS:                        '50'", "VUS:                        '500'"),
         ('"artifact_sha256": hashes', '"artifact_sha256": {}'),
         ("corelink.endurance-heartbeat.v1", "corelink.heartbeat.v0"),
         ("checkpoint-teardown", "teardown"),
