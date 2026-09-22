@@ -36,6 +36,9 @@ on:
           - i1700
           - i1687
           - i1688
+          - i1650-contract
+          - i1649-contract
+          - i1659-dry
 
 permissions:
   contents: read
@@ -52,7 +55,7 @@ jobs:
   campaign:
     name: campaign ${{ inputs.suite }}
     if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Checkout canonical repository
@@ -364,6 +367,59 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest -q tests/test_validate_load_target_receipt.py 2>&1 | tee artifacts/campaign-ci/i1688.log
+
+      - name: i1650 credential-free ignored-harness manifest contract
+        if: ${{ inputs.suite == 'i1650-contract' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This verifier is static and mutation based.  It must never receive
+          # the protected real-integration environment or invoke a provider.
+          python3 -S scripts/verify_real_ignored_harnesses.py 2>&1 | tee artifacts/campaign-ci/i1650-contract.log
+
+      - name: i1649 read-only Stripe contract tests
+        if: ${{ inputs.suite == 'i1649-contract' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Both suites replace D1/Stripe subprocesses with fakes; no key or
+          # provider CLI is installed and no live readback is attempted.
+          python3 -m pytest -q \
+            tests/test_check_billing_health.py \
+            tests/test_verify_stripe_webhook_destinations.py \
+            2>&1 | tee artifacts/campaign-ci/i1649-contract.log
+
+      - name: i1659 B-103 reproducer dry contract
+        if: ${{ inputs.suite == 'i1659-dry' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Inspect the fixed reproducer contract without importing its network
+          # client or running a staging arm.  Runtime load belongs to a separate
+          # owner-authorized workflow and is intentionally unreachable here.
+          python3 -S - <<'PY' 2>&1 | tee artifacts/campaign-ci/i1659-dry.log
+          import ast
+          from pathlib import Path
+
+          path = Path("scripts/reproduce_b103_cargo_write.py")
+          tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+          source = path.read_text(encoding="utf-8")
+          required = (
+              'CONCURRENCIES = (4, 16, 64)',
+              'TARGET = "https://staging.corelink.humangr.com"',
+              'WEBDAV_METHODS = ("GET", "HEAD", "PROPFIND", "MKCOL", "PUT", "DELETE")',
+              '"put_only"',
+              '"webdav_sequence"',
+          )
+          for marker in required:
+              if marker not in source:
+                  raise SystemExit(f"missing B-103 contract marker: {marker}")
+          if not any(isinstance(node, ast.FunctionDef) and node.name == "run_arm" for node in tree.body):
+              raise SystemExit("missing B-103 run_arm contract")
+          if not any(isinstance(node, ast.FunctionDef) and node.name == "request" for node in tree.body):
+              raise SystemExit("missing B-103 request contract")
+          print("B-103 reproducer dry contract: PASS (no staging requests made)")
+          PY
 
       - name: Upload compact campaign logs
         if: ${{ always() }}
