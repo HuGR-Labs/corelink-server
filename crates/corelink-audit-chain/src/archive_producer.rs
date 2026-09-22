@@ -79,12 +79,11 @@
 //!
 //! ## Retention enforcement
 //!
-//! The 7-year retention SLA is enforced via R2 bucket-level Object Lock
-//! Governance Mode (Terraform/wrangler IaC config) — see
-//! `specs/_audits/sealed/2026-05-15-audit-chain-retention.md` for the mechanism +
-//! the property-test stub. This module does NOT delete; it only writes.
-//! Any path that mutates audit data would violate INV-AUDIT-APPEND-ONLY
-//! and is therefore not exposed.
+//! The current R2 archive may use create-if-absent and an administrator-removable
+//! Bucket Lock rule, but it is not S3 Object Lock or WORM. This module does
+//! not expose deletion; Compliance retention must use a separately negotiated
+//! [`crate::VerifiedObjectLockArchive`] adapter before it can claim
+//! storage-enforced immutability.
 //!
 //! ## INV-OBS-AUDIT-CHAIN-INTEGRITY enforcement (CRITICAL)
 //!
@@ -233,7 +232,7 @@ pub trait ArchiveSink: Send + Sync + core::fmt::Debug {
     /// # Errors
     ///
     /// Returns [`ArchiveProducerError::SinkBackend`] on backend failure
-    /// (network / R2 reject / Object Lock denial / etc.). Fail-CLOSED.
+    /// (network / R2 reject / conditional-write denial / etc.). Fail-CLOSED.
     fn put_chunk(&self, r2_key: &str, ndjson_body: &[u8]) -> Result<(), ArchiveProducerError>;
 }
 
