@@ -1,1 +1,9 @@
-B-046 INDETERMINATE: /private/tmp/corelink-postdelivery-audit-20260908/.github/workflows/backlog-verify.yml missing contract markers: scripts/verify_b046_object_lock_probe.py, tests/test_verify_b046_object_lock_probe.py, crates/corelink-container/src/routes/dsr/adapter_r2_cas_legalhold.rs, migrations/d1/0102_cas_retention.sql
+B-046 INDETERMINATE
+receipt: evidence/owner-actions/B-046/object-lock-probe.json
+captured_at: 2026-09-09T04:13:53Z
+provider: configured R2 S3-compatible endpoint (exact account and target not evidenced)
+bucket_operation: CreateBucket(Object Lock enabled) -> INDETERMINATE / InvalidArgument
+object_operation: PutObject(COMPLIANCE retention) -> SKIPPED
+classification: INDETERMINATE
+reason: the credential shape was rejected before bucket creation; no provider capability result was observed
+scope: no bucket or object was created; no production retention state was touched
