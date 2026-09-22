@@ -48,8 +48,12 @@ jobs:
           grep -F 'mode = "COMPLIANCE"' "$module"
           grep -F 'aws_s3_bucket_object_lock_configuration' "$module"
           grep -F 'aws_iam_role' "$module"
-          ! grep -F '"s3:DeleteObject"' "$module"
-          ! grep -F '"s3:GetObject"' "$module"
-          ! grep -F '"s3:PutObjectLegalHold"' "$module"
-          ! grep -F '"s3:PutObjectRetention"' "$module"
-          ! grep -F '"s3:*"' "$module"
+          actions=$(grep -E '^[[:space:]]*"s3:[^"]+",?$' "$module" \
+            | sed -E 's/^[[:space:]]*"([^"]+)".*/\1/')
+          expected=$(printf '%s\n' \
+            's3:GetBucketObjectLockConfiguration' \
+            's3:GetBucketLocation' \
+            's3:GetObjectLegalHold' \
+            's3:GetObjectRetention' \
+            's3:PutObject')
+          test "$actions" = "$expected"
