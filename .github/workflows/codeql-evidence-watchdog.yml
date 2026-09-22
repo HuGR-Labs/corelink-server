@@ -3,9 +3,8 @@ name: CodeQL evidence watchdog
 # A step in codeql.yml cannot observe a matrix job that never received a
 # runner. This independent schedule checks GitHub's platform truth: a recent
 # successful scheduled run, the exact three-language job population, and one
-# retained SARIF artifact per language. It stays on the product-owned fabric
-# to preserve the zero-hosted-CI mandate; runner-fleet-health remains the
-# separate signal for an unavailable fabric.
+# retained SARIF artifact per language. It runs on an ephemeral hosted Linux
+# runner; runner-fleet-health remains the separate product-fleet signal.
 
 on:
   schedule:
@@ -26,7 +25,7 @@ concurrency:
 jobs:
   inspect:
     name: Verify CodeQL nightly evidence
-    runs-on: corelink
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
