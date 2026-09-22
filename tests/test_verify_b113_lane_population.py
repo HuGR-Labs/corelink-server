@@ -69,6 +69,26 @@ def test_shared_buck2_marker_is_scoped_to_the_named_job() -> None:
         MODULE.verify(sources)
 
 
+def test_nightly_mutants_keeps_a_bounded_pinned_fallback() -> None:
+    """A missing release asset must not strand the nightly mutation gate."""
+    lane = next(item for item in MODULE.LANES if item.name == "nightly-mutants")
+    body = MODULE.job_body(corpus()[lane.workflow], lane.job, lane.name)
+    assert "tool: cargo-mutants@27.0.0" in body
+    assert "fallback: cargo-binstall" in body
+    assert "fallback: none" not in body
+
+
+def test_nightly_mutants_rejects_unpinned_source_fallback() -> None:
+    """The contract must fail if the fallback silently becomes cargo-install."""
+    lane = next(item for item in MODULE.LANES if item.name == "nightly-mutants")
+    sources = corpus()
+    sources[lane.workflow] = sources[lane.workflow].replace(
+        "fallback: cargo-binstall", "fallback: cargo-install", 1
+    )
+    with pytest.raises(MODULE.VerificationError, match="nightly-mutants"):
+        MODULE.verify(sources)
+
+
 @pytest.mark.parametrize(
     ("job", "before", "after"),
     (
