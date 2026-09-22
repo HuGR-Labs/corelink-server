@@ -35,7 +35,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let db = Arc::new(Mutex::new(Connection::open_in_memory().expect("sqlite")));
-        let migrations = ["0017_usage_event_idem.sql", "0095_usage_event_staging_aggregatable.sql", "0131_usage_event_staging_conflicts.sql"];
+        let migrations = ["0017_usage_event_idem.sql", "0095_usage_event_staging_aggregatable.sql", "0133_usage_event_staging_conflicts.sql"];
         for migration in migrations {
             let path = format!("{}/../../migrations/d1/{migration}", env!("CARGO_MANIFEST_DIR"));
             db.lock().expect("sqlite lock").execute_batch(&std::fs::read_to_string(path).expect("migration read")).expect("migration apply");

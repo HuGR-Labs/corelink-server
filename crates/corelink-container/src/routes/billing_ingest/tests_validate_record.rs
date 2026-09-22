@@ -2,10 +2,9 @@
 //! once: the canonical record passes through with its typed fields intact, and
 //! a field is refused the first byte past its declared bound.
 //!
-//! `source` carries the bound because it is the one free-text field on the
-//! record; the enum, uuid, period and hex fields are bounded by their own
-//! parsers. The exactly-at-cap case is here on purpose — a cap tested only
-//! from above cannot tell an off-by-one from a correct limit.
+//! The wire integers are intentionally tested at the exact signed-storage cap
+//! and one above it. A cap tested only from above cannot tell an off-by-one
+//! from a correct limit.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -25,6 +24,40 @@ fn validate_record_accepts_canonical() {
     assert_eq!(rec.event_kind, UsageEventKind::RunnerSlotSeconds);
     assert_eq!(rec.region, "iad");
     assert_eq!(rec.qty, 7200);
+}
+
+#[test]
+fn signed_storage_boundary_is_exact_for_qty_and_time_ms() {
+    let at_cap: UsageRecordWire = serde_json::from_value({
+        let mut r = record_json(&tenant_a(), &hex64(0x25));
+        r["qty"] = serde_json::json!(MAX_PERSISTED_NONNEGATIVE);
+        r["time_ms"] = serde_json::json!(MAX_PERSISTED_NONNEGATIVE);
+        r
+    })
+    .unwrap();
+    assert!(validate_record(at_cap).is_ok());
+
+    let qty_above: UsageRecordWire = serde_json::from_value({
+        let mut r = record_json(&tenant_a(), &hex64(0x26));
+        r["qty"] = serde_json::json!(MAX_PERSISTED_NONNEGATIVE + 1);
+        r
+    })
+    .unwrap();
+    assert_eq!(
+        validate_record(qty_above),
+        Err(RecordError::QtyOutOfStorageRange)
+    );
+
+    let time_above: UsageRecordWire = serde_json::from_value({
+        let mut r = record_json(&tenant_a(), &hex64(0x27));
+        r["time_ms"] = serde_json::json!(MAX_PERSISTED_NONNEGATIVE + 1);
+        r
+    })
+    .unwrap();
+    assert_eq!(
+        validate_record(time_above),
+        Err(RecordError::TimeMsOutOfStorageRange)
+    );
 }
 
 #[test]
@@ -53,10 +86,12 @@ fn record_error_variant_name(error: &RecordError) -> &'static str {
     match error {
         RecordError::BadTenantId => "bad tenant ID",
         RecordError::BadBillingPeriod => "bad billing period",
+        RecordError::QtyOutOfStorageRange => "quantity outside storage range",
         RecordError::BadRegion => "bad region",
         RecordError::BadIdemKey => "bad idempotency key",
         RecordError::EmptySource => "empty source",
         RecordError::SourceTooLong => "oversized source",
+        RecordError::TimeMsOutOfStorageRange => "timestamp outside storage range",
     }
 }
 
@@ -77,6 +112,16 @@ fn every_record_error_variant_has_a_rejection_fixture() {
             .unwrap(),
             RecordError::BadBillingPeriod,
             "bad_billing_period",
+        ),
+        (
+            serde_json::from_value({
+                let mut record = record_json(&tenant_a(), &hex64(0x35));
+                record["qty"] = serde_json::json!(MAX_PERSISTED_NONNEGATIVE + 1);
+                record
+            })
+            .unwrap(),
+            RecordError::QtyOutOfStorageRange,
+            "qty_out_of_storage_range",
         ),
         (
             serde_json::from_value({
@@ -112,6 +157,16 @@ fn every_record_error_variant_has_a_rejection_fixture() {
             .unwrap(),
             RecordError::SourceTooLong,
             "source_too_long",
+        ),
+        (
+            serde_json::from_value({
+                let mut record = record_json(&tenant_a(), &hex64(0x36));
+                record["time_ms"] = serde_json::json!(MAX_PERSISTED_NONNEGATIVE + 1);
+                record
+            })
+            .unwrap(),
+            RecordError::TimeMsOutOfStorageRange,
+            "time_ms_out_of_storage_range",
         ),
     ];
 
