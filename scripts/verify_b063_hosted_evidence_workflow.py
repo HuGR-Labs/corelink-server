@@ -40,7 +40,7 @@ def verify(source: str) -> None:
     if unpinned:
         raise AssertionError(f"unpinned action references: {unpinned}")
 
-    if "READ_ONLY != \"true\"" not in source:
+    if '[[ "${READ_ONLY}" == "true" ]]' not in source:
         raise AssertionError("live lane must fail closed unless READ_ONLY=true")
     if "str(row.get(\"tenant_id\") or \"\")[:8]" not in source:
         raise AssertionError("receipt must retain only the eight-character tenant prefix")
