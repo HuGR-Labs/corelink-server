@@ -4,12 +4,13 @@
 
 AWS S3 Object Lock is the proposed backend family for the Compliance archive
 path. This is an evidence-backed provider capability choice. A campaign-
-authorized, synthetic-only target was provisioned in AWS account
-`046797548582`, region `us-east-1`, with one-day Compliance retention. This is
-not production approval of an account, bucket, residency mapping, retention
-term, legal-hold policy, or runtime credential. No tenant data was written and
-no archive route was enabled. The present Cloudflare R2 archive remains
-non-WORM and is not changed by this document or the inactive Terraform module.
+authorized, synthetic-only target was provisioned in a redacted AWS account,
+region `us-east-1`, with one-day Compliance retention. The account identifier
+is redacted from the repository receipt. This is not production approval of an
+account, bucket, residency mapping, retention term, legal-hold policy, or
+runtime credential. No tenant data was written and no archive route was
+enabled. The present Cloudflare R2 archive remains non-WORM and is not changed
+by this document or the inactive Terraform module.
 
 Amazon S3 requires Object Lock to be enabled when a bucket is created. Its
 Compliance retention mode prevents deletion or overwrite before the retention

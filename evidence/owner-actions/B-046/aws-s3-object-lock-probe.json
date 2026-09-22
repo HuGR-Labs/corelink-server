@@ -4,7 +4,7 @@
   "captured_at": "2026-09-22T20:04:20Z",
   "scope": {
     "provider": "AWS S3",
-    "account": "046797548582",
+    "account": "redacted",
     "region": "us-east-1",
     "target": "isolated synthetic archive bucket; identifier redacted",
     "retention_mode": "COMPLIANCE",

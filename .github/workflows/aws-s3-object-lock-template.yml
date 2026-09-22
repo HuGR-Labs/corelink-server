@@ -68,6 +68,13 @@ jobs:
           grep -F 'variable = "s3:object-lock-legal-hold"' "$module"
           grep -F 'values   = ["ON"]' "$module"
 
+          evidence=evidence/owner-actions/B-046/aws-s3-object-lock-probe.json
+          docs=docs/operator/aws-s3-object-lock-archive-provisioning.md
+          if grep -nE '(^|[^[:digit:]])[[:digit:]]{12}([^[:digit:]]|$)' "$evidence" "$docs"; then
+            echo "AWS account identifiers must be redacted from the probe receipt and operator docs" >&2
+            exit 1
+          fi
+
   adapter-conformance:
     name: immutable archive adapter conformance
     runs-on: ubuntu-latest
