@@ -69,9 +69,9 @@ Migration `0139_terraform_drift_region_contract.sql`:
 6. Uses the existing migration runner's numeric ordering. Migration `0139` is
    a one-shot rollout and is not a replay-safe down migration.
 
-The migration keeps `PRAGMA foreign_keys` disabled only around the table swap
-and restores it before completion. It does not change the consumer's event
-shape, remove the legacy rows, or introduce a production apply path.
+The migration disables `PRAGMA foreign_keys` for the rebuild operation and
+restores it before completion. It does not change the consumer's event shape,
+remove the legacy rows, or introduce a production apply path.
 
 ## Preservation and rollout invariants
 
