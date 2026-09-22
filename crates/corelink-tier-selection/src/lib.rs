@@ -96,6 +96,7 @@ pub mod audit;
 pub mod dpa;
 pub mod error;
 pub mod ledger;
+pub mod runner_checkout_attempt;
 pub mod stripe;
 pub mod tenant;
 pub mod tier;
@@ -110,6 +111,10 @@ pub use error::TierError;
 pub use ledger::{
     CheckoutSessionRow, SubscriptionActivationReceipt, SubscriptionState, TierSelectionLedger,
     TierSelectionReceipt, TierSelectionRow, TIER_SELECTION_LOCK_WINDOW_MS,
+};
+pub use runner_checkout_attempt::{
+    InMemoryRunnerCheckoutAttemptLedger, RunnerCheckoutAttempt, RunnerCheckoutAttemptDecision,
+    RunnerCheckoutAttemptError, RunnerCheckoutAttemptState, RunnerCheckoutSessionExpiry,
 };
 pub use stripe::{
     compute_stripe_signature, parse_stripe_signature_header, verify_stripe_signature,
