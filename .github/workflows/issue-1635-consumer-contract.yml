@@ -1,0 +1,41 @@
+name: issue-1635 credentialless consumer contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/issue-1635-consumer-contract.yml
+      - docs/operator/issue-1635-consumer-contract.md
+      - scripts/verify_i1635_consumer_contract.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: validate typed usage acknowledgements
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Build mixed acknowledgement fixture
+        run: |
+          cat > "$RUNNER_TEMP/i1635-ack.json" <<'JSON'
+          {
+            "schema_version": 1,
+            "batch_id": "fixture-mixed-outcomes",
+            "outcomes": [
+              {"event_id": "evt-accepted", "status": "accepted", "reason": "stored"},
+              {"event_id": "evt-deduped", "status": "deduped", "reason": "exact_replay"},
+              {"event_id": "evt-conflict", "status": "conflicting", "reason": "payload_mismatch"},
+              {"event_id": "evt-rejected", "status": "rejected", "reason": "invalid_record"},
+              {"event_id": "evt-ambiguous", "status": "ambiguous", "reason": "transport_unknown"}
+            ],
+            "settlement_event_ids": ["evt-accepted", "evt-deduped"]
+          }
+          JSON
+      - name: Validate consumer contract
+        run: python3 scripts/verify_i1635_consumer_contract.py "$RUNNER_TEMP/i1635-ack.json"
