@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CoreLink Customer & Privacy REST API
-  version: 0.1.0
+  version: 0.1.2
   summary: REST surface for CoreLink customer onboarding, privacy (DSR / DPA),
     billing webhooks, admin operations and health.
   description: |

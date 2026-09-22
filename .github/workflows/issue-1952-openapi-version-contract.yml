@@ -1,0 +1,25 @@
+name: issue-1952-openapi-version-contract
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "openapi/corelink-v1.yaml"
+      - "openapi/corelink-v1.json"
+      - "tests/test_i1952_openapi_version_contract.py"
+      - ".github/workflows/issue-1952-openapi-version-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    if: github.repository_id == '1232040291'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Verify OpenAPI version authority
+        run: python3 tests/test_i1952_openapi_version_contract.py
