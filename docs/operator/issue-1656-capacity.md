@@ -22,11 +22,11 @@ instance type, or changes the reservation arithmetic.
 
 Provider mode accepts an operator captured JSON readback with
 `--provider-readback`. The evidence must be marked `read_only`, carry the
-account `total_vcpu`, and include positive `vcpu_per_deployment` and
-`total_memory_mib` fields. A missing, malformed, or mismatched readback is a
-failure. Until that readback exists, the verifier reports the repository
-declaration as `UNVERIFIED` and does not claim that Cloudflare's live quota or
-usage agrees.
+account `total_vcpu`, match the runner contract's `vcpu_per_deployment`, and
+include a positive `total_memory_mib` field. A missing, malformed, boolean, or
+mismatched readback is a failure. Until that readback exists, the verifier
+reports the repository declaration as `UNVERIFIED` and does not claim that
+Cloudflare's live quota or usage agrees.
 
 ## Done criteria
 
