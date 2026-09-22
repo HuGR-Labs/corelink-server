@@ -97,8 +97,13 @@ import { SharedArray } from 'k6/data';
 const TARGET_HOST = __ENV.K6_TARGET_HOST || 'https://staging.corelink.humangr.com';
 const AUTH_BEARER = __ENV.K6_AUTH_BEARER || '';
 const DURATION = __ENV.DURATION || '24h';
-const VUS = parseInt(__ENV.VUS || '50', 10);
+const VUS = Number(__ENV.VUS || '50');
 const CONFIRM = __ENV.K6_ENDURANCE_CONFIRM || '';
+const MAX_VUS = 50;
+
+if (!Number.isInteger(VUS) || VUS < 1 || VUS > MAX_VUS) {
+  throw new Error(`VUS must be an integer between 1 and ${MAX_VUS}, got ${__ENV.VUS || '50'}`);
+}
 
 function extractHostname(u) {
   const m = /^https?:\/\/([^/:?#]+)/i.exec(u);
