@@ -3997,8 +3997,7 @@ verify-means: |
   fica vermelho de propósito para forçar validação de conteúdo, transição para
   `done` e inversão do guard. Nenhuma assinatura, exportação ou notificação é
   alegada pela presença dos arquivos.
-last-verified: 2026-09-22
-evidence: reports/owner-actions/b170-reverification-2026-09-22.md
+last-verified: 2026-09-08
 ```
 
 ### B-171 — Degraded-prefix fallback produces a SHARED (not isolated) namespace and the storage op still PROCEEDS — empty prefix collapses all non-UUID tenants into one keyspace
