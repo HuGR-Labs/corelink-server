@@ -30,7 +30,15 @@ pub(super) fn load_script(name: &str) -> Result<String, String> {
 
 pub(super) fn assert_release_contract(workflow: &str) {
     for required in [
-        "- \"cli-v*\"",
+        "workflow_dispatch:",
+        "release_tag:",
+        "refs/tags/${{ inputs.release_tag }}",
+        "Resolve typed release identity",
+        "runner: ubuntu-24.04",
+        "runner: windows-2022",
+        "runner: macos-14",
+        "runs-on: ${{ matrix.target.runner }}",
+        "mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29",
         "HuGR-Labs/corelink-cli",
         "EXPECTED_ZIG_VERSION=0.16.0",
         "EXPECTED_CARGO_ZIGBUILD_VERSION=0.19.8",
@@ -62,7 +70,7 @@ pub(super) fn assert_release_contract(workflow: &str) {
         "gh api --method DELETE \"repos/HuGR-Labs/corelink-cli/releases/assets/${STAGING_ASSET_ID}\"",
         "STAGING_ASSET_COUNT=\"$(gh api \"repos/HuGR-Labs/corelink-cli/releases/tags/${TAG}\"",
         "release-slsa3:",
-        "release-slsa3:\n    needs: [final-manifest, release-readiness]\n    if: needs.release-readiness.outputs.publish == 'true'\n    # Called workflows cannot elevate the caller's token permissions. Grant\n    # OIDC only to this provenance call; all other release jobs retain the\n    # workflow-level contents:read default.\n    permissions:\n      contents: read\n      id-token: write\n    uses: ./.github/workflows/release-slsa3.yml",
+        "release-slsa3:\n    needs: [final-manifest, release-readiness]\n    # Called workflows cannot elevate the caller's token permissions. Grant\n    # OIDC only to this provenance call; all other release jobs retain the\n    # workflow-level contents:read default.\n    permissions:\n      contents: read\n      id-token: write\n    uses: ./.github/workflows/release-slsa3.yml",
         "publish-release:",
         "Verify complete authenticated inventory before publication",
         "gh release download \"${TAG}\" --repo HuGR-Labs/corelink-cli --dir \"${PUBLISHED}\" --clobber",
@@ -71,7 +79,7 @@ pub(super) fn assert_release_contract(workflow: &str) {
         "uses: ./.github/workflows/sign-linux.yml",
         "uses: ./.github/workflows/sign-windows.yml",
         "uses: ./.github/workflows/notarize-macos.yml",
-        "tag: ${{ github.ref_name }}",
+        "tag: ${{ inputs.release_tag }}",
     ] {
         assert!(
             workflow.contains(required),

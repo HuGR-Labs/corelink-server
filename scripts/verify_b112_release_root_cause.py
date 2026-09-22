@@ -581,28 +581,24 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
             errors.append(f"missing {label}: {needle}")
 
     release_tags = _yaml_trigger_values(release, "tags")
-    if "cli-v*" not in release_tags:
-        errors.append("release-cli is missing its executable cli-v* trigger")
-    if "v*" in release_tags:
-        errors.append("release-cli must not acquire the Cosign v* trigger")
+    if "workflow_dispatch:" not in release_code:
+        errors.append("release-cli must be an explicit workflow_dispatch operation")
+    if release_tags:
+        errors.append("release-cli must not publish from a tag-push trigger")
     if not any(
-        isinstance(value, yaml.nodes.SequenceNode)
-        and [str(item.value) for item in value.value if isinstance(item, yaml.nodes.ScalarNode)]
-        == ["self-hosted", "mac", "corelink-builder"]
+        isinstance(value, yaml.nodes.ScalarNode)
+        and str(value.value) == "${{ matrix.target.runner }}"
         for _line, value in _yaml_job_key_nodes(release, "build", "runs-on")
     ):
-        errors.append("missing semantic isolated builder label set")
+        errors.append("build must select an isolated GitHub-hosted runner per target")
+    for runner in ("ubuntu-24.04", "windows-2022", "macos-14"):
+        if f"runner: {runner}" not in release_code:
+            errors.append(f"missing hosted target runner: {runner}")
     if not any(
-        isinstance(value, yaml.nodes.ScalarNode) and str(value.value) == "3"
-        for _line, value in _yaml_job_key_nodes(release, "build", "max-parallel")
-    ):
-        errors.append("missing semantic bounded matrix parallelism")
-    if not any(
-        args[:1] == ["scripts/ci-use-host-toolchain.sh"]
-        and args[1:] == ["${TARGET_TRIPLE}"]
+        args[:1] == ["scripts/ci-assert-pinned-toolchain.sh"]
         for _line, args in _active_commands(release, "bash")
     ):
-        errors.append("missing active host toolchain guard command")
+        errors.append("missing active pinned Rust toolchain guard command")
     if not any(name == "EXPECTED_ZIG_VERSION" and value == "0.16.0" for _line, name, value in _active_assignments(release)):
         errors.append("missing active Zig version pin")
     if not any(
@@ -610,6 +606,11 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
         for _line, value in _yaml_key_values(release, "uses")
     ):
         errors.append("missing active prebuilt installer pin")
+    if not any(
+        value == "mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29"
+        for _line, value in _yaml_key_values(release, "uses")
+    ):
+        errors.append("missing active pinned Zig setup action")
     if "cargo-zigbuild@0.19.8" not in [
         value for _line, value in _yaml_key_values(release, "tool")
     ]:
@@ -742,7 +743,7 @@ def mutation_self_test(release: str, cosign: str, backlog: str) -> None:
     mutations = {
         "cache export": (release.replace("CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}", "CARGO_ZIGBUILD_CACHE_MUTATED=${ZIGBUILD_CACHE}", 1), cosign, backlog),
         "prebuilt action": (release.replace("taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b", "actions/checkout@deadbeef", 1), cosign, backlog),
-        "cli trigger": (release.replace('      - "cli-v*"\n', "", 1), cosign, backlog),
+        "manual trigger": (release.replace("  workflow_dispatch:", "  # dispatch removed", 1), cosign, backlog),
         "retired workflow": (release, "name: stale\n", backlog),
         "retirement statement": (release, cosign, backlog.replace(
             "`cosign-sign.yml` foi removido em 2026-09-08 (B-118)",
@@ -791,22 +792,12 @@ def mutation_self_test(release: str, cosign: str, backlog: str) -> None:
             '          ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"\n', 1), cosign, backlog),
         "Cargo export order": (release.replace('          echo "CARGO_HOME=${CARGO_HOME}" >> "$GITHUB_ENV"\n', '', 1), cosign, backlog),
         "SRC consumer order": (_inject_run_command(release, 'cp "$SRC" /tmp/early-artifact'), cosign, backlog),
-        "runs-on echo bait": (release.replace(
-            "runs-on: [self-hosted, mac, corelink-builder]",
-            "runs-on: [self-hosted, mac, wrong-label]", 1
-        ).replace(
-            "          cargo zigbuild --version\n",
-            "          echo 'runs-on: [self-hosted, mac, corelink-builder]'\n"
-            "          cargo zigbuild --version\n", 1), cosign, backlog),
-        "max-parallel echo bait": (release.replace(
-            "      max-parallel: 3\n", "      # max-parallel removed\n", 1
-        ).replace(
-            "          cargo zigbuild --version\n",
-            "          echo 'max-parallel: 3'\n"
-            "          cargo zigbuild --version\n", 1), cosign, backlog),
+        "hosted Windows runner": (release.replace(
+            "runner: windows-2022", "runner: self-hosted", 1
+        ), cosign, backlog),
         "toolchain echo bait": (release.replace(
-            '        run: bash scripts/ci-use-host-toolchain.sh "${TARGET_TRIPLE}"\n',
-            "        run: echo 'bash scripts/ci-use-host-toolchain.sh ${TARGET_TRIPLE}'\n", 1), cosign, backlog),
+            "        run: bash scripts/ci-assert-pinned-toolchain.sh\n",
+            "        run: echo 'bash scripts/ci-assert-pinned-toolchain.sh'\n", 1), cosign, backlog),
         "zig pin echo bait": (release.replace(
             "          EXPECTED_ZIG_VERSION=0.16.0\n",
             "          echo 'EXPECTED_ZIG_VERSION=0.16.0'\n", 1), cosign, backlog),
