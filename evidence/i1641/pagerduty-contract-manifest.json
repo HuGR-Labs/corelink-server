@@ -1,6 +1,7 @@
 {
   "schema": "corelink.pagerduty.contract-manifest.v1",
   "issue": 1641,
+  "backlog_id": "B-008",
   "credentialless": true,
   "network_calls": false,
   "mutating_actions": false,
