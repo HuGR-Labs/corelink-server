@@ -2,9 +2,11 @@
 """Fail-closed static contract for the B-134 Docker-shim experiment.
 
 This checker deliberately does not manufacture runtime evidence. It proves
-that both candidate workflows exercise Docker-compatible commands on the
-``corelink`` fleet, that no placeholder/stub can report success, and that the
-evidence ledger remains ``UNMEASURED`` until a real run is recorded.
+that the credential-free ``smoke-install`` observation reaches the
+``corelink`` fleet, records backend and runner provenance, runs the structured
+helper, and keeps the evidence ledger ``UNMEASURED`` until a real run is
+recorded. The helper observes a local fixture; it does not claim the separate
+image build, installer, doctor, publish, or deploy acceptance boundary.
 """
 
 from __future__ import annotations
@@ -153,19 +155,22 @@ def check_smoke(text: str) -> None:
     require_run_on_corelink(text, where)
     if "HOSTED_ACTIONS_AVAILABLE" in text:
         raise ContractError(f"{where}: hosted availability gate would hide the experiment")
-    require_line(text, r"^\s*CORELINK_CANARY_PAT:\s*\$\{\{ secrets\.CORELINK_CANARY_PAT \}\}\s*$", where)
-    require_exec_line(script, '-e CORELINK_TEST_TOKEN="$CORELINK_CANARY_PAT" \\', where)
-    require_line(text, r"^\s*run:\s*docker build -f apps/get-corelink-worker/test/smoke-install\.Dockerfile\s+", where)
-    require_exec_line(script, "if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then", where)
-    require_exec_line(script, 'if [ -n "${CORELINK_CANARY_PAT:-}" ]; then', where)
-    require_exec_line(script, 'if [ -z "${CORELINK_TEST_TOKEN:-}" ]; then', where)
-    require_exec(script, r"^\s*docker run\s+", where)
-    require_exec(script, r"&& corelink --version\b", where)
-    require_exec(script, r"&& corelink doctor\b", where)
-    if re.search(r"(?i)CORELINK_INSTALL_PROBE_TOKEN|PROBE_TOKEN|openssl rand", script):
-        raise ContractError(f"{where}: synthetic installer token would create false evidence")
-    if re.search(r"(?i)changeme|placeholder|stub", script):
-        raise ContractError(f"{where}: placeholder/stub text remains in the executable contract")
+    if "hosted/manual" in text.lower():
+        raise ContractError(f"{where}: hosted wording contradicts the CoreLink fleet route")
+    require_line(text, r"^\s*workflow_dispatch:\s*$", where)
+    require_line(text, r"^\s*I1672_FLEET_LABEL:\s*corelink\s*$", where)
+    require_line(text, r"^\s*I1672_RUNNER_NAME:\s*\$\{\{ runner\.name \}\}\s*$", where)
+    require_line(text, r"^\s*I1672_RUNNER_OS:\s*\$\{\{ runner\.os \}\}\s*$", where)
+    require_line(text, r"^\s*I1672_RUNNER_ARCH:\s*\$\{\{ runner\.arch \}\}\s*$", where)
+    require_exec_line(script, "set -euo pipefail", where)
+    require_exec_line(script, "if docker info > artifacts/i1672/docker-info.txt 2>&1; then", where)
+    require_exec_line(script, 'exit "${rc}"', where)
+    require_exec_line(script, "python3 scripts/smoke_install_observe.py \\", where)
+    require_exec_line(script, "--receipt artifacts/i1672/smoke-install-receipt.json", where)
+    require("if: ${{ always() }}", where)
+    require("upload-artifact@", where)
+    if re.search(r"(?i)secrets\.|CORELINK_CANARY_PAT|CORELINK_TEST_TOKEN|docker build|docker run|corelink doctor", text):
+        raise ContractError(f"{where}: credentialed install claims do not belong in the contract-free observation")
 
 
 def check_cosign(text: str) -> None:
