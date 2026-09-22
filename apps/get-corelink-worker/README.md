@@ -66,7 +66,7 @@ The install Worker at `https://corelink-get.humangr.com` serves binaries
 from `https://github.com/HuGR-Labs/corelink-cli/releases/latest/download`.
 Releases in that repo are created automatically by
 `.github/workflows/release-cli.yml` in `HuGR-dev/corelink-server`
-whenever a `cli-v*` tag is pushed.
+when an owner manually dispatches it for an existing `cli-v*` tag.
 
 ### One-time operator setup (do this once, before the first release)
 
@@ -89,18 +89,22 @@ whenever a `cli-v*` tag is pushed.
 
 ### Releasing a new CLI version
 
+The server tags `cli-v0.1.0` and `cli-v0.1.1` are historical releases; `cli-v0.1.2` is the next patch target. This version alignment does not claim signing readiness: Apple and Windows certificates remain an external block tracked in [#1664](https://github.com/HuGR-dev/corelink-server/issues/1664).
+
 ```bash
-# 1. Ensure the version in Cargo.toml workspace is bumped (e.g. 0.1.0)
+# 1. Ensure the version in Cargo.toml workspace is bumped (for the next patch, 0.1.2)
 # 2. Commit all changes to main
-# 3. Push the release tag — the workflow fires automatically
-git tag cli-v0.1.0
-git push origin cli-v0.1.0
+# 3. Create and push the release tag after the signing gate is ready
+git tag cli-v0.1.2
+git push origin cli-v0.1.2
+# 4. Dispatch the workflow for that exact existing tag
+gh workflow run release-cli.yml --ref cli-v0.1.2 --field release_tag=cli-v0.1.2
 ```
 
 The workflow will:
 1. Build 5 binaries via `cargo-zigbuild` on ubuntu-22.04
 2. Compute SHA-256 checksums
-3. Create a release in `HuGR-Labs/corelink-cli` tagged `v0.1.0`
+3. Create a release in `HuGR-Labs/corelink-cli` tagged `v0.1.2`
 4. Upload 11 files: 5 binaries + 5 `.sha256` files + `checksums.txt`
 
 ### Expected artifact list (per release)
@@ -123,7 +127,7 @@ The workflow will:
 
 | Tag | Meaning |
 |-----|---------|
-| `cli-v0.1.0` | CLI release 0.1.0 (triggers the workflow) |
+| `cli-v0.1.2` | CLI release 0.1.2 (manual workflow target) |
 | `v*` | Server/other releases (does NOT trigger release-cli.yml) |
 
 ### Troubleshooting
