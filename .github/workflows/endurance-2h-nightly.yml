@@ -85,6 +85,7 @@ jobs:
         id: target_host
         env:
           K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}
+          DURATION: ${{ github.event.inputs.duration || '2h' }}
         run: |
           set -euo pipefail
           if [[ -z "${K6_TARGET_HOST:-}" ]]; then
@@ -97,8 +98,16 @@ jobs:
             echo "::error::K6_TARGET_HOST must equal $CANONICAL_TARGET (optional trailing slash only)"
             exit 1
           fi
+          case "${DURATION}" in
+            30s|2h) ;;
+            *) echo "::error::DURATION must be 30s or 2h"; exit 1 ;;
+          esac
+          if [[ "${DURATION}" == "2h" && "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]]; then
+            echo "::error::endurance is dispatch-only"
+            exit 1
+          fi
           echo "target_host=$TARGET_HOST" >> "$GITHUB_OUTPUT"
-          echo "Target: $TARGET_HOST"
+          echo "Target: $TARGET_HOST duration=${DURATION}"
 
       - name: prepare results dir
         id: prepare_results
