@@ -14240,7 +14240,9 @@ Docker.**
 O único workflow candidato restante depende de Docker e é roteado para a fila
 `corelink` como experimento controlado:
 
-- `smoke-install.yml` — preflight `docker info`, build, install/version e `doctor`
+- `smoke-install.yml` — preflight `docker info`, runner provenance, and a
+  credential-free local fixture receipt; the image build, install/version,
+  doctor, publish, and deploy acceptance evidence remain separate requirements
 - `cosign-sign.yml` — **removido em 2026-09-08 (B-118)**; não é mais uma
   observação pendente nem uma lane que possa ser promovida por evidência futura
 
@@ -14248,9 +14250,9 @@ O único workflow candidato restante depende de Docker e é roteado para a fila
 esta verde (2026-08-31T00:39). **Mas ele chama `buildctl` DIRETO**, nao passa pelo shim.
 Isso nao prova nada sobre os dois acima.
 
-**O experimento e barato e decide o smoke:** a proxima execucao deve despacha-lo com
-`runs-on: corelink` e ler o resultado. Ate que exista essa execucao, a afirmacao "ele
-funciona na frota" segue **nao medida** — o comentario em `cargo-deny.yml:102`
+**O experimento e barato e mede apenas a fronteira do smoke:** a proxima execucao deve
+despacha-lo com `runs-on: corelink` e ler o resultado. Ate que exista essa execucao,
+a afirmacao "ele funciona na frota" segue **nao medida** — o comentario em `cargo-deny.yml:102`
 ("the `corelink` box image ships no docker at all") ja esta desatualizado pelo mesmo
 motivo.
 
