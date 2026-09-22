@@ -1291,6 +1291,17 @@ mod tests {
             Err(RunnerAggregateError::InvalidTenantPeriodTerms { .. })
         ));
 
+        // A tier/rate change belongs to a later snapshot/period; it cannot
+        // retroactively reprice consumption already bound to this snapshot.
+        let mut changed_rate = starter_input_with_prior(0, vec![]);
+        let terms = changed_rate.tenant_period_terms.get_mut(&t).unwrap();
+        terms.rate_cents_per_vcpu_hour += 1;
+        terms.terms_snapshot_digest_hex = terms.expected_snapshot_digest_hex();
+        assert!(matches!(
+            aggregate_runner_usage(&changed_rate),
+            Err(RunnerAggregateError::InvalidPriorConsumption { .. })
+        ));
+
         let overflow = starter_input_with_prior(
             u128::MAX,
             vec![StagedRunnerEvent {
