@@ -66,7 +66,8 @@ Exit codes (semantic — wired to PagerDuty by the wrapper workflow):
          (b) GAP count went up
          (c) drill missed past its grace window (Critical: 0d, Important: 7d, Standard: 14d)
          (d) any compliance-gate CI workflow failed in last 7d
-         (e) any vendor review > 2× its cadence (i.e. doubled the SLA window)
+         (e) any vendor review past its cadence window (staleness is a
+             regression; the digest remains the evidence and escalation path)
          (f) **TLA ratchet floor regressed** (R5-3) — any of
              `tla_verified` / `code_referenced` / `test_referenced` /
              `critical_referenced` decreased OR `orphan_refs` > 0
@@ -238,9 +239,9 @@ def assemble(today: date, output_dir: Path, reference: str | None,
             f"{len(drill_flags)} drill(s) overdue past grace window: "
             + ", ".join(f"{d.drill_id} (+{d.days_overdue}d)" for d in drill_flags)
         )
-    if any(v.sla_2x_breach for v in vendor_breaches):
+    if vendor_breaches:
         reasons.append(
-            f"{sum(1 for v in vendor_breaches if v.sla_2x_breach)} vendor review(s) > 2× cadence"
+            f"{len(vendor_breaches)} vendor review(s) overdue past cadence"
         )
     if ci_failures:
         reasons.append(

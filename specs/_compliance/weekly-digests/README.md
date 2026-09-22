@@ -31,11 +31,11 @@ This README is:
 
 ### 2.2 Vendor SLA tiers
 
-| Category | Cadence letter | Cadence (days) | 1× breach action | 2× breach action |
+| Category | Cadence letter | Cadence (days) | Breach action |
 |---|---|---|---|---|
-| Critical | Q | 90 | email owner; review packet in 30d | PD page; ad-hoc review per RB-VENDOR-RISK-QUARTERLY-REVIEW.md §4 |
-| Important | B | 180 | email owner; review packet in 30d | PD page; ad-hoc review |
-| Standard | A | 365 | email owner; review at next quarterly | PD page; ad-hoc review |
+| Critical | Q | 90 | PD page; email owner; review packet in 30d |
+| Important | B | 180 | PD page; email owner; review packet in 30d |
+| Standard | A | 365 | PD page; email owner; review packet at next quarterly |
 
 ### 2.3 Drill criticality
 
@@ -65,7 +65,7 @@ The digest script exits 1 (which triggers PagerDuty + PR comment via the workflo
 3. **Critical-class drill missed** past 0d grace.
 4. **Important-class drill missed** past 7d grace.
 5. **Standard-class drill missed** past 14d grace.
-6. **Vendor 2× SLA breach** (any tier).
+6. **Any vendor review past its cadence window** (any tier).
 7. **Compliance-gate CI workflow** with conclusion `failure / timed_out / cancelled / startup_failure` in last 7d.
 8. **Co-occurrence** of two or more of (1)..(7) — escalates severity one tier (handled by the runbook §4 matrix).
 
