@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import tempfile
@@ -89,6 +90,8 @@ def _number(source: dict[str, Any], *paths: tuple[str, ...]) -> float:
             value = value.get(part)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             continue
+        if not math.isfinite(value):
+            raise ProbeError(f"capacity field {'/'.join(path)} is not finite")
         if value < 0:
             raise ProbeError(f"capacity field {'/'.join(path)} is negative")
         return float(value)

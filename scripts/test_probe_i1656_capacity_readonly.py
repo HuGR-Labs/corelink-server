@@ -1,3 +1,5 @@
+import importlib.util
+import json
 import unittest
 from pathlib import Path
 
@@ -5,6 +7,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PROBE = (ROOT / "scripts/probe_i1656_capacity_readonly.py").read_text(encoding="utf-8")
 WORKFLOW = (ROOT / ".github/workflows/issue-1656-capacity-refresh.yml").read_text(encoding="utf-8")
+PROBE_SPEC = importlib.util.spec_from_file_location(
+    "probe_i1656_capacity_readonly", ROOT / "scripts/probe_i1656_capacity_readonly.py"
+)
+assert PROBE_SPEC is not None and PROBE_SPEC.loader is not None
+PROBE_MODULE = importlib.util.module_from_spec(PROBE_SPEC)
+PROBE_SPEC.loader.exec_module(PROBE_MODULE)
 
 
 class Issue1656CapacityRefreshContractTests(unittest.TestCase):
@@ -27,3 +35,10 @@ class Issue1656CapacityRefreshContractTests(unittest.TestCase):
         self.assertNotIn("PATCH", WORKFLOW)
         self.assertNotIn("POST", WORKFLOW)
         self.assertNotIn("DELETE", WORKFLOW)
+
+    def test_nonfinite_json_capacity_values_fail_closed(self) -> None:
+        for encoded in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(encoded=encoded):
+                source = json.loads(f'{{"total_vcpu": {encoded}}}')
+                with self.assertRaisesRegex(PROBE_MODULE.ProbeError, "not finite"):
+                    PROBE_MODULE._number(source, ("total_vcpu",))
