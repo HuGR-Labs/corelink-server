@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "suite_id": "i1672",
+  "issue": 1672,
+  "kind": "contract-only",
+  "workflow": ".github/workflows/smoke-install.yml",
+  "runner": "ubuntu-latest",
+  "trigger": "workflow_dispatch",
+  "helper": "scripts/smoke_install_observe.py",
+  "tests": [
+    "tests/test_i1672_smoke_install_contract.py"
+  ],
+  "command": "python3 -m pytest -q tests/test_i1672_smoke_install_contract.py",
+  "receipt": "artifacts/i1672/smoke-install-receipt.json",
+  "observations": [
+    "startup",
+    "readiness",
+    "endpoint_functional",
+    "endpoint_wrong",
+    "timeout",
+    "process_death",
+    "cleanup",
+    "artifact_provenance"
+  ],
+  "forbidden": [
+    "campaign-ci.yml",
+    "self-hosted",
+    "secrets.",
+    "production_endpoint"
+  ],
+  "runtime_boundary": "A manual GitHub-hosted dispatch is required for backend evidence; local contract tests make no fleet or production claim.",
+  "evidence_remainder": {
+    "status": "PENDING_MANUAL_DISPATCH",
+    "required": ["github_run_id", "receipt", "backend_log"],
+    "claim_allowed_before_dispatch": false
+  }
+}

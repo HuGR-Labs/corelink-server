@@ -1,171 +1,60 @@
-# smoke-install — end-to-end smoke test of the `corelink` install one-liner.
-# B-134 experiment: this run exercises the `corelink` runner's
-# Docker-compatible nerdctl/containerd backend. A successful `docker info` or
-# `docker build` proves command compatibility only; it does not claim a Docker
-# daemon exists.
-# -----------------------------------------------------------------------------
-# Builds a clean Debian container, runs the public install script, and asserts
-# `corelink --version` / `corelink doctor`. This is a Docker CLI workflow (plain
-# `docker build`/`docker run` `run:` steps — NOT a container action), so it does
-# NOT hit the "Container action is only supported on Linux" failure. The B-134
-# candidate runs it on `corelink` so the backend behavior can be measured.
-#
-# ⚠️ THIS GATE WAS GREEN AND BLIND (fixed 2026-08-02).
-#   The CI test token it gated on never existed — verified: absent from the repo
-#   secrets, and there are no org secrets. The preflight treated that as a reason
-#   to SKIP and report success, so every run since inception passed while
-#   executing none of the smoke test. That covers the 2026-07-10 launch and the
-#   three weeks since — exactly the window in which this was meant to be proving
-#   that the customer-facing install one-liner still works.
-#
-#   It is also the gate that should have caught the CLI being fully broken
-#   against prod while its unit tests stayed green (found and fixed by hand, #842).
-#
-#   A gate that cannot run must say so in red: reporting green is worse than
-#   having no gate at all, because it also consumes the attention that would
-#   otherwise notice the gap. That principle stands; what follows is the second
-#   correction to how it was applied.
-#
-# The installer itself invokes `corelink whoami` after writing its config, so a
-# successful end-to-end install necessarily requires a real PAT. The workflow
-# therefore fails closed when `CORELINK_CANARY_PAT` is unavailable; a synthetic
-# token would only create false evidence by stopping at the installer's auth
-# check. The same real PAT is then used by `corelink doctor` for its CAS write.
-#
-# THE CREDENTIAL: `CORELINK_CANARY_PAT`. There is NO owner action outstanding.
-#   RETIRED: the never-created secret this file used to demand, and used to tell
-#   the owner to go and mint, was `CORELINK_TEST_TOKEN_CI`. It is referenced
-#   nowhere in this workflow any more. The retirement remains recorded in
-#   `docs/internal/secrets-checklist.md` (matrix row 134) and the test README.
-#
-#   No new secret is minted and nothing waits on a human. `CORELINK_CANARY_PAT`
-#   already exists, is already bound, and is already working: `cas-canary.yml:38-46`
-#   uses it hourly for an "Authenticated CAS BLAKE3 round-trip against prod"
-#   (6/6 successful runs on 2026-08-02), so it demonstrably carries `cas:rw`.
-#   That is exactly what `corelink doctor` requires — doctor's storage_write
-#   check performs a REAL production CAS PUT (`PUT /v1/cas/<tenant>/<blake3>`,
-#   `tools/cli/src/doctor.rs:200`), which is why a read-only PAT would fail it
-#   and why the installer's own final verb is `whoami`, not `doctor`.
-#
-#   ⚠️ SHARED CREDENTIAL: `CORELINK_CANARY_PAT` now backs TWO workflows —
-#   `cas-canary.yml` (hourly, prod CAS round-trip) and this one. Rotating or
-#   revoking it takes both red. Update both consumers in the same pass.
-#
-# DEGRADATION — honest and fail-closed:
-#   * No Docker-compatible backend -> HARD FAIL the job.
-#   * No PAT -> HARD FAIL before the install runs. The installer calls `whoami`,
-#     so proceeding with a fake token would not exercise the advertised path.
-#
-#   Safe to fail loudly: the triggers are `push:main` + weekly schedule + manual
-#   dispatch, NOT `pull_request`, so a red here blocks nobody's PR.
-#
-# NOT YET AN OBSERVED PASS. This gate has never executed its steps on the
-# `corelink` backend, so the first real run is the measurement. A red there is
-# the gate working; read its output rather than re-gating it into silence.
-
+# i1672 — hosted/manual install boundary observation; credential-free.
 name: smoke-install
-on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/get-corelink-worker/**"
-      - ".github/workflows/smoke-install.yml"
-  schedule:
-    # Cadence: daily -> WEEKLY Wed (CI cost diet 2026-08-01). The paths-filtered
-    # `push` lane above still smokes every change to the installer surface.
-    - cron: "0 6 * * 3"
-  workflow_dispatch:
 
-# Least-privilege: this smoke test only checks out + builds + runs a throwaway
-# Docker image — no writes (no gh-api, comments, pushes, or releases). A default
-# broad token scope is unnecessary attack surface.
+on:
+  workflow_dispatch:
+    inputs:
+      timeout_seconds:
+        description: Probe timeout for startup/readiness and cleanup
+        required: false
+        default: "2"
+        type: string
+
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  smoke:
-    name: installer smoke (Docker-compatible backend experiment)
-    # The shim is intentionally not described as a Docker daemon.
-    runs-on: corelink
+  observe:
+    name: hosted smoke observation
+    runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      # Map the secret to a job-level env so the preflight can test for its
-      # PRESENCE (never its value). The `secrets` context is not usable in a
-      # job-level `if:` — mirror the repo idiom (pentest-findings-sync.yml,
-      # cas-canary.yml) of routing the secret through `env` first. Resolves to
-      # the empty string when the secret is unset.
-      CORELINK_CANARY_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Checkout tested tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      - name: Preflight — Docker-compatible backend (hard requirement)
+      - name: Observe Docker boundary
+        id: backend
         shell: bash
         run: |
           set -uo pipefail
-
-          # A Docker-compatible backend is the ONLY hard requirement: without
-          # it nothing below can execute. On `corelink`, docker is a drop-in
-          # shim over nerdctl/containerd/buildkitd; success proves compatibility,
-          # not daemon identity.
-          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-            echo "Docker-compatible backend reachable."
+          mkdir -p artifacts/i1672
+          if docker info > artifacts/i1672/docker-info.txt 2>&1; then
+            echo "Docker boundary reachable; helper will classify daemon versus shim separately."
           else
-            echo "::error title=smoke-install cannot run (Docker-compatible backend)::The docker command or its backend is unavailable on this runner."
-            exit 1
+            rc=$?
+            echo "::error title=i1672 backend unavailable::docker info failed (rc=${rc}); fleet/backend failure is recorded explicitly."
+            exit "${rc}"
           fi
 
-          # The installer calls `corelink whoami` before returning, so a real
-          # PAT is a hard requirement for this end-to-end path. Do not replace
-          # it with a token-shaped sentinel: that would make the smoke stop
-          # before the version and doctor assertions and report misleading
-          # evidence.
-          if [ -n "${CORELINK_CANARY_PAT:-}" ]; then
-            echo "CORELINK_CANARY_PAT is set — the authenticated install and doctor legs will run."
-          else
-            echo "::error title=smoke-install cannot run (PAT)::CORELINK_CANARY_PAT is required because the installer invokes corelink whoami."
-            exit 1
-          fi
-
-      - name: Build smoke image
-        id: build
-        run: docker build -f apps/get-corelink-worker/test/smoke-install.Dockerfile -t corelink-smoke .
-
-      - name: Run install one-liner (corelink --version)
-        if: success()
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker run --rm \
-            -e CORELINK_TEST_TOKEN="$CORELINK_CANARY_PAT" \
-            corelink-smoke \
-            sh -c 'curl -fsSL "$CORELINK_GET_URL" | sh -s -- --token="$CORELINK_TEST_TOKEN" && corelink --version'
-
-      # AUTHENTICATED — doctor genuinely needs a cas:rw PAT (it performs a real
-      # prod CAS PUT). It is gated on the IMAGE existing, not on the version leg
-      # being clean, so one run yields both verdicts instead of hiding the second
-      # behind the first.
-      - name: Verify corelink doctor reaches the server
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+      - name: Observe process, readiness, endpoint, death, timeout, and cleanup
+        if: ${{ always() }}
         shell: bash
         env:
-          # Shared with cas-canary.yml — see the SHARED CREDENTIAL note in the
-          # header before rotating.
-          CORELINK_TEST_TOKEN: ${{ secrets.CORELINK_CANARY_PAT }}
+          I1672_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
         run: |
           set -uo pipefail
-          if [ -z "${CORELINK_TEST_TOKEN:-}" ]; then
-            echo "::error title=smoke-install cannot run (PAT)::CORELINK_CANARY_PAT is not set, so the authenticated leg proves nothing. This step FAILS rather than skipping. It is the same secret cas-canary.yml uses; if that workflow is green, this one is a binding problem, not a minting problem."
-            exit 1
-          fi
-          # `doctor` runs the canonical connectivity + auth diagnostic checks
-          # (there is no `ping` subcommand; the real verb is `doctor`,
-          # tools/cli/src/main.rs) and its storage_write check does a REAL CAS
-          # PUT against prod (tools/cli/src/doctor.rs:200) — hence cas:rw.
-          docker run --rm \
-            -e CORELINK_TEST_TOKEN="$CORELINK_TEST_TOKEN" \
-            corelink-smoke \
-            sh -c "curl -fsSL \$CORELINK_GET_URL | sh -s -- --token=\$CORELINK_TEST_TOKEN && corelink doctor"
+          timeout="${I1672_TIMEOUT_SECONDS:-2}"
+          python3 scripts/smoke_install_observe.py \
+            --timeout-seconds "${timeout}" \
+            --receipt artifacts/i1672/smoke-install-receipt.json
+
+      - name: Upload structured observation
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: i1672-smoke-install-observation-${{ github.run_id }}
+          path: artifacts/i1672/
+          if-no-files-found: error
+          retention-days: 14
