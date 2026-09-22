@@ -360,6 +360,7 @@ class B029LoadGateTests(unittest.TestCase):
         self.assertEqual(len(parts), 3)
         for occurrence in (0, 1):
             with self.subTest(occurrence=occurrence):
+                shutil.rmtree(self.root / "workflow-contract", ignore_errors=True)
                 mutated = "".join(
                     segment + ("" if index == occurrence else guard)
                     for index, segment in enumerate(parts[:-1])
