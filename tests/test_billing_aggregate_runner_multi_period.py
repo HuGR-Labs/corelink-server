@@ -72,7 +72,7 @@ def test_failed_batch_lost_ack_and_bare_watermark_never_reapply_accounting() -> 
     else: raise AssertionError("failed atomic batch passed")
     assert seam.snapshot(db) == before
     assert seam.commit(db, rows, "2026-02") == "Committed"; committed = seam.snapshot(db)
-    assert seam.commit(db, rows, "2026-02") == "Deduped" and seam.snapshot(db) == committed
+    assert seam.commit(db, rows, "2026-02", now=2000) == "Deduped" and seam.snapshot(db) == committed
     db2 = seam.database(); seam.terms(db2, T1, "2026-02"); seam.stage(db2, T1, "bare", "2026-02", emitted=1)
     db2.execute("UPDATE usage_event_staging SET runner_aggregated_at=1"); db2.commit(); bare, _ = seam.extract(db2, "2026-02", 8)
     assert not bare
