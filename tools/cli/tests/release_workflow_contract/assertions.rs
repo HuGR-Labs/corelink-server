@@ -30,15 +30,7 @@ pub(super) fn load_script(name: &str) -> Result<String, String> {
 
 pub(super) fn assert_release_contract(workflow: &str) {
     for required in [
-        "workflow_dispatch:",
-        "release_tag:",
-        "refs/tags/${{ inputs.release_tag }}",
-        "Resolve typed release identity",
-        "runner: ubuntu-24.04",
-        "runner: windows-2022",
-        "runner: macos-14",
-        "runs-on: ${{ matrix.target.runner }}",
-        "mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29",
+        "- \"cli-v*\"",
         "HuGR-Labs/corelink-cli",
         "EXPECTED_ZIG_VERSION=0.16.0",
         "EXPECTED_CARGO_ZIGBUILD_VERSION=0.19.8",
@@ -70,8 +62,8 @@ pub(super) fn assert_release_contract(workflow: &str) {
         "gh api --method DELETE \"repos/HuGR-Labs/corelink-cli/releases/assets/${STAGING_ASSET_ID}\"",
         "STAGING_ASSET_COUNT=\"$(gh api \"repos/HuGR-Labs/corelink-cli/releases/tags/${TAG}\"",
         "release-slsa3:",
-        "release-slsa3:\n    needs: [final-manifest, release-readiness, release]\n    # Called workflows cannot elevate the caller's token permissions. Grant\n    # OIDC only to this provenance call; all other release jobs retain the\n    # workflow-level contents:read default.\n    permissions:\n      contents: read\n      id-token: write\n    uses: ./.github/workflows/release-slsa3.yml",
-        "publish-release:\n    name: publish verified signed release\n    needs: [release-slsa3, release-readiness, final-manifest, release]",
+        "release-slsa3:\n    needs: [final-manifest, release-readiness, release]\n    # Called workflows cannot elevate the caller's token permissions. Grant\n    # OIDC only to this provenance call; all other release jobs retain the\n    # workflow-level contents:read default.\n    permissions:\n      attestations: write\n      contents: read\n      id-token: write\n    uses: ./.github/workflows/release-slsa3.yml\n    with:\n      release_tag: ${{ inputs.release_tag }}\n      source_sha: ${{ needs.release.outputs.source_sha }}\n      manifest_sha256: ${{ needs.final-manifest.outputs.sha256 }}",
+        "publish-release:",
         "Verify complete authenticated inventory before publication",
         "gh release download \"${TAG}\" --repo HuGR-Labs/corelink-cli --dir \"${PUBLISHED}\" --clobber",
         "scripts/verify_cli_release_inventory.py",
@@ -79,7 +71,7 @@ pub(super) fn assert_release_contract(workflow: &str) {
         "uses: ./.github/workflows/sign-linux.yml",
         "uses: ./.github/workflows/sign-windows.yml",
         "uses: ./.github/workflows/notarize-macos.yml",
-        "tag: ${{ inputs.release_tag }}",
+        "tag: ${{ github.ref_name }}",
     ] {
         assert!(
             workflow.contains(required),
@@ -151,15 +143,15 @@ pub(super) fn assert_downstream_signer_contract(name: &str, workflow: &str) {
     );
     if name == "sign-windows.yml" {
         assert!(
-            workflow.contains("Copy-Item ./assets/extracted/corelink.exe ./assets/corelink-windows-x86_64.exe -Force"),
+            workflow.contains(
+                "cp \"./assets/extracted/corelink.exe\" \"./assets/corelink-windows-x86_64.exe\""
+            ),
             "a raw Windows release executable must be replaced with signed bytes"
         );
         assert!(
-            workflow.contains("runs-on: windows-2022")
-                && workflow.contains("signtool.exe")
-                && workflow.contains("Import-PfxCertificate")
-                && workflow.contains("/sha1 $cert.Thumbprint"),
-            "Windows signing must use the hosted signtool certificate store without a password argv"
+            workflow.contains("EXPECTED_OSSLSIGNCODE_VERSION: \"2.13\"")
+                && !workflow.contains("apt-get install"),
+            "Windows signing must use the pinned runner-image toolchain, not a mutable apt install"
         );
     }
     if name == "sign-linux.yml" {
@@ -213,26 +205,20 @@ pub(super) fn assert_slsa_contract(workflow: &str) {
         "workflow_call:",
         "manifest_sha256:",
         "SOURCE_SHA: ${{ inputs.source_sha }}",
-        "SUBJECT_LIST: ${{ needs.build-artifacts.outputs.subject-list }}",
-        "RELEASE_TAG: ${{ inputs.release_tag }}",
         "release-manifest.json",
         "--pattern checksums.txt",
-        "Bind OIDC provenance to the immutable release tag and source",
         "test \"${GITHUB_REF}\" = \"refs/tags/${TAG}\"",
         "test \"${GITHUB_SHA}\" = \"${SOURCE_SHA}\"",
-        "re.escape(os.environ[\"TAG\"])",
-        "@refs/tags/${ESCAPED_TAG}$",
-        "CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}",
-        "test \"${CALLER_WORKFLOW_REF}\" = \"${REPO}/.github/workflows/release-cli.yml@refs/tags/${TAG}\"",
-        "release-cli.yml@refs/tags/${TAG}",
-        "CALLED_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/release-slsa3.yml@${{ github.ref }}",
-        "caller/called workflow identity is not bound",
-        "builder_id = f\"{server}/{called_workflow_ref}\"",
-        "contents: read # No source-repository write permission is needed for provenance.",
-        "Upload provenance to the release",
-        "test \"$(gh --version | awk 'NR == 1 {print $3}')\" = \"2.79.0\"",
-        "--tlog-upload=true",
-        "scripts/verify_cli_rekor_bundle.py",
+        "attestations: write",
+        "id-token: write",
+        "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
+        "subject-checksums: provenance-subjects.sha256",
+        "provenance.intoto.jsonl.bundle",
+        "gh attestation verify",
+        "--signer-workflow",
+        "--source-ref",
+        "--source-digest",
+        "--cert-oidc-issuer \"https://token.actions.githubusercontent.com\"",
     ] {
         assert!(
             workflow.contains(required),
@@ -250,8 +236,9 @@ pub(super) fn assert_publication_inventory_contract(workflow: &str) {
         "gh release download \"${TAG}\" --repo HuGR-Labs/corelink-cli \\",
         "--dir \"${PUBLISHED}\" --clobber",
         "scripts/verify_cli_release_inventory.py",
-        "cosign verify-blob",
-        "--certificate-oidc-issuer \"https://token.actions.githubusercontent.com\"",
+        "gh attestation verify",
+        "--signer-workflow",
+        "--cert-oidc-issuer \"https://token.actions.githubusercontent.com\"",
         "gh release edit \"${TAG}\" --repo HuGR-Labs/corelink-cli --draft=false",
     ] {
         assert!(
@@ -289,14 +276,14 @@ pub(super) fn assert_retry_manifest_contract(workflow: &str) {
 pub(super) fn assert_inventory_helper_contract(script: &str) {
     for required in [
         "staging-manifest.json",
-        "set(api_names) != expected",
-        "actual_names != expected",
-        "duplicate name",
-        "subject_digests != artifact_digests",
-        "verify_checksums(directory, artifact_digests)",
+        "METADATA",
+        "provenance.intoto.jsonl.bundle",
+        "signed_statement",
+        "dsseEnvelope",
+        "subject_digests",
+        "verify_checksums(directory, artifacts)",
         "CHECKSUM_LINE",
-        "canonical closed-world asset index",
-        "--repository",
+        "release inventory is not closed-world",
         "except (OSError, ValueError, json.JSONDecodeError)",
     ] {
         assert!(

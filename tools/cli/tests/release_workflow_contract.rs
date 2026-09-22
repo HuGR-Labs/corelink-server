@@ -15,29 +15,28 @@ use assertions::*;
 
 fn assert_managed_cli_provenance_contract(caller: &str, generator: &str) {
     assert!(
-        generator.contains(
-            "slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@"
-        ),
-        "CLI provenance must delegate to the managed SLSA L3 generator"
+        generator.contains("actions/attest-build-provenance@"),
+        "CLI provenance must use GitHub's managed provenance action"
     );
     assert!(
         generator
             .lines()
             .any(|line| line.trim().starts_with("uses:")
-                && line.contains("generator_generic_slsa3.yml@")
+                && line.contains("actions/attest-build-provenance@")
                 && line.rsplit_once('@').is_some_and(
                     |(_, sha)| sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())
                 )),
-        "managed SLSA L3 generator must be pinned to a full commit SHA"
+        "GitHub's provenance action must be pinned to a full commit SHA"
     );
     for required in [
         "provenance.intoto.jsonl",
         "provenance.intoto.jsonl.bundle",
         "https://token.actions.githubusercontent.com",
-        "--certificate-oidc-issuer",
-        "--certificate-identity-regexp",
-        "HuGR-Labs/corelink-server/.github/workflows/release-cli.yml@refs/tags/cli-v",
-        "base64-subjects",
+        "--cert-oidc-issuer",
+        "--signer-workflow",
+        "--source-ref",
+        "--source-digest",
+        "subject-checksums",
         "subject-list",
         "release-manifest.json",
     ] {
@@ -59,17 +58,16 @@ fn assert_managed_cli_provenance_contract(caller: &str, generator: &str) {
 }
 
 #[test]
-fn cli_provenance_uses_managed_l3_generator_and_exact_release_identity() -> Result<(), String> {
+fn cli_provenance_uses_managed_generator_and_exact_release_identity() -> Result<(), String> {
     let caller = release_workflow()?;
     let generator = load_workflow("release-slsa3.yml")?;
     assert_managed_cli_provenance_contract(&caller, &generator);
 
     for (mutant, label) in [
-        (generator.replace("generator_generic_slsa3.yml@", "generator_generic_slsa3.yml@v2"), "unpinned generator"),
-        (generator.replace("HuGR-Labs/corelink-server/.github/workflows/release-cli.yml@refs/tags/cli-v", "attacker/repo/.github/workflows/release-cli.yml@refs/tags/cli-v"), "wrong caller identity"),
+        (generator.replace("actions/attest-build-provenance@", "actions/attest-build-provenance@v4"), "unpinned generator"),
+        (generator.replace("--signer-workflow", "--owner"), "wrong caller identity verifier"),
         (generator.replace("release-manifest.json", "wrong-subject.json"), "tampered subject"),
-        (generator.replace("slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@", "local-generator@"), "unmanaged builder"),
-        (generator.replace("--certificate-identity-regexp", "--certificate-identity"), "wrong caller identity verifier"),
+        (generator.replace("actions/attest-build-provenance@", "local-generator@"), "unmanaged builder"),
         (generator.replace("https://token.actions.githubusercontent.com", "https://wrong-issuer.example"), "wrong Fulcio issuer"),
     ] {
         assert!(
