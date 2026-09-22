@@ -1,0 +1,40 @@
+name: issue-2047 Buck2 authenticated warm-cache contract
+
+# Credentialless hosted proof for #2047.  This lane checks the source
+# contract and mutation teeth only; it never downloads Buck2, reads a PAT,
+# contacts CoreLink, or dispatches the long runtime workflow.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/buck2-starter-ci.yml"
+      - ".github/workflows/issue-2047-buck2-cache-contract.yml"
+      - "examples/buck2-starter/.buckconfig"
+      - "examples/buck2-starter/BUCK"
+      - "examples/buck2-starter/toolchains/BUCK"
+      - "examples/buck2-starter/scripts/benchmark.sh"
+      - "scripts/verify_i2047_buck2_cache.py"
+      - "tests/test_i2047_buck2_cache_contract.py"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2047-buck2-cache-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: credentialless Buck2 warm-cache contract and mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact revision without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify authenticated cache contract and mutations
+        run: python3 -S scripts/verify_i2047_buck2_cache.py --self-test --json
+      - name: Run standard-library focused regression
+        run: PYTHONPATH=. python3 -S tests/test_i2047_buck2_cache_contract.py

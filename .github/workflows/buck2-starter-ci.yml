@@ -190,6 +190,7 @@ jobs:
 
       # ── validate PAT secret ────────────────────────────────────────────────
       - name: Validate CORELINK_PAT secret is set
+        id: validate-pat
         run: |
           if [[ -z "${CORELINK_PAT:-}" ]]; then
             echo "ERROR: CORELINK_PAT secret is not configured." >&2
@@ -197,8 +198,29 @@ jobs:
             exit 1
           fi
           echo "CORELINK_PAT is set (length=${#CORELINK_PAT})"
+          echo "present=true" >> "${GITHUB_OUTPUT}"
         env:
           CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
+
+      # This cache is only a runner-local acceleration layer for the pinned
+      # Buck2 release.  The full repository and exact commit are part of the
+      # key: a warm result from another repository or SHA must never be
+      # admitted.  There are deliberately no restore-keys fallbacks.
+      - name: Restore exact Buck2 cache namespace
+        id: buck2-cache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: examples/buck2-starter/buck-out/v2/cache
+          key: buck2-build-${{ github.repository }}-${{ github.sha }}
+
+      - name: Record Buck2 cache provenance
+        run: |
+          set -euo pipefail
+          cat > /tmp/buck2-cache-provenance.txt <<EOF
+          key=buck2-build-${GITHUB_REPOSITORY}-${GITHUB_SHA}
+          matched_key=${{ steps.buck2-cache-restore.outputs.cache-matched-key }}
+          authenticated_pat=true
+          EOF
 
       # ── cold build ─────────────────────────────────────────────────────────
       - name: Cold build — buck2 build :hello (populate remote cache)
@@ -219,6 +241,7 @@ jobs:
 
       # ── warm build (assert cache hits) ────────────────────────────────────
       - name: Warm build — assert ≥ 80 % remote cache hits
+        id: warm-build
         working-directory: examples/buck2-starter
         run: |
           set -euo pipefail
@@ -285,7 +308,18 @@ jobs:
           path: |
             /tmp/cold-report.json
             /tmp/warm-report.json
+            /tmp/buck2-cache-provenance.txt
           retention-days: 14
+
+      # Save only a successful, authenticated candidate under the exact
+      # repository/SHA key.  A missing PAT can therefore never populate a
+      # cache namespace that a later warm build would trust.
+      - name: Save exact Buck2 cache namespace
+        if: steps.validate-pat.outputs.present == 'true' && steps.warm-build.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: examples/buck2-starter/buck-out/v2/cache
+          key: buck2-build-${{ github.repository }}-${{ github.sha }}
 
   # ── negative scenarios ───────────────────────────────────────────────────────
   negative-scenarios:
@@ -339,7 +373,13 @@ jobs:
           echo "negative probes independent"
           unset CORELINK_PAT
           set +e
-          OUTPUT="$(buck2 build :hello 2>&1)"
+          OUTPUT="$(
+            if [[ -z "${CORELINK_PAT:-}" ]]; then
+              echo "CORELINK_PAT is missing; refusing unauthenticated remote-cache build." >&2
+              exit 78
+            fi
+            buck2 build :hello 2>&1
+          )"
           RESULT=$?
           set -e
           printf '%s\n' "${OUTPUT}"
@@ -425,14 +465,46 @@ jobs:
     timeout-minutes: 30
     # Only run on push to main or weekly cron; skip on PRs to save minutes.
     if: |
-      github.event_name == 'push' ||
-      github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch'
+      needs.build.result == 'success' &&
+      (github.event_name == 'push' ||
+       github.event_name == 'schedule' ||
+       github.event_name == 'workflow_dispatch')
     needs: build
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Restore exact Buck2 cache namespace
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: examples/buck2-starter/buck-out/v2/cache
+          key: buck2-build-${{ github.repository }}-${{ github.sha }}
+
+      - name: Download and admit the current warm receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: buck2-build-reports
+          path: ${{ runner.temp }}/buck2-build-reports
+
+      - name: Require numeric warm receipt before benchmark
+        run: |
+          set -euo pipefail
+          WARM_REPORT="${RUNNER_TEMP}/buck2-build-reports/warm-report.json"
+          test -s "${WARM_REPORT}" || {
+            echo "FAIL: benchmark admission requires the current warm report." >&2
+            exit 1
+          }
+          COUNTERS="$(python3 -S "${GITHUB_WORKSPACE}/scripts/parse_buck2_build_report.py" \
+            --report "${WARM_REPORT}")"
+          read -r HITS TOTAL <<<"${COUNTERS}"
+          RATIO=$(( (HITS * 100) / TOTAL ))
+          printf 'warm_cache_hits=%s\nwarm_declared_actions=%s\nwarm_cache_ratio=%s\n' \
+            "${HITS}" "${TOTAL}" "${RATIO}" > "${RUNNER_TEMP}/buck2-warm-admission.txt"
+          if (( RATIO < 80 )); then
+            echo "FAIL: benchmark admission requires warm cache ratio >= 80%; got ${RATIO}%." >&2
+            exit 1
+          fi
 
       - name: Install Buck2
         timeout-minutes: 5
@@ -466,6 +538,17 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends clang-14 libc++-14-dev libc++abi-14-dev
 
+      - name: Validate CORELINK_PAT before benchmark
+        run: |
+          set -euo pipefail
+          if [[ -z "${CORELINK_PAT:-}" ]]; then
+            echo "ERROR: refusing benchmark without CORELINK_PAT; no unauthenticated cache writes are allowed." >&2
+            exit 1
+          fi
+          echo "CORELINK_PAT is set (length=${#CORELINK_PAT})"
+        env:
+          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
+
       - name: Run benchmark script
         working-directory: examples/buck2-starter
         run: |
@@ -481,6 +564,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: buck2-benchmark-report
-          path: ${{ runner.temp }}/buck2-benchmark/BENCHMARK.md
+          path: |
+            ${{ runner.temp }}/buck2-benchmark/BENCHMARK.md
+            ${{ runner.temp }}/buck2-benchmark/BENCHMARK.json
+            ${{ runner.temp }}/buck2-warm-admission.txt
           if-no-files-found: error
           retention-days: 14
