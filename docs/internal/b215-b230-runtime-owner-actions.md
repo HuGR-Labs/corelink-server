@@ -18,8 +18,10 @@ attached to the sprint evidence bundle:
 3. one controlled exhausted-message observation showing alert, bounded
    requeue, and final operator disposition.
 
-The source consumer and its tests are implementation evidence; they do not
-prove that an external alert was delivered.
+The source consumer persists privacy-minimized D1 lifecycle receipts (opaque
+event digest, categorical status, and transition time) before its queue
+dispositions. Those receipts prevent a DLQ retry-budget exhaustion from being a
+silent platform drop; they do not prove that an external alert was delivered.
 
 Attach the three redacted records below to the evidence bundle:
 

@@ -26,6 +26,7 @@ from verify_b139_semgrep import (  # noqa: E402
     enforce_report,
     evaluate,
 )
+import verify_b139_semgrep as b139_policy  # noqa: E402
 
 
 def test_workflow_locks_semgrep_to_hosted_runner() -> None:
@@ -208,6 +209,8 @@ def test_every_error_population_blocks(
     report = _load(output / OUTPUT_NAMES["report"])
     assert report["blocking"] == {  # type: ignore[index]
         "explicit_error_findings": 1,
+        "approved_suppressed_error_findings": 0,
+        "unsuppressed_error_findings": 1,
         "scanner_error": False,
         "verdict": "FAIL",
     }
@@ -635,6 +638,77 @@ def test_index_only_rule_reference_and_suppressed_result_count(tmp_path: Path) -
     assert _sarif_counts(path, custom=False)[0]["error"] == 1
 
 
+def test_approved_bundled_suppression_is_retained_but_nonblocking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site = (
+        ".github/workflows/example.yml",
+        12,
+        b139_policy.SUPPRESSION_RULE,
+    )
+    monkeypatch.setattr(b139_policy, "_approved_suppression_sites", lambda: {site})
+    bundled = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": b139_policy.SUPPRESSION_RULE, "defaultConfiguration": {"level": "error"}}],
+        [{
+            "ruleId": b139_policy.SUPPRESSION_RULE,
+            "suppressions": [{"kind": "inSource"}],
+            "locations": [{"physicalLocation": {
+                "artifactLocation": {"uri": site[0]},
+                "region": {"startLine": site[1]},
+            }}],
+        }],
+    )
+    custom = _write_sarif(
+        tmp_path / "custom.sarif",
+        [
+            {"id": rule_id, "defaultConfiguration": {"level": severity[0].lower()}}
+            for rule_id, severity in CUSTOM_POLICY.items()
+        ],
+        [],
+    )
+    report = tmp_path / "report.json"
+    assert evaluate(bundled, custom, report, 0, 0) == 0
+    data = _load(report)
+    assert data["bundled"]["approved_suppressed"] == 1  # type: ignore[index]
+    assert data["blocking"]["explicit_error_findings"] == 1  # type: ignore[index]
+    assert data["blocking"]["unsuppressed_error_findings"] == 0  # type: ignore[index]
+    assert data["blocking"]["verdict"] == "PASS"  # type: ignore[index]
+
+
+def test_unapproved_bundled_suppression_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site = (
+        ".github/workflows/example.yml",
+        12,
+        b139_policy.SUPPRESSION_RULE,
+    )
+    monkeypatch.setattr(b139_policy, "_approved_suppression_sites", lambda: set())
+    bundled = _write_sarif(
+        tmp_path / "bundled.sarif",
+        [{"id": b139_policy.SUPPRESSION_RULE, "defaultConfiguration": {"level": "error"}}],
+        [{
+            "ruleId": b139_policy.SUPPRESSION_RULE,
+            "suppressions": [{"kind": "inSource"}],
+            "locations": [{"physicalLocation": {
+                "artifactLocation": {"uri": site[0]},
+                "region": {"startLine": site[1]},
+            }}],
+        }],
+    )
+    custom = _write_sarif(
+        tmp_path / "custom.sarif",
+        [
+            {"id": rule_id, "defaultConfiguration": {"level": severity[0].lower()}}
+            for rule_id, severity in CUSTOM_POLICY.items()
+        ],
+        [],
+    )
+    with pytest.raises(VerificationError, match="unapproved suppression"):
+        evaluate(bundled, custom, tmp_path / "report.json", 0, 0)
+
+
 @pytest.mark.parametrize(
     "result",
     [
@@ -902,10 +976,12 @@ def _valid_evaluated_report() -> dict:
     return {
         "status": "evaluated",
         "scanner_exit_codes": {"bundled": 0, "custom": 0},
-        "bundled": {"results": 0, "levels": levels.copy()},
-        "custom": {"results": 0, "levels": levels.copy()},
+        "bundled": {"results": 0, "levels": levels.copy(), "approved_suppressed": 0},
+        "custom": {"results": 0, "levels": levels.copy(), "approved_suppressed": 0},
         "blocking": {
             "explicit_error_findings": 0,
+            "approved_suppressed_error_findings": 0,
+            "unsuppressed_error_findings": 0,
             "scanner_error": False,
             "verdict": "PASS",
         },

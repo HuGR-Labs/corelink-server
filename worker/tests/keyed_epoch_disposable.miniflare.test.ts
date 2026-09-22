@@ -123,7 +123,8 @@ async function start(): Promise<void> {
     modules: true,
     compatibilityDate: "2026-04-01",
     d1Databases: { AUDIT_HARNESS_DB: "disposable-keyed-epoch" },
-    d1Persist: persistRoot,
+    defaultPersistRoot: persistRoot,
+    d1Persist: true,
   });
 }
 async function call(path: string): Promise<Response> {

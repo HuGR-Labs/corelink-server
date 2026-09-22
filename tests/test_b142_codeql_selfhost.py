@@ -1,4 +1,4 @@
-"""Focused B-142 CodeQL runner/evidence contract and mutation tests."""
+"""Focused CodeQL hosted runner/evidence contract and mutation tests."""
 
 from __future__ import annotations
 
@@ -21,7 +21,8 @@ CODEQL_ACTION_VERSION = "v4.37.1"
 
 def _assert_scanner_contract(text: str) -> None:
     """Small lexical contract used by the mutation probes below."""
-    assert "runs-on: corelink" in text
+    assert "runs-on: ubuntu-latest" in text
+    assert "runs-on: corelink" not in text
     assert "max-parallel: 1" in text
     assert "dependency-caching: true" in text
     assert "name: Require CodeQL SARIF evidence" in text
@@ -29,6 +30,9 @@ def _assert_scanner_contract(text: str) -> None:
     assert "evidence_status=missing" in text
     assert "exit 1" in text
     assert "name: codeql-sarif-${{ matrix.language }}" in text
+    assert "pull_request:" in text
+    assert "cancel-in-progress:" in text
+    assert "continue-on-error:" not in text
 
 
 def _assert_pin_contract(scanner: str, semgrep: str, runbook: str) -> None:
@@ -36,7 +40,7 @@ def _assert_pin_contract(scanner: str, semgrep: str, runbook: str) -> None:
     for action in ("init", "analyze", "upload-sarif"):
         assert f"github/codeql-action/{action}@{CODEQL_ACTION_SHA}" in scanner
         assert f"github/codeql-action/{action}@{CODEQL_ACTION_VERSION}" in scanner
-    assert scanner.count(CODEQL_ACTION_SHA) == 4  # header + three immutable refs
+    assert scanner.count(CODEQL_ACTION_SHA) == 3  # init, analyze, and upload
     assert "v3.27.0" not in scanner
     assert "TBD" not in scanner
     assert f"github/codeql-action/upload-sarif@{CODEQL_ACTION_VERSION}" in semgrep
@@ -46,6 +50,7 @@ def _assert_pin_contract(scanner: str, semgrep: str, runbook: str) -> None:
     assert "TBD-SHA replace post-baseline" not in runbook
     assert "actions/checkout@v7.0.0" in scanner
     assert "actions/upload-artifact@v7.0.1" in scanner
+    assert "dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8" in scanner
 
 
 def _load_module():
@@ -63,12 +68,17 @@ class B142WorkflowContractTest(unittest.TestCase):
         self.watchdog = WATCHDOG.read_text(encoding="utf-8")
         self.runbook = RUNBOOK.read_text(encoding="utf-8")
 
-    def test_scanner_is_on_corelink_with_bounded_matrix(self) -> None:
-        self.assertIn("runs-on: corelink", self.scanner)
-        self.assertNotIn("runs-on: ubuntu-latest", self.scanner)
+    def test_scanner_is_hosted_with_bounded_matrix(self) -> None:
+        self.assertIn("runs-on: ubuntu-latest", self.scanner)
+        self.assertNotIn("runs-on: corelink", self.scanner)
         self.assertIn("max-parallel: 1", self.scanner)
-        self.assertIn("group: codeql-nightly", self.scanner)
-        self.assertIn("cancel-in-progress: false", self.scanner)
+        self.assertIn("group: codeql-${{ github.workflow }}", self.scanner)
+        self.assertIn("cancel-in-progress: true", self.scanner)
+        self.assertIn("pull_request:", self.scanner)
+        self.assertIn("paths:", self.scanner)
+        self.assertIn("**/*.rs", self.scanner)
+        self.assertIn("permissions:\n  contents: read\n  security-events: write", self.scanner)
+        self.assertNotIn("actions: read", self.scanner)
         self.assertIn('CARGO_BUILD_JOBS: "2"', self.scanner)
         self.assertIn('CODEQL_THREADS: "2"', self.scanner)
         self.assertIn('CODEQL_RAM_MB: "4096"', self.scanner)
@@ -79,7 +89,6 @@ class B142WorkflowContractTest(unittest.TestCase):
             self.assertIn(f'category: "/language:${{{{ matrix.language }}}}"', self.scanner)
         self.assertIn("queries: ${{ matrix.queries }}", self.scanner)
         self.assertIn("security-extended,security-and-quality", self.scanner)
-        self.assertIn("build-mode: manual", self.scanner)
         self.assertIn("build-mode: none", self.scanner)
         self.assertIn("dependency-caching: true", self.scanner)
         self.assertIn("upload: never", self.scanner)
@@ -100,7 +109,7 @@ class B142WorkflowContractTest(unittest.TestCase):
         self.assertIn("name: codeql-sarif-${{ matrix.language }}", self.scanner)
 
     def test_watchdog_has_closed_population_and_fail_closed_alarm(self) -> None:
-        self.assertIn("runs-on: corelink", self.watchdog)
+        self.assertIn("runs-on: ubuntu-latest", self.watchdog)
         self.assertIn("check_codeql_evidence.py", self.watchdog)
         for language in ("rust", "javascript-typescript", "python"):
             self.assertIn(f"CodeQL {language}", self.watchdog)
@@ -112,7 +121,7 @@ class B142WorkflowContractTest(unittest.TestCase):
 
     def test_mutations_remove_load_bearing_controls(self) -> None:
         _assert_scanner_contract(self.scanner)
-        runner_mutant = self.scanner.replace("runs-on: corelink", "runs-on: ubuntu-latest")
+        runner_mutant = self.scanner.replace("runs-on: ubuntu-latest", "runs-on: self-hosted")
         with self.assertRaises(AssertionError):
             _assert_scanner_contract(runner_mutant)
         matrix_mutant = self.scanner.replace("max-parallel: 1", "max-parallel: 3")

@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Verify B-142's self-hosted CodeQL and secrets-drift workflow wiring.
+"""Verify B-142's hosted CodeQL and secrets-drift workflow wiring.
 
 This is the repository-side half of B-142. It proves the jobs that must run
-on the product-owned ``corelink`` runner are present and structurally bound to
-that label. It does not query GitHub, assert runner availability, or claim
-that GHAS accepted a SARIF upload; those remain external evidence.
+on ephemeral GitHub-hosted Linux runners. It does not query GitHub, assert
+runner availability, or claim that GHAS accepted a SARIF upload; those remain
+external evidence.
 
 The workflow reader is the repository's stdlib-compatible structural parser,
 so comments and shell strings cannot manufacture a job or runner label. The
-secrets-drift watchdog allows its documented owner-controlled hosted fallback,
-but its default branch must remain ``corelink``.
+secrets-drift watchdog has no owner-controlled runner fallback.
 """
 
 from __future__ import annotations
@@ -33,17 +32,11 @@ class ContractError(ValueError):
 
 
 CONTRACTS: tuple[tuple[str, str, str], ...] = (
-    (".github/workflows/codeql.yml", "analyze", "corelink"),
-    (".github/workflows/secrets-drift.yml", "secrets-drift", "corelink"),
-    (".github/workflows/codeql-evidence-watchdog.yml", "inspect", "corelink"),
-    (
-        ".github/workflows/secrets-drift-evidence-watchdog.yml",
-        "inspect",
-        "corelink-fallback",
-    ),
+    (".github/workflows/codeql.yml", "analyze", "ubuntu-latest"),
+    (".github/workflows/secrets-drift.yml", "secrets-drift", "ubuntu-latest"),
+    (".github/workflows/codeql-evidence-watchdog.yml", "inspect", "ubuntu-latest"),
+    (".github/workflows/secrets-drift-evidence-watchdog.yml", "inspect", "ubuntu-latest"),
 )
-
-HOSTED_FALLBACK = "${{ vars.HOSTED_ACTIONS_AVAILABLE == 'true' && 'ubuntu-latest' || 'corelink' }}"
 
 
 def _read_jobs(root: pathlib.Path, relative: str) -> list[Any]:
@@ -72,19 +65,10 @@ def check_workflow(root: pathlib.Path, relative: str, expected_job: str, runner:
             f"{relative}: expected exactly one job {expected_job!r}; observed {names!r}"
         )
     observed = _runner_value(getattr(matches[0], "runs_on", None))
-    if runner == "corelink":
-        if observed != "corelink":
-            raise ContractError(
-                f"{relative}:{expected_job}: runner must be the exact corelink label, got {observed!r}"
-            )
-    elif runner == "corelink-fallback":
-        if observed != HOSTED_FALLBACK:
-            raise ContractError(
-                f"{relative}:{expected_job}: runner must preserve the owner-controlled hosted "
-                f"fallback with corelink default, got {observed!r}"
-            )
-    else:  # pragma: no cover - contracts are static and module-owned
-        raise ContractError(f"unknown runner contract: {runner}")
+    if observed != runner:
+        raise ContractError(
+            f"{relative}:{expected_job}: runner must be {runner!r}, got {observed!r}"
+        )
 
 
 def verify(root: pathlib.Path = ROOT) -> dict[str, str]:
@@ -106,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(
         "B-142 workflow contract: PASS: CodeQL and secrets-drift jobs/watchdogs "
-        "are structurally present on corelink; GHAS/run evidence remains external"
+        "are structurally present on hosted Linux; GHAS/run evidence remains external"
     )
     return 0
 

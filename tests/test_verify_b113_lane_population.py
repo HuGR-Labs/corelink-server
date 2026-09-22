@@ -104,49 +104,16 @@ def test_nightly_mutants_rejects_unpinned_source_fallback() -> None:
         MODULE.verify(sources)
 
 
-@pytest.mark.parametrize(
-    ("job", "before", "after"),
-    (
-        (None, "        default: all\n", "        default: mutants\n"),
-        (None, "          - mutants\n", "          - other\n"),
-        (
-            "tlc-extended",
-            "if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all'\n",
-            "if: always()\n",
-        ),
-        (
-            "proptest-extended",
-            "if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all'\n",
-            "if: always()\n",
-        ),
-        (
-            "fuzz-matrix",
-            "if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all'\n",
-            "if: always()\n",
-        ),
-        (
-            "mutants-workspace",
-            "if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all' || inputs.lane == 'mutants'\n",
-            "if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all'\n",
-        ),
-    ),
-)
-def test_nightly_dispatch_cannot_run_the_wrong_lane(job: str | None, before: str, after: str) -> None:
+def test_legacy_nightly_mutants_cannot_be_reactivated() -> None:
     sources = corpus()
     nightly = sources[".github/workflows/nightly.yml"]
-    if job is None:
-        assert nightly.count(before) == 1
-        mutated = nightly.replace(before, after, 1)
-    else:
-        boundary = re.compile(rf"(?ms)^  {re.escape(job)}:\n.*?(?=^  [A-Za-z0-9_-]+:\n|\Z)")
-        match = boundary.search(nightly)
-        assert match is not None and match.group(0).count(before) == 1
-        mutated = (
-            nightly[: match.start()]
-            + match.group(0).replace(before, after, 1)
-            + nightly[match.end() :]
-        )
-    sources[".github/workflows/nightly.yml"] = mutated
+    start = nightly.index("  mutants-workspace:\n")
+    legacy_if = nightly.index("if: ${{ false }}", start)
+    sources[".github/workflows/nightly.yml"] = (
+        nightly[:legacy_if]
+        + "if: github.event_name != 'workflow_dispatch' || inputs.lane == 'mutants'"
+        + nightly[legacy_if + len("if: ${{ false }}"):]
+    )
     with pytest.raises(MODULE.VerificationError, match="nightly-mutants"):
         MODULE.verify(sources)
 

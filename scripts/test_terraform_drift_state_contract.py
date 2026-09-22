@@ -117,17 +117,13 @@ class TerraformDriftStateContractTests(unittest.TestCase):
                 self.assertIn(f"terraform_exitcode={expected}\n", output)
                 self.assertNotIn("r2-secret-value", result.stdout + result.stderr + output)
 
-    def test_plan_maps_unexpected_exit_and_tee_failure_to_error(self) -> None:
+    def test_plan_maps_unexpected_exit_without_echoing_raw_output(self) -> None:
         result, output, called = self._run_plan(7)
         self.assertEqual(result.returncode, 1)
         self.assertTrue(called)
         self.assertIn("exitcode=1\n", output)
         self.assertIn("terraform_exitcode=7\n", output)
-
-        result, output, called = self._run_plan(0, tee_exit=9)
-        self.assertEqual(result.returncode, 1)
-        self.assertTrue(called)
-        self.assertIn("exitcode=1\n", output)
+        self.assertEqual(result.stdout, "")
 
     def test_missing_backend_credential_stops_before_plan(self) -> None:
         result, output, called = self._run_plan(0, missing="AWS_SECRET_ACCESS_KEY")

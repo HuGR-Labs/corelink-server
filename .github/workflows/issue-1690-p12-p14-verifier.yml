@@ -1,0 +1,92 @@
+name: issue-1690 P12-P14 current-main verifier
+
+# Manual evidence lane only. It records the merged tree and the three signed
+# bundle commits without touching secrets, production, or deployment state.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1690-p12-p14-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify P12-P14 merged tree
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout canonical main
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Record exact-tree and ancestry evidence
+        id: evidence
+        env:
+          EXPECTED_TREE: 48e15ff30b0556a1f366388a61b617ad01f5d363
+          P12_COMMIT: 2963bd510ff03df932c8a60e91b1c23742fbe1b6
+          P13_COMMIT: 4e1844f7f5c644b5f4f01fc32653399e70918124
+          P14_COMMIT: 59cfb2ca01c0732cede1d2a2693a3dea7ef1da59
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/issue-1690
+          head_sha="$(git rev-parse HEAD)"
+          test "${GITHUB_REF}" = refs/heads/main
+          test "${head_sha}" = "${GITHUB_SHA}"
+          actual_tree="$(git show -s --format=%T "${head_sha}")"
+          ancestry_json='[]'
+          ancestry_ok=true
+          for commit in "${P12_COMMIT}" "${P13_COMMIT}" "${P14_COMMIT}"; do
+            present=false
+            if git cat-file -e "${commit}^{commit}" 2>/dev/null && git merge-base --is-ancestor "${commit}" "${head_sha}"; then
+              present=true
+            else
+              ancestry_ok=false
+            fi
+            ancestry_json="$(python3 - "${ancestry_json}" "${commit}" "${present}" <<'PY'
+          import json
+          import sys
+          rows = json.loads(sys.argv[1])
+          rows.append({"commit": sys.argv[2], "ancestor_of_head": sys.argv[3] == "true"})
+          print(json.dumps(rows, separators=(",", ":")))
+          PY
+          )"
+          done
+          python3 - "${head_sha}" "${GITHUB_SHA}" "${EXPECTED_TREE}" "${actual_tree}" "${ancestry_json}" > artifacts/issue-1690/p12-p14-main-verification.json <<'PY'
+          import json
+          import sys
+          head_sha, github_sha, expected_tree, actual_tree, ancestry = sys.argv[1:]
+          report = {
+              "schema_version": "1",
+              "issue": 1690,
+              "ref": "refs/heads/main",
+              "head_sha": head_sha,
+              "github_sha": github_sha,
+              "expected_tree": expected_tree,
+              "actual_tree": actual_tree,
+              "tree_matches": expected_tree == actual_tree,
+              "bundle_commits": json.loads(ancestry),
+          }
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+          cat artifacts/issue-1690/p12-p14-main-verification.json
+          tree_matches="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["tree_matches"]).lower())' artifacts/issue-1690/p12-p14-main-verification.json)"
+          if [[ "${tree_matches}" != true || "${ancestry_ok}" != true ]]; then
+            echo 'P12-P14 exact-tree or ancestry contract is not satisfied on main' >&2
+            exit 1
+          fi
+
+      - name: Upload redacted verification receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-1690-p12-p14-main-verification-${{ github.run_id }}
+          path: artifacts/issue-1690/p12-p14-main-verification.json
+          retention-days: 30
+          if-no-files-found: error

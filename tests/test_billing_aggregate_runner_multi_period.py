@@ -81,3 +81,16 @@ def test_failed_batch_lost_ack_and_bare_watermark_never_reapply_accounting() -> 
     try: seam.commit(db2, [row], "2026-02")
     except seam.Conflict as exc: assert "watermark" in str(exc)
     else: raise AssertionError("bare watermark accepted")
+
+
+def test_stale_consumption_or_chain_coordinate_aborts_before_claiming() -> None:
+    seam.assert_stale_coordinates_abort_before_claim_or_accounting()
+
+
+def test_workflow_fences_durable_coordinates_before_claims() -> None:
+    workflow = (ROOT / ".github/workflows/billing-aggregate-runner.yml").read_text()
+    fence = workflow.index("consumption_fence_sql")
+    claim = workflow.index("INSERT INTO runner_aggregate_event_claim")
+    assert fence < claim
+    assert "chain_fence_sql" in workflow
+    assert '"prior_consumption": {tid:' in workflow

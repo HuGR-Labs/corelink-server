@@ -1,0 +1,7 @@
+{
+  "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5",
+  "scope": "no_independent_review_claimed",
+  "standard_approved": false,
+  "per_crate_artifacts_approved": false,
+  "hosted_verifier": "verify_current_provenance.py"
+}
