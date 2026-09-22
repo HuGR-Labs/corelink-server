@@ -1,0 +1,133 @@
+name: issue-1660 B-104 authenticated 404 latency evidence
+
+# Manual owner lane for #1660. The job performs exactly the read-only controls
+# and ten authenticated GETs defined by RB-B104. It never performs a write,
+# deployment, cache purge, issue mutation, or broad performance run. Staging
+# is mandatory; production cannot be substituted for a missing staging lane.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Approved staging HTTPS origin (host must contain staging, stage, or stg)"
+        required: true
+        type: string
+      tenant:
+        description: "Owner-approved staging tenant UUID"
+        required: true
+        type: string
+      deployed_version:
+        description: "Worker/container version confirmed on the staging target"
+        required: true
+        type: string
+      confirm:
+        description: 'Type exactly "run-1660-b104-staging-read-only" to authorize ten reads'
+        required: true
+        type: string
+      no_write_ack:
+        description: 'Type exactly "staging-only-no-write" to confirm the lane is read-only'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1660-b104-authenticated-404-staging
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    name: B-104 staging authenticated 404 probe
+    if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 8
+    steps:
+      - name: Checkout without a credential helper
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize redacted evidence receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          printf '%s\n' 'B-104 INDETERMINATE: probe not started' > artifacts/issue-1660-b104-staging.log
+          sha256sum artifacts/issue-1660-b104-staging.log > artifacts/issue-1660-b104-staging.log.sha256
+
+      - name: Require the protected staging read contract
+        env:
+          TARGET: ${{ inputs.target }}
+          TENANT: ${{ inputs.tenant }}
+          DEPLOYED_VERSION: ${{ inputs.deployed_version }}
+          CONFIRM: ${{ inputs.confirm }}
+          NO_WRITE_ACK: ${{ inputs.no_write_ack }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REPOSITORY" = HuGR-dev/corelink-server
+          test "$GITHUB_REF" = refs/heads/main
+          test "$CONFIRM" = run-1660-b104-staging-read-only
+          test "$NO_WRITE_ACK" = staging-only-no-write
+          python3 - "$TARGET" "$TENANT" "$DEPLOYED_VERSION" <<'PY'
+          import re
+          import sys
+          from urllib.parse import urlsplit
+
+          target, tenant, version = sys.argv[1:]
+          parsed = urlsplit(target)
+          host = (parsed.hostname or "").lower()
+          if (parsed.scheme != "https" or not host or parsed.username or
+                  parsed.password or parsed.path not in ("", "/") or
+                  parsed.query or parsed.fragment):
+              raise SystemExit("target must be an HTTPS origin without credentials or path")
+          if not re.search(r"(?:^|[.-])(staging|stage|stg)(?:[.-]|$)", host):
+              raise SystemExit("target host must identify the staging environment")
+          if host == "corelink-api.humangr.com":
+              raise SystemExit("production origin is forbidden for this lane")
+          if not re.fullmatch(
+                  r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                  tenant):
+              raise SystemExit("tenant must be a UUID")
+          if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", version):
+              raise SystemExit("deployed version has an invalid shape")
+          PY
+          printf '%s\n' 'B-104 INDETERMINATE: probe not started' > artifacts/issue-1660-b104-staging.log
+
+      - name: Run ten bounded authenticated GETs and retain redacted evidence
+        env:
+          PROBE_BASE: ${{ inputs.target }}
+          PROBE_TENANT: ${{ inputs.tenant }}
+          PROBE_VERSION: ${{ inputs.deployed_version }}
+          PROBE_SAMPLES: "10"
+          PROBE_TIMEOUT: "10"
+          PROBE_TOKEN: ${{ secrets.CORELINK_B104_STAGING_PAT }}
+        shell: bash
+        run: |
+          set +e
+          status=0
+          if [[ -z "${PROBE_TOKEN:-}" ]]; then
+            printf '%s\n' 'B-104 INDETERMINATE: staging environment secret CORELINK_B104_STAGING_PAT is unavailable' > artifacts/issue-1660-b104-staging.log
+            status=2
+          else
+            ./scripts/probe-authenticated-404.sh > artifacts/issue-1660-b104-staging.log 2>&1
+            status=$?
+          fi
+          # The probe log contains only the redacted origin label, deployed
+          # version, status, wall time, and fixed Server-Timing phase stats.
+          sha256sum artifacts/issue-1660-b104-staging.log > artifacts/issue-1660-b104-staging.log.sha256
+          exit "$status"
+
+      - name: Upload redacted B-104 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-1660-b104-staging-${{ github.run_id }}
+          path: |
+            artifacts/issue-1660-b104-staging.log
+            artifacts/issue-1660-b104-staging.log.sha256
+          if-no-files-found: error
+          retention-days: 30

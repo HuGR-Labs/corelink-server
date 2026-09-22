@@ -27,14 +27,14 @@ jobs:
     runs-on: corelink
     timeout-minutes: 10
     steps:
-      - name: Checkout candidate data (immutable event SHA)
+      - name: Checkout candidate data (immutable event SHA) # nosemgrep: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout # reason: candidate is data-only; BASE checker runs separately; ADR-0101
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0  # v6.0.3
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           path: _candidate
           fetch-depth: 1
           persist-credentials: false
-      - name: Checkout BASE control tree (immutable event SHA)
+      - name: Checkout BASE control tree (immutable event SHA) # nosemgrep: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout # reason: immutable BASE control tree; ADR-0101
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0  # v6.0.3
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}

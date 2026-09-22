@@ -1,0 +1,59 @@
+name: AWS S3 Object-Lock archive template
+
+on:
+  pull_request:
+    paths:
+      - "infra/terraform/modules/audit-object-lock-aws/**"
+      - "docs/operator/aws-s3-object-lock-archive-provisioning.md"
+      - ".github/workflows/aws-s3-object-lock-template.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-s3-object-lock-template-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: inactive Object-Lock template validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout canonical repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.7.5"
+          terraform_wrapper: false
+
+      - name: Check format and validate inactive module
+        working-directory: infra/terraform/modules/audit-object-lock-aws
+        run: |
+          set -euo pipefail
+          terraform fmt -check -diff
+          terraform init -backend=false -input=false
+          terraform validate -no-color
+
+      - name: Check Object-Lock and writer-role invariants
+        run: |
+          set -euo pipefail
+          module=infra/terraform/modules/audit-object-lock-aws/main.tf
+          grep -F 'object_lock_enabled = true' "$module"
+          grep -F 'mode = "COMPLIANCE"' "$module"
+          grep -F 'aws_s3_bucket_object_lock_configuration' "$module"
+          grep -F 'aws_iam_role' "$module"
+          actions=$(grep -E '^[[:space:]]*"s3:[^"]+",?$' "$module" \
+            | sed -E 's/^[[:space:]]*"([^"]+)".*/\1/')
+          expected=$(printf '%s\n' \
+            's3:GetBucketObjectLockConfiguration' \
+            's3:GetBucketLocation' \
+            's3:GetObjectLegalHold' \
+            's3:GetObjectRetention' \
+            's3:PutObject')
+          test "$actions" = "$expected"

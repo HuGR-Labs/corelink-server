@@ -1,7 +1,7 @@
 ---
 type: "Runbook"
 title: "Scheduled drills"
-description: "Fail-closed synthetic PagerDuty drill handoff from the Worker cron."
+description: "Fail-closed synthetic PagerDuty drill handoff seam with no active trigger."
 source_files:
   - "worker/src/index_common.ts"
 source_blobs:
@@ -13,11 +13,19 @@ tags: ["ops", "scheduled-drills"]
 ---
 # Scheduled drills
 
-The main Worker declares one non-production Cloudflare cron entry:
+The main Worker currently declares no synthetic Cloudflare cron. B-072 retired
+the source-only trigger until the owner supplies receiver deployment, PagerDuty,
+and end-to-end evidence. The scheduled handler and its same-account service
+binding remain a dormant, fail-closed handoff seam.
 
-| Cron (UTC) | Handoff | Contract |
+| Active trigger | Handoff seam | Contract |
 | --- | --- | --- |
-| `0 14 * * 1` | `synthetic_page` | Synthetic PagerDuty page; four-week region rotation. |
+| None | `synthetic_page` | Owner-controlled non-production trigger, pending evidence. |
+
+There is no replacement scheduler active in the repository or documented as
+deployed. An owner may reintroduce a non-production trigger only after the
+receiver binding, PagerDuty integration, and end-to-end evidence are supplied;
+that change must update this contract and pass the focused B-072 verifier.
 
 `worker/src/index.ts` is the scheduler, not the PagerDuty client. Each tick
 requires the same-account `SCHEDULED_DRILL_DELIVERY` Service Binding. If that
@@ -25,17 +33,18 @@ binding is absent, throws, or returns a non-2xx response, the handler fails and
 Cloudflare may retry the tick. It never logs or sends a PagerDuty routing key,
 and it never treats a local fake or an absent binding as delivery.
 
-The handoff includes a deterministic id derived from the cron and
-`scheduledTime`, allowing the receiving Worker to deduplicate retries. Unknown
-cron values are rejected with `noRetry()`; delivery exceptions and non-2xx
-responses remain retryable failures.
+When invoked by an owner-approved trigger, the handoff includes a deterministic
+id derived from the cron and `scheduledTime`, allowing the receiving Worker to
+deduplicate retries. Unknown cron values are rejected with `noRetry()`; delivery
+exceptions and non-2xx responses remain retryable failures.
 
-The synthetic-page payload carries the runbook's non-secret PagerDuty contract:
+If an owner-approved non-production trigger is reintroduced, the synthetic-page
+payload carries the runbook's non-secret PagerDuty contract:
 `service=synthetic-drill`, `event_action=trigger`, native `severity=info`,
 semantic `synthetic_severity=sev2_synthetic`, a four-week region selector, and
 the `PAT-CORRELATION-ID-001` correlation prefix. Weeks 0–2 are immediate
 handoffs. Week 3 (`boundary_handoff`) is deliberately not emitted at the
-Monday 14:00 cron: the payload retains the actual `scheduled_at_ms`, sets
+trigger time: the payload retains the actual `scheduled_at_ms`, sets
 `delivery_mode=deferred`, and sets `emit_at_ms` to the following Sunday at
 23:59:00 UTC. A receiver must schedule that effective timestamp and must not
 send the PagerDuty event immediately. The receiver owns the actual

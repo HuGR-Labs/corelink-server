@@ -491,9 +491,11 @@ async fn read_unarchived_partitions(d1: &D1HttpClient) -> Result<Vec<(String, St
 /// Read up to `limit` sealed-but-unarchived rows of one partition, in chain
 /// order.
 ///
-/// `ORDER BY sequence_number` over the unarchived, un-quarantined set yields
-/// the ordered PREFIX of what is left, so the next call resumes exactly where
-/// this one stopped.
+/// `ORDER BY sequence_number, id` over the unarchived, un-quarantined set
+/// yields a deterministic ordered PREFIX of what is left, including when a
+/// historical fork contains duplicate sequence numbers. The stable id tie
+/// break is part of the replay contract: the same rows must be selected on
+/// every retry before the verifier decides which branch is archivable.
 ///
 /// It does NOT guarantee the batch is chain-contiguous — that was the wrong
 /// assumption. The 2026-08-14 seal fork left duplicated sequence numbers with
@@ -515,7 +517,7 @@ async fn read_unarchived_rows(
                AND emitted_at IS NOT NULL AND archived_at IS NULL \
                AND quarantined_at IS NULL \
                AND sequence_number IS NOT NULL AND canonical_jcs IS NOT NULL \
-             ORDER BY sequence_number \
+             ORDER BY sequence_number, id \
              LIMIT ?3",
             &[json!(tenant_id), json!(region), json!(limit)],
         )
@@ -649,7 +651,8 @@ const MARK_ARCHIVED_SQL: &str = "WITH requested AS (
     ), eligible AS (
        SELECT o.id FROM audit_outbox o
        JOIN requested r ON r.id = o.id
-       WHERE o.emitted_at IS NOT NULL AND o.archived_at IS NULL
+       WHERE o.tenant_id = ?4 AND o.region = ?5
+         AND o.emitted_at IS NOT NULL AND o.archived_at IS NULL
     ), exact AS (
        SELECT 1
        WHERE (SELECT COUNT(*) FROM requested) = CAST(?3 AS INTEGER)
@@ -662,6 +665,7 @@ const MARK_ARCHIVED_SQL: &str = "WITH requested AS (
     UPDATE audit_outbox
     SET archived_at = CAST(?1 AS INTEGER)
     WHERE id IN (SELECT id FROM requested)
+      AND tenant_id = ?4 AND region = ?5
       AND emitted_at IS NOT NULL AND archived_at IS NULL
       AND EXISTS (SELECT 1 FROM exact)
     RETURNING id";
@@ -720,10 +724,25 @@ async fn mark_archived(
         .collect::<Vec<_>>();
     let row_ids_json = serde_json::to_string(&row_ids)
         .map_err(|e| format!("archive watermark row-id JSON encoding failed: {e}"))?;
+    let first = lines
+        .first()
+        .ok_or("archive watermark refuses an empty chunk")?;
+    if lines
+        .iter()
+        .any(|line| line.tenant_id != first.tenant_id || line.region != first.region)
+    {
+        return Err("archive watermark input crosses tenant partition".to_owned());
+    }
     let returned = d1
         .query(
             MARK_ARCHIVED_SQL,
-            &[json!(now), Value::String(row_ids_json), json!(lines.len())],
+            &[
+                json!(now),
+                Value::String(row_ids_json),
+                json!(lines.len()),
+                json!(first.tenant_id),
+                json!(first.region),
+            ],
         )
         .await?;
     validate_archived_returned_ids(lines, &returned)
@@ -2177,7 +2196,9 @@ async fn finalize_signed_archive(
         json!(published_at),
     ];
     let mut statements = vec![D1BatchStatement::new(
-        format!("INSERT INTO audit_chain_archive_manifest (tenant_id,region,epoch_id,start_sequence,end_sequence_exclusive,record_count,is_empty,algorithm_id,link_key_id,start_prev_hash,end_head_hash,end_head_witness_sequence,end_head_witness_hash,epoch_ledger_sequence,epoch_ledger_hash,manifest_version,manifest_hash,manifest_jcs,signature_b64,signing_key_id,published_at_ms) SELECT ?1,?2,?3,?4,?5,?6,0,?7,?8,?9,?10,?11,?12,?13,?14,1,?15,CAST(?16 AS BLOB),?17,?18,?19 WHERE NOT EXISTS (SELECT 1 FROM audit_chain_archive_manifest WHERE {exact})"),
+        format!(
+            "INSERT INTO audit_chain_archive_manifest (tenant_id,region,epoch_id,start_sequence,end_sequence_exclusive,record_count,is_empty,algorithm_id,link_key_id,start_prev_hash,end_head_hash,end_head_witness_sequence,end_head_witness_hash,epoch_ledger_sequence,epoch_ledger_hash,manifest_version,manifest_hash,manifest_jcs,signature_b64,signing_key_id,published_at_ms) SELECT ?1,?2,?3,?4,?5,?6,0,?7,?8,?9,?10,?11,?12,?13,?14,1,?15,CAST(?16 AS BLOB),?17,?18,?19 WHERE NOT EXISTS (SELECT 1 FROM audit_chain_archive_manifest WHERE {exact})"
+        ),
         params.clone(),
     )];
     statements.push(D1BatchStatement::new(
@@ -3051,6 +3072,26 @@ mod tests {
     }
 
     #[test]
+    fn existing_object_accepts_one_ndjson_terminator() {
+        let candidate = verifying_lines(2);
+        let body = candidate
+            .iter()
+            .map(|line| serde_json::to_string(line).expect("fixture serializes"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let existing =
+            parse_existing_chunk(format!("{body}\n").as_bytes(), &ChainEpoch::legacy(), None)
+                .expect("one trailing newline is conventional NDJSON");
+        assert_eq!(existing, candidate);
+        assert!(parse_existing_chunk(
+            format!("{body}\n\n").as_bytes(),
+            &ChainEpoch::legacy(),
+            None
+        )
+        .is_err());
+    }
+
+    #[test]
     fn existing_object_must_be_an_exact_nonempty_prefix() {
         let candidate = verifying_lines(3);
         assert_eq!(existing_prefix_len(&[], &candidate), None);
@@ -3113,8 +3154,17 @@ mod tests {
         assert!(MARK_ARCHIVED_SQL.contains("json_each(?2)"));
         assert!(MARK_ARCHIVED_SQL.contains("COUNT(DISTINCT id)"));
         assert!(MARK_ARCHIVED_SQL.contains("CAST(?1 AS INTEGER)"));
+        assert!(MARK_ARCHIVED_SQL.contains("o.tenant_id = ?4 AND o.region = ?5"));
+        assert!(MARK_ARCHIVED_SQL.contains("tenant_id = ?4 AND region = ?5"));
         assert!(MARK_ARCHIVED_SQL.contains("emitted_at IS NOT NULL AND archived_at IS NULL"));
         assert!(MARK_ARCHIVED_SQL.contains("RETURNING id"));
+    }
+
+    #[test]
+    fn archive_row_selection_has_a_stable_duplicate_sequence_tie_break() {
+        let source = include_str!("audit_archive.rs");
+        assert!(source.contains("ORDER BY sequence_number, id"));
+        assert!(!source.contains("ORDER BY sequence_number \\\n"));
     }
 
     /// The columns this module is ALLOWED to write. Anything else in a `SET`

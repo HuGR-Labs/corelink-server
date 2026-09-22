@@ -7453,11 +7453,13 @@ independently. Therefore neither bot authorship nor a zero-job
 `startup_failure` proves token suppression. A present run, check, or status
 also does not prove that CI executed or passed.
 
-The five active auto-PR creators already require `BOT_PR_TOKEN` and fail closed
-when it is absent. For **automatic, unapproved** PR CI, the smallest remaining
-owner credential is a dedicated fine-grained PAT scoped to this repository with
-`contents:write` and `pull_requests:write`; a GitHub App alternative must mint
-its short-lived installation token per job. Do not reuse a release credential.
+The five active auto-PR creators now mint a repository-scoped, one-hour GitHub
+App installation token per job from `CORELINK_BOT_APP_ID` and
+`CORELINK_BOT_APP_PRIVATE_KEY`; those App secrets remain absent in the
+read-only inventory. For **automatic, unapproved** PR CI, the owner creates a
+private App installed only on this repository with `contents:write` and
+`pull_requests:write`. No installation token or PAT is stored as a durable bot
+credential. Do not reuse a release credential.
 This token cannot repair Actions startup failure, hosted-billing limits, or an
 offline/missing runner labelled `corelink`. Bot-PR CI is established only when
 the expected jobs actually complete on viable capacity, with no approval
@@ -7467,9 +7469,10 @@ pending, and the owner records the run/job evidence.
 today, what each option costs, and what happens if the answer is "not now".
 
 **Owner-only credential action:** inspect approved dedicated credentials first,
-then mint the fine-grained PAT in the authenticated GitHub account flow if
-none exists. An App path requires per-job minting wiring before use, not a
-one-time installation token stored as `BOT_PR_TOKEN`. Restore Actions job
+then create/install the private App in the authenticated GitHub account flow if
+it does not exist. Store only its numeric ID and PEM private key as
+`CORELINK_BOT_APP_ID` and `CORELINK_BOT_APP_PRIVATE_KEY`; the workflow already
+mints per-job tokens and fails closed when either is absent. Restore Actions job
 startup and `corelink` runner capacity as separate prerequisites before a
 harmless proof PR; neither is solved by the credential itself.
 

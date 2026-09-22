@@ -71,7 +71,7 @@ pub(super) fn assert_release_contract(workflow: &str) {
         "uses: ./.github/workflows/sign-linux.yml",
         "uses: ./.github/workflows/sign-windows.yml",
         "uses: ./.github/workflows/notarize-macos.yml",
-        "tag: ${{ inputs.release_tag }}",
+        "tag: ${{ needs.release.outputs.validated_tag }}",
     ] {
         assert!(
             workflow.contains(required),
@@ -89,6 +89,45 @@ pub(super) fn assert_release_contract(workflow: &str) {
     assert!(
         !workflow.contains("ditto -c -k --sequesterRsrc --keepParent"),
         "the Windows archive must not nest corelink.exe below a ditto parent directory"
+    );
+}
+
+pub(super) fn assert_release_tag_shell_boundary(workflow: &str) {
+    for required in [
+        "validated_tag: ${{ steps.validate-release-tag.outputs.tag }}",
+        "- name: Validate release tag before shell use",
+        "id: validate-release-tag",
+        "INPUT_TAG: ${{ inputs.release_tag }}",
+        "case \"${INPUT_TAG}\" in",
+        r#"[[ "${INPUT_TAG}" =~ ^cli-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]"#,
+        r#"printf 'tag=%s\n' "${INPUT_TAG}" >> "${GITHUB_OUTPUT}""#,
+        "TAG: ${{ steps.validate-release-tag.outputs.tag }}",
+        "gh release create \"${TAG}\"",
+        "gh release upload \"${TAG}\"",
+        "gh release download \"${TAG}\"",
+    ] {
+        assert!(
+            workflow.contains(required),
+            "release tag boundary is missing: {required}"
+        );
+    }
+    let validation = workflow
+        .find("- name: Validate release tag before shell use")
+        .unwrap();
+    for command in [
+        "gh release create \"${TAG}\"",
+        "gh release upload \"${TAG}\"",
+        "gh release download \"${TAG}\"",
+    ] {
+        assert!(
+            validation < workflow.find(command).unwrap(),
+            "release command must follow validation: {command}"
+        );
+    }
+    assert!(
+        !workflow.contains("gh release upload \"${{ inputs.release_tag }}\"")
+            && !workflow.contains("gh release download \"${{ inputs.release_tag }}\""),
+        "release commands must consume validated TAG"
     );
 }
 

@@ -74,7 +74,7 @@
 //! at first divergence sequence; sequence monotonicity; genesis-zero
 //! convention; JCS canonicalization byte-stability; audit-of-audit
 //! fail-closed envelope on every decision arm. The live R2 PutObject
-//! (with Object Lock Governance Mode 7y retention) + scheduled DO
+//! (with the current non-WORM R2 archive configuration) + scheduled DO
 //! verifier Cron + SIEM fan-out via Cloudflare Queue + Terraform IaC
 //! integration tests run alongside WI-S09-007 (PRR ship gate).
 //!
@@ -87,9 +87,10 @@
 //!   Pinned by `prop_chain_verify_passes_on_unmodified` (10k iter PR
 //!   gate; nightly 100k via `PROPTEST_CASES` env var).
 //! - INV-AUDIT-APPEND-ONLY (CRITICAL, TLA+ proven em Lote 6.2 from
-//!   S-06 inheritance): R2 Object Lock Governance Mode 7y enforces
-//!   append-only at storage level; tampering detected at verify time
-//!   via hash chain integrity. Pinned by `prop_chain_append_only`.
+//!   S-06 inheritance): the current R2 archive is tamper-evident through
+//!   chain verification, but it is not storage-enforced WORM. Compliance
+//!   storage enforcement requires a separately negotiated Object-Lock adapter.
+//!   Pinned by `prop_chain_append_only`.
 //! - INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER (HIGH; lift from S-07 P1-1 fix
 //!   plus Lote 10.6bis pattern): audit-of-audit emit BEFORE state
 //!   mutation on every decision arm (`event_appended`,
@@ -118,11 +119,10 @@
 //!
 //! # Production wiring (deferred to WI-S09-007)
 //!
-//! - CF R2 PutObject + Object Lock Governance Mode 7y retention via
+//! - CF R2 PutObject for the existing non-WORM archive via
 //!   `worker::send_future` fire-and-forget per Lote 10.7bis R5 P0-3
-//!   (NEVER `tokio::spawn`).
-//! - Terraform IaC for R2 bucket Object Lock + lifecycle (per WI
-//!   §6.1.3).
+//!   (NEVER `tokio::spawn`). A Compliance archive requires a separately
+//!   provisioned provider adapter after Object-Lock negotiation succeeds.
 //! - DO `AuditChainVerifier-<region>` per-region; cron alarm 24h at
 //!   UTC 02:00 (low-traffic window); alarm re-arm AT START (Lote
 //!   10.4bis lesson).
@@ -144,6 +144,7 @@ pub mod error;
 pub mod event;
 pub mod exporter;
 pub mod neon_shadow;
+pub mod object_lock_archive;
 pub mod sealed_archive;
 pub mod sink;
 pub mod verifier;
@@ -188,6 +189,14 @@ pub use neon_shadow::{
     NeonShadowSink, ShadowEventRow, ShadowSyncAuditRow, ShadowSyncAuditSink, ShadowSyncReceipt,
     TimelineBucket, EVENT_TYPE_SHADOW_SYNCED, EVENT_TYPE_SHADOW_SYNC_FAILED,
     SHADOW_LAG_NOMINAL_MAX_MS, SHADOW_LAG_SEV2_THRESHOLD_MS,
+};
+pub use object_lock_archive::{
+    ArchiveAuditReceipt, ArchiveResidency, DeleteAttempt, DeleteDenialReceipt, ImmutableArchivePut,
+    ImmutableArchiveWriteReceipt, ImmutableRetention, InMemoryObjectLockArchive, LegalHold,
+    ObjectLockArchiveAdapter, ObjectLockArchiveError, ObjectLockBackendFamily,
+    ObjectLockBackendIdentity, ObjectLockCapabilities, ObjectLockCapabilityReport,
+    ObjectLockRetentionReadback, R2ObjectLockUnavailable, VerifiedImmutableArchiveReceipt,
+    VerifiedObjectLockArchive, OBJECT_LOCK_ARCHIVE_CONTRACT_VERSION,
 };
 // Wave-25 follow-on: re-export `Region` from `corelink-analytics` so
 // downstream callers of `D1TenantRegionResolver` (notably

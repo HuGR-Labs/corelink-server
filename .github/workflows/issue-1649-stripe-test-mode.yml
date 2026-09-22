@@ -1,0 +1,96 @@
+name: issue 1649 Stripe test-mode evidence
+
+# Bounded, manual-only Stripe test-mode evidence. The PR path runs only the
+# credentialless contract check. The dispatch path requires an explicit phrase,
+# main, a protected environment, and STRIPE_SECRET_KEY beginning with sk_test_.
+# It never calls a CoreLink or production endpoint. The probe asserts
+# `livemode=false` for the account and disposable Customer.
+#
+# Required protected-environment secret:
+#   STRIPE_SECRET_KEY — Stripe test secret (sk_test_...). A missing secret makes
+#     the executor skip; a live key fails closed before any network call.
+# Required dispatch input:
+#   confirm = run-i1649-stripe-test-mode
+# Receipt: artifacts/issue-1649-stripe-test-mode-receipt.json (redacted only).
+
+on:
+  pull_request:
+    paths:
+      - scripts/stripe_test_mode_evidence.py
+      - .github/workflows/issue-1649-stripe-test-mode.yml
+      - docs/operator/issue-1649-stripe-test-mode-evidence.md
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type run-i1649-stripe-test-mode to run the bounded test-mode probe'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1649-stripe-test-mode-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  contract:
+    name: credentialless Stripe lane contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Verify hosted fail-closed contract
+        run: python3 scripts/stripe_test_mode_evidence.py --contract
+
+  test-mode-evidence:
+    name: Stripe test-mode idempotency and cleanup
+    needs: contract
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected == true
+    runs-on: ubuntu-latest
+    environment: stripe-test
+    timeout-minutes: 10
+    outputs:
+      run: ${{ steps.secret-gate.outputs.run }}
+    steps:
+      - name: Gate on test secret presence
+        id: secret-gate
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${STRIPE_SECRET_KEY:-}" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Stripe test-mode lane skipped::STRIPE_SECRET_KEY is not configured in protected environment stripe-test"
+          fi
+
+      - name: Checkout exact tree
+        if: steps.secret-gate.outputs.run == 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Run bounded Stripe test-mode probe
+        if: steps.secret-gate.outputs.run == 'true'
+        env:
+          I1649_CONFIRM: ${{ inputs.confirm }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${STRIPE_SECRET_KEY}"
+          python3 scripts/stripe_test_mode_evidence.py \
+            --output artifacts/issue-1649-stripe-test-mode-receipt.json
+
+      - name: Upload redacted receipt
+        if: always() && steps.secret-gate.outputs.run == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-1649-stripe-test-mode-receipt-${{ github.run_id }}
+          path: artifacts/issue-1649-stripe-test-mode-receipt.json
+          if-no-files-found: error
+          retention-days: 14

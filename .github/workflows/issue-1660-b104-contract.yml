@@ -1,0 +1,40 @@
+name: issue-1660 B-104 static and adversarial contract
+
+# Credentialless PR gate. This checks the manual staging lane's source
+# contract and mutation teeth; it never dispatches the evidence lane or calls
+# any network target.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-1660-b104-authenticated-404.yml"
+      - ".github/workflows/issue-1660-b104-contract.yml"
+      - "evidence/owner-actions/B-104/authenticated-404-contract.json"
+      - "scripts/probe-authenticated-404.sh"
+      - "scripts/verify_i1660_b104_contract.py"
+      - "specs/_runbooks/RB-B104-AUTHENTICATED-404.md"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/issue-1660-b104-authenticated-404.yml"
+      - ".github/workflows/issue-1660-b104-contract.yml"
+      - "evidence/owner-actions/B-104/authenticated-404-contract.json"
+      - "scripts/probe-authenticated-404.sh"
+      - "scripts/verify_i1660_b104_contract.py"
+      - "specs/_runbooks/RB-B104-AUTHENTICATED-404.md"
+
+permissions:
+  contents: read
+
+jobs:
+  static-contract:
+    name: B-104 credentialless static/adversarial contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout without a credential helper
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify B-104 static and adversarial contract
+        run: python3 -S scripts/verify_i1660_b104_contract.py

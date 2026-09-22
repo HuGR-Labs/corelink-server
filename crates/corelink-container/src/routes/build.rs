@@ -19,6 +19,44 @@ use super::*;
 /// route shape identical. (The Neon-backed factory this once named was
 /// retired with #71 — see [`build`].)
 pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router {
+    build_with_factory_and_byok(shadow_factory, None)
+}
+
+/// Attach the same boot-owned cache to the CAS accounting decorator.
+///
+/// This is deliberately a factory helper rather than a second cache factory:
+/// storage and accounting must observe one control-plane transition together.
+pub(crate) fn attach_byok_to_cas_accounting(
+    handler: crate::byte_accounting::AccountingCasHandler,
+    byok: Option<&crate::storage::byok_cas::DataPlaneByok>,
+) -> crate::byte_accounting::AccountingCasHandler {
+    match byok {
+        Some(byok) => handler.with_byok(Arc::new(byok.clone())),
+        None => handler,
+    }
+}
+
+/// Attach the same boot-owned cache to the AC accounting decorator.
+pub(crate) fn attach_byok_to_ac_accounting(
+    handler: crate::byte_accounting::AccountingAcHandler,
+    byok: Option<&crate::storage::byok_cas::DataPlaneByok>,
+) -> crate::byte_accounting::AccountingAcHandler {
+    match byok {
+        Some(byok) => handler.with_byok(Arc::new(byok.clone())),
+        None => handler,
+    }
+}
+
+/// Build the composed router with the one boot-owned BYOK collaborator set.
+///
+/// All four consumers clone `DataPlaneByok::config_cache()`: CAS storage, AC
+/// storage, CAS accounting, and AC accounting.  Do not create per-handler
+/// caches here; doing so permits encryption and reservation to disagree during
+/// a BYOK config transition.
+pub fn build_with_factory_and_byok(
+    shadow_factory: Arc<dyn ShadowSinkFactory>,
+    byok: Option<crate::storage::byok_cas::DataPlaneByok>,
+) -> Router {
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1). ONE
     // gate (D1-backed) shared across every billable data-plane surface
     // (CAS/AC, Bazel REAPI, Turbo, sccache), exactly like the rate-limit
@@ -94,7 +132,8 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         );
     }
 
-    let (cas_read_raw, cas_write_raw, cas_delete_raw, cas_list) = cas::build_handlers();
+    let (cas_read_raw, cas_write_raw, cas_delete_raw, cas_list) =
+        cas::build_handlers_with_byok(byok.as_ref());
     // Tenant bulk-export (SEAM): the export source reads blobs through the SAME
     // CAS read/list handlers (one R2 connection, no forked store) — capture the
     // `Arc`s BEFORE they are moved into `cas_state` / the Bazel bridge below.
@@ -114,11 +153,12 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         Arc<dyn corelink_handler_cas::CasDeleteHandler>,
     ) = match byte_accountant.as_ref() {
         Some(acc) => {
-            let acct = Arc::new(crate::byte_accounting::AccountingCasHandler::new(
+            let acct = crate::byte_accounting::AccountingCasHandler::new(
                 cas_write_raw.clone(),
                 cas_delete_raw.clone(),
                 acc.clone(),
-            ));
+            );
+            let acct = Arc::new(attach_byok_to_cas_accounting(acct, byok.as_ref()));
             (
                 acct.clone() as Arc<dyn corelink_handler_cas::CasWriteHandler>,
                 acct as Arc<dyn corelink_handler_cas::CasDeleteHandler>,
@@ -193,7 +233,8 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         // usage-metering-roi: the ONE shared display meter (clone = cheap Arc).
         usage_meter: usage_meter.clone(),
     };
-    let (ac_lookup, ac_update_raw, ac_delete_raw, ac_list) = ac::build_handlers();
+    let (ac_lookup, ac_update_raw, ac_delete_raw, ac_list) =
+        ac::build_handlers_with_byok(byok.as_ref());
     // Tenant bulk-export (SEAM): reuse the SAME AC lookup/list handlers for the
     // AC half of the bundle — capture BEFORE they are moved into `ac_state` /
     // the Bazel bridge.
@@ -207,11 +248,12 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         Arc<dyn corelink_handler_ac::AcDeleteHandler>,
     ) = match byte_accountant.as_ref() {
         Some(acc) => {
-            let acct = Arc::new(crate::byte_accounting::AccountingAcHandler::new(
+            let acct = crate::byte_accounting::AccountingAcHandler::new(
                 ac_update_raw.clone(),
                 ac_delete_raw.clone(),
                 acc.clone(),
-            ));
+            );
+            let acct = Arc::new(attach_byok_to_ac_accounting(acct, byok.as_ref()));
             (
                 acct.clone() as Arc<dyn corelink_handler_ac::AcUpdateHandler>,
                 acct as Arc<dyn corelink_handler_ac::AcDeleteHandler>,

@@ -12,7 +12,9 @@ const REGION: &str = "iad";
 /// AC-plane fixtures (rt-nuclear C2 sibling): the AC `update`-vs-`delete`
 /// write-vs-delete byte-accounting race, mirroring the CAS suite below.
 mod ac {
-    use super::{ByteAccountant, ByteStore, InMemoryByteStore, Row, REGION};
+    use super::{
+        ByteAccountant, ByteStore, InMemoryByteStore, MutationLiabilityState, Row, REGION,
+    };
     use corelink_handler_ac::{
         AcDeleteHandler, AcDeleteRequest, AcLookupHandler, AcLookupRequest, AcUpdateHandler,
         AcUpdateRequest, InMemoryAcHandler, InMemoryAuditSink, InMemorySliObserver,
@@ -168,6 +170,52 @@ mod ac {
             na,
             "distinct-key update + delete must account independently (only A's bytes remain)"
         );
+    }
+
+    #[derive(Debug)]
+    struct PublishedThenAuditFails;
+
+    impl AcUpdateHandler for PublishedThenAuditFails {
+        fn update(
+            &self,
+            _req: AcUpdateRequest,
+        ) -> Result<corelink_handler_ac::AcUpdateResponse, corelink_handler_ac::AcHandlerError> {
+            Err(corelink_handler_ac::AcHandlerError::AuditFailed(
+                "injected post-publish audit failure".to_owned(),
+            ))
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn post_publish_ac_error_retains_reconcilable_liability() {
+        let store = Arc::new(InMemoryByteStore::new());
+        let accountant = Arc::new(ByteAccountant::new(
+            store.clone() as Arc<dyn ByteStore>,
+            REGION.to_owned(),
+        ));
+        let delete_inner = Arc::new(InMemoryAcHandler::new(
+            Arc::new(InMemoryAuditSink::new()),
+            Arc::new(InMemorySliObserver::new()),
+        ));
+        let decorator = AccountingAcHandler::new(
+            Arc::new(PublishedThenAuditFails) as Arc<dyn AcUpdateHandler>,
+            delete_inner as Arc<dyn AcDeleteHandler>,
+            accountant,
+        );
+        let digest = "f".repeat(64);
+        let body = b"published-before-audit".to_vec();
+        assert!(decorator
+            .update(
+                AcUpdateRequest::new("t", digest.clone(), body.clone(), "p", "t", 1)
+                    .with_storage_quota_bytes(Some(1_000_000)),
+            )
+            .is_err());
+        assert_eq!(store.used("t", REGION), body.len() as i64);
+        let liability = store
+            .liability("t", REGION, &digest)
+            .expect("ambiguous AC failure must remain durable for reconciliation");
+        assert_eq!(liability.state, MutationLiabilityState::Unknown);
+        assert!(liability.intent_id.is_some());
     }
 }
 

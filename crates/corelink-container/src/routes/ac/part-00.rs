@@ -350,6 +350,40 @@ pub type AcHandlerSet = (
 /// `WI-S04-CF-WIRING`).
 #[must_use]
 pub fn build_handlers() -> AcHandlerSet {
+    build_handlers_with_byok(None)
+}
+
+/// Attach the boot-owned BYOK collaborators to a real AC handler.
+///
+/// The router factory is the sole production caller; keeping the attachment
+/// here gives the composition test a controlled storage seam.
+pub(crate) fn attach_byok_to_r2_handler(
+    handler: crate::storage::r2_s3::R2AcHandler,
+    byok: Option<&crate::storage::byok_cas::DataPlaneByok>,
+) -> crate::storage::r2_s3::R2AcHandler {
+    match byok {
+        Some(byok) => {
+            let handler = handler
+                .with_byok(byok.config_cache(), byok.tcs_resolver())
+                .with_byok_random(byok.mode_b());
+            match byok.runtime_gate() {
+                Some(gate) => handler.with_byok_runtime_gate(gate),
+                None => handler,
+            }
+        }
+        None => handler,
+    }
+}
+
+/// Build AC handlers with the process's one BYOK collaborator set.
+///
+/// The compatibility wrapper above remains intentionally plaintext-capable for
+/// unit callers. Production router assembly uses this function and passes the
+/// same cache Arc to CAS, AC, and accounting.
+#[must_use]
+pub fn build_handlers_with_byok(
+    byok: Option<&crate::storage::byok_cas::DataPlaneByok>,
+) -> AcHandlerSet {
     #[cfg(not(target_arch = "wasm32"))]
     {
         use crate::storage::{r2_s3, StorageEnv};
@@ -382,6 +416,7 @@ pub fn build_handlers() -> AcHandlerSet {
                         region = %region,
                         "AC handler: R2S3 (real storage)"
                     );
+                    let handler = attach_byok_to_r2_handler(handler, byok);
                     let shared: Arc<r2_s3::R2AcHandler> = Arc::new(handler);
                     let lookup: Arc<dyn AcLookupHandler> = shared.clone();
                     let update: Arc<dyn AcUpdateHandler> = shared.clone();

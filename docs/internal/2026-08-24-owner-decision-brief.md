@@ -42,30 +42,31 @@ too.
 Neither a bot author nor an empty check list alone establishes token
 suppression. A run can instead be pending human approval, fail before creating
 jobs, fail on billing, or lack a matching runner. The five active auto-PR
-creators now require `BOT_PR_TOKEN`; the dedicated secret is still absent in
-the 2026-09-13 read-only inventory. The separate fleet-health slot census
+creators now mint a repository-scoped, one-hour GitHub App installation token
+per job from `CORELINK_BOT_APP_ID` and `CORELINK_BOT_APP_PRIVATE_KEY`; both App
+secrets remain absent in the 2026-09-13 read-only inventory. The separate fleet-health slot census
 remains explicitly disabled because `GITHUB_TOKEN` cannot request the required
 repository administration permission.
 
 **Options.**
-- **Automatic, unapproved bot-PR CI:** owner mints a dedicated fine-grained PAT
-  scoped to this repository with `contents: write` and `pull-requests: write`,
-  then stores it as `BOT_PR_TOKEN`. The five creators are already wired and
-  fail closed when it is absent. An App alternative requires per-job token
-  minting from its ID/private key; [an installation token expires after one
+- **Automatic, unapproved bot-PR CI:** owner creates a private GitHub App
+  installed only on `HuGR-dev/corelink-server` with `contents: write` and
+  `pull-requests: write`, then stores only its numeric ID and PEM private key
+  as `CORELINK_BOT_APP_ID` and `CORELINK_BOT_APP_PRIVATE_KEY`. Each creator
+  mints an installation token for its job; [the token expires after one
   hour](https://docs.github.com/en/rest/apps/apps#create-an-installation-access-token-for-an-app)
-  and cannot be stored once for durable use.
+  and is never stored as a durable secret.
 - **Human-approved CI:** a write-authorized owner can approve pending
   `GITHUB_TOKEN`-created PR workflow runs under repository policy. This is
   not unattended automation and cannot rescue runs that fail before jobs exist.
 - **Fleet slot census:** separately authorize `administration: read` and
   `actions: read` for the repository runner API and wire that credential to
-  `runner-fleet-health.yml`; the bot-PR PAT's smaller scope does not provide
+  `runner-fleet-health.yml`; the bot-PR App's smaller scope does not provide
   it. Neither credential restores the missing `corelink` runner fleet or
   changes GitHub-hosted billing.
 
-**If deferred:** creator workflows continue to fail closed without
-`BOT_PR_TOKEN`; the slot census remains unavailable in CI. Before any test PR,
+**If deferred:** creator workflows continue to fail closed without the App
+secrets; the slot census remains unavailable in CI. Before any test PR,
 the owner must separately establish Actions job startup and online `corelink`
 runner capacity, then inspect job-level conclusions rather than treating a
 present workflow run or check count as success.

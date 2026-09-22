@@ -39,6 +39,40 @@
 /// fallback.
 #[must_use]
 pub fn build_handlers() -> CasHandlers {
+    build_handlers_with_byok(None)
+}
+
+/// Attach the boot-owned BYOK collaborators to a real CAS handler.
+///
+/// Keeping this small composition seam separate lets the router factory and
+/// its controlled integration test exercise the exact production attachment.
+pub(crate) fn attach_byok_to_r2_handler(
+    handler: crate::storage::r2_s3::R2CasHandler,
+    byok: Option<&crate::storage::byok_cas::DataPlaneByok>,
+) -> crate::storage::r2_s3::R2CasHandler {
+    match byok {
+        Some(byok) => {
+            let handler = handler
+                .with_byok(byok.config_cache(), byok.tcs_resolver())
+                .with_byok_random(byok.mode_b());
+            match byok.runtime_gate() {
+                Some(gate) => handler.with_byok_runtime_gate(gate),
+                None => handler,
+            }
+        }
+        None => handler,
+    }
+}
+
+/// Build CAS handlers with the process's one BYOK collaborator set.
+///
+/// `build_handlers` remains the compatibility entry point for callers that do
+/// not own production composition.  The router uses this form so storage and
+/// accounting can share the identical config-cache `Arc`.
+#[must_use]
+pub fn build_handlers_with_byok(
+    byok: Option<&crate::storage::byok_cas::DataPlaneByok>,
+) -> CasHandlers {
     #[cfg(not(target_arch = "wasm32"))]
     {
         use crate::storage::{r2_s3, StorageEnv};
@@ -81,6 +115,7 @@ pub fn build_handlers() -> CasHandlers {
                     // R2CasHandler implements both CasReadHandler and
                     // CasWriteHandler against the same R2 bucket; share
                     // one Arc behind both trait objects.
+                    let handler = attach_byok_to_r2_handler(handler, byok);
                     let shared: Arc<r2_s3::R2CasHandler> = Arc::new(handler);
                     let read: Arc<dyn CasReadHandler> = shared.clone();
                     let write: Arc<dyn CasWriteHandler> = shared.clone();
