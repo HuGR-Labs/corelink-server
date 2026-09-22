@@ -46,6 +46,9 @@ on:
           - i1641-pagerduty-contract
           - i1654-d1-residency-contract
           - i1655-sla-credit-contract
+          - i1670-enospc-linker
+          - i1680-schema-contract
+          - i1792-miniflare-epoch
 
 permissions:
   contents: read
@@ -88,11 +91,11 @@ jobs:
           python-version: '3.12'
 
       - name: Set up pnpm for the worker lane
-        if: ${{ inputs.suite == 'i1662' || inputs.suite == 'i1671' || inputs.suite == 'i1678' }}
+        if: ${{ inputs.suite == 'i1662' || inputs.suite == 'i1671' || inputs.suite == 'i1678' || inputs.suite == 'i1792-miniflare-epoch' }}
         uses: ./.github/actions/setup-pnpm
 
       - name: Set up Node.js for the worker lane
-        if: ${{ inputs.suite == 'i1662' || inputs.suite == 'i1671' || inputs.suite == 'i1678' }}
+        if: ${{ inputs.suite == 'i1662' || inputs.suite == 'i1671' || inputs.suite == 'i1678' || inputs.suite == 'i1792-miniflare-epoch' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -383,6 +386,100 @@ jobs:
           test_name='adapter_cache::tests::put_records_the_store_phase_exactly_once'
           cargo test --locked -p corelink-server --lib "$test_name" -- --exact --nocapture 2>&1 | tee artifacts/campaign-ci/i1663.log
           grep -F "test ${test_name} ... ok" artifacts/campaign-ci/i1663.log
+
+      - name: i1670 bounded ENOSPC and linker classification
+        if: ${{ inputs.suite == 'i1670-enospc-linker' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/i1670"
+          mkdir -p "$root/enospc" "$root/linker" artifacts/campaign-ci/i1670
+          mounted=()
+          cleanup() {
+            local path
+            set +e
+            for path in "${mounted[@]}"; do sudo umount "$path"; done
+            rm -rf "$root"
+          }
+          trap cleanup EXIT
+
+          make_fs() {
+            local image="$1" mountpoint="$2"
+            dd if=/dev/zero of="$image" bs=1M count=48 status=none
+            mkfs.ext4 -q -F "$image"
+            sudo mount -o loop "$image" "$mountpoint"
+            mounted+=("$mountpoint")
+            sudo chown "$USER":"$USER" "$mountpoint"
+          }
+
+          make_fs "$root/enospc.img" "$root/enospc"
+          fallocate -l 46M "$root/enospc/fill.bin"
+          set +e
+          CORELINK_CLASSIFICATION_ARTIFACT="$PWD/artifacts/campaign-ci/i1670/enospc-classification.json" \
+            scripts/run-with-infra-classification.sh \
+            dd if=/dev/zero of="$root/enospc/write.bin" bs=1M count=8 status=none \
+            >artifacts/campaign-ci/i1670/enospc.log 2>&1
+          enospc_rc=$?
+          set -e
+          test "$enospc_rc" -ne 0
+          grep -Eq '^classification: (ENOSPC|LINKER_FAILURE)$' artifacts/campaign-ci/i1670/enospc.log
+
+          make_fs "$root/linker.img" "$root/linker"
+          cat >"$root/main.c" <<'EOF'
+          int main(void) { return 0; }
+          EOF
+          cc -c "$root/main.c" -o "$root/main.o"
+          fallocate -l 46M "$root/linker/fill.bin"
+          set +e
+          CORELINK_CLASSIFICATION_ARTIFACT="$PWD/artifacts/campaign-ci/i1670/linker-classification.json" \
+            scripts/run-with-infra-classification.sh \
+            cc "$root/main.o" -o "$root/linker/linked" \
+            >artifacts/campaign-ci/i1670/linker.log 2>&1
+          linker_rc=$?
+          set -e
+          test "$linker_rc" -ne 0
+          grep -Eq '^classification: (ENOSPC|LINKER_FAILURE)$' artifacts/campaign-ci/i1670/linker.log
+          grep -Eq 'No space left on device|os error 28|ENOSPC|collect2|ld:' artifacts/campaign-ci/i1670/linker.log
+          ENOSPC_RC="$enospc_rc" LINKER_RC="$linker_rc" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path("artifacts/campaign-ci/i1670")
+          report = {
+              "schema": "corelink.issue-1670.hosted-classification.v1",
+              "runner": "ubuntu-24.04",
+              "bounded_filesystem_bytes": 48 * 1024 * 1024,
+              "enospc_exit": int(os.environ["ENOSPC_RC"]),
+              "linker_exit": int(os.environ["LINKER_RC"]),
+              "enospc_classification": json.loads((root / "enospc-classification.json").read_text())["classification"],
+              "linker_classification": json.loads((root / "linker-classification.json").read_text())["classification"],
+              "cleanup": "EXIT trap unmounts both images and removes the bounded fixture",
+          }
+          (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+          PY
+
+      - name: i1680 credentialless schema and contract checks
+        if: ${{ inputs.suite == 'i1680-schema-contract' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No identity inputs and no opt-in wall-clock probe are accepted in
+          # this lane; it validates only the product PR's parser/schema guard.
+          python3 -m unittest -q \
+            tests/test_run_b251_latency_probe.py \
+            tests/test_verify_b251_quota_cas_budget.py \
+            2>&1 | tee artifacts/campaign-ci/i1680-schema-contract.log
+          ! rg -n 'K6_|STRIPE|CLOUDFLARE|DATABASE_URL|PAT|--allow-run' \
+            .github/workflows/b251-d03-read-only-probe.yml
+
+      - name: i1792 exact Miniflare workerd epoch test
+        if: ${{ inputs.suite == 'i1792-miniflare-epoch' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --filter @corelink/worker...
+          pnpm --dir worker exec vitest run --config vitest.miniflare.config.mts \
+            tests/keyed_epoch_disposable.miniflare.test.ts \
+            2>&1 | tee artifacts/campaign-ci/i1792-miniflare-epoch.log
 
       - name: i1650 credential-free ignored-harness manifest contract
         if: ${{ inputs.suite == 'i1650-contract' }}
