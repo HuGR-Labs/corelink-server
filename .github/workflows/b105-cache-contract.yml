@@ -1,0 +1,51 @@
+name: B-105 cache cost contract
+
+# Credentialless repository gate for #1661. This job audits the checked-in
+# cache path and arithmetic only. It never enables the pilot, contacts CoreLink,
+# dispatches load, or deploys a Worker. Production paired evidence remains an
+# owner action and keeps B-105 open.
+on:
+  pull_request:
+    paths:
+      - "evidence/owner-actions/B-105/cache-cost-contract.json"
+      - "scripts/verify_b105_cache_contract.py"
+      - ".github/workflows/b105-cache-contract.yml"
+      - ".github/workflows/corelink-reapi.yml"
+      - "apps/docs/docs/integrations/sccache-cargo.md"
+      - "crates/corelink-container/src/adapter_pat_verifier.rs"
+      - "crates/corelink-container/src/adapter_pat_gate.rs"
+      - "docs/internal/sccache-pilot-diagnosis-2026-08-04.md"
+      - "BACKLOG.md"
+  push:
+    branches: [main]
+    paths:
+      - "evidence/owner-actions/B-105/cache-cost-contract.json"
+      - "scripts/verify_b105_cache_contract.py"
+      - ".github/workflows/b105-cache-contract.yml"
+      - ".github/workflows/corelink-reapi.yml"
+      - "apps/docs/docs/integrations/sccache-cargo.md"
+      - "crates/corelink-container/src/adapter_pat_verifier.rs"
+      - "crates/corelink-container/src/adapter_pat_gate.rs"
+      - "docs/internal/sccache-pilot-diagnosis-2026-08-04.md"
+      - "BACKLOG.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: verify B-105 cache cost contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify credentialless path, cost model, and negative mutation
+        run: python3 scripts/verify_b105_cache_contract.py --self-test --json
+      - name: Publish redacted contract summary
+        run: |
+          python3 scripts/verify_b105_cache_contract.py --json >> "$GITHUB_STEP_SUMMARY"
