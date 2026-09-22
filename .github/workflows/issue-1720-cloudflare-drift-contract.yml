@@ -1,0 +1,33 @@
+name: issue-1720 Cloudflare drift contract
+
+# Credentialless hosted checks for the bounded audit and its fail-closed
+# cleanup. This lane never reads provider credentials or dispatches drift.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-1720-cloudflare-drift-audit.yml"
+      - ".github/workflows/issue-1720-cloudflare-drift-contract.yml"
+      - ".github/workflows/terraform-drift.yml"
+      - "scripts/test_issue_1720_cloudflare_drift_audit.py"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1720-cloudflare-drift-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: hosted static and mutation contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact revision without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Run static and adversarial checks
+        run: python3 -S scripts/test_issue_1720_cloudflare_drift_audit.py
