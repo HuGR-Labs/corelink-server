@@ -19,11 +19,12 @@
 //!
 //! Per the WI §6.1.4 + §6.1.6 retention model:
 //!
-//! - Production wiring binds the bucket with R2 Object Lock Governance
-//!   Mode 7y retention (CTRL-AUDIT-001 + INV-AUDIT-APPEND-ONLY foundation
-//!   from S-06). The IaC + the actual `wrangler r2 object put` call land
-//!   alongside WI-S09-007 PRR ship gate per the `trait-abstraction-defer`
-//!   charter pattern.
+//! - Production wiring may bind the current R2 archive with a native Bucket
+//!   Lock rule. That rule is administrator-removable and is not Object Lock or
+//!   WORM; Compliance retention is available only through the separately
+//!   negotiated Object-Lock archive contract. The IaC + the actual `wrangler
+//!   r2 object put` call land alongside WI-S09-007 PRR ship gate per the
+//!   `trait-abstraction-defer` charter pattern.
 //! - The in-memory fake here exercises every algorithmic invariant a
 //!   production binding bug would expose: per-tenant chain partitioning;
 //!   audit fail-CLOSED envelope on every emit arm; chain head advance
