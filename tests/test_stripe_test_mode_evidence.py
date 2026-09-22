@@ -22,7 +22,7 @@ SPEC.loader.exec_module(MODULE)
 class StripeRestrictedKeyContractTests(unittest.TestCase):
     def test_restricted_test_key_runs_only_through_mocked_requests(self) -> None:
         responses = [
-            (200, {"livemode": False}),
+            (200, {"object": "account", "id": "acct_fixture"}),
             (200, {"livemode": False, "id": "cus_fixture"}),
             (200, {"livemode": False, "id": "cus_fixture"}),
             (200, {"livemode": False, "id": "cus_fixture"}),
@@ -40,6 +40,25 @@ class StripeRestrictedKeyContractTests(unittest.TestCase):
             self.assertTrue(receipt["idempotency_replayed"])
             self.assertTrue(receipt["cleanup"]["succeeded"])
             self.assertNotIn("rk_test_fixture", receipt_text)
+
+    def test_account_response_requires_account_identity_without_livemode(self) -> None:
+        for account in (
+            {"object": "account"},
+            {"object": "customer", "id": "cus_fixture"},
+            {"object": "account", "id": "cus_fixture"},
+        ):
+            with self.subTest(account_shape=account):
+                with tempfile.TemporaryDirectory() as directory:
+                    output = Path(directory) / "receipt.json"
+                    with patch.object(
+                        MODULE, "request_json", return_value=(200, account)
+                    ) as request:
+                        with self.assertRaises(MODULE.ProbeError):
+                            MODULE.run_probe("rk_test_fixture", "123456", output)
+                    self.assertEqual(request.call_count, 1)
+                    receipt = json.loads(output.read_text(encoding="utf-8"))
+                    self.assertIsNone(receipt["livemode"])
+                    self.assertEqual(receipt["ordering"], [])
 
     def test_non_restricted_or_non_test_prefixes_fail_before_requests(self) -> None:
         for key in ("sk_test_fixture", "sk_live_fixture", "rk_live_fixture", "malformed"):
