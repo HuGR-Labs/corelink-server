@@ -2,9 +2,10 @@
 """SQLite seam oracle for #1631's bounded runner aggregate workflow.
 
 Success/DoD: the real discovery and commit SQL shape preserves period order,
-caps, immutable terms, exact claims, and all-or-nothing accounting.  Invariants:
+caps, immutable terms, exact claims, and all-or-nothing accounting. Invariants:
 only the oldest historical plus current period run; terms-less rows stay pending;
-and a non-exact claim or bare watermark changes no accounting state.
+a non-exact claim, bare watermark, or stale durable coordinate changes no
+accounting state.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ MIGRATION = ROOT / "migrations/d1/0134_runner_aggregate_durable_state.sql"
 DISCOVERY_SQL = """WITH e AS (SELECT json_extract(value,'$.tenant_id') tenant_id,json_extract(value,'$.request_id') request_id FROM json_each(?)) SELECT e.tenant_id,e.request_id,c.claim_fingerprint,c.aggregate_batch_id,c.billing_period,c.terms_snapshot_ref,c.terms_snapshot_digest_hex,c.evidence_ref,c.evidence_digest_hex,c.claimed_at_ms,s.runner_aggregated_at FROM e LEFT JOIN runner_aggregate_event_claim c USING(tenant_id,request_id) LEFT JOIN usage_event_staging s USING(tenant_id,request_id)"""
 CLAIM_SQL = """INSERT INTO runner_aggregate_event_claim (tenant_id,request_id,aggregate_batch_id,billing_period,claim_fingerprint,terms_snapshot_ref,terms_snapshot_digest_hex,evidence_ref,evidence_digest_hex,claimed_at_ms) SELECT json_extract(value,'$.tenant_id'),json_extract(value,'$.request_id'),json_extract(value,'$.aggregate_batch_id'),json_extract(value,'$.billing_period'),json_extract(value,'$.claim_fingerprint'),t.terms_snapshot_ref,t.terms_snapshot_digest_hex,json_extract(value,'$.evidence_ref'),json_extract(value,'$.evidence_digest_hex'),CAST(json_extract(value,'$.claimed_at_ms') AS INTEGER) FROM json_each(?) JOIN usage_event_staging s ON s.tenant_id=json_extract(value,'$.tenant_id') AND s.request_id=json_extract(value,'$.request_id') JOIN runner_period_terms_snapshot t ON t.tenant_id=s.tenant_id AND t.billing_period=s.billing_period AND t.terms_snapshot_ref=json_extract(value,'$.terms_snapshot_ref') AND t.terms_snapshot_digest_hex=json_extract(value,'$.terms_snapshot_digest_hex') WHERE s.runner_aggregated_at IS NULL"""
 EXACT_CLAIM_SQL = """WITH e AS (SELECT value FROM json_each(?)) SELECT abs(CASE WHEN (SELECT count(*) FROM runner_aggregate_event_claim c JOIN e ON c.tenant_id=json_extract(e.value,'$.tenant_id') AND c.request_id=json_extract(e.value,'$.request_id') AND c.aggregate_batch_id=json_extract(e.value,'$.aggregate_batch_id') AND c.billing_period=json_extract(e.value,'$.billing_period') AND c.claim_fingerprint=json_extract(e.value,'$.claim_fingerprint') AND c.terms_snapshot_ref=json_extract(e.value,'$.terms_snapshot_ref') AND c.terms_snapshot_digest_hex=json_extract(e.value,'$.terms_snapshot_digest_hex') AND c.evidence_ref=json_extract(e.value,'$.evidence_ref') AND c.evidence_digest_hex=json_extract(e.value,'$.evidence_digest_hex') AND c.claimed_at_ms=CAST(json_extract(e.value,'$.claimed_at_ms') AS INTEGER)) = json_array_length(?) THEN 0 ELSE -9223372036854775808 END)"""
+CONSUMPTION_FENCE_SQL = """WITH expected AS (SELECT json_extract(value,'$.tenant_id') AS tenant_id, CAST(json_extract(value,'$.cumulative_vcpu_seconds') AS INTEGER) AS cumulative_vcpu_seconds FROM json_each(?)), actual AS (SELECT tenant_id, COALESCE(SUM(vcpu_seconds),0) AS cumulative_vcpu_seconds FROM runner_usage_counter WHERE billing_period=? GROUP BY tenant_id) SELECT abs(CASE WHEN EXISTS (SELECT 1 FROM expected LEFT JOIN actual USING(tenant_id) WHERE expected.cumulative_vcpu_seconds != COALESCE(actual.cumulative_vcpu_seconds,0)) THEN -9223372036854775808 ELSE 0 END)"""
+CHAIN_FENCE_SQL = """WITH expected AS (SELECT json_extract(value,'$.region') AS region, json_extract(value,'$.current_head_hex') AS current_head_hex, CAST(json_extract(value,'$.next_sequence') AS INTEGER) AS next_sequence FROM json_each(?)) SELECT abs(CASE WHEN EXISTS (SELECT 1 FROM expected LEFT JOIN runner_hash_chain_head h ON h.region=expected.region AND h.chain_kind='runner_vcpu' WHERE (expected.current_head_hex IS NULL AND h.region IS NOT NULL) OR (expected.current_head_hex IS NOT NULL AND (h.region IS NULL OR h.current_head != expected.current_head_hex OR h.next_sequence != expected.next_sequence))) THEN -9223372036854775808 ELSE 0 END)"""
 WATERMARK_SQL = """UPDATE usage_event_staging SET runner_aggregated_at=CAST(? AS INTEGER) WHERE runner_aggregated_at IS NULL AND EXISTS (SELECT 1 FROM json_each(?) e WHERE tenant_id=json_extract(e.value,'$.tenant_id') AND request_id=json_extract(e.value,'$.request_id'))"""
 
 
@@ -104,10 +107,40 @@ def snapshot(db: sqlite3.Connection) -> tuple[list[tuple], list[tuple], list[tup
     return tuple(tuple(row) for row in db.execute("SELECT * FROM runner_usage_counter ORDER BY 1,2,3")), tuple(tuple(row) for row in db.execute("SELECT * FROM runner_hash_chain_head ORDER BY 1")), tuple(tuple(row) for row in db.execute("SELECT tenant_id,request_id,runner_aggregated_at FROM usage_event_staging ORDER BY 1,2"))
 
 
+def prior_coordinates(db: sqlite3.Connection, rows: list[sqlite3.Row], period: str) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Return the exact consumption and chain coordinates a drain observed."""
+    tenants = sorted({str(row["tenant_id"]) for row in rows})
+    regions = sorted({str(row["region"]) for row in rows})
+    consumption = {
+        str(row["tenant_id"]): int(row["vcpu_seconds"])
+        for row in db.execute(
+            "SELECT tenant_id, COALESCE(SUM(vcpu_seconds),0) AS vcpu_seconds FROM runner_usage_counter WHERE billing_period=? GROUP BY tenant_id",
+            (period,),
+        )
+    }
+    heads = {
+        str(row["region"]): row
+        for row in db.execute(
+            "SELECT region,current_head,next_sequence FROM runner_hash_chain_head WHERE chain_kind='runner_vcpu'"
+        )
+    }
+    return (
+        [{"tenant_id": tenant, "cumulative_vcpu_seconds": consumption.get(tenant, 0)} for tenant in tenants],
+        [
+            {"region": region, **({"current_head_hex": str(heads[region]["current_head"]), "next_sequence": int(heads[region]["next_sequence"])} if region in heads else {})}
+            for region in regions
+        ],
+    )
+
+
 def commit(db: sqlite3.Connection, rows: list[sqlite3.Row], period: str, *, now: int = 1000,
-           fail: bool = False) -> str:
+           fail: bool = False, prior_state: list[dict[str, object]] | None = None,
+           prior_heads: list[dict[str, object]] | None = None) -> str:
     events = [event(row, period, now) for row in rows]
     payload = json.dumps(events, sort_keys=True, separators=(",", ":"))
+    observed_state, observed_heads = prior_coordinates(db, rows, period)
+    prior_state = observed_state if prior_state is None else prior_state
+    prior_heads = observed_heads if prior_heads is None else prior_heads
     winners = db.execute(DISCOVERY_SQL, (payload,)).fetchall()
     if any(row["runner_aggregated_at"] is not None and row["claim_fingerprint"] is None for row in winners):
         raise Conflict("watermark without durable claim")
@@ -119,6 +152,8 @@ def commit(db: sqlite3.Connection, rows: list[sqlite3.Row], period: str, *, now:
         raise Conflict("durable claim winner")
     try:
         with db:
+            db.execute(CONSUMPTION_FENCE_SQL, (json.dumps(prior_state, sort_keys=True, separators=(",", ":")), period))
+            db.execute(CHAIN_FENCE_SQL, (json.dumps(prior_heads, sort_keys=True, separators=(",", ":")),))
             db.execute(CLAIM_SQL, (payload,))
             db.execute(EXACT_CLAIM_SQL, (payload, payload))
             if fail:
@@ -142,6 +177,36 @@ def commit(db: sqlite3.Connection, rows: list[sqlite3.Row], period: str, *, now:
     return "Committed"
 
 
+def assert_stale_coordinates_abort_before_claim_or_accounting() -> None:
+    """Concurrent disjoint batches must retry instead of using the same C0/head."""
+    db = database()
+    terms(db, T1 := "tenant-a", "2026-02")
+    stage(db, T1, "first", "2026-02", emitted=1, qty=60)
+    stage(db, T1, "second", "2026-02", emitted=2, qty=60)
+    db.commit()
+    rows, _ = extract(db, "2026-02", 8)
+    first, second = [rows[0]], [rows[1]]
+    first_state, first_heads = prior_coordinates(db, first, "2026-02")
+    stale_state, stale_heads = prior_coordinates(db, second, "2026-02")
+    assert first_state == stale_state == [{"tenant_id": T1, "cumulative_vcpu_seconds": 0}]
+    assert first_heads == stale_heads == [{"region": "iad"}]
+    assert commit(db, first, "2026-02", prior_state=first_state, prior_heads=first_heads) == "Committed"
+    committed = snapshot(db)
+    try:
+        commit(db, second, "2026-02", prior_state=stale_state, prior_heads=stale_heads)
+    except Conflict as exc:
+        assert "atomic batch failed" in str(exc)
+    else:
+        raise AssertionError("stale writer advanced consumption or chain coordinates")
+    assert snapshot(db) == committed
+    assert db.execute("SELECT count(*) FROM runner_aggregate_event_claim WHERE request_id='second'").fetchone()[0] == 0
+    retry_rows, _ = extract(db, "2026-02", 8)
+    retry_state, retry_heads = prior_coordinates(db, retry_rows, "2026-02")
+    assert retry_state == [{"tenant_id": T1, "cumulative_vcpu_seconds": 60}]
+    assert commit(db, retry_rows, "2026-02", prior_state=retry_state, prior_heads=retry_heads) == "Committed"
+    assert db.execute("SELECT SUM(vcpu_seconds) FROM runner_usage_counter WHERE tenant_id=?", (T1,)).fetchone()[0] == 120
+
+
 def run(db: sqlite3.Connection, current: str) -> tuple[list[str], list[tuple[str, str]]]:
     processed, pending = [], []
     selected = periods(db, current)
@@ -155,6 +220,7 @@ def run(db: sqlite3.Connection, current: str) -> tuple[list[str], list[tuple[str
 
 
 def main() -> None:
+    assert_stale_coordinates_abort_before_claim_or_accounting()
     print("billing aggregate runner multi-period seam: PASS")
 
 
