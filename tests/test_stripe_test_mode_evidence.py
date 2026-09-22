@@ -32,15 +32,14 @@ class StripeRestrictedKeyContractTests(unittest.TestCase):
             output = Path(directory) / "receipt.json"
             with patch.object(MODULE, "request_json", side_effect=responses) as request:
                 result = MODULE.run_probe("rk_test_fixture", "123456", output)
-
-        self.assertEqual(result, 0)
-        self.assertEqual(request.call_count, 5)
-        receipt_text = output.read_text(encoding="utf-8")
-        receipt = json.loads(receipt_text)
-        self.assertIs(receipt["livemode"], False)
-        self.assertTrue(receipt["idempotency_replayed"])
-        self.assertTrue(receipt["cleanup"]["succeeded"])
-        self.assertNotIn("rk_test_fixture", receipt_text)
+            self.assertEqual(result, 0)
+            self.assertEqual(request.call_count, 5)
+            receipt_text = output.read_text(encoding="utf-8")
+            receipt = json.loads(receipt_text)
+            self.assertIs(receipt["livemode"], False)
+            self.assertTrue(receipt["idempotency_replayed"])
+            self.assertTrue(receipt["cleanup"]["succeeded"])
+            self.assertNotIn("rk_test_fixture", receipt_text)
 
     def test_non_restricted_or_non_test_prefixes_fail_before_requests(self) -> None:
         for key in ("sk_test_fixture", "sk_live_fixture", "rk_live_fixture", "malformed"):
