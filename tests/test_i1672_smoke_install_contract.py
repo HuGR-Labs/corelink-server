@@ -24,8 +24,8 @@ REQUIRED_OBSERVATIONS = {
 
 def _contract(workflow: str, helper: str, manifest: dict[str, object]) -> None:
     assert "workflow_dispatch:" in workflow
-    assert "runs-on: ubuntu-latest" in workflow
-    assert "runs-on: corelink" not in workflow
+    assert "runs-on: corelink" in workflow
+    assert "runs-on: ubuntu-latest" not in workflow
     assert "self-hosted" not in workflow
     assert "campaign-ci.yml" not in workflow
     assert "secrets." not in workflow
@@ -52,7 +52,7 @@ def _contract(workflow: str, helper: str, manifest: dict[str, object]) -> None:
 
     assert manifest["suite_id"] == "i1672"
     assert manifest["kind"] == "contract-only"
-    assert manifest["runner"] == "ubuntu-latest"
+    assert manifest["runner"] == "corelink"
     assert manifest["trigger"] == "workflow_dispatch"
     assert manifest["workflow"] == ".github/workflows/smoke-install.yml"
     assert set(manifest["observations"]) == REQUIRED_OBSERVATIONS
@@ -76,7 +76,7 @@ def test_i1672_contract() -> None:
 @pytest.mark.parametrize(
     ("name", "mutate"),
     [
-        ("hosted_runner", lambda w, h, m: (w.replace("runs-on: ubuntu-latest", "runs-on: corelink"), h, m)),
+        ("hosted_runner", lambda w, h, m: (w.replace("runs-on: corelink", "runs-on: ubuntu-latest"), h, m)),
         ("manual_trigger", lambda w, h, m: (w.replace("workflow_dispatch:", "workflow_dispatch_removed:", 1), h, m)),
         ("credential", lambda w, h, m: (w + "\nsecrets.CORELINK_CANARY_PAT\n", h, m)),
         ("backend_seam", lambda w, h, m: (w.replace("if docker info >", "if docker status >", 1), h, m)),
