@@ -22,6 +22,12 @@ on:
           - i1675
           - i1686
           - i1662
+          - i1678
+          - i1666
+          - i1672
+          - i1669
+          - i1671
+          - i1668
 
 permissions:
   contents: read
@@ -64,11 +70,11 @@ jobs:
           python-version: '3.12'
 
       - name: Set up pnpm for the worker lane
-        if: ${{ inputs.suite == 'i1662' }}
+        if: ${{ inputs.suite == 'i1662' || inputs.suite == 'i1671' || inputs.suite == 'i1678' }}
         uses: ./.github/actions/setup-pnpm
 
       - name: Set up Node.js for the worker lane
-        if: ${{ inputs.suite == 'i1662' }}
+        if: ${{ inputs.suite == 'i1662' || inputs.suite == 'i1671' || inputs.suite == 'i1678' }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -76,15 +82,21 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install pinned worker dependencies
-        if: ${{ inputs.suite == 'i1662' }}
+        if: ${{ inputs.suite == 'i1662' || inputs.suite == 'i1671' }}
         shell: bash
         run: pnpm install --frozen-lockfile --filter worker... --ignore-scripts
+
+      - name: Install pinned signup-worker dependencies
+        if: ${{ inputs.suite == 'i1678' }}
+        shell: bash
+        run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
 
       - name: Install pytest for seam checks
         shell: bash
         run: python -m pip install pytest pyyaml
 
-      - name: Install protoc for the container SQL lane
+      - name: Install protoc for the Rust lanes
+        if: ${{ inputs.suite == 'i1629' || inputs.suite == 'i1631' || inputs.suite == 'i1632' || inputs.suite == 'i1636' || inputs.suite == 'i1638' || inputs.suite == 'i1639' || inputs.suite == 'i1628' || inputs.suite == 'i1671' || inputs.suite == 'i1668' }}
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
 
       - name: Prepare bounded campaign log directory
@@ -212,6 +224,61 @@ jobs:
         run: |
           set -euo pipefail
           pnpm --dir worker exec vitest run tests/pat_verify_cache.test.ts tests/runner_mint.test.ts tests/auth_rotate.test.ts 2>&1 | tee artifacts/campaign-ci/i1662.log
+
+      - name: i1678 exact DSR queue isolation checks
+        if: ${{ inputs.suite == 'i1678' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            pnpm --dir apps/signup-worker test -- dsr_consumer.test.ts
+            pnpm --dir apps/signup-worker typecheck
+          } 2>&1 | tee artifacts/campaign-ci/i1678.log
+
+      - name: i1666 exact nightly mutants lane contract checks
+        if: ${{ inputs.suite == 'i1666' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            python3 -m pytest -q tests/test_verify_b113_lane_population.py
+            python3 scripts/verify_b113_lane_population.py
+          } 2>&1 | tee artifacts/campaign-ci/i1666.log
+
+      - name: i1672 exact smoke-install contract check
+        if: ${{ inputs.suite == 'i1672' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pytest -q tests/test_i1672_smoke_install_contract.py 2>&1 | tee artifacts/campaign-ci/i1672.log
+
+      - name: i1669 exact residency writer checks
+        if: ${{ inputs.suite == 'i1669' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            python3 -m pytest -q tests/test_audit_outbox_residency_runtime.py
+            python3 scripts/verify_b071_fence.py
+          } 2>&1 | tee artifacts/campaign-ci/i1669.log
+
+      - name: i1671 exact Server-Timing attribution checks
+        if: ${{ inputs.suite == 'i1671' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            cargo test --locked -p corelink-server --lib origin_timing -- --nocapture
+            python3 scripts/test_b103_b129_attribution.py
+            pnpm --dir worker exec vitest run tests/server_timing_origin_subphases.test.ts
+          } 2>&1 | tee artifacts/campaign-ci/i1671.log
+
+      - name: i1668 exact audit drain fallback checks
+        if: ${{ inputs.suite == 'i1668' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p corelink-server --lib audit_drain -- --nocapture 2>&1 | tee artifacts/campaign-ci/i1668.log
 
       - name: Upload compact campaign logs
         if: ${{ always() }}
