@@ -10,7 +10,7 @@ on:
       - "crates/corelink-container/src/gc_sweep.rs"
       - "crates/corelink-container/src/gc_sweep/**"
       - "migrations/d1/0115_gc_purge_fence.sql"
-      - "migrations/d1/0118_gc_accounting_legal_hold.sql"
+      - "migrations/d1/0142_gc_accounting_legal_hold.sql"
       - "scripts/verify_b071_fence.py"
   workflow_dispatch:
 

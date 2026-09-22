@@ -1,6 +1,6 @@
 -- Durable, authenticated webhook inbox. Additive-only; never deletes legacy markers.
--- Ordinal reservation: 0131 is the first free D1 ordinal after 0130 on
--- integration base e70d9d9349f1ae96d71fd918817af8ad2bcd4762 (Refs #1629).
+-- 0132 follows the Terraform summary compatibility migration. Its effect
+-- ledger remains immediately after it in 0133 (Refs #1629).
 CREATE TABLE IF NOT EXISTS stripe_webhook_event_inbox (
     event_id TEXT NOT NULL PRIMARY KEY,
     event_type TEXT NOT NULL,

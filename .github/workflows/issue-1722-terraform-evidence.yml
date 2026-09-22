@@ -1,0 +1,28 @@
+name: Issue 1722 Terraform evidence guard
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/terraform-drift.yml"
+      - "scripts/sanitize_terraform_drift.py"
+      - "scripts/test_sanitize_terraform_drift.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sanitizer-retention:
+    name: Sanitizer and retention contract
+    # Hosted-runner contract: this credentialless guard must not depend on the
+    # private CoreLink runner pool or provider credentials.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      - name: Run focused Terraform evidence guard
+        run: python3 scripts/test_sanitize_terraform_drift.py

@@ -134,8 +134,11 @@ def test_starter_declares_root_cell_and_bundled_execution_platform() -> None:
     assert config.count("execution_platforms = prelude//platforms:default") == 2
     assert "execution_platforms = //:platforms" not in config
     assert 'load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")' in toolchains
+    assert 'load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain")' in toolchains
     assert 'name = "cxx"' in toolchains
     assert 'visibility = ["PUBLIC"]' in toolchains
+    assert 'system_python_bootstrap_toolchain(' in toolchains
+    assert 'name = "python_bootstrap"' in toolchains
     assert 'name = "metro_js_platform_override"' in metro_platform_shim
     for value in ("android", "ios", "macos", "vr", "windows"):
         assert (
@@ -221,6 +224,30 @@ def test_starter_toolchain_rejects_each_cxx_structure_mutation(mutation) -> None
         mutated = mutation(toolchains)
         assert 'load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")' in mutated
         assert 'name = "cxx"' in mutated
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda text: text.replace(
+            'load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain")\n',
+            "",
+            1,
+        ),
+        lambda text: text.replace(
+            'name = "python_bootstrap"',
+            'name = "wrong_python_bootstrap"',
+            1,
+        ),
+    ),
+)
+def test_starter_toolchain_rejects_each_python_bootstrap_structure_mutation(mutation) -> None:
+    toolchains = TOOLCHAINS_PATH.read_text(encoding="utf-8")
+    with pytest.raises(AssertionError):
+        mutated = mutation(toolchains)
+        assert 'load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain")' in mutated
+        assert 'system_python_bootstrap_toolchain(' in mutated
+        assert 'name = "python_bootstrap"' in mutated
 
 
 @pytest.mark.parametrize(
