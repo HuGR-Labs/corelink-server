@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Verify the B-072 scheduled-drill contract without contacting PagerDuty.
 
-This is intentionally a small, fail-closed verifier. It proves the trigger
-configuration and Worker routing seam agree, while leaving external delivery
-to the real Service Binding receiver. A passing local test must never be
-mistaken for proof that PagerDuty accepted or delivered a page.
+This is intentionally a small, fail-closed verifier. It proves that the
+repository has no active synthetic trigger and that the dormant Worker seam
+retains its safety guards. External deployment, delivery, and human receipt
+remain owner evidence; a passing local check never proves those events.
 """
 
 from __future__ import annotations
 
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -145,9 +146,27 @@ def verify(root: Path) -> int:
     schedule = (root / "worker/src/index_schedule.ts").read_text(encoding="utf-8")
     common = (root / "worker/src/index_common.ts").read_text(encoding="utf-8")
 
-    expected = 'crons = [\n    "0 14 * * 1",\n]'
-    if config.count(expected) != 1:
-        return fail("default/dev must declare exactly the synthetic-page cron")
+    try:
+        config_data = tomllib.loads(config)
+    except tomllib.TOMLDecodeError as error:
+        return fail(f"wrangler.toml is not valid TOML: {error}")
+
+    def active_crons(value: object, path: str = "") -> list[str]:
+        if isinstance(value, dict):
+            found: list[str] = []
+            for key, child in value.items():
+                found.extend(active_crons(child, f"{path}.{key}" if path else key))
+            return found
+        if path.endswith(".crons") and isinstance(value, list) and value:
+            return [path]
+        return []
+
+    active_trigger_paths = active_crons(config_data)
+    if active_trigger_paths:
+        return fail(
+            "synthetic triggers must remain absent until external evidence exists: "
+            + ", ".join(active_trigger_paths)
+        )
     if '"0 6 * * 1"' in config:
         return fail("retired chaos cron must not be scheduled")
 
@@ -212,7 +231,7 @@ def verify(root: Path) -> int:
     if re.search(r"pagerduty\.com|routing[_-]?key|PAGERDUTY", handler, re.IGNORECASE):
         return fail("scheduled handler contains direct PagerDuty credential/endpoint material")
 
-    print("B-072 PASS: one synthetic default/dev trigger, production overrides, and fail-closed handoff verified")
+    print("B-072 PASS: synthetic trigger absent; dormant handoff seam remains fail-closed (external evidence pending)")
     return 0
 
 
