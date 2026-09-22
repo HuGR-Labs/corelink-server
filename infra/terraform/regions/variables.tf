@@ -1,23 +1,17 @@
-# WI-S14-001 — Shared variables for all region invocations.
+# Legacy variable declarations retained for documentation tooling.
+# The drift workflow uses the four independent roots under this directory;
+# this directory itself is not a Terraform root and must not receive init/plan.
 
 variable "cf_account_id" {
-  type        = string
-  description = "Cloudflare account ID. Injected via TF_VAR_cf_account_id at runtime."
-  sensitive   = true
+  type      = string
+  sensitive = true
 }
 
 variable "cf_zone_id" {
-  type        = string
-  description = "Cloudflare zone ID for api.humangr.com. Injected via TF_VAR_cf_zone_id."
+  type = string
 }
 
 variable "environment" {
-  type        = string
-  description = "Deployment environment: staging | production"
-  default     = "staging"
-
-  validation {
-    condition     = contains(["staging", "production"], var.environment)
-    error_message = "environment must be one of: staging, production"
-  }
+  type    = string
+  default = "staging"
 }
