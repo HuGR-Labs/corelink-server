@@ -58,6 +58,13 @@ REQUIRED_COMMITMENT_IDS = (
     "cloudflare", "clerk", "resend", "stripe", "github", "pagerduty",
     "sentry", "plausible", "betterstack",
 )
+EXPECTED_AUTHORITY = "Legal"
+EXPECTED_NON_CLAIMS = (
+    "Packet existence is not a signature or executed DPA.",
+    "TEMPLATE records are not completed Legal reviews.",
+    "Public vendor policy pages are not execution evidence.",
+    "No SOC 2 or transfer assessment is inferred.",
+)
 
 
 class ReviewError(ValueError):
@@ -161,12 +168,13 @@ def assess(texts: dict[str, str]) -> str:
     packet = _packet(texts[ACTION_PACKET])
     if packet.get("schema_version") != 1 or packet.get("backlog_id") != "B-316":
         raise ReviewError("B-316 packet identity/schema drifted")
+    if packet.get("authority") != EXPECTED_AUTHORITY:
+        raise ReviewError("B-316 packet authority drifted")
+    if packet.get("non_claims") != list(EXPECTED_NON_CLAIMS):
+        raise ReviewError("B-316 packet non-claims drifted")
     entries = packet.get("vendors")
     if not isinstance(entries, dict) or set(entries) != EXPECTED_IDS:
         raise ReviewError("B-316 packet vendor population is not exact")
-    non_claims = packet.get("non_claims")
-    if not isinstance(non_claims, list) or len(non_claims) != 4:
-        raise ReviewError("B-316 packet must preserve the four explicit non-claims")
     related = packet.get("related_owner_backlog")
     if related != {
         "vendor_review_cadence_and_Drata_access": "B-032",
@@ -299,6 +307,17 @@ def mutation_self_test(texts: dict[str, str]) -> None:
     changed = copy.deepcopy(texts)
     changed[COMMITMENTS] = changed[COMMITMENTS].replace("### 1.4 Neon, Inc.", "### 1.4 Unknown Vendor", 1)
     mutations.append(changed)
+    changed = copy.deepcopy(texts)
+    packet = _packet(changed[ACTION_PACKET])
+    packet["authority"] = "Automated"
+    changed[ACTION_PACKET] = json.dumps(packet)
+    mutations.append(changed)
+    for index in range(len(EXPECTED_NON_CLAIMS)):
+        changed = copy.deepcopy(texts)
+        packet = _packet(changed[ACTION_PACKET])
+        packet["non_claims"][index] = f"Drifted non-claim {index + 1}."
+        changed[ACTION_PACKET] = json.dumps(packet)
+        mutations.append(changed)
     for index, changed in enumerate(mutations, 1):
         try:
             assess(changed)
