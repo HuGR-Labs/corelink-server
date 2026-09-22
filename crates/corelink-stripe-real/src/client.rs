@@ -936,6 +936,26 @@ impl StripeRunnerCheckoutProvider {
             cancel_url: cancel_url.into(),
         }
     }
+
+    /// Create the stable Stripe customer used by the runner attempt ledger.
+    /// The idempotency key is tenant scoped, so a lost response is safe to
+    /// replay before reserving the payable Checkout attempt.
+    pub fn ensure_customer(&self, tenant_id: &str) -> Result<String, StripeError> {
+        self.stripe
+            .create_customer("", tenant_id, &format!("customer:{tenant_id}"))
+            .map(|customer| customer.id)
+    }
+
+    /// Create or replay the hosted session and retain the URL for HTTP
+    /// responses. Replaying this call with the attempt key is the provider's
+    /// reconciliation primitive after a lost ACK.
+    pub fn create_response(
+        &self,
+        attempt: &RunnerCheckoutAttempt,
+    ) -> Result<CheckoutSessionResponse, StripeError> {
+        self.stripe
+            .create_runner_checkout_session(attempt, &self.success_url, &self.cancel_url)
+    }
 }
 
 impl core::fmt::Debug for StripeRunnerCheckoutProvider {
@@ -954,8 +974,7 @@ impl RunnerCheckoutSessionCreator for StripeRunnerCheckoutProvider {
         attempt: &RunnerCheckoutAttempt,
     ) -> Result<String, corelink_tier_selection::runner_checkout_attempt::RunnerCheckoutAttemptError>
     {
-        self.stripe
-            .create_runner_checkout_session(attempt, &self.success_url, &self.cancel_url)
+        self.create_response(attempt)
             .map(|response| response.session_id)
             .map_err(|error| corelink_tier_selection::runner_checkout_attempt::RunnerCheckoutAttemptError::ProviderCreateFailed(error.to_string()))
     }
