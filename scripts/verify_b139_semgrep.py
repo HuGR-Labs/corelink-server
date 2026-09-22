@@ -63,6 +63,10 @@ CUSTOM_POLICY = {
         "pattern: $X.expect($MSG)",
     ),
 }
+SUPPRESSION_RULE = (
+    "yaml.github-actions.security.pull-request-target-code-checkout."
+    "pull-request-target-code-checkout"
+)
 CUSTOM_PATHS = {
     "corelink.rust.no-unwrap-in-src": {
         "include": ["/crates/*/src/**/*.rs", "/apps/**/src/**/*.rs"],
@@ -554,6 +558,89 @@ def _sarif_counts(path: Path, *, custom: bool) -> tuple[dict[str, int], int]:
     return counts, results_seen
 
 
+def _approved_suppression_sites() -> set[tuple[str, int, str]]:
+    """Load the exact trust-boundary allowlist used by the PR-target guard."""
+
+    try:
+        from verify_b139_prtarget_data_boundary import approved_suppression_sites
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise VerificationError("PR-target suppression guard is unavailable") from exc
+    try:
+        sites = approved_suppression_sites(ROOT)
+    except Exception as exc:  # guard failures are fail closed
+        raise VerificationError(f"PR-target suppression guard failed: {exc}") from exc
+    if not isinstance(sites, set) or any(
+        not isinstance(site, tuple)
+        or len(site) != 3
+        or not isinstance(site[0], str)
+        or not isinstance(site[1], int)
+        or isinstance(site[1], bool)
+        or site[1] < 1
+        or site[2] != SUPPRESSION_RULE
+        for site in sites
+    ):
+        raise VerificationError("PR-target suppression guard returned malformed sites")
+    return sites
+
+
+def _approved_bundled_suppressions(
+    path: Path, approved: set[tuple[str, int, str]]
+) -> int:
+    """Validate and count only the exact approved bundled suppressions."""
+
+    data = _load_json(path)
+    runs = data.get("runs")
+    if not isinstance(runs, list) or not runs:
+        raise VerificationError(f"{path} has no SARIF runs")
+    seen: set[tuple[str, int, str]] = set()
+    for run in runs:
+        if not isinstance(run, dict) or not isinstance(run.get("results"), list):
+            raise VerificationError(f"{path} has malformed SARIF run")
+        tool = run.get("tool")
+        driver = tool.get("driver") if isinstance(tool, dict) else None
+        rules = driver.get("rules", []) if isinstance(driver, dict) else None
+        if not isinstance(rules, list):
+            raise VerificationError(f"{path} has no SARIF driver rules")
+        for result in run["results"]:
+            if not isinstance(result, dict) or "suppressions" not in result:
+                continue
+            effective_id, level = _sarif_result_level(path, result, rules, custom=False)
+            if (
+                effective_id != SUPPRESSION_RULE
+                and not effective_id.endswith("." + SUPPRESSION_RULE)
+            ) or level != "error":
+                raise VerificationError(
+                    f"{path} has an unsupported or non-error approved suppression"
+                )
+            if result.get("suppressions") != [{"kind": "inSource"}]:
+                raise VerificationError(f"{path} has malformed suppression metadata")
+            locations = result.get("locations")
+            if not isinstance(locations, list) or len(locations) != 1:
+                raise VerificationError(f"{path} has malformed suppressed location")
+            physical = locations[0].get("physicalLocation")
+            if not isinstance(physical, dict):
+                raise VerificationError(f"{path} has malformed suppressed location")
+            artifact = physical.get("artifactLocation")
+            region = physical.get("region")
+            uri = artifact.get("uri") if isinstance(artifact, dict) else None
+            line = region.get("startLine") if isinstance(region, dict) else None
+            if (
+                not isinstance(uri, str)
+                or not uri
+                or uri.startswith("/")
+                or uri.startswith("%")
+                or not isinstance(line, int)
+                or isinstance(line, bool)
+                or line < 1
+            ):
+                raise VerificationError(f"{path} has non-canonical suppressed location")
+            site = (uri.replace("\\", "/"), line, SUPPRESSION_RULE)
+            if site not in approved or site in seen:
+                raise VerificationError(f"{path} contains an unapproved suppression site")
+            seen.add(site)
+    return len(seen)
+
+
 def evaluate(
     bundled_sarif: Path,
     custom_sarif: Path,
@@ -563,19 +650,31 @@ def evaluate(
 ) -> int:
     bundled_counts, bundled_results = _sarif_counts(bundled_sarif, custom=False)
     custom_counts, custom_results = _sarif_counts(custom_sarif, custom=True)
+    approved_suppressed = _approved_bundled_suppressions(
+        bundled_sarif, _approved_suppression_sites()
+    )
     error_findings = bundled_counts["error"] + custom_counts["error"]
+    unsuppressed_errors = error_findings - approved_suppressed
+    if unsuppressed_errors < 0:
+        raise VerificationError("approved suppression count exceeds ERROR findings")
     scanner_error = bool(bundled_rc or custom_rc)
     report_data = {
         "schema_version": 1,
         "finding": "B-139",
         "status": "evaluated",
         "scanner_exit_codes": {"bundled": bundled_rc, "custom": custom_rc},
-        "bundled": {"results": bundled_results, "levels": bundled_counts},
-        "custom": {"results": custom_results, "levels": custom_counts},
+        "bundled": {
+            "results": bundled_results,
+            "levels": bundled_counts,
+            "approved_suppressed": approved_suppressed,
+        },
+        "custom": {"results": custom_results, "levels": custom_counts, "approved_suppressed": 0},
         "blocking": {
             "explicit_error_findings": error_findings,
+            "approved_suppressed_error_findings": approved_suppressed,
+            "unsuppressed_error_findings": unsuppressed_errors,
             "scanner_error": scanner_error,
-            "verdict": "FAIL" if error_findings or scanner_error else "PASS",
+            "verdict": "FAIL" if unsuppressed_errors or scanner_error else "PASS",
         },
         "sarif_upload": {
             "bundled": "pending-upload-step",
@@ -594,7 +693,7 @@ def evaluate(
     )
     if bundled_rc or custom_rc:
         return 1
-    return 1 if error_findings else 0
+    return 1 if unsuppressed_errors else 0
 
 
 def classify_uploads(report: Path, bundled_outcome: str, custom_outcome: str) -> None:
@@ -645,6 +744,7 @@ def enforce_report(report: Path) -> int:
     if any(type(code) is not int or code < 0 for code in exit_codes.values()):
         raise VerificationError("scan report has invalid scanner exit code")
     error_findings = 0
+    approved_suppressed = 0
     for population in ("bundled", "custom"):
         scan = report_data.get(population)
         if not isinstance(scan, dict) or type(scan.get("results")) is not int:
@@ -656,11 +756,15 @@ def enforce_report(report: Path) -> int:
             raise VerificationError(f"scan report has malformed {population} levels")
         if any(type(count) is not int or count < 0 for count in levels.values()):
             raise VerificationError(f"scan report has invalid {population} count")
+        suppressed = scan.get("approved_suppressed")
+        if type(suppressed) is not int or suppressed < 0 or suppressed > levels["error"]:
+            raise VerificationError(f"scan report has invalid {population} approved suppression count")
         if scan["results"] != sum(levels.values()):
             raise VerificationError(
                 f"scan report {population} total does not match levels"
             )
         error_findings += levels["error"]
+        approved_suppressed += suppressed
     blocking = report_data.get("blocking")
     if not isinstance(blocking, dict) or blocking.get("verdict") not in {
         "PASS",
@@ -668,7 +772,13 @@ def enforce_report(report: Path) -> int:
     }:
         raise VerificationError("scan report has no closed blocking verdict")
     scanner_error = any(exit_codes.values())
-    expected_verdict = "FAIL" if error_findings or scanner_error else "PASS"
+    blocking_suppressed = blocking.get("approved_suppressed_error_findings")
+    unsuppressed_errors = blocking.get("unsuppressed_error_findings")
+    if blocking_suppressed != approved_suppressed:
+        raise VerificationError("approved suppression count does not match SARIF populations")
+    if unsuppressed_errors != error_findings - approved_suppressed:
+        raise VerificationError("unsuppressed ERROR count does not match SARIF populations")
+    expected_verdict = "FAIL" if unsuppressed_errors or scanner_error else "PASS"
     if blocking.get("explicit_error_findings") != error_findings:
         raise VerificationError("blocking ERROR count does not match SARIF populations")
     if blocking.get("scanner_error") is not scanner_error:

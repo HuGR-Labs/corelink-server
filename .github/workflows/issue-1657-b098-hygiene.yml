@@ -1,0 +1,73 @@
+name: issue-1657 B-098 repository hygiene
+
+# Credentialless repository evidence only. This gate audits the checked-in
+# repository-owned half of B-098. External worktrees, release signing, and
+# production cutover remain owner actions and are never performed here.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/issue-1657-b098-hygiene.yml
+      - BACKLOG.md
+      - CLAUDE.md
+      - .github/release-allowed-signers
+      - .github/release-signing-policy.json
+      - crates/corelink-runbook-tracker/Cargo.toml
+      - docs/handoff/2026-09-09-b098-ops-authority-census.md
+      - docs/handoff/2026-09-05-b098-owner-action-packet.md
+      - docs/knowledge/ops/release-process.md
+      - docs/release/**
+      - evidence/owner-actions/B-098/**
+      - scripts/cut-v1-0-0-ga-tag.sh
+      - scripts/verify_b098_repo_hygiene.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/issue-1657-b098-hygiene.yml
+      - BACKLOG.md
+      - CLAUDE.md
+      - .github/release-allowed-signers
+      - .github/release-signing-policy.json
+      - crates/corelink-runbook-tracker/Cargo.toml
+      - docs/handoff/2026-09-09-b098-ops-authority-census.md
+      - docs/handoff/2026-09-05-b098-owner-action-packet.md
+      - docs/knowledge/ops/release-process.md
+      - docs/release/**
+      - evidence/owner-actions/B-098/**
+      - scripts/cut-v1-0-0-ga-tag.sh
+      - scripts/verify_b098_repo_hygiene.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1657-b098-hygiene-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  credentialless-verify:
+    name: B-098 credentialless repository verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact tree without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify repository-owned hygiene contract
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/issue-1657
+          python3 -S scripts/verify_b098_repo_hygiene.py --json \
+            > artifacts/issue-1657/b098-repository-hygiene.json
+
+      - name: Upload bounded repository receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: issue-1657-b098-hygiene-${{ github.run_id }}
+          path: artifacts/issue-1657/b098-repository-hygiene.json
+          if-no-files-found: error
+          retention-days: 30
