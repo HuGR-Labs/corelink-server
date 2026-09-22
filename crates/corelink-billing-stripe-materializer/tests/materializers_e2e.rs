@@ -299,18 +299,18 @@ fn tier_change_no_op_when_target_tier_equals_current() {
 #[test]
 fn idempotency_replay_does_not_materialize_twice() {
     let bundle = build_bundle();
-    let (body, hdr) = envelope_for("invoice.paid", "evt_idem_1");
+    let (body, hdr) = envelope_for("charge.refunded", "evt_idem_1");
 
     let r1 = bundle.dispatcher.process(&body, Some(&hdr));
     let r2 = bundle.dispatcher.process(&body, Some(&hdr));
     assert_eq!(r1, DispatchResponse::Ok200);
     assert_eq!(r2, DispatchResponse::Ok200);
     // Materialization happened exactly once.
-    assert_eq!(bundle.d1.count_table("stripe_invoices"), 1);
+    assert_eq!(bundle.d1.count_table("stripe_refunds"), 1);
     assert_eq!(
         bundle
             .audit
-            .count_event("corelink.billing.invoice.materialized.v1"),
+            .count_event("corelink.billing.refund.materialized.v1"),
         1
     );
     // Dedup table holds exactly one entry.

@@ -347,3 +347,81 @@ fn unknown_plan_in_subscription_update_surfaces_invalid_payload() {
     let err = handler.on_subscription_updated(&e).unwrap_err();
     assert!(matches!(err, MaterializerError::InvalidPayload(_)));
 }
+
+#[test]
+fn refunds_follow_the_durable_product_axis_and_leave_unknowns_pending() {
+    let (handler, d1, audit) = fixture();
+    d1.upsert_tier("ten_1", "pro", 1_700_000_000_000, "init")
+        .unwrap();
+    d1.upsert_runners_entitlement("ten_1", 40, 240, 1_700_000_000_000)
+        .unwrap();
+    d1.record_cache_purchase("ten_1", "sub_cache");
+    d1.record_runners_purchase("ten_1", "sub_runner");
+    let invoice = |id: &str, subscription: &str| {
+        env(
+            &format!("evt_{id}"),
+            "invoice.paid",
+            serde_json::json!({
+                "object": {
+                    "id": id,
+                    "subscription": subscription,
+                    "metadata": { "tenant_id": "ten_1" },
+                }
+            }),
+        )
+    };
+    let refund = |id: &str, invoice: &str, amount: i64, amount_refunded: i64| {
+        env(
+            id,
+            "charge.refunded",
+            serde_json::json!({
+                "object": {
+                    "id": format!("ch_{id}"),
+                    "invoice": invoice,
+                    "amount": amount,
+                    "amount_refunded": amount_refunded,
+                    "metadata": { "tenant_id": "ten_1" },
+                }
+            }),
+        )
+    };
+
+    handler.on_invoice_paid(&invoice("in_runner", "sub_runner")).unwrap();
+    handler
+        .on_charge_refunded(&refund("evt_runner_full", "in_runner", 100, 100))
+        .unwrap();
+    assert_eq!(d1.runners_entitlement_of("ten_1"), None);
+    assert_eq!(d1.tier_for("ten_1").as_deref(), Some("pro"));
+    assert_eq!(audit.count_event("corelink.tenant.tier_changed.v1"), 0);
+
+    d1.upsert_runners_entitlement("ten_1", 40, 240, 1_700_000_000_000)
+        .unwrap();
+    d1.record_runners_purchase("ten_1", "sub_runner");
+    handler.on_invoice_paid(&invoice("in_cache", "sub_cache")).unwrap();
+    handler
+        .on_charge_refunded(&refund("evt_cache_partial", "in_cache", 100, 25))
+        .unwrap();
+    assert_eq!(d1.runners_entitlement_of("ten_1"), Some((40, 240)));
+    assert_eq!(audit.count_event("corelink.tenant.tier_changed.v1"), 0);
+
+    handler
+        .on_charge_refunded(&refund("evt_cache_full", "in_cache", 100, 100))
+        .unwrap();
+    assert_eq!(d1.runners_entitlement_of("ten_1"), Some((40, 240)));
+    assert_eq!(audit.count_event("corelink.tenant.tier_changed.v1"), 1);
+
+    // A charge delivered before its invoice has no durable attribution. Even
+    // after the invoice arrives, the already-materialized refund stays pending
+    // for reconciliation; it never guesses Cache on a replay/order race.
+    handler
+        .on_charge_refunded(&refund("evt_out_of_order", "in_late", 100, 100))
+        .unwrap();
+    handler.on_invoice_paid(&invoice("in_late", "sub_runner")).unwrap();
+    assert_eq!(d1.runners_entitlement_of("ten_1"), Some((40, 240)));
+    let pending = d1
+        .snapshot()
+        .into_iter()
+        .find(|row| row.stripe_event_id == "evt_out_of_order")
+        .unwrap();
+    assert_eq!(pending.payload["refunded_product_axis"], "pending");
+}
