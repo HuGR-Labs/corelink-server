@@ -2,12 +2,12 @@
 type: "Evidence"
 title: "B-098 Ops authority and key census"
 description: "Metadata-only census proving that the independent Ops release authority is not yet provisioned."
-checkpoint_sha: "1126e25d294ae16e73efa70004642e34f223285d"
+checkpoint_sha: "aaa53b1e404b719dc04d60f34ca301039abb19ec"
 provenance: "AUTHORED"
 capture_scope: "current-tree"
 remote_status: "ABSENT"
 tags: ["b-098", "release", "ops", "fail-closed", "key-census"]
-timestamp: "2026-09-22T05:05:26Z"
+timestamp: "2026-09-22T07:55:57Z"
 
 ---
 # B-098 Ops authority and key census
@@ -30,7 +30,7 @@ changed or created by this census.
 
 ## Metadata inspected
 
-The inspection was performed from the current repository checkout at checkpoint `1126e25d294ae16e73efa70004642e34f223285d` (`capture_scope: current-tree`).
+The inspection was performed from the current repository checkout at checkpoint `aaa53b1e404b719dc04d60f34ca301039abb19ec` (`capture_scope: current-tree`).
 Only public metadata and fingerprints were read; private key and token material
 was never printed.
 
