@@ -20,6 +20,21 @@
 | Conditions / follow-ups | `VR-7 — Legal must obtain and record the signed-copy DPA and SOC 2 evidence.` |
 | Next review due | `TBD (YYYY-MM-DD)` |
 
+## Repository-verified technical and data-flow scope
+
+- **Role:** application error monitoring for the admin UI and docs-site build.
+- **Runtime flow:** `apps/admin-ui/sentry.server.config.ts` and
+  `sentry.edge.config.ts` initialise Sentry only when `SENTRY_DSN` (or its
+  public fallback) is present. Events use `sendDefaultPii: false` and pass
+  through `beforeSend`, `beforeSendTransaction`, and `beforeBreadcrumb`; the
+  shared scrubber removes secret/PII-shaped values before transmission.
+- **Data boundary:** the repository classifies the resulting exception,
+  breadcrumb, and diagnostic event stream as `telemetry`; no customer content
+  flow is asserted by this packet.
+- **Repository sources:** `apps/admin-ui/sentry.server.config.ts`,
+  `apps/admin-ui/sentry.edge.config.ts`, `apps/admin-ui/src/lib/sentry-scrub.ts`,
+  and registry row 20 in `specs/_compliance/VENDOR-RISK-REGISTER.md`.
+
 ## Notes
 
 No signature, named review, transfer assessment, certification, or approval is

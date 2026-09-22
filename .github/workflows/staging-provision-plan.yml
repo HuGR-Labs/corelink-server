@@ -24,7 +24,9 @@ concurrency:
 jobs:
   plan:
     name: read-only Cloudflare staging plan
-    runs-on: corelink
+    # This plan holds repository-scoped Cloudflare secrets. It therefore runs
+    # on GitHub-hosted infrastructure, never on the retired corelink label.
+    runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 15
     env:
