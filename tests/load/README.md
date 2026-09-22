@@ -1,11 +1,12 @@
 # R3-prep — K6 Load Test Suite (Operator Playbook)
 
-> Status: **dispatch-only until staging is provisioned**; operator-only and requires a real staging target. **DO NOT** run any of these scripts against the
+> Status: **dispatch-only until staging is provisioned**; operator-only and requires a real staging target plus an owner-issued identity receipt. **DO NOT** run any of these scripts against the
 > production environment from CI or any unattended automation. The
 > kill-switch stampede + signup burst scenarios both mutate D1 state and
 > can burn out free-tier D1 quotas if cleanup is skipped. There is **no
-> automatic cleanup job** in the dispatch workflow; an owner-approved operator
-> must scope and verify cleanup on the staging tenant after each run.
+> arbitrary URL. The dispatch workflow requires an owner-issued target receipt,
+> bounds each job, and calls the staging teardown endpoint in an `always()` step.
+> A missing teardown token or failed teardown fails the run closed.
 
 This directory contains five k6 scripts that exercise the critical paths
 mapped in R-3 (E2E + integration). They are designed to run dia-1 do staging
@@ -45,6 +46,8 @@ for f in tests/load/k6/*.js; do k6 inspect "$f" || exit 1; done
 | Var                        | Required by                              | Notes |
 |----------------------------|------------------------------------------|-------|
 | `K6_TARGET_HOST`           | all                                      | Must point at staging. The signup script aborts on prod-shaped hostname. |
+| `K6_TARGET_IDENTITY_RECEIPT` | workflow pre-flight                    | Owner-issued JSON binding canonical staging to a 40-character deployment SHA; expires within 24h. |
+| `K6_STAGING_TEARDOWN_TOKEN` | workflow teardown                       | Staging-only token for the bounded synthetic-state teardown endpoint. |
 | `K6_AUTH_BEARER`           | signup, dsr, cas, byok                   | Staging PAT scoped to load-test tenant. NEVER export a real-tenant PAT. |
 | `K6_STRIPE_WHSEC`          | stripe-webhook-burst                     | Staging Stripe `whsec_…` secret only. |
 | `K6_MFA_STUB_TOKEN`        | dsr-api                                  | Staging Clerk stub MFA token (the prod accept-list rejects this header). |
@@ -82,7 +85,7 @@ npx k6-html-reporter@1.x \
   --output tests/load/results/$(date +%Y-%m-%d)/signup.html
 ```
 
-The dispatch workflow uploads the JSON artifacts to the workflow run; the HTML
+The dispatch workflow uploads the JSON artifacts and target receipt to the workflow run; the HTML
 reporter step runs offline on the operator workstation when needed.
 
 ## Cleanup
@@ -106,16 +109,18 @@ Each scenario creates synthetic state:
 - **byok-revoke-stampede**: re-warm the CMK + DEK cache via
   `scripts/byok-load-warmup.sh --cmk-id $K6_BYOK_TEST_CMK_ID --entries 10000`.
 
-There is no automatic cleanup job. Before dispatch, the owner/operator must
-confirm the staging tenant, synthetic identifiers, R2 lifecycle behavior, and
-the bounded cleanup steps above; after dispatch they must verify cleanup (or
-record the approved retention window) before another run. Never broaden a
-cleanup query to production or to rows outside the synthetic load-test scope.
+Before dispatch, the owner/operator must confirm the staging tenant, synthetic
+identifiers, R2 lifecycle behavior, and the bounded cleanup steps above. The
+workflow teardown receives only its run id and scenario and is derived from the
+canonical target origin; it cannot be redirected to another URL. A failed or
+missing teardown is a failed run and must be investigated before another run.
 
 ## Target environment safety rails
 
-- `K6_TARGET_HOST` *must* contain `staging.` or `dev.`. The signup script
-  refuses production hostnames. Add the same guard to every new scenario.
+- `K6_TARGET_HOST` *must* equal `https://staging.corelink.humangr.com` (one
+  trailing slash is the only normalization). Every workflow run also validates
+  `K6_TARGET_IDENTITY_RECEIPT` before any scenario starts. The signup script
+  refuses production hostnames as a second defense.
 - The webhook script requires a staging-only Stripe webhook secret
   (`whsec_test_…`). Production secrets MUST NEVER be exposed to this code
   path.
