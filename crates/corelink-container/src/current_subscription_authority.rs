@@ -67,7 +67,12 @@ impl StripeCurrentSubscriptionAuthority {
         let created_ms = u64::try_from(created)
             .ok()
             .and_then(|seconds| seconds.checked_mul(1_000))
-            .ok_or_else(|| format!("Stripe subscription {} has invalid creation time", response.id))?;
+            .ok_or_else(|| {
+                format!(
+                    "Stripe subscription {} has invalid creation time",
+                    response.id
+                )
+            })?;
         Ok(CurrentSubscription::new(
             response.id.clone(),
             response.status.clone(),
