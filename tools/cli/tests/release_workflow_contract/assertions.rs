@@ -30,7 +30,7 @@ pub(super) fn load_script(name: &str) -> Result<String, String> {
 
 pub(super) fn assert_release_contract(workflow: &str) {
     for required in [
-        "- \"cli-v*\"",
+        "description: \"Existing cli-vMAJOR.MINOR.PATCH tag to build and publish\"",
         "HuGR-Labs/corelink-cli",
         "EXPECTED_ZIG_VERSION=0.16.0",
         "EXPECTED_CARGO_ZIGBUILD_VERSION=0.19.8",
