@@ -64,11 +64,10 @@ def main() -> int:
     require(probe, 'PROBE_BASE="${PROBE_BASE:-}"', "explicit target prerequisite")
     require(probe, 'PROBE_SAMPLES="${PROBE_SAMPLES:-10}"', "ten-sample default")
     require(probe, 'openssl rand -hex 32', "fresh 64-hex object keys")
-    require(probe, "REQUEST_STATUS} = \"404\"", "served authenticated 404 assertion")
+    require(probe, '[ "${REQUEST_STATUS}" = "404" ]', "served authenticated 404 assertion")
     require(probe, "phase=wall median_ms=", "wall median/p90 reporting")
     require(probe, "for phase in wall auth wdb", "Server-Timing phase reporting")
-    for phase in ("auth", "wdb", "origin", "opat", "ohandler", "total"):
-        require(probe, f'required_phase in {phase}', f"required {phase} attribution")
+    require(probe, "for required_phase in auth wdb origin opat ohandler total; do", "required attribution phases")
     require(probe, "staging-origin-redacted", "redacted target label")
     if '"${PROBE_BASE}"' in probe.split("printf 'B-104 authenticated 404 probe", 1)[-1].split("if ! request", 1)[0]:
         raise SystemExit("probe prints the target origin before requests")
