@@ -114,6 +114,7 @@ fn envelope_for(event_type: &str, id: &str) -> (Vec<u8>, String) {
             "id": "sub_canceled",
             "status": "canceled",
             "metadata": { "tenant_id": "ten_1" },
+            "plan": { "id": "plan_pro" },
         }),
         "customer.subscription.updated" => serde_json::json!({
             "id": "sub_updated",

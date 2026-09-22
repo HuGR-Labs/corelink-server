@@ -58,6 +58,7 @@
 
 mod audit;
 pub mod clock;
+mod current_subscription;
 mod d1;
 mod handler;
 mod idempotency;
@@ -75,6 +76,7 @@ pub use clock::SystemMatClock;
 #[cfg(target_arch = "wasm32")]
 pub use clock::WasmWorkerMatClock;
 pub use clock::{default_mat_clock, InMemoryFakeMatClock, MatClock};
+pub use current_subscription::{CurrentSubscription, CurrentSubscriptionAuthority};
 pub use d1::{
     BillingD1Error, BillingD1Writer, InMemoryBillingD1, MaterializedRow, WebhookOutcome,
     SQL_DELETE_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
