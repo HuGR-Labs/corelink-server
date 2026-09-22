@@ -11,6 +11,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = ("signup", "webhook", "dsr", "cas", "byok")
+TARGET = "https://staging.corelink.humangr.com"
+TENANT = "019e7109-e514-72b2-ac5b-607d97ea64a1"
+DEPLOYMENT = "a" * 40
 SPEC = importlib.util.spec_from_file_location(
     "load_test_baseline_check", ROOT / "scripts" / "load-test-baseline-check.py"
 )
@@ -24,7 +27,17 @@ def write_summary(root: Path, scenario: str, median: object = 10, p99: object = 
     target = root / scenario / "summary.json"
     target.parent.mkdir(parents=True)
     target.write_text(
-        json.dumps({"metrics": {"http_req_duration": {"med": median, "p(99)": p99}}})
+        json.dumps(
+            {
+                "schema": 1,
+                "suite_version": "r3-prep-v2",
+                "scenario": scenario,
+                "target": TARGET,
+                "tenant_id": TENANT,
+                "deployment_sha": DEPLOYMENT,
+                "metrics": {"http_req_duration": {"med": median, "p(99)": p99}},
+            }
+        )
     )
     (target.parent / "status.json").write_text(
         json.dumps({"scenario": scenario, "outcome": "success"})
@@ -36,10 +49,18 @@ def write_baseline(path: Path, scenarios: dict[str, dict[str, object]]) -> None:
     path.write_text(
         json.dumps(
             {
-                "schema": 1,
+                "schema": 2,
+                "baseline_version": "k6-baseline-v2",
+                "suite_version": "r3-prep-v2",
                 "captured_at": "2026-09-05T00:00:00Z",
                 "commit": "test",
                 "metric": "http_req_duration.med (ms)",
+                "threshold_multiplier": 1.20,
+                "identity": {
+                    "target": TARGET,
+                    "tenant_id": TENANT,
+                    "deployment_sha": DEPLOYMENT,
+                },
                 "scenarios": scenarios,
             }
         )
