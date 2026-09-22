@@ -1,11 +1,18 @@
 /** Durable, tenant-scoped ownership writes for paid Checkout completions. */
 
-export interface D1RunResult { meta?: { changes?: number } }
+export interface D1RunResult {
+    meta?: { changes?: number };
+    results?: Array<Record<string, unknown>>;
+}
 export interface D1PreparedStatement {
     bind(...values: unknown[]): D1PreparedStatement;
     run(): Promise<D1RunResult>;
 }
-export interface D1DatabaseLike { prepare(query: string): D1PreparedStatement }
+export interface D1DatabaseLike {
+    prepare(query: string): D1PreparedStatement;
+    /** D1 executes a batch as one transaction; required for entitlement CAS. */
+    batch?(statements: D1PreparedStatement[]): Promise<D1RunResult[]>;
+}
 
 /** Keep webhook-side recovery shorter than Stripe's 24h idempotency window. */
 export const CHECKOUT_LEDGER_RECOVERY_TTL_MS = 15 * 60 * 1000;

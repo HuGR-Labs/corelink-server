@@ -45,3 +45,21 @@ class RegionalCapacityVerifierTests(unittest.TestCase):
                                         "vcpu_per_deployment": 4, "total_memory_mib": 6291456}), encoding="utf-8")
             with self.assertRaises(verifier.CapacityError):
                 verifier.verify_provider(path, model)
+
+    def test_provider_vcpu_mismatch_fails_closed(self) -> None:
+        model = verifier.declared_budget()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "provider.json"
+            path.write_text(json.dumps({"schema_version": 1, "read_only": True, "total_vcpu": 1500,
+                                        "vcpu_per_deployment": 2, "total_memory_mib": 6291456}), encoding="utf-8")
+            with self.assertRaises(verifier.CapacityError):
+                verifier.verify_provider(path, model)
+
+    def test_provider_boolean_numeric_field_fails_closed(self) -> None:
+        model = verifier.declared_budget()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "provider.json"
+            path.write_text(json.dumps({"schema_version": 1, "read_only": True, "total_vcpu": 1500,
+                                        "vcpu_per_deployment": True, "total_memory_mib": 6291456}), encoding="utf-8")
+            with self.assertRaises(verifier.CapacityError):
+                verifier.verify_provider(path, model)

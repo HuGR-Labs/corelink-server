@@ -54,16 +54,18 @@
 use std::sync::Arc;
 
 use corelink_billing_stripe_materializer::{
-    BillingD1Error, BillingD1Writer, MaterializedRow, RefundedProduct, RefundedPurchase,
-    WebhookOutcome, SQL_DELETE_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER,
-    SQL_FIND_INVOICE_SUBSCRIPTION, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
-    SQL_INSERT_WEBHOOK_EVENT_PROCESSED, SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER,
-    SQL_RESOLVE_REFUND_PRODUCT, SQL_REVOKE_REFUNDED_RUNNERS_ENTITLEMENT, SQL_UPSERT_CUSTOMER,
-    SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT, SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
+    BillingD1Error, BillingD1Writer, EntitlementCasOutcome, MaterializedRow, RefundedProduct,
+    RefundedPurchase, RunnerEntitlementRevision, WebhookOutcome,
+    SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE, SQL_CAS_DELETE_RUNNERS_ENTITLEMENT,
+    SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER, SQL_FIND_INVOICE_SUBSCRIPTION,
+    SQL_INSERT_DISPUTE, SQL_INSERT_REFUND, SQL_INSERT_WEBHOOK_EVENT_PROCESSED,
+    SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_RUNNER_ENTITLEMENT_FENCE, SQL_READ_TIER,
+    SQL_RESOLVE_REFUND_PRODUCT, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_SUBSCRIPTION,
+    SQL_UPSERT_TIER,
 };
 use serde_json::{json, Value};
 
-use crate::storage::d1_http::D1HttpClient;
+use crate::storage::d1_http::{D1BatchStatement, D1HttpClient};
 
 /// Durable native billing writer, backed by Cloudflare D1 over the REST
 /// API. Holds the shared [`D1HttpClient`] (which owns + redacts the CF API
@@ -114,6 +116,20 @@ impl D1HttpBillingWriter {
             tokio::runtime::Handle::current().block_on(async move { d1.query(sql, &binds).await })
         })
         .map_err(|e| BillingD1Error::Transient(format!("d1-http-billing: {e}")))
+    }
+
+    /// Run a small rollback-on-error D1 batch. The CAS fence and entitlement
+    /// mutation share this transaction, so instances cannot interleave a
+    /// stale delete/grant between the compare and the write.
+    fn run_batch(
+        &self,
+        statements: Vec<D1BatchStatement>,
+    ) -> Result<Vec<Vec<serde_json::Map<String, Value>>>, BillingD1Error> {
+        let d1 = Arc::clone(&self.d1);
+        tokio::task::block_in_place(move || {
+            tokio::runtime::Handle::current().block_on(async move { d1.batch(statements).await })
+        })
+        .map_err(|e| BillingD1Error::Transient(format!("d1-http-billing batch: {e:?}")))
     }
 
     /// Serialize the canonical [`MaterializedRow::payload`] to the TEXT
@@ -429,56 +445,109 @@ impl BillingD1Writer for D1HttpBillingWriter {
         Ok(())
     }
 
-    fn upsert_runners_entitlement(
+    fn cas_runners_entitlement(
         &self,
         tenant_id: &str,
-        max_concurrency: u32,
-        max_vcpu_h: u32,
+        revision: RunnerEntitlementRevision<'_>,
+        entitlement: Option<(u32, u32)>,
         now_ms: i64,
-    ) -> Result<(), BillingD1Error> {
-        if max_concurrency == 0 {
-            // `runners_entitlement.max_concurrency` has a `CHECK (> 0)`; reject a
-            // 0 cap here rather than send a write the table would bounce.
+    ) -> Result<EntitlementCasOutcome, BillingD1Error> {
+        if tenant_id.trim().is_empty()
+            || revision.subscription_id.trim().is_empty()
+            || revision.subscription_created_at_ms == 0
+            || revision.stripe_event_created_at_ms == 0
+            || revision.stripe_event_id.trim().is_empty()
+        {
             return Err(BillingD1Error::InvalidPayload(
-                "upsert_runners_entitlement: max_concurrency must be > 0".to_owned(),
+                "d1-http-billing: runner entitlement CAS requires non-empty identity and provider timestamps"
+                    .to_owned(),
             ));
         }
-        // Binds (?1..?4): tenant_id, max_concurrency, created_at_ms (= now_ms),
-        // max_vcpu_h. `plan` is the literal `'runners'` marker in the statement.
-        self.run(
-            SQL_UPSERT_RUNNERS_ENTITLEMENT,
-            vec![
-                json!(tenant_id),
-                json!(max_concurrency),
-                json!(now_ms),
-                json!(max_vcpu_h),
-            ],
-        )?;
-        Ok(())
-    }
-
-    fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error> {
-        // Symmetric revoke twin of `upsert_runners_entitlement`. Bind (?1):
-        // tenant_id. `DELETE … WHERE tenant_id = ?` is idempotent (a missing row
-        // is a 0-rows-affected no-op), so a replay/duplicate revoke is harmless.
-        self.run(SQL_DELETE_RUNNERS_ENTITLEMENT, vec![json!(tenant_id)])?;
-        Ok(())
-    }
-
-    fn revoke_refunded_runners_entitlement(
-        &self,
-        tenant_id: &str,
-        stripe_subscription_id: &str,
-    ) -> Result<(), BillingD1Error> {
-        self.run(
-            SQL_REVOKE_REFUNDED_RUNNERS_ENTITLEMENT,
-            vec![
-                json!(tenant_id),
-                json!(tenant_id),
-                json!(stripe_subscription_id),
-            ],
-        )?;
-        Ok(())
+        let mutation = match entitlement {
+            Some((max_concurrency, max_vcpu_h)) => {
+                if max_concurrency == 0 {
+                    return Err(BillingD1Error::InvalidPayload(
+                        "d1-http-billing: runner entitlement CAS max_concurrency must be > 0"
+                            .to_owned(),
+                    ));
+                }
+                D1BatchStatement::new(
+                    SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT,
+                    vec![
+                        json!(tenant_id),
+                        json!(max_concurrency),
+                        json!(now_ms),
+                        json!(max_vcpu_h),
+                        json!(tenant_id),
+                        json!(revision.subscription_id),
+                        json!(revision.subscription_created_at_ms),
+                        json!(revision.stripe_event_created_at_ms),
+                        json!(revision.stripe_event_id),
+                    ],
+                )
+            }
+            None => D1BatchStatement::new(
+                SQL_CAS_DELETE_RUNNERS_ENTITLEMENT,
+                vec![
+                    json!(tenant_id),
+                    json!(tenant_id),
+                    json!(revision.subscription_id),
+                    json!(revision.subscription_created_at_ms),
+                    json!(revision.stripe_event_created_at_ms),
+                    json!(revision.stripe_event_id),
+                ],
+            ),
+        };
+        let results = self.run_batch(vec![
+            D1BatchStatement::new(
+                SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE,
+                vec![
+                    json!(tenant_id),
+                    json!(revision.subscription_id),
+                    json!(revision.subscription_created_at_ms),
+                    json!(revision.stripe_event_created_at_ms),
+                    json!(revision.stripe_event_id),
+                    json!(if revision.authority_is_current {
+                        1_i64
+                    } else {
+                        0_i64
+                    }),
+                    json!(if entitlement.is_some() { 1_i64 } else { 0_i64 }),
+                    json!(now_ms),
+                ],
+            ),
+            mutation,
+            D1BatchStatement::new(SQL_READ_RUNNER_ENTITLEMENT_FENCE, vec![json!(tenant_id)]),
+        ])?;
+        let advanced = results.first().is_some_and(|rows| !rows.is_empty());
+        if advanced {
+            return Ok(EntitlementCasOutcome::Applied);
+        }
+        let current = results
+            .get(2)
+            .and_then(|rows| rows.first())
+            .and_then(|row| {
+                Some((
+                    row.get("stripe_subscription_id")?.as_str()?,
+                    row.get("subscription_created_at_ms")?.as_u64()?,
+                    row.get("stripe_event_created_at_ms")?.as_u64()?,
+                    row.get("stripe_event_id")?.as_str()?,
+                ))
+            })
+            .ok_or_else(|| {
+                BillingD1Error::Transient(
+                    "d1-http-billing: runner entitlement fence disappeared during CAS".to_owned(),
+                )
+            })?;
+        if current.0 == revision.subscription_id
+            && current.1 == revision.subscription_created_at_ms
+            && current.2 == revision.stripe_event_created_at_ms
+            && current.3 == revision.stripe_event_id
+        {
+            Ok(EntitlementCasOutcome::Duplicate)
+        } else {
+            Ok(EntitlementCasOutcome::Stale)
+        }
     }
 }
 

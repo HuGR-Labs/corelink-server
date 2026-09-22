@@ -27,6 +27,7 @@ retains the resulting receipt.
 |---|---|
 | Workflow | `.github/workflows/endurance-2h-nightly.yml` |
 | Trigger | `workflow_dispatch` only; no schedule or PR trigger |
+| Dispatch ref | canonical repository, protected `refs/heads/main` only |
 | Input | `duration`: `30s` or `2h` (default `2h`) |
 | Job / runner | `endurance-2h` / `corelink` |
 | Environment | `staging` |

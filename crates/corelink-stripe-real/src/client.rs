@@ -661,6 +661,20 @@ impl StripeRealClient {
         self.get::<SubscriptionObject>(&format!("/v1/subscriptions/{id}"))
     }
 
+    /// `GET /v1/subscriptions?customer=...&status=all` — list one customer's
+    /// current subscription state. The caller validates the authoritative
+    /// active/trialing identity; this client deliberately performs no ranking.
+    pub fn list_customer_subscriptions(
+        &self,
+        customer_id: &str,
+    ) -> Result<SubscriptionList, StripeError> {
+        let customer =
+            url::form_urlencoded::byte_serialize(customer_id.as_bytes()).collect::<String>();
+        self.get::<SubscriptionList>(&format!(
+            "/v1/subscriptions?customer={customer}&status=all&limit=100"
+        ))
+    }
+
     /// `POST /v1/billing_portal/sessions` — create a Customer Portal
     /// session.
     ///
@@ -1093,6 +1107,52 @@ pub struct SubscriptionObject {
     pub status: String,
     /// Customer id.
     pub customer: String,
+    /// Provider-assigned subscription creation time (Unix seconds).
+    /// This is the replacement generation; it is distinct from billing period
+    /// boundaries and local webhook receive time.
+    pub created: Option<i64>,
+    /// Current subscription items. Stripe returns one item for the CoreLink
+    /// products; callers that reconcile entitlements must validate that
+    /// cardinality before using the price.
+    #[serde(default)]
+    pub items: Option<SubscriptionItems>,
+}
+
+/// Stripe subscription list response (subset).
+#[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
+pub struct SubscriptionList {
+    /// Subscriptions for the requested customer.
+    #[serde(default)]
+    pub data: Vec<SubscriptionObject>,
+    /// A truncated list cannot establish unique authority.
+    #[serde(default)]
+    pub has_more: bool,
+}
+
+/// Stripe subscription item collection (subset).
+#[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
+pub struct SubscriptionItems {
+    /// Items currently attached to the subscription.
+    #[serde(default)]
+    pub data: Vec<SubscriptionItem>,
+}
+
+/// Stripe subscription item (subset).
+#[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
+pub struct SubscriptionItem {
+    /// Price selected for this item.
+    pub price: Option<SubscriptionPrice>,
+}
+
+/// Stripe price embedded in a subscription item (subset).
+#[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
+pub struct SubscriptionPrice {
+    /// Stripe price identifier (`price_...`).
+    pub id: String,
 }
 
 /// Stripe `billing_portal.session` object (subset).
