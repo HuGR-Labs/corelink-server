@@ -1,0 +1,156 @@
+name: issue #1675 live timeout probe
+
+# Manual and staging-only.  The preflight deliberately remains red while the
+# owner handoff records NXDOMAIN/unprovisioned staging.  No production target,
+# secret, route, or API is reachable from this lane.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "run-1675-live-probe" to authorize one bounded probe'
+        required: true
+        type: string
+      target:
+        description: 'Owner-approved target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: i1675-live-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: bounded i1675 staging probe
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1380335483' }}
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 10
+    steps:
+      - name: Checkout canonical repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Require protected manual dispatch
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/main
+          test "$CONFIRM" = run-1675-live-probe
+          test "$TARGET" = staging
+          mkdir -p artifacts/i1675
+
+      - name: Validate canonical staging target and topology
+        env:
+          K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}
+          K6_TARGET_IDENTITY_RECEIPT: ${{ secrets.K6_TARGET_IDENTITY_RECEIPT }}
+          K6_STAGING_PAT: ${{ secrets.K6_STAGING_PAT }}
+          K6_STAGING_MFA_STUB: ${{ secrets.K6_STAGING_MFA_STUB }}
+          K6_STAGING_STRIPE_WHSEC: ${{ secrets.K6_STAGING_STRIPE_WHSEC }}
+          K6_STAGING_BYOK_CMK_ID: ${{ secrets.K6_STAGING_BYOK_CMK_ID }}
+        run: |
+          set -euo pipefail
+          test "$K6_TARGET_HOST" = https://staging.corelink.humangr.com
+          for value in K6_TARGET_IDENTITY_RECEIPT K6_STAGING_PAT K6_STAGING_MFA_STUB K6_STAGING_STRIPE_WHSEC K6_STAGING_BYOK_CMK_ID; do
+            test -n "${!value:-}" || { echo "::error::$value is missing from staging"; exit 1; }
+          done
+          python3 scripts/verify_staging_target.py
+          python3 scripts/verify_staging_topology_contract.py --expect ready
+          python3 scripts/validate_load_target_receipt.py \
+            --target "$K6_TARGET_HOST" \
+            --output "$RUNNER_TEMP/i1675-target-receipt.json"
+          getent hosts staging.corelink.humangr.com
+          curl --fail --silent --show-error --location --max-time 10 \
+            "$K6_TARGET_HOST/health" >/dev/null
+
+      - name: Resolve numeric hosted job identity
+        id: job
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          job_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" \
+            --jq '.jobs[] | select(.name == "bounded i1675 staging probe") | .id' | head -n1)"
+          [[ "$job_id" =~ ^[0-9]+$ ]]
+          echo "job_id=$job_id" >> "$GITHUB_OUTPUT"
+
+      - name: Run declared-timeout arm once
+        env:
+          K6_STAGING_PAT: ${{ secrets.K6_STAGING_PAT }}
+          TARGET: https://staging.corelink.humangr.com
+          RUN_ID: ${{ github.run_id }}
+          JOB_ID: ${{ steps.job.outputs.job_id }}
+        run: |
+          set -euo pipefail
+          python3 scripts/run_i1675_live_probe.py --arm timeout --target "$TARGET" \
+            --run-id "$RUN_ID" --job-id "$JOB_ID" --timeout-seconds 30 \
+            --output artifacts/i1675/declared-timeout.json
+
+      - name: Run runner communication-loss arm once
+        env:
+          K6_STAGING_PAT: ${{ secrets.K6_STAGING_PAT }}
+          TARGET: https://staging.corelink.humangr.com
+          RUN_ID: ${{ github.run_id }}
+          JOB_ID: ${{ steps.job.outputs.job_id }}
+        run: |
+          set -euo pipefail
+          python3 scripts/run_i1675_live_probe.py --arm runner_communication_loss --target "$TARGET" \
+            --run-id "$RUN_ID" --job-id "$JOB_ID" --timeout-seconds 30 \
+            --output artifacts/i1675/runner-communication-loss.json
+
+      - name: Revoke disposable probe state
+        if: always()
+        env:
+          K6_STAGING_PAT: ${{ secrets.K6_STAGING_PAT }}
+          TARGET: https://staging.corelink.humangr.com
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --max-time 20 \
+            --request POST --header "Authorization: Bearer $K6_STAGING_PAT" \
+            --header 'Content-Type: application/json' \
+            --data '{"run_id":'"$GITHUB_RUN_ID"',"issue":1675}' \
+            "$TARGET/_internal/i1675/cleanup" >/dev/null
+
+      - name: Write redacted observer manifest
+        if: always()
+        env:
+          JOB_ID: ${{ steps.job.outputs.job_id }}
+        run: |
+          set -euo pipefail
+          {
+            printf '{"schema":"corelink.actions-job-observer.v1","issue":1675,"run_id":%s,"job_id":%s,' "$GITHUB_RUN_ID" "${JOB_ID:-0}"
+            printf '"run_url":"https://github.com/%s/actions/runs/%s",' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            printf '"job_url":"https://github.com/%s/actions/runs/%s/job/%s",' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "${JOB_ID:-0}"
+            printf '"receipts":['
+            first=1
+            for receipt in artifacts/i1675/*.json; do
+              [[ -f "$receipt" ]] || continue
+              [[ "$receipt" == *target* ]] && continue
+              [[ "$first" == 1 ]] || printf ','
+              first=0
+              hash="$(sha256sum "$receipt" | cut -d ' ' -f1)"
+              name="$(basename "$receipt")"
+              printf '{"path":"%s","sha256":"%s"}' "$name" "$hash"
+            done
+            printf ']}\n'
+          } > artifacts/i1675/observer-manifest.json
+
+      - name: Upload redacted receipts only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: i1675-live-probe-${{ github.run_id }}
+          path: artifacts/i1675/*.json
+          if-no-files-found: error
+          retention-days: 30
