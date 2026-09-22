@@ -37,7 +37,8 @@ MINGW_W64_FORMULA_URL = (
     "00e77a1611f627f2ea8f876fad0468f2c4b3ed20/Formula/m/mingw-w64.rb"
 )
 MINGW_W64_FORMULA_SHA256 = "4b5f53d8ff341875f158092cbdcd5536ce3d6d5136de1672ecf687564dae07f9"
-PINNED_FORMULA_INSTALL = 'env -u HOMEBREW_NO_INSTALL_FROM_API brew install "${MINGW_W64_PINNED_FORMULA}"'
+PINNED_FORMULA_TRUST = 'brew trust --formula "${MINGW_W64_TAP}/mingw-w64"'
+PINNED_FORMULA_INSTALL = 'brew install "${MINGW_W64_TAP}/mingw-w64"'
 DLLTOOL_PATH = "$(brew --prefix mingw-w64)/bin/x86_64-w64-mingw32-dlltool"
 DLLTOOL_GUARDS = (
     'if [ "${ACTUAL_MINGW_W64_VERSION}" != "${EXPECTED_MINGW_W64_VERSION}" ]; then',
@@ -114,14 +115,26 @@ def _verify_dlltool_contract(text: str) -> None:
         fail("pinned dlltool installation and the Windows GNU build must be present")
     if install_step > windows_target or windows_target > windows_build:
         fail("Windows GNU build must be gated by its dlltool probe")
+    for unsupported in (
+        'brew tap-new --no-git "${MINGW_W64_TAP}"',
+        'env -u HOMEBREW_FORBID_PACKAGES_FROM_PATHS brew install',
+        'HOMEBREW_NO_REQUIRE_TAP_TRUST=1',
+    ):
+        if unsupported in text:
+            fail(f"untrusted or unpinned tap installation is forbidden: {unsupported}")
     for token in (
         "Install and verify pinned MinGW-w64 dlltool",
         "EXPECTED_MINGW_W64_VERSION=14.0.0",
         "EXPECTED_DLLTOOL_VERSION='GNU dlltool (GNU Binutils) 2.47'",
         f"EXPECTED_MINGW_W64_FORMULA_SHA256={MINGW_W64_FORMULA_SHA256}",
         MINGW_W64_FORMULA_URL,
+        'MINGW_W64_TAP=corelink/homebrew-mingw-w64',
+        'brew tap-new "${MINGW_W64_TAP}"',
+        'test "$(git -C "${MINGW_W64_TAP_REPOSITORY}" rev-parse --is-inside-work-tree)" = true',
         'curl --fail --location --silent --show-error "${MINGW_W64_FORMULA_URL}" --output "${MINGW_W64_PINNED_FORMULA}"',
         "shasum -a 256 --check --status",
+        'cp "${MINGW_W64_PINNED_FORMULA}" "${MINGW_W64_TAP_FORMULA}"',
+        PINNED_FORMULA_TRUST,
         PINNED_FORMULA_INSTALL,
         'brew list --versions mingw-w64',
         DLLTOOL_PATH,
@@ -137,13 +150,6 @@ def _verify_dlltool_contract(text: str) -> None:
         end = text.find("\n          fi", start)
         if start < 0 or end < 0 or "exit 1" not in text[start:end]:
             fail(f"dlltool preflight must fail closed: {guard}")
-    for unsupported in (
-        'brew tap-new --no-git "${MINGW_W64_TAP}"',
-        'brew install "${MINGW_W64_TAP}/mingw-w64"',
-        'brew install "mingw-w64"',
-    ):
-        if unsupported in text:
-            fail(f"untrusted or unpinned tap installation is forbidden: {unsupported}")
 
 
 def _dlltool_contract_mutation_self_test(text: str) -> None:
@@ -175,10 +181,8 @@ def _dlltool_contract_mutation_self_test(text: str) -> None:
         fail(f"dlltool contract mutation survived: {token}")
 
     untrusted_tap = text.replace(
-        PINNED_FORMULA_INSTALL,
-        'brew tap-new --no-git "${MINGW_W64_TAP}"\n'
-        '          brew install "${MINGW_W64_TAP}/mingw-w64"\n'
-        f"          {PINNED_FORMULA_INSTALL}",
+        'brew tap-new "${MINGW_W64_TAP}"',
+        'brew tap-new --no-git "${MINGW_W64_TAP}"',
         1,
     )
     try:
