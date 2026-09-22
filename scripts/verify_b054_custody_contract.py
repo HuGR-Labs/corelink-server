@@ -47,6 +47,11 @@ def assess(files: dict[str, str]) -> None:
         "pull_request:",
         "workflow_dispatch:",
         "permissions:\n  contents: read",
+    ):
+        if token not in workflow:
+            raise ContractError(f"workflow is missing {token!r}")
+
+    for token in (
         "github.repository == 'HuGR-dev/corelink-server'",
         "github.event_name == 'workflow_dispatch'",
         "github.ref == 'refs/heads/main'",
