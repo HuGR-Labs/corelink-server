@@ -93,6 +93,10 @@ env:
 jobs:
   k6-staging:
     name: k6 load suite (staging)
+    # Require an operator dispatch from the protected canonical branch. This
+    # keeps staging load traffic unreachable from forks, feature refs, and any
+    # future trigger accidentally added above.
+    if: github.repository == 'HuGR-dev/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: corelink
     environment: staging        # binds the staging secrets scope
     timeout-minutes: 45
