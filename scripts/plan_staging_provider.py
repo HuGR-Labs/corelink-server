@@ -155,14 +155,15 @@ def main() -> int:
     dns_ok, dns_result = provider_get(token, f"zones/{zone}/dns_records?{dns_query}")
     checks["dns-read"] = {"ok": dns_ok}
     if dns_ok:
+        dns_present = any(
+            item.get("name") == HOSTNAME
+            and item.get("proxied") is True
+            and item.get("type") in {"A", "AAAA", "CNAME"}
+            for item in result_items(dns_result)
+        )
         checks["staging-dns"] = {
-            "ok": True,
-            "state": "present" if any(
-                item.get("name") == HOSTNAME
-                and item.get("proxied") is True
-                and item.get("type") in {"A", "AAAA", "CNAME"}
-                for item in result_items(dns_result)
-            ) else "absent",
+            "ok": dns_present,
+            "state": "present" if dns_present else "absent",
         }
     else:
         checks["dns-read"]["error"] = dns_result
@@ -172,13 +173,14 @@ def main() -> int:
     if routes_ok:
         # Cloudflare exposes routes only as a zone-wide list. This receipt
         # discards it and retains the truth of the exact staging pair only.
+        route_present = any(
+            item.get("pattern") == f"{HOSTNAME}/*"
+            and item.get("script") == cloudflare["root_worker"]
+            for item in result_items(routes_result)
+        )
         checks["staging-worker-route"] = {
-            "ok": True,
-            "state": "present" if any(
-                item.get("pattern") == f"{HOSTNAME}/*"
-                and item.get("script") == cloudflare["root_worker"]
-                for item in result_items(routes_result)
-            ) else "absent",
+            "ok": route_present,
+            "state": "present" if route_present else "absent",
         }
     else:
         checks["worker-routes-read"]["error"] = routes_result

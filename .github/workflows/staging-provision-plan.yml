@@ -48,6 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/verify_staging_target.py
+          python3 scripts/verify_staging_topology_contract.py --expect ready
 
       - name: Create redacted provider plan
         run: |
