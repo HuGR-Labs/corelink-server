@@ -19,6 +19,8 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
+type RunnerFence = (String, String, bool);
+
 /// Error category surfaced by [`BillingD1Writer`].
 ///
 /// `Transient` flows back to the dispatcher as
@@ -501,8 +503,8 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
     fn cas_runners_entitlement(
         &self,
         tenant_id: &str,
-        subscription_id: &str,
-        authority_key: &str,
+        _subscription_id: &str,
+        _authority_key: &str,
         entitlement: Option<(u32, u32)>,
         now_ms: i64,
     ) -> Result<EntitlementCasOutcome, BillingD1Error> {
@@ -540,7 +542,7 @@ pub struct InMemoryBillingD1 {
     refund_purchases: Arc<Mutex<HashMap<(String, String), RefundedProduct>>>,
     /// `tenant_id` → (`authority_key`, `stripe_subscription_id`, `is_granting`) durable-fence
     /// mirror used by native concurrency tests.
-    runner_fences: Arc<Mutex<HashMap<String, (String, String, bool)>>>,
+    runner_fences: Arc<Mutex<HashMap<String, RunnerFence>>>,
     /// If set, every write returns this error (drives fail-CLOSED tests).
     fail_with: Arc<Mutex<Option<BillingD1Error>>>,
 }
@@ -927,7 +929,7 @@ impl BillingD1Writer for InMemoryBillingD1 {
             }
             Some((_, current_subscription, current_is_granting))
                 if current_subscription != subscription_id
-                    && !(entitlement.is_some() && !current_is_granting) =>
+                    && (entitlement.is_none() || *current_is_granting) =>
             {
                 EntitlementCasOutcome::Stale
             }
