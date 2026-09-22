@@ -1,6 +1,6 @@
 # D1 migration-prefix compatibility decision for issue #2024
 
-**Decision date:** 2026-09-22  
+**Decision date:** 2026-09-22
 **Scope:** the `0118`, `0131`, and `0137` filename collisions on `main`.
 
 Wrangler records a migration by its complete filename in each binding's
