@@ -11,7 +11,7 @@
 PRAGMA foreign_keys = OFF;
 PRAGMA defer_foreign_keys = true;
 
-CREATE TABLE terraform_drift_findings_new (
+CREATE TABLE IF NOT EXISTS terraform_drift_findings_new (
     finding_id BLOB(16) PRIMARY KEY,
     region TEXT NOT NULL CHECK (
         region IN (
@@ -60,14 +60,14 @@ CREATE INDEX IF NOT EXISTS idx_terraform_drift_region_time
 CREATE INDEX IF NOT EXISTS idx_terraform_drift_severity
     ON terraform_drift_findings (severity, detected_at_ms);
 
-CREATE TRIGGER terraform_drift_findings_canonical_region_insert
+CREATE TRIGGER IF NOT EXISTS terraform_drift_findings_canonical_region_insert
 BEFORE INSERT ON terraform_drift_findings
 WHEN NEW.region NOT IN ('wnam', 'enam', 'weur', 'sam')
 BEGIN
     SELECT RAISE(ABORT, 'terraform drift findings require a canonical region');
 END;
 
-CREATE TRIGGER terraform_drift_findings_region_immutable
+CREATE TRIGGER IF NOT EXISTS terraform_drift_findings_region_immutable
 BEFORE UPDATE OF region ON terraform_drift_findings
 WHEN NEW.region <> OLD.region OR NEW.region NOT IN ('wnam', 'enam', 'weur', 'sam')
 BEGIN

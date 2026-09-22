@@ -24,6 +24,7 @@ on:
       - 'scripts/d1-migration-verify.py'
       - 'scripts/check_migrations_additive.py'
       - 'scripts/check_migration_prefixes.py'
+      - 'scripts/test_terraform_drift_region_contract.py'
       - 'crates/corelink-ops/**'
       - '.github/workflows/d1-migration-validate.yml'
   push:
@@ -71,6 +72,10 @@ jobs:
           python3 scripts/d1-migration-verify.py --schema-only migrations/d1/ > /tmp/expected-schema.json
           test -s /tmp/expected-schema.json
 
+      - name: Run focused Terraform drift migration replay contract
+        run: |
+          python3 scripts/test_terraform_drift_region_contract.py
+
       - name: Upload expected-schema artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -97,6 +102,11 @@ jobs:
         run: |
           cargo test -p corelink-ops \
             --test migrations_d1_migration_integration -- --nocapture
+
+      - name: Run additive migration property test
+        run: |
+          cargo test -p corelink-ops \
+            --test migrations_prop_migration_additivity -- --nocapture
 
       - name: Run runner shell-script dry-run smoke
         run: |
