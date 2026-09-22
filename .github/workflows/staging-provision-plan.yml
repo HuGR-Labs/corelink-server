@@ -57,26 +57,31 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Create scoped R2 API token and install backend bindings
+      - name: Create separate scoped R2 tokens and install staging bindings
         id: credentials
         env:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           receipt="$RUNNER_TEMP/r2-state-receipt.json"
-          token_id=""
+          tf_token_id=""
+          staging_token_id=""
           installed=false
           cleanup() {
             status=$?
-            if [[ "$installed" != true && -n "$token_id" ]]; then
-              curl --silent --show-error --fail-with-body --request DELETE \
-                --header "Authorization: Bearer $CF_API_TOKEN" \
-                "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/tokens/$token_id" >/dev/null || true
+            if [[ "$installed" != true ]]; then
+              for token_id in "$tf_token_id" "$staging_token_id"; do
+                [[ -n "$token_id" ]] || continue
+                curl --silent --show-error --fail-with-body --request DELETE \
+                  --header "Authorization: Bearer $CF_API_TOKEN" \
+                  "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/tokens/$token_id" >/dev/null || true
+              done
             fi
             jq -n --arg bucket "$STATE_BUCKET" --arg key "$STATE_KEY" \
-              --arg token_created "$([[ -n "$token_id" ]] && echo true || echo false)" \
+              --arg tf_token_created "$([[ -n "$tf_token_id" ]] && echo true || echo false)" \
+              --arg staging_token_created "$([[ -n "$staging_token_id" ]] && echo true || echo false)" \
               --arg installed "$installed" --argjson status "$status" \
-              '{schema:1,bucket:$bucket,state_key:$key,token_created:($token_created=="true"),backend_secrets_installed:($installed=="true"),exit_status:$status}' \
+              '{schema:1,bucket:$bucket,state_key:$key,tf_token_created:($tf_token_created=="true"),staging_token_created:($staging_token_created=="true"),bindings_installed:($installed=="true"),exit_status:$status}' \
               >"$receipt"
             exit "$status"
           }
@@ -97,20 +102,35 @@ jobs:
           groups="$(api 'https://api.cloudflare.com/client/v4/user/tokens/permission_groups')"
           group_id="$(jq -r '.result[] | select(.name == "Workers R2 Storage Bucket Item Write") | .id' <<<"$groups" | head -n1)"
           [[ -n "$group_id" && "$group_id" != null ]] || { echo '::error::R2 bucket-item-write permission group unavailable.'; exit 1; }
-          policy="$(jq -nc --arg account "$CF_ACCOUNT_ID" --arg bucket "$STATE_BUCKET" --arg group "$group_id" '{name:"corelink-terraform-staging-state-1721",policies:[{effect:"allow",resources:{("com.cloudflare.edge.r2.bucket." + $account + "_default_" + $bucket):"*"},permission_groups:[{id:$group}]}]}')"
-          token="$(api --request POST --data "$policy" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/tokens")"
-          token_id="$(jq -r '.result.id // empty' <<<"$token")"
-          token_value="$(jq -r '.result.value // empty' <<<"$token")"
-          [[ -n "$token_id" && -n "$token_value" ]] || { echo '::error::Cloudflare returned no R2 token material.'; exit 1; }
-          access_secret="$(printf %s "$token_value" | sha256sum | awk '{print $1}')"
+          tf_policy="$(jq -nc --arg account "$CF_ACCOUNT_ID" --arg bucket "$STATE_BUCKET" --arg group "$group_id" '{name:"corelink-terraform-staging-state-1721",policies:[{effect:"allow",resources:{("com.cloudflare.edge.r2.bucket." + $account + "_default_" + $bucket):"*"},permission_groups:[{id:$group}]}]}')"
+          tf_token="$(api --request POST --data "$tf_policy" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/tokens")"
+          tf_token_id="$(jq -r '.result.id // empty' <<<"$tf_token")"
+          tf_token_value="$(jq -r '.result.value // empty' <<<"$tf_token")"
+          [[ -n "$tf_token_id" && -n "$tf_token_value" ]] || { echo '::error::Cloudflare returned no Terraform R2 token material.'; exit 1; }
+          tf_access_secret="$(printf %s "$tf_token_value" | sha256sum | awk '{print $1}')"
+
+          buckets="$(api "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/r2/buckets")"
+          staging_buckets="$(jq -c '[((.result.buckets // .result // [])[] | select(.name | test("^corelink-[a-z0-9-]+-staging$")) | {name, jurisdiction:(.jurisdiction // "default")})] | unique_by(.name, .jurisdiction)' <<<"$buckets")"
+          (( $(jq 'length' <<<"$staging_buckets") > 0 )) || { echo '::error::No corelink-*-staging buckets available for the staging-only token.'; exit 1; }
+          staging_resources="$(jq -nc --arg account "$CF_ACCOUNT_ID" --argjson buckets "$staging_buckets" '$buckets | reduce .[] as $bucket ({}; .["com.cloudflare.edge.r2.bucket." + $account + "_" + $bucket.jurisdiction + "_" + $bucket.name] = "*")')"
+          staging_policy="$(jq -nc --argjson resources "$staging_resources" --arg group "$group_id" '{name:"corelink-staging-r2-data-1700",policies:[{effect:"allow",resources:$resources,permission_groups:[{id:$group}]}]}')"
+          staging_token="$(api --request POST --data "$staging_policy" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/tokens")"
+          staging_token_id="$(jq -r '.result.id // empty' <<<"$staging_token")"
+          staging_token_value="$(jq -r '.result.value // empty' <<<"$staging_token")"
+          [[ -n "$staging_token_id" && -n "$staging_token_value" ]] || { echo '::error::Cloudflare returned no staging R2 token material.'; exit 1; }
+          staging_access_secret="$(printf %s "$staging_token_value" | sha256sum | awk '{print $1}')"
           endpoint="https://${CF_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          printf %s "$token_id" | gh secret set TF_BACKEND_ACCESS_KEY_ID --repo "$GH_REPO"
-          printf %s "$access_secret" | gh secret set TF_BACKEND_SECRET_ACCESS_KEY --repo "$GH_REPO"
+          printf %s "$tf_token_id" | gh secret set TF_BACKEND_ACCESS_KEY_ID --repo "$GH_REPO"
+          printf %s "$tf_access_secret" | gh secret set TF_BACKEND_SECRET_ACCESS_KEY --repo "$GH_REPO"
           printf %s "$STATE_BUCKET" | gh secret set TF_BACKEND_BUCKET --repo "$GH_REPO"
           printf %s "$endpoint" | gh secret set TF_BACKEND_ENDPOINT --repo "$GH_REPO"
+          printf %s "$staging_token_id" | gh secret set R2_S3_ACCESS_KEY_ID --repo "$GH_REPO" --env staging
+          printf %s "$staging_access_secret" | gh secret set R2_S3_SECRET_ACCESS_KEY --repo "$GH_REPO" --env staging
+          present="$(gh secret list --repo "$GH_REPO" --env staging --json name)"
+          jq -e '([.[].name] | index("R2_S3_ACCESS_KEY_ID")) and ([.[].name] | index("R2_S3_SECRET_ACCESS_KEY"))' <<<"$present" >/dev/null
           {
-            printf 'AWS_ACCESS_KEY_ID=%s\n' "$token_id"
-            printf 'AWS_SECRET_ACCESS_KEY=%s\n' "$access_secret"
+            printf 'AWS_ACCESS_KEY_ID=%s\n' "$tf_token_id"
+            printf 'AWS_SECRET_ACCESS_KEY=%s\n' "$tf_access_secret"
           } >> "$GITHUB_ENV"
           installed=true
           echo 'created_and_installed=true' >> "$GITHUB_OUTPUT"
