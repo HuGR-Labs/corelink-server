@@ -23,7 +23,7 @@ pub fn is_safe_summary_artifact_url(url: &str) -> bool {
             "terraform-plan-",
         ]
         .iter()
-            .any(|marker| lower.contains(marker))
+        .any(|marker| lower.contains(marker))
 }
 
 /// Severity classification for a drift finding.
