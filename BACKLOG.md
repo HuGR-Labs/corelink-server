@@ -9073,9 +9073,11 @@ aqui com o que foi lido de cada um. O guard canônico confirma exatamente sete
 workflows e nove jobs (Buck2 contribui três jobs); `terraform-drift.yml` fica
 fora desta população porque é ownership de B-111.
 
-- **`nightly.yml`** (103 runs, cron ativo, falhou 2026-08-29): morre em
-  `Install cargo-mutants (pinned, prebuilt)` no `corelink-builder-5`. A lane
-  ainda queima hoje.
+- **B-113/nightly hosted mutants receipt:** the legacy `nightly.yml`
+  `mutants-workspace` job stays disabled. `.github/workflows/issue-1863-mutants-hosted.yml`
+  is the only dispatch-only GitHub-hosted scheduled-equivalent evidence path;
+  its pinned prebuilt command and protected-main guards are checked statically.
+  This repository contract does not prove that any dispatched run succeeded.
 - **`terraform-drift.yml`**: explicitamente excluída desta população; é coberta
   por [B-111] e não é uma lane de B-113.
 - **`sbom.yml`** (16 runs, 2026-08-25): morre em
@@ -9111,7 +9113,11 @@ verify-means: |
   e `Generate SBOM` falham por estado da máquina/rede, `fuzz-nightly` cancela
   sem step, e as duas de carga precisariam de execução real para saber se ainda
   pegam box. Um verify sintético aqui seria teatro. O decaimento de 14 dias é o
-  que impede este item de virar gaveta.
+  que impede este item de virar gaveta. For B-113/nightly, the dispatch-only
+  GitHub-hosted scheduled-equivalent evidence path is
+  `.github/workflows/issue-1863-mutants-hosted.yml`; the legacy nightly job is
+  disabled. A successful retained receipt remains external evidence and is not
+  inferred from this verifier.
 last-verified: 2026-09-05
 ```
 

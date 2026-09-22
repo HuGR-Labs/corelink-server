@@ -5,6 +5,9 @@ on:
     paths:
       - ".github/workflows/issue-1863-mutants-hosted.yml"
       - ".github/workflows/issue-1863-mutants-contract.yml"
+      - ".github/workflows/nightly.yml"
+      - "BACKLOG.md"
+      - "docs/internal/b113-six-lanes-owner-actions.md"
       - "scripts/verify_i1863_mutants_hosted.py"
   workflow_dispatch:
 

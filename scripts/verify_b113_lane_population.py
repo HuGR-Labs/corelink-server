@@ -276,30 +276,14 @@ def assert_yaml_lane_shape(parsed: dict, lane: Lane) -> None:
     if not isinstance(job, dict):
         raise VerificationError(f"{lane.name}: expected executable job {lane.job!r}")
     if lane.name == "nightly-mutants":
-        events = workflow_events(parsed)
-        dispatch = events.get("workflow_dispatch")
-        inputs = dispatch.get("inputs") if isinstance(dispatch, dict) else None
-        lane_input = inputs.get("lane") if isinstance(inputs, dict) else None
-        if not isinstance(lane_input, dict) or lane_input.get("type") != "choice":
-            raise VerificationError("nightly-mutants: workflow_dispatch lane choice is missing")
-        if lane_input.get("default") != "all" or lane_input.get("options") != ["all", "mutants"]:
-            raise VerificationError("nightly-mutants: lane choice must default to all and offer all/mutants")
-
-        all_lanes = ("tlc-extended", "proptest-extended", "fuzz-matrix")
-        all_condition = "github.event_name != 'workflow_dispatch' || inputs.lane == 'all'"
-        mutants_condition = (
-            "github.event_name != 'workflow_dispatch' || inputs.lane == 'all' "
-            "|| inputs.lane == 'mutants'"
-        )
-        for job_name in all_lanes:
-            candidate = jobs.get(job_name)
-            if not isinstance(candidate, dict) or candidate.get("if") != all_condition:
-                raise VerificationError(
-                    f"nightly-mutants: {job_name} must run for schedule/all and be excluded for mutants dispatch"
-                )
-        if job.get("if") != mutants_condition:
+        # The only authorized runtime evidence path is the protected,
+        # dispatch-only GitHub-hosted #1863 workflow. Retaining the legacy
+        # definition preserves the bounded command contract, but it must not
+        # execute through the nightly schedule or its manual lane selector.
+        if job.get("if") != "${{ false }}":
             raise VerificationError(
-                "nightly-mutants: mutants-workspace must run for schedule, all, and mutants dispatch"
+                "nightly-mutants: legacy mutants-workspace must remain disabled; "
+                "use the #1863 hosted dispatch-only receipt path"
             )
     if lane.name == "fuzz-nightly":
         env = job.get("env")

@@ -458,7 +458,10 @@ jobs:
   # coverage of the mutated code path — fix the test, not the threshold.
   # ---------------------------------------------------------------------
   mutants-workspace:
-    if: github.event_name != 'workflow_dispatch' || inputs.lane == 'all' || inputs.lane == 'mutants'
+    # B-113/nightly evidence is collected only by the protected, dispatch-only
+    # issue-1863 hosted lane. Keep this legacy scheduled/manual copy inert so
+    # a green nightly result cannot be mistaken for the retained receipt.
+    if: ${{ false }}
     name: cargo-mutants workspace (fail-on-any-survivor)
     # This lane is isolated from the shared Mac fleet. GitHub-hosted Linux
     # provides a disposable workspace and a native runner for the pinned

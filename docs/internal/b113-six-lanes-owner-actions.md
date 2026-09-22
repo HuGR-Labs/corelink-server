@@ -16,14 +16,14 @@ contain nine job boundaries. `terraform-drift.yml` is not a B-113 lane.
 
 ## Platform / CI actions
 
-1. **Nightly extended gates (`nightly.yml`)**
+1. **B-113/nightly hosted mutants receipt**
 
-   Dispatch one run after the D02 merge and inspect job
-   `mutants-workspace` separately from the other nightly matrices. Run
-   `33492330308` / job `99806462194` ended while `setup-protoc` was still in
-   progress; it never reached cargo-mutants, so it is not evidence of a
-   cargo-mutants defect. If setup still cancels, retain the runner/job log and
-   classify the host event instead of reopening the installer claim.
+   `.github/workflows/issue-1863-mutants-hosted.yml` is the only dispatch-only GitHub-hosted scheduled-equivalent evidence path for `mutants-workspace`.
+   The legacy `nightly.yml` job remains disabled; do not dispatch it or treat a
+   skipped legacy job as a receipt. Retain the final protected-main hosted run
+   URL, SHA, runner, lane, and conclusion with secrets and personal data
+   redacted. A repository contract or an in-progress run does not prove that
+   any dispatched run succeeded.
 
 2. **Fuzz platform choice (`fuzz-nightly.yml`)
 

@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Static contract check for the dispatch-only #1863 hosted mutants lane."""
+"""Static contract for the #1863 hosted receipt and disabled legacy lane."""
 
 from pathlib import Path
+import re
 
 
 WORKFLOW = Path(".github/workflows/issue-1863-mutants-hosted.yml")
+LEGACY_WORKFLOW = Path(".github/workflows/nightly.yml")
+BACKLOG = Path("BACKLOG.md")
+OWNER_PACKET = Path("docs/internal/b113-six-lanes-owner-actions.md")
 REQUIRED = (
     "workflow_dispatch:",
     "permissions:\n  contents: read",
@@ -23,6 +27,9 @@ REQUIRED = (
 
 def main() -> int:
     text = WORKFLOW.read_text(encoding="utf-8")
+    legacy = LEGACY_WORKFLOW.read_text(encoding="utf-8")
+    backlog = BACKLOG.read_text(encoding="utf-8")
+    owner_packet = OWNER_PACKET.read_text(encoding="utf-8")
     if "schedule:" in text or "pull_request:" in text or "push:" in text:
         raise SystemExit("#1863 lane must remain workflow_dispatch-only")
     missing = [marker for marker in REQUIRED if marker not in text]
@@ -43,7 +50,21 @@ def main() -> int:
         raise SystemExit("missing dispatch guards: " + ", ".join(missing_guards))
     if "run: cargo mutants --workspace --no-shuffle --minimum-test-timeout=600" not in text:
         raise SystemExit("mutants command drifted from the nightly lane")
-    print("issue #1863 hosted mutants contract: PASS")
+    legacy_job = re.search(
+        r"(?ms)^  mutants-workspace:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+        legacy,
+    )
+    if legacy_job is None or "if: ${{ false }}" not in legacy_job.group("body"):
+        raise SystemExit("legacy nightly mutants-workspace must remain disabled")
+    mapping_markers = (
+        "issue-1863-mutants-hosted.yml",
+        "dispatch-only GitHub-hosted scheduled-equivalent evidence path",
+        "any dispatched run succeeded",
+    )
+    for marker in mapping_markers:
+        if marker not in backlog or marker not in owner_packet:
+            raise SystemExit(f"missing B-113/nightly hosted-evidence mapping marker: {marker}")
+    print("issue #1863 / B-113 nightly hosted receipt contract: PASS")
     return 0
 
 
