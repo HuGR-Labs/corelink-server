@@ -11,6 +11,20 @@ fn row(table: &str) -> MaterializedRow {
     }
 }
 
+fn runner_revision(
+    subscription_id: &str,
+    subscription_created_at_ms: u64,
+    stripe_event_created_at_ms: u64,
+    stripe_event_id: &str,
+) -> RunnerEntitlementRevision<'_> {
+    RunnerEntitlementRevision {
+        subscription_id,
+        subscription_created_at_ms,
+        stripe_event_created_at_ms,
+        stripe_event_id,
+    }
+}
+
 #[test]
 fn customer_upsert_rejects_wrong_table() {
     let d1 = InMemoryBillingD1::new();
@@ -98,18 +112,18 @@ fn runners_entitlement_seed_then_revoke_then_idempotent() {
 fn runners_entitlement_cas_is_idempotent_and_rejects_stale_provider_revisions() {
     let d1 = InMemoryBillingD1::new();
     assert_eq!(
-        d1.cas_runners_entitlement("ten_1", "sub_run", 1_700_000_000_000, 2_000, "evt_2", Some((80, 600)), 2)
+        d1.cas_runners_entitlement("ten_1", runner_revision("sub_run", 1_700_000_000_000, 2_000, "evt_2"), Some((80, 600)), 2)
             .unwrap(),
         EntitlementCasOutcome::Applied
     );
     assert_eq!(d1.runners_entitlement_of("ten_1"), Some((80, 600)));
     assert_eq!(
-        d1.cas_runners_entitlement("ten_1", "sub_run", 1_700_000_000_000, 2_000, "evt_2", Some((80, 600)), 3)
+        d1.cas_runners_entitlement("ten_1", runner_revision("sub_run", 1_700_000_000_000, 2_000, "evt_2"), Some((80, 600)), 3)
             .unwrap(),
         EntitlementCasOutcome::Duplicate
     );
     assert_eq!(
-        d1.cas_runners_entitlement("ten_1", "sub_run", 1_700_000_000_000, 1_000, "evt_1", None, 4)
+        d1.cas_runners_entitlement("ten_1", runner_revision("sub_run", 1_700_000_000_000, 1_000, "evt_1"), None, 4)
             .unwrap(),
         EntitlementCasOutcome::Stale
     );
@@ -119,13 +133,13 @@ fn runners_entitlement_cas_is_idempotent_and_rejects_stale_provider_revisions() 
         "stale revoke must not remove a newer grant"
     );
     assert_eq!(
-        d1.cas_runners_entitlement("ten_1", "sub_run", 1_700_000_000_000, 3_000, "evt_3", None, 5)
+        d1.cas_runners_entitlement("ten_1", runner_revision("sub_run", 1_700_000_000_000, 3_000, "evt_3"), None, 5)
             .unwrap(),
         EntitlementCasOutcome::Applied
     );
     assert_eq!(d1.runners_entitlement_of("ten_1"), None);
     assert_eq!(
-        d1.cas_runners_entitlement("ten_1", "sub_run", 1_700_000_000_000, 2_000, "evt_2", Some((80, 600)), 6)
+        d1.cas_runners_entitlement("ten_1", runner_revision("sub_run", 1_700_000_000_000, 2_000, "evt_2"), Some((80, 600)), 6)
             .unwrap(),
         EntitlementCasOutcome::Stale
     );
@@ -139,15 +153,15 @@ fn runner_cas_total_orders_same_second_replacement_identities() {
     // decide the winner before either event timestamp is considered.
     assert_eq!(
         d1.cas_runners_entitlement(
-            "ten_equal", "sub_aaa_predecessor", 1_700_000_000_000, 5_000,
-            "evt_predecessor_grant", Some((80, 600)), 1,
+            "ten_equal", runner_revision("sub_aaa_predecessor", 1_700_000_000_000, 5_000,
+            "evt_predecessor_grant"), Some((80, 600)), 1,
         ).unwrap(),
         EntitlementCasOutcome::Applied,
     );
     assert_eq!(
         d1.cas_runners_entitlement(
-            "ten_equal", "sub_zzz_successor", 1_700_000_000_000, 4_000,
-            "evt_successor_cancel", None, 2,
+            "ten_equal", runner_revision("sub_zzz_successor", 1_700_000_000_000, 4_000,
+            "evt_successor_cancel"), None, 2,
         ).unwrap(),
         EntitlementCasOutcome::Applied,
     );
@@ -156,8 +170,8 @@ fn runner_cas_total_orders_same_second_replacement_identities() {
     // successor cancellation, even with a later event timestamp.
     assert_eq!(
         d1.cas_runners_entitlement(
-            "ten_equal", "sub_aaa_predecessor", 1_700_000_000_000, 9_000,
-            "evt_predecessor_replay", Some((80, 600)), 3,
+            "ten_equal", runner_revision("sub_aaa_predecessor", 1_700_000_000_000, 9_000,
+            "evt_predecessor_replay"), Some((80, 600)), 3,
         ).unwrap(),
         EntitlementCasOutcome::Stale,
     );

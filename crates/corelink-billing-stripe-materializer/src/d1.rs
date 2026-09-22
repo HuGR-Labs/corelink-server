@@ -349,6 +349,17 @@ pub const SQL_CAS_DELETE_RUNNERS_ENTITLEMENT: &str = "DELETE FROM runners_entitl
 pub const SQL_READ_RUNNER_ENTITLEMENT_FENCE: &str =
     "SELECT stripe_subscription_id, subscription_created_at_ms, stripe_event_created_at_ms, stripe_event_id FROM runner_entitlement_reconcile_fence WHERE tenant_id = ?";
 
+/// Immutable provider facts that define one Runner entitlement revision.
+/// The durable fence orders these values lexicographically in declaration
+/// order, so no local clock or synthesized authority participates.
+#[derive(Clone, Copy, Debug)]
+pub struct RunnerEntitlementRevision<'a> {
+    pub subscription_id: &'a str,
+    pub subscription_created_at_ms: u64,
+    pub stripe_event_created_at_ms: u64,
+    pub stripe_event_id: &'a str,
+}
+
 /// Canonical billing-D1 writer trait.
 ///
 /// All write methods are **idempotent**: calling the same method twice
@@ -463,10 +474,7 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
     fn cas_runners_entitlement(
         &self,
         tenant_id: &str,
-        _subscription_id: &str,
-        _subscription_created_at_ms: u64,
-        _stripe_event_created_at_ms: u64,
-        _stripe_event_id: &str,
+        _revision: RunnerEntitlementRevision<'_>,
         entitlement: Option<(u32, u32)>,
         now_ms: i64,
     ) -> Result<EntitlementCasOutcome, BillingD1Error> {
@@ -830,19 +838,16 @@ impl BillingD1Writer for InMemoryBillingD1 {
     fn cas_runners_entitlement(
         &self,
         tenant_id: &str,
-        subscription_id: &str,
-        subscription_created_at_ms: u64,
-        stripe_event_created_at_ms: u64,
-        stripe_event_id: &str,
+        revision: RunnerEntitlementRevision<'_>,
         entitlement: Option<(u32, u32)>,
         _now_ms: i64,
     ) -> Result<EntitlementCasOutcome, BillingD1Error> {
         self.check_armed()?;
         if tenant_id.trim().is_empty()
-            || subscription_id.trim().is_empty()
-            || subscription_created_at_ms == 0
-            || stripe_event_created_at_ms == 0
-            || stripe_event_id.trim().is_empty()
+            || revision.subscription_id.trim().is_empty()
+            || revision.subscription_created_at_ms == 0
+            || revision.stripe_event_created_at_ms == 0
+            || revision.stripe_event_id.trim().is_empty()
         {
             return Err(BillingD1Error::InvalidPayload(
                 "runner entitlement CAS requires non-empty identity and provider timestamps"
@@ -862,10 +867,10 @@ impl BillingD1Writer for InMemoryBillingD1 {
         // subscription identity, provider event time, then provider event id.
         // The identity tie-breaker handles Stripe's whole-second creation clock.
         let candidate = (
-            subscription_created_at_ms,
-            subscription_id,
-            stripe_event_created_at_ms,
-            stripe_event_id,
+            revision.subscription_created_at_ms,
+            revision.subscription_id,
+            revision.stripe_event_created_at_ms,
+            revision.stripe_event_id,
         );
         let outcome = match fences.get(tenant_id) {
             Some((current_subscription, current_created, current_event, current_event_id, _)) => {
@@ -883,10 +888,10 @@ impl BillingD1Writer for InMemoryBillingD1 {
                     fences.insert(
                         tenant_id.to_owned(),
                         (
-                            subscription_id.to_owned(),
-                            subscription_created_at_ms,
-                            stripe_event_created_at_ms,
-                            stripe_event_id.to_owned(),
+                            revision.subscription_id.to_owned(),
+                            revision.subscription_created_at_ms,
+                            revision.stripe_event_created_at_ms,
+                            revision.stripe_event_id.to_owned(),
                             entitlement.is_some(),
                         ),
                     );
@@ -897,10 +902,10 @@ impl BillingD1Writer for InMemoryBillingD1 {
                 fences.insert(
                     tenant_id.to_owned(),
                     (
-                        subscription_id.to_owned(),
-                        subscription_created_at_ms,
-                        stripe_event_created_at_ms,
-                        stripe_event_id.to_owned(),
+                        revision.subscription_id.to_owned(),
+                        revision.subscription_created_at_ms,
+                        revision.stripe_event_created_at_ms,
+                        revision.stripe_event_id.to_owned(),
                         entitlement.is_some(),
                     ),
                 );

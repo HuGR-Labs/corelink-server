@@ -55,12 +55,13 @@ use std::sync::Arc;
 
 use corelink_billing_stripe_materializer::{
     BillingD1Error, BillingD1Writer, EntitlementCasOutcome, MaterializedRow, RefundedProduct,
-    RefundedPurchase, WebhookOutcome, SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE,
-    SQL_CAS_DELETE_RUNNERS_ENTITLEMENT, SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER,
-    SQL_FIND_INVOICE_SUBSCRIPTION, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
-    SQL_INSERT_WEBHOOK_EVENT_PROCESSED, SQL_MARK_SUBSCRIPTION_CANCELED,
-    SQL_READ_RUNNER_ENTITLEMENT_FENCE, SQL_READ_TIER, SQL_RESOLVE_REFUND_PRODUCT,
-    SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
+    RefundedPurchase, RunnerEntitlementRevision, WebhookOutcome,
+    SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE, SQL_CAS_DELETE_RUNNERS_ENTITLEMENT,
+    SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER, SQL_FIND_INVOICE_SUBSCRIPTION,
+    SQL_INSERT_DISPUTE, SQL_INSERT_REFUND, SQL_INSERT_WEBHOOK_EVENT_PROCESSED,
+    SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_RUNNER_ENTITLEMENT_FENCE, SQL_READ_TIER,
+    SQL_RESOLVE_REFUND_PRODUCT, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_SUBSCRIPTION,
+    SQL_UPSERT_TIER,
 };
 use serde_json::{json, Value};
 
@@ -447,18 +448,15 @@ impl BillingD1Writer for D1HttpBillingWriter {
     fn cas_runners_entitlement(
         &self,
         tenant_id: &str,
-        subscription_id: &str,
-        subscription_created_at_ms: u64,
-        stripe_event_created_at_ms: u64,
-        stripe_event_id: &str,
+        revision: RunnerEntitlementRevision<'_>,
         entitlement: Option<(u32, u32)>,
         now_ms: i64,
     ) -> Result<EntitlementCasOutcome, BillingD1Error> {
         if tenant_id.trim().is_empty()
-            || subscription_id.trim().is_empty()
-            || subscription_created_at_ms == 0
-            || stripe_event_created_at_ms == 0
-            || stripe_event_id.trim().is_empty()
+            || revision.subscription_id.trim().is_empty()
+            || revision.subscription_created_at_ms == 0
+            || revision.stripe_event_created_at_ms == 0
+            || revision.stripe_event_id.trim().is_empty()
         {
             return Err(BillingD1Error::InvalidPayload(
                 "d1-http-billing: runner entitlement CAS requires non-empty identity and provider timestamps"
@@ -481,10 +479,10 @@ impl BillingD1Writer for D1HttpBillingWriter {
                         json!(now_ms),
                         json!(max_vcpu_h),
                         json!(tenant_id),
-                        json!(subscription_id),
-                        json!(subscription_created_at_ms),
-                        json!(stripe_event_created_at_ms),
-                        json!(stripe_event_id),
+                        json!(revision.subscription_id),
+                        json!(revision.subscription_created_at_ms),
+                        json!(revision.stripe_event_created_at_ms),
+                        json!(revision.stripe_event_id),
                     ],
                 )
             }
@@ -493,10 +491,10 @@ impl BillingD1Writer for D1HttpBillingWriter {
                 vec![
                     json!(tenant_id),
                     json!(tenant_id),
-                    json!(subscription_id),
-                    json!(subscription_created_at_ms),
-                    json!(stripe_event_created_at_ms),
-                    json!(stripe_event_id),
+                    json!(revision.subscription_id),
+                    json!(revision.subscription_created_at_ms),
+                    json!(revision.stripe_event_created_at_ms),
+                    json!(revision.stripe_event_id),
                 ],
             ),
         };
@@ -505,10 +503,10 @@ impl BillingD1Writer for D1HttpBillingWriter {
                 SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE,
                 vec![
                     json!(tenant_id),
-                    json!(subscription_id),
-                    json!(subscription_created_at_ms),
-                    json!(stripe_event_created_at_ms),
-                    json!(stripe_event_id),
+                    json!(revision.subscription_id),
+                    json!(revision.subscription_created_at_ms),
+                    json!(revision.stripe_event_created_at_ms),
+                    json!(revision.stripe_event_id),
                     json!(if entitlement.is_some() { 1_i64 } else { 0_i64 }),
                     json!(now_ms),
                 ],
@@ -536,10 +534,10 @@ impl BillingD1Writer for D1HttpBillingWriter {
                     "d1-http-billing: runner entitlement fence disappeared during CAS".to_owned(),
                 )
             })?;
-        if current.0 == subscription_id
-            && current.1 == subscription_created_at_ms
-            && current.2 == stripe_event_created_at_ms
-            && current.3 == stripe_event_id
+        if current.0 == revision.subscription_id
+            && current.1 == revision.subscription_created_at_ms
+            && current.2 == revision.stripe_event_created_at_ms
+            && current.3 == revision.stripe_event_id
         {
             Ok(EntitlementCasOutcome::Duplicate)
         } else {

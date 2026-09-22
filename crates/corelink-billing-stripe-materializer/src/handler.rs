@@ -43,7 +43,10 @@ use corelink_tier_selection::tier::TierKind;
 use crate::audit::{AuditSeverity, BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
 use crate::clock::{default_mat_clock, MatClock};
 use crate::current_subscription::CurrentSubscriptionAuthority;
-use crate::d1::{BillingD1Error, BillingD1Writer, EntitlementCasOutcome, MaterializedRow};
+use crate::d1::{
+    BillingD1Error, BillingD1Writer, EntitlementCasOutcome, MaterializedRow,
+    RunnerEntitlementRevision,
+};
 use crate::runners::RunnersEntitlementResolver;
 use crate::tier::{TierSelectError, TierSelector};
 
@@ -656,10 +659,12 @@ impl D1SubscriptionStateHandler {
                 .map_err(audit_to_mat)?;
             self.apply_runner_cas(
                 tenant_id,
-                subscription_id,
-                current.subscription_created_at_ms,
-                event_created_at_ms(env)?,
-                &env.id,
+                RunnerEntitlementRevision {
+                    subscription_id,
+                    subscription_created_at_ms: current.subscription_created_at_ms,
+                    stripe_event_created_at_ms: event_created_at_ms(env)?,
+                    stripe_event_id: &env.id,
+                },
                 None,
                 now_ms,
             )?;
@@ -684,10 +689,12 @@ impl D1SubscriptionStateHandler {
             .map_err(audit_to_mat)?;
         self.apply_runner_cas(
             tenant_id,
-            subscription_id,
-            current.subscription_created_at_ms,
-            event_created_at_ms(env)?,
-            &env.id,
+            RunnerEntitlementRevision {
+                subscription_id,
+                subscription_created_at_ms: current.subscription_created_at_ms,
+                stripe_event_created_at_ms: event_created_at_ms(env)?,
+                stripe_event_id: &env.id,
+            },
             Some((ent.max_concurrency, ent.max_vcpu_h)),
             now_ms,
         )?;
@@ -697,28 +704,18 @@ impl D1SubscriptionStateHandler {
     fn apply_runner_cas(
         &self,
         tenant_id: &str,
-        subscription_id: &str,
-        subscription_created_at_ms: u64,
-        stripe_event_created_at_ms: u64,
-        stripe_event_id: &str,
+        revision: RunnerEntitlementRevision<'_>,
         entitlement: Option<(u32, u32)>,
         now_ms: u64,
     ) -> Result<(), MaterializerError> {
         let outcome = self
             .d1
-            .cas_runners_entitlement(
-                tenant_id,
-                subscription_id,
-                subscription_created_at_ms,
-                stripe_event_created_at_ms,
-                stripe_event_id,
-                entitlement,
-                now_ms as i64,
-            )
+            .cas_runners_entitlement(tenant_id, revision, entitlement, now_ms as i64)
             .map_err(d1_to_mat)?;
         if outcome == EntitlementCasOutcome::Stale {
             return Err(MaterializerError::Transient(format!(
-                "stale Stripe provider revision rejected for {subscription_id}"
+                "stale Stripe provider revision rejected for {}",
+                revision.subscription_id,
             )));
         }
         Ok(())
@@ -1024,10 +1021,12 @@ impl D1SubscriptionStateHandler {
                         })?;
                     self.apply_runner_cas(
                         &tenant_id,
-                        &purchase.stripe_subscription_id,
-                        current.subscription_created_at_ms,
-                        event_created_at_ms(env)?,
-                        &env.id,
+                        RunnerEntitlementRevision {
+                            subscription_id: &purchase.stripe_subscription_id,
+                            subscription_created_at_ms: current.subscription_created_at_ms,
+                            stripe_event_created_at_ms: event_created_at_ms(env)?,
+                            stripe_event_id: &env.id,
+                        },
                         None,
                         now_ms,
                     )?;
