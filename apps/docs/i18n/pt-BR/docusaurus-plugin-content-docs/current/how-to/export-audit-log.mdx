@@ -5,7 +5,6 @@ sidebar_label: Export audit log
 description: Produce a tamper-proof audit log export from CoreLink with Merkle inclusion proofs for SOC 2, GDPR, or LGPD evidence.
 tags: [audit, compliance, soc2, gdpr, lgpd, cli, how-to]
 ---
-
 <!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
 
 > MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
@@ -138,11 +137,11 @@ Each row carries the canonical CloudEvents 1.0 attribute set + CoreLink extensio
 
 ## Troubleshooting
 
-**Export hangs at "verify".** The `--verify` pass is O(events²) for the sibling walk; a 1M-event window takes ~30s on commodity hardware. For very large windows, split into monthly chunks and concatenate the JSON-LD `events` arrays — chain head continuity is enforced via the manifest.
+**Export hangs at "verify."** The `--verify` pass is O(events²) for the sibling walk; a 1M-event window takes ~30s on commodity hardware. For very large windows, split into monthly chunks and concatenate the JSON-LD `events` arrays — chain head continuity is enforced via the manifest.
 
-**Verify reports "chain break".** Stop — that's a SEV-0 signal. Open a support ticket at [`support@hugr.com`](mailto:support@hugr.com) **with the export file attached**. Internal triage runbook: `RB-AUDIT-EXPORT-INTEGRITY`.
+**Verify reports "chain break."** Stop — that's a SEV-0 signal. Open a support ticket at [`support@hugr.com`](mailto:support@hugr.com) **with the export file attached**. Internal triage runbook: `RB-AUDIT-EXPORT-INTEGRITY`.
 
-**"production server-side endpoint not yet wired".** Today the CLI requires `--fixture` for offline / regression mode while the CF Worker `GET /v1/audit/export/window` impl lands. Production wiring goes live in the audit-export-worker rollout — track `ROADMAP-TO-GA.md` §4 R-4.
+**"production server-side endpoint not yet wired."** Stale message. The route is mounted: `GET /v1/audit/{tenant}/export` (`crates/corelink-container/src/routes/audit_export/types.rs:20`), reached through the Worker's generic `/v1/*` forward. `--fixture` is for offline / regression runs, not a stand-in for a missing endpoint. Note the shape if you are hand-rolling the call: the tenant is a **path segment**, and the window is `from`/`to` — a `/v1/audit/export` with the tenant in the query string was never served.
 
 ## Related
 
