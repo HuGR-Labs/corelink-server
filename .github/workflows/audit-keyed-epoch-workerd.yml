@@ -36,6 +36,6 @@ jobs:
       - name: Install worker dependencies
         run: pnpm install --frozen-lockfile --filter @corelink/worker...
       - name: Exercise disposable workerd epoch harness
-        run: pnpm --dir worker exec vitest run tests/keyed_epoch_disposable.miniflare.test.ts
+        run: pnpm --dir worker exec vitest run --config vitest.miniflare.config.mts tests/keyed_epoch_disposable.miniflare.test.ts
 # This local, credential-free harness has an in-process fixture witness. It is
 # not independent-witness, key-custody, archive, or live-target evidence (#1793+).

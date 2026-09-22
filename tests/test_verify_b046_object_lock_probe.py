@@ -115,6 +115,23 @@ class B046ObjectLockProbeTests(unittest.TestCase):
         with self.assertRaises(verifier.ProbeError):
             verifier.validate_repository_contract(mutated)
 
+    def test_receipt_schema_and_capability_polarity_fail_closed(self) -> None:
+        evidence_path = verifier.EVIDENCE_PATH
+        raw = evidence_path.read_text(encoding="utf-8")
+        verifier.validate_evidence_record(raw)
+
+        malformed = raw.replace('"classification": "INDETERMINATE"', '"classification": "SUPPORTED"', 1)
+        with self.assertRaises(verifier.ProbeError):
+            verifier.validate_evidence_record(malformed)
+
+        malformed = raw.replace('"status": "SKIPPED"', '"status": "MALFORMED"', 1)
+        with self.assertRaises(verifier.ProbeError):
+            verifier.validate_evidence_record(malformed)
+
+        malformed = raw.replace('"detail": "provider rejected', '"detail": "AWS_ACCESS_KEY_ID provider rejected', 1)
+        with self.assertRaises(verifier.ProbeError):
+            verifier.validate_evidence_record(malformed)
+
 
 if __name__ == "__main__":
     unittest.main()
