@@ -1,0 +1,54 @@
+name: issue-1641 PagerDuty contract
+
+# Credentialless repository gate for the PagerDuty human receipt lane. This
+# checks only the checked out source contract; it never contacts PagerDuty,
+# reads a secret, deploys a worker, or mutates an incident.
+on:
+  pull_request:
+    paths:
+      - 'evidence/i1641/pagerduty-contract-manifest.json'
+      - 'scripts/verify_i1641_pagerduty_contract.py'
+      - 'worker/src/index_schedule.ts'
+      - 'worker/src/index_common.ts'
+      - 'apps/synthetic-pager-worker/src/**'
+      - 'infra/pagerduty/schedule.yaml'
+      - 'migrations/d1/0116_synthetic_page_delivery_lifecycle.sql'
+      - 'specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md'
+      - 'specs/_runbooks/RB-ONCALL-POLICY.md'
+      - '.github/workflows/issue-1641-pagerduty-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'evidence/i1641/pagerduty-contract-manifest.json'
+      - 'scripts/verify_i1641_pagerduty_contract.py'
+      - 'worker/src/index_schedule.ts'
+      - 'worker/src/index_common.ts'
+      - 'apps/synthetic-pager-worker/src/**'
+      - 'infra/pagerduty/schedule.yaml'
+      - 'migrations/d1/0116_synthetic_page_delivery_lifecycle.sql'
+      - 'specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md'
+      - 'specs/_runbooks/RB-ONCALL-POLICY.md'
+      - '.github/workflows/issue-1641-pagerduty-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1641-pagerduty-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: credentialless PagerDuty contract
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1380335483' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify credentialless event, receipt, escalation, and redaction contract
+        run: python3 -S scripts/verify_i1641_pagerduty_contract.py
