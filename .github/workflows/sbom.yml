@@ -39,10 +39,11 @@ env:
   CYCLONEDX_CLI_VERSION: "0.27.2"
   # SHA-256 digests of the cyclonedx-cli release binaries, pinned for supply
   # chain and ENFORCED in the install step below.
-  # SHA-256 digests of the macOS tool binaries, enforced before execution.
-  # The lane is intentionally macOS-only, matching the corelink-builder fleet.
+  # SHA-256 digests of the platform tool binaries, enforced before execution.
+  # The generation and validation gates run on GitHub-hosted Linux.
   CYCLONEDX_CLI_OSX_X64_SHA256: "331c2245ef7dadf09fa3d2710a2aaab071ff6bea2ba3e5df8f95a4f3f6e825e9"
   CYCLONEDX_CLI_OSX_ARM64_SHA256: "2d24c331c2ccc5e4061722bd4780c8b295041b2569d130bbe80cf7da95b97171"
+  CYCLONEDX_CLI_LINUX_X64_SHA256: "5e1595542a6367378a3944bbd3008caab3de65d572345361d3b9597b1dbbaaa0"
   TSA_URL: "https://tsa.sigstore.dev/api/v1/timestamp"
 
 jobs:
@@ -51,7 +52,11 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-generate:
     name: "Verify committed Cargo.lock SBOM"
-    runs-on: [self-hosted, mac, corelink-builder]
+    # The Mac builder fleet is shared and can leave this release gate queued
+    # or in startup failure. Hosted Linux gives this deterministic verifier an
+    # isolated runner without changing the artifact contract.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     outputs:
       version: ${{ steps.version.outputs.version }}
       sbom_path: sbom.cdx.json
@@ -62,15 +67,17 @@ jobs:
         # SHA-pinned: actions/checkout v4.2.2
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
-      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
-      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
-      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
-      # `rustc` unexecutable mid-build for every other job — it took the host down
-      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
-      # default, silently moving every concurrent job off the ADR-0015 reproducibility
-      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
-      - name: Use the workspace-pinned host toolchain (provisions nothing)
-        run: bash scripts/ci-use-host-toolchain.sh
+      # Hosted runners are job-private, so provisioning the exact workspace
+      # pin is safe and keeps cargo metadata reproducible.
+      - name: Set up the workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: 1.91.1
+
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
 
       - name: Cache Cargo registry
         # SHA-pinned: actions/cache v4.2.3
@@ -151,7 +158,8 @@ jobs:
   # ---------------------------------------------------------------------------
   sbom-ntia-validate:
     name: "NTIA minimum elements check"
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     needs: sbom-generate
 
     steps:
@@ -163,34 +171,19 @@ jobs:
         with:
           name: sbom-cdx-json
 
-      # This job runs on the macOS fleet, and the download below asked for
-      # `cyclonedx-linux-x64` — a Linux ELF binary that macOS cannot exec. It was
-      # a second wall standing behind the job-1 failure and had never been
-      # reached, so it had never been observed. Same fault class as
-      # `reproducible-build`: a lane naming an artifact the platform cannot use.
-      #
-      # Arch is now selected from `uname -m` (the fleet self-reports the `X64`
-      # label, which does not settle whether the host is Apple Silicon), and the
-      # binary is verified against a SHA-256 pinned in the `env:` block above
-      # BEFORE it is made executable. Digests are computed from the upstream
-      # v0.27.2 release assets on 2026-08-31.
+      # The validator now runs on hosted Linux, so use the matching release
+      # asset and verify it before execution. The digest is pinned above.
       - name: Install CycloneDX CLI ${{ env.CYCLONEDX_CLI_VERSION }}
         timeout-minutes: 5
         run: |
           set -euo pipefail
-          case "$(uname -s)/$(uname -m)" in
-            Darwin/arm64)  ASSET="cyclonedx-osx-arm64"; WANT="${CYCLONEDX_CLI_OSX_ARM64_SHA256}" ;;
-            Darwin/x86_64) ASSET="cyclonedx-osx-x64";   WANT="${CYCLONEDX_CLI_OSX_X64_SHA256}" ;;
-            *)
-              echo "::error::Unsupported host $(uname -s)/$(uname -m) for cyclonedx-cli. This job targets the macOS corelink-builder fleet; add the digest for this platform rather than dropping the pin."
-              exit 1
-              ;;
-          esac
+          ASSET="cyclonedx-linux-x64"
+          WANT="${CYCLONEDX_CLI_LINUX_X64_SHA256}"
           CDXCLI_URL="https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CYCLONEDX_CLI_VERSION}/${ASSET}"
           echo "Downloading ${ASSET} from ${CDXCLI_URL}"
           curl --proto '=https' --tlsv1.2 -fsSL --retry 3 \
             --connect-timeout 10 --max-time 120 -o cyclonedx-cli "$CDXCLI_URL"
-          GOT="$(shasum -a 256 cyclonedx-cli | awk '{print $1}')"
+          GOT="$(sha256sum cyclonedx-cli | awk '{print $1}')"
           if [ "$GOT" != "$WANT" ]; then
             echo "::error::cyclonedx-cli SHA-256 pin violation for ${ASSET}: expected ${WANT}, got ${GOT}. Do NOT re-pin against the mutable upstream URL without a Security review."
             exit 1
