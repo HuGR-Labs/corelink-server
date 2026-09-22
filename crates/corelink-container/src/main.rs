@@ -38,6 +38,7 @@ use corelink_billing_stripe_materializer::{
     InMemoryBillingD1, RealStripeAuditEmitter,
 };
 use corelink_server::billing_d1_http::D1HttpBillingWriter;
+use corelink_server::current_subscription_authority::StripeCurrentSubscriptionAuthority;
 use corelink_server::routes;
 use corelink_server::routes::audit_analytics::ShadowSinkFactory;
 use corelink_server::webhook::{router as webhook_router, WebhookState};
@@ -829,6 +830,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 runners_resolver.len()
             );
             sub_handler = sub_handler.with_runners_resolver(Arc::new(runners_resolver));
+            // Runner reconciliation is provider-authoritative. If native
+            // Stripe credentials are unavailable, keep the webhook mounted
+            // for observability but leave this authority unwired: the
+            // materializer then returns a transient error before any Runner
+            // entitlement mutation (fail-CLOSED, Stripe retries).
+            match corelink_stripe_real::StripeRealClient::from_env() {
+                Ok(stripe) => {
+                    sub_handler = sub_handler.with_current_subscription_authority(Arc::new(
+                        StripeCurrentSubscriptionAuthority::new(Arc::new(stripe)),
+                    ));
+                    tracing::info!("Runners current-subscription authority wired to Stripe");
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        error = %error,
+                        "Runners current-subscription authority unavailable; Runner entitlement writes fail CLOSED"
+                    );
+                }
+            }
         } else {
             tracing::info!("Runners entitlement seed dormant (no STRIPE_PRICE_ID_RUNNER_* set)");
         }
