@@ -24,7 +24,10 @@ class HostedMutantsEvidenceContractTest(unittest.TestCase):
                 "actions/upload-artifact@v7",
             ),
             ("permissions:\n  contents: read", "permissions:\n  contents: write"),
-            ("mutants.out/", "missing-mutants-output/"),
+            (
+                '"mutation_output": "mutants.out/"',
+                '"mutation_output": "missing-mutants-output/"',
+            ),
         )
         text = WORKFLOW.read_text(encoding="utf-8")
         for before, after in mutations:
