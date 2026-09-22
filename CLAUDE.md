@@ -20,7 +20,7 @@ It already exposes multiple cache surfaces: native CAS/AC, **Bazel REAPI v2**
 
 ## Architecture wiki (OKF)
 
-`docs/knowledge/` is the **code-grounded architecture wiki** — **170 OKF concepts**
+`docs/knowledge/` is the **code-grounded architecture wiki** — **171 OKF concepts**
 (recount with `python3 scripts/validate_okf.py`; `index.md` and `log.md` are reserved),
 each naming the `source_files` it explains (anti-drift gated against them).
 Browse `docs/knowledge/index.md`, or the rendered site `docs/okf-wiki-site/index.html` (search + cross-link graph; regen via `scripts/okf_render.py`). **Rule: before modifying a
@@ -44,7 +44,7 @@ for bodies), or invoke the **`okf-context`** skill.
 
 ## Gates (must stay green before merge)
 
-- `python3 scripts/validate_specs.py` → **481 full-schema + 11 YAML-only (492 total), 0 failures** (counts are produced by the validator, not a hand-maintained gate).
+- `python3 scripts/validate_specs.py` → **485 full-schema + 11 YAML-only (496 total), 0 failures** (counts are produced by the validator, not a hand-maintained gate).
 - Secrets matrix: `bash scripts/secrets-checklist-verify.sh` (OK, no drift) +
   `python3 scripts/validate_secrets_matrix.py` (code_only=0). Both exclude build output
   (`.open-next`/`.wrangler`) — don't let them scan generated bundles.
