@@ -10,7 +10,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github/workflows/buck2-starter-ci.yml"
+BUCKCONFIG_PATH = ROOT / "examples/buck2-starter/.buckconfig"
 EXPECTED_VERSION = "2026-08-01"
+EXPECTED_BUILD_VERSION = "2026-07-31"
 EXPECTED_SHA256 = "aa304d471a79f69233b09767d4ba9add769049b7a37f78a3a71a72983372f511"
 SUITE_COMMAND = "python -m pytest -q tests/test_i1685_buck2_ci.py"
 
@@ -59,6 +61,7 @@ def assert_contract(text: str) -> None:
     env = parsed.get("env")
     assert isinstance(env, dict)
     assert env.get("BUCK2_VERSION") == EXPECTED_VERSION
+    assert env.get("BUCK2_BUILD_VERSION") == EXPECTED_BUILD_VERSION
     assert env.get("BUCK2_SHA256") == EXPECTED_SHA256
     assert re.fullmatch(r"[0-9a-f]{64}", env["BUCK2_SHA256"])
     assert env.get("BUCK2_INSTALL_DIR") == "${{ github.workspace }}/.buck2-bin"
@@ -76,7 +79,7 @@ def assert_contract(text: str) -> None:
     assert "zstd -d \"${ARCHIVE}\"" in install
     assert 'VERSION_OUTPUT="$(${BUCK2_INSTALL_DIR}/buck2 --version)"' not in install
     assert 'VERSION_OUTPUT="$("${BUCK2_INSTALL_DIR}/buck2" --version)"' in install
-    assert 'grep -F -- "${BUCK2_VERSION}" <<<"${VERSION_OUTPUT}"' in install
+    assert 'grep -F -- "${BUCK2_BUILD_VERSION}" <<<"${VERSION_OUTPUT}"' in install
     assert "|| true" not in install
 
     cold = _run(_step(build, "Cold build — buck2 build :hello (populate remote cache)"))
@@ -117,15 +120,23 @@ def test_buck2_contract_is_complete() -> None:
     assert_contract(WORKFLOW_PATH.read_text(encoding="utf-8"))
 
 
+def test_starter_declares_root_cell_and_bundled_execution_platform() -> None:
+    config = BUCKCONFIG_PATH.read_text(encoding="utf-8")
+    assert re.search(r"(?m)^\[cells\]\n\s+root = \.\s*$", config)
+    assert config.count("execution_platforms = prelude//platforms:default") == 2
+    assert "execution_platforms = //:platforms" not in config
+
+
 @pytest.mark.parametrize(
     ("mutation", "expected"),
     (
         (lambda text: text.replace(f'BUCK2_VERSION: "{EXPECTED_VERSION}"', 'BUCK2_VERSION: "2026-09-01"'), "version"),
+        (lambda text: text.replace(f'BUCK2_BUILD_VERSION: "{EXPECTED_BUILD_VERSION}"', 'BUCK2_BUILD_VERSION: "2026-09-01"'), "build version"),
         (lambda text: text.replace(EXPECTED_SHA256, "0" * 64), "checksum"),
         (lambda text: text.replace("runs-on: ubuntu-latest", "runs-on: corelink"), "runner"),
         (lambda text: text.replace("timeout-minutes: 20", "timeout-minutes: 0"), "timeout"),
         (lambda text: text.replace(".cache_hits", "cache_hits_removed"), "cache"),
-        (lambda text: text.replace('grep -F -- "${BUCK2_VERSION}" <<<"${VERSION_OUTPUT}"', "# version check removed"), "version smoke"),
+        (lambda text: text.replace('grep -F -- "${BUCK2_BUILD_VERSION}" <<<"${VERSION_OUTPUT}"', "# version check removed"), "version smoke"),
         (lambda text: text.replace("sudo apt-get install -y --no-install-recommends zstd jq", "sudo apt-get install -y --no-install-recommends zstd jq || true", 1), "install failure"),
     ),
 )
