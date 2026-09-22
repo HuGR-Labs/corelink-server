@@ -27,6 +27,10 @@ def _contract(workflow: str, helper: str, manifest: dict[str, object]) -> None:
     assert "runs-on: corelink" in workflow
     assert "runs-on: ubuntu-latest" not in workflow
     assert "self-hosted" not in workflow
+    assert "I1672_FLEET_LABEL: corelink" in workflow
+    assert "I1672_RUNNER_NAME: ${{ runner.name }}" in workflow
+    assert "I1672_RUNNER_OS: ${{ runner.os }}" in workflow
+    assert "I1672_RUNNER_ARCH: ${{ runner.arch }}" in workflow
     assert "campaign-ci.yml" not in workflow
     assert "secrets." not in workflow
     assert "if docker info >" in workflow
@@ -45,6 +49,9 @@ def _contract(workflow: str, helper: str, manifest: dict[str, object]) -> None:
         "shutil.rmtree",
         "helper_sha256",
         '"result": "PASS"',
+        '"corelink-fleet"',
+        '"I1672_FLEET_LABEL"',
+        '"runner_provenance_invalid"',
     ):
         assert marker in helper
     assert "GITHUB_SHA" in helper
@@ -58,6 +65,7 @@ def _contract(workflow: str, helper: str, manifest: dict[str, object]) -> None:
     assert set(manifest["observations"]) == REQUIRED_OBSERVATIONS
     assert "campaign-ci.yml" in manifest["forbidden"]
     assert manifest["evidence_remainder"]["status"] == "PENDING_MANUAL_DISPATCH"
+    assert "runner_label" in manifest["evidence_remainder"]["required"]
     assert manifest["evidence_remainder"]["claim_allowed_before_dispatch"] is False
 
 
@@ -77,6 +85,7 @@ def test_i1672_contract() -> None:
     ("name", "mutate"),
     [
         ("hosted_runner", lambda w, h, m: (w.replace("runs-on: corelink", "runs-on: ubuntu-latest"), h, m)),
+        ("fleet_provenance", lambda w, h, m: (w.replace("I1672_FLEET_LABEL: corelink", "I1672_FLEET_LABEL: hosted"), h, m)),
         ("manual_trigger", lambda w, h, m: (w.replace("workflow_dispatch:", "workflow_dispatch_removed:", 1), h, m)),
         ("credential", lambda w, h, m: (w + "\nsecrets.CORELINK_CANARY_PAT\n", h, m)),
         ("backend_seam", lambda w, h, m: (w.replace("if docker info >", "if docker status >", 1), h, m)),
