@@ -122,7 +122,7 @@ class Issue2075CapacityReceiptTests(unittest.TestCase):
             "run-2075-read-only",
             "refs/heads/main",
             "production-capacity-read",
-            "CLOUDFLARE_API_TOKEN",
+            "CLOUDFLARE_CAPACITY_READ_TOKEN",
             "CLOUDFLARE_ACCOUNT_ID",
             "containers list --json",
             "containers instances",

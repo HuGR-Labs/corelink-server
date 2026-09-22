@@ -32,7 +32,9 @@ The workflow is dispatch-only, requires the protected `production-capacity-read`
 environment, a literal confirmation, the `main` ref, and exact checked-out
 commit SHA equality. Its invocation uses the pinned Wrangler version, fixed
 read-only list commands, and uploads only the aggregate receipt and digest.
-Disable the workflow after its single authorized read.
+The Wrangler Containers command permission scope is `containers:write`, although
+this workflow invokes only list/read commands. Disable the workflow after its
+single authorized read.
 
 Cloudflare also documents time-integrated container metrics through
 [`containersMetricsAdaptiveGroups` and `containersUsageAdaptiveGroups`](https://developers.cloudflare.com/analytics/graphql-api/tutorials/querying-container-metrics/).
