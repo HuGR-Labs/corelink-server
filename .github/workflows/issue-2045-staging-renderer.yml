@@ -1,0 +1,36 @@
+name: issue 2045 staging renderer
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "scripts/render_staging_wrangler.py"
+      - "tests/test_render_staging_wrangler.py"
+      - "tests/test_issue_2045_renderer_workflow.py"
+      - ".github/workflows/issue-2045-staging-renderer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2045-staging-renderer-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused:
+    name: renderer unit and workflow contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact pull request head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Run focused renderer and static workflow contract
+        run: >-
+          python3 -S -m unittest -v
+          tests/test_render_staging_wrangler.py
+          tests/test_issue_2045_renderer_workflow.py
