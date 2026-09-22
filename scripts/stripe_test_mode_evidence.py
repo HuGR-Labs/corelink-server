@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""Bounded Stripe test-mode evidence probe for issue #1649.
+
+The probe uses only the Stripe API test key supplied by the workflow. It creates
+one disposable Customer, replays the exact create request with one stable
+idempotency key, verifies test mode and ordering, then deletes the Customer.
+Only a redacted receipt is written; response bodies and credentials are never
+printed.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+API_BASE = "https://api.stripe.com"
+TIMEOUT_SECONDS = 20
+CONFIRMATION = "run-i1649-stripe-test-mode"
+REQUIRED_WORKFLOW_MARKERS = (
+    "runs-on: ubuntu-latest",
+    "STRIPE_SECRET_KEY",
+    "sk_test_",
+    "livemode",
+    "idempotency",
+    "cleanup",
+    "persist-credentials: false",
+)
+FORBIDDEN_WORKFLOW_MARKERS = (
+    "sk_live_",
+    "runs-on: corelink",
+    "runs-on: self-hosted",
+    "api.stripe.com/v1",
+)
+
+
+class ProbeError(RuntimeError):
+    """A fail-closed probe error without provider response content."""
+
+
+def redacted_id(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return "<missing>"
+    if len(value) <= 8:
+        return value[:3] + "…"
+    return value[:4] + "…" + value[-3:]
+
+
+def request_json(
+    key: str,
+    method: str,
+    path: str,
+    *,
+    form: dict[str, str] | None = None,
+    idempotency_key: str | None = None,
+) -> tuple[int, dict[str, Any]]:
+    body = urllib.parse.urlencode(form or {}).encode() if form is not None else None
+    headers = {"Authorization": f"Bearer {key}"}
+    if body is not None:
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+    if idempotency_key is not None:
+        headers["Idempotency-Key"] = idempotency_key
+    request = urllib.request.Request(
+        API_BASE + path, data=body, headers=headers, method=method
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read())
+            if not isinstance(payload, dict):
+                raise ProbeError(f"Stripe returned a non-object for {path}")
+            return response.status, payload
+    except urllib.error.HTTPError as error:
+        # Never include the response body: provider errors can contain request
+        # metadata and are not part of the redacted evidence contract.
+        raise ProbeError(f"Stripe {method} {path} returned HTTP {error.code}") from error
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+        raise ProbeError(f"Stripe {method} {path} was unavailable") from error
+
+
+def assert_test_mode(payload: dict[str, Any], label: str) -> None:
+    if payload.get("livemode") is not False:
+        raise ProbeError(f"{label} did not assert livemode=false")
+
+
+def run_probe(key: str, run_id: str, output: Path) -> int:
+    if not key.startswith("sk_test_"):
+        raise ProbeError("STRIPE_SECRET_KEY must start with sk_test_; live keys are rejected")
+    if not run_id or not run_id.isascii() or not run_id.replace("-", "").isalnum():
+        raise ProbeError("GITHUB_RUN_ID is missing or malformed")
+
+    steps: list[str] = []
+    customer_id: str | None = None
+    cleanup_ok = False
+    idempotency_key = f"corelink-i1649-{run_id}"
+    receipt: dict[str, Any] = {
+        "schema": "corelink.stripe-test-mode-evidence.v1",
+        "issue": 1649,
+        "mode": "test",
+        "livemode": False,
+        "idempotency_replayed": False,
+        "ordering": [],
+        "cleanup": {"attempted": False, "succeeded": False},
+        "redacted": True,
+    }
+
+    try:
+        account_status, account = request_json(key, "GET", "/v1/account")
+        if account_status != 200:
+            raise ProbeError("Stripe account read failed")
+        assert_test_mode(account, "account")
+        steps.append("account_livemode_checked")
+
+        create_form = {
+            "description": f"corelink i1649 evidence {run_id}",
+            "metadata[corelink_evidence]": "i1649",
+        }
+        _, first = request_json(
+            key, "POST", "/v1/customers", form=create_form, idempotency_key=idempotency_key
+        )
+        assert_test_mode(first, "created customer")
+        customer_id = first.get("id")
+        if not isinstance(customer_id, str) or not customer_id.startswith("cus_"):
+            raise ProbeError("Stripe customer response did not contain a customer id")
+        steps.append("customer_created")
+
+        _, replay = request_json(
+            key, "POST", "/v1/customers", form=create_form, idempotency_key=idempotency_key
+        )
+        assert_test_mode(replay, "replayed customer")
+        if replay.get("id") != customer_id:
+            raise ProbeError("same idempotency key produced a different customer")
+        receipt["idempotency_replayed"] = True
+        steps.append("same_request_replayed")
+
+        _, retrieved = request_json(key, "GET", f"/v1/customers/{customer_id}")
+        assert_test_mode(retrieved, "retrieved customer")
+        if retrieved.get("id") != customer_id:
+            raise ProbeError("retrieved customer id differed from create response")
+        steps.append("customer_retrieved_after_create")
+
+        receipt["customer"] = redacted_id(customer_id)
+        receipt["idempotency_key"] = redacted_id(idempotency_key)
+    finally:
+        receipt["cleanup"]["attempted"] = customer_id is not None
+        if customer_id is not None:
+            try:
+                _, deleted = request_json(key, "DELETE", f"/v1/customers/{customer_id}")
+                cleanup_ok = deleted.get("deleted") is True and deleted.get("id") == customer_id
+                if cleanup_ok:
+                    steps.append("customer_deleted")
+            except ProbeError:
+                cleanup_ok = False
+        receipt["cleanup"]["succeeded"] = cleanup_ok
+        receipt["ordering"] = steps
+        receipt["captured_at"] = datetime.now(timezone.utc).isoformat()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    if steps != [
+        "account_livemode_checked",
+        "customer_created",
+        "same_request_replayed",
+        "customer_retrieved_after_create",
+        "customer_deleted",
+    ]:
+        raise ProbeError("probe ordering receipt did not match the required sequence")
+    if not cleanup_ok:
+        raise ProbeError("cleanup did not confirm customer deletion")
+    return 0
+
+
+def contract_check(workflow: Path) -> int:
+    text = workflow.read_text(encoding="utf-8")
+    missing = [marker for marker in REQUIRED_WORKFLOW_MARKERS if marker not in text]
+    forbidden = [marker for marker in FORBIDDEN_WORKFLOW_MARKERS if marker in text]
+    if missing or forbidden:
+        if missing:
+            print("contract missing required markers: " + ", ".join(missing))
+        if forbidden:
+            print("contract contains forbidden markers: " + ", ".join(forbidden))
+        return 1
+    print("i1649 Stripe hosted test-mode contract: PASS")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--contract", action="store_true")
+    parser.add_argument("--workflow", type=Path, default=Path(".github/workflows/issue-1649-stripe-test-mode.yml"))
+    parser.add_argument("--output", type=Path, default=Path("artifacts/issue-1649-stripe-test-mode-receipt.json"))
+    args = parser.parse_args(argv)
+    if args.contract:
+        return contract_check(args.workflow)
+    try:
+        if os.environ.get("I1649_CONFIRM") != CONFIRMATION:
+            raise ProbeError("dispatch confirmation is missing or incorrect")
+        return run_probe(
+            os.environ.get("STRIPE_SECRET_KEY", ""),
+            os.environ.get("GITHUB_RUN_ID", ""),
+            args.output,
+        )
+    except ProbeError as error:
+        print(f"i1649 Stripe test-mode evidence: FAIL — {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
