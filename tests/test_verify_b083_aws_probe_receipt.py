@@ -54,6 +54,15 @@ def test_aws_probe_receipt_green_then_named_red_mutants() -> None:
         assert "must not be empty" in missing_receipt.stderr
 
         record = json.loads((ROOT / EVIDENCE).read_text(encoding="utf-8"))
+        record["observations"]["context_rejection"]["audit_receipts"] = [
+            record["observations"]["wrap_unwrap"]["audit_receipts"][0]
+        ]
+        path.write_text(json.dumps(record), encoding="utf-8")
+        reused_receipt = _run(tree)
+        assert reused_receipt.returncode != 0
+        assert "reuses a receipt from another observation" in reused_receipt.stderr
+
+        record = json.loads((ROOT / EVIDENCE).read_text(encoding="utf-8"))
         record["observations"]["wrap_unwrap"]["detail"] = "AKIA1234567890ABCDEF"
         path.write_text(json.dumps(record), encoding="utf-8")
         credential_shape = _run(tree)

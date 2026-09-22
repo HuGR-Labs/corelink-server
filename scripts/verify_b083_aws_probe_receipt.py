@@ -59,7 +59,7 @@ def _text(value: Any, label: str) -> str:
     return value
 
 
-def _receipts(value: Any, label: str, required: bool) -> None:
+def _receipts(value: Any, label: str, required: bool) -> list[str]:
     if not isinstance(value, list) or (required and not value):
         raise EvidenceError(f"{label} must {'not be empty' if required else 'be a list'}")
     if len(value) != len(set(value)):
@@ -67,16 +67,21 @@ def _receipts(value: Any, label: str, required: bool) -> None:
     for receipt in value:
         if not isinstance(receipt, str) or not RECEIPT.fullmatch(receipt):
             raise EvidenceError(f"{label} must contain only redacted CloudTrail receipt hashes")
+    return value
 
 
-def _observation(name: str, value: Any) -> None:
+def _observation(name: str, value: Any, seen_receipts: set[str]) -> None:
     item = _exact(value, frozenset({"status", "audit_receipts", "detail", "blocker"}), f"observations.{name}")
     status = item["status"]
     _text(item["detail"], f"observations.{name}.detail")
     if name in PASS_STEPS:
         if status != "PASS" or item["blocker"] is not None:
             raise EvidenceError(f"observations.{name} must be receipt-backed PASS without a blocker")
-        _receipts(item["audit_receipts"], f"observations.{name}.audit_receipts", required=True)
+        receipts = _receipts(item["audit_receipts"], f"observations.{name}.audit_receipts", required=True)
+        reused = set(receipts).intersection(seen_receipts)
+        if reused:
+            raise EvidenceError(f"observations.{name} reuses a receipt from another observation")
+        seen_receipts.update(receipts)
         return
     if name in INCOMPLETE_STEPS:
         if status != "NOT_COMPLETED" or item["audit_receipts"] != []:
@@ -104,8 +109,9 @@ def validate_record(record: Any) -> None:
     if identity != {"grant_operations": ["Decrypt", "DescribeKey", "Encrypt"], "persistent_credentials": "NOT_CREATED", "temporary_role": "DELETED"}:
         raise EvidenceError("identity boundary must be the deleted grant-only role with no persistent credentials")
     observations = _exact(root["observations"], OBSERVATION_STEPS, "observations")
+    seen_receipts: set[str] = set()
     for name in sorted(OBSERVATION_STEPS):
-        _observation(name, observations[name])
+        _observation(name, observations[name], seen_receipts)
     runtime = _exact(root["runtime_binding"], frozenset({"status", "blocker"}), "runtime_binding")
     if runtime["status"] != "NOT_PROVISIONED":
         raise EvidenceError("an AWS CLI probe cannot claim a protected CoreLink runtime")
