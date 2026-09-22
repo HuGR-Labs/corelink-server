@@ -59,7 +59,7 @@ use corelink_billing_stripe_materializer::{
     SQL_CAS_DELETE_RUNNERS_ENTITLEMENT, SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT,
     SQL_DELETE_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER, SQL_FIND_INVOICE_SUBSCRIPTION,
     SQL_INSERT_DISPUTE, SQL_INSERT_REFUND, SQL_INSERT_WEBHOOK_EVENT_PROCESSED,
-    SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER, SQL_READ_RUNNER_ENTITLEMENT_FENCE,
+    SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_RUNNER_ENTITLEMENT_FENCE, SQL_READ_TIER,
     SQL_RESOLVE_REFUND_PRODUCT, SQL_REVOKE_REFUNDED_RUNNERS_ENTITLEMENT, SQL_UPSERT_CUSTOMER,
     SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT, SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
 };
@@ -550,14 +550,9 @@ impl BillingD1Writer for D1HttpBillingWriter {
                 ],
             ),
             mutation,
-            D1BatchStatement::new(
-                SQL_READ_RUNNER_ENTITLEMENT_FENCE,
-                vec![json!(tenant_id)],
-            ),
+            D1BatchStatement::new(SQL_READ_RUNNER_ENTITLEMENT_FENCE, vec![json!(tenant_id)]),
         ])?;
-        let advanced = results
-            .first()
-            .is_some_and(|rows| !rows.is_empty());
+        let advanced = results.first().is_some_and(|rows| !rows.is_empty());
         if advanced {
             return Ok(EntitlementCasOutcome::Applied);
         }
@@ -568,8 +563,7 @@ impl BillingD1Writer for D1HttpBillingWriter {
             .and_then(Value::as_str)
             .ok_or_else(|| {
                 BillingD1Error::Transient(
-                    "d1-http-billing: runner entitlement fence disappeared during CAS"
-                        .to_owned(),
+                    "d1-http-billing: runner entitlement fence disappeared during CAS".to_owned(),
                 )
             })?;
         if current == authority_key {

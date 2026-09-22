@@ -388,7 +388,9 @@ fn refunds_follow_the_durable_product_axis_and_leave_unknowns_pending() {
         )
     };
 
-    handler.on_invoice_paid(&invoice("in_runner", "sub_runner")).unwrap();
+    handler
+        .on_invoice_paid(&invoice("in_runner", "sub_runner"))
+        .unwrap();
     handler
         .on_charge_refunded(&refund("evt_runner_full", "in_runner", 100, 100))
         .unwrap();
@@ -399,7 +401,9 @@ fn refunds_follow_the_durable_product_axis_and_leave_unknowns_pending() {
     d1.upsert_runners_entitlement("ten_1", 40, 240, 1_700_000_000_000)
         .unwrap();
     d1.record_runners_purchase("ten_1", "sub_runner");
-    handler.on_invoice_paid(&invoice("in_cache", "sub_cache")).unwrap();
+    handler
+        .on_invoice_paid(&invoice("in_cache", "sub_cache"))
+        .unwrap();
     handler
         .on_charge_refunded(&refund("evt_cache_partial", "in_cache", 100, 25))
         .unwrap();
@@ -418,7 +422,9 @@ fn refunds_follow_the_durable_product_axis_and_leave_unknowns_pending() {
     handler
         .on_charge_refunded(&refund("evt_out_of_order", "in_late", 100, 100))
         .unwrap();
-    handler.on_invoice_paid(&invoice("in_late", "sub_runner")).unwrap();
+    handler
+        .on_invoice_paid(&invoice("in_late", "sub_runner"))
+        .unwrap();
     assert_eq!(d1.runners_entitlement_of("ten_1"), Some((40, 240)));
     let pending = d1
         .snapshot()

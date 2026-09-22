@@ -43,9 +43,7 @@ use corelink_tier_selection::tier::TierKind;
 use crate::audit::{AuditSeverity, BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
 use crate::clock::{default_mat_clock, MatClock};
 use crate::current_subscription::CurrentSubscriptionAuthority;
-use crate::d1::{
-    BillingD1Error, BillingD1Writer, EntitlementCasOutcome, MaterializedRow,
-};
+use crate::d1::{BillingD1Error, BillingD1Writer, EntitlementCasOutcome, MaterializedRow};
 use crate::runners::RunnersEntitlementResolver;
 use crate::tier::{TierSelectError, TierSelector};
 
