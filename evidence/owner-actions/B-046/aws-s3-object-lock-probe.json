@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "issue": 1877,
+  "captured_at": "2026-09-22T20:04:20Z",
+  "scope": {
+    "provider": "AWS S3",
+    "account": "046797548582",
+    "region": "us-east-1",
+    "target": "isolated synthetic archive bucket; identifier redacted",
+    "retention_mode": "COMPLIANCE",
+    "default_retention_days": 1,
+    "tenant_data_written": false,
+    "production_route_enabled": false,
+    "production_approval": false,
+    "jurisdiction_mapping": "not approved or claimed"
+  },
+  "probe": {
+    "object": "synthetic audit object; key redacted",
+    "version_id": "redacted",
+    "put": {
+      "status": "PASS",
+      "cloudtrail_event_id": "0754d41b-ba7a-44d4-9833-3eefe22d5fee",
+      "s3_request_id": "MHHQXH70Y49H3P2T"
+    },
+    "retention_readback": {
+      "status": "PASS",
+      "mode": "COMPLIANCE",
+      "retain_until": "2026-09-23T20:02:28.369Z"
+    },
+    "legal_hold_readback": {
+      "status": "PASS",
+      "state": "ON"
+    },
+    "residency_readback": {
+      "status": "PASS",
+      "provider_region": "us-east-1",
+      "jurisdiction_mapping": "not asserted"
+    },
+    "delete_denial": {
+      "status": "PASS",
+      "principal_had_delete_permission": true,
+      "denied_by": "S3 Object Lock",
+      "cloudtrail_event_id": "82e8e126-ff15-4c70-a511-837dadc1f983",
+      "s3_request_id": "ZW22PWF433KED41W"
+    }
+  },
+  "durable_audit": {
+    "source": "CloudTrail S3 data events delivered to a separate protected audit bucket",
+    "trail_log_file_validation_enabled": true,
+    "selector_scope": "synthetic target prefix only",
+    "event_ids": [
+      "0754d41b-ba7a-44d4-9833-3eefe22d5fee",
+      "58afec9a-22d8-4349-9d1c-33c11f878591",
+      "0c285477-7678-4199-ae6a-85e5605fcd1b",
+      "2eda77a6-c45c-42c0-806e-c5133c2b4f95",
+      "82e8e126-ff15-4c70-a511-837dadc1f983"
+    ],
+    "hourly_digest_validation": "pending; the digest covering probe events was not yet available at capture time"
+  },
+  "cleanup": {
+    "temporary_probe_role": "removed after receipt capture",
+    "locked_object": "retained until retain_until; no early teardown attempted",
+    "archive_bucket": "isolated target retained; no tenant data or route"
+  },
+  "classification": "SYNTHETIC_PROVIDER_PROBE_PASS_PRODUCTION_APPROVAL_PENDING"
+}

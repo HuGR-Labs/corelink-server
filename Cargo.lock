@@ -1309,6 +1309,8 @@ dependencies = [
 name = "corelink-audit-chain"
 version = "0.1.2"
 dependencies = [
+ "aws-sdk-s3",
+ "aws-types",
  "base64",
  "blake3",
  "corelink-analytics",
