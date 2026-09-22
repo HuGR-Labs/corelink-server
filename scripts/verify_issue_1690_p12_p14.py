@@ -140,6 +140,8 @@ def load_manifest(path: Path) -> dict[str, Any]:
         raise VerificationError(f"manifest cannot be read: {exc}") from exc
     if not isinstance(manifest, dict) or manifest.get("schema_version") != "2":
         raise VerificationError("manifest schema_version must be 2")
+    if manifest.get("issue") != 1690:
+        raise VerificationError("manifest issue must be 1690")
     return manifest
 
 
