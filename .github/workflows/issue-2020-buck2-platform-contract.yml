@@ -1,0 +1,38 @@
+name: issue-2020 Buck2 default target platform contract
+
+# Credentialless hosted contract for #2020. It checks the pinned parser
+# platform and mutation teeth without downloading Buck2, reading a PAT, or
+# dispatching the long runtime workflow.
+on:
+  pull_request:
+    paths:
+      - "examples/buck2-starter/.buckconfig"
+      - "examples/buck2-starter/BUCK"
+      - ".github/workflows/buck2-starter-ci.yml"
+      - ".github/workflows/issue-2020-buck2-platform-contract.yml"
+      - "scripts/verify_i2020_buck2_platform.py"
+      - "tests/test_i2020_buck2_platform_contract.py"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2020-buck2-platform-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: credentialless Buck2 platform contract and mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact revision without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify repository contract and mutation resistance
+        run: python3 -S scripts/verify_i2020_buck2_platform.py --self-test --json
+      - name: Run focused Python regression
+        run: python3 -S -m unittest tests/test_i2020_buck2_platform_contract.py

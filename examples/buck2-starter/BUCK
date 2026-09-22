@@ -7,7 +7,7 @@
 #   buck2 build :hello     — builds the binary
 #   buck2 run   :hello     — builds + runs
 
-load("@prelude//cxx:cxx.bzl", "cxx_binary", "cxx_library")
+load("@prelude//:rules.bzl", "cxx_binary", "cxx_library")
 
 # Reusable greeter library — represents the "1 transitive dep" fixture.
 cxx_library(

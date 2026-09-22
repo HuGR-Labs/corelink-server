@@ -25,6 +25,12 @@
 [external_cells]
     prelude = bundled
 
+[parser]
+    # Resolve every root target against the bundled public default platform.
+    # This keeps configuration features available without importing a
+    # repository-specific or Meta-internal platform graph.
+    target_platform_detector_spec = target:root//...->prelude//platforms:default
+
 [buck2]
     execution_platforms = prelude//platforms:default
 
