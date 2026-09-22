@@ -15775,23 +15775,33 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-154 — ⛔ OWNER: dois instrumentos jurídicos executados afirmam capacidades que a plataforma devolve como não-implementadas
+### B-154 — ⛔ OWNER: dois instrumentos jurídicos executados afirmam capacidades ainda sem prova operacional
 
 Não são páginas de marketing. São atos jurídicos assinados, e por isso **nenhuma linha deles
 pode ser emendada sem o owner** — a correção de um instrumento executado é um aditivo, não um
 commit.
 
 - **`legal/dpa/v1.0.0.en-US.md:110`** — *"Audit events are retained in immutable R2 with
-  Object Lock"*. **R2 não implementa Object Lock**; a API devolve `NotImplemented`, o que
-  está registrado neste repositório e é a razão de [B-046] existir como item bloqueado por
-  plataforma. O DPA é o instrumento que o comprador anexa ao contrato dele.
+  Object Lock"*. O receipt atual de [B-046](evidence/owner-actions/B-046/object-lock-probe.json),
+  capturado em 2026-09-09, é `INDETERMINATE`: a credencial foi rejeitada antes de criar o
+  bucket e a operação de retenção foi `SKIPPED`. Ele não prova Object Lock e também não prova
+  a sua ausência. O DPA é o instrumento que o comprador anexa ao contrato dele.
 - **`legal/sla/v1.0.0.md:46`** — a linha Enterprise compromete *"BYOK kill-switch p99 ≤
-  5 min"*. O BYOK devolve **501** (`routes/byok_admin.rs:249`) e o único provider compilado
-  no binário embarcado é o fake — é o [B-083], que já aponta para cá ao dizer que *"a
-  reconciliação dos instrumentos assinados"* é de outro item.
-- **`marketing/launch/CASE-STUDIES/enterprise-byok.md:59`** — depoimento atribuído que afirma
-  que *"o drill de kill-switch produziu o artefato de que a equipe de compliance precisava"*.
-  O drill é o [B-084]: emite `PASS` a partir de um `sleep`.
+  5 min"*. O receipt atual de [B-083](evidence/owner-actions/B-083/byok-real-kms-lifecycle.json),
+  capturado em 2026-09-09, registra `check_access: BLOCKED` e `NOT_EXECUTED` para ativação,
+  round-trip CAS/AC, revogação e `run_loop`, porque não havia tenant protegido, CMK, role ou
+  credencial. O Dockerfile seleciona `byok-aws-real` e a rota falha fechado quando o provider
+  não está disponível, mas isso não comprova operação nem p99. A capacidade prometida segue
+  sem evidência operacional; [B-083] continua sendo a dependência técnica.
+- **`marketing/launch/CASE-STUDIES/enterprise-byok.md:59`** — a fonte atual é um rascunho
+  com placeholders e declara que não existe depoimento, drill ou artefato de cliente. Não há
+  uma promessa pública executada a reconciliar nesta cópia; ela deve permanecer não publicada
+  até existir evidência e aprovação do cliente.
+
+**Estado evidence-first (2026-09-09).** Os dois receipts acima são observações versionadas,
+não aprovação jurídica nem capability green. A combinação mantém B-154 **open/blocked**: os
+  instrumentos executados continuam carregando as afirmações, e nenhuma evidência atual
+  comprova Object Lock ou o SLO BYOK. O case study continua draft e não fecha o item.
 
 **Uma correção ao enunciado original, e ela muda o custo para melhor.** A atribuição do
 depoimento é hoje `[ENTERPRISE_CUSTOMER_TITLE]` / `[ENTERPRISE_CUSTOMER_NAME or
@@ -15840,13 +15850,15 @@ verify: |
     echo "FALHA: $b sumiu — sem ele nao consigo sustentar que o SLA promete o que nao existe."; exit 1
   fi
   if [ "$n" -gt 0 ]; then
-    echo "aberto: $n de 2 instrumentos executados ainda afirmam capacidade nao entregue:$det (BYOK segue 501 no codigo)"
+    echo "aberto: $n de 2 instrumentos executados ainda afirmam capacidade sem evidencia (BYOK tem ramo fail-closed 501 no codigo):$det"
   else
     echo "aberto: nenhum instrumento publicado repete a afirmacao; o BYOK segue NOT_IMPLEMENTED e a decisao/assinatura do owner continua pendente"
   fi'
 verify-means: |
-  open — pelo menos um dos dois instrumentos assinados ainda carrega a afirmação, **e** o
-  código continua devolvendo `NOT_IMPLEMENTED` no caminho do BYOK.
+  open/blocked — os dois instrumentos assinados ainda carregam as afirmações e os receipts
+  versionados atuais não comprovam as capacidades: B-046 está `INDETERMINATE` antes do probe
+  de Object Lock; B-083 está `BLOCKED`/`NOT_EXECUTED` sem tenant, CMK e runtime protegido.
+  Nenhum desses estados pode virar green por inferência de código, configuração ou prosa.
 
   **Os greps nos instrumentos são ancorados em `^[^#]*`** — markdown não tem comentário de
   linha, mas as duas páginas usam `#` de cabeçalho, e um título futuro como
@@ -15859,8 +15871,9 @@ verify-means: |
   cenário a linha do SLA pode ter passado a ser verdadeira, e um portão não deve tomar essa
   decisão no lugar do owner.
 
-  **Medido pelos dois lados (2026-08-31):** no estado atual sai *"aberto: 2 de 2
-  instrumentos…"* e exit 0. Numa cópia com as duas linhas retiradas dos instrumentos, sai
+  **Medido pelos dois lados (2026-09-09):** no estado atual sai *"aberto: 2 de 2
+  instrumentos…"* e exit 0; os receipts citados acima permanecem bloqueados/indeterminados.
+  Numa cópia com as duas linhas retiradas dos instrumentos, sai
   *"FALHA: nenhum dos dois instrumentos assinados carrega mais a afirmacao"* e exit 1.
 
   **O depoimento do case study ficou FORA do predicado, de propósito.** Ele é hoje um
