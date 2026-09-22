@@ -26,6 +26,10 @@ on:
         description: "Single region to check (leave empty for all)"
         required: false
         default: ""
+      expected_sha:
+        description: "Optional audited main SHA; reject a moved main ref"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -56,6 +60,21 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
+
+      - name: Verify expected dispatch revision
+        if: github.event_name == 'workflow_dispatch' && inputs.expected_sha != ''
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::expected_sha must be a full lowercase commit SHA."
+            exit 1
+          }
+          [[ "$GITHUB_SHA" == "$EXPECTED_SHA" ]] || {
+            echo "::error::main moved after the authoritative audit read; refusing Terraform drift plan."
+            exit 1
+          }
 
       - name: Setup Terraform ${{ env.TF_VERSION }}
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
