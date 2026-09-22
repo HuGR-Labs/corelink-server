@@ -182,6 +182,14 @@ def test_diagnostic_mutations_that_add_values_or_identifiers_are_rejected() -> N
     with_leaked_schema_count["schema_shape"]["root_unknown_key_count"] = "account-PRIVATE"
     mutations.append(with_leaked_schema_count)
 
+    with_oversized_exit = deepcopy(diagnostic)
+    with_oversized_exit["exit_code"] = 10**1000
+    mutations.append(with_oversized_exit)
+
+    with_oversized_key_count = deepcopy(diagnostic)
+    with_oversized_key_count["schema_shape"]["root_unknown_key_count"] = 10**1000
+    mutations.append(with_oversized_key_count)
+
     for mutated in mutations:
         try:
             validate_provider_diagnostic(mutated)

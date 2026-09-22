@@ -71,7 +71,12 @@ def make_provider_diagnostic(
     query_id: str, exit_code: int, stdout: str, stderr: str,
     *, stdout_truncated: bool = False, stderr_truncated: bool = False,
 ) -> dict[str, object]:
-    if query_id not in QUERY_IDS or isinstance(exit_code, bool) or not isinstance(exit_code, int) or exit_code <= 0:
+    if (
+        query_id not in QUERY_IDS
+        or isinstance(exit_code, bool)
+        or not isinstance(exit_code, int)
+        or not 1 <= exit_code <= 255
+    ):
         raise ValueError("provider query identity or exit code is invalid")
     combined = f"{stdout}\n{stderr}"
     error_class = next(
@@ -107,7 +112,11 @@ def validate_provider_diagnostic(value: dict[str, object]) -> None:
         raise ValueError("provider diagnostic fields differ from the allowlist")
     if value["query_stage"] != "wrangler_d1_execute" or value["query_id"] not in QUERY_IDS:
         raise ValueError("provider query stage or id is not allowlisted")
-    if isinstance(value["exit_code"], bool) or not isinstance(value["exit_code"], int) or value["exit_code"] <= 0:
+    if (
+        isinstance(value["exit_code"], bool)
+        or not isinstance(value["exit_code"], int)
+        or not 1 <= value["exit_code"] <= 255
+    ):
         raise ValueError("provider exit code is invalid")
     if value["error_class"] not in ERROR_CLASSES:
         raise ValueError("provider error class is not allowlisted")
@@ -129,7 +138,7 @@ def validate_provider_diagnostic(value: dict[str, object]) -> None:
         if not isinstance(keys, list) or keys != sorted(set(keys)) or any(key not in SCHEMA_KEYS for key in keys):
             raise ValueError("provider schema keys are invalid")
         count = shape[f"{name}_unknown_key_count"]
-        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= MAX_PROVIDER_OUTPUT_BYTES:
             raise ValueError("provider unknown-key count is invalid")
     if any(not isinstance(shape[key], bool) for key in ("stdout_truncated", "stderr_truncated")):
         raise ValueError("provider truncation marker is invalid")
