@@ -27,13 +27,16 @@ REQUIRED_WORKFLOW_MARKERS = (
     "github.repository == 'HuGR-dev/corelink-server'",
     "runs-on: ubuntu-latest",
     "STRIPE_SECRET_KEY",
-    "sk_test_",
+    "rk_test_",
+    "Accounts: Read",
+    "Customers: Write",
     "livemode",
     "idempotency",
     "cleanup",
     "persist-credentials: false",
 )
 FORBIDDEN_WORKFLOW_MARKERS = (
+    "sk_test_",
     "sk_live_",
     "runs-on: corelink",
     "runs-on: self-hosted",
@@ -89,9 +92,14 @@ def assert_test_mode(payload: dict[str, Any], label: str) -> None:
         raise ProbeError(f"{label} did not assert livemode=false")
 
 
+def require_restricted_test_key(key: str) -> None:
+    """Reject unrestricted and live keys before any provider request."""
+    if not key.startswith("rk_test_"):
+        raise ProbeError("STRIPE_SECRET_KEY must start with rk_test_; other keys are rejected")
+
+
 def run_probe(key: str, run_id: str, output: Path) -> int:
-    if not key.startswith("sk_test_"):
-        raise ProbeError("STRIPE_SECRET_KEY must start with sk_test_; live keys are rejected")
+    require_restricted_test_key(key)
     if not run_id or not run_id.isascii() or not run_id.replace("-", "").isalnum():
         raise ProbeError("GITHUB_RUN_ID is missing or malformed")
 
