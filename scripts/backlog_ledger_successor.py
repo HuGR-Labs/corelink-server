@@ -77,12 +77,12 @@ SPRINT3_FIELDS = {
 V0004_RECONCILIATION = {
     "sequence": 4,
     "previous_sequence": 3,
-    "base_commit": "0f90d89e0710e88e297d39b16e0fdad390bdcafc",
+    "base_commit": "3fb5ffee45f8a859b5f0230bfc5c1518ab254b21",
     "previous_source_sha256": "41726d6c8b2f4b1dc7ff35466a78c242e147b99eaca69a956064024e04212e23",
     "prior_source_sha256": "c272de9f9cc4e6ae36bddbff4c97012d8589150a22c0038e0875a6ddf855ac87",
     "source_sha256": "74a71eb5ea5833e1bde69a30c46076a9c4519128a5f6db123a6f5ade1bdb800e",
     "prior_ledger_sha256": "02d81ecf3ade17a5317b3f24e68a17a801837bde6112cac9288b6a7f6175b656",
-    "ledger_sha256": "0f4e3f3f2a838a84d0ffab29d0e99a738e39fa791c94b431035ffcd409d4e3ca",
+    "ledger_sha256": "9fb392260a8d34323d6e56f2042a0aa88abe43282b7130223368f1b3a193006d",
     "changed_ids": ["B-098", "B-154"],
     "catalog_sha256": {
         "docs/campaigns/remediation/work-packages/B001-B045.md": "2a1735804f43bb726789b99ee80c14cf876f41eb6c684e3ea54e68981413cd38",
