@@ -36,6 +36,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use corelink_tier_selection::error::TierError;
+use corelink_tier_selection::runner_checkout_attempt::{
+    RunnerCheckoutAttempt, RunnerCheckoutSessionCreator, RunnerCheckoutSessionExpiry,
+    RunnerCheckoutSessionReconciler,
+};
 use corelink_tier_selection::stripe::{
     CheckoutSessionRequest, CheckoutSessionResponse, StripeClient,
 };
@@ -679,6 +683,52 @@ impl StripeRealClient {
         )
     }
 
+    /// Create a runner Checkout session with the ledger's exact idempotency
+    /// key and price/customer binding. Retries with that key replay Stripe's
+    /// cached response instead of opening another payable session.
+    pub fn create_runner_checkout_session(
+        &self,
+        attempt: &RunnerCheckoutAttempt,
+        success_url: &str,
+        cancel_url: &str,
+    ) -> Result<CheckoutSessionResponse, StripeError> {
+        let req = CheckoutSessionRequest::new(
+            attempt.tenant_id.clone(),
+            attempt.tier,
+            String::new(),
+            success_url,
+            cancel_url,
+        );
+        let raw = self.create_checkout_session_raw(
+            &req,
+            &attempt.idempotency_key,
+            &attempt.price_id,
+            &CheckoutPromo::from_env(),
+            &attempt.customer_id,
+        )?;
+        let customer = raw.customer.unwrap_or_else(|| attempt.customer_id.clone());
+        let url = raw
+            .url
+            .ok_or_else(|| StripeError::InvalidRequest("missing url on checkout session".into()))?;
+        Ok(CheckoutSessionResponse::new(
+            raw.id,
+            StripeCustomerId::new(customer),
+            url,
+        ))
+    }
+
+    /// Expire an unpaid Stripe Checkout session. Stripe treats the operation
+    /// as terminal; callers must only advance the D1 attempt after `Ok(())`.
+    pub fn expire_checkout_session(&self, session_id: &str) -> Result<(), StripeError> {
+        let key = format!("checkout-expire:{session_id}");
+        let _: CheckoutSessionObject = self.post_form(
+            &format!("/v1/checkout/sessions/{session_id}/expire"),
+            &[],
+            &key,
+        )?;
+        Ok(())
+    }
+
     /// `POST /v1/checkout/sessions` — typed Stripe Checkout creation
     /// (returns the raw Stripe object).
     ///
@@ -861,6 +911,84 @@ impl StripeClient for StripeRealClient {
             StripeCustomerId::new(customer),
             url,
         ))
+    }
+}
+
+/// Stripe provider adapter consumed by the runner checkout coordinator.
+#[derive(Clone)]
+pub struct StripeRunnerCheckoutProvider {
+    stripe: Arc<StripeRealClient>,
+    success_url: String,
+    cancel_url: String,
+}
+
+impl StripeRunnerCheckoutProvider {
+    /// Bind Stripe and the trusted redirect URLs used for runner sessions.
+    #[must_use]
+    pub fn new(
+        stripe: Arc<StripeRealClient>,
+        success_url: impl Into<String>,
+        cancel_url: impl Into<String>,
+    ) -> Self {
+        Self {
+            stripe,
+            success_url: success_url.into(),
+            cancel_url: cancel_url.into(),
+        }
+    }
+}
+
+impl core::fmt::Debug for StripeRunnerCheckoutProvider {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StripeRunnerCheckoutProvider")
+            .field("stripe", &"[StripeRealClient]")
+            .field("success_url", &self.success_url)
+            .field("cancel_url", &self.cancel_url)
+            .finish()
+    }
+}
+
+impl RunnerCheckoutSessionCreator for StripeRunnerCheckoutProvider {
+    fn create(
+        &self,
+        attempt: &RunnerCheckoutAttempt,
+    ) -> Result<String, corelink_tier_selection::runner_checkout_attempt::RunnerCheckoutAttemptError>
+    {
+        self.stripe
+            .create_runner_checkout_session(attempt, &self.success_url, &self.cancel_url)
+            .map(|response| response.session_id)
+            .map_err(|error| corelink_tier_selection::runner_checkout_attempt::RunnerCheckoutAttemptError::ProviderCreateFailed(error.to_string()))
+    }
+}
+
+impl RunnerCheckoutSessionExpiry for StripeRunnerCheckoutProvider {
+    fn expire(
+        &self,
+        attempt: &RunnerCheckoutAttempt,
+    ) -> Result<(), corelink_tier_selection::runner_checkout_attempt::RunnerCheckoutAttemptError>
+    {
+        let session_id = attempt
+            .session_id
+            .as_deref()
+            .ok_or(corelink_tier_selection::runner_checkout_attempt::RunnerCheckoutAttemptError::InvalidTransition)?;
+        self.stripe
+            .expire_checkout_session(session_id)
+            .map_err(|error| corelink_tier_selection::runner_checkout_attempt::RunnerCheckoutAttemptError::ProviderExpiryFailed(error.to_string()))
+    }
+}
+
+impl RunnerCheckoutSessionReconciler for StripeRunnerCheckoutProvider {
+    fn reconcile(
+        &self,
+        attempt: &RunnerCheckoutAttempt,
+    ) -> Result<
+        Option<String>,
+        corelink_tier_selection::runner_checkout_attempt::RunnerCheckoutAttemptError,
+    > {
+        // Stripe has no search endpoint for an Idempotency-Key. Replaying the
+        // original POST is the provider-supported reconciliation primitive and
+        // is safe because the key is the durable attempt identity.
+        self.create(attempt).map(Some)
     }
 }
 
