@@ -709,6 +709,11 @@ def mutation_self_test() -> int:
     workflow = _read(WORKFLOW)
     policy = _load_json(POLICY)
     bundled_lock = _load_json(BUNDLED_LOCK)
+    r4_start = config.index("corelink.rust.no-expect-in-byok-src")
+    r4_severity = (
+        config[:r4_start]
+        + config[r4_start:].replace("severity: WARNING", "severity: ERROR", 1)
+    )
     mutations = [
         (
             "custom-rule",
@@ -746,6 +751,7 @@ def mutation_self_test() -> int:
             workflow,
             policy,
         ),
+        ("r4-severity", r4_severity, workflow, policy),
         (
             "r3-pattern",
             config.replace(
