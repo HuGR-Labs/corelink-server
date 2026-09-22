@@ -172,13 +172,31 @@ async fn out_of_storage_range_records_skip_at_first_middle_and_last() {
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     let first_attempt: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
     assert_eq!(
-        (first_attempt.accepted, first_attempt.deduped, first_attempt.rejected, first_attempt.total),
+        (
+            first_attempt.accepted,
+            first_attempt.deduped,
+            first_attempt.rejected,
+            first_attempt.total
+        ),
         (2, 0, 3, 2)
     );
-    assert_eq!(first_attempt.outcomes[0].reason.as_deref(), Some("qty_out_of_storage_range"));
-    assert_eq!(first_attempt.outcomes[2].reason.as_deref(), Some("time_ms_out_of_storage_range"));
-    assert_eq!(first_attempt.outcomes[4].reason.as_deref(), Some("qty_out_of_storage_range"));
-    assert_eq!(store.seen.lock().unwrap().len(), 3, "only valid siblings stage");
+    assert_eq!(
+        first_attempt.outcomes[0].reason.as_deref(),
+        Some("qty_out_of_storage_range")
+    );
+    assert_eq!(
+        first_attempt.outcomes[2].reason.as_deref(),
+        Some("time_ms_out_of_storage_range")
+    );
+    assert_eq!(
+        first_attempt.outcomes[4].reason.as_deref(),
+        Some("qty_out_of_storage_range")
+    );
+    assert_eq!(
+        store.seen.lock().unwrap().len(),
+        3,
+        "only valid siblings stage"
+    );
 
     // Replaying the same mixed batch deterministically re-rejects the poison
     // records and dedups the valid siblings. It never becomes a retryable 503.
@@ -188,6 +206,9 @@ async fn out_of_storage_range_records_skip_at_first_middle_and_last() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     let retry: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
-    assert_eq!((retry.accepted, retry.deduped, retry.rejected, retry.total), (0, 2, 3, 2));
+    assert_eq!(
+        (retry.accepted, retry.deduped, retry.rejected, retry.total),
+        (0, 2, 3, 2)
+    );
     assert_eq!(store.seen.lock().unwrap().len(), 3);
 }
