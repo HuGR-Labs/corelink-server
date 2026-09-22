@@ -120,14 +120,17 @@ jobs:
           [[ -n "$staging_token_id" && -n "$staging_token_value" ]] || { echo '::error::Cloudflare returned no staging R2 token material.'; exit 1; }
           staging_access_secret="$(printf %s "$staging_token_value" | sha256sum | awk '{print $1}')"
           endpoint="https://${CF_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          AWS_ACCESS_KEY_ID="$staging_token_id" AWS_SECRET_ACCESS_KEY="$staging_access_secret" AWS_DEFAULT_REGION=auto \
+            aws s3api list-buckets --endpoint-url "$endpoint" >/dev/null
           printf %s "$tf_token_id" | gh secret set TF_BACKEND_ACCESS_KEY_ID --repo "$GH_REPO"
           printf %s "$tf_access_secret" | gh secret set TF_BACKEND_SECRET_ACCESS_KEY --repo "$GH_REPO"
           printf %s "$STATE_BUCKET" | gh secret set TF_BACKEND_BUCKET --repo "$GH_REPO"
           printf %s "$endpoint" | gh secret set TF_BACKEND_ENDPOINT --repo "$GH_REPO"
           printf %s "$staging_token_id" | gh secret set R2_S3_ACCESS_KEY_ID --repo "$GH_REPO" --env staging
           printf %s "$staging_access_secret" | gh secret set R2_S3_SECRET_ACCESS_KEY --repo "$GH_REPO" --env staging
+          printf %s "$endpoint" | gh secret set STAGING_R2_S3_ENDPOINT --repo "$GH_REPO" --env staging
           present="$(gh secret list --repo "$GH_REPO" --env staging --json name)"
-          jq -e '([.[].name] | index("R2_S3_ACCESS_KEY_ID")) and ([.[].name] | index("R2_S3_SECRET_ACCESS_KEY"))' <<<"$present" >/dev/null
+          jq -e '([.[].name] | index("R2_S3_ACCESS_KEY_ID")) and ([.[].name] | index("R2_S3_SECRET_ACCESS_KEY")) and ([.[].name] | index("STAGING_R2_S3_ENDPOINT"))' <<<"$present" >/dev/null
           {
             printf 'AWS_ACCESS_KEY_ID=%s\n' "$tf_token_id"
             printf 'AWS_SECRET_ACCESS_KEY=%s\n' "$tf_access_secret"
