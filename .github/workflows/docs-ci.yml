@@ -317,11 +317,12 @@ jobs:
         # `--remap` + `--fallback-extensions` pair is what makes this gate prove
         # something (see the note above), so neither may be dropped in the move.
         #
-        # The docs-site remaps resolve the path-mounted docs site against THIS
-        # build instead of live production. A PR's generated pages are not
-        # deployed at humangr.com yet, so checking those URLs over the network
-        # reports 404s for valid routes that are present in this artifact.
-        # External hosts remain network checked.
+        # The docs-site remaps resolve generated docs paths against THIS build
+        # instead of live production. A PR's generated pages are not deployed
+        # at humangr.com yet, so checking those URLs over the network reports
+        # 404s for valid routes that are present in this artifact. The path
+        # pattern stops at comma-delimited values such as GOPROXY, which remain
+        # network checked along with other external hosts.
         #
         # The SDK remap resolves the two artifact trees we publish
         # ourselves (`/pypi/**`, `/npm/**`) against THIS build instead of the
@@ -346,7 +347,7 @@ jobs:
             --fallback-extensions html \
             --remap '^file://${{ github.workspace }}/apps/docs/build/corelink/docs(/.*)?$ file://${{ github.workspace }}/apps/docs/build$1' \
             --remap '^https://humangr\.com/corelink/docs/(pypi|npm)/(.*)$ file://${{ github.workspace }}/apps/docs/build/$1/$2' \
-            --remap '^https://humangr\.com/corelink/docs(/.*)?$ file://${{ github.workspace }}/apps/docs/build$1' \
+            --remap '^https://humangr\.com/corelink/docs(/[^,[:space:]"<>]*)?$ file://${{ github.workspace }}/apps/docs/build$1' \
             'apps/docs/build/**/*.html'
 
   sdk-artifacts:
