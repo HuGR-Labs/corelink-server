@@ -69,6 +69,18 @@ jobs:
     runs-on: corelink  # zero-hosted: python3 (regenerate) + `gh pr create` — gh 2.97.0 baked at increment 3 (#453)
     timeout-minutes: 15
     steps:
+      - name: Mint repository-scoped bot token
+        id: app-token
+        uses: actions/create-github-app-token@def152b8a737443d7af6c5722c6389146fe90c90 # v2.1.2
+        with:
+          app-id: ${{ secrets.CORELINK_BOT_APP_ID }}
+          private-key: ${{ secrets.CORELINK_BOT_APP_PRIVATE_KEY }}
+          owner: HuGR-dev
+          repositories: corelink-server
+          permission-metadata: read
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -78,7 +90,7 @@ jobs:
           # opened/synchronize/reopened event can yield approval-required
           # runs. Once provisioned, the dedicated token supports unattended
           # CI; actual completed jobs, not check presence, prove execution.
-          token: ${{ secrets.BOT_PR_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Regenerate reference set
         run: |
@@ -113,11 +125,11 @@ jobs:
       - name: Open auto-sync PR
         if: steps.diff.outputs.changed == 'true'
         env:
-          BOT_PR_TOKEN: ${{ secrets.BOT_PR_TOKEN }}
+          BOT_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
-          : "${BOT_PR_TOKEN:?BOT_PR_TOKEN must be configured before opening an auto-PR}"
-          export GH_TOKEN="${BOT_PR_TOKEN}"
+          : "${BOT_APP_TOKEN:?BOT_APP_TOKEN must be configured before opening an auto-PR}"
+          export GH_TOKEN="${BOT_APP_TOKEN}"
           BRANCH="bot/api-reference-sync-${GITHUB_SHA::7}"
           git checkout -b "$BRANCH"
           git add apps/docs/docs/reference/api/

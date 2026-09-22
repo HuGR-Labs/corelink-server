@@ -18,12 +18,11 @@
 #   branch markers, so a PR remains covered even when its author is typed as a
 #   User, an App, or a renamed machine account.
 #
-# THE DURABLE FIX is a dedicated non-Actions token wired into every active
-#   creator. The existing `BOT_PR_TOKEN` wiring accepts a fine-grained PAT;
-#   the one-time owner action for that path is to provision it. A GitHub App
-#   path needs per-job minting; its installation token expires
-#   in one hour and must not be parked in BOT_PR_TOKEN as a durable secret.
-#   Neither token path repairs Actions startup failure or absent corelink runner
+# THE DURABLE FIX is a repository-scoped GitHub App wired into every active
+#   creator. Each job mints an installation token that expires in one hour from
+#   `CORELINK_BOT_APP_ID` and `CORELINK_BOT_APP_PRIVATE_KEY`; those secrets hold
+#   only the App metadata and private key, never an installation token.
+#   The App does not repair Actions startup failure or absent corelink runner
 #   capacity. A check is proven only by actual job-level execution evidence.
 #
 # THIS FILE IS A BOUNDED COMPENSATING CONTROL: it makes absence of check runs
