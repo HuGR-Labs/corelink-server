@@ -6,7 +6,9 @@ canonical PUT-only burst with the six WebDAV requests that sccache/opendal
 uses around a write.  Every response is retained as redacted wire evidence:
 status, body digest/shape, retry hint, Server-Timing, and request identity.
 Response bodies are never copied into the artifact and the PAT is only used in
-memory.
+memory. Each operation also uses a payload derived from its unique key; that
+keeps independent writes on independent content-hash accounting locks instead
+of making the harness serialize them on one synthetic blob.
 
 The fixed concurrency levels and method order are intentional.  A run with a
 429 or another unexpected response is written to the artifact and exits 2 so
@@ -115,6 +117,7 @@ def request(
     return {
         "method": method,
         "key": key,
+        "request_body_sha256": sha256(body) if method == "PUT" else None,
         "status": status,
         "expected_statuses": sorted(EXPECTED[method]),
         "ok": status in EXPECTED[method],
@@ -138,7 +141,12 @@ def run_operation(base: str, tenant: str, token: str, mode: str) -> list[dict[st
         methods = WEBDAV_METHODS
     rows: list[dict[str, object]] = []
     for method in methods:
-        body = b"b103-diagnostic" if method == "PUT" else b""
+        # Unique keys model independent cache artifacts.  Keep their payloads
+        # unique as well: AccountingCasHandler shards its reserve/write lock
+        # by content hash, and one shared body would turn this matrix into a
+        # same-hash idempotency/serialization test instead of a parallel
+        # independent-write test.
+        body = f"b103-diagnostic:{key}".encode("ascii") if method == "PUT" else b""
         rows.append(request(base, tenant, token, method, key, body))
     return rows
 
