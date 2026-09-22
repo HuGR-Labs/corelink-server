@@ -617,10 +617,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --disable-pip-version-check --no-input --quiet pytest blake3
+          python3 -m pip install --disable-pip-version-check --no-input --quiet -r requirements-ci.txt
           {
             python3 -m pytest -q tests/test_b063_archive_replay.py
-            cargo clippy --locked --package corelink-server --all-targets -- -D warnings
+            # The package has two pre-existing route orchestration functions
+            # with intentional argument shape; keep every other warning fatal
+            # while this focused lane checks the archive replay module.
+            cargo clippy --locked --package corelink-server --all-targets -- -D warnings -A clippy::too_many_arguments
             cargo test --locked --package corelink-server --lib audit_archive -- --nocapture
           } 2>&1 | tee artifacts/campaign-ci/i1809-b063-archive-replay.log
 

@@ -2196,7 +2196,9 @@ async fn finalize_signed_archive(
         json!(published_at),
     ];
     let mut statements = vec![D1BatchStatement::new(
-        format!("INSERT INTO audit_chain_archive_manifest (tenant_id,region,epoch_id,start_sequence,end_sequence_exclusive,record_count,is_empty,algorithm_id,link_key_id,start_prev_hash,end_head_hash,end_head_witness_sequence,end_head_witness_hash,epoch_ledger_sequence,epoch_ledger_hash,manifest_version,manifest_hash,manifest_jcs,signature_b64,signing_key_id,published_at_ms) SELECT ?1,?2,?3,?4,?5,?6,0,?7,?8,?9,?10,?11,?12,?13,?14,1,?15,CAST(?16 AS BLOB),?17,?18,?19 WHERE NOT EXISTS (SELECT 1 FROM audit_chain_archive_manifest WHERE {exact})"),
+        format!(
+            "INSERT INTO audit_chain_archive_manifest (tenant_id,region,epoch_id,start_sequence,end_sequence_exclusive,record_count,is_empty,algorithm_id,link_key_id,start_prev_hash,end_head_hash,end_head_witness_sequence,end_head_witness_hash,epoch_ledger_sequence,epoch_ledger_hash,manifest_version,manifest_hash,manifest_jcs,signature_b64,signing_key_id,published_at_ms) SELECT ?1,?2,?3,?4,?5,?6,0,?7,?8,?9,?10,?11,?12,?13,?14,1,?15,CAST(?16 AS BLOB),?17,?18,?19 WHERE NOT EXISTS (SELECT 1 FROM audit_chain_archive_manifest WHERE {exact})"
+        ),
         params.clone(),
     )];
     statements.push(D1BatchStatement::new(
@@ -3077,10 +3079,16 @@ mod tests {
             .map(|line| serde_json::to_string(line).expect("fixture serializes"))
             .collect::<Vec<_>>()
             .join("\n");
-        let existing = parse_existing_chunk(format!("{body}\n").as_bytes())
-            .expect("one trailing newline is conventional NDJSON");
+        let existing =
+            parse_existing_chunk(format!("{body}\n").as_bytes(), &ChainEpoch::legacy(), None)
+                .expect("one trailing newline is conventional NDJSON");
         assert_eq!(existing, candidate);
-        assert!(parse_existing_chunk(format!("{body}\n\n").as_bytes()).is_err());
+        assert!(parse_existing_chunk(
+            format!("{body}\n\n").as_bytes(),
+            &ChainEpoch::legacy(),
+            None
+        )
+        .is_err());
     }
 
     #[test]
