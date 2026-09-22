@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   evidence:
-    if: github.repository == 'HuGR/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
+    if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04
     environment: staging
     timeout-minutes: 10
@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_EVENT_NAME" = workflow_dispatch
-          test "$GITHUB_REPOSITORY" = HuGR/corelink-server
+          test "$GITHUB_REPOSITORY" = HuGR-dev/corelink-server
           test "$GITHUB_REF" = refs/heads/main
           test "$CONFIRM" = run-1658-b102-staging
           python3 - "$TENANT" <<'PY'
