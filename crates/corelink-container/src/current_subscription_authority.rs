@@ -97,6 +97,10 @@ impl CurrentSubscriptionAuthority for StripeCurrentSubscriptionAuthority {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "fixtures deserialize static JSON and unwrap only in test assertions"
+)]
 mod tests {
     use super::*;
     fn response(items: serde_json::Value) -> SubscriptionObject {
