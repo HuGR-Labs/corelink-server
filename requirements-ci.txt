@@ -17,3 +17,7 @@ pyyaml>=6.0.0,<7.0.0
 # `corelink` Firecracker image's /usr/bin/python3 has no pytest at all. A gate
 # that depends on which machine picks up the job is not a gate.
 pytest>=9.0.0,<10.0.0
+# B-063's offline archive replay recomputes the sealed link hash without
+# contacting D1/R2. Keep this in the hosted verifier environment rather than
+# silently weakening the hash-chain check when the package is absent.
+blake3>=1.0.0,<2.0.0
