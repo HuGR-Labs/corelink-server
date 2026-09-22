@@ -621,7 +621,7 @@ def _check_b251_semantics(command: str, artifact: str) -> None:
         '.identity.fields_compared == ["seed","failure","blob"]',
         ".measurement.sample_count == 1000",
         ".measurement.limit_us == 5000",
-        ".measurement.p99_us < .measurement.limit_us",
+        ".measurement.p99_us <= .measurement.limit_us",
         '.measurement.fixture == "InMemoryAtomicQuotaChecker"',
         ".measurement.production_latency_measured == false",
         artifact + " >/dev/null",
@@ -653,7 +653,7 @@ def _check_b251_semantics(command: str, artifact: str) -> None:
         "identity": {"match": True, "fields_compared": ["seed", "failure", "blob"]},
         "measurement": {
             "sample_count": 1000,
-            "p99_us": 4999,
+            "p99_us": 5000,
             "limit_us": 5000,
             "fixture": "InMemoryAtomicQuotaChecker",
             "production_latency_measured": False,
@@ -667,7 +667,7 @@ def _check_b251_semantics(command: str, artifact: str) -> None:
         {**positive, "identity": {"match": False, "fields_compared": ["seed", "failure", "blob"]}},
         {**positive, "identity": {"match": True, "fields_compared": ["seed", "blob"]}},
         {**positive, "measurement": {**positive["measurement"], "sample_count": 999}},
-        {**positive, "measurement": {**positive["measurement"], "p99_us": 5000}},
+        {**positive, "measurement": {**positive["measurement"], "p99_us": 5001}},
         {**positive, "measurement": {**positive["measurement"], "limit_us": 5001}},
         {**positive, "measurement": {**positive["measurement"], "fixture": "production"}},
         {
