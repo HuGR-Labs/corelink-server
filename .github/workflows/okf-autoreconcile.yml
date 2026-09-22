@@ -12,10 +12,12 @@
 #   Add the repo secret OPENAI_API_KEY (Settings → Secrets → Actions). The Codex
 #   Action cannot run without it. The workflow is push/main + dispatch/main only;
 #   it never exposes that secret to a fork pull request.
-#   The open-PR step requires the dedicated `BOT_PR_TOKEN` secret for
-#   unattended CI. GITHUB_TOKEN-created PRs may produce approval-required
-#   pull_request runs, not automatic execution; missing runner capacity or
-#   zero-job startup failures are separate blockers. This workflow's own
+#   The open-PR step requires the repository-scoped App secrets
+#   `CORELINK_BOT_APP_ID` and `CORELINK_BOT_APP_PRIVATE_KEY` for unattended CI.
+#   Each job mints a short-lived installation token; it never stores that token.
+#   GITHUB_TOKEN-created PRs may produce approval-required pull_request runs,
+#   not automatic execution; missing runner capacity or zero-job startup
+#   failures are separate blockers. This workflow's own
 #   pre-PR validation is not proof that the PR's required jobs completed.
 #
 # COST/SAFETY: runs after a trusted main merge or an operator dispatch on main;
@@ -85,13 +87,25 @@ jobs:
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 20
     steps:
+      - name: Mint repository-scoped bot token
+        id: app-token
+        uses: actions/create-github-app-token@def152b8a737443d7af6c5722c6389146fe90c90 # v2.1.2
+        with:
+          app-id: ${{ secrets.CORELINK_BOT_APP_ID }}
+          private-key: ${{ secrets.CORELINK_BOT_APP_PRIVATE_KEY }}
+          owner: HuGR-dev
+          repositories: corelink-server
+          permission-metadata: read
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Checkout (full history — reconcile compares cited lines across SHAs)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
           # Fetch auth is explicit even though credentials are not persisted;
-          # the PR step below installs BOT_PR_TOKEN for the branch push.
-          token: ${{ secrets.BOT_PR_TOKEN }}
+          # the PR step below installs the short-lived App token for the branch push.
+          token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
 
       - name: B-058 contract and mutation self-test
@@ -261,14 +275,14 @@ jobs:
       - name: Open the auto-reconcile PR
         if: steps.validate.outputs.changed == 'true'
         env:
-          BOT_PR_TOKEN: ${{ secrets.BOT_PR_TOKEN }}
+          BOT_APP_TOKEN: ${{ steps.app-token.outputs.token }}
           PATH: ${{ env.OKF_ORIGINAL_PATH }}
           OKF_REAL_GIT: ''
           OKF_GUARD_MARKER: ''
         run: |
           set -euo pipefail
-          : "${BOT_PR_TOKEN:?BOT_PR_TOKEN must be configured before opening an auto-PR}"
-          export GH_TOKEN="${BOT_PR_TOKEN}"
+          : "${BOT_APP_TOKEN:?BOT_APP_TOKEN must be configured before opening an auto-PR}"
+          export GH_TOKEN="${BOT_APP_TOKEN}"
           gh auth setup-git
           BR="auto/okf-reconcile-${{ github.run_id }}"
           git config user.name  "okf-autoreconcile[bot]"

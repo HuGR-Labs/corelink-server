@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Verify the B-012 bot-PR credential contract without contacting GitHub.
+"""Verify the B-012 GitHub App bot-PR contract without contacting GitHub.
 
-The owner action provisions ``BOT_PR_TOKEN`` out of band. This check keeps a
-future workflow edit from silently reverting to ``GITHUB_TOKEN`` (whose
-pull-request events may require human approval rather than running
-automatically) or to an optional fallback.
+The owner creates and installs the App out of band. Each creator job mints a
+repository-scoped, short-lived installation token; no PAT or installation
+token is stored as a durable Actions secret.
 """
 
 from __future__ import annotations
@@ -35,6 +34,11 @@ AUTO_PR_HEAD_MARKERS = (
     "bot/api-reference-sync-",
     "releases/v",
 )
+
+APP_ACTION = "actions/create-github-app-token@def152b8a737443d7af6c5722c6389146fe90c90"
+APP_ID_SECRET = "CORELINK_BOT_APP_ID"
+APP_KEY_SECRET = "CORELINK_BOT_APP_PRIVATE_KEY"
+APP_TOKEN_OUTPUT = "steps.app-token.outputs.token"
 
 B012_BACKLOG_REQUIRED = (
     "approval-required",
@@ -130,18 +134,32 @@ def verify(root: Path = ROOT) -> list[str]:
             errors.append(f"{name}: PR comments lost approval-required/completed-job distinction")
         if "suppresses the pull_request event" in text or "pull_request event is suppressed and no checks appear" in text:
             errors.append(f"{name}: PR comments still claim unconditional GITHUB_TOKEN suppression")
-        if "secrets.BOT_PR_TOKEN" not in text:
-            errors.append(f"{name}: does not consume secrets.BOT_PR_TOKEN")
+        if APP_ACTION not in text:
+            errors.append(f"{name}: does not mint a GitHub App installation token")
+        for secret in (APP_ID_SECRET, APP_KEY_SECRET):
+            if f"secrets.{secret}" not in text:
+                errors.append(f"{name}: missing App secret {secret}")
+        for setting in (
+            "owner: HuGR-dev",
+            "repositories: corelink-server",
+            "permission-metadata: read",
+            "permission-contents: write",
+            "permission-pull-requests: write",
+        ):
+            if setting not in text:
+                errors.append(f"{name}: App minting is missing {setting!r}")
+        if "BOT_PR_TOKEN" in text:
+            errors.append(f"{name}: legacy BOT_PR_TOKEN path remains")
         if "gh pr create" not in text:
             errors.append(f"{name}: no gh pr create command found")
 
         step = _pr_step(text)
-        if "BOT_PR_TOKEN" not in step:
-            errors.append(f"{name}: PR step is not bound to BOT_PR_TOKEN")
-        if re.search(r"secrets\.GITHUB_TOKEN|github\.token", step):
+        if "BOT_APP_TOKEN" not in step or APP_TOKEN_OUTPUT not in step:
+            errors.append(f"{name}: PR step is not bound to the minted App token")
+        if re.search(r"secrets\.GITHUB_TOKEN|github\.token|secrets\.BOT_PR_TOKEN", step):
             errors.append(f"{name}: PR step still uses an Actions token")
-        if "BOT_PR_TOKEN:?" not in step and ': "${BOT_PR_TOKEN:?' not in step:
-            errors.append(f"{name}: PR step lacks a fail-closed token preflight")
+        if "BOT_APP_TOKEN:?" not in step and ': "${BOT_APP_TOKEN:?' not in step:
+            errors.append(f"{name}: PR step lacks a fail-closed App-token preflight")
         if any(re.search(r"\|\|\s*true", command) for command in _pr_create_commands(step)):
             errors.append(f"{name}: PR creation failure is being swallowed")
 
@@ -152,26 +170,28 @@ def verify(root: Path = ROOT) -> list[str]:
             continue
         text = path.read_text(encoding="utf-8")
         checkout_blocks = re.findall(r"uses: actions/checkout@.*?(?=\n\s*- name:|\Z)", text, re.S)
-        if not any("token: ${{ secrets.BOT_PR_TOKEN }}" in block for block in checkout_blocks):
-            errors.append(f"{name}: checkout that pushes the bot branch is not bound to BOT_PR_TOKEN")
+        if not any(f"token: ${{{{ {APP_TOKEN_OUTPUT} }}}}" in block for block in checkout_blocks):
+            errors.append(f"{name}: checkout that pushes the bot branch is not bound to the minted App token")
 
     okf = workflows / "okf-autoreconcile.yml"
     if okf.is_file():
         text = okf.read_text(encoding="utf-8")
-        if "token: ${{ secrets.BOT_PR_TOKEN }}" not in text:
-            errors.append("okf-autoreconcile.yml: checkout is not bound to BOT_PR_TOKEN")
+        if APP_ACTION not in text or f"secrets.{APP_ID_SECRET}" not in text or f"secrets.{APP_KEY_SECRET}" not in text:
+            errors.append("okf-autoreconcile.yml: App token minting is incomplete")
+        if f"token: ${{{{ {APP_TOKEN_OUTPUT} }}}}" not in text:
+            errors.append("okf-autoreconcile.yml: checkout is not bound to the minted App token")
         if "persist-credentials: false" not in text:
             errors.append("okf-autoreconcile.yml: checkout must not persist credentials")
         if "gh auth setup-git" not in text:
             errors.append("okf-autoreconcile.yml: PR step lacks explicit checkout push auth")
-        if "OKF_BOT_PAT" in text:
-            errors.append("okf-autoreconcile.yml: optional OKF_BOT_PAT fallback loses the automatic-CI guarantee")
+        if "OKF_BOT_PAT" in text or "BOT_PR_TOKEN" in text:
+            errors.append("okf-autoreconcile.yml: legacy bot credential fallback remains")
 
     release = workflows / "release-notes.yml"
     if release.is_file():
         text = release.read_text(encoding="utf-8")
-        if "token: ${{ secrets.BOT_PR_TOKEN }}" not in text[text.find("Create draft GitHub Release") :]:
-            errors.append("release-notes.yml: draft release action is not bound to BOT_PR_TOKEN")
+        if f"token: ${{{{ {APP_TOKEN_OUTPUT} }}}}" not in text[text.find("Create draft GitHub Release") :]:
+            errors.append("release-notes.yml: draft release action is not bound to the minted App token")
 
     gate = workflows / "bot-pr-has-checks.yml"
     if not gate.is_file():

@@ -67,6 +67,18 @@ jobs:
     runs-on: corelink
     timeout-minutes: 10
     steps:
+      - name: Mint repository-scoped bot token
+        id: app-token
+        uses: actions/create-github-app-token@def152b8a737443d7af6c5722c6389146fe90c90 # v2.1.2
+        with:
+          app-id: ${{ secrets.CORELINK_BOT_APP_ID }}
+          private-key: ${{ secrets.CORELINK_BOT_APP_PRIVATE_KEY }}
+          owner: HuGR-dev
+          repositories: corelink-server
+          permission-metadata: read
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Checkout full history
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -76,7 +88,7 @@ jobs:
           # opened/synchronize/reopened event can yield approval-required
           # runs. Once provisioned, this token supports unattended CI; only
           # completed jobs prove the generated PR was actually checked.
-          token: ${{ secrets.BOT_PR_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Resolve refs
         id: refs
@@ -163,15 +175,15 @@ jobs:
         if: github.event_name == 'push'
         shell: bash
         env:
-          BOT_PR_TOKEN: ${{ secrets.BOT_PR_TOKEN }}
+          BOT_APP_TOKEN: ${{ steps.app-token.outputs.token }}
           NOTES_PATH: ${{ steps.gen.outputs.outpath }}
           VERSION: ${{ steps.refs.outputs.version }}
           FROM_REF: ${{ steps.refs.outputs.from }}
           TO_REF: ${{ steps.refs.outputs.to }}
         run: |
           set -euo pipefail
-          : "${BOT_PR_TOKEN:?BOT_PR_TOKEN must be configured before opening an auto-PR}"
-          export GH_TOKEN="${BOT_PR_TOKEN}"
+          : "${BOT_APP_TOKEN:?BOT_APP_TOKEN must be configured before opening an auto-PR}"
+          export GH_TOKEN="${BOT_APP_TOKEN}"
           # Use a per-tag branch so editorial PRs don't collide.
           BRANCH="releases/v${VERSION}"
           git config user.name  "corelink-release-bot"
@@ -193,12 +205,12 @@ jobs:
         if: github.event_name == 'push'
         shell: bash
         env:
-          BOT_PR_TOKEN: ${{ secrets.BOT_PR_TOKEN }}
+          BOT_APP_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ steps.refs.outputs.version }}
         run: |
           set -euo pipefail
-          : "${BOT_PR_TOKEN:?BOT_PR_TOKEN must be configured before opening an auto-PR}"
-          export GH_TOKEN="${BOT_PR_TOKEN}"
+          : "${BOT_APP_TOKEN:?BOT_APP_TOKEN must be configured before opening an auto-PR}"
+          export GH_TOKEN="${BOT_APP_TOKEN}"
           gh pr create \
             --base main \
             --head "releases/v${VERSION}" \
@@ -214,7 +226,7 @@ jobs:
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@f3cad8bcbf209fe591aa1823e372c5d96b7fc800 # v2.3.1
         with:
-          token: ${{ secrets.BOT_PR_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           tag_name: ${{ github.ref_name }}
           name: "CoreLink ${{ steps.refs.outputs.version }}"
           body_path: ${{ steps.gen.outputs.outpath }}
