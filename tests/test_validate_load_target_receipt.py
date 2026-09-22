@@ -24,6 +24,7 @@ def receipt() -> dict[str, object]:
         "schema": 1,
         "environment": "staging",
         "target": module.CANONICAL_TARGET,
+        "tenant_id": "019e7109-e514-72b2-ac5b-607d97ea64a1",
         "deployment_sha": "a" * 40,
         "issued_at": "2026-09-22T00:00:00Z",
         "expires_at": "2026-09-22T23:59:59Z",
