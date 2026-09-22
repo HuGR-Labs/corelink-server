@@ -318,25 +318,32 @@ def run(args: argparse.Namespace) -> int:
 
 
 def cleanup(args: argparse.Namespace) -> int:
-    receipt = load_state(args.state)
-    if not args.receipt.exists():
-        fail("redacted receipt is missing")
-    output = json.loads(args.receipt.read_text(encoding="utf-8"))
-    if not isinstance(output, dict):
-        fail("redacted receipt is malformed")
-    output["cleanup"] = {"attempted": False, "revoked": False}
-    pat_id = receipt.get("pat_id")
+    state = load_state(args.state)
+    pat_id = state.get("pat_id")
     if pat_id is None:
-        output["cleanup"] = {"attempted": False, "revoked": True, "result": "no_pat_minted"}
-        write_json(args.receipt, output)
+        if args.receipt.exists():
+            try:
+                output = json.loads(args.receipt.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                output = {"schema_version": 1, "issue": 1662, "backlog_id": "B-106", "valid": False}
+            if not isinstance(output, dict):
+                output = {"schema_version": 1, "issue": 1662, "backlog_id": "B-106", "valid": False}
+            output["cleanup"] = {"attempted": False, "revoked": True, "result": "no_pat_minted"}
+            write_json(args.receipt, output)
         return 0
     owner_session = os.environ.get("CORELINK_B106_OWNER_SESSION", "")
     if not isinstance(pat_id, str) or not owner_session:
-        output["cleanup"] = {"attempted": True, "revoked": False, "result": "malformed_state"}
-        write_json(args.receipt, output)
         fail("probe state is incomplete; refusing to claim cleanup")
+    output: dict[str, Any] = {"schema_version": 1, "issue": 1662, "backlog_id": "B-106", "valid": False}
     try:
         status = revoke_pat(origin(args.target), owner_session, pat_id)
+        # Revoke first.  A missing or damaged receipt must never block cleanup.
+        try:
+            output = json.loads(args.receipt.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            output = {"schema_version": 1, "issue": 1662, "backlog_id": "B-106", "valid": False}
+        if not isinstance(output, dict):
+            output = {"schema_version": 1, "issue": 1662, "backlog_id": "B-106", "valid": False}
         output["cleanup"] = {"attempted": True, "revoked": True, "status": status}
         # Remove the bearer state as soon as the revoke has succeeded.  The
         # state file is never an uploaded artifact.
