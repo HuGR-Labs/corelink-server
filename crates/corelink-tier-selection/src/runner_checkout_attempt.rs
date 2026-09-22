@@ -1,6 +1,6 @@
 //! Durable runner Checkout attempt identity and safe replacement state machine.
 //!
-//! The D1 schema is `migrations/d1/0136_runner_checkout_attempts.sql`.
+//! The D1 schema is `migrations/d1/0137_runner_checkout_attempts.sql`.
 //! This in-memory model pins the transaction contract for its later D1
 //! adapter: a new selected plan cannot create a second payable session until
 //! the prior attempt is proven terminal by the provider.

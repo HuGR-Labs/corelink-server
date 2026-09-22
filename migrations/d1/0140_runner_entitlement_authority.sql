@@ -1,4 +1,4 @@
--- D1 ordinal 0138 — same-second replacement identity is authorized only by
+-- D1 ordinal 0140 — same-second replacement identity is authorized only by
 -- the provider-backed current customer subscription lookup, never by an
 -- opaque Stripe id's lexical order.
 
