@@ -24,7 +24,7 @@ if [[ -z "$published_whl" ]]; then
   exit 1
 fi
 python3 -m venv "$work/venv" >/dev/null
-"$work/venv/bin/pip" -q install build 'hatchling==1.32.0'
+"$work/venv/bin/pip" -q install build 'hatchling==1.27.0'
 (cd sdks/python && "$work/venv/bin/python" -m build --wheel --outdir "$work/whl" >/dev/null)
 rebuilt_whl="$(find "$work/whl" -name '*.whl' -print -quit)"
 

@@ -58,17 +58,22 @@ const DOC_PATHS = {
     "sccache-cargo.md",
   ),
 } as const;
-const CARGO_ROUTE_PATH = path.resolve(
-  __dirname,
-  "..",
-  "..",
-  "..",
-  "crates",
-  "corelink-container",
-  "src",
-  "routes",
-  "cargo",
+const CARGO_ROUTE_PATHS = [
   "part-00.rs",
+  "part-00-01.rs",
+].map((fragment) =>
+  path.resolve(
+    __dirname,
+    "..",
+    "..",
+    "..",
+    "crates",
+    "corelink-container",
+    "src",
+    "routes",
+    "cargo",
+    fragment,
+  ),
 );
 
 const PUBLISHED_METHODS = ["GET", "PUT", "HEAD", "PROPFIND", "MKCOL", "DELETE"];
@@ -140,7 +145,10 @@ function assertSccacheContract(
   expect(cargoSource).toMatch(/async fn handle_delete\([\s\S]*?resolve_with_capability/);
 }
 
-const cargoSource = fs.readFileSync(CARGO_ROUTE_PATH, "utf8");
+// The route is split across include! fragments. Read the same executable
+// fragments that cargo.rs assembles so the published contract tracks all
+// served methods, including PUT.
+const cargoSource = CARGO_ROUTE_PATHS.map((routePath) => fs.readFileSync(routePath, "utf8")).join("\n");
 
 describe("sccache/cargo published contract", () => {
   for (const [locale, docPath] of Object.entries(DOC_PATHS)) {
