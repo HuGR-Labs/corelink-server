@@ -88,7 +88,7 @@ IMMUTABLE_ITEM_FIELDS = frozenset({
     "id", "repo", "verify", "action-packet", "source-document",
     "source-locator", "finding-title", "problem", "evidence", "acceptance",
 })
-B154_LEGACY_VERIFY_SHA256 = "a6045afb801b3b6a61ff09d97b6e77ba5fa4f7e1c4f9ed0fde8554957484264e"
+B154_LEGACY_VERIFY_SHA256 = "39b0307a1a4451c90fb22fe9a37cfbd858485d38e6361e6c3d15bce1d1f4beac"
 ALLOWED_TRANSITION_FIELDS = frozenset({"status", "owner", "last-verified", "verify-means"})
 
 # A command's polarity cannot be inferred from arbitrary shell.  We can still
