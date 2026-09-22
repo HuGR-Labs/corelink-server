@@ -10,7 +10,11 @@ on:
       - "scripts/test_verify_regional_capacity.py"
       - "scripts/probe_i1656_capacity_readonly.py"
       - "scripts/test_probe_i1656_capacity_readonly.py"
+      - "scripts/probe_i2075_capacity_instances.py"
+      - "scripts/test_probe_i2075_capacity_instances.py"
       - "docs/operator/issue-2044-capacity-schema.md"
+      - "docs/operator/issue-2075-capacity.md"
+      - ".github/workflows/issue-2075-capacity-readonly.yml"
       - ".github/workflows/issue-1656-capacity-refresh.yml"
       - ".github/workflows/issue-1656-capacity.yml"
   push:
@@ -22,7 +26,11 @@ on:
       - "scripts/test_verify_regional_capacity.py"
       - "scripts/probe_i1656_capacity_readonly.py"
       - "scripts/test_probe_i1656_capacity_readonly.py"
+      - "scripts/probe_i2075_capacity_instances.py"
+      - "scripts/test_probe_i2075_capacity_instances.py"
       - "docs/operator/issue-2044-capacity-schema.md"
+      - "docs/operator/issue-2075-capacity.md"
+      - ".github/workflows/issue-2075-capacity-readonly.yml"
       - ".github/workflows/issue-1656-capacity-refresh.yml"
 
 permissions:
@@ -36,4 +44,4 @@ jobs:
       - name: Verify repository budget
         run: python3 scripts/verify_regional_capacity.py
       - name: Exercise fail-closed tests
-        run: python3 -m unittest scripts/test_verify_regional_capacity.py scripts/test_probe_i1656_capacity_readonly.py
+        run: python3 -m unittest scripts/test_verify_regional_capacity.py scripts/test_probe_i1656_capacity_readonly.py scripts/test_probe_i2075_capacity_instances.py

@@ -1,0 +1,83 @@
+name: issue-2075 protected capacity receipt
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "run-2075-read-only" to authorize one bounded read'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2075-capacity-readonly
+  cancel-in-progress: false
+
+jobs:
+  readback:
+    name: "issue #2075 redacted production capacity receipt"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production-capacity-read
+    steps:
+      - name: Checkout exact main commit without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Require the bounded owner read contract
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REPOSITORY" = HuGR-dev/corelink-server
+          test "$GITHUB_REF" = refs/heads/main
+          test "$CONFIRM" = run-2075-read-only
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          mkdir -p artifacts
+
+      - name: Install the pinned read-only CLI runtime
+        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
+        with:
+          version: 10.32.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install the locked Wrangler dependency without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter corelink-monorepo
+
+      - name: Capture the aggregate-only provider receipt
+        env:
+          CLOUDFLARE_CAPACITY_READ_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          GITHUB_SHA: ${{ github.sha }}
+          WRANGLER_LOG: none
+          WRANGLER_SEND_METRICS: "false"
+          WRANGLER_SEND_ERROR_REPORTS: "false"
+        run: |
+          set -euo pipefail
+          # The probe runs these supported read commands and keeps their raw output in memory only:
+          # pnpm exec wrangler containers list --json
+          # pnpm exec wrangler containers instances <APPLICATION_ID> --json
+          python3 scripts/probe_i2075_capacity_instances.py \
+            --output artifacts/issue-2075-capacity-read-only-receipt.json
+          shasum -a 256 artifacts/issue-2075-capacity-read-only-receipt.json \
+            > artifacts/issue-2075-capacity-read-only-receipt.sha256
+
+      - name: Upload the redacted receipt and its exact digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-2075-capacity-read-only-${{ github.run_id }}
+          path: |
+            artifacts/issue-2075-capacity-read-only-receipt.json
+            artifacts/issue-2075-capacity-read-only-receipt.sha256
+          if-no-files-found: error
+          retention-days: 30
