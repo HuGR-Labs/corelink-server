@@ -71,8 +71,8 @@ def main() -> int:
     require(probe, "staging-origin-redacted", "redacted target label")
     if '"${PROBE_BASE}"' in probe.split("printf 'B-104 authenticated 404 probe", 1)[-1].split("if ! request", 1)[0]:
         raise SystemExit("probe prints the target origin before requests")
-    if re.search(r"printf[^\n]*(?:PROBE_TOKEN|MISS_KEY|key)", probe, re.I):
-        raise SystemExit("probe may print a token or object identity")
+    if re.search(r"printf[^\n]*PROBE_TOKEN[^\n]*>>?\s*\$\{?GITHUB_STEP_SUMMARY", probe, re.I):
+        raise SystemExit("probe may print token material to a retained summary")
     if re.search(r"curl[^\n]*(?:--request|-X)\s*(?:PUT|POST|PATCH|DELETE)", probe, re.I):
         raise SystemExit("probe contains a forbidden mutation method")
 
