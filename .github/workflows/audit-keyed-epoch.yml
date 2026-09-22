@@ -1,0 +1,53 @@
+name: audit keyed epoch contract
+
+on:
+  pull_request:
+    paths:
+      - "crates/corelink-audit-chain/**"
+      - "crates/corelink-container/src/routes/audit_archive.rs"
+      - "migrations/d1/0109_audit_chain_epoch_contract.sql"
+      - "migrations/d1/0110_audit_chain_epoch_row_metadata.sql"
+      - "scripts/verify_b054_audit_chain_contract.py"
+      - "scripts/test_audit_chain_epoch_schema.py"
+      - ".github/workflows/audit-keyed-epoch.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-keyed-epoch-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: B-054 keyed epoch contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout canonical repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Verify B-054 fail-closed source contract
+        run: python3 scripts/verify_b054_audit_chain_contract.py
+
+      - name: Verify additive epoch schema mutations
+        run: python3 scripts/test_audit_chain_epoch_schema.py
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Exercise legacy and keyed epoch primitives
+        run: |
+          set -euo pipefail
+          cargo test --locked -p corelink-audit-chain --lib epoch -- --nocapture
+          cargo test --locked -p corelink-audit-chain --lib sealed_archive -- --nocapture
