@@ -18,6 +18,10 @@ on:
           - i1638
           - i1639
           - i1628
+          - i1685
+          - i1675
+          - i1686
+          - i1662
 
 permissions:
   contents: read
@@ -58,6 +62,23 @@ jobs:
         uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.6.0
         with:
           python-version: '3.12'
+
+      - name: Set up pnpm for the worker lane
+        if: ${{ inputs.suite == 'i1662' }}
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Set up Node.js for the worker lane
+        if: ${{ inputs.suite == 'i1662' }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install pinned worker dependencies
+        if: ${{ inputs.suite == 'i1662' }}
+        shell: bash
+        run: pnpm install --frozen-lockfile --filter worker... --ignore-scripts
 
       - name: Install pytest for seam checks
         shell: bash
@@ -160,6 +181,37 @@ jobs:
             cargo clippy --locked -p corelink-billing --all-targets -- -D warnings
             cargo test --locked -p corelink-ops --test migrations_d1_migration_integration -- --nocapture
           } 2>&1 | tee artifacts/campaign-ci/i1628.log
+
+      - name: i1685 exact Buck2 CI test
+        if: ${{ inputs.suite == 'i1685' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pytest -q tests/test_i1685_buck2_ci.py 2>&1 | tee artifacts/campaign-ci/i1685.log
+
+      - name: i1675 exact timeout receipt test
+        if: ${{ inputs.suite == 'i1675' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/test_i1675_timeout_receipts.py 2>&1 | tee artifacts/campaign-ci/i1675.log
+
+      - name: i1686 exact fuzz nightly checks
+        if: ${{ inputs.suite == 'i1686' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            python3 scripts/verify_i1686_fuzz_nightly.py --self-test
+            python3 -m pytest -q tests/test_verify_i1686_fuzz_nightly.py
+          } 2>&1 | tee artifacts/campaign-ci/i1686.log
+
+      - name: i1662 exact worker cache and auth tests
+        if: ${{ inputs.suite == 'i1662' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir worker exec vitest run tests/pat_verify_cache.test.ts tests/runner_mint.test.ts tests/auth_rotate.test.ts 2>&1 | tee artifacts/campaign-ci/i1662.log
 
       - name: Upload compact campaign logs
         if: ${{ always() }}
