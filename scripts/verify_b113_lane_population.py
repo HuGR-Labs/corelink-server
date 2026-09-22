@@ -96,7 +96,7 @@ LANES = (
         ".github/workflows/nightly.yml",
         "mutants-workspace",
         (
-            "runs-on: [self-hosted, mac, corelink-builder]",
+            "runs-on: ubuntu-latest",
             "timeout-minutes: 240",
             "taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b",
             "tool: cargo-mutants@27.0.0",

@@ -62,6 +62,11 @@ version(s), and a redacted receipt or authority reference where an external act
 is claimed. A decision record may explicitly say “no action required”; it must
 not say approved, sent, delivered, or received without that supporting receipt.
 
+Unsigned working templates are available under
+`docs/internal/b170-owner-artifact-templates/` for the Legal disposition, PagerDuty
+export receipt, and Sales/Legal notification decision. They are scaffolding only;
+they are not the three canonical records and do not alter the open state.
+
 The B-170 guard treats missing records as `open` and turns red when all three
 appear, forcing content review before the backlog item can be closed.
 
