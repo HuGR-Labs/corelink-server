@@ -3,10 +3,13 @@
 ## Decision
 
 AWS S3 Object Lock is the proposed backend family for the Compliance archive
-path. This is an evidence-backed provider capability choice, not approval of an
-AWS account, bucket, residency mapping, retention term, legal-hold policy, or
-runtime credential. The present Cloudflare R2 archive remains non-WORM and is
-not changed by this document or the inactive Terraform module.
+path. This is an evidence-backed provider capability choice. A campaign-
+authorized, synthetic-only target was provisioned in AWS account
+`046797548582`, region `us-east-1`, with one-day Compliance retention. This is
+not production approval of an account, bucket, residency mapping, retention
+term, legal-hold policy, or runtime credential. No tenant data was written and
+no archive route was enabled. The present Cloudflare R2 archive remains
+non-WORM and is not changed by this document or the inactive Terraform module.
 
 Amazon S3 requires Object Lock to be enabled when a bucket is created. Its
 Compliance retention mode prevents deletion or overwrite before the retention
@@ -21,7 +24,8 @@ template. It creates a new S3 bucket with Object Lock enabled, versioning,
 Compliance default retention, public-access blocks, server-side encryption,
 and a dedicated writer role. The writer role can read Object Lock state and
 write objects under `audit/*`; it cannot read object payloads, delete objects,
-override retention, or set/release legal holds. S3 applies the bucket's
+or override retention. Its legal-hold permission is condition-bound to
+setting a hold `ON`; it cannot release a hold. S3 applies the bucket's
 Compliance default retention to writer puts.
 
 The module is not called from an environment root. It must stay inactive until
@@ -46,18 +50,23 @@ enabled:
    and the retention/access policy for its receipt.
 5. A redacted, authenticated live-probe record for that account and bucket.
 
-The repository has no approved target, credentials, or durable audit receipt
-source today. Consequently it cannot truthfully report any complete
-`ObjectLockArchiveAdapter` capability set, and
-`VerifiedObjectLockArchive::connect` must not be wired into an archive route.
-This is a provisioning blocker, not a reason to fall back to R2, lifecycle
-rules, conditional writes, or an in-memory adapter.
+The synthetic probe proves provider controls only for that isolated target;
+it does not approve production residency, retention, legal-hold operations,
+credentials, or route wiring. Its redacted receipt is
+[`B-046/aws-s3-object-lock-probe.json`](../../evidence/owner-actions/B-046/aws-s3-object-lock-probe.json).
+Consequently, `VerifiedObjectLockArchive::connect` must not be wired into an
+archive route. This is a production-approval blocker, not a reason to represent
+R2, lifecycle rules, conditional writes, or an in-memory adapter as WORM.
 
 ## Required live probe
 
-Run the following operations against the exact new target with an approved
-short-lived probe identity. Preserve only redacted output and immutable
-request/event identifiers in the evidence record.
+The campaign-authorized synthetic probe used a temporary, narrowly scoped
+delete-probe role and a CloudTrail trail whose S3 data selector covered only
+the synthetic target prefix. Account, bucket, and object identifiers are
+redacted from the repository receipt. CloudTrail log-file validation is
+enabled; the hourly digest containing the probe events was not yet available
+when the receipt was captured, so digest-chain validation remains pending. No
+production route may rely on this probe as its durable audit source.
 
 1. Read the bucket Object Lock configuration and verify the configured default
    mode is `COMPLIANCE` and retention is the approved value.
@@ -92,11 +101,16 @@ read both back, verify the expected residency, and attach a durable audit
 receipt. It must not mount an immutable archive route or perform a fallback
 write if any of those steps fails.
 
-The inactive writer policy intentionally lacks authority for per-object
-retention or legal-hold headers. Do not widen it directly. Any runtime adapter
-that needs those headers requires a separately approved, condition-bound IAM
-policy that permits `COMPLIANCE` mode and setting, but never releasing, legal
-holds; the live probe must validate that policy before the route is enabled.
+Capability negotiation also requires a separate probe client and the exact
+key/version of an already locked synthetic object. It performs the versioned
+delete attempt and accepts only S3's structured Object-Lock `AccessDenied`;
+missing probe identity, missing version, or any other error fails closed. The
+archive writer must never receive delete permission.
+
+The template writer policy grants no delete or retention-override authority.
+It permits setting legal hold only to `ON`. The runtime adapter stays
+feature-gated and is not wired to a production route until Security,
+Compliance, and Legal approve the production target and policy.
 
 ## Sources
 

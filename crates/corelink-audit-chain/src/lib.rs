@@ -138,6 +138,10 @@
 
 pub mod archive_producer;
 pub mod audit;
+/// Optional native Amazon S3 Object Lock implementation for the portable
+/// archive contract. It is never enabled by the Cloudflare Worker build.
+#[cfg(all(feature = "aws-s3-object-lock", not(target_arch = "wasm32")))]
+pub mod aws_s3_object_lock;
 pub mod chain;
 pub mod epoch;
 pub mod error;

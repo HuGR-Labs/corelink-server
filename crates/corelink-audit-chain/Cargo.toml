@@ -14,6 +14,11 @@ workspace = true
 # Default: pure-logic crate; only the in-memory fakes are built.
 default = []
 
+# Native AWS S3 Object Lock adapter. Kept opt-in so the Cloudflare Worker
+# dependency graph remains provider-neutral unless a native deployment
+# deliberately enables this adapter.
+aws-s3-object-lock = ["dep:aws-sdk-s3", "dep:aws-types", "dep:tokio"]
+
 # Build-time witness for the production `RealNeonShadowSink` driver
 # path (per-region project resolver + `app.current_tenant` RLS GUC
 # `set_local`-via-`SELECT set_config` + idempotent ON CONFLICT DO
@@ -78,6 +83,8 @@ corelink-analytics = { workspace = true }
 # DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` on the in-memory
 # audit sink record buffer (no poisoning, smaller guard).
 parking_lot = { workspace = true }
+aws-sdk-s3 = { workspace = true, optional = true }
+aws-types = { version = "1", optional = true }
 
 # Wave-20 — `TokioPostgresExecutor` adapter satisfying `NeonExecutor`.
 # All optional, gated by the `neon-real` feature (native-only — the
