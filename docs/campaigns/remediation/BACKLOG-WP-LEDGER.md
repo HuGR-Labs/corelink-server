@@ -25,8 +25,8 @@ closure. A legitimate new observation must version a new manifest and transition
 the ledger base in the same reviewed change.
 
 ```ledger-state
-base-ref: df1cd53f56a2eff4643aaf9368e25fb0303ce57d
-base-sha: df1cd53f56a2eff4643aaf9368e25fb0303ce57d
+base-ref: 00a26d7be81c46db7cdb8d41ed9def1f8b474aec
+base-sha: 00a26d7be81c46db7cdb8d41ed9def1f8b474aec
 observed-at: 2026-09-13
 item-count: 373
 open-count: 13

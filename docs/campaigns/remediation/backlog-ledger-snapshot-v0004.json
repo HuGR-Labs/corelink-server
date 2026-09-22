@@ -1,0 +1,47 @@
+{
+  "schema_version": 3,
+  "sequence": 4,
+  "transition": "base-derived-data",
+  "base_commit": "00a26d7be81c46db7cdb8d41ed9def1f8b474aec",
+  "prior_snapshot_sha256": "7905cc11ea88311581a53ca64fc01d567311d7419f0e93efff5f714385bb4e6a",
+  "prior_source_sha256": "c272de9f9cc4e6ae36bddbff4c97012d8589150a22c0038e0875a6ddf855ac87",
+  "source_sha256": "208c18517916ad39d262ff76fdf99765b678f9d1b768f4f107173beb21f663b4",
+  "prior_ledger_sha256": "02d81ecf3ade17a5317b3f24e68a17a801837bde6112cac9288b6a7f6175b656",
+  "ledger_sha256": "23c43891e7ebd396ab2245231c72d68c88b474dbafc7b13a44b8ba40721c427a",
+  "prior_catalog_sha256": {
+    "docs/campaigns/remediation/work-packages/B001-B045.md": "2a1735804f43bb726789b99ee80c14cf876f41eb6c684e3ea54e68981413cd38",
+    "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
+    "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
+    "docs/campaigns/remediation/work-packages/B131-B167.md": "4be50ac320f2c8d238a21760bc24a5391a7a5dc1102532d9d034e05556ad089d"
+  },
+  "catalog_sha256": {
+    "docs/campaigns/remediation/work-packages/B001-B045.md": "2a1735804f43bb726789b99ee80c14cf876f41eb6c684e3ea54e68981413cd38",
+    "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
+    "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
+    "docs/campaigns/remediation/work-packages/B131-B167.md": "4be50ac320f2c8d238a21760bc24a5391a7a5dc1102532d9d034e05556ad089d"
+  },
+  "item_count": 373,
+  "status_counts": {
+    "done": 328,
+    "open": 13,
+    "parked": 32
+  },
+  "open_ids": [
+    "B-008",
+    "B-012",
+    "B-032",
+    "B-035",
+    "B-065",
+    "B-086",
+    "B-089",
+    "B-097",
+    "B-111",
+    "B-154",
+    "B-170",
+    "B-314",
+    "B-316"
+  ],
+  "changed_ids": [
+    "B-154"
+  ]
+}
