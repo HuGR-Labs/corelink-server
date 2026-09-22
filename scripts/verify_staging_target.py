@@ -10,7 +10,15 @@ from pathlib import Path
 ORIGIN = "https://staging.corelink.humangr.com"
 CONTRACT = Path("infra/staging/topology.json")
 WORKFLOWS = (Path(".github/workflows/load-test-nightly.yml"), Path(".github/workflows/endurance-2h-nightly.yml"))
-SECRETS = {"K6_STAGING_BYOK_CMK_ID", "K6_STAGING_MFA_STUB", "K6_STAGING_PAT", "K6_STAGING_STRIPE_WHSEC", "K6_TARGET_HOST"}
+SECRETS = {
+    "K6_STAGING_BYOK_CMK_ID",
+    "K6_STAGING_MFA_STUB",
+    "K6_STAGING_PAT",
+    "K6_STAGING_STRIPE_WHSEC",
+    "K6_STAGING_TEARDOWN_TOKEN",
+    "K6_TARGET_IDENTITY_RECEIPT",
+    "K6_TARGET_HOST",
+}
 RESOURCES = {"corelink-config-staging", "corelink-cas-staging", "corelink-ac-iad-staging", "corelink-chunk-iad-staging", "corelink-manifest-iad-staging", "corelink-metadata-staging", "corelink-clerk-jwks-staging", "corelink-negative-cache-staging", "corelink-dsr-erasure-staging", "corelink-dsr-erasure-dlq-staging"}
 
 
