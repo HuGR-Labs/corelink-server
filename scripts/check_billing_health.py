@@ -75,16 +75,18 @@ D1_QUERY_TIMEOUT_SECONDS = 30
 
 # Historical rows in `stripe_webhook_events_processed` use TWO different id
 # schemes: the signup-worker stores Stripe's own `evt_…` id, while the
-# container stores a derived content hash. This SQL fragment separates them.
-# Their presence in a 30-day window cannot establish that both destinations
-# remain enabled now, or that rows of one event type represent the same delivery.
+# container stores a derived content hash. These SQL fragments are the single
+# classifier used by every check below. Unknown IDs are neither scheme and
+# fail closed; treating every non-`evt_` value as derived would hide malformed
+# or future IDs as a healthy second source.
 #
 # It matters for counting. Each endpoint receives EVERY event of the types it
 # subscribes to, so each scheme is already a COMPLETE view of those events.
 # Summing the two therefore double-counts every event both endpoints see, and a
 # cluster rule that sums will trip at half its stated threshold. Take the MAX of
 # the per-scheme counts, never the sum.
-CANONICAL_EVENT_ID_SQL = r"event_id LIKE 'evt\_%' ESCAPE '\'"
+CANONICAL_EVENT_ID_SQL = r"(event_id LIKE 'evt\_%' ESCAPE '\' AND length(event_id) > 4)"
+DERIVED_EVENT_ID_SQL = r"(length(event_id) = 64 AND event_id NOT GLOB '*[^0-9a-f]*')"
 
 
 class NotConfigured(Exception):
@@ -166,13 +168,21 @@ def check_payment_failure_clusters(
         database_id,
         token,
         f"SELECT SUM(CASE WHEN {CANONICAL_EVENT_ID_SQL} THEN 1 ELSE 0 END) AS canonical, "
-        f"SUM(CASE WHEN NOT ({CANONICAL_EVENT_ID_SQL}) THEN 1 ELSE 0 END) AS derived "
+        f"SUM(CASE WHEN {DERIVED_EVENT_ID_SQL} THEN 1 ELSE 0 END) AS derived, "
+        f"SUM(CASE WHEN NOT ({CANONICAL_EVENT_ID_SQL}) AND NOT ({DERIVED_EVENT_ID_SQL}) "
+        "THEN 1 ELSE 0 END) AS unknown "
         "FROM stripe_webhook_events_processed "
         f"WHERE event_type = 'invoice.payment_failed' AND processed_at_ms >= {cutoff_ms}",
     )
     row = rows[0] if rows else {}
     canonical = row.get("canonical") or 0
     derived = row.get("derived") or 0
+    unknown = row.get("unknown") or 0
+    if unknown:
+        return [
+            f"{unknown} webhook row(s) carry an unrecognized event_id scheme "
+            "— billing health is UNKNOWN, not healthy"
+        ]
     n = max(canonical, derived)
     if n >= PAYMENT_FAILED_ALERT_THRESHOLD:
         return [
@@ -205,16 +215,24 @@ def check_duplicate_webhook_ingestion(
         token,
         "SELECT event_type, "
         f"SUM(CASE WHEN {CANONICAL_EVENT_ID_SQL} THEN 1 ELSE 0 END) AS canonical, "
-        f"SUM(CASE WHEN NOT ({CANONICAL_EVENT_ID_SQL}) THEN 1 ELSE 0 END) AS derived, "
+        f"SUM(CASE WHEN {DERIVED_EVENT_ID_SQL} THEN 1 ELSE 0 END) AS derived, "
+        f"SUM(CASE WHEN NOT ({CANONICAL_EVENT_ID_SQL}) AND NOT ({DERIVED_EVENT_ID_SQL}) "
+        "THEN 1 ELSE 0 END) AS unknown, "
         f"MAX(CASE WHEN {CANONICAL_EVENT_ID_SQL} THEN processed_at_ms END) AS latest_canonical_ms, "
-        f"MAX(CASE WHEN NOT ({CANONICAL_EVENT_ID_SQL}) THEN processed_at_ms END) AS latest_derived_ms "
+        f"MAX(CASE WHEN {DERIVED_EVENT_ID_SQL} THEN processed_at_ms END) AS latest_derived_ms "
         "FROM stripe_webhook_events_processed "
         f"WHERE processed_at_ms >= {cutoff_ms} "
-        "GROUP BY event_type HAVING canonical > 0 AND derived > 0 "
+        "GROUP BY event_type HAVING unknown > 0 OR (canonical > 0 AND derived > 0) "
         "ORDER BY event_type",
     )
     if not rows:
         return []
+    unknown = sum(int(row.get("unknown") or 0) for row in rows)
+    if unknown:
+        return [
+            f"{unknown} webhook row(s) carry an unrecognized event_id scheme "
+            "— billing health is UNKNOWN, not healthy"
+        ]
     def latest_utc(value: object) -> str:
         if value is None:
             return "unknown"
