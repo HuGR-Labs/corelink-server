@@ -1,0 +1,70 @@
+{
+  "schema_version": "i1664.signing-readiness.v1",
+  "status": "blocked",
+  "captured_at": "2026-09-22T00:00:00Z",
+  "owner": "release-engineering",
+  "credentialless": true,
+  "redaction": {
+    "private_material_present": false,
+    "secret_values_recorded": false
+  },
+  "lanes": {
+    "gpg": {
+      "status": "blocked",
+      "identity": {
+        "fingerprint": null,
+        "issuer": "self-generated release key",
+        "subject_or_team": null,
+        "chain_or_profile": "4096-bit RSA release key"
+      },
+      "access": {
+        "secret_names": ["GPG_PRIVATE_KEY", "GPG_PRIVATE_KEY_PASS", "GPG_KEY_ID", "GPG_KEY_FINGERPRINT"],
+        "scope": "release-cli signing workflow only",
+        "rotation_owner": "Release Engineering",
+        "last_rotated_at": null,
+        "access_status": "missing"
+      },
+      "expiry": {"expires_at": null, "status": "missing"},
+      "verification": {"status": "missing", "receipt_reference": null, "verified_at": null, "method": "gpg --status-fd verification receipt"},
+      "blockers": ["GPG public fingerprint, key expiry, secret access review, and a successful detached-signature receipt are external inputs."]
+    },
+    "windows": {
+      "status": "blocked",
+      "identity": {
+        "fingerprint": null,
+        "issuer": "CA-issued Authenticode certificate",
+        "subject_or_team": null,
+        "chain_or_profile": "EV code-signing certificate chain plus RFC 3161 timestamp authority"
+      },
+      "access": {
+        "secret_names": ["WINDOWS_CODE_SIGNING_CERT", "WINDOWS_CODE_SIGNING_PASSWORD", "WINDOWS_CODE_SIGNING_FINGERPRINT", "WINDOWS_CODE_SIGNING_SUBJECT"],
+        "scope": "release-cli Windows signer workflow only",
+        "rotation_owner": "Release Engineering",
+        "last_rotated_at": null,
+        "access_status": "missing"
+      },
+      "expiry": {"expires_at": null, "status": "missing"},
+      "verification": {"status": "missing", "receipt_reference": null, "verified_at": null, "method": "osslsigncode verify plus trusted timestamp receipt"},
+      "blockers": ["Authenticode certificate chain, fingerprint, expiry, secret access review, and a successful timestamped verification receipt are external inputs."]
+    },
+    "apple": {
+      "status": "blocked",
+      "identity": {
+        "fingerprint": null,
+        "issuer": "Apple Developer ID Application",
+        "subject_or_team": null,
+        "chain_or_profile": "Developer ID certificate chain, App Store Connect notary key, and issuer UUID"
+      },
+      "access": {
+        "secret_names": ["APPLE_DEVELOPER_ID", "APPLE_DEVELOPER_ID_PASSWORD", "APPLE_TEAM_ID", "APPLE_NOTARIZATION_API_KEY", "APPLE_NOTARIZATION_KEY_ID", "APPLE_NOTARIZATION_ISSUER", "APPLE_DEVELOPER_ID_FINGERPRINT"],
+        "scope": "release-cli macOS notarization workflow only",
+        "rotation_owner": "Release Engineering",
+        "last_rotated_at": null,
+        "access_status": "missing"
+      },
+      "expiry": {"expires_at": null, "status": "missing"},
+      "verification": {"status": "missing", "receipt_reference": null, "verified_at": null, "method": "codesign verification plus notarytool and stapler receipts"},
+      "blockers": ["Developer ID identity, Team ID, notary issuer/key access, expiry, and a successful notarization/staple receipt are external inputs."]
+    }
+  }
+}

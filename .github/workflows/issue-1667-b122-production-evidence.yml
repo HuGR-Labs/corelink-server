@@ -1,0 +1,176 @@
+name: Issue 1667 B-122 production timing evidence
+
+# The pull-request job is credentialless and checks the lane contract.  The
+# production job is deliberately manual and protected by the production
+# environment; it is the only path that can receive the dogfood PAT.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/issue-1667-b122-production-evidence.yml'
+      - 'scripts/verify_i1667_b122_production_lane.py'
+      - 'scripts/verify_d03_timing_artifact.py'
+      - 'docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md'
+      - 'docs/handoff/2026-09-06-d03-graduation-packets.json'
+  workflow_dispatch:
+    inputs:
+      approval:
+        description: 'Type run-b122-production-evidence after owner approval'
+        required: true
+        type: string
+      production_base:
+        description: 'Approved production base URL (HTTPS); no path/query'
+        required: true
+        type: string
+      dogfood_tenant:
+        description: 'Approved dogfood tenant identifier'
+        required: true
+        type: string
+      serving_sha:
+        description: 'Exact deployed commit serving the requests (40 hex)'
+        required: true
+        type: string
+      region:
+        description: 'Serving region/colo label recorded before sampling'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b122-production-evidence
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: B-122 credentialless lane contract
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Verify fail-closed production lane contract
+        run: python3 scripts/verify_i1667_b122_production_lane.py
+
+  production:
+    name: B-122 bounded production observation
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Validate approved target and serving identity
+        env:
+          APPROVAL: ${{ inputs.approval }}
+          BASE: ${{ inputs.production_base }}
+          TENANT: ${{ inputs.dogfood_tenant }}
+          SERVING_SHA: ${{ inputs.serving_sha }}
+          REGION: ${{ inputs.region }}
+          PAT: ${{ secrets.CORELINK_DOGFOOD_PAT }}
+        run: |
+          set -euo pipefail
+          test "${APPROVAL}" = run-b122-production-evidence
+          test -n "${PAT}"
+          test -n "${REGION}" && test "${#REGION}" -le 128
+          [[ "${SERVING_SHA}" =~ ^[0-9a-fA-F]{40}$ ]]
+          python3 - "${BASE}" "${TENANT}" <<'PY'
+          import re
+          import sys
+          from urllib.parse import urlparse
+          base, tenant = sys.argv[1:]
+          parsed = urlparse(base)
+          if parsed.scheme != "https" or not parsed.netloc or parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+              raise SystemExit("production_base must be an HTTPS origin without path/query")
+          if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", tenant):
+              raise SystemExit("dogfood_tenant contains unsupported characters")
+          PY
+      - name: Capture B-102 warm and B-107 separated 1 KiB samples
+        env:
+          BASE: ${{ inputs.production_base }}
+          TENANT: ${{ inputs.dogfood_tenant }}
+          SERVING_SHA: ${{ inputs.serving_sha }}
+          REGION: ${{ inputs.region }}
+          PAT: ${{ secrets.CORELINK_DOGFOOD_PAT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p artifacts/b122
+          : > artifacts/b122/b102-warm.txt
+          : > artifacts/b122/b107-separated.txt
+          date -u +%Y-%m-%dT%H:%M:%SZ > artifacts/b122/sample-started-utc.txt
+          start="$(date +%s)"
+          for profile in b102-warm b107-separated; do
+            output="artifacts/b122/${profile}.txt"
+            for ordinal in 1 2 3; do
+              test "$(( $(date +%s) - start ))" -le 60
+              headers="$(mktemp)"
+              trap 'rm -f "${headers}"' EXIT
+              detail=()
+              if [[ "${profile}" = b102-warm ]]; then
+                detail=(-H 'X-Server-Timing-Wdb-Detail: on')
+              fi
+              set +e
+              timeout 25s curl --connect-timeout 10 --max-time 20 --silent --show-error \
+                --output /dev/null --dump-header "${headers}" \
+                --write-out "ordinal=${ordinal} status=%{http_code} bytes=%{size_upload} wall_s=%{time_total}\n" \
+                -H "Authorization: Bearer ${PAT}" \
+                -H 'Content-Type: application/octet-stream' "${detail[@]}" \
+                -X PUT "${BASE}/cargo/${TENANT}/${profile}-${GITHUB_RUN_ID}-${ordinal}" \
+                --data-binary @<(head -c 1024 /dev/zero) >> "${output}"
+              status=$?
+              set -e
+              test "${status}" -eq 0
+              tr -d '\r' < "${headers}" | grep -i '^server-timing:' >> "${output}"
+              rm -f "${headers}"
+              trap - EXIT
+            done
+          done
+          test "$(( $(date +%s) - start ))" -le 60
+          test "$(wc -l < artifacts/b122/b102-warm.txt | tr -d ' ')" -eq 6
+          test "$(wc -l < artifacts/b122/b107-separated.txt | tr -d ' ')" -eq 6
+      - name: Verify and redact the timing receipt
+        env:
+          SERVING_SHA: ${{ inputs.serving_sha }}
+          REGION: ${{ inputs.region }}
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_d03_timing_artifact.py --writes artifacts/b122/b102-warm.txt > artifacts/b122/shape-check-b102.txt
+          python3 scripts/verify_d03_timing_artifact.py --writes artifacts/b122/b107-separated.txt > artifacts/b122/shape-check-b107.txt
+          python3 - "${SERVING_SHA}" "${REGION}" <<'PY'
+          import json
+          import pathlib
+          import sys
+          b102 = pathlib.Path("artifacts/b122/b102-warm.txt").read_text(encoding="utf-8").splitlines()
+          b107 = pathlib.Path("artifacts/b122/b107-separated.txt").read_text(encoding="utf-8").splitlines()
+          sample_started_utc = pathlib.Path("artifacts/b122/sample-started-utc.txt").read_text(encoding="utf-8").strip()
+          packet = {
+              "issue": "B-122",
+              "measurement_mode": "production_dogfood_bounded",
+              "serving_sha": sys.argv[1],
+              "region": sys.argv[2],
+              "sample_started_utc": sample_started_utc,
+              "sample_count": 3,
+              "profiles": {"B-102": b102, "B-107": b107},
+              "shape_checks": {
+                  "B-102": pathlib.Path("artifacts/b122/shape-check-b102.txt").read_text(encoding="utf-8").strip(),
+                  "B-107": pathlib.Path("artifacts/b122/shape-check-b107.txt").read_text(encoding="utf-8").strip(),
+              },
+          }
+          pathlib.Path("artifacts/b122/B122-adapter-timing.json").write_text(json.dumps(packet, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          sha256sum artifacts/b122/B122-adapter-timing.json | tee artifacts/b122/B122-adapter-timing.sha256
+      - name: Upload redacted receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b122-production-evidence-${{ github.run_id }}
+          path: artifacts/b122/
+          if-no-files-found: error
+          retention-days: 30

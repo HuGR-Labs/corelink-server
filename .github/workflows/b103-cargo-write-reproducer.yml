@@ -1,9 +1,10 @@
 name: B-103 cargo write reproducer
 
 # This lane is deliberately separate from campaign-ci and has no schedule.
-# It is a bounded staging observation: six fixed arms (PUT-only and the exact
-# WebDAV sequence) at concurrency 4/16/64. A failing response is retained and
-# the run is red; the artifact is the evidence, not a closure assertion.
+# It is a bounded staging observation: three sequential warm PUTs followed by
+# six fixed arms (PUT-only and the exact WebDAV sequence) at concurrency 4/16/64.
+# A failing response is retained and the run is red; the artifact is the
+# evidence, not a closure assertion.
 
 on:
   workflow_dispatch:
@@ -50,7 +51,7 @@ jobs:
             --output "${RUNNER_TEMP}/b103-target-receipt.json" \
             --github-output "${GITHUB_OUTPUT}"
 
-      - name: run bounded matrix (retain red evidence)
+      - name: run warm sequence and bounded matrix (retain red evidence)
         id: reproduce
         continue-on-error: true
         env:

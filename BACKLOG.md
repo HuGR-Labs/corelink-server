@@ -210,6 +210,29 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
+### B-1630 — runner shadow charge fences cumulative consumption and region heads
+
+The cumulative shadow-charge correction for [issue #1630](https://github.com/HuGR-dev/corelink-server/issues/1630) is merged in PR #1923. The writer now fences the durable tenant-period consumption and per-region hash-chain coordinates before claims, counters, heads, or source watermarks; a stale batch aborts atomically and retries from fresh state. The implementation remains shadow-only and does not activate Stripe billing.
+
+```backlog
+id: B-1630
+repo: corelink-server
+owner: tl
+status: done
+verify: manual
+verify-means: |
+  done — PR #1923 (`971c9e63b30c7e701ea749fc2a1227ee5fb1093c`) merged the
+  cumulative-coordinate fence. Hosted i1630 run
+  `35700316381` passed the seven-test Python seam, the Rust aggregate suite
+  (including allowance-boundary, partition-invariant delta, retry/idempotency,
+  stale-coordinate, multi-region, missing-terms and chain-resume cases), the
+  three aggregate-binary tests, clippy and rustfmt. The run uploaded the
+  compact campaign log artifact. Reopen if the fence no longer precedes
+  claims/accounting/watermarks, partitioning can change the cumulative result,
+  retries duplicate accounting, or Stripe submission is activated by this path.
+last-verified: 2026-09-22
+```
+
 ### B-364 — o probe de latência comparava RTT remoto com budget interno — FECHADO
 
 Descoberto ao completar B-165: `curl time_total` mistura processamento do serviço,
@@ -5555,7 +5578,8 @@ verify: |
 verify-means: |
   parked — focused source tests and mutation gates prove the DLQ consumer accepts
   only PagerDuty HTTP 202 as delivery, retains the DLQ delivery when paging is
-  missing/rejected, redacts transport errors, and permits only one main-queue
+  missing/rejected, records privacy-minimized durable lifecycle receipts before
+  queue disposition, redacts transport errors, and permits only one main-queue
   re-enqueue. Runtime/owner packet
   `docs/internal/b215-b230-runtime-owner-actions.md` remains: verify the deployed
   consumer, an accepted on-call delivery, and one controlled exhausted-message
@@ -9049,9 +9073,11 @@ aqui com o que foi lido de cada um. O guard canônico confirma exatamente sete
 workflows e nove jobs (Buck2 contribui três jobs); `terraform-drift.yml` fica
 fora desta população porque é ownership de B-111.
 
-- **`nightly.yml`** (103 runs, cron ativo, falhou 2026-08-29): morre em
-  `Install cargo-mutants (pinned, prebuilt)` no `corelink-builder-5`. A lane
-  ainda queima hoje.
+- **B-113/nightly hosted mutants receipt:** the legacy `nightly.yml`
+  `mutants-workspace` job stays disabled. `.github/workflows/issue-1863-mutants-hosted.yml`
+  is the only dispatch-only GitHub-hosted scheduled-equivalent evidence path;
+  its pinned prebuilt command and protected-main guards are checked statically.
+  This repository contract does not prove that any dispatched run succeeded.
 - **`terraform-drift.yml`**: explicitamente excluída desta população; é coberta
   por [B-111] e não é uma lane de B-113.
 - **`sbom.yml`** (16 runs, 2026-08-25): morre em
@@ -9087,7 +9113,11 @@ verify-means: |
   e `Generate SBOM` falham por estado da máquina/rede, `fuzz-nightly` cancela
   sem step, e as duas de carga precisariam de execução real para saber se ainda
   pegam box. Um verify sintético aqui seria teatro. O decaimento de 14 dias é o
-  que impede este item de virar gaveta.
+  que impede este item de virar gaveta. For B-113/nightly, the dispatch-only
+  GitHub-hosted scheduled-equivalent evidence path is
+  `.github/workflows/issue-1863-mutants-hosted.yml`; the legacy nightly job is
+  disabled. A successful retained receipt remains external evidence and is not
+  inferred from this verifier.
 last-verified: 2026-09-05
 ```
 
@@ -15055,6 +15085,20 @@ SARIF em vez de alegar upload no Security tab. O packet de ação está em
 `docs/handoff/2026-09-05-b142-codeql-selfhost-action-packet.md`. Este bloco continua `open`
 enquanto o braço `secrets-drift` — explicitamente separado e pertencente ao B-132 — não for
 fechado no mesmo cutover; não se conta o slice como fechamento do item inteiro.
+
+**Reconciliação de evidência 2026-09-22 — residual externo ainda aberto.** O PR #1774 foi
+integrado em `main` no commit `5cfcb86c64f4fc6e6b885ccd414ecf5d411dfe13`; o recibo hospedado
+focado de CodeQL é o run
+`https://github.com/HuGR-dev/corelink-server/actions/runs/35695599538` (Rust,
+JavaScript/TypeScript e Python, com os artefatos SARIF e as guardas de evidência verdes). A
+execução agendada de `secrets-drift` mais recente que a plataforma ainda lista como sucesso é
+`https://github.com/HuGR-dev/corelink-server/actions/runs/33489746051`, de 2026-09-01, e já
+está fora da janela de 26 horas exigida pelo watchdog. A dispatch manual não satisfaz o
+predicado: `scripts/check_secrets_drift_evidence.py` exige `event=schedule` e
+`head_branch=main`; não há um recibo agendado atual nem um resultado atual do watchdog. Os
+workflows permanecem desabilitados até que o owner autorize e disponibilize a lane; portanto
+este item permanece `parked`, a issue #1674 permanece aberta, e não se afirma fechamento por
+fiação estrutural ou por um run manual.
 
 ```backlog
 id: B-142

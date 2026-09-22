@@ -92,6 +92,17 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
             .is_err(),
         "an authenticated release API failure must not be ignored"
     );
+    let wrong_publication_identity = workflow.replace(
+        "--signer-workflow \"${GITHUB_REPOSITORY}/.github/workflows/release-slsa3.yml\"",
+        "--signer-workflow \"${GITHUB_REPOSITORY}/.github/workflows/release-cli.yml\"",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_publication_inventory_contract(
+            &wrong_publication_identity
+        ))
+        .is_err(),
+        "the final publication verifier must require the exact signer workflow identity"
+    );
     assert!(
         std::panic::catch_unwind(|| assert_release_contract(&no_readback)).is_err(),
         "removing published-artifact digest verification must fail the control"
@@ -130,8 +141,8 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
     let slsa = load_workflow("release-slsa3.yml")?;
     for required in [
         "CORELINK_CLI_RELEASE_TOKEN",
-        "RELEASE_REPOSITORY: HuGR-Labs/corelink-cli",
-        "--repo \"${RELEASE_REPOSITORY}\"",
+        "HuGR-Labs/corelink-cli",
+        "gh release upload \"${TAG}\" --repo HuGR-Labs/corelink-cli",
     ] {
         assert!(
             slsa.contains(required),
@@ -250,22 +261,6 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         std::panic::catch_unwind(|| assert_slsa_contract(&unbound_slsa_oidc)).is_err(),
         "SLSA OIDC must remain bound to the exact tag"
     );
-    let caller_identity_unbound = slsa.replace(
-        "CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}",
-        "caller identity check removed",
-    );
-    assert!(
-        std::panic::catch_unwind(|| assert_slsa_contract(&caller_identity_unbound)).is_err(),
-        "the reusable workflow must bind OIDC to the tagged caller workflow"
-    );
-    let called_identity_unbound = slsa.replace(
-        "caller/called workflow identity is not bound",
-        "called workflow identity check removed",
-    );
-    assert!(
-        std::panic::catch_unwind(|| assert_slsa_contract(&called_identity_unbound)).is_err(),
-        "the provenance builder must remain bound to the called workflow"
-    );
     let unchecked_inventory = slsa.replace(
         "--pattern checksums.txt",
         "inventory checksum fetch removed",
@@ -274,31 +269,42 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         std::panic::catch_unwind(|| assert_slsa_contract(&unchecked_inventory)).is_err(),
         "SLSA must attest the exact manifest inventory, including checksums"
     );
-    let writable_slsa_source = slsa.replace(
-        "contents: read # No source-repository write permission is needed for provenance.",
-        "contents: write # privilege regression",
-    );
+    let writable_slsa_source =
+        slsa.replace("contents: read", "contents: write # privilege regression");
     assert!(
         std::panic::catch_unwind(|| assert_slsa_contract(&writable_slsa_source)).is_err(),
         "SLSA provenance must not regain source-repository contents write"
     );
-    let unpinned_slsa_uploader = slsa.replace(
-        "test \"$(gh --version | awk 'NR == 1 {print $3}')\" = \"2.79.0\"",
-        "gh version guard removed",
+    let unpinned_slsa_action = slsa.replace(
+        "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
+        "actions/attest-build-provenance@v4",
     );
     assert!(
-        std::panic::catch_unwind(|| assert_slsa_contract(&unpinned_slsa_uploader)).is_err(),
-        "the provenance-uploading job must verify the exact gh version"
+        std::panic::catch_unwind(|| assert_slsa_contract(&unpinned_slsa_action)).is_err(),
+        "the GitHub provenance action must remain SHA-pinned"
     );
-
-    let disabled_rekor = slsa.replace("--tlog-upload=true", "COSIGN_TLOG_UPLOAD_DISABLED=1");
+    let unbound_signer = slsa.replace(
+        "--signer-workflow \"${REPO}/.github/workflows/release-slsa3.yml\"",
+        "--signer-workflow \"${REPO}/.github/workflows/release-cli.yml\"",
+    );
     assert!(
-        std::panic::catch_unwind(|| assert_slsa_contract(&disabled_rekor)).is_err(),
-        "a tlog-disable mutation must fail the production SLSA contract"
+        std::panic::catch_unwind(|| assert_slsa_contract(&unbound_signer)).is_err(),
+        "the GitHub attestation signer identity must remain exact"
+    );
+    let reintroduced_staging_manifest = slsa.replace(
+        "test \"${STAGING_ASSET_COUNT}\" = \"0\"",
+        "staging inventory check removed",
+    );
+    assert!(
+        std::panic::catch_unwind(|| assert_slsa_contract(&reintroduced_staging_manifest)).is_err(),
+        "the provenance generator must reject a staging manifest in its exact inventory"
     );
     let inventory_helper = load_script("verify_cli_release_inventory.py")?;
     assert_inventory_helper_contract(&inventory_helper);
-    let unmatched_asset = inventory_helper.replace("if set(api_names) != expected:", "if False:");
+    let unmatched_asset = inventory_helper.replace(
+        "release inventory is not closed-world",
+        "inventory check removed",
+    );
     assert!(
         std::panic::catch_unwind(|| assert_inventory_helper_contract(&unmatched_asset)).is_err(),
         "an unmatched public release asset must fail the closed-world helper contract"
@@ -310,29 +316,12 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         "a late staging-manifest reintroduction must fail the helper contract"
     );
     let checksum_bypass = inventory_helper.replace(
-        "verify_checksums(directory, artifact_digests)",
+        "verify_checksums(directory, artifacts)",
         "checksum verification removed",
     );
     assert!(
         std::panic::catch_unwind(|| assert_inventory_helper_contract(&checksum_bypass)).is_err(),
         "the closed-world checksum contents check must remain wired into publication"
-    );
-    let rekor_helper = load_script("verify_cli_rekor_bundle.py")?;
-    assert_rekor_helper_contract(&rekor_helper);
-    let missing_inclusion = rekor_helper.replace("if not entries:", "if False:");
-    assert!(
-        std::panic::catch_unwind(|| assert_rekor_helper_contract(&missing_inclusion)).is_err(),
-        "missing inclusion mutation must fail the production verifier contract"
-    );
-    let digest_unbound =
-        rekor_helper.replace("digest.lower() == expected", "digest.lower() == True");
-    assert_ne!(
-        digest_unbound, rekor_helper,
-        "the digest-binding mutation must change the production verifier"
-    );
-    assert!(
-        std::panic::catch_unwind(|| assert_rekor_helper_contract(&digest_unbound)).is_err(),
-        "unbound Rekor entry mutation must fail the production verifier contract"
     );
     Ok(())
 }

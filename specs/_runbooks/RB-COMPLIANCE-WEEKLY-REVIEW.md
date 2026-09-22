@@ -103,7 +103,7 @@ When the digest exit code = 1, the workflow has already paged. The runbook cover
 | Open GAP count rose | SEV-3 | Compliance Lead | 4h | 7d |
 | Drill missed (Critical class) past grace 0d | SEV-2 | SRE Lead + Compliance Lead | 1h | 7d (re-drill) |
 | Drill missed (Important class) past grace 7d | SEV-3 | SRE Lead | 4h | 14d (re-drill) |
-| Vendor 2× SLA breach | SEV-3 | VP-Sec (vendor owner) | 4h | 30d (review packet) |
+| Vendor review past cadence | SEV-3 | VP-Sec (vendor owner) | 4h | 30d (review packet) |
 | Compliance-gate CI failure (cargo-audit / cargo-deny / cosign-sign / verify-fips / verify-lgpd / dr-drill / backup-daily) | SEV-3 | Workflow owner | 4h | 48h |
 | Two or more concurrent regression classes | bump severity up one level | as above | as above | as above |
 | **TLA ratchet floor regressed** (any of `tla_verified` / `code_referenced` / `test_referenced` / `critical_referenced` / `orphan_refs > 0`) — R5-3 expansion §10 | SEV-2 | Architect + Compliance Lead | 1h | 7d (restore floor or land §3 waiver in `RB-CANONICAL-DRIFT.md`) |
@@ -121,7 +121,7 @@ The workflow triggers a PagerDuty event when **any** of the following is true (t
 3. A Critical-class drill (DR-005..DR-010, DR-15, DR-16) missed past 0d grace.
 4. An Important-class drill (DR-001..DR-004, DR-011..DR-014) missed past 7d grace.
 5. A Standard-class drill missed past 14d grace.
-6. Any vendor in `VENDOR-RISK-REGISTER.md` past 2× its cadence window.
+6. Any vendor in `VENDOR-RISK-REGISTER.md` past its cadence window.
 7. Any compliance-tagged GitHub Actions workflow with conclusion `failure` / `timed_out` / `cancelled` / `startup_failure` in the last 7d.
 8. Two or more of (1)..(7) co-occur (severity escalates one tier).
 9. **(R5-3 §10) TLA ratchet floor regressed** — any of `tla_verified` / `code_referenced` / `test_referenced` / `critical_referenced` is strictly less than the prior digest snapshot, OR `orphan_refs` > 0.
@@ -140,7 +140,7 @@ The workflow triggers a PagerDuty event when **any** of the following is true (t
 4. **For each regression reason:**
    - If GAP severity upgrade: open WI titled `WI-COMP-GAP-XX-RE-OPEN` with the new severity; assign to the GAP owner from the register summary.
    - If drill missed: file a re-drill date in `BCP-DR-DRILL-CADENCE.md`; notify SRE Lead.
-   - If vendor 2× breach: kick off ad-hoc review per `specs/_runbooks/RB-VENDOR-RISK-QUARTERLY-REVIEW.md` §4 (ad-hoc lane).
+   - If a vendor review is stale: kick off ad-hoc review per `specs/_runbooks/RB-VENDOR-RISK-QUARTERLY-REVIEW.md` §4 (ad-hoc lane).
    - If CI failure: open ticket against the workflow owner; link the failed run URL.
 5. **Append the regression to the digest PR** as a top-of-file callout (under the H1) before merge — auditor-trail.
 6. **Resolve the PD page** once each reason has a tracking issue + owner + ETA.

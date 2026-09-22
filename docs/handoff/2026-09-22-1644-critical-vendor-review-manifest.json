@@ -24,7 +24,47 @@
       "owner": "VP-Sec",
       "canonical_record": "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md",
       "record_kind": "repository_template",
-      "evidence_status": "template_pending_external_review"
+      "evidence_status": "template_pending_external_review",
+      "current_repo_evidence": [
+        "specs/_compliance/VENDOR-RISK-REGISTER.md",
+        "specs/_compliance/vendor-dd/DD-CLOUDFLARE.md",
+        "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md"
+      ],
+      "refresh_packet": {
+        "scope": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "subprocessors": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "residency": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "security_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "dpa_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "renewal_date": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "human_decision": {
+          "status": "pending_human_review",
+          "decision": null
+        },
+        "signer": {
+          "status": "pending_human_review",
+          "name": null,
+          "signed_at": null
+        }
+      }
     },
     {
       "id": "stripe",
@@ -35,7 +75,47 @@
       "owner": "VP-Sec",
       "canonical_record": "docs/compliance/vendor-reviews/stripe-dpa-review-2026-04.md",
       "record_kind": "repository_template",
-      "evidence_status": "template_pending_external_review"
+      "evidence_status": "template_pending_external_review",
+      "current_repo_evidence": [
+        "specs/_compliance/VENDOR-RISK-REGISTER.md",
+        "specs/_compliance/vendor-dd/DD-STRIPE.md",
+        "docs/compliance/vendor-reviews/stripe-dpa-review-2026-04.md"
+      ],
+      "refresh_packet": {
+        "scope": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "subprocessors": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "residency": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "security_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "dpa_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "renewal_date": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "human_decision": {
+          "status": "pending_human_review",
+          "decision": null
+        },
+        "signer": {
+          "status": "pending_human_review",
+          "name": null,
+          "signed_at": null
+        }
+      }
     },
     {
       "id": "clerk",
@@ -46,7 +126,47 @@
       "owner": "VP-Sec",
       "canonical_record": "docs/compliance/vendor-reviews/clerk-dpa-review-2026-04.md",
       "record_kind": "repository_template",
-      "evidence_status": "template_pending_external_review"
+      "evidence_status": "template_pending_external_review",
+      "current_repo_evidence": [
+        "specs/_compliance/VENDOR-RISK-REGISTER.md",
+        "specs/_compliance/vendor-dd/DD-CLERK.md",
+        "docs/compliance/vendor-reviews/clerk-dpa-review-2026-04.md"
+      ],
+      "refresh_packet": {
+        "scope": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "subprocessors": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "residency": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "security_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "dpa_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "renewal_date": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "human_decision": {
+          "status": "pending_human_review",
+          "decision": null
+        },
+        "signer": {
+          "status": "pending_human_review",
+          "name": null,
+          "signed_at": null
+        }
+      }
     },
     {
       "id": "aws-kms",
@@ -57,7 +177,46 @@
       "owner": "VP-Sec",
       "canonical_record": null,
       "record_kind": "external_drata_or_aws_artifact",
-      "evidence_status": "external_evidence_required"
+      "evidence_status": "external_evidence_required",
+      "current_repo_evidence": [
+        "specs/_compliance/VENDOR-RISK-REGISTER.md",
+        "specs/_compliance/vendor-dd/DD-AWS-KMS.md"
+      ],
+      "refresh_packet": {
+        "scope": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "subprocessors": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "residency": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "security_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "dpa_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "renewal_date": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "human_decision": {
+          "status": "pending_human_review",
+          "decision": null
+        },
+        "signer": {
+          "status": "pending_human_review",
+          "name": null,
+          "signed_at": null
+        }
+      }
     },
     {
       "id": "gcp-kms",
@@ -68,7 +227,46 @@
       "owner": "VP-Sec",
       "canonical_record": null,
       "record_kind": "external_drata_or_google_compliance_reports_manager",
-      "evidence_status": "external_evidence_required"
+      "evidence_status": "external_evidence_required",
+      "current_repo_evidence": [
+        "specs/_compliance/VENDOR-RISK-REGISTER.md",
+        "specs/_compliance/vendor-dd/DD-GCP-KMS.md"
+      ],
+      "refresh_packet": {
+        "scope": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "subprocessors": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "residency": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "security_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "dpa_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "renewal_date": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "human_decision": {
+          "status": "pending_human_review",
+          "decision": null
+        },
+        "signer": {
+          "status": "pending_human_review",
+          "name": null,
+          "signed_at": null
+        }
+      }
     },
     {
       "id": "azure-key-vault",
@@ -79,7 +277,46 @@
       "owner": "VP-Sec",
       "canonical_record": null,
       "record_kind": "external_drata_or_service_trust_portal",
-      "evidence_status": "external_evidence_required"
+      "evidence_status": "external_evidence_required",
+      "current_repo_evidence": [
+        "specs/_compliance/VENDOR-RISK-REGISTER.md",
+        "specs/_compliance/vendor-dd/DD-AZURE-KEYVAULT.md"
+      ],
+      "refresh_packet": {
+        "scope": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "subprocessors": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "residency": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "security_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "dpa_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "renewal_date": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "human_decision": {
+          "status": "pending_human_review",
+          "decision": null
+        },
+        "signer": {
+          "status": "pending_human_review",
+          "name": null,
+          "signed_at": null
+        }
+      }
     },
     {
       "id": "drata",
@@ -90,7 +327,46 @@
       "owner": "VP-Sec",
       "canonical_record": null,
       "record_kind": "external_drata_vendor_module",
-      "evidence_status": "external_credential_and_workspace_export_required"
+      "evidence_status": "external_credential_and_workspace_export_required",
+      "current_repo_evidence": [
+        "specs/_compliance/VENDOR-RISK-REGISTER.md",
+        "specs/_compliance/vendor-dd/DD-DRATA.md"
+      ],
+      "refresh_packet": {
+        "scope": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "subprocessors": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "residency": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "security_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "dpa_changes": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "renewal_date": {
+          "status": "pending_external",
+          "evidence": null
+        },
+        "human_decision": {
+          "status": "pending_human_review",
+          "decision": null
+        },
+        "signer": {
+          "status": "pending_human_review",
+          "name": null,
+          "signed_at": null
+        }
+      }
     }
   ],
   "non_claims": [
@@ -99,5 +375,19 @@
     "Public vendor pages do not close the Critical review cadence item.",
     "The manifest does not authorize editing effective legal or contractual text."
   ],
-  "next_external_action": "Owner supplies an authorized Drata credential or workspace export; VP-Sec/Compliance records current evidence and dated review outcomes in the canonical system of record."
+  "next_external_action": "Owner supplies an authorized Drata credential or workspace export; VP-Sec/Compliance records current evidence and dated review outcomes in the canonical system of record.",
+  "refresh_packet_schema": {
+    "required_fields": [
+      "scope",
+      "subprocessors",
+      "residency",
+      "security_changes",
+      "dpa_changes",
+      "renewal_date",
+      "human_decision",
+      "signer"
+    ],
+    "field_rule": "Each field must be completed from dated evidence before the review can move out of pending_external; null means owner action required.",
+    "approval_rule": "A named human reviewer and signer must record the decision; repository automation cannot approve legal or contractual terms."
+  }
 }

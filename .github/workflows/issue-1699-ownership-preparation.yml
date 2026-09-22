@@ -1,0 +1,24 @@
+name: issue-1699-ownership-preparation
+
+on:
+  pull_request:
+    paths:
+      - 'docs/ownership/preparation/**'
+      - '.github/workflows/issue-1699-ownership-preparation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  current-main-provenance:
+    name: current main provenance and approval boundary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify current-main census and unapproved ownership boundary
+        run: python3 docs/ownership/preparation/2026-09-19/verify_current_provenance.py

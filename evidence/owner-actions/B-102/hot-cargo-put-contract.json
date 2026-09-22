@@ -1,0 +1,74 @@
+{
+  "schema": "corelink.hot-cargo-put.contract-manifest.v1",
+  "issue": 1658,
+  "backlog_id": "B-102",
+  "status": "open_external_measurement_required",
+  "environment": "staging",
+  "network_calls": true,
+  "production_allowed": false,
+  "mutating_actions": true,
+  "scope": {
+    "request": "PUT /cargo/<tenant>/<unique-key> with a 1 KiB body",
+    "serial_samples": 10,
+    "concurrency_control": [1, 4],
+    "cleanup": "DELETE each map key immediately after its PUT observation",
+    "controls": [
+      "GET /health without credentials -> 200",
+      "PUT /cargo/<tenant>/<unique-key> without credentials -> 401 or 403"
+    ],
+    "required_result": "every authenticated PUT -> 200 and every cleanup DELETE -> 204",
+    "statistics": ["arithmetic median", "nearest-rank p90"],
+    "forbidden_shortcuts": [
+      "production target",
+      "single sample",
+      "wall-time-only attribution",
+      "auth refusal counted as a PUT",
+      "retryable response hidden or retried silently",
+      "missing Server-Timing phase treated as zero"
+    ]
+  },
+  "attribution": {
+    "edge": ["auth", "wdb", "qtier", "qbatch", "qresid", "total"],
+    "container": ["origin", "ohop", "opat", "oquota", "ostore", "oaccounting", "ohandler"],
+    "hashing": "the current container has no separate hash phase; BLAKE3 body hashing remains inside ohandler and is named in the artifact metadata",
+    "storage": "ostore and oaccounting are required separately so R2 latency cannot be hidden inside D1 accounting",
+    "cold_warm": "auth desc=d1 is cold; auth desc=l1 or kv is warm; both populations are required",
+    "budget": "ohop + named origin sub-phases == origin within 1 ms of wire rounding"
+  },
+  "retry_contract": {
+    "client_retries": false,
+    "attempts_per_observation": 1,
+    "retryable_statuses": [429, 500, 502, 503, 504],
+    "action": "retain status, Retry-After, and timing, then fail the lane"
+  },
+  "closure": {
+    "target": "hot PUT server path returns to the owner-declared order of 30-50 ms",
+    "required_receipt": [
+      "staging deployment version",
+      "ten successful authenticated 1 KiB PUTs",
+      "cold and warm auth populations",
+      "p50 and p90 for total and every named phase",
+      "serial and concurrency-4 observations",
+      "redacted artifact with retry outcomes",
+      "phase-level comparison against the prior receipt"
+    ],
+    "current_blocker": "no staging receipt has been captured by this repository-only change"
+  },
+  "paths": {
+    "probe": "scripts/probe_i1658_cargo_put_latency.py",
+    "workflow": ".github/workflows/issue-1658-b102-cargo-put.yml",
+    "runbook": "specs/_runbooks/RB-B102-HOT-CARGO-PUT.md",
+    "cargo_route": "crates/corelink-container/src/routes/cargo/part-00.rs",
+    "cache": "crates/corelink-container/src/adapter_cache.rs",
+    "timing": "crates/corelink-container/src/origin_timing.rs",
+    "worker_timing": "worker/src/index_observability.ts"
+  },
+  "prohibited": [
+    "production load generation",
+    "production deployment",
+    "threshold weakening",
+    "PAT or tenant secret values in artifacts",
+    "unbounded concurrency",
+    "unrelated backlog edits"
+  ]
+}

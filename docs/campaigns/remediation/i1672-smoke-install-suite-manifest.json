@@ -4,7 +4,7 @@
   "issue": 1672,
   "kind": "contract-only",
   "workflow": ".github/workflows/smoke-install.yml",
-  "runner": "ubuntu-latest",
+  "runner": "corelink",
   "trigger": "workflow_dispatch",
   "helper": "scripts/smoke_install_observe.py",
   "tests": [
@@ -28,10 +28,10 @@
     "secrets.",
     "production_endpoint"
   ],
-  "runtime_boundary": "A manual GitHub-hosted dispatch is required for backend evidence; local contract tests make no fleet or production claim.",
+  "runtime_boundary": "A manual CoreLink-fleet GitHub Actions dispatch is required for backend evidence; local contract tests make no fleet or production claim.",
   "evidence_remainder": {
     "status": "PENDING_MANUAL_DISPATCH",
-    "required": ["github_run_id", "receipt", "backend_log"],
+    "required": ["github_run_id", "runner_label", "receipt", "backend_log"],
     "claim_allowed_before_dispatch": false
   }
 }

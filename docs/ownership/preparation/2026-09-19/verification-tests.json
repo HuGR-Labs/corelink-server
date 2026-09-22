@@ -1,0 +1,7 @@
+{
+  "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5",
+  "refresh_local_checks": false,
+  "cargo_builds_or_tests": 0,
+  "rustfmt_or_lint": 0,
+  "hosted_verifier": "verify_current_provenance.py"
+}

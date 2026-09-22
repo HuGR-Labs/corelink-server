@@ -1,91 +1,56 @@
 name: CodeQL (R-prep static analysis)
 
-# GitHub CodeQL static analysis gate — pre-pentest engagement R-prep wave.
+# GitHub CodeQL static analysis for Rust, JavaScript/TypeScript, and Python.
+# The canonical repository is public and uses GitHub-hosted Linux runners.
+# Every scan must produce SARIF and its Security-tab upload is fail closed.
 #
-# Languages covered:
-#   - rust (experimental CodeQL pack — explicitly enabled for the nightly scan).
-#   - javascript-typescript (admin-ui + docs site + tooling).
-#   - python (validate_specs.py, conformance harness, audit scripts).
+# The pull-request paths cover all source, dependency, workflow, and scanner
+# inputs that can change the analysed program. Nightly and manual runs cover
+# the complete matrix from the default branch.
 #
-# Triggers (CORRECTED 2026-08-01 — the list below had drifted away from the
-# actual `on:` block, which is the drift that produced a false "every real diff
-# is still gated on PR" claim in the CI-cost-diet review):
-#   - schedule: DAILY 05:30 UTC. This is the ONLY automatic trigger.
-#   - workflow_dispatch: manual trigger for on-call / pentest preparation re-run.
-#   - there is NO `pull_request` lane and NO `push` lane — both were removed on
-#     2026-06-02 when the heavy gates moved off per-PR. Nothing gates on CodeQL
-#     between scheduled runs.
-#
-# Fail policy:
-#   The severity gate below only fails on `pull_request` / `workflow_dispatch`.
-#   Since there is no `pull_request` trigger, in practice only a dispatched run
-#   can fail-closed on a HIGH/CRITICAL finding; scheduled runs surface findings
-#   in the Security tab without blocking.
-#
-# CURRENT REALITY (verified 2026-08-30): hosted Actions jobs never received a
-# runner because account billing was blocked. This lane now runs on the
-# product-owned `corelink` fabric and therefore performs the scan even when
-# Advanced Security is unavailable. The Security-tab upload remains an external
-# owner capability; a retained SARIF artifact and the independent watchdog make
-# that limitation visible instead of turning it into a green zero-scan.
-#
-# SARIF uploaded to the GHA Security tab (category per language) so the
-# Security team can triage via the repo's central security dashboard.
-#
-# SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin
-# policy. All three `github/codeql-action/*` refs below resolve to the verified
-# CodeQL Action v4.37.1 commit `7188fc363630916deb702c7fdcf4e481b751f97a`.
-# Keep the friendly version, env declaration, and SHA comment synchronized;
-# version/SHA bumps require ADR + Security review (§14).
+# All third-party actions are immutable SHA refs. Keep the release comments,
+# pins, and the CodeQL action version synchronized when upgrading them.
 #
 # Cross-refs:
 #   - SOC2 rollup: CC8.1 (change management — static-analysis gate evidence).
-#   - ROADMAP-TO-GA.md §7 Wave R-7 (Evidence Gate) — static-analysis baseline
-#     is part of the GA-go evidence package consumed by PRR-S20-GA.
-#   - Pre-pentest cutoff 2026-06-15 (specs/_pentest/scope.md).
+#   - ROADMAP-TO-GA.md §7 Wave R-7 (Evidence Gate).
 #   - Runbook: specs/_runbooks/RB-STATIC-ANALYSIS-TRIAGE.md.
 
 on:
-  # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly + on-demand. There is NO `pull_request` lane — re-add one only if
-  # this must block PRs again.
-  #
-  # Cadence: DAILY, deliberately KEPT (CI cost diet 2026-08-01 considered
-  # daily -> weekly and rejected it). Two reasons:
-  #   1. There is no `pull_request` lane, so weekly really would open a 7-day
-  #      window with nothing compensating — on a launched product carrying
-  #      auth + billing. The "the PR paths: lane still gates every diff"
-  #      argument applies to s07/s08/s09/gc, NOT to this workflow.
-  #   2. The saving did not justify that risk: with GHAS off the whole run
-  #      bills 3 hosted minutes (see the header), so daily -> weekly buys
-  #      ~66 min/month — ~2% of this repo's Actions bill.
-  # Revisit only together with enabling GHAS: a full 3-language CodeQL run is
-  # expensive, and at that point the correct lever is a paths-filtered
-  # `pull_request` lane, not a longer cron interval.
+  pull_request:
+    paths:
+      - ".github/workflows/codeql.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+      - "**/*.rs"
+      - "**/*.js"
+      - "**/*.jsx"
+      - "**/*.ts"
+      - "**/*.tsx"
+      - "**/*.py"
+      - "**/package.json"
+      - "**/pnpm-lock.yaml"
+      - "scripts/**"
+      - "tests/**"
   schedule:
     - cron: '30 5 * * *'
   workflow_dispatch:
 
 permissions:
-  # Required by github/codeql-action/analyze to upload SARIF.
-  security-events: write
-  # Required to checkout the code + read PR metadata for paths-filter.
   contents: read
-  actions: read
-  # Read-only PR context for path/severity comment links.
-  pull-requests: read
+  security-events: write
 
 concurrency:
-  # A stable group also serializes manual dispatches from different refs. A
-  # queued security scan is safer than cancelling the only nightly evidence.
-  group: codeql-nightly
-  cancel-in-progress: false
+  # Cancel stale scans for the same event/ref; the event discriminator keeps
+  # scheduled, manual, and pull-request evidence runs independent.
+  group: codeql-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.event.pull_request.number || 'none' }}
+  cancel-in-progress: true
 
 env:
   # Pinned CodeQL action release — bump via ADR + Security review.
   CODEQL_ACTION_VERSION: "v4.37.1"
-  # CodeQL and cargo both default to all available CPUs. The corelink default
-  # box is shared with other customer work, so keep this lane resource-bounded.
+  # Keep the hosted matrix resource-bounded and predictable.
   CODEQL_THREADS: "2"
   CODEQL_RAM_MB: "4096"
   CARGO_BUILD_JOBS: "2"
@@ -93,13 +58,7 @@ env:
 jobs:
   analyze:
     name: CodeQL ${{ matrix.language }}
-    # Manual dispatch is valid only from trusted main. Scheduled runs are
-    # emitted by GitHub from the default branch.
-    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
-    # Product-owned ephemeral Linux runner (zero GitHub-hosted billing). The
-    # CodeQL bundle supports Linux x64 and the corelink image carries Python,
-    # Node and the workspace-pinned Rust toolchain.
-    runs-on: corelink
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -118,17 +77,28 @@ jobs:
           # (codeql/rust-queries). Wired through `with: queries:` below.
           #
           # Rust is in experimental CodeQL support — enabled via the
-          # `--language rust` opt-in. Build mode `manual` so cargo respects
-          # the workspace toolchain pin (rust-toolchain.toml).
+          # `--language rust` opt-in. The hosted Rust analyser requires
+          # dependency-aware `none` mode for this configuration.
           - language: rust
-            build-mode: manual
+            build-mode: none
             queries: ""
+            # The Rust database is substantially larger than the interpreted
+            # language databases. Keep the full source scope, but give the
+            # CodeQL evaluator a supported 8 GiB budget and one worker so the
+            # default Rust query pack cannot exhaust the hosted runner while
+            # evaluating multiple queries concurrently.
+            ram: "8192"
+            threads: "1"
           - language: javascript-typescript
             build-mode: none
             queries: security-extended,security-and-quality
+            ram: "4096"
+            threads: "2"
           - language: python
             build-mode: none
             queries: security-extended,security-and-quality
+            ram: "4096"
+            threads: "2"
 
     steps:
       - name: Checkout
@@ -170,17 +140,16 @@ jobs:
 
       # -----------------------------------------------------------------
       # Rust build prerequisites (only for the `rust` matrix leg).
-      # CodeQL Rust analyser instruments cargo build artefacts; we install
-      # the workspace-pinned toolchain + cache to keep the run < 30 min.
+      # CodeQL Rust analyser instruments cargo build artefacts.
       # -----------------------------------------------------------------
-      - name: Use workspace-pinned Rust toolchain (provisions nothing)
+      - name: Install workspace-pinned Rust toolchain
         if: matrix.language == 'rust'
-        # `corelink` is self-hosted: dtolnay/rust-toolchain would mutate the
-        # runner's shared ~/.rustup. This script reads rust-toolchain.toml and
-        # fails loudly when the baked Linux toolchain is missing.
-        env:
-          HOST_TRIPLE: x86_64-unknown-linux-gnu
-        run: bash scripts/ci-use-host-toolchain.sh
+        # dtolnay/rust-toolchain@stable — immutable ref, required on hosted
+        # runners because the workspace pins Rust 1.91.1.
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.1
+          components: rust-src
 
       - name: Initialize CodeQL
         # github/codeql-action/init v4.37.1 — verified SHA pin below.
@@ -197,21 +166,13 @@ jobs:
           # extended suites), so codeql/rust-queries (the default) is used.
           queries: ${{ matrix.queries }}
           # CodeQL manages its dependency cache through the Actions cache
-          # service. The corelink runner is ephemeral, so this does not touch
-          # the shared Mac home/cache guarded elsewhere in the repository.
+          # service on the ephemeral hosted runner.
           dependency-caching: true
-          threads: ${{ env.CODEQL_THREADS }}
-          ram: ${{ env.CODEQL_RAM_MB }}
-
-      # -----------------------------------------------------------------
-      # Rust manual build — CodeQL traces the workspace cargo build to
-      # build its CFG/dataflow facts. We compile with --all-targets to
-      # cover bin + lib + tests + examples in one pass.
-      # -----------------------------------------------------------------
-      - name: Build Rust workspace (manual mode for CodeQL trace)
-        if: matrix.language == 'rust'
-        run: |
-          cargo build --workspace --all-targets --locked
+          # These are official CodeQL Action inputs. Rust overrides the
+          # default matrix budget above; JS/TS and Python retain the existing
+          # bounded settings and continue to emit their own SARIF artifacts.
+          threads: ${{ matrix.threads }}
+          ram: ${{ matrix.ram }}
 
       - name: Perform CodeQL Analysis
         id: analyze
@@ -220,13 +181,9 @@ jobs:
         uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a  # github/codeql-action/analyze@v4.37.1
         with:
           category: "/language:${{ matrix.language }}"
-          # Write the SARIF to a local dir for BOTH the severity gate below and
-          # the (separate, non-fatal) upload step. `upload: never` so the
-          # analysis is judged ONLY on whether the scan/build succeeded — NOT on
-          # the GHAS-gated Security-tab upload, which is split out into the
-          # best-effort step below (mirrors the tfsec pattern in
-          # terraform-lint.yml). Previously `upload: always`, which folded the
-          # upload into this step and reddened the whole job when GHAS was off.
+          # Write SARIF locally so the evidence check and explicit upload are
+          # both visible. `upload: never` keeps the fail-closed upload in its
+          # dedicated step below.
           output: codeql-results
           upload: never
 
@@ -285,15 +242,9 @@ jobs:
         # github/codeql-action/upload-sarif@v4.37.1 — same verified SHA pin as
         # init/analyze above (matches semgrep.yml).
         #
-        # SARIF upload requires GitHub Advanced Security (code scanning), which
-        # is NOT enabled on this private repo — the upload returns "Code scanning
-        # is not enabled for this repository" and would otherwise red the whole
-        # CodeQL job even though the scan above passed. `continue-on-error` keeps
-        # the JOB status driven by the actual CodeQL scan + severity gate; until
-        # GHAS is enabled this upload no-ops without failing the gate. The scan
-        # still runs. Once GHAS is enabled the SARIF populates the Security tab
-        # with no further change.
-        continue-on-error: true
+        # A missing or rejected Security-tab upload is a failed scan. Public
+        # repository Actions must have code-scanning enabled before this lane
+        # is treated as healthy.
         id: upload
         if: always() && steps.evidence.outputs.evidence_status == 'present'
         uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a  # github/codeql-action/upload-sarif@v4.37.1
@@ -323,8 +274,8 @@ jobs:
             echo "- Language: \`${MATRIX_LANGUAGE}\`"
             echo "- SARIF artifact: \`codeql-sarif-${MATRIX_LANGUAGE}\` (90 days)"
             if [[ "${upload_outcome}" == failure ]]; then
-              echo "- Security-tab upload: **unavailable** (owner must enable Advanced Security)"
-              echo "::warning::CodeQL scan evidence is retained, but the Security-tab upload was unavailable; follow the B-142 action packet."
+              echo "- Security-tab upload: **failed** (the CodeQL job is failed closed)"
+              echo "::error::CodeQL SARIF upload failed; the scan cannot be considered healthy."
             elif [[ "${upload_outcome}" == skipped ]]; then
               echo "- Security-tab upload: **not attempted** because scan evidence was missing"
             else
@@ -339,8 +290,8 @@ jobs:
       # Severity gate — fail the PR if any finding ≥ HIGH (security-severity
       # >= 7.0 in SARIF) appears in the current run.
       #
-      # On schedule/push to main we surface findings but never auto-fail
-      # the cron — the Security tab + Slack notification handles triage.
+      # Scheduled runs surface findings in the Security tab; PR and manual
+      # runs fail on HIGH/CRITICAL findings.
       # -----------------------------------------------------------------
       - name: Severity gate (fail PR on HIGH/CRITICAL)
         if: steps.evidence.outputs.evidence_status == 'present' && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
