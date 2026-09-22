@@ -18,6 +18,61 @@ from typing import Any
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
+# These values are independently anchored in the verifier.  The JSON file is
+# the reviewable inventory, but changing that file alone must never redefine
+# what this lane accepts.
+EXPECTED_HISTORICAL_TREE = "48e15ff30b0556a1f366388a61b617ad01f5d363"
+EXPECTED_HISTORICAL_SOURCES = {
+    "p12": "84b99ae353c67eda6096633c7c7d7478ea49df3c",
+    "p13": "a75431b8eadf1d2afaa55bee843fe945bacb7a8d",
+    "p14": "432b4007a3accbbd56e4fff59358ce9e0c309d40",
+}
+EXPECTED_SQUASH_COMMIT = "e70d9d9349f1ae96d71fd918817af8ad2bcd4762"
+EXPECTED_SQUASH_PARENT = "2e43814b41ffc2c9f9ed02c7819f2ab2d32a3859"
+EXPECTED_SQUASH_TREE = "b457d53f281061bdfd3f95a5216ea103f11b39ea"
+EXPECTED_SOURCE_INVENTORY = {
+    "p12": {
+        "commit": "2963bd510ff03df932c8a60e91b1c23742fbe1b6",
+        "paths": [
+            "worker/src/durable_object.ts",
+            "worker/src/lib/devenv_cleanup_route.ts",
+            "worker/tests/b126_m3_refactor.test.ts",
+            "worker/tests/durable_object_part2_test_helpers.ts",
+        ],
+    },
+    "p13": {
+        "commit": "4e1844f7f5c644b5f4f01fc32653399e70918124",
+        "paths": [
+            "worker/src/index_special_customer.ts",
+            "worker/tests/index_part5.test.ts",
+            "worker/tests/index_special_customer_devenv_quota.test.ts",
+            "worker/tests/quota_batch.test.ts",
+            "worker/tests/region-map.test.ts",
+        ],
+    },
+    "p14": {
+        "commit": "59cfb2ca01c0732cede1d2a2693a3dea7ef1da59",
+        "paths": [
+            "worker/tests/do_miniflare_integration.miniflare.test.ts",
+            "worker/tests/durable_object_part2_tests_1.ts",
+        ],
+    },
+}
+EXPECTED_PATH_BLOBS = {
+    "worker/src/durable_object.ts": "1ea100789b9514ea1c7caf67212fe3b162bbe3e4",
+    "worker/src/index_special_customer.ts": "3de39b8a8e4ac4d9e6d5161385b476c7453b71d3",
+    "worker/src/lib/devenv_cleanup_route.ts": "9174b7800e380995d3514959246218a3a18c1b1c",
+    "worker/tests/b126_m3_refactor.test.ts": "db20fffa4424e722e1d1bc3fc212f7087c8b853e",
+    "worker/tests/do_miniflare_integration.miniflare.test.ts": "ea3807b9169bf1364ee442b889b406998848abde",
+    "worker/tests/durable_object_part2_test_helpers.ts": "31871fdaa42d49a36e3800326f2968486533607a",
+    "worker/tests/durable_object_part2_tests_1.ts": "7466a04b1658735dad6730518b0ae82de0bd96b3",
+    "worker/tests/index_part5.test.ts": "21f4aec344cb570eb91b1bfb9ed17ab45e21cf6e",
+    "worker/tests/index_special_customer_devenv_quota.test.ts": "4f69f90abb0fb8bd82b5e7340c32d7a2ca495d07",
+    "worker/tests/quota_batch.test.ts": "b31adf04021c8db2e4134cf4f933545729280a50",
+    "worker/tests/region-map.test.ts": "2b9f667977f61597764a2c85f14d2c896d22253e",
+}
+EXPECTED_PATH_COUNT = 11
+
 
 class VerificationError(Exception):
     pass
@@ -135,6 +190,27 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
     for path, blob in path_blobs.items():
         if not isinstance(path, str) or not path or not isinstance(blob, str) or not SHA_RE.fullmatch(blob):
             raise VerificationError("path blob inventory contains an invalid entry")
+
+    if historical_tree != EXPECTED_HISTORICAL_TREE:
+        raise VerificationError("manifest historical tree differs from the verifier anchor")
+    if historical_sources != EXPECTED_HISTORICAL_SOURCES:
+        raise VerificationError("manifest historical source IDs differ from the verifier anchors")
+    if merge_commit != EXPECTED_SQUASH_COMMIT:
+        raise VerificationError("manifest squash commit differs from the verifier anchor")
+    if merge_parent != EXPECTED_SQUASH_PARENT:
+        raise VerificationError("manifest squash parent differs from the verifier anchor")
+    if squash_tree != EXPECTED_SQUASH_TREE:
+        raise VerificationError("manifest squash tree differs from the verifier anchor")
+    normalized_inventory = {
+        stage: {"commit": entry["commit"], "paths": sorted(entry["paths"])}
+        for stage, entry in source_inventory.items()
+    }
+    if normalized_inventory != EXPECTED_SOURCE_INVENTORY:
+        raise VerificationError("manifest source inventory differs from the verifier anchors")
+    if len(path_blobs) != EXPECTED_PATH_COUNT:
+        raise VerificationError("manifest path inventory does not contain exactly 11 paths")
+    if path_blobs != EXPECTED_PATH_BLOBS:
+        raise VerificationError("manifest path blob inventory differs from the verifier anchors")
 
     if not commit_exists(merge_commit):
         raise VerificationError("reachable squash merge commit is missing")
