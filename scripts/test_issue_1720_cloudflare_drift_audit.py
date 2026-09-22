@@ -114,7 +114,7 @@ def verify_drift_workflow(source: str) -> None:
         "Verify expected dispatch revision",
         "inputs.expected_sha != ''",
         'EXPECTED_SHA: ${{ inputs.expected_sha }}',
-        '[[ \"$EXPECTED_SHA\" == \"$GITHUB_SHA\" ]]',
+        '[[ "$EXPECTED_SHA" == "$GITHUB_SHA" ]]',
     ):
         require(source, marker)
 
