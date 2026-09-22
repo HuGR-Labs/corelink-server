@@ -19,16 +19,14 @@ fn assert_managed_cli_provenance_contract(caller: &str, generator: &str) {
         "CLI provenance must use GitHub's managed provenance action"
     );
     assert!(
-        generator
-            .lines()
-            .any(|line| {
-                line.split_whitespace().any(|token| {
-                    token.starts_with("actions/attest-build-provenance@")
-                        && token.rsplit_once('@').is_some_and(|(_, sha)| {
-                            sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())
-                        })
-                })
-            }),
+        generator.lines().any(|line| {
+            line.split_whitespace().any(|token| {
+                token.starts_with("actions/attest-build-provenance@")
+                    && token.rsplit_once('@').is_some_and(|(_, sha)| {
+                        sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())
+                    })
+            })
+        }),
         "GitHub's provenance action must be pinned to a full commit SHA"
     );
     for required in [
