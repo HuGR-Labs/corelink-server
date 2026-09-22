@@ -15,7 +15,7 @@ tags: ["adr", "d1", "migration", "terraform-drift", "region", "additive", "sqlit
 references:
   - "migrations/d1/0139_terraform_drift_region_contract.sql"
   - "migrations/d1/0025_terraform_drift_findings.sql"
-  - "migrations/d1/0131_terraform_drift_summary_artifact.sql"
+  - "migrations/d1/0140_terraform_drift_summary_artifact.sql"
   - "scripts/check_migration_prefixes.py"
   - "scripts/check_migrations_additive.py"
   - "scripts/test_terraform_drift_region_contract.py"
@@ -101,7 +101,7 @@ make legacy region names valid for new writes.
 
 - `migrations/d1/0025_terraform_drift_findings.sql` — original table and
   historical region CHECK.
-- `migrations/d1/0131_terraform_drift_summary_artifact.sql` — summary artifact
+- `migrations/d1/0140_terraform_drift_summary_artifact.sql` — summary artifact
   column preserved by the explicit copy.
 - `migrations/d1/0139_terraform_drift_region_contract.sql` — executable
   rebuild, triggers, indexes, and line-local additive waivers.

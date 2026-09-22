@@ -1,4 +1,4 @@
--- CoreLink D1 — GC finalization accounting and legal-hold fence.
+-- 0141 — CoreLink D1 GC finalization accounting and legal-hold fence.
 --
 -- The B-071 purge protocol already makes the R2/D1 operation resumable and
 -- idempotent.  This follow-up keeps the final metadata delete safe for the
