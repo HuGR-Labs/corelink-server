@@ -659,6 +659,7 @@ impl D1SubscriptionStateHandler {
                 subscription_id,
                 current.subscription_created_at_ms,
                 event_created_at_ms(env)?,
+                &env.id,
                 None,
                 now_ms,
             )?;
@@ -686,6 +687,7 @@ impl D1SubscriptionStateHandler {
             subscription_id,
             current.subscription_created_at_ms,
             event_created_at_ms(env)?,
+            &env.id,
             Some((ent.max_concurrency, ent.max_vcpu_h)),
             now_ms,
         )?;
@@ -698,6 +700,7 @@ impl D1SubscriptionStateHandler {
         subscription_id: &str,
         subscription_created_at_ms: u64,
         stripe_event_created_at_ms: u64,
+        stripe_event_id: &str,
         entitlement: Option<(u32, u32)>,
         now_ms: u64,
     ) -> Result<(), MaterializerError> {
@@ -708,7 +711,7 @@ impl D1SubscriptionStateHandler {
                 subscription_id,
                 subscription_created_at_ms,
                 stripe_event_created_at_ms,
-                &env.id,
+                stripe_event_id,
                 entitlement,
                 now_ms as i64,
             )
@@ -1021,6 +1024,7 @@ impl D1SubscriptionStateHandler {
                         &purchase.stripe_subscription_id,
                         current.subscription_created_at_ms,
                         event_created_at_ms(env)?,
+                        &env.id,
                         None,
                         now_ms,
                     )?;
