@@ -315,7 +315,7 @@ def main() -> int:
     mutation_checks(config, test, runner)
     print(
         "B-251 quota-CAS budget: PASS "
-        "(deterministic invariants; seed/failure/blob comparison; isolated 1000-sample p99<5ms probe; mutations red)"
+        "(deterministic invariants; seed/failure/blob comparison; isolated 1000-sample p99<=5ms probe; mutations red)"
     )
     return 0
 
