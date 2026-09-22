@@ -312,7 +312,7 @@ fn runners_updated_non_granting_status_revokes_prior_entitlement() {
         authority.set("sub_run", non_granting, "price_runner_team");
 
         // Now the subscription goes non-granting → revoke.
-        let e = env(
+        let mut e = env(
             "evt_revoke",
             "customer.subscription.updated",
             serde_json::json!({
@@ -324,6 +324,10 @@ fn runners_updated_non_granting_status_revokes_prior_entitlement() {
                 }
             }),
         );
+        // This represents the later provider revision. Equal timestamps use
+        // event identity as the deterministic final tie-breaker, so ordinary
+        // state transitions retain their provider chronology explicitly.
+        e.created = 1_700_000_001;
         handler.on_subscription_updated(&e).unwrap();
         assert_eq!(
             d1.runners_entitlement_of("ten_run"),
@@ -364,7 +368,7 @@ fn runners_subscription_deleted_revokes_entitlement() {
     authority.set("sub_run", "canceled", "price_runner_team");
 
     // Now delete the subscription (a Runners-price sub).
-    let del = env(
+    let mut del = env(
         "evt_del",
         "customer.subscription.deleted",
         serde_json::json!({
@@ -376,6 +380,7 @@ fn runners_subscription_deleted_revokes_entitlement() {
             }
         }),
     );
+    del.created = 1_700_000_001;
     handler.on_subscription_deleted(&del).unwrap();
     assert_eq!(
         d1.runners_entitlement_of("ten_run"),
@@ -481,8 +486,8 @@ fn cache_price_still_routes_to_tier_when_runners_resolver_present() {
 #[test]
 fn stale_runner_update_and_delete_converge_to_current_active_subscription() {
     // Stripe can deliver distinct `updated` / `deleted` snapshots after the
-    // subscription recovered. Their timestamp and event id are intentionally
-    // irrelevant: the provider's current object remains the only authority.
+    // subscription recovered. The provider's current object remains the
+    // authority, while the provider event facts advance the durable fence.
     let (handler, d1, _audit, authority) = fixture_with_runners();
     authority.set("sub_run", "active", "price_runner_team");
 
@@ -499,7 +504,7 @@ fn stale_runner_update_and_delete_converge_to_current_active_subscription() {
     );
     handler.on_subscription_updated(&current).unwrap();
 
-    let stale_update = env(
+    let mut stale_update = env(
         "evt_stale_update",
         "customer.subscription.updated",
         serde_json::json!({
@@ -510,7 +515,8 @@ fn stale_runner_update_and_delete_converge_to_current_active_subscription() {
             }
         }),
     );
-    let stale_delete = env(
+    stale_update.created = 1_700_000_001;
+    let mut stale_delete = env(
         "evt_stale_delete",
         "customer.subscription.deleted",
         serde_json::json!({
@@ -521,6 +527,7 @@ fn stale_runner_update_and_delete_converge_to_current_active_subscription() {
             }
         }),
     );
+    stale_delete.created = 1_700_000_002;
     handler.on_subscription_updated(&stale_update).unwrap();
     handler.on_subscription_deleted(&stale_delete).unwrap();
 
