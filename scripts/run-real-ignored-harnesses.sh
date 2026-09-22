@@ -11,6 +11,8 @@ set -euo pipefail
 
 readonly SCRIPT_NAME="${0##*/}"
 readonly PROFILE="${1:-}"
+readonly RECEIPT_DIR="${REAL_HARNESS_RECEIPT_DIR:-artifacts/real-ignored-harnesses}"
+readonly RECEIPT_FILE="${RECEIPT_DIR}/receipt.jsonl"
 
 usage() {
   printf 'usage: %s {d1|r2|stripe|neon|all}\n' "$SCRIPT_NAME" >&2
@@ -34,13 +36,54 @@ require_https() {
   [[ "${!name}" == https://* ]] || die "$name must use https://"
 }
 
+record_receipt() {
+  # Values are closed selectors or statuses; credentials never enter receipts.
+  local profile="$1" test_name="$2" status="$3"
+  printf '{"profile":"%s","test":"%s","status":"%s"}\n' \
+    "$profile" "$test_name" "$status" >> "$RECEIPT_FILE"
+}
+
+finish_receipt() {
+  local rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    record_receipt "$PROFILE" "__profile__" "passed"
+  else
+    record_receipt "$PROFILE" "__profile__" "failed"
+  fi
+  trap - EXIT
+  exit "$rc"
+}
+
 run_cargo() {
   # --locked makes the live lane execute the repository's resolved dependency
   # graph. --ignored is deliberately present only in this allow-listed runner.
   # Cargo and its toolchain are supplied by the trusted self-hosted runner
   # image. A compromised host/toolchain or same-user TOCTOU is infrastructure
   # outside this repository verifier's trust boundary.
-  cargo test --locked "$@" -- --ignored --nocapture
+  local profile="$1" expected="$2"
+  shift 2
+  local log_file="${RECEIPT_DIR}/${profile}-${expected}.log"
+  record_receipt "$profile" "$expected" "started"
+  set +e
+  cargo test --locked "$@" "$expected" -- --ignored --nocapture 2>&1 | tee "$log_file"
+  local cargo_rc="${PIPESTATUS[0]}"
+  set -e
+  if [[ "$cargo_rc" -ne 0 ]]; then
+    record_receipt "$profile" "$expected" "failed"
+    return "$cargo_rc"
+  fi
+
+  # Cargo exits zero for an empty filter. Require exactly one matching `ok`
+  # line so a stale selector can never produce a false green receipt.
+  local passed
+  passed="$(awk -v target="$expected" '$1 == "test" && $NF == "ok" && ($2 == target || $2 ~ ("::" target "$")) { count++ } END { print count + 0 }' "$log_file")"
+  if [[ "$passed" != "1" ]]; then
+    record_receipt "$profile" "$expected" "not-discovered"
+    printf 'error: expected exactly one passing ignored test named %s; observed %s\n' \
+      "$expected" "$passed" >&2
+    return 3
+  fi
+  record_receipt "$profile" "$expected" "passed"
 }
 
 preflight_d1() {
@@ -85,31 +128,56 @@ preflight_neon() {
 }
 
 run_d1() {
-  run_cargo --package corelink-server --lib d1_acquire_lock_then_held_then_release
-  run_cargo --package corelink-server --lib d1_dpa_and_active_subscription_reads
-  run_cargo --package corelink-server --lib d1_persist_free_active_does_not_count_as_a_subscription
-  run_cargo --package corelink-server --lib d1_http_blob_meta_round_trip
-  run_cargo --package corelink-server --lib d1_http_tenant_admin_lookup_round_trip
-  run_cargo --package corelink-server --lib d1_audit_write_blocking_records_oaudit_phase
+  run_cargo d1 d1_acquire_lock_then_held_then_release --package corelink-server --lib
+  run_cargo d1 d1_dpa_and_active_subscription_reads --package corelink-server --lib
+  run_cargo d1 d1_persist_free_active_does_not_count_as_a_subscription --package corelink-server --lib
+  run_cargo d1 d1_http_blob_meta_round_trip --package corelink-server --lib
+  run_cargo d1 d1_http_tenant_admin_lookup_round_trip --package corelink-server --lib
+  run_cargo d1 d1_audit_write_blocking_records_oaudit_phase --package corelink-server --lib
 }
 
 run_r2() {
-  run_cargo --package corelink-server --lib r2_cas_list_durable_audit_failure_precedes_storage
-  run_cargo --package corelink-server --lib storage_r2_round_trip
-  run_cargo --package corelink-server --lib cas_idempotent_rewrite_reports_durable_false
-  run_cargo --package corelink-server --lib delete_if_present_credits_size_once_then_none
-  run_cargo --package corelink-server --lib r2_cas_exists_batch_fails_closed_on_bad_audit_creds
+  run_cargo r2 r2_cas_list_durable_audit_failure_precedes_storage --package corelink-server --lib
+  run_cargo r2 storage_r2_round_trip --package corelink-server --lib
+  run_cargo r2 cas_idempotent_rewrite_reports_durable_false --package corelink-server --lib
+  run_cargo r2 delete_if_present_credits_size_once_then_none --package corelink-server --lib
+  run_cargo r2 r2_cas_exists_batch_fails_closed_on_bad_audit_creds --package corelink-server --lib
 }
 
 run_stripe() {
-  run_cargo --package corelink-stripe-real --features live-integration --test live_integration
+  run_cargo stripe live_create_customer --package corelink-stripe-real --features live-integration --test live_integration
+  run_cargo stripe live_get_customer_404 --package corelink-stripe-real --features live-integration --test live_integration
+  run_cargo stripe live_create_checkout_session_starter --package corelink-stripe-real --features live-integration --test live_integration
+  run_cargo stripe live_idempotent_checkout_returns_same_session --package corelink-stripe-real --features live-integration --test live_integration
+  run_cargo stripe live_billing_portal_session --package corelink-stripe-real --features live-integration --test live_integration
+  run_cargo stripe live_authentication_failure_bad_token --package corelink-stripe-real --features live-integration --test live_integration
 }
 
 run_neon() {
   # The five ignored tests are compiled only with neon-real; no PAT or D1
   # credential is inherited by this profile.
-  run_cargo --package corelink-audit-chain --features neon-real --test neon_shadow_real
+  run_cargo neon sync_chunk_persists_rows_against_live_postgres --package corelink-audit-chain --features neon-real --test neon_shadow_real
+  run_cargo neon sync_chunk_is_idempotent_on_replay --package corelink-audit-chain --features neon-real --test neon_shadow_real
+  run_cargo neon aggregate_event_count_against_live_postgres --package corelink-audit-chain --features neon-real --test neon_shadow_real
+  run_cargo neon aggregate_timeline_against_live_postgres --package corelink-audit-chain --features neon-real --test neon_shadow_real
+  run_cargo neon rls_policy_isolates_tenants_against_live_postgres --package corelink-audit-chain --features neon-real --test neon_shadow_real
 }
+
+case "$PROFILE" in
+  d1|r2|stripe|neon|all) ;;
+  *)
+    usage
+    # An empty/unknown selector must never fall through to a broad
+    # `cargo test --ignored` invocation. In particular, `seed` is not a
+    # supported selector.
+    die "unknown harness profile: ${PROFILE:-<empty>}"
+    ;;
+esac
+
+mkdir -p "$RECEIPT_DIR"
+: > "$RECEIPT_FILE"
+cp scripts/real-ignored-harness-manifest.json "$RECEIPT_DIR/manifest.json"
+trap finish_receipt EXIT
 
 case "$PROFILE" in
   d1) preflight_d1; run_d1 ;;
@@ -128,12 +196,5 @@ case "$PROFILE" in
     run_r2
     run_stripe
     run_neon
-    ;;
-  *)
-    usage
-    # An empty/unknown selector must never fall through to a broad
-    # `cargo test --ignored` invocation. In particular, `seed` is not a
-    # supported selector.
-    die "unknown harness profile: ${PROFILE:-<empty>}"
     ;;
 esac
