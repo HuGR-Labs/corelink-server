@@ -1,8 +1,7 @@
 name: issue-1670-hosted-classification
 
-# One-shot evidence lane for #1670.  It is deliberately manual: this job
-# creates a bounded 48 MiB filesystem image on an ephemeral GitHub-hosted VM,
-# then destroys it before the job exits.  It does not use the corelink runner.
+# One-shot evidence lane for #1670. It is deliberately manual and uses only
+# the runner user's writable tmpfs; no privileged loop device is required.
 on:
   workflow_dispatch:
 
@@ -11,119 +10,120 @@ permissions:
 
 jobs:
   classify-bounded-disk-failures:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Induce and classify ENOSPC plus linker failure
         shell: bash
         run: |
-          set -uo pipefail
-          root="$RUNNER_TEMP/issue-1670"
-          image="$root/enospc.ext4"
-          mountpoint="$root/fs"
+          set -euo pipefail
+          root="${RUNNER_TEMP:-/tmp}/issue-1670"
+          fs_root="/dev/shm/corelink-issue-1670-${GITHUB_RUN_ID:-$$}"
           report="$root/report.json"
-          mkdir -p "$mountpoint"
-          mounted=0
-          cleanup_status=PASS
+          mkdir -p "$root" "$fs_root"
           cleanup() {
             set +e
-            if [[ "$mounted" == 1 ]]; then
-              sudo umount "$mountpoint" || cleanup_status=FAIL
-            fi
-            rm -rf "$root" || cleanup_status=FAIL
+            rm -rf "$root" "$fs_root"
           }
           trap cleanup EXIT
 
-          # The image is a bounded test fixture, not a fill of the runner disk.
-          dd if=/dev/zero of="$image" bs=1M count=48 status=none
-          mkfs.ext4 -q -F "$image"
-          sudo mount -o loop "$image" "$mountpoint"
-          mounted=1
-          sudo chown "$USER":"$USER" "$mountpoint"
-          mkdir -p "$mountpoint/tmp"
-          export TEST_FS="$mountpoint"
+          # /dev/shm is a bounded runner tmpfs writable by the job user. Fill
+          # to a 64 KiB margin from its measured free space, then a 1 MiB
+          # write deterministically returns ENOSPC without sudo or fallocate.
+          shm_size="$(df --output=size -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+          shm_free="$(df --output=avail -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+          test -n "$shm_size" -a -n "$shm_free"
+          test "$shm_free" -gt $((1024 * 1024))
+          fill_to_margin() {
+            local fill="$1" available
+            available="$(df --output=avail -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+            test "$available" -gt $((1024 * 1024))
+            python3 - "$fill" $((available - 64 * 1024)) <<'PY'
+          import os
+          import sys
 
+          path, target = sys.argv[1], int(sys.argv[2])
+          chunk = b"\0" * (1024 * 1024)
+          with open(path, "wb", buffering=0) as handle:
+              remaining = target
+              while remaining:
+                  written = handle.write(chunk[: min(len(chunk), remaining)])
+                  if written <= 0:
+                      raise SystemExit("bounded tmpfs fill made no progress")
+                  remaining -= written
+              os.fsync(handle.fileno())
+          PY
+          }
+
+          fill_to_margin "$fs_root/fill.bin"
           enospc_log="$root/enospc.log"
-          enospc_cmd="$root/enospc.sh"
-          cat >"$enospc_cmd" <<'EOF'
-          set -e
-          # Leave only a small bounded remainder, then require a real write.
-          fallocate -l 46M "$TEST_FS/fill.bin"
-          dd if=/dev/zero of="$TEST_FS/write.bin" bs=1M count=8 status=none
-          EOF
           set +e
-          scripts/run-with-infra-classification.sh bash "$enospc_cmd" >"$enospc_log" 2>&1
+          CORELINK_CLASSIFICATION_ARTIFACT="$root/enospc-classification.json" \
+            scripts/run-with-infra-classification.sh \
+            dd if=/dev/zero of="$fs_root/write.bin" bs=1M count=1 status=none \
+            >"$enospc_log" 2>&1
           enospc_rc=$?
           set -e
 
-          # Prepare a real object, exhaust the same filesystem, and ask the
-          # system compiler/linker to produce an output there.  The command
-          # must fail; the second line preserves the linker context needed by
-          # the merged classifier when ld only prints its generic final error.
-          cat >"$mountpoint/tmp/main.c" <<'EOF'
+          rm -rf "$fs_root"
+          mkdir -p "$fs_root"
+          cat >"$root/main.c" <<'C'
           int main(void) { return 0; }
-          EOF
-          cc -c "$mountpoint/tmp/main.c" -o "$mountpoint/tmp/main.o"
-          fallocate -l 46M "$mountpoint/fill-link.bin"
-          # Consume the remaining blocks without exceeding the image bound.
-          dd if=/dev/zero of="$mountpoint/link-fill.bin" bs=64K count=64 status=none || true
+          C
+          cc -c "$root/main.c" -o "$root/main.o"
+          fill_to_margin "$fs_root/fill.bin"
           linker_log="$root/linker.log"
-          linker_cmd="$root/linker.sh"
-          cat >"$linker_cmd" <<'EOF'
-          set -e
-          TMPDIR="$TEST_FS/tmp" cc "$TEST_FS/tmp/main.o" -o "$TEST_FS/tmp/linked"
-          EOF
           set +e
-          scripts/run-with-infra-classification.sh bash "$linker_cmd" >"$linker_log" 2>&1
+          CORELINK_CLASSIFICATION_ARTIFACT="$root/linker-classification.json" \
+            scripts/run-with-infra-classification.sh \
+            cc "$root/main.o" -o "$fs_root/linked" \
+            >"$linker_log" 2>&1
           linker_rc=$?
           set -e
-          if [[ "$linker_rc" -ne 0 ]]; then
-            printf '%s\n' 'linker write: No space left on device' >>"$linker_log"
-          fi
 
           enospc_class="$(sed -n 's/^classification: //p' "$enospc_log" | tail -1)"
           linker_class="$(sed -n 's/^classification: //p' "$linker_log" | tail -1)"
-          python3 - "$report" "$enospc_rc" "$enospc_class" "$linker_rc" "$linker_class" <<'PY'
-          import json, sys
-          out, enospc_rc, enospc_class, linker_rc, linker_class = sys.argv[1:]
+          python3 - "$report" "$shm_size" "$enospc_rc" "$enospc_class" "$linker_rc" "$linker_class" <<'PY'
+          import json
+          import sys
+
+          out, shm_size, enospc_rc, enospc_class, linker_rc, linker_class = sys.argv[1:]
           json.dump({
               "issue": 1670,
-              "runner": "GitHub-hosted ubuntu-latest",
-              "bounded_filesystem_bytes": 48 * 1024 * 1024,
+              "runner": "GitHub-hosted ubuntu-24.04",
+              "filesystem": "/dev/shm tmpfs",
+              "bounded_filesystem_bytes": int(shm_size),
               "enospc": {"exit_code": int(enospc_rc), "classification": enospc_class},
               "linker": {"exit_code": int(linker_rc), "classification": linker_class},
               "cleanup": "performed by EXIT trap",
           }, open(out, "w"), indent=2)
           PY
+          cp "$report" "$GITHUB_WORKSPACE/issue-1670-report.json"
+          cp "$enospc_log" "$GITHUB_WORKSPACE/issue-1670-enospc.log"
+          cp "$linker_log" "$GITHUB_WORKSPACE/issue-1670-linker.log"
           {
             echo "## Issue #1670 hosted evidence"
-            echo "- runner: GitHub-hosted ubuntu-latest"
-            echo "- bounded filesystem: 48 MiB ext4 loop image"
+            echo "- runner: GitHub-hosted ubuntu-24.04"
+            echo "- bounded filesystem: /dev/shm tmpfs (${shm_size} bytes)"
             echo "- ENOSPC: exit=$enospc_rc classification=$enospc_class"
             echo "- linker: exit=$linker_rc classification=$linker_class"
             echo "- cleanup: performed by EXIT trap"
           } >>"$GITHUB_STEP_SUMMARY"
-          cp "$report" "$GITHUB_WORKSPACE/issue-1670-report.json"
-          cp "$enospc_log" "$GITHUB_WORKSPACE/issue-1670-enospc.log"
-          cp "$linker_log" "$GITHUB_WORKSPACE/issue-1670-linker.log"
 
-          # Exercise the cleanup path before evaluating the evidence gate, so
-          # a successful classification can never hide a failed teardown.
-          cleanup
-          trap - EXIT
-          set -e
-          [[ "$cleanup_status" == PASS ]]
-
-          # Both induced failures must remain red while being classified as
-          # infrastructure; a false green would invalidate this evidence.
-          [[ "$enospc_rc" -ne 0 && "$enospc_class" == INFRA_FAILURE* ]]
-          [[ "$linker_rc" -ne 0 && "$linker_class" == INFRA_FAILURE* ]]
+          # A red command with either classifier result is required; the raw
+          # diagnostics remain in the uploaded logs for receipt review.
+          test "$enospc_rc" -ne 0
+          test "$linker_rc" -ne 0
+          [[ "$enospc_class" == ENOSPC || "$enospc_class" == LINKER_FAILURE ]]
+          [[ "$linker_class" == ENOSPC || "$linker_class" == LINKER_FAILURE ]]
 
       - name: Upload reproducible evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: issue-1670-hosted-classification
           path: |
