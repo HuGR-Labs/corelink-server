@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -162,8 +163,6 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
         raise VerificationError("historical source commit inventory is incomplete")
     for stage, commit in historical_sources.items():
         require_sha(commit, f"historical {stage} commit")
-        if not commit_exists(commit):
-            raise VerificationError(f"historical {stage} source object is missing")
 
     merge_commit = require_sha(squash.get("merge_commit"), "squash merge commit")
     merge_parent = require_sha(squash.get("merge_parent"), "squash merge parent")
@@ -180,8 +179,6 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
         if not isinstance(entry, dict):
             raise VerificationError(f"squash {stage} entry is invalid")
         commit = require_sha(entry.get("commit"), f"squash {stage} commit")
-        if not commit_exists(commit):
-            raise VerificationError(f"squash {stage} source object is missing")
         paths = entry.get("paths")
         if not isinstance(paths, list) or not paths or any(not isinstance(p, str) or not p for p in paths):
             raise VerificationError(f"squash {stage} path inventory is invalid")
@@ -253,6 +250,16 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
     if mismatches:
         raise VerificationError(f"current-main bundle path blobs differ: {', '.join(mismatches)}")
 
+    historical_results: dict[str, dict[str, Any]] = {}
+    for stage, commit in historical_sources.items():
+        present = commit_exists(commit)
+        historical_results[stage] = {
+            "commit": commit,
+            "object_present_in_hosted_checkout": present,
+            "ancestor_of_head": ancestor(commit, head) if present else False,
+            "unavailable_object_rule": "historical source identities are pinned; unreachable source objects are reported, not fetched or treated as proof of current-main ancestry",
+        }
+
     source_results: dict[str, dict[str, Any]] = {}
     expected_parents = {
         "p12": merge_parent,
@@ -262,13 +269,11 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
     for stage, entry in source_inventory.items():
         commit = entry["commit"]
         present = commit_exists(commit)
-        if not present:
-            raise VerificationError(f"squash {stage} source object is missing")
         result: dict[str, Any] = {
             "commit": commit,
             "object_present": present,
             "ancestor_of_head": ancestor(commit, head) if present else False,
-            "ancestry_rule": "historical source may be unreachable after squash; merge commit must be reachable",
+            "source_object_rule": "source IDs and staged paths are pinned in the manifest; source objects may be unavailable after squash; the canonical squash commit and landed blobs are authoritative",
         }
         if present:
             parents = git("rev-list", "--parents", "-n1", commit).split()
@@ -279,24 +284,39 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
                 raise VerificationError(f"squash {stage} source object conflicts with its inventory")
         source_results[stage] = result
 
+    current_main_tree = git("show", "-s", "--format=%T", head)
+    exact_tree_matches = current_main_tree == historical_tree
     return {
         "schema_version": "2",
         "issue": 1690,
         "ref": "refs/heads/main",
         "head_sha": head,
         "github_sha": github_sha,
-        "status": "PASS_SQUASH_PROVENANCE",
+        "immutable_sha": github_sha,
+        "expected_tree": historical_tree,
+        "observed_tree": current_main_tree,
+        "tree_matches": exact_tree_matches,
+        "receipt_provenance": {
+            "repository": os.environ.get("GITHUB_REPOSITORY"),
+            "workflow": os.environ.get("GITHUB_WORKFLOW"),
+            "run_id": os.environ.get("GITHUB_RUN_ID"),
+            "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+            "artifact_name": f"issue-1690-p12-p14-main-verification-{os.environ.get('GITHUB_RUN_ID', 'local')}",
+        },
+        "status": "PASS" if exact_tree_matches else "FAIL_EXACT_TREE_MISMATCH",
         "contract": {
             "historical_test_tree": historical_tree,
-            "historical_tree_matches_current_main": git("show", "-s", "--format=%T", head) == historical_tree,
+            "historical_tree_matches_current_main": exact_tree_matches,
+            "current_main_tree_matches_github_sha": True,
             "squash_merge_commit": merge_commit,
             "squash_merge_is_ancestor": True,
             "squash_tree": squash_tree,
-            "current_main_tree": git("show", "-s", "--format=%T", head),
+            "current_main_tree": current_main_tree,
             "current_main_path_blobs_match_squash_tree": True,
             "ancestry_rule": "P12-P14 source ids are historical and may be unreachable after squash; the canonical #1746 squash commit and its path inventory must be reachable from main.",
         },
         "historical_source_commits": historical_sources,
+        "historical_source_object_evidence": historical_results,
         "squash_source_commits": source_results,
         "path_inventory": path_results,
     }
@@ -313,12 +333,24 @@ def main() -> int:
         manifest = load_manifest(args.manifest)
         report = verify(manifest, args.head, args.github_sha)
     except VerificationError as exc:
+        observed_tree = git_optional("show", "-s", "--format=%T", args.head)
         report = {
             "schema_version": "2",
             "issue": 1690,
             "ref": "refs/heads/main",
             "head_sha": args.head,
             "github_sha": args.github_sha,
+            "immutable_sha": args.github_sha,
+            "expected_tree": EXPECTED_HISTORICAL_TREE,
+            "observed_tree": observed_tree,
+            "tree_matches": observed_tree == EXPECTED_HISTORICAL_TREE,
+            "receipt_provenance": {
+                "repository": os.environ.get("GITHUB_REPOSITORY"),
+                "workflow": os.environ.get("GITHUB_WORKFLOW"),
+                "run_id": os.environ.get("GITHUB_RUN_ID"),
+                "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+                "artifact_name": f"issue-1690-p12-p14-main-verification-{os.environ.get('GITHUB_RUN_ID', 'local')}",
+            },
             "status": "FAIL",
             "failure": str(exc),
         }
@@ -326,7 +358,7 @@ def main() -> int:
         return 1
 
     print(json.dumps(report, indent=2, sort_keys=True))
-    return 0
+    return 0 if report["status"] == "PASS" else 1
 
 
 if __name__ == "__main__":
