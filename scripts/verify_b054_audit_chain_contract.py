@@ -10,6 +10,8 @@ partial epoch metadata.
 from __future__ import annotations
 
 import tomllib
+import re
+import subprocess
 from pathlib import Path
 
 
@@ -36,6 +38,10 @@ ARCHIVE_LIVE_TOKENS = (
 )
 ARCHIVE_LIVE_AUTH_TOKENS = ARCHIVE_LIVE_TOKENS[:5]
 AUDIT_SIGNING_SEED_NAME = "AUDIT_CHAIN_SIGNING_SEED_HEX"
+AUDIT_SIGNING_SEED_ASSIGNMENT = re.compile(
+    rf"\b{re.escape(AUDIT_SIGNING_SEED_NAME)}\b\s*=\s*([\"'])"
+    rf"[0-9a-fA-F]{{64}}\1"
+)
 
 
 def _toml_keys(value: object):
@@ -107,6 +113,57 @@ def deployment_secret_boundary_mutation_self_test(wrangler: str) -> None:
             assess_deployment_secret_boundary(mutant)
         except ContractError:
             raise ContractError(f"deployment secret text false positive: {label}")
+
+
+def assess_seed_artifact_boundary(artifacts: dict[str, str]) -> None:
+    """Reject seed assignments in tracked source and evidence artifacts.
+
+    A write-only secret must not be copied into a report, log, fixture, or
+    generated artifact.  The name may appear in operator documentation, but a
+    complete 32-byte hex value next to an assignment is always a leak.
+    """
+    for path, text in artifacts.items():
+        if AUDIT_SIGNING_SEED_ASSIGNMENT.search(text):
+            raise ContractError(
+                f"tracked artifact contains plaintext {AUDIT_SIGNING_SEED_NAME}: {path}"
+            )
+
+
+def seed_artifact_boundary_mutation_self_test() -> None:
+    """Prove a complete seed assignment is rejected while redacted text passes."""
+    assess_seed_artifact_boundary(
+        {"report.md": 'AUDIT_CHAIN_SIGNING_SEED_HEX = "<REDACTED-64-HEX>"'}
+    )
+    try:
+        assess_seed_artifact_boundary(
+            {"report.md": 'AUDIT_CHAIN_SIGNING_SEED_HEX = "' + ("0" * 64) + '"'}
+        )
+    except ContractError:
+        return
+    raise ContractError("plaintext seed artifact mutation survived")
+
+
+def tracked_text_artifacts() -> dict[str, str]:
+    """Read tracked files for the seed leak scan without inspecting the worktree."""
+    result = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=ROOT,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    artifacts: dict[str, str] = {}
+    for raw_path in result.stdout.split(b"\0"):
+        if not raw_path:
+            continue
+        path = raw_path.decode("utf-8")
+        candidate = ROOT / path
+        try:
+            artifacts[path] = candidate.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            # Binary assets cannot contain a textual assignment and do not
+            # belong to this source/evidence contract scan.
+            continue
+    return artifacts
 
 
 def assess_archive_live_boundary(archive: str) -> None:
@@ -435,6 +492,8 @@ def main() -> int:
     mutation_self_test(files)
     archive_live_mutation_self_test()
     deployment_secret_boundary_mutation_self_test(files["wrangler"])
+    seed_artifact_boundary_mutation_self_test()
+    assess_seed_artifact_boundary(tracked_text_artifacts())
     print("B-054 contract: PASS (unknown/partial/downgrade epoch metadata fail closed; mutations red)")
     return 0
 

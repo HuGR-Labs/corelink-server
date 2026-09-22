@@ -27,6 +27,7 @@ TOKEN = re.compile(r"^[A-Za-z0-9._~:-]{1,180}$")
 PHASE = re.compile(r"(?P<n>[a-z][a-z0-9_-]*);dur=(?P<d>[0-9]+(?:\.[0-9]+)?)")
 Q = ("qtier", "qdo", "qbatch", "qresid", "qcontrol")
 ORIGIN = ("opat", "oquota", "ostore", "oaccounting", "oargon", "opermit", "ortier", "oaudit", "oratelimit", "ohandler")
+REQUIRED_ORIGIN = ("ostore", "oaccounting", "ohandler")
 
 
 def fail(message: str) -> None:
@@ -75,12 +76,35 @@ def request(url: urllib.parse.SplitResult, token: str) -> tuple[int, dict[str, s
         conn.close()
 
 
+def validate_sample(status: int, headers: dict[str, str], values: dict[str, float], wall: float, deployed_sha: str, deployed_region: str) -> float:
+    wire_sha = headers.get("x-corelink-deployed-sha") or headers.get("x-corelink-deployed-commit")
+    if not wire_sha or wire_sha.lower() != deployed_sha.lower():
+        fail("deployed SHA missing or mismatched on wire")
+    if headers.get("x-corelink-server-timing-wdb-detail") != "on":
+        fail("diagnostic flag missing or mismatched on wire")
+    if headers.get("x-corelink-deployed-region") != deployed_region:
+        fail("deployed region missing or mismatched on wire")
+    required = set(Q) | {"ohop", "wdb", "origin", "total"}
+    if not required.issubset(values) or any(name not in values for name in REQUIRED_ORIGIN):
+        fail("required B-129 Server-Timing phase missing")
+    if not math.isclose(sum(values[n] for n in Q), values["wdb"], abs_tol=1e-6):
+        fail("q phase sum does not reconcile to wdb")
+    if not math.isclose(values["ohop"] + sum(values.get(n, 0.0) for n in ORIGIN), values["origin"], abs_tol=1e-6):
+        fail("origin phase sum does not reconcile")
+    if not headers.get("x-request-id") or not headers.get("cf-ray"):
+        fail("response is missing request or colo identity")
+    if status != 200 or wall <= 0 or values["total"] <= 0 or values["total"] + 1e-6 < values["wdb"] + values["origin"]:
+        fail("non-success or over-counted timing row")
+    return 100.0 * (values["total"] - values["wdb"] - values["origin"]) / values["total"]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", required=True)
     parser.add_argument("--tenant", required=True)
     parser.add_argument("--cargo-key", required=True)
     parser.add_argument("--deployed-sha", required=True)
+    parser.add_argument("--deployed-region", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--samples", type=int, default=10)
     args = parser.parse_args()
@@ -91,7 +115,7 @@ def main() -> int:
     declared_sha = os.environ.get("CORELINK_DEPLOYED_COMMIT", "")
     if declared_sha and declared_sha.lower() != args.deployed_sha.lower():
         fail("declared deployed SHA does not match dispatch SHA")
-    if not SHA.fullmatch(args.deployed_sha) or not UUID.fullmatch(args.tenant) or not TOKEN.fullmatch(args.cargo_key):
+    if not SHA.fullmatch(args.deployed_sha) or not UUID.fullmatch(args.tenant) or not TOKEN.fullmatch(args.cargo_key) or not TOKEN.fullmatch(args.deployed_region):
         fail("invalid target, tenant, cargo key, or deployed SHA")
     token = os.environ.get("CORELINK_DOGFOOD_PAT")
     if not token:
@@ -109,31 +133,14 @@ def main() -> int:
         if time.monotonic() >= deadline:
             fail("probe deadline exceeded")
         status, headers, wall = request(url, token)
-        wire_sha = headers.get("x-corelink-deployed-sha") or headers.get("x-corelink-deployed-commit")
-        wire_flag = headers.get("x-corelink-server-timing-wdb-detail")
-        if not wire_sha or wire_sha.lower() != args.deployed_sha.lower():
-            fail("deployed SHA missing or mismatched on wire")
-        if wire_flag != "on":
-            fail("diagnostic flag missing or mismatched on wire")
         values = timing(headers.get("server-timing", ""))
-        required = set(Q) | {"ohop", "wdb", "origin", "total"}
-        if not required.issubset(values):
-            fail("required B-129 Server-Timing phase missing")
-        if not math.isclose(sum(values[n] for n in Q), values["wdb"], abs_tol=1e-6):
-            fail("q phase sum does not reconcile to wdb")
-        if not math.isclose(values["ohop"] + sum(values.get(n, 0.0) for n in ORIGIN), values["origin"], abs_tol=1e-6):
-            fail("origin phase sum does not reconcile")
-        if not headers.get("x-request-id") or not headers.get("cf-ray"):
-            fail("response is missing request or colo identity")
-        if status != 200 or values["total"] <= 0 or values["total"] + 1e-6 < values["wdb"] + values["origin"]:
-            fail("non-success or over-counted timing row")
-        residual = 100.0 * (values["total"] - values["wdb"] - values["origin"]) / values["total"]
+        residual = validate_sample(status, headers, values, wall, args.deployed_sha, args.deployed_region)
         rows.append({"sample": ordinal, "status": status, "wall_s": round(wall, 6), "phases_ms": values, "residual_pct": round(residual, 6), "request_id": headers.get("x-request-id", ""), "cf_ray": headers.get("cf-ray", "")})
     maximum = max(row["residual_pct"] for row in rows)
     median = residual_median(rows)
     if median >= 10:
         fail(f"residual median is {median:.3f}%, expected <10%")
-    receipt = {"issue": 1671, "work_package": "B-129", "kind": "approved_read_only_probe", "target_origin": f"{target.scheme}://{target.netloc}", "tenant": args.tenant, "cargo_key_sha256": hashlib.sha256(args.cargo_key.encode()).hexdigest(), "deployed_sha": args.deployed_sha.lower(), "diagnostic_flag": "on", "captured_at": datetime.now(timezone.utc).isoformat(), "sample_count": args.samples, "residual_median_pct": median, "residual_max_pct": maximum, "rows": rows}
+    receipt = {"issue": 1671, "work_package": "B-129", "kind": "approved_read_only_probe", "target_origin": f"{target.scheme}://{target.netloc}", "tenant": args.tenant, "cargo_key_sha256": hashlib.sha256(args.cargo_key.encode()).hexdigest(), "deployed_sha": args.deployed_sha.lower(), "deployed_region": args.deployed_region, "diagnostic_flag": "on", "captured_at": datetime.now(timezone.utc).isoformat(), "sample_count": args.samples, "residual_median_pct": median, "residual_max_pct": maximum, "rows": rows}
     with open(args.output, "w", encoding="utf-8") as handle:
         json.dump(receipt, handle, sort_keys=True, indent=2)
         handle.write("\n")

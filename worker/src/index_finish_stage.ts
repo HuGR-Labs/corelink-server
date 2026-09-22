@@ -255,6 +255,19 @@ export async function finishResponse(
       // needs no redeploy of the timing code, only of this gate.
       const wdbDetail = (env as unknown as { SERVER_TIMING_WDB_DETAIL?: string })
         .SERVER_TIMING_WDB_DETAIL === "on";
+      const deployment = env as unknown as {
+        CORELINK_DEPLOYED_SHA?: string;
+        CORELINK_DEPLOYED_REGION?: string;
+      };
+      if (deployment.CORELINK_DEPLOYED_SHA) {
+        finalHeaders.set("X-Corelink-Deployed-Sha", deployment.CORELINK_DEPLOYED_SHA);
+      }
+      if (deployment.CORELINK_DEPLOYED_REGION) {
+        finalHeaders.set("X-Corelink-Deployed-Region", deployment.CORELINK_DEPLOYED_REGION);
+      }
+      if (wdbDetail) {
+        finalHeaders.set("X-Corelink-Server-Timing-Wdb-Detail", "on");
+      }
       for (const [name, ms] of [
         ["qtier", stQTierMs],
         ...(wdbDetail ? ([["qdo", stQDoMs]] as const) : ([] as const)),
