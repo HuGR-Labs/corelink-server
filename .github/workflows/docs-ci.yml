@@ -122,7 +122,7 @@ jobs:
     # check as ⛔ DO NOT MERGE. Note this job has the highest fan-in in the file —
     # six jobs `needs: build` for the `docs-build` artifact — so a stranded spawn
     # here stalls the whole workflow rather than one lane.
-    runs-on: corelink
+    runs-on: ubuntu-latest
     # Measured median 290 s (~4.8 min) over 43 hosted runs; worst observed 312 s.
     # DELIBERATELY LEFT AT 20 (≈4.1x median) rather than tightened to the 3x/15
     # the recipe suggests: this is the job's first exposure to a cold, cacheless
@@ -176,6 +176,13 @@ jobs:
       - name: Install dependencies
         working-directory: .
         run: pnpm install --frozen-lockfile
+
+      # The hosted Ubuntu image does not include the shell/hash tools exercised
+      # by the cross-platform raw-curl fixtures in the main test suite.
+      - name: Install Docs test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends b3sum zsh
 
       - name: Typecheck
         run: pnpm typecheck
@@ -233,7 +240,7 @@ jobs:
     # answered here rather than ignored: the release tarball is pinned by VERSION
     # and by SHA-256 recorded below, and the checksum is verified before the
     # binary is ever executed. That is the same property the action pin gave us.
-    runs-on: corelink
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -336,7 +343,7 @@ jobs:
 
   sdk-artifacts:
     name: published SDK artifacts match their source
-    runs-on: corelink
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
@@ -368,7 +375,7 @@ jobs:
     # ships /usr/bin/python3 (the same idiom `spec_validation.yml` has used on
     # this fleet since 2026-06-03), and pyyaml comes from requirements-ci.txt
     # in a repo-local venv rather than being assumed present.
-    runs-on: corelink
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -414,7 +421,7 @@ jobs:
     # node, nothing python3, no browser. All four are PRESENT on the box (curl
     # 8.5.0, coreutils 9.4, GNU tar 1.35) and github.com answers 200 from it
     # (image inventory 91857115465).
-    runs-on: corelink
+    runs-on: ubuntu-latest
     # Measured median 12 s over 43 hosted runs (max 29 s). 3x median is far under
     # the floor, so this sits at the recipe's 10-minute floor — which is also what
     # it already was. Bounds RUNNING time only; a queued spawn is not capped.
@@ -482,7 +489,7 @@ jobs:
     # versus a per-run download — it is a download versus a job that cannot start.
     # `admin-ui-e2e.yml` already runs this exact install on `corelink`, so the box
     # has the sudo `--with-deps` needs; this is the same recipe, not a new one.
-    runs-on: corelink
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -542,7 +549,7 @@ jobs:
     # Why it fits: `pnpm i18n-coverage` is `tsx scripts/i18n-coverage.ts` — pure
     # node, no `child_process`, no browser, no python3. node/npm/pnpm are on the
     # box (image inventory 91857115465).
-    runs-on: corelink
+    runs-on: ubuntu-latest
     # Measured median 54 s over 43 hosted runs (p90 67 s; one 271 s outlier).
     # 3x median is under the recipe's 10-minute floor, so it stays at the floor —
     # which also covers the outlier ~2.2x over. Bounds RUNNING time only.
@@ -592,7 +599,7 @@ jobs:
     # browser. `diff` is Priority: required on the Ubuntu 24.04 base this image is
     # built from; and if it were ever absent, `checkDrift()` catches the execSync
     # throw and FAILS the gate loudly — it cannot degrade into a false pass.
-    runs-on: corelink
+    runs-on: ubuntu-latest
     # Measured median 50 s over 43 hosted runs (max 67 s). 3x median is under the
     # recipe's 10-minute floor, so it stays at the floor. Bounds RUNNING time only.
     timeout-minutes: 10
@@ -615,6 +622,13 @@ jobs:
 
       - name: Install docs deps
         run: pnpm install --filter @corelink/docs --frozen-lockfile=false
+
+      # The hosted Ubuntu image does not include the shell/hash tools exercised
+      # by the cross-platform raw-curl fixtures.
+      - name: Install REAPI fixture tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends b3sum zsh
 
       - name: Typecheck
         run: pnpm --filter @corelink/docs typecheck
