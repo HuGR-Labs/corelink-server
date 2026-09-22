@@ -106,7 +106,7 @@ class Issue1720CloudflareDriftAuditTests(unittest.TestCase):
         source = AUDIT_WORKFLOW.read_text(encoding="utf-8")
         mutations = (
             source.replace("if ! gh api --method PUT", "if gh api --method PUT", 1),
-            source.replace("disabled_manually", "active", 1),
+            source.replace("disabled_manually", "active"),
             source.replace("trap cleanup_disable_workflows EXIT", "trap cleanup_disable_workflows RETURN", 1),
             source.replace("cleanup_status=1", "cleanup_status=0", 1),
             source.replace(READ_ENDPOINTS[0], "/accounts/$CF_ACCOUNT_ID/r2/removed?per_page=1", 1),
