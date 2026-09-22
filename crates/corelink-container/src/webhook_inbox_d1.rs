@@ -6,8 +6,9 @@
 use std::sync::Arc;
 
 use corelink_billing::stripe::real::webhook_dispatch::{
-    DurableWebhookEvent, DurableWebhookInbox, InboxClaim as DispatcherInboxClaim,
-    InboxReceiveOutcome, InboxTerminalState as DispatcherInboxTerminalState,
+    DurableWebhookEvent, DurableWebhookInbox, EffectReservation,
+    InboxClaim as DispatcherInboxClaim, InboxReceiveOutcome,
+    InboxTerminalState as DispatcherInboxTerminalState,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -27,6 +28,12 @@ pub const SQL_COMPLETE: &str = "UPDATE stripe_webhook_event_inbox SET state = 'c
 pub const SQL_QUARANTINE: &str = "UPDATE stripe_webhook_event_inbox SET state = 'quarantined', claim_owner = NULL, claim_expires_at_ms = NULL, updated_at_ms = ?1, terminal_at_ms = ?1, last_error = ?2 WHERE event_id = ?3 AND state = 'claimed' AND fence = ?4 AND claim_owner = ?5 AND claim_expires_at_ms > ?6 RETURNING event_id";
 /// Insert the idempotent effect witness only while this exact lease is live.
 pub const SQL_EFFECT_INSERT: &str = "INSERT INTO stripe_webhook_event_effects (event_id, effect_key, payload_sha256, fence, effect_kind, applied_at_ms) SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE EXISTS (SELECT 1 FROM stripe_webhook_event_inbox WHERE event_id = ?1 AND state = 'claimed' AND fence = ?4 AND claim_owner = ?7 AND claim_expires_at_ms > ?6) ON CONFLICT(event_id) DO NOTHING RETURNING event_id";
+/// Read the existing witness after a reservation conflict.
+pub const SQL_EFFECT_READ: &str = "SELECT effect_key, payload_sha256, fence, effect_kind FROM stripe_webhook_event_effects WHERE event_id = ?1";
+/// Seal only the pending witness owned by this live claim.
+pub const SQL_EFFECT_SEAL: &str = "UPDATE stripe_webhook_event_effects SET effect_kind = ?1, applied_at_ms = ?2 WHERE event_id = ?3 AND effect_key = ?4 AND payload_sha256 = ?5 AND fence = ?6 AND effect_kind = ?7 AND EXISTS (SELECT 1 FROM stripe_webhook_event_inbox WHERE event_id = ?3 AND state = 'claimed' AND fence = ?6 AND claim_owner = ?8 AND claim_expires_at_ms > ?2) RETURNING event_id";
+/// Abort a reservation only while its claim remains live.
+pub const SQL_EFFECT_ABORT: &str = "DELETE FROM stripe_webhook_event_effects WHERE event_id = ?1 AND effect_key = ?2 AND payload_sha256 = ?3 AND fence = ?4 AND effect_kind = ?5 AND EXISTS (SELECT 1 FROM stripe_webhook_event_inbox WHERE event_id = ?1 AND state = 'claimed' AND fence = ?4 AND claim_owner = ?6 AND claim_expires_at_ms > ?7) RETURNING event_id";
 /// Terminalize only when the witness just inserted by the same fenced claim exists.
 pub const SQL_EFFECT_COMPLETE: &str = "UPDATE stripe_webhook_event_inbox SET state = 'completed', claim_owner = NULL, claim_expires_at_ms = NULL, updated_at_ms = ?1, terminal_at_ms = ?1, last_error = NULL WHERE event_id = ?2 AND state = 'claimed' AND fence = ?3 AND claim_owner = ?4 AND claim_expires_at_ms > ?1 AND EXISTS (SELECT 1 FROM stripe_webhook_event_effects WHERE event_id = ?2 AND effect_key = ?5 AND payload_sha256 = ?6 AND fence = ?3 AND effect_kind = ?7) RETURNING event_id";
 
@@ -242,16 +249,18 @@ impl D1WebhookInbox {
         }
         let now = i64::try_from(now_ms).unwrap_or(i64::MAX);
         let fence = i64::try_from(claim.fence).unwrap_or(i64::MAX);
+        let pending_kind = format!("pending:{effect_kind}");
         let result = self.run_batch(vec![
             D1BatchStatement::new(
-                SQL_EFFECT_INSERT,
+                SQL_EFFECT_SEAL,
                 vec![
+                    json!(effect_kind),
+                    json!(now),
                     json!(claim.event_id),
                     json!(effect_key),
                     json!(event.payload_sha256),
                     json!(fence),
-                    json!(effect_kind),
-                    json!(now),
+                    json!(pending_kind),
                     json!(owner),
                 ],
             ),
@@ -271,6 +280,85 @@ impl D1WebhookInbox {
         let inserted = result.first().is_some_and(|rows| !rows.is_empty());
         let completed = result.get(1).is_some_and(|rows| !rows.is_empty());
         Ok(inserted && completed)
+    }
+
+    fn reserve_effect(
+        &self,
+        claim: &InboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+    ) -> Result<EffectReservation, String> {
+        validate_durable_event(event)?;
+        if claim.event_id != event.event_id || effect_key.is_empty() || effect_kind.is_empty() {
+            return Err("webhook inbox: invalid effect reservation identity".to_owned());
+        }
+        let now = i64::try_from(now_ms).unwrap_or(i64::MAX);
+        let fence = i64::try_from(claim.fence).unwrap_or(i64::MAX);
+        let pending_kind = format!("pending:{effect_kind}");
+        let rows = self.run(
+            SQL_EFFECT_INSERT,
+            vec![
+                json!(claim.event_id),
+                json!(effect_key),
+                json!(event.payload_sha256),
+                json!(fence),
+                json!(pending_kind),
+                json!(now),
+                json!(owner),
+            ],
+        )?;
+        if !rows.is_empty() {
+            return Ok(EffectReservation::Reserved);
+        }
+        let row = self
+            .run(SQL_EFFECT_READ, vec![json!(claim.event_id)])?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "webhook inbox: effect reservation disappeared".to_owned())?;
+        if text(&row, "effect_key")? != effect_key
+            || text(&row, "payload_sha256")? != event.payload_sha256
+        {
+            return Err("webhook inbox: effect conflicts with authenticated event".to_owned());
+        }
+        let stored_fence = number(&row, "fence")?;
+        let stored_kind = text(&row, "effect_kind")?;
+        if stored_kind == effect_kind {
+            return Ok(EffectReservation::Applied);
+        }
+        if stored_kind == pending_kind && stored_fence == claim.fence {
+            return Ok(EffectReservation::PendingRecovery);
+        }
+        Err("webhook inbox: stale or incompatible pending effect".to_owned())
+    }
+
+    fn abort_reserved_effect(
+        &self,
+        claim: &InboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+    ) -> Result<bool, String> {
+        validate_durable_event(event)?;
+        let now = i64::try_from(now_ms).unwrap_or(i64::MAX);
+        let fence = i64::try_from(claim.fence).unwrap_or(i64::MAX);
+        let rows = self.run(
+            SQL_EFFECT_ABORT,
+            vec![
+                json!(claim.event_id),
+                json!(effect_key),
+                json!(event.payload_sha256),
+                json!(fence),
+                json!(format!("pending:{effect_kind}")),
+                json!(owner),
+                json!(now),
+            ],
+        )?;
+        Ok(!rows.is_empty())
     }
 }
 
@@ -327,6 +415,50 @@ impl DurableWebhookInbox for D1WebhookInbox {
             owner,
             state,
             error,
+            now_ms,
+        )
+    }
+
+    fn reserve_effect(
+        &self,
+        claim: &DispatcherInboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+    ) -> Result<EffectReservation, String> {
+        self.reserve_effect(
+            &InboxClaim {
+                event_id: claim.event_id.clone(),
+                fence: claim.fence,
+            },
+            owner,
+            event,
+            effect_key,
+            effect_kind,
+            now_ms,
+        )
+    }
+
+    fn abort_reserved_effect(
+        &self,
+        claim: &DispatcherInboxClaim,
+        owner: &str,
+        event: &DurableWebhookEvent,
+        effect_key: &str,
+        effect_kind: &str,
+        now_ms: u64,
+    ) -> Result<bool, String> {
+        self.abort_reserved_effect(
+            &InboxClaim {
+                event_id: claim.event_id.clone(),
+                fence: claim.fence,
+            },
+            owner,
+            event,
+            effect_key,
+            effect_kind,
             now_ms,
         )
     }
@@ -522,8 +654,23 @@ mod tests {
                 "stripe-webhook-effect:key",
                 digest,
                 fence,
+                "pending:invoice.paid",
+                2_i64,
+                "owner-a",
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+        tx.query_row(
+            SQL_EFFECT_SEAL,
+            rusqlite::params![
                 "invoice.paid",
                 2_i64,
+                "evt_effect",
+                "stripe-webhook-effect:key",
+                digest,
+                fence,
+                "pending:invoice.paid",
                 "owner-a",
             ],
             |row| row.get::<_, String>(0),
@@ -576,6 +723,45 @@ mod tests {
             |row| row.get::<_, String>(0),
         );
         assert!(matches!(stale, Err(rusqlite::Error::QueryReturnedNoRows)));
+
+        db.query_row(
+            SQL_RECEIVE,
+            rusqlite::params!["evt_race", "invoice.paid", raw, digest, 1_i64, 1_i64],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+        let old_fence: i64 = db
+            .query_row(
+                SQL_CLAIM,
+                rusqlite::params!["owner-old", 10_i64, 1_i64, "evt_race"],
+                |row| row.get(4),
+            )
+            .unwrap();
+        let new_fence: i64 = db
+            .query_row(
+                SQL_CLAIM,
+                rusqlite::params!["owner-new", 30_i64, 10_i64, "evt_race"],
+                |row| row.get(4),
+            )
+            .unwrap();
+        let stale_owner = db.query_row(
+            SQL_EFFECT_INSERT,
+            rusqlite::params![
+                "evt_race",
+                "stripe-webhook-effect:race",
+                digest,
+                old_fence,
+                "pending:invoice.paid",
+                11_i64,
+                "owner-old",
+            ],
+            |row| row.get::<_, String>(0),
+        );
+        assert!(matches!(
+            stale_owner,
+            Err(rusqlite::Error::QueryReturnedNoRows)
+        ));
+        assert_eq!(new_fence, old_fence + 1, "new lease fences stale owner");
     }
 
     #[test]

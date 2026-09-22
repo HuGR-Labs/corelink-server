@@ -52,6 +52,7 @@ struct LostAckInbox {
 struct LostAckInboxState {
     claimed: bool,
     terminal: bool,
+    reserved: bool,
     fail_after_commit: bool,
 }
 
@@ -100,6 +101,39 @@ impl DurableWebhookInbox for LostAckInbox {
         _now_ms: u64,
     ) -> Result<bool, String> {
         Ok(false)
+    }
+
+    fn reserve_effect(
+        &self,
+        _claim: &InboxClaim,
+        _owner: &str,
+        _event: &DurableWebhookEvent,
+        _effect_key: &str,
+        _effect_kind: &str,
+        _now_ms: u64,
+    ) -> Result<EffectReservation, String> {
+        let mut state = self.state.lock().unwrap();
+        if state.terminal {
+            Ok(EffectReservation::Applied)
+        } else if state.reserved {
+            Ok(EffectReservation::PendingRecovery)
+        } else {
+            state.reserved = true;
+            Ok(EffectReservation::Reserved)
+        }
+    }
+
+    fn abort_reserved_effect(
+        &self,
+        _claim: &InboxClaim,
+        _owner: &str,
+        _event: &DurableWebhookEvent,
+        _effect_key: &str,
+        _effect_kind: &str,
+        _now_ms: u64,
+    ) -> Result<bool, String> {
+        self.state.lock().unwrap().reserved = false;
+        Ok(true)
     }
 
     fn commit_effect(
@@ -155,7 +189,39 @@ fn lost_ack_after_effect_commit_retries_as_terminal_without_reapplying() {
         "the committed effect is never re-applied after a lost ACK"
     );
 }
+#[test]
+fn post_mutation_failure_seals_pending_effect_without_a_second_apply() {
+    let idem = Arc::new(InMemoryIdempotencyStore::new());
+    let materializer = Arc::new(RecordingStateMaterializer::new());
+    materializer.arm_error_after_record(MaterializerError::AppliedButUnconfirmed(
+        "injected after durable business mutation".to_owned(),
+    ));
+    let materializer_for_dispatch: Arc<dyn StateMaterializer> = materializer.clone();
+    let dispatcher = WebhookDispatcher::new(
+        SECRET.to_vec(),
+        idem,
+        materializer_for_dispatch,
+        Arc::new(RecordingAuditEmitter::new()),
+        Arc::new(RecordingSliRecorder::new()),
+        Arc::new(FixedClock::new(FIXED_TS, 0.123)),
+    )
+    .with_durable_inbox(Arc::new(LostAckInbox::default()));
+    let (body, header) = signed_envelope("evt_post_mutation", "invoice.paid", FIXED_TS);
 
+    assert_eq!(
+        dispatcher.process(&body, Some(&header)),
+        DispatchResponse::InternalError500
+    );
+    assert_eq!(
+        dispatcher.process(&body, Some(&header)),
+        DispatchResponse::Ok200
+    );
+    assert_eq!(
+        materializer.call_count(),
+        1,
+        "pending witness fences replay"
+    );
+}
 #[test]
 fn happy_path_subscription_deleted_dispatches_audits_emits_sli() {
     let (d, idem, mat, audit, sli) = fixture();
