@@ -1,0 +1,22 @@
+name: issue-1652 B-072 evidence verifier
+
+on:
+  pull_request:
+    paths:
+      - "scripts/verify_b072_external_evidence.py"
+      - "scripts/test_b072_external_evidence.py"
+      - "tests/fixtures/b072_evidence_valid.json"
+      - ".github/workflows/issue-1652-b072-evidence.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  credentialless-evidence:
+    name: B-072 credentialless evidence contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Verify redacted evidence schema and adversarial mutations
+        run: python3 scripts/test_b072_external_evidence.py
