@@ -1,0 +1,47 @@
+name: issue #1863 hosted workspace mutants
+
+# Manual-only replacement for the disabled nightly mutants-workspace lane.
+# Keeping this file dispatch-only leaves nightly schedules inert.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1863-mutants-hosted
+  cancel-in-progress: false
+
+jobs:
+  mutants-workspace:
+    name: cargo-mutants workspace (fail-on-any-survivor)
+    if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        timeout-minutes: 10
+        run: bash scripts/ci-assert-pinned-toolchain.sh
+
+      - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          workspaces: ". -> target"
+
+      - uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        timeout-minutes: 8
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cargo-mutants (pinned, prebuilt)
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        timeout-minutes: 10
+        with:
+          tool: cargo-mutants@27.0.0
+          fallback: cargo-binstall
+
+      - name: cargo-mutants workspace
+        timeout-minutes: 225
+        run: cargo mutants --workspace --no-shuffle --minimum-test-timeout=600
