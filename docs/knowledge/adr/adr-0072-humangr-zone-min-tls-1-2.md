@@ -41,6 +41,19 @@ successor. All of it now states the 1.2 floor (BACKLOG B-019); the two FROZEN/AU
 documents keep their audited bodies under a dated errata. The cited SSL Labs A+ scan predates the
 floor change and the control now says so rather than implying otherwise.
 
+## Surface boundary and downgrade evidence
+
+The read-only inventory in `scripts/verify_b035_tls_surfaces.py` names the
+production Worker routes, regional custom domains, Pages docs domain, and the
+R2 egress endpoints. The first group is covered by the single
+`humangr.com` zone `min_tls_version` setting; a matching `--live` read is the
+only production probe this repository performs. Cloudflare does not expose a
+repo-owned per-host override for those custom domains, and R2's origin TLS
+policy is provider-managed rather than configurable by this repository. A
+TLS 1.1 downgrade handshake probe therefore cannot be represented as a local
+configuration assertion; the provider setting read is the bounded evidence,
+with that limitation recorded in the verifier output.
+
 # Decision
 
 - The floor is **TLS 1.2** on `humangr.com`, accepted deliberately rather than tolerated.
