@@ -13,6 +13,7 @@ on:
       - ".github/workflows/audit-chain-daily-verify.yml"
       - "scripts/verify_b054_audit_chain_contract.py"
       - "scripts/test_audit_chain_epoch_schema.py"
+      - "wrangler.toml"
       - ".github/workflows/audit-keyed-epoch.yml"
   workflow_dispatch: {}
 

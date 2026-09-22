@@ -9,6 +9,7 @@ partial epoch metadata.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -34,6 +35,39 @@ ARCHIVE_LIVE_TOKENS = (
     "B054_ARCHIVE_D1_EXACT_CAS",
 )
 ARCHIVE_LIVE_AUTH_TOKENS = ARCHIVE_LIVE_TOKENS[:5]
+
+
+def assess_deployment_secret_boundary(wrangler: str) -> None:
+    """Keep audit signing seed material out of versioned Worker config.
+
+    The seed is intentionally accepted only through the write-only secret
+    binding.  This check is line-oriented because Wrangler permits the
+    production ``vars`` table to be an inline TOML table; parsing the whole
+    deployment file would add no protection beyond rejecting this assignment
+    shape.
+    """
+    if re.search(r"(?m)(?:^|[,{])\s*AUDIT_CHAIN_SIGNING_SEED_HEX\s*=", wrangler):
+        raise ContractError(
+            "production config must not assign AUDIT_CHAIN_SIGNING_SEED_HEX; use a write-only secret"
+        )
+
+
+def deployment_secret_boundary_mutation_self_test(wrangler: str) -> None:
+    """Prove a plaintext production vars assignment is rejected."""
+    assess_deployment_secret_boundary(wrangler)
+    marker = 'R2_CAS_REGION = "iad"'
+    if marker not in wrangler:
+        raise ContractError("deployment secret mutation fixture marker is missing")
+    mutant = wrangler.replace(
+        marker,
+        marker + ', AUDIT_CHAIN_SIGNING_SEED_HEX = "' + ("0" * 64) + '"',
+        1,
+    )
+    try:
+        assess_deployment_secret_boundary(mutant)
+    except ContractError:
+        return
+    raise ContractError("plaintext deployment secret mutation survived")
 
 
 def assess_archive_live_boundary(archive: str) -> None:
@@ -105,6 +139,7 @@ def archive_live_mutation_self_test() -> None:
 
 
 def assess(files: dict[str, str]) -> None:
+    assess_deployment_secret_boundary(files["wrangler"])
     epoch = files["epoch"]
     archive = files["archive"]
     migration = files["migration"]
@@ -355,10 +390,12 @@ def main() -> int:
         "secret_custody": (ROOT / "docs/internal/secrets-checklist.md").read_text(encoding="utf-8"),
         "sealed_archive": (ROOT / "crates/corelink-audit-chain/src/sealed_archive.rs").read_text(encoding="utf-8"),
         "daily_workflow": (ROOT / ".github/workflows/audit-chain-daily-verify.yml").read_text(encoding="utf-8"),
+        "wrangler": (ROOT / "wrangler.toml").read_text(encoding="utf-8"),
     }
     assess(files)
     mutation_self_test(files)
     archive_live_mutation_self_test()
+    deployment_secret_boundary_mutation_self_test(files["wrangler"])
     print("B-054 contract: PASS (unknown/partial/downgrade epoch metadata fail closed; mutations red)")
     return 0
 
