@@ -116,15 +116,23 @@ jobs:
 
           [[ -n "${CORELINK_CANARY_PAT:-}" ]] || fail_closed "CORELINK_CANARY_PAT_missing"
           echo "::add-mask::${CORELINK_CANARY_PAT}"
-          auth_header="$(printf 'x-access-token:%s' "${CORELINK_CANARY_PAT}" | base64 | tr -d '\n')"
-          echo "::add-mask::${auth_header}"
-          export GIT_TERMINAL_PROMPT=0
+          askpass="$RUNNER_TEMP/corelink-runners-git-askpass"
+          cat >"${askpass}" <<'SH'
+          # Git invokes this process only for the username/password prompts.
+          case "$1" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$CORELINK_CANARY_PAT" ;;
+            *) exit 1 ;;
+          esac
+          SH
+          chmod 700 "${askpass}"
 
           # Resolve the PR head first.  This is a read-only access check and
           # prevents a token that cannot read the private source from reaching
           # the test phase.  Only SHA metadata is retained.
           ref_file="$RUNNER_TEMP/pr-601-head-ref"
-          if ! git -c "http.extraHeader=Authorization: Basic ${auth_header}" \
+          if ! GIT_ASKPASS="${askpass}" GIT_TERMINAL_PROMPT=1 \
+            git -c credential.helper= \
             ls-remote "${repo_url}" "refs/pull/${RUNNERS_PR}/head" >"${ref_file}"; then
             fail_closed "runners_repository_access_denied"
           fi
@@ -136,14 +144,15 @@ jobs:
           mkdir -p "${source_dir}"
           git -C "${source_dir}" init -q
           git -C "${source_dir}" remote add origin "${repo_url}"
-          git -C "${source_dir}" \
-            -c "http.extraHeader=Authorization: Basic ${auth_header}" \
+          GIT_ASKPASS="${askpass}" GIT_TERMINAL_PROMPT=1 \
+            git -C "${source_dir}" -c credential.helper= \
             fetch --no-tags --depth=1 origin "refs/pull/${RUNNERS_PR}/head"
           git -C "${source_dir}" checkout --detach --quiet "${TARGET_SHA}"
 
           # The source is now local.  Drop the PAT before installing packages
           # or running any source tests, then prove no credential was persisted.
-          unset CORELINK_CANARY_PAT auth_header
+          rm -f "${askpass}"
+          unset CORELINK_CANARY_PAT GIT_ASKPASS
           [[ "$(git -C "${source_dir}" remote get-url origin)" == "${repo_url}" ]] || \
             fail_closed "credentialed_git_remote_detected"
           [[ -z "$(git -C "${source_dir}" config --local --get-all http.extraHeader || true)" ]] || \
