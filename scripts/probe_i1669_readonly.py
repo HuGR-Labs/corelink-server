@@ -61,19 +61,24 @@ SELECT
     COUNT(*) AS audit_rows,
     SUM(CASE WHEN t.tenant_id IS NULL AND a.tenant_id <> '_public'
         THEN 1 ELSE 0 END) AS orphan_rows,
-    SUM(CASE WHEN t.tenant_id IS NOT NULL THEN 1 ELSE 0 END) AS joinable_rows,
-    SUM(CASE WHEN a.tenant_id = '_public' AND a.region = 'wnam'
-        THEN 1 ELSE 0 END)
-        AS system_scope_rows,
+    SUM(CASE WHEN t.tenant_id IS NOT NULL AND a.tenant_id <> '_public'
+        THEN 1 ELSE 0 END) AS joinable_rows,
     SUM(CASE WHEN a.tenant_id = '_public'
-                  AND (a.region IS NULL OR a.region <> 'wnam')
-        THEN 1 ELSE 0 END) AS invalid_system_scope_rows,
+                  AND a.region = 'wnam'
+                  AND a.event_type IN ({public_events})
+        THEN 1 ELSE 0 END)
+        AS reserved_public_rows,
+    SUM(CASE WHEN a.tenant_id = '_public'
+                  AND (a.region IS NULL OR a.region <> 'wnam'
+                       OR a.event_type IS NULL
+                       OR a.event_type NOT IN ({public_events}))
+        THEN 1 ELSE 0 END) AS invalid_public_rows,
     SUM(CASE WHEN t.tenant_id IS NULL AND a.tenant_id <> '_public' AND EXISTS (
         SELECT 1 FROM dsr_erasure_log AS d WHERE d.tenant_id = a.tenant_id
     ) THEN 1 ELSE 0 END) AS erased_orphan_rows
 FROM audit_outbox AS a
 LEFT JOIN tenant AS t ON t.tenant_id = a.tenant_id
-""".strip()
+""".format(public_events=RESIDENCY._PUBLIC_EVENTS_SQL).strip()
 
 # Do not accept a caller-provided SQL string.  Every request must be one of
 # these exact aggregate SELECTs; the write verbs are absent by construction.
@@ -87,8 +92,8 @@ BACKFILL_FIELDS = (
     "audit_rows",
     "orphan_rows",
     "joinable_rows",
-    "system_scope_rows",
-    "invalid_system_scope_rows",
+    "reserved_public_rows",
+    "invalid_public_rows",
     "erased_orphan_rows",
 )
 
@@ -223,15 +228,15 @@ def run(account_id: str, database_id: str, token: str, output: Path) -> int:
         if (
             completeness["orphan_rows"]
             + completeness["joinable_rows"]
-            + completeness["system_scope_rows"]
-            + completeness["invalid_system_scope_rows"]
+            + completeness["reserved_public_rows"]
+            + completeness["invalid_public_rows"]
             != counts.total_rows
         ):
             raise ProbeError("backfill completeness partition is partial")
         if (
             completeness["orphan_rows"] != counts.orphan_rows
-            or completeness["system_scope_rows"] != counts.system_scope_rows
-            or completeness["invalid_system_scope_rows"] != counts.invalid_system_scope_rows
+            or completeness["reserved_public_rows"] != counts.reserved_public_rows
+            or completeness["invalid_public_rows"] != counts.invalid_public_rows
             or completeness["erased_orphan_rows"] != counts.erased_orphan_rows
         ):
             raise ProbeError("backfill completeness does not reconcile with residency")

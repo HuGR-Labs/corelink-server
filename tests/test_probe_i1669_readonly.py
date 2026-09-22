@@ -24,15 +24,19 @@ def aggregate_fixture(*, invalid_public_region: bool = False) -> tuple[dict, dic
     connection.executescript(
         """
         CREATE TABLE tenant (tenant_id TEXT PRIMARY KEY, primary_region TEXT);
-        CREATE TABLE audit_outbox (tenant_id TEXT NOT NULL, region TEXT NOT NULL);
+        CREATE TABLE audit_outbox (
+            tenant_id TEXT NOT NULL,
+            region TEXT NOT NULL,
+            event_type TEXT NOT NULL
+        );
         CREATE TABLE dsr_erasure_log (tenant_id TEXT NOT NULL);
         INSERT INTO tenant VALUES ('tenant-e', 'enam');
         INSERT INTO tenant VALUES ('tenant-w', 'wnam');
-        INSERT INTO audit_outbox VALUES ('tenant-e', 'enam');
-        INSERT INTO audit_outbox VALUES ('tenant-w', 'enam');
-        INSERT INTO audit_outbox VALUES ('erased-tenant', 'weur');
-        INSERT INTO audit_outbox VALUES ('unexplained-tenant', 'apac');
-        INSERT INTO audit_outbox VALUES ('_public', 'wnam');
+        INSERT INTO audit_outbox VALUES ('tenant-e', 'enam', 'customer.event');
+        INSERT INTO audit_outbox VALUES ('tenant-w', 'enam', 'customer.event');
+        INSERT INTO audit_outbox VALUES ('erased-tenant', 'weur', 'customer.event');
+        INSERT INTO audit_outbox VALUES ('unexplained-tenant', 'apac', 'customer.event');
+        INSERT INTO audit_outbox VALUES ('_public', 'wnam', 'public.revoke');
         INSERT INTO dsr_erasure_log VALUES ('erased-tenant');
         """
     )
@@ -53,38 +57,40 @@ def test_public_namespace_is_a_separate_backfill_partition() -> None:
 
     assert residency["total_rows"] == 5
     assert residency["orphan_rows"] == 2
-    assert residency["system_scope_rows"] == 1
+    assert residency["reserved_public_rows"] == 1
     assert residency["violated_rows"] == 1
     assert backfill == {
         "audit_rows": 5,
         "orphan_rows": 2,
         "joinable_rows": 2,
-        "system_scope_rows": 1,
-        "invalid_system_scope_rows": 0,
+        "reserved_public_rows": 1,
+        "invalid_public_rows": 0,
         "erased_orphan_rows": 1,
     }
     assert backfill["orphan_rows"] == residency["orphan_rows"]
-    assert backfill["system_scope_rows"] == residency["system_scope_rows"]
-    assert backfill["invalid_system_scope_rows"] == residency["invalid_system_scope_rows"]
+    assert backfill["reserved_public_rows"] == residency["reserved_public_rows"]
+    assert backfill["invalid_public_rows"] == residency["invalid_public_rows"]
     assert backfill["erased_orphan_rows"] == residency["erased_orphan_rows"]
     assert (
         backfill["orphan_rows"]
         + backfill["joinable_rows"]
-        + backfill["system_scope_rows"]
+        + backfill["reserved_public_rows"]
         == residency["total_rows"]
     )
 
 
-def test_invalid_public_region_still_reconciles_as_system_scope() -> None:
+def test_invalid_public_region_still_reconciles_as_invalid_public() -> None:
     residency, backfill = aggregate_fixture(invalid_public_region=True)
 
-    assert residency["invalid_system_scope_rows"] == 1
-    assert residency["violated_rows"] == 2
+    assert residency["invalid_public_rows"] == 1
+    assert residency["violated_rows"] == 1
+    assert residency["unevaluable_rows"] == 3
     assert backfill["orphan_rows"] == residency["orphan_rows"]
-    assert backfill["system_scope_rows"] == residency["system_scope_rows"]
+    assert backfill["reserved_public_rows"] == residency["reserved_public_rows"]
+    assert backfill["invalid_public_rows"] == residency["invalid_public_rows"]
     assert backfill["erased_orphan_rows"] == residency["erased_orphan_rows"]
 
 
 def test_backfill_allowlist_requires_explicit_system_scope_bucket() -> None:
     assert "a.tenant_id = '_public'" in probe.BACKFILL_COMPLETENESS_SQL
-    assert "system_scope_rows" in probe.BACKFILL_FIELDS
+    assert "reserved_public_rows" in probe.BACKFILL_FIELDS
