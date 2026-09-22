@@ -1,0 +1,86 @@
+{
+  "schema": "corelink.b105.cache-cost-contract.v1",
+  "issue": 1661,
+  "backlog_id": "B-105",
+  "status": "open_external_measurement_required",
+  "credentialless": true,
+  "network_calls": false,
+  "mutating_actions": false,
+  "runner_contract": "github-hosted",
+  "sources": {
+    "pilot_workflow": ".github/workflows/corelink-reapi.yml",
+    "customer_recipe": "apps/docs/docs/integrations/sccache-cargo.md",
+    "server_auth_path": "crates/corelink-container/src/adapter_pat_verifier.rs",
+    "server_gate": "crates/corelink-container/src/adapter_pat_gate.rs",
+    "diagnosis": "docs/internal/sccache-pilot-diagnosis-2026-08-04.md",
+    "backlog": "BACKLOG.md",
+    "verifier": "scripts/verify_b105_cache_contract.py"
+  },
+  "current_path": {
+    "workload": "corelink-reapi pr-gate",
+    "runner": "corelink",
+    "pilot_toggle": "vars.CORELINK_SCCACHE_PILOT == 'on'",
+    "wrapper": "RUSTC_WRAPPER=sccache",
+    "endpoint": "https://corelink-api.humangr.com/cargo/<tenant>",
+    "workflow_cache_chain": "remote-only (SCCACHE_MULTILEVEL_CHAIN is not set)",
+    "customer_cache_chain": "disk,webdav",
+    "write_behavior": "cache misses write through the /cargo WebDAV surface; writes are excluded from the zero-miss observation"
+  },
+  "observed_cost_model": {
+    "source_run": "30874583952",
+    "source_revision": "a4e864e0",
+    "cold_lane_seconds": [409, 423],
+    "warm_lane_seconds": 435,
+    "warm_cache_hits": 827,
+    "warm_cache_misses": 0,
+    "warm_cache_errors": 0,
+    "warm_read_errors": 0,
+    "warm_write_errors": 0,
+    "cold_baseline_midpoint_seconds": 416,
+    "observed_delta_seconds": 19,
+    "observed_delta_range_seconds": [12, 26],
+    "write_cost_contribution_seconds": 0,
+    "write_cost_formula": "cache_misses * average_cache_write_seconds",
+    "interpretation": "negative cache result remains visible: the warm lane was slower than the cold midpoint, and zero misses make write cost zero for this observation"
+  },
+  "acceptance": {
+    "repository_gate": "static source and arithmetic contract passes on ubuntu-24.04 without credentials or network",
+    "production_measurement": "six or more alternating paired cache-off/cache-on runs on one runner, revision, workload, and input set",
+    "required_pair_fields": [
+      "control_duration_seconds",
+      "treatment_duration_seconds",
+      "control_first",
+      "cache_hits",
+      "cache_misses",
+      "cache_read_errors",
+      "cache_write_errors",
+      "revision",
+      "runner",
+      "workload"
+    ],
+    "result_labels": ["faster", "slower", "indeterminate"],
+    "closure": "keep B-105 open until the paired production receipt is linked and its result survives runner variance"
+  },
+  "invariants": [
+    "the control and treatment must measure the same lane and input population",
+    "cache misses and cache writes are reported independently of cache-hit benefit",
+    "a zero-miss treatment contributes zero write cost; write-path fixes cannot explain that observation",
+    "the old hit-versus-compiler averages are not used because their populations were disjoint",
+    "a negative or indeterminate cache result is retained and cannot be relabeled as a pass",
+    "the repository gate never reads a PAT, tenant secret, provider state, or production endpoint",
+    "this contract does not enable the pilot, edit the campaign, generate load, or deploy"
+  ],
+  "external_blocker": {
+    "owner": "production operator",
+    "required_artifact": "fresh redacted paired-lane receipt from the existing production evidence workflow",
+    "reason": "repository-only evidence cannot establish whether the fixed product path beats cold compilation on a real runner"
+  },
+  "prohibited": [
+    "closing B-105 from the static contract alone",
+    "claiming the 0.527/0.678 disjoint-population ratio is causal",
+    "assigning zero-miss slowdown to cache writes",
+    "adding a production credential to the repository",
+    "dispatching live load or deploying a Worker",
+    "editing campaign orchestration or unrelated backlog entries"
+  ]
+}
