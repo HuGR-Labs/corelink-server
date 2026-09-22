@@ -12012,11 +12012,15 @@ verify-means: |
 last-verified: 2026-09-12
 ```
 
-### B-098 — dezoito worktrees vivem num diretório que o sistema operacional apaga, e uma delas tem trabalho não enviado
+### B-098 — worktrees temporárias exigem inventário local, e a release GA ainda não tem evidência
 
-Dezoito worktrees estão sob `/private/tmp`, sujeitas à limpeza periódica do macOS. O
-trabalho do PR #1439 está fisicamente num desses diretórios. Não toquei, porque é trabalho
-em andamento de outra sessão — mas precisa sair de lá.
+Snapshot da máquina do proprietário em 2026-09-22: **389 worktrees registradas**, 274 em
+`/private/tmp`, das quais 8 tinham alterações locais. Dez worktrees — incluindo todas as
+oito sujas e as duas do trabalho #1657 — foram movidas para `HuGR/_worktrees`; os HEADs
+foram preservados por branch local e backup remoto. A auditoria e o mapa de recuperação
+estão registrados no comentário de evidência de [#1657](https://github.com/HuGR-dev/corelink-server/issues/1657#issuecomment-5783099317).
+O PR #1439 já está **MERGED**. A população de worktrees é estado da máquina e permanece
+fora do gate de CI; worktrees de PR ainda em execução são migradas após a integração.
 
 No mesmo eixo, medido em 2026-08-30: 154 branches locais (129 não mergeadas, 24 mergeadas e
 não apagadas), 87 remotas, e a seção `[Unreleased]` do CHANGELOG com 9.911 linhas sem que
@@ -12027,8 +12031,8 @@ Itens menores que o mandato de impecabilidade cobre: a conta `gmhelmold` tem tok
 inválido no keyring e está marcada como ativa no `gh`; e `corelink-runbook-tracker` era o
 único crate cujos lints copiados divergiam do workspace — faltavam `print_stdout` e
 `print_stderr`. A fonte dinâmica atual (verificada em 2026-09-22) reporta 95 pacotes Rust,
-75 diretórios de crate, 171 conceitos OKF e 485 specs com schema mais 11 somente com YAML
-(496 no total); esses valores estão documentados em `CLAUDE.md` e vinculados ao verificador.
+75 diretórios de crate, 171 conceitos OKF e 486 specs com schema mais 11 somente com YAML
+(497 no total); esses valores estão documentados em `CLAUDE.md` e vinculados ao verificador.
 
 ```backlog
 id: B-098
