@@ -58,10 +58,21 @@ impl StripeCurrentSubscriptionAuthority {
                 response.id
             ));
         }
-        Ok(CurrentSubscription::new(
+        let current_period_end = response.current_period_end.ok_or_else(|| {
+            format!(
+                "Stripe subscription {} has no current_period_end authority key",
+                response.id
+            )
+        })?;
+        Ok(CurrentSubscription::with_authority_key(
             response.id.clone(),
             response.status.clone(),
             price.id.clone(),
+            CurrentSubscription::stripe_authority_key(
+                current_period_end,
+                &response.status,
+                &price.id,
+            ),
         ))
     }
 }
@@ -93,6 +104,7 @@ mod tests {
             "id": "sub_current",
             "status": "active",
             "customer": "cus_1",
+            "current_period_end": 1800000000,
             "items": items,
         }))
         .unwrap()
@@ -111,7 +123,16 @@ mod tests {
             .unwrap();
         assert_eq!(
             current,
-            CurrentSubscription::new("sub_current", "active", "price_runner_team")
+            CurrentSubscription::with_authority_key(
+                "sub_current",
+                "active",
+                "price_runner_team",
+                CurrentSubscription::stripe_authority_key(
+                    1_800_000_000,
+                    "active",
+                    "price_runner_team",
+                ),
+            )
         );
     }
 

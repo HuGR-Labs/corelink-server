@@ -1093,6 +1093,10 @@ pub struct SubscriptionObject {
     pub status: String,
     /// Customer id.
     pub customer: String,
+    /// End of the provider-owned current billing period (Unix seconds).
+    /// Used as the reconciliation ordering boundary; unlike local receive
+    /// time it is stable across container instances.
+    pub current_period_end: Option<i64>,
     /// Current subscription items. Stripe returns one item for the CoreLink
     /// products; callers that reconcile entitlements must validate that
     /// cardinality before using the price.

@@ -6,6 +6,10 @@
 
 use std::fmt;
 
+fn legacy_authority_key() -> String {
+    "legacy:00000000000000000000".to_owned()
+}
+
 /// The provider's current view of one Stripe subscription.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
@@ -16,6 +20,11 @@ pub struct CurrentSubscription {
     pub status: String,
     /// Current price identifier for the subscription's sole Runners item.
     pub price_id: String,
+    /// Monotonic comparison key derived from the provider-authoritative
+    /// Stripe object. It is persisted with the entitlement fence and must not
+    /// be replaced by webhook delivery time or process-local sequence.
+    #[serde(default = "legacy_authority_key")]
+    pub authority_key: String,
 }
 
 impl CurrentSubscription {
@@ -30,7 +39,44 @@ impl CurrentSubscription {
             subscription_id: subscription_id.into(),
             status: status.into(),
             price_id: price_id.into(),
+            authority_key: legacy_authority_key(),
         }
+    }
+
+    /// Construct a snapshot with an explicit provider-derived ordering key.
+    #[must_use]
+    pub fn with_authority_key(
+        subscription_id: impl Into<String>,
+        status: impl Into<String>,
+        price_id: impl Into<String>,
+        authority_key: impl Into<String>,
+    ) -> Self {
+        Self {
+            subscription_id: subscription_id.into(),
+            status: status.into(),
+            price_id: price_id.into(),
+            authority_key: authority_key.into(),
+        }
+    }
+
+    /// Build the stable ordering key used by the native Stripe authority.
+    /// `current_period_end` is a provider-owned revision boundary; the status
+    /// rank makes a non-granting state win over a same-period grant on replay.
+    #[must_use]
+    pub fn stripe_authority_key(current_period_end: i64, status: &str, price_id: &str) -> String {
+        let period = current_period_end.max(0);
+        let rank = match status {
+            "active" => 10,
+            "trialing" => 20,
+            "past_due" => 30,
+            "unpaid" => 40,
+            "incomplete" => 50,
+            "incomplete_expired" => 60,
+            "paused" => 70,
+            "canceled" => 80,
+            _ => 90,
+        };
+        format!("stripe:{period:020}:{rank:03}:{price_id}")
     }
 }
 
