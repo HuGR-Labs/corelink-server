@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-types";
 import {
   verifyPatRowCached,
+  invalidatePatVerifyCache,
   __resetPatVerifyCacheForTest,
   PAT_VERIFY_CACHE_TTL_MS,
   type CachedPatRow,
@@ -98,6 +99,38 @@ describe("verifyPatRowCached", () => {
       (await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 + PAT_VERIFY_CACHE_TTL_MS - 1 })).kind,
     ).toBe("found");
     expect(reads()).toBe(1);
+  });
+
+  it("evicts L1 immediately when an authoritative revoke invalidates the token", async () => {
+    let revoked = false;
+    const { db, reads } = makePatD1({ present: () => !revoked });
+    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 })).kind).toBe("found");
+    revoked = true;
+    invalidatePatVerifyCache(TEST_TOKEN_ID);
+    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_001 })).kind).toBe("not_found");
+    expect(reads()).toBe(2);
+  });
+
+  it("does not let a pre-revoke in-flight read repopulate L1", async () => {
+    let release!: () => void;
+    const rowReady = new Promise<void>((resolve) => { release = resolve; });
+    const db = {
+      prepare: () => ({
+        bind: () => ({
+          first: async <T>() => {
+            await rowReady;
+            return ROW as T;
+          },
+        }),
+      }),
+    } as unknown as D1Database;
+    const pending = verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 });
+    await Promise.resolve();
+    invalidatePatVerifyCache(TEST_TOKEN_ID);
+    release();
+    expect((await pending).kind).toBe("not_found");
+    const revokedDb = makePatD1({ present: () => false }).db;
+    expect((await verifyPatRowCached(revokedDb, TEST_TOKEN_ID, { nowMs: 1_001 })).kind).toBe("not_found");
   });
 
   it("tags the serving tier as `source` (d1 on the read, l1 on the cached hit) for Server-Timing", async () => {

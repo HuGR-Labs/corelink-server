@@ -44,7 +44,7 @@ import {
   deriveTenantCeilingThrottleKey,
 } from "./session_exchange.js";
 import { blake3Hex } from "./blake3.js";
-import { patRowKvKey } from "./pat_verify_cache.js";
+import { invalidatePatVerifyCache, patRowKvKey } from "./pat_verify_cache.js";
 
 /**
  * Domain-separation prefix for the exact-AC-key narrowing of a runner-job PAT
@@ -719,6 +719,7 @@ export async function handleRunnerRevoke(
       token_id = row?.token_id ?? null;
     }
     if (token_id !== null) {
+      invalidatePatVerifyCache(token_id);
       const kv = (env as unknown as {
         METADATA_KV?: { delete(key: string): Promise<void> };
       }).METADATA_KV;
