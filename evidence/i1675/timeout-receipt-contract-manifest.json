@@ -1,0 +1,74 @@
+{
+  "schema": "corelink.actions-timeout-receipt.contract-manifest.v1",
+  "issue": 1675,
+  "backlog_id": "B-152",
+  "credentialless": true,
+  "network_calls": false,
+  "mutating_actions": false,
+  "status": "contract_only_live_receipt_pending",
+  "contract": {
+    "receipt_schema": "corelink.actions-timeout-receipt.v1",
+    "observation_schema": "corelink.actions-job-observation.v1",
+    "classifier": "scripts/classify_timeout_receipt.py",
+    "contract_tests": "scripts/test_i1675_timeout_receipts.py",
+    "audit_spec": "specs/_audits/2026-09-21-i1675-timeout-receipts.md",
+    "required_typed_evidence": [
+      "workflow emitted declared-timeout marker with declared timeout limit",
+      "runner heartbeat or communication-loss signal",
+      "post-step command exit or signal",
+      "job conclusion and run/job identity"
+    ],
+    "elapsed_time_alone_is_insufficient": true
+  },
+  "hosted_observation": {
+    "repository": "HuGR-dev/corelink-server",
+    "workflow": "billing campaign CI",
+    "workflow_file": ".github/workflows/campaign-ci.yml",
+    "suite": "i1675",
+    "run_id": 35681211783,
+    "run_url": "https://github.com/HuGR-dev/corelink-server/actions/runs/35681211783",
+    "head_sha": "5c3656f6e28a2107ef614797e17e1f476cfdfcc2",
+    "job": "campaign i1675",
+    "job_conclusion": "success",
+    "artifact": {
+      "artifact_id": 10674533838,
+      "name": "campaign-ci-i1675-logs",
+      "size_in_bytes": 364,
+      "retention_expires_at": "2026-09-29T02:55:30Z",
+      "contents": [
+        "i1675.log",
+        "run.txt"
+      ],
+      "receipt_files_present": false,
+      "receipt_schema_instances": 0
+    },
+    "observed_at": "2026-09-22T04:05:30Z"
+  },
+  "evidence_boundary": {
+    "proves": [
+      "the merged #1765 classifier contract passed on a GitHub-hosted Ubuntu job",
+      "the hosted artifact was retained and its metadata was recorded"
+    ],
+    "does_not_prove": [
+      "a declared timeout occurred in a real hosted job",
+      "runner communication loss occurred in a real hosted job",
+      "the historical B-152 ten-minute deaths have a named cause or a fix"
+    ]
+  },
+  "external_blocker": {
+    "owner": "owner/SRE",
+    "required_artifact": "a fresh GitHub-hosted instrumented job artifact containing at least one valid corelink.actions-timeout-receipt.v1 receipt, with the matching observation and run/job identity",
+    "required_outcomes": [
+      "declared_timeout receipt with explicit timeout marker and declared limit",
+      "runner_communication_loss receipt with heartbeat or communication-loss evidence"
+    ],
+    "reason": "The current hosted artifact runs only the offline contract matrix; it emits no live observation or receipt, so the two operational causes remain unclassified.",
+    "closure_rule": "Do not close B-152 from this contract manifest, a green contract lane, a rerun, or a zero recent occurrence. Close only after the causal mechanism is named and removed and a follow-up observation window is retained."
+  },
+  "prohibited": [
+    "claiming the contract run is a live timeout receipt",
+    "inferring declared timeout or runner loss from elapsed time, exit 124, or an absent post-step",
+    "editing the campaign workflow in this evidence update",
+    "storing credentials or raw hosted logs in git"
+  ]
+}
