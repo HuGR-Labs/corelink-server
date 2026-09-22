@@ -37,6 +37,11 @@ MINGW_W64_FORMULA_URL = (
     "00e77a1611f627f2ea8f876fad0468f2c4b3ed20/Formula/m/mingw-w64.rb"
 )
 DLLTOOL_PATH = "$(brew --prefix mingw-w64)/bin/x86_64-w64-mingw32-dlltool"
+DLLTOOL_GUARDS = (
+    'if [ "${ACTUAL_MINGW_W64_VERSION}" != "${EXPECTED_MINGW_W64_VERSION}" ]; then',
+    'if [ ! -x "${DLLTOOL_PATH}" ]; then',
+    'if [ "${ACTUAL_DLLTOOL_VERSION}" != "${EXPECTED_DLLTOOL_VERSION}" ]; then',
+)
 
 
 def fail(message: str) -> None:
@@ -100,9 +105,12 @@ def _slice_routing_mutation_self_test() -> None:
 
 
 def _verify_dlltool_contract(text: str) -> None:
+    install_step = text.find("- name: Install and verify pinned MinGW-w64 dlltool")
     windows_target = text.find("if [ \"${target}\" = \"x86_64-pc-windows-gnu\" ]; then")
     windows_build = text.find('cargo zigbuild -p corelink-cli --release --locked --target "${target}"')
-    if windows_target < 0 or windows_build < 0 or windows_target > windows_build:
+    if install_step < 0 or windows_target < 0 or windows_build < 0:
+        fail("pinned dlltool installation and the Windows GNU build must be present")
+    if install_step > windows_target or windows_target > windows_build:
         fail("Windows GNU build must be gated by its dlltool probe")
     for token in (
         "Install and verify pinned MinGW-w64 dlltool",
@@ -111,17 +119,19 @@ def _verify_dlltool_contract(text: str) -> None:
         MINGW_W64_FORMULA_URL,
         'brew install "${MINGW_W64_FORMULA_URL}"',
         'brew list --versions mingw-w64',
-        'if [ "${ACTUAL_MINGW_W64_VERSION}" != "${EXPECTED_MINGW_W64_VERSION}" ]; then',
         DLLTOOL_PATH,
-        'if [ ! -x "${DLLTOOL_PATH}" ]; then',
         '"${DLLTOOL_PATH}" --version | sed -n \'1p\'',
-        'if [ "${ACTUAL_DLLTOOL_VERSION}" != "${EXPECTED_DLLTOOL_VERSION}" ]; then',
         'echo "$(dirname "${DLLTOOL_PATH}")" >> "${GITHUB_PATH}"',
         "command -v x86_64-w64-mingw32-dlltool",
         "x86_64-w64-mingw32-dlltool --version | sed -n '1p'",
     ):
         if token not in text:
             fail(f"pinned fail-closed Windows dlltool contract is missing: {token}")
+    for guard in DLLTOOL_GUARDS:
+        start = text.find(guard)
+        end = text.find("\n          fi", start)
+        if start < 0 or end < 0 or "exit 1" not in text[start:end]:
+            fail(f"dlltool preflight must fail closed: {guard}")
 
 
 def _dlltool_contract_mutation_self_test(text: str) -> None:
@@ -135,6 +145,10 @@ def _dlltool_contract_mutation_self_test(text: str) -> None:
         (
             "command -v x86_64-w64-mingw32-dlltool",
             "# Windows build-time dlltool probe removed",
+        ),
+        (
+            '            exit 1\n          fi\n          DLLTOOL_PATH=',
+            '            # missing dlltool no longer stops before compile\n          fi\n          DLLTOOL_PATH=',
         ),
     ):
         mutated = text.replace(token, replacement, 1)
