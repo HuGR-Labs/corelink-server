@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 WORKFLOW = Path(".github/workflows/issue-1648-b063-read-only-evidence.yml")
+ARCHIVE_MONITOR = Path(".github/workflows/audit-archive-lag.yml")
 
 
 def verify(source: str) -> None:
@@ -46,8 +47,23 @@ def verify(source: str) -> None:
         raise AssertionError("receipt must retain only the eight-character tenant prefix")
 
 
+def verify_alert_contract(source: str) -> None:
+    """Keep partition failures separately actionable from fleet-wide absence."""
+    required = (
+        "page = (clause1 and clause2) or (partitions_failed > 0)",
+        'cls = "archive-partition-failure"',
+        'dedup = "audit-archive-partition-failure-" + os.environ["RUN_DATE"]',
+        'cls = "archive-absent"',
+        'dedup = "audit-archive-absent-" + os.environ["RUN_DATE"]',
+    )
+    missing = [marker for marker in required if marker not in source]
+    if missing:
+        raise AssertionError(f"B-063 SEV-0 alert contract is missing: {missing}")
+
+
 def main() -> int:
     verify(WORKFLOW.read_text(encoding="utf-8"))
+    verify_alert_contract(ARCHIVE_MONITOR.read_text(encoding="utf-8"))
     print("B-063 hosted read-only evidence workflow contract: PASS")
     return 0
 

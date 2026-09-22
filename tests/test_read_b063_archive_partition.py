@@ -2,6 +2,7 @@
 
 import json
 
+import blake3
 import pytest
 
 from scripts import read_b063_archive_partition as readback
@@ -87,7 +88,14 @@ def test_full_population_zero_with_exact_canary_control(monkeypatch):
 
     def fake_query(sql, account, token):
         queries.append(sql)
-        return [{"target_rows": 188}] if "AS target_rows" in sql else []
+        if "AS target_rows" in sql:
+            return [{
+                "target_rows": 188,
+                "target_active_rows": 0,
+                "target_archived_rows": 180,
+                "target_quarantined_rows": 8,
+            }]
+        return []
 
     monkeypatch.setattr(readback, "query", fake_query)
     result = readback.sample("account", "token", 1788638262347)
@@ -98,6 +106,50 @@ def test_full_population_zero_with_exact_canary_control(monkeypatch):
     assert readback.TARGET_TENANT not in queries[0]
     assert f"tenant_id='{readback.TARGET_TENANT}'" in queries[1]
     assert "substr(" not in queries[1]
+    assert result["exact_target_archived_rows"] == 180
+    assert result["exact_target_quarantined_rows"] == 8
+    assert result["exact_target_replay_verdict"] == "empty_active_queue"
+
+
+def test_sample_replays_the_exact_active_partition_without_returning_payload(monkeypatch):
+    previous = "00" * 32
+    active_rows = []
+    for sequence in range(2):
+        canonical = f'{{"n":{sequence}}}'
+        digest = blake3.blake3(bytes.fromhex(previous) + canonical.encode()).hexdigest()
+        active_rows.append({
+            "id": f"row-{sequence}",
+            "tenant_id": readback.TARGET_TENANT,
+            "region": readback.TARGET_REGION,
+            "sequence_number": sequence,
+            "prev_hash": previous,
+            "chain_hash": digest,
+            "enqueued_at": 1_787_824_088_488,
+            "canonical_jcs": canonical,
+            "algorithm_id": None,
+            "epoch_id": None,
+            "link_key_id": None,
+        })
+        previous = digest
+
+    def fake_query(sql, *_):
+        if "AS target_rows" in sql:
+            return [{
+                "target_rows": 2,
+                "target_active_rows": 2,
+                "target_archived_rows": 0,
+                "target_quarantined_rows": 0,
+            }]
+        if "SELECT id, tenant_id, region" in sql:
+            return active_rows
+        return []
+
+    monkeypatch.setattr(readback, "query", fake_query)
+    result = readback.sample("account", "token", 1_788_638_262_347)
+    assert result["exact_target_replay_verdict"] == "drainable"
+    assert result["exact_target_verifying_prefix_rows"] == 2
+    assert result["exact_target_replay_writes"] == {"d1": 0, "r2": 0}
+    assert "canonical_jcs" not in json.dumps(result)
 
 
 @pytest.mark.parametrize("tenant,region,target", [
@@ -106,23 +158,51 @@ def test_full_population_zero_with_exact_canary_control(monkeypatch):
     ("different-tenant", "weur", False),
 ])
 def test_any_failing_partition_is_red(monkeypatch, tenant, region, target):
-    monkeypatch.setattr(
-        readback, "query",
-        lambda sql, *_: [{"target_rows": 188}] if "AS target_rows" in sql else
-        [{"tenant_id": tenant, "region": region, "pending_old": 188}],
-    )
+    def fake_query(sql, *_):
+        if "AS target_rows" in sql:
+            return [{
+                "target_rows": 188,
+                "target_active_rows": 0,
+                "target_archived_rows": 180,
+                "target_quarantined_rows": 8,
+            }]
+        if "SELECT id, tenant_id, region" in sql:
+            return []
+        return [{"tenant_id": tenant, "region": region, "pending_old": 188}]
+
+    monkeypatch.setattr(readback, "query", fake_query)
     result = readback.sample("account", "token", 1788638262347)
     assert result["failed_partitions"] == 1
     assert result["exact_target_failed"] is target
 
 
-@pytest.mark.parametrize("control", [[], [{"target_rows": 0}], [{"target_rows": "188"}]])
+@pytest.mark.parametrize("control", [
+    [],
+    [{
+        "target_rows": 0,
+        "target_active_rows": 0,
+        "target_archived_rows": 0,
+        "target_quarantined_rows": 0,
+    }],
+    [{
+        "target_rows": "188",
+        "target_active_rows": 0,
+        "target_archived_rows": 0,
+        "target_quarantined_rows": 0,
+    }],
+    [{
+        "target_rows": 188,
+        "target_active_rows": "0",
+        "target_archived_rows": 188,
+        "target_quarantined_rows": 0,
+    }],
+])
 def test_empty_or_malformed_canary_control_is_indeterminate(monkeypatch, control):
     monkeypatch.setattr(
         readback, "query",
         lambda sql, *_: control if "AS target_rows" in sql else [],
     )
-    with pytest.raises(ValueError, match="control"):
+    with pytest.raises(ValueError, match="control|state"):
         readback.sample("account", "token", 1788638262347)
 
 
@@ -136,13 +216,16 @@ def test_three_samples_red_exit_and_no_secret_in_output(monkeypatch, capsys):
 
     def fake_sample(*_):
         calls.append(1)
-        return {"failed_partitions": 1 if len(calls) == 2 else 0}
+        return {
+            "failed_partitions": 1 if len(calls) == 2 else 0,
+            "exact_target_replay_verdict": "empty_active_queue",
+        }
 
     monkeypatch.setattr(readback, "sample", fake_sample)
     assert readback.main() == 1
     output = capsys.readouterr().out
     assert len(calls) == 3
-    assert json.loads(output)["verdict"] == "FAILED_PARTITIONS_REMAIN"
+    assert json.loads(output)["verdict"] == "RECOVERY_REQUIRED"
     assert "do-not-print-this" not in output
 
 
@@ -151,6 +234,13 @@ def test_zero_verdict_is_observation_not_recovery(monkeypatch, capsys):
     monkeypatch.setenv("CF_ACCOUNT_ID", "account")
     monkeypatch.setenv("CF_API_TOKEN", "secret")
     monkeypatch.setattr(readback.time, "sleep", lambda _: None)
-    monkeypatch.setattr(readback, "sample", lambda *_: {"failed_partitions": 0})
+    monkeypatch.setattr(
+        readback,
+        "sample",
+        lambda *_: {
+            "failed_partitions": 0,
+            "exact_target_replay_verdict": "empty_active_queue",
+        },
+    )
     assert readback.main() == 0
-    assert json.loads(capsys.readouterr().out)["verdict"] == "NO_FAILED_PARTITIONS_OBSERVED"
+    assert json.loads(capsys.readouterr().out)["verdict"] == "REPLAY_AND_PARTITION_CHECKS_OK"

@@ -1,14 +1,20 @@
 name: issue-1648-b063-read-only-evidence
 
 # B-063/#1648 evidence lane. The pull_request job is a hosted static contract
-# check. The manual job is the only live path and performs SELECT-only D1 reads;
-# it never invokes the archive route or writes a row.
+# check plus replay and alert-contract tests. The manual job reads production
+# D1 only; it replays the exact canary queue in memory and never invokes the
+# archive route, pages, writes a row, or persists audit payloads.
 
 on:
   pull_request:
     paths:
       - ".github/workflows/issue-1648-b063-read-only-evidence.yml"
+      - "scripts/read_b063_archive_partition.py"
+      - "scripts/verify_b063_archive_replay.py"
       - "scripts/verify_b063_hosted_evidence_workflow.py"
+      - "tests/test_b063_archive_replay.py"
+      - "tests/test_read_b063_archive_partition.py"
+      - "tests/test_verify_b063_archive_alert_contract.py"
   workflow_dispatch:
     inputs:
       read_only:
@@ -58,6 +64,28 @@ jobs:
           persist-credentials: false
       - name: Verify fail-closed read-only contract
         run: python3 scripts/verify_b063_hosted_evidence_workflow.py
+
+      - name: Install bounded replay test dependencies
+        run: python3 -m pip install --disable-pip-version-check --no-input -r requirements-ci.txt
+
+      - name: Verify partition replay, redaction, and SELECT-only evidence
+        run: python3 -m pytest -q tests/test_b063_archive_replay.py tests/test_read_b063_archive_partition.py tests/test_verify_b063_archive_alert_contract.py
+
+  archive-recovery-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+      - name: Verify immutable prefix replay, idempotency, watermark, and quarantine contracts
+        run: cargo test --locked -p corelink-server routes::audit_archive::tests:: -- --nocapture
 
   live-read-only:
     if: >-
@@ -198,5 +226,46 @@ jobs:
         with:
           name: b063-read-only-receipt-${{ github.run_id }}
           path: b063-read-only-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Replay the exact canary backlog in memory
+        if: always() && github.repository == 'HuGR-dev/corelink-server' && github.event_name == 'workflow_dispatch' && inputs.run_live == 'true'
+        env:
+          OWNER_APPROVED_READONLY: "1"
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --no-input -r requirements-ci.txt
+          python3 scripts/read_b063_archive_partition.py > b063-replay-receipt.json
+          python3 - <<'PY'
+          import json
+          with open("b063-replay-receipt.json", encoding="utf-8") as source:
+              receipt = json.load(source)
+          print(json.dumps({
+              "verdict": receipt["verdict"],
+              "target_prefix": receipt["target_prefix"],
+              "target_region": receipt["target_region"],
+              "samples": [
+                  {
+                      "failed_partitions": item["failed_partitions"],
+                      "target_active_rows": item["exact_target_active_rows"],
+                      "target_archived_rows": item["exact_target_archived_rows"],
+                      "target_quarantined_rows": item["exact_target_quarantined_rows"],
+                      "replay": item["exact_target_replay_verdict"],
+                      "verifying_prefix_rows": item["exact_target_verifying_prefix_rows"],
+                      "break_reason": item["exact_target_break_reason"],
+                      "writes": item["exact_target_replay_writes"],
+                  }
+                  for item in receipt["samples"]
+              ],
+          }, sort_keys=True))
+          PY
+
+      - name: Upload exact canary replay receipt
+        if: always() && github.repository == 'HuGR-dev/corelink-server' && github.event_name == 'workflow_dispatch' && inputs.run_live == 'true'
+        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.6.2
+        with:
+          name: b063-replay-receipt-${{ github.run_id }}
+          path: b063-replay-receipt.json
           if-no-files-found: error
           retention-days: 14
