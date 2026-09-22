@@ -1,0 +1,56 @@
+name: B-035 TLS contract inventory
+
+# This is the exact repository-owned contract gate for #1645.  It runs on a
+# GitHub-hosted runner and has no Cloudflare credentials.  The live provider
+# setting is read by scripts/check_tls_floor.py in its separately scoped drift
+# workflow; this job never claims that external proof.
+on:
+  pull_request:
+    paths:
+      - "legal/dpa/v1.0.0.en-US.md"
+      - "legal/dpa/v1.0.0.pt-BR.md"
+      - "legal/dpa/v1.0.0.es-419.md"
+      - "legal/dpa/STANDARD-CONTRACTUAL-CLAUSES-EU.md"
+      - "legal/dpa/SUB-PROCESSOR-COMMITMENTS.md"
+      - "legal/privacy-notice/v1.0.0/en-US.md"
+      - "legal/privacy-notice/v1.0.0/pt-BR.md"
+      - "legal/privacy-notice/v1.0.0/es-MX.md"
+      - "scripts/verify_b035_tls_surfaces.py"
+      - "tests/test_verify_b035_tls_surfaces.py"
+      - ".github/workflows/b035-contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "legal/dpa/v1.0.0.en-US.md"
+      - "legal/dpa/v1.0.0.pt-BR.md"
+      - "legal/dpa/v1.0.0.es-419.md"
+      - "legal/dpa/STANDARD-CONTRACTUAL-CLAUSES-EU.md"
+      - "legal/dpa/SUB-PROCESSOR-COMMITMENTS.md"
+      - "legal/privacy-notice/v1.0.0/en-US.md"
+      - "legal/privacy-notice/v1.0.0/pt-BR.md"
+      - "legal/privacy-notice/v1.0.0/es-MX.md"
+      - "scripts/verify_b035_tls_surfaces.py"
+      - "tests/test_verify_b035_tls_surfaces.py"
+      - ".github/workflows/b035-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  b035-contract:
+    name: enumerate all eight TLS claims
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify exact inventory and fail-closed mutation behavior
+        run: python3 scripts/verify_b035_tls_surfaces.py --self-test
+      - name: Run B-035 contract tests
+        run: python3 -m unittest -v tests/test_verify_b035_tls_surfaces.py
+      - name: Emit redacted repository evidence
+        run: python3 scripts/verify_b035_tls_surfaces.py --expect-open --json
