@@ -1,0 +1,26 @@
+name: B-029 load gate focused contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/b029-load-gate.yml"
+      - ".github/workflows/load-test-nightly.yml"
+      - "scripts/verify_b029_load_gate.py"
+      - "tests/test_b029_load_gate.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-contract:
+    if: github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Run focused B-029 contract tests
+        run: python3 -m pytest -q tests/test_b029_load_gate.py
