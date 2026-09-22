@@ -40,6 +40,14 @@ use proptest::test_runner::Config;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
+const B071_FORWARD_MIGRATION: &str = "0143_gc_accounting_region_upgrade.sql";
+const B071_REPLACEMENT_COMMENT: &str =
+    "-- additive-trigger-replacement: ADR-0143 B-071 historic accounting body";
+const B071_REPLACEMENT_TRIGGERS: &[&str] = &[
+    "trg_gc_purge_accounting_required",
+    "trg_gc_purge_finalize_accounting",
+];
+
 // =====================================================================
 // PROPTEST_CASES runtime knob (S-07 P1-2 contract — runtime fn, NOT const).
 // =====================================================================
@@ -186,16 +194,99 @@ fn valid_line_waiver(line: &str, comment_start: usize) -> bool {
         && !remainder.trim().is_empty()
 }
 
+fn valid_b071_trigger_drop(line: &str, comment_start: usize) -> bool {
+    let statement = line[..comment_start].trim();
+    let comment = line[comment_start..].trim();
+    comment == B071_REPLACEMENT_COMMENT
+        && B071_REPLACEMENT_TRIGGERS
+            .iter()
+            .any(|trigger| statement == format!("DROP TRIGGER IF EXISTS {trigger};"))
+}
+
+fn b071_allowed_create_name(trimmed: &str) -> Option<&'static str> {
+    let name = trimmed
+        .strip_prefix("CREATE TRIGGER ")?
+        .split_whitespace()
+        .next()?
+        .trim_end_matches(';');
+    B071_REPLACEMENT_TRIGGERS
+        .iter()
+        .copied()
+        .find(|trigger| *trigger == name)
+}
+
+/// The two ADR-0143 replacements are one statement sequence, not two
+/// independent waivers. Each exact DROP line must be followed by the CREATE
+/// for the same name; each name is consumed once and in the ADR-pinned order.
+/// This makes a duplicate or unpaired allowed-name CREATE fail the same way as
+/// a renamed or reordered pair.
+fn b071_trigger_pair_sequence_is_exact(migration_name: Option<&str>, sql: &str) -> bool {
+    if migration_name != Some(B071_FORWARD_MIGRATION) {
+        return false;
+    }
+
+    let lines: Vec<&str> = sql.lines().collect();
+    let mut paired_names = Vec::new();
+    let mut paired_create_lines = Vec::new();
+    let mut all_allowed_creates = Vec::new();
+
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if let Some(name) = B071_REPLACEMENT_TRIGGERS.iter().find(|name| {
+            trimmed == format!("DROP TRIGGER IF EXISTS {name}; {B071_REPLACEMENT_COMMENT}")
+        }) {
+            let Some((create_index, create_line)) =
+                lines
+                    .iter()
+                    .enumerate()
+                    .skip(index + 1)
+                    .find(|(_, candidate)| {
+                        !candidate.trim().is_empty() && !candidate.trim_start().starts_with("--")
+                    })
+            else {
+                return false;
+            };
+            if create_line.trim() != format!("CREATE TRIGGER {name}") {
+                return false;
+            }
+            paired_names.push(*name);
+            paired_create_lines.push(create_index);
+        }
+        if let Some(name) = b071_allowed_create_name(trimmed) {
+            all_allowed_creates.push((index, name));
+        }
+    }
+
+    paired_names.as_slice() == B071_REPLACEMENT_TRIGGERS
+        && all_allowed_creates.len() == B071_REPLACEMENT_TRIGGERS.len()
+        && all_allowed_creates
+            .iter()
+            .map(|(index, _)| *index)
+            .eq(paired_create_lines)
+}
+
 /// Normalize a SQL fragment for keyword detection: apply audited line-local
 /// waivers, strip comments, uppercase, and collapse whitespace.
 fn normalize_for_scan(sql: &str) -> String {
+    normalize_migration_for_scan(None, sql)
+}
+
+/// Normalize one migration while retaining the name-scoped B-071 exception.
+/// The historical generic ADR waiver remains for pre-existing rebuilds; the
+/// forward trigger replacement has no generic path and must match its exact
+/// source line in 0143.
+fn normalize_migration_for_scan(migration_name: Option<&str>, sql: &str) -> String {
     let mut in_block_comment = false;
     let mut quote = None;
+    let b071_pair_sequence_is_authorized = b071_trigger_pair_sequence_is_exact(migration_name, sql);
     let waiver_filtered = sql
         .lines()
         .map(|line| {
             let comment_start = line_comment_start(line, &mut in_block_comment, &mut quote);
-            if comment_start.is_some_and(|start| valid_line_waiver(line, start)) {
+            if comment_start.is_some_and(|start| {
+                valid_line_waiver(line, start)
+                    || (b071_pair_sequence_is_authorized && valid_b071_trigger_drop(line, start))
+            }) {
                 ""
             } else {
                 line
@@ -219,6 +310,18 @@ fn normalize_for_scan(sql: &str) -> String {
         }
     }
     out
+}
+
+fn is_b071_authorized_trigger_create(migration_name: &str, raw: &str, statement: &str) -> bool {
+    if !b071_trigger_pair_sequence_is_exact(Some(migration_name), raw) {
+        return false;
+    }
+    B071_REPLACEMENT_TRIGGERS.iter().any(|trigger| {
+        let create = format!("CREATE TRIGGER {}", trigger.to_ascii_uppercase());
+        statement
+            .strip_prefix(&create)
+            .is_some_and(|tail| tail.chars().next().is_some_and(char::is_whitespace))
+    })
 }
 
 /// Scan canonicalized SQL for the appearance of any forbidden prefix as
@@ -291,7 +394,7 @@ proptest! {
         let idx = rng.random_range(0..corpus.len());
         let (name, raw) = &corpus[idx];
 
-        let canonical = normalize_for_scan(raw);
+        let canonical = normalize_migration_for_scan(Some(name), raw);
         let violations = find_violations(&canonical);
         prop_assert!(
             violations.is_empty(),
@@ -386,7 +489,7 @@ proptest! {
             // chars of the statement to keep the matcher simple.
             let head: String = t.chars().take(64).collect();
             let has_ine = head.contains("IF NOT EXISTS");
-            if !has_ine {
+            if !has_ine && !is_b071_authorized_trigger_create(name, raw, t) {
                 let excerpt: String = t.chars().take(80).collect();
                 anti_pattern.push(excerpt);
             }
@@ -399,6 +502,82 @@ proptest! {
             anti_pattern.len(), anti_pattern
         );
     }
+}
+
+#[test]
+fn b071_bare_trigger_create_exception_is_name_and_pair_scoped() {
+    let raw = format!(
+        "DROP TRIGGER IF EXISTS trg_gc_purge_accounting_required; {B071_REPLACEMENT_COMMENT}\n\
+         CREATE TRIGGER trg_gc_purge_accounting_required\nBEFORE DELETE ON blob_meta\nBEGIN SELECT 1; END;\n\
+         DROP TRIGGER IF EXISTS trg_gc_purge_finalize_accounting; {B071_REPLACEMENT_COMMENT}\n\
+         CREATE TRIGGER trg_gc_purge_finalize_accounting\nAFTER DELETE ON blob_meta\nBEGIN SELECT 1; END;"
+    );
+    assert!(b071_trigger_pair_sequence_is_exact(
+        Some(B071_FORWARD_MIGRATION),
+        &raw
+    ));
+    let statement = "CREATE TRIGGER TRG_GC_PURGE_ACCOUNTING_REQUIRED BEFORE DELETE ON BLOB_META";
+    assert!(is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &raw,
+        statement
+    ));
+
+    assert!(!is_b071_authorized_trigger_create(
+        "0144_unrelated.sql",
+        &raw,
+        statement
+    ));
+    assert!(!is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &raw.replace(
+            "DROP TRIGGER IF EXISTS trg_gc_purge_accounting_required; ",
+            ""
+        ),
+        statement
+    ));
+    assert!(!is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &raw.replace(
+            "trg_gc_purge_accounting_required",
+            "trg_gc_purge_legal_hold_guard"
+        ),
+        "CREATE TRIGGER TRG_GC_PURGE_LEGAL_HOLD_GUARD BEFORE DELETE ON BLOB_META",
+    ));
+    assert!(!is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &raw.replace(
+            B071_REPLACEMENT_COMMENT,
+            "-- additive-allowed: ADR-0143 copied generic waiver",
+        ),
+        statement,
+    ));
+    assert!(!is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &raw,
+        "CREATE TABLE ESCAPE_HATCH (ID INTEGER)"
+    ));
+    assert!(!is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &raw,
+        "CREATE TRIGGER TRG_GC_PURGE_UNRELATED BEFORE DELETE ON BLOB_META",
+    ));
+    let duplicate_unpaired_allowed_create = format!(
+        "{raw}\nCREATE TRIGGER trg_gc_purge_accounting_required\n\
+         AFTER DELETE ON blob_meta\nBEGIN SELECT 1; END;"
+    );
+    assert!(
+        !b071_trigger_pair_sequence_is_exact(
+            Some(B071_FORWARD_MIGRATION),
+            &duplicate_unpaired_allowed_create
+        ),
+        "a duplicate allowed-name CREATE must not inherit authorization from an earlier pair"
+    );
+    assert!(!is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &duplicate_unpaired_allowed_create,
+        statement,
+    ));
 }
 
 // =====================================================================

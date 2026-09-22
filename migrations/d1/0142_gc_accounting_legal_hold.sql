@@ -35,9 +35,11 @@ BEGIN
     SELECT RAISE(ABORT, 'gc_purge_blocked_by_legal_hold');
 END;
 
--- Never finalize a purge if the authoritative accounting row is absent.  A
--- row is keyed by the blob's residency region, which is the same region used
--- by the CAS accounting path.
+-- Never finalize a purge if the authoritative accounting row is absent.  The
+-- accounting state is keyed by the GC region (the five-region storage
+-- partition), while blob_meta.region is the tenant's macro-residency region.
+-- Use the fenced intent's gc_region instead of comparing those different
+-- domains.
 CREATE TRIGGER IF NOT EXISTS trg_gc_purge_accounting_required
 BEFORE DELETE ON blob_meta
 FOR EACH ROW
@@ -50,7 +52,12 @@ WHEN EXISTS (
 AND NOT EXISTS (
     SELECT 1 FROM tenant_storage_state
     WHERE tenant_id = OLD.tenant_id
-      AND region = OLD.region
+      AND region = (
+          SELECT gc_region FROM gc_purge_intent
+          WHERE tenant_id = OLD.tenant_id
+            AND digest = OLD.digest
+            AND state = 'r2_deleted'
+      )
 )
 BEGIN
     SELECT RAISE(ABORT, 'gc_purge_accounting_state_missing');
@@ -89,5 +96,10 @@ BEGIN
                   AND state = 'r2_deleted')
            )
      WHERE tenant_id = OLD.tenant_id
-       AND region = OLD.region;
+       AND region = (
+           SELECT gc_region FROM gc_purge_intent
+           WHERE tenant_id = OLD.tenant_id
+             AND digest = OLD.digest
+             AND state = 'r2_deleted'
+       );
 END;
