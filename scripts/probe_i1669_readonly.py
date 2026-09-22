@@ -59,9 +59,16 @@ FROM audit_outbox
 BACKFILL_COMPLETENESS_SQL = """
 SELECT
     COUNT(*) AS audit_rows,
-    SUM(CASE WHEN t.tenant_id IS NULL THEN 1 ELSE 0 END) AS orphan_rows,
+    SUM(CASE WHEN t.tenant_id IS NULL AND a.tenant_id <> '_public'
+        THEN 1 ELSE 0 END) AS orphan_rows,
     SUM(CASE WHEN t.tenant_id IS NOT NULL THEN 1 ELSE 0 END) AS joinable_rows,
-    SUM(CASE WHEN t.tenant_id IS NULL AND EXISTS (
+    SUM(CASE WHEN a.tenant_id = '_public' AND a.region = 'wnam'
+        THEN 1 ELSE 0 END)
+        AS system_scope_rows,
+    SUM(CASE WHEN a.tenant_id = '_public'
+                  AND (a.region IS NULL OR a.region <> 'wnam')
+        THEN 1 ELSE 0 END) AS invalid_system_scope_rows,
+    SUM(CASE WHEN t.tenant_id IS NULL AND a.tenant_id <> '_public' AND EXISTS (
         SELECT 1 FROM dsr_erasure_log AS d WHERE d.tenant_id = a.tenant_id
     ) THEN 1 ELSE 0 END) AS erased_orphan_rows
 FROM audit_outbox AS a
@@ -76,7 +83,14 @@ QUERY_ALLOWLIST = {
     "backfill_completeness": BACKFILL_COMPLETENESS_SQL,
 }
 POPULATION_FIELDS = ("audit_rows", "audit_tenants", "blank_tenant_rows")
-BACKFILL_FIELDS = ("audit_rows", "orphan_rows", "joinable_rows", "erased_orphan_rows")
+BACKFILL_FIELDS = (
+    "audit_rows",
+    "orphan_rows",
+    "joinable_rows",
+    "system_scope_rows",
+    "invalid_system_scope_rows",
+    "erased_orphan_rows",
+)
 
 
 class ProbeError(RuntimeError):
@@ -193,6 +207,9 @@ def run(account_id: str, database_id: str, token: str, output: Path) -> int:
             fields = tuple(RESIDENCY.COUNT_FIELDS) if name == "residency" else POPULATION_FIELDS if name == "population" else BACKFILL_FIELDS
             observations[name] = _aggregate(payload, fields)
             receipt["queries"].append({"name": name, "query_sha256": _hash(query), "response_sha256": payload_hash, "row_count": 1})
+        # Preserve aggregate-only diagnostics even when a reconciliation gate
+        # fails below.  No row payload or tenant identifier is retained.
+        receipt["counts"] = observations
         counts = RESIDENCY.Counts(**observations["residency"])
         state, reason = RESIDENCY.assess(counts, environment="production")
         population = observations["population"]
@@ -203,11 +220,22 @@ def run(account_id: str, database_id: str, token: str, output: Path) -> int:
             raise ProbeError("historical audit population contains blank tenant IDs")
         if completeness["audit_rows"] != counts.total_rows:
             raise ProbeError("backfill completeness denominator is inconsistent")
-        if completeness["orphan_rows"] + completeness["joinable_rows"] != counts.total_rows:
+        if (
+            completeness["orphan_rows"]
+            + completeness["joinable_rows"]
+            + completeness["system_scope_rows"]
+            + completeness["invalid_system_scope_rows"]
+            != counts.total_rows
+        ):
             raise ProbeError("backfill completeness partition is partial")
-        if completeness["orphan_rows"] != counts.orphan_rows or completeness["erased_orphan_rows"] != counts.erased_orphan_rows:
+        if (
+            completeness["orphan_rows"] != counts.orphan_rows
+            or completeness["system_scope_rows"] != counts.system_scope_rows
+            or completeness["invalid_system_scope_rows"] != counts.invalid_system_scope_rows
+            or completeness["erased_orphan_rows"] != counts.erased_orphan_rows
+        ):
             raise ProbeError("backfill completeness does not reconcile with residency")
-        receipt.update({"status": state, "reason": reason, "counts": observations})
+        receipt.update({"status": state, "reason": reason})
         _write(output, receipt)
         return 0 if state == "COMPLIANT" else 1
     except (ProbeError, RESIDENCY.Indeterminate) as exc:
