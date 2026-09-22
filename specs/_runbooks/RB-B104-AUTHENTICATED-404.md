@@ -68,7 +68,9 @@ The final `Server-Timing` header is parsed using a fixed, bounded vocabulary:
 phase fails the run, so an old deployment cannot look fast because it omitted
 instrumentation. On the miss path, `404` status plus `opat` and absent
 `ostore` identify the URL map miss without treating the miss as a successful
-storage read.
+storage read. The probe rejects the sample population if any response emits
+`ostore`, including a zero duration, because a URL-map miss must not perform
+durable blob work.
 
 The timing pad is a security control and must remain enabled. It means `total`
 is not a raw server execution profile; the unpadded attribution phases are the
