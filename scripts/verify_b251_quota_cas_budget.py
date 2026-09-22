@@ -110,7 +110,8 @@ def assess(config: str, test: str, runner: str) -> None:
         "Vec::with_capacity(1_000)",
         "for _ in 0..1_000",
         "samples.sort_unstable();",
-        "let p99 = samples[(samples.len() * 99 / 100)",
+        "let p99_rank = (samples.len() * 99 + 99) / 100;",
+        "let p99 = samples[p99_rank - 1];",
         "B251_LATENCY_PROBE_JSON=",
         '\\"production_latency_measured\\":false',
         "assert!(p99 <= 5_000",
@@ -226,6 +227,14 @@ def mutation_checks(config: str, test: str, runner: str) -> None:
         (
             "latency p99 order-statistic removed",
             test.replace("samples.sort_unstable();", "", 1),
+        ),
+        (
+            "nearest-rank p99 weakened",
+            test.replace(
+                "let p99_rank = (samples.len() * 99 + 99) / 100;\n    let p99 = samples[p99_rank - 1];",
+                "let p99 = samples[(samples.len() * 99 / 100).min(samples.len() - 1)];",
+                1,
+            ),
         ),
         (
             "latency inclusive boundary weakened",

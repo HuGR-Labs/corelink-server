@@ -24,6 +24,7 @@ API_BASE = "https://api.stripe.com"
 TIMEOUT_SECONDS = 20
 CONFIRMATION = "run-i1649-stripe-test-mode"
 REQUIRED_WORKFLOW_MARKERS = (
+    "github.repository == 'HuGR-dev/corelink-server'",
     "runs-on: ubuntu-latest",
     "STRIPE_SECRET_KEY",
     "sk_test_",

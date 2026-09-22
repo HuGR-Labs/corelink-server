@@ -76,12 +76,12 @@ SPRINT3_FIELDS = {
 B154_RECONCILIATION = {
     "sequence": 4,
     "previous_sequence": 3,
-    "base_commit": "80614c5e83e74099dee3c710ad126cb44a9e557f",
+    "base_commit": "0f90d89e0710e88e297d39b16e0fdad390bdcafc",
     "previous_source_sha256": "41726d6c8b2f4b1dc7ff35466a78c242e147b99eaca69a956064024e04212e23",
     "prior_source_sha256": "c272de9f9cc4e6ae36bddbff4c97012d8589150a22c0038e0875a6ddf855ac87",
     "source_sha256": "208c18517916ad39d262ff76fdf99765b678f9d1b768f4f107173beb21f663b4",
     "prior_ledger_sha256": "02d81ecf3ade17a5317b3f24e68a17a801837bde6112cac9288b6a7f6175b656",
-    "ledger_sha256": "74299a6b9283e60958aa1ff98cb2efcd027f70dd783d4111dc68e9e51ade86c9",
+    "ledger_sha256": "594ea8bf766a73a0349e8f644007d16cf39543339edc458e779499aa87f8d76b",
     "changed_ids": ["B-154"],
     "catalog_sha256": {
         "docs/campaigns/remediation/work-packages/B001-B045.md": "2a1735804f43bb726789b99ee80c14cf876f41eb6c684e3ea54e68981413cd38",
