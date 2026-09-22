@@ -381,7 +381,7 @@ jobs:
         run: |
           set -euo pipefail
           test_name='adapter_cache::tests::put_records_the_store_phase_exactly_once'
-          cargo test --locked -p corelink-container --lib "$test_name" -- --exact --nocapture 2>&1 | tee artifacts/campaign-ci/i1663.log
+          cargo test --locked -p corelink-server --lib "$test_name" -- --exact --nocapture 2>&1 | tee artifacts/campaign-ci/i1663.log
           grep -F "test ${test_name} ... ok" artifacts/campaign-ci/i1663.log
 
       - name: i1650 credential-free ignored-harness manifest contract
