@@ -38,8 +38,8 @@
 //!
 //! - **Auto-apply FORBIDDEN**: no `terraform apply` call anywhere in this
 //!   crate. This is a hardened invariant (WI-S13-004 §7 anti-scope).
-//! - **OIDC credentials**: crate is agnostic to credentials; production
-//!   wiring uses OIDC-bound tokens only.
+//! - **Credential boundary**: the crate is agnostic to credentials; production
+//!   wiring supplies the dedicated provider and backend credentials at runtime.
 //! - **Append-only audit**: `DriftFindingStore` has no DELETE surface.
 //!
 //! # Production wiring (deferred)

@@ -60,17 +60,17 @@ set -e
 case "$terraform_exitcode" in
   0)
     write_output 0 0 none false
-    printf '::notice::Region %s: no drift (exit 0)\n' "$region"
+    printf '::notice::Region %s: no drift (exit 0)\n' "$region" >&2
     exit 0
     ;;
   2)
     write_output 2 2 medium true
-    printf '::warning::Region %s: drift detected (exit 2)\n' "$region"
+    printf '::warning::Region %s: drift detected (exit 2)\n' "$region" >&2
     exit 2
     ;;
   *)
     write_output 1 "$terraform_exitcode" error false
-    printf '::error::Region %s: Terraform error (exit %s)\n' "$region" "$terraform_exitcode"
+    printf '::error::Region %s: Terraform error (exit %s)\n' "$region" "$terraform_exitcode" >&2
     exit 1
     ;;
 esac
