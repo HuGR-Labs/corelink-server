@@ -37,6 +37,10 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run DSR classification and adversarial contracts
-        run: >-
-          cargo test --locked -p corelink-server --lib
-          routes::dsr::adapter_d1::tests::
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$(mktemp)"
+          cargo test --locked -p corelink-server --lib \
+            routes::dsr::adapter_d1::tests:: 2>&1 | tee "${log}"
+          grep -Eq 'test result: ok\. [1-9][0-9]* passed;' "${log}"
