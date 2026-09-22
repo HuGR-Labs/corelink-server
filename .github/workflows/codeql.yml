@@ -82,12 +82,23 @@ jobs:
           - language: rust
             build-mode: none
             queries: ""
+            # The Rust database is substantially larger than the interpreted
+            # language databases. Keep the full source scope, but give the
+            # CodeQL evaluator a supported 8 GiB budget and one worker so the
+            # default Rust query pack cannot exhaust the hosted runner while
+            # evaluating multiple queries concurrently.
+            ram: "8192"
+            threads: "1"
           - language: javascript-typescript
             build-mode: none
             queries: security-extended,security-and-quality
+            ram: "4096"
+            threads: "2"
           - language: python
             build-mode: none
             queries: security-extended,security-and-quality
+            ram: "4096"
+            threads: "2"
 
     steps:
       - name: Checkout
@@ -126,8 +137,11 @@ jobs:
           # CodeQL manages its dependency cache through the Actions cache
           # service on the ephemeral hosted runner.
           dependency-caching: true
-          threads: ${{ env.CODEQL_THREADS }}
-          ram: ${{ env.CODEQL_RAM_MB }}
+          # These are official CodeQL Action inputs. Rust overrides the
+          # default matrix budget above; JS/TS and Python retain the existing
+          # bounded settings and continue to emit their own SARIF artifacts.
+          threads: ${{ matrix.threads }}
+          ram: ${{ matrix.ram }}
 
       - name: Perform CodeQL Analysis
         id: analyze
