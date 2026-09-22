@@ -124,11 +124,10 @@ impl R2CasHandler {
     ///
     /// GATED-INERT: encryption engages ONLY for a tenant whose
     /// `tenant_byok_config.state == 'active'`; every other tenant (and the
-    /// `_public` namespace) keeps the exact plaintext path. The production
-    /// builder ([`build_r2_cas_handler_from_env`]) does NOT call this yet —
-    /// onboarding (the sole writer of the `active` state) is a later wave, and
-    /// the default build links no real `KmsProvider` — so production stays on
-    /// the unchanged plaintext path until that wave wires a provider here.
+    /// `_public` namespace) keeps the exact plaintext path. Production router
+    /// assembly calls this only after it has constructed the one real-provider
+    /// [`DataPlaneByok`](crate::storage::byok_cas::DataPlaneByok) set; the
+    /// default build has no such provider and remains plaintext.
     #[must_use]
     pub fn with_byok(
         mut self,

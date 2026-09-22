@@ -463,5 +463,27 @@ mod tests {
         }
     }
 
+    #[test]
+    fn data_plane_exposes_clones_of_one_authoritative_config_cache() {
+        let cache = Arc::new(ByokConfigCache::new(
+            Arc::new(MockConfigSource::ok(None)),
+            60,
+        ));
+        let resolver = Arc::new(
+            TcsResolver::new(
+                Arc::new(MockSecretSource { row: None }),
+                Arc::new(MockKms::ok()),
+                300,
+            )
+            .unwrap(),
+        );
+        let mode_b = Arc::new(mode_b_enc(Arc::new(MemEnvelopeStore::default()), false));
+        let data_plane = DataPlaneByok::new(Arc::clone(&cache), resolver, mode_b);
+        assert!(
+            Arc::ptr_eq(&cache, &data_plane.config_cache()),
+            "composition consumers must receive clones of the one cache Arc"
+        );
+    }
+
     include!("part-02-tail.rs");
 }

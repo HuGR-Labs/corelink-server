@@ -364,6 +364,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(
         "routes: building composed data-plane router (CAS + AC + Admin + audit-export + audit-analytics + signup) + /_health"
     );
+    // Construct BYOK data-plane collaborators once before route assembly.  The
+    // router passes this one cache Arc to both storage surfaces and both byte
+    // accounting decorators, so a config transition cannot split encryption
+    // from physical-byte reservation.  A binary without a real provider keeps
+    // the existing non-BYOK path; a real-provider production setup that cannot
+    // construct its D1/KMS collaborators refuses boot.
+    let byok_data_plane = corelink_server::storage::byok_cas::DataPlaneByok::from_env()
+        .await
+        .map_err(|error| format!("BYOK data-plane wiring failed: {error}"))?;
     // The composed data-plane router is the product surface. We bind it to the
     // HTTP listener on PORT (50051) — the exact port the DO forwards HTTP to and
     // probes for /_health. `/_health` is added here so the DO's container
@@ -375,7 +384,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // carries larger build artifacts) sets its own larger per-route limit inside
     // `turbo_v8::router()` and is NOT constrained by this global default.
     const GLOBAL_BODY_LIMIT_BYTES: usize = 10 * 1024 * 1024; // 10 MiB
-    let mut app = routes::build_with_factory(shadow_factory)
+    let mut app = routes::build_with_factory_and_byok(shadow_factory, byok_data_plane)
         // The failover heartbeat is deliberately a separate authenticated
         // internal route. Public `/_health` readiness probes never refresh
         // failover state and therefore cannot spoof liveness anonymously.
