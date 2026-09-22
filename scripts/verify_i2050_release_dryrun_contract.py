@@ -26,8 +26,11 @@ TARGETS = {
     "corelink-windows-x86_64.zip",
 }
 PINNED_ACTION = re.compile(r"^\s*uses:\s+[^\s@]+@[0-9a-f]{40}(?:\s+#.*)?$", re.MULTILINE)
-ZIGBUILD_VERSION_PROBE = '''test "$(cargo zigbuild -V | awk '{print $2}')" = "0.19.8"'''
-UNSUPPORTED_ZIGBUILD_VERSION_PROBE = 'cargo zigbuild --version'
+ZIGBUILD_VERSION_PROBE = '''test "$(cargo-zigbuild --version | awk '{print $2}')" = "0.19.8"'''
+UNSUPPORTED_ZIGBUILD_VERSION_PROBES = (
+    "cargo zigbuild --version",
+    "cargo zigbuild -V",
+)
 
 
 def fail(message: str) -> None:
@@ -36,22 +39,26 @@ def fail(message: str) -> None:
 
 def _verify_zigbuild_version_probe(text: str) -> None:
     if ZIGBUILD_VERSION_PROBE not in text:
-        fail("cargo-zigbuild must be pinned by the supported cargo zigbuild -V probe")
-    if UNSUPPORTED_ZIGBUILD_VERSION_PROBE in text:
-        fail("unsupported cargo zigbuild --version probe must not return")
+        fail("cargo-zigbuild must be pinned by its direct --version probe")
+    for unsupported in UNSUPPORTED_ZIGBUILD_VERSION_PROBES:
+        if unsupported in text:
+            fail(f"unsupported version probe must not return: {unsupported}")
 
 
 def _zigbuild_version_probe_mutation_self_test(text: str) -> None:
-    mutated = text.replace(
-        ZIGBUILD_VERSION_PROBE,
-        '''test "$(cargo zigbuild --version | awk '{print $2}')" = "0.19.8"''',
-        1,
-    )
-    try:
-        _verify_zigbuild_version_probe(mutated)
-    except SystemExit:
-        return
-    fail("unsupported cargo-zigbuild version-probe mutation survived")
+    for unsupported in UNSUPPORTED_ZIGBUILD_VERSION_PROBES:
+        mutated = text.replace(
+            ZIGBUILD_VERSION_PROBE,
+            f"{ZIGBUILD_VERSION_PROBE}\n          {unsupported}",
+            1,
+        )
+        try:
+            _verify_zigbuild_version_probe(mutated)
+        except SystemExit as error:
+            if unsupported not in str(error):
+                raise
+        else:
+            fail(f"unsupported cargo-zigbuild mutation survived: {unsupported}")
 
 
 def contract() -> None:
@@ -142,7 +149,7 @@ def contract() -> None:
             fail(f"required release proof is missing: {token}")
     _verify_zigbuild_version_probe(text)
     _zigbuild_version_probe_mutation_self_test(text)
-    print("PASS: only the new dry-run workflow, its checker, and read-only PR test wiring changed")
+    print("PASS: only the dry-run workflow and its checker changed")
     print("PASS: manual protected-main lane, no release/tag/cross-repo write path")
     print("PASS: five targets, pinned cross-toolchain, CycloneDX, Rekor, and SLSA provenance")
 

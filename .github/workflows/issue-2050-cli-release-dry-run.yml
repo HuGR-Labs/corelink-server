@@ -83,8 +83,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(zig version)" = "0.16.0"
-          # This subcommand accepts -V; --version is rejected by cargo-zigbuild.
-          test "$(cargo zigbuild -V | awk '{print $2}')" = "0.19.8"
+          # Probe cargo-zigbuild's top-level parser directly; cargo zigbuild
+          # forwards these flags to the zigbuild subcommand, which rejects them.
+          test "$(cargo-zigbuild --version | awk '{print $2}')" = "0.19.8"
           for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-pc-windows-gnu; do
             CARGO_TARGET_DIR="${RUNNER_TEMP}/corelink-target/${target}" \
               cargo zigbuild -p corelink-cli --release --locked --target "${target}"
