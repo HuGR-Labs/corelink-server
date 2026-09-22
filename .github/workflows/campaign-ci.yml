@@ -39,6 +39,9 @@ on:
           - i1650-contract
           - i1649-contract
           - i1659-dry
+          - i1809-b063-archive-replay
+          - i1810-b046-object-lock
+          - i1811-b032-vendor-review
 
 permissions:
   contents: read
@@ -420,6 +423,35 @@ jobs:
               raise SystemExit("missing B-103 request contract")
           print("B-103 reproducer dry contract: PASS (no staging requests made)")
           PY
+
+      - name: i1809 B-063 archive replay and route checks
+        if: ${{ inputs.suite == 'i1809-b063-archive-replay' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --no-input --quiet pytest blake3
+          {
+            python3 -m pytest -q tests/test_b063_archive_replay.py
+            cargo clippy --locked --package corelink-container --all-targets -- -D warnings
+            cargo test --locked --package corelink-container --lib audit_archive -- --nocapture
+          } 2>&1 | tee artifacts/campaign-ci/i1809-b063-archive-replay.log
+
+      - name: i1810 B-046 object-lock receipt checks
+        if: ${{ inputs.suite == 'i1810-b046-object-lock' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            python3 scripts/verify_b046_object_lock_probe.py
+            python3 -m unittest -q tests/test_verify_b046_object_lock_probe.py
+          } 2>&1 | tee artifacts/campaign-ci/i1810-b046-object-lock.log
+
+      - name: i1811 B-032 vendor-review manifest checks
+        if: ${{ inputs.suite == 'i1811-b032-vendor-review' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_1644_vendor_review_manifest.py 2>&1 | tee artifacts/campaign-ci/i1811-b032-vendor-review.log
 
       - name: Upload compact campaign logs
         if: ${{ always() }}
