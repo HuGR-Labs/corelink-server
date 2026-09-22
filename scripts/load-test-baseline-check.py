@@ -58,8 +58,8 @@ produce a complete set of summary/status files would otherwise land here as a
 silent green — exactly the defect this script exists to remove.
 
 `--expected-scenarios` closes the artifact population: the current summaries and
-matrix-leg status records must match it exactly. A focused manual dispatch must
-therefore pass its selected list explicitly.
+matrix-leg status records must match it exactly. The hosted workflow rejects a
+focused manual dispatch, so every gate run must request the complete population.
 
 stdlib-only on purpose: the self-hosted fleets have no guaranteed third-party
 python packages.
