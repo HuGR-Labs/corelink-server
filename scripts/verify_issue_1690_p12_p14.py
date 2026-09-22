@@ -162,6 +162,8 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
         raise VerificationError("historical source commit inventory is incomplete")
     for stage, commit in historical_sources.items():
         require_sha(commit, f"historical {stage} commit")
+        if not commit_exists(commit):
+            raise VerificationError(f"historical {stage} source object is missing")
 
     merge_commit = require_sha(squash.get("merge_commit"), "squash merge commit")
     merge_parent = require_sha(squash.get("merge_parent"), "squash merge parent")
@@ -178,6 +180,8 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
         if not isinstance(entry, dict):
             raise VerificationError(f"squash {stage} entry is invalid")
         commit = require_sha(entry.get("commit"), f"squash {stage} commit")
+        if not commit_exists(commit):
+            raise VerificationError(f"squash {stage} source object is missing")
         paths = entry.get("paths")
         if not isinstance(paths, list) or not paths or any(not isinstance(p, str) or not p for p in paths):
             raise VerificationError(f"squash {stage} path inventory is invalid")
@@ -258,6 +262,8 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
     for stage, entry in source_inventory.items():
         commit = entry["commit"]
         present = commit_exists(commit)
+        if not present:
+            raise VerificationError(f"squash {stage} source object is missing")
         result: dict[str, Any] = {
             "commit": commit,
             "object_present": present,
