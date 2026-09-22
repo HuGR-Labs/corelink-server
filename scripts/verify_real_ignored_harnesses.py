@@ -23,6 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github/workflows/real-ignored-harnesses.yml"
+CONTRACT_WORKFLOW_PATH = ROOT / ".github/workflows/issue-1650-real-integration-contract.yml"
 RUNNER_PATH = ROOT / "scripts/run-real-ignored-harnesses.sh"
 MANIFEST_PATH = ROOT / "scripts/real-ignored-harness-manifest.json"
 SEED_PATH = ROOT / "crates/corelink-pat/tests/emit_e2e_seed.rs"
@@ -87,6 +88,16 @@ SOURCE_SHA256 = {
     "crates/corelink-stripe-real/tests/live_integration.rs": "55e9d64edb8b35a97de82ff8f55f75ce74159d1bcf4e86d5fa73b0874105ae7a",
     "crates/corelink-audit-chain/tests/neon_shadow_real.rs": "dfd22738e96d82695b40addf64b3dbaf611fbd8026346f0b4e33b28f10fe79eb",
 }
+
+CONTRACT_TRIGGER_INPUTS = (
+    ".github/workflows/issue-1650-real-integration-contract.yml",
+    ".github/workflows/real-ignored-harnesses.yml",
+    "scripts/run-real-ignored-harnesses.sh",
+    "scripts/real-ignored-harness-manifest.json",
+    "scripts/verify_real_ignored_harnesses.py",
+    "crates/corelink-pat/tests/emit_e2e_seed.rs",
+    *SOURCE_SHA256.keys(),
+)
 
 
 def code_lines(text: str) -> list[str]:
@@ -387,10 +398,14 @@ def assert_contract(workflow: str, runner: str) -> None:
         fail("executor is not pinned to the protected main ref")
     if 'test "$GITHUB_EVENT_NAME" = "workflow_dispatch"' not in wf:
         fail("executor does not fail closed on event type")
+    if "github.repository == 'HuGR-dev/corelink-server'" not in wf or 'test "$GITHUB_REPOSITORY" = "HuGR-dev/corelink-server"' not in wf:
+        fail("executor is not scoped to the canonical server repository")
     if "github.repository_id == '1232040291'" not in wf or 'test "$GITHUB_REPOSITORY_ID" = "1232040291"' not in wf:
         fail("executor is not scoped to the stable server repository ID")
-    if "if: github.repository_id == '1232040291' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected" not in wf:
-        fail("real executor job lacks the stable-ID, protected-main dispatch guard")
+    if "if: github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected" not in wf:
+        fail("real executor job lacks canonical repository, stable-ID, protected-main dispatch guard")
+    if not re.search(r"(?m)^\s{4}runs-on:\s*ubuntu-24\.04\s*$", workflow):
+        fail("real executor must use a GitHub-hosted runner")
 
     # The workflow must have a selectable, bounded profile set.
     for profile in ("d1", "r2", "stripe", "neon", "all"):
@@ -551,6 +566,29 @@ def assert_contract(workflow: str, runner: str) -> None:
         fail("PAT seed output markers changed; review before changing executor policy")
 
 
+def assert_hosted_contract_workflow(workflow: str) -> None:
+    """Require the static/mutation contract to run on hosted CI without credentials."""
+    active = code_text(workflow)
+    if not re.search(r"(?m)^on:\s*$", active) or not re.search(r"(?m)^\s{2}pull_request:\s*$", active):
+        fail("credentialless contract must run as a pull_request check")
+    if re.search(r"(?m)^\s{2}(?:pull_request_target|push|schedule|workflow_dispatch|workflow_call):", active):
+        fail("credentialless contract has an unexpected trigger")
+    if not re.search(r"(?m)^\s{4}runs-on:\s*ubuntu-24\.04\s*$", workflow):
+        fail("credentialless contract must use a GitHub-hosted runner")
+    if re.search(r"(?im)^\s*environment\s*:", active) or re.search(r"\b(?:secrets|vars)\.", active):
+        fail("credentialless contract references a protected environment or credential")
+    if not re.search(r"(?m)^\s{2}contents:\s*read\s*$", active):
+        fail("credentialless contract permissions must be read-only")
+    if "persist-credentials: false" not in active:
+        fail("credentialless contract checkout must not persist credentials")
+    if "python3 scripts/verify_real_ignored_harnesses.py" not in active:
+        fail("credentialless contract does not run the static/mutation verifier")
+    triggered_paths = set(re.findall(r'(?m)^\s{6}- "([^\"]+)"\s*$', active))
+    missing = [path for path in CONTRACT_TRIGGER_INPUTS if path not in triggered_paths]
+    if missing:
+        fail(f"credentialless contract PR path filter omits verifier inputs: {', '.join(missing)}")
+
+
 def expect_rejected(label: str, workflow: str, runner: str) -> None:
     try:
         assert_contract(workflow, runner)
@@ -559,7 +597,7 @@ def expect_rejected(label: str, workflow: str, runner: str) -> None:
     fail(f"negative mutation was accepted: {label}")
 
 
-def mutation_checks(workflow: str, runner: str) -> None:
+def mutation_checks(workflow: str, runner: str, contract_workflow: str) -> None:
     # Missing trigger: a manually documented lane is not an executor.
     expect_rejected(
         "missing workflow_dispatch",
@@ -577,6 +615,31 @@ def mutation_checks(workflow: str, runner: str) -> None:
     )
     # Automatic PR execution would expose network credentials to untrusted code.
     expect_rejected("pull_request trigger", workflow.replace("  workflow_dispatch:\n", "  pull_request:\n  workflow_dispatch:\n", 1), runner)
+    expect_rejected("wrong canonical repository", workflow.replace("HuGR-dev/corelink-server", "HuGR-Labs/corelink-server"), runner)
+    expect_rejected("self-hosted real executor", workflow.replace("runs-on: ubuntu-24.04", "runs-on: corelink", 1), runner)
+    try:
+        assert_hosted_contract_workflow(contract_workflow.replace("runs-on: ubuntu-24.04", "runs-on: corelink", 1))
+    except AssertionError:
+        pass
+    else:
+        fail("self-hosted credentialless contract mutation was accepted")
+    try:
+        assert_hosted_contract_workflow(contract_workflow.replace("permissions:\n  contents: read", "permissions:\n  contents: read\n\nenv:\n  TOKEN: ${{ secrets.TOKEN }}", 1))
+    except AssertionError:
+        pass
+    else:
+        fail("credentialed hosted contract mutation was accepted")
+    for path in CONTRACT_TRIGGER_INPUTS:
+        path_entry = f'      - "{path}"\n'
+        if path_entry not in contract_workflow:
+            fail(f"path-trigger mutation setup is missing input: {path}")
+        mutated = contract_workflow.replace(path_entry, "", 1)
+        try:
+            assert_hosted_contract_workflow(mutated)
+        except AssertionError:
+            pass
+        else:
+            fail(f"PR path-filter omission was accepted for verifier input: {path}")
     # Comment bait: a commented-out command is not executable coverage.
     target = REQUIRED_D1[0]
     expect_rejected("commented target", workflow, runner.replace(f"run_cargo d1 {target} --package corelink-server --lib", f"# run_cargo d1 {target} --package corelink-server --lib", 1))
@@ -717,9 +780,11 @@ def preflight_runtime_checks() -> None:
 
 def main() -> int:
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    contract_workflow = CONTRACT_WORKFLOW_PATH.read_text(encoding="utf-8")
     runner = RUNNER_PATH.read_text(encoding="utf-8")
     assert_contract(workflow, runner)
-    mutation_checks(workflow, runner)
+    assert_hosted_contract_workflow(contract_workflow)
+    mutation_checks(workflow, runner, contract_workflow)
     preflight_runtime_checks()
     print("B-068 executor contract: PASS (full allow-list + negative mutations)")
     return 0

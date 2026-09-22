@@ -57,7 +57,7 @@ finish_receipt() {
 run_cargo() {
   # --locked makes the live lane execute the repository's resolved dependency
   # graph. --ignored is deliberately present only in this allow-listed runner.
-  # Cargo and its toolchain are supplied by the trusted self-hosted runner
+  # Cargo and its toolchain are supplied by the GitHub-hosted runner
   # image. A compromised host/toolchain or same-user TOCTOU is infrastructure
   # outside this repository verifier's trust boundary.
   local profile="$1" expected="$2"
