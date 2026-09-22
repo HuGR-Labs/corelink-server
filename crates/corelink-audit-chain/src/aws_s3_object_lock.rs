@@ -413,6 +413,20 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
                 .await
                 .map_err(|_| "PutObject with Compliance retention failed".to_string())
         })?;
+        // Capture the adapter's local observation time for the successful response.
+        let observed_at_unix_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| {
+                ObjectLockArchiveError::Backend(
+                    "system clock was before the Unix epoch".to_string(),
+                )
+            })?
+            .as_millis();
+        let observed_at_unix_ms = u64::try_from(observed_at_unix_ms).map_err(|_| {
+            ObjectLockArchiveError::Backend(
+                "local observation timestamp exceeded u64 range".to_string(),
+            )
+        })?;
         let version_id = output.version_id().ok_or_else(|| {
             ObjectLockArchiveError::Backend(
                 "S3 PutObject returned no version ID for the locked object".to_string(),
@@ -431,23 +445,12 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
                 )
             })?
             .insert(request.object_key.clone(), version_id.to_string());
-        let recorded_at_unix_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| {
-                ObjectLockArchiveError::Backend(
-                    "system clock was before the Unix epoch".to_string(),
-                )
-            })?
-            .as_millis();
-        let recorded_at_unix_ms = u64::try_from(recorded_at_unix_ms).map_err(|_| {
-            ObjectLockArchiveError::Backend("system timestamp exceeded u64 range".to_string())
-        })?;
         Ok(ImmutableArchiveWriteReceipt {
             object_key: request.object_key.clone(),
             audit_receipt: ArchiveAuditReceipt {
                 receipt_id: request_id.to_string(),
                 object_key: request.object_key.clone(),
-                recorded_at_unix_ms,
+                observed_at_unix_ms,
             },
         })
     }

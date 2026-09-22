@@ -102,6 +102,13 @@ read both back, verify the expected residency, and attach a durable audit
 receipt. It must not mount an immutable archive route or perform a fallback
 write if any of those steps fails.
 
+The generated SDK `PutObject` output used here exposes a provider request ID
+but no modeled write timestamp. The receipt's S3 request ID is the
+provider-issued correlation value. Its `observed_at_unix_ms` field is the
+adapter's local clock reading immediately after the successful response; it is
+not an S3 event timestamp. Use the provider's durable CloudTrail event and
+digest as the external audit record.
+
 Capability negotiation also requires a separate probe client and the exact
 key/version of an already locked synthetic object. It performs the versioned
 delete attempt and accepts only S3's structured Object-Lock `AccessDenied`;
