@@ -11,6 +11,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github/workflows/buck2-starter-ci.yml"
 BUCKCONFIG_PATH = ROOT / "examples/buck2-starter/.buckconfig"
+TOOLCHAINS_PATH = ROOT / "examples/buck2-starter/toolchains/BUCK"
 EXPECTED_VERSION = "2026-08-01"
 EXPECTED_BUILD_VERSION = "2026-07-31"
 EXPECTED_SHA256 = "aa304d471a79f69233b09767d4ba9add769049b7a37f78a3a71a72983372f511"
@@ -122,11 +123,15 @@ def test_buck2_contract_is_complete() -> None:
 
 def test_starter_declares_root_cell_and_bundled_execution_platform() -> None:
     config = BUCKCONFIG_PATH.read_text(encoding="utf-8")
-    assert "[cells]\n    root = .\n    prelude = prelude\n" in config
+    toolchains = TOOLCHAINS_PATH.read_text(encoding="utf-8")
+    assert "[cells]\n    root = .\n    prelude = prelude\n    toolchains = toolchains\n" in config
     assert "[cell_aliases]\n    config = prelude\n" in config
     assert "[external_cells]\n    prelude = bundled\n" in config
     assert config.count("execution_platforms = prelude//platforms:default") == 2
     assert "execution_platforms = //:platforms" not in config
+    assert 'load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")' in toolchains
+    assert 'name = "cxx"' in toolchains
+    assert 'visibility = ["PUBLIC"]' in toolchains
 
 
 @pytest.mark.parametrize(
@@ -142,7 +147,7 @@ def test_starter_config_rejects_each_prelude_mapping_mutation(mutation, expected
     config = BUCKCONFIG_PATH.read_text(encoding="utf-8")
     with pytest.raises(AssertionError):
         mutated = mutation(config)
-        assert "[cells]\n    root = .\n    prelude = prelude\n" in mutated
+        assert "[cells]\n    root = .\n    prelude = prelude\n    toolchains = toolchains\n" in mutated
         assert "[cell_aliases]\n    config = prelude\n" in mutated
         assert "[external_cells]\n    prelude = bundled\n" in mutated
 
@@ -160,6 +165,41 @@ def test_starter_config_rejects_each_prelude_mapping_mutation(mutation, expected
         (lambda text: text.replace("sudo apt-get install -y --no-install-recommends zstd jq", "sudo apt-get install -y --no-install-recommends zstd jq || true", 1), "install failure"),
     ),
 )
+
+
 def test_contract_rejects_each_mutation(mutation, expected: str) -> None:
     with pytest.raises(AssertionError):
         assert_contract(mutation(WORKFLOW_PATH.read_text(encoding="utf-8")))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda text: text.replace("    toolchains = toolchains\n", "", 1),
+        lambda text: text.replace("    toolchains = toolchains\n", "    toolchains = root\n", 1),
+    ),
+)
+def test_starter_config_rejects_each_toolchains_mapping_mutation(mutation) -> None:
+    config = BUCKCONFIG_PATH.read_text(encoding="utf-8")
+    with pytest.raises(AssertionError):
+        mutated = mutation(config)
+        assert "    toolchains = toolchains\n" in mutated
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda text: text.replace(
+            'load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")\n',
+            "",
+            1,
+        ),
+        lambda text: text.replace('name = "cxx"', 'name = "wrong"', 1),
+    ),
+)
+def test_starter_toolchain_rejects_each_cxx_structure_mutation(mutation) -> None:
+    toolchains = TOOLCHAINS_PATH.read_text(encoding="utf-8")
+    with pytest.raises(AssertionError):
+        mutated = mutation(toolchains)
+        assert 'load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")' in mutated
+        assert 'name = "cxx"' in mutated
