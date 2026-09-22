@@ -1,0 +1,49 @@
+{
+  "trace_id": "b113-pinned-warm-fixture",
+  "success": true,
+  "results": {
+    "root//:hello": {
+      "success": "SUCCESS",
+      "outputs": {
+        "DEFAULT": [
+          "buck-out/v2/art/root/5bb6e0e3d998e4f4/__hello__/hello"
+        ]
+      },
+      "other_outputs": {},
+      "configured_graph_size": null,
+      "configured": {
+        "prelude//platforms:default#5bb6e0e3d998e4f4": {
+          "errors": [],
+          "success": "SUCCESS",
+          "outputs": {
+            "DEFAULT": [
+              "buck-out/v2/art/root/5bb6e0e3d998e4f4/__hello__/hello"
+            ]
+          },
+          "other_outputs": {},
+          "configured_graph_size": null
+        }
+      },
+      "errors": []
+    }
+  },
+  "failures": {},
+  "project_root": "/home/runner/work/corelink-server/corelink-server/examples/buck2-starter",
+  "truncated": false,
+  "strings": {},
+  "build_metrics": {
+    "action_graph_size": null,
+    "metrics": {
+      "full_graph_execution_time_ms": 0.0,
+      "full_graph_output_size_bytes": 0.0,
+      "local_execution_time_ms": 0.0,
+      "remote_execution_time_ms": 0.0,
+      "local_executions": 0.0,
+      "remote_executions": 0.0,
+      "remote_cache_hits": 4.0,
+      "analysis_retained_memory": 0.0,
+      "declared_actions": 4.0
+    },
+    "compute_time_ms": 0
+  }
+}
