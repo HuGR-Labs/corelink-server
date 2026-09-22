@@ -40,6 +40,14 @@ use proptest::test_runner::Config;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
+const B071_FORWARD_MIGRATION: &str = "0143_gc_accounting_region_upgrade.sql";
+const B071_REPLACEMENT_COMMENT: &str =
+    "-- additive-trigger-replacement: ADR-0143 B-071 historic accounting body";
+const B071_REPLACEMENT_TRIGGERS: &[&str] = &[
+    "trg_gc_purge_accounting_required",
+    "trg_gc_purge_finalize_accounting",
+];
+
 // =====================================================================
 // PROPTEST_CASES runtime knob (S-07 P1-2 contract — runtime fn, NOT const).
 // =====================================================================
@@ -186,16 +194,39 @@ fn valid_line_waiver(line: &str, comment_start: usize) -> bool {
         && !remainder.trim().is_empty()
 }
 
+fn valid_b071_trigger_drop(migration_name: Option<&str>, line: &str, comment_start: usize) -> bool {
+    if migration_name != Some(B071_FORWARD_MIGRATION) {
+        return false;
+    }
+    let statement = line[..comment_start].trim();
+    let comment = line[comment_start..].trim();
+    comment == B071_REPLACEMENT_COMMENT
+        && B071_REPLACEMENT_TRIGGERS
+            .iter()
+            .any(|trigger| statement == format!("DROP TRIGGER IF EXISTS {trigger};"))
+}
+
 /// Normalize a SQL fragment for keyword detection: apply audited line-local
 /// waivers, strip comments, uppercase, and collapse whitespace.
 fn normalize_for_scan(sql: &str) -> String {
+    normalize_migration_for_scan(None, sql)
+}
+
+/// Normalize one migration while retaining the name-scoped B-071 exception.
+/// The historical generic ADR waiver remains for pre-existing rebuilds; the
+/// forward trigger replacement has no generic path and must match its exact
+/// source line in 0143.
+fn normalize_migration_for_scan(migration_name: Option<&str>, sql: &str) -> String {
     let mut in_block_comment = false;
     let mut quote = None;
     let waiver_filtered = sql
         .lines()
         .map(|line| {
             let comment_start = line_comment_start(line, &mut in_block_comment, &mut quote);
-            if comment_start.is_some_and(|start| valid_line_waiver(line, start)) {
+            if comment_start.is_some_and(|start| {
+                valid_line_waiver(line, start)
+                    || valid_b071_trigger_drop(migration_name, line, start)
+            }) {
                 ""
             } else {
                 line
@@ -219,6 +250,27 @@ fn normalize_for_scan(sql: &str) -> String {
         }
     }
     out
+}
+
+fn is_b071_authorized_trigger_create(migration_name: &str, raw: &str, statement: &str) -> bool {
+    if migration_name != B071_FORWARD_MIGRATION {
+        return false;
+    }
+    B071_REPLACEMENT_TRIGGERS.iter().any(|trigger| {
+        let drop = format!("DROP TRIGGER IF EXISTS {trigger}; {B071_REPLACEMENT_COMMENT}");
+        let create = format!("CREATE TRIGGER {}", trigger.to_ascii_uppercase());
+        raw.find(&drop).is_some_and(|drop_start| {
+            let create_start = drop_start + drop.len();
+            let raw_tail = raw[create_start..].trim_start();
+            let raw_pair = raw_tail
+                .strip_prefix(&format!("CREATE TRIGGER {trigger}"))
+                .is_some_and(|tail| tail.chars().next().is_some_and(char::is_whitespace));
+            let statement_name = statement
+                .strip_prefix(&create)
+                .is_some_and(|tail| tail.chars().next().is_some_and(char::is_whitespace));
+            raw_pair && statement_name
+        })
+    })
 }
 
 /// Scan canonicalized SQL for the appearance of any forbidden prefix as
@@ -291,7 +343,7 @@ proptest! {
         let idx = rng.random_range(0..corpus.len());
         let (name, raw) = &corpus[idx];
 
-        let canonical = normalize_for_scan(raw);
+        let canonical = normalize_migration_for_scan(Some(name), raw);
         let violations = find_violations(&canonical);
         prop_assert!(
             violations.is_empty(),
@@ -386,7 +438,7 @@ proptest! {
             // chars of the statement to keep the matcher simple.
             let head: String = t.chars().take(64).collect();
             let has_ine = head.contains("IF NOT EXISTS");
-            if !has_ine {
+            if !has_ine && !is_b071_authorized_trigger_create(name, raw, t) {
                 let excerpt: String = t.chars().take(80).collect();
                 anti_pattern.push(excerpt);
             }
@@ -399,6 +451,58 @@ proptest! {
             anti_pattern.len(), anti_pattern
         );
     }
+}
+
+#[test]
+fn b071_bare_trigger_create_exception_is_name_and_pair_scoped() {
+    let trigger = "trg_gc_purge_accounting_required";
+    let raw = format!(
+        "DROP TRIGGER IF EXISTS {trigger}; {B071_REPLACEMENT_COMMENT}\n\n\
+         CREATE TRIGGER {trigger}\nBEFORE DELETE ON blob_meta\nBEGIN SELECT 1; END;"
+    );
+    let statement = "CREATE TRIGGER TRG_GC_PURGE_ACCOUNTING_REQUIRED BEFORE DELETE ON BLOB_META";
+    assert!(is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &raw,
+        statement
+    ));
+
+    assert!(!is_b071_authorized_trigger_create(
+        "0144_unrelated.sql",
+        &raw,
+        statement
+    ));
+    assert!(!is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &raw.replace(
+            &format!("DROP TRIGGER IF EXISTS {trigger}; {B071_REPLACEMENT_COMMENT}"),
+            ""
+        ),
+        statement
+    ));
+    assert!(!is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &raw.replace(trigger, "trg_gc_purge_legal_hold_guard"),
+        "CREATE TRIGGER TRG_GC_PURGE_LEGAL_HOLD_GUARD BEFORE DELETE ON BLOB_META",
+    ));
+    assert!(!is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &raw.replace(
+            B071_REPLACEMENT_COMMENT,
+            "-- additive-allowed: ADR-0143 copied generic waiver",
+        ),
+        statement,
+    ));
+    assert!(!is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &raw,
+        "CREATE TABLE ESCAPE_HATCH (ID INTEGER)"
+    ));
+    assert!(!is_b071_authorized_trigger_create(
+        B071_FORWARD_MIGRATION,
+        &raw,
+        "CREATE TRIGGER TRG_GC_PURGE_UNRELATED BEFORE DELETE ON BLOB_META",
+    ));
 }
 
 // =====================================================================

@@ -35,7 +35,8 @@ finalization semantics.
 ## Verification and rollout
 
 The credentialless hosted D1 and B-071 gates replay both corrected fresh
-`0142 → 0143` and historical `0118 → 0143` paths.  The mutation cases in the
-additive verifier reject a renamed trigger, a table drop, a generic annotation,
-and a path change.  This ADR authorizes no production apply; the normal D1
-owner-gated migration process remains required.
+`0142 → 0143` and historical `0118 → 0143` paths.  The Python additive gate
+and Rust idempotent-create property both reject a renamed trigger, a table
+drop, a generic annotation, a path change, and any other bare `CREATE`.  This
+ADR authorizes no production apply; the normal D1 owner-gated migration process
+remains required.
