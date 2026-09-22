@@ -154,6 +154,23 @@ fn residue_is_clamped_rather_than_reported_negative() {
     ledger.add(Phase::Quota, 50_000);
     let parsed = parse(&ledger.server_timing_value_with(10_000, true));
     assert_eq!(parsed["ohandler"], 0);
+    assert!(ledger
+        .server_timing_value_with(10_000, true)
+        .contains("ohandler;dur=0;desc=\"unreconciled\""));
+}
+
+#[test]
+fn overlapping_phases_keep_their_components_and_mark_the_aggregate() {
+    let ledger = PhaseLedger::new();
+    ledger.add(Phase::Store, 80_000);
+    ledger.add(Phase::Accounting, 60_000);
+
+    let wire = ledger.server_timing_value_with(100_000, true);
+    let parsed = parse(&wire);
+    assert_eq!(parsed["ostore"], 80);
+    assert_eq!(parsed["oaccounting"], 60);
+    assert_eq!(parsed["ohandler"], 0);
+    assert!(wire.contains("ohandler;dur=0;desc=\"unreconciled\""));
 }
 
 /// **A nested re-entry of the SAME phase is one wall-clock window.**

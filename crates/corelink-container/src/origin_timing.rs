@@ -69,8 +69,11 @@
 //! `ohandler` is computed from the layer's whole-request clock after every
 //! specific phase has been accounted for. It is an explicit request-framework
 //! phase, not an anonymous residue: the Worker allowlist consumes it and the
-//! canonical phases always partition the container window; the legacy alias is
-//! normalized away by new Workers.
+//! canonical phases partition the container window when their scopes are
+//! disjoint. If independent scopes overlap, the individual measurements remain
+//! visible and `ohandler` is marked `desc="unreconciled"` rather than being
+//! presented as a trustworthy aggregate. The legacy alias is normalized away
+//! by new Workers.
 //!
 //! ## Durable attempted-audit ordering
 //!
@@ -441,8 +444,10 @@ impl PhaseLedger {
     /// `total_us` microseconds.
     ///
     /// A phase that ran is emitted even at `dur=0`; a phase that did not run is
-    /// omitted entirely. `ohandler` accounts for request-framework work, so the
-    /// canonical emitted phases sum EXACTLY to `floor(total_us / 1000)`; the
+    /// omitted entirely. `ohandler` accounts for request-framework work when
+    /// the recorded scopes fit inside the request clock. If independent phase
+    /// scopes overlap and their sum exceeds that clock, all individual phases
+    /// are retained and `ohandler` is marked `desc="unreconciled"`; the
     /// compatibility alias is intentionally excluded from that arithmetic.
     #[must_use]
     pub fn server_timing_value(&self, total_us: i64) -> String {
@@ -484,11 +489,17 @@ impl PhaseLedger {
                 parts.push(format!("{name};dur={ms}"));
             }
         }
-        // `floor(a) + floor(b) <= floor(a + b) <= floor(total)`, so this cannot
-        // go negative — the `max(0)` is a belt-and-braces guard against a future
-        // phase that overlaps another rather than partitioning the request.
-        let handler_ms = (total_ms - attributed_ms).max(0);
-        parts.push(format!("ohandler;dur={handler_ms}"));
+        // Distinct phase scopes can overlap even though re-entry of one phase
+        // is coalesced by the ledger. Clamping this residue to zero would make
+        // an impossible aggregate look valid and hide the overlap. Keep every
+        // component above and mark the aggregate so consumers can retain the
+        // critical path without summing incompatible numbers.
+        let (handler_ms, handler_suffix) = if attributed_ms > total_ms {
+            (0, ";desc=\"unreconciled\"")
+        } else {
+            (total_ms - attributed_ms, "")
+        };
+        parts.push(format!("ohandler;dur={handler_ms}{handler_suffix}"));
         // Keep the historical name for one safe mixed-rollout window. Old
         // Workers only allowlist `oother` and would otherwise drop the new
         // phase, inflating `ohop`. New Workers normalize and deduplicate this

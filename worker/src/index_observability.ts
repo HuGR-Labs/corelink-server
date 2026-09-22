@@ -181,9 +181,9 @@ export function quotaPathFor(input: {
  * A phase still at its `-1` did-not-run sentinel is EXCLUDED from the sum,
  * never treated as a 0-cost phase — the same sentinel semantics the caller's
  * declarations document. If the phases that did run sum to MORE than `wdb`
- * (clock skew across the awaits), the split is dropped whole rather than
- * published wrong: `qcontrol;dur=<wdbMs>;desc="unreconciled"`, mirroring
- * the fail-closed split contract.
+ * (clock skew across the awaits), the aggregate is marked
+ * `qcontrol;dur=<wdbMs>;desc="unreconciled"`, mirroring the fail-closed split
+ * contract.
  *
  * Invariant: qtier + qdo + qbatch + qresid + qcontrol === wdb, exactly, always.
  */
@@ -228,12 +228,15 @@ export function wdbControlPhase(wdbMs: number, phases: readonly number[]): strin
  *     container): return nothing. `origin` stands alone exactly as before, which
  *     is what lets this Worker deploy ahead of the container repin.
  *   - **a report that does not fit** (Σ > `origin`, or a known phase name with
- *     an unparseable duration): return a single
- *     `ohop;dur=<origin>;desc="unreconciled"`. The split is dropped whole, and
- *     the `desc` says so on the wire. A split that silently redistributes a
- *     phase it could not read is worse than no split — it invites a confident
- *     wrong conclusion, which is the entire failure mode this instrumentation
- *     exists to prevent.
+ *     an unparseable duration): return the critical-path fallback
+ *     `ohop;dur=<origin>;desc="unreconciled"` and retain every valid component
+ *     that was parsed. The marker is deliberately not additive with those
+ *     components; its description prevents a client from treating the
+ *     fallback as a measured residual while still preserving the individual
+ *     timings for diagnosis. A split that silently redistributes a phase it
+ *     could not read is worse than no split — it invites a confident wrong
+ *     conclusion, which is the entire failure mode this instrumentation exists
+ *     to prevent.
  *
  * ⚠️ The two sides do NOT share a clock resolution. The Worker's `Date.now()`
  * advances only across I/O, so a Worker phase at `dur=0` means "no I/O"; the
@@ -274,13 +277,21 @@ export function originSubPhases(originMs: number, containerTiming: string | null
     }
     reported.set(canonicalName, value);
   }
-  if (reported.size === 0) return [];
+  // A known phase with no readable duration is still evidence that the report
+  // cannot be reconciled. Keep the critical-path marker even when there are no
+  // other valid components to retain. A header with only unknown metrics stays
+  // outside this origin contract and is ignored as before.
+  if (reported.size === 0) {
+    return malformed ? [`ohop;dur=${originMs};desc="unreconciled"`] : [];
+  }
   let sum = 0;
   for (const v of reported.values()) sum += v;
-  if (malformed || sum > originMs) {
-    return [`ohop;dur=${originMs};desc="unreconciled"`];
-  }
-  const out = [`ohop;dur=${originMs - sum}`];
+  const unreconciled = malformed || sum > originMs;
+  const out = [
+    unreconciled
+      ? `ohop;dur=${originMs};desc="unreconciled"`
+      : `ohop;dur=${originMs - sum}`,
+  ];
   for (const name of ORIGIN_CONTAINER_PHASES) {
     const v = reported.get(name);
     // Emission contract, identical to the `wdb` sub-phases: a phase that RAN is
