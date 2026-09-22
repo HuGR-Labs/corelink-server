@@ -232,6 +232,14 @@ class OwnerActionPacketTests(unittest.TestCase):
                     with self.assertRaises(MODULE.PacketError):
                         MODULE.check_data(self.data, "B-110")
 
+    def test_identifier_focus_skips_unrelated_owner_receipts(self) -> None:
+        mutated = copy.deepcopy(self.data)
+        b086 = next(entry for entry in mutated["items"] if entry["id"] == "B-086")
+        b086["owner"] = "owner"
+        with self.assertRaises(MODULE.PacketError):
+            MODULE.check_data(mutated)
+        self.assertEqual(MODULE.check_data(mutated, "B-054"), {"items": 29, "population": 29})
+
     def test_b054_receipt_mutations_fail_closed(self) -> None:
         original = MODULE._read_json_evidence
         record = copy.deepcopy(original(MODULE.B054_EVIDENCE_PATH, MODULE.B054_EVIDENCE_REQUIRED_FIELDS, "B-054"))
@@ -259,6 +267,22 @@ class OwnerActionPacketTests(unittest.TestCase):
         def read_keyed(path, fields, label):
             return mutated if path == MODULE.B054_EVIDENCE_PATH else original(path, fields, label)
         with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_keyed):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-054")
+
+        mutated = copy.deepcopy(original(MODULE.B054_EVIDENCE_PATH, MODULE.B054_EVIDENCE_REQUIRED_FIELDS, "B-054"))
+        mutated["two_person_administration"]["status"] = "PASS"
+        def read_custody_status(path, fields, label):
+            return mutated if path == MODULE.B054_EVIDENCE_PATH else original(path, fields, label)
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_custody_status):
+            with self.assertRaises(MODULE.PacketError):
+                MODULE.check_data(self.data, "B-054")
+
+        mutated = copy.deepcopy(original(MODULE.B054_EVIDENCE_PATH, MODULE.B054_EVIDENCE_REQUIRED_FIELDS, "B-054"))
+        mutated["two_person_administration"]["access_review"]["owner"] = "unverified-owner"
+        def read_custody_owner(path, fields, label):
+            return mutated if path == MODULE.B054_EVIDENCE_PATH else original(path, fields, label)
+        with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_custody_owner):
             with self.assertRaises(MODULE.PacketError):
                 MODULE.check_data(self.data, "B-054")
 

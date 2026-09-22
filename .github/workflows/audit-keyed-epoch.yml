@@ -13,6 +13,11 @@ on:
       - ".github/workflows/audit-chain-daily-verify.yml"
       - "scripts/verify_b054_audit_chain_contract.py"
       - "scripts/test_audit_chain_epoch_schema.py"
+      - "wrangler.toml"
+      - "scripts/verify_owner_action_packets.py"
+      - "evidence/owner-actions/B-054/keyed-audit-epoch-rollout.json"
+      - "docs/handoff/2026-09-05-owner-action-packets-b008-b154.json"
+      - "tests/test_owner_action_packets.py"
       - ".github/workflows/audit-keyed-epoch.yml"
   workflow_dispatch: {}
 
@@ -44,6 +49,15 @@ jobs:
 
       - name: Verify additive epoch schema mutations
         run: python3 scripts/test_audit_chain_epoch_schema.py
+
+      - name: Verify typed two-person custody blocker
+        run: python3 scripts/verify_owner_action_packets.py --id B-054
+
+      - name: Exercise B-054 owner packet mutation tests
+        run: >-
+          python3 -m unittest
+          tests.test_owner_action_packets.OwnerActionPacketTests.test_identifier_focus_skips_unrelated_owner_receipts
+          tests.test_owner_action_packets.OwnerActionPacketTests.test_b054_receipt_mutations_fail_closed
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action

@@ -9,6 +9,7 @@ partial epoch metadata.
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 
@@ -34,6 +35,78 @@ ARCHIVE_LIVE_TOKENS = (
     "B054_ARCHIVE_D1_EXACT_CAS",
 )
 ARCHIVE_LIVE_AUTH_TOKENS = ARCHIVE_LIVE_TOKENS[:5]
+AUDIT_SIGNING_SEED_NAME = "AUDIT_CHAIN_SIGNING_SEED_HEX"
+
+
+def _toml_keys(value: object):
+    """Yield TOML table and inline-table keys without inspecting string values."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield key
+            yield from _toml_keys(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _toml_keys(child)
+
+
+def assess_deployment_secret_boundary(wrangler: str) -> None:
+    """Keep audit signing seed material out of versioned Worker config.
+
+    The seed is intentionally accepted only through the write-only secret
+    binding. Parse the TOML so bare and quoted keys are treated identically,
+    while comments and string values remain data rather than configuration.
+    """
+    try:
+        document = tomllib.loads(wrangler)
+    except tomllib.TOMLDecodeError as error:
+        raise ContractError(f"wrangler TOML is invalid: {error}") from error
+    if AUDIT_SIGNING_SEED_NAME in _toml_keys(document):
+        raise ContractError(
+            f"production config must not assign {AUDIT_SIGNING_SEED_NAME}; use a write-only secret"
+        )
+
+
+def deployment_secret_boundary_mutation_self_test(wrangler: str) -> None:
+    """Prove exact TOML key forms are rejected without text false positives."""
+    assess_deployment_secret_boundary(wrangler)
+    marker = 'R2_CAS_REGION = "iad"'
+    if marker not in wrangler:
+        raise ContractError("deployment secret mutation fixture marker is missing")
+
+    def with_inline_assignment(key: str) -> str:
+        return wrangler.replace(
+            marker,
+            marker + ", " + key + ' = "' + ("0" * 64) + '"',
+            1,
+        )
+
+    for label, mutant in (
+        ("bare key", with_inline_assignment(AUDIT_SIGNING_SEED_NAME)),
+        ("quoted key", with_inline_assignment(f'"{AUDIT_SIGNING_SEED_NAME}"')),
+    ):
+        try:
+            assess_deployment_secret_boundary(mutant)
+        except ContractError:
+            continue
+        raise ContractError(f"plaintext deployment secret mutation survived: {label}")
+
+    for label, mutant in (
+        (
+            "comment",
+            wrangler + f'\n# {AUDIT_SIGNING_SEED_NAME} = "' + ("0" * 64) + '"\n',
+        ),
+        (
+            "string value",
+            wrangler
+            + '\nB054_CUSTODY_NOTE = "'
+            + AUDIT_SIGNING_SEED_NAME
+            + ' is intentionally write-only"\n',
+        ),
+    ):
+        try:
+            assess_deployment_secret_boundary(mutant)
+        except ContractError:
+            raise ContractError(f"deployment secret text false positive: {label}")
 
 
 def assess_archive_live_boundary(archive: str) -> None:
@@ -105,6 +178,7 @@ def archive_live_mutation_self_test() -> None:
 
 
 def assess(files: dict[str, str]) -> None:
+    assess_deployment_secret_boundary(files["wrangler"])
     epoch = files["epoch"]
     archive = files["archive"]
     migration = files["migration"]
@@ -355,10 +429,12 @@ def main() -> int:
         "secret_custody": (ROOT / "docs/internal/secrets-checklist.md").read_text(encoding="utf-8"),
         "sealed_archive": (ROOT / "crates/corelink-audit-chain/src/sealed_archive.rs").read_text(encoding="utf-8"),
         "daily_workflow": (ROOT / ".github/workflows/audit-chain-daily-verify.yml").read_text(encoding="utf-8"),
+        "wrangler": (ROOT / "wrangler.toml").read_text(encoding="utf-8"),
     }
     assess(files)
     mutation_self_test(files)
     archive_live_mutation_self_test()
+    deployment_secret_boundary_mutation_self_test(files["wrangler"])
     print("B-054 contract: PASS (unknown/partial/downgrade epoch metadata fail closed; mutations red)")
     return 0
 
