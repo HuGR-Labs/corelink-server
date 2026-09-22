@@ -54,6 +54,11 @@ EXPECTED_COMPARATOR = (
     "--expected-scenarios",
     "${EXPECTED_SCENARIOS}",
 )
+PROTECTED_DISPATCH_GUARD = (
+    "github.repository == 'HuGR-dev/corelink-server' && "
+    "github.event_name == 'workflow_dispatch' && "
+    "github.ref == 'refs/heads/main' && github.ref_protected"
+)
 
 
 @dataclass(frozen=True)
@@ -611,6 +616,8 @@ def assess(root: Path, *, expect: str) -> list[str]:
     # anchored to the executable command/action, not to prose in the header.
     if workflow.count("runs-on: corelink") != 2:
         gaps.append("both load jobs must run on corelink")
+    if workflow.count(PROTECTED_DISPATCH_GUARD) != 2:
+        gaps.append("both load jobs must require the canonical protected manual dispatch")
     if "actions/cache/restore@" not in workflow or "restore-keys:" not in workflow:
         gaps.append("previous baseline is not restored by cache prefix")
     steps = _yaml_steps(workflow)
