@@ -87,7 +87,6 @@ jobs:
           # The pinned Homebrew formula declares source version 14.0.0 and
           # revision 3, so `brew list --versions` reports 14.0.0_3.
           EXPECTED_MINGW_W64_VERSION=14.0.0_3
-          EXPECTED_DLLTOOL_VERSION='GNU dlltool (GNU Binutils) 2.47'
           EXPECTED_MINGW_W64_FORMULA_SHA256=4b5f53d8ff341875f158092cbdcd5536ce3d6d5136de1672ecf687564dae07f9
           MINGW_W64_FORMULA_URL=https://raw.githubusercontent.com/Homebrew/homebrew-core/00e77a1611f627f2ea8f876fad0468f2c4b3ed20/Formula/m/mingw-w64.rb
           MINGW_W64_TAP=corelink/homebrew-mingw-w64
@@ -97,6 +96,13 @@ jobs:
           test "$(git -C "${MINGW_W64_TAP_REPOSITORY}" rev-parse --is-inside-work-tree)" = true
           curl --fail --location --silent --show-error "${MINGW_W64_FORMULA_URL}" --output "${MINGW_W64_PINNED_FORMULA}"
           printf '%s  %s\n' "${EXPECTED_MINGW_W64_FORMULA_SHA256}" "${MINGW_W64_PINNED_FORMULA}" | shasum -a 256 --check --status
+          # Read the required Binutils release from the integrity-checked formula.
+          EXPECTED_BINUTILS_VERSION="$(sed -n '/^  resource "binutils" do$/,/^  end$/s|^    url "https://ftpmirror\.gnu\.org/binutils/binutils-\([^"/]*\)\.tar\.bz2"$|\1|p' "${MINGW_W64_PINNED_FORMULA}")"
+          if [[ ! "${EXPECTED_BINUTILS_VERSION}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::pinned MinGW-w64 formula has no valid Binutils resource version: ${EXPECTED_BINUTILS_VERSION}." >&2
+            exit 1
+          fi
+          echo "EXPECTED_BINUTILS_VERSION=${EXPECTED_BINUTILS_VERSION}" >> "${GITHUB_ENV}"
           MINGW_W64_TAP_FORMULA="${MINGW_W64_TAP_REPOSITORY}/Formula/mingw-w64.rb"
           cp "${MINGW_W64_PINNED_FORMULA}" "${MINGW_W64_TAP_FORMULA}"
           printf '%s  %s\n' "${EXPECTED_MINGW_W64_FORMULA_SHA256}" "${MINGW_W64_TAP_FORMULA}" | shasum -a 256 --check --status
@@ -113,8 +119,14 @@ jobs:
             exit 1
           fi
           ACTUAL_DLLTOOL_VERSION="$("${DLLTOOL_PATH}" --version | sed -n '1p')"
-          if [ "${ACTUAL_DLLTOOL_VERSION}" != "${EXPECTED_DLLTOOL_VERSION}" ]; then
-            echo "::error::release dry-run needs ${EXPECTED_DLLTOOL_VERSION}, got ${ACTUAL_DLLTOOL_VERSION}." >&2
+          DLLTOOL_VERSION_PREFIX="GNU ${DLLTOOL_PATH} (GNU Binutils) ${EXPECTED_BINUTILS_VERSION}"
+          if [[ "${ACTUAL_DLLTOOL_VERSION}" != "${DLLTOOL_VERSION_PREFIX}"* ]]; then
+            echo "::error::release dry-run needs ${DLLTOOL_PATH} built from Binutils ${EXPECTED_BINUTILS_VERSION}, got ${ACTUAL_DLLTOOL_VERSION}." >&2
+            exit 1
+          fi
+          DLLTOOL_VERSION_SUFFIX="${ACTUAL_DLLTOOL_VERSION#${DLLTOOL_VERSION_PREFIX}}"
+          if [[ -n "${DLLTOOL_VERSION_SUFFIX}" && ! "${DLLTOOL_VERSION_SUFFIX}" =~ ^(\.[0-9]+)+\.?$ ]]; then
+            echo "::error::dlltool reported an invalid Binutils version suffix: ${ACTUAL_DLLTOOL_VERSION}." >&2
             exit 1
           fi
           dirname "${DLLTOOL_PATH}" >> "${GITHUB_PATH}"
@@ -129,8 +141,23 @@ jobs:
           test "$(cargo-zigbuild --version | awk '{print $2}')" = "0.19.8"
           for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-pc-windows-gnu; do
             if [ "${target}" = "x86_64-pc-windows-gnu" ]; then
-              command -v x86_64-w64-mingw32-dlltool
-              test "$(x86_64-w64-mingw32-dlltool --version | sed -n '1p')" = 'GNU dlltool (GNU Binutils) 2.47'
+              DLLTOOL_PATH="$(command -v x86_64-w64-mingw32-dlltool)"
+              EXPECTED_DLLTOOL_PATH="$(brew --prefix mingw-w64)/bin/x86_64-w64-mingw32-dlltool"
+              if [ "${DLLTOOL_PATH}" != "${EXPECTED_DLLTOOL_PATH}" ]; then
+                echo "::error::Windows build resolved dlltool at ${DLLTOOL_PATH}, expected ${EXPECTED_DLLTOOL_PATH}." >&2
+                exit 1
+              fi
+              ACTUAL_DLLTOOL_VERSION="$("${DLLTOOL_PATH}" --version | sed -n '1p')"
+              DLLTOOL_VERSION_PREFIX="GNU ${EXPECTED_DLLTOOL_PATH} (GNU Binutils) ${EXPECTED_BINUTILS_VERSION}"
+              if [[ "${ACTUAL_DLLTOOL_VERSION}" != "${DLLTOOL_VERSION_PREFIX}"* ]]; then
+                echo "::error::Windows build needs ${EXPECTED_DLLTOOL_PATH} built from Binutils ${EXPECTED_BINUTILS_VERSION}, got ${ACTUAL_DLLTOOL_VERSION}." >&2
+                exit 1
+              fi
+              DLLTOOL_VERSION_SUFFIX="${ACTUAL_DLLTOOL_VERSION#${DLLTOOL_VERSION_PREFIX}}"
+              if [[ -n "${DLLTOOL_VERSION_SUFFIX}" && ! "${DLLTOOL_VERSION_SUFFIX}" =~ ^(\.[0-9]+)+\.?$ ]]; then
+                echo "::error::Windows build found an invalid Binutils version suffix: ${ACTUAL_DLLTOOL_VERSION}." >&2
+                exit 1
+              fi
             fi
             CARGO_TARGET_DIR="${RUNNER_TEMP}/corelink-target/${target}" \
               cargo zigbuild -p corelink-cli --release --locked --target "${target}"

@@ -40,10 +40,12 @@ MINGW_W64_FORMULA_SHA256 = "4b5f53d8ff341875f158092cbdcd5536ce3d6d5136de1672ecf6
 PINNED_FORMULA_TRUST = 'brew trust --formula "${MINGW_W64_TAP}/mingw-w64"'
 PINNED_FORMULA_INSTALL = 'brew install "${MINGW_W64_TAP}/mingw-w64"'
 DLLTOOL_PATH = "$(brew --prefix mingw-w64)/bin/x86_64-w64-mingw32-dlltool"
+BINUTILS_RESOURCE_VERSION = "2.47"
+DLLTOOL_VERSION_SUFFIX_GUARD = 'if [[ -n "${DLLTOOL_VERSION_SUFFIX}" && ! "${DLLTOOL_VERSION_SUFFIX}" =~ ^(\\.[0-9]+)+\\.?$ ]]; then'
 DLLTOOL_GUARDS = (
     'if [ "${ACTUAL_MINGW_W64_VERSION}" != "${EXPECTED_MINGW_W64_VERSION}" ]; then',
     'if [ ! -x "${DLLTOOL_PATH}" ]; then',
-    'if [ "${ACTUAL_DLLTOOL_VERSION}" != "${EXPECTED_DLLTOOL_VERSION}" ]; then',
+    'if [[ "${ACTUAL_DLLTOOL_VERSION}" != "${DLLTOOL_VERSION_PREFIX}"* ]]; then',
 )
 
 
@@ -125,7 +127,6 @@ def _verify_dlltool_contract(text: str) -> None:
     for token in (
         "Install and verify pinned MinGW-w64 dlltool",
         "EXPECTED_MINGW_W64_VERSION=14.0.0_3",
-        "EXPECTED_DLLTOOL_VERSION='GNU dlltool (GNU Binutils) 2.47'",
         f"EXPECTED_MINGW_W64_FORMULA_SHA256={MINGW_W64_FORMULA_SHA256}",
         MINGW_W64_FORMULA_URL,
         'MINGW_W64_TAP=corelink/homebrew-mingw-w64',
@@ -133,6 +134,13 @@ def _verify_dlltool_contract(text: str) -> None:
         'test "$(git -C "${MINGW_W64_TAP_REPOSITORY}" rev-parse --is-inside-work-tree)" = true',
         'curl --fail --location --silent --show-error "${MINGW_W64_FORMULA_URL}" --output "${MINGW_W64_PINNED_FORMULA}"',
         "shasum -a 256 --check --status",
+        'resource "binutils" do',
+        'binutils-\\([^"/]*\\)\\.tar\\.bz2',
+        'if [[ ! "${EXPECTED_BINUTILS_VERSION}" =~ ^[0-9]+\\.[0-9]+(\\.[0-9]+)?$ ]]; then',
+        'echo "EXPECTED_BINUTILS_VERSION=${EXPECTED_BINUTILS_VERSION}" >> "${GITHUB_ENV}"',
+        'DLLTOOL_VERSION_PREFIX="GNU ${DLLTOOL_PATH} (GNU Binutils) ${EXPECTED_BINUTILS_VERSION}"',
+        'if [[ "${ACTUAL_DLLTOOL_VERSION}" != "${DLLTOOL_VERSION_PREFIX}"* ]]; then',
+        'DLLTOOL_VERSION_SUFFIX="${ACTUAL_DLLTOOL_VERSION#${DLLTOOL_VERSION_PREFIX}}"',
         'cp "${MINGW_W64_PINNED_FORMULA}" "${MINGW_W64_TAP_FORMULA}"',
         PINNED_FORMULA_TRUST,
         PINNED_FORMULA_INSTALL,
@@ -141,10 +149,18 @@ def _verify_dlltool_contract(text: str) -> None:
         '"${DLLTOOL_PATH}" --version | sed -n \'1p\'',
         'dirname "${DLLTOOL_PATH}" >> "${GITHUB_PATH}"',
         "command -v x86_64-w64-mingw32-dlltool",
-        "x86_64-w64-mingw32-dlltool --version | sed -n '1p'",
+        'EXPECTED_DLLTOOL_PATH="$(brew --prefix mingw-w64)/bin/x86_64-w64-mingw32-dlltool"',
+        'if [ "${DLLTOOL_PATH}" != "${EXPECTED_DLLTOOL_PATH}" ]; then',
+        'DLLTOOL_VERSION_PREFIX="GNU ${EXPECTED_DLLTOOL_PATH} (GNU Binutils) ${EXPECTED_BINUTILS_VERSION}"',
     ):
         if token not in text:
             fail(f"pinned fail-closed Windows dlltool contract is missing: {token}")
+    if text.count(DLLTOOL_VERSION_SUFFIX_GUARD) < 2:
+        fail("both dlltool probes must reject malformed or non-version suffixes")
+    if text.count('if [[ "${ACTUAL_DLLTOOL_VERSION}" != "${DLLTOOL_VERSION_PREFIX}"* ]]; then') < 2:
+        fail("both dlltool probes must fail closed on a path or upstream version mismatch")
+    if "EXPECTED_DLLTOOL_VERSION" in text or "= 'GNU dlltool (GNU Binutils) 2.47'" in text:
+        fail("dlltool must be checked against the formula resource version and resolved path")
     for guard in DLLTOOL_GUARDS:
         start = text.find(guard)
         end = text.find("\n          fi", start)
@@ -153,6 +169,20 @@ def _verify_dlltool_contract(text: str) -> None:
 
 
 def _dlltool_contract_mutation_self_test(text: str) -> None:
+    expected_executable = "/usr/local/opt/mingw-w64/bin/x86_64-w64-mingw32-dlltool"
+    expected_line = f"GNU {expected_executable} (GNU Binutils) {BINUTILS_RESOURCE_VERSION}"
+    for accepted in (expected_line, f"{expected_line}.20260726."):
+        if not _dlltool_version_matches(accepted, expected_executable, BINUTILS_RESOURCE_VERSION):
+            fail(f"valid pinned Binutils version was rejected: {accepted}")
+    for rejected in (
+        f"GNU /usr/local/bin/x86_64-w64-mingw32-dlltool (GNU Binutils) {BINUTILS_RESOURCE_VERSION}.20260726.",
+        f"GNU {expected_executable} (GNU Binutils) 2.48.20260726.",
+        f"GNU {expected_executable} (GNU Binutils) 2.470.20260726.",
+        f"GNU {expected_executable} (GNU Binutils) {BINUTILS_RESOURCE_VERSION}.unknown",
+    ):
+        if _dlltool_version_matches(rejected, expected_executable, BINUTILS_RESOURCE_VERSION):
+            fail(f"invalid dlltool path or Binutils version was accepted: {rejected}")
+
     for token, replacement in (
         (
             "EXPECTED_MINGW_W64_VERSION=14.0.0_3",
@@ -164,14 +194,26 @@ def _dlltool_contract_mutation_self_test(text: str) -> None:
         ),
         (MINGW_W64_FORMULA_URL, "https://example.invalid/mingw-w64.rb"),
         (
+            'DLLTOOL_VERSION_PREFIX="GNU ${DLLTOOL_PATH} (GNU Binutils) ${EXPECTED_BINUTILS_VERSION}"',
+            'DLLTOOL_VERSION_PREFIX="GNU dlltool (GNU Binutils) ${EXPECTED_BINUTILS_VERSION}"',
+        ),
+        (
+            'DLLTOOL_VERSION_PREFIX="GNU ${EXPECTED_DLLTOOL_PATH} (GNU Binutils) ${EXPECTED_BINUTILS_VERSION}"',
+            'DLLTOOL_VERSION_PREFIX="GNU dlltool (GNU Binutils) ${EXPECTED_BINUTILS_VERSION}"',
+        ),
+        (
+            DLLTOOL_VERSION_SUFFIX_GUARD,
+            'if [[ -n "${DLLTOOL_VERSION_SUFFIX}" && false ]]; then',
+        ),
+        (
+            'if [[ "${ACTUAL_DLLTOOL_VERSION}" != "${DLLTOOL_VERSION_PREFIX}"* ]]; then',
+            'if [[ false ]]; then',
+        ),
+        (
             PINNED_FORMULA_INSTALL,
             'brew tap-new --no-git "${MINGW_W64_TAP}"\n          brew install "${MINGW_W64_TAP}/mingw-w64"',
         ),
         ('if [ ! -x "${DLLTOOL_PATH}" ]; then', "# dlltool executable check removed"),
-        (
-            'if [ "${ACTUAL_DLLTOOL_VERSION}" != "${EXPECTED_DLLTOOL_VERSION}" ]; then',
-            "# dlltool version check removed",
-        ),
         (
             "command -v x86_64-w64-mingw32-dlltool",
             "# Windows build-time dlltool probe removed",
@@ -200,6 +242,15 @@ def _dlltool_contract_mutation_self_test(text: str) -> None:
             raise
     else:
         fail("untrusted no-git tap installation mutation survived")
+
+
+def _dlltool_version_matches(line: str, executable_path: str, upstream_version: str) -> bool:
+    """Match the selected binary path and exact upstream version with numeric build suffixes."""
+    prefix = f"GNU {executable_path} (GNU Binutils) {upstream_version}"
+    if not line.startswith(prefix):
+        return False
+    suffix = line[len(prefix):]
+    return suffix == "" or re.fullmatch(r"(?:\.[0-9]+)+\.?", suffix) is not None
 
 
 def contract() -> None:
