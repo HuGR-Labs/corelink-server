@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "finding": "B-170",
+  "issue": 1677,
+  "artifact_kind": "pagerduty_rotation_export_receipt",
+  "status": "pending",
+  "decision_owner": null,
+  "exported_at": null,
+  "account_or_workspace": null,
+  "schedule_reference": null,
+  "rotation_scope": null,
+  "timezone": null,
+  "coverage_window": null,
+  "export_format": null,
+  "source_export_reference": null,
+  "redacted_receipt_reference": null,
+  "sha256": null,
+  "notes": "Template only; no PagerDuty export or 24x7 rotation claim is present."
+}

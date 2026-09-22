@@ -1158,11 +1158,11 @@ def _check_item(
         # A token can make bot-PR CI unattended, but a missing runner or a
         # zero-job startup failure is a different boundary. Keep the owner
         # packet from regressing to "all bot PR events are suppressed".
-        if item["action_type"] != "github_app_or_fine_grained_pat" or len(procedure) != 5:
+        if item["action_type"] != "github_app_installation_token" or len(procedure) != 5:
             raise PacketError("B-012 credential procedure drifted")
         required_by_step = (
-            ("fine-grained PAT", "contents:write", "pull_requests:write", "one-hour"),
-            ("BOT_PR_TOKEN", "--body-stdin", "five creators"),
+            ("GitHub App", "contents:write", "pull_requests:write", "repository-scoped"),
+            ("CORELINK_BOT_APP_ID", "CORELINK_BOT_APP_PRIVATE_KEY", "--body-stdin", "five creators"),
             ("startup_failure", "online runner labelled corelink", "hosted-billing"),
             ("approval-required", "GITHUB_TOKEN", "Dependabot"),
             ("job URLs", "zero-job run"),

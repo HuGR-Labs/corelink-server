@@ -64,6 +64,18 @@ jobs:
       reasons: ${{ steps.digest.outputs.reasons }}
 
     steps:
+      - name: Mint repository-scoped bot token
+        id: app-token
+        uses: actions/create-github-app-token@def152b8a737443d7af6c5722c6389146fe90c90 # v2.1.2
+        with:
+          app-id: ${{ secrets.CORELINK_BOT_APP_ID }}
+          private-key: ${{ secrets.CORELINK_BOT_APP_PRIVATE_KEY }}
+          owner: HuGR-dev
+          repositories: corelink-server
+          permission-metadata: read
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -72,7 +84,7 @@ jobs:
           # opened/synchronize/reopened PR runs may be approval-required.
           # Once provisioned, the dedicated token on push and PR creation
           # supports unattended CI; check presence is not completed-job proof.
-          token: ${{ secrets.BOT_PR_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Compute digest date
         id: date
@@ -143,11 +155,11 @@ jobs:
         if: github.event.inputs.dry_run != 'true'
         id: pr
         env:
-          BOT_PR_TOKEN: ${{ secrets.BOT_PR_TOKEN }}
+          BOT_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
-          : "${BOT_PR_TOKEN:?BOT_PR_TOKEN must be configured before opening an auto-PR}"
-          export GH_TOKEN="${BOT_PR_TOKEN}"
+          : "${BOT_APP_TOKEN:?BOT_APP_TOKEN must be configured before opening an auto-PR}"
+          export GH_TOKEN="${BOT_APP_TOKEN}"
           BRANCH="auto/compliance-digest-${{ steps.date.outputs.digest_date }}"
           git checkout -b "${BRANCH}"
           git add specs/_compliance/weekly-digests/${{ steps.date.outputs.digest_date }}.md
@@ -186,7 +198,7 @@ jobs:
           steps.pr.outputs.pr_created == 'true' &&
           github.event.inputs.dry_run != 'true'
         env:
-          GH_TOKEN: ${{ secrets.BOT_PR_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_URL: ${{ steps.pr.outputs.pr_url }}
           REASONS: ${{ steps.digest.outputs.reasons }}
         run: |
