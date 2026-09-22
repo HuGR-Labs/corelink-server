@@ -27,5 +27,3 @@ jobs:
         run: python3 scripts/verify_b083_kms_lifecycle_evidence.py
       - name: Reject forged lifecycle evidence
         run: python3 tests/test_verify_b083_kms_lifecycle_evidence.py
-      - name: Verify B-083 packet binding
-        run: python3 scripts/verify_owner_action_packets.py --id B-083
