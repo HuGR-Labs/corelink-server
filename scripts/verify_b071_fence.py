@@ -63,8 +63,12 @@ def make_db() -> sqlite3.Connection:
     # Forward migration is safe to replay during a staged deployment.
     db.executescript(MIGRATION.read_text())
     db.execute("INSERT INTO tenant VALUES ('t1', 'wnam')")
+    # tenant_storage_state.region is the five-region GC partition, while
+    # blob_meta.region is the tenant macro-residency region.  Keep them
+    # intentionally different so the accounting trigger cannot regress to
+    # comparing the wrong region domain.
     db.execute(
-        "INSERT INTO tenant_storage_state VALUES ('t1', 'wnam', 10, 100, 1, 1, NULL, 0, 1, 1)"
+        "INSERT INTO tenant_storage_state VALUES ('t1', 'iad', 10, 100, 1, 1, NULL, 0, 1, 1)"
     )
     db.execute(
         "INSERT INTO blob_meta VALUES ('t1', ?, 10, 0, 1, 1, 1, 'wnam')",
