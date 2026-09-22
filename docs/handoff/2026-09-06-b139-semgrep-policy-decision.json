@@ -25,10 +25,10 @@
     }
   },
   "policy": {
-    "blocking_condition": "A finding blocks only when its SARIF level is error, or when the Semgrep process exits nonzero for an execution or output error.",
+    "blocking_condition": "A finding blocks only when its SARIF level is error and it is not an exact PR-target approved suppression, or when the Semgrep process exits nonzero for an execution or output error.",
     "bundled_findings": "Bundled findings are counted separately by SARIF level; warning, note, and none are retained and reported but do not block.",
     "custom_findings": "High-precision CoreLink rules R2/R3 declare explicit-error and block. R1/R4 are advisory duplicates of blocking Clippy lints because Semgrep OSS cannot reliably distinguish Rust code enclosed by colocated cfg(test) modules; their warnings remain retained and counted.",
-    "suppression": "Custom suppressions remain subject to the runbook nosemgrep reason and ADR convention; this policy does not broaden exclusions.",
+    "suppression": "Bundled pull_request_target ERRORs are nonblocking only when their in-source suppression is one exact coordinate returned by the PR-target guard; custom suppressions remain subject to the runbook nosemgrep reason and ADR convention; this policy does not broaden exclusions.",
     "fail_closed": true,
     "semgrep_error_flag": "not used; the evaluator applies the explicit SARIF ERROR policy and preserves nonzero scanner failures"
   },
