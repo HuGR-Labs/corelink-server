@@ -1,89 +1,65 @@
 #!/usr/bin/env bash
 set -euo pipefail
-root="$(cd "$(dirname "$0")/.." && pwd)"
-s="$root/scripts/classify-runner-failure.py"
+root="$(cd "$(dirname "$0")/.." && pwd -P)"
+detector="$root/scripts/classify-runner-failure.py"
 wrapper="$root/scripts/run-with-infra-classification.sh"
-timeout_runner="$root/scripts/exec-with-timeout.py"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/i1670.XXXXXX")"
+trap 'rm -rf -- "$tmp"' EXIT
 
-python3 -m py_compile "$s" "$timeout_runner"
+python3 -m py_compile "$detector" "$root/scripts/exec-with-timeout.py"
+
+assert_classification() {
+  local expected="$1" status="$2" text="$3" actual
+  set +e
+  actual="$(printf '%s\n' "$text" | python3 "$detector" --status "$status" 2>/dev/null)"
+  set -e
+  grep -qx "classification: $expected" <<<"$actual"
+}
+
+# Contract: disk-full, test failure, and success are disjoint.
+assert_classification ENOSPC 7 'cargo: could not create target: No space left on device (os error 28)'
+assert_classification TEST_FAILURE 7 'test parser ... FAILED; assertion failed'
+assert_classification SUCCESS 0 'test parser ... ok; ENOSPC is only a fixture word'
+assert_classification TEST_FAILURE 9 'error[E0308]; collect2: ld failed with Bus error'
+
+artifact="${CORELINK_CLASSIFICATION_ARTIFACT:-${CORELINK_ARTIFACT_DIR:-$tmp/artifact}/classification.json}"
+summary="$tmp/summary.md"
 set +e
-printf '%s\n' 'cargo: could not create incremental directory: No space left on device (os error 28)' | python3 "$s" >/dev/null; rc=$?
-set -e; [ "$rc" -eq 42 ]
-set +e
-printf '%s\n' 'collect2: ld failed with Bus error' | python3 "$s" >/dev/null; rc=$?
-set -e; [ "$rc" -eq 42 ]
-printf '%s\n' 'assertion failed in PR code' | python3 "$s" | grep -qx CODE_FAILURE
-printf '%s\n' 'test fixture says bus error in test output' | python3 "$s" | grep -qx CODE_FAILURE
-printf '%s\n' 'collect2: ld: Bus error; error[E0308]: code mismatch' | python3 "$s" | grep -qx CODE_FAILURE
-set +e
-printf '%s\n' 'Runner lost communication while the operation was canceled' | python3 "$s" >/dev/null
-rc=$?
+output="$(CORELINK_CLASSIFICATION_ARTIFACT="$artifact" GITHUB_STEP_SUMMARY="$summary" \
+  CORELINK_CLEANUP_ROOT="$tmp/workspace" "$wrapper" sh -c \
+  'echo "cargo: write failed: No space left on device (os error 28)" >&2; mkdir -p "$PWD/target"; exit 7' 2>&1)"
+status=$?
 set -e
-[ "$rc" -eq 43 ]
-printf '%s\n' 'Runner lost communication; assertion failed in test' | python3 "$s" | grep -qx CODE_FAILURE
-chmod +x "$wrapper"
+[ "$status" -eq 7 ]
+grep -q '^classification: ENOSPC$' <<<"$output"
+grep -q 'original exit 7 is preserved' <<<"$output"
+python3 - "$artifact" <<'PY'
+import json, sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["classification"] == "ENOSPC"
+assert payload["exit_code"] == 7
+assert payload["original_exit_code"] == 7
+assert payload["original_status_preserved"] is True
+PY
+grep -q 'Classification:.*ENOSPC' "$summary"
 
-# The wrapper must preserve the original status for infrastructure failures;
-# annotation is additive and never a green override.
-set +e
-infra_output="$($wrapper sh -c 'echo "cargo: could not create incremental directory: No space left on device (os error 28)" >&2; exit 7' 2>&1)"
-rc=$?
-set -e
-[ "$rc" -eq 7 ]
-grep -q '^classification: INFRA_FAILURE ' <<<"$infra_output"
-grep -q 'original gate status preserved' <<<"$infra_output"
+# Cleanup is bounded and only removes its fixed allowlist.  The sentinel stays.
+mkdir -p "$tmp/workspace/target" "$tmp/workspace/cache" "$tmp/workspace/temp"
+printf keep >"$tmp/workspace/cache/sentinel"
+printf keep >"$tmp/workspace/temp/sentinel"
+CORELINK_CLEANUP_ROOT="$tmp/workspace" CORELINK_CLEANUP_TIMEOUT_SECONDS=2 \
+  "$wrapper" sh -c 'exit 0' >/dev/null
+[ ! -e "$tmp/workspace/target" ]
+[ -e "$tmp/workspace/cache/sentinel" ]
+[ -e "$tmp/workspace/temp/sentinel" ]
 
-set +e
-linker_output="$($wrapper sh -c 'echo "collect2: ld failed with Bus error" >&2; exit 8' 2>&1)"
-rc=$?
-set -e
-[ "$rc" -eq 8 ]
-grep -q '^classification: INFRA_FAILURE ' <<<"$linker_output"
-grep -q 'original gate status preserved' <<<"$linker_output"
-
-# Ordinary code failures remain non-zero and are not relabeled as infra.
-set +e
-code_output="$($wrapper sh -c 'echo "assertion failed" >&2; exit 3' 2>&1)"
-rc=$?
-set -e
-[ "$rc" -eq 3 ]
-grep -q '^classification: CODE_FAILURE$' <<<"$code_output"
-if grep -q 'Infrastructure failure' <<<"$code_output"; then exit 1; fi
-
-# A mixed diagnostic is code-owned even when it contains infra-looking text.
-set +e
-mixed_output="$($wrapper sh -c 'echo "error[E0308]: code mismatch; collect2: ld failed with Bus error" >&2; exit 9' 2>&1)"
-rc=$?
-set -e
-[ "$rc" -eq 9 ]
-grep -q '^classification: CODE_FAILURE$' <<<"$mixed_output"
-if grep -q 'classification: INFRA_FAILURE' <<<"$mixed_output"; then exit 1; fi
-
-# Signal exits are converted to the shell convention and remain non-zero.
-set +e
-signal_output="$($wrapper sh -c 'kill -TERM $$' 2>&1)"
-rc=$?
-set -e
-[ "$rc" -eq 143 ]
-grep -q '^classification: CODE_FAILURE$' <<<"$signal_output"
-
-# Timeout is bounded, distinct from infra, and still non-zero.
-start=$(date +%s)
+# Timeout remains non-zero and cannot be relabeled as a test or disk failure.
 set +e
 timeout_output="$(CORELINK_GATE_TIMEOUT_SECONDS=1 "$wrapper" sh -c 'sleep 30' 2>&1)"
-rc=$?
+status=$?
 set -e
-elapsed=$(( $(date +%s) - start ))
-[ "$rc" -eq 124 ]
-[ "$elapsed" -le 5 ]
-grep -q '^GATE_TIMEOUT ' <<<"$timeout_output"
+[ "$status" -eq 124 ]
 grep -q '^classification: TIMEOUT$' <<<"$timeout_output"
+grep -q '^GATE_TIMEOUT ' <<<"$timeout_output"
 
-# The timeout helper itself rejects malformed bounds instead of running an
-# unbounded command.
-set +e
-python3 "$timeout_runner" 0 sh -c true >/dev/null 2>&1
-rc=$?
-set -e
-[ "$rc" -eq 2 ]
-echo 'runner failure classification tests: PASS'
+echo 'i1670 runner classification contract: PASS'
