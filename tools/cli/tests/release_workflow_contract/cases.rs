@@ -245,10 +245,8 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
         std::panic::catch_unwind(|| assert_slsa_contract(&unchecked_inventory)).is_err(),
         "SLSA must attest the exact manifest inventory, including checksums"
     );
-    let writable_slsa_source = slsa.replace(
-        "contents: read",
-        "contents: write # privilege regression",
-    );
+    let writable_slsa_source =
+        slsa.replace("contents: read", "contents: write # privilege regression");
     assert!(
         std::panic::catch_unwind(|| assert_slsa_contract(&writable_slsa_source)).is_err(),
         "SLSA provenance must not regain source-repository contents write"
@@ -268,7 +266,10 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
     );
     let inventory_helper = load_script("verify_cli_release_inventory.py")?;
     assert_inventory_helper_contract(&inventory_helper);
-    let unmatched_asset = inventory_helper.replace("release inventory is not closed-world", "inventory check removed");
+    let unmatched_asset = inventory_helper.replace(
+        "release inventory is not closed-world",
+        "inventory check removed",
+    );
     assert!(
         std::panic::catch_unwind(|| assert_inventory_helper_contract(&unmatched_asset)).is_err(),
         "an unmatched public release asset must fail the closed-world helper contract"

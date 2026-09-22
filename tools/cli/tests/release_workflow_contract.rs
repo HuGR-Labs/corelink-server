@@ -64,14 +64,36 @@ fn cli_provenance_uses_managed_generator_and_exact_release_identity() -> Result<
     assert_managed_cli_provenance_contract(&caller, &generator);
 
     for (mutant, label) in [
-        (generator.replace("actions/attest-build-provenance@", "actions/attest-build-provenance@v4"), "unpinned generator"),
-        (generator.replace("--signer-workflow", "--owner"), "wrong caller identity verifier"),
-        (generator.replace("release-manifest.json", "wrong-subject.json"), "tampered subject"),
-        (generator.replace("actions/attest-build-provenance@", "local-generator@"), "unmanaged builder"),
-        (generator.replace("https://token.actions.githubusercontent.com", "https://wrong-issuer.example"), "wrong Fulcio issuer"),
+        (
+            generator.replace(
+                "actions/attest-build-provenance@",
+                "actions/attest-build-provenance@v4",
+            ),
+            "unpinned generator",
+        ),
+        (
+            generator.replace("--signer-workflow", "--owner"),
+            "wrong caller identity verifier",
+        ),
+        (
+            generator.replace("release-manifest.json", "wrong-subject.json"),
+            "tampered subject",
+        ),
+        (
+            generator.replace("actions/attest-build-provenance@", "local-generator@"),
+            "unmanaged builder",
+        ),
+        (
+            generator.replace(
+                "https://token.actions.githubusercontent.com",
+                "https://wrong-issuer.example",
+            ),
+            "wrong Fulcio issuer",
+        ),
     ] {
         assert!(
-            std::panic::catch_unwind(|| assert_managed_cli_provenance_contract(&caller, &mutant)).is_err(),
+            std::panic::catch_unwind(|| assert_managed_cli_provenance_contract(&caller, &mutant))
+                .is_err(),
             "mutation control accepted {label}"
         );
     }
