@@ -104,6 +104,7 @@ jobs:
           mkdir -p artifacts/b122
           : > artifacts/b122/b102-warm.txt
           : > artifacts/b122/b107-separated.txt
+          date -u +%Y-%m-%dT%H:%M:%SZ > artifacts/b122/sample-started-utc.txt
           start="$(date +%s)"
           for profile in b102-warm b107-separated; do
             output="artifacts/b122/${profile}.txt"
@@ -140,21 +141,27 @@ jobs:
           REGION: ${{ inputs.region }}
         run: |
           set -euo pipefail
-          python3 scripts/verify_d03_timing_artifact.py --writes artifacts/b122/b107-separated.txt > artifacts/b122/shape-check.txt
+          python3 scripts/verify_d03_timing_artifact.py --writes artifacts/b122/b102-warm.txt > artifacts/b122/shape-check-b102.txt
+          python3 scripts/verify_d03_timing_artifact.py --writes artifacts/b122/b107-separated.txt > artifacts/b122/shape-check-b107.txt
           python3 - "${SERVING_SHA}" "${REGION}" <<'PY'
           import json
           import pathlib
           import sys
           b102 = pathlib.Path("artifacts/b122/b102-warm.txt").read_text(encoding="utf-8").splitlines()
           b107 = pathlib.Path("artifacts/b122/b107-separated.txt").read_text(encoding="utf-8").splitlines()
+          sample_started_utc = pathlib.Path("artifacts/b122/sample-started-utc.txt").read_text(encoding="utf-8").strip()
           packet = {
               "issue": "B-122",
               "measurement_mode": "production_dogfood_bounded",
               "serving_sha": sys.argv[1],
               "region": sys.argv[2],
+              "sample_started_utc": sample_started_utc,
               "sample_count": 3,
               "profiles": {"B-102": b102, "B-107": b107},
-              "shape_check": pathlib.Path("artifacts/b122/shape-check.txt").read_text(encoding="utf-8").strip(),
+              "shape_checks": {
+                  "B-102": pathlib.Path("artifacts/b122/shape-check-b102.txt").read_text(encoding="utf-8").strip(),
+                  "B-107": pathlib.Path("artifacts/b122/shape-check-b107.txt").read_text(encoding="utf-8").strip(),
+              },
           }
           pathlib.Path("artifacts/b122/B122-adapter-timing.json").write_text(json.dumps(packet, sort_keys=True) + "\n", encoding="utf-8")
           PY
