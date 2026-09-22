@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "account_limit_vcpu": 1500,
+  "cache": {
+    "environments": ["prod", "prod-sam", "prod-lhr", "prod-nrt", "prod-syd"],
+    "instance_type": "basic",
+    "vcpu_per_instance": 0.25,
+    "max_instances_per_environment": 200
+  },
+  "runner": {
+    "max_instances": 250,
+    "vcpu_per_instance": 4
+  },
+  "expected_reservation_vcpu": 1250,
+  "provider_readback": {
+    "status": "unverified",
+    "endpoint": "GET /accounts/{account}/containers/me",
+    "required_fields": ["total_vcpu", "vcpu_per_deployment", "total_memory_mib"]
+  }
+}
