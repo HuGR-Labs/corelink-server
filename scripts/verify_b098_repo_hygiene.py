@@ -416,6 +416,7 @@ def _check_governance_receipt(
     specs_yaml_only_count: int,
     receipt_text: str | None = None,
     census_text: str | None = None,
+    verify_origin: bool = False,
 ) -> list[str]:
     """Require a strict typed blocker instead of silently treating absent evidence as green."""
     path = root / GOVERNANCE_RECEIPT.relative_to(ROOT)
@@ -442,7 +443,11 @@ def _check_governance_receipt(
     if data.get("status") != "BLOCKED":
         issues.append("B-098 release-governance blocker receipt must remain BLOCKED until external gates exist")
     captured_at = _parse_timestamp(data.get("captured_at"), "receipt captured_at", issues)
-    if captured_at is not None and datetime.datetime.now(datetime.timezone.utc) - captured_at > REMOTE_EVIDENCE_MAX_AGE:
+    # A normal repository audit must be reproducible from the checked-in tree.
+    # Wall-clock freshness is only meaningful when the caller explicitly asks
+    # for the live origin check; otherwise the result would change every day
+    # without a repository change.
+    if verify_origin and captured_at is not None and datetime.datetime.now(datetime.timezone.utc) - captured_at > REMOTE_EVIDENCE_MAX_AGE:
         issues.append("B-098 remote absence receipt is stale; run --verify-origin before relying on it")
     checkpoint = data.get("checkpoint_sha", "")
     if not _is_oid(checkpoint) or not set(checkpoint) - {"0"}:
@@ -618,6 +623,15 @@ def package_count(root: Path = ROOT) -> int:
         raise VerificationError("cargo metadata returned malformed JSON") from exc
     if not isinstance(packages, list) or not packages:
         raise VerificationError("cargo metadata returned no packages")
+    package_ids = [
+        package.get("id")
+        for package in packages
+        if isinstance(package, dict)
+    ]
+    if len(package_ids) != len(packages) or any(not isinstance(package_id, str) for package_id in package_ids):
+        raise VerificationError("cargo metadata returned a package without an id")
+    if len(set(package_ids)) != len(package_ids):
+        raise VerificationError("cargo metadata returned duplicate package ids")
     return len(packages)
 
 
@@ -1056,6 +1070,7 @@ def audit(
             okf_count=okf,
             specs_schema_count=schema,
             specs_yaml_only_count=yaml_only,
+            verify_origin=verify_origin,
         )
     )
     issues.extend(_check_release_contract(root, tags))
