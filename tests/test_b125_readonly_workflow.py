@@ -5,10 +5,21 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import sys
+from copy import deepcopy
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from b125_readonly_diagnostics import (  # noqa: E402
+    MAX_PROVIDER_OUTPUT_BYTES,
+    make_provider_diagnostic,
+    record_provider_failure,
+    validate_provider_diagnostic,
+)
+
+
 WORKFLOW = ROOT / ".github/workflows/b125-audit-throughput-read-only.yml"
 FIXTURE_NAMES = (
     "b125-d1-aggregate-direct.json",
@@ -106,3 +117,85 @@ def test_workflow_keeps_four_query_ids_and_remote_only_execution() -> None:
     assert "--local" not in source
     assert "contents: read" in source
     assert "persist-credentials: false" in source
+
+
+def test_failure_receipt_is_bounded_data_free_and_keeps_provider_shape(tmp_path: Path) -> None:
+    diagnostic = make_provider_diagnostic(
+        "hourly",
+        1,
+        json.dumps(
+            {
+                "success": False,
+                "errors": [{"code": 7500, "message": "account=db row=private token=private"}],
+                "results": [{"event_id": "private"}],
+            }
+        ),
+        "D1_ERROR: tenant=private credential=private",
+    )
+    validate_provider_diagnostic(diagnostic)
+    assert (diagnostic["query_stage"], diagnostic["query_id"]) == ("wrangler_d1_execute", "hourly")
+    assert (diagnostic["error_class"], diagnostic["provider_code"]) == ("D1_ERROR", "7500")
+    assert diagnostic["schema_shape"]["root_keys"] == ["errors", "results", "success"]
+    assert diagnostic["schema_shape"]["error_entry_keys"] == ["code", "message"]
+    assert "private" not in json.dumps(diagnostic)
+
+    receipt = tmp_path / "receipt.json"
+    stdout = tmp_path / "stdout.json"
+    stderr = tmp_path / "stderr.txt"
+    receipt.write_text('{"issue":1668,"queries":[]}\n', encoding="utf-8")
+    stdout.write_text("private-value" * (MAX_PROVIDER_OUTPUT_BYTES // 8), encoding="utf-8")
+    stderr.write_text(
+        "D1_ERROR: " + ("private-value" * (MAX_PROVIDER_OUTPUT_BYTES // 8)), encoding="utf-8"
+    )
+
+    record_provider_failure(receipt, "hourly", 1, stdout, stderr)
+    recorded = json.loads(receipt.read_text(encoding="utf-8"))["provider_failure"]
+    validate_provider_diagnostic(recorded)
+    assert recorded["schema_shape"]["stdout_truncated"] is True
+    assert recorded["schema_shape"]["stderr_truncated"] is True
+    assert "private-value" not in json.dumps(recorded)
+    assert len(json.dumps(recorded)) < 2000
+
+
+def test_diagnostic_mutations_that_add_values_or_identifiers_are_rejected() -> None:
+    diagnostic = make_provider_diagnostic(
+        "hourly",
+        1,
+        '{"success":false,"errors":[{"code":7500,"message":"private-value"}]}',
+        "D1_ERROR: private-value",
+    )
+    mutations = []
+
+    with_raw_message = deepcopy(diagnostic)
+    with_raw_message["provider_message"] = "private-value"
+    mutations.append(with_raw_message)
+
+    with_identifier = deepcopy(diagnostic)
+    with_identifier["database_id"] = "database-PRIVATE"
+    mutations.append(with_identifier)
+
+    with_unknown_schema_key = deepcopy(diagnostic)
+    with_unknown_schema_key["schema_shape"]["root_keys"].append("account_id")
+    mutations.append(with_unknown_schema_key)
+
+    with_leaked_schema_count = deepcopy(diagnostic)
+    with_leaked_schema_count["schema_shape"]["root_unknown_key_count"] = "account-PRIVATE"
+    mutations.append(with_leaked_schema_count)
+
+    for mutated in mutations:
+        try:
+            validate_provider_diagnostic(mutated)
+        except ValueError:
+            continue
+        raise AssertionError("unsafe provider diagnostic mutation was accepted")
+
+
+def test_workflow_keeps_unredacted_provider_output_out_of_artifacts_and_logs() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    assert 'raw_dir="$RUNNER_TEMP/b125-d1"' in source
+    assert '2>"$stderr"' in source
+    assert 'b125_readonly_diagnostics.py record' in source
+    assert 'path: artifacts/b125-audit-throughput-receipt.json' in source
+    assert 'path: "$raw_dir"' not in source
+    assert 'echo "$stderr"' not in source
+    assert 'echo "$raw"' not in source

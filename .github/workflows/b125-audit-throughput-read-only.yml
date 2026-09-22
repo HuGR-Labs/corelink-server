@@ -137,11 +137,18 @@ jobs:
             [[ "$sql" != *';'* ]] || fail_closed "query_contains_statement_separator_${id}"
             [[ ! "$sql" =~ (INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|CREATE|PRAGMA|ATTACH|DETACH) ]] || fail_closed "query_contains_write_or_pragma_${id}"
             raw="$raw_dir/$id.json"
+            stderr="$raw_dir/$id.stderr"
             set +e
-            CI=1 pnpm --silent dlx wrangler@4.111.0 d1 execute "$D1_DATABASE_ID" --remote --command "$sql" --json >"$raw"
+            CI=1 pnpm --silent dlx wrangler@4.111.0 d1 execute "$D1_DATABASE_ID" --remote --command "$sql" --json >"$raw" 2>"$stderr"
             status=$?
             set -e
-            [[ "$status" -eq 0 ]] || fail_closed "wrangler_query_failed_${id}_${status}"
+            if [[ "$status" -ne 0 ]]; then
+              # Raw provider output stays under RUNNER_TEMP. The receipt only
+              # records an allowlisted error class/code and JSON schema shape.
+              python3 scripts/b125_readonly_diagnostics.py record \
+                "$receipt" "$id" "$status" "$raw" "$stderr"
+              fail_closed "wrangler_query_failed_${id}_${status}"
+            fi
             [[ -s "$raw" ]] || fail_closed "empty_wrangler_response_${id}"
             if ! python3 - "$receipt" "$raw" "$id" "$sql" <<'PY'
           import hashlib, json, sys

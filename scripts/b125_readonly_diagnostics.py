@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Record bounded, data-free diagnostics for a failed B-125 read."""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+
+QUERY_IDS = {"population", "hourly", "latency", "heads"}
+ERROR_CLASSES = {
+    "D1_ERROR", "SQLITE_BUSY", "SQLITE_CONSTRAINT", "SQLITE_ERROR",
+    "WRANGLER_ERROR", "HTTP_ERROR", "PROVIDER_ERROR", "UNKNOWN_ERROR",
+}
+SCHEMA_KEYS = {
+    "code", "data", "error", "errors", "meta", "message", "messages",
+    "result", "results", "success", "status",
+}
+MAX_PROVIDER_OUTPUT_BYTES = 65536
+PROVIDER_CODE = re.compile(r"^[0-9]{1,6}$")
+
+
+def _kind(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    return "unknown"
+
+
+def _shape(value: object) -> tuple[str, list[str], int]:
+    if not isinstance(value, dict):
+        return _kind(value), [], 0
+    keys = {str(key) for key in value}
+    return "object", sorted(keys & SCHEMA_KEYS), len(keys - SCHEMA_KEYS)
+
+
+def _schema(stdout: str, stdout_truncated: bool, stderr_truncated: bool) -> dict[str, object]:
+    if not stdout.strip():
+        document, fmt = None, "empty"
+    else:
+        try:
+            document, fmt = json.loads(stdout), "json"
+        except (json.JSONDecodeError, UnicodeError):
+            document, fmt = None, "non_json"
+    root = _shape(document)
+    result = document.get("result") if isinstance(document, dict) else None
+    if isinstance(document, list) and document:
+        result = document[0]
+    error = document.get("errors") if isinstance(document, dict) else None
+    error = error[0] if isinstance(error, list) and error else None
+    shaped = {"format": fmt, "stdout_truncated": stdout_truncated, "stderr_truncated": stderr_truncated}
+    for name, value in (("root", document), ("result", result), ("error_entry", error)):
+        kind, keys, unknown = root if name == "root" else _shape(value)
+        shaped[f"{name}_kind"] = kind
+        shaped[f"{name}_keys"] = keys
+        shaped[f"{name}_unknown_key_count"] = unknown
+    return shaped
+
+
+def make_provider_diagnostic(
+    query_id: str, exit_code: int, stdout: str, stderr: str,
+    *, stdout_truncated: bool = False, stderr_truncated: bool = False,
+) -> dict[str, object]:
+    if query_id not in QUERY_IDS or isinstance(exit_code, bool) or not isinstance(exit_code, int) or exit_code <= 0:
+        raise ValueError("provider query identity or exit code is invalid")
+    combined = f"{stdout}\n{stderr}"
+    error_class = next(
+        (code for code in ("D1_ERROR", "SQLITE_BUSY", "SQLITE_CONSTRAINT", "SQLITE_ERROR")
+         if re.search(rf"\b{code}\b", combined, re.IGNORECASE)),
+        None,
+    )
+    if error_class is None:
+        if re.search(r"\bHTTP(?:\s+status)?\s*[:=]?\s*[45][0-9]{2}\b", combined, re.IGNORECASE):
+            error_class = "HTTP_ERROR"
+        elif re.search(r"\bwrangler\b|\bCloudflare API\b", combined, re.IGNORECASE):
+            error_class = "WRANGLER_ERROR"
+        else:
+            error_class = "PROVIDER_ERROR" if combined.strip() else "UNKNOWN_ERROR"
+    try:
+        errors = json.loads(stdout).get("errors", [])
+    except (json.JSONDecodeError, AttributeError, UnicodeError):
+        errors = []
+    code = errors[0].get("code") if isinstance(errors, list) and errors and isinstance(errors[0], dict) else None
+    provider_code = str(code) if isinstance(code, (int, str)) and not isinstance(code, bool) else None
+    if provider_code is not None and not PROVIDER_CODE.fullmatch(provider_code):
+        provider_code = None
+    return {
+        "query_stage": "wrangler_d1_execute", "query_id": query_id, "exit_code": exit_code,
+        "error_class": error_class, "provider_code": provider_code,
+        "schema_shape": _schema(stdout, stdout_truncated, stderr_truncated),
+    }
+
+
+def validate_provider_diagnostic(value: dict[str, object]) -> None:
+    fields = {"query_stage", "query_id", "exit_code", "error_class", "provider_code", "schema_shape"}
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError("provider diagnostic fields differ from the allowlist")
+    if value["query_stage"] != "wrangler_d1_execute" or value["query_id"] not in QUERY_IDS:
+        raise ValueError("provider query stage or id is not allowlisted")
+    if isinstance(value["exit_code"], bool) or not isinstance(value["exit_code"], int) or value["exit_code"] <= 0:
+        raise ValueError("provider exit code is invalid")
+    if value["error_class"] not in ERROR_CLASSES:
+        raise ValueError("provider error class is not allowlisted")
+    code = value["provider_code"]
+    if code is not None and (not isinstance(code, str) or not PROVIDER_CODE.fullmatch(code)):
+        raise ValueError("provider code is invalid")
+    shape = value["schema_shape"]
+    names = {"root", "result", "error_entry"}
+    expected = {"format", "stdout_truncated", "stderr_truncated"} | {
+        f"{name}_{suffix}" for name in names for suffix in ("kind", "keys", "unknown_key_count")
+    }
+    if not isinstance(shape, dict) or set(shape) != expected or shape["format"] not in {"empty", "json", "non_json"}:
+        raise ValueError("provider schema fields differ from the allowlist")
+    kinds = {"null", "boolean", "object", "array", "number", "string", "unknown"}
+    for name in names:
+        if shape[f"{name}_kind"] not in kinds:
+            raise ValueError("provider schema kind is invalid")
+        keys = shape[f"{name}_keys"]
+        if not isinstance(keys, list) or keys != sorted(set(keys)) or any(key not in SCHEMA_KEYS for key in keys):
+            raise ValueError("provider schema keys are invalid")
+        count = shape[f"{name}_unknown_key_count"]
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise ValueError("provider unknown-key count is invalid")
+    if any(not isinstance(shape[key], bool) for key in ("stdout_truncated", "stderr_truncated")):
+        raise ValueError("provider truncation marker is invalid")
+
+
+def _read_bounded(path: Path) -> tuple[str, bool]:
+    if not path.exists():
+        return "", False
+    with path.open("rb") as stream:
+        raw = stream.read(MAX_PROVIDER_OUTPUT_BYTES + 1)
+    return raw[:MAX_PROVIDER_OUTPUT_BYTES].decode("utf-8", errors="replace"), len(raw) > MAX_PROVIDER_OUTPUT_BYTES
+
+
+def record_provider_failure(receipt: Path, query_id: str, exit_code: int, stdout_path: Path, stderr_path: Path) -> None:
+    stdout, stdout_truncated = _read_bounded(stdout_path)
+    stderr, stderr_truncated = _read_bounded(stderr_path)
+    diagnostic = make_provider_diagnostic(
+        query_id, exit_code, stdout, stderr,
+        stdout_truncated=stdout_truncated, stderr_truncated=stderr_truncated,
+    )
+    validate_provider_diagnostic(diagnostic)
+    document = json.loads(receipt.read_text(encoding="utf-8"))
+    document["provider_failure"] = diagnostic
+    receipt.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 7 or sys.argv[1] != "record":
+        raise SystemExit("usage: b125_readonly_diagnostics.py record RECEIPT QUERY EXIT STDOUT STDERR")
+    record_provider_failure(Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]), Path(sys.argv[5]), Path(sys.argv[6]))
