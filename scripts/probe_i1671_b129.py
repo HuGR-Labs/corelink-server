@@ -24,7 +24,10 @@ from datetime import datetime, timezone
 SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")
 TOKEN = re.compile(r"^[A-Za-z0-9._~:-]{1,180}$")
-PHASE = re.compile(r"(?P<n>[a-z][a-z0-9_-]*);dur=(?P<d>[0-9]+(?:\.[0-9]+)?)")
+PHASE = re.compile(
+    r"^\s*(?P<n>[a-z][a-z0-9_-]*)\s*;\s*dur=(?P<d>[0-9]+(?:\.[0-9]+)?)"
+    r"(?:\s*;[^,]*)?\s*$"
+)
 Q = ("qtier", "qdo", "qbatch", "qresid", "qcontrol")
 ORIGIN = ("opat", "oquota", "ostore", "oaccounting", "oargon", "opermit", "ortier", "oaudit", "oratelimit", "ohandler")
 REQUIRED_ORIGIN = ("ostore", "oaccounting", "ohandler")
@@ -43,12 +46,17 @@ def residual_median(rows: list[dict[str, object]]) -> float:
 
 def timing(raw: str) -> dict[str, float]:
     values: dict[str, float] = {}
-    for match in PHASE.finditer(raw):
+    for part in raw.split(","):
+        match = PHASE.fullmatch(part)
+        if match is None:
+            if ";dur=" in part:
+                fail("malformed Server-Timing phase")
+            continue
         name, value = match.group("n"), float(match.group("d"))
         if name in values or not math.isfinite(value):
             fail("malformed or duplicate Server-Timing phase")
         values[name] = value
-    if not values or any(";dur=" in part and not PHASE.search(part) for part in raw.split(",")):
+    if not values:
         fail("malformed or empty Server-Timing header")
     if "oother" in values:
         if "ohandler" in values and not math.isclose(values["oother"], values["ohandler"], abs_tol=1e-6):

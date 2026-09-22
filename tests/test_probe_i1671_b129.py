@@ -53,6 +53,20 @@ class ProbeContractTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             PROBE.timing("wdb;dur=NaN")
 
+    def test_phase_duration_must_consume_the_entire_server_timing_item(self):
+        self.assertEqual(
+            PROBE.timing('wdb;dur=5;desc="worker database"'),
+            {"wdb": 5.0},
+        )
+        for malformed in (
+            "wdb;dur=5ms",
+            "wdb;dur=5junk",
+            "prefix wdb;dur=5",
+            "wdb;dur=5 trailing",
+        ):
+            with self.subTest(header=malformed), self.assertRaises(RuntimeError):
+                PROBE.timing(malformed)
+
 
 if __name__ == "__main__":
     unittest.main()
