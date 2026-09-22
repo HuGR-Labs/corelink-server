@@ -37,6 +37,7 @@ MINGW_W64_FORMULA_URL = (
     "00e77a1611f627f2ea8f876fad0468f2c4b3ed20/Formula/m/mingw-w64.rb"
 )
 MINGW_W64_FORMULA_SHA256 = "4b5f53d8ff341875f158092cbdcd5536ce3d6d5136de1672ecf687564dae07f9"
+PINNED_FORMULA_INSTALL = 'env -u HOMEBREW_NO_INSTALL_FROM_API brew install "${MINGW_W64_PINNED_FORMULA}"'
 DLLTOOL_PATH = "$(brew --prefix mingw-w64)/bin/x86_64-w64-mingw32-dlltool"
 DLLTOOL_GUARDS = (
     'if [ "${ACTUAL_MINGW_W64_VERSION}" != "${EXPECTED_MINGW_W64_VERSION}" ]; then',
@@ -119,12 +120,9 @@ def _verify_dlltool_contract(text: str) -> None:
         "EXPECTED_DLLTOOL_VERSION='GNU dlltool (GNU Binutils) 2.47'",
         f"EXPECTED_MINGW_W64_FORMULA_SHA256={MINGW_W64_FORMULA_SHA256}",
         MINGW_W64_FORMULA_URL,
-        'MINGW_W64_TAP=corelink/homebrew-mingw-w64',
-        'brew tap-new --no-git "${MINGW_W64_TAP}"',
-        'curl --fail --location --silent --show-error "${MINGW_W64_FORMULA_URL}" --output "${MINGW_W64_TAP_FORMULA}"',
+        'curl --fail --location --silent --show-error "${MINGW_W64_FORMULA_URL}" --output "${MINGW_W64_PINNED_FORMULA}"',
         "shasum -a 256 --check --status",
-        'cp "${MINGW_W64_TAP_FORMULA}" "$(brew --repo "${MINGW_W64_TAP}")/Formula/mingw-w64.rb"',
-        'brew install "${MINGW_W64_TAP}/mingw-w64"',
+        PINNED_FORMULA_INSTALL,
         'brew list --versions mingw-w64',
         DLLTOOL_PATH,
         '"${DLLTOOL_PATH}" --version | sed -n \'1p\'',
@@ -139,13 +137,22 @@ def _verify_dlltool_contract(text: str) -> None:
         end = text.find("\n          fi", start)
         if start < 0 or end < 0 or "exit 1" not in text[start:end]:
             fail(f"dlltool preflight must fail closed: {guard}")
+    for unsupported in (
+        'brew tap-new --no-git "${MINGW_W64_TAP}"',
+        'brew install "${MINGW_W64_TAP}/mingw-w64"',
+        'brew install "mingw-w64"',
+    ):
+        if unsupported in text:
+            fail(f"untrusted or unpinned tap installation is forbidden: {unsupported}")
 
 
 def _dlltool_contract_mutation_self_test(text: str) -> None:
     for token, replacement in (
         (MINGW_W64_FORMULA_URL, "https://example.invalid/mingw-w64.rb"),
-        ('brew tap-new --no-git "${MINGW_W64_TAP}"', "# local custom tap creation removed"),
-        ('brew install "${MINGW_W64_TAP}/mingw-w64"', 'brew install "mingw-w64"'),
+        (
+            PINNED_FORMULA_INSTALL,
+            'brew tap-new --no-git "${MINGW_W64_TAP}"\n          brew install "${MINGW_W64_TAP}/mingw-w64"',
+        ),
         ('if [ ! -x "${DLLTOOL_PATH}" ]; then', "# dlltool executable check removed"),
         (
             'if [ "${ACTUAL_DLLTOOL_VERSION}" != "${EXPECTED_DLLTOOL_VERSION}" ]; then',
@@ -166,6 +173,21 @@ def _dlltool_contract_mutation_self_test(text: str) -> None:
         except SystemExit:
             continue
         fail(f"dlltool contract mutation survived: {token}")
+
+    untrusted_tap = text.replace(
+        PINNED_FORMULA_INSTALL,
+        'brew tap-new --no-git "${MINGW_W64_TAP}"\n'
+        '          brew install "${MINGW_W64_TAP}/mingw-w64"\n'
+        f"          {PINNED_FORMULA_INSTALL}",
+        1,
+    )
+    try:
+        _verify_dlltool_contract(untrusted_tap)
+    except SystemExit as error:
+        if "untrusted or unpinned tap installation is forbidden" not in str(error):
+            raise
+    else:
+        fail("untrusted no-git tap installation mutation survived")
 
 
 def contract() -> None:
