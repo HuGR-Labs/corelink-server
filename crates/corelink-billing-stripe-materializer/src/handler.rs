@@ -1016,9 +1016,12 @@ impl D1SubscriptionStateHandler {
                 Some(purchase) if purchase.product == crate::d1::RefundedProduct::Runners => {
                     let current = self
                         .current_subscription(&purchase.stripe_subscription_id)?
-                        .ok_or_else(|| MaterializerError::Transient(
-                            "Runners refund cannot bypass provider entitlement authority".to_owned(),
-                        ))?;
+                        .ok_or_else(|| {
+                            MaterializerError::Transient(
+                                "Runners refund cannot bypass provider entitlement authority"
+                                    .to_owned(),
+                            )
+                        })?;
                     self.apply_runner_cas(
                         &tenant_id,
                         &purchase.stripe_subscription_id,

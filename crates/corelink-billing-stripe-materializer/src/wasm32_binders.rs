@@ -79,10 +79,9 @@ use corelink_cf_bindings::{CfD1DatabaseReal, D1Error, TenantId};
 
 use crate::audit::{BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
 use crate::d1::{
-    BillingD1Error, BillingD1Writer, MaterializedRow, WebhookOutcome,
-    SQL_DOWNGRADE_TIER, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
-    SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE,
-    SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
+    BillingD1Error, BillingD1Writer, MaterializedRow, WebhookOutcome, SQL_DOWNGRADE_TIER,
+    SQL_INSERT_DISPUTE, SQL_INSERT_REFUND, SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER,
+    SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
 };
 
 // ---------------------------------------------------------------------------
@@ -335,8 +334,6 @@ impl BillingD1Writer for CfD1BillingWriter {
             "wasm32_async_dispatch_pending: downgrade_tier staged; dispatch via worker::send::SendFuture layer"
                 .to_owned(),
         ))
-    }
-
 }
 
 /// Map a [`D1Error`] from the wrapped binding onto the canonical
