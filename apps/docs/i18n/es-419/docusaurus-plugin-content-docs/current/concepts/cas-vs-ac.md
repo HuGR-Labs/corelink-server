@@ -1,88 +1,70 @@
 ---
 id: cas-vs-ac
-title: Almacenamiento direccionable por contenido y Action Cache
+title: Content-Addressable Storage and Action Cache
 sidebar_position: 1
-description: Cómo se diferencian CAS y AC, cuándo se usa cada uno y cómo Bazel usa ambos juntos.
+description: How CAS and AC differ, when each is used, and how Bazel uses both together.
 ---
-
-<!-- i18n:MT (es-419) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
+<!-- i18n:MT (es-419) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
 
 > MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
 >
 > Canonical EN source: `docs/concepts/cas-vs-ac.md`
 
-# Almacenamiento direccionable por contenido y Action Cache
 
-CoreLink expone dos cachés distintos que funcionan juntos. La mayoría de los
-usuarios solo piensa en uno — el que almacena sus salidas de build — pero entender
-ambos vale los 5 minutos de lectura.
+# Content-Addressable Storage and Action Cache
 
-## Almacenamiento direccionable por contenido (CAS)
+CoreLink exposes two distinct caches that work together. Most users only think about one — the one that stores their build outputs — but understanding both is worth the 5-minute read.
 
-El CAS almacena blobs arbitrarios indexados por su digest SHA-256. La clave *es* el
-digest: no se requiere un nombre de archivo, una etiqueta de versión ni metadatos
-separados.
+## Content-Addressable Storage (CAS)
+
+CAS stores arbitrary blobs keyed by their BLAKE3 digest. The key *is* the digest: there is no separate filename, version tag, or metadata required.
 
 ```
-key:   sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+key:   e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85   (BLAKE3, 64 lowercase hex)
 value: <bytes>
 ```
 
-Propiedades:
+Properties:
 
-- **Inmutable**: una vez que un blob se almacena en un digest dado, el contenido en
-  ese digest nunca cambia.
-- **Deduplicado**: si dos tenants (o dos jobs de CI) suben los mismos bytes, la
-  capa de almacenamiento guarda una copia. Ambos tenants pagan por el acceso, no
-  por el almacenamiento duplicado.
-- **Verificable**: el cliente que calcula `sha256(downloaded_bytes)` siempre
-  coincidirá con la clave usada para recuperarlo.
+- **Immutable**: once a blob is stored at a given digest, the content at that digest never changes.
+- **Deduplicated**: if two tenants (or two CI jobs) upload the same bytes, the storage layer stores one copy. Both tenants pay for access, not for duplicate storage.
+- **Verifiable**: the client computing `blake3(downloaded_bytes)` will always match the key used to retrieve it — the write path re-hashes the uploaded bytes and rejects a mismatched claim with `422`.
 
-### CAS en el contexto de REAPI
+### CAS in the REAPI context
 
-En la [Remote Execution API](https://github.com/bazelbuild/remote-apis), el CAS se
-usa para:
+In the [Remote Execution API](https://github.com/bazelbuild/remote-apis), CAS is used for:
 
-- Contenido de archivos de origen (entradas de las acciones)
-- Archivos objeto compilados y artefactos finales (salidas de las acciones)
-- Mensajes proto `Directory` que describen el árbol de entrada
+- Source file contents (inputs to actions)
+- Compiled object files and final artifacts (outputs of actions)
+- `Directory` proto messages that describe the input tree
 
-Bazel sube las entradas al CAS antes de despachar una acción remota. El ejecutor lee
-las entradas del CAS, ejecuta la acción y sube las salidas de vuelta al CAS.
+Bazel uploads inputs to CAS before dispatching a remote action. The executor reads inputs from CAS, runs the action, and uploads outputs back to CAS.
 
-### Endpoints HTTP del CAS
+### CAS HTTP endpoints
 
 ```
-PUT /v1/cas/<tenant_id>/<sha256>   body: raw bytes  → 201 + {"hash": "sha256:<digest>"}
-GET /v1/cas/<tenant_id>/<sha256>                    → 200 + raw bytes
+PUT /v1/cas/<tenant_id>/<blake3>   body: raw bytes  → 201 (fresh) / 200 (idempotent) + bare digest as the response body
+GET /v1/cas/<tenant_id>/<blake3>                    → 200 + raw bytes
 ```
 
-Consulte la [referencia de la API HTTP](../api/http.md) para conocer todos los
-detalles.
+See the [HTTP API reference](../api/http.md) for full details.
 
 ## Action Cache (AC)
 
-El Action Cache asigna un **action digest** a un **action result**. Un action
-digest es el SHA-256 de un proto `Action` serializado — codifica el comando, el
-árbol de entrada y las propiedades de plataforma de forma determinista. El action
-result registra los digests de salida, el código de salida y los tiempos.
+The Action Cache maps an **action digest** to an **action result**. An action digest is the SHA-256 of a serialized `Action` proto — it encodes the command, input tree, and platform properties deterministically. The action result records the output digests, exit code, and timing.
 
 ```
 key:   sha256(<Action proto>)
 value: ActionResult { output_files: [...], exit_code: 0, ... }
 ```
 
-Propiedades:
+Properties:
 
-- **Omite trabajo redundante**: si `action_digest` está en el AC, la herramienta de
-  build obtiene las salidas en caché del CAS y omite volver a ejecutar la acción.
-- **Con alcance de tenant**: las entradas del AC de un tenant nunca son visibles
-  para otro.
-- **Invalidado por cualquier cambio de entrada**: como la clave es el digest de las
-  entradas + comando, cualquier cambio en los archivos de origen, las banderas o la
-  toolchain produce una clave diferente — el caché falla de forma limpia.
+- **Skips redundant work**: if `action_digest` is in AC, the build tool fetches the cached outputs from CAS and skips re-running the action.
+- **Tenant-scoped**: AC entries from one tenant are never visible to another.
+- **Invalidated by any input change**: because the key is the digest of inputs + command, any change to source files, flags, or the toolchain produces a different key — the cache misses cleanly.
 
-### Cuándo Bazel usa el AC
+### When Bazel uses AC
 
 ```
 build tool
@@ -93,7 +75,7 @@ build tool
                  PUT /v1/cas/<tenant>/<output_hash> → store each output
 ```
 
-### Diagrama: CAS + AC juntos
+### Diagram: CAS + AC together
 
 ```
         ┌─────────────────────────────────────────────────┐
@@ -114,20 +96,17 @@ build tool
                                        └────────────────┘
 ```
 
-## Comparación
+## Comparison
 
 | | CAS | Action Cache |
 |---|---|---|
-| Clave | SHA-256 del contenido | SHA-256 del proto Action |
-| Valor | Bytes crudos | ActionResult (digests de salida, código de salida) |
-| Inmutable | Sí | Sí (las entradas no se actualizan, solo se escriben una vez) |
-| Usado para | Blobs (archivos, protos) | Memoización de acciones de build |
-| Disponible sin REAPI | Sí (API REST) | Solo mediante gRPC de REAPI |
-| Turborepo | No directamente (Turbo usa su propio formato de artefacto) | El `TURBO_API` de Turborepo se asigna a este concepto |
+| Key | BLAKE3 of content | SHA-256 of Action proto |
+| Value | Raw bytes | ActionResult (output digests, exit code) |
+| Immutable | Yes | Yes (entries are not updated, only written once) |
+| Used for | Blobs (files, protos) | Build action memoization |
+| Available without REAPI | Yes (REST API) | Via REAPI gRPC only |
+| Turborepo | Not directly (Turbo uses its own artifact format) | Turborepo `TURBO_API` maps to this concept |
 
-## Lo que Turborepo llama "remote cache"
+## What Turborepo calls "remote cache"
 
-Turborepo no expone CAS/AC como conceptos distintos. Su API de caché remoto es un
-protocolo HTTP simplificado donde las salidas de las tareas se almacenan por un
-hash de las entradas de la tarea. CoreLink expone un endpoint compatible con
-Turborepo — consulte [Integración con Turborepo](../integrations/turborepo.md).
+Turborepo does not expose CAS/AC as distinct concepts. Its remote cache API is a simplified HTTP protocol where task outputs are stored by a hash of the task inputs. CoreLink exposes a Turborepo-compatible endpoint — see [Turborepo integration](../integrations/turborepo.md).
