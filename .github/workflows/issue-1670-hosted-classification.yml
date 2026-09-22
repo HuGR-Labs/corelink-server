@@ -1,0 +1,188 @@
+name: issue-1670-hosted-classification
+
+# One-shot evidence lane for #1670. It is deliberately manual and uses only
+# the runner user's writable tmpfs; no privileged loop device is required.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classify-bounded-disk-failures:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Induce and classify ENOSPC plus linker failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP:-/tmp}/issue-1670"
+          fs_root="/dev/shm/corelink-issue-1670-${GITHUB_RUN_ID:-$$}"
+          report="$root/report.json"
+          mkdir -p "$root" "$fs_root"
+          cleanup() {
+            set +e
+            rm -rf "$root" "$fs_root"
+          }
+          trap cleanup EXIT
+
+          # /dev/shm is a bounded runner tmpfs writable by the job user. Fill
+          # to a measured margin, then drain the remaining allocatable blocks
+          # without sudo, fallocate, or reliance on reserved filesystem space.
+          shm_size="$(df --output=size -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+          shm_free="$(df --output=avail -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+          shm_block_size="$(stat -fc '%S' "$fs_root")"
+          test -n "$shm_size" -a -n "$shm_free"
+          test "$shm_block_size" -gt 0
+          test "$shm_free" -gt $((1024 * 1024))
+          fill_to_margin() {
+            local fill="$1" available
+            available="$(df --output=avail -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+            test "$available" -gt $((1024 * 1024))
+            python3 - "$fill" $((available - 64 * 1024)) <<'PY'
+          import os
+          import sys
+
+          path, target = sys.argv[1], int(sys.argv[2])
+          chunk = b"\0" * (1024 * 1024)
+          with open(path, "wb", buffering=0) as handle:
+              remaining = target
+              while remaining:
+                  written = handle.write(chunk[: min(len(chunk), remaining)])
+                  if written <= 0:
+                      raise SystemExit("bounded tmpfs fill made no progress")
+                  remaining -= written
+              os.fsync(handle.fileno())
+          PY
+          }
+
+          # The margin fill leaves setup headroom for metadata, but a tiny
+          # linker output can still fit in that margin.  Consume the measured
+          # remaining blocks with a bounded second file after every setup step;
+          # commands, objects, logs, and reports stay outside this tmpfs while
+          # the output directory metadata is created before the drain.
+          drain_remaining_blocks() {
+            local fill="$1" available block_size max_blocks drain_rc remaining
+            block_size="$(stat -fc '%S' "$fs_root")"
+            available="$(df --output=avail -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+            test "$block_size" -gt 0
+            test "$available" -ge "$block_size"
+            max_blocks=$((available / block_size + 2))
+            test "$max_blocks" -le 1048576
+            set +e
+            timeout --signal=TERM 30s \
+              dd if=/dev/zero of="$fill" bs="$block_size" count="$max_blocks" status=none
+            drain_rc=$?
+            set -e
+            remaining="$(df --output=avail -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+            case "$drain_rc" in
+              0|1) ;;
+              *) echo "bounded tmpfs drain failed with status $drain_rc" >&2; return 1 ;;
+            esac
+            test "$remaining" -lt "$block_size"
+            printf '%s\n' "$remaining"
+          }
+
+          mkdir -p "$fs_root/out"
+          fill_to_margin "$fs_root/fill.bin"
+          enospc_remaining="$(drain_remaining_blocks "$fs_root/enospc-drain.bin")"
+          enospc_log="$root/enospc.log"
+          set +e
+          CORELINK_CLASSIFICATION_ARTIFACT="$root/enospc-classification.json" \
+            scripts/run-with-infra-classification.sh \
+            dd if=/dev/zero of="$fs_root/write.bin" bs=1M count=1 status=none \
+            >"$enospc_log" 2>&1
+          enospc_rc=$?
+          set -e
+
+          rm -rf "$fs_root"
+          mkdir -p "$fs_root"
+          mkdir -p "$fs_root/out"
+          cat >"$root/main.c" <<'C'
+          int main(void) { return 0; }
+          C
+          cc -c "$root/main.c" -o "$root/main.o"
+          linker_cmd="$root/linker.sh"
+          cat >"$linker_cmd" <<'EOF'
+          set -e
+          cc "$1" -o "$2"
+          EOF
+          chmod 700 "$linker_cmd"
+          fill_to_margin "$fs_root/fill.bin"
+          linker_remaining="$(drain_remaining_blocks "$fs_root/linker-drain.bin")"
+          linker_log="$root/linker.log"
+          set +e
+          CORELINK_CLASSIFICATION_ARTIFACT="$root/linker-classification.json" \
+            scripts/run-with-infra-classification.sh \
+            bash "$linker_cmd" "$root/main.o" "$fs_root/out/linked" \
+            >"$linker_log" 2>&1
+          linker_rc=$?
+          set -e
+
+          enospc_class="$(sed -n 's/^classification: //p' "$enospc_log" | tail -1)"
+          linker_class="$(sed -n 's/^classification: //p' "$linker_log" | tail -1)"
+          test -n "$enospc_class" -a -n "$linker_class"
+          test -s "$root/enospc-classification.json"
+          test -s "$root/linker-classification.json"
+          python3 - "$root/enospc-classification.json" "$root/linker-classification.json" <<'PY'
+          import json
+          import sys
+
+          for path in sys.argv[1:]:
+              classification = json.load(open(path))["classification"]
+              if classification not in {"ENOSPC", "LINKER_FAILURE"}:
+                  raise SystemExit(f"unexpected classifier receipt: {classification}")
+          PY
+          python3 - "$report" "$shm_size" "$shm_block_size" "$enospc_rc" "$enospc_class" "$linker_rc" "$linker_class" "$enospc_remaining" "$linker_remaining" <<'PY'
+          import json
+          import sys
+
+          (out, shm_size, shm_block_size, enospc_rc, enospc_class, linker_rc,
+           linker_class, enospc_remaining, linker_remaining) = sys.argv[1:]
+          json.dump({
+              "issue": 1670,
+              "runner": "GitHub-hosted ubuntu-24.04",
+              "filesystem": "/dev/shm tmpfs",
+              "bounded_filesystem_bytes": int(shm_size),
+              "filesystem_block_bytes": int(shm_block_size),
+              "enospc_remaining_bytes": int(enospc_remaining),
+              "linker_remaining_bytes": int(linker_remaining),
+              "enospc": {"exit_code": int(enospc_rc), "classification": enospc_class},
+              "linker": {"exit_code": int(linker_rc), "classification": linker_class},
+              "cleanup": "performed by EXIT trap",
+          }, open(out, "w"), indent=2)
+          PY
+          cp "$report" "$GITHUB_WORKSPACE/issue-1670-report.json"
+          cp "$enospc_log" "$GITHUB_WORKSPACE/issue-1670-enospc.log"
+          cp "$linker_log" "$GITHUB_WORKSPACE/issue-1670-linker.log"
+          {
+            echo "## Issue #1670 hosted evidence"
+            echo "- runner: GitHub-hosted ubuntu-24.04"
+            echo "- bounded filesystem: /dev/shm tmpfs (${shm_size} bytes)"
+            echo "- ENOSPC: exit=$enospc_rc classification=$enospc_class"
+            echo "- linker: exit=$linker_rc classification=$linker_class"
+            echo "- cleanup: performed by EXIT trap"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+          # A red command with either classifier result is required; the raw
+          # diagnostics remain in the uploaded logs for receipt review.
+          test "$enospc_rc" -ne 0
+          test "$linker_rc" -ne 0
+          [[ "$enospc_class" == ENOSPC || "$enospc_class" == LINKER_FAILURE ]]
+          [[ "$linker_class" == ENOSPC || "$linker_class" == LINKER_FAILURE ]]
+
+      - name: Upload reproducible evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-1670-hosted-classification
+          path: |
+            issue-1670-report.json
+            issue-1670-enospc.log
+            issue-1670-linker.log
+          if-no-files-found: error

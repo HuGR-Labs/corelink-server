@@ -10,6 +10,7 @@ sample count, fixture boundary, and strict p99 limit all pass.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -60,7 +61,12 @@ def _load_identity(path: Path, expected_source: str) -> dict[str, str]:
         raise ProbeError(f"identity input has wrong source: {path}")
     for field in IDENTITY_FIELDS:
         value = payload.get(field)
-        if not isinstance(value, str) or not value.strip():
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+            or len(value) > 256
+            or any(ord(char) < 0x20 or ord(char) == 0x7f for char in value)
+        ):
             raise ProbeError(f"identity input has empty {field}: {path}")
     return payload
 
@@ -69,6 +75,14 @@ def compare_identity(d02: dict[str, str], observed: dict[str, str]) -> None:
     mismatches = [field for field in IDENTITY_FIELDS if d02[field] != observed[field]]
     if mismatches:
         raise ProbeError("D02 identity mismatch: " + ", ".join(mismatches))
+
+
+def _identity_receipt(identity: dict[str, str]) -> dict[str, str]:
+    """Bind receipts without copying operator supplied values into artifacts."""
+    return {
+        f"{field}_sha256": hashlib.sha256(identity[field].encode("utf-8")).hexdigest()
+        for field in IDENTITY_FIELDS
+    }
 
 
 def parse_probe_output(output: str) -> dict[str, object]:
@@ -99,8 +113,8 @@ def parse_probe_output(output: str) -> dict[str, object]:
     p99_us = record["p99_us"]
     if isinstance(p99_us, bool) or not isinstance(p99_us, int) or p99_us < 0:
         raise ProbeError("probe p99 is not a non-negative integer")
-    if p99_us >= LIMIT_US:
-        raise ProbeError(f"probe p99 was not below 5ms: {p99_us}us")
+    if p99_us > LIMIT_US:
+        raise ProbeError(f"probe p99 exceeded 5ms: {p99_us}us")
     return record
 
 
@@ -184,6 +198,8 @@ def run_probe(
             "observed_source": "D03-observed",
             "fields_compared": list(IDENTITY_FIELDS),
             "match": True,
+            "baseline": _identity_receipt(d02),
+            "observed": _identity_receipt(observed),
         },
         "measurement": probe,
         "environment": {
@@ -208,7 +224,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.allow_run:
         raise ProbeError("--allow-run is required")
     run_probe(args.d02_identity, args.observed_identity, args.output)
-    print("B-251 latency probe: PASS (identity matched; samples=1000; p99<5ms)")
+    print("B-251 latency probe: PASS (identity matched; samples=1000; p99<=5ms)")
     return 0
 
 
