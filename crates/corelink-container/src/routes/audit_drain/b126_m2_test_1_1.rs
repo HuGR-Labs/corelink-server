@@ -55,6 +55,27 @@ fn resolve_key_id_empty_dedicated_falls_back_then_defaults() {
 }
 
 #[test]
+fn drain_batch_budget_defaults_to_the_bounded_production_value() {
+    assert_eq!(DEFAULT_AUDIT_DRAIN_BATCH_LIMIT, 512);
+    assert_eq!(parse_audit_drain_batch_limit(None), 512);
+    assert_eq!(parse_audit_drain_batch_limit(Some("")), 512);
+    assert_eq!(parse_audit_drain_batch_limit(Some(" 512 ")), 512);
+    assert_eq!(parse_audit_drain_batch_limit(Some("0")), 512);
+    assert_eq!(parse_audit_drain_batch_limit(Some("-1")), 512);
+    assert_eq!(parse_audit_drain_batch_limit(Some("not-a-number")), 512);
+}
+
+#[test]
+fn drain_batch_budget_keeps_positive_deployment_override() {
+    assert_eq!(parse_audit_drain_batch_limit(Some("1")), 1);
+    assert_eq!(parse_audit_drain_batch_limit(Some("2048")), 2048);
+    assert_eq!(
+        parse_audit_drain_batch_limit(Some("999999999")),
+        AUDIT_V2_MAX_ROWS_PER_TRANSACTION as i64
+    );
+}
+
+#[test]
 fn limit_prefix_seal_then_resume_equals_one_shot_seal() {
     // The batched-drain fix seals only an ordered PREFIX per call (LIMIT) and
     // the next call resumes from the advanced head. This MUST yield the exact
