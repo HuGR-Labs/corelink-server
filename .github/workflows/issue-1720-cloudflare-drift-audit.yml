@@ -1,0 +1,85 @@
+name: issue-1720 Cloudflare drift credential audit
+
+# #1720's token is issued and installed only through the owner-controlled
+# Cloudflare and GitHub Settings consoles. This bounded workflow consumes the
+# installed dedicated token, performs six read-only receipts, dispatches one
+# exact-ref Terraform drift run, and disables both workflows afterwards.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type issue-1720-audit-drift-token to run this bounded audit
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  audit:
+    if: github.event.inputs.confirm == 'issue-1720-audit-drift-token'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_TERRAFORM_DRIFT_API_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CF_ZONE_ID: ${{ vars.CF_ZONE_ID }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Verify dedicated credential inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in CLOUDFLARE_API_TOKEN CF_ACCOUNT_ID CF_ZONE_ID; do
+            [[ -n "${!key:-}" ]] || { echo "::error::Missing required $key"; exit 1; }
+          done
+          echo "::notice::Dedicated credential is present; values remain masked."
+
+      - name: Verify six read-only Cloudflare API receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          response_dir="$RUNNER_TEMP/issue-1720"
+          mkdir -p "$response_dir"
+          trap 'rm -rf "$response_dir"' EXIT
+          read_receipt() {
+            local label="$1" url="$2" output status codes
+            output="$response_dir/$(printf '%s' "$label" | tr ' ' '-').json"
+            status="$(curl --silent --show-error --output "$output" --write-out '%{http_code}' \
+              --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$url")"
+            if [[ "$status" != 2* ]] || ! jq -e '.success == true' "$output" >/dev/null; then
+              codes="$(jq -r '[.errors[]?.code] | join(",")' "$output" 2>/dev/null || true)"
+              echo "::error::$label read denied: HTTP $status provider_codes=${codes:-none}"
+              return 1
+            fi
+            echo "::notice::Read receipt PASS: $label"
+          }
+          read_receipt "Workers R2 Storage" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/r2/buckets?per_page=1"
+          read_receipt "D1" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/d1/database?per_page=1"
+          read_receipt "Workers KV Storage" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/storage/kv/namespaces?per_page=1"
+          read_receipt "Workers Scripts" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/scripts?per_page=1"
+          read_receipt "DNS" "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records?per_page=1"
+          read_receipt "Workers Routes" "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/workers/routes?per_page=1"
+          account_receipt="${CF_ACCOUNT_ID:0:6}...${CF_ACCOUNT_ID: -4}"
+          zone_receipt="${CF_ZONE_ID:0:6}...${CF_ZONE_ID: -4}"
+          echo "::notice::Scope receipt: account=$account_receipt zone=$zone_receipt account_reads=4 zone_reads=2"
+
+      - name: Dispatch one exact-ref Terraform drift run
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow enable terraform-drift.yml --repo "$GITHUB_REPOSITORY"
+          gh workflow run terraform-drift.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_SHA" --field region=wnam
+          echo "::notice::Terraform Drift Detection dispatched once at $GITHUB_SHA."
+
+      - name: Disable both bounded workflows
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow disable terraform-drift.yml --repo "$GITHUB_REPOSITORY" || true
+          gh workflow disable "$GITHUB_WORKFLOW" --repo "$GITHUB_REPOSITORY" || true
+          echo "::notice::Bounded workflows disabled after this attempt."
