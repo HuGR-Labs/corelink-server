@@ -429,7 +429,36 @@ jobs:
           PY
           }
 
+          # The margin fill leaves setup headroom for metadata, but a tiny
+          # linker output can still fit in that margin.  Consume the measured
+          # remaining blocks with a bounded second file after every setup step;
+          # commands, objects, logs, and reports stay outside this tmpfs while
+          # the output directory metadata is created before the drain.
+          drain_remaining_blocks() {
+            local fill="$1" available block_size max_blocks drain_rc remaining
+            block_size="$(stat -fc '%S' "$fs_root")"
+            available="$(df --output=avail -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+            test "$block_size" -gt 0
+            test "$available" -ge "$block_size"
+            max_blocks=$((available / block_size + 2))
+            test "$max_blocks" -le 1048576
+            set +e
+            timeout --signal=TERM 30s \
+              dd if=/dev/zero of="$fill" bs="$block_size" count="$max_blocks" status=none
+            drain_rc=$?
+            set -e
+            remaining="$(df --output=avail -B1 "$fs_root" | awk 'NR == 2 { print $1 }')"
+            case "$drain_rc" in
+              0|1) ;;
+              *) echo "bounded tmpfs drain failed with status $drain_rc" >&2; return 1 ;;
+            esac
+            test "$remaining" -lt "$block_size"
+            printf '%s\n' "$remaining"
+          }
+
+          mkdir -p "$fs_root/out"
           fill_to_margin "$fs_root/fill.bin"
+          enospc_remaining="$(drain_remaining_blocks "$fs_root/enospc-drain.bin")"
           set +e
           CORELINK_CLASSIFICATION_ARTIFACT="$PWD/artifacts/campaign-ci/i1670/enospc-classification.json" \
             scripts/run-with-infra-classification.sh \
@@ -442,22 +471,44 @@ jobs:
 
           rm -rf "$fs_root"
           mkdir -p "$fs_root"
+          mkdir -p "$fs_root/out"
           cat >"$root/main.c" <<'EOF'
           int main(void) { return 0; }
           EOF
           cc -c "$root/main.c" -o "$root/main.o"
+          linker_cmd="$root/linker.sh"
+          cat >"$linker_cmd" <<'EOF'
+          set -e
+          cc "$1" -o "$2"
+          EOF
+          chmod 700 "$linker_cmd"
           fill_to_margin "$fs_root/fill.bin"
+          linker_remaining="$(drain_remaining_blocks "$fs_root/linker-drain.bin")"
           set +e
           CORELINK_CLASSIFICATION_ARTIFACT="$PWD/artifacts/campaign-ci/i1670/linker-classification.json" \
             scripts/run-with-infra-classification.sh \
-            cc "$root/main.o" -o "$fs_root/linked" \
+            bash "$linker_cmd" "$root/main.o" "$fs_root/out/linked" \
             >artifacts/campaign-ci/i1670/linker.log 2>&1
           linker_rc=$?
           set -e
           test "$linker_rc" -ne 0
           grep -Eq '^classification: (ENOSPC|LINKER_FAILURE)$' artifacts/campaign-ci/i1670/linker.log
           grep -Eq 'No space left on device|os error 28|ENOSPC|collect2|ld:' artifacts/campaign-ci/i1670/linker.log
+          test -s artifacts/campaign-ci/i1670/enospc-classification.json
+          test -s artifacts/campaign-ci/i1670/linker-classification.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("artifacts/campaign-ci/i1670")
+          for name in ("enospc-classification.json", "linker-classification.json"):
+              classification = json.loads((root / name).read_text())["classification"]
+              if classification not in {"ENOSPC", "LINKER_FAILURE"}:
+                  raise SystemExit(f"unexpected classifier receipt: {classification}")
+          PY
           SHM_SIZE="$(df --output=size -B1 "$fs_root" | awk 'NR == 2 { print $1 }')" \
+          SHM_BLOCK_SIZE="$(stat -fc '%S' "$fs_root")" \
+          ENOSPC_REMAINING="$enospc_remaining" LINKER_REMAINING="$linker_remaining" \
           ENOSPC_RC="$enospc_rc" LINKER_RC="$linker_rc" python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -467,6 +518,9 @@ jobs:
               "runner": "ubuntu-24.04",
               "filesystem": "/dev/shm tmpfs",
               "bounded_filesystem_bytes": int(os.environ["SHM_SIZE"]),
+              "filesystem_block_bytes": int(os.environ["SHM_BLOCK_SIZE"]),
+              "enospc_remaining_bytes": int(os.environ["ENOSPC_REMAINING"]),
+              "linker_remaining_bytes": int(os.environ["LINKER_REMAINING"]),
               "enospc_exit": int(os.environ["ENOSPC_RC"]),
               "linker_exit": int(os.environ["LINKER_RC"]),
               "enospc_classification": json.loads((root / "enospc-classification.json").read_text())["classification"],
