@@ -1,0 +1,88 @@
+name: B-054 nonproduction key custody and rotation drill
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b054-key-custody-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  custody-rotation:
+    name: Protected nonproduction custody rotation
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: b054-key-custody-drill
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact main tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Compile custody drill without access to secrets
+        id: compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          metadata="$RUNNER_TEMP/b054-custody-build.jsonl"
+          cargo test --locked -p corelink-audit-chain --test b054_custody_drill --no-run --message-format=json >"$metadata"
+          python3 - "$metadata" "$GITHUB_OUTPUT" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          metadata = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+          binaries = []
+          for line in metadata:
+              try:
+                  message = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if message.get("reason") == "compiler-artifact" and message.get("target", {}).get("name") == "b054_custody_drill":
+                  executable = message.get("executable")
+                  if executable:
+                      binaries.append(executable)
+          if len(binaries) != 1:
+              raise SystemExit("could not identify the single protected custody test binary")
+          with pathlib.Path(sys.argv[2]).open("a", encoding="utf-8") as output:
+              output.write(f"test_binary={binaries[0]}\n")
+          PY
+
+      - name: Run protected rotation and historical verification
+        shell: bash
+        env:
+          B054_E1_SIGNING_SEED_HEX: ${{ secrets.B054_E1_SIGNING_SEED_HEX }}
+          B054_E1_LINK_KEY_HEX: ${{ secrets.B054_E1_LINK_KEY_HEX }}
+          B054_E2_SIGNING_SEED_HEX: ${{ secrets.B054_E2_SIGNING_SEED_HEX }}
+          B054_E2_LINK_KEY_HEX: ${{ secrets.B054_E2_LINK_KEY_HEX }}
+          B054_RECEIPT_PATH: ${{ runner.temp }}/b054-custody-rotation-receipt.json
+          TEST_BINARY: ${{ steps.compile.outputs.test_binary }}
+        run: |
+          set -euo pipefail
+          set +x
+          transcript="$RUNNER_TEMP/b054-custody-test.log"
+          if ! "$TEST_BINARY" --ignored --nocapture >"$transcript" 2>&1; then
+            echo "::error::B-054 protected custody drill failed; transcript withheld to protect secret material."
+            exit 1
+          fi
+          python3 scripts/verify_b054_custody_redaction.py "$transcript" "$B054_RECEIPT_PATH"
+          echo "B-054 mutation-sensitive custody and rotation assertions passed."
+          cat "$B054_RECEIPT_PATH" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload redacted custody receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b054-custody-rotation-${{ github.run_id }}
+          path: ${{ runner.temp }}/b054-custody-rotation-receipt.json
+          if-no-files-found: error
+          retention-days: 90

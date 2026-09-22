@@ -70,3 +70,6 @@ jobs:
           cargo test --locked -p corelink-audit-chain --lib epoch -- --nocapture
           cargo test --locked -p corelink-audit-chain --lib sealed_archive -- --nocapture
           cargo test --locked -p corelink-audit-chain --lib object_lock_archive -- --nocapture
+
+      - name: Compile protected custody drill without secrets
+        run: cargo test --locked -p corelink-audit-chain --test b054_custody_drill --no-run
