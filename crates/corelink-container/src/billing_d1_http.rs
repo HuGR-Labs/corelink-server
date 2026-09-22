@@ -531,12 +531,18 @@ impl BillingD1Writer for D1HttpBillingWriter {
                         json!(max_vcpu_h),
                         json!(tenant_id),
                         json!(authority_key),
+                        json!(subscription_id),
                     ],
                 )
             }
             None => D1BatchStatement::new(
                 SQL_CAS_DELETE_RUNNERS_ENTITLEMENT,
-                vec![json!(tenant_id), json!(tenant_id), json!(authority_key)],
+                vec![
+                    json!(tenant_id),
+                    json!(tenant_id),
+                    json!(authority_key),
+                    json!(subscription_id),
+                ],
             ),
         };
         let results = self.run_batch(vec![
@@ -546,6 +552,7 @@ impl BillingD1Writer for D1HttpBillingWriter {
                     json!(tenant_id),
                     json!(subscription_id),
                     json!(authority_key),
+                    json!(if entitlement.is_some() { 1_i64 } else { 0_i64 }),
                     json!(now_ms),
                 ],
             ),
@@ -559,21 +566,21 @@ impl BillingD1Writer for D1HttpBillingWriter {
         let current = results
             .get(2)
             .and_then(|rows| rows.first())
-            .and_then(|row| row.get("authority_key"))
-            .and_then(Value::as_str)
+            .and_then(|row| {
+                Some((
+                    row.get("authority_key")?.as_str()?,
+                    row.get("stripe_subscription_id")?.as_str()?,
+                ))
+            })
             .ok_or_else(|| {
                 BillingD1Error::Transient(
                     "d1-http-billing: runner entitlement fence disappeared during CAS".to_owned(),
                 )
             })?;
-        if current == authority_key {
+        if current.0 == authority_key && current.1 == subscription_id {
             Ok(EntitlementCasOutcome::Duplicate)
-        } else if current > authority_key {
-            Ok(EntitlementCasOutcome::Stale)
         } else {
-            Err(BillingD1Error::Transient(
-                "d1-http-billing: runner entitlement fence ordering is invalid".to_owned(),
-            ))
+            Ok(EntitlementCasOutcome::Stale)
         }
     }
 }

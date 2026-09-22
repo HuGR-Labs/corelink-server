@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS runner_entitlement_reconcile_fence (
     tenant_id             TEXT PRIMARY KEY,
     stripe_subscription_id TEXT NOT NULL,
     authority_key         TEXT NOT NULL CHECK (length(authority_key) > 0),
+    is_granting           INTEGER NOT NULL CHECK (is_granting IN (0, 1)),
     applied_at_ms         INTEGER NOT NULL
 );
 

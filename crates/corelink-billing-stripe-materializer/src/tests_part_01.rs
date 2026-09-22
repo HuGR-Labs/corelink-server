@@ -134,8 +134,12 @@ fn runners_entitlement_cas_is_idempotent_and_rejects_stale_keys() {
 #[test]
 fn runner_cas_sql_keeps_fence_and_mutation_tenant_scoped() {
     assert!(SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE.contains("ON CONFLICT(tenant_id)"));
+    assert!(SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE.contains("is_granting"));
+    assert!(SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE.contains("stripe_subscription_id <>"));
     assert!(SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT.contains("authority_key = ?"));
+    assert!(SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT.contains("stripe_subscription_id = ?"));
     assert!(SQL_CAS_DELETE_RUNNERS_ENTITLEMENT.contains("authority_key = ?"));
+    assert!(SQL_CAS_DELETE_RUNNERS_ENTITLEMENT.contains("stripe_subscription_id = ?"));
     assert!(SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT.contains("WHERE EXISTS"));
     assert!(SQL_CAS_DELETE_RUNNERS_ENTITLEMENT.contains("WHERE tenant_id = ?"));
 }

@@ -528,6 +528,64 @@ fn stale_runner_update_and_delete_converge_to_current_active_subscription() {
 }
 
 #[test]
+fn replaced_subscription_identity_is_tenant_authority() {
+    // A replacement keeps the tenant's entitlement authority while Stripe
+    // changes the subscription id. Equal-period keys must still converge in
+    // either delivery order: the successor grant replaces the predecessor
+    // revoke, and the predecessor revoke cannot replace the successor grant.
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    let old_key = "stripe:00000000000000180000:080:price_runner_team";
+    let new_key = "stripe:00000000000000180000:010:price_runner_team";
+    authority.set_with_key("sub_predecessor", "canceled", "price_runner_team", old_key);
+    authority.set_with_key("sub_successor", "active", "price_runner_team", new_key);
+
+    let predecessor = env(
+        "evt_predecessor_cancel",
+        "customer.subscription.deleted",
+        serde_json::json!({
+            "object": { "id": "sub_predecessor", "status": "canceled",
+                "metadata": { "tenant_id": "ten_replaced" },
+                "plan": { "id": "price_runner_team" } }
+        }),
+    );
+    let successor = env(
+        "evt_successor_active",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": { "id": "sub_successor", "status": "active",
+                "metadata": { "tenant_id": "ten_replaced" },
+                "plan": { "id": "price_runner_team" } }
+        }),
+    );
+
+    handler.on_subscription_deleted(&predecessor).unwrap();
+    assert_eq!(d1.runners_entitlement_of("ten_replaced"), None);
+    handler.on_subscription_updated(&successor).unwrap();
+    handler.on_subscription_updated(&successor).unwrap();
+    assert_eq!(d1.runners_entitlement_of("ten_replaced"), Some((80, 600)));
+    assert_eq!(
+        d1.runner_fence_of("ten_replaced"),
+        Some((new_key.to_owned(), "sub_successor".to_owned(), true))
+    );
+
+    // Reverse delivery is the failure mode from #1844: once the successor
+    // owns the tenant fence, the predecessor cannot revoke it.
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    authority.set_with_key("sub_predecessor", "canceled", "price_runner_team", old_key);
+    authority.set_with_key("sub_successor", "active", "price_runner_team", new_key);
+    handler.on_subscription_updated(&successor).unwrap();
+    assert!(matches!(
+        handler.on_subscription_deleted(&predecessor),
+        Err(MaterializerError::Transient(_))
+    ));
+    assert_eq!(d1.runners_entitlement_of("ten_replaced"), Some((80, 600)));
+    assert_eq!(
+        d1.runner_fence_of("ten_replaced"),
+        Some((new_key.to_owned(), "sub_successor".to_owned(), true))
+    );
+}
+
+#[test]
 fn runner_create_reconciles_the_current_snapshot() {
     let (handler, d1, _audit, authority) = fixture_with_runners();
     authority.set("sub_run", "active", "price_runner_team");
