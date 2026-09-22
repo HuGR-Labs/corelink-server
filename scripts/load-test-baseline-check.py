@@ -73,9 +73,19 @@ import json
 import math
 import os
 import pathlib
+import re
 import sys
+from dataclasses import dataclass
 
-BASELINE_SCHEMA = 1
+BASELINE_SCHEMA = 2
+BASELINE_VERSION = "k6-baseline-v2"
+SUMMARY_SCHEMA = 1
+SUITE_VERSION = "r3-prep-v2"
+CANONICAL_TARGET = "https://staging.corelink.humangr.com"
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+TENANT_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 REQUIRED_SCENARIOS = frozenset({"signup", "webhook", "dsr", "cas", "byok"})
 
 # Default regression threshold: a scenario fails when its current median is
@@ -94,6 +104,23 @@ class InputError(ValueError):
 
 class BaselineError(ValueError):
     """A stored baseline exists but cannot be trusted."""
+
+
+@dataclass(frozen=True)
+class RunIdentity:
+    """Public identity that makes a measurement portable only to its target."""
+
+    target: str
+    tenant_id: str
+    deployment_sha: str
+    suite_version: str
+
+
+@dataclass(frozen=True)
+class BaselineRecord:
+    identity: RunIdentity
+    scenarios: dict[str, dict[str, float]]
+    threshold: float
 
 
 def _finite_positive(value: object, *, label: str) -> float:
@@ -121,10 +148,13 @@ def _now() -> str:
 
 
 def collect_current(
-    results_dir: pathlib.Path, expected: set[str] | None = None
+    results_dir: pathlib.Path,
+    expected: set[str] | None = None,
+    identity: RunIdentity | None = None,
 ) -> dict[str, dict[str, float | None]]:
-    """Read every `summary.json` under results_dir into {scenario: stats}."""
+    """Read only sanitized summaries and bind every row to one run identity."""
     out: dict[str, dict[str, float | None]] = {}
+    observed: RunIdentity | None = None
     if not results_dir.exists():
         return out
     for summary in sorted(results_dir.rglob("summary.json")):
@@ -134,6 +164,29 @@ def collect_current(
             raise InputError(f"failed to parse {summary}: {exc}") from exc
         if not isinstance(data, dict):
             raise InputError(f"{summary} is not a JSON object")
+        if data.get("schema") != SUMMARY_SCHEMA or data.get("suite_version") != SUITE_VERSION:
+            raise InputError(f"{summary} is not a sanitized {SUITE_VERSION} summary")
+        scenario = summary.parent.name
+        if data.get("scenario") != scenario:
+            raise InputError(f"{summary} scenario identity does not match its artifact path")
+        target = data.get("target")
+        tenant_id = data.get("tenant_id")
+        deployment_sha = data.get("deployment_sha")
+        if not all(isinstance(value, str) and value.strip() for value in (target, tenant_id, deployment_sha)):
+            raise InputError(f"{summary} is missing target identity")
+        if target != CANONICAL_TARGET:
+            raise InputError(f"{summary} is bound to an unexpected target")
+        if not TENANT_RE.fullmatch(tenant_id):
+            raise InputError(f"{summary} has an invalid tenant identity")
+        if not SHA_RE.fullmatch(deployment_sha):
+            raise InputError(f"{summary} has an invalid deployment identity")
+        current_identity = RunIdentity(target, tenant_id, deployment_sha, data["suite_version"])
+        if observed is None:
+            observed = current_identity
+        elif current_identity != observed:
+            raise InputError(f"{summary} target, tenant, deployment, or suite identity differs")
+        if identity is not None and current_identity != identity:
+            raise InputError(f"{summary} identity does not match the run identity")
         metrics = data.get("metrics")
         if not isinstance(metrics, dict):
             raise InputError(f"{summary} has no metrics object")
@@ -144,7 +197,6 @@ def collect_current(
         p99 = dur.get("p(99)")
         if median is None:
             raise InputError(f"{summary} has no http_req_duration.med")
-        scenario = summary.parent.name
         if scenario in out:
             raise InputError(
                 f"duplicate k6 summary for scenario {scenario!r}; refusing to choose one"
@@ -165,7 +217,50 @@ def collect_current(
     return out
 
 
-def load_baseline(path: pathlib.Path) -> dict[str, dict[str, float]]:
+def collect_identity(results_dir: pathlib.Path, expected: set[str]) -> RunIdentity:
+    """Collect the identity from the same complete sanitized population."""
+    if not results_dir.exists():
+        raise InputError(f"results directory {results_dir} is missing")
+    identities: set[RunIdentity] = set()
+    summaries = sorted(results_dir.rglob("summary.json"))
+    if not summaries:
+        raise InputError("current run produced no sanitized k6 summaries")
+    for summary in summaries:
+        try:
+            data = json.loads(summary.read_text())
+        except (OSError, ValueError) as exc:
+            raise InputError(f"failed to parse {summary}: {exc}") from exc
+        if not isinstance(data, dict):
+            raise InputError(f"{summary} is not a JSON object")
+        if data.get("schema") != SUMMARY_SCHEMA or data.get("suite_version") != SUITE_VERSION:
+            raise InputError(f"{summary} is not a sanitized {SUITE_VERSION} summary")
+        scenario = summary.parent.name
+        if data.get("scenario") != scenario or scenario not in expected:
+            raise InputError(f"{summary} has an unexpected scenario identity")
+        identity = RunIdentity(
+            data.get("target"), data.get("tenant_id"), data.get("deployment_sha"), data["suite_version"]
+        )
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (
+                identity.target,
+                identity.tenant_id,
+                identity.deployment_sha,
+                identity.suite_version,
+            )
+        ):
+            raise InputError(f"{summary} is missing target identity")
+        if identity.target != CANONICAL_TARGET:
+            raise InputError(f"{summary} is bound to an unexpected target")
+        if not TENANT_RE.fullmatch(identity.tenant_id) or not SHA_RE.fullmatch(identity.deployment_sha):
+            raise InputError(f"{summary} has an invalid tenant or deployment identity")
+        identities.add(identity)
+    if len(identities) != 1:
+        raise InputError("current summaries are not bound to one target, tenant, and deployment")
+    return next(iter(identities))
+
+
+def load_baseline_record(path: pathlib.Path) -> BaselineRecord:
     if not path.exists():
         raise BaselineError(f"baseline {path} is missing")
     try:
@@ -178,11 +273,34 @@ def load_baseline(path: pathlib.Path) -> dict[str, dict[str, float]]:
         raise BaselineError(
             f"baseline {path} has unsupported schema {data.get('schema')!r}"
         )
+    if data.get("baseline_version") != BASELINE_VERSION:
+        raise BaselineError(f"baseline {path} has an unsupported baseline version")
+    if data.get("suite_version") != SUITE_VERSION:
+        raise BaselineError(f"baseline {path} has an unsupported suite version")
     if data.get("metric") != "http_req_duration.med (ms)":
         raise BaselineError(f"baseline {path} has an unexpected metric")
     for field in ("captured_at", "commit"):
         if not isinstance(data.get(field), str) or not data[field].strip():
             raise BaselineError(f"baseline {path} is missing metadata field {field!r}")
+    threshold = data.get("threshold_multiplier")
+    try:
+        threshold = _finite_positive(threshold, label=f"baseline {path} threshold_multiplier")
+    except InputError as exc:
+        raise BaselineError(str(exc)) from exc
+    if threshold <= 1.0:
+        raise BaselineError(f"baseline {path} threshold_multiplier must be > 1.0")
+    identity_data = data.get("identity")
+    if not isinstance(identity_data, dict) or set(identity_data) != {
+        "target",
+        "tenant_id",
+        "deployment_sha",
+    }:
+        raise BaselineError(f"baseline {path} has no exact target identity")
+    target = identity_data.get("target")
+    tenant_id = identity_data.get("tenant_id")
+    deployment_sha = identity_data.get("deployment_sha")
+    if target != CANONICAL_TARGET or not isinstance(tenant_id, str) or not TENANT_RE.fullmatch(tenant_id) or not isinstance(deployment_sha, str) or not SHA_RE.fullmatch(deployment_sha):
+        raise BaselineError(f"baseline {path} has an invalid target identity")
     scenarios = data.get("scenarios")
     if not isinstance(scenarios, dict):
         raise BaselineError(f"baseline {path} has no `scenarios` map")
@@ -202,7 +320,16 @@ def load_baseline(path: pathlib.Path) -> dict[str, dict[str, float]]:
         except InputError as exc:
             raise BaselineError(str(exc)) from exc
         validated[scenario] = {"median_ms": median_ms, "p99_ms": p99_ms}
-    return validated
+    return BaselineRecord(
+        identity=RunIdentity(target, tenant_id, deployment_sha, data["suite_version"]),
+        scenarios=validated,
+        threshold=threshold,
+    )
+
+
+def load_baseline(path: pathlib.Path) -> dict[str, dict[str, float]]:
+    """Compatibility view for callers that only need scenario measurements."""
+    return load_baseline_record(path).scenarios
 
 
 def collect_statuses(results_dir: pathlib.Path, expected: set[str]) -> None:
@@ -248,15 +375,27 @@ def write_baseline(
     path: pathlib.Path,
     scenarios: dict[str, dict[str, float]],
     commit: str,
+    identity: RunIdentity,
+    threshold: float,
 ) -> None:
+    if not math.isfinite(threshold) or threshold <= 1.0:
+        raise BaselineError("cannot write a baseline with an invalid threshold")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
             {
                 "schema": BASELINE_SCHEMA,
+                "baseline_version": BASELINE_VERSION,
+                "suite_version": SUITE_VERSION,
                 "captured_at": _now(),
                 "commit": commit,
                 "metric": "http_req_duration.med (ms)",
+                "threshold_multiplier": threshold,
+                "identity": {
+                    "target": identity.target,
+                    "tenant_id": identity.tenant_id,
+                    "deployment_sha": identity.deployment_sha,
+                },
                 "scenarios": scenarios,
             },
             indent=2,
@@ -328,7 +467,8 @@ def main(argv: list[str]) -> int:
             raise InputError("--expected-scenarios must define a non-empty population")
         expected_set = set(expected)
         collect_statuses(results_dir, expected_set)
-        current = collect_current(results_dir, expected_set)
+        current_identity = collect_identity(results_dir, expected_set)
+        current = collect_current(results_dir, expected_set, current_identity)
     except InputError as exc:
         print(f"::error::{exc}")
         return EXIT_USAGE
@@ -354,9 +494,21 @@ def main(argv: list[str]) -> int:
         return EXIT_OK
 
     try:
-        baseline = load_baseline(baseline_path)
+        baseline_record = load_baseline_record(baseline_path)
     except BaselineError as exc:
         print(f"::error::{exc}")
+        return EXIT_USAGE
+    if baseline_record.identity != current_identity:
+        print("::error::baseline target, tenant, deployment, or suite identity does not match current summaries")
+        return EXIT_USAGE
+    if baseline_record.threshold != threshold:
+        print(
+            f"::error::baseline threshold {baseline_record.threshold} does not match requested {threshold}"
+        )
+        return EXIT_USAGE
+    baseline = baseline_record.scenarios
+    if set(baseline) != expected_set:
+        print("::error::baseline scenario population does not exactly match the current run")
         return EXIT_USAGE
     lines: list[str] = []
     regressions: list[str] = []
@@ -410,7 +562,7 @@ def main(argv: list[str]) -> int:
     else:
         merged = dict(baseline)
         merged.update(current)
-        write_baseline(baseline_path, merged, args.commit)
+        write_baseline(baseline_path, merged, args.commit, current_identity, threshold)
         print(
             f"PASS — {compared} scenario(s) compared against the stored "
             f"baseline, all within {(threshold - 1.0) * 100:.0f}%. Baseline updated."

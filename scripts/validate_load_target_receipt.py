@@ -20,8 +20,19 @@ from urllib.parse import urlsplit
 CANONICAL_TARGET = "https://staging.corelink.humangr.com"
 RECEIPT_SCHEMA = 1
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+TENANT_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-REQUIRED = {"schema", "environment", "target", "deployment_sha", "issued_at", "expires_at"}
+REQUIRED = {
+    "schema",
+    "environment",
+    "target",
+    "tenant_id",
+    "deployment_sha",
+    "issued_at",
+    "expires_at",
+}
 WORKFLOW_REQUIREMENTS = (
     "workflow_dispatch:",
     "Type \"run-bounded-load\"",
@@ -82,6 +93,9 @@ def validate(receipt: object, target: str, *, now: dt.datetime | None = None) ->
     deployment_sha = receipt.get("deployment_sha")
     if not isinstance(deployment_sha, str) or not SHA_RE.fullmatch(deployment_sha):
         raise ReceiptError("deployment_sha must be a 40 character lowercase commit SHA")
+    tenant_id = receipt.get("tenant_id")
+    if not isinstance(tenant_id, str) or not TENANT_RE.fullmatch(tenant_id):
+        raise ReceiptError("tenant_id must be a lowercase canonical UUID")
     issued = _timestamp(receipt.get("issued_at"), "issued_at")
     expires = _timestamp(receipt.get("expires_at"), "expires_at")
     current = now or dt.datetime.now(dt.UTC)
@@ -93,6 +107,7 @@ def validate(receipt: object, target: str, *, now: dt.datetime | None = None) ->
         "schema": RECEIPT_SCHEMA,
         "environment": "staging",
         "target": CANONICAL_TARGET,
+        "tenant_id": tenant_id,
         "deployment_sha": deployment_sha,
         "issued_at": receipt["issued_at"],
         "expires_at": receipt["expires_at"],

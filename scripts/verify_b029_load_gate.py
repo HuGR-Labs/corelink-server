@@ -24,6 +24,7 @@ from pathlib import Path
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ".github/workflows/load-test-nightly.yml"
 COMPARATOR = "scripts/load-test-baseline-check.py"
+SANITIZER = "scripts/sanitize_k6_summary.py"
 OPERATOR_README = "tests/load/README.md"
 COMPARE_STEP = "compare median vs stored baseline"
 CANONICAL_STAGING_HOST = "staging.corelink.humangr.com"
@@ -583,9 +584,24 @@ def assess(root: Path, *, expect: str) -> list[str]:
     try:
         workflow = workflow_path.read_text(encoding="utf-8")
         comparator = comparator_path.read_text(encoding="utf-8")
+        sanitizer = (root / SANITIZER).read_text(encoding="utf-8")
         readme = readme_path.read_text(encoding="utf-8")
     except OSError as exc:
         return [f"instrument error: {exc}"]
+
+    if "BASELINE_SCHEMA = 2" not in comparator or 'BASELINE_VERSION = "k6-baseline-v2"' not in comparator:
+        gaps.append("baseline schema/version is not explicit")
+    if 'DEFAULT_REGRESSION_THRESHOLD = 1.20' not in comparator or "threshold_multiplier" not in comparator:
+        gaps.append("baseline threshold is not explicit")
+    if 'SUITE_VERSION = "r3-prep-v2"' not in comparator or 'SUITE_VERSION = "r3-prep-v2"' not in sanitizer:
+        gaps.append("load suite version is not explicit")
+    for needle in (
+        "sanitize_k6_summary.py",
+        "summary.raw.json",
+        "--summary-export tests/load/results/${{ matrix.scenario.id }}/summary.raw.json",
+    ):
+        if needle not in workflow:
+            gaps.append(f"workflow does not require sanitized summaries: {needle}")
 
     gaps.extend(_hostname_gaps(root))
 
