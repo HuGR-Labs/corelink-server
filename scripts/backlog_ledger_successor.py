@@ -71,18 +71,19 @@ SPRINT3_FIELDS = {
 
 # One reviewed bridge repairs a recorded v0003 successor that was followed by
 # unrecorded, main-only BACKLOG drift. It does not rewrite v0003: it pins both
-# sides of the gap, admits only the B-154 conjunction below, and returns the
-# chain to ordinary append-only successor validation at v0004.
-B154_RECONCILIATION = {
+# sides of the gap, admits only the B-098 census correction and B-154
+# conjunction below, and returns the chain to ordinary append-only successor
+# validation at v0004.
+V0004_RECONCILIATION = {
     "sequence": 4,
     "previous_sequence": 3,
     "base_commit": "0f90d89e0710e88e297d39b16e0fdad390bdcafc",
     "previous_source_sha256": "41726d6c8b2f4b1dc7ff35466a78c242e147b99eaca69a956064024e04212e23",
     "prior_source_sha256": "c272de9f9cc4e6ae36bddbff4c97012d8589150a22c0038e0875a6ddf855ac87",
-    "source_sha256": "208c18517916ad39d262ff76fdf99765b678f9d1b768f4f107173beb21f663b4",
+    "source_sha256": "74a71eb5ea5833e1bde69a30c46076a9c4519128a5f6db123a6f5ade1bdb800e",
     "prior_ledger_sha256": "02d81ecf3ade17a5317b3f24e68a17a801837bde6112cac9288b6a7f6175b656",
     "ledger_sha256": "594ea8bf766a73a0349e8f644007d16cf39543339edc458e779499aa87f8d76b",
-    "changed_ids": ["B-154"],
+    "changed_ids": ["B-098", "B-154"],
     "catalog_sha256": {
         "docs/campaigns/remediation/work-packages/B001-B045.md": "2a1735804f43bb726789b99ee80c14cf876f41eb6c684e3ea54e68981413cd38",
         "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
@@ -144,12 +145,12 @@ def install(api):
                 return False
         return True
 
-    def _b154_reconciliation_authorized(
+    def _v0004_reconciliation_authorized(
         previous: dict[str, object], prior: dict[str, bytes], current: dict[str, bytes],
         receipt: dict[str, object], sequence: int,
     ) -> bool:
         """Authorize the sole v0003-to-v0004 gap repair by complete byte binding."""
-        pinned = B154_RECONCILIATION
+        pinned = V0004_RECONCILIATION
         if (
             sequence != pinned["sequence"]
             or previous.get("sequence") != pinned["previous_sequence"]
@@ -435,7 +436,7 @@ def install(api):
         sprint3_rewrite = _sprint3_rewrite_authorized(
             prior, current, receipt, sequence,
         )
-        b154_reconciliation = previous is not None and _b154_reconciliation_authorized(
+        v0004_reconciliation = previous is not None and _v0004_reconciliation_authorized(
             previous, prior, current, receipt, sequence,
         )
         for item_id in changed:
@@ -443,7 +444,10 @@ def install(api):
                 continue
             if not (
                 (sprint3_rewrite and item_id in SPRINT3_CHANGED_IDS)
-                or (b154_reconciliation and item_id == "B-154")
+                or (
+                    v0004_reconciliation
+                    and item_id in V0004_RECONCILIATION["changed_ids"]
+                )
             ) and (
                 _normative_section(old_sections[item_id], item_id)
                 != _normative_section(new_sections[item_id], item_id)
@@ -478,7 +482,7 @@ def install(api):
             backlog_verify.parse(prior["BACKLOG.md"].decode("utf-8")),
             today or backlog_verify.dt.date.today(),
             allow_sprint3_rewrite=sprint3_rewrite,
-            allow_b154_reconciliation=b154_reconciliation,
+            allow_b154_reconciliation=v0004_reconciliation,
             successor_mode=True,
         )
         if transition_errors:
@@ -545,12 +549,12 @@ def install(api):
                 raise LedgerError(f"{path}: prior snapshot differs from immutable BASE")
             prior = _git_state_bytes(root, base_sha)
             current = _git_state_bytes(root, commits[0])
-            b154_reconciliation = _b154_reconciliation_authorized(
+            v0004_reconciliation = _v0004_reconciliation_authorized(
                 previous, prior, current, receipt, index + 3,
             )
             if (
                 _sha256(prior["BACKLOG.md"]) != previous["source_sha256"]
-                and not b154_reconciliation
+                and not v0004_reconciliation
             ):
                 raise LedgerError(f"{path}: prior BACKLOG differs from prior snapshot")
             if index + 1 < len(paths):
@@ -564,7 +568,7 @@ def install(api):
                     ).stdout.strip(),
                 )
                 next_prior = _git_state_bytes(root, next_receipt["base_commit"])
-                bridge = _b154_reconciliation_authorized(
+                bridge = _v0004_reconciliation_authorized(
                     receipt, next_prior, next_current, next_receipt, index + 4,
                 )
                 if current != next_prior and not bridge:
@@ -575,7 +579,7 @@ def install(api):
                 bridge = (
                     pending_receipt is not None
                     and pending_current is not None
-                    and _b154_reconciliation_authorized(
+                    and _v0004_reconciliation_authorized(
                         receipt, _state_bytes(root), pending_current,
                         pending_receipt, index + 4,
                     )
@@ -663,7 +667,7 @@ def install(api):
         )
         if (
             receipt["prior_source_sha256"] != previous["source_sha256"]
-            and not _b154_reconciliation_authorized(
+            and not _v0004_reconciliation_authorized(
                 previous, prior, current, receipt, len(base_paths) + 3,
             )
         ):
@@ -692,7 +696,7 @@ def install(api):
     return SimpleNamespace(
         _sha256=_sha256,
         _sprint3_rewrite_authorized=_sprint3_rewrite_authorized,
-        _b154_reconciliation_authorized=_b154_reconciliation_authorized,
+        _v0004_reconciliation_authorized=_v0004_reconciliation_authorized,
         _normative_section=_normative_section,
         _catalog_relatives=_catalog_relatives,
         _state_bytes=_state_bytes,

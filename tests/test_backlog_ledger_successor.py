@@ -173,11 +173,11 @@ def test_exact_rewrite_authorization_binds_both_sources_ids_and_fields(tmp_path,
     assert not authorized(prior, current, receipt, 3)
 
 
-def test_b154_reconciliation_snapshot_is_fully_pinned():
+def test_v0004_reconciliation_snapshot_is_fully_pinned():
     receipt = json.loads((
         ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0004.json"
     ).read_text())
-    pinned = successor.B154_RECONCILIATION
+    pinned = successor.V0004_RECONCILIATION
     assert receipt["sequence"] == pinned["sequence"]
     for key in (
         "base_commit", "prior_source_sha256", "source_sha256",
@@ -190,9 +190,9 @@ def test_b154_reconciliation_snapshot_is_fully_pinned():
     assert ledger._sha256(ledger.LEDGER_PATH.read_bytes()) == pinned["ledger_sha256"]
 
 
-def test_b154_reconciliation_authorization_rejects_any_byte_drift():
+def test_v0004_reconciliation_authorization_rejects_any_byte_drift():
     policy = ledger._successor_policy()
-    pinned = successor.B154_RECONCILIATION
+    pinned = successor.V0004_RECONCILIATION
     prior = {}
     for relative in (
         Path("BACKLOG.md"), ledger.LEDGER_RELATIVE, *policy._catalog_relatives(),
@@ -208,9 +208,11 @@ def test_b154_reconciliation_authorization_rejects_any_byte_drift():
     receipt = json.loads((
         ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0004.json"
     ).read_text())
-    authorized = policy._b154_reconciliation_authorized
+    authorized = policy._v0004_reconciliation_authorized
     assert authorized(previous, prior, current, receipt, 4)
-    assert not authorized(previous, prior, current, {**receipt, "changed_ids": []}, 4)
+    assert not authorized(
+        previous, prior, current, {**receipt, "changed_ids": ["B-154"]}, 4,
+    )
     assert not authorized(
         previous,
         {**prior, "BACKLOG.md": prior["BACKLOG.md"] + b"\n"},

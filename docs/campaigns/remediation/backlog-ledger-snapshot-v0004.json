@@ -5,7 +5,7 @@
   "base_commit": "0f90d89e0710e88e297d39b16e0fdad390bdcafc",
   "prior_snapshot_sha256": "7905cc11ea88311581a53ca64fc01d567311d7419f0e93efff5f714385bb4e6a",
   "prior_source_sha256": "c272de9f9cc4e6ae36bddbff4c97012d8589150a22c0038e0875a6ddf855ac87",
-  "source_sha256": "208c18517916ad39d262ff76fdf99765b678f9d1b768f4f107173beb21f663b4",
+  "source_sha256": "74a71eb5ea5833e1bde69a30c46076a9c4519128a5f6db123a6f5ade1bdb800e",
   "prior_ledger_sha256": "02d81ecf3ade17a5317b3f24e68a17a801837bde6112cac9288b6a7f6175b656",
   "ledger_sha256": "594ea8bf766a73a0349e8f644007d16cf39543339edc458e779499aa87f8d76b",
   "prior_catalog_sha256": {
@@ -42,6 +42,7 @@
     "B-316"
   ],
   "changed_ids": [
+    "B-098",
     "B-154"
   ]
 }
