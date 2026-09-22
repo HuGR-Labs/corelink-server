@@ -79,6 +79,17 @@ def test_b083_lifecycle_evidence_green_then_named_red_mutants() -> None:
         assert secret_material.returncode != 0
         assert "credential or private-key material" in secret_material.stderr
 
+        raw = (ROOT / EVIDENCE).read_text(encoding="utf-8")
+        duplicate_key = raw.replace(
+            '"evidence_state": "BLOCKED"',
+            '"evidence_state": "BLOCKED", "evidence_state": "BLOCKED"',
+            1,
+        )
+        path.write_text(duplicate_key, encoding="utf-8")
+        duplicate_record = _run(tree)
+        assert duplicate_record.returncode != 0
+        assert "duplicate JSON key: evidence_state" in duplicate_record.stderr
+
         verified = _verified_record()
         path.write_text(json.dumps(verified), encoding="utf-8")
         verified_green = _run(tree)
