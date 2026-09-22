@@ -10,7 +10,7 @@ import { runQuotaBatch, secondsUntilNextMonthStart } from "./lib/quota.js";
 import { quotaExceededResponse } from "./index_observability.js";
 import { findMissingResponseBody, shadowCompareEdgeFindMissing } from "./lib/edge_find_missing.js";
 import { shadowCompareEdgePublicRead } from "./lib/edge_public_read.js";
-import { patRowKvKey } from "./lib/pat_verify_cache.js";
+import { invalidatePatVerifyCache, patRowKvKey } from "./lib/pat_verify_cache.js";
 import { getServerNonce } from "./index_common.js";
 import { reapiError } from "./index_common.js";
 import { originSubPhases, wdbControlPhase } from "./index_observability.js";
@@ -181,6 +181,7 @@ export async function finishResponse(
         : null;
     finalHeaders.delete("x-corelink-pat-cache-invalidate");
     if (revokedTokenId !== null && revokedTokenId.length > 0) {
+      invalidatePatVerifyCache(revokedTokenId);
       const revokeKv = (env as unknown as {
         METADATA_KV?: { delete(key: string): Promise<void> };
       }).METADATA_KV;

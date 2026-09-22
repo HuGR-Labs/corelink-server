@@ -181,7 +181,26 @@ const patCache = new Map<string, CachedEntry>();
  * ONE D1 read (collapses a same-token burst instead of stampeding D1). Entries
  * are removed as soon as the read settles.
  */
-const inflight = new Map<string, Promise<PatVerifyResult>>();
+interface InFlightVerify {
+  readonly promise: Promise<PatVerifyResult>;
+  invalidated: boolean;
+}
+
+const inflight = new Map<string, InFlightVerify>();
+
+/**
+ * Remove a token from the local positive cache after an authoritative revoke.
+ * Marking an in-flight read matters: its response may have been started before
+ * the revoke and must not repopulate L1 after the eviction. A marked flight
+ * resolves as not_found, so concurrent callers fail closed as well.
+ */
+export function invalidatePatVerifyCache(tokenId: string): void {
+  patCache.delete(tokenId);
+  const flight = inflight.get(tokenId);
+  if (flight !== undefined) {
+    flight.invalidated = true;
+  }
+}
 
 /** Insert a positive entry, evicting to stay within {@link PAT_VERIFY_CACHE_CAP}. */
 function putCache(tokenId: string, row: CachedPatRow, nowMs: number): void {
@@ -293,10 +312,13 @@ export async function verifyPatRowCached(
   // ── Single-flight: collapse concurrent misses to one L2/L3 read ─────────────
   const existing = inflight.get(tokenId);
   if (existing !== undefined) {
-    return existing;
+    return existing.promise;
   }
 
-  const flight = (async (): Promise<PatVerifyResult> => {
+  let flight!: InFlightVerify;
+  flight = {
+    invalidated: false,
+    promise: (async (): Promise<PatVerifyResult> => {
     try {
       // ── L2: KV (globally replicated, per-colo edge cache) ──────────────────
       // The latency fix for callers far from the D1 primary (e.g. SAM): once a
@@ -306,6 +328,7 @@ export async function verifyPatRowCached(
       // all fall through to D1 (availability); D1 stays the source-of-truth.
       const kvRow = opts.kv ? await kvGetPatRow(opts.kv, tokenId) : null;
       if (kvRow !== null) {
+        if (flight.invalidated) return { kind: "not_found" };
         putCache(tokenId, kvRow, nowMs);
         return { kind: "found", row: kvRow, source: "kv" };
       }
@@ -319,6 +342,7 @@ export async function verifyPatRowCached(
         // stays bounded by any existing positive entry's TTL. D1 is authoritative.
         return { kind: "not_found" };
       }
+      if (flight.invalidated) return { kind: "not_found" };
       putCache(tokenId, row, nowMs);
       // Populate L2 best-effort: a KV write failure must NEVER break auth (the
       // read already succeeded against D1). Bounded 30 s TTL = the L2 revocation
@@ -335,18 +359,19 @@ export async function verifyPatRowCached(
           await putPromise;
         }
       }
-      return { kind: "found", row, source: "d1" };
+      return flight.invalidated ? { kind: "not_found" } : { kind: "found", row, source: "d1" };
     } catch {
       // The D1 read faulted (KV never throws to here — kvGetPatRow swallows).
       // Do NOT cache, do NOT serve a stale/expired entry. Surface the fault so
       // extractAuth returns d1_lookup_error → 503 (fail-closed, retryable).
-      return { kind: "error" };
+      return flight.invalidated ? { kind: "not_found" } : { kind: "error" };
     } finally {
       inflight.delete(tokenId);
     }
-  })();
+    })(),
+  };
   inflight.set(tokenId, flight);
-  return flight;
+  return flight.promise;
 }
 
 /**

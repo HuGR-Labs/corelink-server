@@ -44,7 +44,7 @@ import {
   deriveTenantCeilingThrottleKey,
 } from "./session_exchange.js";
 import { blake3Hex } from "./blake3.js";
-import { patRowKvKey } from "./pat_verify_cache.js";
+import { invalidatePatVerifyCache, patRowKvKey } from "./pat_verify_cache.js";
 import { readCredentialLifecycle } from "./credential_lifecycle_client.js";
 import { prepareRunnerCredential } from "./runner_credential_routes.js";
 import type { RunnerCredentialOperation } from "./runner_credential_obligation.js";
@@ -812,6 +812,7 @@ export async function handleRunnerRevoke(
       token_id = row?.token_id ?? null;
     }
     if (token_id !== null) {
+      invalidatePatVerifyCache(token_id);
       const kv = (env as unknown as {
         METADATA_KV?: { delete(key: string): Promise<void> };
       }).METADATA_KV;
