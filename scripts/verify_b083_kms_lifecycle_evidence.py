@@ -23,10 +23,15 @@ PROVIDERS = frozenset({"aws", "gcp", "azure", "vault"})
 PREREQUISITES = frozenset({"isolated_test_tenant", "customer_controlled_cmk", "least_privilege_runtime_identity", "protected_operator_authorization", "durable_audit_receipt_sink"})
 LIFECYCLE_STEPS = frozenset({"customer_create_or_import", "provider_access", "wrap_unwrap", "revoke_restore", "rotate", "deletion_schedule", "audit_receipts", "tenant_isolation", "failure_retry", "residency"})
 RECEIPT_KEYS = frozenset({"status", "receipt_reference", "completed_at", "blocker"})
-SECRET_FIELD_MARKERS = ("ciphertext", "plaintext", "secret", "token", "credential", "key_material")
-SECRET_VALUE_PATTERNS = (re.compile(r"-----BEGIN [A-Z ]+PRIVATE KEY-----"), re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"), re.compile(r"\b(?:gh[pousr]_|github_pat_|sk_live_|whsec_)\S+", re.IGNORECASE))
+SECRET_FIELD_MARKERS = ("ciphertext", "plaintext", "secret", "token", "credential", "key_material", "private_key", "access_key", "api_key", "password")
+SECRET_VALUE_PATTERNS = (
+    re.compile(r"-----BEGIN [A-Z ]+PRIVATE KEY-----"),
+    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
+    re.compile(r"\b(?:gh[pousr]_|github_pat_|sk_live_|whsec_|xox[baprs]-)\S+", re.IGNORECASE),
+    re.compile(r"\b(?:password|secret|token)\s*[=:]\s*\S+", re.IGNORECASE),
+    re.compile(r"\b[A-Za-z0-9/+=]{40}\b"),
+)
 SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
-REDACTED_RECEIPT = re.compile(r"^audit://[a-z0-9][a-z0-9._/-]{2,180}$")
 UTC_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
@@ -78,8 +83,9 @@ def _validate_receipt(name: str, receipt: Any, state: str) -> None:
         return
     if state != "VERIFIED":
         raise EvidenceError(f"lifecycle.{name} cannot PASS while evidence_state is {state}")
-    if not isinstance(reference, str) or not REDACTED_RECEIPT.fullmatch(reference):
-        raise EvidenceError(f"lifecycle.{name} PASS requires a redacted audit:// receipt_reference")
+    reference_pattern = re.compile(rf"^audit://{re.escape(name)}/[a-z0-9][a-z0-9._-]{{2,160}}$")
+    if not isinstance(reference, str) or not reference_pattern.fullmatch(reference):
+        raise EvidenceError(f"lifecycle.{name} PASS requires its own redacted audit://{name}/ receipt_reference")
     if not isinstance(completed_at, str) or not UTC_TIMESTAMP.fullmatch(completed_at):
         raise EvidenceError(f"lifecycle.{name} PASS requires a UTC completed_at timestamp")
     if blocker is not None:
