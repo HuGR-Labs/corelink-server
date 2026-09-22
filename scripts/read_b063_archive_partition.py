@@ -157,6 +157,9 @@ def main() -> int:
     if os.environ.get("OWNER_APPROVED_READONLY") != "1":
         print("B-063: OWNER_APPROVED_READONLY=1 is required", file=sys.stderr)
         return 2
+    if os.environ.get("READ_ONLY") != "true" or os.environ.get("LAG_HOURS") != "3":
+        print("B-063: exact read-only production scope is required", file=sys.stderr)
+        return 2
     account = os.environ.get("CF_ACCOUNT_ID", "")
     token = os.environ.get("CF_API_TOKEN", "")
     if not account or not token:

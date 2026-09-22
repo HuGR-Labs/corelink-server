@@ -73,6 +73,8 @@ def test_query_rejects_missing_or_unsafe_d1_meta(monkeypatch, meta):
 
 def test_indeterminate_read_exits_two_without_green_output(monkeypatch, capsys):
     monkeypatch.setenv("OWNER_APPROVED_READONLY", "1")
+    monkeypatch.setenv("READ_ONLY", "true")
+    monkeypatch.setenv("LAG_HOURS", "3")
     monkeypatch.setenv("CF_ACCOUNT_ID", "account")
     monkeypatch.setenv("CF_API_TOKEN", "do-not-print-this")
     monkeypatch.setattr(readback, "sample", lambda *_: (_ for _ in ()).throw(ValueError("unsafe")))
@@ -81,6 +83,24 @@ def test_indeterminate_read_exits_two_without_green_output(monkeypatch, capsys):
     assert captured.out == ""
     assert "indeterminate" in captured.err
     assert "do-not-print-this" not in captured.err
+
+
+@pytest.mark.parametrize(("read_only", "lag_hours"), [
+    ("false", "3"),
+    ("true", "4"),
+    (None, "3"),
+])
+def test_live_replay_fails_closed_outside_exact_read_scope(
+    monkeypatch, capsys, read_only, lag_hours
+):
+    monkeypatch.setenv("OWNER_APPROVED_READONLY", "1")
+    if read_only is None:
+        monkeypatch.delenv("READ_ONLY", raising=False)
+    else:
+        monkeypatch.setenv("READ_ONLY", read_only)
+    monkeypatch.setenv("LAG_HOURS", lag_hours)
+    assert readback.main() == 2
+    assert capsys.readouterr().out == ""
 
 
 def test_full_population_zero_with_exact_canary_control(monkeypatch):
@@ -208,6 +228,8 @@ def test_empty_or_malformed_canary_control_is_indeterminate(monkeypatch, control
 
 def test_three_samples_red_exit_and_no_secret_in_output(monkeypatch, capsys):
     monkeypatch.setenv("OWNER_APPROVED_READONLY", "1")
+    monkeypatch.setenv("READ_ONLY", "true")
+    monkeypatch.setenv("LAG_HOURS", "3")
     monkeypatch.setenv("CF_ACCOUNT_ID", "account")
     monkeypatch.setenv("CF_API_TOKEN", "do-not-print-this")
     monkeypatch.setattr(readback.time, "sleep", lambda _: None)
@@ -231,6 +253,8 @@ def test_three_samples_red_exit_and_no_secret_in_output(monkeypatch, capsys):
 
 def test_zero_verdict_is_observation_not_recovery(monkeypatch, capsys):
     monkeypatch.setenv("OWNER_APPROVED_READONLY", "1")
+    monkeypatch.setenv("READ_ONLY", "true")
+    monkeypatch.setenv("LAG_HOURS", "3")
     monkeypatch.setenv("CF_ACCOUNT_ID", "account")
     monkeypatch.setenv("CF_API_TOKEN", "secret")
     monkeypatch.setattr(readback.time, "sleep", lambda _: None)

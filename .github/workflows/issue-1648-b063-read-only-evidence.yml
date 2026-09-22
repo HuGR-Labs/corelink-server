@@ -84,6 +84,10 @@ jobs:
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
         with:
           toolchain: 1.91.1
+      - name: Install protoc
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify immutable prefix replay, idempotency, watermark, and quarantine contracts
         run: "cargo test --locked -p corelink-server routes::audit_archive::tests:: -- --nocapture"
 
@@ -233,6 +237,8 @@ jobs:
         if: always() && github.repository == 'HuGR-dev/corelink-server' && github.event_name == 'workflow_dispatch' && inputs.run_live == 'true'
         env:
           OWNER_APPROVED_READONLY: "1"
+          READ_ONLY: ${{ inputs.read_only }}
+          LAG_HOURS: ${{ inputs.lag_hours }}
         run: |
           set -euo pipefail
           python3 -m pip install --disable-pip-version-check --no-input -r requirements-ci.txt
