@@ -68,6 +68,7 @@ def main() -> int:
     require(probe, "phase_stats()", "wall median/p90 reporting helper")
     require(probe, "for phase in wall auth wdb", "Server-Timing phase reporting")
     require(probe, "for required_phase in auth wdb origin opat ohandler total; do", "required attribution phases")
+    require(probe, 'authenticated URL-map miss emitted forbidden Server-Timing phase \'ostore\'', "miss must not emit storage phase")
     require(probe, "staging-origin-redacted", "redacted target label")
     if '"${PROBE_BASE}"' in probe.split("printf 'B-104 authenticated 404 probe", 1)[-1].split("if ! request", 1)[0]:
         raise SystemExit("probe prints the target origin before requests")

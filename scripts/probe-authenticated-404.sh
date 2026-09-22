@@ -189,6 +189,10 @@ for required_phase in auth wdb origin opat ohandler total; do
     die "required Server-Timing phase '${required_phase}' missing from one or more samples"
 done
 
+store_count="$(awk -F '\t' '$2 == "ostore" { n++ } END { print n + 0 }' "${TIMING_ROWS}")"
+[ "${store_count}" -eq 0 ] || \
+  die "authenticated URL-map miss emitted forbidden Server-Timing phase 'ostore'"
+
 for phase in wall auth wdb qtier qbatch qresid origin ohop opat oquota ostore oaccounting ohandler total; do
   phase_stats "${phase}"
 done
