@@ -265,6 +265,8 @@
       "K6_STAGING_MFA_STUB",
       "K6_STAGING_PAT",
       "K6_STAGING_STRIPE_WHSEC",
+      "K6_STAGING_TEARDOWN_TOKEN",
+      "K6_TARGET_IDENTITY_RECEIPT",
       "K6_TARGET_HOST"
     ]
   },
@@ -328,6 +330,8 @@
       "K6_STAGING_MFA_STUB",
       "K6_STAGING_PAT",
       "K6_STAGING_STRIPE_WHSEC",
+      "K6_STAGING_TEARDOWN_TOKEN",
+      "K6_TARGET_IDENTITY_RECEIPT",
       "K6_TARGET_HOST"
     ],
     "forbidden_secret_patterns": [
