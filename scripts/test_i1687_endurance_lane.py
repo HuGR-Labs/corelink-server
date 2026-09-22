@@ -52,6 +52,18 @@ def test_schedule_is_rejected() -> None:
     assert any("unattended" in error for error in errors)
 
 
+def test_unprotected_dispatch_is_rejected() -> None:
+    source = workflow_text()
+    guard = (
+        "github.repository == 'HuGR-dev/corelink-server' && "
+        "github.event_name == 'workflow_dispatch' && "
+        "github.ref == 'refs/heads/main' && github.ref_protected"
+    )
+    mutated = source.replace(guard, "github.event_name == 'workflow_dispatch'", 1)
+    errors = verify_workflow(mutated)
+    assert any("protected canonical dispatch" in error for error in errors)
+
+
 if __name__ == "__main__":
     for name, function in sorted(globals().items()):
         if name.startswith("test_"):
