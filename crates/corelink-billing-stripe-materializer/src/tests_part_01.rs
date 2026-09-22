@@ -95,6 +95,52 @@ fn runners_entitlement_seed_then_revoke_then_idempotent() {
 }
 
 #[test]
+fn runners_entitlement_cas_is_idempotent_and_rejects_stale_keys() {
+    let d1 = InMemoryBillingD1::new();
+    assert_eq!(
+        d1.cas_runners_entitlement("ten_1", "sub_run", "stripe:0002", Some((80, 600)), 2)
+            .unwrap(),
+        EntitlementCasOutcome::Applied
+    );
+    assert_eq!(d1.runners_entitlement_of("ten_1"), Some((80, 600)));
+    assert_eq!(
+        d1.cas_runners_entitlement("ten_1", "sub_run", "stripe:0002", Some((80, 600)), 3)
+            .unwrap(),
+        EntitlementCasOutcome::Duplicate
+    );
+    assert_eq!(
+        d1.cas_runners_entitlement("ten_1", "sub_run", "stripe:0001", None, 4)
+            .unwrap(),
+        EntitlementCasOutcome::Stale
+    );
+    assert_eq!(
+        d1.runners_entitlement_of("ten_1"),
+        Some((80, 600)),
+        "stale revoke must not remove a newer grant"
+    );
+    assert_eq!(
+        d1.cas_runners_entitlement("ten_1", "sub_run", "stripe:0003", None, 5)
+            .unwrap(),
+        EntitlementCasOutcome::Applied
+    );
+    assert_eq!(d1.runners_entitlement_of("ten_1"), None);
+    assert_eq!(
+        d1.cas_runners_entitlement("ten_1", "sub_run", "stripe:0002", Some((80, 600)), 6)
+            .unwrap(),
+        EntitlementCasOutcome::Stale
+    );
+}
+
+#[test]
+fn runner_cas_sql_keeps_fence_and_mutation_tenant_scoped() {
+    assert!(SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE.contains("ON CONFLICT(tenant_id)"));
+    assert!(SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT.contains("authority_key = ?"));
+    assert!(SQL_CAS_DELETE_RUNNERS_ENTITLEMENT.contains("authority_key = ?"));
+    assert!(SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT.contains("WHERE EXISTS"));
+    assert!(SQL_CAS_DELETE_RUNNERS_ENTITLEMENT.contains("WHERE tenant_id = ?"));
+}
+
+#[test]
 fn delete_runners_entitlement_sql_shape() {
     let sql = SQL_DELETE_RUNNERS_ENTITLEMENT;
     assert!(

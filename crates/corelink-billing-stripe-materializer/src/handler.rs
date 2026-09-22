@@ -43,7 +43,9 @@ use corelink_tier_selection::tier::TierKind;
 use crate::audit::{AuditSeverity, BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
 use crate::clock::{default_mat_clock, MatClock};
 use crate::current_subscription::CurrentSubscriptionAuthority;
-use crate::d1::{BillingD1Error, BillingD1Writer, MaterializedRow};
+use crate::d1::{
+    BillingD1Error, BillingD1Writer, EntitlementCasOutcome, MaterializedRow,
+};
 use crate::runners::RunnersEntitlementResolver;
 use crate::tier::{TierSelectError, TierSelector};
 
@@ -598,9 +600,13 @@ impl D1SubscriptionStateHandler {
                     }),
                 })
                 .map_err(audit_to_mat)?;
-            self.d1
-                .delete_runners_entitlement(tenant_id)
-                .map_err(d1_to_mat)?;
+            self.apply_runner_cas(
+                tenant_id,
+                subscription_id,
+                &current.authority_key,
+                None,
+                now_ms,
+            )?;
             return Ok(true);
         }
         // Granting status: SEED. Audit BEFORE the state mutation (fail-CLOSED).
@@ -620,15 +626,40 @@ impl D1SubscriptionStateHandler {
                 }),
             })
             .map_err(audit_to_mat)?;
-        self.d1
-            .upsert_runners_entitlement(
+        self.apply_runner_cas(
+            tenant_id,
+            subscription_id,
+            &current.authority_key,
+            Some((ent.max_concurrency, ent.max_vcpu_h)),
+            now_ms,
+        )?;
+        Ok(true)
+    }
+
+    fn apply_runner_cas(
+        &self,
+        tenant_id: &str,
+        subscription_id: &str,
+        authority_key: &str,
+        entitlement: Option<(u32, u32)>,
+        now_ms: u64,
+    ) -> Result<(), MaterializerError> {
+        let outcome = self
+            .d1
+            .cas_runners_entitlement(
                 tenant_id,
-                ent.max_concurrency,
-                ent.max_vcpu_h,
+                subscription_id,
+                authority_key,
+                entitlement,
                 now_ms as i64,
             )
             .map_err(d1_to_mat)?;
-        Ok(true)
+        if outcome == EntitlementCasOutcome::Stale {
+            return Err(MaterializerError::Transient(format!(
+                "stale Stripe authority key rejected for {subscription_id}"
+            )));
+        }
+        Ok(())
     }
 
     fn reconcile_tier(
