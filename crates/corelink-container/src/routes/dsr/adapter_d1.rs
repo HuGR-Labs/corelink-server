@@ -179,6 +179,9 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // as `tenant_billing` / `stripe_checkout_sessions` above → ERASE per
     // ADR-S11-013 (`DELETE ... WHERE tenant_id = ?`; the tenant_id index covers it).
     "runner_billing",
+    // Runner entitlement reconciliation fence (migr. 0139/0140) is
+    // tenant-scoped operational ordering state with no retention basis → ERASE.
+    "runner_entitlement_reconcile_fence",
     // Runner checkout attempts are recoverable provider-intent state (migr.
     // 0136), analogous to stripe_checkout_sessions. They are not the fiscal
     // invoice/customer/subscription records retained by ADR-S11-013.
