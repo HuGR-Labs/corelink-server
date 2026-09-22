@@ -354,6 +354,8 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
     it("refuses conflicting canonical and legacy alias durations", () => {
       expect(originSubPhases(300, "opat;dur=97, ohandler;dur=4, oother;dur=5")).toEqual([
         'ohop;dur=300;desc="unreconciled"',
+        "opat;dur=97",
+        "ohandler;dur=4",
       ]);
     });
 
@@ -391,6 +393,7 @@ describe("Server-Timing `origin` sub-phase attribution", () => {
       expect(out).toEqual([
         'ohop;dur=300;desc="unreconciled"',
         "opat;dur=97",
+        "ohandler;dur=4",
       ]);
     });
 
