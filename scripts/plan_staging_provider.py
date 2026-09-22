@@ -67,14 +67,28 @@ def require_contract(contract: dict[str, Any]) -> list[str]:
     if teardown.get("manual_only") is not True or teardown.get("fail_closed") is not True:
         failures.append("teardown-boundary")
     cloudflare = contract.get("cloudflare", {})
-    if cloudflare.get("route") != f"{HOSTNAME}/*" or cloudflare.get("root_worker") != "corelink-staging":
+    if cloudflare.get("zone_name") != "humangr.com":
+        failures.append("zone-boundary")
+    if cloudflare.get("route") != f"{HOSTNAME}/*" or (
+        cloudflare.get("root_worker"),
+        cloudflare.get("signup_worker"),
+        cloudflare.get("synthetic_receiver_worker"),
+    ) != ("corelink-staging", "corelink-signup-staging", "corelink-synthetic-pager-staging"):
         failures.append("route-boundary")
+    resource_names = contract.get("outputs", {}).get("resource_names", [])
+    if not resource_names or any(not isinstance(name, str) or not name.endswith("-staging") for name in resource_names):
+        failures.append("resource-isolation")
     return failures
 
 
 def name_present(result: Any, expected: str, field: str) -> bool:
     items = result if isinstance(result, list) else result.get("result", []) if isinstance(result, dict) else []
     return any(isinstance(item, dict) and item.get(field) == expected for item in items)
+
+
+def result_items(result: Any) -> list[dict[str, Any]]:
+    items = result if isinstance(result, list) else result.get("result", []) if isinstance(result, dict) else []
+    return [item for item in items if isinstance(item, dict)]
 
 
 def main() -> int:
@@ -138,10 +152,48 @@ def main() -> int:
                 lambda result, name=queue_name: name_present(result, name, "queue_name"),
             )
     dns_query = urllib.parse.urlencode({"name": HOSTNAME})
-    check("dns-read", f"zones/{zone}/dns_records?{dns_query}")
-    check("worker-routes-read", f"zones/{zone}/workers/routes")
+    dns_ok, dns_result = provider_get(token, f"zones/{zone}/dns_records?{dns_query}")
+    checks["dns-read"] = {"ok": dns_ok}
+    if dns_ok:
+        checks["staging-dns"] = {
+            "ok": True,
+            "state": "present" if any(
+                item.get("name") == HOSTNAME
+                and item.get("proxied") is True
+                and item.get("type") in {"A", "AAAA", "CNAME"}
+                for item in result_items(dns_result)
+            ) else "absent",
+        }
+    else:
+        checks["dns-read"]["error"] = dns_result
+
+    routes_ok, routes_result = provider_get(token, f"zones/{zone}/workers/routes")
+    checks["worker-routes-read"] = {"ok": routes_ok}
+    if routes_ok:
+        # Cloudflare exposes routes only as a zone-wide list. This receipt
+        # discards it and retains the truth of the exact staging pair only.
+        checks["staging-worker-route"] = {
+            "ok": True,
+            "state": "present" if any(
+                item.get("pattern") == f"{HOSTNAME}/*"
+                and item.get("script") == cloudflare["root_worker"]
+                for item in result_items(routes_result)
+            ) else "absent",
+        }
+    else:
+        checks["worker-routes-read"]["error"] = routes_result
+
     for worker in (cloudflare["root_worker"], cloudflare["signup_worker"], cloudflare["synthetic_receiver_worker"]):
-        check(f"worker-read:{worker}", f"accounts/{account}/workers/scripts/{urllib.parse.quote(worker, safe='')}")
+        # /scripts/{name} downloads raw JavaScript. /settings is JSON and
+        # proves existence without copying code into the runner or receipt.
+        ok, result = provider_get(token, f"accounts/{account}/workers/scripts/{urllib.parse.quote(worker, safe='')}/settings")
+        key = f"worker-settings:{worker}"
+        if ok:
+            checks[key] = {"ok": True, "state": "present"}
+        elif "10007" in result.get("provider_error_codes", []):
+            checks[key] = {"ok": True, "state": "absent"}
+        else:
+            checks[key] = {"ok": False, "error": result}
 
     failures = sorted(key for key, result in checks.items() if not result["ok"])
     summary["plan_state"] = "ready-for-reviewed-apply" if not failures else "blocked"

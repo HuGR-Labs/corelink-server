@@ -44,6 +44,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify frozen staging boundary
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_staging_target.py
+
       - name: Create redacted provider plan
         run: |
           set -euo pipefail
