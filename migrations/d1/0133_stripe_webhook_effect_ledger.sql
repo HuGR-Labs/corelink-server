@@ -1,6 +1,5 @@
 -- Effect keys make a claimed webhook safe to replay after a process crash.
--- Ordinal reservation: 0132 is the next free D1 ordinal after 0131 on
--- integration base e70d9d9349f1ae96d71fd918817af8ad2bcd4762 (Refs #1629).
+-- 0133 follows the webhook inbox migration at 0132 (Refs #1629).
 CREATE TABLE IF NOT EXISTS stripe_webhook_event_effects (
     event_id TEXT NOT NULL PRIMARY KEY,
     effect_key TEXT NOT NULL UNIQUE,

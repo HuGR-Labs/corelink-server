@@ -1,4 +1,4 @@
--- 0133: durable logical Checkout attempts for the runner entitlement axis.
+-- 0137: durable logical Checkout attempts for the runner entitlement axis.
 --
 -- A row binds the provider idempotency key and exact selected parameters to
 -- one monotonic tenant-local generation. An open prior row blocks a replacement

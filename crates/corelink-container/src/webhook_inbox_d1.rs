@@ -551,7 +551,7 @@ mod tests {
         .unwrap();
         db.execute("INSERT INTO stripe_webhook_events_processed VALUES ('evt_legacy','invoice.paid',1,'dispatched','evt_legacy')", []).unwrap();
         db.execute_batch(include_str!(
-            "../../../migrations/d1/0131_stripe_webhook_inbox.sql"
+            "../../../migrations/d1/0132_stripe_webhook_inbox.sql"
         ))
         .unwrap();
         let state: String = db
@@ -572,7 +572,7 @@ mod tests {
         ))
         .unwrap();
         db.execute_batch(include_str!(
-            "../../../migrations/d1/0131_stripe_webhook_inbox.sql"
+            "../../../migrations/d1/0132_stripe_webhook_inbox.sql"
         ))
         .unwrap();
         let _: String = db
@@ -623,11 +623,11 @@ mod tests {
         ))
         .unwrap();
         db.execute_batch(include_str!(
-            "../../../migrations/d1/0131_stripe_webhook_inbox.sql"
+            "../../../migrations/d1/0132_stripe_webhook_inbox.sql"
         ))
         .unwrap();
         db.execute_batch(include_str!(
-            "../../../migrations/d1/0132_stripe_webhook_effect_ledger.sql"
+            "../../../migrations/d1/0133_stripe_webhook_effect_ledger.sql"
         ))
         .unwrap();
         let raw = "00";

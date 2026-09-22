@@ -368,11 +368,11 @@ fn runner_billing_tables_have_exact_dsr_dispositions() {
 fn runner_billing_migration_tables_remain_classified() {
     for (migration, tables) in [
         (
-            "0133_usage_event_staging_conflicts.sql",
+            "0134_usage_event_staging_conflicts.sql",
             ["usage_event_staging_conflicts"].as_slice(),
         ),
         (
-            "0134_runner_aggregate_durable_state.sql",
+            "0135_runner_aggregate_durable_state.sql",
             [
                 "runner_period_terms_snapshot",
                 "runner_aggregate_event_claim",
@@ -380,7 +380,7 @@ fn runner_billing_migration_tables_remain_classified() {
             .as_slice(),
         ),
         (
-            "0136_runner_checkout_attempts.sql",
+            "0137_runner_checkout_attempts.sql",
             ["runner_checkout_attempts"].as_slice(),
         ),
     ] {

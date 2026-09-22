@@ -13,8 +13,8 @@ REGIONS = ("wnam", "enam", "weur", "sam")
 LEGACY_REGIONS = ("us-east", "us-west", "eu-west", "ap-southeast", "sa-east", "global")
 CONSUMER = ROOT / "crates/corelink-terraform-drift-consumer/src/event.rs"
 MIGRATION_0025 = ROOT / "migrations/d1/0025_terraform_drift_findings.sql"
-MIGRATION_0140 = ROOT / "migrations/d1/0140_terraform_drift_summary_artifact.sql"
-MIGRATION_0139 = ROOT / "migrations/d1/0139_terraform_drift_region_contract.sql"
+MIGRATION_0131 = ROOT / "migrations/d1/0131_terraform_drift_summary_artifact.sql"
+MIGRATION_0141 = ROOT / "migrations/d1/0141_terraform_drift_region_contract.sql"
 
 
 def insert_finding(connection: sqlite3.Connection, finding_id: bytes, region: str) -> None:
@@ -42,9 +42,9 @@ class TerraformDriftRegionContractTests(unittest.TestCase):
     def test_migration_keeps_history_but_rejects_legacy_new_writes(self) -> None:
         connection = sqlite3.connect(":memory:")
         connection.executescript(MIGRATION_0025.read_text(encoding="utf-8"))
-        connection.executescript(MIGRATION_0140.read_text(encoding="utf-8"))
+        connection.executescript(MIGRATION_0131.read_text(encoding="utf-8"))
         insert_finding(connection, b"legacy-row-00001", "us-east")
-        connection.executescript(MIGRATION_0139.read_text(encoding="utf-8"))
+        connection.executescript(MIGRATION_0141.read_text(encoding="utf-8"))
 
         for region in REGIONS:
             insert_finding(connection, f"new-{region}".encode().ljust(16, b"-"), region)

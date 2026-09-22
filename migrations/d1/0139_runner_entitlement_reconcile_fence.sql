@@ -1,4 +1,4 @@
--- D1 ordinal 0143 — #1639. The provider, rather than webhook arrival or a
+-- D1 ordinal 0139 — #1639. The provider, rather than webhook arrival or a
 -- lexical SKU identity, owns these two ordering coordinates.
 
 CREATE TABLE IF NOT EXISTS runner_entitlement_reconcile_fence (
