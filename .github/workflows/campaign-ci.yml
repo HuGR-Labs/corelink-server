@@ -42,6 +42,9 @@ on:
           - i1809-b063-archive-replay
           - i1810-b046-object-lock
           - i1811-b032-vendor-review
+          - i1641-pagerduty-contract
+          - i1654-d1-residency-contract
+          - i1655-sla-credit-contract
 
 permissions:
   contents: read
@@ -452,6 +455,33 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/verify_1644_vendor_review_manifest.py 2>&1 | tee artifacts/campaign-ci/i1811-b032-vendor-review.log
+
+      - name: i1641 PagerDuty contract (credentialless)
+        if: ${{ inputs.suite == 'i1641-pagerduty-contract' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Static repository proof only: no PagerDuty endpoint, secret, or
+          # acknowledgement is reachable from this lane.
+          python3 -S scripts/verify_i1641_pagerduty_contract.py 2>&1 | tee artifacts/campaign-ci/i1641-pagerduty-contract.log
+
+      - name: i1654 D1 residency contract (credentialless)
+        if: ${{ inputs.suite == 'i1654-d1-residency-contract' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Static repository proof only: no D1 provider state, credentials,
+          # database provisioning, or legal instrument mutation.
+          python3 -S scripts/verify_b086_d1_residency.py 2>&1 | tee artifacts/campaign-ci/i1654-d1-residency-contract.log
+
+      - name: i1655 SLA credit contract (credentialless)
+        if: ${{ inputs.suite == 'i1655-sla-credit-contract' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Repository guard only: Stripe remains unreachable and production
+          # credit gates stay disabled.
+          python3 -S scripts/verify_b089_sla_credits.py 2>&1 | tee artifacts/campaign-ci/i1655-sla-credit-contract.log
 
       - name: Upload compact campaign logs
         if: ${{ always() }}
