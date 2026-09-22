@@ -130,3 +130,64 @@ async fn all_records_invalid_are_422() {
     );
     assert!(store.seen.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn out_of_storage_range_records_skip_at_first_middle_and_last() {
+    let store = Arc::new(FakeStore::new());
+    let existing_key = hex64(0x60);
+    let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
+
+    // Seed the identity used by the invalid last member. Validation must
+    // still reject that member before deduplication; an existing coordinate
+    // cannot turn an out-of-domain payload into a successful replay.
+    let seeded = app
+        .clone()
+        .oneshot(ingest_request(
+            Some(TEST_AUTH_KEY),
+            serde_json::json!([record_json(&tenant_a(), &existing_key)]),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(seeded.status(), StatusCode::ACCEPTED);
+
+    let mut first = record_json(&tenant_a(), &hex64(0x61));
+    first["qty"] = serde_json::json!(MAX_PERSISTED_NONNEGATIVE + 1);
+    let mut middle = record_json(&tenant_a(), &hex64(0x62));
+    middle["time_ms"] = serde_json::json!(MAX_PERSISTED_NONNEGATIVE + 1);
+    let mut last_existing = record_json(&tenant_a(), &existing_key);
+    last_existing["qty"] = serde_json::json!(MAX_PERSISTED_NONNEGATIVE + 1);
+    let body = serde_json::json!([
+        first,
+        record_json(&tenant_a(), &hex64(0x63)),
+        middle,
+        record_json(&tenant_a(), &hex64(0x64)),
+        last_existing,
+    ]);
+
+    let resp = app
+        .clone()
+        .oneshot(ingest_request(Some(TEST_AUTH_KEY), body.clone()))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    let first_attempt: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
+    assert_eq!(
+        (first_attempt.accepted, first_attempt.deduped, first_attempt.rejected, first_attempt.total),
+        (2, 0, 3, 2)
+    );
+    assert_eq!(first_attempt.outcomes[0].reason.as_deref(), Some("qty_out_of_storage_range"));
+    assert_eq!(first_attempt.outcomes[2].reason.as_deref(), Some("time_ms_out_of_storage_range"));
+    assert_eq!(first_attempt.outcomes[4].reason.as_deref(), Some("qty_out_of_storage_range"));
+    assert_eq!(store.seen.lock().unwrap().len(), 3, "only valid siblings stage");
+
+    // Replaying the same mixed batch deterministically re-rejects the poison
+    // records and dedups the valid siblings. It never becomes a retryable 503.
+    let resp = app
+        .oneshot(ingest_request(Some(TEST_AUTH_KEY), body))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    let retry: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
+    assert_eq!((retry.accepted, retry.deduped, retry.rejected, retry.total), (0, 2, 3, 2));
+    assert_eq!(store.seen.lock().unwrap().len(), 3);
+}

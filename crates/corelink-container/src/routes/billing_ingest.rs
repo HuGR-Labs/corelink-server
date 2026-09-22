@@ -70,12 +70,14 @@
 //!   `accepted` = first-sight rows inserted; `deduped` = rows whose
 //!   `idem_key` (the `(tenant_id, request_id)` staging coordinate) already
 //!   existed (idempotent no-op) — both are success. `rejected` = records
-//!   DROPPED for failing per-record validation (bad `billing_period`, non-uuid
-//!   `tenant_id`, unknown `event_kind`, non-letter `region`/`idem_key`); they
-//!   are never persisted and never retried (a malformed record cannot become
-//!   valid). A non-zero `rejected` is an emitter/config defect to chase, not a
-//!   retry signal — the runner can retry the whole batch freely, valid records
-//!   dedup and bad ones re-reject identically.
+//!   DROPPED for failing per-record validation (including `qty` or `time_ms`
+//!   outside the nonnegative signed-64-bit storage domain, bad
+//!   `billing_period`, non-uuid `tenant_id`, unknown `event_kind`, or
+//!   non-letter `region`/`idem_key`); they are never persisted and never
+//!   retried (a malformed record cannot become valid). A non-zero `rejected`
+//!   is an emitter/config defect to chase, not a retry signal — the runner can
+//!   retry the whole batch freely, valid records dedup and bad ones re-reject
+//!   identically.
 //! - Missing / wrong service secret (401).
 //! - Malformed JSON, empty batch, or an over-limit batch (400) — a BATCH-level
 //!   fault, distinct from a single bad record (which is skipped, not a 400).
@@ -127,6 +129,12 @@ const MAX_BATCH_RECORDS: usize = 1024;
 /// Minimum length (chars) of the dedicated ingest secret.
 const MIN_INGEST_AUTH_KEY_LEN: usize = 32;
 
+/// Maximum value accepted by the end-to-end staging contract for nonnegative
+/// integer fields. JSON and the DTO use `u64`, but D1 binds these columns as
+/// signed integers. Keeping this as an explicit validation bound prevents an
+/// out-of-domain value from becoming a backend-looking retryable failure.
+const MAX_PERSISTED_NONNEGATIVE: u64 = i64::MAX as u64;
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Persistence seam (trait + D1 impl + fake) — testable without a network
 // ──────────────────────────────────────────────────────────────────────────────
@@ -142,7 +150,9 @@ pub struct StagedUsageRecord {
     pub tenant_id: Uuid,
     /// Canonical usage event kind (e.g. [`UsageEventKind::RunnerSlotSeconds`]).
     pub event_kind: UsageEventKind,
-    /// Billable quantity (slot-seconds for `runner_slot_seconds`).
+    /// Billable quantity (slot-seconds for `runner_slot_seconds`). The wire
+    /// type is `u64`, while the supported persisted domain is
+    /// `0..=i64::MAX`; this is a domain bound, not a coercion or truncation.
     pub qty: u64,
     /// Canonical `YYYY-MM` UTC month bucket.
     pub billing_period: String,
@@ -151,7 +161,9 @@ pub struct StagedUsageRecord {
     /// Originating source URI (e.g. `corelink/runner/iad`). CloudEvents
     /// `source`; recorded as the staged `event_id` correlation root.
     pub source: String,
-    /// Wall-clock instant of the lease close (Unix epoch ms).
+    /// Wall-clock instant of the lease close (Unix epoch ms). The supported
+    /// persisted domain is `0..=i64::MAX`; the route does not claim that every
+    /// value in this storage domain is a semantically current timestamp.
     pub time_ms: u64,
     /// Deterministic idempotency key (64-char BLAKE3 hex). The dedup
     /// coordinate — re-pushing the same `idem_key` is a no-op.
@@ -483,14 +495,16 @@ pub enum IngestOutcomeKind {
     Conflict,
 }
 
-/// Validation failure for a single record (mapped to a 400 with a stable,
-/// non-leaking reason code).
+/// Validation failure for a single record (mapped to a stable, non-leaking
+/// per-record reason code in the 202/422 response).
 #[derive(Debug, PartialEq, Eq)]
 enum RecordError {
     /// `tenant_id` is not a canonical UUID.
     BadTenantId,
     /// `billing_period` is not the canonical `YYYY-MM` shape.
     BadBillingPeriod,
+    /// `qty` cannot be represented by the signed integer storage contract.
+    QtyOutOfStorageRange,
     /// `region` is not 3 ASCII letters (checked AFTER lowercase-canonicalization,
     /// so a mixed/upper-case colo like `IAD` is accepted, not rejected).
     BadRegion,
@@ -500,6 +514,8 @@ enum RecordError {
     EmptySource,
     /// `source` exceeds [`MAX_SOURCE_LEN`].
     SourceTooLong,
+    /// `time_ms` cannot be represented by the signed integer storage contract.
+    TimeMsOutOfStorageRange,
 }
 
 impl RecordError {
@@ -508,10 +524,12 @@ impl RecordError {
         match self {
             Self::BadTenantId => "bad_tenant_id",
             Self::BadBillingPeriod => "bad_billing_period",
+            Self::QtyOutOfStorageRange => "qty_out_of_storage_range",
             Self::BadRegion => "bad_region",
             Self::BadIdemKey => "bad_idem_key",
             Self::EmptySource => "empty_source",
             Self::SourceTooLong => "source_too_long",
+            Self::TimeMsOutOfStorageRange => "time_ms_out_of_storage_range",
         }
     }
 }
@@ -537,6 +555,16 @@ const MAX_SOURCE_LEN: usize = 256;
 fn validate_record(wire: UsageRecordWire) -> Result<StagedUsageRecord, RecordError> {
     let tenant_id = Uuid::parse_str(&wire.tenant_id).map_err(|_| RecordError::BadTenantId)?;
     validate_billing_period(&wire.billing_period).map_err(|_| RecordError::BadBillingPeriod)?;
+    // Keep the wire representation wide enough to decode the JSON integer,
+    // then reject values outside the exact D1 signed-integer domain as a
+    // permanent record error. This runs before the store, so a poison member
+    // cannot become a 503 or prevent valid siblings from progressing.
+    if wire.qty > MAX_PERSISTED_NONNEGATIVE {
+        return Err(RecordError::QtyOutOfStorageRange);
+    }
+    if wire.time_ms > MAX_PERSISTED_NONNEGATIVE {
+        return Err(RecordError::TimeMsOutOfStorageRange);
+    }
     // Canonical CF colocode: 3 ASCII letters (matches the
     // `usage_event_staging` CHECK(length(region) = 3) + the
     // `corelink_analytics::Region::as_str()` shape).
