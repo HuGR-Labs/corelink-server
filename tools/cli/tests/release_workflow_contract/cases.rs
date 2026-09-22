@@ -1,8 +1,8 @@
 use super::*;
 
 #[test]
-fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_mutations()
--> Result<(), String> {
+fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_mutations(
+) -> Result<(), String> {
     let workflow = release_workflow()?;
     assert_release_contract(&workflow);
     assert_publication_inventory_contract(&workflow);
