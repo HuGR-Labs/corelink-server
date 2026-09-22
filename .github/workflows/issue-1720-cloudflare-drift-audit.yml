@@ -103,8 +103,41 @@ jobs:
         run: |
           set -euo pipefail
           gh workflow enable terraform-drift.yml --repo "$GITHUB_REPOSITORY"
-          gh workflow run terraform-drift.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_SHA" --field region=wnam
-          echo "::notice::Terraform Drift Detection dispatched once at exact ref $GITHUB_SHA."
+
+          # A workflow dispatch accepts a branch/tag ref, not a raw commit
+          # SHA. Read authoritative main and bind the dispatch to the audit
+          # revision. The drift workflow checks expected_sha against its
+          # resolved GITHUB_SHA before Terraform setup or plan.
+          main_sha=""
+          if ! main_sha="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+            --jq '.object.sha')"; then
+            echo "::error::Unable to read authoritative refs/heads/main; refusing drift dispatch."
+            exit 1
+          fi
+          if [[ ! "$main_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Authoritative refs/heads/main is absent or not a full commit SHA; refusing drift dispatch."
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Audit must run from refs/heads/main; refusing broad-ref dispatch."
+            exit 1
+          fi
+          if [[ "$main_sha" == "$GITHUB_SHA" ]]; then
+            : "authoritative refs/heads/main is the audited revision"
+          else
+            echo "::error::refs/heads/main moved during audit (main=$main_sha audit=$GITHUB_SHA); refusing drift dispatch."
+            exit 1
+          fi
+          if ! gh workflow run terraform-drift.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            --field region=wnam \
+            --field expected_sha="$main_sha"; then
+            echo "::error::Terraform Drift Detection dispatch failed; audit remains red."
+            exit 1
+          fi
+          echo "::notice::Terraform Drift Detection dispatched once at refs/heads/main SHA $main_sha."
 
       - name: Disable both bounded workflows and verify readback
         if: always()

@@ -26,6 +26,10 @@ on:
         description: "Single region to check (leave empty for all)"
         required: false
         default: ""
+      expected_sha:
+        description: "Expected resolved commit SHA for a bounded main-ref audit dispatch"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -40,8 +44,34 @@ env:
   TF_CLI_ARGS: "-no-color"
 
 jobs:
+  verify-dispatch-revision:
+    name: Verify expected dispatch revision
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require canonical main ref and exact expected SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+            echo "::error::Manual Terraform drift dispatch must use refs/heads/main." >&2
+            exit 1
+          }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::Manual Terraform drift dispatch requires a full expected_sha." >&2
+            exit 1
+          }
+          [[ "$EXPECTED_SHA" == "$GITHUB_SHA" ]] || {
+            echo "::error::Resolved dispatch revision moved (expected=$EXPECTED_SHA actual=$GITHUB_SHA)." >&2
+            exit 1
+          }
+
   drift-check:
     name: Drift — ${{ matrix.region }}
+    needs: verify-dispatch-revision
+    if: always() && (github.event_name != 'workflow_dispatch' || needs.verify-dispatch-revision.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
