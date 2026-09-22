@@ -3,8 +3,8 @@ name: Terraform Drift Detection
 # WI-S13-004 — Daily cron 03:00 UTC + manual dispatch.
 # Runs `terraform plan -detailed-exitcode` per region (matrix).
 # Exit code 0 = no diff; 1 = error; 2 = diff exists.
-# On exit 2 → SEV-3 Slack alert + upload plan artifact.
-# On exit 1 → SEV-2 Slack alert (terraform error) + upload logs.
+# On exit 2 → SEV-3 Slack alert + upload sanitized summary.
+# On exit 1 → SEV-2 Slack alert (terraform error) + upload sanitized summary.
 # NO `terraform apply` step — auto-apply is FORBIDDEN (RB-FM-206).
 # Cloudflare credentials come from repository secrets; this workflow only plans.
 # Operational prerequisite: provision and verify the dedicated read-only token
@@ -142,7 +142,10 @@ jobs:
           set -euo pipefail
           region="${{ matrix.region }}"
           plan_file="plan-${region}.tfplan"
-          plan_log="plan-${region}.log"
+          plan_json="${GITHUB_WORKSPACE}/terraform-plan-${region}.json"
+          summary_file="${GITHUB_WORKSPACE}/terraform-drift-summary-${region}.json"
+          rm -f "${plan_file}" "${plan_json}" "${summary_file}"
+          trap 'rm -f "${plan_file}" "${plan_json}"' EXIT
 
           if [[ -z "${CLOUDFLARE_API_TOKEN:-}" \
             || -z "${TF_VAR_cf_account_id:-}" \
@@ -150,18 +153,49 @@ jobs:
             echo "::error::Required Cloudflare inputs missing: CF_TERRAFORM_DRIFT_API_TOKEN or CF_ACCOUNT_ID secret, or CF_ZONE_ID repository variable"
             TF_EXIT=1
           else
+            # Never stream or persist Terraform's human-readable output. It can
+            # contain values that are redacted in the terminal but present in
+            # the saved plan. The plan file exists only until this step exits.
+            set +e
             terraform plan \
               -detailed-exitcode \
               -out="${plan_file}" \
               -input=false \
-              2>&1 | tee "${plan_log}"
+              >/dev/null 2>&1
+            TF_EXIT="$?"
+            set -e
 
-            TF_EXIT="${PIPESTATUS[0]}"
+            if [[ "${TF_EXIT}" == '0' || "${TF_EXIT}" == '2' ]]; then
+              # JSON is local-only input to the allow-listed sanitizer. It is
+              # never uploaded, logged, or passed to another action.
+              if ! terraform show -json "${plan_file}" >"${plan_json}" 2>/dev/null; then
+                echo "::error::Terraform plan serialization failed; drift evidence is unavailable"
+                TF_EXIT=1
+              fi
+            fi
           fi
+
+          if [[ "${TF_EXIT}" == '0' || "${TF_EXIT}" == '2' ]]; then
+            python3 "${GITHUB_WORKSPACE}/scripts/sanitize_terraform_drift.py" \
+              --region "${region}" \
+              --run-id "${GITHUB_RUN_ID}" \
+              --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+              --detected-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --exit-code "${TF_EXIT}" \
+              --plan-json "${plan_json}" \
+              --output "${summary_file}"
+          else
+            python3 "${GITHUB_WORKSPACE}/scripts/sanitize_terraform_drift.py" \
+              --region "${region}" \
+              --run-id "${GITHUB_RUN_ID}" \
+              --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+              --detected-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --exit-code 1 \
+              --output "${summary_file}"
+          fi
+
           {
             echo "exitcode=${TF_EXIT}"
-            echo "plan_log=${plan_log}"
-            echo "plan_file=${plan_file}"
             echo "region=${region}"
           } >> "$GITHUB_OUTPUT"
 
@@ -191,19 +225,17 @@ jobs:
           exit "${TF_EXIT}"
 
       # ----------------------------------------------------------------
-      # 5. Upload plan artifact (always — compliance evidence)
+      # 5. Upload sanitized summary (always — bounded evidence)
       # ----------------------------------------------------------------
-      - name: Upload plan artifact — ${{ matrix.region }}
+      - name: Upload sanitized drift summary — ${{ matrix.region }}
         if: always()
         # actions/upload-artifact@v4.5.0
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: terraform-plan-${{ matrix.region }}-${{ github.run_id }}
-          path: |
-            infra/terraform/regions/plan-${{ matrix.region }}.log
-            infra/terraform/regions/plan-${{ matrix.region }}.tfplan
-          retention-days: 30
-          if-no-files-found: warn
+          name: terraform-drift-summary-${{ matrix.region }}-${{ github.run_id }}
+          path: terraform-drift-summary-${{ matrix.region }}.json
+          retention-days: 7
+          if-no-files-found: error
 
       # ----------------------------------------------------------------
       # 6a. SEV-3 alert — drift detected (exit code 2)

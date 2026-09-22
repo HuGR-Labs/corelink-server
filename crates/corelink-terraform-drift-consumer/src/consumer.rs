@@ -11,7 +11,7 @@
 use crate::audit::{DriftAuditEventType, DriftAuditRecord, DriftAuditSink};
 use crate::classifier::DriftClassifier;
 use crate::error::DriftConsumerError;
-use crate::event::{DriftFinding, DriftPlanEvent};
+use crate::event::{is_safe_summary_artifact_url, DriftFinding, DriftPlanEvent};
 use crate::metrics::{DriftMetricOutcome, DriftMetrics};
 use crate::store::DriftFindingStore;
 
@@ -59,6 +59,14 @@ where
         &mut self,
         event: &DriftPlanEvent,
     ) -> Result<DriftFinding, DriftConsumerError> {
+        if event
+            .plan_summary_artifact_url
+            .as_deref()
+            .is_some_and(|url| !is_safe_summary_artifact_url(url))
+        {
+            return Err(DriftConsumerError::UnsafeEvidenceUrl);
+        }
+
         // Step 1: classify
         let severity = self.classifier.classify(event)?;
 
@@ -148,7 +156,7 @@ mod tests {
             tf_exit_code: exit_code,
             plan_diff_count: diff_count,
             plan_summary: "test summary".to_owned(),
-            plan_full_artifact_url: Some("https://example.com/artifact".to_owned()),
+            plan_summary_artifact_url: Some("https://example.com/artifact".to_owned()),
             github_run_id: "run-42".to_owned(),
         }
     }

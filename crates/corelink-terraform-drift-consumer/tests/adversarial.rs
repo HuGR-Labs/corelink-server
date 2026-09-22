@@ -36,7 +36,7 @@ fn make_event(region: &str, exit_code: i32, diff_count: u32) -> DriftPlanEvent {
         tf_exit_code: exit_code,
         plan_diff_count: diff_count,
         plan_summary: format!("summary for {region} diff={diff_count}"),
-        plan_full_artifact_url: Some(format!("https://ci.example.com/artifacts/{region}")),
+        plan_summary_artifact_url: Some(format!("https://ci.example.com/artifacts/{region}")),
         github_run_id: format!("run-adversarial-{region}"),
     }
 }
@@ -174,6 +174,17 @@ fn adv_04_negative_exit_code_rejected() {
         result,
         Err(DriftConsumerError::UnrecognisedExitCode(-1))
     ));
+}
+
+#[test]
+fn adv_11_raw_plan_artifact_url_rejected() {
+    let mut consumer = make_consumer();
+    let mut event = make_event("us-east", 2, 1);
+    event.plan_summary_artifact_url = Some("https://ci.example.com/plan.tfplan".to_owned());
+    let result = consumer.process_plan_event(&event);
+    assert!(matches!(result, Err(DriftConsumerError::UnsafeEvidenceUrl)));
+    assert!(consumer.store().all_findings().is_empty());
+    assert!(consumer.audit_sink().records.is_empty());
 }
 
 // -----------------------------------------------------------------------

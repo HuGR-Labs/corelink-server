@@ -29,6 +29,11 @@ pub enum DriftConsumerError {
     /// Attempted an operation that is security-forbidden (e.g. auto-apply).
     #[error("security violation — forbidden operation: {0}")]
     ForbiddenOperation(String),
+
+    /// Evidence URL points at a raw Terraform payload rather than the
+    /// sanitized summary artifact.
+    #[error("unsafe Terraform evidence URL")]
+    UnsafeEvidenceUrl,
 }
 
 /// Store-layer errors.

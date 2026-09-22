@@ -6,6 +6,20 @@ use uuid::Uuid;
 /// Canonical set of CoreLink regions for terraform matrix.
 pub const REGIONS: &[&str] = &["us-east", "us-west", "eu-west", "ap-southeast", "sa-east"];
 
+/// Returns whether an evidence link can identify only a sanitized summary.
+///
+/// The workflow is the source of truth for the artifact contents. This
+/// boundary rejects common raw-plan/log names if an untrusted event attempts
+/// to smuggle one into the audit record.
+#[must_use]
+pub fn is_safe_summary_artifact_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    url.starts_with("https://")
+        && ![".tfplan", ".log", "plan.json", "full-plan", "terraform-plan-"]
+            .iter()
+            .any(|marker| lower.contains(marker))
+}
+
 /// Severity classification for a drift finding.
 ///
 /// Derived from `diff_count` by [`crate::classifier::DefaultDriftClassifier`].
@@ -82,11 +96,14 @@ pub struct DriftPlanEvent {
     /// Number of resources with diff (from plan output parsing).
     pub plan_diff_count: u32,
 
-    /// Short summary (top 5 resources changed).
+    /// Sanitized action-count summary; resource names and values are excluded.
     pub plan_summary: String,
 
-    /// GitHub Actions artifact URL for full plan output.
-    pub plan_full_artifact_url: Option<String>,
+    /// GitHub Actions artifact URL for the sanitized summary only.
+    ///
+    /// Raw plan files and terminal logs are never valid evidence values.
+    #[serde(alias = "plan_full_artifact_url")]
+    pub plan_summary_artifact_url: Option<String>,
 
     /// GitHub Actions run ID for traceability.
     pub github_run_id: String,
@@ -107,11 +124,13 @@ pub struct DriftFinding {
     /// Number of resources diffed.
     pub plan_diff_count: u32,
 
-    /// Plan summary (human readable, top 5).
+    /// Sanitized action-count summary; resource names and values are excluded.
     pub plan_summary: String,
 
-    /// Full plan artifact URL.
-    pub plan_full_artifact_url: Option<String>,
+    /// Sanitized drift summary artifact URL.
+    ///
+    /// This field must never point to a saved plan, plan JSON, or raw log.
+    pub plan_summary_artifact_url: Option<String>,
 
     /// Classified severity.
     pub severity: DriftSeverity,
@@ -145,7 +164,7 @@ impl DriftFinding {
             detected_at_ms: event.detected_at_ms,
             plan_diff_count: event.plan_diff_count,
             plan_summary: event.plan_summary.clone(),
-            plan_full_artifact_url: event.plan_full_artifact_url.clone(),
+            plan_summary_artifact_url: event.plan_summary_artifact_url.clone(),
             severity,
             status: DriftStatus::Open,
             remediation_decision: None,

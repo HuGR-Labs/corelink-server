@@ -67,7 +67,7 @@ mod tests {
             tf_exit_code: exit_code,
             plan_diff_count: diff_count,
             plan_summary: String::new(),
-            plan_full_artifact_url: None,
+            plan_summary_artifact_url: None,
             github_run_id: "run-123".to_owned(),
         }
     }

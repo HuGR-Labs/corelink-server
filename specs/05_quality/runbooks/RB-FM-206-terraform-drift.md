@@ -34,7 +34,7 @@ sla_remediate: "≤ 7d"
 | Remediation SLA | ≤ 7 days from detection |
 | Auto-apply | **FORBIDDEN** — always manual + dual-approval (WI-S13-002) |
 | Escalation > 7d | SEV-2 + post-mortem + Architect + Security Lead |
-| Audit evidence | D1 `terraform_drift_findings` table (compliance-grade; 7y retention) |
+| Audit evidence | D1 `terraform_drift_findings` table (compliance-grade; 7y retention) + sanitized summary artifact (7 days) |
 
 ---
 
@@ -46,7 +46,13 @@ The GitHub Actions workflow `.github/workflows/terraform-drift.yml` runs daily a
 
 For each of 5 regions (`us-east`, `us-west`, `eu-west`, `ap-southeast`, `sa-east`):
 1. `terraform init -backend-config=backend-<region>.hcl`
-2. `terraform plan -detailed-exitcode -out=plan-<region>.tfplan`
+2. `terraform plan -detailed-exitcode` creates a runner-local plan for classification; it is removed before the job ends.
+
+The workflow suppresses Terraform's human-readable output and converts the local plan to a
+fixed-schema summary containing only run metadata, region, exit category, drift boolean, and
+create/update/delete/replace/read action counts. It uploads that summary for 7 days. The
+`.tfplan`, plan JSON, terminal log, configuration, variables, prior state, resource addresses,
+and attribute values are never uploaded or linked as evidence.
 
 Exit codes:
 - **0** — no diff; clean run row inserted in D1 (cron health check).
@@ -175,13 +181,10 @@ Per spec contract §18: open post-mortem doc + drift discipline review with Arch
 > Use the separate manual apply workflow with dual-approval (WI-S13-002).
 
 ```sh
-# 1. Review plan first (already available as artifact from detection run)
-gh run download <run_id> --name terraform-plan-<region>-<run_id>
+# 1. Review the sanitized summary artifact and the current IaC diff.
+#    Do not download or reconstruct a raw plan from the detection run.
 
-# 2. Inspect plan
-terraform show plan-<region>.tfplan
-
-# 3. Trigger manual apply workflow (dual-approval required)
+# 2. Trigger manual apply workflow (dual-approval required)
 gh workflow run terraform-apply-manual.yml \
   --field region=<region> \
   --field finding_id=<uuid> \
