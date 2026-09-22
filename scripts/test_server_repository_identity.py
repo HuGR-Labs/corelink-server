@@ -28,6 +28,9 @@ ROOT = Path(__file__).resolve().parents[1]
 ACTIVE_IDENTITY_LITERAL_ALLOWLIST = {
     ".github/ISSUE_TEMPLATE/config.yml": "Current security-advisory and discussion destinations use the post-transfer server owner.",
     ".github/workflows/bot-pr-has-checks.yml": "This live workflow allows exactly source/destination repo names only after checking stable repository ID.",
+     ".github/workflows/ci-clone-bundle.yml": "Clone-only guard accepts the destination only with its exact numeric repository ID.",
+     ".github/workflows/sbom-clone-bundle.yml": "Bounded SBOM clone job accepts the destination only with its exact numeric repository ID.",
+     "scripts/verify_ci_clone_bundle.py": "The stdlib verifier pins the exact clone destination repository identity.",
     "apps/docs/src/pages/compare/vs-bazel-remote-s3.mdx": "Current product documentation references the post-transfer server security intake.",
     "apps/docs/src/pages/compare/vs-buildbuddy.mdx": "Current product documentation references the post-transfer server security intake.",
     "apps/docs/src/pages/compare/vs-engflow.mdx": "Current product documentation references the post-transfer server security intake.",

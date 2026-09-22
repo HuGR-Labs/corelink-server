@@ -1,0 +1,35 @@
+name: SBOM CI clone bundle
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-publish:
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1380335483' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Verify clone identity hardening
+        run: python3 scripts/test_server_repository_identity.py
+
+      - name: Verify bounded clone workflow contract
+        run: python3 scripts/test_verify_ci_clone_bundle.py
+
+      - name: Generate CycloneDX 1.5 SBOM
+        run: python3 scripts/generate_public_sbom.py --output sbom.cdx.json
+
+      - name: Verify schema, population, and nonempty hashes
+        run: python3 scripts/verify_public_sbom.py sbom.cdx.json
+
+      - name: Upload retained CycloneDX SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: corelink-server-sbom-cyclonedx-1.5
+          path: sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 7
