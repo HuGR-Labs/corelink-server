@@ -67,9 +67,12 @@ def _active(text: str) -> str:
 def _require_cache_pair(job: str, label: str, *, restore: bool, save: bool = False) -> None:
     action = ACTION_CACHE_SAVE if save else ACTION_CACHE
     _require_once(job, action, f"{label}/cache")
-    _require(job, f"path: {EXPECTED_CACHE_PATH}", f"{label}/cache")
-    _require(job, f"key: {EXPECTED_CACHE_KEY}", f"{label}/cache")
-    if "restore-keys:" in job:
+    start = job.index(f"uses: {action}")
+    end = job.find("\n      - ", start)
+    step = job[start:] if end == -1 else job[start:end]
+    _require(step, f"path: {EXPECTED_CACHE_PATH}", f"{label}/cache")
+    _require(step, f"key: {EXPECTED_CACHE_KEY}", f"{label}/cache")
+    if "restore-keys:" in step:
         raise ContractError(f"{label}/cache: broad restore-keys fallback is forbidden")
     if restore and save:
         raise ContractError(f"{label}/cache: restore and save boundaries must be separate")
