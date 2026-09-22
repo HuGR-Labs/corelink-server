@@ -1,0 +1,82 @@
+name: issue-1671 B-129 approved diagnostic probe
+
+# Manual owner lane. It performs bounded authenticated GETs only. It never
+# deploys, mutates the target, or closes #1671/B-129.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Approved HTTPS origin (no path, query, or credentials)"
+        required: true
+        type: string
+      deployed_sha:
+        description: "40 character SHA confirmed on the deployed target"
+        required: true
+        type: string
+      tenant:
+        description: "Approved dogfood tenant UUID"
+        required: true
+        type: string
+      cargo_key:
+        description: "Approved existing cargo key (read-only)"
+        required: true
+        type: string
+      owner_approved_probe:
+        description: 'Type exactly "1" during the approved diagnostic window'
+        required: true
+        type: string
+      deployed_server_timing_wdb_detail:
+        description: 'Type exactly "on" when the deployed diagnostic flag is armed'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1671-b129-diagnostic-${{ inputs.tenant }}
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Run bounded read-only probe
+        env:
+          TARGET: ${{ inputs.target }}
+          TENANT: ${{ inputs.tenant }}
+          CARGO_KEY: ${{ inputs.cargo_key }}
+          DEPLOYED_SHA: ${{ inputs.deployed_sha }}
+          CORELINK_DEPLOYED_COMMIT: ${{ inputs.deployed_sha }}
+          OWNER_APPROVED_PROBE: ${{ inputs.owner_approved_probe }}
+          DEPLOYED_SERVER_TIMING_WDB_DETAIL: ${{ inputs.deployed_server_timing_wdb_detail }}
+          CORELINK_DOGFOOD_PAT: ${{ secrets.CORELINK_DOGFOOD_PAT }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 scripts/probe_i1671_b129.py \
+            --target "$TARGET" --tenant "$TENANT" --cargo-key "$CARGO_KEY" \
+            --deployed-sha "$DEPLOYED_SHA" --samples 10 \
+            --output artifacts/issue-1671-b129-receipt.json
+          # The output is already redacted: no PAT or response body is retained.
+          python3 - <<'PY'
+          import json
+          p = "artifacts/issue-1671-b129-receipt.json"
+          d = json.load(open(p, encoding="utf-8"))
+          print(f"B-129 PASS: samples={d['sample_count']} residual_max_pct={d['residual_max_pct']}")
+          PY
+
+      - name: Upload redacted receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-1671-b129-receipt-${{ github.run_id }}
+          path: artifacts/issue-1671-b129-receipt.json
+          if-no-files-found: error
+          retention-days: 30
