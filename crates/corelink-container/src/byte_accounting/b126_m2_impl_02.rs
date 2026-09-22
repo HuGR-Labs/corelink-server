@@ -68,6 +68,11 @@ impl AccountingAcHandler {
         self
     }
 
+    #[cfg(test)]
+    pub(crate) fn byok_config_cache_for_test(&self) -> Option<&Arc<ByokConfigCache>> {
+        self.byok_config_cache.as_ref()
+    }
+
     /// Acquire the per-`(tenant, action_digest)` serialization guard (the shard
     /// the key hashes to) and block on it via the SAME `block_in_place` +
     /// `block_on` bridge the R2 handlers use for their async I/O.
@@ -160,17 +165,65 @@ impl corelink_handler_ac::AcUpdateHandler for AccountingAcHandler {
                 )));
             }
         }
+        // AC has no mutation-effect result channel. A storage implementation
+        // can publish then fail its trailing durable audit, so an `Err` is
+        // ambiguous and must retain a reconcilable liability rather than refund.
+        let logical_key = req.action_digest.clone();
+        if let Err(e) = block_on_record_liability(
+            &self.accountant,
+            &tenant,
+            &logical_key,
+            byte_len,
+            MutationLiabilityState::Reserved,
+            None,
+        ) {
+            block_on_release(&self.accountant, &tenant, byte_len);
+            return Err(AcHandlerError::Internal(format!(
+                "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
+            )));
+        }
         match self.update_inner.update(req) {
             Ok(resp) => {
                 // Idempotent / divergent-refused AC writes that stored nothing
                 // new (`durable == false`) roll the reservation back.
                 if !resp.durable {
-                    block_on_release(&self.accountant, &tenant, byte_len);
+                    if let Err(e) = block_on_settle_liability(
+                        &self.accountant,
+                        &tenant,
+                        &logical_key,
+                        MutationLiabilityResolution::NotWritten,
+                    ) {
+                        return Err(AcHandlerError::Internal(format!(
+                            "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
+                        )));
+                    }
+                } else if let Err(e) = block_on_record_liability(
+                    &self.accountant,
+                    &tenant,
+                    &logical_key,
+                    byte_len,
+                    MutationLiabilityState::Committed,
+                    None,
+                ) {
+                    return Err(AcHandlerError::Internal(format!(
+                        "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
+                    )));
                 }
                 Ok(resp)
             }
             Err(e) => {
-                block_on_release(&self.accountant, &tenant, byte_len);
+                if let Err(liability_error) = block_on_record_liability(
+                    &self.accountant,
+                    &tenant,
+                    &logical_key,
+                    byte_len,
+                    MutationLiabilityState::Unknown,
+                    Some(uuid::Uuid::new_v4()),
+                ) {
+                    return Err(AcHandlerError::Internal(format!(
+                        "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {liability_error}"
+                    )));
+                }
                 Err(e)
             }
         }

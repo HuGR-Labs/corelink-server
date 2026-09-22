@@ -152,6 +152,11 @@ impl R2CasHandler {
         self
     }
 
+    #[cfg(test)]
+    pub(crate) fn byok_config_cache_for_test(&self) -> Option<&Arc<ByokConfigCache>> {
+        self.byok_config_cache.as_ref()
+    }
+
     /// Attach the mandatory production data-plane gate/catalog pair.
     #[must_use]
     pub fn with_byok_runtime_gate(mut self, gate: Arc<dyn ByokRuntimeGate>) -> Self {

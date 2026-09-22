@@ -22,6 +22,31 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     build_with_factory_and_byok(shadow_factory, None)
 }
 
+/// Attach the same boot-owned cache to the CAS accounting decorator.
+///
+/// This is deliberately a factory helper rather than a second cache factory:
+/// storage and accounting must observe one control-plane transition together.
+pub(crate) fn attach_byok_to_cas_accounting(
+    handler: crate::byte_accounting::AccountingCasHandler,
+    byok: Option<&crate::storage::byok_cas::DataPlaneByok>,
+) -> crate::byte_accounting::AccountingCasHandler {
+    match byok {
+        Some(byok) => handler.with_byok(byok.config_cache()),
+        None => handler,
+    }
+}
+
+/// Attach the same boot-owned cache to the AC accounting decorator.
+pub(crate) fn attach_byok_to_ac_accounting(
+    handler: crate::byte_accounting::AccountingAcHandler,
+    byok: Option<&crate::storage::byok_cas::DataPlaneByok>,
+) -> crate::byte_accounting::AccountingAcHandler {
+    match byok {
+        Some(byok) => handler.with_byok(byok.config_cache()),
+        None => handler,
+    }
+}
+
 /// Build the composed router with the one boot-owned BYOK collaborator set.
 ///
 /// All four consumers clone `DataPlaneByok::config_cache()`: CAS storage, AC
@@ -133,10 +158,7 @@ pub fn build_with_factory_and_byok(
                 cas_delete_raw.clone(),
                 acc.clone(),
             );
-            let acct = match byok.as_ref() {
-                Some(byok) => Arc::new(acct.with_byok(byok.config_cache())),
-                None => Arc::new(acct),
-            };
+            let acct = Arc::new(attach_byok_to_cas_accounting(acct, byok.as_ref()));
             (
                 acct.clone() as Arc<dyn corelink_handler_cas::CasWriteHandler>,
                 acct as Arc<dyn corelink_handler_cas::CasDeleteHandler>,
@@ -231,10 +253,7 @@ pub fn build_with_factory_and_byok(
                 ac_delete_raw.clone(),
                 acc.clone(),
             );
-            let acct = match byok.as_ref() {
-                Some(byok) => Arc::new(acct.with_byok(byok.config_cache())),
-                None => Arc::new(acct),
-            };
+            let acct = Arc::new(attach_byok_to_ac_accounting(acct, byok.as_ref()));
             (
                 acct.clone() as Arc<dyn corelink_handler_ac::AcUpdateHandler>,
                 acct as Arc<dyn corelink_handler_ac::AcDeleteHandler>,

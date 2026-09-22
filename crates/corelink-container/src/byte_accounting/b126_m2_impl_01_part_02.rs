@@ -86,6 +86,15 @@ fn byok_committed_len(
     }
 }
 
+#[cfg(test)]
+pub(crate) fn byok_committed_len_for_test(
+    cache: Option<&Arc<ByokConfigCache>>,
+    tenant: &str,
+    plaintext_len: i64,
+) -> Result<i64, String> {
+    byok_committed_len(cache, tenant, plaintext_len)
+}
+
 /// Bridge an async release call onto the sync handler trait (see [`block_on_accrue`]).
 fn block_on_release(acc: &ByteAccountant, tenant: &str, bytes: i64) {
     let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Accounting);
@@ -288,6 +297,11 @@ impl AccountingCasHandler {
     pub fn with_byok(mut self, byok_config_cache: Arc<ByokConfigCache>) -> Self {
         self.byok_config_cache = Some(byok_config_cache);
         self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn byok_config_cache_for_test(&self) -> Option<&Arc<ByokConfigCache>> {
+        self.byok_config_cache.as_ref()
     }
 }
 
