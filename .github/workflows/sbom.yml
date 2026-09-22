@@ -195,10 +195,14 @@ jobs:
 
       - name: Validate NTIA minimum elements (strict gate)
         run: |
+          # CycloneDX CLI 0.27.2's validate command accepts the input format
+          # and schema version, then uses --fail-on-errors for a strict exit
+          # status. Keep the invocation within that command contract.
           ./cyclonedx-cli validate \
             --input-file sbom.cdx.json \
-            --minimum-required-fields ntia \
-            --output-format text
+            --input-format json \
+            --input-version v1_5 \
+            --fail-on-errors
           echo "NTIA validation PASSED"
 
       - name: Validate SBOM JSON is well-formed
