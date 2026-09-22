@@ -54,12 +54,12 @@ def _safe_workflow(source: str) -> bool:
     job_names = re.findall(r"(?m)^  ([a-zA-Z0-9_-]+):\s*$", source.split("jobs:", 1)[-1])
     if job_names != ["focused"]:
         return False
-    uses = re.findall(r"(?m)^\s*-\s*uses:\s*([^\s]+)", source)
+    uses = re.findall(r"(?m)^\s*(?:-\s*)?uses:\s*([^\s]+)", source)
     if uses != [CHECKOUT]:
         return False
     if "persist-credentials: false" not in source:
         return False
-    if re.search(r"(?m)^\s{6}environment\s*:", source):
+    if re.search(r"(?m)^ {4}environment\s*:", source):
         return False
     if re.search(r"\$\{\{\s*secrets\.", source, re.IGNORECASE):
         return False
