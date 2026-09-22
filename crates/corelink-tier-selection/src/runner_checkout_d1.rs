@@ -8,10 +8,12 @@
 /// Reserve the next generation only when no open attempt exists.
 ///
 /// Bind `?1..?6` as `(tenant_id, tier, price_id, stripe_customer_id,
-/// idempotency_key, now_ms)`. A zero-row result means the caller must read the
+/// ignored_idempotency_key, now_ms)`. The key is derived from the allocated
+/// generation inside the statement so a concurrent reserve cannot share a
+/// key. A zero-row result means the caller must read the
 /// current row and return replay/expiry/recovery; it must never create a
 /// second session speculatively.
-pub const SQL_RESERVE_RUNNER_CHECKOUT_ATTEMPT: &str = "INSERT INTO runner_checkout_attempts (tenant_id, generation, tier, price_id, stripe_customer_id, idempotency_key, state, created_at_ms, updated_at_ms) SELECT ?1, COALESCE((SELECT MAX(generation) FROM runner_checkout_attempts WHERE tenant_id = ?1), 0) + 1, ?2, ?3, ?4, ?5, 'reserved', ?6, ?6 WHERE NOT EXISTS (SELECT 1 FROM runner_checkout_attempts WHERE tenant_id = ?1 AND state IN ('reserved', 'session_created')) ON CONFLICT DO NOTHING RETURNING tenant_id, generation, tier, price_id, stripe_customer_id, idempotency_key, state, session_id";
+pub const SQL_RESERVE_RUNNER_CHECKOUT_ATTEMPT: &str = "INSERT INTO runner_checkout_attempts (tenant_id, generation, tier, price_id, stripe_customer_id, idempotency_key, state, created_at_ms, updated_at_ms) SELECT ?1, COALESCE((SELECT MAX(generation) FROM runner_checkout_attempts WHERE tenant_id = ?1), 0) + 1, ?2, ?3, ?4, printf('checkout:v2:runner:%s:%d', ?1, COALESCE((SELECT MAX(generation) FROM runner_checkout_attempts WHERE tenant_id = ?1), 0) + 1), 'reserved', ?6, ?6 WHERE ?5 = ?5 AND NOT EXISTS (SELECT 1 FROM runner_checkout_attempts WHERE tenant_id = ?1 AND state IN ('reserved', 'session_created')) ON CONFLICT DO NOTHING RETURNING tenant_id, generation, tier, price_id, stripe_customer_id, idempotency_key, state, session_id";
 
 /// Read the latest generation to classify exact replay, plan change, or a
 /// stale reservation after `SQL_RESERVE_RUNNER_CHECKOUT_ATTEMPT` returned no row.
