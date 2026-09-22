@@ -116,7 +116,7 @@ jobs:
       # checker rejects control mutations, and every later run step uses the
       # separately checked-out _base working directory.
       # ---------------------------------------------------------------------
-      - name: Checkout PR merge ref (SHA-pinned)
+      - name: Checkout PR merge ref (SHA-pinned) # nosemgrep: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout # reason: PR merge is inspected as data only; ADR-0101
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
@@ -124,7 +124,7 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
-      - name: Checkout BASE ref into _base (trusted tree; SHA-pinned)
+      - name: Checkout BASE ref into _base (trusted tree; SHA-pinned) # nosemgrep: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout # reason: immutable BASE control tree; ADR-0101
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           ref: ${{ github.event.pull_request.base.sha }}
