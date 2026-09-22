@@ -1,0 +1,20 @@
+# Public compatibility targets required by the bundled Buck2 2026-08-01
+# prelude.  These labels provide configuration values only; they do not
+# import Meta-internal build targets.
+
+constraint_setting(
+    name = "asset_dest_path_resolver",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "android",
+    constraint_setting = ":asset_dest_path_resolver",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "generic",
+    constraint_setting = ":asset_dest_path_resolver",
+    visibility = ["PUBLIC"],
+)

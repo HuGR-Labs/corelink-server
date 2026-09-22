@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github/workflows/buck2-starter-ci.yml"
 BUCKCONFIG_PATH = ROOT / "examples/buck2-starter/.buckconfig"
 TOOLCHAINS_PATH = ROOT / "examples/buck2-starter/toolchains/BUCK"
+METRO_PLATFORM_SHIM_PATH = ROOT / "examples/buck2-starter/tools/build_defs/js/constraints/metro_js_platform_override/BUCK"
+ASSET_RESOLVER_SHIM_PATH = ROOT / "examples/buck2-starter/tools/build_defs/js/constraints/asset_dest_path_resolver/BUCK"
 EXPECTED_VERSION = "2026-08-01"
 EXPECTED_BUILD_VERSION = "2026-07-31"
 EXPECTED_SHA256 = "aa304d471a79f69233b09767d4ba9add769049b7a37f78a3a71a72983372f511"
@@ -124,14 +126,28 @@ def test_buck2_contract_is_complete() -> None:
 def test_starter_declares_root_cell_and_bundled_execution_platform() -> None:
     config = BUCKCONFIG_PATH.read_text(encoding="utf-8")
     toolchains = TOOLCHAINS_PATH.read_text(encoding="utf-8")
+    metro_platform_shim = METRO_PLATFORM_SHIM_PATH.read_text(encoding="utf-8")
+    asset_resolver_shim = ASSET_RESOLVER_SHIM_PATH.read_text(encoding="utf-8")
     assert "[cells]\n    root = .\n    prelude = prelude\n    toolchains = toolchains\n" in config
-    assert "[cell_aliases]\n    config = prelude\n" in config
+    assert "[cell_aliases]\n    config = prelude\n    fbsource = root\n" in config
     assert "[external_cells]\n    prelude = bundled\n" in config
     assert config.count("execution_platforms = prelude//platforms:default") == 2
     assert "execution_platforms = //:platforms" not in config
     assert 'load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")' in toolchains
     assert 'name = "cxx"' in toolchains
     assert 'visibility = ["PUBLIC"]' in toolchains
+    assert 'name = "metro_js_platform_override"' in metro_platform_shim
+    for value in ("android", "ios", "macos", "vr", "windows"):
+        assert (
+            f'    name = "{value}",\n'
+            '    constraint_setting = ":metro_js_platform_override",\n'
+        ) in metro_platform_shim
+    assert 'name = "asset_dest_path_resolver"' in asset_resolver_shim
+    for value in ("android", "generic"):
+        assert (
+            f'    name = "{value}",\n'
+            '    constraint_setting = ":asset_dest_path_resolver",\n'
+        ) in asset_resolver_shim
 
 
 @pytest.mark.parametrize(
@@ -140,6 +156,8 @@ def test_starter_declares_root_cell_and_bundled_execution_platform() -> None:
         (lambda text: text.replace("    prelude = prelude\n", "", 1), "prelude cell"),
         (lambda text: text.replace("    config = prelude\n", "", 1), "config cell alias"),
         (lambda text: text.replace("    config = prelude\n", "    config = root\n", 1), "config cell alias target"),
+        (lambda text: text.replace("    fbsource = root\n", "", 1), "fbsource cell alias"),
+        (lambda text: text.replace("    fbsource = root\n", "    fbsource = prelude\n", 1), "fbsource cell alias target"),
         (lambda text: text.replace("    prelude = bundled\n", "", 1), "bundled prelude origin"),
     ),
 )
@@ -148,7 +166,7 @@ def test_starter_config_rejects_each_prelude_mapping_mutation(mutation, expected
     with pytest.raises(AssertionError):
         mutated = mutation(config)
         assert "[cells]\n    root = .\n    prelude = prelude\n    toolchains = toolchains\n" in mutated
-        assert "[cell_aliases]\n    config = prelude\n" in mutated
+        assert "[cell_aliases]\n    config = prelude\n    fbsource = root\n" in mutated
         assert "[external_cells]\n    prelude = bundled\n" in mutated
 
 
@@ -203,3 +221,35 @@ def test_starter_toolchain_rejects_each_cxx_structure_mutation(mutation) -> None
         mutated = mutation(toolchains)
         assert 'load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")' in mutated
         assert 'name = "cxx"' in mutated
+
+
+@pytest.mark.parametrize(
+    ("path", "mutation", "expected"),
+    (
+        (
+            METRO_PLATFORM_SHIM_PATH,
+            lambda text: text.replace('name = "android"', "", 1),
+            '    name = "android",\n    constraint_setting = ":metro_js_platform_override",',
+        ),
+        (
+            METRO_PLATFORM_SHIM_PATH,
+            lambda text: text.replace('name = "android"', 'name = "wrong"', 1),
+            '    name = "android",\n    constraint_setting = ":metro_js_platform_override",',
+        ),
+        (
+            ASSET_RESOLVER_SHIM_PATH,
+            lambda text: text.replace('name = "generic"', "", 1),
+            '    name = "generic",\n    constraint_setting = ":asset_dest_path_resolver",',
+        ),
+        (
+            ASSET_RESOLVER_SHIM_PATH,
+            lambda text: text.replace('name = "generic"', 'name = "wrong"', 1),
+            '    name = "generic",\n    constraint_setting = ":asset_dest_path_resolver",',
+        ),
+    ),
+)
+def test_starter_fbsource_shims_reject_each_target_mutation(path, mutation, expected) -> None:
+    text = path.read_text(encoding="utf-8")
+    with pytest.raises(AssertionError):
+        mutated = mutation(text)
+        assert expected in mutated
