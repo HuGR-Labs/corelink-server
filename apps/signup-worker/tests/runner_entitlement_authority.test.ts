@@ -39,23 +39,52 @@ describe("Runners provider authority", () => {
         });
     });
 
-    it("fails closed when current Runners authority is ambiguous or absent", async () => {
+    it("fails closed when current Runners authority is ambiguous", async () => {
         const old = subscription("sub_old", "canceled");
-        for (const [data, eventSubscription] of [
-            [[subscription("sub_a", "active"), subscription("sub_b", "trialing")], old],
-            [[], { ...old, items: { data: [{ price: { id: "price_cache" } }] } }],
-        ]) {
-            vi.stubGlobal("fetch", vi.fn(async (input: string) => ({
-                ok: true,
-                status: 200,
-                json: async () => input.includes("?") ? { data, has_more: false } : eventSubscription,
-            })));
-            await expect(resolveAuthoritativeRunnerSubscription({
-                eventSubscriptionId: old.id,
-                stripeSecretKey: "sk_test_authority",
-                runnerPriceIds: runnerPrices,
-            })).rejects.toThrow(/ambiguous|no current/);
-        }
+        vi.stubGlobal("fetch", vi.fn(async (input: string) => ({
+            ok: true,
+            status: 200,
+            json: async () => input.includes("?") ? {
+                data: [subscription("sub_a", "active"), subscription("sub_b", "trialing")],
+                has_more: false,
+            } : old,
+        })));
+        await expect(resolveAuthoritativeRunnerSubscription({
+            eventSubscriptionId: old.id,
+            stripeSecretKey: "sk_test_authority",
+            runnerPriceIds: runnerPrices,
+        })).rejects.toThrow("ambiguous");
+    });
+
+    it("rejects an active webhook subscription absent from current customer state", async () => {
+        const active = subscription("sub_absent_active", "active");
+        vi.stubGlobal("fetch", vi.fn(async (input: string) => ({
+            ok: true,
+            status: 200,
+            json: async () => input.includes("?") ? { data: [], has_more: false } : active,
+        })));
+        await expect(resolveAuthoritativeRunnerSubscription({
+            eventSubscriptionId: active.id,
+            stripeSecretKey: "sk_test_authority",
+            runnerPriceIds: runnerPrices,
+        })).rejects.toThrow("no unique active/trialing");
+    });
+
+    it("marks an absent non-granting identity as non-authoritative", async () => {
+        const canceled = subscription("sub_absent_canceled", "canceled");
+        vi.stubGlobal("fetch", vi.fn(async (input: string) => ({
+            ok: true,
+            status: 200,
+            json: async () => input.includes("?") ? { data: [], has_more: false } : canceled,
+        })));
+        await expect(resolveAuthoritativeRunnerSubscription({
+            eventSubscriptionId: canceled.id,
+            stripeSecretKey: "sk_test_authority",
+            runnerPriceIds: runnerPrices,
+        })).resolves.toMatchObject({
+            subscriptionId: canceled.id,
+            authorityIsCurrent: false,
+        });
     });
 
     it("rejects a stale identity after an atomic D1 batch reads a different fence", async () => {

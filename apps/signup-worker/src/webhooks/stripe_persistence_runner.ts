@@ -65,6 +65,9 @@ export async function resolveAuthoritativeRunnerSubscription(opts: {
     if (active.length > 1) throw new Error("runner entitlement authority is ambiguous");
     const eventSnapshot = snapshot(eventSubscription, opts.runnerPriceIds);
     if (!eventSnapshot) throw new Error("runner entitlement authority has no current Runners identity");
+    if (eventSnapshot.status === "active" || eventSnapshot.status === "trialing") {
+        throw new Error("runner entitlement authority has no unique active/trialing Runners identity");
+    }
     return eventSnapshot;
 }
 

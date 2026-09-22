@@ -883,7 +883,8 @@ impl BillingD1Writer for InMemoryBillingD1 {
                         && (revision.stripe_event_created_at_ms > *current_event
                             || (revision.stripe_event_created_at_ms == *current_event
                                 && revision.stripe_event_id > current_event_id.as_str())));
-                if !advances && same_identity
+                if !advances
+                    && same_identity
                     && revision.subscription_created_at_ms == *current_created
                     && revision.stripe_event_created_at_ms == *current_event
                     && revision.stripe_event_id == current_event_id

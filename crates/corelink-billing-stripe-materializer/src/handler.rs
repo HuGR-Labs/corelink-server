@@ -625,9 +625,11 @@ impl D1SubscriptionStateHandler {
                 };
                 (current, false)
             }
-            _ => return Err(MaterializerError::Transient(format!(
-                "Runners entitlement authority is ambiguous for {subscription_id}"
-            ))),
+            _ => {
+                return Err(MaterializerError::Transient(format!(
+                    "Runners entitlement authority is ambiguous for {subscription_id}"
+                )))
+            }
         };
         let ent = resolver.resolve(&current.price_id).ok_or_else(|| {
             MaterializerError::Transient(format!(
@@ -1024,10 +1026,15 @@ impl D1SubscriptionStateHandler {
                         })?;
                     let current = snapshots
                         .iter()
-                        .find(|snapshot| snapshot.subscription_id == purchase.stripe_subscription_id)
-                        .ok_or_else(|| MaterializerError::Transient(
-                            "Runners refund authority omitted the purchased subscription".to_owned(),
-                        ))?;
+                        .find(|snapshot| {
+                            snapshot.subscription_id == purchase.stripe_subscription_id
+                        })
+                        .ok_or_else(|| {
+                            MaterializerError::Transient(
+                                "Runners refund authority omitted the purchased subscription"
+                                    .to_owned(),
+                            )
+                        })?;
                     self.apply_runner_cas(
                         &tenant_id,
                         RunnerEntitlementRevision {

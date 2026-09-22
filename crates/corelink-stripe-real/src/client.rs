@@ -668,8 +668,8 @@ impl StripeRealClient {
         &self,
         customer_id: &str,
     ) -> Result<SubscriptionList, StripeError> {
-        let customer = url::form_urlencoded::byte_serialize(customer_id.as_bytes())
-            .collect::<String>();
+        let customer =
+            url::form_urlencoded::byte_serialize(customer_id.as_bytes()).collect::<String>();
         self.get::<SubscriptionList>(&format!(
             "/v1/subscriptions?customer={customer}&status=all&limit=100"
         ))

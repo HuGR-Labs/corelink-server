@@ -10,6 +10,7 @@ use std::sync::Mutex;
 #[derive(Debug, Default)]
 struct TestCurrentSubscriptionAuthority {
     snapshots: Mutex<HashMap<String, crate::CurrentSubscription>>,
+    customer_snapshots: Mutex<HashMap<String, Vec<crate::CurrentSubscription>>>,
 }
 
 impl TestCurrentSubscriptionAuthority {
@@ -56,6 +57,17 @@ impl TestCurrentSubscriptionAuthority {
             ),
         );
     }
+
+    fn set_customer_snapshots(
+        &self,
+        requested_subscription_id: &str,
+        snapshots: Vec<crate::CurrentSubscription>,
+    ) {
+        self.customer_snapshots
+            .lock()
+            .unwrap()
+            .insert(requested_subscription_id.to_owned(), snapshots);
+    }
 }
 
 impl crate::CurrentSubscriptionAuthority for TestCurrentSubscriptionAuthority {
@@ -69,6 +81,20 @@ impl crate::CurrentSubscriptionAuthority for TestCurrentSubscriptionAuthority {
             .get(subscription_id)
             .cloned()
             .ok_or_else(|| format!("no current snapshot for {subscription_id}"))
+    }
+
+    fn current_customer_subscriptions(
+        &self,
+        subscription_id: &str,
+    ) -> Result<Vec<crate::CurrentSubscription>, String> {
+        let customer_snapshots = self.customer_snapshots.lock().map_err(|e| {
+            format!("test current-customer-subscription mutex poisoned: {e}")
+        })?;
+        if let Some(snapshots) = customer_snapshots.get(subscription_id) {
+            return Ok(snapshots.clone());
+        }
+        drop(customer_snapshots);
+        Ok(vec![self.current_subscription(subscription_id)?])
     }
 }
 
@@ -643,6 +669,30 @@ fn same_second_reversed_id_predecessor_webhook_uses_current_provider_identity() 
         d1.runner_fence_of("ten_same_second"),
         Some(("sub_aaa_successor".to_owned(), 1_700_000_000_000, 1_700_000_000_000, "evt_old_cancel".to_owned(), true)),
     );
+}
+
+#[test]
+fn active_runner_event_absent_from_provider_customer_list_cannot_grant() {
+    let (handler, d1, _audit, authority) = fixture_with_runners();
+    authority.set("sub_absent", "active", "price_runner_team");
+    // The webhook object is readable, but Stripe's current customer state has
+    // no active/trialing Runners identity. The native path must not append the
+    // webhook object and treat it as authority.
+    authority.set_customer_snapshots("sub_absent", Vec::new());
+    let active = env(
+        "evt_absent_active",
+        "customer.subscription.updated",
+        serde_json::json!({
+            "object": { "id": "sub_absent", "status": "active",
+                "metadata": { "tenant_id": "ten_absent" },
+                "plan": { "id": "price_runner_team" } }
+        }),
+    );
+    assert!(matches!(
+        handler.on_subscription_updated(&active),
+        Err(MaterializerError::Transient(_))
+    ));
+    assert_eq!(d1.runners_entitlement_of("ten_absent"), None);
 }
 
 #[test]

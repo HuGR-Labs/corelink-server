@@ -507,7 +507,11 @@ impl BillingD1Writer for D1HttpBillingWriter {
                     json!(revision.subscription_created_at_ms),
                     json!(revision.stripe_event_created_at_ms),
                     json!(revision.stripe_event_id),
-                    json!(if revision.authority_is_current { 1_i64 } else { 0_i64 }),
+                    json!(if revision.authority_is_current {
+                        1_i64
+                    } else {
+                        0_i64
+                    }),
                     json!(if entitlement.is_some() { 1_i64 } else { 0_i64 }),
                     json!(now_ms),
                 ],
