@@ -81,7 +81,7 @@ env:
   # Cache-key namespace for the persisted baseline. Bump the `v<N>` suffix to
   # deliberately discard every stored baseline (e.g. after a staging resize
   # makes the old numbers meaningless).
-  BASELINE_CACHE_PREFIX: load-test-k6-baseline-v1
+  BASELINE_CACHE_PREFIX: load-test-k6-baseline-v2
   K6_ALL_SCENARIOS: signup,webhook,dsr,cas,byok
   K6_EXPECTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
 
@@ -209,8 +209,19 @@ jobs:
           set -o pipefail
           k6 run \
             --out json=tests/load/results/${{ matrix.scenario.id }}/results.json \
-            --summary-export tests/load/results/${{ matrix.scenario.id }}/summary.json \
+            --summary-export tests/load/results/${{ matrix.scenario.id }}/summary.raw.json \
             ${{ matrix.scenario.script }}
+
+      - name: sanitize k6 summary
+        if: steps.filter.outputs.enabled == 'true' && always()
+        run: |
+          set -euo pipefail
+          python3 scripts/sanitize_k6_summary.py \
+            --input "tests/load/results/${{ matrix.scenario.id }}/summary.raw.json" \
+            --receipt "tests/load/results/${{ matrix.scenario.id }}/target-receipt.json" \
+            --output "tests/load/results/${{ matrix.scenario.id }}/summary.json" \
+            --scenario "${{ matrix.scenario.id }}"
+          rm -f "tests/load/results/${{ matrix.scenario.id }}/summary.raw.json"
 
       - name: record scenario outcome
         if: steps.filter.outputs.enabled == 'true' && always()

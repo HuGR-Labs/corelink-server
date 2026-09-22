@@ -46,7 +46,7 @@ for f in tests/load/k6/*.js; do k6 inspect "$f" || exit 1; done
 | Var                        | Required by                              | Notes |
 |----------------------------|------------------------------------------|-------|
 | `K6_TARGET_HOST`           | all                                      | Must point at staging. The signup script aborts on prod-shaped hostname. |
-| `K6_TARGET_IDENTITY_RECEIPT` | workflow pre-flight                    | Owner-issued JSON binding canonical staging to a 40-character deployment SHA; expires within 24h. |
+| `K6_TARGET_IDENTITY_RECEIPT` | workflow pre-flight                    | Owner-issued JSON binding canonical staging, the dedicated load-test tenant UUID, and a 40-character deployment SHA; expires within 24h. |
 | `K6_STAGING_TEARDOWN_TOKEN` | workflow teardown                       | Staging-only token for the bounded synthetic-state teardown endpoint. |
 | `K6_AUTH_BEARER`           | signup, dsr, cas, byok                   | Staging PAT scoped to load-test tenant. NEVER export a real-tenant PAT. |
 | `K6_STRIPE_WHSEC`          | stripe-webhook-burst                     | Staging Stripe `whsec_…` secret only. |
@@ -85,7 +85,7 @@ npx k6-html-reporter@1.x \
   --output tests/load/results/$(date +%Y-%m-%d)/signup.html
 ```
 
-The dispatch workflow uploads the JSON artifacts and target receipt to the workflow run; the HTML
+The dispatch workflow uploads sanitized JSON artifacts and the public target receipt to the workflow run; raw k6 summaries are removed before upload. The HTML
 reporter step runs offline on the operator workstation when needed.
 
 ## Cleanup
@@ -141,6 +141,6 @@ missing teardown is a failed run and must be investigated before another run.
 
 ## Versioning
 
-Bump the suite version (and re-baseline the operator comparison budget) when
-the SLO catalog floors change. The current version is **r3-prep v1** —
+Bump the suite version and baseline cache namespace (and re-baseline the operator comparison budget) when
+the SLO catalog floors or identity envelope change. The current version is **r3-prep v2** —
 matches HEAD of `wt/r3-prep-load-tests`.

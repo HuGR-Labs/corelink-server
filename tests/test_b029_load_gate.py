@@ -15,6 +15,9 @@ SCRIPT = ROOT / "scripts/load-test-baseline-check.py"
 VERIFIER = ROOT / "scripts/verify_b029_load_gate.py"
 FULL_SCENARIOS = ("signup", "webhook", "dsr", "cas", "byok")
 FULL_EXPECTED_SCENARIOS = ",".join(FULL_SCENARIOS)
+TARGET = "https://staging.corelink.humangr.com"
+TENANT = "019e7109-e514-72b2-ac5b-607d97ea64a1"
+DEPLOYMENT = "a" * 40
 
 
 def load_module(path: Path, name: str):
@@ -52,7 +55,15 @@ class B029LoadGateTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(
-                {"metrics": {"http_req_duration": {"med": median, "p(99)": p99}}}
+                {
+                    "schema": 1,
+                    "suite_version": "r3-prep-v2",
+                    "scenario": scenario,
+                    "target": TARGET,
+                    "tenant_id": TENANT,
+                    "deployment_sha": DEPLOYMENT,
+                    "metrics": {"http_req_duration": {"med": median, "p(99)": p99}},
+                }
             )
         )
         if status is not None:
@@ -64,10 +75,18 @@ class B029LoadGateTests(unittest.TestCase):
         self.baseline.write_text(
             json.dumps(
                 {
-                    "schema": 1,
+                    "schema": 2,
+                    "baseline_version": "k6-baseline-v2",
+                    "suite_version": "r3-prep-v2",
                     "captured_at": "2026-09-06T00:00:00Z",
                     "commit": "base-commit",
                     "metric": "http_req_duration.med (ms)",
+                    "threshold_multiplier": 1.20,
+                    "identity": {
+                        "target": TARGET,
+                        "tenant_id": TENANT,
+                        "deployment_sha": DEPLOYMENT,
+                    },
                     "scenarios": {
                         scenario: {"median_ms": median, "p99_ms": 20}
                         for scenario in FULL_SCENARIOS
@@ -113,6 +132,7 @@ class B029LoadGateTests(unittest.TestCase):
         (contract / "scripts").mkdir()
         (contract / "tests/load").mkdir(parents=True)
         shutil.copy(ROOT / "scripts/load-test-baseline-check.py", contract / "scripts")
+        shutil.copy(ROOT / "scripts/sanitize_k6_summary.py", contract / "scripts")
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
         self._copy_hostname_sources(contract)
         (contract / ".github/workflows/load-test-nightly.yml").write_text(workflow)
@@ -443,10 +463,11 @@ class B029LoadGateTests(unittest.TestCase):
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
         self._copy_hostname_sources(contract)
         (contract / "scripts").mkdir()
+        shutil.copy(ROOT / "scripts/sanitize_k6_summary.py", contract / "scripts")
 
         source = SCRIPT.read_text()
         current_start = source.index("def collect_current(")
-        current_end = source.index("\ndef load_baseline", current_start)
+        current_end = source.index("\ndef collect_identity", current_start)
         current_mutant = (
             source[:current_start]
             + '''def collect_current(results_dir, expected=None):
@@ -490,10 +511,11 @@ class B029LoadGateTests(unittest.TestCase):
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
         self._copy_hostname_sources(contract)
         (contract / "scripts").mkdir()
+        shutil.copy(ROOT / "scripts/sanitize_k6_summary.py", contract / "scripts")
         source = SCRIPT.read_text()
 
         current_start = source.index("def collect_current(")
-        current_end = source.index("\ndef load_baseline", current_start)
+        current_end = source.index("\ndef collect_identity", current_start)
         current_dead = (
             source[:current_start]
             + '''def collect_current(results_dir, expected=None):
@@ -535,9 +557,9 @@ class B029LoadGateTests(unittest.TestCase):
         )
 
         early_return = source.replace(
-            "        current = collect_current(results_dir, expected_set)\n",
+            "        current = collect_current(results_dir, expected_set, current_identity)\n",
             "        return EXIT_OK  # all required collection code below is unreachable\n"
-            "        current = collect_current(results_dir, expected_set)\n",
+            "        current = collect_current(results_dir, expected_set, current_identity)\n",
             1,
         )
         (contract / "scripts/load-test-baseline-check.py").write_text(early_return)

@@ -24,6 +24,7 @@ def receipt() -> dict[str, object]:
         "schema": 1,
         "environment": "staging",
         "target": module.CANONICAL_TARGET,
+        "tenant_id": "019e7109-e514-72b2-ac5b-607d97ea64a1",
         "deployment_sha": "a" * 40,
         "issued_at": "2026-09-22T00:00:00Z",
         "expires_at": "2026-09-22T23:59:59Z",
@@ -57,7 +58,7 @@ class LoadTargetReceiptTests(unittest.TestCase):
                     module.validate(receipt(), target, now=NOW)
 
     def test_rejects_missing_or_malformed_identity(self) -> None:
-        for key, value in (("deployment_sha", "HEAD"), ("environment", "production"), ("expires_at", "2026-09-22T12:00:00Z")):
+        for key, value in (("deployment_sha", "HEAD"), ("tenant_id", "other-tenant"), ("environment", "production"), ("expires_at", "2026-09-22T12:00:00Z")):
             mutated = receipt()
             mutated[key] = value
             with self.subTest(key=key):
