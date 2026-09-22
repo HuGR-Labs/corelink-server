@@ -211,6 +211,7 @@ pub(super) fn assert_slsa_contract(workflow: &str) {
         "--pattern checksums.txt",
         "test \"${GITHUB_REF}\" = \"refs/tags/${TAG}\"",
         "test \"${GITHUB_SHA}\" = \"${SOURCE_SHA}\"",
+        "contents: read",
         "attestations: write",
         "id-token: write",
         "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
