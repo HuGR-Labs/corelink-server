@@ -85,6 +85,10 @@ const RETAIN_DISCLOSABLE_TABLES: &[&str] = &[
     "sla_monthly_observations",
     "sla_monthly_measurements",
     "sla_credit_ledger",
+    // Runner aggregation's immutable terms/claim rows are retained billing
+    // evidence under ADR-S11-013 and are disclosed with the retained set.
+    "runner_period_terms_snapshot",
+    "runner_aggregate_event_claim",
 ];
 
 /// Lower-snake column-name tokens that mark a column as secret/credential
