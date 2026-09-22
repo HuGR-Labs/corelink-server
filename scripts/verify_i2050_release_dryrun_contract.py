@@ -36,6 +36,7 @@ MINGW_W64_FORMULA_URL = (
     "https://raw.githubusercontent.com/Homebrew/homebrew-core/"
     "00e77a1611f627f2ea8f876fad0468f2c4b3ed20/Formula/m/mingw-w64.rb"
 )
+MINGW_W64_FORMULA_SHA256 = "4b5f53d8ff341875f158092cbdcd5536ce3d6d5136de1672ecf687564dae07f9"
 DLLTOOL_PATH = "$(brew --prefix mingw-w64)/bin/x86_64-w64-mingw32-dlltool"
 DLLTOOL_GUARDS = (
     'if [ "${ACTUAL_MINGW_W64_VERSION}" != "${EXPECTED_MINGW_W64_VERSION}" ]; then',
@@ -116,8 +117,14 @@ def _verify_dlltool_contract(text: str) -> None:
         "Install and verify pinned MinGW-w64 dlltool",
         "EXPECTED_MINGW_W64_VERSION=14.0.0",
         "EXPECTED_DLLTOOL_VERSION='GNU dlltool (GNU Binutils) 2.47'",
+        f"EXPECTED_MINGW_W64_FORMULA_SHA256={MINGW_W64_FORMULA_SHA256}",
         MINGW_W64_FORMULA_URL,
-        'brew install "${MINGW_W64_FORMULA_URL}"',
+        'MINGW_W64_TAP=corelink/homebrew-mingw-w64',
+        'brew tap-new --no-git "${MINGW_W64_TAP}"',
+        'curl --fail --location --silent --show-error "${MINGW_W64_FORMULA_URL}" --output "${MINGW_W64_TAP_FORMULA}"',
+        "shasum -a 256 --check --status",
+        'cp "${MINGW_W64_TAP_FORMULA}" "$(brew --repo "${MINGW_W64_TAP}")/Formula/mingw-w64.rb"',
+        'brew install "${MINGW_W64_TAP}/mingw-w64"',
         'brew list --versions mingw-w64',
         DLLTOOL_PATH,
         '"${DLLTOOL_PATH}" --version | sed -n \'1p\'',
@@ -137,6 +144,8 @@ def _verify_dlltool_contract(text: str) -> None:
 def _dlltool_contract_mutation_self_test(text: str) -> None:
     for token, replacement in (
         (MINGW_W64_FORMULA_URL, "https://example.invalid/mingw-w64.rb"),
+        ('brew tap-new --no-git "${MINGW_W64_TAP}"', "# local custom tap creation removed"),
+        ('brew install "${MINGW_W64_TAP}/mingw-w64"', 'brew install "mingw-w64"'),
         ('if [ ! -x "${DLLTOOL_PATH}" ]; then', "# dlltool executable check removed"),
         (
             'if [ "${ACTUAL_DLLTOOL_VERSION}" != "${EXPECTED_DLLTOOL_VERSION}" ]; then',
