@@ -65,7 +65,7 @@ def main() -> int:
     require(probe, 'PROBE_SAMPLES="${PROBE_SAMPLES:-10}"', "ten-sample default")
     require(probe, 'openssl rand -hex 32', "fresh 64-hex object keys")
     require(probe, '[ "${REQUEST_STATUS}" = "404" ]', "served authenticated 404 assertion")
-    require(probe, "phase=wall median_ms=", "wall median/p90 reporting")
+    require(probe, "phase_stats()", "wall median/p90 reporting helper")
     require(probe, "for phase in wall auth wdb", "Server-Timing phase reporting")
     require(probe, "for required_phase in auth wdb origin opat ohandler total; do", "required attribution phases")
     require(probe, "staging-origin-redacted", "redacted target label")
