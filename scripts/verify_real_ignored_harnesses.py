@@ -287,7 +287,12 @@ def rust_code_without_comments_and_strings(body: str) -> str:
     return "".join(out)
 
 
-def exact_ignored_source(body: str, target: str) -> bool:
+def exact_ignored_source(
+    body: str,
+    target: str,
+    *,
+    allowed_cfg: str | None = None,
+) -> bool:
     code = rust_code_without_comments_and_strings(body)
     pattern = rf"(?m)^[ \t]*(?:(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+{re.escape(target)}\s*\()"
     declarations = list(re.finditer(pattern, code))
@@ -319,8 +324,13 @@ def exact_ignored_source(body: str, target: str) -> bool:
     # cfg on the crate/module containing this harness can silently remove the
     # test from the compiled target. These real harnesses must always compile;
     # reject every cfg attribute rather than trying to evaluate expressions.
-    if re.search(r"(?m)^\s*#!\[\s*cfg(?:\s*\(|\s*\])", code[:declaration.start()]):
-        return False
+    crate_cfg = re.findall(
+        r"(?m)^\s*#!\[\s*cfg\s*\(([^\n]*)\)\s*\]\s*$",
+        body[: declaration.start()],
+    )
+    if crate_cfg:
+        if allowed_cfg is None or crate_cfg != [allowed_cfg]:
+            return False
 
     line_start = code.rfind("\n", 0, declaration.start()) + 1
     prior = code[:line_start].splitlines()
@@ -345,7 +355,12 @@ def exact_ignored_source(body: str, target: str) -> bool:
             while module_prior and re.fullmatch(r"\s*#\[[^\n]*\]\s*", module_prior[-1]):
                 module_attrs.insert(0, module_prior.pop().strip())
             if any(re.match(r"#\[\s*cfg(?:\s*\(|\s*\])", attr, re.IGNORECASE) for attr in module_attrs):
-                return False
+                module_cfg = re.findall(
+                    r"(?m)^\s*#\[\s*cfg\s*\(([^\n]*)\)\s*\]\s*$",
+                    body[:module.start()],
+                )
+                if allowed_cfg is None or module_cfg != [allowed_cfg]:
+                    return False
     return True
 
 
@@ -513,7 +528,16 @@ def assert_contract(workflow: str, runner: str) -> None:
         if not source.is_file():
             fail(f"source for real target is missing: {target}: {source_path}")
         body = source.read_text(encoding="utf-8")
-        if not exact_ignored_source(body, target):
+        allowed_cfg = (
+            'feature = "live-integration"'
+            if source_path == "crates/corelink-stripe-real/tests/live_integration.rs"
+            else (
+                'all(feature = "neon-real", not(target_arch = "wasm32"))'
+                if source_path == "crates/corelink-audit-chain/tests/neon_shadow_real.rs"
+                else None
+            )
+        )
+        if not exact_ignored_source(body, target, allowed_cfg=allowed_cfg):
             fail(f"real target source declaration/ignore association is not exact: {target}")
         if not re.search(rf"(?m)^\s*run_cargo\b[^\n]*\b{re.escape(target)}\b", sh):
             fail(f"runner does not execute exact source target: {target}")
