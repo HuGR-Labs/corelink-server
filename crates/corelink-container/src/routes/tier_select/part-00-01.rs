@@ -179,7 +179,7 @@ async fn orchestrate_runner_tier_select(
             .store
             .checkout_runner(provider, tenant_id, tier, now_ms)
             .await
-            .map_err(TierSelectHttpError::StripeUnavailable)?;
+            .map_err(|error| TierSelectHttpError::StripeUnavailable(Some(error)))?;
         if !created.checkout_url.starts_with("https://") {
             return Err(TierSelectHttpError::StripeUnavailable(Some(
                 "checkout url was not https".to_owned(),
