@@ -162,6 +162,44 @@ fn extract_plan_id(env: &StripeWebhookEnvelope) -> Option<&str> {
         })
 }
 
+/// Extract a subscription relationship from an expanded invoice/charge object.
+/// This is a Stripe object relationship, not user-controlled metadata.
+fn extract_subscription_id(object: &serde_json::Value) -> Option<&str> {
+    object
+        .get("subscription")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            object
+                .get("subscription_details")
+                .and_then(|details| details.get("subscription"))
+                .and_then(serde_json::Value::as_str)
+        })
+}
+
+/// Extract the invoice id from a Charge, accepting Stripe's normal string form
+/// and an expanded invoice object for replay tooling.
+fn extract_invoice_id(object: &serde_json::Value) -> Option<&str> {
+    object
+        .get("invoice")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            object
+                .get("invoice")
+                .and_then(|invoice| invoice.get("id"))
+                .and_then(serde_json::Value::as_str)
+        })
+}
+
+/// The subscription relation carried by a refund's Charge, including an
+/// expanded invoice used by replay tooling.
+fn extract_refund_subscription_id(object: &serde_json::Value) -> Option<&str> {
+    extract_subscription_id(object).or_else(|| {
+        object
+            .get("invoice")
+            .and_then(|invoice| extract_subscription_id(invoice))
+    })
+}
+
 /// Production [`StateMaterializer`] implementation.
 pub struct D1SubscriptionStateHandler {
     d1: Arc<dyn BillingD1Writer>,
@@ -667,9 +705,11 @@ impl D1SubscriptionStateHandler {
         })?;
         let now_ms = self.clock.now_ms();
 
+        let subscription_id = env.data.get("object").and_then(extract_subscription_id);
         let payload = serde_json::json!({
             "stripe_event_type": env.event_type,
             "invoice_id": inv_id,
+            "stripe_subscription_id": subscription_id,
             "outcome": outcome,
         });
         self.audit
@@ -752,9 +792,31 @@ impl D1SubscriptionStateHandler {
                         .and_then(|o| o.get("amount_refunded").and_then(serde_json::Value::as_i64)),
                 )
                 .is_some_and(|(amount, refunded)| amount > 0 && refunded >= amount);
+        // Tenant identity does not identify a purchased product. Prefer an
+        // expanded Charge/Invoice subscription relationship; otherwise resolve
+        // the Charge's invoice through the materialized invoice and the durable
+        // Cache/Runners purchase maps. Missing or ambiguous history deliberately
+        // stays pending rather than silently selecting Cache.
+        let refunded_purchase = match object.and_then(extract_refund_subscription_id) {
+            Some(subscription_id) => self
+                .d1
+                .resolve_refunded_purchase_by_subscription(&tenant_id, subscription_id)
+                .map_err(d1_to_mat)?,
+            None => match object.and_then(extract_invoice_id) {
+                Some(invoice_id) => self
+                    .d1
+                    .resolve_refunded_purchase_by_invoice(&tenant_id, invoice_id)
+                    .map_err(d1_to_mat)?,
+                None => None,
+            },
+        };
+        let invoice_id = object.and_then(extract_invoice_id);
         let payload = serde_json::json!({
             "stripe_event_type": env.event_type,
             "charge_id": charge_id,
+            "invoice_id": invoice_id,
+            "stripe_subscription_id": refunded_purchase.as_ref().map(|p| &p.stripe_subscription_id),
+            "refunded_product_axis": refunded_purchase.as_ref().map(|p| p.product.as_str()).unwrap_or("pending"),
             "fully_refunded": fully_refunded,
         });
         self.audit
@@ -781,10 +843,20 @@ impl D1SubscriptionStateHandler {
             })
             .map_err(d1_to_mat)?;
         if fully_refunded {
-            // A full refund is an access revocation. Use the same inactive
-            // downgrade path as subscription cancellation; partial refunds
-            // remain billing evidence but do not silently remove service.
-            self.persist_tier_downgrade(&tenant_id, TierKind::Free, env, now_ms)?;
+            match refunded_purchase {
+                Some(purchase) if purchase.product == crate::d1::RefundedProduct::Cache => {
+                    self.persist_tier_downgrade(&tenant_id, TierKind::Free, env, now_ms)?;
+                }
+                Some(purchase) if purchase.product == crate::d1::RefundedProduct::Runners => {
+                    self.d1
+                        .revoke_refunded_runners_entitlement(
+                            &tenant_id,
+                            &purchase.stripe_subscription_id,
+                        )
+                        .map_err(d1_to_mat)?;
+                }
+                Some(_) | None => {}
+            }
         }
         Ok(())
     }

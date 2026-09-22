@@ -153,6 +153,17 @@ pub const SQL_INSERT_DISPUTE: &str = "INSERT INTO stripe_disputes (tenant_id, st
 /// parent `stripe_charge_id` (refunds are addressed via the charge in
 /// webhook deliveries) — there is NO `stripe_refund_id` column.
 pub const SQL_INSERT_REFUND: &str = "INSERT INTO stripe_refunds (tenant_id, stripe_charge_id, stripe_event_id, materialized_at_ms, payload_json) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING";
+/// Resolve the subscription recorded on an already-materialized invoice.  A
+/// charge refund only carries the invoice id, while the invoice is the durable
+/// Stripe object that carries the subscription relationship.
+pub const SQL_FIND_INVOICE_SUBSCRIPTION: &str = "SELECT json_extract(payload_json, '$.stripe_subscription_id') AS stripe_subscription_id FROM stripe_invoices WHERE tenant_id = ? AND stripe_invoice_id = ? LIMIT 1";
+/// Resolve a subscription against the two durable purchase maps.  Returning
+/// more than one row is deliberately treated as ambiguous by the writer.
+pub const SQL_RESOLVE_REFUND_PRODUCT: &str = "SELECT 'runners' AS product_axis FROM runner_billing WHERE tenant_id = ? AND runner_subscription_id = ? UNION ALL SELECT 'cache' AS product_axis FROM tenant_billing WHERE tenant_id = ? AND stripe_subscription_id = ? LIMIT 2";
+/// Revoke Runners only when every active runner subscription is represented by
+/// a full-refund materialization.  The refunded subscription itself is always
+/// excluded, so one full refund cannot revoke a separately-paid runner SKU.
+pub const SQL_REVOKE_REFUNDED_RUNNERS_ENTITLEMENT: &str = "DELETE FROM runners_entitlement WHERE tenant_id = ? AND NOT EXISTS (SELECT 1 FROM runner_billing rb WHERE rb.tenant_id = ? AND rb.status IN ('active', 'trialing') AND rb.runner_subscription_id != ? AND NOT EXISTS (SELECT 1 FROM stripe_refunds sr WHERE sr.tenant_id = rb.tenant_id AND json_extract(sr.payload_json, '$.stripe_subscription_id') = rb.runner_subscription_id AND json_extract(sr.payload_json, '$.fully_refunded') = 1))";
 /// Idempotency dedup INSERT into `stripe_webhook_events_processed`
 /// (migration 0044). This table is UN-tenanted — its PRIMARY KEY is the
 /// globally-unique Stripe `event_id`; there is NO `tenant_id` column.
@@ -177,6 +188,36 @@ pub enum WebhookOutcome {
     /// ([`corelink_billing_stripe_traits::CanonicalWebhookEventType::Unknown`]) —
     /// acknowledged for forward-compat but not acted on.
     AcknowledgedUnknown,
+}
+
+/// The product axis durably identified for a refunded subscription.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RefundedProduct {
+    /// Cache subscription recorded in `tenant_billing`.
+    Cache,
+    /// Runners subscription recorded in `runner_billing`.
+    Runners,
+}
+
+impl RefundedProduct {
+    /// Stable audit payload value.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Cache => "cache",
+            Self::Runners => "runners",
+        }
+    }
+}
+
+/// A product-axis decision paired with the durable Stripe subscription id.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RefundedPurchase {
+    /// The product axis selected from the purchase maps.
+    pub product: RefundedProduct,
+    /// The Stripe subscription whose invoice was refunded.
+    pub stripe_subscription_id: String,
 }
 
 impl WebhookOutcome {
@@ -389,6 +430,40 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
     /// `customer.subscription.deleted`, so a canceled/lapsed tenant never keeps a
     /// stale entitlement. Idempotent (revoking an absent entitlement is a no-op).
     fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error>;
+
+    /// Resolve a subscription id through the durable Cache/Runners purchase
+    /// maps. `None` means unknown or ambiguous ownership and MUST NOT select a
+    /// product by tenant identity alone.
+    fn resolve_refunded_purchase_by_subscription(
+        &self,
+        _tenant_id: &str,
+        _stripe_subscription_id: &str,
+    ) -> Result<Option<RefundedPurchase>, BillingD1Error> {
+        Ok(None)
+    }
+
+    /// Resolve a charge's invoice id through the materialized invoice and then
+    /// the durable purchase maps. Historical or out-of-order invoices may have
+    /// no usable relationship; those stay pending attribution.
+    fn resolve_refunded_purchase_by_invoice(
+        &self,
+        _tenant_id: &str,
+        _stripe_invoice_id: &str,
+    ) -> Result<Option<RefundedPurchase>, BillingD1Error> {
+        Ok(None)
+    }
+
+    /// Revoke the refunded Runners subscription without touching Cache or a
+    /// separately-active Runners subscription. The default is intentionally a
+    /// no-op because a writer that cannot prove this relation must not delete a
+    /// tenant-wide entitlement.
+    fn revoke_refunded_runners_entitlement(
+        &self,
+        _tenant_id: &str,
+        _stripe_subscription_id: &str,
+    ) -> Result<(), BillingD1Error> {
+        Ok(())
+    }
 }
 
 /// Native in-memory mirror. Stores every materialized row + every
@@ -409,6 +484,9 @@ pub struct InMemoryBillingD1 {
     /// `tenant_id` → (`max_concurrency`, `max_vcpu_h`) — the Runners
     /// entitlement mirror (`runners_entitlement`).
     runners: Arc<Mutex<HashMap<String, (u32, u32)>>>,
+    /// (`tenant_id`, `subscription_id`) → purchased product. Test-only mirror
+    /// of `tenant_billing` and `runner_billing` used by refund routing tests.
+    refund_purchases: Arc<Mutex<HashMap<(String, String), RefundedProduct>>>,
     /// If set, every write returns this error (drives fail-CLOSED tests).
     fail_with: Arc<Mutex<Option<BillingD1Error>>>,
 }
@@ -489,6 +567,26 @@ impl InMemoryBillingD1 {
         match self.tiers.lock() {
             Ok(g) => g.get(tenant_id).map(|(tier, _)| tier.clone()),
             Err(p) => p.into_inner().get(tenant_id).map(|(tier, _)| tier.clone()),
+        }
+    }
+
+    /// Seed a durable Cache purchase mapping for a hermetic refund test.
+    pub fn record_cache_purchase(&self, tenant_id: &str, stripe_subscription_id: &str) {
+        if let Ok(mut g) = self.refund_purchases.lock() {
+            g.insert(
+                (tenant_id.to_owned(), stripe_subscription_id.to_owned()),
+                RefundedProduct::Cache,
+            );
+        }
+    }
+
+    /// Seed a durable Runners purchase mapping for a hermetic refund test.
+    pub fn record_runners_purchase(&self, tenant_id: &str, stripe_subscription_id: &str) {
+        if let Ok(mut g) = self.refund_purchases.lock() {
+            g.insert(
+                (tenant_id.to_owned(), stripe_subscription_id.to_owned()),
+                RefundedProduct::Runners,
+            );
         }
     }
 
@@ -658,6 +756,71 @@ impl BillingD1Writer for InMemoryBillingD1 {
         // Idempotent revoke: removing an absent entry is a no-op, mirroring the
         // production `DELETE … WHERE tenant_id = ?` semantics (0 rows affected).
         g.remove(tenant_id);
+        Ok(())
+    }
+
+    fn resolve_refunded_purchase_by_subscription(
+        &self,
+        tenant_id: &str,
+        stripe_subscription_id: &str,
+    ) -> Result<Option<RefundedPurchase>, BillingD1Error> {
+        self.check_armed()?;
+        let g = self.refund_purchases.lock().map_err(|e| {
+            BillingD1Error::Transient(format!("refund purchases mutex poisoned: {e}"))
+        })?;
+        Ok(
+            g.get(&(tenant_id.to_owned(), stripe_subscription_id.to_owned()))
+                .copied()
+                .map(|product| RefundedPurchase {
+                    product,
+                    stripe_subscription_id: stripe_subscription_id.to_owned(),
+                }),
+        )
+    }
+
+    fn resolve_refunded_purchase_by_invoice(
+        &self,
+        tenant_id: &str,
+        stripe_invoice_id: &str,
+    ) -> Result<Option<RefundedPurchase>, BillingD1Error> {
+        self.check_armed()?;
+        let subscription_id = self.snapshot().into_iter().rev().find_map(|row| {
+            (row.table == "stripe_invoices"
+                && row.tenant_id == tenant_id
+                && row.stripe_id == stripe_invoice_id)
+                .then(|| {
+                    row.payload
+                        .get("stripe_subscription_id")?
+                        .as_str()
+                        .map(str::to_owned)
+                })
+                .flatten()
+        });
+        match subscription_id {
+            Some(subscription_id) => {
+                self.resolve_refunded_purchase_by_subscription(tenant_id, &subscription_id)
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn revoke_refunded_runners_entitlement(
+        &self,
+        tenant_id: &str,
+        stripe_subscription_id: &str,
+    ) -> Result<(), BillingD1Error> {
+        self.check_armed()?;
+        let mut purchases = self.refund_purchases.lock().map_err(|e| {
+            BillingD1Error::Transient(format!("refund purchases mutex poisoned: {e}"))
+        })?;
+        purchases.remove(&(tenant_id.to_owned(), stripe_subscription_id.to_owned()));
+        let has_other_runner = purchases.iter().any(|((tenant, _), product)| {
+            tenant == tenant_id && *product == RefundedProduct::Runners
+        });
+        drop(purchases);
+        if !has_other_runner {
+            self.delete_runners_entitlement(tenant_id)?;
+        }
         Ok(())
     }
 }

@@ -54,11 +54,12 @@
 use std::sync::Arc;
 
 use corelink_billing_stripe_materializer::{
-    BillingD1Error, BillingD1Writer, MaterializedRow, WebhookOutcome,
-    SQL_DELETE_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
+    BillingD1Error, BillingD1Writer, MaterializedRow, RefundedProduct, RefundedPurchase,
+    WebhookOutcome, SQL_DELETE_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER,
+    SQL_FIND_INVOICE_SUBSCRIPTION, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
     SQL_INSERT_WEBHOOK_EVENT_PROCESSED, SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER,
-    SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT,
-    SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
+    SQL_RESOLVE_REFUND_PRODUCT, SQL_REVOKE_REFUNDED_RUNNERS_ENTITLEMENT, SQL_UPSERT_CUSTOMER,
+    SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT, SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
 };
 use serde_json::{json, Value};
 
@@ -328,6 +329,58 @@ impl BillingD1Writer for D1HttpBillingWriter {
         Ok(Some(tier))
     }
 
+    fn resolve_refunded_purchase_by_subscription(
+        &self,
+        tenant_id: &str,
+        stripe_subscription_id: &str,
+    ) -> Result<Option<RefundedPurchase>, BillingD1Error> {
+        let rows = self.run(
+            SQL_RESOLVE_REFUND_PRODUCT,
+            vec![
+                json!(tenant_id),
+                json!(stripe_subscription_id),
+                json!(tenant_id),
+                json!(stripe_subscription_id),
+            ],
+        )?;
+        // Two rows means a corrupt/ambiguous ownership map. Keep the refund
+        // pending; selecting either product could revoke an unrelated service.
+        if rows.len() != 1 {
+            return Ok(None);
+        }
+        let Some(row) = rows.first() else {
+            return Ok(None);
+        };
+        let product = match row.get("product_axis").and_then(Value::as_str) {
+            Some("cache") => RefundedProduct::Cache,
+            Some("runners") => RefundedProduct::Runners,
+            _ => return Ok(None),
+        };
+        Ok(Some(RefundedPurchase {
+            product,
+            stripe_subscription_id: stripe_subscription_id.to_owned(),
+        }))
+    }
+
+    fn resolve_refunded_purchase_by_invoice(
+        &self,
+        tenant_id: &str,
+        stripe_invoice_id: &str,
+    ) -> Result<Option<RefundedPurchase>, BillingD1Error> {
+        let rows = self.run(
+            SQL_FIND_INVOICE_SUBSCRIPTION,
+            vec![json!(tenant_id), json!(stripe_invoice_id)],
+        )?;
+        let Some(subscription_id) = rows
+            .first()
+            .and_then(|row| row.get("stripe_subscription_id"))
+            .and_then(Value::as_str)
+        else {
+            return Ok(None);
+        };
+        self.resolve_refunded_purchase_by_subscription(tenant_id, subscription_id)
+    }
+
     fn upsert_tier(
         &self,
         tenant_id: &str,
@@ -409,6 +462,22 @@ impl BillingD1Writer for D1HttpBillingWriter {
         // tenant_id. `DELETE … WHERE tenant_id = ?` is idempotent (a missing row
         // is a 0-rows-affected no-op), so a replay/duplicate revoke is harmless.
         self.run(SQL_DELETE_RUNNERS_ENTITLEMENT, vec![json!(tenant_id)])?;
+        Ok(())
+    }
+
+    fn revoke_refunded_runners_entitlement(
+        &self,
+        tenant_id: &str,
+        stripe_subscription_id: &str,
+    ) -> Result<(), BillingD1Error> {
+        self.run(
+            SQL_REVOKE_REFUNDED_RUNNERS_ENTITLEMENT,
+            vec![
+                json!(tenant_id),
+                json!(tenant_id),
+                json!(stripe_subscription_id),
+            ],
+        )?;
         Ok(())
     }
 }
