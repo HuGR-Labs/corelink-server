@@ -1,12 +1,8 @@
 name: audit keyed epoch workerd
 
 on:
-  pull_request:
-    paths:
-      - "worker/tests/keyed_epoch_disposable.miniflare.test.ts"
-      - "worker/package.json"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/audit-keyed-epoch-workerd.yml"
+  # Standalone execution is explicit only. The central campaign workflow is
+  # the normal Wave9 entry point and selects this suite once per exact head.
   workflow_dispatch: {}
 
 permissions:
