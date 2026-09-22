@@ -216,8 +216,8 @@ def mutation_checks(sources: dict[str, str]) -> None:
             lambda s: s.__setitem__(
                 "workflow",
                 s["workflow"].replace(
-                    EXPECTED_CACHE_KEY,
-                    "buck2-build-${{ github.repository }}",
+                    f"key: {EXPECTED_CACHE_KEY}",
+                    "key: buck2-build-${{ github.repository }}",
                     1,
                 ),
             ),
