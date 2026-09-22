@@ -17,6 +17,9 @@
     root = .
     prelude = prelude
 
+[cell_aliases]
+    config = prelude
+
 [external_cells]
     prelude = bundled
 
