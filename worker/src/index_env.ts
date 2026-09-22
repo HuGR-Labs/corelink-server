@@ -231,6 +231,11 @@ export interface Env {
   // understanding that "on" leaks one bit of the internal key's correctness
   // per request on a capped tier. Operator-flipped only; not in wrangler.toml.
   SERVER_TIMING_WDB_DETAIL?: string;
+  // Deployment identity is injected by the release environment and echoed on
+  // diagnostic responses so an owner receipt cannot attach timings to an
+  // unverified build or region.
+  CORELINK_DEPLOYED_SHA?: string;
+  CORELINK_DEPLOYED_REGION?: string;
   // Forwarded to the CONTAINER (see `durable_object.ts` container.start env
   // forward-list), not read by the Worker itself: "on" arms the container's
   // `oargon`/`opermit`/`ortier` detail phases. Declared here so the forward is
