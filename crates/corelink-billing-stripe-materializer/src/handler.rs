@@ -30,7 +30,7 @@
 //!    next delivery hits the dedup row → no re-mutation.
 
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 // Wave-36 Trigger A: trait + type surface migrated to the leaf
 // `corelink-billing-stripe-traits` crate (no `corelink-stripe-real`
@@ -42,7 +42,8 @@ use corelink_tier_selection::tier::TierKind;
 
 use crate::audit::{AuditSeverity, BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
 use crate::clock::{default_mat_clock, MatClock};
-use crate::d1::{BillingD1Error, BillingD1Writer, MaterializedRow};
+use crate::current_subscription::CurrentSubscriptionAuthority;
+use crate::d1::{BillingD1Error, BillingD1Writer, EntitlementCasOutcome, MaterializedRow};
 use crate::runners::RunnersEntitlementResolver;
 use crate::tier::{TierSelectError, TierSelector};
 
@@ -142,6 +143,17 @@ fn subscription_status_grants_access(status: &str) -> bool {
     matches!(status, "active" | "trialing")
 }
 
+/// Stripe's signed event creation time is the revision for one subscription.
+/// A local wall clock or price identifier cannot establish provider order.
+fn event_created_at_ms(env: &StripeWebhookEnvelope) -> Result<u64, MaterializerError> {
+    env.created
+        .checked_mul(1_000)
+        .filter(|created_at_ms| *created_at_ms > 0)
+        .ok_or_else(|| {
+            MaterializerError::InvalidPayload("missing Stripe event created timestamp".to_owned())
+        })
+}
+
 /// Extract the subscription's price/plan id, tolerant to Stripe API-version
 /// shape (F-MP-3, go-live audit): prefer the legacy `data.object.plan.id`, fall
 /// back to the modern `data.object.items.data[0].price.id`. Both the cache-tier
@@ -211,6 +223,13 @@ pub struct D1SubscriptionStateHandler {
     /// [`Self::with_runners_resolver`] once the `STRIPE_PRICE_ID_RUNNER_*`
     /// prices exist — env-gated activation, mirroring the cache tier selector.
     runners_resolver: Option<Arc<dyn RunnersEntitlementResolver>>,
+    /// Provider read used to make a webhook an idempotent reconciliation trigger
+    /// instead of trusting its delivered snapshot.
+    runners_authority: Option<Arc<dyn CurrentSubscriptionAuthority>>,
+    /// Holds the provider read and the corresponding entitlement mutation in one
+    /// local critical section, so two native deliveries cannot finish in reverse
+    /// order and let an earlier read overwrite a later reconciliation.
+    runners_reconcile_lock: Mutex<()>,
     clock: Arc<dyn MatClock>,
 }
 
@@ -221,6 +240,7 @@ impl fmt::Debug for D1SubscriptionStateHandler {
             .field("audit", &self.audit)
             .field("tier_selector", &self.tier_selector)
             .field("runners_resolver", &self.runners_resolver)
+            .field("runners_authority", &self.runners_authority)
             .field("clock", &self.clock)
             .finish()
     }
@@ -246,6 +266,8 @@ impl D1SubscriptionStateHandler {
             audit,
             tier_selector,
             runners_resolver: None,
+            runners_authority: None,
+            runners_reconcile_lock: Mutex::new(()),
             clock: default_mat_clock(),
         }
     }
@@ -256,6 +278,18 @@ impl D1SubscriptionStateHandler {
     #[must_use]
     pub fn with_runners_resolver(mut self, resolver: Arc<dyn RunnersEntitlementResolver>) -> Self {
         self.runners_resolver = Some(resolver);
+        self
+    }
+
+    /// Wire the provider-authoritative reader required before a Runners
+    /// entitlement is changed. Without it, a configured Runners resolver
+    /// fails closed rather than deriving entitlement from webhook arrival order.
+    #[must_use]
+    pub fn with_current_subscription_authority(
+        mut self,
+        authority: Arc<dyn CurrentSubscriptionAuthority>,
+    ) -> Self {
+        self.runners_authority = Some(authority);
         self
     }
 
@@ -389,6 +423,39 @@ impl D1SubscriptionStateHandler {
                 "subscription {sub_id} arrived with no `status` field"
             )));
         };
+        let event_price_id = extract_plan_id(env).ok_or_else(|| {
+            MaterializerError::InvalidPayload(
+                "missing data.object.plan.id / items.data[].price.id (required for subscription axis routing)"
+                    .to_string(),
+            )
+        })?;
+        // Resolve the provider snapshot before writing the subscription row or
+        // choosing the Runner/cache axis. The webhook's product and status are
+        // delivery data only; a stale cache-shaped event must not downgrade a
+        // currently Runner subscription.
+        let _runner_guard = self
+            .runners_resolver
+            .as_ref()
+            .map(|_| {
+                self.runners_reconcile_lock.lock().map_err(|e| {
+                    MaterializerError::Transient(format!(
+                        "Runners reconciliation lock poisoned: {e}"
+                    ))
+                })
+            })
+            .transpose()?;
+        let current = self.current_subscription(&sub_id)?;
+        if let (Some(resolver), Some(current)) = (self.runners_resolver.as_ref(), current.as_ref())
+        {
+            if resolver.resolve(event_price_id).is_some()
+                && resolver.resolve(&current.price_id).is_none()
+            {
+                return Err(MaterializerError::Transient(format!(
+                    "Runners entitlement authority returned non-Runners price {} for {sub_id}",
+                    current.price_id
+                )));
+            }
+        }
 
         let audit_name = if canceled {
             "corelink.billing.subscription_canceled.materialized.v1"
@@ -402,7 +469,14 @@ impl D1SubscriptionStateHandler {
         let payload = serde_json::json!({
             "stripe_event_type": env.event_type,
             "stripe_subscription_id": sub_id,
-            "status": status,
+            "status": current
+                .as_ref()
+                .map_or(status.as_str(), |snapshot| snapshot.status.as_str()),
+            "provider_current": current.as_ref().map(|snapshot| serde_json::json!({
+                "status": snapshot.status,
+                "price_id": snapshot.price_id,
+                "subscription_created_at_ms": snapshot.subscription_created_at_ms,
+            })),
         });
         self.audit
             .emit_billing(&BillingAuditRecord {
@@ -426,7 +500,7 @@ impl D1SubscriptionStateHandler {
             payload,
             materialized_at_ms: now_ms,
         };
-        if canceled {
+        if canceled && current.is_none() {
             self.d1.mark_subscription_canceled(row).map_err(d1_to_mat)?;
         } else {
             self.d1.upsert_subscription(row).map_err(d1_to_mat)?;
@@ -447,17 +521,29 @@ impl D1SubscriptionStateHandler {
         // `customer.subscription.deleted`, `reconcile_runners` REVOKES the
         // entitlement (symmetric to how it seeds) rather than leaving it stale;
         // in either handled case the caller skips the cache reconcile/downgrade.
-        if env.event_type == "customer.subscription.updated" {
-            if !self.reconcile_runners(env, &tenant_id, &status, now_ms)? {
+        let is_runner_reconcile_event = matches!(
+            env.event_type.as_str(),
+            "customer.subscription.created"
+                | "customer.subscription.updated"
+                | "customer.subscription.deleted"
+        );
+        if is_runner_reconcile_event {
+            let runners_handled = self.reconcile_runners(
+                env,
+                &tenant_id,
+                &sub_id,
+                event_price_id,
+                current.as_ref(),
+                now_ms,
+            )?;
+            if env.event_type == "customer.subscription.updated" && !runners_handled {
                 self.reconcile_tier(env, &tenant_id, &status, now_ms)?;
-            }
-        } else if canceled {
-            // `customer.subscription.deleted`. If the price is a Runners price,
-            // `reconcile_runners` revokes `runners_entitlement` (the `canceled`
-            // status is non-granting → revoke branch) and returns Ok(true), so we
-            // must NOT then run the cache downgrade (a Runners price is not a
-            // cache tier). Otherwise fall through to the cache-tier downgrade.
-            if !self.reconcile_runners(env, &tenant_id, &status, now_ms)? {
+            } else if canceled && !runners_handled {
+                // `customer.subscription.deleted`. If the price is a Runners price,
+                // `reconcile_runners` revokes `runners_entitlement` (the `canceled`
+                // status is non-granting → revoke branch) and returns Ok(true), so we
+                // must NOT then run the cache downgrade (a Runners price is not a
+                // cache tier). Otherwise fall through to the cache-tier downgrade.
                 // On cancel, downgrade tenant to Free (per dispatcher contract —
                 // `customer.subscription.deleted` → "downgrade to Free tier").
                 // Emit audit if the downgrade is a real change. This uses the
@@ -472,6 +558,35 @@ impl D1SubscriptionStateHandler {
         }
 
         Ok(())
+    }
+
+    fn current_subscription(
+        &self,
+        subscription_id: &str,
+    ) -> Result<Option<crate::CurrentSubscription>, MaterializerError> {
+        let Some(_resolver) = self.runners_resolver.as_ref() else {
+            return Ok(None);
+        };
+        let authority = self.runners_authority.as_ref().ok_or_else(|| {
+            MaterializerError::Transient(
+                "Runners entitlement authority is unavailable; refusing webhook snapshot"
+                    .to_owned(),
+            )
+        })?;
+        let current = authority
+            .current_subscription(subscription_id)
+            .map_err(|e| {
+                MaterializerError::Transient(format!(
+                    "Runners entitlement authority unavailable for {subscription_id}: {e}"
+                ))
+            })?;
+        if current.subscription_id != subscription_id {
+            return Err(MaterializerError::Transient(format!(
+                "Runners entitlement authority returned {} for requested {subscription_id}",
+                current.subscription_id
+            )));
+        }
+        Ok(Some(current))
     }
 
     /// Reconcile `runners_entitlement` when the subscription's plan is a
@@ -492,22 +607,34 @@ impl D1SubscriptionStateHandler {
         &self,
         env: &StripeWebhookEnvelope,
         tenant_id: &str,
-        status: &str,
+        subscription_id: &str,
+        event_price_id: &str,
+        current: Option<&crate::CurrentSubscription>,
         now_ms: u64,
     ) -> Result<bool, MaterializerError> {
         let Some(resolver) = self.runners_resolver.as_ref() else {
             return Ok(false); // dormant (no STRIPE_PRICE_ID_RUNNER_* wired)
         };
-        let Some(plan_id) = extract_plan_id(env) else {
-            return Ok(false); // no plan/price id → let the cache path raise its own error
-        };
-        let Some(ent) = resolver.resolve(plan_id) else {
+        let event_is_runner = resolver.resolve(event_price_id).is_some();
+        let current = current.ok_or_else(|| {
+            MaterializerError::Transient(
+                "Runners entitlement authority is unavailable; refusing webhook snapshot"
+                    .to_owned(),
+            )
+        })?;
+        let Some(ent) = resolver.resolve(&current.price_id) else {
+            if event_is_runner {
+                return Err(MaterializerError::Transient(format!(
+                    "Runners entitlement authority returned non-Runners price {} for {subscription_id}",
+                    current.price_id
+                )));
+            }
             return Ok(false); // not a Runners price → cache-tier path
         };
         // It IS a Runners-tier price ⇒ handled (return Ok(true) either way so the
         // caller never falls through to the cache reconcile, which would 422
         // UnknownPlan on a Runners price).
-        if !subscription_status_grants_access(status) {
+        if !subscription_status_grants_access(&current.status) {
             // Non-granting status (or a `customer.subscription.deleted`, status
             // 'canceled'): REVOKE the entitlement symmetrically to the seed so the
             // container materializer never leaves a stale grant. Audit BEFORE the
@@ -522,13 +649,19 @@ impl D1SubscriptionStateHandler {
                     severity: AuditSeverity::Notice,
                     ts_ms: now_ms,
                     payload: serde_json::json!({
-                        "status": status,
+                        "status": current.status,
+                        "stripe_subscription_id": current.subscription_id,
                     }),
                 })
                 .map_err(audit_to_mat)?;
-            self.d1
-                .delete_runners_entitlement(tenant_id)
-                .map_err(d1_to_mat)?;
+            self.apply_runner_cas(
+                tenant_id,
+                subscription_id,
+                current.subscription_created_at_ms,
+                event_created_at_ms(env)?,
+                None,
+                now_ms,
+            )?;
             return Ok(true);
         }
         // Granting status: SEED. Audit BEFORE the state mutation (fail-CLOSED).
@@ -544,18 +677,47 @@ impl D1SubscriptionStateHandler {
                 payload: serde_json::json!({
                     "max_concurrency": ent.max_concurrency,
                     "max_vcpu_h": ent.max_vcpu_h,
+                    "stripe_subscription_id": current.subscription_id,
                 }),
             })
             .map_err(audit_to_mat)?;
-        self.d1
-            .upsert_runners_entitlement(
+        self.apply_runner_cas(
+            tenant_id,
+            subscription_id,
+            current.subscription_created_at_ms,
+            event_created_at_ms(env)?,
+            Some((ent.max_concurrency, ent.max_vcpu_h)),
+            now_ms,
+        )?;
+        Ok(true)
+    }
+
+    fn apply_runner_cas(
+        &self,
+        tenant_id: &str,
+        subscription_id: &str,
+        subscription_created_at_ms: u64,
+        stripe_event_created_at_ms: u64,
+        entitlement: Option<(u32, u32)>,
+        now_ms: u64,
+    ) -> Result<(), MaterializerError> {
+        let outcome = self
+            .d1
+            .cas_runners_entitlement(
                 tenant_id,
-                ent.max_concurrency,
-                ent.max_vcpu_h,
+                subscription_id,
+                subscription_created_at_ms,
+                stripe_event_created_at_ms,
+                entitlement,
                 now_ms as i64,
             )
             .map_err(d1_to_mat)?;
-        Ok(true)
+        if outcome == EntitlementCasOutcome::Stale {
+            return Err(MaterializerError::Transient(format!(
+                "stale Stripe provider revision rejected for {subscription_id}"
+            )));
+        }
+        Ok(())
     }
 
     fn reconcile_tier(

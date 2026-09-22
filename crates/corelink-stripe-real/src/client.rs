@@ -1093,6 +1093,40 @@ pub struct SubscriptionObject {
     pub status: String,
     /// Customer id.
     pub customer: String,
+    /// Provider-assigned subscription creation time (Unix seconds).
+    /// This is the replacement generation; it is distinct from billing period
+    /// boundaries and local webhook receive time.
+    pub created: Option<i64>,
+    /// Current subscription items. Stripe returns one item for the CoreLink
+    /// products; callers that reconcile entitlements must validate that
+    /// cardinality before using the price.
+    #[serde(default)]
+    pub items: Option<SubscriptionItems>,
+}
+
+/// Stripe subscription item collection (subset).
+#[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
+pub struct SubscriptionItems {
+    /// Items currently attached to the subscription.
+    #[serde(default)]
+    pub data: Vec<SubscriptionItem>,
+}
+
+/// Stripe subscription item (subset).
+#[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
+pub struct SubscriptionItem {
+    /// Price selected for this item.
+    pub price: Option<SubscriptionPrice>,
+}
+
+/// Stripe price embedded in a subscription item (subset).
+#[derive(Clone, Debug, Deserialize)]
+#[non_exhaustive]
+pub struct SubscriptionPrice {
+    /// Stripe price identifier (`price_...`).
+    pub id: String,
 }
 
 /// Stripe `billing_portal.session` object (subset).

@@ -19,6 +19,8 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
+type RunnerFence = (String, u64, u64, bool);
+
 /// Error category surfaced by [`BillingD1Writer`].
 ///
 /// `Transient` flows back to the dispatcher as
@@ -230,6 +232,19 @@ impl WebhookOutcome {
         }
     }
 }
+
+/// Result of a durable entitlement CAS operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EntitlementCasOutcome {
+    /// The provider key advanced the fence and the requested state was applied.
+    Applied,
+    /// The same provider key was replayed; the requested state is already
+    /// owned by this key and may be safely repeated.
+    Duplicate,
+    /// The provider key was older than the durable fence and no mutation ran.
+    Stale,
+}
 /// Read the current tier for a tenant (`tier_selections`, migration
 /// 0039). Bind `?1` = `tenant_id`. Already schema-correct (the #172 fix).
 pub const SQL_READ_TIER: &str = "SELECT tier FROM tier_selections WHERE tenant_id = ?";
@@ -321,6 +336,22 @@ pub const SQL_UPSERT_RUNNERS_ENTITLEMENT: &str = "INSERT INTO runners_entitlemen
 /// defense-in-depth convergent revoke (symmetric to how it seeds).
 pub const SQL_DELETE_RUNNERS_ENTITLEMENT: &str =
     "DELETE FROM runners_entitlement WHERE tenant_id = ?";
+
+/// Advance the durable Runner entitlement fence for a newer snapshot of the
+/// same subscription. A different subscription id is a replacement boundary:
+/// only a successor grant may replace a predecessor revoke. This keeps a
+/// predecessor cancellation from revoking a successor entitlement when Stripe
+/// replaces a subscription within one billing period. The fence row is
+/// retained after revoke so an old grant cannot be reinserted after restart.
+pub const SQL_ADVANCE_RUNNER_ENTITLEMENT_FENCE: &str = "INSERT INTO runner_entitlement_reconcile_fence (tenant_id, stripe_subscription_id, subscription_created_at_ms, stripe_event_created_at_ms, is_granting, applied_at_ms) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET stripe_subscription_id = excluded.stripe_subscription_id, subscription_created_at_ms = excluded.subscription_created_at_ms, stripe_event_created_at_ms = excluded.stripe_event_created_at_ms, is_granting = excluded.is_granting, applied_at_ms = excluded.applied_at_ms WHERE excluded.subscription_created_at_ms > runner_entitlement_reconcile_fence.subscription_created_at_ms OR (excluded.stripe_subscription_id = runner_entitlement_reconcile_fence.stripe_subscription_id AND excluded.stripe_event_created_at_ms > runner_entitlement_reconcile_fence.stripe_event_created_at_ms) RETURNING stripe_subscription_id";
+/// Apply a grant only when this operation owns the current durable fence row.
+pub const SQL_CAS_UPSERT_RUNNERS_ENTITLEMENT: &str = "INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h) SELECT ?, ?, 'runners', ?, ? WHERE EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ? AND stripe_subscription_id = ? AND subscription_created_at_ms = ? AND stripe_event_created_at_ms = ?) ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency = excluded.max_concurrency, max_vcpu_h = excluded.max_vcpu_h";
+/// Apply a revoke only when this operation owns the current durable fence row.
+pub const SQL_CAS_DELETE_RUNNERS_ENTITLEMENT: &str = "DELETE FROM runners_entitlement WHERE tenant_id = ? AND EXISTS (SELECT 1 FROM runner_entitlement_reconcile_fence WHERE tenant_id = ? AND stripe_subscription_id = ? AND subscription_created_at_ms = ? AND stripe_event_created_at_ms = ?)";
+/// Read back the fence in the same D1 transaction to classify equal-key,
+/// equal-identity retries (idempotent duplicate) versus a rejected operation.
+pub const SQL_READ_RUNNER_ENTITLEMENT_FENCE: &str =
+    "SELECT stripe_subscription_id, subscription_created_at_ms, stripe_event_created_at_ms FROM runner_entitlement_reconcile_fence WHERE tenant_id = ?";
 
 /// Canonical billing-D1 writer trait.
 ///
@@ -464,6 +495,29 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
     ) -> Result<(), BillingD1Error> {
         Ok(())
     }
+
+    /// Atomically compare the provider authority key and mutate the Runner
+    /// entitlement. Production D1 implementations keep the fence and
+    /// entitlement mutation in one transaction. The default preserves the
+    /// legacy seam for test doubles that do not model persistent fencing.
+    fn cas_runners_entitlement(
+        &self,
+        tenant_id: &str,
+        _subscription_id: &str,
+        _subscription_created_at_ms: u64,
+        _stripe_event_created_at_ms: u64,
+        entitlement: Option<(u32, u32)>,
+        now_ms: i64,
+    ) -> Result<EntitlementCasOutcome, BillingD1Error> {
+        match entitlement {
+            Some((max_concurrency, max_vcpu_h)) => self
+                .upsert_runners_entitlement(tenant_id, max_concurrency, max_vcpu_h, now_ms)
+                .map(|()| EntitlementCasOutcome::Applied),
+            None => self
+                .delete_runners_entitlement(tenant_id)
+                .map(|()| EntitlementCasOutcome::Applied),
+        }
+    }
 }
 
 /// Native in-memory mirror. Stores every materialized row + every
@@ -487,6 +541,9 @@ pub struct InMemoryBillingD1 {
     /// (`tenant_id`, `subscription_id`) → purchased product. Test-only mirror
     /// of `tenant_billing` and `runner_billing` used by refund routing tests.
     refund_purchases: Arc<Mutex<HashMap<(String, String), RefundedProduct>>>,
+    /// `tenant_id` → provider identity, replacement generation, revision, and grant state.
+    /// mirror used by native concurrency tests.
+    runner_fences: Arc<Mutex<HashMap<String, RunnerFence>>>,
     /// If set, every write returns this error (drives fail-CLOSED tests).
     fail_with: Arc<Mutex<Option<BillingD1Error>>>,
 }
@@ -530,6 +587,15 @@ impl InMemoryBillingD1 {
         match self.runners.lock() {
             Ok(g) => g.get(tenant_id).copied(),
             Err(p) => p.into_inner().get(tenant_id).copied(),
+        }
+    }
+
+    /// Read the tenant's durable entitlement fence for acceptance tests.
+    #[must_use]
+    pub fn runner_fence_of(&self, tenant_id: &str) -> Option<(String, u64, u64, bool)> {
+        match self.runner_fences.lock() {
+            Ok(g) => g.get(tenant_id).cloned(),
+            Err(p) => p.into_inner().get(tenant_id).cloned(),
         }
     }
 
@@ -822,6 +888,87 @@ impl BillingD1Writer for InMemoryBillingD1 {
             self.delete_runners_entitlement(tenant_id)?;
         }
         Ok(())
+    }
+
+    fn cas_runners_entitlement(
+        &self,
+        tenant_id: &str,
+        subscription_id: &str,
+        subscription_created_at_ms: u64,
+        stripe_event_created_at_ms: u64,
+        entitlement: Option<(u32, u32)>,
+        _now_ms: i64,
+    ) -> Result<EntitlementCasOutcome, BillingD1Error> {
+        self.check_armed()?;
+        if tenant_id.trim().is_empty()
+            || subscription_id.trim().is_empty()
+            || subscription_created_at_ms == 0
+            || stripe_event_created_at_ms == 0
+        {
+            return Err(BillingD1Error::InvalidPayload(
+                "runner entitlement CAS requires non-empty identity and provider timestamps"
+                    .to_owned(),
+            ));
+        }
+        if entitlement.is_some_and(|(max_concurrency, _)| max_concurrency == 0) {
+            return Err(BillingD1Error::InvalidPayload(
+                "runner entitlement CAS max_concurrency must be > 0".to_owned(),
+            ));
+        }
+        let mut fences = self
+            .runner_fences
+            .lock()
+            .map_err(|e| BillingD1Error::Transient(format!("runner fence mutex poisoned: {e}")))?;
+        let outcome = match fences.get(tenant_id) {
+            Some((current_subscription, current_created, current_event, _))
+                if current_subscription == subscription_id
+                    && *current_created == subscription_created_at_ms
+                    && *current_event > stripe_event_created_at_ms =>
+            {
+                EntitlementCasOutcome::Stale
+            }
+            Some((current_subscription, current_created, current_event, _))
+                if current_subscription == subscription_id
+                    && *current_created == subscription_created_at_ms
+                    && *current_event == stripe_event_created_at_ms =>
+            {
+                EntitlementCasOutcome::Duplicate
+            }
+            Some((current_subscription, current_created, _, _))
+                if current_subscription != subscription_id
+                    && *current_created >= subscription_created_at_ms =>
+            {
+                EntitlementCasOutcome::Stale
+            }
+            _ => {
+                fences.insert(
+                    tenant_id.to_owned(),
+                    (
+                        subscription_id.to_owned(),
+                        subscription_created_at_ms,
+                        stripe_event_created_at_ms,
+                        entitlement.is_some(),
+                    ),
+                );
+                EntitlementCasOutcome::Applied
+            }
+        };
+        if outcome == EntitlementCasOutcome::Stale {
+            return Ok(outcome);
+        }
+        let mut runners = self
+            .runners
+            .lock()
+            .map_err(|e| BillingD1Error::Transient(format!("runners mutex poisoned: {e}")))?;
+        match entitlement {
+            Some((max_concurrency, max_vcpu_h)) => {
+                runners.insert(tenant_id.to_owned(), (max_concurrency, max_vcpu_h));
+            }
+            None => {
+                runners.remove(tenant_id);
+            }
+        }
+        Ok(outcome)
     }
 }
 
