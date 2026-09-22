@@ -353,6 +353,16 @@ class B029LoadGateTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_baseline_job_guard_mutation_is_rejected(self) -> None:
+        workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
+        self.assertEqual(workflow.count(verifier.PROTECTED_DISPATCH_GUARD), 2)
+        mutated = workflow.replace(verifier.PROTECTED_DISPATCH_GUARD, "", 1)
+        gaps = self._assess_workflow(mutated)
+        self.assertIn(
+            "both load jobs must require the canonical protected manual dispatch",
+            gaps,
+        )
+
     def test_mutation_of_checklist_hostname_is_rejected(self) -> None:
         workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
         self.assertEqual(self._assess_workflow(workflow), [])
