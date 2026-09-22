@@ -21,7 +21,7 @@ CODEQL_ACTION_VERSION = "v4.37.1"
 
 def _assert_scanner_contract(text: str) -> None:
     """Small lexical contract used by the mutation probes below."""
-    assert "runs-on: corelink" in text
+    assert "runs-on: ubuntu-latest" in text
     assert "max-parallel: 1" in text
     assert "dependency-caching: true" in text
     assert "name: Require CodeQL SARIF evidence" in text
@@ -63,9 +63,9 @@ class B142WorkflowContractTest(unittest.TestCase):
         self.watchdog = WATCHDOG.read_text(encoding="utf-8")
         self.runbook = RUNBOOK.read_text(encoding="utf-8")
 
-    def test_scanner_is_on_corelink_with_bounded_matrix(self) -> None:
-        self.assertIn("runs-on: corelink", self.scanner)
-        self.assertNotIn("runs-on: ubuntu-latest", self.scanner)
+    def test_scanner_is_on_hosted_linux_with_bounded_matrix(self) -> None:
+        self.assertIn("runs-on: ubuntu-latest", self.scanner)
+        self.assertNotIn("runs-on: corelink", self.scanner)
         self.assertIn("max-parallel: 1", self.scanner)
         self.assertIn("group: codeql-nightly", self.scanner)
         self.assertIn("cancel-in-progress: false", self.scanner)
@@ -100,7 +100,7 @@ class B142WorkflowContractTest(unittest.TestCase):
         self.assertIn("name: codeql-sarif-${{ matrix.language }}", self.scanner)
 
     def test_watchdog_has_closed_population_and_fail_closed_alarm(self) -> None:
-        self.assertIn("runs-on: corelink", self.watchdog)
+        self.assertIn("runs-on: ubuntu-latest", self.watchdog)
         self.assertIn("check_codeql_evidence.py", self.watchdog)
         for language in ("rust", "javascript-typescript", "python"):
             self.assertIn(f"CodeQL {language}", self.watchdog)
@@ -112,7 +112,7 @@ class B142WorkflowContractTest(unittest.TestCase):
 
     def test_mutations_remove_load_bearing_controls(self) -> None:
         _assert_scanner_contract(self.scanner)
-        runner_mutant = self.scanner.replace("runs-on: corelink", "runs-on: ubuntu-latest")
+        runner_mutant = self.scanner.replace("runs-on: ubuntu-latest", "runs-on: corelink")
         with self.assertRaises(AssertionError):
             _assert_scanner_contract(runner_mutant)
         matrix_mutant = self.scanner.replace("max-parallel: 1", "max-parallel: 3")

@@ -22,12 +22,10 @@ name: CodeQL (R-prep static analysis)
 #   can fail-closed on a HIGH/CRITICAL finding; scheduled runs surface findings
 #   in the Security tab without blocking.
 #
-# CURRENT REALITY (verified 2026-08-30): hosted Actions jobs never received a
-# runner because account billing was blocked. This lane now runs on the
-# product-owned `corelink` fabric and therefore performs the scan even when
-# Advanced Security is unavailable. The Security-tab upload remains an external
-# owner capability; a retained SARIF artifact and the independent watchdog make
-# that limitation visible instead of turning it into a green zero-scan.
+# This lane runs on an ephemeral GitHub-hosted Linux runner. The Security-tab
+# upload remains an external owner capability; a retained SARIF artifact and
+# the independent watchdog make that limitation visible instead of turning it
+# into a green zero-scan.
 #
 # SARIF uploaded to the GHA Security tab (category per language) so the
 # Security team can triage via the repo's central security dashboard.
@@ -84,8 +82,8 @@ concurrency:
 env:
   # Pinned CodeQL action release — bump via ADR + Security review.
   CODEQL_ACTION_VERSION: "v4.37.1"
-  # CodeQL and cargo both default to all available CPUs. The corelink default
-  # box is shared with other customer work, so keep this lane resource-bounded.
+  # CodeQL and cargo both default to all available CPUs. Keep this lane
+  # resource-bounded for predictable hosted execution.
   CODEQL_THREADS: "2"
   CODEQL_RAM_MB: "4096"
   CARGO_BUILD_JOBS: "2"
@@ -96,10 +94,9 @@ jobs:
     # Manual dispatch is valid only from trusted main. Scheduled runs are
     # emitted by GitHub from the default branch.
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
-    # Product-owned ephemeral Linux runner (zero GitHub-hosted billing). The
-    # CodeQL bundle supports Linux x64 and the corelink image carries Python,
-    # Node and the workspace-pinned Rust toolchain.
-    runs-on: corelink
+    # Ephemeral GitHub-hosted Linux runner. The CodeQL bundle supports Linux x64
+    # and the image carries Python and Node; Rust uses the pinned toolchain.
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false

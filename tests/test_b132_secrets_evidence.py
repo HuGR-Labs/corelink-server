@@ -33,11 +33,16 @@ class B132WorkflowContractTest(unittest.TestCase):
         self.scanner = SCANNER_WORKFLOW.read_text(encoding="utf-8")
         self.watchdog = WATCHDOG_WORKFLOW.read_text(encoding="utf-8")
 
-    def test_scanner_is_scheduled_on_product_owned_runner(self) -> None:
+    def test_scanner_and_watchdog_use_hosted_linux_for_credentialless_metadata(self) -> None:
         self.assertIn("cron: '0 4 * * *'", self.scanner)
-        self.assertIn("runs-on: corelink", self.scanner)
-        self.assertNotIn("ubuntu-latest", self.scanner)
+        self.assertIn("runs-on: ubuntu-latest", self.scanner)
+        self.assertIn("runs-on: ubuntu-latest", self.watchdog)
+        self.assertNotIn("runs-on: corelink", self.scanner)
+        self.assertNotIn("runs-on: corelink", self.watchdog)
         self.assertNotIn("HOSTED_ACTIONS_AVAILABLE", self.scanner)
+        self.assertNotIn("HOSTED_ACTIONS_AVAILABLE", self.watchdog)
+        self.assertNotIn("secrets.", self.scanner)
+        self.assertNotIn("secrets.", self.watchdog)
         self.assertIn("persist-credentials: false", self.scanner)
         self.assertIn("persist-credentials: false", self.watchdog)
 
@@ -82,13 +87,22 @@ class B132WorkflowContractTest(unittest.TestCase):
         self.assertNotIn("github-script", self.scanner)
         self.assertIn("if: steps.evidence.outcome == 'failure'", self.watchdog)
         self.assertIn("Fail closed on evidence gap", self.watchdog)
-        self.assertIn("vars.HOSTED_ACTIONS_AVAILABLE == 'true'", self.watchdog)
-        self.assertIn("|| 'corelink'", self.watchdog)
+        self.assertIn("runs-on: ubuntu-latest", self.watchdog)
+        self.assertNotIn("vars.HOSTED_ACTIONS_AVAILABLE", self.watchdog)
 
     def test_mutations_remove_each_load_bearing_control(self) -> None:
-        runner_mutant = self.scanner.replace("runs-on: corelink", "runs-on: ubuntu-latest")
-        self.assertNotIn("runs-on: corelink", runner_mutant)
-        self.assertIn("ubuntu-latest", runner_mutant)
+        def assert_hosted(text: str) -> None:
+            self.assertIn("runs-on: ubuntu-latest", text)
+            self.assertNotIn("runs-on: corelink", text)
+
+        assert_hosted(self.scanner)
+        assert_hosted(self.watchdog)
+        hosted_mutant = self.scanner.replace("runs-on: ubuntu-latest", "runs-on: corelink")
+        with self.assertRaises(AssertionError):
+            assert_hosted(hosted_mutant)
+        watchdog_mutant = self.watchdog.replace("runs-on: ubuntu-latest", "runs-on: corelink")
+        with self.assertRaises(AssertionError):
+            assert_hosted(watchdog_mutant)
         retention_mutant = self.scanner.replace("retention-days: 90", "retention-days: 1")
         self.assertNotIn("retention-days: 90", retention_mutant)
         upload_mutant = self.scanner.replace("if-no-files-found: error", "if-no-files-found: warn")
