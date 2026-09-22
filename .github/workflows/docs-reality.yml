@@ -51,6 +51,13 @@ on:
       - 'scripts/validate_docs_reality.py'
       - 'scripts/docs_reality_allowlist.json'
       - 'tests/test_validate_docs_reality_hostnames.py'
+      # The B-127 operator runbook depends on the offline receipt classifier;
+      # validate its negative cases whenever that contract or the runbook changes.
+      - 'scripts/RB-AUDIT-RESIDENCY-THIRD-STATE.md'
+      - 'scripts/classify_i1669_receipt.py'
+      - 'scripts/probe_i1669_readonly.py'
+      - 'scripts/verify_audit_residency.py'
+      - 'tests/test_i1669_receipt_classifier.py'
       - '.github/workflows/docs-reality.yml'
   push:
     branches: [main]
@@ -74,6 +81,11 @@ on:
       - 'corelink-go/**'
       - 'scripts/validate_docs_reality.py'
       - 'scripts/docs_reality_allowlist.json'
+      - 'scripts/RB-AUDIT-RESIDENCY-THIRD-STATE.md'
+      - 'scripts/classify_i1669_receipt.py'
+      - 'scripts/probe_i1669_readonly.py'
+      - 'scripts/verify_audit_residency.py'
+      - 'tests/test_i1669_receipt_classifier.py'
 
 permissions:
   contents: read
@@ -146,6 +158,10 @@ jobs:
           command -v python3
           python3 -m pytest --version
           python3 -m pytest tests/test_validate_docs_reality_hostnames.py -q
+
+      - name: Validate the offline #1669 receipt classifier
+        shell: bash
+        run: python3 -m pytest tests/test_i1669_receipt_classifier.py -q
 
       - name: Summarize results in PR
         if: always()
