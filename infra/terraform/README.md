@@ -16,44 +16,51 @@ infra/terraform/
       gcp-kms/              # GCP SA + WIF (CoreLink-side)
       azure-kv/             # AAD app + SP + secret (CoreLink-side)
       vault/                # AppRole + transit policy (CoreLink-side)
-    corelink-region/        # legacy per-region module (WI-S14-001; kept)
+    corelink-region/        # reusable per-region resource module
   environments/
     staging/                # active pre-GA composition
     production/             # *.example template; activate post-GA only
-  regions/                  # historical per-region instantiation (WI-S14)
+  regions/
+    wnam/                   # independent root + state key
+    enam/                   # independent root + state key
+    weur/                   # independent root + state key
+    sam/                    # independent root + state key
   main.tf                   # legacy root (WI-S13-004); kept for backwards-compat
 ```
 
-New environments should compose `modules/cloudflare-base` +
-`modules/cloudflare-storage` + `modules/cloudflare-secrets`. The legacy
-`main.tf` + `regions/` stay until WI-S14 is fully migrated.
+The drift workflow runs one root under `regions/<region>/` per matrix entry.
+Each root contains exactly one `corelink-region` module and declares an S3
+backend with `use_lockfile = true`. This prevents a plan for one region from
+loading another region's resources or state. The legacy root is not used by
+the regional drift job.
 
 ## Backend setup
 
-State is stored in an S3-compatible backend with locking:
+Regional state is stored in one Cloudflare R2 bucket under four distinct keys:
 
-| Env | Bucket | Lock table |
+| Region | State key | Lock object |
 |---|---|---|
-| staging    | `corelink-tfstate-staging`    | `corelink-tfstate-lock`      |
-| production | `corelink-tfstate-production` | `corelink-tfstate-lock-prod` |
+| `wnam` | `corelink/wnam/terraform.tfstate` | `corelink/wnam/terraform.tfstate.tflock` |
+| `enam` | `corelink/enam/terraform.tfstate` | `corelink/enam/terraform.tfstate.tflock` |
+| `weur` | `corelink/weur/terraform.tfstate` | `corelink/weur/terraform.tfstate.tflock` |
+| `sam`  | `corelink/sam/terraform.tfstate`  | `corelink/sam/terraform.tfstate.tflock` |
 
-Encryption: AES-256 server-side; production additionally requires
-MFA-delete and a bucket policy denying `s3:DeleteObject` without MFA.
+Terraform 1.11.4's native S3 lockfile is enabled in every regional root.
+The R2 token must have Object Read & Write permission on the state bucket so
+Terraform can create and remove the `.tflock` object. The bucket, endpoint,
+and credentials are runtime inputs; no backend config file or credential is
+created in the checkout.
 
-Real backend config (bucket name + region + DynamoDB lock table) is passed
-to `terraform init` via `-backend-config=backend-<env>.hcl`. The real
-`backend-<env>.hcl` is git-ignored; an `*.example` template is committed.
+The drift workflow fails before `init` when any of these are absent:
+`TF_BACKEND_BUCKET`, `TF_BACKEND_ENDPOINT`,
+`TF_BACKEND_ACCESS_KEY_ID`, or `TF_BACKEND_SECRET_ACCESS_KEY`. It passes the
+non-secret bucket and endpoint to `terraform init` and exposes the two token
+parts only through `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
 
-```bash
-cd infra/terraform/environments/staging
-cp backend-staging.hcl.example backend-staging.hcl   # then fill in real values
-terraform init -backend-config=backend-staging.hcl
-```
-
-R2 + KV backend (Cloudflare-native) is an option once Terraform's S3
-backend supports R2 with KV locks (tracked: hashicorp/terraform#34859).
-Until then we use AWS S3 + DynamoDB for staging and a separate
-locked-down S3 bucket in a CoreLink-owned AWS account for production.
+The repository cannot prove R2 lock contention without the provisioned bucket
+and scoped token. That integration check remains a release blocker and must
+record two concurrent operations against the exact R2 endpoint before this
+workflow is treated as a live drift signal.
 
 ## Workspaces
 
@@ -114,6 +121,10 @@ Credentials are supplied at runtime; secret values are not stored in Terraform:
   narrowed to one bucket. Provision and verify this secret, its scopes, the
   account ID, and the zone variable before running; this repository change
   does not establish their live existence or configuration.
+- R2 backend: `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are mapped from
+  `TF_BACKEND_ACCESS_KEY_ID` and `TF_BACKEND_SECRET_ACCESS_KEY`. The bucket and
+  endpoint come from `TF_BACKEND_BUCKET` and `TF_BACKEND_ENDPOINT`.
+  Credentials are not passed on the command line or written to HCL/output.
 - AWS: `AWS_ROLE_ARN` assumed via `aws-actions/configure-aws-credentials`
   using GitHub OIDC.
 - GCP: `google-github-actions/auth` with Workload Identity Federation.

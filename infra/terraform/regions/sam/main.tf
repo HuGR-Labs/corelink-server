@@ -1,13 +1,15 @@
-# WI-S14-001 — SAM region (sa-east) Terraform invocation.
-# Auto-apply FORBIDDEN — see RB-FM-206 + RB-region.
+# WI-S14-001 / #1721 — the SAM root owns exactly one region module.
+# Auto-apply FORBIDDEN — see RB-FM-206 and RB-TERRAFORM-DRIFT.
+
+provider "cloudflare" {}
 
 module "sam" {
-  source = "../modules/corelink-region"
+  source = "../../modules/corelink-region"
 
   region_name      = "sam"
   r2_location_hint = "sam"
   d1_location      = "sam"
-  do_jurisdiction  = "none" # SAM: no current regulatory jurisdiction mandate
+  do_jurisdiction  = "none"
   cf_zone_id       = var.cf_zone_id
   cf_account_id    = var.cf_account_id
   environment      = var.environment

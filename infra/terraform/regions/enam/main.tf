@@ -1,13 +1,15 @@
-# WI-S14-001 — ENAM region (us-east) Terraform invocation.
-# Auto-apply FORBIDDEN — see RB-FM-206 + RB-region.
+# WI-S14-001 / #1721 — the ENAM root owns exactly one region module.
+# Auto-apply FORBIDDEN — see RB-FM-206 and RB-TERRAFORM-DRIFT.
+
+provider "cloudflare" {}
 
 module "enam" {
-  source = "../modules/corelink-region"
+  source = "../../modules/corelink-region"
 
   region_name      = "enam"
   r2_location_hint = "enam"
   d1_location      = "enam"
-  do_jurisdiction  = "us" # ENAM: US jurisdiction
+  do_jurisdiction  = "us"
   cf_zone_id       = var.cf_zone_id
   cf_account_id    = var.cf_account_id
   environment      = var.environment
