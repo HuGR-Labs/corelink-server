@@ -186,6 +186,7 @@ corelink-handler-cas = { workspace = true }
 corelink-handler-cas-erase = { workspace = true }
 corelink-handler-ac = { workspace = true }
 corelink-handler-admin = { workspace = true }
+corelink-reapi = { workspace = true }
 # Phase 0 Stream B1 — REAPI v2 Bazel remote-cache bridge.
 # Routes `/bazel/v2/*` to the CAS/AC handler surfaces so any Bazel user
 # can set `--remote_cache=https://corelink-api.humangr.com/bazel/v2`.

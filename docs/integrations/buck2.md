@@ -1,28 +1,41 @@
 # Buck2 + CoreLink Integration Guide
 
-> **Buck2 is not yet supported.** CoreLink is a **cache-only** platform served
-> over **HTTP**. Buck2's remote cache / remote-execution client
-> (`buck2_re_client` with `engine_address` / `cas_address` /
-> `action_cache_address`) connects over **gRPC**, and CoreLink does **not**
-> expose a gRPC remote-execution endpoint. There is no working `.buckconfig`
-> today — a config pointed at a `grpcs://` CoreLink address would fail to
-> connect. This guide will be updated if Buck2 support lands.
+CoreLink provides a cache-only REAPI gRPC ingress for Buck2. When deployed with
+the container PAT verifier configured, it serves CAS, ByteStream, ActionCache,
+and Capabilities on the API HTTPS origin. Capabilities advertise SHA-256 and
+ActionCache updates, and do not advertise remote execution. Buck2 actions run
+locally; CoreLink stores and retrieves their cache entries.
 
-## What works today
+## Configure the client
 
-The only wired build-tool cache in the Bazel family is the **Bazel REAPI v2
-ByteStream** surface at `https://corelink-api.humangr.com/bazel/v2/<tenant>`.
-See the [Bazel integration guide](./bazel.md).
+Start from [`examples/buck2-starter/.buckconfig`](../../examples/buck2-starter/.buckconfig).
+Its `[buck2_re_client]` section points the engine, ActionCache, and CAS clients
+to the CoreLink API origin and injects the PAT through `http_headers`. Buck2
+supports `$VAR` expansion in that header. Keep the PAT in the environment or a
+secret manager; never put it in a committed config.
 
-For any tool that speaks plain HTTP, the native CAS is available directly:
+Set the instance name to the tenant ID that owns the PAT in an ignored
+`.buckconfig.local` file:
 
-```text
-PUT/GET https://corelink-api.humangr.com/v1/cas/<tenant>/<blake3-hex>
+```ini
+[buck2_re_client]
+instance_name = YOUR_PAT_TENANT_ID
+
+[corelink]
+provenance = YOUR_REPOSITORY@YOUR_COMMIT_SHA
 ```
 
-The digest is the blob's **BLAKE3** hash (compute with `b3sum`).
+The server checks that each request's instance matches the authenticated
+tenant. Read operations require a valid cache-scoped PAT; CAS and ActionCache
+writes also require write scope. The gRPC ingress uses SHA-256 digests,
+delegates storage to the shared tenant-isolated CAS/ActionCache handlers, and
+preserves their quota, audit, and byte-accounting behavior.
 
-## Want Buck2?
+Use `remote_enabled = False` and `remote_cache_enabled = True` in the registered
+execution platform. Do not interpret a local build as remote execution or as
+proof of a CoreLink cache hit. A warm-cache claim needs a clean local build and
+a report with nonzero CoreLink remote reads.
 
-Buck2 gRPC remote execution / remote cache is not on the current surface. If you
-need it, raise it with support so it can be weighed against the roadmap.
+For the complete starter flow, see the [Buck2 starter README](../../examples/buck2-starter/README.md).
+The separate [Bazel integration guide](./bazel.md) documents the HTTP REAPI
+surface for Bazel clients.

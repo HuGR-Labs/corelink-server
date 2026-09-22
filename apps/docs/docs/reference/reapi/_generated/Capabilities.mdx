@@ -33,6 +33,80 @@ description: Auto-generated reference for the Capabilities gRPC service.
 | `hash` | `string` | 1 |
 | `size_bytes` | `int64` | 2 |
 
+### GetActionResultRequest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `instance_name` | `string` | 1 |
+| `action_digest` | `Digest` | 2 |
+| `inline_stdout` | `bool` | 3 |
+| `inline_stderr` | `bool` | 4 |
+
+### UpdateActionResultRequest
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `instance_name` | `string` | 1 |
+| `action_digest` | `Digest` | 2 |
+| `action_result` | `ActionResult` | 3 |
+
+### ActionResult
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `output_files` | `repeated OutputFile` | 2 |
+| `output_directories` | `repeated OutputDirectory` | 3 |
+| `exit_code` | `int32` | 4 |
+| `stdout_raw` | `bytes` | 5 |
+| `stdout_digest` | `Digest` | 6 |
+| `stderr_raw` | `bytes` | 7 |
+| `stderr_digest` | `Digest` | 8 |
+| `execution_metadata` | `ExecutedActionMetadata` | 9 |
+| `output_file_symlinks` | `repeated OutputSymlink` | 10 |
+| `output_directory_symlinks` | `repeated OutputSymlink` | 11 |
+| `output_symlinks` | `repeated OutputSymlink` | 12 |
+
+### OutputFile
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `path` | `string` | 1 |
+| `digest` | `Digest` | 2 |
+| `is_executable` | `bool` | 4 |
+| `contents` | `bytes` | 5 |
+
+### OutputDirectory
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `path` | `string` | 1 |
+| `tree_digest` | `Digest` | 3 |
+| `is_topologically_sorted` | `bool` | 4 |
+| `root_directory_digest` | `Digest` | 5 |
+
+### OutputSymlink
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `path` | `string` | 1 |
+| `target` | `string` | 2 |
+
+### ExecutedActionMetadata
+
+| Field | Type | Tag |
+| --- | --- | --- |
+| `worker_start_timestamp` | `google.protobuf.Timestamp` | 1 |
+| `worker_completed_timestamp` | `google.protobuf.Timestamp` | 2 |
+| `input_fetch_start_timestamp` | `google.protobuf.Timestamp` | 3 |
+| `input_fetch_completed_timestamp` | `google.protobuf.Timestamp` | 4 |
+| `execution_start_timestamp` | `google.protobuf.Timestamp` | 5 |
+| `execution_completed_timestamp` | `google.protobuf.Timestamp` | 6 |
+| `output_upload_start_timestamp` | `google.protobuf.Timestamp` | 7 |
+| `output_upload_completed_timestamp` | `google.protobuf.Timestamp` | 8 |
+| `worker` | `string` | 9 |
+| `auxiliary_metadata` | `repeated google.protobuf.Any` | 10 |
+| `queued_timestamp` | `google.protobuf.Timestamp` | 11 |
+
 ### BatchUpdateBlobsRequest
 
 | Field | Type | Tag |

@@ -72,12 +72,13 @@ def verify(config: str, buck: str, runtime_workflow: str) -> None:
         "[external_cells]",
         "    prelude = bundled",
         "execution_platforms = prelude//platforms:default",
-        "url = https://corelink-api.humangr.com/bazel/cache",
-        "http_headers = Authorization: Bearer ${CORELINK_PAT}",
-        "read = true",
-        "write = true",
-        "remote_cache_address = https://corelink-api.humangr.com/bazel/cache",
-        "hash_algorithm = BLAKE3",
+        "root//platforms:corelink-cache",
+        "engine_address = https://corelink-api.humangr.com",
+        "action_cache_address = https://corelink-api.humangr.com",
+        "cas_address = https://corelink-api.humangr.com",
+        "instance_name = replace-with-pat-tenant-id",
+        "http_headers = Authorization: Bearer $CORELINK_PAT",
+        "hash_algorithm = SHA256",
     ):
         _require(config, marker, "buckconfig")
 

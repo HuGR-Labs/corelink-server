@@ -140,6 +140,8 @@ pub mod email_hash;
 /// Native production GC sweep entrypoint adapters over the shared D1/R2
 /// clients. The pure `corelink-gc` crate remains network-free.
 pub mod gc_sweep;
+/// Authenticated REAPI gRPC adapter over the decorated native cache plane.
+pub mod grpc_reapi;
 /// Native data-plane **PAT possession gate** (red-team finding #4): the
 /// [`native_pat_gate::NativePatGate`] that re-runs the full Argon2id Option-B
 /// verification (via [`adapter_pat::PatVerifier`]) at the container, so a leaked

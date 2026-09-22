@@ -188,13 +188,14 @@ def verify(
         "    prelude = bundled",
         "target_platform_detector_spec = target:root//...->prelude//platforms:default",
         "execution_platforms = prelude//platforms:default",
+        "root//platforms:corelink-cache",
         "detailed_aggregated_metrics = true",
-        "url = https://corelink-api.humangr.com/bazel/cache",
-        "http_headers = Authorization: Bearer ${CORELINK_PAT}",
-        "read = true",
-        "write = true",
-        "remote_cache_address = https://corelink-api.humangr.com/bazel/cache",
-        "hash_algorithm = BLAKE3",
+        "engine_address = https://corelink-api.humangr.com",
+        "action_cache_address = https://corelink-api.humangr.com",
+        "cas_address = https://corelink-api.humangr.com",
+        "instance_name = replace-with-pat-tenant-id",
+        "http_headers = Authorization: Bearer $CORELINK_PAT",
+        "hash_algorithm = SHA256",
     ):
         _require(config, marker, "buckconfig")
     _require(buck, 'load("@prelude//:rules.bzl", "cxx_binary", "cxx_library")', "BUCK")
@@ -293,7 +294,7 @@ def mutation_checks(sources: dict[str, str]) -> None:
         ),
         (
             "remote cache write policy drift",
-            lambda s: s.__setitem__("config", s["config"].replace("    write = true", "    write = false", 1)),
+            lambda s: s.__setitem__("config", s["config"].replace("    cas_address = https://corelink-api.humangr.com", "    cas_address = https://example.invalid", 1)),
         ),
         (
             "prelude platform drift",

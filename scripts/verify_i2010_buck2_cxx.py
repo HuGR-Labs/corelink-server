@@ -136,15 +136,15 @@ def verify(
         "[external_cells]",
         "    prelude = bundled",
         "execution_platforms = prelude//platforms:default",
+        "root//platforms:corelink-cache",
+        "digest_algorithms = SHA256",
         "detailed_aggregated_metrics = true",
-        "url = https://corelink-api.humangr.com/bazel/cache",
-        "http_headers = Authorization: Bearer ${CORELINK_PAT}",
-        "read = true",
-        "write = true",
-        "retry_timeout_secs = 60",
-        "max_retries = 3",
-        "remote_cache_address = https://corelink-api.humangr.com/bazel/cache",
-        "hash_algorithm = BLAKE3",
+        "engine_address = https://corelink-api.humangr.com",
+        "action_cache_address = https://corelink-api.humangr.com",
+        "cas_address = https://corelink-api.humangr.com",
+        "instance_name = replace-with-pat-tenant-id",
+        "http_headers = Authorization: Bearer $CORELINK_PAT",
+        "hash_algorithm = SHA256",
     ):
         _require(config, marker, "buckconfig")
     _require(toolchain, 'load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")', "toolchains/BUCK")
@@ -184,7 +184,7 @@ def mutation_checks(sources: dict[str, str]) -> None:
         ),
         (
             "remote cache write policy",
-            lambda s: s.__setitem__("config", s["config"].replace("    write = true", "    write = false", 1)),
+            lambda s: s.__setitem__("config", s["config"].replace("    cas_address = https://corelink-api.humangr.com", "    cas_address = https://example.invalid", 1)),
         ),
         (
             "missing PAT negative probe",

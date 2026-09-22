@@ -13,6 +13,19 @@
 
 use super::*;
 
+/// Fully decorated cache handlers exported to the co-resident REAPI transport.
+/// Constructing an adapter from raw handlers would bypass byte accounting,
+/// tombstone protection, audit, and BYOK state.
+#[derive(Clone)]
+pub struct ReapiBridgeDeps {
+    pub cas_read: Arc<dyn corelink_handler_cas::CasReadHandler>,
+    pub cas_write: Arc<dyn corelink_handler_cas::CasWriteHandler>,
+    pub ac_lookup: Arc<dyn corelink_handler_ac::AcLookupHandler>,
+    pub ac_update: Arc<dyn corelink_handler_ac::AcUpdateHandler>,
+    pub quota: Option<QuotaGate>,
+    pub pat: Option<Arc<crate::adapter_pat::PatVerifier>>,
+}
+
 /// Build the composed router with an explicit
 /// [`ShadowSinkFactory`] — used by the production boot path to swap
 /// in the D1-backed `D1ShadowSinkFactory` while keeping every other
@@ -57,6 +70,15 @@ pub fn build_with_factory_and_byok(
     shadow_factory: Arc<dyn ShadowSinkFactory>,
     byok: Option<crate::storage::byok_cas::DataPlaneByok>,
 ) -> Router {
+    build_with_factory_and_byok_with_reapi(shadow_factory, byok).0
+}
+
+/// Build the REST router and return the exact shared cache-plane decorators
+/// for the gRPC REAPI ingress.
+pub fn build_with_factory_and_byok_with_reapi(
+    shadow_factory: Arc<dyn ShadowSinkFactory>,
+    byok: Option<crate::storage::byok_cas::DataPlaneByok>,
+) -> (Router, ReapiBridgeDeps) {
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1). ONE
     // gate (D1-backed) shared across every billable data-plane surface
     // (CAS/AC, Bazel REAPI, Turbo, sccache), exactly like the rate-limit
@@ -260,6 +282,14 @@ pub fn build_with_factory_and_byok(
             )
         }
         None => (ac_update_raw, ac_delete_raw),
+    };
+    let reapi_deps = ReapiBridgeDeps {
+        cas_read: cas_read.clone(),
+        cas_write: cas_write.clone(),
+        ac_lookup: ac_lookup.clone(),
+        ac_update: ac_update.clone(),
+        quota: quota.clone(),
+        pat: crate::adapter_pat::PatVerifier::from_env().map(Arc::new),
     };
     let ac_state = ac::AcRouteState {
         lookup: ac_lookup.clone(),
@@ -715,7 +745,7 @@ pub fn build_with_factory_and_byok(
         crate::origin_timing::origin_timing_layer,
     ));
 
-    router
+    (router, reapi_deps)
 }
 
 #[cfg(test)]

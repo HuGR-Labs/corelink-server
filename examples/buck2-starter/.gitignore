@@ -9,6 +9,7 @@ buck-out
 .buck2d
 .buckd
 .buckversion
+.buckconfig.local
 
 # macOS
 .DS_Store

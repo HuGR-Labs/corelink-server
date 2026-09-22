@@ -1,6 +1,6 @@
 # CoreLink Buck2 Starter
 
-Get your **first remote-cache hit in under 5 minutes** using Buck2 + CoreLink.
+Get a Buck2 remote-cache hit using CoreLink's authenticated REAPI gRPC cache.
 
 > Parity project: same hello-world + 1 transitive dep scope as
 > [`examples/bazel-starter`](../bazel-starter/README.md) —
@@ -13,7 +13,7 @@ Get your **first remote-cache hit in under 5 minutes** using Buck2 + CoreLink.
 
 | Tool | Minimum version | Install |
 |---|---|---|
-| Buck2 | latest stable | [Buck2 releases](https://github.com/facebook/buck2/releases) |
+| Buck2 | 2026-08-01 | [Buck2 releases](https://github.com/facebook/buck2/releases) |
 | C++ toolchain | GCC 11+ / Clang 13+ | System package manager |
 | `jq` | 1.6+ | System package manager (benchmark script only) |
 
@@ -22,8 +22,8 @@ Get your **first remote-cache hit in under 5 minutes** using Buck2 + CoreLink.
 ## Step 1 — Get a CoreLink PAT (~1 min)
 
 1. Sign up at <https://humangr.com/corelink/sign-up> (free tier available).
-2. Navigate to **Settings → API Tokens → New token**.
-3. Copy the token; you will export it in the next step.
+2. Navigate to **Settings → API Tokens → New token** and grant cache read/write access.
+3. Record the token's tenant ID from the same settings page.
 
 ---
 
@@ -34,8 +34,21 @@ export CORELINK_PAT=corelink_pat_0123456789ABCDEF.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 ```
 
 > **Security note:** The `.buckconfig` in this project reads `CORELINK_PAT` from
-> the environment via `${CORELINK_PAT}` interpolation.  Never hard-code a token
+> the environment in the REAPI `http_headers` setting. Never hard-code a token
 > in `.buckconfig` or any committed file (CTRL-CRED-001).
+
+Create a local config with your tenant ID and a repository/commit provenance
+value. `.buckconfig.local` is ignored by Git:
+
+```ini
+[buck2_re_client]
+instance_name = YOUR_PAT_TENANT_ID
+
+[corelink]
+provenance = YOUR_REPOSITORY@YOUR_COMMIT_SHA
+```
+
+The tenant ID must belong to the PAT. The server rejects a different instance.
 
 ---
 
@@ -120,32 +133,38 @@ are present in the pinned release's report.
 ### Auth error (401)
 
 ```
-Error: HTTP 401 Unauthorized
+Unauthenticated: invalid authorization
 ```
 
 - Check `echo $CORELINK_PAT` — confirm the variable is set and non-empty.
 - Verify the token is valid: `corelink doctor` (requires CoreLink CLI from
   [WI-S15-001](../../specs/04_sprints/S15/work_items/WI-S15-001-corelink-cli.md)).
-- Ensure the token has `cache:read` and `cache:write` scopes.
+- Ensure the token has cache read and write scopes and `.buckconfig.local`
+  names that token's tenant ID.
 
 ### Cache miss on warm build
 
-- Confirm `[remote_cache] write = true` in `.buckconfig`.
+- Confirm `engine_address`, `action_cache_address`, and `cas_address` point to
+  the same CoreLink HTTPS origin in `.buckconfig`.
+- Confirm `[corelink] provenance` is set in `.buckconfig.local` and that the
+  configured platform enables cache reads and writes.
 - Check for proxy or firewall blocking `https://corelink-api.humangr.com`.
 - Run with verbose logging: `buck2 build :hello -v 2`.
 
-### Quota exceeded (429)
+### Quota exceeded
 
 ```
-Error: HTTP 429 Too Many Requests
+ResourceExhausted: cache quota exceeded
 ```
 
 - Your tenant has reached its usage limit.  Upgrade at <https://humangr.com/corelink/en/customer/billing>.
 
 ### Network unreachable
 
-Buck2 retries transient failures automatically (`max_retries = 3` in `.buckconfig`).
-If the cluster is persistently unreachable the build falls back to local execution.
+This starter keeps local execution enabled and remote execution disabled. It
+uses CoreLink for CAS and ActionCache traffic only; it does not claim that an
+action ran remotely. If the cache endpoint is unreachable, no CoreLink cache
+hit has been established.
 
 ---
 
