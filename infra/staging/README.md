@@ -38,8 +38,9 @@ would bind the staging Worker to top-level development resources.
    `staging.corelink.humangr.com`; verify DNS, TLS, `workers_dev = false`, Worker
    health, container health, D1 migration head, R2 isolation, queue consumer,
    DLQ consumer, and service-binding reachability.
-8. Create/protect the GitHub `staging` environment and bind its five required
-   `K6_*` secrets. `K6_TARGET_HOST` must be exactly
+8. Create/protect the GitHub `staging` environment and bind its seven required
+   `K6_*` secrets, including the target identity receipt and teardown token.
+   `K6_TARGET_HOST` must be exactly
    `https://staging.corelink.humangr.com` (one trailing slash is normalized).
 9. Dispatch the load suite once. Only a complete five-scenario green run may
    seed the baseline; then perform the separately approved cadence decision.

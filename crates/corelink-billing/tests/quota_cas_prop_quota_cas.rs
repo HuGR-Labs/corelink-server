@@ -587,7 +587,10 @@ fn real_latency_probe_under_5ms_p99() {
         samples.push(started.elapsed().as_micros());
     }
     samples.sort_unstable();
-    let p99 = samples[(samples.len() * 99 / 100).min(samples.len() - 1)];
+    // Nearest-rank p99 uses rank ceil(0.99 * N), with ranks starting at one.
+    // Keep the inclusive 5 ms boundary on that exact order statistic.
+    let p99_rank = (samples.len() * 99 + 99) / 100;
+    let p99 = samples[p99_rank - 1];
     writeln!(
         std::io::stderr().lock(),
         concat!(
