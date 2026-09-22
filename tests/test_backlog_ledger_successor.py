@@ -209,6 +209,19 @@ def test_v0004_reconciliation_authorization_rejects_any_byte_drift():
         ledger.REPO_ROOT / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0004.json"
     ).read_text())
     authorized = policy._v0004_reconciliation_authorized
+    assert previous["source_sha256"] == pinned["previous_source_sha256"]
+    assert policy._sha256(prior["BACKLOG.md"]) == pinned["prior_source_sha256"]
+    assert policy._sha256(current["BACKLOG.md"]) == pinned["source_sha256"]
+    assert policy._sha256(prior[ledger.LEDGER_RELATIVE.as_posix()]) == pinned["prior_ledger_sha256"]
+    assert policy._sha256(current[ledger.LEDGER_RELATIVE.as_posix()]) == pinned["ledger_sha256"]
+    old_items = {item.id: item.raw for item in ledger.backlog_verify.parse(prior["BACKLOG.md"].decode())}
+    new_items = {item.id: item.raw for item in ledger.backlog_verify.parse(current["BACKLOG.md"].decode())}
+    status, old_verify, new_verify, old_means, new_means = pinned["fields"]
+    assert old_items["B-154"]["status"] == new_items["B-154"]["status"] == status
+    assert policy._sha256(old_items["B-154"]["verify"].encode()) == old_verify
+    assert policy._sha256(new_items["B-154"]["verify"].encode()) == new_verify
+    assert policy._sha256(old_items["B-154"]["verify-means"].encode()) == old_means
+    assert policy._sha256(new_items["B-154"]["verify-means"].encode()) == new_means
     assert authorized(previous, prior, current, receipt, 4)
     assert not authorized(
         previous, prior, current, {**receipt, "changed_ids": ["B-154"]}, 4,
