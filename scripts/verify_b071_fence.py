@@ -9,6 +9,7 @@ authority for compiling the Rust adapters.
 from __future__ import annotations
 
 import pathlib
+import re
 import sqlite3
 import tempfile
 
@@ -28,14 +29,17 @@ CANONICAL_DIGEST = "d" * 64
 def legacy_control_migration() -> str:
     """Return the deployed 0118 trigger bodies before the gc-region repair."""
     current = CONTROL_MIGRATION.read_text()
-    fenced_region = """region = (
-          SELECT gc_region FROM gc_purge_intent
-          WHERE tenant_id = OLD.tenant_id
-            AND digest = OLD.digest
-            AND state = 'r2_deleted'
-      )"""
-    legacy = current.replace(fenced_region, "region = OLD.region")
-    assert legacy.count("region = OLD.region") == 2, "0118 legacy trigger fixture drifted"
+    legacy, replacements = re.subn(
+        r"""region = \(
+\s+SELECT gc_region FROM gc_purge_intent
+\s+WHERE tenant_id = OLD\.tenant_id
+\s+AND digest = OLD\.digest
+\s+AND state = 'r2_deleted'
+\s+\)""",
+        "region = OLD.region",
+        current,
+    )
+    assert replacements == 2, "0118 legacy trigger fixture drifted"
     return legacy
 
 
