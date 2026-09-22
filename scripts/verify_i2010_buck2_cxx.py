@@ -107,8 +107,8 @@ def verify(
         "time buck2 build :hello \\",
         "test -s /tmp/cold-report.json",
         "test -s /tmp/warm-report.json",
-        ".cache_hits >= 0",
-        ".total_actions > 0",
+        "scripts/parse_buck2_build_report.py",
+        "--report /tmp/warm-report.json",
         "RATIO < 80",
         'CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}',
     ):
@@ -136,6 +136,7 @@ def verify(
         "[external_cells]",
         "    prelude = bundled",
         "execution_platforms = prelude//platforms:default",
+        "detailed_aggregated_metrics = true",
         "url = https://corelink-api.humangr.com/bazel/cache",
         "http_headers = Authorization: Bearer ${CORELINK_PAT}",
         "read = true",

@@ -90,7 +90,7 @@ def assert_contract(text: str) -> None:
     smoke = _run(_step(build, "Smoke-run binary"))
     assert "buck2 build :hello \\" in cold
     assert "test -s /tmp/cold-report.json" in cold
-    assert ".cache_hits" in warm and ".total_actions" in warm and "RATIO < 80" in warm
+    assert "parse_buck2_build_report.py" in warm and "--report /tmp/warm-report.json" in warm and "RATIO < 80" in warm
     assert "buck2 run :hello -- CoreLink" in smoke
     assert "Hello, CoreLink" in smoke
 
@@ -132,6 +132,7 @@ def test_starter_declares_root_cell_and_bundled_execution_platform() -> None:
     assert "[cell_aliases]\n    config = prelude\n    fbsource = root\n" in config
     assert "[external_cells]\n    prelude = bundled\n" in config
     assert config.count("execution_platforms = prelude//platforms:default") == 2
+    assert "detailed_aggregated_metrics = true" in config
     assert "execution_platforms = //:platforms" not in config
     assert 'load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")' in toolchains
     assert 'load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain")' in toolchains
@@ -181,7 +182,7 @@ def test_starter_config_rejects_each_prelude_mapping_mutation(mutation, expected
         (lambda text: text.replace(EXPECTED_SHA256, "0" * 64), "checksum"),
         (lambda text: text.replace("runs-on: ubuntu-latest", "runs-on: corelink"), "runner"),
         (lambda text: text.replace("timeout-minutes: 20", "timeout-minutes: 0"), "timeout"),
-        (lambda text: text.replace(".cache_hits", "cache_hits_removed"), "cache"),
+        (lambda text: text.replace("parse_buck2_build_report.py", "report_parser_removed"), "cache"),
         (lambda text: text.replace('grep -F -- "${BUCK2_BUILD_VERSION}" <<<"${VERSION_OUTPUT}"', "# version check removed"), "version smoke"),
         (lambda text: text.replace("sudo apt-get install -y --no-install-recommends zstd jq", "sudo apt-get install -y --no-install-recommends zstd jq || true", 1), "install failure"),
     ),

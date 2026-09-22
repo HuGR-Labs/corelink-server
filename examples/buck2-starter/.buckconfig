@@ -33,6 +33,10 @@
 
 [buck2]
     execution_platforms = prelude//platforms:default
+    # The documented build report metrics are opt-in in the pinned Buck2
+    # release.  Keep the report's cache counters available to CI and the
+    # benchmark without changing remote-cache reads, writes, or retry policy.
+    detailed_aggregated_metrics = true
 
 [build]
     execution_platforms = prelude//platforms:default
