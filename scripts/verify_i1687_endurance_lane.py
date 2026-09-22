@@ -9,6 +9,11 @@ from pathlib import Path
 
 CANONICAL_TARGET = "https://staging.corelink.humangr.com"
 WORKFLOW = Path(".github/workflows/endurance-2h-nightly.yml")
+PROTECTED_DISPATCH = (
+    "github.repository == 'HuGR-dev/corelink-server' && "
+    "github.event_name == 'workflow_dispatch' && "
+    "github.ref == 'refs/heads/main' && github.ref_protected"
+)
 
 
 class LaneContractError(ValueError):
@@ -19,6 +24,8 @@ def verify_workflow(text: str) -> list[str]:
     errors: list[str] = []
     if "workflow_dispatch:" not in text:
         errors.append("workflow_dispatch trigger is missing")
+    if text.count(PROTECTED_DISPATCH) != 2:
+        errors.append("measurement and baseline jobs must require a protected canonical dispatch")
     if re.search(r"^\s+schedule:", text, re.MULTILINE):
         errors.append("schedule trigger would make the lane unattended")
     if "CANONICAL_TARGET='https://staging.corelink.humangr.com'" not in text:
