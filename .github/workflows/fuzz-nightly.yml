@@ -1,62 +1,31 @@
 name: Fuzz nightly (BYOK + tenant-path + audit-chain + HKDF)
 
 concurrency:
-  # Escopo por ref. Grupo CONSTANTE torna o grupo repo-global: duas execucoes
-  # `workflow_dispatch` deste mesmo workflow em branches DIFERENTES cancelam uma
-  # a outra. Foi o que matou tres dispatches em 2026-08-31.
-  group: "ci-fuzz-nightly-byok-tenant-path-audit-chain-hkdf-${{ github.event.pull_request.number || github.ref }}"
-  # A manual dispatch is a long-running, expensive measurement.  Cancelling
-  # one because another ref was dispatched destroys the only evidence of the
-  # first run; the per-job timeout below is the bounded stop condition.
+  # Keep scheduled and manual runs in separate groups. A manual dispatch must
+  # never cancel a scheduled measurement (the cancellation observed in #1686).
+  group: "ci-fuzz-nightly-byok-tenant-path-audit-chain-hkdf-${{ github.event_name }}-${{ github.ref }}"
+  # A fuzz run is evidence. Serialize equivalent runs and let the explicit
+  # job/step timeouts stop a wedged or over-budget process.
   cancel-in-progress: false
 
 # Nightly fuzz lane for the pre-pentest hardening surface: BYOK
 # envelope encryption, tenant-path HMAC derivation (extended), audit-
 # chain hash-chain append + JCS canonicalization, HKDF-SHA256 expand.
 #
-# The intended targets are six sanitizer jobs for 30 min on the self-hosted
-# macOS builder fleet. The schedule is parked: this is dispatch-only until the
-# owner provisions the missing macOS libFuzzer C++ sources or explicitly moves
-# the matrix to Linux. Corpus is persisted via actions/cache so a confirmed
-# manual run can grow it monotonically.
+# The six targets run as independent shards for 30 min on hosted Linux. The
+# schedule is enabled again after #1686: versioned runner evidence showed the
+# former macOS host lacked FuzzerPlatform.h and libFuzzer C++ sources.
+# Corpus is persisted via actions/cache so scheduled and manual runs grow it
+# monotonically.
 # Fail-closed: any libfuzzer-discovered crash uploads the offending
 # artifact + exits non-zero.
 
-# ⛔ SCHEDULE PARKED 2026-08-02 — this lane has NEVER passed on this fleet.
-#
-# Measured before parking: 0 successes in the last 30 scheduled runs, and the
-# last 5 burned an average of 80 min EACH before failing. Across all scheduled
-# lanes the self-hosted Mac was spending ~8.8 h/day on jobs that fail, of which
-# this was the third-largest contributor (238 min per 48 h). The Mac is the
-# founder's own machine and heavy compiles have crashed it before, so this is
-# not free CI — it is the machine the whole fleet depends on.
-#
-# The failure is structural, not flaky. Every run dies in the fuzz BUILD:
-#     cargo:warning=clang++: error: no input files
-#     error occurred in cc-rs: command did not execute successfully
-#     Error: failed to build fuzz script: ASAN_OPTIONS=... RUSTFLAGS=...
-# i.e. libfuzzer's sanitizer build cannot link on this host. No amount of
-# re-running changes that.
-#
-# Historical note (2026-08-02): the lane was originally drafted for Ubuntu, but
-# its canonical execution target is the self-hosted macOS builder pool shown by
-# `runs-on` below. This repair does not silently migrate platforms: the schedule
-# stays parked and only an explicit `workflow_dispatch` may run it. Re-arming
-# requires an owner-approved toolchain/platform change followed by a successful
-# manual run, with the existing shared-Mac rustup safety boundary preserved.
-#
-# Re-arming checklist: fix the runner + toolchain → dispatch manually → observe
-# a GREEN run → restore the `schedule:` block below in that same PR.
 on:
-  # schedule:
-  #   # 03:17 UTC nightly — staggered before the 04:23 UTC main nightly
-  #   # (so failures here surface ~1h before the broader nightly gates
-  #   # run; ops gets a clean signal on which lane regressed).
-  #   - cron: '17 3 * * *'
+  schedule:
+    # 03:17 UTC nightly — staggered before the 04:23 UTC main nightly.
+    - cron: '17 3 * * *'
   workflow_dispatch:
-    # Manual trigger for ops/dev to re-run on demand (e.g. after landing
-    # a crypto-adjacent PR). Currently the ONLY trigger — see the parking
-    # note above.
+    # Manual trigger for a bounded re-run after a crypto-adjacent change.
 
 permissions:
   contents: read
@@ -64,25 +33,23 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # 30 min per target (1800s) on the self-hosted macOS fleet. PR-gate runs at
-  # 300s via scripts/fuzz-all.sh; a manual dispatch runs at 1800s.
+  # 30 min per target (1800s). PR-gate runs at 300s via scripts/fuzz-all.sh.
   FUZZ_DURATION: '1800'
 
 jobs:
   fuzz-matrix-expansion:
     name: fuzz 30m (${{ matrix.crate }}::${{ matrix.target }})
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 40
-    # rust-toolchain.toml pins stable for normal workspace commands. Merely
-    # prepending the nightly bin directory is insufficient when rustup applies
-    # that directory override, so select the already-installed nightly without
-    # installing or mutating the shared toolchain.
+    # cargo-fuzz requires nightly; hosted jobs install it in their isolated
+    # workspace and never mutate another job's toolchain.
     env:
-      RUSTUP_TOOLCHAIN: nightly-x86_64-apple-darwin
+      RUSTUP_TOOLCHAIN: nightly
       FUZZ_CRATE: ${{ matrix.crate }}
       FUZZ_TARGET: ${{ matrix.target }}
     strategy:
       fail-fast: false
+      max-parallel: 6
       matrix:
         include:
           - { crate: corelink-byok, target: wrapped_dek_parse }
@@ -95,17 +62,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      # ROOT FIX (2026-06-15): do NOT use `dtolnay/rust-toolchain@nightly` here.
-      # On the shared self-hosted Mac it ran `rustup` nightly channel-update +
-      # component-removal against the SHARED `~/.rustup`, deleting the `rustup`
-      # shim mid-run → every `~/.cargo/bin/cargo` symlink dangled → `os error 2`
-      # on EVERY other Rust gate (and the clw build box, same host) all day.
-      # Use the pre-installed HOST nightly toolchain on PATH instead — the exact
-      # pattern the per-crate fuzz-smoke jobs already use (corelink-meta/worker/
-      # hash/...). It never installs/mutates rustup, so it cannot corrupt the
-      # shared toolchain.
-      - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly; no rustup mutation)
-        run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
+      # Hosted jobs have an isolated HOME. Pin the action revision while using
+      # the nightly channel required by cargo-fuzz.
+      - name: Install nightly toolchain (cargo-fuzz)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: nightly
 
       # The installer binary is kept in its runner-local tools directory, but
       # the Cargo registry/git checkout and build output used by `cargo fuzz`
@@ -169,7 +131,9 @@ jobs:
       - name: Run fuzz target (${{ env.FUZZ_DURATION }}s)
         working-directory: crates/${{ matrix.crate }}
         timeout-minutes: 35
-        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ env.FUZZ_DURATION }}
+        run: |
+          set -euo pipefail
+          cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ env.FUZZ_DURATION }}
 
       - name: Upload fuzz artifacts on failure
         # libfuzzer drops crash-* / leak-* / timeout-* artifacts here.
