@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,14 +25,39 @@ REQUIRED_OBSERVATIONS = {
 
 
 def _contract(workflow: str, helper: str, manifest: dict[str, object]) -> None:
+    parsed_workflow = yaml.safe_load(workflow)
+    assert isinstance(parsed_workflow, dict)
+    jobs = parsed_workflow.get("jobs")
+    assert isinstance(jobs, dict)
+    observe_job = jobs.get("observe")
+    assert isinstance(observe_job, dict)
+    job_env = observe_job.get("env") or {}
+    assert isinstance(job_env, dict)
+    assert not any(re.search(r"\$\{\{\s*runner\.", str(value)) for value in job_env.values())
+
+    steps = observe_job.get("steps")
+    assert isinstance(steps, list)
+    probe_step = next(
+        (
+            step
+            for step in steps
+            if isinstance(step, dict)
+            and step.get("name") == "Observe process, readiness, endpoint, death, timeout, and cleanup"
+        ),
+        None,
+    )
+    assert isinstance(probe_step, dict)
+    probe_env = probe_step.get("env") or {}
+    assert isinstance(probe_env, dict)
+    assert probe_env.get("I1672_FLEET_LABEL") == "corelink"
+    assert probe_env.get("I1672_RUNNER_NAME") == "${{ runner.name }}"
+    assert probe_env.get("I1672_RUNNER_OS") == "${{ runner.os }}"
+    assert probe_env.get("I1672_RUNNER_ARCH") == "${{ runner.arch }}"
+
     assert "workflow_dispatch:" in workflow
     assert "runs-on: corelink" in workflow
     assert "runs-on: ubuntu-latest" not in workflow
     assert "self-hosted" not in workflow
-    assert "I1672_FLEET_LABEL: corelink" in workflow
-    assert "I1672_RUNNER_NAME: ${{ runner.name }}" in workflow
-    assert "I1672_RUNNER_OS: ${{ runner.os }}" in workflow
-    assert "I1672_RUNNER_ARCH: ${{ runner.arch }}" in workflow
     assert "campaign-ci.yml" not in workflow
     assert "secrets." not in workflow
     assert "if docker info >" in workflow
@@ -86,6 +113,22 @@ def test_i1672_contract() -> None:
     [
         ("hosted_runner", lambda w, h, m: (w.replace("runs-on: corelink", "runs-on: ubuntu-latest"), h, m)),
         ("fleet_provenance", lambda w, h, m: (w.replace("I1672_FLEET_LABEL: corelink", "I1672_FLEET_LABEL: hosted"), h, m)),
+        (
+            "runner_context_at_job_scope",
+            lambda w, h, m: (
+                w.replace(
+                    "    runs-on: corelink\n",
+                    "    runs-on: corelink\n    env:\n      I1672_RUNNER_NAME: ${{ runner.name }}\n",
+                    1,
+                ),
+                h,
+                m,
+            ),
+        ),
+        (
+            "runner_context_missing_from_probe_step",
+            lambda w, h, m: (w.replace("I1672_RUNNER_NAME: ${{ runner.name }}", "I1672_RUNNER_NAME: ${{ github.job }}", 1), h, m),
+        ),
         ("manual_trigger", lambda w, h, m: (w.replace("workflow_dispatch:", "workflow_dispatch_removed:", 1), h, m)),
         ("credential", lambda w, h, m: (w + "\nsecrets.CORELINK_CANARY_PAT\n", h, m)),
         ("backend_seam", lambda w, h, m: (w.replace("if docker info >", "if docker status >", 1), h, m)),
