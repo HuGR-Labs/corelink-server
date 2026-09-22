@@ -44,7 +44,7 @@ fn medium_drift_event() -> DriftPlanEvent {
         tf_exit_code: 2, // diff detected
         plan_diff_count: 5,
         plan_summary: "~cloudflare_worker_script.corelink (env vars) +2 resources".to_string(),
-        plan_full_artifact_url: None,
+        plan_summary_artifact_url: None,
         github_run_id: "gha-dry-run-001".to_string(),
     }
 }
@@ -57,7 +57,7 @@ fn clean_event() -> DriftPlanEvent {
         tf_exit_code: 0, // clean
         plan_diff_count: 0,
         plan_summary: "No changes. Infrastructure is up-to-date.".to_string(),
-        plan_full_artifact_url: None,
+        plan_summary_artifact_url: None,
         github_run_id: "gha-dry-run-002".to_string(),
     }
 }

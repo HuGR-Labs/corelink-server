@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS terraform_drift_findings (
     -- Human-readable summary from terraform plan output (top 5 resources)
     plan_summary TEXT NOT NULL DEFAULT '',
 
-    -- GitHub Actions artifact URL for full plan output
+    -- Legacy URL column retained for historical rows. New writes leave this
+    -- NULL; sanitized summary links use plan_summary_artifact_url (0131).
     plan_full_artifact_url TEXT,
 
     -- Severity classification

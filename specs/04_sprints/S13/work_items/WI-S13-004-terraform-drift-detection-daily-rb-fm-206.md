@@ -43,7 +43,7 @@ tags: ["wi", "s13", "admin-plane", "terraform-drift", "drift-detection", "rb-fm-
 
 ## 1. Intent
 
-Implementar terraform drift detection daily para mitigar **FM-206** (Terraform drift — estado real ≠ definido em IaC): (1) **GitHub Action daily cron** 03:00 UTC; (2) `terraform plan` per region (currently CoreLink targets Cloudflare Workers + R2 + D1 + Neon Postgres em ~5 regiões + global config); (3) if `terraform plan` diff count > 0 → **SEV-3 alert** posted em Slack #infra-drift channel com diff summary + full plan output uploaded as artifact; (4) **RB-FM-206 manual remediation runbook** (`specs/05_runbooks/RB-FM-206.md`) com decision tree: (a) apply changes (drift legitimate; reconcile to IaC), (b) investigate (drift unexpected; investigate root cause), (c) revert manual change (drift via manual edit; revert to IaC); (5) **auto-apply forbidden** — `terraform apply` requires manual human approval; CI Action only runs `terraform plan`; mitigates FM-206 catastrophic auto-apply incidents (e.g., AWS console manual change reverted by CI = production down).
+Implementar terraform drift detection daily para mitigar **FM-206** (Terraform drift — estado real ≠ definido em IaC): (1) **GitHub Action daily cron** 03:00 UTC; (2) `terraform plan` per region (currently CoreLink targets Cloudflare Workers + R2 + D1 + Neon Postgres em ~5 regiões + global config); (3) if `terraform plan` diff count > 0 → **SEV-3 alert** posted em Slack #infra-drift channel com diff summary + um artefato de resumo sanitizado; (4) **RB-FM-206 manual remediation runbook** (`specs/05_runbooks/RB-FM-206.md`) com decision tree: (a) apply changes (drift legitimate; reconcile to IaC), (b) investigate (drift unexpected; investigate root cause), (c) revert manual change (drift via manual edit; revert to IaC); (5) **auto-apply forbidden** — `terraform apply` requires manual human approval; CI Action only runs `terraform plan`; mitigates FM-206 catastrophic auto-apply incidents (e.g., AWS console manual change reverted by CI = production down).
 
 ```yaml
 # .github/workflows/terraform-drift.yml (forward; documented spec only — NO code in this WI)
@@ -69,7 +69,7 @@ jobs:
           terraform_version: 1.7.X
       - run: terraform init -backend-config=backend-${{ matrix.region }}.hcl
         working-directory: infra/terraform/
-      - run: terraform plan -detailed-exitcode -out=plan.tfplan
+      - run: terraform plan -detailed-exitcode -out=plan.tfplan (runner-local only; removed before upload)
         id: plan
         working-directory: infra/terraform/
         continue-on-error: true   # capture exit code; we handle differently
@@ -93,7 +93,7 @@ CREATE TABLE terraform_drift_findings (
     detected_at_ms BIGINT NOT NULL,
     plan_diff_count INTEGER NOT NULL,
     plan_summary TEXT NOT NULL,
-    plan_full_artifact_url TEXT,                -- GitHub Actions artifact URL
+    plan_summary_artifact_url TEXT,             -- Sanitized summary URL; raw plan URL forbidden
     severity TEXT NOT NULL CHECK (severity IN ('none', 'low', 'medium', 'high')),
     status TEXT NOT NULL CHECK (status IN ('open', 'investigating', 'remediated', 'wontfix')),
     remediation_decision TEXT,                  -- 'apply' | 'investigate' | 'revert' (per RB-FM-206 decision tree)
@@ -178,10 +178,11 @@ CI workflow + runbook + D1 audit; HIGH_RISK; FF-HR-005.
    - Daily cron 03:00 UTC.
    - Manual `workflow_dispatch` for ad-hoc check.
    - Matrix over 5 regions: us-east, us-west, eu-west, ap-southeast, sa-east.
-   - Steps: `terraform init` (backend per-region) → `terraform plan -detailed-exitcode -out=plan.tfplan`.
+   - Steps: `terraform init` (backend per-region) → local `terraform plan -detailed-exitcode -out=plan.tfplan` → allow-listed summary generation; local plan is removed before upload.
    - Exit code handling: 0 = no diff; 1 = error; 2 = diff exists.
-   - On exit code 2: post Slack SEV-3 alert + upload plan artifact.
-   - On exit code 1: post Slack SEV-2 alert (terraform error) + upload logs.
+   - On exit code 2: post Slack SEV-3 alert + upload the sanitized summary artifact.
+   - On exit code 1: post Slack SEV-2 alert (terraform error) + upload the sanitized error summary.
+   - Sanitized summary retention is 7 days; compliance retention remains on the D1 audit row (7 years).
    - **NO `terraform apply` step** (security property; auto-apply forbidden).
    - Permissions: `contents: read` + `id-token: write` (OIDC for Cloudflare API auth).
    - OIDC-bound credentials only (no long-lived AWS/CF secrets in workflow).
@@ -201,8 +202,8 @@ CI workflow + runbook + D1 audit; HIGH_RISK; FF-HR-005.
 
 4. **Slack alert template**:
    - Channel: #infra-drift.
-   - SEV-3 message format: `[SEV-3] Terraform drift detected in region {region}: {diff_count} resources changed. See plan artifact: {url}. Runbook: RB-FM-206.`.
-   - Includes: region, diff count, top 5 changed resources, artifact URL, runbook reference.
+   - SEV-3 message format: `[SEV-3] Terraform drift detected in region {region}: {diff_count} resources changed. See sanitized summary: {url}. Runbook: RB-FM-206.`.
+   - Includes: region, action counts, sanitized summary URL, runbook reference. Resource names and values are excluded.
    - Pinned daily summary message updated per cron run (top of channel).
 
 5. **Métricas underscored Prometheus** (per `observability_model.md §3.1 + §4.1`):
@@ -288,7 +289,7 @@ Feature: Terraform drift detection daily + RB-FM-206
     Given Cloudflare console manual change in region us-east (Worker config modified)
     When cron triggers
     Then terraform plan detects diff in us-east (exit code = 2)
-    And Slack #infra-drift posts SEV-3 message with diff summary + plan artifact URL
+    And Slack #infra-drift posts SEV-3 message with action summary + sanitized artifact URL
     And D1 row inserted (region="us-east", severity="medium", status="open")
     And metric corelink_admin_terraform_drift_findings_total{region="us-east",severity="medium"} incremented
     And audit "admin.terraform_drift.detected" emitted
@@ -450,6 +451,8 @@ TLA+ alignment: não-aplicável (CI cron + audit emission; sem state machine cri
 | D1 migration `terraform_drift_findings` | `migrations/0XX_terraform_drift_findings.sql` | SQL |
 | RB-FM-206 runbook | `specs/05_runbooks/RB-FM-206.md` | Markdown |
 | Slack alert template | `infra/slack/terraform-drift-template.json` | JSON |
+| Sanitized evidence generator | `scripts/sanitize_terraform_drift.py` | Python (fixed schema; no raw payload) |
+| Evidence boundary tests | `scripts/test_sanitize_terraform_drift.py` | Python (canary + mutation-sensitive) |
 | CI gate custom lint (forbid apply) | `scripts/lint_no_terraform_apply.py` | Python |
 | Drift cron consumer Worker | `crates/corelink-terraform-drift-consumer/` | Rust |
 | Adversarial tests | `crates/corelink-terraform-drift-consumer/tests/adversarial.rs` | Rust |
@@ -588,7 +591,7 @@ Não-aplicável (este WI é CI workflow + runbook + D1 audit). Admin API for rem
 - **Spoofing**: OIDC-bound credentials short-lived; no long-lived secret exfiltration vector.
 - **Tampering**: state file integrity check + CODEOWNERS + required reviews.
 - **Repudiation**: D1 audit log + 7y retention.
-- **Information disclosure**: terraform plan output excludes secrets (Cloudflare API tokens never in plan).
+- **Information disclosure**: raw plan files, plan JSON, and terminal logs never leave the runner; only an allow-listed summary is uploaded.
 - **DoS**: cron daily bounded; no operational impact.
 - **Elevation of privilege**: NO auto-apply (manual gate); CODEOWNERS + dual-approval for remediation.
 
@@ -597,7 +600,7 @@ Não-aplicável (este WI é CI workflow + runbook + D1 audit). Admin API for rem
 - **Identifiability**: admin user_id em D1 + audit (intentional CTRL-AUDIT-002).
 - **Non-repudiation**: cripto property intentional.
 - **Detectability**: drift publicly tracked em Slack channel + D1.
-- **Disclosure**: terraform plan output filtered for secrets.
+- **Disclosure**: Terraform output is suppressed and the uploaded summary has a fixed schema with no variables, addresses, configuration, prior state, or resource values.
 - **Unawareness**: admin onboarding documents RB-FM-206.
 - **Non-compliance**: SOC 2 CC8.1 + ISO 27001 A.5.18 satisfied.
 

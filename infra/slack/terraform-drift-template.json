@@ -25,15 +25,9 @@
       },
       {
         "type": "section",
-        "text": {
-          "type": "mrkdwn",
-          "text": "*Top changed resources:*\n```{{top_resources_snippet}}```"
-        }
-      },
-      {
-        "type": "section",
         "fields": [
-          { "type": "mrkdwn", "text": "*Plan artifact:*\n<{{artifact_url}}|View full plan>" },
+          { "type": "mrkdwn", "text": "*Sanitized summary:*\n<{{summary_artifact_url}}|View summary>" },
+          { "type": "mrkdwn", "text": "*Action counts:*\n`{{action_counts}}`" },
           { "type": "mrkdwn", "text": "*Finding ID:*\n`{{finding_id}}`" }
         ]
       },
@@ -52,8 +46,8 @@
         "elements": [
           {
             "type": "button",
-            "text": { "type": "plain_text", "text": "View Plan Artifact" },
-            "url": "{{artifact_url}}",
+            "text": { "type": "plain_text", "text": "View Sanitized Summary" },
+            "url": "{{summary_artifact_url}}",
             "style": "primary"
           },
           {
