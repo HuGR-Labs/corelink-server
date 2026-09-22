@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           test_name='webhook_inbox_d1::tests::effect_witness_and_completion_share_one_fenced_transaction'
-          cargo test --locked -p corelink-server --lib "$test_name" --exact --nocapture 2>&1 | tee artifacts/campaign-ci/i1629.log
+          cargo test --locked -p corelink-server --lib "$test_name" -- --exact --nocapture 2>&1 | tee artifacts/campaign-ci/i1629.log
           grep -F "test ${test_name} ... ok" artifacts/campaign-ci/i1629.log
 
       - name: i1631 multi-period, seam, and migration checks
