@@ -16018,19 +16018,33 @@ property test antigo misturava prova determinística de orçamento com um relóg
 parede frágil. O contrato exige separar complexidade/correção da medição opt-in, sem
 fabricar um resultado de produção.
 
+O lane B-251 agora deriva os dois registros de identidade executando o checker
+`InMemoryAtomicQuotaChecker` no produtor D02 imutável e no código observado em `main`,
+com entradas determinísticas dentro dos intervalos do property test D02. O recibo
+mantém apenas hashes dos transcripts e atesta sua proveniência. O replay e o p99
+continuam sendo evidência do fixture in-memory; a árvore não contém implementação de
+produção de `AtomicCasState`/`AtomicQuotaChecker`, e este lane não mede latência de
+produção. A comparação inclui uma mutação negativa de identidade. O workflow só mede
+p99 após merge, em `main` protegido, por dispatch explícito.
+
 ```backlog
 id: B-251
 repo: corelink-server
 owner: tl
 status: parked
-verify: python3 scripts/verify_b251_quota_cas_budget.py
+verify: |
+  python3 scripts/verify_b251_quota_cas_budget.py
+  python3 scripts/verify_b251_provenance_contract.py
 verify-means: |
   parked — `verify_b251_quota_cas_budget.py` fecha a parte determinística e fail-closed:
   o orçamento de tentativas/eventos, os casos allow/deny e a prova de mutações são
   verificáveis sem Cargo. O p99 real permanece explicitamente em probe isolada
   `#[ignore]`, com 1.000 amostras e limite de 5 ms; sua execução pertence ao bundle
-  D03 e não é alegada por este gate estático. A identidade do seed/failure e do blob
-  deve ser comparada ao D02/main antes de qualquer fechamento.
+  D03 e não é alegada por este gate estático. O workflow agora executa o mesmo adapter
+  de operação contra o commit produtor D02 fixado e o checkout D03, compara os digests
+  gerados, rejeita uma mutação e emite recibo redigido com atestação. A coleta ainda
+  precisa passar no workflow hospedado após merge; não existe evidência de latência de
+  produção e o status continua parked até essa evidência ser anexada.
 last-verified: 2026-09-05
 ```
 

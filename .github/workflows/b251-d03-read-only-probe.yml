@@ -1,41 +1,23 @@
-name: B-251 D03 read-only quota CAS probe
+name: B-251 quota CAS provenance and read-only latency probe
 
-# This is an operator-only lane. It runs the already ignored, in-memory probe
-# on a GitHub-hosted runner and never deploys, writes a remote target, or
-# changes the B-251 issue. A successful receipt is runtime evidence only.
+# Pull requests run only credentialless static/fixture contracts. A bounded
+# checker replay and timing measurement is available only after merge, from
+# protected main, with one explicit dispatch confirmation.
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/b251-d03-read-only-probe.yml'
+      - 'crates/corelink-billing/tests/b251_identity_operation.rs'
+      - 'scripts/collect_b251_provenance.py'
+      - 'scripts/run_b251_latency_probe.py'
+      - 'scripts/verify_b251_provenance_contract.py'
+      - 'tests/test_b251_provenance_contract.py'
+      - 'tests/test_run_b251_latency_probe.py'
+      - 'docs/**'
   workflow_dispatch:
     inputs:
       confirm:
         description: 'Type "run-b251-d03-read-only" to run the bounded probe'
-        required: true
-        type: string
-      execution_target:
-        description: 'Read-only target label; must be github-hosted-read-only'
-        required: true
-        type: string
-      d02_seed:
-        description: 'D02 seed receipt identity'
-        required: true
-        type: string
-      d02_failure:
-        description: 'D02 failure receipt identity'
-        required: true
-        type: string
-      d02_blob:
-        description: 'D02 blob receipt identity'
-        required: true
-        type: string
-      d03_seed:
-        description: 'D03 observed seed receipt identity'
-        required: true
-        type: string
-      d03_failure:
-        description: 'D03 observed failure receipt identity'
-        required: true
-        type: string
-      d03_blob:
-        description: 'D03 observed blob receipt identity'
         required: true
         type: string
 
@@ -47,69 +29,84 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  probe:
-    name: B-251 bounded 1000-sample probe
+  contract:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
-      - name: Checkout without write credentials
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest==8.4.2
+      - run: python -m pytest -q tests/test_b251_provenance_contract.py tests/test_run_b251_latency_probe.py
+
+  probe:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.ref == 'refs/heads/main' &&
+      github.ref_protected == true
+    name: B-251 bounded checker replay and 1000-sample probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout protected main without write credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          path: d03
 
-      - name: Require explicit read-only dispatch and identities
+      - name: Checkout immutable D02 producer revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: HuGR-dev/corelink-server
+          ref: f88c6ca41868f6a02e78ba9f4357d3abf67da4be
+          fetch-depth: 0
+          persist-credentials: false
+          path: d02
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+
+      - name: Validate dispatch and derive both identities from real checker operations
+        id: collect
         env:
           CONFIRM: ${{ inputs.confirm }}
-          TARGET: ${{ inputs.execution_target }}
-          D02_SEED: ${{ inputs.d02_seed }}
-          D02_FAILURE: ${{ inputs.d02_failure }}
-          D02_BLOB: ${{ inputs.d02_blob }}
-          D03_SEED: ${{ inputs.d03_seed }}
-          D03_FAILURE: ${{ inputs.d03_failure }}
-          D03_BLOB: ${{ inputs.d03_blob }}
         run: |
           set -euo pipefail
           test "${CONFIRM}" = run-b251-d03-read-only
-          test "${TARGET}" = github-hosted-read-only
-          for value in "${D02_SEED}" "${D02_FAILURE}" "${D02_BLOB}" "${D03_SEED}" "${D03_FAILURE}" "${D03_BLOB}"; do
-            test -n "${value}"
-            test "${#value}" -le 256
-            case "${value}" in *[[:cntrl:]]*) exit 1 ;; esac
-          done
-          mkdir -p "${RUNNER_TEMP}/b251"
-          D02_SEED="${D02_SEED}" D02_FAILURE="${D02_FAILURE}" D02_BLOB="${D02_BLOB}" \
-          D03_SEED="${D03_SEED}" D03_FAILURE="${D03_FAILURE}" D03_BLOB="${D03_BLOB}" \
-          python3 - <<'PY'
-          import json, os
-          root = os.environ["RUNNER_TEMP"] + "/b251"
-          for name, source, prefix in (("d02.json", "D02", "D02"), ("d03.json", "D03-observed", "D03")):
-              payload = {"source": source, "seed": os.environ[f"{prefix}_SEED"], "failure": os.environ[f"{prefix}_FAILURE"], "blob": os.environ[f"{prefix}_BLOB"]}
-              with open(f"{root}/{name}", "w", encoding="utf-8") as handle:
-                  json.dump(payload, handle, sort_keys=True)
-                  handle.write("\n")
-          PY
+          mkdir -p artifacts/b251
+          python3 d03/scripts/collect_b251_provenance.py \
+            --d02 "$GITHUB_WORKSPACE/d02" \
+            --d03 "$GITHUB_WORKSPACE/d03" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --output "$GITHUB_WORKSPACE/artifacts/b251/provenance-receipt.json"
 
-      - name: Run exact ignored probe and retain failure receipt
-        id: probe
-        env:
-          D02_IDENTITY: ${{ runner.temp }}/b251/d02.json
-          D03_IDENTITY: ${{ runner.temp }}/b251/d03.json
+      - name: Run bounded p99 probe against generated identity records
         run: |
-          set +e
-          mkdir -p artifacts
-          python3 scripts/run_b251_latency_probe.py --allow-run \
-            --d02-identity "${D02_IDENTITY}" \
-            --observed-identity "${D03_IDENTITY}" \
-            --output artifacts/b251-d03-latency-receipt.json 2>&1 | tee artifacts/b251-d03-probe.log
-          status=${PIPESTATUS[0]}
-          echo "probe_exit=${status}" >> artifacts/b251-d03-probe.log
-          exit "${status}"
+          set -euo pipefail
+          python3 d03/scripts/run_b251_latency_probe.py --allow-run \
+            --d02-identity "$GITHUB_WORKSPACE/artifacts/b251/d02-identity.json" \
+            --observed-identity "$GITHUB_WORKSPACE/artifacts/b251/d03-identity.json" \
+            --output "$GITHUB_WORKSPACE/artifacts/b251/latency-receipt.json"
 
-      - name: Upload redacted receipt and failure log
-        if: always()
+      - name: Attest redacted evidence receipts
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: artifacts/b251/*.json
+
+      - name: Upload redacted receipts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: b251-d03-read-only-probe-${{ github.run_id }}
-          path: artifacts/b251-d03-*
+          name: b251-provenance-probe-${{ github.run_id }}
+          path: artifacts/b251/*.json
           if-no-files-found: error
           retention-days: 30
