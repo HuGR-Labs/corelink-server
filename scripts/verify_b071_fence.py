@@ -9,6 +9,7 @@ authority for compiling the Rust adapters.
 from __future__ import annotations
 
 import pathlib
+import re
 import sqlite3
 import tempfile
 
@@ -16,6 +17,7 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations/d1/0115_gc_purge_fence.sql"
 CONTROL_MIGRATION = ROOT / "migrations/d1/0142_gc_accounting_legal_hold.sql"
+FORWARD_CONTROL_MIGRATION = ROOT / "migrations/d1/0143_gc_accounting_region_upgrade.sql"
 CAS_QUERY = ROOT / "crates/corelink-meta/src/cas_query.rs"
 CAS_FENCE = ROOT / "crates/corelink-container/src/storage/cas_write_fence.rs"
 CAS_OPS = ROOT / "crates/corelink-container/src/storage/r2_s3_parts/cas_write.rs"
@@ -24,7 +26,24 @@ GC_SWEEP = ROOT / "crates/corelink-container/src/gc_sweep/part-03.rs"
 CANONICAL_DIGEST = "d" * 64
 
 
-def make_db() -> sqlite3.Connection:
+def legacy_0118_control_migration() -> str:
+    """Return historical 0118 trigger bodies before the gc-region repair."""
+    current = CONTROL_MIGRATION.read_text()
+    legacy, replacements = re.subn(
+        r"""region = \(
+\s+SELECT gc_region FROM gc_purge_intent
+\s+WHERE tenant_id = OLD\.tenant_id
+\s+AND digest = OLD\.digest
+\s+AND state = 'r2_deleted'
+\s+\)""",
+        "region = OLD.region",
+        current,
+    )
+    assert replacements == 2, "historical 0118 trigger fixture drifted"
+    return legacy
+
+
+def make_db(control_migration: str | None = None) -> sqlite3.Connection:
     db = sqlite3.connect(":memory:")
     db.executescript(
         """
@@ -59,12 +78,19 @@ def make_db() -> sqlite3.Connection:
         """
     )
     db.executescript(MIGRATION.read_text())
-    db.executescript(CONTROL_MIGRATION.read_text())
-    # Forward migration is safe to replay during a staged deployment.
+    db.executescript(control_migration or CONTROL_MIGRATION.read_text())
+    # The forward migration replaces the bodies left behind by an already
+    # applied 0118. Replaying it must preserve the same fenced definitions.
+    db.executescript(FORWARD_CONTROL_MIGRATION.read_text())
+    db.executescript(FORWARD_CONTROL_MIGRATION.read_text())
     db.executescript(MIGRATION.read_text())
     db.execute("INSERT INTO tenant VALUES ('t1', 'wnam')")
+    # tenant_storage_state.region is the five-region GC partition, while
+    # blob_meta.region is the tenant macro-residency region.  Keep them
+    # intentionally different so the accounting trigger cannot regress to
+    # comparing the wrong region domain.
     db.execute(
-        "INSERT INTO tenant_storage_state VALUES ('t1', 'wnam', 10, 100, 1, 1, NULL, 0, 1, 1)"
+        "INSERT INTO tenant_storage_state VALUES ('t1', 'iad', 10, 100, 1, 1, NULL, 0, 1, 1)"
     )
     db.execute(
         "INSERT INTO blob_meta VALUES ('t1', ?, 10, 0, 1, 1, 1, 'wnam')",
@@ -219,6 +245,7 @@ def main() -> None:
     gc = GC_SWEEP.read_text()
     migration = MIGRATION.read_text()
     control_migration = CONTROL_MIGRATION.read_text()
+    forward_control_migration = FORWARD_CONTROL_MIGRATION.read_text()
     assert not live_wiring_errors(ops, wiring, gc), live_wiring_errors(ops, wiring, gc)
     for token in (
         "trg_gc_purge_reclaim_stale_cas_writer",
@@ -240,6 +267,14 @@ def main() -> None:
         "MAX(0, bytes_used - OLD.size_bytes)",
     ):
         assert token in control_migration, f"GC control migration missing {token}"
+    for token in (
+        "DROP TRIGGER IF EXISTS trg_gc_purge_accounting_required",
+        "DROP TRIGGER IF EXISTS trg_gc_purge_finalize_accounting",
+        "gc_region FROM gc_purge_intent",
+        "MAX(0, bytes_used - OLD.size_bytes)",
+        "bytes_reclaimed_lifetime",
+    ):
+        assert token in forward_control_migration, f"GC forward migration missing {token}"
     assert "algorithm-tagged digest" not in fence, \
         "writer fence still requires an algorithm prefix at the metadata boundary"
     assert "&canonical_meta_digest(&req.claimed_hash)" in ops, \
@@ -264,7 +299,21 @@ def main() -> None:
         ".with_cas_write_fence(cas_write_fence)", "", 1
     ), "fence wiring appears more than once"
 
-    db = make_db()
+    # Fresh installs execute corrected 0142 followed by 0143. Existing
+    # deployments can carry historic 0118 bodies, then execute 0143. Exercise
+    # the latter sequence below because it is the deployed-upgrade seam.
+    fresh = make_db()
+    for trigger in (
+        "trg_gc_purge_accounting_required",
+        "trg_gc_purge_finalize_accounting",
+    ):
+        trigger_sql = fresh.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?", (trigger,)
+        ).fetchone()[0]
+        assert "gc_region" in trigger_sql and "OLD.region" not in trigger_sql, \
+            f"fresh install retained the obsolete {trigger} body"
+
+    db = make_db(legacy_0118_control_migration())
     # The purge acquisition boundary is transactional: a lease older than the
     # bounded TTL is deleted by the migration trigger in the same transaction
     # that creates epoch 1, while a lease exactly at the boundary still wins
