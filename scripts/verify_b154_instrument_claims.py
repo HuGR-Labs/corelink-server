@@ -28,6 +28,11 @@ SLA = ROOT / "legal/sla/v1.0.0.md"
 B083_RECEIPT = Path("evidence/owner-actions/B-083/byok-real-kms-lifecycle.json")
 B046_PROBE = Path("evidence/owner-actions/B-046/object-lock-probe.json")
 DOCKERFILE = Path("Dockerfile")
+B083_UNEXECUTED_LIFECYCLE = frozenset({
+    "customer_create_or_import", "provider_access", "wrap_unwrap", "revoke_restore",
+    "rotate", "deletion_schedule", "audit_receipts", "tenant_isolation",
+    "failure_retry", "residency",
+})
 
 
 class VerificationError(RuntimeError):
@@ -176,13 +181,23 @@ def verify_texts(dpa_text: str, sla_text: str) -> list[tuple[str, int, str]]:
 def verify_capability_state(byok: dict, object_lock: dict, dockerfile: str) -> None:
     """Require the exact current evidence boundary, never a stray 501/NotImplemented."""
     try:
+        lifecycle = byok["lifecycle"]
         byok_unverified = (
-            byok["tenant_redacted"] == "NOT_PROVISIONED"
-            and byok["image_digest"] is None
-            and byok["check_access"] == "BLOCKED"
-            and all(byok[field]["status"] == "NOT_EXECUTED" for field in (
-                "activation", "cas_ac_round_trip", "revocation", "run_loop"
-            ))
+            byok["schema_version"] == 2
+            and byok["evidence_state"] == "BLOCKED"
+            and byok["tenant_redacted"] == "NOT_PROVISIONED"
+            and byok["runtime"] == {
+                "provider": "aws", "image_digest": None, "execution_region": None,
+            }
+            and set(lifecycle) == B083_UNEXECUTED_LIFECYCLE
+            and all(
+                set(row) == {"status", "receipt_reference", "completed_at", "blocker"}
+                and row["status"] == "NOT_EXECUTED"
+                and row["receipt_reference"] is None
+                and row["completed_at"] is None
+                and isinstance(row["blocker"], str) and row["blocker"]
+                for row in lifecycle.values()
+            )
         )
         probe_indeterminate = (
             object_lock["classification"] == "INDETERMINATE"

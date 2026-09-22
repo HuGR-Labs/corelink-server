@@ -81,7 +81,7 @@ def test_capability_evidence_drift_fails_closed(mutant: str) -> None:
     byok, probe, dockerfile = _capability_sources()
     if mutant == "byok":
         byok = copy.deepcopy(byok)
-        byok["activation"]["status"] = "PASS"
+        byok["lifecycle"]["customer_create_or_import"]["status"] = "PASS"
     elif mutant == "object_lock":
         probe = copy.deepcopy(probe)
         probe["classification"] = "SUPPORTED"

@@ -61,6 +61,7 @@ def _successor_fixture(tmp_path, monkeypatch, *, first_status="open", anchor_ope
         genesis: "genesis fixture\n",
         ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot.json": "original fixture\n",
         Path("scripts/backlog_verify.py"): "# trusted control fixture\n",
+        Path("scripts/verify_owner_action_packets.py"): "# trusted control fixture\n",
         Path("scripts/verify_backlog_wp_ledger.py"): "# trusted ledger fixture\n",
         Path("scripts/backlog_ledger_successor.py"): "# trusted successor fixture\n",
         Path("scripts/backlog_ledger_contracts.py"): "# trusted contracts fixture\n",
@@ -171,6 +172,230 @@ def test_exact_rewrite_authorization_binds_both_sources_ids_and_fields(tmp_path,
         "B-001": ("open", manual, manual, first, ledger._sha256(b"no owner approval needed")),
     })
     assert not authorized(prior, current, receipt, 3)
+
+
+def test_v0004_reconciliation_is_byte_pinned_before_any_data_successor(monkeypatch):
+    """The trusted policy admits one complete image, never a candidate-defined delta."""
+    policy = ledger._successor_policy()
+    catalogs = {path.as_posix(): b"catalog" for path in policy._catalog_relatives()}
+    prior = {
+        "BACKLOG.md": (
+            b"### B-098 \xe2\x80\x94 census before\n```backlog\n"
+            b"id: B-098\nrepo: corelink-server\nowner: tl\nstatus: parked\n"
+            b"verify: manual\nverify-means: census\nlast-verified: 2026-09-22\n```\n"
+            b"### B-154 \xe2\x80\x94 legacy\n```backlog\n"
+            b"id: B-154\nrepo: corelink-server\nowner: owner\nstatus: open\n"
+            b"verify: legacy\nverify-means: legacy proof\nlast-verified: 2026-09-05\n```\n"
+        ),
+        ledger.LEDGER_RELATIVE.as_posix(): b"ledger-before",
+        **catalogs,
+    }
+    current = {
+        "BACKLOG.md": (
+            b"### B-098 \xe2\x80\x94 census after\n```backlog\n"
+            b"id: B-098\nrepo: corelink-server\nowner: tl\nstatus: parked\n"
+            b"verify: manual\nverify-means: census\nlast-verified: 2026-09-22\n```\n"
+            b"### B-154 \xe2\x80\x94 canonical\n```backlog\n"
+            b"id: B-154\nrepo: corelink-server\nowner: owner\nstatus: open\n"
+            b"verify: canonical\nverify-means: canonical proof\nlast-verified: 2026-09-22\n```\n"
+        ),
+        ledger.LEDGER_RELATIVE.as_posix(): b"ledger-after",
+        **catalogs,
+    }
+    fields = (
+        "open",
+        ledger._sha256(b"legacy"), ledger._sha256(b"canonical"),
+        ledger._sha256(b"legacy proof"), ledger._sha256(b"canonical proof"),
+    )
+    pinned = {
+        "sequence": 4,
+        "previous_sequence": 3,
+        "previous_source_sha256": "previous-receipt-source",
+        "prior_source_sha256": ledger._sha256(prior["BACKLOG.md"]),
+        "source_sha256": ledger._sha256(current["BACKLOG.md"]),
+        "prior_ledger_sha256": ledger._sha256(prior[ledger.LEDGER_RELATIVE.as_posix()]),
+        "ledger_sha256": ledger._sha256(current[ledger.LEDGER_RELATIVE.as_posix()]),
+        "changed_ids": ["B-098", "B-154"],
+        "catalog_sha256": {key: ledger._sha256(value) for key, value in catalogs.items()},
+        "fields": fields,
+    }
+    monkeypatch.setattr(successor, "V0004_RECONCILIATION", pinned)
+    previous = {"sequence": 3, "source_sha256": "previous-receipt-source"}
+    receipt = {
+        "base_commit": "a" * 40,
+        "prior_source_sha256": pinned["prior_source_sha256"],
+        "source_sha256": pinned["source_sha256"],
+        "prior_ledger_sha256": pinned["prior_ledger_sha256"],
+        "ledger_sha256": pinned["ledger_sha256"],
+        "prior_catalog_sha256": pinned["catalog_sha256"],
+        "catalog_sha256": pinned["catalog_sha256"],
+        "changed_ids": pinned["changed_ids"],
+    }
+    authorized = policy._v0004_reconciliation_authorized
+    assert authorized(previous, prior, current, receipt, 4)
+    assert not authorized(previous, prior, current, {**receipt, "changed_ids": ["B-154"]}, 4)
+    assert not authorized(
+        previous, prior, {**current, "BACKLOG.md": current["BACKLOG.md"] + b"\n"}, receipt, 4,
+    )
+
+
+def test_v0004_policy_in_base_accepts_only_the_exact_dynamic_base_successor(
+    tmp_path, monkeypatch,
+):
+    """Exercise the BASE gate after policy merge, with a later event SHA."""
+    repo_root = Path(__file__).resolve().parents[1]
+    real_b154 = next(
+        item for item in ledger.backlog_verify.parse((repo_root / "BACKLOG.md").read_text())
+        if item.id == "B-154"
+    ).raw
+    legacy_verify = real_b154["verify"]
+    assert ledger._sha256(legacy_verify.encode()) == ledger.backlog_verify.B154_LEGACY_VERIFY_SHA256
+    canonical_verify = (
+        "python3 -S scripts/verify_owner_action_packets.py --id B-154 &&\n"
+        "python3 -S scripts/verify_b154_instrument_claims.py --self-test\n"
+    )
+
+    def exact_case(name: str):
+        case_root = tmp_path / name
+        case_root.mkdir()
+        base, v3_candidate = _successor_fixture(case_root, monkeypatch)
+        assert ledger.validate_candidate_successor(base, v3_candidate)["sequence"] == 3
+        for relative in (
+            Path("BACKLOG.md"), ledger.LEDGER_RELATIVE,
+            ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0003.json",
+        ):
+            (base / relative).write_bytes((v3_candidate / relative).read_bytes())
+        _git(base, "add", ".")
+        _git(base, "commit", "--quiet", "-m", "delivered v3")
+
+        legacy_command = legacy_verify.rstrip().replace("\n", "\n  ")
+        canonical_command = canonical_verify.rstrip().replace("\n", "\n  ")
+        legacy_block = (
+            "### B-154 — legacy\n```backlog\nid: B-154\nrepo: corelink-server\n"
+            "owner: owner\nstatus: open\nverify: |\n  "
+            + legacy_command
+            + "\nverify-means: |\n  legacy proof\nlast-verified: 2026-09-05\n```\n"
+        )
+        prestate = (base / "BACKLOG.md").read_text() + (
+            "### B-098 — census before\n```backlog\nid: B-098\nrepo: corelink-server\n"
+            "owner: tl\nstatus: parked\nverify: manual\nverify-means: census\n"
+            "last-verified: 2026-09-22\n```\n" + legacy_block
+        )
+        (base / "BACKLOG.md").write_text(prestate)
+        base_ledger = base / ledger.LEDGER_RELATIVE
+        base_ledger.write_text(base_ledger.read_text().replace(
+            "item-count: 2", "item-count: 4"
+        ).replace("open-count: 1", "open-count: 2").replace(
+            "parked-count: 0", "parked-count: 1"
+        ))
+        _git(base, "add", ".")
+        _git(base, "commit", "--quiet", "-m", "trusted policy base")
+        base_sha = _git(base, "rev-parse", "HEAD")
+
+        candidate = case_root / "v4-candidate"
+        shutil.copytree(base, candidate, ignore=shutil.ignore_patterns(".git"))
+        candidate_backlog = candidate / "BACKLOG.md"
+        target_block = legacy_block.replace("### B-154 — legacy", "### B-154 — canonical").replace(
+            legacy_command, canonical_command
+        ).replace("legacy proof", "canonical proof").replace(
+            "last-verified: 2026-09-05", "last-verified: 2026-09-22"
+        )
+        candidate_backlog.write_text(candidate_backlog.read_text().replace(
+            "### B-098 — census before", "### B-098 — census after"
+        ).replace(legacy_block, target_block))
+        candidate_ledger = candidate / ledger.LEDGER_RELATIVE
+        old_base = parse_ledger_state(candidate_ledger.read_text(), "candidate-ledger")["base-ref"]
+        candidate_ledger.write_text(candidate_ledger.read_text().replace(
+            f"base-ref: {old_base}", f"base-ref: {base_sha}"
+        ).replace(f"base-sha: {old_base}", f"base-sha: {base_sha}"))
+        prior, current = ledger._state_bytes(base), ledger._state_bytes(candidate)
+        catalog_hashes = {
+            path.as_posix(): ledger._sha256(prior[path.as_posix()])
+            for path in ledger._successor_policy()._catalog_relatives()
+        }
+        old_b154 = next(item for item in ledger.backlog_verify.parse(prior["BACKLOG.md"].decode()) if item.id == "B-154").raw
+        new_b154 = next(item for item in ledger.backlog_verify.parse(current["BACKLOG.md"].decode()) if item.id == "B-154").raw
+        v3_receipt = json.loads((base / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0003.json").read_text())
+        pinned = {
+            "sequence": 4, "previous_sequence": 3,
+            "previous_source_sha256": v3_receipt["source_sha256"],
+            "prior_source_sha256": ledger._sha256(prior["BACKLOG.md"]),
+            "source_sha256": ledger._sha256(current["BACKLOG.md"]),
+            "prior_ledger_sha256": ledger._sha256(prior[ledger.LEDGER_RELATIVE.as_posix()]),
+            "ledger_sha256": ledger._sha256(current[ledger.LEDGER_RELATIVE.as_posix()]),
+            "changed_ids": ["B-098", "B-154"], "catalog_sha256": catalog_hashes,
+            "fields": (
+                old_b154["status"], ledger._sha256(old_b154["verify"].encode()),
+                ledger._sha256(new_b154["verify"].encode()),
+                ledger._sha256(old_b154["verify-means"].encode()),
+                ledger._sha256(new_b154["verify-means"].encode()),
+            ),
+        }
+        monkeypatch.setattr(successor, "V0004_RECONCILIATION", pinned)
+        receipt = {
+            "schema_version": 3, "sequence": 4, "transition": "base-derived-data",
+            "base_commit": base_sha,
+            "prior_snapshot_sha256": ledger._sha256((base / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0003.json").read_bytes()),
+            "prior_source_sha256": pinned["prior_source_sha256"], "source_sha256": pinned["source_sha256"],
+            "prior_ledger_sha256": pinned["prior_ledger_sha256"], "ledger_sha256": pinned["ledger_sha256"],
+            "prior_catalog_sha256": catalog_hashes, "catalog_sha256": catalog_hashes,
+            "item_count": 4, "status_counts": {"done": 1, "open": 2, "parked": 1},
+            "open_ids": ["B-001", "B-154"], "changed_ids": ["B-098", "B-154"],
+        }
+        receipt_path = candidate / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0004.json"
+        receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
+        policy = ledger._successor_policy()
+        status, old_verify, new_verify, old_means, new_means = pinned["fields"]
+        checks = {
+            "policy pin": successor.V0004_RECONCILIATION == pinned,
+            "sequence": 4 == pinned["sequence"],
+            "previous receipt": v3_receipt["sequence"] == pinned["previous_sequence"]
+            and v3_receipt["source_sha256"] == pinned["previous_source_sha256"],
+            "changed ids": receipt["changed_ids"] == pinned["changed_ids"],
+            "backlog bytes": ledger._sha256(prior["BACKLOG.md"]) == pinned["prior_source_sha256"]
+            and ledger._sha256(current["BACKLOG.md"]) == pinned["source_sha256"],
+            "ledger bytes": ledger._sha256(prior[ledger.LEDGER_RELATIVE.as_posix()]) == pinned["prior_ledger_sha256"]
+            and ledger._sha256(current[ledger.LEDGER_RELATIVE.as_posix()]) == pinned["ledger_sha256"],
+            "receipt bytes": all(receipt[key] == pinned[key] for key in (
+                "prior_source_sha256", "source_sha256", "prior_ledger_sha256", "ledger_sha256",
+            )),
+            "catalog bytes": catalog_hashes == pinned["catalog_sha256"]
+            and {path.as_posix(): ledger._sha256(current[path.as_posix()]) for path in policy._catalog_relatives()} == catalog_hashes
+            and receipt["prior_catalog_sha256"] == catalog_hashes and receipt["catalog_sha256"] == catalog_hashes,
+            "B-154 fields": old_b154["status"] == new_b154["status"] == "open"
+            and old_b154["status"] == status
+            and ledger._sha256(old_b154["verify"].encode()) == old_verify
+            and ledger._sha256(new_b154["verify"].encode()) == new_verify
+            and ledger._sha256(old_b154["verify-means"].encode()) == old_means
+            and ledger._sha256(new_b154["verify-means"].encode()) == new_means,
+        }
+        assert all(checks.values()), checks
+        assert policy._v0004_reconciliation_authorized(v3_receipt, prior, current, receipt, 4)
+        return base, candidate, receipt_path
+
+    base, candidate, receipt_path = exact_case("exact")
+    assert ledger.validate_candidate_successor(base, candidate, today=dt.date(2026, 9, 22))["sequence"] == 4
+
+    base, candidate, receipt_path = exact_case("base-commit")
+    receipt = json.loads(receipt_path.read_text())
+    receipt["base_commit"] = "0" * 40
+    receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
+    with pytest.raises(LedgerError, match="stale/replayed"):
+        ledger.validate_candidate_successor(base, candidate, today=dt.date(2026, 9, 22))
+
+    base, candidate, receipt_path = exact_case("base-state")
+    (base / "BACKLOG.md").write_text((base / "BACKLOG.md").read_text() + "\n")
+    with pytest.raises(LedgerError, match="trusted BASE data differs"):
+        ledger.validate_candidate_successor(base, candidate, today=dt.date(2026, 9, 22))
+
+    base, candidate, receipt_path = exact_case("candidate-data")
+    candidate_backlog = candidate / "BACKLOG.md"
+    candidate_backlog.write_text(candidate_backlog.read_text().replace("census after", "census mutated"))
+    receipt = json.loads(receipt_path.read_text())
+    receipt["source_sha256"] = ledger._sha256(candidate_backlog.read_bytes())
+    receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
+    with pytest.raises(LedgerError, match="normative BACKLOG section changed"):
+        ledger.validate_candidate_successor(base, candidate, today=dt.date(2026, 9, 22))
 
 
 @pytest.mark.parametrize("old_status,new_status,mutation", [
