@@ -675,7 +675,17 @@ def assess(root: Path, *, expect: str) -> list[str]:
     else:
         current_fn = _function(tree, "collect_current")
         statuses_fn = _function(tree, "collect_statuses")
-        baseline_fn = _function(tree, "load_baseline")
+        # The identity-bound comparator's executable loader is
+        # ``load_baseline_record``.  Keep accepting the compatibility
+        # ``load_baseline`` view for older trees, but inspect and require the
+        # record loader whenever it is present so the target identity and
+        # threshold checks remain part of the verified path.
+        baseline_name = (
+            "load_baseline_record"
+            if _function(tree, "load_baseline_record") is not None
+            else "load_baseline"
+        )
+        baseline_fn = _function(tree, baseline_name)
         main_fn = _function(tree, "main")
         if current_fn is None:
             gaps.append("comparator has no executable collect_current function")
@@ -696,7 +706,7 @@ def assess(root: Path, *, expect: str) -> list[str]:
             if "success" not in statuses_strings or not _set_population_check(statuses_fn, "statuses"):
                 gaps.append("collect_statuses does not require an exact successful population")
         if baseline_fn is None:
-            gaps.append("comparator has no executable load_baseline function")
+            gaps.append(f"comparator has no executable {baseline_name} function")
         else:
             if not _raises(baseline_fn, "BaselineError"):
                 gaps.append("missing or malformed baseline is not fail-closed")
@@ -706,7 +716,8 @@ def assess(root: Path, *, expect: str) -> list[str]:
         if main_fn is None:
             gaps.append("comparator has no executable main function")
         else:
-            for call in ("collect_statuses", "collect_current", "load_baseline"):
+            required_calls = ("collect_statuses", "collect_current", baseline_name)
+            for call in required_calls:
                 if not _calls(main_fn, call):
                     gaps.append(f"main does not execute {call}")
             main_names = {

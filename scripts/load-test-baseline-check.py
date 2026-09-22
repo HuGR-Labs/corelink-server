@@ -486,7 +486,13 @@ def main(argv: list[str]) -> int:
                 "overwrite established evidence in bootstrap mode"
             )
             return EXIT_USAGE
-        write_baseline(baseline_path, current, args.commit)
+        write_baseline(
+            baseline_path,
+            current,
+            args.commit,
+            current_identity,
+            threshold,
+        )
         print(
             "BOOTSTRAP ONLY — complete successful five-scenario baseline seeded; "
             "this is not a regression comparison"
