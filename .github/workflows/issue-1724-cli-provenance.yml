@@ -1,0 +1,34 @@
+name: issue-1724-cli-provenance
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-1724-cli-provenance.yml"
+      - ".github/workflows/release-cli.yml"
+      - ".github/workflows/release-slsa3.yml"
+      - "scripts/verify_cli_release_inventory.py"
+      - "tools/cli/tests/release_workflow_contract.rs"
+      - "tools/cli/tests/release_workflow_contract/**"
+      - "tools/cli/Cargo.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: validate managed CLI provenance contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+      - name: Reject provenance builder, identity, issuer, and subject mutations
+        run: cargo test --locked -p corelink-cli --test release_workflow_contract -- --nocapture

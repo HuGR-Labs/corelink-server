@@ -62,7 +62,7 @@ pub(super) fn assert_release_contract(workflow: &str) {
         "gh api --method DELETE \"repos/HuGR-Labs/corelink-cli/releases/assets/${STAGING_ASSET_ID}\"",
         "STAGING_ASSET_COUNT=\"$(gh api \"repos/HuGR-Labs/corelink-cli/releases/tags/${TAG}\"",
         "release-slsa3:",
-        "release-slsa3:\n    needs: [final-manifest, release-readiness, release]\n    # Called workflows cannot elevate the caller's token permissions. Grant\n    # OIDC only to this provenance call; all other release jobs retain the\n    # workflow-level contents:read default.\n    permissions:\n      attestations: write\n      contents: read\n      id-token: write\n    uses: ./.github/workflows/release-slsa3.yml\n    with:\n      release_tag: ${{ needs.release.outputs.validated_tag }}\n      source_sha: ${{ needs.release.outputs.source_sha }}\n      manifest_sha256: ${{ needs.final-manifest.outputs.sha256 }}",
+        "release-slsa3:\n    needs: [final-manifest, release-readiness, release]\n    # Called workflows cannot elevate the caller's token permissions. Grant\n    # OIDC only to this provenance call; all other release jobs retain the\n    # workflow-level contents:read default.\n    permissions:\n      attestations: write\n      contents: read\n      id-token: write\n    uses: ./.github/workflows/release-slsa3.yml\n    with:\n      release_tag: ${{ inputs.release_tag }}\n      source_sha: ${{ needs.release.outputs.source_sha }}\n      manifest_sha256: ${{ needs.final-manifest.outputs.sha256 }}",
         "publish-release:\n    name: publish verified signed release\n    needs: [release-slsa3, release-readiness, final-manifest, release]",
         "Verify complete authenticated inventory before publication",
         "gh release download \"${TAG}\" --repo HuGR-Labs/corelink-cli --dir \"${PUBLISHED}\" --clobber",
@@ -257,10 +257,11 @@ pub(super) fn assert_slsa_contract(workflow: &str) {
         "subject-checksums: provenance-subjects.sha256",
         "provenance.intoto.jsonl.bundle",
         "gh attestation verify",
-        "--signer-workflow",
+        "--signer-workflow \"${REPO}/.github/workflows/release-slsa3.yml\"",
         "--source-ref",
         "--source-digest",
         "--cert-oidc-issuer \"https://token.actions.githubusercontent.com\"",
+        "test \"${STAGING_ASSET_COUNT}\" = \"0\"",
     ] {
         assert!(
             workflow.contains(required),
@@ -279,7 +280,7 @@ pub(super) fn assert_publication_inventory_contract(workflow: &str) {
         "--dir \"${PUBLISHED}\" --clobber",
         "scripts/verify_cli_release_inventory.py",
         "gh attestation verify",
-        "--signer-workflow",
+        "--signer-workflow \"${GITHUB_REPOSITORY}/.github/workflows/release-slsa3.yml\"",
         "--cert-oidc-issuer \"https://token.actions.githubusercontent.com\"",
         "gh release edit \"${TAG}\" --repo HuGR-Labs/corelink-cli --draft=false",
     ] {
