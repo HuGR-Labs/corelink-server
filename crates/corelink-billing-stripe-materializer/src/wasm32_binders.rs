@@ -334,6 +334,7 @@ impl BillingD1Writer for CfD1BillingWriter {
             "wasm32_async_dispatch_pending: downgrade_tier staged; dispatch via worker::send::SendFuture layer"
                 .to_owned(),
         ))
+    }
 }
 
 /// Map a [`D1Error`] from the wrapped binding onto the canonical
