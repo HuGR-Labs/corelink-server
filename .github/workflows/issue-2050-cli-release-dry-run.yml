@@ -1,6 +1,8 @@
 name: issue-2050-cli-release-dry-run
 
 "on":
+  # Keep this lane scoped to its isolated dry-run files. The broader CLI
+  # provenance lane also invokes its contract when shared Cargo inputs change.
   pull_request:
     paths:
       - ".github/workflows/issue-2050-cli-release-dry-run.yml"

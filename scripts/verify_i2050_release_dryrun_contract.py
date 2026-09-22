@@ -7,6 +7,7 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -61,6 +62,38 @@ def _zigbuild_version_probe_mutation_self_test(text: str) -> None:
             fail(f"unsupported cargo-zigbuild mutation survived: {unsupported}")
 
 
+def _verify_i2050_pr_slice(changed_files: set[str]) -> bool:
+    """Enforce the two-file allowlist only when this isolated slice is touched."""
+    if not changed_files.intersection(ALLOWED_FILES):
+        return False
+    outside_files = changed_files - ALLOWED_FILES
+    if outside_files:
+        fail(
+            "PR changes outside this isolated slice: "
+            f"{sorted(outside_files)}"
+        )
+    return True
+
+
+def _slice_routing_mutation_self_test() -> None:
+    for allowed_file in ALLOWED_FILES:
+        if not _verify_i2050_pr_slice({allowed_file}):
+            fail(f"the relevant-change case did not enforce the slice: {allowed_file}")
+
+    if not _verify_i2050_pr_slice(ALLOWED_FILES.copy()):
+        fail("the both-files case did not enforce the isolated CLI slice")
+
+    try:
+        _verify_i2050_pr_slice(ALLOWED_FILES | {"Cargo.lock"})
+    except SystemExit:
+        pass
+    else:
+        fail("an unrelated file mixed into the isolated CLI slice survived")
+
+    if _verify_i2050_pr_slice({"Cargo.lock"}):
+        fail("an unrelated-only change was incorrectly routed into the CLI slice")
+
+
 def contract() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     changed = subprocess.run(
@@ -69,20 +102,37 @@ def contract() -> None:
         capture_output=True,
         text=True,
     ).stdout.splitlines()
-    if set(changed) != ALLOWED_FILES:
-        fail(f"PR changes outside this isolated slice: {sorted(set(changed) ^ ALLOWED_FILES)}")
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "pull_request")
+    if event_name == "pull_request":
+        _slice_routing_mutation_self_test()
+        if _verify_i2050_pr_slice(set(changed)):
+            print("PASS: relevant CLI dry-run change enforces the exact two-file slice")
+        else:
+            print("SKIP: CLI dry-run slice isolation (neither slice file changed)")
+    elif event_name == "workflow_dispatch":
+        print("PASS: manual dispatch validates contracts without PR slice routing")
+    else:
+        fail(f"unsupported event for contract validation: {event_name}")
     hosted_contract = Path(".github/workflows/issue-1724-cli-provenance.yml").read_text(
         encoding="utf-8"
     )
     for token in (
         '".github/workflows/issue-2050-cli-release-dry-run.yml"',
         '"scripts/verify_i2050_release_dryrun_contract.py"',
+        '"Cargo.lock"',
+        '"rust-toolchain.toml"',
         "fetch-depth: 0",
         "persist-credentials: false",
+        "workflow_dispatch:",
         "python3 -S scripts/verify_i2050_release_dryrun_contract.py contract",
     ):
         if token not in hosted_contract:
             fail(f"the existing read-only hosted PR lane does not run the contract: {token}")
+    contract_job = re.search(
+        r"(?ms)^  contract:\n(.*?)(?=^  [A-Za-z0-9_-]+:|\Z)", hosted_contract
+    )
+    if contract_job is None or re.search(r"^\s+if:", contract_job.group(1), re.MULTILINE):
+        fail("the CLI provenance contract job must remain enabled for PR and manual dispatch")
     if "id-token: write" in hosted_contract or "contents: write" in hosted_contract:
         fail("the PR contract lane has signing or write permission")
     if not re.search(r'^"on":\s*$', text, re.MULTILINE):
@@ -126,6 +176,12 @@ def contract() -> None:
     ):
         if token not in hosted_workflow:
             fail(f"hosted actionlint protection is missing or unpinned: {token}")
+    for token in (
+        "if: github.event_name == 'pull_request'",
+        "github.event_name == 'workflow_dispatch'",
+    ):
+        if token not in text:
+            fail(f"manual dry-run dispatch semantics changed: {token}")
     if "persist-credentials: false" not in text:
         fail("checkout credentials are persisted")
     if not re.search(r"retention-days:\s*1\b", text):
@@ -149,7 +205,7 @@ def contract() -> None:
             fail(f"required release proof is missing: {token}")
     _verify_zigbuild_version_probe(text)
     _zigbuild_version_probe_mutation_self_test(text)
-    print("PASS: only the dry-run workflow and its checker changed")
+    print("PASS: workflow-only, verifier-only, both, mixed, and unrelated-only routing cases")
     print("PASS: manual protected-main lane, no release/tag/cross-repo write path")
     print("PASS: five targets, pinned cross-toolchain, CycloneDX, Rekor, and SLSA provenance")
 
