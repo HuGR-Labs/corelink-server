@@ -1,4 +1,4 @@
-name: Release — SLSA L2 Build Provenance, self-hosted (WI-S12-001)
+name: Release — SLSA L2 Build Provenance, GitHub-hosted (WI-S12-001)
 
 concurrency:
   # SEM cancelamento em voo, de proposito, por restauracao de intencao declarada.
@@ -8,7 +8,7 @@ concurrency:
   # uma build de proveniencia SLSA L2 em voo podia ser cancelada por um
   # segundo release ou dispatch, que e exatamente o desfecho contra o qual a decisao
   # foi tomada. Grupo constante e sem o flag = serializa em vez de matar.
-  group: "ci-release-slsa-l2-build-provenance-self-hosted-wi-s12-001"
+  group: "ci-release-slsa-l2-build-provenance-github-hosted-wi-s12-001"
 
 # Generates SLSA Build **Level 2** provenance for CoreLink releases on the
 # self-hosted `corelink-builder` fleet.
@@ -93,7 +93,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-artifacts:
     name: Subjects from the final published release inventory
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
 
@@ -185,7 +185,7 @@ jobs:
   slsa-provenance:
     name: Generate SLSA L2 Provenance (self-hosted)
     needs: [build-artifacts]
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     permissions:
       # OIDC token for Fulcio keyless signing. Issued by GitHub, not the runner,
       # so this works on the self-hosted fleet.
@@ -316,10 +316,10 @@ jobs:
                           "ref": github_ref,
                       },
                       "internalParameters": {
-                          # Honest: the builder is the shared self-hosted fleet,
-                          # not an isolated/managed VM. This is Build L2, not L3.
-                          "runner": "self-hosted:corelink-builder",
-                          "isolated": False,
+                          # Hosted runners are ephemeral. This custom generator
+                          # still claims only SLSA L2, never an unmanaged L3 claim.
+                          "runner": "github-hosted:ubuntu-24.04",
+                          "isolated": True,
                       },
                       "resolvedDependencies": [
                           {
@@ -330,11 +330,11 @@ jobs:
                   },
                   "runDetails": {
                       "builder": {
-                          # Non-isolated self-hosted builder → SLSA Build L2.
+                          # The release contract intentionally claims SLSA L2.
                           "id": builder_id,
                           "version": {
                               "corelink-slsa-build-level": "L2",
-                              "corelink-builder-isolation": "self-hosted-non-isolated",
+                              "corelink-builder-isolation": "github-hosted-ephemeral",
                           },
                       },
                       "metadata": {
@@ -417,7 +417,7 @@ jobs:
   attach-release-assets:
     name: Re-verify the attested inventory against the release
     needs: [build-artifacts, slsa-provenance]
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
 

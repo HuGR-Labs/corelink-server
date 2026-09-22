@@ -66,15 +66,9 @@ env:
 jobs:
   windows-cert-present:
     name: gate — Windows cert present
-    # Runner: `corelink` — was `[self-hosted, Linux, X64]`, a pool that DOES NOT
-    # EXIST (every online self-hosted runner in this repo is labelled
-    # `self-hosted,macOS,X64,mac,corelink-builder`; see reproducible-build.yml's
-    # `build` job for the same root-cause finding). GitHub queues an
-    # unsatisfiable `runs-on` forever rather than failing it. `corelink` is
-    # CoreLink's own ephemeral Linux (Ubuntu 24.04, Firecracker) fabric — a real
-    # Linux pool that exists, which is what the `sign` job below actually needs
-    # (osslsigncode 2.13 and 7z are preinstalled on that image).
-    runs-on: corelink
+    # GitHub's maintained Windows image exposes the native certificate store
+    # and signtool needed by the signing job below.
+    runs-on: windows-2022
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
@@ -99,12 +93,9 @@ jobs:
     needs: windows-cert-present
     if: >-
       needs.windows-cert-present.outputs.ready == 'true'
-    # Runner: `corelink` — see the `windows-cert-present` job above for why the
-    # previous `[self-hosted, Linux, X64]` pool does not exist. `corelink` is
-    # CoreLink's pinned Linux image carries osslsigncode 2.13 and 7z. The
-    # verification step below checks those preinstalled tools; it does not
-    # mutate the runner or install packages during a release.
-    runs-on: corelink
+    # Use the hosted Windows image and its native signtool; no package install
+    # or self-hosted runner state participates in this signing boundary.
+    runs-on: windows-2022
 
     steps:
       - name: Checkout
@@ -116,20 +107,12 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      - name: Verify pinned signing toolchain on the runner image
-        shell: bash
-        env:
-          # This is the version exercised against the legacy PFX and DigiCert
-          # RFC-3161 endpoint in infra/ci-runners/README.md. These tools are
-          # preinstalled in the pinned runner image; changing them under a tag
-          # would make a release non-reproducible.
-          EXPECTED_OSSLSIGNCODE_VERSION: "2.13"
+      - name: Verify hosted Windows signing toolchain
+        shell: pwsh
         run: |
-          set -euo pipefail
-          command -v osslsigncode
-          command -v 7z
-          osslsigncode_version="$(osslsigncode --version)"
-          grep -F "${EXPECTED_OSSLSIGNCODE_VERSION}" <<<"${osslsigncode_version}" >/dev/null
+          $tool = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin/x64/signtool.exe'
+          if (-not (Test-Path $tool)) { throw 'signtool.exe is missing from windows-2022' }
+          & $tool verify /? | Out-Null
 
       - name: Resolve release tag
         id: tag
@@ -223,36 +206,27 @@ jobs:
           test "${CERT_FINGERPRINT}" = "${WINDOWS_CODE_SIGNING_FINGERPRINT}"
           test "${CERT_SUBJECT}" = "${WINDOWS_CODE_SIGNING_SUBJECT}"
 
-      - name: osslsigncode sign (Authenticode, RFC 3161 timestamp)
-        shell: bash
+      - name: Sign Authenticode binary with hosted signtool
+        shell: pwsh
         env:
           CERT_PATH: ${{ steps.certificate.outputs.path }}
           WINDOWS_CODE_SIGNING_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_PASSWORD }}
+          WINDOWS_CODE_SIGNING_FINGERPRINT: ${{ secrets.WINDOWS_CODE_SIGNING_FINGERPRINT }}
         run: |
-          set -euo pipefail
-          umask 077
-          PASSWORD_FILE="$(mktemp "${RUNNER_TEMP}/corelink-windows-sign-pass.XXXXXX")"
-          trap 'rm -f "${PASSWORD_FILE}" "${CERT_PATH}"' EXIT
-          printf '%s' "${WINDOWS_CODE_SIGNING_PASSWORD}" > "${PASSWORD_FILE}"
-          # signtool /fd sha256 /tr <rfc3161> /td sha256  ->  osslsigncode -h sha256 -ts <rfc3161>
-          osslsigncode sign \
-            -pkcs12 "${CERT_PATH}" \
-            -readpass "${PASSWORD_FILE}" \
-            -n "CoreLink CLI" \
-            -i "https://corelink.io" \
-            -ts "http://timestamp.digicert.com" \
-            -h sha256 \
-            -in "./assets/extracted/corelink.exe" \
-            -out "./assets/extracted/corelink-signed.exe"
-          mv -f "./assets/extracted/corelink-signed.exe" "./assets/extracted/corelink.exe"
-          # The raw .exe is a public release asset too.  Replace it with the
-          # exact Authenticode-signed bytes; do not leave an unsigned sibling.
-          cp "./assets/extracted/corelink.exe" "./assets/corelink-windows-x86_64.exe"
+          $securePassword = ConvertTo-SecureString $env:WINDOWS_CODE_SIGNING_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $env:CERT_PATH -CertStoreLocation Cert:\CurrentUser\My -Password $securePassword
+          if ($cert.Thumbprint -ne $env:WINDOWS_CODE_SIGNING_FINGERPRINT) { throw 'PFX fingerprint mismatch' }
+          $tool = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin/x64/signtool.exe'
+          & $tool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /sha1 $cert.Thumbprint ./assets/extracted/corelink.exe
+          if ($LASTEXITCODE -ne 0) { throw 'signtool signing failed' }
+          Copy-Item ./assets/extracted/corelink.exe ./assets/corelink-windows-x86_64.exe -Force
 
-      - name: osslsigncode verify
-        shell: bash
+      - name: Verify Authenticode signature
+        shell: pwsh
         run: |
-          osslsigncode verify -in "./assets/extracted/corelink.exe"
+          $tool = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin/x64/signtool.exe'
+          & $tool verify /pa /v ./assets/extracted/corelink.exe
+          if ($LASTEXITCODE -ne 0) { throw 'signtool verification failed' }
 
       - name: Re-pack signed binary
         shell: bash

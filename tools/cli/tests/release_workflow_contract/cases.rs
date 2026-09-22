@@ -166,7 +166,7 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
     );
 
     let public_unsigned_windows = load_workflow("sign-windows.yml")?.replace(
-        "cp \"./assets/extracted/corelink.exe\" \"./assets/corelink-windows-x86_64.exe\"",
+        "Copy-Item ./assets/extracted/corelink.exe ./assets/corelink-windows-x86_64.exe -Force",
         "raw Windows asset copy removed",
     );
     assert!(

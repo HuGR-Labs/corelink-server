@@ -151,15 +151,15 @@ pub(super) fn assert_downstream_signer_contract(name: &str, workflow: &str) {
     );
     if name == "sign-windows.yml" {
         assert!(
-            workflow.contains(
-                "cp \"./assets/extracted/corelink.exe\" \"./assets/corelink-windows-x86_64.exe\""
-            ),
+            workflow.contains("Copy-Item ./assets/extracted/corelink.exe ./assets/corelink-windows-x86_64.exe -Force"),
             "a raw Windows release executable must be replaced with signed bytes"
         );
         assert!(
-            workflow.contains("EXPECTED_OSSLSIGNCODE_VERSION: \"2.13\"")
-                && !workflow.contains("apt-get install"),
-            "Windows signing must use the pinned runner-image toolchain, not a mutable apt install"
+            workflow.contains("runs-on: windows-2022")
+                && workflow.contains("signtool.exe")
+                && workflow.contains("Import-PfxCertificate")
+                && workflow.contains("/sha1 $cert.Thumbprint"),
+            "Windows signing must use the hosted signtool certificate store without a password argv"
         );
     }
     if name == "sign-linux.yml" {
