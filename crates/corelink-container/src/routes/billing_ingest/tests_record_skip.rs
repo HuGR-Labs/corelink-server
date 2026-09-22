@@ -1,4 +1,4 @@
-//! One invalid RECORD is counted in `rejected` and skipped with 202: it never
+//! One invalid RECORD is counted in `rejected` and skipped: it never
 //! blocks its batch-mates and never leaves the runner re-POSTing forever.
 //!
 //! The old all-or-nothing behaviour let a single poison record 400 its whole
@@ -23,7 +23,7 @@ use super::*;
 
 #[tokio::test]
 async fn bad_tenant_id_is_skipped_not_fatal() {
-    // A single malformed record is SKIPPED (202, rejected:1, nothing staged),
+    // A rejected-only batch returns 422 with a record-level outcome.
     // NOT a 400 — the per-record-skip contract. The reason-code mapping is
     // pinned exhaustively in `every_record_error_variant_has_a_rejection_fixture`.
     assert_eq!(RecordError::BadTenantId.code(), "bad_tenant_id");
@@ -36,7 +36,7 @@ async fn bad_tenant_id_is_skipped_not_fatal() {
         ))
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
     assert_eq!((ir.accepted, ir.rejected, ir.total), (0, 1, 0));
     assert!(store.seen.lock().unwrap().is_empty());
@@ -55,7 +55,7 @@ async fn bad_billing_period_is_skipped_not_fatal() {
         ))
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
     assert_eq!((ir.accepted, ir.rejected, ir.total), (0, 1, 0));
     assert!(store.seen.lock().unwrap().is_empty());
@@ -72,7 +72,7 @@ async fn bad_idem_key_is_skipped_not_fatal() {
         ))
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
     assert_eq!((ir.accepted, ir.rejected, ir.total), (0, 1, 0));
     assert!(store.seen.lock().unwrap().is_empty());
@@ -106,10 +106,9 @@ async fn malformed_record_is_skipped_good_record_staged() {
 }
 
 #[tokio::test]
-async fn all_records_invalid_still_drains_202() {
-    // Even an ALL-bad batch must drain (202, `rejected:N`, nothing staged),
-    // so a runner buffer full of poison records empties instead of re-POSTing
-    // forever. Batch-LEVEL faults (empty / oversized / unparseable) stay 400.
+async fn all_records_invalid_are_422() {
+    // A rejected-only batch is caller-correctable and carries each record's
+    // stable result. Batch-level faults (empty / oversized / unparseable) stay 400.
     let store = Arc::new(FakeStore::new());
     let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
     let mut b1 = record_json(&tenant_a(), &hex64(0x18));
@@ -123,7 +122,7 @@ async fn all_records_invalid_still_drains_202() {
         ))
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
     assert_eq!(
         (ir.accepted, ir.deduped, ir.rejected, ir.total),

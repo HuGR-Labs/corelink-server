@@ -165,6 +165,17 @@ pub enum StageOutcome {
     Inserted,
     /// The coordinate already existed → idempotent no-op (deduped).
     Deduped,
+    /// Different or unverifiable payload; downstream WP2 contract seam.
+    Conflict(StageConflictReason),
+}
+
+/// Why a duplicate coordinate cannot be classified as an idempotent replay.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StageConflictReason {
+    /// A valid persisted fingerprint differs from the incoming fingerprint.
+    PayloadMismatch,
+    /// A legacy or corrupted persisted fingerprint cannot be trusted.
+    ExistingFingerprintUnverifiable,
 }
 
 /// Persistence seam for the runner usage-push ingest. Production wiring
@@ -175,9 +186,9 @@ pub enum StageOutcome {
 #[async_trait]
 pub trait UsageStagingStore: Send + Sync + core::fmt::Debug {
     /// Idempotently stage one record into the canonical usage store, keyed
-    /// by `(tenant_id, idem_key)`. A first-sight coordinate inserts +
-    /// returns [`StageOutcome::Inserted`]; an existing coordinate is a
-    /// no-op + returns [`StageOutcome::Deduped`].
+    /// by `(tenant_id, idem_key)`. A first-sight coordinate inserts; only an
+    /// exact valid fingerprint replay dedups. A divergent or unverifiable
+    /// winner returns a durable [`StageOutcome::Conflict`].
     ///
     /// # Errors
     ///
@@ -190,10 +201,8 @@ pub trait UsageStagingStore: Send + Sync + core::fmt::Debug {
 /// (migration 0017; `qty` / `event_kind` / `billing_period` added by 0095 so the
 /// counter aggregator can drain the quantity directly). `request_id` carries the
 /// record's `idem_key` (the `(tenant_id, request_id)` PRIMARY KEY is the
-/// INV-BILLING-NO-DUP dedup coordinate). `ON CONFLICT DO NOTHING` makes a re-push
-/// a pure no-op; the `changes()` count distinguishes a fresh insert (1) from a
-/// dedup (0). `drained_to_r2_at` is left NULL — the drain Worker advances that
-/// watermark when it commits the R2 PutObject.
+/// INV-BILLING-NO-DUP coordinate). `RETURNING` linearizes insertion; a losing
+/// caller reads and fingerprint-checks the durable winner.
 ///
 /// `qty` / `event_kind` / `billing_period` are persisted (not just hashed) so the
 /// billable quantity is durably aggregatable server-side (WI-S10-007); the
@@ -203,18 +212,19 @@ const STAGE_INSERT_SQL: &str = "INSERT INTO usage_event_staging \
      (tenant_id, region, request_id, event_type, event_payload_hash, event_id, emitted_at, \
       qty, event_kind, billing_period) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
-     ON CONFLICT (tenant_id, request_id) DO NOTHING";
+     ON CONFLICT (tenant_id, request_id) DO NOTHING \
+     RETURNING event_payload_hash";
 
-/// SQL: read back whether the `(tenant_id, request_id)` coordinate now
-/// exists. D1's HTTP API does not surface `changes()` in the row results,
-/// so the insert + this existence probe together give a deterministic
-/// inserted-vs-deduped signal: we probe BEFORE the insert to classify the
-/// outcome (a pre-existing row ⇒ dedup; absent ⇒ insert). The insert is
-/// still `ON CONFLICT DO NOTHING` so a concurrent racer can never
-/// double-insert — the probe only classifies the count, never gates
-/// correctness.
-const STAGE_EXISTS_SQL: &str =
-    "SELECT 1 AS present FROM usage_event_staging WHERE tenant_id = ?1 AND request_id = ?2 LIMIT 1";
+const STAGE_WINNER_SQL: &str = "SELECT event_payload_hash FROM usage_event_staging \
+     WHERE tenant_id = ?1 AND request_id = ?2 LIMIT 1";
+
+const STAGE_CONFLICT_SQL: &str = "INSERT INTO usage_event_staging_conflicts \
+     (tenant_id, request_id, observed_fingerprint, incoming_fingerprint, reason, \
+      first_observed_at, last_observed_at, observation_count) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, 1) \
+     ON CONFLICT (tenant_id, request_id, observed_fingerprint, incoming_fingerprint, reason) \
+     DO UPDATE SET last_observed_at = excluded.last_observed_at, \
+                   observation_count = usage_event_staging_conflicts.observation_count + 1";
 
 /// Production [`UsageStagingStore`] backed by the canonical
 /// `usage_event_staging` D1 table (migration 0017) over the D1 HTTP API.
@@ -254,47 +264,67 @@ impl D1UsageStagingStore {
         );
         Digest::compute(image.as_bytes()).to_hex()
     }
-}
 
+    #[rustfmt::skip]
+    fn valid_fingerprint(value: &str) -> bool {
+        value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    }
+
+    async fn record_conflict(
+        &self,
+        tenant: &str,
+        record: &StagedUsageRecord,
+        observed_fingerprint: String,
+        incoming_fingerprint: &str,
+        reason: StageConflictReason,
+    ) -> Result<(), String> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("system clock before Unix epoch: {e}"))?
+            .as_millis();
+        let now =
+            i64::try_from(now).map_err(|_| "conflict timestamp out of i64 range".to_owned())?;
+        let reason = match reason {
+            StageConflictReason::PayloadMismatch => "payload_mismatch",
+            StageConflictReason::ExistingFingerprintUnverifiable => {
+                "existing_fingerprint_unverifiable"
+            }
+        };
+        self.d1
+            .query(
+                STAGE_CONFLICT_SQL,
+                &[
+                    serde_json::Value::String(tenant.to_owned()),
+                    serde_json::Value::String(record.idem_key.clone()),
+                    serde_json::Value::String(observed_fingerprint),
+                    serde_json::Value::String(incoming_fingerprint.to_owned()),
+                    serde_json::Value::String(reason.to_owned()),
+                    serde_json::Value::Number(now.into()),
+                ],
+            )
+            .await
+            .map(|_| ())
+    }
+}
 #[async_trait]
 impl UsageStagingStore for D1UsageStagingStore {
     async fn stage(&self, record: &StagedUsageRecord) -> Result<StageOutcome, String> {
         let tenant = record.tenant_id.to_string();
-
-        // Classify the outcome by probing for the dedup coordinate FIRST.
-        let existing = self
-            .d1
-            .query(
-                STAGE_EXISTS_SQL,
-                &[
-                    serde_json::Value::String(tenant.clone()),
-                    serde_json::Value::String(record.idem_key.clone()),
-                ],
-            )
-            .await?;
-        if !existing.is_empty() {
-            return Ok(StageOutcome::Deduped);
-        }
-
-        // Insert idempotently. `ON CONFLICT DO NOTHING` keeps a concurrent
-        // racer from double-inserting; if the racer won between our probe
-        // and this insert, the conflict is silently absorbed and the row is
-        // still present exactly once — we report `Inserted` here (the
-        // racer reports `Deduped`), so the count is never inflated.
         let payload_hash = Self::payload_hash(record);
         let i64_time = i64::try_from(record.time_ms)
             .map_err(|_| format!("time_ms out of i64 range: {}", record.time_ms))?;
         let i64_qty = i64::try_from(record.qty)
             .map_err(|_| format!("qty out of i64 range: {}", record.qty))?;
-        self.d1
+        let inserted = self
+            .d1
             .query(
                 STAGE_INSERT_SQL,
                 &[
-                    serde_json::Value::String(tenant),
+                    serde_json::Value::String(tenant.clone()),
                     serde_json::Value::String(record.region.clone()),
                     serde_json::Value::String(record.idem_key.clone()),
                     serde_json::Value::String(USAGE_EVENT_TYPE.to_owned()),
-                    serde_json::Value::String(payload_hash),
+                    serde_json::Value::String(payload_hash.clone()),
                     serde_json::Value::String(record.source.clone()),
                     serde_json::Value::Number(i64_time.into()),
                     serde_json::Value::Number(i64_qty.into()),
@@ -303,7 +333,39 @@ impl UsageStagingStore for D1UsageStagingStore {
                 ],
             )
             .await?;
-        Ok(StageOutcome::Inserted)
+        if !inserted.is_empty() {
+            return Ok(StageOutcome::Inserted);
+        }
+
+        let winner = self
+            .d1
+            .query(
+                STAGE_WINNER_SQL,
+                &[
+                    serde_json::Value::String(tenant.clone()),
+                    serde_json::Value::String(record.idem_key.clone()),
+                ],
+            )
+            .await?;
+        let observed = winner
+            .first()
+            .and_then(|row| row.get("event_payload_hash"))
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| {
+                "insert lost but durable winner could not be read or verified".to_owned()
+            })?
+            .to_owned();
+        let reason = if !Self::valid_fingerprint(&observed) {
+            StageConflictReason::ExistingFingerprintUnverifiable
+        } else if observed == payload_hash {
+            return Ok(StageOutcome::Deduped);
+        } else {
+            StageConflictReason::PayloadMismatch
+        };
+        self.record_conflict(&tenant, record, observed, &payload_hash, reason)
+            .await
+            .map_err(|e| format!("required staging conflict record failed: {e}"))?;
+        Ok(StageOutcome::Conflict(reason))
     }
 }
 
@@ -374,9 +436,11 @@ struct UsageRecordWire {
     idem_key: String,
 }
 
-/// JSON response body: the per-batch accepted / deduped / rejected tally.
+/// JSON response body: the ordered outcome of every input record.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IngestResponse {
+    /// One result for each array element, in request order.
+    pub outcomes: Vec<IngestRecordOutcome>,
     /// First-sight records inserted into the staging store.
     pub accepted: u32,
     /// Records whose `idem_key` already existed (idempotent no-ops).
@@ -389,6 +453,34 @@ pub struct IngestResponse {
     /// Total records successfully staged (`accepted + deduped`; excludes
     /// `rejected`).
     pub total: u32,
+}
+
+/// The durable or validation result for one submitted record.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IngestRecordOutcome {
+    /// Zero-based position in the request array.
+    pub index: usize,
+    /// The canonical idempotency key, when the input supplied a valid key.
+    pub idem_key: Option<String>,
+    /// Classification of this input.
+    pub outcome: IngestOutcomeKind,
+    /// Stable diagnostic for rejected and conflict outcomes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Wire classification for a submitted usage record.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IngestOutcomeKind {
+    /// The submitted record was newly staged.
+    Accepted,
+    /// The submitted record exactly matched a durable prior record.
+    Deduped,
+    /// The submitted record failed wire or record validation.
+    Rejected,
+    /// The submitted record disagreed with its durable identity winner.
+    Conflict,
 }
 
 /// Validation failure for a single record (mapped to a 400 with a stable,
@@ -420,6 +512,16 @@ impl RecordError {
             Self::BadIdemKey => "bad_idem_key",
             Self::EmptySource => "empty_source",
             Self::SourceTooLong => "source_too_long",
+        }
+    }
+}
+
+impl StageConflictReason {
+    /// Stable public conflict reason.
+    const fn code(self) -> &'static str {
+        match self {
+            Self::PayloadMismatch => "payload_mismatch",
+            Self::ExistingFingerprintUnverifiable => "existing_fingerprint_unverifiable",
         }
     }
 }
@@ -488,6 +590,14 @@ fn validate_record(wire: UsageRecordWire) -> Result<StagedUsageRecord, RecordErr
     })
 }
 
+/// Extract an idempotency key only when it is a canonicalizable BLAKE3 hex
+/// coordinate. Rejections can therefore be correlated without echoing a
+/// malformed caller value.
+fn canonical_idem_key(input: &serde_json::Value) -> Option<String> {
+    let idem_key = input.get("idem_key")?.as_str()?.to_ascii_lowercase();
+    (idem_key.len() == 64 && idem_key.bytes().all(|b| b.is_ascii_hexdigit())).then_some(idem_key)
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Route handler
 // ──────────────────────────────────────────────────────────────────────────────
@@ -522,7 +632,7 @@ async fn handle_ingest(
     }
 
     // ── 2. Parse the batch — ONLY after the auth gate passed ────────────────
-    let wire_records: Vec<UsageRecordWire> = match serde_json::from_slice(&body) {
+    let inputs: Vec<serde_json::Value> = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(error = %e, "billing_ingest: invalid request body");
@@ -530,10 +640,10 @@ async fn handle_ingest(
         }
     };
 
-    if wire_records.is_empty() {
+    if inputs.is_empty() {
         return bad_request("empty_batch");
     }
-    if wire_records.len() > MAX_BATCH_RECORDS {
+    if inputs.len() > MAX_BATCH_RECORDS {
         return bad_request("batch_too_large");
     }
 
@@ -549,17 +659,36 @@ async fn handle_ingest(
     // a retry signal). Batch-level faults (unparseable / empty / oversized) stay
     // 400 above; a genuine backend persist fault stays 503 below (fail-CLOSED,
     // idempotent retry).
-    let mut staged: Vec<StagedUsageRecord> = Vec::with_capacity(wire_records.len());
+    let mut staged = Vec::with_capacity(inputs.len());
+    let mut outcomes = Vec::with_capacity(inputs.len());
     let mut rejected: u32 = 0;
-    for wire in wire_records {
-        match validate_record(wire) {
-            Ok(rec) => staged.push(rec),
-            Err(e) => {
+    for (index, input) in inputs.into_iter().enumerate() {
+        let idem_key = canonical_idem_key(&input);
+        match serde_json::from_value::<UsageRecordWire>(input)
+            .map_err(|_| "invalid_record")
+            .and_then(|wire| validate_record(wire).map_err(|e| e.code()))
+        {
+            Ok(rec) => {
+                staged.push((outcomes.len(), rec));
+                outcomes.push(IngestRecordOutcome {
+                    index,
+                    idem_key,
+                    outcome: IngestOutcomeKind::Accepted,
+                    reason: None,
+                });
+            }
+            Err(reason) => {
                 rejected = rejected.saturating_add(1);
                 tracing::warn!(
-                    reason = e.code(),
+                    reason,
                     "billing_ingest: record validation failed; skipping (batch not rejected)"
                 );
+                outcomes.push(IngestRecordOutcome {
+                    index,
+                    idem_key,
+                    outcome: IngestOutcomeKind::Rejected,
+                    reason: Some(reason.to_owned()),
+                });
             }
         }
     }
@@ -567,10 +696,25 @@ async fn handle_ingest(
     // ── 4. Persist idempotently; tally accepted vs deduped ──────────────────
     let mut accepted: u32 = 0;
     let mut deduped: u32 = 0;
-    for rec in &staged {
+    let mut has_conflict = false;
+    for (outcome_index, rec) in &staged {
         match state.store.stage(rec).await {
             Ok(StageOutcome::Inserted) => accepted = accepted.saturating_add(1),
-            Ok(StageOutcome::Deduped) => deduped = deduped.saturating_add(1),
+            Ok(StageOutcome::Deduped) => {
+                deduped = deduped.saturating_add(1);
+                let Some(outcome) = outcomes.get_mut(*outcome_index) else {
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                };
+                outcome.outcome = IngestOutcomeKind::Deduped;
+            }
+            Ok(StageOutcome::Conflict(reason)) => {
+                has_conflict = true;
+                let Some(outcome) = outcomes.get_mut(*outcome_index) else {
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                };
+                outcome.outcome = IngestOutcomeKind::Conflict;
+                outcome.reason = Some(reason.code().to_owned());
+            }
             Err(e) => {
                 // Fail-CLOSED: a backend fault → 503; the runner retries the
                 // batch (idempotent by idem_key — no double-count on retry).
@@ -581,9 +725,17 @@ async fn handle_ingest(
     }
 
     let total = accepted.saturating_add(deduped);
+    let status = if has_conflict {
+        StatusCode::CONFLICT
+    } else if total == 0 && rejected != 0 {
+        StatusCode::UNPROCESSABLE_ENTITY
+    } else {
+        StatusCode::ACCEPTED
+    };
     (
-        StatusCode::ACCEPTED,
+        status,
         Json(IngestResponse {
+            outcomes,
             accepted,
             deduped,
             rejected,
@@ -712,3 +864,9 @@ mod tests_validate_record;
 
 #[cfg(test)]
 mod tests_payload_hash;
+
+#[cfg(test)]
+mod tests_durable_classification;
+
+#[cfg(test)]
+mod tests_http_outcomes;
