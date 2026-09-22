@@ -379,7 +379,7 @@ jobs:
               exit 78
             fi
             buck2 build :hello 2>&1
-          )"
+          ) 2>&1"
           RESULT=$?
           set -e
           printf '%s\n' "${OUTPUT}"
