@@ -44,7 +44,7 @@
         "access_status": "missing"
       },
       "expiry": {"expires_at": null, "status": "missing"},
-      "verification": {"status": "missing", "receipt_reference": null, "verified_at": null, "method": "osslsigncode verify plus trusted timestamp receipt"},
+      "verification": {"status": "missing", "receipt_reference": null, "verified_at": null, "method": "signtool verify /pa /v after signtool RFC 3161 timestamp signing"},
       "blockers": ["Authenticode certificate chain, fingerprint, expiry, secret access review, and a successful timestamped verification receipt are external inputs."]
     },
     "apple": {
