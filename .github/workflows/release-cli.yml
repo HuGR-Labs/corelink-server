@@ -799,7 +799,7 @@ jobs:
       id-token: write
     uses: ./.github/workflows/release-slsa3.yml
     with:
-      release_tag: ${{ needs.release.outputs.validated_tag }}
+      release_tag: ${{ inputs.release_tag }}
       source_sha: ${{ needs.release.outputs.source_sha }}
       manifest_sha256: ${{ needs.final-manifest.outputs.sha256 }}
     secrets:
