@@ -87,7 +87,7 @@ impl CasReadHandler for R2CasHandler {
                 CasHandlerError::AuditFailed(e)
             })?;
 
-        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Read)?;
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Read, None)?;
         let resolved = match tokio::task::block_in_place(|| {
             handle.block_on(self.resolve_byok_with_guard(
                 &req.tenant,
@@ -313,7 +313,7 @@ impl CasReadHandler for R2CasHandler {
                 CasHandlerError::AuditFailed(e)
             })?;
 
-        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Read)?;
+        let mut byok_guard = self.acquire_byok_data(&req.tenant, DataOperation::Read, None)?;
         let result = tokio::task::block_in_place(|| {
             handle.block_on(self.probe_existence_unaudited(&req, byok_guard.as_ref()))
         });

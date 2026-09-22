@@ -1,0 +1,52 @@
+name: '#1633 BYOK physical-byte accounting gate'
+
+on:
+  pull_request:
+    paths:
+      - 'crates/corelink-container/src/byte_accounting/**'
+      - 'crates/corelink-container/src/storage/byok_cas/**'
+      - 'crates/corelink-container/src/storage/r2_s3_parts/**'
+      - 'crates/corelink-container/src/routes/**'
+      - 'crates/corelink-container/src/main.rs'
+      - '.github/workflows/i1633-byok-accounting.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  focused-accounting:
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' && ((github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/issue-1633-byok-cache') || (github.event_name == 'pull_request' && github.head_ref == 'codex/issue-1633-byok-cache')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout the isolated canonical snapshot
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 1
+
+      - name: Install the pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b
+
+      - name: Execute exact BYOK physical-byte regressions
+        run: |
+          set -euo pipefail
+          for test_name in \
+            byte_accounting::byok_accounting_tests::active_byok_write_then_delete_nets_to_zero_at_committed_size \
+            byte_accounting::byok_accounting_tests::active_random_dedup_put_and_other_delete_preserve_physical_bytes \
+            byte_accounting::byok_accounting_tests::config_transition_and_failure_change_the_same_reservation_decision \
+            storage::byok_cas::tests::operation_pin_keeps_rotation_snapshot_and_rejects_cross_tenant_reuse \
+            byte_accounting::byok_accounting_tests::committed_len_is_plaintext_for_public_namespace \
+            storage::r2_s3::implementation::tests::router_factory_attachments_share_cache_across_storage_and_accounting \
+            byte_accounting::decorator_tests::ac::post_publish_ac_error_retains_reconcilable_liability
+          do
+            cargo test --locked -p corelink-server --lib "$test_name" -- --exact --nocapture
+          done
+          echo 'I1633_BYOK_ACCOUNTING_RESULT executed=1 passed=1'

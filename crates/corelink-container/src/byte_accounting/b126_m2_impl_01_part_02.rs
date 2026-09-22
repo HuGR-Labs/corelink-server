@@ -29,31 +29,25 @@ fn block_on_accrue(
     tokio::task::block_in_place(|| handle.block_on(acc.accrue(tenant, bytes, quota_seed)))
 }
 
-/// Compute the **committed (stored) byte size** the accountant must reserve and
-/// release for a write — the size that actually lands in R2, so reserve ==
-/// release == the eventual delete-release (which measures the real R2 object)
-/// and `bytes_used` can NEVER drift (audit C3 CRITICAL).
-///
-/// For a BYOK-ENCRYPTING tenant the stored object is the `CLB1` convergent blob
-/// = `plaintext_len + BYOK_CLB1_OVERHEAD` (32 B). Such a tenant is detected via
-/// the SAME [`ByokConfigCache`] the storage handlers use — engagement
-/// [`ByokEngagement::Encrypt`] for a non-`_public` tenant — so a write that
-/// stores ciphertext is accounted at its ciphertext size on BOTH the reserve and
-/// (on rollback) the release.
-///
-/// - `cache == None` (today's production / tests) ⇒ plaintext size — byte-for-
-///   byte the legacy behaviour, zero change for every non-BYOK deployment.
-/// - `_public`, not configured, or `Plaintext` engagement ⇒ plaintext size.
-/// - `FailClosed` engagement (Mode B / partial) ⇒ plaintext size: the inner
-///   storage write fails closed and stores NOTHING, so the (plaintext-sized)
-///   reservation is rolled back net-zero — no ciphertext is ever committed.
-/// - `Encrypt` ⇒ `plaintext_len + BYOK_CLB1_OVERHEAD`.
-///
-/// FAIL-CLOSED: a config-cache read error returns `Err` — the caller maps it to
-/// the 503 fail-closed sentinel. We must NEVER under-reserve an active tenant on
-/// an undetermined config (and the shared cache means the inner handler would
-/// fail closed on the same error anyway).
-fn byok_committed_len(
+/// Freeze a BYOK operation before its reservation. The returned pin owns the
+/// exact transition capability and configuration snapshot consumed by R2; its
+/// `committed_len` is therefore the physical-byte basis for both accounting and
+/// the stored object. There is no second config lookup after this point.
+fn pin_byok_operation(
+    byok: Option<&Arc<crate::storage::byok_cas::DataPlaneByok>>,
+    tenant: &str,
+    plaintext_len: i64,
+) -> Result<Option<Arc<crate::storage::byok_cas::ByokOperationPin>>, String> {
+    match byok {
+        Some(byok) => byok.pin_write(tenant, plaintext_len),
+        None => Ok(None),
+    }
+}
+
+// Compatibility oracle for the legacy unit fixtures. Production accounting
+// never calls this path: it always carries a `ByokOperationPin` into R2.
+#[cfg(test)]
+pub(crate) fn byok_committed_len_for_test(
     cache: Option<&Arc<ByokConfigCache>>,
     tenant: &str,
     plaintext_len: i64,
@@ -61,21 +55,16 @@ fn byok_committed_len(
     let Some(cache) = cache else {
         return Ok(plaintext_len);
     };
-    // `_public` is deterministic public content — never encrypted (dedup), so it
-    // is byte-identical to today (frozen policy: non-BYOK + `_public` unchanged).
     if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
         return Ok(plaintext_len);
     }
     let handle = tokio::runtime::Handle::current();
     let cfg = tokio::task::block_in_place(|| handle.block_on(cache.get(tenant)))
-        .map_err(|e| format!("byok config read (accounting): {e}"))?;
+        .map_err(|error| format!("byok config read (test oracle): {error}"))?;
     let Some(cfg) = cfg else {
         return Ok(plaintext_len);
     };
     match engagement_for(&cfg) {
-        // Mode A (convergent) stores `CLB1` (+32 B); Mode B (random) stores `CLB2`
-        // (+20 B — the nonce lives in `byok_envelope`, not inline). Account the
-        // committed CIPHERTEXT size so the reservation matches the real R2 object.
         ByokEngagement::Encrypt(ByokCryptoMode::Convergent) => {
             Ok(plaintext_len.saturating_add(i64::try_from(BYOK_CLB1_OVERHEAD).unwrap_or(i64::MAX)))
         }
@@ -108,13 +97,7 @@ fn block_on_record_liability(
     let _scope = crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Accounting);
     let handle = tokio::runtime::Handle::current();
     tokio::task::block_in_place(|| {
-        handle.block_on(acc.record_mutation_liability(
-            tenant,
-            logical_key,
-            bytes,
-            state,
-            intent_id,
-        ))
+        handle.block_on(acc.record_mutation_liability(tenant, logical_key, bytes, state, intent_id))
     })
 }
 
@@ -151,10 +134,16 @@ fn classify_mutation_failure(
         corelink_handler_cas::MutationEffect::Pending { intent_id } => {
             (MutationLiabilityState::Pending, Some(*intent_id), false)
         }
-        corelink_handler_cas::MutationEffect::Unknown => {
-            (MutationLiabilityState::Unknown, Some(unknown_intent_id), false)
-        }
-        _ => (MutationLiabilityState::Unknown, Some(unknown_intent_id), false),
+        corelink_handler_cas::MutationEffect::Unknown => (
+            MutationLiabilityState::Unknown,
+            Some(unknown_intent_id),
+            false,
+        ),
+        _ => (
+            MutationLiabilityState::Unknown,
+            Some(unknown_intent_id),
+            false,
+        ),
     }
 }
 
@@ -241,12 +230,11 @@ pub struct AccountingCasHandler {
     accountant: Arc<ByteAccountant>,
     /// Fixed, memory-bounded shard array of per-`(tenant, hash)` async locks.
     key_locks: Arc<Vec<Arc<tokio::sync::Mutex<()>>>>,
-    /// BYOK Wave 3b (GATED-INERT): the SAME per-tenant config cache the storage
-    /// handlers use. `None` ⇒ plaintext-size accounting (today's behaviour). When
-    /// `Some` AND a tenant is BYOK-`active`, the reserve/release size is the
-    /// committed CIPHERTEXT size (`plaintext + BYOK_CLB1_OVERHEAD`) so it matches
-    /// the on-disk object the delete path releases (audit C3 — no drift).
-    byok_config_cache: Option<Arc<ByokConfigCache>>,
+    /// The one data-plane collaborator set. Each write derives one operation
+    /// pin from it and passes that pin through to the R2 handler.
+    byok: Option<Arc<crate::storage::byok_cas::DataPlaneByok>>,
+    #[cfg(test)]
+    test_byok_config_cache: Option<Arc<ByokConfigCache>>,
 }
 
 impl core::fmt::Debug for AccountingCasHandler {
@@ -274,20 +262,33 @@ impl AccountingCasHandler {
             delete_inner,
             accountant,
             key_locks: Arc::new(key_locks),
-            byok_config_cache: None,
+            byok: None,
+            #[cfg(test)]
+            test_byok_config_cache: None,
         }
     }
 
-    /// Attach the BYOK Wave-3b config cache so a BYOK-`active` tenant is
-    /// reserved/released at its committed CIPHERTEXT size (audit C3). Mirrors
-    /// [`crate::storage::r2_s3::R2CasHandler::with_byok`]'s gating; pass the SAME
-    /// `ByokConfigCache` Arc the storage handler holds so the active-ness lookup
-    /// is a shared in-memory cache HIT (one D1 hop total). `None` (the default)
-    /// keeps the exact plaintext-size accounting.
+    /// Attach the one BYOK data plane that also owns the inner R2 gate.
     #[must_use]
-    pub fn with_byok(mut self, byok_config_cache: Arc<ByokConfigCache>) -> Self {
-        self.byok_config_cache = Some(byok_config_cache);
+    pub fn with_byok(mut self, byok: Arc<crate::storage::byok_cas::DataPlaneByok>) -> Self {
+        self.byok = Some(byok);
         self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_byok_cache_for_test(mut self, cache: Arc<ByokConfigCache>) -> Self {
+        self.test_byok_config_cache = Some(cache);
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn byok_for_test(&self) -> Option<&Arc<crate::storage::byok_cas::DataPlaneByok>> {
+        self.byok.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn byok_config_cache_for_test(&self) -> Option<&Arc<ByokConfigCache>> {
+        self.test_byok_config_cache.as_ref()
     }
 }
 
@@ -302,18 +303,19 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
     fn write_with_effect(
         &self,
         req: corelink_handler_cas::CasWriteRequest,
-    ) -> Result<corelink_handler_cas::CasWriteResponse, corelink_handler_cas::CasWriteFailure>
-    {
+    ) -> Result<corelink_handler_cas::CasWriteResponse, corelink_handler_cas::CasWriteFailure> {
         use corelink_handler_cas::{CasHandlerError, CasWriteFailure};
         // Reject a forged physical/accounting pairing before touching the
         // quota ledger.  The inner handler repeats the gate (and emits the
         // canonical denial audit), but the decorator must not even transiently
         // reserve another tenant's bytes for a malformed request.
         if !req.is_authorized_for_caller() {
-            return Err(CasWriteFailure::not_written(CasHandlerError::CrossTenantDenied {
-                caller: req.caller_tenant,
-                requested_tenant: req.tenant,
-            }));
+            return Err(CasWriteFailure::not_written(
+                CasHandlerError::CrossTenantDenied {
+                    caller: req.caller_tenant,
+                    requested_tenant: req.tenant,
+                },
+            ));
         }
         // `tenant` is the physical storage namespace (and BYOK namespace),
         // while `accounting_tenant` is the authenticated tenant whose quota
@@ -339,23 +341,39 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
         // releases the real R2 object size) → reserve == release, no drift. A
         // config read error fails CLOSED (503). `None` cache / non-BYOK tenant ⇒
         // `byte_len == plaintext_len`, byte-identical to today.
-        let committed_len = {
+        let pin = {
             let _scope =
                 crate::origin_timing::PhaseScope::enter(crate::origin_timing::Phase::Accounting);
-            byok_committed_len(
-                self.byok_config_cache.as_ref(),
+            pin_byok_operation(self.byok.as_ref(), &storage_namespace, plaintext_len)
+        };
+        let pin = match pin {
+            Ok(pin) => pin,
+            Err(e) => {
+                tracing::error!(error = %e, "cas: BYOK operation pin failed; failing closed");
+                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(
+                    format!("{ACCT_UNAVAILABLE_SENTINEL}{e}"),
+                )));
+            }
+        };
+        #[cfg(not(test))]
+        let byte_len = pin
+            .as_ref()
+            .map_or(plaintext_len, |pin| pin.committed_len());
+        #[cfg(test)]
+        let byte_len = match pin.as_ref() {
+            Some(pin) => pin.committed_len(),
+            None => match byok_committed_len_for_test(
+                self.test_byok_config_cache.as_ref(),
                 &storage_namespace,
                 plaintext_len,
-            )
-        };
-        let byte_len = match committed_len {
-            Ok(n) => n,
-            Err(e) => {
-                tracing::error!(error = %e, "cas: byok committed-size lookup failed; failing closed");
-                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
-                    "{ACCT_UNAVAILABLE_SENTINEL}{e}"
-                ))));
-            }
+            ) {
+                Ok(byte_len) => byte_len,
+                Err(error) => {
+                    return Err(CasWriteFailure::not_written(CasHandlerError::Internal(
+                        format!("{ACCT_UNAVAILABLE_SENTINEL}{error}"),
+                    )));
+                }
+            },
         };
         // RESERVE before the R2 PUT (cluster-C): an over-cap / indeterminate
         // reservation is rejected here, so the inner write — the durable R2 PUT
@@ -363,9 +381,9 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
         match block_on_accrue(&self.accountant, &accounting_tenant, byte_len, quota_seed) {
             Ok(AccrueOutcome::Accrued) => {}
             Ok(AccrueOutcome::OverCap) => {
-                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
-                    "{OVER_CAP_SENTINEL}cas write would exceed storage cap"
-                ))));
+                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(
+                    format!("{OVER_CAP_SENTINEL}cas write would exceed storage cap"),
+                )));
             }
             Ok(AccrueOutcome::Indeterminate) => {
                 // Fresh/unsynced tenant + no resolved cap → we refuse to seed an
@@ -374,15 +392,17 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                     tenant = %accounting_tenant,
                     "cas: storage cap indeterminate for an unseeded tenant; failing closed"
                 );
-                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
+                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(
+                    format!(
                     "{ACCT_UNAVAILABLE_SENTINEL}storage cap indeterminate (no row, no resolved cap)"
-                ))));
+                ),
+                )));
             }
             Err(e) => {
                 tracing::error!(error = %e, "cas: byte reservation failed; failing closed");
-                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
-                    "{ACCT_UNAVAILABLE_SENTINEL}{e}"
-                ))));
+                return Err(CasWriteFailure::not_written(CasHandlerError::Internal(
+                    format!("{ACCT_UNAVAILABLE_SENTINEL}{e}"),
+                )));
             }
         }
         let logical_key = req.claimed_hash.clone();
@@ -395,11 +415,17 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
             None,
         ) {
             block_on_release(&self.accountant, &accounting_tenant, byte_len);
-            return Err(CasWriteFailure::not_written(CasHandlerError::Internal(format!(
-                "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
-            ))));
+            return Err(CasWriteFailure::not_written(CasHandlerError::Internal(
+                format!("{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"),
+            )));
         }
-        match self.write_inner.write_with_effect(req) {
+        let context = pin
+            .as_ref()
+            .map(|pin| Arc::clone(pin) as Arc<dyn corelink_handler_cas::CasWriteOperationContext>);
+        match self
+            .write_inner
+            .write_with_effect_and_context(req, context.as_deref())
+        {
             Ok(resp) => {
                 // An idempotent re-write stored NOTHING new (`durable == false`),
                 // so roll the reservation back to avoid double-counting.
@@ -410,9 +436,9 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                         &logical_key,
                         MutationLiabilityResolution::NotWritten,
                     ) {
-                        return Err(CasWriteFailure::unknown(CasHandlerError::Internal(format!(
-                            "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
-                        ))));
+                        return Err(CasWriteFailure::unknown(CasHandlerError::Internal(
+                            format!("{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"),
+                        )));
                     }
                 } else if let Err(e) = block_on_record_liability(
                     &self.accountant,
@@ -422,9 +448,9 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                     MutationLiabilityState::Committed,
                     None,
                 ) {
-                    return Err(CasWriteFailure::committed(CasHandlerError::Internal(format!(
-                        "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
-                    ))));
+                    return Err(CasWriteFailure::committed(CasHandlerError::Internal(
+                        format!("{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"),
+                    )));
                 }
                 Ok(resp)
             }
@@ -438,9 +464,9 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                         &logical_key,
                         MutationLiabilityResolution::NotWritten,
                     ) {
-                        return Err(CasWriteFailure::unknown(CasHandlerError::Internal(format!(
-                            "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
-                        ))));
+                        return Err(CasWriteFailure::unknown(CasHandlerError::Internal(
+                            format!("{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"),
+                        )));
                     }
                 } else if let Err(e) = block_on_record_liability(
                     &self.accountant,
@@ -450,9 +476,9 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
                     state,
                     intent_id,
                 ) {
-                    return Err(CasWriteFailure::unknown(CasHandlerError::Internal(format!(
-                        "{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"
-                    ))));
+                    return Err(CasWriteFailure::unknown(CasHandlerError::Internal(
+                        format!("{ACCT_UNAVAILABLE_SENTINEL}mutation liability: {e}"),
+                    )));
                 }
                 Err(failure)
             }

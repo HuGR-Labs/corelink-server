@@ -68,7 +68,8 @@ pub use audit::{AuditEvent, AuditEventKind, AuditSink, InMemoryAuditSink};
 pub use digest_algo::DigestAlgo;
 pub use error::{CasHandlerError, CasWriteFailure, MutationEffect};
 pub use handler::{
-    CasDeleteHandler, CasListHandler, CasReadHandler, CasWriteHandler, InMemoryCasHandler,
+    CasDeleteHandler, CasListHandler, CasReadHandler, CasWriteHandler, CasWriteOperationContext,
+    InMemoryCasHandler,
 };
 pub use observer::{InMemorySliObserver, SliObservation, SliObserver};
 pub use request::{
