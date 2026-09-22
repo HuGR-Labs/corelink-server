@@ -735,6 +735,14 @@ mod tests {
             "ostore lost the blocking read: {store_us} us"
         );
         assert!(store_us <= wall_us, "ostore exceeded read wall clock");
+        let accounting_us = ledger
+            .micros(crate::origin_timing::Phase::Accounting)
+            .expect("the URL-map read must have recorded an accounting window");
+        assert!(
+            store_us.saturating_add(accounting_us) <= wall_us,
+            "ostore ({store_us} us) + oaccounting ({accounting_us} us) must stay within \
+             the get wall clock ({wall_us} us); the blocking read and URL-map windows overlap"
+        );
         assert_eq!(
             ledger.recordings_for_test(crate::origin_timing::Phase::Store),
             1,
