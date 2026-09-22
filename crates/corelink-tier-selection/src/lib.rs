@@ -97,6 +97,7 @@ pub mod dpa;
 pub mod error;
 pub mod ledger;
 pub mod runner_checkout_attempt;
+pub mod runner_checkout_d1;
 pub mod stripe;
 pub mod tenant;
 pub mod tier;
@@ -114,7 +115,14 @@ pub use ledger::{
 };
 pub use runner_checkout_attempt::{
     InMemoryRunnerCheckoutAttemptLedger, RunnerCheckoutAttempt, RunnerCheckoutAttemptDecision,
-    RunnerCheckoutAttemptError, RunnerCheckoutAttemptState, RunnerCheckoutSessionExpiry,
+    RunnerCheckoutAttemptError, RunnerCheckoutAttemptState, RunnerCheckoutOrchestrator,
+    RunnerCheckoutProvider, RunnerCheckoutSessionCreator, RunnerCheckoutSessionExpiry,
+    RunnerCheckoutSessionReconciler,
+};
+pub use runner_checkout_d1::{
+    SQL_MARK_RUNNER_CHECKOUT_ABANDONED, SQL_MARK_RUNNER_CHECKOUT_EXPIRED,
+    SQL_READ_CURRENT_RUNNER_CHECKOUT_ATTEMPT, SQL_RECORD_RUNNER_CHECKOUT_SESSION,
+    SQL_RESERVE_RUNNER_CHECKOUT_ATTEMPT,
 };
 pub use stripe::{
     compute_stripe_signature, parse_stripe_signature_header, verify_stripe_signature,

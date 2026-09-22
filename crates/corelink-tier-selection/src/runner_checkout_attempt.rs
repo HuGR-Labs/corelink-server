@@ -91,6 +91,10 @@ pub enum RunnerCheckoutAttemptError {
     /// The provider refused to expire an unpaid Checkout session.
     #[error("runner checkout session expiry failed: {0}")]
     ProviderExpiryFailed(String),
+    /// The provider rejected creation of a Checkout session. The reservation
+    /// remains open so a later retry can reconcile the provider first.
+    #[error("runner checkout session creation failed: {0}")]
+    ProviderCreateFailed(String),
 }
 
 /// Provider operation required before replacing an unpaid runner Checkout.
@@ -101,6 +105,162 @@ pub enum RunnerCheckoutAttemptError {
 pub trait RunnerCheckoutSessionExpiry {
     /// Expire the session attached to an [`RunnerCheckoutAttemptDecision::ExpiryRequired`] attempt.
     fn expire(&self, attempt: &RunnerCheckoutAttempt) -> Result<(), RunnerCheckoutAttemptError>;
+}
+
+/// Provider operation that creates a session using the attempt's exact
+/// idempotency key. Implementations must pass that key unchanged to Stripe.
+pub trait RunnerCheckoutSessionCreator {
+    /// Create one hosted session for the reserved attempt.
+    fn create(&self, attempt: &RunnerCheckoutAttempt)
+        -> Result<String, RunnerCheckoutAttemptError>;
+}
+
+/// Provider lookup used after a process crashed before recording Stripe's
+/// response. `Some` means Stripe accepted the original request; `None` means
+/// no session exists and the reservation may be abandoned.
+pub trait RunnerCheckoutSessionReconciler {
+    /// Find the provider session by the stored idempotency key.
+    fn reconcile(
+        &self,
+        attempt: &RunnerCheckoutAttempt,
+    ) -> Result<Option<String>, RunnerCheckoutAttemptError>;
+}
+
+/// Complete provider seam used by [`RunnerCheckoutOrchestrator`].
+pub trait RunnerCheckoutProvider:
+    RunnerCheckoutSessionCreator
+    + RunnerCheckoutSessionExpiry
+    + RunnerCheckoutSessionReconciler
+    + core::fmt::Debug
+    + Send
+    + Sync
+{
+}
+
+impl<T> RunnerCheckoutProvider for T where
+    T: RunnerCheckoutSessionCreator
+        + RunnerCheckoutSessionExpiry
+        + RunnerCheckoutSessionReconciler
+        + core::fmt::Debug
+        + Send
+        + Sync
+{
+}
+
+/// Coordinates the durable ledger with Stripe's create, expire, and lookup
+/// calls. It never creates a replacement while an open attempt is present.
+#[derive(Clone, Debug)]
+pub struct RunnerCheckoutOrchestrator<P> {
+    ledger: InMemoryRunnerCheckoutAttemptLedger,
+    provider: std::sync::Arc<P>,
+}
+
+impl<P: RunnerCheckoutProvider> RunnerCheckoutOrchestrator<P> {
+    /// Construct an orchestrator over a ledger and provider adapter.
+    #[must_use]
+    pub fn new(ledger: InMemoryRunnerCheckoutAttemptLedger, provider: std::sync::Arc<P>) -> Self {
+        Self { ledger, provider }
+    }
+
+    /// Return the payable attempt, creating it only after any prior attempt
+    /// has been reconciled or confirmed expired by the provider.
+    pub fn checkout(
+        &self,
+        tenant_id: TenantId,
+        tier: TierKind,
+        price_id: impl Into<String>,
+        customer_id: impl Into<String>,
+    ) -> Result<RunnerCheckoutAttempt, RunnerCheckoutAttemptError> {
+        let price_id = price_id.into();
+        let customer_id = customer_id.into();
+        let decision = self
+            .ledger
+            .begin(tenant_id, tier, price_id.clone(), customer_id.clone())?;
+        match decision {
+            RunnerCheckoutAttemptDecision::Replay(attempt)
+                if attempt.state == RunnerCheckoutAttemptState::Reserved =>
+            {
+                // A concurrent click can observe the reservation while its
+                // owner is between D1 and Stripe. First recover a provider
+                // response already committed under that key; if none exists,
+                // reuse the same key rather than allocating a generation.
+                let session_id = match self.provider.reconcile(&attempt)? {
+                    Some(id) => id,
+                    None => self
+                        .provider
+                        .create(&attempt)
+                        .map_err(|error| match error {
+                            RunnerCheckoutAttemptError::ProviderCreateFailed(_) => error,
+                            other => {
+                                RunnerCheckoutAttemptError::ProviderCreateFailed(other.to_string())
+                            }
+                        })?,
+                };
+                self.ledger
+                    .record_session(&attempt.tenant_id, attempt.generation, &session_id)?;
+                self.ledger
+                    .current(&attempt.tenant_id, attempt.generation)
+                    .ok_or(RunnerCheckoutAttemptError::GenerationMismatch)
+            }
+            RunnerCheckoutAttemptDecision::Replay(attempt) => Ok(attempt),
+            RunnerCheckoutAttemptDecision::Create(attempt) => {
+                let session_id = self
+                    .provider
+                    .create(&attempt)
+                    .map_err(|error| match error {
+                        RunnerCheckoutAttemptError::ProviderCreateFailed(_) => error,
+                        other => {
+                            RunnerCheckoutAttemptError::ProviderCreateFailed(other.to_string())
+                        }
+                    })?;
+                self.ledger
+                    .record_session(&attempt.tenant_id, attempt.generation, &session_id)?;
+                self.ledger
+                    .current(&attempt.tenant_id, attempt.generation)
+                    .ok_or(RunnerCheckoutAttemptError::GenerationMismatch)
+            }
+            RunnerCheckoutAttemptDecision::ExpiryRequired(attempt) => {
+                self.provider.expire(&attempt)?;
+                let session_id = attempt
+                    .session_id
+                    .as_deref()
+                    .ok_or(RunnerCheckoutAttemptError::InvalidTransition)?;
+                self.ledger
+                    .mark_expired(&attempt.tenant_id, attempt.generation, session_id)?;
+                self.checkout(
+                    attempt.tenant_id,
+                    tier,
+                    price_id.clone(),
+                    customer_id.clone(),
+                )
+            }
+            RunnerCheckoutAttemptDecision::RecoveryRequired(attempt) => {
+                match self.provider.reconcile(&attempt)? {
+                    Some(session_id) => {
+                        self.ledger.record_session(
+                            &attempt.tenant_id,
+                            attempt.generation,
+                            &session_id,
+                        )?;
+                        self.ledger
+                            .current(&attempt.tenant_id, attempt.generation)
+                            .ok_or(RunnerCheckoutAttemptError::GenerationMismatch)
+                    }
+                    None => {
+                        self.ledger
+                            .mark_provider_absent(&attempt.tenant_id, attempt.generation)?;
+                        self.checkout(attempt.tenant_id, tier, price_id, customer_id)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Expose the underlying ledger for webhook and reconciliation wiring.
+    #[must_use]
+    pub fn ledger(&self) -> &InMemoryRunnerCheckoutAttemptLedger {
+        &self.ledger
+    }
 }
 
 /// Atomic in-memory model of the D1 runner checkout attempt ledger.
@@ -165,6 +325,12 @@ impl InMemoryRunnerCheckoutAttemptLedger {
             .attempts
             .lock()
             .map_err(|_| RunnerCheckoutAttemptError::InvalidTransition)?;
+        if rows.values().flatten().any(|other| {
+            (other.tenant_id != *tenant_id || other.generation != generation)
+                && other.session_id.as_deref() == Some(session_id)
+        }) {
+            return Err(RunnerCheckoutAttemptError::InvalidTransition);
+        }
         let attempt = current(&mut rows, tenant_id, generation)?;
         match (&attempt.state, &attempt.session_id) {
             (RunnerCheckoutAttemptState::Reserved, None) => {
@@ -179,6 +345,16 @@ impl InMemoryRunnerCheckoutAttemptLedger {
             }
             _ => Err(RunnerCheckoutAttemptError::InvalidTransition),
         }
+    }
+
+    /// Snapshot the current generation after a provider mutation is recorded.
+    #[must_use]
+    pub fn current(&self, tenant_id: &TenantId, generation: u64) -> Option<RunnerCheckoutAttempt> {
+        self.attempts
+            .lock()
+            .ok()
+            .and_then(|rows| rows.get(tenant_id)?.last().cloned())
+            .filter(|attempt| attempt.generation == generation)
     }
 
     /// Admit a replacement only after the provider has confirmed expiry.
@@ -276,6 +452,7 @@ const fn is_runner_tier(tier: TierKind) -> bool {
 )]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     fn begin(
         ledger: &InMemoryRunnerCheckoutAttemptLedger,
@@ -366,5 +543,186 @@ mod tests {
             _ => panic!(),
         };
         assert_eq!(key(first.join().unwrap()), key(second.join().unwrap()));
+    }
+
+    #[derive(Debug, Default)]
+    struct FakeProvider {
+        sessions: Mutex<HashMap<String, String>>,
+        create_calls: Mutex<Vec<String>>,
+        expire_calls: Mutex<Vec<String>>,
+        fail_expire: Mutex<bool>,
+        lose_next_ack: Mutex<bool>,
+    }
+
+    impl RunnerCheckoutSessionCreator for FakeProvider {
+        fn create(
+            &self,
+            attempt: &RunnerCheckoutAttempt,
+        ) -> Result<String, RunnerCheckoutAttemptError> {
+            let mut calls = self.create_calls.lock().unwrap();
+            calls.push(attempt.idempotency_key.clone());
+            let mut sessions = self.sessions.lock().unwrap();
+            if let Some(id) = sessions.get(&attempt.idempotency_key).cloned() {
+                return Ok(id);
+            }
+            let id = format!("cs_{}", sessions.len() + 1);
+            sessions.insert(attempt.idempotency_key.clone(), id.clone());
+            if *self.lose_next_ack.lock().unwrap() {
+                *self.lose_next_ack.lock().unwrap() = false;
+                return Err(RunnerCheckoutAttemptError::ProviderCreateFailed(
+                    "lost response after provider commit".to_string(),
+                ));
+            }
+            Ok(id)
+        }
+    }
+
+    impl RunnerCheckoutSessionExpiry for FakeProvider {
+        fn expire(
+            &self,
+            attempt: &RunnerCheckoutAttempt,
+        ) -> Result<(), RunnerCheckoutAttemptError> {
+            self.expire_calls
+                .lock()
+                .unwrap()
+                .push(attempt.session_id.clone().unwrap());
+            if *self.fail_expire.lock().unwrap() {
+                return Err(RunnerCheckoutAttemptError::ProviderExpiryFailed(
+                    "provider refused expiry".to_string(),
+                ));
+            }
+            Ok(())
+        }
+    }
+
+    impl RunnerCheckoutSessionReconciler for FakeProvider {
+        fn reconcile(
+            &self,
+            attempt: &RunnerCheckoutAttempt,
+        ) -> Result<Option<String>, RunnerCheckoutAttemptError> {
+            Ok(self
+                .sessions
+                .lock()
+                .unwrap()
+                .get(&attempt.idempotency_key)
+                .cloned())
+        }
+    }
+
+    fn orchestrator() -> (RunnerCheckoutOrchestrator<FakeProvider>, Arc<FakeProvider>) {
+        let provider = Arc::new(FakeProvider::default());
+        (
+            RunnerCheckoutOrchestrator::new(
+                InMemoryRunnerCheckoutAttemptLedger::default(),
+                Arc::clone(&provider),
+            ),
+            provider,
+        )
+    }
+
+    #[test]
+    fn plan_change_expires_before_allocating_replacement() {
+        let (orchestrator, provider) = orchestrator();
+        let old = orchestrator
+            .checkout(
+                TenantId::new("tenant-a"),
+                TierKind::RunnerStarter,
+                "price_a",
+                "cus_a",
+            )
+            .unwrap();
+        let replacement = orchestrator
+            .checkout(
+                TenantId::new("tenant-a"),
+                TierKind::RunnerPro,
+                "price_b",
+                "cus_a",
+            )
+            .unwrap();
+        assert_eq!(replacement.generation, old.generation + 1);
+        assert_eq!(*provider.expire_calls.lock().unwrap(), vec!["cs_1"]);
+        assert_eq!(provider.create_calls.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn failed_expiry_leaves_old_session_and_blocks_replacement() {
+        let (orchestrator, provider) = orchestrator();
+        let old = orchestrator
+            .checkout(
+                TenantId::new("tenant-a"),
+                TierKind::RunnerStarter,
+                "price_a",
+                "cus_a",
+            )
+            .unwrap();
+        *provider.fail_expire.lock().unwrap() = true;
+        assert!(matches!(
+            orchestrator.checkout(
+                TenantId::new("tenant-a"),
+                TierKind::RunnerPro,
+                "price_b",
+                "cus_a"
+            ),
+            Err(RunnerCheckoutAttemptError::ProviderExpiryFailed(_))
+        ));
+        assert_eq!(
+            orchestrator
+                .ledger()
+                .current(&old.tenant_id, old.generation)
+                .unwrap()
+                .state,
+            RunnerCheckoutAttemptState::SessionCreated
+        );
+        assert_eq!(provider.create_calls.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn lost_create_ack_reconciles_without_a_second_session() {
+        let (orchestrator, provider) = orchestrator();
+        *provider.lose_next_ack.lock().unwrap() = true;
+        assert!(orchestrator
+            .checkout(
+                TenantId::new("tenant-a"),
+                TierKind::RunnerStarter,
+                "price_a",
+                "cus_a",
+            )
+            .is_err());
+        let recovered = orchestrator
+            .checkout(
+                TenantId::new("tenant-a"),
+                TierKind::RunnerStarter,
+                "price_a",
+                "cus_a",
+            )
+            .unwrap();
+        assert_eq!(recovered.session_id.as_deref(), Some("cs_1"));
+        assert_eq!(provider.create_calls.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn concurrent_orchestrator_clicks_have_one_payable_identity() {
+        let (orchestrator, provider) = orchestrator();
+        let shared = Arc::new(orchestrator);
+        let mut joins = Vec::new();
+        for _ in 0..8 {
+            let shared = Arc::clone(&shared);
+            joins.push(std::thread::spawn(move || {
+                shared.checkout(
+                    TenantId::new("tenant-a"),
+                    TierKind::RunnerStarter,
+                    "price_a",
+                    "cus_a",
+                )
+            }));
+        }
+        let attempts: Vec<_> = joins
+            .into_iter()
+            .map(|join| join.join().unwrap().unwrap())
+            .collect();
+        assert!(attempts
+            .iter()
+            .all(|attempt| attempt.session_id == Some("cs_1".to_string())));
+        assert_eq!(provider.sessions.lock().unwrap().len(), 1);
     }
 }
