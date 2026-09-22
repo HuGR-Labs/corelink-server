@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MIGRATION = ROOT / "migrations/d1/0132_runner_aggregate_durable_state.sql"
+MIGRATION = ROOT / "migrations/d1/0134_runner_aggregate_durable_state.sql"
 TENANT = "00000000-0000-0000-0000-000000000001"
 PERIOD = "2026-09"
 TERMS_REF = "terms://tenant/2026-09/v1"
