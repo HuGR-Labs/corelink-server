@@ -64,6 +64,24 @@ def _secret_names(readiness: dict) -> set[str]:
     )
 
 
+def _verify_observation_workflow(workflow_texts: dict[str, str]) -> None:
+    """Require the dedicated staging invocation, not an image-build mention."""
+    name = "issue-1651-gc-staging-observation.yml"
+    workflow = workflow_texts.get(name)
+    if workflow is None:
+        raise Blocked(f"missing staging observation workflow: .github/workflows/{name}")
+
+    for marker in (
+        "workflow_dispatch:",
+        "environment: staging",
+        "corelink-gc-sweep-production",
+        'GC_OBSERVATION_ONLY: "true"',
+        'GC_LIVE_DELETE: "false"',
+    ):
+        if marker not in workflow:
+            raise Blocked(f"staging observation workflow is missing safety marker: {marker}")
+
+
 def verify() -> None:
     topology = _json(TOPOLOGY)
     blockers: list[str] = []
@@ -119,16 +137,17 @@ def verify() -> None:
         if marker not in control:
             blockers.append(f"control lane is missing credentialless marker: {marker}")
 
-    # A live observation must be an explicitly reviewed workflow, and must not
-    # be inferred from the fixture lane.  The production binary's absence from
-    # workflows is an exact external-state blocker, not a reason to dispatch.
-    workflow_texts = "\n".join(
-        path.read_text(encoding="utf-8")
+    # A live observation must use its dedicated staging lane. The production
+    # image build also names the binary, but that is not an observation.
+    workflow_texts = {
+        path.name: path.read_text(encoding="utf-8")
         for path in (ROOT / ".github/workflows").glob("*.yml")
         if path.is_file() and not path.is_symlink()
-    )
-    if "corelink-gc-sweep-production" not in workflow_texts:
-        blockers.append("no workflow invokes corelink-gc-sweep-production for a staging observation")
+    }
+    try:
+        _verify_observation_workflow(workflow_texts)
+    except Blocked as exc:
+        blockers.append(str(exc))
 
     if blockers:
         raise Blocked("\n".join(f"- {item}" for item in blockers))
