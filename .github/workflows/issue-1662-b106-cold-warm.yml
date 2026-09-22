@@ -1,0 +1,123 @@
+name: issue-1662 B-106 cold-to-warm evidence
+
+# Manual owner lane for #1662's remaining live evidence.  It creates one
+# uniquely named disposable PAT, observes one cold and one immediate warm
+# authenticated miss, and revokes the PAT in an unconditional cleanup step.
+# It deliberately has no PUT/POST data-plane call: B-102/B-103/B-107 remain
+# outside this lane.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "HTTPS production origin (no path, query, or credentials)"
+        required: true
+        type: string
+      tenant:
+        description: "Owner-approved dogfood tenant UUID"
+        required: true
+        type: string
+      confirm:
+        description: 'Type exactly "run-1662-b106-cold-warm" to authorize one bounded probe'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1662-b106-cold-warm
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    name: B-106 cold then same-colo warm auth
+    if: github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 7
+    steps:
+      - name: Checkout without a credential helper
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Confirm protected manual dispatch
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          TARGET: ${{ inputs.target }}
+          TENANT: ${{ inputs.tenant }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REPOSITORY" = HuGR-dev/corelink-server
+          test "$GITHUB_REF" = refs/heads/main
+          test "$CONFIRM" = run-1662-b106-cold-warm
+          python3 - "$TARGET" "$TENANT" <<'PY'
+          import re
+          import sys
+          from urllib.parse import urlsplit
+
+          target, tenant = sys.argv[1:]
+          parsed = urlsplit(target)
+          if (parsed.scheme != "https" or not parsed.hostname or parsed.username or
+                  parsed.password or parsed.path not in ("", "/") or parsed.query or
+                  parsed.fragment):
+              raise SystemExit("target must be an HTTPS origin without credentials or path")
+          if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}", tenant):
+              raise SystemExit("tenant must be a canonical v4 UUID")
+          PY
+          mkdir -p artifacts
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          Path("artifacts/issue-1662-b106-receipt.json").write_text(
+              json.dumps({"schema_version": 1, "issue": 1662, "backlog_id": "B-106", "valid": False,
+                          "failure": "probe_not_started", "cleanup": {"attempted": False, "revoked": False}},
+                         sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Mint one disposable PAT and capture cold-to-warm evidence
+        env:
+          TARGET: ${{ inputs.target }}
+          TENANT: ${{ inputs.tenant }}
+          CORELINK_B106_OWNER_SESSION: ${{ secrets.CORELINK_B106_OWNER_SESSION }}
+          STATE: ${{ runner.temp }}/issue-1662-b106-state.json
+          RECEIPT: artifacts/issue-1662-b106-receipt.json
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CORELINK_B106_OWNER_SESSION:-}"
+          name="b106-cold-warm-${RUN_ID}-${RUN_ATTEMPT}"
+          umask 077
+          python3 scripts/probe_i1662_b106.py run \
+            --target "$TARGET" --tenant "$TENANT" --name "$name" \
+            --state "$STATE" --receipt "$RECEIPT"
+
+      - name: Revoke disposable PAT (always)
+        if: always()
+        env:
+          TARGET: ${{ inputs.target }}
+          CORELINK_B106_OWNER_SESSION: ${{ secrets.CORELINK_B106_OWNER_SESSION }}
+          STATE: ${{ runner.temp }}/issue-1662-b106-state.json
+          RECEIPT: artifacts/issue-1662-b106-receipt.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CORELINK_B106_OWNER_SESSION:-}"
+          python3 scripts/probe_i1662_b106.py cleanup \
+            --target "$TARGET" --state "$STATE" --receipt "$RECEIPT"
+
+      - name: Upload redacted B-106 receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-1662-b106-receipt-${{ github.run_id }}
+          path: artifacts/issue-1662-b106-receipt.json
+          if-no-files-found: error
+          retention-days: 30
