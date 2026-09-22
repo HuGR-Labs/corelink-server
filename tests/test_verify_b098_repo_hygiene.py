@@ -28,8 +28,8 @@ class B098VerifierTests(unittest.TestCase):
         self.assertEqual(result.semver_tags, ())
         self.assertEqual(result.package_count, 95)
         self.assertEqual(result.crate_dir_count, 75)
-        self.assertEqual(result.okf_count, 170)
-        self.assertEqual((result.specs_schema_count, result.specs_yaml_only_count), (481, 11))
+        self.assertEqual(result.okf_count, 172)
+        self.assertEqual((result.specs_schema_count, result.specs_yaml_only_count), (487, 11))
 
     def test_lint_inheritance_mutation_reopens_the_guard(self) -> None:
         tracker = (ROOT / "crates/corelink-runbook-tracker/Cargo.toml").read_text()
@@ -44,13 +44,13 @@ class B098VerifierTests(unittest.TestCase):
 
     def test_each_documented_population_count_is_mutation_sensitive(self) -> None:
         claude = (ROOT / "CLAUDE.md").read_text()
-        mutated = claude.replace("**170 OKF concepts**", "**169 OKF concepts**", 1)
+        mutated = claude.replace("**172 OKF concepts**", "**171 OKF concepts**", 1)
         result = verifier.audit(ROOT, claude_text=mutated)
         self.assertTrue(any("okf_count" in issue for issue in result.issues))
 
         mutated = claude.replace(
-            "**481 full-schema + 11 YAML-only (492 total)",
-            "**480 full-schema + 11 YAML-only (491 total)",
+            "**487 full-schema + 11 YAML-only (498 total)",
+            "**486 full-schema + 11 YAML-only (497 total)",
             1,
         )
         result = verifier.audit(ROOT, claude_text=mutated)
@@ -65,11 +65,11 @@ class B098VerifierTests(unittest.TestCase):
         self.assertFalse(verifier.SEMVER_TAG.fullmatch("v01.2.3"))
 
     def test_only_canonical_ga_tag_can_change_closure_status(self) -> None:
-        base = verifier.Audit(95, 75, 170, 480, 11, ("v0.1.0",), ())
+        base = verifier.Audit(95, 75, 172, 487, 11, ("v0.1.0",), ())
         self.assertEqual(base.status, "open")
-        canonical = verifier.Audit(95, 75, 170, 480, 11, ("v1.0.0-GA",), ())
+        canonical = verifier.Audit(95, 75, 172, 487, 11, ("v1.0.0-GA",), ())
         self.assertEqual(canonical.status, "ready-to-close")
-        invalid = verifier.Audit(95, 75, 170, 480, 11, ("v1.0.0-GA",), ("bad signature",))
+        invalid = verifier.Audit(95, 75, 172, 487, 11, ("v1.0.0-GA",), ("bad signature",))
         self.assertEqual(invalid.status, "invalid")
 
     def test_cut_contract_is_signed_strict_and_evidence_bound(self) -> None:
@@ -127,8 +127,8 @@ class B098VerifierTests(unittest.TestCase):
         for label, mutated in {"top-level": top_duplicate, "nested": nested_duplicate}.items():
             with self.subTest(label=label):
                 issues = verifier._check_governance_receipt(
-                    ROOT, (), package_count=95, crate_dir_count=75, okf_count=170,
-                    specs_schema_count=481, specs_yaml_only_count=11, receipt_text=mutated,
+                    ROOT, (), package_count=95, crate_dir_count=75, okf_count=172,
+                    specs_schema_count=487, specs_yaml_only_count=11, receipt_text=mutated,
                 )
                 self.assertTrue(any("receipt is invalid" in issue for issue in issues))
         policy = (ROOT / ".github/release-signing-policy.json").read_text().rstrip()[:-1]
@@ -189,8 +189,8 @@ class B098VerifierTests(unittest.TestCase):
 
         missing_root = ROOT / "this-root-does-not-exist"
         issues = verifier._check_governance_receipt(
-            missing_root, (), package_count=95, crate_dir_count=75, okf_count=170,
-            specs_schema_count=481, specs_yaml_only_count=11,
+            missing_root, (), package_count=95, crate_dir_count=75, okf_count=172,
+            specs_schema_count=487, specs_yaml_only_count=11,
         )
         self.assertTrue(any("receipt is missing" in issue for issue in issues))
 
@@ -229,8 +229,8 @@ class B098VerifierTests(unittest.TestCase):
                 mutated = deepcopy(baseline)
                 mutate(mutated)
                 issues = verifier._check_governance_receipt(
-                    ROOT, (), package_count=95, crate_dir_count=75, okf_count=170,
-                    specs_schema_count=481, specs_yaml_only_count=11,
+                    ROOT, (), package_count=95, crate_dir_count=75, okf_count=172,
+                    specs_schema_count=487, specs_yaml_only_count=11,
                     receipt_text=json.dumps(mutated),
                 )
                 self.assertTrue(issues, label)
@@ -281,8 +281,8 @@ class B098VerifierTests(unittest.TestCase):
                 needle, value = replacement
                 mutated_census = baseline.replace(needle, value, 1)
                 issues = verifier._check_governance_receipt(
-                    ROOT, (), package_count=95, crate_dir_count=75, okf_count=170,
-                    specs_schema_count=481, specs_yaml_only_count=11,
+                    ROOT, (), package_count=95, crate_dir_count=75, okf_count=172,
+                    specs_schema_count=487, specs_yaml_only_count=11,
                     receipt_text=receipt_text, census_text=mutated_census,
                 )
                 self.assertTrue(issues, label)
@@ -315,7 +315,7 @@ class B098VerifierTests(unittest.TestCase):
 
     def test_duplicate_spec_population_guard_fails_closed(self) -> None:
         claude = (ROOT / "CLAUDE.md").read_text()
-        census = "**481 full-schema + 11 YAML-only (492 total)"
+        census = "**487 full-schema + 11 YAML-only (498 total)"
         mutated = claude.replace(census, f"{census}\n{census}", 1)
         with self.assertRaises(verifier.VerificationError):
             verifier.audit(ROOT, claude_text=mutated)
