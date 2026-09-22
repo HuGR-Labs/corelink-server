@@ -110,7 +110,7 @@ LANES = (
         ".github/workflows/sbom.yml",
         "sbom-generate",
         (
-            "runs-on: [self-hosted, mac, corelink-builder]",
+            "runs-on: ubuntu-24.04",
             'name: "Verify committed Cargo.lock SBOM"',
             'SBOM_VENV="${RUNNER_TEMP}/corelink-sbom-venv"',
             '"$SBOM_PYTHON" tests/verify_rust_sbom.py --check',
