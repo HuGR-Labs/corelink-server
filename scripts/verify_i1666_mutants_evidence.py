@@ -22,6 +22,7 @@ def verify(text: str) -> None:
         '"run_id": os.environ["GITHUB_RUN_ID"]',
         '"sha": os.environ["GITHUB_SHA"]',
         '"status": os.environ["JOB_STATUS"]',
+        '"mutation_output": "mutants.out/"',
         "name: Upload hosted mutants evidence",
         UPLOAD_SHA,
         "name: mutants-evidence-${{ github.run_id }}-${{ github.run_attempt }}",
