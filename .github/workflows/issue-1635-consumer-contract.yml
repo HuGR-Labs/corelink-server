@@ -6,6 +6,7 @@ on:
       - .github/workflows/issue-1635-consumer-contract.yml
       - docs/operator/issue-1635-consumer-contract.md
       - scripts/verify_i1635_consumer_contract.py
+      - tests/test_verify_i1635_consumer_contract.py
   workflow_dispatch:
 
 permissions:
@@ -13,7 +14,7 @@ permissions:
 
 jobs:
   contract:
-    name: validate typed usage acknowledgements
+    name: validate server usage acknowledgement wire
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -21,21 +22,31 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.2.2
         with:
           persist-credentials: false
-      - name: Build mixed acknowledgement fixture
+      - name: Build literal server mixed response and submitted batch
         run: |
-          cat > "$RUNNER_TEMP/i1635-ack.json" <<'JSON'
+          cat > "$RUNNER_TEMP/i1635-request.json" <<'JSON'
+          [
+            {"tenant_id":"11111111-1111-4111-8111-111111111111","event_kind":"runner_slot_seconds","qty":7200,"billing_period":"2026-06","region":"iad","source":"corelink/runner/iad","time_ms":1718000000000,"idem_key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+            {"tenant_id":"11111111-1111-4111-8111-111111111111","event_kind":"runner_slot_seconds","qty":7200,"billing_period":"2026-06","region":"iad","source":"corelink/runner/iad","time_ms":1718000000000,"idem_key":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+            {"tenant_id":"invalid","event_kind":"runner_slot_seconds","qty":7200,"billing_period":"2026-06","region":"iad","source":"corelink/runner/iad","time_ms":1718000000000,"idem_key":"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"}
+          ]
+          JSON
+          cat > "$RUNNER_TEMP/i1635-response.json" <<'JSON'
           {
-            "schema_version": 1,
-            "batch_id": "fixture-mixed-outcomes",
             "outcomes": [
-              {"event_id": "evt-accepted", "status": "accepted", "reason": "stored"},
-              {"event_id": "evt-deduped", "status": "deduped", "reason": "exact_replay"},
-              {"event_id": "evt-conflict", "status": "conflicting", "reason": "payload_mismatch"},
-              {"event_id": "evt-rejected", "status": "rejected", "reason": "invalid_record"},
-              {"event_id": "evt-ambiguous", "status": "ambiguous", "reason": "transport_unknown"}
+              {"index": 0, "idem_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "accepted"},
+              {"index": 1, "idem_key": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "outcome": "deduped"},
+              {"index": 2, "idem_key": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "outcome": "rejected", "reason": "bad_tenant_id"}
             ],
-            "settlement_event_ids": ["evt-accepted", "evt-deduped"]
+            "accepted": 1,
+            "deduped": 1,
+            "rejected": 1,
+            "total": 2
           }
           JSON
-      - name: Validate consumer contract
-        run: python3 scripts/verify_i1635_consumer_contract.py "$RUNNER_TEMP/i1635-ack.json"
+      - name: Validate mixed 202 receipt
+        run: python3 scripts/verify_i1635_consumer_contract.py --status 202 --request "$RUNNER_TEMP/i1635-request.json" --response "$RUNNER_TEMP/i1635-response.json"
+      - name: Validate outcome and status mutations
+        run: python3 tests/test_verify_i1635_consumer_contract.py
+      - name: Validate bodyless backend uncertainty
+        run: python3 scripts/verify_i1635_consumer_contract.py --status 503 --no-body
