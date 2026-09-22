@@ -5,8 +5,21 @@ fn release_workflow_preserves_the_installer_and_signer_contract_and_rejects_muta
 ) -> Result<(), String> {
     let workflow = release_workflow()?;
     assert_release_contract(&workflow);
+    assert_release_tag_shell_boundary(&workflow);
     assert_publication_inventory_contract(&workflow);
     assert_retry_manifest_contract(&workflow);
+
+    let unvalidated_release_command = workflow.replace(
+        "gh release upload \"${TAG}\"",
+        "gh release upload \"${{ inputs.release_tag }}\"",
+    );
+    assert!(
+        std::panic::catch_unwind(|| {
+            assert_release_tag_shell_boundary(&unvalidated_release_command)
+        })
+        .is_err(),
+        "a release command bypassing validated output must fail the structural control"
+    );
 
     let stale_home = workflow.replace("HuGR-Labs/corelink-cli", "HumanGuardrail/corelink-cli");
     assert!(
