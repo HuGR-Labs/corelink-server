@@ -17,6 +17,7 @@ V1_PATH = "/v1/webhook_endpoints"
 V2_PATH = "/v2/core/event_destinations"
 PAGE_SIZE = "100"
 MAX_PAGES = 1000
+V2_WEBHOOK_URL_INCLUDE = ("include[0]", "webhook_endpoint.url")
 
 
 class InventoryError(RuntimeError):
@@ -71,12 +72,15 @@ def _v2_next_params(next_url: str) -> list[tuple[str, str]]:
     params = parse_qsl(parsed.query, keep_blank_values=True)
     if not params:
         raise InventoryError("Stripe v2 continuation URL has no pagination query")
+    includes = [value for key, value in params if key == V2_WEBHOOK_URL_INCLUDE[0]]
+    if includes != [V2_WEBHOOK_URL_INCLUDE[1]]:
+        raise InventoryError("Stripe v2 continuation URL did not preserve the webhook URL include")
     return params
 
 
 def collect_v2(fetch: PageFetcher) -> dict:
     rows: list[dict] = []
-    params = [("limit", PAGE_SIZE)]
+    params = [("limit", PAGE_SIZE), V2_WEBHOOK_URL_INCLUDE]
     seen_pages: set[tuple[tuple[str, str], ...]] = set()
     for _ in range(MAX_PAGES):
         fingerprint = tuple(params)

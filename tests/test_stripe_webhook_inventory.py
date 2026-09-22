@@ -33,7 +33,11 @@ class StripeWebhookInventoryTests(unittest.TestCase):
     def test_v2_follows_the_next_page_url_query(self) -> None:
         cursor = "opaque_cursor_2"
         next_url = "https://api.stripe.com/v2/core/event_destinations?" + urlencode(
-            [("limit", "100"), ("starting_after", cursor)]
+            [
+                ("limit", "100"),
+                ("include[0]", "webhook_endpoint.url"),
+                ("starting_after", cursor),
+            ]
         )
         calls: list[tuple[str, list[tuple[str, str]]]] = []
 
@@ -47,9 +51,28 @@ class StripeWebhookInventoryTests(unittest.TestCase):
 
         self.assertEqual([row["id"] for row in result["data"]], ["ed_first", "ed_last"])
         self.assertEqual(calls, [
-            ("/v2/core/event_destinations", [("limit", "100")]),
-            ("/v2/core/event_destinations", [("limit", "100"), ("starting_after", cursor)]),
+            (
+                "/v2/core/event_destinations",
+                [("limit", "100"), ("include[0]", "webhook_endpoint.url")],
+            ),
+            (
+                "/v2/core/event_destinations",
+                [
+                    ("limit", "100"),
+                    ("include[0]", "webhook_endpoint.url"),
+                    ("starting_after", cursor),
+                ],
+            ),
         ])
+
+    def test_v2_rejects_a_continuation_that_drops_the_webhook_url_include(self) -> None:
+        next_url = "https://api.stripe.com/v2/core/event_destinations?starting_after=ed_next"
+
+        def fetch(path: str, params: list[tuple[str, str]]) -> dict:
+            return {"data": [{"id": "ed_first"}], "next_page_url": next_url}
+
+        with self.assertRaisesRegex(InventoryError, "did not preserve the webhook URL include"):
+            collect_v2(fetch)
 
     def test_v2_rejects_continuation_urls_outside_stripe_api(self) -> None:
         def fetch(path: str, params: list[tuple[str, str]]) -> dict:
