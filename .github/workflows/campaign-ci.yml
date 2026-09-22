@@ -36,6 +36,7 @@ on:
           - i1700
           - i1687
           - i1688
+          - i1663
           - i1650-contract
           - i1649-contract
           - i1659-dry
@@ -373,6 +374,15 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest -q tests/test_validate_load_target_receipt.py 2>&1 | tee artifacts/campaign-ci/i1688.log
+
+      - name: i1663 exact adapter cache store phase test
+        if: ${{ inputs.suite == 'i1663' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_name='adapter_cache::tests::put_records_the_store_phase_exactly_once'
+          cargo test --locked -p corelink-container --lib "$test_name" -- --exact --nocapture 2>&1 | tee artifacts/campaign-ci/i1663.log
+          grep -F "test ${test_name} ... ok" artifacts/campaign-ci/i1663.log
 
       - name: i1650 credential-free ignored-harness manifest contract
         if: ${{ inputs.suite == 'i1650-contract' }}
