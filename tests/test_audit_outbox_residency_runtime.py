@@ -43,6 +43,15 @@ def test_migration_rejects_missing_or_mismatched_tenant_without_rewriting_histor
     assert "DELETE FROM audit_outbox" not in text
 
 
+def test_trigger_writer_does_not_default_missing_tenant_to_a_region() -> None:
+    text = (ROOT / "migrations/d1/0115_gc_purge_fence.sql").read_text(
+        encoding="utf-8"
+    )
+    assert "INSERT OR IGNORE INTO audit_outbox" in text
+    assert "(SELECT primary_region FROM tenant WHERE tenant_id = NEW.tenant_id)" in text
+    assert "COALESCE((SELECT primary_region FROM tenant" not in text
+
+
 def test_migration_trigger_rejects_unknown_tenant_and_allows_public_namespace() -> None:
     connection = sqlite3.connect(":memory:")
     connection.executescript(
