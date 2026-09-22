@@ -494,9 +494,12 @@ jobs:
         timeout-minutes: 10
         with:
           tool: cargo-mutants@27.0.0
-          # Never fall back to an unpinned source install on the shared Mac.
-          # A missing prebuilt asset is an explicit installer failure.
-          fallback: none
+          # Keep the version pin and checksum verification while allowing the
+          # action's pinned cargo-binstall fallback when the release asset is
+          # temporarily unavailable on the self-hosted runner.
+          # `cargo-install` remains disabled: compiling on the shared Mac can
+          # contend with the workspace and hide the real mutation result.
+          fallback: cargo-binstall
 
       - name: cargo-mutants workspace
         timeout-minutes: 225

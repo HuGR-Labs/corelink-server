@@ -100,7 +100,7 @@ LANES = (
             "timeout-minutes: 240",
             "taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b",
             "tool: cargo-mutants@27.0.0",
-            "fallback: none",
+            "fallback: cargo-binstall",
             "timeout-minutes: 225",
             "cargo mutants --workspace --no-shuffle --minimum-test-timeout=600",
         ),
