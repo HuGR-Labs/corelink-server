@@ -74,6 +74,26 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+      - name: teardown synthetic staging state
+        if: always() && steps.target.outcome == 'success'
+        env:
+          B103_TARGET_HOST: https://staging.corelink.humangr.com
+          B103_TEARDOWN_TOKEN: ${{ secrets.K6_STAGING_TEARDOWN_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${B103_TEARDOWN_TOKEN:-}" || {
+            echo "::error::K6_STAGING_TEARDOWN_TOKEN is required; refusing unmanaged synthetic state"
+            exit 1
+          }
+          payload=$(printf '{"run_id":"%s","scenario":"b103-cargo-write"}' "${GITHUB_RUN_ID}")
+          timeout 30s curl --fail --silent --show-error --location \
+            --request POST \
+            --header "Authorization: Bearer ${B103_TEARDOWN_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data "${payload}" \
+            "${B103_TARGET_HOST}/_internal/load-test/teardown" \
+            --output /dev/null
+
       - name: preserve red verdict
         if: always()
         env:
