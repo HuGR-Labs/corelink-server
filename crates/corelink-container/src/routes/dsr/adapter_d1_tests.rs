@@ -249,6 +249,15 @@ fn classification_gate_rejects_unknown_table_fail_closed() {
 }
 
 #[test]
+fn runner_entitlement_reconcile_fence_is_registered_for_tenant_erasure() {
+    let table = "runner_entitlement_reconcile_fence";
+    assert!(ALL_TENANT_KEYED_TABLES.contains(&table));
+    assert!(TENANT_ID_TABLES.contains(&table));
+    assert_eq!(classification_count(table), 1);
+    assert!(!RETAIN_SET.contains(&table));
+}
+
+#[test]
 fn epoch_contract_tables_are_retained_and_new_intents_are_erased() {
     for table in [
         "audit_chain_epoch_ledger",

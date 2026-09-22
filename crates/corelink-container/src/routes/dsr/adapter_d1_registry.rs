@@ -62,6 +62,9 @@ pub(super) const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "cas_tombstone",
     "pilot_tenants",
     "runners_entitlement",
+    // Runner entitlement reconciliation fence (migr. 0139/0140) is
+    // tenant-scoped operational ordering state; erase it with its tenant.
+    "runner_entitlement_reconcile_fence",
     "monthly_request_counts",
     "tier_selection_locks",
     "stripe_checkout_sessions",
