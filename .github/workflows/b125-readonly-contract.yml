@@ -1,12 +1,13 @@
-name: B-125 read-only aggregate contract
+name: B-125 read-only evidence contract
 
-# Credentialless PR gate for the bounded #1668 correction. This workflow only
-# exercises the redacted aggregate shape and never dispatches the D1 read lane.
+# Credentialless PR gate for the bounded #1668 correction. It verifies the
+# aggregate and sanitized provider-error contracts without dispatching D1 reads.
 on:
   pull_request:
     paths:
       - ".github/workflows/b125-audit-throughput-read-only.yml"
       - ".github/workflows/b125-readonly-contract.yml"
+      - "scripts/b125_readonly_diagnostics.py"
       - "tests/test_b125_readonly_workflow.py"
       - "tests/fixtures/b125-d1-aggregate-*.json"
   workflow_dispatch:
@@ -20,7 +21,7 @@ concurrency:
 
 jobs:
   aggregate-shape:
-    name: B-125 hosted aggregate shape
+    name: B-125 hosted evidence contract
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -35,5 +36,5 @@ jobs:
           python-version: "3.12"
       - name: Install the pinned focused test runner
         run: python -m pip install --disable-pip-version-check --no-input pytest==9.0.2
-      - name: Verify the B-125 aggregate contract
+      - name: Verify the B-125 read-only evidence contract
         run: python -m pytest -q tests/test_b125_readonly_workflow.py
