@@ -751,7 +751,7 @@ jobs:
           test "${STAGING_ASSET_COUNT}" = "0"
 
   release-slsa3:
-    needs: [final-manifest, release-readiness]
+    needs: [final-manifest, release-readiness, release]
     # Called workflows cannot elevate the caller's token permissions. Grant
     # OIDC only to this provenance call; all other release jobs retain the
     # workflow-level contents:read default.
@@ -768,7 +768,7 @@ jobs:
 
   publish-release:
     name: publish verified signed release
-    needs: [release-slsa3, release-readiness, final-manifest]
+    needs: [release-slsa3, release-readiness, final-manifest, release]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout release inventory verifier
