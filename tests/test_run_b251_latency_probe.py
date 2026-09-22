@@ -37,8 +37,12 @@ def marker(p99_us: int = 17, **overrides: object) -> str:
     return MODULE.PROBE_MARKER + json.dumps(payload)
 
 
-def test_parse_probe_output_accepts_strictly_under_limit() -> None:
+def test_parse_probe_output_accepts_under_limit() -> None:
     assert MODULE.parse_probe_output(marker())["p99_us"] == 17
+
+
+def test_parse_probe_output_accepts_inclusive_limit() -> None:
+    assert MODULE.parse_probe_output(marker(5000))["p99_us"] == 5000
 
 
 @pytest.mark.parametrize(
@@ -46,7 +50,7 @@ def test_parse_probe_output_accepts_strictly_under_limit() -> None:
     [
         ("", "exactly one"),
         (marker() + "\n" + marker(), "exactly one"),
-        (marker(5000), "exceeded 5ms"),
+        (marker(5001), "exceeded 5ms"),
         (marker(sample_count=999), "exactly 1,000"),
         (marker(production_latency_measured=True), "falsely claimed production"),
     ],
