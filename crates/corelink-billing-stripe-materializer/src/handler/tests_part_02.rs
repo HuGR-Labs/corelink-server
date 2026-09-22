@@ -87,6 +87,7 @@ fn subscription_deleted_marks_canceled_and_preserves_historical_tier() {
                 "id": "sub_1",
                 "status": "canceled",
                 "metadata": { "tenant_id": "ten_1" },
+                "plan": { "id": "plan_pro" },
             }
         }),
     );
@@ -229,6 +230,7 @@ fn subscription_deleted_takes_downgrade_path_not_grant_path() {
                 "id": "sub_1",
                 "status": "canceled",
                 "metadata": { "tenant_id": "ten_1" },
+                "plan": { "id": "plan_pro" },
             }
         }),
     );
