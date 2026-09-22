@@ -52,6 +52,7 @@ on:
           - i1670-enospc-linker
           - i1680-schema-contract
           - i1792-miniflare-epoch
+          - i2013-migration-replay
 
 permissions:
   contents: read
@@ -385,6 +386,19 @@ jobs:
             python3 scripts/test_terraform_drift_state_contract.py
             bash -n scripts/terraform_drift_plan.sh
           } 2>&1 | tee artifacts/campaign-ci/i1721.log
+
+      - name: i2013 migration replay and additive property gates
+        if: ${{ inputs.suite == 'i2013-migration-replay' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            python3 scripts/test_terraform_drift_region_contract.py
+            cargo test --locked -p corelink-ops \
+              --test migrations_d1_migration_integration -- --nocapture
+            cargo test --locked -p corelink-ops \
+              --test migrations_prop_migration_additivity -- --nocapture
+          } 2>&1 | tee artifacts/campaign-ci/i2013-migration-replay.log
 
       - name: i1665 B-112 hosted release-chain contract
         if: ${{ inputs.suite == 'i1665' }}
