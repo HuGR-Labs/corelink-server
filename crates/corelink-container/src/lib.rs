@@ -114,6 +114,10 @@ pub mod byte_accounting;
 /// All cache-plane concurrency budgets derive from this module's basic
 /// (1 GiB / 0.25 vCPU) truth.
 pub mod container_capacity;
+/// Native Stripe current-subscription authority used by Runner entitlement
+/// reconciliation. The module is intentionally separate from webhook parsing
+/// so delivery payloads cannot become the provider authority by accident.
+pub mod current_subscription_authority;
 /// Production D1-backed customer-dashboard handler (dashboard revival
 /// WP-3): [`customer_d1::D1CustomerHandler`] implements all 6
 /// `corelink-handler-customer` traits over the CF D1 REST API
