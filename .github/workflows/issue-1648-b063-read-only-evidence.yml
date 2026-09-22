@@ -60,8 +60,14 @@ jobs:
         run: python3 scripts/verify_b063_hosted_evidence_workflow.py
 
   live-read-only:
-    if: github.event_name == 'workflow_dispatch' && inputs.run_live == 'true'
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.ref_protected == true &&
+      inputs.run_live == 'true'
     runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
     timeout-minutes: 10
     env:
       CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
