@@ -20,7 +20,9 @@ class TimingError(ValueError):
 
 _SAMPLE = re.compile(
     r"^(?:ordinal|sample)=(?P<ordinal>[0-9]+)\s+status=(?P<status>[0-9]+)"
-    r"(?:\s+bytes=(?P<bytes>[0-9]+))?\s+wall_s=(?P<wall>[0-9]+(?:\.[0-9]+)?)$"
+    r"(?:\s+bytes=(?P<bytes>[0-9]+))?\s+wall_s=(?P<wall>[0-9]+(?:\.[0-9]+)?)"
+    r"(?:\s+request_id=(?P<request_id>[A-Za-z0-9._:-]{1,128})"
+    r"\s+cf_ray=(?P<cf_ray>[A-Za-z0-9._:-]{1,128}))?$"
 )
 _PHASE = re.compile(
     r"(?P<name>[a-z][a-z0-9_-]*);dur=(?P<dur>[0-9]+(?:\.[0-9]+)?)"
@@ -63,7 +65,9 @@ def _phases(header: str) -> tuple[dict[str, float], dict[str, str]]:
     return values, descriptions
 
 
-def _records(path: Path, expected: int) -> list[tuple[int, int, int | None, float, dict[str, float], dict[str, str]]]:
+def _records(
+    path: Path, expected: int, require_identities: bool = False
+) -> list[tuple[int, int, int | None, float, dict[str, float], dict[str, str]]]:
     current: tuple[int, int, int | None, float] | None = None
     records: list[tuple[int, int, int | None, float, dict[str, float], dict[str, str]]] = []
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -72,6 +76,8 @@ def _records(path: Path, expected: int) -> list[tuple[int, int, int | None, floa
         if match:
             if current is not None:
                 raise TimingError("sample has no Server-Timing header")
+            if require_identities and (not match.group("request_id") or not match.group("cf_ray")):
+                raise TimingError("write sample is missing request/colo identity")
             current = (
                 int(match.group("ordinal")),
                 int(match.group("status")),
@@ -94,8 +100,8 @@ def _records(path: Path, expected: int) -> list[tuple[int, int, int | None, floa
     return records
 
 
-def verify_writes(path: Path) -> None:
-    for ordinal, status, payload_bytes, wall_s, values, _ in _records(path, 3):
+def verify_writes(path: Path, require_identities: bool = False) -> None:
+    for ordinal, status, payload_bytes, wall_s, values, _ in _records(path, 3, require_identities):
         if status < 200 or status >= 300 or payload_bytes != 1024:
             raise TimingError("writes require 2xx status and exactly 1024 uploaded bytes")
         if wall_s <= 0:
@@ -140,10 +146,16 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--writes", action="store_true")
     mode.add_argument("--reads", action="store_true")
+    parser.add_argument("--require-identities", action="store_true")
     parser.add_argument("artifact", type=Path)
     args = parser.parse_args()
     try:
-        (verify_writes if args.writes else verify_reads)(args.artifact)
+        if args.writes:
+            verify_writes(args.artifact, require_identities=args.require_identities)
+        else:
+            if args.require_identities:
+                parser.error("--require-identities applies only to --writes")
+            verify_reads(args.artifact)
     except (OSError, TimingError) as exc:
         parser.error(str(exc))
     return 0

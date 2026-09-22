@@ -52,6 +52,14 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install focused test runner
+        run: python3 -m pip install --disable-pip-version-check --no-input pytest==9.0.2
+      - name: Run D03 timing receipt mutation coverage
+        run: python3 -m pytest -q scripts/test_verify_d03_timing_artifact.py
       - name: Verify fail-closed production lane contract
         run: python3 scripts/verify_i1667_b122_production_lane.py
 
@@ -119,7 +127,7 @@ jobs:
               set +e
               timeout 25s curl --connect-timeout 10 --max-time 20 --silent --show-error \
                 --output /dev/null --dump-header "${headers}" \
-                --write-out "ordinal=${ordinal} status=%{http_code} bytes=%{size_upload} wall_s=%{time_total}\n" \
+                --write-out "ordinal=${ordinal} status=%{http_code} bytes=%{size_upload} wall_s=%{time_total} request_id=%header{x-request-id} cf_ray=%header{cf-ray}\n" \
                 -H "Authorization: Bearer ${PAT}" \
                 -H 'Content-Type: application/octet-stream' "${detail[@]}" \
                 -X PUT "${BASE}/cargo/${TENANT}/${profile}-${GITHUB_RUN_ID}-${ordinal}" \
@@ -141,8 +149,8 @@ jobs:
           REGION: ${{ inputs.region }}
         run: |
           set -euo pipefail
-          python3 scripts/verify_d03_timing_artifact.py --writes artifacts/b122/b102-warm.txt > artifacts/b122/shape-check-b102.txt
-          python3 scripts/verify_d03_timing_artifact.py --writes artifacts/b122/b107-separated.txt > artifacts/b122/shape-check-b107.txt
+          python3 scripts/verify_d03_timing_artifact.py --writes --require-identities artifacts/b122/b102-warm.txt > artifacts/b122/shape-check-b102.txt
+          python3 scripts/verify_d03_timing_artifact.py --writes --require-identities artifacts/b122/b107-separated.txt > artifacts/b122/shape-check-b107.txt
           python3 - "${SERVING_SHA}" "${REGION}" <<'PY'
           import json
           import pathlib
