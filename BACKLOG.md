@@ -7477,42 +7477,50 @@ independently. Therefore neither bot authorship nor a zero-job
 `startup_failure` proves token suppression. A present run, check, or status
 also does not prove that CI executed or passed.
 
-The five active auto-PR creators now mint a repository-scoped, one-hour GitHub
-App installation token per job from `CORELINK_BOT_APP_ID` and
-`CORELINK_BOT_APP_PRIVATE_KEY`; those App secrets remain absent in the
-read-only inventory. For **automatic, unapproved** PR CI, the owner creates a
-private App installed only on this repository with `contents:write` and
-`pull_requests:write`. No installation token or PAT is stored as a durable bot
-credential. Do not reuse a release credential.
-This token cannot repair Actions startup failure, hosted-billing limits, or an
-offline/missing runner labelled `corelink`. Bot-PR CI is established only when
-the expected jobs actually complete on viable capacity, with no approval
-pending, and the owner records the run/job evidence.
+The five active auto-PR creators mint a repository-scoped, one-hour GitHub App
+installation token per job from `CORELINK_BOT_APP_ID` and
+`CORELINK_BOT_APP_PRIVATE_KEY`. On 2026-09-22, the owner installed the private
+`corelink-bot-ci` App only on `HuGR-dev/corelink-server`, with
+`contents:write`, `metadata:read`, and `pull_requests:write`, and confirmed the
+two required Actions secret names are present while `BOT_PR_TOKEN` is absent.
+No installation token or PAT is stored as a durable bot credential. Do not
+reuse a release credential.
+
+**Closure evidence (2026-09-22):** App-authored proof PR #2093 was opened,
+required no approval, and received successful hosted DCO and rustfmt jobs;
+the PR was closed unmerged and its temporary branch deleted. The sanitized
+receipt is `evidence/owner-actions/B-012/bot-pr-checks.json`, with the issue
+evidence comment at
+https://github.com/HuGR-dev/corelink-server/issues/1642#issuecomment-5785376771.
+This proves those hosted checks can run for an App-authored PR. It does not
+claim that the five automatic creator workflows or the separate self-hosted
+`corelink` runner were exercised. The bot credential cannot repair Actions
+startup failure, hosted-billing limits, or an offline/missing `corelink`
+runner.
 
 **Owner decision brief (2026-08-24):** `docs/internal/2026-08-24-owner-decision-brief.md` states what is true
 today, what each option costs, and what happens if the answer is "not now".
 
-**Owner-only credential action:** inspect approved dedicated credentials first,
-then create/install the private App in the authenticated GitHub account flow if
-it does not exist. Store only its numeric ID and PEM private key as
-`CORELINK_BOT_APP_ID` and `CORELINK_BOT_APP_PRIVATE_KEY`; the workflow already
-mints per-job tokens and fails closed when either is absent. Restore Actions job
-startup and `corelink` runner capacity as separate prerequisites before a
-harmless proof PR; neither is solved by the credential itself.
+**Owner-only credential action:** completed. The dedicated private App is
+installed only on the target repository, and its ID and private key are stored
+as the two repository Actions secrets. The workflows mint per-job tokens and
+fail closed when either secret is absent.
 
 ```backlog
 id: B-012
 repo: corelink-server
 owner: owner
-status: open
+status: done
 action-packet: docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
-verify: python3 -S scripts/verify_owner_action_packets.py --id B-012
+verify: python3 -S scripts/verify_owner_action_packets.py --id B-012 && python3 -S scripts/verify_b012_bot_pr_evidence.py
 verify-means: |
-  packet guard validates the bot-credential procedure and job-level evidence
-  schema, not live execution; B-012 remains open until the owner records a
-  bot-opened PR whose expected jobs completed on viable runners without pending
-  approval. Check/status presence or a zero-job workflow run does not close it.
-last-verified: 2026-09-05
+  done — sanitized owner receipt records the repo-scoped App installation,
+  secret-name metadata, and an App-authored proof PR whose hosted DCO and
+  rustfmt jobs completed successfully without approval. The verifier rejects
+  credential material, installation-ID fields, scope expansion, missing/failed
+  jobs, and a present legacy BOT_PR_TOKEN. This does not claim creator workflow
+  or self-hosted corelink-runner execution.
+last-verified: 2026-09-22
 ```
 
 ### B-013 — three private keys sitting in ~/Downloads

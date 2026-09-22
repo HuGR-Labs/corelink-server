@@ -41,7 +41,7 @@ EXPECTED_IDS = (
 # the other ten legacy rows remain owner-controlled until their actions are
 # evidenced and reclassified.
 LEGACY_OWNER_IDS = frozenset(EXPECTED_IDS[:12]) - {"B-013", "B-110"}
-CLOSED_PACKET_IDS = frozenset({"B-013", "B-110", "B-165"})
+CLOSED_PACKET_IDS = frozenset({"B-012", "B-013", "B-110", "B-165"})
 B089_SURFACES = (
     "legal/sla/v1.0.0.md",
     "apps/docs/src/pages/legal/terms.tsx",
@@ -1114,10 +1114,11 @@ def _check_item(
     canonical_owner, canonical_status = backlog_contracts[expected_id]
     expected_owner = "owner" if expected_id in LEGACY_OWNER_IDS else "tl"
     allowed_statuses = {"open", "parked"}
-    # B-013 closes on its owner-authorized redacted deletion record, while
-    # B-110 closes after the owner selects the already-provisioned CoreLink
-    # Linux substrate and the four workflow migrations are evidenced. Other
-    # legacy owner items remain external-action pending by contract.
+    # B-012 closes on its sanitized App-authored PR and completed hosted-check
+    # evidence; B-013 on its authorized redacted deletion record; B-110 after
+    # the owner selects the already-provisioned CoreLink Linux substrate and
+    # the four workflow migrations are evidenced. Other legacy owner items
+    # remain external-action pending by contract.
     if expected_id in CLOSED_PACKET_IDS:
         allowed_statuses.add("done")
     if canonical_owner != expected_owner or canonical_status not in allowed_statuses:

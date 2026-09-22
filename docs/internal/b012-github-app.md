@@ -99,49 +99,20 @@ and PRs. Never revoke release credentials as part of this procedure.
 
 ## Bounded proof probe and receipt
 
-After this change is merged and Actions job startup plus the `corelink` runner
-are confirmed healthy, run exactly one harmless creator probe. The owner must
-record only metadata in `evidence/owner-actions/B-012/bot-pr-checks.json`:
+After the App is installed and the repository secret names are present, open
+one harmless, App-authored proof PR and keep it unmerged. Record only the
+metadata in `evidence/owner-actions/B-012/bot-pr-checks.json`. The proof checks
+that a PR opened by the App can run the hosted DCO and rustfmt jobs. It does
+not exercise the five scheduled creator workflows or prove that the separate
+`corelink` runner is available.
 
-```json
-{
-  "schema_version": 1,
-  "captured_at": "<UTC>",
-  "repository": "HuGR-dev/corelink-server",
-  "bot_identity": "corelink-bot-ci[bot]",
-  "credential_kind": "app",
-  "app_installation_id": "<numeric id>",
-  "pr_number": "<number>",
-  "workflow_runs": [
-    {
-      "run_id": "<id>",
-      "workflow": "dco-check",
-      "url": "https://github.com/HuGR-dev/corelink-server/actions/runs/<id>",
-      "conclusion": "success",
-      "started_at": "<UTC>",
-      "completed_at": "<UTC>",
-      "job_count": 1,
-      "job_urls": ["https://github.com/HuGR-dev/corelink-server/actions/runs/<id>/job/<id>"]
-    },
-    {
-      "run_id": "<id>",
-      "workflow": "rustfmt",
-      "url": "https://github.com/HuGR-dev/corelink-server/actions/runs/<id>",
-      "conclusion": "success",
-      "started_at": "<UTC>",
-      "completed_at": "<UTC>",
-      "job_count": 1,
-      "job_urls": ["https://github.com/HuGR-dev/corelink-server/actions/runs/<id>/job/<id>"]
-    }
-  ],
-  "all_required_checks_observed": true,
-  "approval_state": "not_required",
-  "runner_names": ["ubuntu-latest"],
-  "reviewer": "<owner>"
-}
-```
+The canonical receipt is `evidence/owner-actions/B-012/bot-pr-checks.json`;
+`scripts/verify_b012_bot_pr_evidence.py` enforces its exact schema and the
+hosted-job, scope, and redaction requirements.
 
-The receipt is valid only when both hosted jobs completed successfully, the PR
-was created by the App identity, no approval was pending, and no zero-job or
-`startup_failure` run was used as proof. This runtime receipt is the boundary
-for closing issue #1642; the repository verifier cannot fabricate it.
+Never record the installation ID, App private key, JWT, installation token,
+or secret values. The receipt is valid only when both hosted jobs completed
+successfully, the PR was created by the App identity, no approval was pending,
+and no zero-job or `startup_failure` run was used as proof. This runtime
+receipt is the boundary for closing issue #1642; the repository verifier
+cannot fabricate it.
