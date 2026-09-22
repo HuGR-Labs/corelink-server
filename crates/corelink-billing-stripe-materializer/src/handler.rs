@@ -610,7 +610,18 @@ impl D1SubscriptionStateHandler {
             })
             .collect::<Vec<_>>();
         let (current, authority_is_current) = match active.as_slice() {
-            [current] => (*current, true),
+            [current] if current.subscription_id == subscription_id => (*current, true),
+            // A cancellation for a replaced predecessor may legitimately resolve
+            // to the current successor, which must retain the tenant entitlement.
+            // A granting event for a different identity is not sufficient proof
+            // that this event's subscription is authoritative, so fail closed.
+            [current] if env.event_type == "customer.subscription.deleted" => (*current, true),
+            [current] => {
+                return Err(MaterializerError::Transient(format!(
+                    "Runners entitlement authority returned {} for event subscription {subscription_id}",
+                    current.subscription_id
+                )))
+            }
             [] => {
                 let Some(current) = snapshots.iter().find(|snapshot| {
                     snapshot.subscription_id == subscription_id
