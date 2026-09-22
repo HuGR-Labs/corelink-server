@@ -45,3 +45,42 @@ jobs:
       - name: cargo-mutants workspace
         timeout-minutes: 225
         run: cargo mutants --workspace --no-shuffle --minimum-test-timeout=600
+
+      - name: Write hosted mutants receipt
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          RECEIPT_PATH: ${{ runner.temp }}/mutants-receipt.json
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          receipt = {
+              "schema": "corelink.hosted-mutants-receipt.v1",
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "sha": os.environ["GITHUB_SHA"],
+              "ref": os.environ["GITHUB_REF"],
+              "runner_name": os.environ["RUNNER_NAME"],
+              "runner_os": os.environ["RUNNER_OS"],
+              "status": os.environ["JOB_STATUS"],
+              "mutation_output": "mutants.out/",
+          }
+          Path(os.environ["RECEIPT_PATH"]).write_text(
+              json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Upload hosted mutants evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mutants-receipt.json
+            mutants.out/
+          if-no-files-found: error
+          retention-days: 30
