@@ -1,0 +1,115 @@
+name: B-251 D03 read-only quota CAS probe
+
+# This is an operator-only lane. It runs the already ignored, in-memory probe
+# on a GitHub-hosted runner and never deploys, writes a remote target, or
+# changes the B-251 issue. A successful receipt is runtime evidence only.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "run-b251-d03-read-only" to run the bounded probe'
+        required: true
+        type: string
+      execution_target:
+        description: 'Read-only target label; must be github-hosted-read-only'
+        required: true
+        type: string
+      d02_seed:
+        description: 'D02 seed receipt identity'
+        required: true
+        type: string
+      d02_failure:
+        description: 'D02 failure receipt identity'
+        required: true
+        type: string
+      d02_blob:
+        description: 'D02 blob receipt identity'
+        required: true
+        type: string
+      d03_seed:
+        description: 'D03 observed seed receipt identity'
+        required: true
+        type: string
+      d03_failure:
+        description: 'D03 observed failure receipt identity'
+        required: true
+        type: string
+      d03_blob:
+        description: 'D03 observed blob receipt identity'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b251-d03-read-only-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: B-251 bounded 1000-sample probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Require explicit read-only dispatch and identities
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          TARGET: ${{ inputs.execution_target }}
+          D02_SEED: ${{ inputs.d02_seed }}
+          D02_FAILURE: ${{ inputs.d02_failure }}
+          D02_BLOB: ${{ inputs.d02_blob }}
+          D03_SEED: ${{ inputs.d03_seed }}
+          D03_FAILURE: ${{ inputs.d03_failure }}
+          D03_BLOB: ${{ inputs.d03_blob }}
+        run: |
+          set -euo pipefail
+          test "${CONFIRM}" = run-b251-d03-read-only
+          test "${TARGET}" = github-hosted-read-only
+          for value in "${D02_SEED}" "${D02_FAILURE}" "${D02_BLOB}" "${D03_SEED}" "${D03_FAILURE}" "${D03_BLOB}"; do
+            test -n "${value}"
+            test "${#value}" -le 256
+            case "${value}" in *[[:cntrl:]]*) exit 1 ;; esac
+          done
+          mkdir -p "${RUNNER_TEMP}/b251"
+          D02_SEED="${D02_SEED}" D02_FAILURE="${D02_FAILURE}" D02_BLOB="${D02_BLOB}" \
+          D03_SEED="${D03_SEED}" D03_FAILURE="${D03_FAILURE}" D03_BLOB="${D03_BLOB}" \
+          python3 - <<'PY'
+          import json, os
+          root = os.environ["RUNNER_TEMP"] + "/b251"
+          for name, source, prefix in (("d02.json", "D02", "D02"), ("d03.json", "D03-observed", "D03")):
+              payload = {"source": source, "seed": os.environ[f"{prefix}_SEED"], "failure": os.environ[f"{prefix}_FAILURE"], "blob": os.environ[f"{prefix}_BLOB"]}
+              with open(f"{root}/{name}", "w", encoding="utf-8") as handle:
+                  json.dump(payload, handle, sort_keys=True)
+                  handle.write("\n")
+          PY
+
+      - name: Run exact ignored probe and retain failure receipt
+        id: probe
+        env:
+          D02_IDENTITY: ${{ runner.temp }}/b251/d02.json
+          D03_IDENTITY: ${{ runner.temp }}/b251/d03.json
+        run: |
+          set +e
+          mkdir -p artifacts
+          python3 scripts/run_b251_latency_probe.py --allow-run \
+            --d02-identity "${D02_IDENTITY}" \
+            --observed-identity "${D03_IDENTITY}" \
+            --output artifacts/b251-d03-latency-receipt.json 2>&1 | tee artifacts/b251-d03-probe.log
+          status=${PIPESTATUS[0]}
+          echo "probe_exit=${status}" >> artifacts/b251-d03-probe.log
+          exit "${status}"
+
+      - name: Upload redacted receipt and failure log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b251-d03-read-only-probe-${{ github.run_id }}
+          path: artifacts/b251-d03-*
+          if-no-files-found: error
+          retention-days: 30
