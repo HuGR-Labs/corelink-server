@@ -33,12 +33,22 @@ class Buck2BuildReportTests(unittest.TestCase):
                 "renamed remote_cache_hits",
                 "string counter",
                 "negative counter",
+                "fractional counter",
+                "non-finite counter",
                 "inconsistent counters",
             ],
         )
 
     def test_each_counter_mutation_fails_closed(self) -> None:
-        for mutation in ("absent", "renamed", "type", "negative", "inconsistent"):
+        for mutation in (
+            "absent",
+            "renamed",
+            "type",
+            "negative",
+            "fractional",
+            "non-finite",
+            "inconsistent",
+        ):
             with self.subTest(mutation=mutation):
                 report = copy.deepcopy(_fixture())
                 metrics = report["build_metrics"]["metrics"]
@@ -50,6 +60,10 @@ class Buck2BuildReportTests(unittest.TestCase):
                     metrics["declared_actions"] = "4"
                 elif mutation == "negative":
                     metrics["remote_cache_hits"] = -1
+                elif mutation == "fractional":
+                    metrics["remote_cache_hits"] = 2.5
+                elif mutation == "non-finite":
+                    metrics["remote_cache_hits"] = float("nan")
                 elif mutation == "inconsistent":
                     metrics["remote_cache_hits"] = 5
                 with self.assertRaises(ReportError):

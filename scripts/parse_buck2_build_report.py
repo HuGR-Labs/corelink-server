@@ -134,6 +134,14 @@ def self_test() -> dict[str, Any]:
     mutations["negative counter"] = mutated
 
     mutated = copy.deepcopy(_fixture())
+    mutated["build_metrics"]["metrics"]["remote_cache_hits"] = 2.5
+    mutations["fractional counter"] = mutated
+
+    mutated = copy.deepcopy(_fixture())
+    mutated["build_metrics"]["metrics"]["remote_cache_hits"] = float("nan")
+    mutations["non-finite counter"] = mutated
+
+    mutated = copy.deepcopy(_fixture())
     mutated["build_metrics"]["metrics"]["remote_cache_hits"] = 5
     mutations["inconsistent counters"] = mutated
 
