@@ -23,7 +23,8 @@
 ## Notes
 
 - Cold runs: `buck2 clean` before each build; remote cache populated during warm phase.
-- Cache hit ratio derived from Buck2 build report JSON (`cache_hits / total_actions`).
+- Cache hit ratio derived from Buck2's documented build report metrics
+  (`build_metrics.metrics.remote_cache_hits / declared_actions`).
 - Threshold ≥ 80% maps to WI-S15-003 AC §8 + sprint contract R-S15-8.
 - Run locally: `./scripts/benchmark.sh`
 

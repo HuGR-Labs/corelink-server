@@ -239,24 +239,16 @@ jobs:
             exit 1
           fi
 
-          # Parse cache hit ratio from build report. Missing, malformed, or
-          # partial reports are failures: treating them as zero actions turns
-          # a broken cache assertion into a green run.
+          # Parse the documented pinned Buck2 report schema. The parser reads
+          # build_metrics.metrics.remote_cache_hits and declared_actions and
+          # rejects missing, renamed, typed, negative, fractional, or
+          # inconsistent counters. A broken cache assertion must stay red.
           test -s /tmp/warm-report.json || {
             echo "FAIL: warm build did not produce a report." >&2; exit 1;
           }
-          jq -e '
-            type == "object" and
-            (.cache_hits | type == "number") and
-            (.total_actions | type == "number") and
-            (.cache_hits >= 0) and (.total_actions > 0) and
-            (.cache_hits <= .total_actions)
-          ' /tmp/warm-report.json >/dev/null || {
-            echo "FAIL: warm build report is missing valid cache_hits/total_actions." >&2
-            exit 1
-          }
-          HITS=$(jq -er '.cache_hits' /tmp/warm-report.json)
-          TOTAL=$(jq -er '.total_actions' /tmp/warm-report.json)
+          COUNTERS="$(python3 -S "${GITHUB_WORKSPACE}/scripts/parse_buck2_build_report.py" \
+            --report /tmp/warm-report.json)"
+          read -r HITS TOTAL <<<"${COUNTERS}"
 
           echo "Cache hits: ${HITS} / ${TOTAL}"
 

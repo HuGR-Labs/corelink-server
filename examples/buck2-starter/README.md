@@ -100,10 +100,16 @@ Check the build report for cache hit details:
 
 ```bash
 buck2 build :hello --build-report /tmp/report.json
-jq '.cache_hits, .total_actions' /tmp/report.json
+python3 ../../scripts/parse_buck2_build_report.py --report /tmp/report.json
 # 3
 # 3
 ```
+
+The report parser reads Buck2's documented
+`build_metrics.metrics.remote_cache_hits` and
+`build_metrics.metrics.declared_actions` counters. The starter's
+`.buckconfig` enables `buck2.detailed_aggregated_metrics` so these counters
+are present in the pinned release's report.
 
 **Total elapsed: ≤ 5 minutes.**
 

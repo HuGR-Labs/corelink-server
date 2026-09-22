@@ -9,7 +9,7 @@
 #   STDOUT: summary table (median + p95 + cache-hit ratio)
 #   FILE:   BENCHMARK.md updated with new run results (default: ../BENCHMARK.md)
 #
-# Requirements: buck2, jq, bc, date
+# Requirements: buck2, python3, bc, date
 #
 # Exit codes:
 #   0 — benchmark completed; cache hit ratio >= 80 %
@@ -20,6 +20,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STARTER_DIR="$(dirname "${SCRIPT_DIR}")"
+REPO_ROOT="$(cd "${STARTER_DIR}/../.." && pwd)"
+REPORT_PARSER="${REPO_ROOT}/scripts/parse_buck2_build_report.py"
 
 # ── defaults ────────────────────────────────────────────────────────────────
 ITERATIONS=10
@@ -37,7 +39,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── dependency check ─────────────────────────────────────────────────────────
-for cmd in buck2 jq bc; do
+for cmd in buck2 python3 bc; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: '$cmd' not found in PATH." >&2
         exit 1
@@ -65,24 +67,10 @@ run_build() {
     echo "${elapsed} ${log_file}.report.json"
 }
 
-# ── helper: extract cache hits from buck2 build report ───────────────────────
-cache_hits_from_report() {
+# ── helper: extract documented counters from a Buck2 build report ────────────
+counters_from_report() {
     local report="$1"
-    if [[ -f "${report}" ]]; then
-        # Buck2 build report JSON: .cache_hits and .action_count fields
-        jq -r '(.cache_hits // 0) | tostring' "${report}" 2>/dev/null || echo "0"
-    else
-        echo "0"
-    fi
-}
-
-total_from_report() {
-    local report="$1"
-    if [[ -f "${report}" ]]; then
-        jq -r '(.total_actions // 1) | tostring' "${report}" 2>/dev/null || echo "1"
-    else
-        echo "1"
-    fi
+    python3 -S "${REPORT_PARSER}" --report "${report}"
 }
 
 # ── cold-cache runs ──────────────────────────────────────────────────────────
@@ -112,8 +100,7 @@ for i in $(seq 1 "${ITERATIONS}"); do
     buck2 clean 2>/dev/null || true
     read -r ms report_file <<<"$(run_build)"
     warm_times+=("${ms}")
-    hits=$(cache_hits_from_report "${report_file}")
-    actions=$(total_from_report "${report_file}")
+    read -r hits actions <<<"$(counters_from_report "${report_file}")"
     total_hits=$(( total_hits + hits ))
     total_actions=$(( total_actions + actions ))
     rm -f "${report_file}" 2>/dev/null || true
@@ -194,7 +181,8 @@ $(echo "scale=1; ${cold_median} / (${warm_median} + 1)" | bc)× median speedup (
 ## Notes
 
 - Cold runs: \`buck2 clean\` before each build; remote cache populated during warm phase.
-- Cache hit ratio derived from Buck2 build report JSON (\`cache_hits / total_actions\`).
+- Cache hit ratio derived from Buck2's documented build report metrics
+  (\`build_metrics.metrics.remote_cache_hits / declared_actions\`).
 - Threshold ≥ 80% maps to WI-S15-003 AC §8 + sprint contract R-S15-8.
 - Run this script weekly to track regression: \`./scripts/benchmark.sh\`.
 

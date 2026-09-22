@@ -1,0 +1,48 @@
+name: issue-2038 Buck2 report counter contract
+
+# Credentialless, hosted-only proof for the report parser. The real Buck2
+# dispatch remains separately bounded by WI-S15-003 and is never started here.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/buck2-starter-ci.yml"
+      - ".github/workflows/issue-2038-buck2-report-contract.yml"
+      - "examples/buck2-starter/.buckconfig"
+      - "examples/buck2-starter/README.md"
+      - "examples/buck2-starter/scripts/benchmark.sh"
+      - "scripts/parse_buck2_build_report.py"
+      - "tests/fixtures/buck2-warm-report-2026-08-01.json"
+      - "tests/test_parse_buck2_build_report.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/buck2-starter-ci.yml"
+      - ".github/workflows/issue-2038-buck2-report-contract.yml"
+      - "examples/buck2-starter/.buckconfig"
+      - "examples/buck2-starter/README.md"
+      - "examples/buck2-starter/scripts/benchmark.sh"
+      - "scripts/parse_buck2_build_report.py"
+      - "tests/fixtures/buck2-warm-report-2026-08-01.json"
+      - "tests/test_parse_buck2_build_report.py"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: verify pinned report fixture and mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run report parser fixture and mutation gate
+        run: python3 -S scripts/parse_buck2_build_report.py --self-test --json
+
+      - name: Run standard-library focused tests
+        run: PYTHONPATH=. python3 -S tests/test_parse_buck2_build_report.py
