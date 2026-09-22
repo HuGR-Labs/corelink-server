@@ -11,12 +11,12 @@ fn row(table: &str) -> MaterializedRow {
     }
 }
 
-fn runner_revision(
-    subscription_id: &str,
+fn runner_revision<'a>(
+    subscription_id: &'a str,
     subscription_created_at_ms: u64,
     stripe_event_created_at_ms: u64,
-    stripe_event_id: &str,
-) -> RunnerEntitlementRevision<'_> {
+    stripe_event_id: &'a str,
+) -> RunnerEntitlementRevision<'a> {
     RunnerEntitlementRevision {
         subscription_id,
         subscription_created_at_ms,
