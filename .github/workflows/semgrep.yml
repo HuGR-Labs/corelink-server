@@ -167,6 +167,10 @@ jobs:
           source .semgrep-venv/bin/activate
           python -m pip install --quiet --upgrade pip
           python -m pip install --quiet "semgrep==1.164.0"
+          # The canonical B-139 runner imports PyYAML to validate the
+          # workflow/rulepack contract before it emits SARIF. Semgrep's
+          # package does not guarantee that dependency in this venv.
+          python -m pip install --quiet "PyYAML==6.0.2"
           semgrep --version
           set +e
           semgrep scan \
