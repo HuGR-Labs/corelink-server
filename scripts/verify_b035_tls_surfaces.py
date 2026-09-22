@@ -7,9 +7,10 @@ until counsel publishes a superseding version or the owner raises the external
 Cloudflare floor.  ``--live`` performs one read-only GET of the Cloudflare zone
 setting; it never sends a write request and never prints credentials.
 
-The legal lines do not name individual hostnames.  This verifier consequently
-does not infer eight host mappings: the only external surface it can safely
-check is the zone mapping recorded by ADR-0072 and ``check_tls_floor.py``.
+The legal lines do not name individual hostnames.  The verifier therefore
+reports the configured ingress/custom-domain and egress surfaces as an
+explicit audit inventory, while the only live value it can safely check is
+the Cloudflare zone mapping recorded by ADR-0072 and ``check_tls_floor.py``.
 """
 
 from __future__ import annotations
@@ -34,6 +35,27 @@ API = "https://api.cloudflare.com/client/v4/zones/{zone}/settings/min_tls_versio
 # records that the Cloudflare cipher list was not audited or pinned.
 PROTOCOL_FLOOR = "1.2"
 CIPHER_POLICY = "external Cloudflare policy; no cipher-suite floor is claimed or verified"
+
+# Keep the contract audit honest about the traffic surfaces it covers.  These
+# are the hostnames declared by the Worker/Pages route manifests, plus the R2
+# endpoints used by the container.  Cloudflare's zone setting applies to every
+# proxied hostname in this zone; it does not configure TLS on an R2 origin.
+# The latter is deliberately recorded as a provider boundary rather than
+# inferred from the edge setting.
+NAMED_SURFACES = (
+    {"name": "corelink-api", "kind": "ingress", "hostname": "corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
+    {"name": "corelink-oci", "kind": "ingress", "hostname": "corelink-oci.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
+    {"name": "regional-api-sam", "kind": "custom_domain", "hostname": "sam.corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
+    {"name": "regional-api-lhr", "kind": "custom_domain", "hostname": "lhr.corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
+    {"name": "regional-api-nrt", "kind": "custom_domain", "hostname": "nrt.corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
+    {"name": "regional-api-syd", "kind": "custom_domain", "hostname": "syd.corelink-api.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
+    {"name": "signup-worker", "kind": "ingress", "hostname": "corelink-signup.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
+    {"name": "get-worker", "kind": "ingress", "hostname": "corelink-get.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
+    {"name": "analytics-worker", "kind": "custom_domain", "hostname": "corelink-analytics.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
+    {"name": "docs-pages", "kind": "custom_domain", "hostname": "corelink-docs.humangr.com", "enforcement": "Cloudflare zone min_tls_version"},
+    {"name": "r2-global", "kind": "egress", "hostname": "*.r2.cloudflarestorage.com", "enforcement": "Cloudflare R2 provider TLS policy; no repo setting"},
+    {"name": "r2-eu", "kind": "egress", "hostname": "*.eu.r2.cloudflarestorage.com", "enforcement": "Cloudflare R2 provider TLS policy; no repo setting"},
+)
 
 
 class VerificationError(RuntimeError):
@@ -111,6 +133,13 @@ def inventory(root: Path = ROOT) -> dict[str, Any]:
             "protocol_floor": f"TLS {PROTOCOL_FLOOR}",
             "cipher_policy": CIPHER_POLICY,
             "source": "ADR-0072 + scripts/check_tls_floor.py",
+            "named_surfaces": [dict(surface) for surface in NAMED_SURFACES],
+            "downgrade_probe": {
+                "status": "provider_read_only_setting_only",
+                "scope": "Cloudflare edge zone setting; no production handshake mutation",
+                "result": "TLS 1.2 is the configured minimum when --live reports match",
+                "limitation": "Cloudflare does not expose a repo-owned per-host or R2-origin minimum in this repository; R2 TLS policy is provider-managed",
+            },
         },
     }
 

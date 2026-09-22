@@ -16,6 +16,7 @@ infra/terraform/
       gcp-kms/              # GCP SA + WIF (CoreLink-side)
       azure-kv/             # AAD app + SP + secret (CoreLink-side)
       vault/                # AppRole + transit policy (CoreLink-side)
+    audit-object-lock-aws/  # inactive S3 Compliance archive template
     corelink-region/        # reusable per-region resource module
   environments/
     staging/                # active pre-GA composition
