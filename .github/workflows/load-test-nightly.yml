@@ -61,7 +61,7 @@ on:
         required: true
         type: string
       scenarios:
-        description: 'Comma-sep list of scenarios to run (default: all)'
+        description: 'The complete comma-separated scenario population (all five required)'
         required: false
         default: 'signup,webhook,dsr,cas,byok'
       bootstrap_baseline:
@@ -88,7 +88,10 @@ env:
   # makes the old numbers meaningless).
   BASELINE_CACHE_PREFIX: load-test-k6-baseline-v2
   K6_ALL_SCENARIOS: signup,webhook,dsr,cas,byok
-  K6_EXPECTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
+  # The workflow_dispatch input has an explicit all-scenarios default. Keep an
+  # explicitly empty value visible so the classifier can reject it instead of
+  # silently turning it into a complete population.
+  K6_EXPECTED_SCENARIOS: ${{ github.event.inputs.scenarios }}
 
 jobs:
   k6-staging:
@@ -123,13 +126,17 @@ jobs:
       - name: filter scenarios
         id: filter
         env:
-          REQUESTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
+          REQUESTED_SCENARIOS: ${{ github.event.inputs.scenarios }}
         run: |
           set -euo pipefail
           REQUESTED="${REQUESTED_SCENARIOS}"
+          if [[ -z "${REQUESTED}" || "${REQUESTED}" == ,* || "${REQUESTED}" == *, || "${REQUESTED}" == *,,* ]]; then
+            echo "::error::scenarios must be a non-empty comma-separated population"
+            exit 1
+          fi
           IFS=',' read -ra SELECTED <<<"${REQUESTED}"
-          test "${#SELECTED[@]}" -ge 1 -a "${#SELECTED[@]}" -le 5 || {
-            echo "::error::scenarios must contain between 1 and 5 canonical entries"
+          test "${#SELECTED[@]}" -eq 5 || {
+            echo "::error::the load gate requires all five scenarios; partial dispatches are invalid"
             exit 1
           }
           for scenario in "${SELECTED[@]}"; do
@@ -138,6 +145,11 @@ jobs:
               *) echo "::error::unsupported scenario: ${scenario}"; exit 1 ;;
             esac
           done
+          CANONICAL="$(printf '%s\n' "${SELECTED[@]}" | sort | paste -sd, -)"
+          test "${CANONICAL}" = "byok,cas,dsr,signup,webhook" || {
+            echo "::error::scenario population is not the canonical five-scenario set"
+            exit 1
+          }
           if [[ ",$REQUESTED," == *",${{ matrix.scenario.id }},"* ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
@@ -294,17 +306,38 @@ jobs:
         run: |
           set -euo pipefail
           canonicalize() {
-            tr ',' '\n' <<<"$1" | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//; s/[[:space:]]*$//' | sort -u | paste -sd, -
+            tr ',' '\n' <<<"$1" | sed '/^[[:space:]]*$/d; s/^[[:space:]]*//; s/[[:space:]]*$//' | sort | paste -sd, -
           }
-          REQUESTED="$(canonicalize "${K6_EXPECTED_SCENARIOS}")"
-          ALL="$(canonicalize "${K6_ALL_SCENARIOS}")"
-          if [[ "${REQUESTED}" == "${ALL}" ]]; then
-            echo 'full=true' >> "$GITHUB_OUTPUT"
-            echo "complete five-scenario population: ${REQUESTED}"
-          else
-            echo 'full=false' >> "$GITHUB_OUTPUT"
-            echo "subset dispatch (${REQUESTED}) is diagnostic-only: non-gating and non-publishing"
+          REQUESTED_INPUT="${K6_EXPECTED_SCENARIOS:-}"
+          if [[ -z "${REQUESTED_INPUT}" || "${REQUESTED_INPUT}" == ,* || "${REQUESTED_INPUT}" == *, || "${REQUESTED_INPUT}" == *,,* ]]; then
+            echo "::error::scenarios must be a non-empty comma-separated population"
+            exit 1
           fi
+          IFS=',' read -ra SELECTED <<<"${REQUESTED_INPUT}"
+          test "${#SELECTED[@]}" -eq 5 || {
+            echo "::error::the load gate requires all five scenarios; partial dispatches are invalid"
+            exit 1
+          }
+          declare -A SEEN=()
+          for scenario in "${SELECTED[@]}"; do
+            case "${scenario}" in
+              signup|webhook|dsr|cas|byok) ;;
+              *) echo "::error::unsupported scenario: ${scenario}"; exit 1 ;;
+            esac
+            if [[ -n "${SEEN[${scenario}]:-}" ]]; then
+              echo "::error::duplicate scenario: ${scenario}"
+              exit 1
+            fi
+            SEEN["${scenario}"]=1
+          done
+          REQUESTED="$(canonicalize "${REQUESTED_INPUT}")"
+          ALL="$(canonicalize "${K6_ALL_SCENARIOS}")"
+          test "${REQUESTED}" = "${ALL}" || {
+            echo "::error::scenario population is not the canonical five-scenario set"
+            exit 1
+          }
+          echo 'full=true' >> "$GITHUB_OUTPUT"
+          echo "complete five-scenario population: ${REQUESTED}"
 
       - name: download current run artifacts
         if: steps.population.outputs.full == 'true'
@@ -345,7 +378,7 @@ jobs:
         id: compare
         if: steps.population.outputs.full == 'true' && inputs.bootstrap_baseline != true
         env:
-          EXPECTED_SCENARIOS: ${{ github.event.inputs.scenarios || 'signup,webhook,dsr,cas,byok' }}
+          EXPECTED_SCENARIOS: ${{ github.event.inputs.scenarios }}
         run: |
           set -euo pipefail
           python3 scripts/load-test-baseline-check.py \

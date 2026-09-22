@@ -45,7 +45,7 @@ def main() -> int:
             raise SystemExit(f"staging B-102 lane must remain manual; found {forbidden}")
     for required in (
         "environment: staging",
-        "github.repository == 'HuGR/corelink-server'",
+        "github.repository == 'HuGR-dev/corelink-server'",
         "github.ref == 'refs/heads/main'",
         "github.ref_protected",
         "run-1658-b102-staging",
