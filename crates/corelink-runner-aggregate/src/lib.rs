@@ -327,12 +327,13 @@ pub struct RunnerAggregateOutput {
     pub counters: Vec<CounterRow>,
     /// Chain-head updates to write into `runner_hash_chain_head`.
     pub chain_head_updates: Vec<ChainHeadUpdate>,
-    /// Per-tenant shadow charges (bills nothing).
+    /// Per-tenant shadow deltas for this invocation (bills nothing).
+    /// Each line also carries the cumulative-period snapshot separately.
     pub shadow_ledger: Vec<ShadowLine>,
     /// Reserved for explicit non-pricing notes. Missing or invalid terms fail
     /// the entire artifact and are never silently skipped.
     pub skipped: Vec<SkipNote>,
-    /// Total shadow charge across all tenants this period, in millicents.
+    /// Sum of invocation charge deltas, in millicents; never a monthly snapshot.
     pub total_shadow_millicents: u128,
 }
 
