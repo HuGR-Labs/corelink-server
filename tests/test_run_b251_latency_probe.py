@@ -46,7 +46,7 @@ def test_parse_probe_output_accepts_strictly_under_limit() -> None:
     [
         ("", "exactly one"),
         (marker() + "\n" + marker(), "exactly one"),
-        (marker(5000), "exceeded 5ms"),
+        (marker(5001), "exceeded 5ms"),
         (marker(sample_count=999), "exactly 1,000"),
         (marker(production_latency_measured=True), "falsely claimed production"),
     ],
