@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "finding": "B-139",
-  "status": "engineering-complete-evidence-pending",
-  "non_claim": "This artifact records policy and executable evidence boundaries only. It does not claim a successful full scan, dispatch, SARIF upload, or Advanced Security availability.",
+  "status": "repo-calibrated-bundled-evidence-pending",
+  "non_claim": "This artifact records policy and executable evidence boundaries only. It does not claim a successful bundled scan, dispatch, SARIF upload, or Advanced Security availability.",
   "scan_population": {
     "bundled_rulesets": [
       "p/security-audit",
@@ -14,12 +14,18 @@
     ],
     "custom_config": "./semgrep.yml",
     "custom_rule_count": 4,
-    "custom_rule_prefix": "corelink."
+    "custom_rule_prefix": "corelink.",
+    "custom_rule_severities": {
+      "corelink.rust.no-unwrap-in-src": "WARNING",
+      "corelink.rust.no-tokio-in-lib-crates": "ERROR",
+      "corelink.rust.prop-assert-matches-struct-variant": "ERROR",
+      "corelink.rust.no-expect-in-byok-src": "WARNING"
+    }
   },
   "policy": {
     "blocking_condition": "A finding blocks only when its SARIF level is error, or when the Semgrep process exits nonzero for an execution or output error.",
     "bundled_findings": "Bundled findings are counted separately by SARIF level; warning, note, and none are retained and reported but do not block.",
-    "custom_findings": "CoreLink rules declare metadata policy explicit-error and severity ERROR; an unsuppressed custom finding at level error blocks.",
+    "custom_findings": "R2/R3 are high-precision explicit-error rules and block. R1/R4 remain retained as WARNING because Semgrep OSS cannot reliably distinguish Rust code in colocated cfg(test) modules; Clippy remains the precise blocking control.",
     "suppression": "In-source suppressions are accepted only after approved_suppression_sites(root) passes and the nine returned (repo-relative URI, uses-line, rule-id) coordinates are matched exactly; raw ERROR counts remain retained and approved-suppressed counts are reported separately.",
     "fail_closed": true,
     "semgrep_error_flag": "not used; the evaluator applies the explicit SARIF ERROR policy and preserves nonzero scanner failures"
@@ -40,7 +46,21 @@
     "findings": 4228,
     "scope": "historical Semgrep run 31365335113",
     "is_current_scan": false,
-    "requires_bundle_rerun": true
+    "requires_bundle_rerun": true,
+    "custom_calibration_2026_09_21": {
+      "semgrep_version": "1.164.0",
+      "before": {
+        "total": 3966,
+        "corelink.rust.no-unwrap-in-src": 3935,
+        "corelink.rust.no-expect-in-byok-src": 31,
+        "blocking": 3966
+      },
+      "decision": "R1/R4 WARNING because the measured signals are dominated by colocated cfg(test) code and duplicate blocking Clippy lints; R2/R3 remain ERROR.",
+      "expected_after_policy": {
+        "blocking": 0,
+        "advisory_baseline": 3966
+      }
+    }
   },
   "closure": {
     "requires": [

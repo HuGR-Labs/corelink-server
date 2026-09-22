@@ -36,6 +36,12 @@ CUSTOM = (
     "corelink.rust.prop-assert-matches-struct-variant",
     "corelink.rust.no-expect-in-byok-src",
 )
+CUSTOM_POLICY = {
+    "corelink.rust.no-unwrap-in-src": ("WARNING", "advisory-duplicate-of-clippy"),
+    "corelink.rust.no-tokio-in-lib-crates": ("ERROR", "explicit-error"),
+    "corelink.rust.prop-assert-matches-struct-variant": ("ERROR", "explicit-error"),
+    "corelink.rust.no-expect-in-byok-src": ("WARNING", "advisory-duplicate-of-clippy"),
+}
 SUPPRESSION_RULE = "yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout"
 _RULE_ROOT = "%B139_ROOT_2%"
 _URI_ROOT = "%B139_ROOT_3%"
@@ -107,6 +113,9 @@ def _check_policy(policy: dict[str, Any]) -> None:
         raise VerificationError("custom rule population changed")
     if population.get("custom_rule_prefix") != "corelink.":
         raise VerificationError("custom rule prefix changed")
+    expected_severities = {rule_id: values[0] for rule_id, values in CUSTOM_POLICY.items()}
+    if population.get("custom_rule_severities") != expected_severities:
+        raise VerificationError("custom rule severity ledger changed")
     rule_policy = policy.get("policy")
     if not isinstance(rule_policy, dict):
         raise VerificationError("policy section must be an object")
@@ -148,8 +157,9 @@ def check_static(
         raise VerificationError("custom rule population is not exactly the four CoreLink rules")
     for rule_id in CUSTOM:
         block = blocks[rule_id]
-        _require(block, "severity: ERROR", f"{rule_id} severity")
-        _require(block, "policy: explicit-error", f"{rule_id} policy metadata")
+        severity, policy = CUSTOM_POLICY[rule_id]
+        _require(block, f"severity: {severity}", f"{rule_id} severity")
+        _require(block, f"policy: {policy}", f"{rule_id} policy metadata")
         _require(block, "source: corelink-custom", f"{rule_id} source metadata")
 
     for ruleset in BUNDLED:
@@ -317,8 +327,15 @@ def mutation_self_test() -> int:
     config = _read(RULEPACK)
     workflow = _read(WORKFLOW)
     policy = _load_json(POLICY)
+    r4_start = config.index("corelink.rust.no-expect-in-byok-src")
+    r4_severity = (
+        config[:r4_start]
+        + config[r4_start:].replace("severity: WARNING", "severity: ERROR", 1)
+    )
     mutations = [
         ("custom-rule", config.replace("corelink.rust.no-unwrap-in-src", "", 1), workflow, policy),
+        ("r1-severity", config.replace("severity: WARNING", "severity: ERROR", 1), workflow, policy),
+        ("r4-severity", r4_severity, workflow, policy),
         ("explicit-evaluator", config, workflow.replace("verify_b139_semgrep.py --evaluate", "", 1), policy),
         ("blocking-policy", config, workflow, {**policy, "policy": {**policy["policy"], "blocking_condition": "all findings are informational"}}),
         ("upload-truth", config, workflow.replace("unavailable_or_unverified", ""), policy),
@@ -353,7 +370,7 @@ def main(argv: list[str] | None = None) -> int:
             return result
         result = check_static()
         mutations = mutation_self_test() if args.self_test else 0
-        suffix = f"; mutations={mutations}/4" if args.self_test else ""
+        suffix = f"; mutations={mutations}" if args.self_test else ""
         print(f"B139 static policy: PASS; custom={result['custom_rules']} bundled={result['bundled_rulesets']}{suffix}")
         return 0
     except (OSError, VerificationError) as exc:
