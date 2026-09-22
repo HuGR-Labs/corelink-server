@@ -1,33 +1,33 @@
-# Vendor Legal-Review Record — Clerk, Inc.
+# Vendor Critical Review Assessment — Clerk, Inc.
 
-> STATUS: TEMPLATE — pending the actual legal review record (owner/counsel to complete).
+> STATUS: ASSESSMENT — dated public-source review; not Legal approval.
 
 | Field | Value |
 |---|---|
 | Vendor | Clerk, Inc. |
 | Sub-processor id | `clerk` |
-| Review date | `TBD (YYYY-MM-DD)` |
-| Reviewer | `TBD (named Legal Counsel / Privacy Officer)` |
+| Review date | `2026-09-22` |
+| Reviewer | `Automated public-source assessment (not Legal Counsel)` |
 | DPA reference | <https://clerk.com/legal/dpa> |
-| DPA status | `TBD (executed / pending)` |
-| SCC / transfer mechanism | `TBD (e.g. EU SCCs Module 3; UK IDTA)` |
-| Schrems II TIA | `TBD` |
-| Data categories processed | account email; auth tokens; device metadata; minimal profile |
-| Data residency / region | US (primary); EU read-replica for EU tenants |
-| Sub-processor flow-down | `TBD (confirm flow-down per GDPR Art. 28(4))` |
-| Certifications verified | `TBD` (declared: SOC 2 Type II; ISO 27001 (in progress)) |
-| Review outcome | `TBD (approved / approved-with-conditions / rejected)` |
-| Conditions / follow-ups | `TBD` |
-| Next review due | `TBD (YYYY-MM-DD)` |
+| DPA status | `Evidence insufficient — no executed CoreLink copy available` |
+| SCC / transfer mechanism | `Evidence insufficient — account/legal review required` |
+| Schrems II TIA | `Evidence insufficient — no CoreLink assessment available` |
+| Data categories processed | pii |
+| Data residency / region | US primary; EU read-replica for EU tenants |
+| Sub-processor flow-down | `Evidence insufficient — not verified` |
+| Certifications verified | `Public claim only; current customer/account report not retrieved` |
+| Review outcome | `Evidence insufficient — not approved` |
+| Conditions / follow-ups | Risk disposition: retain vendor in Critical tier; no approval granted. VP-Sec must obtain current report/DPA evidence and complete the review. |
+| Next review due | `2026-11-20 (90-day cadence from this assessment; requires authoritative evidence)` |
 
-## Notes
+## Sources and scope
 
-`<Replace with the real review narrative. Do not fabricate.>`
+- First-party source consulted on 2026-09-22: <https://clerk.com/articles/clerk-security-how-we-protect-your-users>.
+- Register scope: Critical vendor; quarterly cadence; owner `VP-Sec`; baseline last review `2026-05-15`; overdue scheduled review `2026-08-15`.
+- Public Clerk material states SOC 2 Type 2 posture and US hosting. No current report, CoreLink executed DPA, transfer assessment, or account evidence was available.
 
-This record is referenced by `legal/dpa/SUB-PROCESSOR-COMMITMENTS.md` (§1.2).
-Clerk is the authentication/identity sub-processor; it is disclosed in the DPA
-commitments file but is not (currently) a row in `legal/sub-processors.md`.
+This assessment records only publicly observable facts and unresolved evidence. It does not claim a signed contract, named Legal approval, SOC report possession, transfer assessment, or Drata record.
 
 ---
 
-*Referenced by `legal/dpa/SUB-PROCESSOR-COMMITMENTS.md`.*
+*Canonical evidence path is tracked by `docs/handoff/2026-09-22-1644-critical-vendor-review-manifest.json`.*

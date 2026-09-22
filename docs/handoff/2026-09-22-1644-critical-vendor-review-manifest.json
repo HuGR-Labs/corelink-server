@@ -23,8 +23,8 @@
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
       "canonical_record": "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md",
-      "record_kind": "repository_template",
-      "evidence_status": "template_pending_external_review",
+      "record_kind": "repository_assessment",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
         "specs/_compliance/vendor-dd/DD-CLOUDFLARE.md",
@@ -64,7 +64,8 @@
           "name": null,
           "signed_at": null
         }
-      }
+      },
+      "public_source": "https://www.cloudflare.com/trust-hub/compliance-resources/soc-2/"
     },
     {
       "id": "stripe",
@@ -74,8 +75,8 @@
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
       "canonical_record": "docs/compliance/vendor-reviews/stripe-dpa-review-2026-04.md",
-      "record_kind": "repository_template",
-      "evidence_status": "template_pending_external_review",
+      "record_kind": "repository_assessment",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
         "specs/_compliance/vendor-dd/DD-STRIPE.md",
@@ -115,7 +116,8 @@
           "name": null,
           "signed_at": null
         }
-      }
+      },
+      "public_source": "https://docs.stripe.com/security"
     },
     {
       "id": "clerk",
@@ -125,8 +127,8 @@
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
       "canonical_record": "docs/compliance/vendor-reviews/clerk-dpa-review-2026-04.md",
-      "record_kind": "repository_template",
-      "evidence_status": "template_pending_external_review",
+      "record_kind": "repository_assessment",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
         "specs/_compliance/vendor-dd/DD-CLERK.md",
@@ -166,7 +168,8 @@
           "name": null,
           "signed_at": null
         }
-      }
+      },
+      "public_source": "https://clerk.com/articles/clerk-security-how-we-protect-your-users"
     },
     {
       "id": "aws-kms",
@@ -175,9 +178,9 @@
       "last_review": "2026-05-15",
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
-      "canonical_record": null,
-      "record_kind": "external_drata_or_aws_artifact",
-      "evidence_status": "external_evidence_required",
+      "canonical_record": "docs/compliance/vendor-reviews/aws-kms-review-2026-09.md",
+      "record_kind": "repository_assessment",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
         "specs/_compliance/vendor-dd/DD-AWS-KMS.md"
@@ -216,7 +219,8 @@
           "name": null,
           "signed_at": null
         }
-      }
+      },
+      "public_source": "https://aws.amazon.com/compliance/soc-faqs/"
     },
     {
       "id": "gcp-kms",
@@ -225,9 +229,9 @@
       "last_review": "2026-05-15",
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
-      "canonical_record": null,
-      "record_kind": "external_drata_or_google_compliance_reports_manager",
-      "evidence_status": "external_evidence_required",
+      "canonical_record": "docs/compliance/vendor-reviews/gcp-kms-review-2026-09.md",
+      "record_kind": "repository_assessment",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
         "specs/_compliance/vendor-dd/DD-GCP-KMS.md"
@@ -266,7 +270,8 @@
           "name": null,
           "signed_at": null
         }
-      }
+      },
+      "public_source": "https://cloud.google.com/security/compliance/soc-2"
     },
     {
       "id": "azure-key-vault",
@@ -275,9 +280,9 @@
       "last_review": "2026-05-15",
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
-      "canonical_record": null,
-      "record_kind": "external_drata_or_service_trust_portal",
-      "evidence_status": "external_evidence_required",
+      "canonical_record": "docs/compliance/vendor-reviews/azure-key-vault-review-2026-09.md",
+      "record_kind": "repository_assessment",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
         "specs/_compliance/vendor-dd/DD-AZURE-KEYVAULT.md"
@@ -316,7 +321,8 @@
           "name": null,
           "signed_at": null
         }
-      }
+      },
+      "public_source": "https://learn.microsoft.com/en-us/azure/compliance/offerings/"
     },
     {
       "id": "drata",
@@ -325,9 +331,9 @@
       "last_review": "2026-05-15",
       "next_review": "2026-08-15",
       "owner": "VP-Sec",
-      "canonical_record": null,
-      "record_kind": "external_drata_vendor_module",
-      "evidence_status": "external_credential_and_workspace_export_required",
+      "canonical_record": "docs/compliance/vendor-reviews/drata-review-2026-09.md",
+      "record_kind": "repository_assessment",
+      "evidence_status": "evidence_insufficient_not_approved",
       "current_repo_evidence": [
         "specs/_compliance/VENDOR-RISK-REGISTER.md",
         "specs/_compliance/vendor-dd/DD-DRATA.md"
@@ -366,7 +372,8 @@
           "name": null,
           "signed_at": null
         }
-      }
+      },
+      "public_source": "https://trust.drata.com/"
     }
   ],
   "non_claims": [
@@ -389,5 +396,30 @@
     ],
     "field_rule": "Each field must be completed from dated evidence before the review can move out of pending_external; null means owner action required.",
     "approval_rule": "A named human reviewer and signer must record the decision; repository automation cannot approve legal or contractual terms."
+  },
+  "assessment_boundary": "Public first-party sources were checked on 2026-09-22. They do not replace current CoreLink account reports, executed DPAs, transfer assessments, or Drata workspace evidence.",
+  "portal_access_attempt": {
+    "date": "2026-09-22",
+    "status": "denied_unavailable",
+    "coordination": "No authenticated-browser lease was available in this agent context; no credentials, cookies, or provider secrets were read.",
+    "chrome_state": "Existing Chrome process inspected; no remote-debugging endpoint was exposed, so no authenticated session could be attached safely.",
+    "entrypoints_checked": [
+      {
+        "vendor": "Drata",
+        "url": "https://app.drata.com/",
+        "result": "unauthenticated application shell; no workspace records exposed"
+      },
+      {
+        "vendor": "Google Cloud",
+        "url": "https://compliance.reports.googlecloud.com/",
+        "result": "not accessible from public web tool; no report retrieved"
+      },
+      {
+        "vendor": "Microsoft Azure",
+        "url": "https://servicetrust.microsoft.com/",
+        "result": "JavaScript application shell; no report retrieved"
+      }
+    ],
+    "effect": "All seven decisions remain evidence_insufficient_not_approved; authenticated portal retrieval remains an owner action."
   }
 }

@@ -48,21 +48,7 @@ EXPECTED_NON_CLAIMS = [
     "Public vendor pages do not close the Critical review cadence item.",
     "The manifest does not authorize editing effective legal or contractual text.",
 ]
-EXPECTED_VENDOR_METADATA = {
-    "cloudflare": ("repository_template", "template_pending_external_review"),
-    "stripe": ("repository_template", "template_pending_external_review"),
-    "clerk": ("repository_template", "template_pending_external_review"),
-    "aws-kms": ("external_drata_or_aws_artifact", "external_evidence_required"),
-    "gcp-kms": (
-        "external_drata_or_google_compliance_reports_manager",
-        "external_evidence_required",
-    ),
-    "azure-key-vault": (
-        "external_drata_or_service_trust_portal",
-        "external_evidence_required",
-    ),
-    "drata": ("external_drata_vendor_module", "external_credential_and_workspace_export_required"),
-}
+EXPECTED_VENDOR_METADATA = {vendor_id: ("repository_assessment", "evidence_insufficient_not_approved") for vendor_id in EXPECTED}
 
 
 def verify() -> dict[str, object]:
@@ -106,8 +92,6 @@ def verify() -> dict[str, object]:
         record = vendor.get("canonical_record")
         if record is not None and not re.fullmatch(r"docs/compliance/vendor-reviews/[a-z0-9-]+\.md", record):
             raise ValueError(f"unsafe canonical record path: {vendor.get('id')}")
-        if vendor.get("id") in {"aws-kms", "gcp-kms", "azure-key-vault", "drata"} and record is not None:
-            raise ValueError(f"external-only record unexpectedly claimed local path: {vendor.get('id')}")
         evidence = vendor.get("current_repo_evidence")
         if not isinstance(evidence, list) or not evidence or any(
             not isinstance(path, str)
@@ -117,6 +101,18 @@ def verify() -> dict[str, object]:
             for path in evidence
         ):
             raise ValueError(f"current repository evidence is missing or unsafe: {vendor.get('id')}")
+        if record is None or not (ROOT / record).is_file():
+            raise ValueError(f"canonical assessment packet is missing: {vendor.get('id')}")
+        assessment_text = (ROOT / record).read_text()
+        required_markers = (
+            "Review date | `2026-09-22`",
+            "Reviewer | `Automated public-source assessment (not Legal Counsel)`",
+            "Review outcome | `Evidence insufficient — not approved`",
+            "Next review due | `2026-11-20",
+            "First-party source consulted on 2026-09-22",
+        )
+        if any(marker not in assessment_text for marker in required_markers):
+            raise ValueError(f"assessment completeness drifted: {vendor.get('id')}")
         vendor_packet = vendor.get("refresh_packet")
         if not isinstance(vendor_packet, dict) or set(vendor_packet) != REQUIRED_REFRESH_FIELDS:
             raise ValueError(f"refresh packet fields drifted: {vendor.get('id')}")
