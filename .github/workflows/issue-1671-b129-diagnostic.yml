@@ -3,6 +3,13 @@ name: issue-1671 B-129 approved diagnostic probe
 # Manual owner lane. It performs bounded authenticated GETs only. It never
 # deploys, mutates the target, or closes #1671/B-129.
 on:
+  pull_request:
+    paths:
+      - "scripts/probe_i1671_b129.py"
+      - "scripts/test_probe_i1671_b129_contract.py"
+      - "worker/src/index_env.ts"
+      - "worker/src/index_finish_stage.ts"
+      - ".github/workflows/issue-1671-b129-diagnostic.yml"
   workflow_dispatch:
     inputs:
       target:
@@ -42,6 +49,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Run offline mutation contract
+        run: python3 scripts/test_probe_i1671_b129_contract.py
+
   probe:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
@@ -76,9 +96,6 @@ jobs:
           d = json.load(open(p, encoding="utf-8"))
           print(f"B-129 PASS: samples={d['sample_count']} residual_max_pct={d['residual_max_pct']}")
           PY
-
-      - name: Run offline mutation contract
-        run: python3 scripts/test_probe_i1671_b129_contract.py
 
       - name: Upload redacted receipt
         if: always()
