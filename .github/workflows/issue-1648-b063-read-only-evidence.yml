@@ -44,7 +44,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  D1_DATABASE_ID: "d64742ea-e102-40b2-a844-ff02e3f94562"
+  AUDIT_D1_DATABASE_ID: "d64742ea-e102-40b2-a844-ff02e3f94562"
 
 jobs:
   hosted-contract:
@@ -101,7 +101,7 @@ jobs:
           from urllib.request import Request, urlopen
 
           account = os.environ["CF_ACCOUNT_ID"]
-          database = os.environ["D1_DATABASE_ID"]
+          database = os.environ["AUDIT_D1_DATABASE_ID"]
           token = os.environ["CF_API_TOKEN"]
           lag_hours = int(os.environ["LAG_HOURS"])
           endpoint = f"https://api.cloudflare.com/client/v4/accounts/{account}/d1/database/{database}/query"
