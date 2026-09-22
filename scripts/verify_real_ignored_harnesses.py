@@ -12,6 +12,7 @@ comment bait, and missing workflow triggers.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import os
 import subprocess
@@ -23,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github/workflows/real-ignored-harnesses.yml"
 RUNNER_PATH = ROOT / "scripts/run-real-ignored-harnesses.sh"
+MANIFEST_PATH = ROOT / "scripts/real-ignored-harness-manifest.json"
 SEED_PATH = ROOT / "crates/corelink-pat/tests/emit_e2e_seed.rs"
 
 REQUIRED_D1 = (
@@ -40,6 +42,21 @@ REQUIRED_R2 = (
     "delete_if_present_credits_size_once_then_none",
     "r2_cas_exists_batch_fails_closed_on_bad_audit_creds",
 )
+REQUIRED_STRIPE = (
+    "live_create_customer",
+    "live_get_customer_404",
+    "live_create_checkout_session_starter",
+    "live_idempotent_checkout_returns_same_session",
+    "live_billing_portal_session",
+    "live_authentication_failure_bad_token",
+)
+REQUIRED_NEON = (
+    "sync_chunk_persists_rows_against_live_postgres",
+    "sync_chunk_is_idempotent_on_replay",
+    "aggregate_event_count_against_live_postgres",
+    "aggregate_timeline_against_live_postgres",
+    "rls_policy_isolates_tenants_against_live_postgres",
+)
 
 REQUIRED_TARGET_SOURCES = {
     **{target: "crates/corelink-container/src/routes/tier_select_store.rs" for target in REQUIRED_D1[:3]},
@@ -51,9 +68,11 @@ REQUIRED_TARGET_SOURCES = {
     "cas_idempotent_rewrite_reports_durable_false": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
     "delete_if_present_credits_size_once_then_none": "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs",
     "r2_cas_exists_batch_fails_closed_on_bad_audit_creds": "crates/corelink-container/src/storage/r2_s3_parts/tests_2.rs",
+    **{target: "crates/corelink-stripe-real/tests/live_integration.rs" for target in REQUIRED_STRIPE},
+    **{target: "crates/corelink-audit-chain/tests/neon_shadow_real.rs" for target in REQUIRED_NEON},
 }
 
-# Byte-locked source manifest for the exact files containing the 11 selected
+# Byte-locked source manifest for the exact files containing the selected
 # harnesses. This is intentionally reviewed data, not a generated claim: any
 # legitimate source edit (including cfg_attr/raw/unicode/macro changes) must
 # update this manifest in the same reviewed change before semantic checks can
@@ -65,6 +84,8 @@ SOURCE_SHA256 = {
     "crates/corelink-container/src/storage/d1_audit_sink/tests_phase_attribution.rs": "474d45a030f333bfb73d7152bc2a802d9d29b8af2d559c5310f9a683bc74e717",
     "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs": "9a946473e1f76d1af26958cdbefca8ac641dbfaeb2066af7e7a8a5d302df0f8d",
     "crates/corelink-container/src/storage/r2_s3_parts/tests_2.rs": "3c46817aa4a3f758768297ad13baa7033088c27a25848531bcc3cda280451779",
+    "crates/corelink-stripe-real/tests/live_integration.rs": "55e9d64edb8b35a97de82ff8f55f75ce74159d1bcf4e86d5fa73b0874105ae7a",
+    "crates/corelink-audit-chain/tests/neon_shadow_real.rs": "dfd22738e96d82695b40addf64b3dbaf611fbd8026346f0b4e33b28f10fe79eb",
 }
 
 
@@ -173,6 +194,52 @@ def verify_source_binding_manifest(
         fail("target/source binding is not closed over the reviewed digest manifest")
 
 
+def verify_exact_manifest() -> None:
+    """Keep the human-reviewed test inventory closed over the executor."""
+    try:
+        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"exact test manifest is unreadable: {exc}")
+    profiles = manifest.get("profiles")
+    if manifest.get("schema_version") != 1 or not isinstance(profiles, dict):
+        fail("exact test manifest schema is invalid")
+    expected_names = {
+        "d1": REQUIRED_D1,
+        "r2": REQUIRED_R2,
+        "stripe": REQUIRED_STRIPE,
+        "neon": REQUIRED_NEON,
+    }
+    expected_packages = {
+        "d1": ("corelink-server", "lib", ()),
+        "r2": ("corelink-server", "lib", ()),
+        "stripe": ("corelink-stripe-real", "test/live_integration", ("live-integration",)),
+        "neon": ("corelink-audit-chain", "test/neon_shadow_real", ("neon-real",)),
+    }
+    expected_env = {
+        "d1": ("CLOUDFLARE_ACCOUNT_ID", "CF_API_TOKEN", "D1_DATABASE_ID", "R2_S3_ENDPOINT", "R2_S3_ACCESS_KEY_ID", "R2_S3_SECRET_ACCESS_KEY"),
+        "r2": ("CLOUDFLARE_ACCOUNT_ID", "CF_API_TOKEN", "D1_DATABASE_ID", "R2_S3_ENDPOINT", "R2_S3_ACCESS_KEY_ID", "R2_S3_SECRET_ACCESS_KEY", "R2_TEST_BUCKET"),
+        "stripe": ("HUGR_WALLET_BASE", "HUGR_WALLET_TOKEN", "HUGR_STRIPE_REF", "STRIPE_AUTH_MODE", "STRIPE_PRICE_ID_STARTER"),
+        "neon": ("NEON_TEST_DSN",),
+    }
+    if set(profiles) != set(expected_names):
+        fail("exact test manifest profile set drifted")
+    for profile, names in expected_names.items():
+        entry = profiles[profile]
+        package, target, features = expected_packages[profile]
+        if entry.get("package") != package or entry.get("target") != target:
+            fail(f"exact test manifest command drifted: {profile}")
+        if tuple(entry.get("features", ())) != features:
+            fail(f"exact test manifest features drifted: {profile}")
+        if tuple(entry.get("required_env", ())) != expected_env[profile]:
+            fail(f"exact test manifest environment gate drifted: {profile}")
+        tests = entry.get("tests")
+        if not isinstance(tests, list) or tuple(item.get("name") for item in tests) != names:
+            fail(f"exact test manifest test names drifted: {profile}")
+        for item in tests:
+            if item.get("source") != REQUIRED_TARGET_SOURCES.get(item.get("name")):
+                fail(f"exact test manifest source binding drifted: {profile}/{item.get('name')}")
+
+
 def rust_code_without_comments_and_strings(body: str) -> str:
     """Blank Rust comments/strings (including raw strings) but keep newlines."""
     out: list[str] = []
@@ -220,7 +287,12 @@ def rust_code_without_comments_and_strings(body: str) -> str:
     return "".join(out)
 
 
-def exact_ignored_source(body: str, target: str) -> bool:
+def exact_ignored_source(
+    body: str,
+    target: str,
+    *,
+    allowed_cfg: str | None = None,
+) -> bool:
     code = rust_code_without_comments_and_strings(body)
     pattern = rf"(?m)^[ \t]*(?:(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+{re.escape(target)}\s*\()"
     declarations = list(re.finditer(pattern, code))
@@ -252,8 +324,13 @@ def exact_ignored_source(body: str, target: str) -> bool:
     # cfg on the crate/module containing this harness can silently remove the
     # test from the compiled target. These real harnesses must always compile;
     # reject every cfg attribute rather than trying to evaluate expressions.
-    if re.search(r"(?m)^\s*#!\[\s*cfg(?:\s*\(|\s*\])", code[:declaration.start()]):
-        return False
+    crate_cfg = re.findall(
+        r"(?m)^\s*#!\[\s*cfg\s*\(([^\n]*)\)\s*\]\s*$",
+        body[: declaration.start()],
+    )
+    if crate_cfg:
+        if allowed_cfg is None or crate_cfg != [allowed_cfg]:
+            return False
 
     line_start = code.rfind("\n", 0, declaration.start()) + 1
     prior = code[:line_start].splitlines()
@@ -278,13 +355,19 @@ def exact_ignored_source(body: str, target: str) -> bool:
             while module_prior and re.fullmatch(r"\s*#\[[^\n]*\]\s*", module_prior[-1]):
                 module_attrs.insert(0, module_prior.pop().strip())
             if any(re.match(r"#\[\s*cfg(?:\s*\(|\s*\])", attr, re.IGNORECASE) for attr in module_attrs):
-                return False
+                module_cfg = re.findall(
+                    r"(?m)^\s*#\[\s*cfg\s*\(([^\n]*)\)\s*\]\s*$",
+                    body[:module.start()],
+                )
+                if allowed_cfg is None or module_cfg != [allowed_cfg]:
+                    return False
     return True
 
 
 def assert_contract(workflow: str, runner: str) -> None:
     # Digest binding is the first source gate; parser/attribute checks are
     # defense in depth and must never silently bless a changed source file.
+    verify_exact_manifest()
     verify_source_binding_manifest()
     verify_source_digests()
     wf = code_text(workflow)
@@ -339,12 +422,29 @@ def assert_contract(workflow: str, runner: str) -> None:
 
     # Exact target coverage: every real ignored class has an executor, and the
     # executor cannot quietly replace one with an unrelated test.
-    for target in REQUIRED_D1 + REQUIRED_R2:
+    expected_runner_targets = [
+        (profile, target)
+        for profile, targets in (
+            ("d1", REQUIRED_D1),
+            ("r2", REQUIRED_R2),
+            ("stripe", REQUIRED_STRIPE),
+            ("neon", REQUIRED_NEON),
+        )
+        for target in targets
+    ]
+    actual_runner_targets = [
+        (match.group(1), match.group(2))
+        for line in runner.splitlines()
+        if (match := re.match(r"^\s*run_cargo\s+(d1|r2|stripe|neon)\s+([A-Za-z0-9_]+)\s+", line))
+    ]
+    if actual_runner_targets != expected_runner_targets:
+        fail("runner target order/set does not match the exact test manifest")
+    for target in REQUIRED_D1 + REQUIRED_R2 + REQUIRED_STRIPE + REQUIRED_NEON:
         if target not in sh:
             fail(f"required real target is not selected: {target}")
     required_fragments = (
-        "run_cargo --package corelink-stripe-real --features live-integration --test live_integration",
-        "run_cargo --package corelink-audit-chain --features neon-real --test neon_shadow_real",
+        "run_cargo stripe live_create_customer --package corelink-stripe-real --features live-integration --test live_integration",
+        "run_cargo neon sync_chunk_persists_rows_against_live_postgres --package corelink-audit-chain --features neon-real --test neon_shadow_real",
         'case "$PROFILE" in',
         "d1) preflight_d1; run_d1",
         "r2) preflight_r2; run_r2",
@@ -418,7 +518,7 @@ def assert_contract(workflow: str, runner: str) -> None:
         fail("runner contains an unscoped cargo --ignored invocation")
     if "CARGO_BIN" in sh or "CARGO_BIN" in wf:
         fail("executor must not honor a caller-controlled CARGO_BIN override")
-    if 'cargo test --locked "$@" -- --ignored --nocapture' not in sh:
+    if 'cargo test --locked "$@" "$expected" -- --ignored --nocapture' not in sh:
         fail("runner does not execute the trusted image Cargo through PATH")
 
     for target, source_path in REQUIRED_TARGET_SOURCES.items():
@@ -426,7 +526,16 @@ def assert_contract(workflow: str, runner: str) -> None:
         if not source.is_file():
             fail(f"source for real target is missing: {target}: {source_path}")
         body = source.read_text(encoding="utf-8")
-        if not exact_ignored_source(body, target):
+        allowed_cfg = (
+            'feature = "live-integration"'
+            if source_path == "crates/corelink-stripe-real/tests/live_integration.rs"
+            else (
+                'all(feature = "neon-real", not(target_arch = "wasm32"))'
+                if source_path == "crates/corelink-audit-chain/tests/neon_shadow_real.rs"
+                else None
+            )
+        )
+        if not exact_ignored_source(body, target, allowed_cfg=allowed_cfg):
             fail(f"real target source declaration/ignore association is not exact: {target}")
         if not re.search(rf"(?m)^\s*run_cargo\b[^\n]*\b{re.escape(target)}\b", sh):
             fail(f"runner does not execute exact source target: {target}")
@@ -468,13 +577,13 @@ def mutation_checks(workflow: str, runner: str) -> None:
     expect_rejected("pull_request trigger", workflow.replace("  workflow_dispatch:\n", "  pull_request:\n  workflow_dispatch:\n", 1), runner)
     # Comment bait: a commented-out command is not executable coverage.
     target = REQUIRED_D1[0]
-    expect_rejected("commented target", workflow, runner.replace(f"run_cargo --package corelink-server --lib {target}", f"# run_cargo --package corelink-server --lib {target}", 1))
+    expect_rejected("commented target", workflow, runner.replace(f"run_cargo d1 {target} --package corelink-server --lib", f"# run_cargo d1 {target} --package corelink-server --lib", 1))
     # Partial executor: dropping any exact real target must be detected.
     expect_rejected("partial D1 executor", workflow, runner.replace(REQUIRED_D1[-1], "d1_target_removed", 1))
     expect_rejected("partial R2 executor", workflow, runner.replace(REQUIRED_R2[-1], "r2_target_removed", 1))
     # Wrong-test substitution must not look like proof of the intended path.
     expect_rejected("wrong test target", workflow, runner.replace("storage_r2_round_trip", "unrelated_unit_test", 1))
-    expect_rejected("caller Cargo override", workflow, runner.replace('cargo test --locked "$@" -- --ignored --nocapture', '"$CARGO_BIN" test --locked "$@" -- --ignored --nocapture', 1))
+    expect_rejected("caller Cargo override", workflow, runner.replace('cargo test --locked "$@" "$expected" -- --ignored --nocapture', '"$CARGO_BIN" test --locked "$@" "$expected" -- --ignored --nocapture', 1))
     expect_rejected("missing R2 source target", workflow, runner.replace("r2_cas_list_durable_audit_failure_precedes_storage", "r2_cas_list_target_removed", 1))
     expect_rejected("R2 wrong source target", workflow, runner.replace("r2_cas_list_durable_audit_failure_precedes_storage", "r2_cas_list_serial_fallback_attributes_the_r2_call_to_ostore", 1))
 
@@ -551,7 +660,7 @@ def mutation_checks(workflow: str, runner: str) -> None:
     expect_rejected("missing Starter price", workflow, runner.replace('[[ "$STRIPE_PRICE_ID_STARTER" == price_* ]]', '[[ "$STRIPE_PRICE_ID_STARTER" == any_* ]]', 1))
     # A preflight that contains a cargo call can mutate the external system
     # before a later profile is checked.
-    expect_rejected("cargo in D1 preflight", workflow, runner.replace("  require_https R2_S3_ENDPOINT\n}\n\npreflight_r2", "  require_https R2_S3_ENDPOINT\n  run_cargo --package corelink-server --lib d1_target\n}\n\npreflight_r2", 1))
+    expect_rejected("cargo in D1 preflight", workflow, runner.replace("  require_https R2_S3_ENDPOINT\n}\n\npreflight_r2", "  require_https R2_S3_ENDPOINT\n  run_cargo d1 d1_target --package corelink-server --lib\n}\n\npreflight_r2", 1))
     expect_rejected("late Neon check omitted from all", workflow, runner.replace("    preflight_neon\n    run_d1", "    run_d1", 1))
 
 
