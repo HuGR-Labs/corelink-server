@@ -26,4 +26,4 @@ jobs:
       - name: Verify hosted mutants evidence contract
         run: python3 scripts/verify_i1666_mutants_evidence.py
       - name: Run focused adversarial checks
-        run: python3 -m pytest -q tests/test_verify_i1666_mutants_evidence.py
+        run: python3 tests/test_verify_i1666_mutants_evidence.py
