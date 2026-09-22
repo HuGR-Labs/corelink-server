@@ -1,0 +1,33 @@
+name: issue-1650-real-integration-contract
+
+# This job checks the real harness selector as data. It has no protected
+# environment, secrets, provider access, or workflow dispatch permission.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-1650-real-integration-contract.yml"
+      - ".github/workflows/real-ignored-harnesses.yml"
+      - "scripts/run-real-ignored-harnesses.sh"
+      - "scripts/verify_real_ignored_harnesses.py"
+      - "crates/corelink-container/src/routes/tier_select_store.rs"
+      - "crates/corelink-container/src/storage/d1_http.rs"
+      - "crates/corelink-container/src/storage/d1_audit_sink/tests_phase_attribution.rs"
+      - "crates/corelink-container/src/storage/r2_s3_parts/tests_1_network.rs"
+      - "crates/corelink-container/src/storage/r2_s3_parts/tests_2.rs"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: validate credentialless real integration contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Audit exact harness inventory and mutation guards
+        run: python3 scripts/verify_real_ignored_harnesses.py
