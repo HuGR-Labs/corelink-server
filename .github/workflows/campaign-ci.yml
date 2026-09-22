@@ -58,6 +58,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install pytest for seam checks
+        shell: bash
+        run: python -m pip install pytest
+
       - name: Install protoc for the container SQL lane
         if: ${{ inputs.suite == 'i1629' }}
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
