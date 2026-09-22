@@ -193,10 +193,13 @@ database_id = "PLACEHOLDER_D1_CONFIG_DB_ID"
 preview_database_id = "PLACEHOLDER_D1_CONFIG_DB_PREVIEW_ID"
 migrations_dir = "migrations/d1"
 
-# B-072 — the default/dev synthetic cron has a concrete, same-account receiver.
-# Service bindings are non-inheritable in Wrangler, so the explicit service
-# lists under every production environment below remain authoritative and do
-# not inherit this drill-only dependency.
+# B-072 — the default/dev scheduled-drill handoff is intentionally dormant.
+# No synthetic cron is declared here until the owner supplies deployment,
+# PagerDuty, and end-to-end evidence. This binding remains the reviewed seam
+# for a future owner-controlled non-production trigger. Service bindings are
+# non-inheritable in Wrangler, so the explicit service lists under every
+# production environment below remain authoritative and cannot inherit this
+# drill-only dependency.
 [[services]]
 binding = "SCHEDULED_DRILL_DELIVERY"
 service = "corelink-synthetic-pager"

@@ -43,8 +43,11 @@ def main(root: Path) -> None:
 
     root_data = tomllib.loads(root_config.read_text())
     triggers = root_data.get("triggers", {}).get("crons", [])
-    if triggers != ["0 14 * * 1"]:
-        fail(f"root schedule must contain only the synthetic cron, got {triggers!r}")
+    if triggers != []:
+        fail(
+            "root synthetic schedule must remain disabled until owner evidence exists, "
+            f"got {triggers!r}"
+        )
     root_receivers = [
         item
         for item in root_data.get("services", [])
