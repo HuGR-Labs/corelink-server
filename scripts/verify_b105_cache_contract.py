@@ -127,7 +127,7 @@ def check_collector_contract(collector: str) -> None:
         "finally:",
         "result[\"cleanup\"] = cleanup(purge_url, namespace, token)",
         "CORELINK_B105_PURGE_URL",
-        "retained_bytes != 0",
+        "retained != 0",
         "CORELINK_B105_RECEIPT_URL",
         "bytes_read",
         "bytes_written",
