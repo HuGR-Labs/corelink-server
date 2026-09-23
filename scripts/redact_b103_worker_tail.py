@@ -16,7 +16,8 @@ from collections.abc import Mapping
 
 
 SENSITIVE_KEY = re.compile(
-    r"(?:authorization|bearer|token|secret|password|email|client.?ip|remote.?ip|"
+    r"(?:authorization|bearer|cookie|set.?cookie|token|api.?key|credential|"
+    r"secret|password|email|client.?ip|remote.?ip|"
     r"source.?ip|ip.?address|ip|"
     r"tenant.?id|user.?id|customer.?id|account.?id)$",
     re.IGNORECASE,

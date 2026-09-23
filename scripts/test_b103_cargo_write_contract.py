@@ -42,6 +42,7 @@ class B103ContractTests(unittest.TestCase):
         sample = (
             '{"event":"request","tenant_id":"' + tenant + '",'
             '"message":"Bearer abc123 contact owner@example.com",'
+            '"headers":{"Cookie":"sid=private","X-API-Key":"api-private"},'
             '"request_id":"req-7"}\n'
         )
         result = subprocess.run(
@@ -56,6 +57,8 @@ class B103ContractTests(unittest.TestCase):
         self.assertIn('"request_id":"req-7"', result.stdout)
         self.assertNotIn(tenant, result.stdout)
         self.assertNotIn("abc123", result.stdout)
+        self.assertNotIn("sid=private", result.stdout)
+        self.assertNotIn("api-private", result.stdout)
         self.assertNotIn("owner@example.com", result.stdout)
         self.assertIn("[REDACTED]", result.stdout)
 
