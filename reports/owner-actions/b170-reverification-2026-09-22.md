@@ -30,3 +30,11 @@ The owner packet and its pending residency template passed the guard's structura
 checks. The three canonical owner artifacts remain absent, so B-170 stays `open`.
 This record does not claim legal approval, contract execution, PagerDuty export
 authenticity, recipient identification, notification, delivery, or receipt.
+
+## Current re-check
+
+The same canonical verifier was re-run against `origin/main` at
+`38ea73ad58c4d476da867abf11f60d0fa1b6d5e7` at `2026-09-22T23:43:10Z`.
+It returned the same `open` state and the same three missing artifact paths.
+`BACKLOG.md` records this latest verification date; no external owner act is
+inferred.
