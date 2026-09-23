@@ -33,11 +33,7 @@ jobs:
     # Runner: GitHub-hosted ubuntu-24.04 (wave 4 migration from corelink fabric).
     # stdlib-only python3 validator; sub-minute check.
     runs-on: ubuntu-24.04
-    # Bound the job (CI cost diet 2026-08-01): a self-hosted job with no
-    # timeout inherits GitHub's 360-min default, so one wedged run can hold
-    # 1 of the 4 `corelink-builder` runners for 6h and stall
-    # `scripts/pre-merge-gate-check.sh` (the mandatory merge gate) for every
-    # other PR. This check is sub-minute.
+    # Bound the job so a stalled hosted run ends promptly; this check is sub-minute.
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -45,11 +41,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # No actions/setup-python: the self-hosted mac fleet can't reliably
-      # provision Python via setup-python (RUNNER_TOOL_CACHE is unset → it
-      # falls back to the unwritable /Users/runner hosted path and dies with
-      # `mkdir: /Users/runner: Permission denied`). This validator only needs
-      # `python3` (stdlib only), which ships on every runner. (2026-06-03)
+      # No actions/setup-python: ubuntu-24.04 provides python3, and this
+      # stdlib-only validator needs no additional runtime setup.
       - name: Validate dashboards (canonical-12 + structural)
         run: python3 scripts/validate_dashboards.py
 
