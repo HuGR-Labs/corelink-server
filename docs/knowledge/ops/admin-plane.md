@@ -3,22 +3,24 @@ type: "Runbook"
 title: "The admin plane: config-singleton CAS + dual-approval mutate + pilot lifecycle"
 description: "How operators mutate runtime config with optimistic concurrency and dual approval, and how the container admin routes gate every privileged action."
 source_files:
-  - "crates/corelink-container/src/routes/admin/part-00.rs"
+  - "crates/corelink-container/src/routes/admin/part-00-00.rs"
+  - "crates/corelink-container/src/routes/admin/part-00-02.rs"
   - "crates/corelink-container/src/routes/admin/part-01.rs"
-  - "crates/corelink-container/src/routes/admin_pilot/part-00.rs"
-  - "crates/corelink-container/src/routes/admin_pilot/part-01.rs"
+  - "crates/corelink-container/src/routes/admin_pilot/part-00-00.rs"
+  - "crates/corelink-container/src/routes/admin_pilot/part-01-01.rs"
   - "crates/corelink-container/src/routes/admin_tenant_detail.rs"
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/routes/build.rs"
   - "docs/internal/admin-plane.md"
 source_blobs:
-  - "crates/corelink-container/src/routes/admin/part-00.rs@d7a50818b395cb9a858a5c8bae4380789bebfd3a"
-  - "crates/corelink-container/src/routes/admin/part-01.rs@b78c6cb1cedb54d8c61696eba61ca7e41043d1af"
-  - "crates/corelink-container/src/routes/admin_pilot/part-00.rs@f997d0e098ef2b37fa5feeaa8ca4d39ad2fdfda6"
-  - "crates/corelink-container/src/routes/admin_pilot/part-01.rs@74d07a747e04f5f2d1cf88b53e6e548275c9cd2e"
+  - "crates/corelink-container/src/routes/admin/part-00-00.rs@d194ecab8cee6ec8a4ad93324306448336e394a2"
+  - "crates/corelink-container/src/routes/admin/part-00-02.rs@3a73973052bf7781e71375e27f0895d67b5e7f20"
+  - "crates/corelink-container/src/routes/admin/part-01.rs@c59a9716d2c92b25bce4a4e19d3cebf72b58f653"
+  - "crates/corelink-container/src/routes/admin_pilot/part-00-00.rs@9b22b2a3cf27b48a0b515204624a72fabe98284d"
+  - "crates/corelink-container/src/routes/admin_pilot/part-01-01.rs@6195ffddd9b75cb6fd88c0a5dfba60cb01622e4e"
   - "crates/corelink-container/src/routes/admin_tenant_detail.rs@4c901b703db19889029303d37281687b106e0c63"
   - "crates/corelink-container/src/routes.rs@ddbe70297312a757a9894c71635d9610f881d3b2"
-  - "crates/corelink-container/src/routes/build.rs@739abcdc453ab5bd7a5642526aed445cf34eccf8"
+  - "crates/corelink-container/src/routes/build.rs@3f4264ce2ef02c736001802dcf514caa18677e05"
   - "docs/internal/admin-plane.md@55950a9541c681185f4f784373735d6d7bf18245"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
@@ -58,29 +60,29 @@ behind one fail-closed authorization gate.
 
 - Config mutation is a CAS PUT carrying `expected_version`; a version mismatch returns `409 VersionConflict`, per the architecture diagram `docs/internal/admin-plane.md:23-53`.
 - Clients follow a bounded CAS retry loop (GET version → modify → PUT → backoff on 409) `docs/internal/admin-plane.md:77-90`.
-- The container admin router exposes the read + mutate routes `crates/corelink-container/src/routes/admin/part-00.rs:705`.
-- Every privileged call is internal-auth-checked; an unconfigured key is treated as absent and rejects `crates/corelink-container/src/routes/admin/part-00.rs:87`.
-- The internal-auth key resolves via a specific-then-shared env lookup `crates/corelink-container/src/routes/admin/part-00.rs:567-592`.
+- The container admin router exposes the read + mutate routes `crates/corelink-container/src/routes/admin/part-00-02.rs:252-259`.
+- Every privileged call is internal-auth-checked; an unconfigured key is treated as absent and rejects `crates/corelink-container/src/routes/admin/part-00-00.rs:86-89`.
+- The internal-auth key resolves via a specific-then-shared env lookup `crates/corelink-container/src/routes/admin/part-00-02.rs:201-203`.
 - A mutate body is parsed into a request that carries the dual-approval `(approval_id, approver)` pair `crates/corelink-container/src/routes/admin/part-01.rs:67`.
-- The recording half of two-person control — `POST /v1/admin/approve` — is gated by a SEPARATE, **dedicated-only** approver key: `approver_auth_key_from_env` resolves `CORELINK_ADMIN_APPROVER_AUTH_KEY` ONLY, with NO fallback to the shared `CORELINK_INTERNAL_AUTH_KEY` (same no-fallback treatment as the erase authority, finding H4), so an unset/blank/too-short value fails the approve gate CLOSED (`403`) rather than silently borrowing the mutate key `crates/corelink-container/src/routes/admin/part-00.rs:654`. The gate itself checks that key before the body is parsed and `403`s on a miss `crates/corelink-container/src/routes/admin/part-01.rs:338`.
-- Credential separation is enforced in code at boot, not left to operator discipline: `approver_key_distinct_or_none` constant-time-compares the resolved approver key against the internal/mutate key and, on a byte-equal match, collapses it to `None` (logs + fails approve CLOSED) so a mis-provisioned key equal to `CORELINK_INTERNAL_AUTH_KEY` cannot silently re-collapse approve+mutate onto one shared secret `crates/corelink-container/src/routes.rs:490`; it is wired into the boot path in `build_with_factory` `crates/corelink-container/src/routes/build.rs:271`.
+- The recording half of two-person control — `POST /v1/admin/approve` — is gated by a SEPARATE, **dedicated-only** approver key: `approver_auth_key_from_env` resolves `CORELINK_ADMIN_APPROVER_AUTH_KEY` ONLY, with NO fallback to the shared `CORELINK_INTERNAL_AUTH_KEY` (same no-fallback treatment as the erase authority, finding H4), so an unset/blank/too-short value fails the approve gate CLOSED (`403`) rather than silently borrowing the mutate key `crates/corelink-container/src/routes/admin/part-00-02.rs:201-203`. The gate itself checks that key before the body is parsed and `403`s on a miss `crates/corelink-container/src/routes/admin/part-01.rs:339`.
+- Credential separation is enforced in code at boot, not left to operator discipline: `approver_key_distinct_or_none` constant-time-compares the resolved approver key against the internal/mutate key and, on a byte-equal match, collapses it to `None` (logs + fails approve CLOSED) so a mis-provisioned key equal to `CORELINK_INTERNAL_AUTH_KEY` cannot silently re-collapse approve+mutate onto one shared secret `crates/corelink-container/src/routes.rs:490`; it is wired into the boot path in `build_with_factory` `crates/corelink-container/src/routes/build.rs:358`.
 - The operator per-tenant read surface reuses that SAME `internal_auth_ok` gate and returns `403` fail-CLOSED before any storage read `crates/corelink-container/src/routes/admin_tenant_detail.rs:162`, then binds the target `tenant_id` into every tenant-scoped `WHERE tenant_id = ?1` query (usage/billing/consents/dsr/pats) `crates/corelink-container/src/routes/admin_tenant_detail.rs:207`.
-- Pilot provisioning routes (create / grant-tier / checkin) are canonical path constants using axum-0.8 `{tenant_id}` capture syntax `crates/corelink-container/src/routes/admin_pilot/part-00.rs:109`.
-- Pilot persistence is abstracted behind a `PilotStore` trait `crates/corelink-container/src/routes/admin_pilot/part-00.rs:389`.
+- Pilot provisioning routes (create / grant-tier / checkin) are canonical path constants using axum-0.8 `{tenant_id}` capture syntax `crates/corelink-container/src/routes/admin_pilot/part-00-00.rs:107-113`.
+- Pilot persistence is abstracted behind a `PilotStore` trait `crates/corelink-container/src/routes/admin_pilot/part-00-00.rs:416-425`.
 - Config propagation is Queue-driven with a 60s safety-net poll, targeting ≤ 5s p99 `docs/internal/admin-plane.md:93-105`.
 
 # Invariants
 
 - A CAS write whose `expected_version` is stale must 409, never silently overwrite `docs/internal/admin-plane.md:80-86`.
 - Rollback requires fresh MFA AND a dual approver (`X-Dual-Approver`) `docs/internal/admin-plane.md:120-123`.
-- The admin plane never runs privileged logic without a configured gate key (unconfigured ⇒ reject) `crates/corelink-container/src/routes/admin/part-00.rs:87`.
+- The admin plane never runs privileged logic without a configured gate key (unconfigured ⇒ reject) `crates/corelink-container/src/routes/admin/part-00-00.rs:86-89`.
 - A dual-approval pair must be set together: an **incomplete** pair (one of `approval_id`/`approver` present, the other absent) is rejected at request construction (`crates/corelink-container/src/routes/admin/part-01.rs:70`); a **fully-absent** pair yields `None` (no approval requested) and proceeds — the per-operation approval *requirement* is enforced in the handler, not at construction.
-- Two-person control is only real when the approve gate and the mutate gate hold DIFFERENT secrets: the approver key is dedicated-only (no shared-key fallback) `crates/corelink-container/src/routes/admin/part-00.rs:654` AND is forced distinct from the internal/mutate key at boot — a byte-equal approver key collapses to `None` so `POST /v1/admin/approve` fails CLOSED `crates/corelink-container/src/routes.rs:490`.
-- Pilot mutations emit a `corelink.admin.pilot_*` audit event on attempt and success `crates/corelink-container/src/routes/admin_pilot/part-01.rs:558-596`.
+- Two-person control is only real when the approve gate and the mutate gate hold DIFFERENT secrets: the approver key is dedicated-only (no shared-key fallback) `crates/corelink-container/src/routes/admin/part-00-02.rs:201-203` AND is forced distinct from the internal/mutate key at boot — a byte-equal approver key collapses to `None` so `POST /v1/admin/approve` fails CLOSED `crates/corelink-container/src/routes.rs:490`.
+- Pilot mutations emit a `corelink.admin.pilot_*` audit event on attempt and success `crates/corelink-container/src/routes/admin_pilot/part-01-01.rs:122-125`.
 
 # Gotchas
 
-- The pilot store baseline is `InMemoryPilotStore` (non-durable) — pilot ops do not survive a restart until a D1-durable store is wired; `build_handlers` returns `InMemoryPilotStore::new()` `crates/corelink-container/src/routes/admin_pilot/part-01.rs:448-449`.
+- The pilot store baseline is `InMemoryPilotStore` (non-durable) — pilot ops do not survive a restart until a D1-durable store is wired; `build_handlers` returns `InMemoryPilotStore::new()` `crates/corelink-container/src/routes/admin_pilot/part-01-01.rs:122-125`.
 - A rollback target older than 90 days returns `410 VersionExpired`; older versions live only in the R2 long-term archive `docs/internal/admin-plane.md:140-142`.
 
 # Citations
@@ -91,20 +93,20 @@ behind one fail-closed authorization gate.
 4. `docs/internal/admin-plane.md:93-105` — the ≤5s p99 propagation timing model.
 5. `docs/internal/admin-plane.md:120-123` — rollback dual-approval + fresh-MFA requirement.
 6. `docs/internal/admin-plane.md:140-142` — 410 VersionExpired for >90d targets.
-7. `crates/corelink-container/src/routes/admin/part-00.rs:87` — internal-auth fail-closed gate (absent/unconfigured key ⇒ `return false`).
-8. `crates/corelink-container/src/routes/admin/part-00.rs:567-592` — specific-then-shared internal-auth key resolution.
-9. `crates/corelink-container/src/routes/admin/part-00.rs:705` — the admin read+mutate router.
+7. `crates/corelink-container/src/routes/admin/part-00-00.rs:86-89` — internal-auth fail-closed gate (absent/unconfigured key ⇒ `return false`).
+8. `crates/corelink-container/src/routes/admin/part-00-02.rs:201-203` — specific-then-shared internal-auth key resolution.
+9. `crates/corelink-container/src/routes/admin/part-00-02.rs:252-259` — the admin read+mutate router.
 10. `crates/corelink-container/src/routes/admin/part-01.rs:70` — incomplete dual-approval pair rejected at request construction (the `_ => return Err(...)` arm).
 10b. `crates/corelink-container/src/routes/admin/part-01.rs:50-65` — the only two LIVE mutate ops: `set_tenant_tier` + `rotate_admin_token` (`_ => return Err("unknown op_kind")`; the config-singleton CAS is design-plane, not wired here).
-10e. `crates/corelink-container/src/routes/admin/part-00.rs:654` — `approver_auth_key_from_env` resolves `CORELINK_ADMIN_APPROVER_AUTH_KEY` via `resolve_dedicated_auth_key` — dedicated-only, NO shared `CORELINK_INTERNAL_AUTH_KEY` fallback (approve fails CLOSED when unset).
-10f. `crates/corelink-container/src/routes/admin/part-01.rs:338` — the `handle_approve` gate checks `approver_auth_key` before body parse and `403`s fail-CLOSED on a miss.
+10e. `crates/corelink-container/src/routes/admin/part-00-02.rs:201-203` — `approver_auth_key_from_env` resolves `CORELINK_ADMIN_APPROVER_AUTH_KEY` via `resolve_dedicated_auth_key` — dedicated-only, NO shared `CORELINK_INTERNAL_AUTH_KEY` fallback (approve fails CLOSED when unset).
+10f. `crates/corelink-container/src/routes/admin/part-01.rs:339` — the `handle_approve` gate checks `approver_auth_key` before body parse and `403`s fail-CLOSED on a miss.
 10g. `crates/corelink-container/src/routes.rs:490` — `approver_key_distinct_or_none`: constant-time byte-equality vs the internal/mutate key; a byte-equal approver key collapses to `None` (boot-enforced credential separation).
-10h. `crates/corelink-container/src/routes/build.rs:271` — `build_with_factory` wires the approver key through `approver_key_distinct_or_none` against the internal auth key at boot.
+10h. `crates/corelink-container/src/routes/build.rs:358` — `build_with_factory` wires the approver key through `approver_key_distinct_or_none` against the internal auth key at boot.
 10c. `crates/corelink-container/src/routes/admin_tenant_detail.rs:162` — the shared-`internal_auth_ok` operator gate returns `403` fail-CLOSED before any storage access (bad/absent internal-auth).
 10d. `crates/corelink-container/src/routes/admin_tenant_detail.rs:207` — binds the target `tenant_id` into a tenant-scoped `WHERE tenant_id = ?1` operator read (usage/`tenant_storage_state`).
-11. `crates/corelink-container/src/routes/admin_pilot/part-00.rs:109` — canonical grant-tier pilot route const.
-12. `crates/corelink-container/src/routes/admin_pilot/part-01.rs:558-596` — pilot create handler emits the `corelink.admin.pilot_*` audit on attempt + success.
-13. `crates/corelink-container/src/routes/admin_pilot/part-01.rs:448-449` — `build_handlers` returns the `InMemoryPilotStore::new()` baseline.
+11. `crates/corelink-container/src/routes/admin_pilot/part-00-00.rs:107-113` — canonical grant-tier pilot route const.
+12. `crates/corelink-container/src/routes/admin_pilot/part-01-01.rs:122-125` — pilot create handler emits the `corelink.admin.pilot_*` audit on attempt + success.
+13. `crates/corelink-container/src/routes/admin_pilot/part-01-01.rs:122-125` — `build_handlers` returns the `InMemoryPilotStore::new()` baseline.
 
 
 # Revalidation

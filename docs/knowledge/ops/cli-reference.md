@@ -6,8 +6,8 @@ source_files:
   - "docs/cli/json-output-schema.md"
   - "docs/cli/telemetry.md"
 source_blobs:
-  - "docs/cli/json-output-schema.md@0aed1d6f813933692363c0ca308aa036b7e16810"
-  - "docs/cli/telemetry.md@2a39713a7ee176c7fc43a236515fd48888e3536e"
+  - "docs/cli/json-output-schema.md@664cc0c97343c0dcf96be8dc6fb700a176c2b04c"
+  - "docs/cli/telemetry.md@6e62d551af916eb1745df479357f5ca3575707e0"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "cli", "json", "telemetry", "privacy", "runbook"]
@@ -30,7 +30,7 @@ evolves, and exactly what (minimal, anonymous) data the binary may phone home wh
 # How it works
 
 - Every subcommand accepts `--output=json` (with a `--json` shorthand on `doctor`) `docs/cli/json-output-schema.md:17-30`.
-- Each subcommand has a fixed JSON shape (ls/get/put/stat/bench/doctor/version/config); `ls` returns one **page** of the server's `GET /v1/cas/{tenant}` body — `{"blobs":[{"hash","size","created_at"}],"next_cursor":<string|null>}` with no `total_count` `docs/cli/json-output-schema.md:34-191`.
+- The supported JSON subcommands have fixed shapes (ls/get/put/stat/bench/doctor/version); `config list` ignores `--output=json` and always prints sanitized TOML. `ls` returns one **page** of the server's `GET /v1/cas/{tenant}` body — `{"blobs":[{"hash","size","created_at"}],"next_cursor":<string|null>}` with no `total_count` `docs/cli/json-output-schema.md:34-204`.
 - Errors go to stderr with exit 1 for general failures and exit 2 for CTRL-CRED-001 violations `docs/cli/json-output-schema.md:213-226`.
 - Telemetry is opt-in, default off — no data leaves the machine until enabled `docs/cli/telemetry.md:10-15`.
 - The collected fields are a fixed, minimal set (version, os, subcommand, outcome, duration, anonymized id) `docs/cli/telemetry.md:18-29`.
@@ -54,7 +54,7 @@ evolves, and exactly what (minimal, anonymous) data the binary may phone home wh
 
 1. `docs/cli/json-output-schema.md:13-15` — SemVer discipline for the JSON schema.
 2. `docs/cli/json-output-schema.md:17-30` — the global `--output=json` flag + subcommand set.
-3. `docs/cli/json-output-schema.md:34-191` — per-subcommand JSON shapes (`ls` is the paginated `{blobs,next_cursor}` page).
+3. `docs/cli/json-output-schema.md:34-204` — per-subcommand JSON shapes (`ls` is the paginated `{blobs,next_cursor}` page).
 4. `docs/cli/json-output-schema.md:114-131` — bench read/write latency nullability.
 5. `docs/cli/json-output-schema.md:213-226` — error response + exit codes (1 general, 2 CTRL-CRED-001).
 6. `docs/cli/json-output-schema.md:221-226` — PAT-in-args exit-2 violation.

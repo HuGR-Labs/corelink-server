@@ -9,7 +9,7 @@ source_files:
 source_blobs:
   - "docs/compliance/vendor-reviews/README.md@a182ae576301b5bca48850387f1c5c236e1b4acb"
   - "docs/compliance/vendor-reviews/_TEMPLATE.md@244d5e9f889f2b025897785e773607805b198fec"
-  - "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md@ce65d5333b62981d60836395c2dcbb66cb845b1f"
+  - "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md@a1743f5818ffeb07963ac50b0a049076be2131a9"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["compliance", "gdpr", "sub-processors", "dpa", "vendor-review", "legal"]
@@ -28,7 +28,7 @@ This directory is the evidence store for the legal review of CoreLink's sub-proc
 - `scripts/validate_sub_processors.py` enforces both (a) the path format and (b) that the target file actually exists, so a missing evidence record can no longer silently pass the gate `docs/compliance/vendor-reviews/README.md:20-22`.
 - Files are named `<vendor-id>-<dpa|review>-<YYYY-MM>.md`, matching the exact path declared in `legal_review_evidence:` and the `Vendor review evidence` rows `docs/compliance/vendor-reviews/README.md:24-28`.
 - Each record is a table of structured fields — vendor legal entity, sub-processor id, review date, named reviewer, DPA reference and status, SCC/transfer mechanism, Schrems II TIA, data categories, residency/region, flow-down confirmation, certifications, outcome, conditions, and next-review date `docs/compliance/vendor-reviews/_TEMPLATE.md:10-26`.
-- The Cloudflare record illustrates a populated stub: vendor `Cloudflare, Inc.`, id `cloudflare`, the customer-DPA URL, data categories (account_metadata; blob_content; audit_logs; telemetry), and multi-region residency pinned per `tenant.primary_region` `docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md:7-16`.
+- The Cloudflare record illustrates a populated stub: vendor `Cloudflare, Inc.`, id `cloudflare`, the customer-DPA URL, data categories (account_metadata; blob_content; audit_logs; telemetry), and multi-region residency pinned per `tenant.primary_region` `docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md:7-17`.
 - Adding/completing a record is a 3-step process: copy `_TEMPLATE.md` to the exact referenced path, have Legal Counsel complete every field with the real outcome, then remove the `STATUS: TEMPLATE` banner once the record is genuine, dated, and attributed `docs/compliance/vendor-reviews/README.md:43-48`.
 
 # Invariants
@@ -42,7 +42,7 @@ This directory is the evidence store for the legal review of CoreLink's sub-proc
 # Gotchas
 
 - Every file currently in the directory is a TEMPLATE marked with a `STATUS: TEMPLATE` banner — they close only the structural gap (paths exist and are schema-checked), not the substantive legal review `docs/compliance/vendor-reviews/README.md:30-37`.
-- Even a vendor-specific stub like the Cloudflare record still carries the TEMPLATE banner and leaves review-outcome fields as `TBD` — its presence does not mean the review happened `docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md:3` `docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md:19-25`.
+- Even a vendor-specific stub like the Cloudflare record still carries the TEMPLATE banner and leaves review-outcome fields as `TBD` — its presence does not mean the review happened `docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md:3` `docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md:20-23`.
 - The template instructs leaving fields as `TBD` until verified rather than guessing — do not fabricate outcomes `docs/compliance/vendor-reviews/_TEMPLATE.md:8`.
 
 # Citations
@@ -50,4 +50,4 @@ This directory is the evidence store for the legal review of CoreLink's sub-proc
 - `docs/compliance/vendor-reviews/README.md:3-22` — the store's purpose, the disclosures that reference it, and the existence-enforcing validator.
 - `docs/compliance/vendor-reviews/README.md:30-48` — TEMPLATE status, the no-fabrication rule, and the add/complete workflow.
 - `docs/compliance/vendor-reviews/_TEMPLATE.md:10-26` — the canonical per-record field schema.
-- `docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md:7-25` — a worked vendor stub still pending real review.
+- `docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md:1-3` and `docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md:20-23` — a worked vendor stub still pending real review.

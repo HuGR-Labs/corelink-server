@@ -5,7 +5,7 @@ description: "Fail-closed synthetic PagerDuty drill handoff seam with no active 
 source_files:
   - "worker/src/index_common.ts"
 source_blobs:
-  - "worker/src/index_common.ts@23c8989d129c494b48fdafdc289f64238e58aae2"
+  - "worker/src/index_common.ts@8ed0757b58effc33386205dc82d4b210fb4fe121"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["ops", "scheduled-drills"]
@@ -60,4 +60,4 @@ requires a separately provisioned, valid environment and is intentionally not
 represented as an automated cron here.
 
 # Citations
-1. `worker/src/index_common.ts:1` — declared source anchor.
+1. `worker/src/index_common.ts:222-223` — declared source anchor.

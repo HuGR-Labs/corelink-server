@@ -6,7 +6,7 @@ source_files:
   - "docs/internal/ENGINEERING-ONBOARDING.md"
   - "docs/internal/onboarding/BUDDY-PROTOCOL.md"
 source_blobs:
-  - "docs/internal/ENGINEERING-ONBOARDING.md@fa1f2689fc136fbdbedda3018873ad91c6cd36ca"
+  - "docs/internal/ENGINEERING-ONBOARDING.md@680c4cf7bb957d6c9e8b0e681f521b7eaf931ac1"
   - "docs/internal/onboarding/BUDDY-PROTOCOL.md@4c115f87481c8649132d578c6377c648551b08bf"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"

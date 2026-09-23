@@ -43,7 +43,7 @@ source_blobs:
   - "crates/corelink-statuspage-real/src/http.rs@be4475b1f217211050f0f99c06690ba67556e375"
   - "crates/corelink-statuspage-real/src/lib.rs@36268b916b8ebe88116b9584e6083679b4297c10"
   - "crates/corelink-dt-webhook/src/handler.rs@3aa0cba9ea6f44f190365c8a9e6684c6639d67dc"
-  - "crates/corelink-terraform-drift-consumer/src/consumer.rs@c62022ee9b81fe4fa54472c0957459f4f5b7acb5"
+  - "crates/corelink-terraform-drift-consumer/src/consumer.rs@8f3ecd94dcb176fc8f00a41f16f323b3b4b40a1afe4fa54472c0957459f4f5b7acb5"
   - "crates/corelink-runbook-tracker/src/lib.rs@c3c770e37961eef6451c51f047a28c669dc017c0"
   - "crates/corelink-dsr-statuspage-scheduler/src/scheduler.rs@bd62eac30c7c531e3ba9a4054cace111a7d633ed"
   - "crates/corelink-clerk-cf/src/dsr_statuspage_cron.rs@25fc5359f7579ace71a51868d92a8e88c9a07688"
@@ -113,8 +113,8 @@ below before assuming any of these "fires" in production.
 - **Terraform drift (`corelink-terraform-drift-consumer`) — real orchestrator, NO apply surface.**
   `process_plan_event` classifies → audit-emits BEFORE the store insert → inserts → records metrics,
   all generic over `DriftClassifier`/`DriftAuditSink`/`DriftFindingStore` traits
-  (`crates/corelink-terraform-drift-consumer/src/consumer.rs:58-96`). The crate deliberately has no
-  `terraform apply` (`crates/corelink-terraform-drift-consumer/src/consumer.rs:124-128`).
+  (`crates/corelink-terraform-drift-consumer/src/consumer.rs:58-104`). The crate deliberately has no
+  `terraform apply` (`crates/corelink-terraform-drift-consumer/src/consumer.rs:129-136`).
 - **Runbook tracker (`corelink-runbook-tracker`) — pure-logic library, no I/O.** Cadence
   (`is_overdue` ≥ 30d) and drift (`compute_drift`, ratio > 2.0 → flagged) are standalone helpers;
   host adapters (D1, Cron, CLI) bind via the `DrillRecorder` trait
@@ -138,9 +138,9 @@ below before assuming any of these "fires" in production.
   on BOTH success and failure before returning (`crates/corelink-slack-real/src/http.rs:149-190`;
   `crates/corelink-statuspage-real/src/http.rs:218-272`).
 - The drift consumer emits the audit record BEFORE the store mutation, so an audit-sink failure
-  blocks the write (`crates/corelink-terraform-drift-consumer/src/consumer.rs:75-82`).
+  blocks the write (`crates/corelink-terraform-drift-consumer/src/consumer.rs:83-90`).
 - The drift consumer exposes no apply path by construction
-  (`crates/corelink-terraform-drift-consumer/src/consumer.rs:124-128`).
+  (`crates/corelink-terraform-drift-consumer/src/consumer.rs:129-136`).
 - The DSR scheduler dedupes per `(date, metric_id)` and seizes the ledger slot even on failure
   (fail-once-per-day), so the cron runtime cannot re-publish the same UTC day
   (`crates/corelink-dsr-statuspage-scheduler/src/scheduler.rs:207-221`,
@@ -187,8 +187,8 @@ below before assuming any of these "fires" in production.
 17. `crates/corelink-statuspage-real/src/lib.rs:55-76` — native http vs wasm32 backend target split.
 18. `crates/corelink-dt-webhook/src/handler.rs:7-9` — production CF Worker wiring deferred.
 19. `crates/corelink-dt-webhook/src/handler.rs:197-213` — `deliver_to_channel` is an in-memory simulation.
-20. `crates/corelink-terraform-drift-consumer/src/consumer.rs:58-96` — classify→audit-before-store→insert→metrics.
-21. `crates/corelink-terraform-drift-consumer/src/consumer.rs:124-128` — no `terraform apply` surface by construction.
+20. `crates/corelink-terraform-drift-consumer/src/consumer.rs:58-104` — classify→audit-before-store→insert→metrics.
+21. `crates/corelink-terraform-drift-consumer/src/consumer.rs:129-136` — no `terraform apply` surface by construction.
 22. `crates/corelink-runbook-tracker/src/lib.rs:256-272` — `compute_drift` (ratio > 2.0 → flagged).
 23. `crates/corelink-runbook-tracker/src/lib.rs:284-286` — `is_overdue` (≥ 30-day cadence).
 24. `crates/corelink-ops/src/rotation/worker.rs:1-11` — rotation worker ships pure-logic skeleton; Cron/D1/KMS deferred.

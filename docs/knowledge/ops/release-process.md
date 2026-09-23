@@ -7,6 +7,7 @@ source_files:
   - "scripts/cut-v1-0-0-ga-tag.sh"
 source_blobs:
   - "docs/release/v1.0.0-GA-tag-draft-final.txt@1769b9949f98cb0434f751e12203caee130191d2"
+  - "scripts/cut-v1-0-0-ga-tag.sh@0cf12f932dcffd108e6d8d5e824bf51212301207"
 checkpoint_sha: "64e57a2ccb218f475b44a260b64af95e0bc7df2c"
 provenance: "AUTHORED"
 tags: ["ops", "release", "ga", "sign-off", "provenance"]
@@ -68,3 +69,8 @@ the cut script does not leave an uncommitted local thaw.
 
 Until every gate above passes, B-098 remains open and neither the local nor
 remote `v1.0.0-GA` ref should exist.
+
+# Citations
+
+- `docs/release/v1.0.0-GA-tag-draft-final.txt:1-7` — draft identity and explicit release scope.
+- `scripts/cut-v1-0-0-ga-tag.sh:15-25` — script actions, tag signing, remote push, and non-actions.
