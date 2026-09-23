@@ -149,6 +149,18 @@ def test_base_derived_successor_accepts_v3_then_v4(tmp_path, monkeypatch):
     assert ledger.validate_candidate_successor(base, next_candidate)["sequence"] == 4
 
 
+def test_workflow_ownership_manifest_update_does_not_require_ledger_successor(
+    tmp_path, monkeypatch,
+):
+    base, _ = _successor_fixture(tmp_path, monkeypatch)
+    candidate = tmp_path / "manifest-only-candidate"
+    shutil.copytree(base, candidate, ignore=shutil.ignore_patterns(".git"))
+    manifest = candidate / ledger.WORKFLOW_OWNERSHIP_MANIFEST
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text("workflow manifest update\n")
+    assert not ledger.successor_required(base, candidate)
+
+
 def test_exact_rewrite_authorization_binds_both_sources_ids_and_fields(tmp_path, monkeypatch):
     base, candidate = _successor_fixture(tmp_path, monkeypatch)
     prior, current = ledger._state_bytes(base), ledger._state_bytes(candidate)
@@ -379,12 +391,12 @@ def test_v0004_policy_in_base_accepts_only_the_exact_dynamic_base_successor(
         ledger.validate_candidate_successor(base, candidate, today=dt.date(2026, 9, 22))
 
 
-def test_v0004_policy_derives_only_b012_retirement_from_pr_base(monkeypatch):
+def test_v0004_policy_derives_b012_retirement_and_wp150_manifest_pointer(monkeypatch):
     """The policy consumes immutable BASE bytes; a receipt never grants scope."""
     root = Path(__file__).resolve().parents[1]
     policy = ledger._successor_policy()
-    prior = ledger._state_bytes(root)
-    base_sha = "a" * 40
+    base_sha = successor.V0004_RECONCILIATION["base_commit"]
+    prior = ledger._git_state_bytes(root, base_sha)
     catalogs = policy._v0004_catalogs(prior)
     current = {
         **prior,
@@ -419,8 +431,14 @@ def test_v0004_policy_derives_only_b012_retirement_from_pr_base(monkeypatch):
     assert all(
         current[path.as_posix()] == prior[path.as_posix()]
         for path in policy._catalog_relatives()
-        if path.as_posix() != "docs/campaigns/remediation/work-packages/B001-B045.md"
+        if path.as_posix() not in {
+            "docs/campaigns/remediation/work-packages/B001-B045.md",
+            "docs/campaigns/remediation/work-packages/B131-B167.md",
+        }
     )
+    assert current["docs/campaigns/remediation/work-packages/B131-B167.md"] != prior[
+        "docs/campaigns/remediation/work-packages/B131-B167.md"
+    ]
 
     assert not policy._v0004_reconciliation_authorized(
         previous, prior, current, {**receipt, "changed_ids": ["B-012"]}, 4,
@@ -703,7 +721,6 @@ def test_base_derived_successor_rejects_mutations(tmp_path, monkeypatch, mutatio
     ("missing-dod", "missing contract fields"),
     ("missing-read-first", "missing contract fields"),
     ("missing-allowlist", "editable allowlist fence"),
-    ("missing-workflow-ownership", "workflow ownership fence"),
     ("broken-dependency-order", "dependency order does not match"),
 ])
 def test_candidate_catalog_contracts_are_validated_before_merge(mutation, match):
@@ -722,10 +739,9 @@ def test_candidate_catalog_contracts_are_validated_before_merge(mutation, match)
         marker = "**Definition of Done.**" if mutation == "missing-dod" else "**Read first.**"
         assert marker in section
         catalog_data[key] = (text[:begin] + section.replace(marker, "**Notes.**", 1) + text[end:]).encode()
-    elif mutation in {"missing-allowlist", "missing-workflow-ownership"}:
+    elif mutation == "missing-allowlist":
         key = "docs/campaigns/remediation/work-packages/B131-B167.md"
-        fence = "wp-editable-allowlist" if mutation == "missing-allowlist" else "wp-workflow-ownership"
-        catalog_data[key] = catalog_data[key].replace(f"```{fence}".encode(), b"```untrusted", 1)
+        catalog_data[key] = catalog_data[key].replace(b"```wp-editable-allowlist", b"```untrusted", 1)
     else:
         ledger_text = ledger_text.replace("WP-148 | WP-140,WP-146", "WP-148 | none", 1)
     with pytest.raises(LedgerError, match=match):

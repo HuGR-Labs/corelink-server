@@ -75,6 +75,7 @@ SPRINT3_FIELDS = {
 V0004_RECONCILIATION = {
     "sequence": 4,
     "previous_sequence": 3,
+    "base_commit": "91630baebe3ae7abe686cd4e06a5621ecdc4ab73",
     "previous_source_sha256": "41726d6c8b2f4b1dc7ff35466a78c242e147b99eaca69a956064024e04212e23",
     "history_start": "87dc11e06f7e2a37ecc980253b710f920026bbb8",
     "history_changed_ids": (
@@ -125,7 +126,7 @@ def install(api):
         return text.replace(old, new, 1)
 
     def _v0004_catalogs(prior: dict[str, bytes]) -> dict[str, bytes]:
-        """Derive the sole permitted catalog data change: retire B-012."""
+        """Derive B-012 retirement and the B131 canonical-manifest pointer."""
         catalogs = {
             path.as_posix(): prior[path.as_posix()]
             for path in _catalog_relatives()
@@ -142,6 +143,82 @@ def install(api):
         ):
             text = _replace_once(text, old, new)
         catalogs[target] = text.encode("utf-8")
+
+        workflow_target = "docs/campaigns/remediation/work-packages/B131-B167.md"
+        workflow_text = catalogs[workflow_target].decode("utf-8")
+        pattern = re.compile(
+            r"(?ms)^This is the only editable ownership source for shared paths\..*?"
+            r"^```wp-workflow-ownership\n.*?^```\n"
+        )
+        pointer = (
+            "WP-150 workflow ownership has one canonical, tracked source at\n"
+            "[`../wp150-workflow-ownership.md`](../wp150-workflow-ownership.md). The manifest\n"
+            "records the complete tracked workflow population, count and path-list hash, and\n"
+            "the owner/status row for every workflow. Workflow additions, renames and removals\n"
+            "update that manifest in the same reviewed change; unsupported ownership remains\n"
+            "`LEAD-BLOCKED | blocked`.\n"
+        )
+        workflow_text, replacements = pattern.subn(pointer, workflow_text)
+        if replacements != 1:
+            raise LedgerError("v0004 workflow ownership source drifted")
+        for old, new in (
+            (
+                "The workflow map is closed and machine-validated against the locked 138-file\n"
+                "population. `LEAD-BLOCKED` is an explicit no-edit sentinel, not permission to\n"
+                "infer an owner. WP-150 is read-only inventory and is rejected as an owner.\n",
+                "The canonical manifest is machine-validated against Git-tracked workflow paths.\n"
+                "`LEAD-BLOCKED` is an explicit no-edit sentinel, not permission to infer an owner.\n"
+                "WP-150 is read-only inventory and is rejected as an owner.\n",
+            ),
+            (
+                "- **Read first:** the complete tracked workflow population, B-136/B-137, the YAML\n"
+                "  parser behavior, and the workflow ownership table in this catalog.\n",
+                "- **Read first:** the complete tracked workflow population, B-136/B-137, the YAML\n"
+                "  parser behavior, and `docs/campaigns/remediation/wp150-workflow-ownership.md`.\n",
+            ),
+            (
+                "- **Population lock:** the manifest is exactly **138** tracked workflow files\n"
+                "  (`.github/workflows/*.yml` and `*.yaml`), sorted bytewise and joined with a final\n"
+                "  newline; its SHA-256 is\n"
+                "  `1616038ec0bb163a7ed436d7487a6255c9da037efaa1f54cbe5f4c3f70a67dc1`.\n"
+                "  The verifier rejects any count/hash drift. A changed population requires a new\n"
+                "  owner row and contract revision before any workflow edit. An unowned or newly\n"
+                "  discovered workflow is an integration blocker; WP-150 and every other existing WP\n"
+                "  are forbidden to edit it until a separately reviewed owner contract is added.\n",
+                "- **Population lock:** `docs/campaigns/remediation/wp150-workflow-ownership.md` is the\n"
+                "  single tracked population and owner/status authority. Its declared count and\n"
+                "  SHA-256 cover the sorted, newline-terminated Git-tracked workflow path list, and\n"
+                "  the verifier rejects count, hash, duplicate, missing or nonexistent path drift.\n"
+                "  Every workflow addition, rename or removal updates this manifest in the same\n"
+                "  reviewed change. An unowned workflow stays `LEAD-BLOCKED | blocked`; WP-150 and\n"
+                "  every other existing WP are forbidden to edit it until an owner contract is reviewed.\n",
+            ),
+            (
+                "**Workflow-owner map (closed):** B-132/142 owns exactly\n"
+                "`.github/workflows/secrets-drift.yml`, `codeql.yml`, and `cas-canary.yml`;\n"
+                "B-139 owns `semgrep.yml`; B-141 owns `pr-labels.yml` and `welcome-first-pr.yml`;\n"
+                "B-148 owns `backlog-verify.yml` and `python-tests.yml`; B-091 owns `sbom.yml`; B-094 owns\n"
+                "`buck2-starter-ci.yml`; B-113 owns the execution cells\n"
+                "`nightly.yml`, `fuzz-nightly.yml`, `endurance-2h-nightly.yml`,\n"
+                "`load-test-nightly.yml`, and `billing-health-daily.yml`; B-118 owns\n"
+                "the retired `cosign-sign.yml` is absent; B-130 owns `api-surface-parity.yml`; the B-136/B-137\n"
+                "candidate lanes remain `LEAD-BLOCKED` until their owner contract is present;\n"
+                "B-071 owns `container-build-push-prod.yml` and `gc-sweep-dry-run.yml`; B-070\n"
+                "owns `cf-deploy-prod.yml` (a future staging path is absent until it exists);\n"
+                "B-067 owns the auth workflow; B-068 owns the ignored-integration workflow. The map is a\n"
+                "closed ownership record for workflow edits; WP-150 is read-only and may never\n"
+                "edit a workflow. Any workflow absent from this map is deliberately unowned and\n"
+                "blocks integration until a new, explicit owner WP is reviewed. This map is not\n"
+                "a glob or an implicit delegation mechanism.\n",
+                "**Workflow-owner map (closed):** The canonical tracked map is maintained only in\n"
+                "[`docs/campaigns/remediation/wp150-workflow-ownership.md`](../wp150-workflow-ownership.md).\n"
+                "It records every tracked workflow exactly once with an evidence-backed owner or\n"
+                "`LEAD-BLOCKED | blocked`. WP-150 is read-only inventory and cannot edit workflows;\n"
+                "no ownership is inferred from a glob, prose, or read-first reference.\n",
+            ),
+        ):
+            workflow_text = _replace_once(workflow_text, old, new)
+        catalogs[workflow_target] = workflow_text.encode("utf-8")
         return catalogs
 
     def _v0004_ledger(prior_raw: bytes, base_sha: str) -> bytes:
@@ -151,6 +228,11 @@ def install(api):
             ("base-ref: df1cd53f56a2eff4643aaf9368e25fb0303ce57d", f"base-ref: {base_sha}"),
             ("base-sha: df1cd53f56a2eff4643aaf9368e25fb0303ce57d", f"base-sha: {base_sha}"),
             ("observed-at: 2026-09-13", "observed-at: 2026-09-23"),
+            (
+                "A legitimate new observation must version a new manifest and transition\n"
+                "the ledger base in the same reviewed change.",
+                "Every new BACKLOG/status observation must version a snapshot manifest and transition the ledger base in the same reviewed change. WP-150 workflow population and ownership updates are maintained in the dedicated tracked manifest; they do not require ledger successors.",
+            ),
             ("The current population is 373 items: 13 open, 328 done and 32 parked. The 13\nopen items", "The current population is 374 items: 12 open, 330 done and 32 parked. The 12\nopen items"),
             ("item-count: 373", "item-count: 374"),
             ("open-count: 13", "open-count: 12"),
@@ -239,6 +321,7 @@ def install(api):
             )
         if (
             sequence != pinned["sequence"]
+            or receipt.get("base_commit") != pinned["base_commit"]
             or previous.get("sequence") != pinned["previous_sequence"]
             or previous.get("source_sha256") != pinned["previous_source_sha256"]
             or receipt.get("changed_ids") != []
