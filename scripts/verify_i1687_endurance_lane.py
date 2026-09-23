@@ -127,12 +127,13 @@ def verify_scenario(text: str) -> list[str]:
     for marker in (
         "const RUN_ID = __ENV.K6_RUN_ID || '';",
         "if (!/^\\d{1,20}$/.test(RUN_ID))",
-        "'x-corelink-load-test-run-id': RUN_ID",
         "_run_${RUN_ID}_endurance_",
         "evt_load_endurance_${RUN_ID}_${idx}",
     ):
         if marker not in text:
             errors.append(f"scenario run-scope marker missing: {marker}")
+    if text.count("'x-corelink-load-test-run-id': RUN_ID") != 2:
+        errors.append("all scenario and memory-poll requests must carry the current run ID")
     if "evt_load_endurance_${idx}" in text:
         errors.append("webhook event ids must be unique to the current run")
     if "${tenant.tenant_id}_endurance_${idx}_" in text:
