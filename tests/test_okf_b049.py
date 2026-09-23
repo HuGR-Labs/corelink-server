@@ -153,10 +153,10 @@ def test_generated_index_and_render_have_no_phantom_or_stale_concepts() -> None:
         match.group(1).removesuffix(".md").lstrip("/")
         for match in __import__("re").finditer(r"\]\(/([^)]*\.md)\)", index)
     }
-    assert len(docs) == 170
+    assert len(docs) == len(links)
     assert links == docs
     rendered = (ROOT / "docs/okf-wiki-site/index.html").read_text(encoding="utf-8")
-    assert "170 concepts" in rendered
+    assert f"{len(docs)} concepts" in rendered
     assert "phantom.md" not in rendered.lower()
 
 

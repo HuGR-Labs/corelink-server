@@ -45,6 +45,9 @@ Each entry cross-references:
 - **Hosted Python CI contract aligned.** Runtime contract now permits its
   documented 30-minute timeout for full-suite execution.
 
+- **OKF population contract aligned.** Generated-wiki coverage now compares
+  corpus, index, and render counts without freezing an obsolete total.
+
 - **B-139 secrets-drift workflow digest refreshed.** Structural trust-boundary
   pin now matches current reviewed workflow.
 
