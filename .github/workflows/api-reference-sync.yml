@@ -45,7 +45,9 @@ jobs:
   drift-check:
     name: drift check (PR-side)
     if: github.event_name == 'pull_request'
-    runs-on: corelink  # zero-hosted: pure python3 + PyYAML (gen-api-reference.py), baked into the box image
+    # Runner: GitHub-hosted ubuntu-latest (Bundle 5 migration from self-hosted).
+    # Pure python3 + PyYAML; read-only drift check.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
