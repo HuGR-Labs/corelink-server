@@ -11,6 +11,51 @@ class ContractError(RuntimeError):
     pass
 
 
+STORAGE_SOURCE_PARTS = (
+    "crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs",
+    "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs",
+    "crates/corelink-container/src/storage/r2_s3_parts/cas_builder.rs",
+    "crates/corelink-container/src/storage/r2_s3_parts/ac_handler.rs",
+    "crates/corelink-container/src/storage/r2_s3_parts/ac_ops.rs",
+    "crates/corelink-container/src/storage/r2_s3_parts/ac_update.rs",
+    "crates/corelink-container/src/storage/r2_s3_parts/ac_delete.rs",
+    "crates/corelink-container/src/storage/r2_s3_parts/ac_list.rs",
+    "crates/corelink-container/src/storage/r2_s3_parts/ac_builder.rs",
+)
+AUDIT_OPERATION_SECTIONS = (
+    (
+        "lookup",
+        "impl corelink_handler_ac::AcLookupHandler",
+        "impl R2AcHandler {\n    fn update_with_byok_operation_context",
+        "emit_lookup_sli",
+    ),
+    (
+        "update",
+        "impl R2AcHandler {\n    fn update_with_byok_operation_context",
+        "impl corelink_handler_ac::AcUpdateHandler",
+        "emit_update_sli",
+    ),
+    (
+        "delete",
+        "impl corelink_handler_ac::AcDeleteHandler",
+        "impl corelink_handler_ac::AcListHandler",
+        "emit_update_sli",
+    ),
+    (
+        "list",
+        "impl corelink_handler_ac::AcListHandler",
+        "/// Build an `R2AcHandler`",
+        "emit_list_sli",
+    ),
+)
+
+
+def storage_source(root: Path) -> str:
+    return "\n".join(
+        (root / path).read_text(encoding="utf-8") for path in STORAGE_SOURCE_PARTS
+    )
+
+
 def _section(source: str, start: str, end: str) -> str:
     begin = source.find(start)
     if begin < 0:
@@ -71,13 +116,7 @@ def assess_source(storage: str, aggregate: str, docs: str) -> list[str]:
     if "emit_update_sli(true, 0)" in storage or "emit_update_sli(false, 0)" in storage:
         gaps.append("ac-update-zero-latency")
 
-    operations = (
-        ("lookup", "impl corelink_handler_ac::AcLookupHandler", "impl corelink_handler_ac::AcUpdateHandler", "emit_lookup_sli"),
-        ("update", "impl corelink_handler_ac::AcUpdateHandler", "impl corelink_handler_ac::AcDeleteHandler", "emit_update_sli"),
-        ("delete", "impl corelink_handler_ac::AcDeleteHandler", "impl corelink_handler_ac::AcListHandler", "emit_update_sli"),
-        ("list", "impl corelink_handler_ac::AcListHandler", "/// Build an `R2AcHandler`", "emit_list_sli"),
-    )
-    for operation, start, end, emit in operations:
+    for operation, start, end, emit in AUDIT_OPERATION_SECTIONS:
         try:
             section = _section(storage, start, end)
         except ContractError as error:
@@ -112,14 +151,7 @@ def assess_source(storage: str, aggregate: str, docs: str) -> list[str]:
 
 
 def assess(root: Path) -> list[str]:
-    storage = "\n".join(
-        (root / path).read_text(encoding="utf-8")
-        for path in (
-            "crates/corelink-container/src/storage/r2_s3.rs",
-            "crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs",
-            "crates/corelink-container/src/storage/r2_s3_parts/ac_ops.rs",
-        )
-    )
+    storage = storage_source(root)
     aggregate = (root / "crates/corelink-container/src/sli_aggregate.rs").read_text(encoding="utf-8")
     docs = (root / "docs/knowledge/storage/r2-cas-bucket.md").read_text(encoding="utf-8")
     return assess_source(storage, aggregate, docs)
