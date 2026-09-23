@@ -50,7 +50,9 @@ jobs:
   drift-check:
     name: drift check (PR-side)
     if: github.event_name == 'pull_request'
-    runs-on: corelink
+    # Runner: GitHub-hosted ubuntu-latest (Bundle 5 migration from self-hosted).
+    # Pure python3; read-only drift check + dry-run notify.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
