@@ -2,6 +2,7 @@
 type: "ComplianceControl"
 title: "RFC-6962 audit / transparency chain"
 description: "CoreLink's tamper-EVIDENT (detect-at-verify) per-tenant BLAKE3 hash-chained audit log — with legacy unkeyed links preserved and a versioned keyed-epoch cutover path that fails closed until its independent witness is deployed — plus the CF-6 signed head and decoupled archive/witness seams."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "docs/internal/auth-event-taxonomy.md"
   - "crates/corelink-audit-chain/src/chain.rs"
@@ -13,6 +14,7 @@ source_files:
   - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01_part2.rs"
   - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02.rs"
   - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02_part2.rs"
+  - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_03.rs"
   - "crates/corelink-container/src/routes/audit_archive.rs"
   - "crates/corelink-container/src/routes/audit_cas_attempted.rs"
   - "crates/corelink-audit-chain/src/sealed_archive.rs"
@@ -36,6 +38,7 @@ source_blobs:
   - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01_part2.rs@30736d73ba18cdedea2741455f8364963267f5a6"
   - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02.rs@41ca30d8bfca9a0d5794a5c5f075f54ffc923460"
   - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_02_part2.rs@49a10a1b0a1529dc035dcb64bfd506a5e37f2314"
+  - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_03.rs@f929ccbcf7b069f37b14993b3c8aff68fbc30fe8"
   - "crates/corelink-container/src/storage/d1_audit_sink.rs@8248f5b89b81118171c8d98dfd28eb98dcad95c5"
 ---
 

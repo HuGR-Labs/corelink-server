@@ -2,6 +2,7 @@
 type: "Runbook"
 title: "GC / eviction operations"
 description: "How CoreLink reclaims storage safely: the GC mark→sweep→delete→reconcile phase machine, the gc-pause degrade-mode kill-switch, the per-tier eviction TTLs + 95% quota trigger, and the mandatory 10→50→100% production rollout."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "crates/corelink-gc/src/run.rs"
   - "crates/corelink-gc/src/degrade.rs"
@@ -13,9 +14,6 @@ source_files:
   - "crates/corelink-eviction/src/trigger.rs"
   - "docs/internal/gc-prod-rollout-plan.md"
 source_blobs:
-  - "crates/corelink-container/src/bin/gc_sweep.rs@47b9bfb144f3254f3ba246f6989e4317b252877d"
-  - "crates/corelink-container/src/gc_sweep.rs@fdde5caf54087fd809ddd0770158e2cd04c05af1"
-  - "crates/corelink-container/src/gc_sweep/part-01.rs@c675a50d11f52eccdb3635aa61fbe67cc06a869d"
   - "crates/corelink-container/src/bin/gc_sweep.rs@47b9bfb144f3254f3ba246f6989e4317b252877d"
   - "crates/corelink-container/src/gc_sweep.rs@fdde5caf54087fd809ddd0770158e2cd04c05af1"
   - "crates/corelink-container/src/gc_sweep/part-01.rs@c675a50d11f52eccdb3635aa61fbe67cc06a869d"

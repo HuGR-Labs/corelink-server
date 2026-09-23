@@ -2,6 +2,7 @@
 type: "Runbook"
 title: "Engineering onboarding & the buddy protocol"
 description: "The post-GA new-engineer ramp — offer to first-PR in ≤5 days, independent in ≤30 — and the senior 'buddy' role that compresses the jargon gap."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "docs/internal/ENGINEERING-ONBOARDING.md"
   - "docs/internal/onboarding/BUDDY-PROTOCOL.md"

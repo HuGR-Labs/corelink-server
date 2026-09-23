@@ -2,6 +2,7 @@
 type: "CrateCluster"
 title: "SRE operations hub (corelink-ops + satellites)"
 description: "How corelink-ops aggregates the SRE/ops primitives (chaos, secret-rotation, drift, runbook, statuspage, slack) into one import surface, and which satellites are live external transports vs. pure-logic skeletons whose production wiring is deferred."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "crates/corelink-ops/src/lib.rs"
   - "crates/corelink-ops/src/chaos.rs"

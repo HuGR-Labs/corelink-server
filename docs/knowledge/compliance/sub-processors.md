@@ -2,6 +2,7 @@
 type: "ComplianceControl"
 title: "Sub-processor / vendor DPA reviews"
 description: "The evidence store and governance for Legal Counsel's review of each CoreLink sub-processor's Data Processing Agreement, transfer mechanism, and GDPR Art. 28 flow-down obligations."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "docs/compliance/vendor-reviews/README.md"
   - "docs/compliance/vendor-reviews/_TEMPLATE.md"

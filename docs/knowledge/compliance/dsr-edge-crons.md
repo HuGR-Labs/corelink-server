@@ -2,6 +2,7 @@
 type: "ComplianceControl"
 title: "DSR edge crons + erasure-queue consumer"
 description: "The signup-worker scheduled() handler: the 24h DSR verify sweep, the dsr.queued.v1 erasure-queue consumer that drives the container erase endpoint, and the PAT-plaintext scrub cron — the edge-plane half of CoreLink's GDPR erasure obligation."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "apps/signup-worker/src/webhooks/dsr_verify_cron.ts"
   - "apps/signup-worker/src/webhooks/dsr_consumer.ts"

@@ -2,6 +2,7 @@
 type: "Runbook"
 title: "The audit export + analytics plane and customer re-verification"
 description: "How a tenant exports its tamper-evident audit chain, re-verifies it with the CLI, and queries analytics — all per-tenant isolated and fail-closed."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01.rs"
   - "crates/corelink-container/src/routes/audit_drain/b126_m2_impl_01_part2.rs"

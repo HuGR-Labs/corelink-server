@@ -2,6 +2,7 @@
 type: "Runbook"
 title: "Reproducible-build process"
 description: "Best-effort reproducible builds: two legs on one self-hosted host diffing the SHIPPED corelink-cli binary, the hermetic flag set (SOURCE_DATE_EPOCH + remap-path-prefix + codegen-units=1 + jobs 1 + locked/offline), the ≤5% byte-diff gate ratified by ADR-0015 — and the 2026-08-24 repair of a lane that hashed a wasm artifact the build cannot produce, which is why it had never once measured anything."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "docs/build/reproducible.md"
   - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md"

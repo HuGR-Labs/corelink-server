@@ -2,6 +2,7 @@
 type: "Runbook"
 title: "Scheduled drills"
 description: "Fail-closed synthetic PagerDuty drill handoff seam with no active trigger."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "worker/src/index_common.ts"
   - "worker/src/index_schedule.ts"

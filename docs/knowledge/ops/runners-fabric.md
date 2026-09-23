@@ -2,6 +2,7 @@
 type: "Runbook"
 title: "Runners fabric (introspect-gated compute)"
 description: "How the corelink-runners compute fabric authorizes placement: the dedicated-key-gated POST /internal/v1/auth/introspect endpoint that resolves tenant + plan + a SEPARATE runners-entitlement axis (max_concurrency / max_vcpu_h), fail-CLOSED on any D1 fault."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "crates/corelink-container/src/routes/auth_introspect/part-00.rs"
   - "crates/corelink-container/src/routes/auth_introspect/part-01.rs"

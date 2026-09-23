@@ -2,6 +2,7 @@
 type: "Runbook"
 title: "The admin plane: config-singleton CAS + dual-approval mutate + pilot lifecycle"
 description: "How operators mutate runtime config with optimistic concurrency and dual approval, and how the container admin routes gate every privileged action."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "crates/corelink-container/src/routes/admin/part-01.rs"
   - "crates/corelink-container/src/routes/admin/part-00-00.rs"
@@ -18,7 +19,8 @@ source_blobs:
   - "crates/corelink-container/src/routes/admin/part-01.rs@c59a9716d2c92b25bce4a4e19d3cebf72b58f653"
   - "crates/corelink-container/src/routes/admin_pilot/part-00-00.rs@9b22b2a3cf27b48a0b515204624a72fabe98284d"
   - "crates/corelink-container/src/routes/admin_pilot/part-01-01.rs@6195ffddd9b75cb6fd88c0a5dfba60cb01622e4e"
-  - "crates/corelink-container/src/routes/build.rs@43036d91a76bf2e14d6d49c2bca705037fc02081"---
+  - "crates/corelink-container/src/routes/build.rs@43036d91a76bf2e14d6d49c2bca705037fc02081"
+---
 # The admin plane: config-singleton CAS + dual-approval mutate + pilot lifecycle
 
 The admin plane is the operator control surface. The **LIVE** container admin mutate route gates

@@ -2,6 +2,7 @@
 type: "ComplianceControl"
 title: "DSR / right-to-erasure pipeline"
 description: "How a GDPR Art.17 data-subject erasure request is intaked, MFA-gated, orchestrated across the live data planes, CAS-tombstoned, and attested in CoreLink."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "docs/security/2026-06-23-secreview-gdpr-residency.md"
   - "crates/corelink-container/src/routes/dsr.rs"
@@ -33,13 +34,14 @@ source_files:
   - "crates/corelink-container/src/routes/cas_erase.rs"
   - "crates/corelink-container/src/routes/dsr/portal/part-00-01.rs"
 source_blobs:
-  - "crates/corelink-container/src/routes/cas/batch_read.rs@93eab5140a1f10276b288323018235b5c3531a14"
+  - "crates/corelink-container/src/routes/cas/batch_read.rs@762ed7b8f4726a6b034e5b2afd1980f3f66c20bf"
   - "crates/corelink-container/src/routes/cas_erase/b126_m2_impl_02.rs@29f5160cf76e159e1304815ea76b0644073c3639"
   - "crates/corelink-container/src/routes/dsr.rs@104c8c767c06cd9285e045b8360f58cb6368573f"
   - "crates/corelink-container/src/routes/dsr/access.rs@c44f7566d9a6b18ce4baf1199b8661ed37fed232"
   - "crates/corelink-container/src/routes/dsr/adapter_d1.rs@cde3bf57aa578b74b188edf9678b84f88300d0cd"
   - "crates/corelink-container/src/routes/dsr/d1util.rs@0a47733f10d39f456c9760be73fce1c4beb6adcc"
-  - "crates/corelink-container/src/routes/dsr/portal/part-00-01.rs@f2af2621d626565b65d8f62e615f5dc5470199e2"---
+  - "crates/corelink-container/src/routes/dsr/portal/part-00-01.rs@f2af2621d626565b65d8f62e615f5dc5470199e2"
+---
 CoreLink is a multi-tenant content-addressable cache sold self-serve to SMBs, so it holds tenant PII and content and must honour data-subject erasure (GDPR Art.17 / LGPD Art.18). The pipeline has two halves: a pure-logic **self-service DSR endpoint** (`corelink-dsr`) that intakes a request, gates destructive arms behind step-up MFA, and issues a signed receipt; and the **live Wave-1 erasure engine** in the container (`routes/dsr.rs`) that actually deletes real bytes across the configured backends and is re-confirmed by a 24h verify sweep. A go-live security review found erasure "complete-by-construction for the live data planes (CAS + AC + D1 + Stripe)" with no launch-blocking finding (`docs/security/2026-06-23-secreview-gdpr-residency.md:12-18`). The whole pipeline is regulatory-grade fail-CLOSED: every state mutation is preceded by a durable audit row, and an erasure is never attested complete while subject bytes survive.
 
 # Role

@@ -2,6 +2,7 @@
 type: "Runbook"
 title: "The corelink CLI: JSON output schema & opt-in telemetry"
 description: "The machine-readable --output=json contract (with SemVer discipline) and the default-off, PII-free CLI telemetry policy."
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 source_files:
   - "docs/cli/json-output-schema.md"
   - "docs/cli/telemetry.md"
