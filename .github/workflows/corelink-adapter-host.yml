@@ -1,11 +1,8 @@
 name: corelink-adapter-host
 
 # Off-Mac PR gate for the `corelink-adapter-host` crate (the brew/npm/pip/oci
-# cache adapters). PR lane: crate-scoped clippy (-D warnings) + tests on
-# `runs-on: corelink` — CoreLink's own ephemeral runner fabric (wave 4,
-# 2026-08-03; previously GitHub-HOSTED ubuntu-latest) — so adapter changes
-# verify in CI WITHOUT loading the self-hosted macOS builder fleet and without
-# billed hosted minutes (mirrors corelink-meta.yml::pr-gate).
+# cache adapters). It runs crate-scoped clippy (-D warnings) and tests on the
+# GitHub-hosted ubuntu-24.04 runner.
 # Workspace-wide gates live in cas_foundation.yml::workspace-build-test (nightly
 # + on-demand) per CI-OPT-001; this lane is the fast, targeted PR coverage.
 
@@ -45,37 +42,11 @@ env:
 jobs:
   pr-gate:
     name: PR gate (crate-scoped clippy + tests)
-    # Runner: `corelink` — the product's own ephemeral runner fabric (wave 4,
-    # 2026-08-03). This job burned 69 billed minutes of ubuntu-latest (~$0.41) in
-    # the 3 days to 2026-08-03; it is the whole hosted footprint of this
-    # workflow, so the move takes all of it.
-    #
-    # The box is 4 vCPU / 12.5 GB (probe run 30825772599) against ubuntu-latest's
-    # 2 vCPU / 7 GB on a private repo — twice the cores, and that headroom is what
-    # pays for the cache loss described next.
-    #
-    # ⚠️ Ephemeral-runner reality — the box carries NO cache between runs, and the
-    # `Swatinem/rust-cache` step below is gated `runner.environment ==
-    # 'github-hosted'` (the shared-$HOME guard), so on a corelink box it SKIPS and
-    # the crate compiles COLD every run. Measured, that costs far less than it
-    # sounds: the image ships a pre-seeded ~/.cargo (415 MB, 362 registry
-    # entries), so `cargo fetch --locked` took 12 s and a full cold
-    # clippy + test cycle for a crate lane ran in ~105 s on 4 cores — comparable
-    # to the warm-cache hosted runs. Do NOT "fix" this by re-enabling the cache
-    # step on self-hosted: that guard exists because the MAC fleet shares one
-    # $HOME and rust-cache's prune step deletes a sibling job's registry
-    # mid-compile (#979/#980).
-    #
-    # ⚠️ A refused or dropped spawn leaves the job QUEUED, and `timeout-minutes`
-    # does not bound queued time — it starts once a job is RUNNING. That is a
-    # stall, not a false pass: `scripts/pre-merge-gate-check.sh` scores a pending
-    # check as ⛔ DO NOT MERGE, so a stranded box blocks the PR rather than
-    # waving it through.
+    # GitHub-hosted ubuntu-24.04. The cargo cache step below is enabled for
+    # GitHub-hosted runners; the pinned toolchain assertion keeps Rust aligned
+    # with rust-toolchain.toml.
     runs-on: ubuntu-24.04
-    # Sized from the measurement, not from a guess: the heaviest crate lane
-    # already on this fabric (corelink-reapi::pr-gate) runs cold in ~409-423 s,
-    # and this lane is lighter (clippy + one debug test pass, no release build).
-    # 30 min is ~4x headroom over the heavier neighbour.
+    # Bound setup, cache restore, clippy, and tests to 30 minutes.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
@@ -93,7 +64,7 @@ jobs:
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
-        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
+        if: runner.environment == 'github-hosted'
         with:
           workspaces: ". -> target"
 

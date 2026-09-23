@@ -37,21 +37,8 @@ concurrency:
 
 jobs:
   spec-validation:
-    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
-    # Five stdlib/venv python3 validators; the step comment below
-    # already documents the venv-on-system-python3 idiom written FOR this fleet.
-    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
-    # check costs a full paid minute every run; on the fleet it costs $0.
-    # Verified running natively on the fleet host (macOS/BSD userland).
-    # zero-hosted (WP-CI): python3 puro (baked na imagem da frota)
     runs-on: ubuntu-24.04
-    # Five stdlib/venv python3 validators.
-    # ubuntu-24.04 has python3 baked in
-    # Bound the job (CI cost diet 2026-08-01): a self-hosted job with no
-    # timeout inherits GitHub's 360-min default, so one wedged run can hold
-    # 1 of the 4 `corelink-builder` runners for 6h and stall
-    # `scripts/pre-merge-gate-check.sh` (the mandatory merge gate) for every
-    # other PR. This check is sub-minute.
+    # Five Python validators on GitHub-hosted ubuntu-24.04.
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -59,13 +46,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # No actions/setup-python: the self-hosted mac fleet can't reliably
-      # provision Python via setup-python (RUNNER_TOOL_CACHE is unset → it
-      # falls back to the unwritable /Users/runner hosted path and dies with
-      # `mkdir: /Users/runner: Permission denied`). We use the system `python3`
-      # (ships on every runner) and isolate the jsonschema/pyyaml deps in a
-      # repo-local venv. Adding the venv's bin to $GITHUB_PATH makes the
-      # `python3` in every subsequent step resolve to the venv. (2026-06-03)
+      # Use the image's system Python to host the repo-local venv. Its bin is
+      # added to $GITHUB_PATH so subsequent validators use the pinned deps.
       - name: Install dependencies (venv on system python3)
         run: |
           set -euo pipefail
