@@ -64,7 +64,17 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
-def validate_provider_binding(binding: dict[str, Any]) -> None:
+def _parse_captured_at(binding: dict[str, Any]) -> datetime:
+    captured = binding["captured_at"]
+    if not isinstance(captured, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", captured):
+        raise ProviderBindingError("provider timestamp must be whole-second UTC")
+    try:
+        return datetime.strptime(captured, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise ProviderBindingError("provider timestamp is invalid") from exc
+
+
+def _validate_provider_binding(binding: dict[str, Any], *, now: datetime | None, enforce_freshness: bool) -> None:
     if set(binding) != PROVIDER_KEYS:
         missing = sorted(PROVIDER_KEYS - set(binding))
         extra = sorted(set(binding) - PROVIDER_KEYS)
@@ -103,16 +113,21 @@ def validate_provider_binding(binding: dict[str, Any]) -> None:
         raise ProviderBindingError("provider script content digest drifted")
     if binding["rollout_percentage"] != EXPECTED_ROLLOUT_PERCENTAGE:
         raise ProviderBindingError("provider rollout is not the pinned 100% serving rollout")
-    captured = binding["captured_at"]
-    if not isinstance(captured, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", captured):
-        raise ProviderBindingError("provider timestamp must be whole-second UTC")
-    try:
-        captured_at = datetime.strptime(captured, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    except ValueError as exc:
-        raise ProviderBindingError("provider timestamp is invalid") from exc
-    now = datetime.now(timezone.utc)
-    if captured_at < now - MAX_RECEIPT_AGE or captured_at > now + MAX_RECEIPT_FUTURE:
+    captured_at = _parse_captured_at(binding)
+    if enforce_freshness and (captured_at < now - MAX_RECEIPT_AGE or captured_at > now + MAX_RECEIPT_FUTURE):
         raise ProviderBindingError("provider evidence is stale or from the future")
+
+
+def validate_provider_binding(binding: dict[str, Any], *, now: datetime | None = None) -> None:
+    """Validate live provider evidence against the wall clock or test clock."""
+
+    _validate_provider_binding(binding, now=now or datetime.now(timezone.utc), enforce_freshness=True)
+
+
+def validate_historical_provider_binding(binding: dict[str, Any]) -> None:
+    """Validate checked-in provider evidence content without live freshness."""
+
+    _validate_provider_binding(binding, now=None, enforce_freshness=False)
 
 
 def main(argv: list[str] | None = None) -> int:
