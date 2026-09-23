@@ -73,7 +73,10 @@ concurrency:
 jobs:
   guard:
     name: Non-active workflows must be declared
-    runs-on: corelink
+    # Runner: GitHub-hosted ubuntu-latest (Bundle 4 migration from self-hosted).
+    # Python stdlib + PyYAML; GitHub API calls via GITHUB_TOKEN; read-only.
+    # if: condition restricts to main repo; runners repo not inspected (no cross-repo cred).
+    runs-on: ubuntu-latest
     if: github.repository_id == '1232040291'
     steps:
       - name: Checkout

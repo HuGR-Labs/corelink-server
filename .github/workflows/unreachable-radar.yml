@@ -34,10 +34,13 @@ concurrency:
 
 jobs:
   radar:
-    # Self-hosted fleet — zero GitHub-hosted spend, per the standing mandate.
-    runs-on: corelink
+    # Runner: GitHub-hosted ubuntu-latest (Bundle 4 migration from self-hosted).
+    # Python stdlib detector; read-only advisory scan.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0  # v6.0.3
+        with:
+          persist-credentials: false
 
       # The gate's own gate, first: if the detector can no longer tell a
       # type-cast read from a dead binding, its report below is worthless.
