@@ -47,9 +47,9 @@ jobs:
     # every touched file; the ~200-file legacy backlog does not block
     # unrelated PRs and burns down as files are edited. Full-tree visibility
     # lives in docs-ci.yml's advisory "Vale prose lint" job.
-    # Runner: GitHub-hosted ubuntu-latest (wave 3 migration from corelink fabric).
+    # Runner: GitHub-hosted ubuntu-24.04 (wave 3 migration from corelink fabric).
     # Native Vale binary (Linux x86_64 release asset) installed at runtime.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       VALE_VERSION: 3.9.1
