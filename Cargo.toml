@@ -518,6 +518,7 @@ aws-sdk-kms = { version = "1", default-features = false, features = ["rt-tokio",
 # pin as aws-sdk-kms to share the existing smithy/runtime infrastructure
 # (aws-smithy-*, aws-runtime, aws-credential-types) already in Cargo.lock.
 aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", "default-https-client"] }
+aws-sdk-sts = { version = "1", default-features = false, features = ["rt-tokio", "default-https-client"] }
 
 # RFC 8785 JCS canonical JSON for AAD / encryption_context binding
 # (used by BYOK providers + audit-chain link hashing).

@@ -12,6 +12,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Version of the immutable archive conformance contract.
 pub const OBJECT_LOCK_ARCHIVE_CONTRACT_VERSION: u32 = 1;
@@ -180,6 +181,8 @@ pub struct ObjectLockCapabilityReport {
 /// Immutable object payload and required post-write state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImmutableArchivePut {
+    /// Authenticated tenant whose trusted routing selected this archive target.
+    pub tenant_id: String,
     /// Provider-neutral object key.
     pub object_key: String,
     /// Bytes to archive.
@@ -193,6 +196,8 @@ pub struct ImmutableArchivePut {
 /// Provider readback after an immutable write.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ObjectLockRetentionReadback {
+    /// Exact provider object version read back from storage.
+    pub object_version: String,
     /// Object key read back from the provider.
     pub object_key: String,
     /// Storage-enforced retention and hold state.
@@ -201,15 +206,18 @@ pub struct ObjectLockRetentionReadback {
     pub residency: ArchiveResidency,
 }
 
-/// Durable record of the provider immutable-write audit event.
+/// Receipt metadata for the provider immutable-write operation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArchiveAuditReceipt {
     /// Provider-issued or externally durable audit-event identifier.
     pub receipt_id: String,
+    /// Exact provider object version covered by the durable receipt.
+    pub object_version: String,
     /// Object key covered by the receipt.
     pub object_key: String,
-    /// Provider-recorded immutable-write time.
-    pub recorded_at_unix_ms: u64,
+    /// Local adapter clock observation immediately after write success.
+    /// This is not a provider timestamp or a durable audit-event time.
+    pub observed_at_unix_ms: u64,
 }
 
 /// Provider result after it accepts an immutable write.
@@ -217,6 +225,8 @@ pub struct ArchiveAuditReceipt {
 pub struct ImmutableArchiveWriteReceipt {
     /// Object key accepted by the provider.
     pub object_key: String,
+    /// Exact immutable version written by the provider.
+    pub object_version: String,
     /// Provider audit receipt for the immutable write.
     pub audit_receipt: ArchiveAuditReceipt,
 }
@@ -362,9 +372,12 @@ where
         &self,
         request: &ImmutableArchivePut,
     ) -> Result<VerifiedImmutableArchiveReceipt, ObjectLockArchiveError> {
-        if request.object_key.trim().is_empty() || request.body.is_empty() {
+        if request.tenant_id.trim().is_empty()
+            || request.object_key.trim().is_empty()
+            || request.body.is_empty()
+        {
             return Err(ObjectLockArchiveError::ReadbackMismatch(
-                "immutable archive write requires a non-empty key and body".to_string(),
+                "immutable archive write requires a tenant, non-empty key, and body".to_string(),
             ));
         }
         if request.retention.retain_until_unix_ms == 0 || !request.expected_residency.is_complete()
@@ -375,9 +388,11 @@ where
         }
         let write_receipt = self.adapter.put_immutable(request)?;
         if write_receipt.object_key != request.object_key
+            || write_receipt.object_version.trim().is_empty()
             || write_receipt.audit_receipt.object_key != request.object_key
+            || write_receipt.audit_receipt.object_version != write_receipt.object_version
             || write_receipt.audit_receipt.receipt_id.trim().is_empty()
-            || write_receipt.audit_receipt.recorded_at_unix_ms == 0
+            || write_receipt.audit_receipt.observed_at_unix_ms == 0
         {
             return Err(ObjectLockArchiveError::ReadbackMismatch(
                 "write receipt did not cover the requested object".to_string(),
@@ -385,6 +400,8 @@ where
         }
         let retention_readback = self.adapter.read_retention(&request.object_key)?;
         if retention_readback.object_key != request.object_key
+            || retention_readback.object_version != write_receipt.object_version
+            || retention_readback.object_version.trim().is_empty()
             || retention_readback.retention != request.retention
             || retention_readback.residency != request.expected_residency
             || !retention_readback.residency.is_complete()
@@ -546,7 +563,7 @@ pub struct InMemoryObjectLockArchive {
     identity: ObjectLockBackendIdentity,
     residency: ArchiveResidency,
     delete_is_denied: bool,
-    objects: Arc<Mutex<BTreeMap<String, ImmutableRetention>>>,
+    objects: Arc<Mutex<BTreeMap<String, (ImmutableRetention, String)>>>,
     next_receipt: Arc<Mutex<u64>>,
 }
 
@@ -601,20 +618,39 @@ impl ObjectLockArchiveAdapter for InMemoryObjectLockArchive {
         let mut objects = self.objects.lock().map_err(|_| {
             ObjectLockArchiveError::TestFixture("in-memory object map mutex poisoned".to_string())
         })?;
-        objects.insert(request.object_key.clone(), request.retention);
         let mut next_receipt = self.next_receipt.lock().map_err(|_| {
             ObjectLockArchiveError::TestFixture(
                 "in-memory receipt counter mutex poisoned".to_string(),
             )
         })?;
+        let version_id = format!("in-memory-version-{}", *next_receipt);
+        objects.insert(
+            request.object_key.clone(),
+            (request.retention, version_id.clone()),
+        );
         let receipt_id = format!("in-memory-object-lock-{}", *next_receipt);
         *next_receipt = next_receipt.saturating_add(1);
+        let observed_at_unix_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| {
+                ObjectLockArchiveError::TestFixture(
+                    "test clock was before the Unix epoch".to_string(),
+                )
+            })?
+            .as_millis();
+        let observed_at_unix_ms = u64::try_from(observed_at_unix_ms).map_err(|_| {
+            ObjectLockArchiveError::TestFixture(
+                "test observation timestamp exceeded u64 range".to_string(),
+            )
+        })?;
         Ok(ImmutableArchiveWriteReceipt {
             object_key: request.object_key.clone(),
+            object_version: version_id.clone(),
             audit_receipt: ArchiveAuditReceipt {
                 receipt_id,
                 object_key: request.object_key.clone(),
-                recorded_at_unix_ms: request.retention.retain_until_unix_ms.saturating_sub(1),
+                object_version: version_id,
+                observed_at_unix_ms,
             },
         })
     }
@@ -626,12 +662,13 @@ impl ObjectLockArchiveAdapter for InMemoryObjectLockArchive {
         let objects = self.objects.lock().map_err(|_| {
             ObjectLockArchiveError::TestFixture("in-memory object map mutex poisoned".to_string())
         })?;
-        let retention = objects.get(object_key).copied().ok_or_else(|| {
+        let (retention, object_version) = objects.get(object_key).cloned().ok_or_else(|| {
             ObjectLockArchiveError::Backend(
                 "object does not exist in in-memory archive".to_string(),
             )
         })?;
         Ok(ObjectLockRetentionReadback {
+            object_version,
             object_key: object_key.to_string(),
             retention,
             residency: self.residency.clone(),
@@ -661,6 +698,66 @@ impl ObjectLockArchiveAdapter for InMemoryObjectLockArchive {
 )]
 mod tests {
     use super::*;
+
+    const LEGACY_TIMESTAMP_FIELD: &str = concat!("recorded_at", "_unix_ms");
+    const LEGACY_PROVIDER_TIME_CLAIM: &str = concat!("Provider-recorded immutable-write ", "time.");
+
+    fn timestamp_semantics_are_local(contract: &str, adapter: &str, docs: &str) -> bool {
+        contract.contains("pub observed_at_unix_ms: u64")
+            && contract.contains("Local adapter clock observation immediately after write success.")
+            && !contract.contains(LEGACY_TIMESTAMP_FIELD)
+            && !contract.contains(LEGACY_PROVIDER_TIME_CLAIM)
+            && adapter.contains("let observed_at_unix_ms = SystemTime::now()")
+            && adapter.contains("observed_at_unix_ms,")
+            && !adapter.contains(LEGACY_TIMESTAMP_FIELD)
+            && docs.contains("Its `observed_at_unix_ms` field is the")
+            && docs.contains("adapter's local clock reading")
+            && docs.contains("not an S3 event timestamp")
+    }
+
+    #[test]
+    fn receipt_timestamp_semantics_reject_provider_recorded_mutations() {
+        let contract = include_str!("object_lock_archive.rs");
+        let adapter = include_str!("aws_s3_object_lock.rs");
+        let docs =
+            include_str!("../../../docs/operator/aws-s3-object-lock-archive-provisioning.md");
+        assert!(timestamp_semantics_are_local(contract, adapter, docs));
+
+        let provider_field_mutation =
+            contract.replace("observed_at_unix_ms", LEGACY_TIMESTAMP_FIELD);
+        assert!(!timestamp_semantics_are_local(
+            &provider_field_mutation,
+            adapter,
+            docs,
+        ));
+
+        let provider_claim_mutation = contract.replace(
+            "Local adapter clock observation immediately after write success.",
+            LEGACY_PROVIDER_TIME_CLAIM,
+        );
+        assert!(!timestamp_semantics_are_local(
+            &provider_claim_mutation,
+            adapter,
+            docs,
+        ));
+
+        let adapter_field_mutation = adapter.replace("observed_at_unix_ms", LEGACY_TIMESTAMP_FIELD);
+        assert!(!timestamp_semantics_are_local(
+            contract,
+            &adapter_field_mutation,
+            docs,
+        ));
+
+        let provider_docs_mutation = docs.replace(
+            "adapter's local clock reading",
+            "provider recorded immutable-write time",
+        );
+        assert!(!timestamp_semantics_are_local(
+            contract,
+            adapter,
+            &provider_docs_mutation,
+        ));
+    }
 
     #[derive(Debug)]
     struct WrongObjectDeleteDenialAdapter {
@@ -709,6 +806,7 @@ mod tests {
 
     fn request() -> ImmutableArchivePut {
         ImmutableArchivePut {
+            tenant_id: "tenant-a".to_string(),
             object_key: "audit/2026/09/22/tenant/00000001.ndjson".to_string(),
             body: b"sealed audit bytes".to_vec(),
             retention: ImmutableRetention {
