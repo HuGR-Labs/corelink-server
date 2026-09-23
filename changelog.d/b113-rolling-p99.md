@@ -1,4 +1,6 @@
-# B-113 CI lane population and rolling p99
+### Changed
+
+- # B-113 CI lane population and rolling p99
 
 - The dispatch-only endurance lane now downloads exactly one non-expired result
   artifact from each of seven prior successful run IDs, validates the complete

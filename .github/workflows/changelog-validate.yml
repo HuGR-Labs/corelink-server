@@ -118,27 +118,38 @@ jobs:
           ADDED=$(printf '%s\n' "$ADDED" | grep -v '^changelog.d/README.md$' || true)
           ADDED=$(printf '%s\n' "$ADDED" | grep -v '^[[:space:]]*$' || true)
 
-          if [[ -z "$ADDED" ]]; then
+          CHANGED=$(git diff --name-only --diff-filter=AM "${BASE}..${HEAD}" \
+                      -- 'changelog.d/*.md')
+          CHANGED=$(printf '%s\n' "$CHANGED" | grep -v '^changelog.d/README.md$' || true)
+          CHANGED=$(printf '%s\n' "$CHANGED" | grep -v '^[[:space:]]*$' || true)
+
+          if [[ -n "$ADDED" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
             echo "no new changelog.d/ fragment in this PR"
             echo "present=false" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
 
-          echo "changelog fragment(s) added:"
-          echo "$ADDED"
-          echo "present=true" >> "$GITHUB_OUTPUT"
+          if [[ -n "$CHANGED" ]]; then
+            echo "changelog fragment(s) added or modified:"
+            echo "$CHANGED"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no added or modified changelog.d/ fragments in this PR"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
           {
             echo "paths<<EOF"
-            echo "$ADDED"
+            echo "$CHANGED"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
       - name: Validate changelog fragment format
-        # Runs whenever a fragment is added, feat:/fix: or not. A malformed
+        # Runs whenever a fragment is added or modified, feat:/fix: or not. A malformed
         # fragment that is never linted is a silently-dropped changelog entry —
         # the same drift this whole workflow exists to prevent, moved one file
         # sideways.
-        if: steps.fragment.outputs.present == 'true'
+        if: steps.fragment.outputs.changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
