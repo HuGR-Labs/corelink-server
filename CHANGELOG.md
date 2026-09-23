@@ -30,6 +30,7 @@ Each entry cross-references:
   placement caused exact-main dispatch rejection. Hosted contract runs remain
   static evidence only, and B-134 stays `UNMEASURED` until authorized fleet
   receipt evidence exists.
+- **B-098 repository hygiene evidence now matches shipped populations.** Canonical specs carry required front matter; CLAUDE and blocker receipt counts derive from the current validator population while release state remains blocked.
 
 - **CAS writes expose durable failure effects.** The handler seam now
   distinguishes definitely-not-written, committed, reconciliation-pending, and
