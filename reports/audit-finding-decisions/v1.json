@@ -6,7 +6,7 @@
     "pilot_identity_2026_07_02": "docs/security/2026-07-02-pilot-identity-brutal-audit.md",
     "b028_dependabot_2026_09_06": "docs/security/b028-dependabot-census-2026-09-06.json"
   },
-  "source_registry_sha256": "ab1842c78f78de7ae470e3e8d4bafc03ec9297e7f3bb808bac870990f2d6a62a",
+  "source_registry_sha256": "63bff935c83330e488bcd840299a73cf838285628cc14b44181b38eac0ccec9f",
   "source_sha256": {
     "due_diligence_2026_06_15": "0ac20e7bf0b0674d06a195cf7ba676816deac91c038ed85c9385235cc93dae56",
     "go_live_2026_08_26": "a6661037b0ada6a244c80bd727c193c371d86c8371d15f7486fa1043e6d8f08a",
