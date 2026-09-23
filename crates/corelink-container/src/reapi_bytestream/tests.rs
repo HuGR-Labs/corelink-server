@@ -18,7 +18,7 @@ use corelink_handler_cas::{
     CasWriteRequest, CasWriteResponse,
 };
 use corelink_reapi::proto::bytestream::{ReadRequest, WriteRequest};
-use futures::{stream, StreamExt};
+use futures::{stream, StreamExt, TryStreamExt};
 use tonic::{Code, Status};
 
 use super::*;
@@ -165,7 +165,10 @@ fn service(
 
 fn metadata() -> tonic::metadata::MetadataMap {
     let mut metadata = tonic::metadata::MetadataMap::new();
-    metadata.insert("authorization", "Bearer test-pat".parse().expect("metadata"));
+    metadata.insert(
+        "authorization",
+        "Bearer test-pat".parse().expect("metadata"),
+    );
     metadata
 }
 
@@ -213,7 +216,7 @@ async fn valid_write_calls_decorated_handler_once_and_read_honors_range() {
         )
         .await
         .expect("read succeeds")
-        .collect::<Result<Vec<_>, Status>>()
+        .try_collect::<Vec<_>>()
         .await
         .expect("read frames");
     let returned: Vec<u8> = frames.into_iter().flat_map(|frame| frame.data).collect();
@@ -353,6 +356,75 @@ async fn malformed_offsets_incomplete_and_hash_or_size_mismatch_fail_before_pers
 }
 
 #[tokio::test]
+async fn read_ranges_and_write_size_ceiling_fail_before_cas() {
+    let body = b"bounded-body".to_vec();
+    let cas = Arc::new(CasSpy::with_body(body.clone()));
+    let service = service(Ok(("tenant-a".into(), true)), Ok(()), cas.clone());
+    let read_name = format!(
+        "tenant-a/blobs/{}/{}",
+        crate::reapi_ingress::sha256_digest(&body),
+        body.len()
+    );
+    for (offset, limit, code) in [
+        (body.len() as i64 + 1, 0, Code::OutOfRange),
+        (0, -1, Code::InvalidArgument),
+    ] {
+        let error = service
+            .read_request(
+                &metadata(),
+                ReadRequest {
+                    resource_name: read_name.clone(),
+                    read_offset: offset,
+                    read_limit: limit,
+                },
+            )
+            .await
+            .err()
+            .expect("invalid range");
+        assert_eq!(error.code(), code);
+    }
+
+    let digest = crate::reapi_ingress::sha256_digest(&body);
+    let too_large_resource = format!(
+        "tenant-a/uploads/00000000-0000-0000-0000-000000000001/blobs/{digest}/{}",
+        REAPI_BYTESTREAM_MAX_BUFFERED_BYTES + 1
+    );
+    let oversized = WriteRequest {
+        resource_name: too_large_resource,
+        write_offset: 0,
+        finish_write: true,
+        data: Vec::new(),
+    };
+    assert_eq!(
+        service
+            .write_stream(&metadata(), stream::iter(vec![Ok(oversized)]))
+            .await
+            .expect_err("declared size exceeds configured ceiling")
+            .code(),
+        Code::ResourceExhausted
+    );
+
+    let too_much_data = WriteRequest {
+        resource_name: format!(
+            "tenant-a/uploads/00000000-0000-0000-0000-000000000001/blobs/{digest}/1"
+        ),
+        write_offset: 0,
+        finish_write: true,
+        data: body,
+    };
+    assert_eq!(
+        service
+            .write_stream(&metadata(), stream::iter(vec![Ok(too_much_data)]))
+            .await
+            .expect_err("body exceeds its declared size")
+            .code(),
+        Code::ResourceExhausted
+    );
+    assert_eq!(cas.reads.load(Ordering::SeqCst), 0);
+    assert_eq!(cas.writes.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
 async fn quota_and_audit_failures_fail_closed() {
     let body = b"body".to_vec();
     let request = WriteRequest {
@@ -411,7 +483,10 @@ async fn tombstone_gates_never_serve_or_persist_and_authority_faults_fail_closed
     let tombstoned = Arc::new(CasSpy::with_body(body.clone()));
     tombstoned.tombstoned.store(true, Ordering::SeqCst);
     let tombstoned_service = service(Ok(("tenant-a".into(), true)), Ok(()), tombstoned.clone());
-    let tombstoned_read = match tombstoned_service.read_request(&metadata(), read.clone()).await {
+    let tombstoned_read = match tombstoned_service
+        .read_request(&metadata(), read.clone())
+        .await
+    {
         Ok(_) => panic!("tombstoned bytes are never served"),
         Err(error) => error,
     };

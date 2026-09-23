@@ -470,6 +470,12 @@ candidates:
     status: "active"
     source_cluster: "surfaces"
     seed_from: ["crates/corelink-container/src/lib.rs", "crates/corelink-container/src/reapi_ingress.rs", "crates/corelink-container/src/reapi_ingress/admission.rs", "crates/corelink-container/src/reapi_ingress/validation.rs", "crates/corelink-container/src/reapi_ingress/tests.rs", "crates/corelink-container/src/routes.rs", "crates/corelink-container/src/routes/build.rs"]
+  - id: "surfaces/reapi-authenticated-bytestream"
+    type: "CacheSurface"
+    title: "Authenticated REAPI ByteStream contract"
+    status: "active"
+    source_cluster: "surfaces"
+    seed_from: ["crates/corelink-container/src/reapi_bytestream.rs", "crates/corelink-container/src/reapi_bytestream/tests.rs"]
   - id: "surfaces/bazel-reapi"
     type: "CacheSurface"
     title: "Bazel REAPI v2 surface"

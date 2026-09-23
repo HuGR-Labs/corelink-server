@@ -30,6 +30,7 @@ def violations(service: str, tests: str, routes: str, concept: str) -> list[str]
         "admitted\n            .cas_write(",
         "finish_write",
         "stream.next().await.transpose()?.is_some()",
+        "drop(first);",
         "write_offset",
         "try_acquire_owned()",
         "Status::unimplemented(",
@@ -46,6 +47,7 @@ def violations(service: str, tests: str, routes: str, concept: str) -> list[str]
         "missing_invalid_read_only_and_tenant_mismatch_never_reach_cas",
         "malformed_offsets_incomplete_and_hash_or_size_mismatch_fail_before_persistence",
         "quota_and_audit_failures_fail_closed",
+        "read_ranges_and_write_size_ceiling_fail_before_cas",
         "terminal_write_requires_eof_and_rejects_delayed_replay_before_persistence",
         "unsupported_resume_never_invents_upload_state",
     )
@@ -76,6 +78,7 @@ def self_test() -> list[str]:
         (service.replace("admitted.cas_read(", "admitted.cas_lookup(", 1), tests, routes, concept, "decorated read bypass"),
         (service.replace("Status::unimplemented(", "Ok(Response::new(QueryWriteStatusResponse { committed_size: 0, complete: false }))", 1), tests, routes, concept, "invented resume state"),
         (service.replace("stream.next().await.transpose()?.is_some()", "false", 1), tests, routes, concept, "missing terminal EOF drain"),
+        (service.replace("drop(first);", "", 1), tests, routes, concept, "unbudgeted initial request frame"),
         (service, tests, routes + "\nReapiByteStreamService::new", concept, "public mount"),
         (service, tests.replace("quota_and_audit_failures_fail_closed", "", 1), routes, concept, "failed audit coverage"),
     )

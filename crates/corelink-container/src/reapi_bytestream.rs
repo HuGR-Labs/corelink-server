@@ -137,20 +137,25 @@ impl ReapiByteStreamService {
             .await
             .transpose()?
             .ok_or_else(|| Status::new(Code::InvalidArgument, "REAPI write stream is empty"))?;
-        let instance = resource_instance(&first.resource_name)?;
+        let first_resource_name = first.resource_name.clone();
+        let instance = resource_instance(&first_resource_name)?;
         let admitted = self
             .ingress
             .authorize(metadata, instance, Access::Write)
             .await?;
         let resource =
-            validate_blob_resource_name(&first.resource_name, admitted.tenant().tenant_id())?;
+            validate_blob_resource_name(&first_resource_name, admitted.tenant().tenant_id())?;
         require_write_resource(&resource)?;
         let declared_size = bounded_resource_size(&resource)?;
         let permit = self.acquire_buffer_permit()?;
 
         let mut buffered = Vec::with_capacity(declared_size);
-        consume_write_chunk(&mut buffered, &first, &first.resource_name, &resource, 0)?;
+        consume_write_chunk(&mut buffered, &first, &first_resource_name, &resource, 0)?;
         let mut finished = first.finish_write;
+        // Release the initial request frame after copying its bytes. Keeping
+        // it alive would add an unbudgeted body-sized allocation beside the
+        // assembled body while the handler persists the write.
+        drop(first);
 
         while !finished {
             let chunk = stream.next().await.transpose()?.ok_or_else(|| {
@@ -165,7 +170,7 @@ impl ReapiByteStreamService {
             consume_write_chunk(
                 &mut buffered,
                 &chunk,
-                &first.resource_name,
+                &first_resource_name,
                 &resource,
                 expected_offset,
             )?;
