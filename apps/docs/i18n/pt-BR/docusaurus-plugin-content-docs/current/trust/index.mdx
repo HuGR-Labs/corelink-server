@@ -26,7 +26,7 @@ last_updated: "2026-05-15"
 # Trust Center
 
 CoreLink is a shared, content-addressable build cache that sees customer build
-artefacts, signed audit events, and (optionally) customer-managed key material.
+artefacts, auditable events, and (optionally) customer-managed key material.
 This Trust Center is the **single public-facing index** of how we secure that
 surface, who we share data with, and what we are willing to commit to in
 writing.
@@ -64,9 +64,9 @@ shapes everything else on this page. The headline commitments are:
    TLA+ model-checked and gated by CI.
 2. **Every artefact is hash-pinned.** No blob ever served diverges from the
    requested digest (`INV-CAS-INTEGRITY`).
-3. **Every write produces an auditable, signed event.** The audit log is
-   append-only, Merkle-linked, and exportable as RFC 6962 inclusion proofs
-   that you can verify offline.
+3. **Every write produces an auditable event.** The audit log is append-only,
+   Merkle-linked, and exportable as RFC 6962 inclusion proofs that you can
+   verify offline.
 4. **BYOK está desenhado, mas ainda não está conectado em produção.** A
    arquitetura de BYOK suporta encapsular as chaves de criptografia de
    dados de um tenant com a raiz KMS dele, em quatro provedores (AWS
@@ -89,12 +89,12 @@ Compliance docs can be theatre. We try hard to make ours falsifiable:
   [status page](https://hugrl.betteruptime.com), and per-binary
   SHA-256 (`.sha256`) checksum sidecars on CLI releases.
 - **Not yet available, and listed here rather than omitted:**
-  the CLI binaries are **not** signed — the signing step in the CLI release
-  workflow is still a placeholder. Container-image signing via
-  Sigstore / Rekor signing for the **former Worker OCI image lane** is not
-  available: the workflow was removed on **2026-09-08** after review found it
-  had never executed and no entry was issued for that lane. Separate
-  release-SLSA and CAS signing paths remain independently gated; SBOM customer
+  the CLI binaries are **not** signed — the CLI release workflow still has a
+  placeholder step. **No signature is available for container images. No
+  Sigstore / Rekor artifact exists for the former Worker OCI image lane**: the
+  workflow was removed on **2026-09-08** after review found it had never
+  executed and no entry was issued for that lane. Separate release and CAS
+  paths remain independently gated; SBOM customer
   distribution is still drafted, not offered.
   Ask at **trust@humangr.com** and we will tell you where it stands rather than
   route you to a process that does not exist.
