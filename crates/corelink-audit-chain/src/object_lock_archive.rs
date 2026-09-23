@@ -211,6 +211,8 @@ pub struct ObjectLockRetentionReadback {
 pub struct ArchiveAuditReceipt {
     /// Provider-issued or externally durable audit-event identifier.
     pub receipt_id: String,
+    /// Exact provider bucket covered by the durable receipt.
+    pub bucket: String,
     /// Exact provider object version covered by the durable receipt.
     pub object_version: String,
     /// Object key covered by the receipt.
@@ -223,6 +225,8 @@ pub struct ArchiveAuditReceipt {
 /// Provider result after it accepts an immutable write.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImmutableArchiveWriteReceipt {
+    /// Exact bucket receiving the immutable object.
+    pub bucket: String,
     /// Object key accepted by the provider.
     pub object_key: String,
     /// Exact immutable version written by the provider.
@@ -313,6 +317,21 @@ pub trait ObjectLockArchiveAdapter: Send + Sync + core::fmt::Debug {
 
     /// Attempt deletion to prove it is denied while retention or hold applies.
     fn attempt_delete(&self, object_key: &str) -> Result<DeleteAttempt, ObjectLockArchiveError>;
+
+    /// Persist a failure observed while verifying a provider operation.
+    /// Implementations with durable audit requirements must bind this record
+    /// to the exact object version when one is known.
+    fn record_failure(
+        &self,
+        _operation: &'static str,
+        _object_key: &str,
+        _object_version: Option<&str>,
+        _failure_class: &'static str,
+    ) -> Result<(), ObjectLockArchiveError> {
+        Err(ObjectLockArchiveError::Backend(
+            "archive adapter does not support durable failure audit".to_string(),
+        ))
+    }
 }
 
 /// Negotiated immutable archive surface with no fallback backend.
@@ -332,7 +351,18 @@ where
     ///
     /// Returns an error if the provider cannot prove the complete contract.
     pub fn connect(adapter: A) -> Result<Self, ObjectLockArchiveError> {
-        let capability_report = adapter.negotiate_capabilities()?;
+        let capability_report = match adapter.negotiate_capabilities() {
+            Ok(report) => report,
+            Err(error) => {
+                adapter.record_failure(
+                    "capability_negotiation",
+                    "",
+                    None,
+                    "provider_or_audit_failure",
+                )?;
+                return Err(error);
+            }
+        };
         if capability_report.contract_version != OBJECT_LOCK_ARCHIVE_CONTRACT_VERSION {
             return Err(ObjectLockArchiveError::CapabilityNegotiationFailed(
                 "contract version mismatch".to_string(),
@@ -386,19 +416,49 @@ where
                 "immutable archive write requires retention and complete residency".to_string(),
             ));
         }
-        let write_receipt = self.adapter.put_immutable(request)?;
+        let write_receipt = match self.adapter.put_immutable(request) {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                self.adapter.record_failure(
+                    "immutable_put",
+                    &request.object_key,
+                    None,
+                    "provider_or_audit_failure",
+                )?;
+                return Err(error);
+            }
+        };
         if write_receipt.object_key != request.object_key
+            || write_receipt.bucket.trim().is_empty()
+            || write_receipt.audit_receipt.bucket != write_receipt.bucket
             || write_receipt.object_version.trim().is_empty()
             || write_receipt.audit_receipt.object_key != request.object_key
             || write_receipt.audit_receipt.object_version != write_receipt.object_version
             || write_receipt.audit_receipt.receipt_id.trim().is_empty()
             || write_receipt.audit_receipt.observed_at_unix_ms == 0
         {
+            self.adapter.record_failure(
+                "immutable_put_verification",
+                &request.object_key,
+                Some(&write_receipt.object_version),
+                "write_receipt_mismatch",
+            )?;
             return Err(ObjectLockArchiveError::ReadbackMismatch(
                 "write receipt did not cover the requested object".to_string(),
             ));
         }
-        let retention_readback = self.adapter.read_retention(&request.object_key)?;
+        let retention_readback = match self.adapter.read_retention(&request.object_key) {
+            Ok(readback) => readback,
+            Err(error) => {
+                self.adapter.record_failure(
+                    "retention_readback",
+                    &request.object_key,
+                    Some(&write_receipt.object_version),
+                    "provider_or_audit_failure",
+                )?;
+                return Err(error);
+            }
+        };
         if retention_readback.object_key != request.object_key
             || retention_readback.object_version != write_receipt.object_version
             || retention_readback.object_version.trim().is_empty()
@@ -406,6 +466,12 @@ where
             || retention_readback.residency != request.expected_residency
             || !retention_readback.residency.is_complete()
         {
+            self.adapter.record_failure(
+                "retention_readback_verification",
+                &request.object_key,
+                Some(&write_receipt.object_version),
+                "readback_mismatch",
+            )?;
             return Err(ObjectLockArchiveError::ReadbackMismatch(
                 "provider retention, legal hold, or residency did not match the request"
                     .to_string(),
@@ -433,7 +499,19 @@ where
                 "delete-denial proof requires a non-empty object key".to_string(),
             ));
         }
-        match self.adapter.attempt_delete(object_key)? {
+        let attempt = match self.adapter.attempt_delete(object_key) {
+            Ok(attempt) => attempt,
+            Err(error) => {
+                self.adapter.record_failure(
+                    "pre_expiry_delete_denial",
+                    object_key,
+                    None,
+                    "provider_or_audit_failure",
+                )?;
+                return Err(error);
+            }
+        };
+        match attempt {
             DeleteAttempt::Denied {
                 object_key: denied_object_key,
                 reason,
@@ -446,15 +524,39 @@ where
             DeleteAttempt::Denied {
                 object_key: denied_object_key,
                 ..
-            } if denied_object_key != object_key => Err(ObjectLockArchiveError::ReadbackMismatch(
-                "delete denial covered a different object than requested".to_string(),
-            )),
-            DeleteAttempt::Denied { .. } => Err(ObjectLockArchiveError::ReadbackMismatch(
-                "delete denial did not include a provider reason".to_string(),
-            )),
-            DeleteAttempt::Deleted => Err(ObjectLockArchiveError::DeleteWasAllowed(
-                object_key.to_string(),
-            )),
+            } if denied_object_key != object_key => {
+                self.adapter.record_failure(
+                    "pre_expiry_delete_denial",
+                    object_key,
+                    None,
+                    "wrong_object_denied",
+                )?;
+                Err(ObjectLockArchiveError::ReadbackMismatch(
+                    "delete denial covered a different object than requested".to_string(),
+                ))
+            }
+            DeleteAttempt::Denied { .. } => {
+                self.adapter.record_failure(
+                    "pre_expiry_delete_denial",
+                    object_key,
+                    None,
+                    "missing_provider_reason",
+                )?;
+                Err(ObjectLockArchiveError::ReadbackMismatch(
+                    "delete denial did not include a provider reason".to_string(),
+                ))
+            }
+            DeleteAttempt::Deleted => {
+                self.adapter.record_failure(
+                    "pre_expiry_delete_denial",
+                    object_key,
+                    None,
+                    "delete_was_allowed",
+                )?;
+                Err(ObjectLockArchiveError::DeleteWasAllowed(
+                    object_key.to_string(),
+                ))
+            }
         }
     }
 }
@@ -644,10 +746,12 @@ impl ObjectLockArchiveAdapter for InMemoryObjectLockArchive {
             )
         })?;
         Ok(ImmutableArchiveWriteReceipt {
+            bucket: self.identity.archive_target.clone(),
             object_key: request.object_key.clone(),
             object_version: version_id.clone(),
             audit_receipt: ArchiveAuditReceipt {
                 receipt_id,
+                bucket: self.identity.archive_target.clone(),
                 object_key: request.object_key.clone(),
                 object_version: version_id,
                 observed_at_unix_ms,
@@ -687,6 +791,16 @@ impl ObjectLockArchiveAdapter for InMemoryObjectLockArchive {
         })?;
         objects.remove(object_key);
         Ok(DeleteAttempt::Deleted)
+    }
+
+    fn record_failure(
+        &self,
+        _operation: &'static str,
+        _object_key: &str,
+        _object_version: Option<&str>,
+        _failure_class: &'static str,
+    ) -> Result<(), ObjectLockArchiveError> {
+        Ok(())
     }
 }
 
@@ -794,6 +908,17 @@ mod tests {
                 reason: "retention_or_legal_hold".to_string(),
             })
         }
+
+        fn record_failure(
+            &self,
+            operation: &'static str,
+            object_key: &str,
+            object_version: Option<&str>,
+            failure_class: &'static str,
+        ) -> Result<(), ObjectLockArchiveError> {
+            self.inner
+                .record_failure(operation, object_key, object_version, failure_class)
+        }
     }
 
     fn identity() -> ObjectLockBackendIdentity {
@@ -828,6 +953,11 @@ mod tests {
         let receipt = archive
             .put_immutable(&request)
             .expect("verified immutable put");
+        assert_eq!(receipt.write_receipt.bucket, "audit-worm-eu");
+        assert_eq!(
+            receipt.write_receipt.audit_receipt.bucket,
+            receipt.write_receipt.bucket
+        );
         assert_eq!(receipt.write_receipt.object_key, request.object_key);
         assert_eq!(receipt.retention_readback.retention, request.retention);
         assert_eq!(

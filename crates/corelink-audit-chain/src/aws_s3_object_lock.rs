@@ -154,12 +154,17 @@ pub struct ComplianceArchiveAuditEvent {
     pub tenant_id: String,
     /// Approved account and target labels, never secrets.
     pub account_id: String,
+    /// Exact configured bucket bound to this operation and durable receipt.
+    pub bucket: String,
     pub target_label: String,
     pub region: String,
     pub object_key: String,
     pub object_version: String,
     pub provider_request_id: String,
     pub evidence_reference: String,
+    /// `success` or `failure`; failure classes are stable, non-sensitive labels.
+    pub outcome: &'static str,
+    pub failure_class: Option<&'static str>,
 }
 
 /// Exact already-locked synthetic object version used during protected
@@ -326,12 +331,15 @@ impl AwsS3ObjectLockAdapter {
             operation,
             tenant_id: self.config.tenant_id.clone(),
             account_id: self.config.account_id.clone(),
+            bucket: self.config.bucket.clone(),
             target_label: self.config.target_label.clone(),
             region: self.config.region.clone(),
             object_key: object_key.into(),
             object_version: object_version.into(),
             provider_request_id: provider_request_id.into(),
             evidence_reference: self.config.evidence_reference.clone(),
+            outcome: "success",
+            failure_class: None,
         }
     }
 
@@ -702,10 +710,12 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
             request_id.to_string(),
         ))?;
         Ok(ImmutableArchiveWriteReceipt {
+            bucket: self.config.bucket.clone(),
             object_key: request.object_key.clone(),
             object_version: version_id.to_string(),
             audit_receipt: ArchiveAuditReceipt {
                 receipt_id: durable_receipt_id,
+                bucket: self.config.bucket.clone(),
                 object_key: request.object_key.clone(),
                 object_version: version_id.to_string(),
                 observed_at_unix_ms,
@@ -830,6 +840,28 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
             )
         })?;
         self.delete_exact_version(object_key, &version_id)
+    }
+
+    fn record_failure(
+        &self,
+        operation: &'static str,
+        object_key: &str,
+        object_version: Option<&str>,
+        failure_class: &'static str,
+    ) -> Result<(), ObjectLockArchiveError> {
+        let observed_version = match object_version {
+            Some(version) => Some(version.to_string()),
+            None => self.object_version(object_key)?,
+        };
+        let mut event = self.audit_event(
+            operation,
+            object_key,
+            observed_version.unwrap_or_default(),
+            "",
+        );
+        event.outcome = "failure";
+        event.failure_class = Some(failure_class);
+        self.persist_audit(event).map(|_| ())
     }
 }
 

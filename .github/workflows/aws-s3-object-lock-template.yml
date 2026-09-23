@@ -5,9 +5,14 @@ on:
     paths:
       - "infra/terraform/modules/audit-object-lock-aws/**"
       - "crates/corelink-audit-chain/**"
+      - "crates/corelink-container/src/routes/dsr/adapter_r2_cas_legalhold.rs"
+      - "migrations/d1/0102_cas_retention.sql"
+      - "migrations/d1/0144_cas_retention_compliance_metadata.sql"
+      - "tests/test_s3_object_lock_migration.py"
       - "Cargo.lock"
       - "docs/operator/aws-s3-object-lock-archive-provisioning.md"
       - ".github/workflows/aws-s3-object-lock-template.yml"
+      - ".github/workflows/aws-s3-object-lock-live-proof.yml"
   workflow_dispatch: {}
 
 permissions:
@@ -74,6 +79,17 @@ jobs:
             exit 1
           fi
 
+          proof=.github/workflows/aws-s3-object-lock-live-proof.yml
+          grep -F 'workflow_dispatch:' "$proof"
+          grep -F "github.ref == 'refs/heads/main'" "$proof"
+          grep -F 'id-token: write' "$proof"
+          grep -F 'environment: s3-object-lock-live-proof' "$proof"
+          grep -F 'ref: main' "$proof"
+          if grep -nE 'aws_access_key_id|aws_secret_access_key' "$proof"; then
+            echo "The protected probe workflow must not use static AWS credentials" >&2
+            exit 1
+          fi
+
   adapter-conformance:
     name: immutable archive adapter conformance
     runs-on: ubuntu-latest
@@ -91,6 +107,9 @@ jobs:
 
       - name: Check AWS adapter delete-probe fail-closed cases
         run: cargo test -p corelink-audit-chain --features aws-s3-object-lock --lib aws_s3_object_lock --locked
+
+      - name: Check CAS Compliance migration and Governance isolation
+        run: python3 tests/test_s3_object_lock_migration.py
 
       - name: Compile the optional native AWS S3 adapter
         run: cargo check -p corelink-audit-chain --features aws-s3-object-lock --locked

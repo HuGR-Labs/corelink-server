@@ -101,6 +101,8 @@ fn cas_list_prefix(region: &str, tenant_prefix: &str) -> String {
 const RETENTION_INSERT_SQL: &str = "INSERT OR IGNORE INTO cas_retention \
      (tenant_id, region, object_key, retain_until_ms, mode, pseudonymized_at_ms) \
      VALUES (?1, ?2, ?3, NULL, 'governance', CAST(?4 AS INTEGER))";
+const GOVERNANCE_RETENTION_SELECT_SQL: &str =
+    "SELECT object_key FROM cas_retention WHERE tenant_id = ?1 AND mode = 'governance'";
 
 /// Count CAS objects still ATTRIBUTABLE to the subject: present under the prefix
 /// AND lacking a `cas_retention` row. Pure verification accounting — unified
@@ -235,7 +237,7 @@ impl BackendErasureAdapter for R2CasLegalHoldEraseAdapter {
         let tid = ctx.tenant_id.to_string();
         let rows = d1_query_blocking(
             &self.d1,
-            "SELECT object_key FROM cas_retention WHERE tenant_id = ?1",
+            GOVERNANCE_RETENTION_SELECT_SQL,
             vec![json!(tid)],
         )
         .map_err(ErasureBackendError::Transport)?;
@@ -343,5 +345,6 @@ mod tests {
         assert!(RETENTION_INSERT_SQL.contains("CAST(?4 AS INTEGER)"));
         // The retention row carries NO subject_id (severs the PII linkage).
         assert!(!RETENTION_INSERT_SQL.contains("subject_id"));
+        assert!(GOVERNANCE_RETENTION_SELECT_SQL.contains("mode = 'governance'"));
     }
 }
