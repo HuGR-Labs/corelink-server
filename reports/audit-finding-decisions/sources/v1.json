@@ -244,6 +244,12 @@
       "path": "docs/security/b028-dependabot-census-2026-09-06.json",
       "expected_count": 9,
       "parser": "b028_dependabot"
+    },
+    {
+      "source_id": "b373_dependabot_2026_09_09",
+      "path": "docs/security/b373-dependabot-census-2026-09-09.json",
+      "expected_count": 19,
+      "parser": "b373_dependabot"
     }
   ]
 }
