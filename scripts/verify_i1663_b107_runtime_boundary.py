@@ -73,7 +73,7 @@ def verify(backlog: str, lane: str) -> None:
 
 def expect_rejected(backlog: str, lane: str, old: str, new: str, reason: str) -> None:
     block = b107_block(backlog)
-    mutated = backlog.replace(block, block.replace(old, new, 1), 1)
+    mutated = backlog.replace(block, block.replace(old, new), 1)
     try:
         verify(mutated, lane)
     except ValueError:
