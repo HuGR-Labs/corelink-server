@@ -36,7 +36,9 @@ package build.bazel.remote.execution.v2;
 
 import "build/bazel/semver/semver.proto";
 import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
 import "google/rpc/status.proto";
 
 option csharp_namespace = "Build.Bazel.Remote.Execution.V2";
@@ -137,12 +139,16 @@ message Digest {
   int64 size_bytes = 2;
 }
 
-// A request for an Action Cache entry.
+// A request for an Action Cache entry. These declarations retain the complete
+// upstream v2.12 ActionCache request and result wire shape so Buck2 clients can
+// round-trip ActionResult data without field loss.
 message GetActionResultRequest {
   string instance_name = 1;
   Digest action_digest = 2;
   bool inline_stdout = 3;
   bool inline_stderr = 4;
+  repeated string inline_output_files = 5;
+  DigestFunction.Value digest_function = 6;
 }
 
 // A request to store an immutable Action Cache entry.
@@ -150,6 +156,8 @@ message UpdateActionResultRequest {
   string instance_name = 1;
   Digest action_digest = 2;
   ActionResult action_result = 3;
+  ResultsCachePolicy results_cache_policy = 4;
+  DigestFunction.Value digest_function = 5;
 }
 
 // Complete upstream ActionResult wire shape required for Buck2 cache reuse.
@@ -165,20 +173,24 @@ message ActionResult {
   bytes stderr_raw = 7;
   Digest stderr_digest = 8;
   ExecutedActionMetadata execution_metadata = 9;
-  repeated OutputSymlink output_file_symlinks = 10;
-  repeated OutputSymlink output_directory_symlinks = 11;
+  repeated OutputSymlink output_file_symlinks = 10 [deprecated = true];
+  repeated OutputSymlink output_directory_symlinks = 11 [deprecated = true];
   repeated OutputSymlink output_symlinks = 12;
 }
 
 message OutputFile {
   string path = 1;
   Digest digest = 2;
+  reserved 3;
   bool is_executable = 4;
   bytes contents = 5;
+  reserved 6;
+  NodeProperties node_properties = 7;
 }
 
 message OutputDirectory {
   string path = 1;
+  reserved 2;
   Digest tree_digest = 3;
   bool is_topologically_sorted = 4;
   Digest root_directory_digest = 5;
@@ -187,20 +199,38 @@ message OutputDirectory {
 message OutputSymlink {
   string path = 1;
   string target = 2;
+  reserved 3;
+  NodeProperties node_properties = 4;
+}
+
+message NodeProperty {
+  string name = 1;
+  string value = 2;
+}
+
+message NodeProperties {
+  repeated NodeProperty properties = 1;
+  google.protobuf.Timestamp mtime = 2;
+  google.protobuf.UInt32Value unix_mode = 3;
 }
 
 message ExecutedActionMetadata {
-  google.protobuf.Timestamp worker_start_timestamp = 1;
-  google.protobuf.Timestamp worker_completed_timestamp = 2;
-  google.protobuf.Timestamp input_fetch_start_timestamp = 3;
-  google.protobuf.Timestamp input_fetch_completed_timestamp = 4;
-  google.protobuf.Timestamp execution_start_timestamp = 5;
-  google.protobuf.Timestamp execution_completed_timestamp = 6;
-  google.protobuf.Timestamp output_upload_start_timestamp = 7;
-  google.protobuf.Timestamp output_upload_completed_timestamp = 8;
-  string worker = 9;
-  repeated google.protobuf.Any auxiliary_metadata = 10;
-  google.protobuf.Timestamp queued_timestamp = 11;
+  string worker = 1;
+  google.protobuf.Timestamp queued_timestamp = 2;
+  google.protobuf.Timestamp worker_start_timestamp = 3;
+  google.protobuf.Timestamp worker_completed_timestamp = 4;
+  google.protobuf.Timestamp input_fetch_start_timestamp = 5;
+  google.protobuf.Timestamp input_fetch_completed_timestamp = 6;
+  google.protobuf.Timestamp execution_start_timestamp = 7;
+  google.protobuf.Timestamp execution_completed_timestamp = 8;
+  google.protobuf.Timestamp output_upload_start_timestamp = 9;
+  google.protobuf.Timestamp output_upload_completed_timestamp = 10;
+  repeated google.protobuf.Any auxiliary_metadata = 11;
+  google.protobuf.Duration virtual_execution_duration = 12;
+}
+
+message ResultsCachePolicy {
+  int32 priority = 1;
 }
 
 // A request message for `ContentAddressableStorage.BatchUpdateBlobs`.

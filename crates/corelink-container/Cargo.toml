@@ -209,6 +209,7 @@ corelink-gc = { workspace = true }
 # corelink-hash::Digest::compute — the canonical content hash for the 2-level
 # moat store (must match the CAS write path's blake3).
 corelink-hash = { workspace = true }
+corelink-reapi = { workspace = true }
 # `url::Url` for the adapter upstream-domain config (BrewAdapterConfig etc.).
 # Direct version (not workspace) matching `corelink-adapter-host` (`url = "2"`)
 # so the `Url` type unifies across the dep boundary; url is not aliased in
