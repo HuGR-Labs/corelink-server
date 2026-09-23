@@ -7,9 +7,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use corelink_reapi::{
-    MAX_BATCH_TOTAL_SIZE_BYTES, MAX_CAS_BLOB_SIZE_BYTES, MAX_FIND_MISSING_BATCH_SIZE,
-};
 use corelink_reapi::proto::google_rpc::Status as RpcStatus;
 use corelink_reapi::proto::reapi::content_addressable_storage_server::{
     ContentAddressableStorage, ContentAddressableStorageServer,
@@ -18,6 +15,9 @@ use corelink_reapi::proto::reapi::{
     batch_read_blobs_response, batch_update_blobs_response, BatchReadBlobsRequest,
     BatchReadBlobsResponse, BatchUpdateBlobsRequest, BatchUpdateBlobsResponse, Digest,
     DigestFunction, FindMissingBlobsRequest, FindMissingBlobsResponse,
+};
+use corelink_reapi::{
+    MAX_BATCH_TOTAL_SIZE_BYTES, MAX_CAS_BLOB_SIZE_BYTES, MAX_FIND_MISSING_BATCH_SIZE,
 };
 use tonic::{async_trait, Code, Request, Response, Status};
 
@@ -81,17 +81,36 @@ impl ContentAddressableStorage for CasUnaryService {
         require_sha256(body.digest_function)?;
         require_batch_count(body.digests.len())?;
         require_identity_acceptable(&body.acceptable_compressors)?;
-        require_declared_batch_bytes(&body.digests)?;
         let admitted = self
             .ingress
             .authorize(&metadata, &body.instance_name, Access::Read)
             .await?;
 
         let mut responses = Vec::with_capacity(body.digests.len());
+        let mut returned_bytes = 0_i64;
         for digest in body.digests {
             let result = batch_read_entry(&admitted, &digest).await;
             let (data, status) = match result {
-                Ok(data) => (data, Status::new(Code::Ok, "")),
+                Ok(data) => {
+                    let data_len = i64::try_from(data.len()).map_err(|_| {
+                        Status::new(Code::ResourceExhausted, "REAPI batch is too large")
+                    })?;
+                    if returned_bytes
+                        .checked_add(data_len)
+                        .is_some_and(|total| total <= MAX_BATCH_TOTAL_SIZE_BYTES)
+                    {
+                        returned_bytes += data_len;
+                        (data, Status::new(Code::Ok, ""))
+                    } else {
+                        (
+                            Vec::new(),
+                            Status::new(
+                                Code::FailedPrecondition,
+                                "REAPI batch response requires ByteStream read",
+                            ),
+                        )
+                    }
+                }
                 Err(error) => (Vec::new(), error),
             };
             responses.push(batch_read_blobs_response::Response {
@@ -164,28 +183,7 @@ fn require_identity_acceptable(compressors: &[i32]) -> Result<(), Status> {
     }
 }
 
-fn require_declared_batch_bytes(digests: &[Digest]) -> Result<(), Status> {
-    let total = digests.iter().try_fold(0_i64, |total, digest| {
-        if digest.size_bytes < 0 {
-            return Ok(total);
-        }
-        total
-            .checked_add(digest.size_bytes)
-            .ok_or_else(|| Status::new(Code::ResourceExhausted, "REAPI batch is too large"))
-    })?;
-    if total <= MAX_BATCH_TOTAL_SIZE_BYTES {
-        Ok(())
-    } else {
-        Err(Status::new(
-            Code::ResourceExhausted,
-            "REAPI batch is too large",
-        ))
-    }
-}
-
-fn require_update_batch_bytes(
-    requests: &[BatchUpdateBlobsRequest::Request],
-) -> Result<(), Status> {
+fn require_update_batch_bytes(requests: &[BatchUpdateBlobsRequest::Request]) -> Result<(), Status> {
     let total = requests.iter().try_fold(0_i64, |total, request| {
         let bytes = i64::try_from(request.data.len())
             .map_err(|_| Status::new(Code::ResourceExhausted, "REAPI batch is too large"))?;
@@ -259,7 +257,10 @@ async fn batch_update_entry(
         return error;
     }
     if i64::try_from(entry.data.len()).ok() != Some(digest.size_bytes) {
-        return Status::new(Code::InvalidArgument, "REAPI digest size does not match payload");
+        return Status::new(
+            Code::InvalidArgument,
+            "REAPI digest size does not match payload",
+        );
     }
     match admitted
         .cas_write(&digest.hash, digest.size_bytes, entry.data)

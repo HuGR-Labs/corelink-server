@@ -447,7 +447,10 @@ async fn cas_unary_writes_use_the_decorated_sha256_handler_once() {
         .unwrap()
         .into_inner();
     assert_eq!(response.responses.len(), 1);
-    assert_eq!(response.responses[0].status.as_ref().unwrap().code, Code::Ok as i32);
+    assert_eq!(
+        response.responses[0].status.as_ref().unwrap().code,
+        Code::Ok as i32
+    );
     let writes = writes.lock().unwrap();
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].tenant, "tenant-a");
@@ -540,18 +543,17 @@ async fn cas_unary_denials_and_invalid_entries_never_reach_storage() {
 async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults() {
     use crate::reapi_cas::CasUnaryService;
     use corelink_reapi::proto::reapi::content_addressable_storage_server::ContentAddressableStorage;
-    use corelink_reapi::proto::reapi::{BatchReadBlobsRequest, DigestFunction, FindMissingBlobsRequest};
+    use corelink_reapi::proto::reapi::{
+        BatchReadBlobsRequest, DigestFunction, FindMissingBlobsRequest,
+    };
 
     let digest = cas_digest(b"read");
     let cross_tenant = corelink_handler_cas::CasHandlerError::CrossTenantDenied {
         caller: "tenant-a".into(),
         requested_tenant: "tenant-b".into(),
     };
-    let (ingress, reads, _writes) = cas_ingress_for_test(
-        Ok(("tenant-a".into(), true)),
-        Ok(()),
-        Err(cross_tenant),
-    );
+    let (ingress, reads, _writes) =
+        cas_ingress_for_test(Ok(("tenant-a".into(), true)), Ok(()), Err(cross_tenant));
     let mut read = tonic::Request::new(BatchReadBlobsRequest {
         instance_name: "tenant-a".into(),
         digests: vec![digest.clone()],
@@ -564,7 +566,10 @@ async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults()
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(response.responses[0].status.as_ref().unwrap().code, Code::NotFound as i32);
+    assert_eq!(
+        response.responses[0].status.as_ref().unwrap().code,
+        Code::NotFound as i32
+    );
     assert_eq!(reads.lock().unwrap().len(), 1);
 
     let mut missing = tonic::Request::new(FindMissingBlobsRequest {
@@ -583,10 +588,40 @@ async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults()
         vec![digest]
     );
 
+    let bytes = vec![7; (corelink_reapi::MAX_BATCH_TOTAL_SIZE_BYTES / 2 + 1) as usize];
+    let digest = cas_digest(&bytes);
     let (ingress, _reads, _writes) = cas_ingress_for_test(
         Ok(("tenant-a".into(), true)),
         Ok(()),
-        Err(corelink_handler_cas::CasHandlerError::AuditFailed("D1 unavailable".into())),
+        Ok(CasReadResponse::new(bytes, digest.hash.clone())),
+    );
+    let mut aggregate = tonic::Request::new(BatchReadBlobsRequest {
+        instance_name: "tenant-a".into(),
+        digests: vec![digest.clone(), digest],
+        acceptable_compressors: vec![0],
+        digest_function: DigestFunction::Sha256 as i32,
+    });
+    *aggregate.metadata_mut() = cas_metadata();
+    let aggregate = CasUnaryService::new(ingress)
+        .batch_read_blobs(aggregate)
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(
+        aggregate.responses[0].status.as_ref().unwrap().code,
+        Code::Ok as i32
+    );
+    assert_eq!(
+        aggregate.responses[1].status.as_ref().unwrap().code,
+        Code::FailedPrecondition as i32
+    );
+
+    let (ingress, _reads, _writes) = cas_ingress_for_test(
+        Ok(("tenant-a".into(), true)),
+        Ok(()),
+        Err(corelink_handler_cas::CasHandlerError::AuditFailed(
+            "D1 unavailable".into(),
+        )),
     );
     let mut backend = tonic::Request::new(FindMissingBlobsRequest {
         instance_name: "tenant-a".into(),
