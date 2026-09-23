@@ -516,17 +516,15 @@ pub fn build_with_factory_and_byok_and_reapi_ingress(
                 if let Some(quota) = quota.clone() {
                     let cap_resolver: Arc<dyn crate::oci_cap::TenantCapResolver> =
                         Arc::new(crate::oci_cap::D1TenantCapResolver::new(d1.clone()));
-                    reapi_ingress = Some(
-                        crate::reapi_ingress::ReapiIngress::from_shared_handlers(
-                            verifier.clone(),
-                            Arc::new(crate::reapi_ingress::QuotaConcurrencyAdmission::new(quota)),
-                            cap_resolver,
-                            cas_read.clone(),
-                            cas_write.clone(),
-                            ac_lookup.clone(),
-                            ac_update.clone(),
-                        ),
-                    );
+                    reapi_ingress = Some(crate::reapi_ingress::ReapiIngress::from_shared_handlers(
+                        verifier.clone(),
+                        Arc::new(crate::reapi_ingress::QuotaConcurrencyAdmission::new(quota)),
+                        cap_resolver,
+                        cas_read.clone(),
+                        cas_write.clone(),
+                        ac_lookup.clone(),
+                        ac_update.clone(),
+                    ));
                 }
 
                 // cargo (sccache): PRIVATE per-tenant moat namespace (no _public).
