@@ -374,6 +374,18 @@ def test_source_digest_drift_is_red_even_when_its_findings_still_parse(tmp_path:
         coverage.verify(fixture_root)
 
 
+def test_changed_comprehensive_audit_requires_explicit_reclassification(tmp_path: Path) -> None:
+    fixture_root = _copy_gate_root(tmp_path)
+    audit = fixture_root / "reports/audits/2026-08-25-comprehensive-audit-and-verification.md"
+    audit.write_text(audit.read_text(encoding="utf-8") + "\nchanged claim\n", encoding="utf-8")
+
+    with pytest.raises(
+        coverage.CoverageError,
+        match="excluded audit content changed; reclassify it: reports/audits/2026-08-25-comprehensive-audit-and-verification.md",
+    ):
+        coverage.source_specs(fixture_root)
+
+
 def test_source_registry_digest_drift_is_red(tmp_path: Path) -> None:
     fixture_root = _copy_gate_root(tmp_path)
     registry = fixture_root / coverage.SOURCE_REGISTRY_RELATIVE
