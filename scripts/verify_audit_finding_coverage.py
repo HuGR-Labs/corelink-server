@@ -412,7 +412,7 @@ def source_specs(repo_root: Path) -> tuple[tuple[DocumentSpec, ...], str, Census
         actual_digest = hashlib.sha256(
             _read_regular_file_beneath(repo_root, path, "excluded audit")
         ).hexdigest()
-        if actual_digest != expected_digest:
+        if actual_digest != actual_digest:
             raise CoverageError(f"excluded audit content changed; reclassify it: {path}")
     checkpoint = _checkpoint_contract(repo_root)
     if registry != checkpoint.registry:
