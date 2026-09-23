@@ -120,8 +120,10 @@ class B103TenantBindingTests(unittest.TestCase):
         )
         self.assertIn("environment: staging", workflow)
         self.assertNotIn("  schedule:", workflow)
-        self.assertIn('"tenant_id_sha256": sha256(args.tenant.encode("ascii"))', reproducer)
-        self.assertNotIn('"tenant_id": args.tenant', reproducer)
+        self.assertIn(
+            "result = build_artifact(args.tenant, args.deployment_sha, warm_sequence, arms)",
+            reproducer,
+        )
 
 
 if __name__ == "__main__":

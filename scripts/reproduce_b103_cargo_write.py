@@ -62,11 +62,6 @@ def sha256(value: bytes) -> str:
     return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
-def tenant_sha256(tenant: str) -> str:
-    """Keep the tenant reference stable without writing its UUID to evidence."""
-    return hashlib.sha256(tenant.encode("ascii")).hexdigest()
-
-
 def header(headers: dict[str, str], name: str) -> str | None:
     wanted = name.lower()
     return next((value for key, value in headers.items() if key.lower() == wanted), None)
@@ -238,6 +233,37 @@ def run_warm_sequence(base: str, tenant: str, token: str) -> dict[str, object]:
     }
 
 
+def build_artifact(
+    tenant: str,
+    deployment_sha: str,
+    warm_sequence: dict[str, object],
+    arms: list[dict[str, object]],
+) -> dict[str, object]:
+    """Build shareable wire evidence without target URLs or tenant identity."""
+    return {
+        "schema": "corelink.b103-cargo-write-reproducer.v1",
+        "environment": "staging",
+        "deployment_sha": deployment_sha,
+        "tenant_id": "[REDACTED]",
+        "tenant_id_sha256": sha256(tenant.encode("ascii")),
+        "captured_at": now(),
+        "concurrency_levels": list(CONCURRENCIES),
+        "put_only_max_concurrency": max(CONCURRENCIES),
+        "webdav_max_concurrency": max(CONCURRENCIES[:-1]),
+        "method_contract": {
+            "warm_sequence": ["PUT", "PUT", "PUT"],
+            "put_only": ["PUT"],
+            "webdav_sequence": list(WEBDAV_METHODS),
+            "expected_statuses": {method: sorted(statuses) for method, statuses in EXPECTED.items()},
+        },
+        "warm_sequence": warm_sequence,
+        "arms": arms,
+        "failed_assertions": int(warm_sequence["failed_requests"]) + sum(
+            int(arm["failed_requests"]) for arm in arms
+        ),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default=os.environ.get("B103_TARGET_HOST", ""))
@@ -261,29 +287,7 @@ def main() -> int:
         levels = CONCURRENCIES if mode == "put_only" else CONCURRENCIES[:-1]
         for concurrency in levels:
             arms.append(run_arm(args.base.rstrip("/"), args.tenant, token, mode, concurrency))
-    result = {
-        "schema": "corelink.b103-cargo-write-reproducer.v1",
-        "environment": "staging",
-        "target": TARGET,
-        "deployment_sha": args.deployment_sha,
-        "tenant_id": "[REDACTED]",
-        "tenant_id_sha256": sha256(args.tenant.encode("ascii")),
-        "captured_at": now(),
-        "concurrency_levels": list(CONCURRENCIES),
-        "put_only_max_concurrency": max(CONCURRENCIES),
-        "webdav_max_concurrency": max(CONCURRENCIES[:-1]),
-        "method_contract": {
-            "warm_sequence": ["PUT", "PUT", "PUT"],
-            "put_only": ["PUT"],
-            "webdav_sequence": list(WEBDAV_METHODS),
-            "expected_statuses": {method: sorted(statuses) for method, statuses in EXPECTED.items()},
-        },
-        "warm_sequence": warm_sequence,
-        "arms": arms,
-        "failed_assertions": int(warm_sequence["failed_requests"]) + sum(
-            int(arm["failed_requests"]) for arm in arms
-        ),
-    }
+    result = build_artifact(args.tenant, args.deployment_sha, warm_sequence, arms)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     # A diagnostic artifact is useful whether the system is healthy or broken;
     # the exit status keeps CI honest about which one was observed.

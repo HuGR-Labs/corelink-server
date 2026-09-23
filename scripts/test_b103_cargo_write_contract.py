@@ -163,7 +163,19 @@ class B103CargoWriteContractTest(unittest.TestCase):
             redact_tenant=True,
         )
         self.assertEqual(safe_receipt["tenant_id"], "[REDACTED]")
-        self.assertNotIn(TENANT, json.dumps(safe_receipt, sort_keys=True))
+        safe_receipt_json = json.dumps(safe_receipt, sort_keys=True)
+        self.assertNotIn(TENANT, safe_receipt_json)
+        self.assertNotIn("https://", safe_receipt_json)
+
+        wire_artifact = REPRODUCER.build_artifact(
+            TENANT,
+            "a" * 40,
+            {"failed_requests": 0, "responses": [{"operation_id": OPERATION}]},
+            [],
+        )
+        wire_artifact_json = json.dumps(wire_artifact, sort_keys=True)
+        self.assertNotIn("https://", wire_artifact_json)
+        self.assertNotIn(TENANT, wire_artifact_json)
 
     def test_put_only_arm_releases_220_independent_operations_together(self) -> None:
         original = REPRODUCER.urlopen

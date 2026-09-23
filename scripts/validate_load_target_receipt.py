@@ -141,6 +141,7 @@ def artifact_receipt(receipt: dict[str, object], *, redact_tenant: bool) -> dict
     tenant = receipt["tenant_id"]
     assert isinstance(tenant, str)
     redacted = dict(receipt)
+    redacted.pop("target", None)
     redacted["tenant_id"] = "[REDACTED]"
     redacted["tenant_id_sha256"] = "sha256:" + hashlib.sha256(tenant.encode("ascii")).hexdigest()
     return redacted
