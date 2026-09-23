@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -152,6 +153,47 @@ class B103CargoWriteContractTest(unittest.TestCase):
         self.assertEqual(safe_receipt["tenant_id"], "[REDACTED]")
         self.assertNotIn(TENANT, json.dumps(safe_receipt, sort_keys=True))
 
+    def test_put_only_arm_releases_220_independent_operations_together(self) -> None:
+        original = REPRODUCER.urlopen
+        captured = []
+        lock = threading.Lock()
+
+        class Response:
+            status = 200
+            headers = {}
+
+            def read(self) -> bytes:
+                return b""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        def fake_urlopen(request, timeout):
+            with lock:
+                captured.append((request, timeout, threading.get_ident()))
+            return Response()
+
+        REPRODUCER.urlopen = fake_urlopen
+        try:
+            arm = REPRODUCER.run_arm("https://example.test", TENANT, TOKEN, "put_only", 220)
+        finally:
+            REPRODUCER.urlopen = original
+        self.assertEqual(arm["concurrency"], 220)
+        self.assertEqual(arm["operations"], 220)
+        self.assertEqual(arm["requests"], 220)
+        self.assertEqual(arm["failed_requests"], 0)
+        self.assertEqual(arm["harness_errors"], [])
+        self.assertEqual(len(captured), 220)
+        self.assertEqual(len({request.full_url for request, _timeout, _thread in captured}), 220)
+        self.assertEqual(len({request.data for request, _timeout, _thread in captured}), 220)
+        self.assertEqual(
+            len({request.get_header("X-corelink-operation") for request, _timeout, _thread in captured}), 220
+        )
+        self.assertEqual(len({_thread for _request, _timeout, _thread in captured}), 220)
+
     def test_workflow_uses_topology_root_worker_and_never_uploads_raw_tail(self) -> None:
         workflow = (ROOT / ".github/workflows/b103-cargo-write-reproducer.yml").read_text(encoding="utf-8")
         topology = json.loads((ROOT / "infra/staging/topology.json").read_text(encoding="utf-8"))
@@ -167,6 +209,7 @@ class B103CargoWriteContractTest(unittest.TestCase):
         self.assertIn("--require-operation-ids-from", workflow)
         self.assertIn("b103-cargo-write-worker-tail.redacted.jsonl", workflow)
         self.assertNotIn("worker-tail.raw.jsonl\n", workflow.split("path: |", 1)[1])
+        self.assertEqual(REPRODUCER.CONCURRENCIES, (4, 16, 64, 220))
 
 
 if __name__ == "__main__":

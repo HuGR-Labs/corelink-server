@@ -26,6 +26,7 @@ import hashlib
 import json
 import os
 import re
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -33,7 +34,9 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-CONCURRENCIES = (4, 16, 64)
+# PUT-only reaches the required 220 independent writes.  The WebDAV sequence
+# remains bounded at 64 because each operation emits six requests.
+CONCURRENCIES = (4, 16, 64, 220)
 TARGET = "https://staging.corelink.humangr.com"
 UUID_V4 = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
@@ -160,9 +163,31 @@ def run_operation(base: str, tenant: str, token: str, mode: str) -> list[dict[st
 
 def run_arm(base: str, tenant: str, token: str, mode: str, concurrency: int) -> dict[str, object]:
     started = time.monotonic()
+    barrier = threading.Barrier(concurrency + 1)
+
+    def synchronized_operation() -> list[dict[str, object]]:
+        # Every operation is ready before the coordinator opens the arm.  This
+        # prevents executor scheduling from turning the 220-write arm into a
+        # gradual ramp, while the timeout guarantees a broken harness is
+        # recorded as a red result instead of waiting indefinitely.
+        barrier.wait(timeout=30)
+        return run_operation(base, tenant, token, mode)
+
+    responses: list[dict[str, object]] = []
+    harness_errors: list[str] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = [pool.submit(run_operation, base, tenant, token, mode) for _ in range(concurrency)]
-        responses = [row for future in futures for row in future.result()]
+        futures = [pool.submit(synchronized_operation) for _ in range(concurrency)]
+        try:
+            barrier.wait(timeout=30)
+        except threading.BrokenBarrierError:
+            harness_errors.append("coordinator_barrier_broken")
+        for future in futures:
+            try:
+                responses.extend(future.result())
+            except (threading.BrokenBarrierError, TimeoutError) as exc:
+                harness_errors.append(f"operation_{type(exc).__name__}")
+            except Exception as exc:  # retain a red diagnostic artifact
+                harness_errors.append(f"operation_{type(exc).__name__}")
     wall_ms = round((time.monotonic() - started) * 1000, 3)
     failures = [row for row in responses if row["ok"] is not True]
     status_counts: dict[str, int] = {}
@@ -175,7 +200,8 @@ def run_arm(base: str, tenant: str, token: str, mode: str, concurrency: int) -> 
         "operations": concurrency,
         "requests": len(responses),
         "successful_requests": len(responses) - len(failures),
-        "failed_requests": len(failures),
+        "failed_requests": len(failures) + len(harness_errors),
+        "harness_errors": harness_errors,
         "status_counts": status_counts,
         "wall_ms": wall_ms,
         "throughput_rps": round((len(responses) - len(failures)) / max(wall_ms / 1000, 0.001), 6),
@@ -227,7 +253,8 @@ def main() -> int:
     warm_sequence = run_warm_sequence(args.base.rstrip("/"), args.tenant, token)
     arms: list[dict[str, object]] = []
     for mode in ("put_only", "webdav_sequence"):
-        for concurrency in CONCURRENCIES:
+        levels = CONCURRENCIES if mode == "put_only" else CONCURRENCIES[:-1]
+        for concurrency in levels:
             arms.append(run_arm(args.base.rstrip("/"), args.tenant, token, mode, concurrency))
     result = {
         "schema": "corelink.b103-cargo-write-reproducer.v1",
@@ -238,6 +265,8 @@ def main() -> int:
         "tenant_id_sha256": sha256(args.tenant.encode("ascii")),
         "captured_at": now(),
         "concurrency_levels": list(CONCURRENCIES),
+        "put_only_max_concurrency": max(CONCURRENCIES),
+        "webdav_max_concurrency": max(CONCURRENCIES[:-1]),
         "method_contract": {
             "warm_sequence": ["PUT", "PUT", "PUT"],
             "put_only": ["PUT"],
