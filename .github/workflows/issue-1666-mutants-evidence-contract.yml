@@ -32,7 +32,7 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
-      - name: Install pinned actionlint when absent
+      - name: Lint changed workflow contracts with pinned actionlint
         shell: bash
         run: |
           set -euo pipefail
@@ -41,10 +41,6 @@ jobs:
             export PATH="$PWD:$PATH"
           fi
           actionlint -version
-      - name: Lint changed workflow contracts
-        shell: bash
-        run: |
-          set -euo pipefail
           actionlint -color -verbose \
             .github/workflows/actionlint.yml \
             .github/workflows/endurance-2h-nightly.yml \
