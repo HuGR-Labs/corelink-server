@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "infra/terraform/modules/audit-object-lock-aws/**"
+      - "crates/corelink-audit-chain/**"
+      - "Cargo.lock"
       - "docs/operator/aws-s3-object-lock-archive-provisioning.md"
       - ".github/workflows/aws-s3-object-lock-template.yml"
   workflow_dispatch: {}
@@ -48,12 +50,48 @@ jobs:
           grep -F 'mode = "COMPLIANCE"' "$module"
           grep -F 'aws_s3_bucket_object_lock_configuration' "$module"
           grep -F 'aws_iam_role' "$module"
-          actions=$(grep -E '^[[:space:]]*"s3:[^"]+",?$' "$module" \
-            | sed -E 's/^[[:space:]]*"([^"]+)".*/\1/')
+          actions=$(grep -oE '"s3:[A-Z][A-Za-z]+"' "$module" \
+            | tr -d '"' \
+            | sort)
           expected=$(printf '%s\n' \
             's3:GetBucketObjectLockConfiguration' \
             's3:GetBucketLocation' \
             's3:GetObjectLegalHold' \
             's3:GetObjectRetention' \
-            's3:PutObject')
+            's3:PutObject' \
+            's3:PutObjectRetention' \
+            's3:PutObjectLegalHold' | sort)
           test "$actions" = "$expected"
+          grep -F 'variable = "s3:object-lock-mode"' "$module"
+          grep -F 'variable = "s3:object-lock-remaining-retention-days"' "$module"
+          grep -F 'values   = ["COMPLIANCE"]' "$module"
+          grep -F 'variable = "s3:object-lock-legal-hold"' "$module"
+          grep -F 'values   = ["ON"]' "$module"
+
+          evidence=evidence/owner-actions/B-046/aws-s3-object-lock-probe.json
+          docs=docs/operator/aws-s3-object-lock-archive-provisioning.md
+          if grep -nE '(^|[^[:digit:]])[[:digit:]]{12}([^[:digit:]]|$)' "$evidence" "$docs"; then
+            echo "AWS account identifiers must be redacted from the probe receipt and operator docs" >&2
+            exit 1
+          fi
+
+  adapter-conformance:
+    name: immutable archive adapter conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Assert the workspace-pinned toolchain
+        run: bash scripts/ci-assert-pinned-toolchain.sh
+
+      - name: Run the portable Object-Lock contract suite
+        run: cargo test -p corelink-audit-chain --lib object_lock_archive --locked
+
+      - name: Check AWS adapter delete-probe fail-closed cases
+        run: cargo test -p corelink-audit-chain --features aws-s3-object-lock --lib aws_s3_object_lock --locked
+
+      - name: Compile the optional native AWS S3 adapter
+        run: cargo check -p corelink-audit-chain --features aws-s3-object-lock --locked
