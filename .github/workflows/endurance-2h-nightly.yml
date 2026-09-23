@@ -224,21 +224,25 @@ jobs:
             exit 1
           }
           payload=$(printf '{"run_id":"%s","scenario":"endurance-2h"}' "${GITHUB_RUN_ID}")
-          timeout 30s curl --fail --silent --show-error --location \
+          HTTP_STATUS=$(timeout 30s curl --fail --silent --show-error \
             --request POST \
             --header "Authorization: Bearer ${K6_STAGING_TEARDOWN_TOKEN}" \
             --header 'Content-Type: application/json' \
             --data "$payload" \
             "${K6_TARGET_HOST}/_internal/load-test/teardown" \
-            --output "${RUNNER_TEMP}/teardown-receipt.json"
+            --output "${RUNNER_TEMP}/teardown-receipt.json" \
+            --write-out '%{http_code}')
+          test "${HTTP_STATUS}" = '200' || {
+            echo "::error::teardown must return HTTP 200 with the exact receipt"
+            exit 1
+          }
           python3 scripts/validate_load_teardown_receipt.py \
             --receipt "${RUNNER_TEMP}/teardown-receipt.json" \
             --run-id "${GITHUB_RUN_ID}" \
             --scenario endurance-2h \
-            --deployment-sha "${TARGET_DEPLOYMENT_SHA}"
+            --deployment-sha "${TARGET_DEPLOYMENT_SHA}" \
+            --output "tests/load/results/endurance-2h/teardown-receipt-${GITHUB_RUN_ID}.json"
           mkdir -p tests/load/results/endurance-2h
-          cp "${RUNNER_TEMP}/teardown-receipt.json" \
-            "tests/load/results/endurance-2h/teardown-receipt-${GITHUB_RUN_ID}.json"
           echo "deletion_proven=true" >> "$GITHUB_OUTPUT"
 
       - name: write receipt and teardown checkpoint

@@ -93,9 +93,11 @@ def verify_workflow(text: str) -> list[str]:
     if (
         "continue-on-error: true" in teardown
         or "K6_STAGING_TEARDOWN_TOKEN is required" not in teardown
-        or "timeout 30s curl --fail --silent --show-error --location" not in teardown
+        or "HTTP_STATUS=$(timeout 30s curl --fail --silent --show-error" not in teardown
+        or "--location" in teardown
+        or "test \"${HTTP_STATUS}\" = '200'" not in teardown
     ):
-        errors.append("failed or unconfigured cleanup must fail the lane")
+        errors.append("failed, redirected, or unconfigured cleanup must fail the lane")
     if "payload=$(printf '{\"run_id\":\"%s\",\"scenario\":\"endurance-2h\"}' \"${GITHUB_RUN_ID}\")" not in text:
         errors.append("teardown must identify exactly this run and the endurance scenario")
     if '"teardown_status": os.environ["TEARDOWN_STATUS"]' not in text:

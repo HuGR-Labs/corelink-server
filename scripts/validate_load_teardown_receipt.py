@@ -13,6 +13,9 @@ SCHEMA = "corelink.load-test-teardown-receipt.v1"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 RUN_ID_RE = re.compile(r"^\d{1,20}$")
 RESOURCE_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+REQUIRED_RESOURCE_CLASSES = frozenset(
+    {"cas_objects", "webhook_idempotency_rows", "dsr_jobs", "audit_entries"}
+)
 REQUIRED_FIELDS = {
     "schema",
     "run_id",
@@ -26,6 +29,20 @@ REQUIRED_FIELDS = {
 
 class TeardownReceiptError(ValueError):
     """The endpoint did not prove complete, exact run-scoped deletion."""
+
+
+def _object_without_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise TeardownReceiptError("receipt contains a duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def parse_receipt(text: str) -> object:
+    """Parse JSON while rejecting ambiguous duplicate keys at every depth."""
+    return json.loads(text, object_pairs_hook=_object_without_duplicate_keys)
 
 
 def _count(value: object, field: str) -> int:
@@ -62,8 +79,8 @@ def validate(
         raise TeardownReceiptError("receipt reports a cross-run deletion")
 
     resources = receipt["resources"]
-    if not isinstance(resources, dict) or not resources:
-        raise TeardownReceiptError("receipt must enumerate at least one resource class")
+    if not isinstance(resources, dict) or set(resources) != REQUIRED_RESOURCE_CLASSES:
+        raise TeardownReceiptError("receipt must enumerate the exact persistent resource classes")
     normalized_resources: dict[str, dict[str, int]] = {}
     for resource, counts in resources.items():
         if not isinstance(resource, str) or not RESOURCE_RE.fullmatch(resource):
@@ -100,10 +117,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--scenario", required=True)
     parser.add_argument("--deployment-sha", required=True)
+    parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        receipt = json.loads(args.receipt.read_text(encoding="utf-8"))
-        validate(
+        receipt = parse_receipt(args.receipt.read_text(encoding="utf-8"))
+        validated = validate(
             receipt,
             run_id=args.run_id,
             scenario=args.scenario,
@@ -112,6 +130,8 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, json.JSONDecodeError, TeardownReceiptError) as exc:
         print(f"::error::teardown receipt rejected: {exc}")
         return 1
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(validated, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print("teardown receipt accepted: exact run, scenario, deployment, and deletion inventory")
     return 0
 

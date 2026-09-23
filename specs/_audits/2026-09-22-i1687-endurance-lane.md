@@ -24,11 +24,15 @@ The response contract proposed for #2161 is
 `corelink.load-test-teardown-receipt.v1`: it binds the exact `run_id`,
 `endurance-2h` scenario, staging `target_deployment_sha`, a complete inventory,
 per-resource `inventory`/`attempted`/`deleted`/`remaining` counts, and
-`cross_run_deletions: 0`. The lane validates those fields against the GitHub
+`cross_run_deletions: 0`. The required resource classes are `cas_objects`,
+`webhook_idempotency_rows`, `dsr_jobs`, and `audit_entries`; expanding that set
+requires updating this versioned contract before a new writer enters the lane.
+The lane validates those fields against the GitHub
 run and the deployment SHA in the owner-issued target identity receipt, then
-retains the redacted response as `teardown-receipt-${GITHUB_RUN_ID}.json` and
-includes it in artifact digests. A status code without a reconciled receipt
-fails the lane and cannot set the deletion proof flag. The server-side handler
+retains only the normalized redacted response as
+`teardown-receipt-${GITHUB_RUN_ID}.json` and includes it in artifact digests.
+Redirects and status codes without a reconciled receipt
+fail the lane and cannot set the deletion proof flag. The server-side handler
 and its staging deployment remain owned by #2161, which is blocked on #1700.
 
 Contract and mutation checks:

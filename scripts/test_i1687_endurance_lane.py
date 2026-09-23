@@ -11,6 +11,7 @@ from verify_i1687_endurance_lane import verify_path, verify_scenario, verify_wor
 from validate_load_teardown_receipt import (  # noqa: E402
     SCHEMA as TEARDOWN_SCHEMA,
     TeardownReceiptError,
+    parse_receipt,
     validate as validate_teardown_receipt,
 )
 
@@ -53,7 +54,11 @@ def test_mutations_fail_closed() -> None:
         ("checkpoint-teardown", "teardown"),
         ("if: always() && steps.target_host.outcome == 'success'", "if: always()"),
         ("K6_STAGING_TEARDOWN_TOKEN is required; refusing unmanaged synthetic state", "cleanup token optional"),
-        ("timeout 30s curl --fail --silent --show-error --location", "curl --fail --silent --show-error --location"),
+        (
+            "HTTP_STATUS=$(timeout 30s curl --fail --silent --show-error",
+            "HTTP_STATUS=$(curl --fail --silent --show-error",
+        ),
+        ("test \"${HTTP_STATUS}\" = '200'", "test \"${HTTP_STATUS}\" = '302'"),
         ('"run_id":"%s","scenario":"endurance-2h"', '"run_id":"*","scenario":"endurance-2h"'),
         ('"teardown_status": os.environ["TEARDOWN_STATUS"]', '"teardown_status": "passed"'),
         (
@@ -107,7 +112,9 @@ def teardown_receipt() -> dict[str, object]:
         "inventory_complete": True,
         "resources": {
             "cas_objects": {"inventory": 2, "attempted": 2, "deleted": 2, "remaining": 0},
-            "webhook_idempotency": {"inventory": 1, "attempted": 1, "deleted": 1, "remaining": 0},
+            "webhook_idempotency_rows": {"inventory": 1, "attempted": 1, "deleted": 1, "remaining": 0},
+            "dsr_jobs": {"inventory": 0, "attempted": 0, "deleted": 0, "remaining": 0},
+            "audit_entries": {"inventory": 2, "attempted": 2, "deleted": 2, "remaining": 0},
         },
         "cross_run_deletions": 0,
     }
@@ -149,10 +156,6 @@ def test_teardown_receipt_mismatches_and_partial_cleanup_fail_closed() -> None:
 
     for field, value in (("deleted", 1), ("remaining", 1), ("attempted", 1)):
         receipt = teardown_receipt()
-        receipt["resources"] = {
-            "cas_objects": {"inventory": 2, "attempted": 2, "deleted": 2, "remaining": 0},
-            "webhook_idempotency": {"inventory": 1, "attempted": 1, "deleted": 1, "remaining": 0},
-        }
         resource_counts = receipt["resources"]["cas_objects"]
         resource_counts[field] = value
         try:
@@ -168,7 +171,7 @@ def test_teardown_receipt_mismatches_and_partial_cleanup_fail_closed() -> None:
             raise AssertionError(f"partial teardown mutation escaped: {field}")
 
 
-def test_teardown_receipt_rejects_unbound_fields_and_no_inventory() -> None:
+def test_teardown_receipt_rejects_unbound_or_incomplete_inventory() -> None:
     receipt = teardown_receipt()
     receipt["personal_data"] = "must never be uploaded"
     try:
@@ -183,8 +186,23 @@ def test_teardown_receipt_rejects_unbound_fields_and_no_inventory() -> None:
     else:
         raise AssertionError("unbound receipt field escaped")
 
+    for resource_change in ("cas_objects", "webhook_idempotency_rows", "dsr_jobs", "audit_entries"):
+        receipt = teardown_receipt()
+        del receipt["resources"][resource_change]
+        try:
+            validate_teardown_receipt(
+                receipt,
+                run_id="1234567890123",
+                scenario="endurance-2h",
+                deployment_sha="a" * 40,
+            )
+        except TeardownReceiptError:
+            pass
+        else:
+            raise AssertionError(f"omitted resource class escaped: {resource_change}")
+
     receipt = teardown_receipt()
-    receipt["resources"] = {}
+    receipt["resources"]["unrecognized_state"] = {"inventory": 0, "attempted": 0, "deleted": 0, "remaining": 0}
     try:
         validate_teardown_receipt(
             receipt,
@@ -195,7 +213,17 @@ def test_teardown_receipt_rejects_unbound_fields_and_no_inventory() -> None:
     except TeardownReceiptError:
         pass
     else:
-        raise AssertionError("empty teardown inventory escaped")
+        raise AssertionError("unknown resource class escaped")
+
+
+def test_teardown_receipt_parser_rejects_duplicate_keys() -> None:
+    for text in ('{"run_id":"1","run_id":"2"}', '{"resources":{"cas_objects":{},"cas_objects":{}}}'):
+        try:
+            parse_receipt(text)
+        except TeardownReceiptError:
+            pass
+        else:
+            raise AssertionError("duplicate JSON key escaped")
 
 
 if __name__ == "__main__":
