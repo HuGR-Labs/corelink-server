@@ -47,7 +47,7 @@ EXPECTED_OLD_MAIN_ALERTS: dict[int, tuple[str, str, str]] = {
 # Compatibility name for focused callers and the pre-merge adjudication path.
 EXPECTED_RESIDUALS = EXPECTED_OLD_MAIN_ALERTS
 EXPECTED_POST_MERGE_ALERTS: dict[int, tuple[str, str, str]] = {}
-BASELINE_SNAPSHOT = "docs/security/b028-dependabot-census-2026-09-06.json"
+BASELINE_SNAPSHOT = "docs/security/b028-dependabot-census-2026-09-06-postmerge.json"
 CANDIDATE_CONTAINED = {26, 27, 28}
 
 # The lockfile must carry the exact published fixes and the two local,

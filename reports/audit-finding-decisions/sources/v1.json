@@ -140,6 +140,16 @@
       "sha256": "e1e4d9309a161f97ab9ccb324b3927db95c306a14e9c0c91becf63c136d6c70e"
     },
     {
+      "path": "docs/security/b373-dependabot-census-2026-09-09.json",
+      "reason": "Explicit B-101 non-source classification: this B-373 pre-merge Dependabot census is historical ledger evidence, not an admitted B-101 finding source; its digest pins that decision until separately admitted.",
+      "sha256": "5d1c2bcd987f7403dae91726e7b37c4fb97dcc5803c9446f6ac5e231c7195c1f"
+    },
+    {
+      "path": "docs/security/b028-dependabot-census-2026-09-06-postmerge.json",
+      "reason": "Explicit B-101 non-source classification: this post-merge B-028 refresh is operational closure evidence; the admitted historical source remains the nine-alert pre-merge census.",
+      "sha256": "57f84d1c97e8d14f8274c0e0ec962aba6e63063c223fa368d68b5200f46bb812"
+    },
+    {
       "path": "reports/audits/2026-07-03-caa360-pre-hn-launch.md",
       "reason": "Explicit B-101 non-source classification: this pre-HN launch report records 35 confirmed findings but is not an approved measured input; its digest forces reclassification and complete decisions if it changes.",
       "sha256": "38b5f67a6b1f915c9333363d5f8349c9999b219713ff4748905daa1c61e22e59"
@@ -152,12 +162,12 @@
     {
       "path": "reports/audits/2026-08-25-comprehensive-audit-and-verification.md",
       "reason": "Explicit B-101 scope decision: this audit-and-verification report is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
-      "sha256": "f7387930aaaf19526c8c99e4c5c118c96c575843a73cacc8f2950f974b784d73"
+      "sha256": "8a0d0c8a8f6f294974b694c9f96778f500751fa84c543159b2682f45202eaacf"
     },
     {
       "path": "reports/audits/2026-08-25-definitive-master-report.md",
       "reason": "Explicit B-101 scope decision: this master report is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
-      "sha256": "a381c32583180aea7c2f3633c3e6bd601f2738249288ac5fc141d8f3c3cfb86b"
+      "sha256": "02412d74c99f096041664022afcd80d8436398b0adf7e60292d5220f87f34cbf"
     },
     {
       "path": "reports/audits/2026-08-25-fix-briefing-ox-alpha-addendum-v2.md",
