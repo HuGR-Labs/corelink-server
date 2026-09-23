@@ -12,7 +12,7 @@ use corelink_reapi::proto::bytestream::{
     QueryWriteStatusRequest, QueryWriteStatusResponse, ReadRequest, ReadResponse, WriteRequest,
     WriteResponse,
 };
-use futures::{Stream, StreamExt};
+use futures::{FutureExt, Stream, StreamExt};
 use tonic::{Code, Request, Response, Status, Streaming};
 
 use crate::reapi_ingress::{
@@ -26,10 +26,9 @@ pub const REAPI_BYTESTREAM_CHUNK_BYTES: usize = 64 * 1024;
 /// At most three full ByteStream bodies can be buffered by this service.
 pub const REAPI_BYTESTREAM_CONCURRENCY_LIMIT: usize = 3;
 
-const REAPI_BYTESTREAM_READ_PEAK_BYTES: u64 =
-    crate::container_capacity::CAS_READ_COPY_MULTIPLIER
-        * REAPI_BYTESTREAM_MAX_BUFFERED_BYTES as u64
-        + REAPI_BYTESTREAM_CHUNK_BYTES as u64;
+const REAPI_BYTESTREAM_READ_PEAK_BYTES: u64 = crate::container_capacity::CAS_READ_COPY_MULTIPLIER
+    * REAPI_BYTESTREAM_MAX_BUFFERED_BYTES as u64
+    + REAPI_BYTESTREAM_CHUNK_BYTES as u64;
 const REAPI_BYTESTREAM_WRITE_PEAK_BYTES: u64 = 2 * REAPI_BYTESTREAM_MAX_BUFFERED_BYTES as u64;
 
 const _: () = assert!(REAPI_BYTESTREAM_CHUNK_BYTES > 0);
@@ -72,7 +71,10 @@ impl ReapiByteStreamService {
         request: ReadRequest,
     ) -> Result<ReapiReadStream, Status> {
         let instance = resource_instance(&request.resource_name)?;
-        let admitted = self.ingress.authorize(metadata, instance, Access::Read).await?;
+        let admitted = self
+            .ingress
+            .authorize(metadata, instance, Access::Read)
+            .await?;
         let resource =
             validate_blob_resource_name(&request.resource_name, admitted.tenant().tenant_id())?;
         require_read_resource(&resource)?;
@@ -136,7 +138,10 @@ impl ReapiByteStreamService {
             .transpose()?
             .ok_or_else(|| Status::new(Code::InvalidArgument, "REAPI write stream is empty"))?;
         let instance = resource_instance(&first.resource_name)?;
-        let admitted = self.ingress.authorize(metadata, instance, Access::Write).await?;
+        let admitted = self
+            .ingress
+            .authorize(metadata, instance, Access::Write)
+            .await?;
         let resource =
             validate_blob_resource_name(&first.resource_name, admitted.tenant().tenant_id())?;
         require_write_resource(&resource)?;
@@ -148,11 +153,12 @@ impl ReapiByteStreamService {
         let mut finished = first.finish_write;
 
         while !finished {
-            let chunk = stream
-                .next()
-                .await
-                .transpose()?
-                .ok_or_else(|| Status::new(Code::InvalidArgument, "REAPI write ended before finish_write"))?;
+            let chunk = stream.next().await.transpose()?.ok_or_else(|| {
+                Status::new(
+                    Code::InvalidArgument,
+                    "REAPI write ended before finish_write",
+                )
+            })?;
             let expected_offset = i64::try_from(buffered.len()).map_err(|_| {
                 Status::new(Code::ResourceExhausted, "REAPI write exceeds buffer limit")
             })?;
@@ -166,7 +172,11 @@ impl ReapiByteStreamService {
             finished = chunk.finish_write;
         }
 
-        if stream.next().await.transpose()?.is_some() {
+        // Reject an already-buffered replay without waiting for peer EOF. A
+        // client may legally keep the transport open after the terminal frame;
+        // waiting would retain both this body permit and its ingress lease.
+        if let Some(extra) = stream.next().now_or_never() {
+            let _ = extra?;
             return Err(Status::new(
                 Code::InvalidArgument,
                 "REAPI write sent a chunk after finish_write",
@@ -197,7 +207,10 @@ impl ReapiByteStreamService {
             .clone()
             .try_acquire_owned()
             .map_err(|_| {
-                Status::new(Code::ResourceExhausted, "REAPI ByteStream capacity exhausted")
+                Status::new(
+                    Code::ResourceExhausted,
+                    "REAPI ByteStream capacity exhausted",
+                )
             })
     }
 }
@@ -211,7 +224,9 @@ impl ByteStream for ReapiByteStreamService {
         request: Request<ReadRequest>,
     ) -> Result<Response<Self::ReadStream>, Status> {
         let metadata = request.metadata().clone();
-        Ok(Response::new(self.read_request(&metadata, request.into_inner()).await?))
+        Ok(Response::new(
+            self.read_request(&metadata, request.into_inner()).await?,
+        ))
     }
 
     async fn write(
@@ -219,7 +234,9 @@ impl ByteStream for ReapiByteStreamService {
         request: Request<Streaming<WriteRequest>>,
     ) -> Result<Response<WriteResponse>, Status> {
         let metadata = request.metadata().clone();
-        Ok(Response::new(self.write_stream(&metadata, request.into_inner()).await?))
+        Ok(Response::new(
+            self.write_stream(&metadata, request.into_inner()).await?,
+        ))
     }
 
     async fn query_write_status(
@@ -290,7 +307,10 @@ fn validate_read_range(offset: i64, limit: i64, size: usize) -> Result<(), Statu
         ));
     }
     if limit < 0 {
-        return Err(Status::new(Code::InvalidArgument, "REAPI read limit is negative"));
+        return Err(Status::new(
+            Code::InvalidArgument,
+            "REAPI read limit is negative",
+        ));
     }
     Ok(())
 }
@@ -318,8 +338,12 @@ fn consume_write_chunk(
         .len()
         .checked_add(chunk.data.len())
         .ok_or_else(|| Status::new(Code::ResourceExhausted, "REAPI write exceeds buffer limit"))?;
-    let declared_size = usize::try_from(resource.size_bytes())
-        .map_err(|_| Status::new(Code::ResourceExhausted, "REAPI write exceeds configured CAS limit"))?;
+    let declared_size = usize::try_from(resource.size_bytes()).map_err(|_| {
+        Status::new(
+            Code::ResourceExhausted,
+            "REAPI write exceeds configured CAS limit",
+        )
+    })?;
     if next_size > REAPI_BYTESTREAM_MAX_BUFFERED_BYTES || next_size > declared_size {
         return Err(Status::new(
             Code::ResourceExhausted,

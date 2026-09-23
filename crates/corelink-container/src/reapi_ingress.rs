@@ -390,7 +390,10 @@ impl ReapiIngress {
     /// This is test-only so production services can only obtain their
     /// dependencies through the route factory and its decorated handlers.
     #[cfg(test)]
-    #[allow(clippy::too_many_arguments, reason = "test harness mirrors the frozen dependency bundle")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "test harness mirrors the frozen dependency bundle"
+    )]
     pub(crate) fn from_test_components(
         authenticator: Arc<dyn IngressAuthenticator>,
         admission: Arc<dyn IngressAdmission>,

@@ -5,7 +5,7 @@
     reason = "test assertions intentionally surface failures"
 )]
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -63,6 +63,8 @@ struct CasSpy {
     read_was_bounded: std::sync::atomic::AtomicBool,
     body: Mutex<Vec<u8>>,
     audit_failure: std::sync::atomic::AtomicBool,
+    tombstoned: AtomicBool,
+    tombstone_authority_failure: AtomicBool,
 }
 
 impl CasSpy {
@@ -76,6 +78,18 @@ impl CasSpy {
 
 impl CasReadHandler for CasSpy {
     fn read(&self, request: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
+        if self.tombstone_authority_failure.load(Ordering::SeqCst) {
+            return Err(CasHandlerError::Internal(format!(
+                "{}authority fault",
+                crate::routes::cas_erase::TOMBSTONE_UNAVAILABLE_SENTINEL
+            )));
+        }
+        if self.tombstoned.load(Ordering::SeqCst) {
+            return Err(CasHandlerError::NotFound {
+                tenant: request.tenant,
+                hash: request.hash,
+            });
+        }
         self.reads.fetch_add(1, Ordering::SeqCst);
         self.read_was_bounded.store(
             request.max_bytes == Some(self.body.lock().expect("body lock").len() as u64),
@@ -90,6 +104,18 @@ impl CasReadHandler for CasSpy {
 
 impl CasWriteHandler for CasSpy {
     fn write(&self, request: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+        if self.tombstone_authority_failure.load(Ordering::SeqCst) {
+            return Err(CasHandlerError::Internal(format!(
+                "{}authority fault",
+                crate::routes::cas_erase::TOMBSTONE_UNAVAILABLE_SENTINEL
+            )));
+        }
+        if self.tombstoned.load(Ordering::SeqCst) {
+            return Err(CasHandlerError::Internal(format!(
+                "{}re-PUT of erased blob refused",
+                crate::routes::cas_erase::TOMBSTONE_GONE_SENTINEL
+            )));
+        }
         self.writes.fetch_add(1, Ordering::SeqCst);
         if self.audit_failure.load(Ordering::SeqCst) {
             return Err(CasHandlerError::AuditFailed("down".into()));
@@ -209,7 +235,10 @@ async fn missing_invalid_read_only_and_tenant_mismatch_never_reach_cas() {
     let valid = service(Ok(("tenant-a".into(), true)), Ok(()), cas.clone());
     assert_eq!(
         valid
-            .write_stream(&tonic::metadata::MetadataMap::new(), stream::iter(vec![Ok(write.clone())]))
+            .write_stream(
+                &tonic::metadata::MetadataMap::new(),
+                stream::iter(vec![Ok(write.clone())]),
+            )
             .await
             .expect_err("missing PAT")
             .code(),
@@ -349,6 +378,105 @@ async fn quota_and_audit_failures_fail_closed() {
             .expect_err("audit failure")
             .code(),
         Code::Unavailable
+    );
+    assert_eq!(cas.writes.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn tombstone_gates_never_serve_or_persist_and_authority_faults_fail_closed() {
+    let body = b"erased-body".to_vec();
+    let write = WriteRequest {
+        resource_name: resource(&body),
+        write_offset: 0,
+        finish_write: true,
+        data: body.clone(),
+    };
+    let read = ReadRequest {
+        resource_name: format!(
+            "tenant-a/blobs/{}/{}",
+            crate::reapi_ingress::sha256_digest(&body),
+            body.len()
+        ),
+        read_offset: 0,
+        read_limit: 0,
+    };
+
+    let tombstoned = Arc::new(CasSpy::with_body(body.clone()));
+    tombstoned.tombstoned.store(true, Ordering::SeqCst);
+    let tombstoned_service = service(Ok(("tenant-a".into(), true)), Ok(()), tombstoned.clone());
+    let tombstoned_read = match tombstoned_service.read_request(&metadata(), read.clone()).await {
+        Ok(_) => panic!("tombstoned bytes are never served"),
+        Err(error) => error,
+    };
+    assert_eq!(tombstoned_read.code(), Code::NotFound);
+    assert_eq!(
+        tombstoned_service
+            .write_stream(&metadata(), stream::iter(vec![Ok(write.clone())]))
+            .await
+            .expect_err("tombstoned bytes are never restored")
+            .code(),
+        Code::Unavailable
+    );
+    assert_eq!(tombstoned.reads.load(Ordering::SeqCst), 0);
+    assert_eq!(tombstoned.writes.load(Ordering::SeqCst), 0);
+    assert_eq!(*tombstoned.body.lock().expect("body lock"), body);
+
+    let unavailable = Arc::new(CasSpy::with_body(body.clone()));
+    unavailable
+        .tombstone_authority_failure
+        .store(true, Ordering::SeqCst);
+    let unavailable_service = service(Ok(("tenant-a".into(), true)), Ok(()), unavailable.clone());
+    let unavailable_read = match unavailable_service.read_request(&metadata(), read).await {
+        Ok(_) => panic!("tombstone fault fails closed before a read"),
+        Err(error) => error,
+    };
+    assert_eq!(unavailable_read.code(), Code::Unavailable);
+    assert_eq!(
+        unavailable_service
+            .write_stream(&metadata(), stream::iter(vec![Ok(write)]))
+            .await
+            .expect_err("tombstone fault fails closed before persistence")
+            .code(),
+        Code::Unavailable
+    );
+    assert_eq!(unavailable.reads.load(Ordering::SeqCst), 0);
+    assert_eq!(unavailable.writes.load(Ordering::SeqCst), 0);
+    assert_eq!(*unavailable.body.lock().expect("body lock"), body);
+}
+
+#[tokio::test]
+async fn terminal_write_does_not_wait_for_peer_eof_and_rejects_available_replay() {
+    let body = b"terminal-body".to_vec();
+    let request = WriteRequest {
+        resource_name: resource(&body),
+        write_offset: 0,
+        finish_write: true,
+        data: body.clone(),
+    };
+    let cas = Arc::new(CasSpy::default());
+    let service = service(Ok(("tenant-a".into(), true)), Ok(()), cas.clone());
+    service
+        .write_stream(
+            &metadata(),
+            stream::iter(vec![Ok(request.clone())])
+                .chain(stream::pending::<Result<WriteRequest, Status>>()),
+        )
+        .await
+        .expect("terminal frame completes without waiting for EOF");
+
+    let replay = WriteRequest {
+        resource_name: String::new(),
+        write_offset: 0,
+        finish_write: false,
+        data: Vec::new(),
+    };
+    assert_eq!(
+        service
+            .write_stream(&metadata(), stream::iter(vec![Ok(request), Ok(replay)]))
+            .await
+            .expect_err("available replay is rejected")
+            .code(),
+        Code::InvalidArgument
     );
     assert_eq!(cas.writes.load(Ordering::SeqCst), 1);
 }
