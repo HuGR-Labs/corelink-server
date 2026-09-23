@@ -81,6 +81,8 @@ def _timing_items(raw: str) -> list[str]:
 def timing(raw: str) -> dict[str, float]:
     values: dict[str, float] = {}
     for part in _timing_items(raw):
+        if not part.strip():
+            fail("empty Server-Timing item")
         match = PHASE.fullmatch(part)
         if match is None:
             if re.search(r";\s*dur\s*=", part):
