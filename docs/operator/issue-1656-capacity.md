@@ -32,6 +32,15 @@ a failure. Until a protected GET produces that receipt, the verifier reports
 the repository declaration as `UNVERIFIED` and does not claim that Cloudflare's
 live quota or usage agrees.
 
+The verifier accepts no provider-defined extensions. Its allowed top-level
+receipt keys are the contract fields plus only the #2044 probe metadata
+`captured_at`, `account_id_redacted`, and `provider_api_version`; that metadata
+is optional because this arithmetic verifier does not consume it. `quota` has
+exactly `total_vcpu`, `vcpu_per_deployment`, `memory_mib_per_deployment`, and
+`total_memory_mib`. Fields such as `tenant_concurrency` or `measured_usage`
+are rejected at either level until a separately reviewed provider contract
+defines their source and semantics.
+
 ## Done criteria
 
 - all five regional blocks match the budget model;

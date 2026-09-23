@@ -65,7 +65,11 @@ class RegionalCapacityVerifierTests(unittest.TestCase):
         model = verifier.declared_budget()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "provider.json"
-            path.write_text(json.dumps(self.provider_receipt()), encoding="utf-8")
+            path.write_text(json.dumps(self.provider_receipt(
+                captured_at="2026-09-23T00:00:00+00:00",
+                account_id_redacted="6a1f...f5cd",
+                provider_api_version="v4",
+            )), encoding="utf-8")
             verifier.verify_provider(path, model)
 
     def test_provider_mismatch_fails_closed(self) -> None:
@@ -116,6 +120,22 @@ class RegionalCapacityVerifierTests(unittest.TestCase):
                     "total_memory_mib": 6291456,
                 }),
                 self.provider_receipt(usage={"status": "measured"}),
+            ):
+                path.write_text(json.dumps(receipt), encoding="utf-8")
+                with self.assertRaises(verifier.CapacityError):
+                    verifier.verify_provider(path, model)
+
+    def test_unknown_receipt_or_quota_claim_field_fails_closed(self) -> None:
+        model = verifier.declared_budget()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "provider.json"
+            quota = self.provider_receipt()["quota"]
+            assert isinstance(quota, dict)
+            for receipt in (
+                self.provider_receipt(tenant_concurrency={"active": 1}),
+                self.provider_receipt(measured_usage={"used_vcpu": 1}),
+                self.provider_receipt(quota={**quota, "tenant_concurrency": 1}),
+                self.provider_receipt(quota={**quota, "measured_usage": 1}),
             ):
                 path.write_text(json.dumps(receipt), encoding="utf-8")
                 with self.assertRaises(verifier.CapacityError):

@@ -23,6 +23,32 @@ KNOWN_VCPU = {"basic": 0.25}
 PROVIDER_RECEIPT_SCHEMA = "corelink.issue-2044.capacity-read-only.v1"
 PROVIDER_RECEIPT_ISSUE = 2044
 PROVIDER_RECEIPT_ENDPOINT = "GET /accounts/{account}/cloudchamber/me"
+REQUIRED_RECEIPT_KEYS = frozenset(
+    {
+        "schema_version",
+        "schema",
+        "issue",
+        "read_only",
+        "endpoint",
+        "quota",
+        "usage",
+        "concurrency",
+    }
+)
+# The #2044 probe emits these metadata fields. They are intentionally optional
+# here because regional arithmetic does not consume them, but no other receipt
+# member may extend this contract without review.
+OPTIONAL_RECEIPT_METADATA_KEYS = frozenset(
+    {"captured_at", "account_id_redacted", "provider_api_version"}
+)
+REQUIRED_QUOTA_KEYS = frozenset(
+    {
+        "total_vcpu",
+        "vcpu_per_deployment",
+        "memory_mib_per_deployment",
+        "total_memory_mib",
+    }
+)
 UNAVAILABLE_MEASUREMENT = {
     "status": "unavailable",
     "source": PROVIDER_RECEIPT_ENDPOINT,
@@ -109,6 +135,10 @@ def positive_finite_number(source: dict[str, object], field: str) -> float:
 
 def verify_provider(path: Path, model: dict[str, object]) -> None:
     evidence = read_json(path)
+    if not REQUIRED_RECEIPT_KEYS.issubset(evidence) or not set(evidence).issubset(
+        REQUIRED_RECEIPT_KEYS | OPTIONAL_RECEIPT_METADATA_KEYS
+    ):
+        raise CapacityError("provider receipt keys do not match the Cloudchamber read-only contract")
     if (
         evidence.get("schema_version") != 1
         or evidence.get("schema") != PROVIDER_RECEIPT_SCHEMA
@@ -120,6 +150,8 @@ def verify_provider(path: Path, model: dict[str, object]) -> None:
     quota = evidence.get("quota")
     if not isinstance(quota, dict):
         raise CapacityError("provider quota is missing or invalid")
+    if set(quota) != REQUIRED_QUOTA_KEYS:
+        raise CapacityError("provider quota keys do not match the Cloudchamber read-only contract")
     if evidence.get("usage") != UNAVAILABLE_MEASUREMENT or evidence.get("concurrency") != UNAVAILABLE_MEASUREMENT:
         raise CapacityError("provider receipt must keep unsupported usage and concurrency unavailable")
     total_vcpu = positive_finite_number(quota, "total_vcpu")
