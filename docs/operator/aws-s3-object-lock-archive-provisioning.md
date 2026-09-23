@@ -96,7 +96,11 @@ but no modeled write timestamp. The receipt's S3 request ID is the
 provider-issued correlation value. Its `observed_at_unix_ms` field is the
 adapter's local clock reading immediately after the successful response; it is
 not an S3 event timestamp. Use the provider's durable CloudTrail event and
-digest as the external audit record.
+digest as the external audit record. `LookupEvents` is management-event history
+and cannot prove S3 object data events. The protected workflow queries the
+approved CloudTrail Lake Event Data Store with `eventCategory = 'Data'`, binds
+the matching put and denied-delete events to the exact bucket/key/version, and
+validates the linked approved trail's digest chain separately.
 
 Capability negotiation requires a separate probe configuration and the exact
 key/version of an already locked synthetic object. The adapter constructs both
@@ -130,7 +134,8 @@ entrypoint. It accepts no role, bucket, region, or account from dispatch
 inputs; it runs only from protected canonical `main`, waits on the
 `s3-object-lock-live-proof` environment, and obtains short-lived credentials
 through GitHub OIDC. Its repository variables must identify the approved
-non-production account, role, region, bucket prefix, CloudTrail trail,
+non-production account, role, region, bucket prefix, CloudTrail trail and
+CloudTrail Lake Event Data Store,
 jurisdiction, approval reference, cost ceiling (capped at USD 5), and named
 cost and cleanup owners. The proof is limited to one new bucket, one synthetic
 object, one region, and one day of Compliance retention. Missing values fail

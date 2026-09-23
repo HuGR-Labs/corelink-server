@@ -572,11 +572,12 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
             .clone();
         let expected_principal = delete_probe_target.expected_principal_arn.clone();
         Self::block_on("delete probe identity binding", async move {
-            let observed = probe_sts
+            let identity = probe_sts
                 .get_caller_identity()
                 .send()
                 .await
-                .map_err(|_| "STS GetCallerIdentity for delete probe failed".to_string())?
+                .map_err(|_| "STS GetCallerIdentity for delete probe failed".to_string())?;
+            let observed = identity
                 .arn()
                 .ok_or_else(|| "STS GetCallerIdentity returned no ARN".to_string())?;
             if observed != expected_principal {
@@ -632,6 +633,41 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
                 delete_probe_target.expected_principal_arn,
                 delete_probe_target.effective_permission_receipt,
             ),
+        })
+    }
+
+    fn record_pre_write_intent(
+        &self,
+        request: &ImmutableArchivePut,
+    ) -> Result<ArchiveAuditReceipt, ObjectLockArchiveError> {
+        Self::validate_object_key(&request.object_key)?;
+        self.validate_tenant_request(request)?;
+        self.require_approved_retention(request.retention.retain_until_unix_ms)?;
+        let observed_at_unix_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| {
+                ObjectLockArchiveError::Backend(
+                    "system clock was before the Unix epoch".to_string(),
+                )
+            })?
+            .as_millis();
+        let observed_at_unix_ms = u64::try_from(observed_at_unix_ms).map_err(|_| {
+            ObjectLockArchiveError::Backend(
+                "local observation timestamp exceeded u64 range".to_string(),
+            )
+        })?;
+        let receipt_id = self.persist_audit(self.audit_event(
+            "immutable_put_intent",
+            request.object_key.clone(),
+            String::new(),
+            String::new(),
+        ))?;
+        Ok(ArchiveAuditReceipt {
+            receipt_id,
+            bucket: self.config.bucket.clone(),
+            object_key: request.object_key.clone(),
+            object_version: String::new(),
+            observed_at_unix_ms,
         })
     }
 

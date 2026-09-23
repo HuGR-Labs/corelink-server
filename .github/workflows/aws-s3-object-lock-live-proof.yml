@@ -42,6 +42,7 @@ jobs:
       AWS_ROLE_ARN: ${{ vars.OBJECT_LOCK_PROBE_ROLE_ARN }}
       AWS_BUCKET_PREFIX: ${{ vars.OBJECT_LOCK_PROBE_BUCKET_PREFIX }}
       AWS_TRAIL_ARN: ${{ vars.OBJECT_LOCK_PROBE_CLOUDTRAIL_TRAIL_ARN }}
+      AWS_EVENT_DATA_STORE_ID: ${{ vars.OBJECT_LOCK_PROBE_CLOUDTRAIL_EVENT_DATA_STORE_ID }}
       APPROVAL_REFERENCE: ${{ vars.OBJECT_LOCK_PROBE_APPROVAL_REFERENCE }}
       COST_CEILING_USD_MICROS: ${{ vars.OBJECT_LOCK_PROBE_COST_CEILING_USD_MICROS }}
       COST_OWNER: ${{ vars.OBJECT_LOCK_PROBE_COST_OWNER }}
@@ -70,6 +71,7 @@ jobs:
           [[ "$COST_CEILING_USD_MICROS" =~ ^[1-9][0-9]*$ ]]
           (( COST_CEILING_USD_MICROS <= 5000000 ))
           test -n "$AWS_TRAIL_ARN"
+          [[ "$AWS_EVENT_DATA_STORE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
           test -n "$APPROVAL_REFERENCE"
           test -n "$COST_OWNER"
           test -n "$CLEANUP_OWNER"
@@ -135,19 +137,28 @@ jobs:
             exit 1
           fi
           grep -q 'AccessDenied\|InvalidRequest' "$RUNNER_TEMP/delete.err"
+          # CloudTrail LookupEvents exposes management events only. The proof
+          # must query an approved Event Data Store for S3 *data* events.
+          query_started_at="$(date -u '+%Y-%m-%d %H:%M:%S')"
+          query="SELECT eventID, eventName, eventData, eventTime FROM ${AWS_EVENT_DATA_STORE_ID} WHERE eventCategory = 'Data' AND eventSource = 's3.amazonaws.com' AND eventTime >= '${query_started_at}'"
+          query_id="$(aws cloudtrail start-query --query-statement "$query" --query QueryId --output text)"
           trail_event=''
           delete_event=''
           for attempt in $(seq 1 20); do
-            aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=PutObject \
-              --max-results 50 > "$RUNNER_TEMP/cloudtrail-events.json"
-            trail_event="$(jq -r --arg bucket "$bucket" --arg key "$key" --arg version "$version" '
-              [.Events[].CloudTrailEvent | fromjson | select(.requestParameters.bucketName == $bucket and .requestParameters.key == $key and .responseElements["x-amz-version-id"] == $version) | {eventID,requestID}] | first // empty' \
-              "$RUNNER_TEMP/cloudtrail-events.json")"
-            aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=DeleteObject \
-              --max-results 50 > "$RUNNER_TEMP/cloudtrail-delete-events.json"
-            delete_event="$(jq -r --arg bucket "$bucket" --arg key "$key" --arg version "$version" '
-              [.Events[].CloudTrailEvent | fromjson | select(.requestParameters.bucketName == $bucket and .requestParameters.key == $key and .requestParameters.versionId == $version and .errorCode != null) | {eventID,requestID}] | first // empty' \
-              "$RUNNER_TEMP/cloudtrail-delete-events.json")"
+            aws cloudtrail get-query-results --query-id "$query_id" > "$RUNNER_TEMP/cloudtrail-data-events.json"
+            query_status="$(jq -r '.QueryStatus' "$RUNNER_TEMP/cloudtrail-data-events.json")"
+            test "$query_status" != Failed -a "$query_status" != Cancelled -a "$query_status" != TimedOut
+            lake_rows="$(jq -c '[.QueryResultRows[]? | reduce .[] as $field ({}; .[$field.Field] = $field.Value)]' "$RUNNER_TEMP/cloudtrail-data-events.json")"
+            trail_event="$(jq -c --arg bucket "$bucket" --arg key "$key" --arg version "$version" '
+              [.[] | select(.eventName == "PutObject") | . as $row | ($row.eventData | fromjson) as $event
+               | select($event.requestParameters.bucketName == $bucket and $event.requestParameters.key == $key and $event.responseElements["x-amz-version-id"] == $version)
+               | {eventID: ($row.eventID // $event.eventID), requestID: ($event.responseElements["x-amz-request-id"] // $row.requestID)}] | first // empty' \
+              <<<"$lake_rows")"
+            delete_event="$(jq -c --arg bucket "$bucket" --arg key "$key" --arg version "$version" '
+              [.[] | select(.eventName == "DeleteObject") | . as $row | ($row.eventData | fromjson) as $event
+               | select($event.requestParameters.bucketName == $bucket and $event.requestParameters.key == $key and $event.requestParameters.versionId == $version and $event.errorCode != null)
+               | {eventID: ($row.eventID // $event.eventID), requestID: ($event.requestID // $row.requestID)}] | first // empty' \
+              <<<"$lake_rows")"
             test -n "$trail_event" -a -n "$delete_event" && break
             sleep 15
           done
@@ -155,6 +166,8 @@ jobs:
           jq -e '.eventID != null and .requestID != null' <<<"$trail_event" >/dev/null
           jq -e '.eventID != null and .requestID != null' <<<"$delete_event" >/dev/null
           request_id="$(jq -r '.requestID' <<<"$trail_event")"
+          # Validate the linked approved trail's digest chain separately from
+          # the Event Data Store query. A live receipt records both links.
           aws cloudtrail validate-logs --trail-arn "$AWS_TRAIL_ARN" > "$RUNNER_TEMP/digest-validation.txt"
           mkdir -p "$RUNNER_TEMP/object-lock-receipt"
           jq -n --arg workflow "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \

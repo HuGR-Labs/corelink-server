@@ -235,12 +235,8 @@ impl BackendErasureAdapter for R2CasLegalHoldEraseAdapter {
 
         // Objects this tenant is holding under governance retention.
         let tid = ctx.tenant_id.to_string();
-        let rows = d1_query_blocking(
-            &self.d1,
-            GOVERNANCE_RETENTION_SELECT_SQL,
-            vec![json!(tid)],
-        )
-        .map_err(ErasureBackendError::Transport)?;
+        let rows = d1_query_blocking(&self.d1, GOVERNANCE_RETENTION_SELECT_SQL, vec![json!(tid)])
+            .map_err(ErasureBackendError::Transport)?;
         let retained: HashSet<String> = rows
             .iter()
             .filter_map(|r| col_str(r, "object_key"))

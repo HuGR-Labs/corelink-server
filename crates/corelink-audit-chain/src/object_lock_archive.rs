@@ -303,6 +303,20 @@ pub trait ObjectLockArchiveAdapter: Send + Sync + core::fmt::Debug {
     /// Prove the required capability set for the exact target.
     fn negotiate_capabilities(&self) -> Result<ObjectLockCapabilityReport, ObjectLockArchiveError>;
 
+    /// Persist and verify a durable intent before the immutable provider write.
+    ///
+    /// The receipt is intentionally bound to the trusted tenant, target bucket,
+    /// and key before a provider version exists. Implementations must refuse the
+    /// write when this audit operation cannot be verified.
+    fn record_pre_write_intent(
+        &self,
+        _request: &ImmutableArchivePut,
+    ) -> Result<ArchiveAuditReceipt, ObjectLockArchiveError> {
+        Err(ObjectLockArchiveError::Backend(
+            "archive adapter does not support durable pre-write intent audit".to_string(),
+        ))
+    }
+
     /// Put one object with storage-enforced immutable retention.
     fn put_immutable(
         &self,
@@ -416,6 +430,17 @@ where
                 "immutable archive write requires retention and complete residency".to_string(),
             ));
         }
+        let pre_write_intent = self.adapter.record_pre_write_intent(request)?;
+        if pre_write_intent.receipt_id.trim().is_empty()
+            || pre_write_intent.bucket.trim().is_empty()
+            || pre_write_intent.object_key != request.object_key
+            || !pre_write_intent.object_version.is_empty()
+            || pre_write_intent.observed_at_unix_ms == 0
+        {
+            return Err(ObjectLockArchiveError::ReadbackMismatch(
+                "durable pre-write intent did not bind the requested target".to_string(),
+            ));
+        }
         let write_receipt = match self.adapter.put_immutable(request) {
             Ok(receipt) => receipt,
             Err(error) => {
@@ -479,6 +504,7 @@ where
         }
         Ok(VerifiedImmutableArchiveReceipt {
             backend: self.capability_report.backend.clone(),
+            pre_write_intent,
             write_receipt,
             retention_readback,
         })
@@ -566,6 +592,8 @@ where
 pub struct VerifiedImmutableArchiveReceipt {
     /// Backend negotiated before the write.
     pub backend: ObjectLockBackendIdentity,
+    /// Durable, verified intent persisted before the provider write.
+    pub pre_write_intent: ArchiveAuditReceipt,
     /// Provider receipt for the write operation.
     pub write_receipt: ImmutableArchiveWriteReceipt,
     /// Post-write retention, legal-hold, and residency readback.
@@ -710,6 +738,26 @@ impl ObjectLockArchiveAdapter for InMemoryObjectLockArchive {
             backend: self.identity.clone(),
             capabilities,
             evidence_reference: "in-memory conformance fixture".to_string(),
+        })
+    }
+
+    fn record_pre_write_intent(
+        &self,
+        request: &ImmutableArchivePut,
+    ) -> Result<ArchiveAuditReceipt, ObjectLockArchiveError> {
+        let mut next_receipt = self.next_receipt.lock().map_err(|_| {
+            ObjectLockArchiveError::TestFixture(
+                "in-memory receipt counter mutex poisoned".to_string(),
+            )
+        })?;
+        let receipt_id = format!("in-memory-object-lock-intent-{}", *next_receipt);
+        *next_receipt = next_receipt.saturating_add(1);
+        Ok(ArchiveAuditReceipt {
+            receipt_id,
+            bucket: self.identity.archive_target.clone(),
+            object_key: request.object_key.clone(),
+            object_version: String::new(),
+            observed_at_unix_ms: 1,
         })
     }
 
@@ -885,6 +933,13 @@ mod tests {
             self.inner.negotiate_capabilities()
         }
 
+        fn record_pre_write_intent(
+            &self,
+            request: &ImmutableArchivePut,
+        ) -> Result<ArchiveAuditReceipt, ObjectLockArchiveError> {
+            self.inner.record_pre_write_intent(request)
+        }
+
         fn put_immutable(
             &self,
             request: &ImmutableArchivePut,
@@ -918,6 +973,54 @@ mod tests {
         ) -> Result<(), ObjectLockArchiveError> {
             self.inner
                 .record_failure(operation, object_key, object_version, failure_class)
+        }
+    }
+
+    #[derive(Debug)]
+    struct IntentAuditFailureAdapter {
+        inner: InMemoryObjectLockArchive,
+        provider_put_calls: Arc<Mutex<u64>>,
+    }
+
+    impl ObjectLockArchiveAdapter for IntentAuditFailureAdapter {
+        fn negotiate_capabilities(
+            &self,
+        ) -> Result<ObjectLockCapabilityReport, ObjectLockArchiveError> {
+            self.inner.negotiate_capabilities()
+        }
+
+        fn record_pre_write_intent(
+            &self,
+            _request: &ImmutableArchivePut,
+        ) -> Result<ArchiveAuditReceipt, ObjectLockArchiveError> {
+            Err(ObjectLockArchiveError::Backend(
+                "durable audit receipt unavailable".to_string(),
+            ))
+        }
+
+        fn put_immutable(
+            &self,
+            request: &ImmutableArchivePut,
+        ) -> Result<ImmutableArchiveWriteReceipt, ObjectLockArchiveError> {
+            let mut calls = self.provider_put_calls.lock().map_err(|_| {
+                ObjectLockArchiveError::TestFixture("put counter mutex poisoned".to_string())
+            })?;
+            *calls = calls.saturating_add(1);
+            self.inner.put_immutable(request)
+        }
+
+        fn read_retention(
+            &self,
+            object_key: &str,
+        ) -> Result<ObjectLockRetentionReadback, ObjectLockArchiveError> {
+            self.inner.read_retention(object_key)
+        }
+
+        fn attempt_delete(
+            &self,
+            object_key: &str,
+        ) -> Result<DeleteAttempt, ObjectLockArchiveError> {
+            self.inner.attempt_delete(object_key)
         }
     }
 
@@ -958,6 +1061,8 @@ mod tests {
             receipt.write_receipt.audit_receipt.bucket,
             receipt.write_receipt.bucket
         );
+        assert_eq!(receipt.pre_write_intent.object_key, request.object_key);
+        assert!(receipt.pre_write_intent.object_version.is_empty());
         assert_eq!(receipt.write_receipt.object_key, request.object_key);
         assert_eq!(receipt.retention_readback.retention, request.retention);
         assert_eq!(
@@ -969,6 +1074,25 @@ mod tests {
             .assert_delete_denied(&request.object_key)
             .expect("retained object delete must be denied");
         assert_eq!(denial.object_key, request.object_key);
+    }
+
+    #[test]
+    fn durable_pre_write_intent_failure_prevents_provider_mutation() {
+        let provider_put_calls = Arc::new(Mutex::new(0));
+        let archive = VerifiedObjectLockArchive::connect(IntentAuditFailureAdapter {
+            inner: InMemoryObjectLockArchive::new(identity(), residency()),
+            provider_put_calls: Arc::clone(&provider_put_calls),
+        })
+        .expect("complete provider capabilities");
+
+        let error = archive
+            .put_immutable(&request())
+            .expect_err("missing durable intent must prevent the provider write");
+        assert_eq!(
+            error,
+            ObjectLockArchiveError::Backend("durable audit receipt unavailable".to_string())
+        );
+        assert_eq!(*provider_put_calls.lock().expect("put counter"), 0);
     }
 
     #[test]

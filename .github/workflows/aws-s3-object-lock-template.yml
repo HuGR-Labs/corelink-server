@@ -85,6 +85,13 @@ jobs:
           grep -F 'id-token: write' "$proof"
           grep -F 'environment: s3-object-lock-live-proof' "$proof"
           grep -F 'ref: main' "$proof"
+          grep -F 'AWS_EVENT_DATA_STORE_ID' "$proof"
+          grep -F "eventCategory = 'Data'" "$proof"
+          grep -F 'start-query' "$proof"
+          if grep -nF 'lookup-events' "$proof"; then
+            echo "LookupEvents cannot establish S3 data-event evidence" >&2
+            exit 1
+          fi
           if grep -nE 'aws_access_key_id|aws_secret_access_key' "$proof"; then
             echo "The protected probe workflow must not use static AWS credentials" >&2
             exit 1
