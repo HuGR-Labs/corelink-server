@@ -1,0 +1,2 @@
+Temporary inert path trigger for hosted pull_request_target verification.
+This is plain text, not an executable workflow.
