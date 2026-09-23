@@ -73,7 +73,7 @@ concurrency:
 jobs:
   guard:
     name: Non-active workflows must be declared
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     if: github.repository_id == '1232040291'
     steps:
       - name: Checkout

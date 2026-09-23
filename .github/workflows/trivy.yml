@@ -77,7 +77,7 @@ env:
 jobs:
   trivy:
     name: trivy fs (JS vuln) + config (IaC misconfig)
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
