@@ -47,7 +47,6 @@ class TruncatedResponse:
 class FakeHttpsConnection:
     requests: list[tuple[str, str, bytes, float]] = []
     attempts: dict[tuple[str, str], int] = {}
-    before_response: object | None = None
 
     def __init__(self, _host: str, _port: int, timeout: float) -> None:
         self.timeout = timeout
@@ -63,8 +62,6 @@ class FakeHttpsConnection:
         method, path, _ = self.request_data
         identity = (method, path)
         self.attempts[identity] = self.attempts.get(identity, 0) + 1
-        if self.before_response is not None:
-            self.before_response()  # type: ignore[operator]
         if method == "GET" and path.endswith("-failed"):
             return FakeResponse(500, b"must-not-count")
         if method == "GET" and path.endswith("-partial"):
@@ -101,7 +98,6 @@ class IsolatedLaneBehaviorTests(unittest.TestCase):
         lane._new_origin_connection = lambda host, port, timeout, _deadline, _monotonic: FakeHttpsConnection(host, port, timeout)
         FakeHttpsConnection.requests = []
         FakeHttpsConnection.attempts = {}
-        FakeHttpsConnection.before_response = None
         self.meter = lane.Meter(PREFIX)
         handler = type("TestHandler", (lane.Handler,), {
             "meter": self.meter, "origin": "https://cache.example.invalid", "tenant": TENANT,
@@ -175,22 +171,13 @@ class IsolatedLaneBehaviorTests(unittest.TestCase):
         self.assertTrue(PREFIX.startswith("b105-42-"))
 
     def test_request_accounting_uses_the_phase_captured_before_remote_io(self) -> None:
-        entered = threading.Event()
-        release = threading.Event()
-        FakeHttpsConnection.before_response = lambda: (entered.set(), release.wait(2))
         self.meter.set_phase("seed")
-        result: list[tuple[int, bytes]] = []
-        request = threading.Thread(target=lambda: result.append(self.request("PUT", f"/cargo/{TENANT}/phase-race", b"seed")))
-        request.start()
-        self.assertTrue(entered.wait(2))
+        _, phase = self.meter.begin_forward("phase-race")
         self.meter.set_phase("pair-0-enabled")
-        release.set()
-        request.join(2)
-        self.assertFalse(request.is_alive())
-        self.assertEqual(result[0][0], 201)
+        self.meter.record("PUT", "phase-race", 4, 201, 0, phase=phase)
+        self.meter.end_forward()
         self.assertEqual(self.meter.counters["seed"]["put_bytes"], 4)
         self.assertEqual(self.meter.counters["pair-0-enabled"]["put_bytes"], 0)
-        FakeHttpsConnection.before_response = None
 
     def test_dns_setup_cannot_extend_an_origin_request_past_its_deadline(self) -> None:
         release = threading.Event()
@@ -252,8 +239,11 @@ class IsolatedLaneBehaviorTests(unittest.TestCase):
         short_upload.close()
         self.assertEqual(self.meter.counters["seed"], {"get_bytes": 0, "put_bytes": 4, "gets": 0, "puts": 1})
         self.assertEqual(self.meter.counters["pair-0-enabled"], {
-            "get_bytes": len(b"read-payload"), "put_bytes": 4, "gets": 1, "puts": 1,
+            "get_bytes": len(b"read-payload") * 2, "put_bytes": 4, "gets": 2, "puts": 1,
         })
+        self.assertEqual(
+            sum(phase == "pair-0-enabled" and method == "GET" for phase, method, _ in self.meter.successes), 2,
+        )
         self.assertEqual(self.meter.retained_payload_bytes(), 8)
         original_limit = lane.MAX_BODY_BYTES
         lane.MAX_BODY_BYTES = 5
@@ -311,27 +301,18 @@ class IsolatedLaneBehaviorTests(unittest.TestCase):
             ("PROPFIND", f"/cargo/{TENANT}/{PREFIX}-delete-transport-failed"),
         ])
 
-    def test_cleanup_waits_for_in_flight_forward_and_fails_closed_at_its_deadline(self) -> None:
-        entered = threading.Event()
-        release = threading.Event()
-        FakeHttpsConnection.before_response = lambda: (entered.set(), release.wait(2))
-        result: list[tuple[int, bytes]] = []
-        request = threading.Thread(target=lambda: result.append(self.request("PUT", f"/cargo/{TENANT}/in-flight", b"late")))
-        request.start()
-        self.assertTrue(entered.wait(2))
+    def test_cleanup_waits_for_an_active_meter_request_then_fails_closed_at_its_deadline(self) -> None:
+        self.meter.begin_forward("in-flight")
         before = len(FakeHttpsConnection.requests)
         deleted, failures = lane.cleanup_exact(
             "https://cache.example.invalid", "redacted-test-token", TENANT, self.meter, cleanup_seconds=0.05,
         )
         self.assertEqual((deleted, failures), (0, 1))
         self.assertEqual([entry[0] for entry in FakeHttpsConnection.requests[before:]], [])
-        self.assertEqual(self.request("GET", f"/cargo/{TENANT}/after-freeze")[0], 400)
-        release.set()
-        request.join(2)
-        self.assertFalse(request.is_alive())
-        self.assertEqual(result[0][0], 201)
-        self.assertEqual([method for method, _, _, _ in FakeHttpsConnection.requests], ["PUT"])
-        FakeHttpsConnection.before_response = None
+        with self.assertRaisesRegex(RuntimeError, "frozen"):
+            self.meter.begin_forward("after-freeze")
+        self.meter.end_forward()
+        self.assertEqual(FakeHttpsConnection.requests, [])
 
     def test_key_inventory_rejects_the_boundary_before_a_broad_cleanup_can_exist(self) -> None:
         original_limit = lane.MAX_TRACKED_KEYS
@@ -363,7 +344,8 @@ class IsolatedLaneBehaviorTests(unittest.TestCase):
                 self.assertEqual(local_request("PUT", b"body"), 201)
                 self.assertEqual(local_request("GET"), 200)
             return {
-                "cache_mode": mode, "duration_seconds": 8.0 if mode == "enabled" else 10.0,
+                "cache_mode": mode, "status": "complete", "returncode": 0,
+                "duration_seconds": 8.0 if mode == "enabled" else 10.0,
                 "sccache": {"hits": 1 if mode == "enabled" else 0, "read_errors": 0, "write_errors": 0},
                 "revision": revision,
             }
