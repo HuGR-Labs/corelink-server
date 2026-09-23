@@ -1,0 +1,34 @@
+name: Issue 2169 isolated B-105 behavior contract
+
+on:
+  pull_request:
+    paths:
+      - "scripts/b105_isolated_lane.py"
+      - "scripts/collect_b105_same_lane.py"
+      - "tests/test_b105_isolated_lane_behavior.py"
+      - ".github/workflows/issue-2169-b105-hosted-contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/b105_isolated_lane.py"
+      - "scripts/collect_b105_same_lane.py"
+      - "tests/test_b105_isolated_lane_behavior.py"
+      - ".github/workflows/issue-2169-b105-hosted-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  behavioral-contract:
+    name: six pairs, isolated root, exact bytes, delete then 404
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Exercise the collector boundary against a fake HTTPS origin
+        run: python3 -S -m unittest -v tests/test_b105_isolated_lane_behavior.py
