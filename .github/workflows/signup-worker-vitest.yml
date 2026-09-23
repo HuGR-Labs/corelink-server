@@ -24,12 +24,14 @@ concurrency:
 
 jobs:
   vitest:
-    runs-on: corelink  # zero-hosted: node/python already baked into the corelink image
+    runs-on: ubuntu-24.04  # GitHub-hosted runner with Node.js and Python available.
     defaults:
       run:
         working-directory: apps/signup-worker
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Set up pnpm
         uses: ./.github/actions/setup-pnpm

@@ -1,4 +1,5 @@
 from pathlib import Path
+import hashlib
 import subprocess
 import sys
 
@@ -19,6 +20,7 @@ from verify_backlog_wp_ledger import (
     validate_structured_allowlist,
     parse_workflow_ownership,
     validate_workflow_ownership,
+    validate_workflow_population,
     parse_ledger_state,
     load_snapshot_manifest,
     validate_snapshot_manifest,
@@ -544,6 +546,47 @@ def test_workflow_ownership_is_closed_and_wp150_is_read_only():
             valid,
             actual,
         )
+    with pytest.raises(LedgerError, match="duplicate workflow ownership path"):
+        validate_workflow_ownership(
+            [(".github/workflows/a.yml", "LEAD-BLOCKED", "blocked"),
+             (".github/workflows/a.yml", "LEAD-BLOCKED", "blocked"),
+             (".github/workflows/b.yml", "LEAD-BLOCKED", "blocked")],
+            valid,
+            actual,
+        )
+
+
+def test_workflow_population_uses_only_git_tracked_paths(tmp_path):
+    root = tmp_path
+    workflow_dir = root / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    tracked = [".github/workflows/a.yml", ".github/workflows/b.yaml"]
+    for path in tracked:
+        target = root / path
+        target.write_text("name: tracked\n")
+    manifest = root / ledger.WORKFLOW_OWNERSHIP_MANIFEST
+    manifest.parent.mkdir(parents=True)
+    payload = ("\n".join(tracked) + "\n").encode()
+    digest = hashlib.sha256(payload).hexdigest()
+    rows = "\n".join(f"{path} | LEAD-BLOCKED | blocked" for path in tracked)
+    manifest.write_text(
+        "# WP-150 workflow ownership manifest\n"
+        f"workflow-count: {len(tracked)}\n"
+        f"workflow-paths-sha256: {digest}\n\n"
+        "```wp-workflow-ownership\n" + rows + "\n```\n"
+    )
+    subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+    subprocess.run(
+        [
+            "git", "add", ".github/workflows/a.yml",
+            ".github/workflows/b.yaml",
+            ledger.WORKFLOW_OWNERSHIP_MANIFEST.as_posix(),
+        ],
+        cwd=root,
+        check=True,
+    )
+    (workflow_dir / "untracked.yml").write_text("name: untracked\n")
+    assert validate_workflow_population(root) == set(tracked)
 
 
 def test_workflow_ownership_parser_uses_strict_top_level_fence():

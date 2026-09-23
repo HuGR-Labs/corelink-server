@@ -25,9 +25,7 @@ def validate(
     sections: dict[str, str] = {}
     source_by_wp: dict[str, str] = {}
     ownership_rows: list[tuple[str, str, str]] = []
-    workflow_rows: list[tuple[str, str, str]] = []
     ownership_fence_count = 0
-    workflow_fence_count = 0
     for path, (lower, upper) in api.CATALOGS.items():
         source = path.relative_to(api.REPO_ROOT).as_posix()
         try:
@@ -37,9 +35,6 @@ def validate(
         if api.strict_fence(text, "wp-editable-allowlist", source) is not None:
             ownership_fence_count += 1
         ownership_rows.extend(api.parse_structured_allowlist(text, source))
-        if api.strict_fence(text, api.WORKFLOW_OWNERSHIP_FENCE, source) is not None:
-            workflow_fence_count += 1
-        workflow_rows.extend(api.parse_workflow_ownership(text, source))
         names = api.declared_wp_names(text, source)
         valid_wps.update(names)
         rows = api.parse_catalog(text, source, lower, upper)
@@ -77,10 +72,16 @@ def validate(
             f"expected exactly one editable allowlist fence, found {ownership_fence_count}"
         )
     api.validate_structured_allowlist(ownership_rows, valid_wps)
-    if workflow_fence_count != 1:
+    workflow_manifest = repo_root / api.WORKFLOW_OWNERSHIP_MANIFEST
+    try:
+        workflow_text = workflow_manifest.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
         raise api.LedgerError(
-            f"expected exactly one workflow ownership fence, found {workflow_fence_count}"
-        )
+            f"missing or non-UTF-8 workflow ownership manifest: {workflow_manifest}"
+        ) from exc
+    workflow_rows = api.parse_workflow_ownership(
+        workflow_text, api.WORKFLOW_OWNERSHIP_MANIFEST.as_posix()
+    )
     api.validate_workflow_ownership(
         workflow_rows, valid_wps, api.validate_workflow_population(repo_root)
     )
