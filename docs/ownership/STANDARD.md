@@ -509,7 +509,7 @@ superfície afetada receber novo SOURCE readback. O freeze não promove artefato
 ancorado em SHA antigo quando há drift material sem reconciliação explícita.
 O último readback remoto desta campanha está em
 [RELEASE-STANDARD-REPAIR-20260923.md](evidence/revision-1.4/RELEASE-STANDARD-REPAIR-20260923.md),
-com `origin/main` observado em `7f966dda8234f54b58766f33e5fca2ad02cc898b`.
+com `origin/main` observado em `0ec05c34db282122579d7e2ab6541183e20aeaf5`.
 Desde o readback `a18d1146`, main mudou workflows, documentos de campanha,
 scripts e testes; o diff não contém Cargo manifests nem fonte Rust. As reconciliações de SOURCE, manifest,
 workspace e lock já pendentes seguem bloqueando aprovação current-main dos

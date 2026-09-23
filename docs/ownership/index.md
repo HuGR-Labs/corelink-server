@@ -1,6 +1,6 @@
 # Ownership — generated population registry
 
-Observed `main`: `7f966dda8234f54b58766f33e5fca2ad02cc898b`. Population: **105**.
+Observed `main`: `0ec05c34db282122579d7e2ab6541183e20aeaf5`. Population: **105**.
 This index is generated from the four artifact paths. `PASS` is structural only; it is not cold approval, runtime evidence, or publication.
 
 | Package | Manifest | Structural | Cold review | Publication |

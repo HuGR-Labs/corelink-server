@@ -7,7 +7,8 @@
 - repositório: `HuGR-dev/corelink-server`
 - base: `main`
 - head: `gustavomhss:codex/corelink-ownership-pr`
-- commit inicial da PR: `1f2444366`
+- baseline de reancoragem: `0ec05c34db282122579d7e2ab6541183e20aeaf5`
+- commits publicados da PR: consultar o head atual antes do merge; ambos devem ter assinatura SSH válida e trailer DCO
 - snapshot de origem: `427ff4bd6`
 - estado da PR: draft; merge ainda não realizado
 
@@ -16,7 +17,10 @@
 A PR adiciona o snapshot de ownership do pacote: standard, schemas, templates,
 gates, registry/index, evidências, issue drafts, 105 skills `own-*` e os três
 documentos de ownership por pacote. Os arquivos de preparação já existentes no
-`main` foram preservados; não há alteração de código Rust nesta entrega.
+`main` foram preservados; não há alteração de código Rust nesta entrega. A
+reancoragem atualiza somente os hashes que o verifier lê como estado corrente, o
+registry/index e o ponteiro atual em `STANDARD.md`; packets e snapshots históricos
+permanecem históricos.
 
 ## Validação reproduzida no snapshot
 
@@ -43,16 +47,18 @@ obter um merge verde.
    ao handoff.
 2. Fazer `git fetch origin main` e ler novamente `git rev-parse origin/main` e
    `git ls-remote origin refs/heads/main` imediatamente antes da validação.
-3. Rodar a suíte documental, probe adversarial, `git diff --check` e a geração do
-   registry usando o SHA recém-observado. Se o main mudar durante a execução,
-   repetir; não enfraquecer o stale-main gate.
+3. Rodar os gates hospedados no head exato, incluindo DCO e current-main
+   provenance; conferir que registry/index foram gerados com o SHA recém-observado.
+   Se o main mudar antes da integração, reancorar e repetir os gates afetados;
+   não enfraquecer o stale-main gate.
 4. Fazer cold review independente do diff da PR e resolver ou registrar os
    `FIX-FIRST`/`BLOCKED` findings sem inventar evidência.
 5. Confirmar que #2310 continua sendo o owner do refresh pós-WIP de READMEs e
    ponteiros locais.
 6. Somente então usar o método normal de merge da organização e registrar o SHA
-   final. Não fazer force-push, não reescrever histórico e não publicar as 105
-   issues a partir desta PR.
+   final. A correção DCO já reconstituiu os dois commits sobre o main atual com
+   `--force-with-lease`; não reescrever novamente durante a revisão. Não publicar
+   as 105 issues a partir desta PR.
 
 ## Resultado esperado do handoff
 
