@@ -48,7 +48,7 @@ concurrency:
 jobs:
   gate:
     name: typecheck + test + build
-    runs-on: ubuntu-24.04  # zero-hosted: node/python already available on ubuntu-24.04
+    runs-on: ubuntu-24.04  # GitHub-hosted runner with Node.js and Python available.
     timeout-minutes: 10
     defaults:
       run:
