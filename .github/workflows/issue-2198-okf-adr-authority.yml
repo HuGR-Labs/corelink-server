@@ -1,0 +1,77 @@
+name: Issue 2198 OKF ADR authority check
+
+on:
+  pull_request:
+    paths:
+      - 'docs/knowledge/adr/adr-0070-tenant-suspend-gate-kv-l2-cache.md'
+      - 'docs/knowledge/adr/adr-0101-object-lock-archive-adapter-contract.md'
+      - 'docs/knowledge/adr/adr-0103-b071-trigger-replacement-waiver.md'
+      - '.github/workflows/issue-2198-okf-adr-authority.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2198-okf-adr-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  adr-authority:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Confirm exact head and prepare focused bundles
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_HEAD"
+          mkdir -p "$RUNNER_TEMP/issue-2198-bundle/adr" \
+            "$RUNNER_TEMP/issue-2198-base/adr"
+          for name in \
+            adr-0070-tenant-suspend-gate-kv-l2-cache.md \
+            adr-0101-object-lock-archive-adapter-contract.md \
+            adr-0103-b071-trigger-replacement-waiver.md; do
+            cp "docs/knowledge/adr/$name" "$RUNNER_TEMP/issue-2198-bundle/adr/$name"
+            git show "$BASE_SHA:docs/knowledge/adr/$name" \
+              > "$RUNNER_TEMP/issue-2198-base/adr/$name"
+          done
+          {
+            echo "head_sha=$actual"
+            echo "base_sha=$BASE_SHA"
+            echo "issue=2198"
+            echo "scope=ADR-0070, ADR-0101, ADR-0103"
+          } > "$RUNNER_TEMP/issue-2198-report.txt"
+
+      - name: Validate only the three ADR concepts
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          python3 scripts/validate_okf.py \
+            --bundle "$RUNNER_TEMP/issue-2198-bundle" \
+            --base-bundle "$RUNNER_TEMP/issue-2198-base" \
+            --manifest "$RUNNER_TEMP/issue-2198-no-manifest.yaml" \
+            --verbose 2>&1 | tee -a "$RUNNER_TEMP/issue-2198-report.txt"
+          status=${PIPESTATUS[0]}
+          set -e
+          echo "validator_exit=$status" | tee -a "$RUNNER_TEMP/issue-2198-report.txt"
+          test "$status" -eq 0
+
+      - name: Upload exact-head validation report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-2198-okf-adr-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue-2198-report.txt
+          if-no-files-found: error
