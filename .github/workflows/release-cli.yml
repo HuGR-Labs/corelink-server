@@ -112,6 +112,11 @@ jobs:
             runner: windows-2022
 
     steps:
+      - name: Enable Git long paths for Windows checkout
+        if: runner.os == 'Windows'
+        shell: bash
+        run: git config --global core.longpaths true
+
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -126,9 +131,6 @@ jobs:
       # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
       # default, silently moving every concurrent job off the ADR-0015 reproducibility
       # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
-      - name: Assert the workspace-pinned Rust toolchain
-        run: bash scripts/ci-assert-pinned-toolchain.sh
-
       - name: Validate matrix target values before shell use
         run: |
           set -euo pipefail
@@ -136,6 +138,16 @@ jobs:
             x86_64-unknown-linux-gnu:corelink-linux-x86_64:corelink-linux-x86_64:|aarch64-unknown-linux-gnu:corelink-linux-aarch64:corelink-linux-arm64:|x86_64-apple-darwin:corelink-darwin-x86_64:corelink-darwin-x86_64:|aarch64-apple-darwin:corelink-darwin-aarch64:corelink-darwin-arm64:|x86_64-pc-windows-gnu:corelink-windows-x86_64:corelink-windows-x86_64:.exe) ;;
             *) echo "::error::untrusted matrix target metadata" >&2; exit 1 ;;
           esac
+
+      - name: Install and assert the workspace-pinned Rust target
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The pinned toolchain is lazily installed by the rustc shim. Invoke
+          # the repository assertion before asking rustup to add a target.
+          bash scripts/ci-assert-pinned-toolchain.sh
+          rustup target add "${TARGET_TRIPLE}"
+          bash scripts/ci-assert-pinned-toolchain.sh "${TARGET_TRIPLE}"
 
       # The Mac fleet shares one HOME between its five runner services. Keep
       # Cargo's registry and target artifacts in this job/attempt/target
@@ -207,15 +219,10 @@ jobs:
         run: |
           set -euo pipefail
           EXPECTED_CARGO_ZIGBUILD_VERSION=0.19.8
-          ACTUAL_CARGO_ZIGBUILD_VERSION="$(cargo zigbuild --version | awk '{print $2}')"
-          if [ "$ACTUAL_CARGO_ZIGBUILD_VERSION" != "$EXPECTED_CARGO_ZIGBUILD_VERSION" ]; then
-            echo "::error::release-cli needs cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}, got ${ACTUAL_CARGO_ZIGBUILD_VERSION}." >&2
-            exit 1
-          fi
+          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"
           ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"
           mkdir -p "$ZIGBUILD_CACHE"
           echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"
-          cargo zigbuild --version
 
       # Reproducible build: SOURCE_DATE_EPOCH from git commit timestamp.
       - name: Set SOURCE_DATE_EPOCH
