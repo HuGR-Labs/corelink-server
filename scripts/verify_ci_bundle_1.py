@@ -9,17 +9,68 @@ from pathlib import Path
 WORKFLOWS = {
     ".github/workflows/action-sha-audit.yml": {
         "job": "verify-sha-pinning",
-        "trigger": 'pull_request:',
+        "trigger": (
+            '  pull_request:\n'
+            '    paths:\n'
+            '      - ".github/workflows/**"\n'
+            '      - "scripts/verify-action-sha-pinning.py"\n'
+            '      - ".github/workflows/action-sha-audit.yml"\n'
+            '  push:\n'
+            '    branches: [main]\n'
+            '    paths:\n'
+            '      - ".github/workflows/**"\n'
+            '      - "scripts/verify-action-sha-pinning.py"'
+        ),
     },
     ".github/workflows/api-surface-parity.yml": {
         "job": "parity",
-        "trigger": 'pull_request:',
+        "trigger": (
+            '  pull_request:\n'
+            '    paths:\n'
+            '      - "openapi/corelink-v1.yaml"\n'
+            '      - "crates/**/*.rs"\n'
+            '      - "worker/src/**/*.ts"\n'
+            '      - "apps/**"\n'
+            '      - "scripts/validate_api_surface.py"\n'
+            '      - "scripts/verify_b119_surface.py"\n'
+            '      - "scripts/verify_b121_surface.py"\n'
+            '      - ".github/workflows/api-surface-parity.yml"\n'
+            '  workflow_dispatch:'
+        ),
     },
     ".github/workflows/quickstart-validate.yml": {
         "job": "validate-quickstart",
-        "trigger": 'pull_request:',
+        "trigger": (
+            '  pull_request:\n'
+            '    paths:\n'
+            '      - "apps/docs/docs/tutorials/quickstart-10min.mdx"\n'
+            '      - "apps/docs/scripts/validate-quickstart.sh"\n'
+            '      - "tools/cli/src/main.rs"\n'
+            '      - ".github/workflows/quickstart-validate.yml"\n'
+            '  push:\n'
+            '    branches: [main]\n'
+            '    paths:\n'
+            '      - "apps/docs/docs/tutorials/quickstart-10min.mdx"\n'
+            '      - "apps/docs/scripts/validate-quickstart.sh"\n'
+            '      - "tools/cli/src/main.rs"'
+        ),
     },
 }
+EXPECTED_PERMISSIONS = "permissions:\n  contents: read"
+
+
+def _top_level_block(source: str, heading: str) -> str:
+    lines = source.splitlines()
+    start = next((i for i, line in enumerate(lines) if line == heading), -1)
+    if start < 0:
+        return ""
+    block: list[str] = [heading]
+    for line in lines[start + 1 :]:
+        if line and not line.startswith((" ", "\t", "#")):
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            block.append(line.split("#", 1)[0].rstrip())
+    return "\n".join(block)
 
 
 def verify_texts(texts: dict[str, str]) -> None:
@@ -27,8 +78,10 @@ def verify_texts(texts: dict[str, str]) -> None:
         source = texts.get(path)
         if source is None:
             raise AssertionError(f"missing bundle workflow: {path}")
-        if contract["trigger"] not in source or "permissions:\n  contents: read" not in source:
+        if _top_level_block(source, "on:") != "on:\n" + contract["trigger"]:
             raise AssertionError(f"trigger/least-privilege contract changed: {path}")
+        if _top_level_block(source, "permissions:") != EXPECTED_PERMISSIONS:
+            raise AssertionError(f"workflow permissions changed: {path}")
         marker = f"  {contract['job']}:"
         start = source.find(marker)
         if start < 0:
@@ -53,6 +106,8 @@ def verify_adversarial_mutations(texts: dict[str, str]) -> None:
         (".github/workflows/api-surface-parity.yml", "persist-credentials: false", "persist-credentials: true"),
         (".github/workflows/quickstart-validate.yml", "continue-on-error: true", "continue-on-error: false"),
         (".github/workflows/quickstart-validate.yml", "permissions:\n  contents: read", "permissions:\n  contents: write"),
+        (".github/workflows/api-surface-parity.yml", "  workflow_dispatch:", "  schedule:\n    - cron: '0 * * * *'\n  workflow_dispatch:"),
+        (".github/workflows/action-sha-audit.yml", "  push:\n    branches: [main]", "  push:\n    branches: [develop]"),
     )
     for path, needle, replacement in mutations:
         mutated = dict(texts)
