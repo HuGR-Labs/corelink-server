@@ -53,6 +53,26 @@ class ProbeContractTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             PROBE.timing("wdb;dur=NaN")
 
+    def test_quoted_description_can_contain_commas_and_escapes(self):
+        raw = r'wdb;dur=5;desc="worker, \"primary\"",qdo;dur=2;desc="C:\\worker"'
+        self.assertEqual(PROBE.timing(raw), {"wdb": 5.0, "qdo": 2.0})
+
+    def test_quoted_parameter_boundaries_are_not_confused_with_phase_commas(self):
+        self.assertEqual(
+            PROBE.timing('wdb;dur=5;desc="qdo;dur=999, still wdb", qdo;dur=2'),
+            {"wdb": 5.0, "qdo": 2.0},
+        )
+
+    def test_unterminated_or_trailing_escaped_quotes_fail_closed(self):
+        for malformed in (
+            'wdb;dur=5;desc="worker, qdo;dur=2',
+            r'wdb;dur=5;desc="worker\\',
+            'wdb;dur=5;desc="worker"garbage,qdo;dur=2',
+            "wdb;dur=5,,qdo;dur=2",
+        ):
+            with self.subTest(header=malformed), self.assertRaises(RuntimeError):
+                PROBE.timing(malformed)
+
 
 if __name__ == "__main__":
     unittest.main()
