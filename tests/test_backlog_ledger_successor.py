@@ -412,7 +412,7 @@ def test_v0004_policy_derives_only_b012_retirement_from_pr_base(monkeypatch):
 
     assert receipt["prior_source_sha256"] == successor.V0004_RECONCILIATION["prior_source_sha256"]
     assert receipt["prior_source_sha256"] == ledger._sha256(
-        _git(root, "show", "HEAD:BACKLOG.md").encode()
+        subprocess.check_output(["git", "show", "HEAD:BACKLOG.md"], cwd=root)
     )
     assert policy._v0004_reconciliation_authorized(previous, prior, current, receipt, 4)
     assert current["BACKLOG.md"] == prior["BACKLOG.md"]
