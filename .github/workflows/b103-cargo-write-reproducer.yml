@@ -15,6 +15,7 @@ on:
       - 'scripts/reproduce_b103_cargo_write.py'
       - 'scripts/redact_b103_worker_tail.py'
       - 'scripts/test_b103_cargo_write_contract.py'
+      - 'scripts/test_b103_tenant_binding.py'
       - 'scripts/validate_load_target_receipt.py'
   workflow_dispatch:
     inputs:
@@ -43,7 +44,7 @@ jobs:
           persist-credentials: false
 
       - name: run credentialless behavior and adversarial contract tests
-        run: python3 -m unittest -v scripts.test_b103_cargo_write_contract
+        run: python3 -m unittest -v scripts.test_b103_cargo_write_contract scripts.test_b103_tenant_binding
 
   reproduce:
     name: bounded /cargo write matrix
@@ -67,11 +68,13 @@ jobs:
         env:
           K6_TARGET_HOST: https://staging.corelink.humangr.com
           K6_TARGET_IDENTITY_RECEIPT: ${{ secrets.K6_TARGET_IDENTITY_RECEIPT }}
+          B103_TENANT_ID: ${{ vars.B103_TENANT_ID }}
         run: |
           set -euo pipefail
           python3 scripts/validate_load_target_receipt.py \
             --target "${K6_TARGET_HOST}" \
             --receipt-env K6_TARGET_IDENTITY_RECEIPT \
+            --tenant-env B103_TENANT_ID \
             --redact-tenant \
             --output "${RUNNER_TEMP}/b103-target-receipt.json" \
             --github-output "${GITHUB_OUTPUT}"

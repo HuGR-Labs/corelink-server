@@ -62,6 +62,11 @@ def sha256(value: bytes) -> str:
     return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
+def tenant_sha256(tenant: str) -> str:
+    """Keep the tenant reference stable without writing its UUID to evidence."""
+    return hashlib.sha256(tenant.encode("ascii")).hexdigest()
+
+
 def header(headers: dict[str, str], name: str) -> str | None:
     wanted = name.lower()
     return next((value for key, value in headers.items() if key.lower() == wanted), None)
