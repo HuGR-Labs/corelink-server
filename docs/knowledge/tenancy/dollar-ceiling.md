@@ -75,8 +75,10 @@ never floating point.
   at the cycle boundary cannot lose an update or over-admit DURABLE spend (the atomic
   check-and-accrue `crates/corelink-container/src/tenant_quota/b126_m2_impl_02_part_02.rs:69-102` + the atomic conditional
   cycle-roll `crates/corelink-container/src/tenant_quota/b126_m2_impl_02_part_02.rs:170-181`). The in-memory `LeasedQuotaStore`
-  in front amortises the round-trip but never over-SERVES: every op is paid for in D1 before it is served,
-  so the cap is a hard over-serve bound even though it permits a bounded over-CHARGE
+  in front amortises the round-trip and, while the configured ceiling is stable, never over-SERVES:
+  every op is paid for in D1 before it is served. After a ceiling decrease, an already-paid warm lease
+  can still serve until it drains, bounded by one lease chunk; otherwise the cap is a hard over-serve
+  bound even though it permits a bounded over-CHARGE
   (`crates/corelink-container/src/tenant_quota/b126_m2_impl_01.rs:71-83`, `crates/corelink-container/src/tenant_quota/b126_m2_impl_01_part_02.rs:123-451`).
 
 # Gotchas

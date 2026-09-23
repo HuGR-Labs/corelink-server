@@ -77,7 +77,7 @@ This handler now ALSO owns the RUNNER entitlement lifecycle — a SECOND, separa
 4. `apps/signup-worker/src/webhooks/stripe_persistence_billing.ts:45-60` — the `INSERT OR IGNORE` idempotency claim into `stripe_webhook_events_processed` (process-then-claim, exactly-once emit).
 5. `apps/signup-worker/src/webhooks/stripe_persistence_billing.ts:253-286` — `activatePaidTierSelection`: `INSERT … ON CONFLICT DO UPDATE SET subscription_state='active'`, the activation write the edge quota gate reads.
 6. `apps/signup-worker/src/webhooks/stripe_contract.ts:68-91` — `tierFromSubscriptionPrice`: the `STRIPE_PRICE_ID_{TIER}` cache price→tier reverse map.
-7. `apps/signup-worker/src/webhooks/stripe_contract.ts:80` — the fail-safe null return when no configured cache price matches.
+7. `apps/signup-worker/src/webhooks/stripe_contract.ts:80-90` — the configured cache price map, match loop, and fail-safe null return when no configured price matches.
 8. `apps/signup-worker/src/webhooks/stripe.ts88-88` — the canonical access gate is `tier_selections.subscription_state='active'`; `tenant_billing` is the secondary mirror, updated on every entitlement change.
 9. `apps/signup-worker/src/webhooks/stripe_persistence_billing.ts:253-286` — this handler is the only writer on the LIVE path that flips the row to `active` (the in-process ledger is test-only); the container webhook is secondary.
 10. `apps/signup-worker/src/webhooks/stripe.ts:346-354` — the `checkout.session.completed` cache branch maps `metadata[tier]` (no price) into activation; why the price↔tier cross-check cannot run on checkout (also why the runner entitlement is seeded on the subscription event, not the checkout).
