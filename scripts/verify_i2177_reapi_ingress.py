@@ -16,6 +16,7 @@ INGRESS_FILES = (
     ROOT / "crates/corelink-container/src/reapi_ingress/validation.rs",
 )
 ROUTES = ROOT / "crates/corelink-container/src/routes/build.rs"
+OKF_CONCEPT = ROOT / "docs/knowledge/surfaces/reapi-authenticated-ingress.md"
 
 
 def call_span(source: str, name: str) -> tuple[int, int] | None:
@@ -36,7 +37,7 @@ def call_span(source: str, name: str) -> tuple[int, int] | None:
     return None
 
 
-def violations(ingress: str, routes: str) -> list[str]:
+def violations(ingress: str, routes: str, okf_concept: str) -> list[str]:
     errors: list[str] = []
     required_ingress = (
         "verify_capability(bearer)",
@@ -87,13 +88,27 @@ def violations(ingress: str, routes: str) -> list[str]:
         errors.append("REAPI ingress must receive the route factory's shared decorated CAS/AC handlers")
     if "router = router.merge(reapi_ingress" in routes:
         errors.append("REAPI ingress must remain unmounted pending #2176 and service contracts")
+
+    required_okf = (
+        "type: \"CacheSurface\"",
+        "crates/corelink-container/src/reapi_ingress.rs",
+        "crates/corelink-container/src/reapi_ingress/admission.rs",
+        "crates/corelink-container/src/reapi_ingress/validation.rs",
+        "crates/corelink-container/src/reapi_ingress/tests.rs",
+        "crates/corelink-container/src/routes/build.rs",
+        "Public gRPC remains unmounted",
+    )
+    for item in required_okf:
+        if item not in okf_concept:
+            errors.append(f"OKF ingress concept is missing contract element: {item}")
     return errors
 
 
 def self_test() -> list[str]:
     ingress = "\n".join(path.read_text(encoding="utf-8") for path in INGRESS_FILES)
     routes = ROUTES.read_text(encoding="utf-8")
-    errors = violations(ingress, routes)
+    okf_concept = OKF_CONCEPT.read_text(encoding="utf-8")
+    errors = violations(ingress, routes, okf_concept)
     span = call_span(routes, "ReapiIngress::from_shared_handlers")
     route_prefix = routes
     route_bundle = ""
@@ -103,16 +118,27 @@ def self_test() -> list[str]:
         route_bundle = routes[span[0] : span[1]]
         route_suffix = routes[span[1] :]
     mutations = (
-        (ingress.replace("verify_capability(bearer)", "verify(bearer)"), routes, "PAT verifier bypass"),
+        (
+            ingress.replace("verify_capability(bearer)", "verify(bearer)"),
+            routes,
+            okf_concept,
+            "PAT verifier bypass",
+        ),
         (
             ingress.replace(
                 'Status::new(Code::ResourceExhausted, "cache admission limit reached")',
                 'Status::new(Code::Unavailable, "cache admission limit reached")',
             ),
             routes,
+            okf_concept,
             "capacity remap",
         ),
-        (ingress.replace("validate_instance_name(instance_name, &tenant_id)?", "Ok(())?"), routes, "tenant instance bypass"),
+        (
+            ingress.replace("validate_instance_name(instance_name, &tenant_id)?", "Ok(())?"),
+            routes,
+            okf_concept,
+            "tenant instance bypass",
+        ),
         (
             ingress,
             route_prefix
@@ -121,11 +147,18 @@ def self_test() -> list[str]:
                 "Arc::new(corelink_handler_cas::InMemoryCasHandler::new()),",
                 1,
             ),
+            okf_concept,
             "parallel CAS handler",
         ),
+        (
+            ingress,
+            routes,
+            okf_concept.replace("crates/corelink-container/src/reapi_ingress.rs", ""),
+            "ungrounded ingress source",
+        ),
     )
-    for mutated_ingress, mutated_routes, label in mutations:
-        if not violations(mutated_ingress, mutated_routes):
+    for mutated_ingress, mutated_routes, mutated_okf_concept, label in mutations:
+        if not violations(mutated_ingress, mutated_routes, mutated_okf_concept):
             errors.append(f"mutation was not detected: {label}")
     return errors
 
@@ -136,7 +169,9 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     errors = self_test() if args.self_test else violations(
-        "\n".join(path.read_text(encoding="utf-8") for path in INGRESS_FILES), ROUTES.read_text(encoding="utf-8")
+        "\n".join(path.read_text(encoding="utf-8") for path in INGRESS_FILES),
+        ROUTES.read_text(encoding="utf-8"),
+        OKF_CONCEPT.read_text(encoding="utf-8"),
     )
     result = {"check": "i2177-reapi-ingress", "ok": not errors, "errors": errors}
     print(json.dumps(result, sort_keys=True) if args.json else "\n".join(errors or ["#2177 ingress contract: PASS"]))
