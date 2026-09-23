@@ -103,13 +103,24 @@ const CARGO_SERVICE_PRINCIPAL: &str = "cargo-adapter-host";
 /// the cargo adapter already derived from the PAT) and thread it into
 /// [`MoatCache::put`] so the row auto-seeds with the REAL cap on the first write.
 ///
-/// `cap_resolver` is `Option` so dev/CI (no D1 storage env) keeps the previous
-/// `None`/fail-closed posture; an indeterminate cap from the resolver (D1 error)
-/// also stays `None` — absence is NEVER treated as unlimited.
+/// Routed requests use the Worker-set cap from [`CARGO_STORAGE_QUOTA_CAP`], so
+/// they do not repeat the D1 tier lookup. `cap_resolver` remains an `Option` as
+/// a direct-call fallback for dev/CI and callers that bypass the gate; an
+/// indeterminate cap from that resolver (D1 error) stays `None` — absence is
+/// NEVER treated as unlimited.
 #[derive(Debug)]
 struct CargoMoatStore {
     moat: Arc<MoatCache>,
     cap_resolver: Option<Arc<dyn crate::oci_cap::TenantCapResolver>>,
+}
+
+tokio::task_local! {
+    /// The Worker-authenticated storage cap for the current cargo request.
+    ///
+    /// The cargo gate scopes this value around the downstream adapter call.
+    /// `Some` is a valid cap; `None` deliberately preserves the byte-accounting
+    /// fail-closed behavior when the trusted header is absent or invalid.
+    static CARGO_STORAGE_QUOTA_CAP: Option<i64>;
 }
 
 #[async_trait]
@@ -123,16 +134,18 @@ impl CasStore for CargoMoatStore {
     }
 
     async fn put(&self, tenant_id: &str, key: &str, bytes: Vec<u8>) -> Result<(), CasError> {
-        // Resolve the tenant's RESOLVED per-tier storage cap so a FRESH tenant
-        // (no `tenant_storage_state` row — e.g. a new sccache user whose first
-        // request is a cargo PUT) auto-seeds the row with the REAL cap instead
-        // of hitting the `None`-cap fail-closed 502. Mirrors OCI (WP #10), keyed
-        // by the tenant id the adapter already derived from the PAT. No resolver
-        // (dev/CI) OR an indeterminate cap (D1 error) ⇒ `None` ⇒ the previous
-        // fail-closed posture — absence is never treated as unlimited.
-        let storage_cap_bytes = match self.cap_resolver.as_ref() {
-            Some(r) => r.resolve_storage_cap(tenant_id).await,
-            None => None,
+        // Routed requests already carry the Worker-authenticated cap. Reusing
+        // it avoids a fresh D1 tier lookup on every PUT. The scoped `None`
+        // value is intentional: absent or invalid trusted headers remain
+        // fail-closed and must not fall back to an untrusted client value.
+        // Direct adapter calls retain the resolver fallback for dev/CI and
+        // callers that do not pass through `cargo_gate`.
+        let storage_cap_bytes = match CARGO_STORAGE_QUOTA_CAP.try_with(|cap| *cap) {
+            Ok(cap) => cap,
+            Err(_) => match self.cap_resolver.as_ref() {
+                Some(r) => r.resolve_storage_cap(tenant_id).await,
+                None => None,
+            },
         };
         self.moat
             .put(tenant_id, key, bytes, storage_cap_bytes)

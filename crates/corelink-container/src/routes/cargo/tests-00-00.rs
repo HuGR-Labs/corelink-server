@@ -82,6 +82,18 @@
         }
     }
 
+    /// A resolver that panics if a routed request performs the old per-PUT D1
+    /// lookup. This keeps the latency fix adversarial: forwarding the cap must
+    /// bypass the resolver entirely.
+    #[derive(Debug)]
+    struct PanicCapResolver;
+    #[async_trait]
+    impl TenantCapResolver for PanicCapResolver {
+        async fn resolve_storage_cap(&self, _tenant_id: &str) -> Option<i64> {
+            panic!("forwarded cap must bypass the per-PUT D1 tier lookup");
+        }
+    }
+
     fn store_with_resolver(
         cap_resolver: Option<Arc<dyn TenantCapResolver>>,
     ) -> (CargoMoatStore, Arc<RecordingCasWrite>) {
@@ -159,6 +171,23 @@
             recorded, None,
             "indeterminate resolver cap must stay None (never unlimited)"
         );
+    }
+
+    /// A forwarded Worker cap skips the resolver, which otherwise performs the
+    /// latency inducing D1 tier lookup on every cargo PUT.
+    #[tokio::test]
+    async fn forwarded_cap_skips_per_put_tier_lookup() {
+        let resolver: Arc<dyn TenantCapResolver> = Arc::new(PanicCapResolver);
+        let (store, rec) = store_with_resolver(Some(resolver));
+        let cap = Some(50 * 1_073_741_824);
+
+        CARGO_STORAGE_QUOTA_CAP
+            .scope(cap, store.put("tenant-abc", "url-key-forwarded", b"x".to_vec()))
+            .await
+            .expect("put must succeed without consulting the D1 resolver");
+
+        let recorded = rec.last_cap.lock().unwrap().expect("a write happened");
+        assert_eq!(recorded, cap);
     }
 
     // ---- cargo_gate: WebDAV MKCOL no-op (sccache real-client fix) --------------
@@ -312,6 +341,51 @@
         Router::new()
             .fallback(any(|| async { StatusCode::OK }))
             .layer(middleware::from_fn_with_state(state, cargo_gate))
+    }
+
+    #[tokio::test]
+    async fn cargo_gate_scopes_forwarded_storage_cap_for_downstream_put() {
+        use axum::routing::any;
+        use tower::ServiceExt;
+
+        let resolver: SharedTenantResolver = Arc::new(FixedTenantResolver {
+            tenant: "tenant-abc".to_owned(),
+            can_write: true,
+            runner_job: false,
+        });
+        let state = CargoGateState {
+            quota: None,
+            resolver,
+            moat: in_memory_moat(),
+        };
+        let app = Router::new()
+            .fallback(any(|| async {
+                match CARGO_STORAGE_QUOTA_CAP.try_with(|cap| *cap).ok().flatten() {
+                    Some(123) => StatusCode::OK,
+                    _ => StatusCode::INTERNAL_SERVER_ERROR,
+                }
+            }))
+            .layer(middleware::from_fn_with_state(state, cargo_gate));
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method(Method::PUT)
+                    .uri("/cargo/tenant-abc/key")
+                    .header(SCOPE_HEADER, "cas:rw")
+                    .header(axum::http::header::AUTHORIZATION, "Bearer pat")
+                    .header(crate::byte_accounting::STORAGE_QUOTA_HEADER, "123")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "cargo_gate must propagate the Worker cap into the downstream PUT scope"
+        );
     }
 
     fn webdav_request(
