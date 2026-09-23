@@ -387,11 +387,78 @@ def check_b216(root: Path) -> None:
     _require(paging, "response.status !== 202", lane)
     _require(body, 'paging.status !== "delivered"', lane)
     _require(body, 'paging.status === "failed" ? paging.error : "route_not_configured"', lane)
-    _require(body, 'action: "retry_paging"', lane)
+    _require(body, 'action: exhausted ? "delivery_exhausted" : "retry_paging"', lane)
     _require(body, 'requeue_error: "transport_error"', lane)
+    for marker in (
+        "const recovery = env.DSR_DLQ_RECOVERY",
+        "if (!store || !recovery)",
+        "await recovery.capture(",
+    ):
+        _require(body, marker, lane)
+    capture_at = body.index("await recovery.capture(")
+    if capture_at > body.index("existing = await store.find(") or capture_at > body.index("m.ack();"):
+        raise ContractError(f"{lane}: recovery capture must precede receipt reads and terminal ACKs")
     index = _code(_read(root, "apps/signup-worker/src/index.ts"))
     _require(index, 'batch.queue === "corelink-dsr-erasure-dlq"', lane)
     _require(index, "await handleErasureDlqBatch(", lane)
+    redrive = _code(_read(root, "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts"))
+    route = _function(redrive, "export async function handleDsrDlqRedrive(", lane)
+    for marker in (
+        "const expected = env.DSR_DLQ_REDRIVE_AUTH_KEY?.trim();",
+        "constantTimeEqual(presented, expected)",
+        "await store.claim(eventId, actorRef, approvalRef, nowMs)",
+        "deriveErasureSalt(envelope.dsr_id, env.ERASURE_SALT_KEY, env.ENVIRONMENT)",
+        "tenant_id: envelope.tenant_id",
+        "subject_id: envelope.tenant_id",
+        "_dlq_requeue: MAX_REQUEUE_COUNT",
+        "await store.prepareDispatch(eventId, Date.now())",
+        "await env.DSR_QUEUE.send(message)",
+        "await store.ambiguous(eventId, Date.now())",
+        'return json(410, { error: "receipt_expired" })',
+    ):
+        _require(route, marker, lane)
+    _require(redrive, "Object.keys(record).length !== 1", lane)
+    if route.index("await store.prepareDispatch(eventId, Date.now())") > route.index("await env.DSR_QUEUE.send(message)"):
+        raise ContractError(f"{lane}: durable dispatch fence must precede Queue.send")
+    _require(redrive, "INSERT OR IGNORE INTO dsr_dlq_redrive_envelopes", lane)
+    _require(redrive, "redrive_state = 'claimed'", lane)
+    _require(redrive, "claim_expires_at_ms > ?2 AND expires_at_ms > ?2", lane)
+    _require(redrive, 'await this.transition(eventId, "submitted", nowMs);', lane)
+    _require(redrive, "redrive_state = 'ambiguous'", lane)
+    _require(redrive, "DELETE FROM dsr_dlq_redrive_envelopes", lane)
+    _require(redrive, "DELETE FROM dsr_dlq_redrive_audit", lane)
+    migration = _read(root, "migrations/d1/0144_dsr_dlq_redrive_authority.sql")
+    for marker in (
+        "CREATE TABLE IF NOT EXISTS dsr_dlq_redrive_envelopes",
+        "CREATE TABLE IF NOT EXISTS dsr_dlq_redrive_audit",
+        "CREATE TRIGGER IF NOT EXISTS trg_dsr_dlq_redrive_audit_transition",
+        "'captured', 'ready', 'closed', 'claimed', 'submitted', 'ambiguous'",
+        "requeue_count IN (0, 1)",
+        "transition IN ('claimed', 'submitted', 'ambiguous')",
+    ):
+        _require(migration, marker, lane)
+    for forbidden in ("recovery_payload_json", "clerk_user_id", "PAGERDUTY_ROUTING_KEY"):
+        if forbidden in redrive or forbidden in migration:
+            raise ContractError(f"{lane}: forbidden recovery persistence marker present: {forbidden}")
+    _require(index, 'url.pathname === "/internal/dsr/dlq/redrive"', lane)
+    _require(index, "runDsrDlqRedriveCleanup", lane)
+    redrive_test = _read(root, "apps/signup-worker/tests/dsr_dlq_redrive.test.ts")
+    for marker in (
+        "shared-secret substitute",
+        "substitute a tenant",
+        "submits exactly once",
+        "returns expired",
+        "ambiguous outcome",
+        "stale claim ambiguous",
+        "already claimed receipt",
+        "claim lease expires",
+        "bounded envelope fields",
+        "strictly after the pre-send fence time",
+        "binds the expiry instant into the strict D1 pre-send fence",
+    ):
+        _require(redrive_test, marker, lane)
+    consumer_test = _read(root, "apps/signup-worker/tests/dsr_consumer.test.ts")
+    _require(consumer_test, "no durable recovery envelope authority", lane)
 
 
 def check_b217(root: Path) -> None:
@@ -565,7 +632,14 @@ def self_test(root: Path = ROOT) -> None:
     }
     paths_by_lane = {
         "B-215": ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/webhooks/clerk_identity.ts"],
-        "B-216": ["apps/signup-worker/src/webhooks/dsr_consumer.ts", "apps/signup-worker/src/index.ts"],
+        "B-216": [
+            "apps/signup-worker/src/webhooks/dsr_consumer.ts",
+            "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts",
+            "apps/signup-worker/src/index.ts",
+            "migrations/d1/0144_dsr_dlq_redrive_authority.sql",
+            "apps/signup-worker/tests/dsr_dlq_redrive.test.ts",
+            "apps/signup-worker/tests/dsr_consumer.test.ts",
+        ],
         "B-217": ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/webhooks/clerk_erasure.ts"],
         "B-218": ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/webhooks/clerk_erasure.ts", "worker/src/lib/internal_auth.ts"],
         "B-219": ["crates/corelink-erasure-attestation/src/verify.rs"],
@@ -725,6 +799,41 @@ def self_test(root: Path = ROOT) -> None:
                 "B-216",
                 'requeue_error: "transport_error"',
                 "requeue_error: String(err)",
+                "apps/signup-worker/src/webhooks/dsr_consumer.ts",
+            ),
+            (
+                "B-216-redrive-dedicated-key-removal",
+                "B-216",
+                "const expected = env.DSR_DLQ_REDRIVE_AUTH_KEY?.trim();",
+                "const expected = env.CORELINK_INTERNAL_AUTH_KEY?.trim();",
+                "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts",
+            ),
+            (
+                "B-216-redrive-atomic-claim-removal",
+                "B-216",
+                "redrive_state = 'claimed'",
+                "redrive_state = 'pending'",
+                "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts",
+            ),
+            (
+                "B-216-redrive-dispatch-fence-removal",
+                "B-216",
+                "await store.prepareDispatch(eventId, Date.now())",
+                "await store.dispatchRemoved(eventId, Date.now())",
+                "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts",
+            ),
+            (
+                "B-216-redrive-expiry-boundary-weakening",
+                "B-216",
+                "AND expires_at_ms > ?2",
+                "AND expires_at_ms >= ?2",
+                "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts",
+            ),
+            (
+                "B-216-recovery-capture-removal",
+                "B-216",
+                "await recovery.capture(",
+                "await recovery.captureRemoved(",
                 "apps/signup-worker/src/webhooks/dsr_consumer.ts",
             ),
         )

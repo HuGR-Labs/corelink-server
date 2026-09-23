@@ -28,6 +28,7 @@ import { handleInstallGithubCallback } from "./webhooks/github_install_callback.
 import type { InstallCallbackEnv } from "./webhooks/github_install_callback.js";
 import { handleErasureQueueBatch, handleErasureDlqBatch } from "./webhooks/dsr_consumer.js";
 import type { QueueMessageBatch, DsrDlqBody } from "./webhooks/dsr_consumer.js";
+import { handleDsrDlqRedrive, runDsrDlqRedriveCleanup } from "./webhooks/dsr_dlq_redrive.js";
 import { runDsrVerifySweep } from "./webhooks/dsr_verify_cron.js";
 import { runPatScrubSweep } from "./webhooks/pat_scrub_cron.js";
 import { runAuditDrainSweep } from "./webhooks/audit_drain_cron.js";
@@ -59,6 +60,9 @@ export async function route(request: Request, env: InstallationProvisionEnv, ctx
   }
   if (url.pathname === "/internal/sla/monthly-observation") {
     return handleSlaObservationIngest(request, workerEnv as unknown as SlaCreditCronEnv);
+  }
+  if (url.pathname === "/internal/dsr/dlq/redrive") {
+    return handleDsrDlqRedrive(request, workerEnv);
   }
   if (url.pathname === "/install/github/app/new" && request.method === "GET") {
     return handleAppManifestForm(request, workerEnv);
@@ -135,7 +139,7 @@ const baseHandler: ExportedHandler<SignupEnv> = {
     }
   },
 
-  // Hourly Cron Trigger (`0 * * * *`). Drives four scheduled sweep families:
+  // Hourly Cron Trigger (`0 * * * *`). Drives five scheduled sweep families:
   //   1. DSR 24h verification sweep — re-fingerprints every DSR past its 24h
   //      SLA deadline via the container /_internal/dsr/verify endpoint (inert
   //      until CORELINK_INTERNAL_AUTH_KEY is bound, task #46).
@@ -149,6 +153,8 @@ const baseHandler: ExportedHandler<SignupEnv> = {
   //   4. B-089 closed-month SLA credit settlement. The provider gate is
   //      checked again inside the sweep/provider, so a manually supplied
   //      provider cannot bypass the parked default.
+  //   5. DSR DLQ redrive retention: turns stale claims into durable ambiguous
+  //      outcomes and purges bounded envelopes and audit records after TTL.
   //
   // The drain half seals pending audit_outbox rows into the tamper-evident
   // hash chain via /_internal/audit/drain; the archive half persists sealed
@@ -174,6 +180,12 @@ const baseHandler: ExportedHandler<SignupEnv> = {
 
     const db = env.CONFIG_DB;
     if (db) {
+      ctx.waitUntil(
+        runDsrDlqRedriveCleanup({ ...env, CONFIG_DB: db }, nowMs)
+          .catch((err: unknown) => {
+            Sentry.captureException(err);
+          }),
+      );
       ctx.waitUntil(
         runDsrVerifySweep({ ...env, CONFIG_DB: db }, nowMs)
           .then((r) => {

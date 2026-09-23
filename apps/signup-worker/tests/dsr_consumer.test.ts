@@ -15,6 +15,10 @@ import {
   type DsrDlqReceiptStore,
 } from "../src/webhooks/dsr_consumer.js";
 import type { DsrQueuedV1 } from "../src/webhooks/clerk.js";
+import type {
+  DsrDlqRecoveryEnvelopeInput,
+  DsrDlqRecoveryStore,
+} from "../src/webhooks/dsr_dlq_redrive.js";
 
 function msg(dsrId = "dsr-1"): DsrQueuedV1 {
   return {
@@ -190,10 +194,34 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     }
   }
 
-  function pagedEnv(send: (message: unknown) => Promise<void>, receipts = new MemoryReceipts()) {
+  /** Captures the bounded envelope before the consumer is ever allowed to ACK. */
+  class MemoryRecovery implements DsrDlqRecoveryStore {
+    readonly states = new Map<string, "captured" | "ready" | "closed">();
+
+    async capture(input: DsrDlqRecoveryEnvelopeInput): Promise<void> {
+      if (!this.states.has(input.eventId)) this.states.set(input.eventId, "captured");
+    }
+    async makeReady(eventId: string): Promise<void> {
+      if (this.states.get(eventId) === "captured") this.states.set(eventId, "ready");
+    }
+    async close(eventId: string): Promise<void> { this.states.set(eventId, "closed"); }
+    async claim(): Promise<"not_ready"> { return "not_ready"; }
+    async claimedEnvelope() { return null; }
+    async prepareDispatch(): Promise<boolean> { return false; }
+    async submitted(): Promise<void> { throw new Error("not used by DLQ consumer"); }
+    async ambiguous(): Promise<void> { /* not used by DLQ consumer */ }
+    async cleanup(): Promise<void> { /* not used by DLQ consumer */ }
+  }
+
+  function pagedEnv(
+    send: (message: unknown) => Promise<void>,
+    receipts = new MemoryReceipts(),
+    recovery = new MemoryRecovery(),
+  ) {
     return {
       DSR_QUEUE: { send },
       DSR_DLQ_RECEIPTS: receipts,
+      DSR_DLQ_RECOVERY: recovery,
       PAGERDUTY_ROUTING_KEY: "routing-key",
       PAGERDUTY_FETCH: vi.fn<typeof fetch>(async () => new Response("accepted", { status: 202 })),
     };
@@ -336,11 +364,11 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     try {
       await handleErasureDlqBatch(
         { messages: [first] },
-        { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: receipts, PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: pagerFetch },
+        { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: receipts, DSR_DLQ_RECOVERY: new MemoryRecovery(), PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: pagerFetch },
       );
       await handleErasureDlqBatch(
         { messages: [second] },
-        { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: receipts, PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: pagerFetch },
+        { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: receipts, DSR_DLQ_RECOVERY: new MemoryRecovery(), PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: pagerFetch },
       );
     } finally {
       error.mockRestore();
@@ -364,6 +392,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
         {
           DSR_QUEUE: { send },
           DSR_DLQ_RECEIPTS: new MemoryReceipts(),
+          DSR_DLQ_RECOVERY: new MemoryRecovery(),
           PAGERDUTY_ROUTING_KEY: "routing-key",
           PAGERDUTY_FETCH: pagerFetch,
         },
@@ -392,7 +421,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     const m = fakeDlq(msg("pager-unconfigured"));
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
-      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: new MemoryReceipts() });
+      await handleErasureDlqBatch({ messages: [m] }, { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: new MemoryReceipts(), DSR_DLQ_RECOVERY: new MemoryRecovery() });
       expect(JSON.parse(String(error.mock.calls[0]?.[0]))).toMatchObject({
         action: "retry_paging",
         paging_status: "not_configured",
@@ -417,6 +446,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
         {
           DSR_QUEUE: { send },
           DSR_DLQ_RECEIPTS: new MemoryReceipts(),
+          DSR_DLQ_RECOVERY: new MemoryRecovery(),
           PAGERDUTY_ROUTING_KEY: "routing-key",
           PAGERDUTY_FETCH: vi.fn<typeof fetch>(async () => new Response("proxy page", { status: 200 })),
         },
@@ -451,6 +481,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
         {
           DSR_QUEUE: { send },
           DSR_DLQ_RECEIPTS: new MemoryReceipts(),
+          DSR_DLQ_RECOVERY: new MemoryRecovery(),
           PAGERDUTY_ROUTING_KEY: "routing-key",
           PAGERDUTY_FETCH: pagerFetch,
         },
@@ -491,6 +522,18 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     expect(m.ack).not.toHaveBeenCalled();
   });
 
+  it("never ACKs a DLQ delivery when no durable recovery envelope authority is bound", async () => {
+    const send = vi.fn<(message: unknown) => Promise<void>>(async () => undefined);
+    const m = fakeDlq(msg("recovery-unavailable"), 3);
+    await handleErasureDlqBatch(
+      { messages: [m] },
+      { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: new MemoryReceipts() },
+    );
+    expect(send).not.toHaveBeenCalled();
+    expect(m.ack).not.toHaveBeenCalled();
+    expect(m.retry).toHaveBeenCalledOnce();
+  });
+
   for (const [name, makeReceipts, receiptBoundary] of [
     ["is absent", () => undefined, "not_configured"],
     ["cannot write", () => {
@@ -514,7 +557,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
         await handleErasureDlqBatch(
           { messages: [m] },
           {
-            DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: makeReceipts(),
+            DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: makeReceipts(), DSR_DLQ_RECOVERY: new MemoryRecovery(),
             PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: pagerFetch,
           },
         );
@@ -530,8 +573,8 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       }
       expect(pagerFetch).not.toHaveBeenCalled();
       expect(send).not.toHaveBeenCalled();
-      expect(m.ack).toHaveBeenCalledOnce();
-      expect(m.retry).not.toHaveBeenCalled();
+      expect(m.ack).not.toHaveBeenCalled();
+      expect(m.retry).toHaveBeenCalledOnce();
     });
   }
 
@@ -563,6 +606,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
         {
           DSR_QUEUE: { send },
           DSR_DLQ_RECEIPTS: receipts,
+          DSR_DLQ_RECOVERY: new MemoryRecovery(),
           PAGERDUTY_ROUTING_KEY: "routing-key",
           PAGERDUTY_FETCH: vi.fn<typeof fetch>(async () => new Response("unavailable", { status: 503 })),
         },
@@ -586,11 +630,11 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     try {
       await handleErasureDlqBatch(
         { messages: [failed] },
-        { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: receipts, PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: reject },
+        { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: receipts, DSR_DLQ_RECOVERY: new MemoryRecovery(), PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: reject },
       );
       await handleErasureDlqBatch(
         { messages: [recovered] },
-        { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: receipts, PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: accepted },
+        { DSR_QUEUE: { send }, DSR_DLQ_RECEIPTS: receipts, DSR_DLQ_RECOVERY: new MemoryRecovery(), PAGERDUTY_ROUTING_KEY: "routing-key", PAGERDUTY_FETCH: accepted },
       );
     } finally {
       error.mockRestore();
