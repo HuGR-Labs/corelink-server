@@ -124,6 +124,8 @@ class BaselineRecord:
 
 
 def _finite_positive(value: object, *, label: str) -> float:
+    if isinstance(value, bool):
+        raise InputError(f"{label} must be a numeric measurement, not a boolean")
     try:
         number = float(value)
     except (TypeError, ValueError) as exc:
