@@ -3,8 +3,22 @@ name: issue-1671 B-129 static contract
 on:
   pull_request:
     paths:
+      - "crates/corelink-container/src/adapter_cache.rs"
+      - "crates/corelink-container/src/byte_accounting.rs"
+      - "crates/corelink-container/src/byte_accounting/**"
+      - "crates/corelink-container/src/origin_timing.rs"
+      - "crates/corelink-container/src/routes/ratelimit_layer.rs"
+      - "docs/handoff/2026-09-05-b103-b129-attribution-owner-packet.md"
+      - "scripts/probe-cargo-cache-latency.sh"
       - "scripts/probe_i1671_b129.py"
+      - "scripts/test_b103_b129_attribution.py"
+      - "scripts/verify_b103_b129_attribution.py"
       - "tests/test_probe_i1671_b129.py"
+      - "worker/src/index.ts"
+      - "worker/src/index_finish_stage.ts"
+      - "worker/src/index_observability.ts"
+      - "worker/tests/server_timing_origin_subphases.test.ts"
+      - "worker/tests/server_timing_wdb_residual_phase.test.ts"
       - ".github/workflows/issue-1671-b129-static.yml"
 
 permissions:
@@ -23,14 +37,26 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          # Attribution evidence must be for the exact authored PR head, not
+          # GitHub's synthetic merge ref.
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.6.0
         with:
           python-version: "3.12"
 
-      - name: Run credentialless B-129 contract tests
+      - name: Run credentialless B-129 attribution contract
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/probe_i1671_b129.py tests/test_probe_i1671_b129.py
+          # These are source and mutation checks only. They do not contact a
+          # deployed target or turn fixture durations into a latency claim.
+          python3 -m py_compile \
+            scripts/probe_i1671_b129.py \
+            scripts/verify_b103_b129_attribution.py \
+            scripts/test_b103_b129_attribution.py \
+            tests/test_probe_i1671_b129.py
+          python3 scripts/verify_b103_b129_attribution.py --self-test
+          python3 scripts/verify_b103_b129_attribution.py --b129-inline
+          python3 scripts/test_b103_b129_attribution.py
           python3 -m unittest -v tests/test_probe_i1671_b129.py

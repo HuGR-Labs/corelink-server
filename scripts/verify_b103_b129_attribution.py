@@ -642,7 +642,13 @@ def main() -> int:
         else:
             raise VerificationError("allowlist phase removal mutation survived the attribution guard")
 
-        mutated_origin = origin.replace('"ohandler;dur={handler_ms}"', '"removed;dur={handler_ms}"', 1)
+        mutated_origin = origin.replace(
+            '"ohandler;dur={handler_ms}{handler_suffix}"',
+            '"removed;dur={handler_ms}{handler_suffix}"',
+            1,
+        )
+        if mutated_origin == origin:
+            raise VerificationError("ohandler self-test mutation did not change active source")
         origin_issues = b129_inline_issues(
             args.root,
             overrides={"crates/corelink-container/src/origin_timing.rs": mutated_origin},
