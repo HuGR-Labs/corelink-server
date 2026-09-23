@@ -188,8 +188,8 @@ jobs:
           set -euo pipefail
           cargo install cargo-cyclonedx --locked --version =0.5.9
           cargo cyclonedx --format json --spec-version 1.5 --all
-          test -s tools/cli/bom.json
-          cp tools/cli/bom.json dist/corelink-cli.cdx.json
+          test -s tools/cli/corelink-cli.cdx.json
+          cp tools/cli/corelink-cli.cdx.json dist/corelink-cli.cdx.json
       - name: Verify optional configured GPG public-key fingerprint
         shell: bash
         run: |
