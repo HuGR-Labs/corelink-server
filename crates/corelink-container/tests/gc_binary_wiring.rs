@@ -42,11 +42,7 @@ fn normalize_shell_continuations(source: &str) -> String {
     let mut continuing = false;
 
     for line in source.lines() {
-        let line = if continuing {
-            line.trim_start()
-        } else {
-            line
-        };
+        let line = if continuing { line.trim_start() } else { line };
         if let Some(prefix) = line.strip_suffix('\\') {
             normalized.push_str(prefix);
             continuing = true;
