@@ -56,3 +56,9 @@ jobs:
           cargo test --locked -p corelink-server --lib \
             routes::dsr::adapter_d1::tests::runner_billing_migration_tables_remain_classified \
             -- --exact --nocapture
+
+      - name: Run the scheduled GC credentialless command contract
+        run: >-
+          cargo test --locked -p corelink-container --test gc_binary_wiring
+          scheduled_sweep_is_credentialless_and_cannot_arm_delete --
+          --exact --nocapture
