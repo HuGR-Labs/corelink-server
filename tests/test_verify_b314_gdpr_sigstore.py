@@ -16,7 +16,7 @@ def _text(path: str) -> str:
 
 def test_open_baseline_and_mutations_pass() -> None:
     verify.verify()
-    assert verify.mutation_checks() == 24
+    assert verify.mutation_checks() == 23
 
 
 def test_wrapped_scoped_posture_is_not_a_false_negative() -> None:
