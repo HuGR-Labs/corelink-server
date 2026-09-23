@@ -12277,7 +12277,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-101 — as auditorias admitidas somam 119 achados; a cobertura e a revisão semântica estão concluídas
+### B-101 — as auditorias admitidas somam 138 achados; a cobertura e a revisão semântica estão concluídas
 
 O `BACKLOG.md` é a fonte declarada de verdade, cada item carrega um `verify`, e o
 `backlog_verify.py` falha em DRIFTED ou STALE. O problema original era que esse mecanismo
@@ -12287,7 +12287,7 @@ construção.
 O recenseamento reexecutável de 2026-09-01 corrigiu a contagem histórica. Os 66 itens
 MEDIUM/LOW do documento de 2026-06-15 omitiam as suas 21 headings CRITICAL/HIGH confirmadas;
 a população viva daquele documento é, portanto, 87, não 66. A cobertura que este item exige
-é **87 + 20 + 3 + 9 = 119** achados, sem mudar ou apagar as fontes originais:
+é **87 + 20 + 3 + 9 + 19 = 138** achados, sem mudar ou apagar as fontes originais:
 
 | Documento | Achados parseados | Decisão registrada |
 |---|---:|---|
@@ -12295,6 +12295,7 @@ a população viva daquele documento é, portanto, 87, não 66. A cobertura que 
 | `reports/audits/2026-08-26-go-live-readiness.md` | 20 | manifesto versionado |
 | `docs/security/2026-07-02-pilot-identity-brutal-audit.md` | 3 | manifesto versionado |
 | `docs/security/b028-dependabot-census-2026-09-06.json` | 9 | manifesto versionado, DA-026…DA-038 |
+| `docs/security/b373-dependabot-census-2026-09-09.json` | 19 | manifesto versionado, DA-039…DA-057 |
 
 O casador agora deriva cada ID diretamente da sintaxe do seu documento, exige contagens e
 IDs sem lacunas, fixa o SHA-256 de cada fonte, e exige uma decisão um-para-um: item B

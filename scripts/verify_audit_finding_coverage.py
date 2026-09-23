@@ -34,8 +34,8 @@ SOURCE_REGISTRY_RELATIVE = SOURCE_DIRECTORY_RELATIVE / "v1.json"
 B101_STAGE = "historical_coverage_complete_semantic_review_complete"
 CANONICAL_BACKLOG_ID = re.compile(r"B-\d{3}")
 # This content certificate is stable across squash; it does not consult Git history.
-B101_REGISTRY_SHA256 = "ab1842c78f78de7ae470e3e8d4bafc03ec9297e7f3bb808bac870990f2d6a62a"
-B101_MANIFEST_SHA256 = "72ea705bf5987ea9beac26b7accb3ba6af8ae55ba32a6c08931f1b4fe7ee159c"
+B101_REGISTRY_SHA256 = "8982ce9a060164065f279fab70b2694c5d03748e7582bcd940c4eb35bb6073dd"
+B101_MANIFEST_SHA256 = "866d2100a15eb26c6842c17d0a065108809f07ae1f980727f0161105ed62289a"
 B101_CENSUS_TREE_SHA256 = "f2050f08a12c917e2ecedd9c4fb152feeebef899f13ee26e2e190ba668516348"
 B101_CENSUS_ROOTS = ("docs/security", "reports/audits")
 B101_PROPOSAL_IDS = {f"B-{number}" for number in range(171, 244)}
@@ -118,7 +118,7 @@ def _checkpoint_contract(repo_root: Path) -> CensusCheckpoint:
     digest = hashlib.sha256(json.dumps(census, separators=(",", ":")).encode()).hexdigest()
     if digest != B101_CENSUS_TREE_SHA256:
         raise CoverageError("governed audit tree differs from the B-101 content certificate")
-    return CensusCheckpoint(registry=registry, manifest=manifest, expected_report={"documents": {"due_diligence_2026_06_15": 87, "go_live_2026_08_26": 20, "pilot_identity_2026_07_02": 3, "b028_dependabot_2026_09_06": 9}, "total": 119, "tracked": 42, "duplicate": 4, "proposed": 73, "status": "historical_coverage_complete_semantic_review_complete"})
+    return CensusCheckpoint(registry=registry, manifest=manifest, expected_report={"documents": {"due_diligence_2026_06_15": 87, "go_live_2026_08_26": 20, "pilot_identity_2026_07_02": 3, "b028_dependabot_2026_09_06": 9, "b373_dependabot_2026_09_09": 19}, "total": 138, "tracked": 61, "duplicate": 4, "proposed": 73, "status": "historical_coverage_complete_semantic_review_complete"})
 
 def _open_directory_beneath(repo_root: Path, relative: str, label: str) -> Path:
     """Resolve a directory while rejecting symlinked path components."""
@@ -248,8 +248,8 @@ def parse_pilot_identity(text: str, document: str) -> list[Finding]:
     return _unique(findings, document)
 
 
-def parse_b028_dependabot(text: str, document: str) -> list[Finding]:
-    """Parse the reviewed Dependabot snapshot as one finding per alert.
+def parse_dependabot_snapshot(text: str, document: str) -> list[Finding]:
+    """Parse a reviewed Dependabot snapshot as one finding per alert.
 
     The snapshot is an evidence source, not prose: every alert gets a stable
     locator and title so the B-101 manifest must make an explicit canonical
@@ -291,7 +291,8 @@ PARSERS: dict[str, Callable[[str, str], list[Finding]]] = {
     "due_diligence": parse_due_diligence,
     "go_live": parse_go_live,
     "pilot_identity": parse_pilot_identity,
-    "b028_dependabot": parse_b028_dependabot,
+    "b028_dependabot": parse_dependabot_snapshot,
+    "b373_dependabot": parse_dependabot_snapshot,
 }
 
 
