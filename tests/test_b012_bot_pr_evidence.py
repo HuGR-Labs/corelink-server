@@ -55,6 +55,14 @@ class B012BotPrEvidenceTests(unittest.TestCase):
                 with self.assertRaises(EvidenceError):
                     validate_record(mutated)
 
+    def test_observed_pr_revisions_are_exactly_bound(self) -> None:
+        for field, replacement in (("head_sha", "0" * 40), ("base_sha", "f" * 40)):
+            with self.subTest(field=field):
+                mutated = copy.deepcopy(self.record)
+                mutated["pr"][field] = replacement
+                with self.assertRaises(EvidenceError):
+                    validate_record(mutated)
+
 
 if __name__ == "__main__":
     unittest.main()

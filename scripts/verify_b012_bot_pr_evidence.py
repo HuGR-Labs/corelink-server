@@ -37,6 +37,8 @@ EXPECTED_RUNS = {
         "completed_at": "2026-09-22T22:34:37Z",
     },
 }
+EXPECTED_PR_HEAD_SHA = "c17e5210d424bcc80848e808bd9c586ab3b7a1f9"
+EXPECTED_PR_BASE_SHA = "0389714d9f5408f744e17227b82d795fff245a32"
 TOP_LEVEL = {
     "schema_version", "captured_at", "repository", "bot_identity", "credential_kind",
     "pr_number", "app_permissions", "app_events", "installation", "actions_secret_names", "pr",
@@ -143,6 +145,10 @@ def validate_record(record: Any) -> None:
         r"[0-9a-f]{40}", pr["base_sha"]
     ):
         _fail("PR revisions must be full commit IDs")
+    if pr["head_sha"] != EXPECTED_PR_HEAD_SHA:
+        _fail("PR head SHA does not match the observed proof PR")
+    if pr["base_sha"] != EXPECTED_PR_BASE_SHA:
+        _fail("PR base SHA does not match the observed proof PR")
 
     runs = obj["workflow_runs"]
     if not isinstance(runs, list) or len(runs) != len(EXPECTED_RUNS):
