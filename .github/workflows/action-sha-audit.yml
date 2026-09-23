@@ -34,14 +34,8 @@ permissions:
 jobs:
   verify-sha-pinning:
     name: Verify all GHA actions SHA-pinned
-    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
-    # stdlib-only python3 read of .github/workflows; the step comment
-    # below already documents it was written to be fleet-safe.
-    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
-    # check costs a full paid minute every run; on the fleet it costs $0.
-    # Verified running natively on the fleet host (macOS/BSD userland).
-    # zero-hosted (WP-CI): python3 puro (baked na imagem da frota)
-    runs-on: corelink
+    # Credentialless read-only bundle 1: GitHub-hosted execution.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout repository
@@ -49,11 +43,8 @@ jobs:
         with:
           # Shallow clone is fine — we only read .github/workflows tree.
           fetch-depth: 1
+          persist-credentials: false
 
-      # No actions/setup-python: the self-hosted mac fleet can't reliably
-      # provision Python via setup-python (RUNNER_TOOL_CACHE is unset, so it
-      # falls back to the unwritable /Users/runner hosted path). This script
-      # only needs `python3`, which ships on every runner. (2026-06-02)
       - name: Run SHA pinning verifier
         run: |
           python3 scripts/verify-action-sha-pinning.py
