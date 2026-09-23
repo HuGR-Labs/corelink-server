@@ -3,6 +3,7 @@ name: Issue 1722 Terraform evidence guard
 on:
   pull_request:
     paths:
+      - ".github/workflows/issue-1722-terraform-evidence.yml"
       - ".github/workflows/terraform-drift.yml"
       - "scripts/sanitize_terraform_drift.py"
       - "scripts/test_sanitize_terraform_drift.py"
@@ -22,7 +23,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+
+      - name: Assert checkout matches selected commit
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - name: Run focused Terraform evidence guard
         run: python3 scripts/test_sanitize_terraform_drift.py
