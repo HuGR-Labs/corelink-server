@@ -1,1 +1,3 @@
+### Fixed
+
 - **B-054 custody evidence scope is explicit.** The owner-action checker now labels repository fixtures as readiness-only and separately requires fail-closed, non-executed states for revocation/recovery, retention, and audit linkage without accepting key material or fabricated ceremony receipts.
