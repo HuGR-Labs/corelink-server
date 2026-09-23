@@ -20,6 +20,7 @@ TOPOLOGY = ROOT / "infra/staging/topology.json"
 READINESS = ROOT / "evidence/staging/readiness.json"
 DRY_RUN_WORKFLOW = ROOT / ".github/workflows/gc-sweep-dry-run.yml"
 CONTROL_WORKFLOW = ROOT / ".github/workflows/issue-1651-gc-control.yml"
+OBSERVATION_WORKFLOW = ROOT / ".github/workflows/gc-production-observation.yml"
 
 REQUIRED_STAGING_SECRETS = (
     "K6_STAGING_BYOK_CMK_ID",
@@ -29,9 +30,43 @@ REQUIRED_STAGING_SECRETS = (
     "K6_TARGET_HOST",
 )
 
+OBSERVATION_WORKFLOW_MARKERS = (
+    "environment: staging",
+    "python3 scripts/collect_b071_gc_observation.py collect",
+)
+
 
 class Blocked(RuntimeError):
     """The live observation boundary is not proven by repository evidence."""
+
+
+def observation_workflow_satisfies_contract(workflow: str) -> bool:
+    """Accept only the dedicated, protected workflow that uses the collector."""
+    return all(marker in workflow for marker in OBSERVATION_WORKFLOW_MARKERS)
+
+
+def contract_self_test() -> None:
+    """Adversarial examples keep generic binary mentions from passing readiness."""
+    generic_binary_smoke = """
+    name: container-build
+    run: /usr/local/bin/corelink-gc-sweep-production
+    # Deliberately starts without scope and expects fail-closed.
+    """
+    if observation_workflow_satisfies_contract(generic_binary_smoke):
+        raise AssertionError("generic binary mention incorrectly passed as observation workflow")
+
+    missing_protection = """
+    run: python3 scripts/collect_b071_gc_observation.py collect
+    """
+    if observation_workflow_satisfies_contract(missing_protection):
+        raise AssertionError("collector command without staging protection incorrectly passed")
+
+    dedicated_staging_observation = """
+    environment: staging
+    run: python3 scripts/collect_b071_gc_observation.py collect
+    """
+    if not observation_workflow_satisfies_contract(dedicated_staging_observation):
+        raise AssertionError("dedicated protected staging observation did not pass")
 
 
 def _text(path: Path) -> str:
@@ -119,22 +154,37 @@ def verify() -> None:
         if marker not in control:
             blockers.append(f"control lane is missing credentialless marker: {marker}")
 
-    # A live observation must be an explicitly reviewed workflow, and must not
-    # be inferred from the fixture lane.  The production binary's absence from
-    # workflows is an exact external-state blocker, not a reason to dispatch.
-    workflow_texts = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (ROOT / ".github/workflows").glob("*.yml")
-        if path.is_file() and not path.is_symlink()
-    )
-    if "corelink-gc-sweep-production" not in workflow_texts:
-        blockers.append("no workflow invokes corelink-gc-sweep-production for a staging observation")
+    # A live observation must be an explicitly reviewed staging workflow. Do
+    # not treat the production-image smoke check as an observation: it invokes
+    # the binary without scope only to prove that it fails closed.
+    try:
+        observation_workflow = _text(OBSERVATION_WORKFLOW)
+    except Blocked as exc:
+        blockers.append(str(exc))
+    else:
+        if not observation_workflow_satisfies_contract(observation_workflow):
+            missing = [
+                marker
+                for marker in OBSERVATION_WORKFLOW_MARKERS
+                if marker not in observation_workflow
+            ]
+            blockers.append(
+                "dedicated GC staging observation workflow is missing required marker(s): "
+                + ", ".join(missing)
+            )
 
     if blockers:
         raise Blocked("\n".join(f"- {item}" for item in blockers))
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--contract-self-test"]:
+        contract_self_test()
+        print("I1651 observation workflow contract: PASS")
+        raise SystemExit(0)
+    if sys.argv[1:]:
+        print("usage: verify_i1651_gc_live_prerequisites.py [--contract-self-test]", file=sys.stderr)
+        raise SystemExit(2)
     try:
         verify()
     except (Blocked, OSError) as exc:

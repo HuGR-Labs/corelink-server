@@ -11,6 +11,7 @@ on:
       - ".github/workflows/gc-sweep-dry-run.yml"
       - ".github/workflows/issue-1651-gc-control.yml"
       - ".github/workflows/issue-1651-gc-live-readiness.yml"
+      - ".github/workflows/gc-production-observation.yml"
       - "infra/staging/topology.json"
       - "evidence/staging/readiness.json"
       - "scripts/verify_i1651_gc_live_prerequisites.py"
@@ -29,6 +30,8 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
+      - name: Exercise dedicated observation workflow contract
+        run: python3 scripts/verify_i1651_gc_live_prerequisites.py --contract-self-test
       - name: Audit approved staging target and safety gates
         # The expected pre-provisioning state is BLOCKED. Keep the exact
         # report visible without turning absence of owner evidence into a PR
