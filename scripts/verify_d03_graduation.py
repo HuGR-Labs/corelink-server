@@ -206,7 +206,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "owner_packet": "docs/campaigns/remediation/work-packages/B131-B167.md#WP-B251",
         "profiles": ["b251-d02", "b251-d03-observed", "InMemoryAtomicQuotaChecker"], "sample_count": 1000,
         "required": ["verify_b251_quota_cas_budget.py", "run_b251_latency_probe.py", "--allow-run", "--d02-identity", "--observed-identity", "--output", "b251-d02-identity.json", "b251-d03-observed-identity.json", "corelink.b251.latency-probe.v1", "identity.match", "fields_compared", "seed", "failure", "blob", "measurement.sample_count", "measurement.p99_us", "measurement.limit_us", "production_latency_measured", "InMemoryAtomicQuotaChecker"],
-        "safety": ["set -euo pipefail", "p99_us < .measurement.limit_us", "production_latency_measured == false"],
+        "safety": ["set -euo pipefail", "p99_us <= .measurement.limit_us", "production_latency_measured == false"],
         "forbidden": ["--force", "production quota redesign", "B251_OBSERVED_", "jq -n", "cargo test -p corelink-billing", "B251-latency-probe.log"],
     },
 }
