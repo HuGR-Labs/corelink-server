@@ -244,14 +244,6 @@ ALLOWLIST_REGEX = re.compile(
     #   Consumer: crates/corelink-container/src/routes/audit_drain.rs (build_state_from_env)
     r"|AUDIT_DRAIN_LEASE_ENABLED$"
     r"|NEAR_CEILING_ALERT_SINK$"
-    # Issue #2193 — exact public deployment metadata / endpoint aliases used
-    # only by the reviewed staging bootstrap or response headers.  These values
-    # carry no credential or protected identifier material.  Keep every name
-    # exact: a similarly named token, key, or receipt must remain code drift.
-    r"|CORELINK_DEPLOYED_REGION$"
-    r"|CORELINK_DEPLOYED_SHA$"
-    r"|STAGING_CLERK_ISSUER_URL$"
-    r"|STAGING_R2_S3_ENDPOINT$"
     r")"
 )
 
