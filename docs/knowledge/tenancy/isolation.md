@@ -7,19 +7,17 @@ source_files:
   - "crates/corelink-container/src/auth_tenant.rs"
   - "crates/tenant-path/src/lib.rs"
   - "crates/tenant-path/src/prefix.rs"
-  - "worker/src/index_auth.ts"
-  - "worker/src/index_quota_stage.ts"
   - "worker/src/index_routing_stage.ts"
   - "worker/src/route_match.ts"
+  - "worker/src/index_special_passthrough.ts"
 source_blobs:
   - "crates/corelink-worker/src/tenant.rs@d3ba56482c7b31fa168133737d8eddba72462a80"
   - "crates/corelink-container/src/auth_tenant.rs@89894fd631b6436ff1c940837b312de30ce3eef7"
   - "crates/tenant-path/src/lib.rs@ed40ce405d38f398b6537f17531f0fd05be3dfdb"
   - "crates/tenant-path/src/prefix.rs@cb25dffd2461c9cd3e6c8f5a98744d3a3d75066c"
-  - "worker/src/index_auth.ts@96f88ae7d6868b338dd197826202f8f9b56c9622"
-  - "worker/src/index_quota_stage.ts@d50b245c7321d94443895c04eacfbfec9c0e9402"
-  - "worker/src/index_routing_stage.ts@f514a592e520a3a13835fe494717275fb7159e52"
-  - "worker/src/route_match.ts@1abbf50c5a2058282ebe362f517b03cda8980646"
+  - "worker/src/index_routing_stage.ts@5cd6c7f272a8a15586734d7a7df0fa6e93066bdd"
+  - "worker/src/route_match.ts@0e1733c5279fc2862c8f8f4bdadcc04c75b60423"
+  - "worker/src/index_special_passthrough.ts@ad5789c4f5bae6f7ad721fe9e69ce9607057b549"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["tenancy", "isolation", "durable-object", "multi-tenant", "security"]
@@ -52,7 +50,7 @@ keyed on the same trusted tenant id this control establishes.
   serialization point for that tenant's state; the local (this-region) DO id is always keyed on
   `resolvedTenantId`, never the shared `_pending_auth` — `worker/src/index_routing_stage.ts:203`.
 - Non-tenant system traffic uses reserved sentinel DO names (e.g. `_system`, `_oci`) that are deliberately
-  distinct from any real tenant id — `worker/src/route_match.ts:70`.
+  distinct from any real tenant id — `worker/src/route_match.ts:85-85`.
 - Inside the container the ONLY trustworthy tenant source is the DO-injected `x-corelink-tenant-id` header;
   the `AuthTenant` extractor reads it and trims it — `crates/corelink-container/src/auth_tenant.rs:79-85`.
 - The reserved-sentinel rejection is now a SHARED source-of-truth `pub fn is_reserved_sentinel`, reused
@@ -91,8 +89,8 @@ keyed on the same trusted tenant id this control establishes.
 
 # Citations
 
-1. `worker/src/index_quota_stage.ts:288` — one DO instance per tenant via `idFromName(resolvedTenantId)` (the implementing call).
-2. `worker/src/index_auth.ts:300` — reserved `_system` sentinel DO name for non-tenant traffic (the `_health/container` route return).
+1. `worker/src/index_routing_stage.ts:242-245` — one DO instance per tenant via `idFromName(resolvedTenantId)` (the implementing call).
+2. `worker/src/index_special_passthrough.ts:163-169` — reserved `_system` sentinel DO name for non-tenant traffic (the `_health/container` route return).
 3. `crates/corelink-worker/src/tenant.rs:36-44` — the `TenantCtx` struct with a private, derived prefix field.
 4. `crates/corelink-worker/src/tenant.rs:55-63` — `TenantCtx::new` derives the prefix from `(tdk, tenant_id)`.
 5. `crates/corelink-container/src/auth_tenant.rs:1-3` — the only trustworthy tenant source is the DO-injected header.
