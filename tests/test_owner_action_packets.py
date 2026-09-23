@@ -243,7 +243,7 @@ class OwnerActionPacketTests(unittest.TestCase):
     def test_identifier_focus_skips_unrelated_owner_receipts(self) -> None:
         mutated = copy.deepcopy(self.data)
         b086 = next(entry for entry in mutated["items"] if entry["id"] == "B-086")
-        b086["owner"] = "owner"
+        b086["owner"] = "tl"
         with self.assertRaises(MODULE.PacketError):
             MODULE.check_data(mutated)
         self.assertEqual(MODULE.check_data(mutated, "B-054"), {"items": 29, "population": 29})
