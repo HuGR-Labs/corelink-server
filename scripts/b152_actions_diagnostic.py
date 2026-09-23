@@ -61,6 +61,12 @@ RUN_CLASSIFICATIONS = {
     "neutral": "neutral_outcome",
     "skipped": "skipped_outcome",
 }
+# B-250 is the one known deleted workflow whose API identity still appears in
+# newly-created startup_failure runs. Keep this identity exact: the path alone
+# or the conclusion alone is not sufficient to assign the more specific class.
+B250_WORKFLOW_ID = 303501160
+B250_WORKFLOW_PATH = "BuildFailed"
+B250_RUN_CLASSIFICATION = "buildfailed_workflow_startup_failure"
 FRACTIONAL_COMPONENTS = re.compile(r"[.,](\d+)")
 HTTP_STATUS = re.compile(r"\bHTTP(?:/\d(?:\.\d)?)?\s+([1-5]\d\d)\b", re.IGNORECASE)
 # Keep every external API invocation bounded.  The retry delays are constants so
@@ -73,6 +79,32 @@ GH_MAX_ATTEMPTS = len(GH_RETRY_DELAYS_SECONDS) + 1
 
 class EvidenceUnavailable(RuntimeError):
     """The API response cannot establish a complete evidence set."""
+
+
+def classify_run_outcome(run: dict[str, Any], run_conclusion: str) -> str:
+    """Classify non-success runs, binding the B-250 class to its exact identity.
+
+    GitHub exposes the workflow ID and path on each run even after the workflow
+    file has been deleted. A partial or malformed match is evidence ambiguity,
+    so fail closed rather than mislabeling it as a generic runner startup.
+    """
+    classification = RUN_CLASSIFICATIONS[run_conclusion]
+    if run_conclusion != "startup_failure":
+        return classification
+
+    workflow_id = run.get("workflow_id")
+    workflow_path = run.get("path")
+    claims_b250_identity = workflow_id == B250_WORKFLOW_ID or workflow_path == B250_WORKFLOW_PATH
+    if not claims_b250_identity:
+        return classification
+    if (
+        isinstance(workflow_id, bool)
+        or not isinstance(workflow_id, int)
+        or workflow_id != B250_WORKFLOW_ID
+        or workflow_path != B250_WORKFLOW_PATH
+    ):
+        raise EvidenceUnavailable("startup_failure has incomplete or conflicting B-250 workflow identity")
+    return B250_RUN_CLASSIFICATION
 
 
 def parse_time(value: str) -> dt.datetime:
@@ -488,15 +520,19 @@ def collect_evidence(repo: str, start: dt.datetime, end: dt.datetime, low: int, 
         if run_conclusion is not None:
             run_conclusion_counts[run_conclusion] += 1
         if run_conclusion in NON_SUCCESS_RUN_CONCLUSIONS:
-            run_outcomes.append({
+            classification = classify_run_outcome(run, run_conclusion)
+            outcome = {
                 "run_id": run_id,
                 "conclusion": run_conclusion,
-                "classification": RUN_CLASSIFICATIONS[run_conclusion],
+                "classification": classification,
                 "workflow": run.get("name") if isinstance(run.get("name"), str) else None,
                 "event": run.get("event") if isinstance(run.get("event"), str) else None,
                 "created_at": run.get("created_at"),
                 "updated_at": run.get("updated_at"),
-            })
+            }
+            if classification == B250_RUN_CLASSIFICATION:
+                outcome.update({"workflow_id": B250_WORKFLOW_ID, "workflow_path": B250_WORKFLOW_PATH})
+            run_outcomes.append(outcome)
     failed_runs = [r for r in validated_runs if r.get("conclusion") == "failure"]
     records: list[dict[str, Any]] = []
     all_job_ids: set[int] = set()
@@ -526,6 +562,7 @@ def collect_evidence(repo: str, start: dt.datetime, end: dt.datetime, low: int, 
         "run_count": len(runs),
         "run_ids": sorted(api_id(r.get("id"), "run") for r in validated_runs),
         "run_conclusion_counts": dict(sorted(run_conclusion_counts.items())),
+        "run_classification_counts": dict(sorted(Counter(item["classification"] for item in run_outcomes).items())),
         "non_success_run_count": len(run_outcomes),
         "run_outcomes": run_outcomes,
         "failed_run_count": len(failed_runs),
