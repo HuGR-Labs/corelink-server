@@ -53,6 +53,7 @@ jobs:
       - name: Prove exact head and run B-314 verifier plus mutations
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
           set -euo pipefail
@@ -63,7 +64,7 @@ jobs:
           {
             echo "### B-314 exact-head evidence"
             echo
-            echo "- PR: #${{ github.event.pull_request.number }}"
+            echo "- PR: #$PR_NUMBER"
             echo "- expected head: `$EXPECTED_HEAD`"
             echo "- checked out head: `$(git rev-parse HEAD)`"
             echo "- verifier: `python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test`"
