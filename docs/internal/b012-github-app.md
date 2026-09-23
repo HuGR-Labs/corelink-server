@@ -3,7 +3,9 @@
 This repository uses a private GitHub App to create automatic pull requests.
 Each creator job mints a one-hour installation token for exactly
 `HuGR-dev/corelink-server`; no PAT or installation token is stored as a durable
-Actions secret.
+Actions secret. The owner installed `corelink-bot-ci` with the permissions
+listed below and verified the App-authored hosted DCO/rustfmt proof recorded in
+`evidence/owner-actions/B-012/bot-pr-checks.json`.
 
 ## App manifest
 
@@ -79,8 +81,7 @@ any mutation. `scripts/verify_bot_pr_auth.py` is the fail-closed static guard.
 
 The App cannot merge a PR through repository automation: generated PRs still
 require the normal human review and branch protection rules. App installation
-or repository secret changes are owner actions and are not performed by this
-repository change.
+and repository secret changes require an organization/repository owner.
 
 The `pull_request` drift checks in `api-reference-sync.yml` and
 `subprocessors-sync.yml` are fork-safe read-only jobs. Their default
@@ -97,51 +98,19 @@ then revoke the previous key. For full revocation, uninstall the App from
 `corelink-server`, delete both repository secrets, and review open bot branches
 and PRs. Never revoke release credentials as part of this procedure.
 
-## Bounded proof probe and receipt
+## Verified hosted proof
 
-After this change is merged and Actions job startup plus the `corelink` runner
-are confirmed healthy, run exactly one harmless creator probe. The owner must
-record only metadata in `evidence/owner-actions/B-012/bot-pr-checks.json`:
+On 2026-09-22, the owner verified the App's selected-repository installation,
+secret-name metadata, and an App-authored PR. The proof PR was closed unmerged
+after the hosted DCO and rustfmt jobs both completed successfully on GitHub
+Actions with the `ubuntu-latest` label and no approval pending. The sanitized
+receipt at `evidence/owner-actions/B-012/bot-pr-checks.json` records each
+workflow run URL and its `job_urls` array, runner names and labels, conclusions,
+and timestamps. `python3 -S scripts/verify_b012_bot_pr_evidence.py` validates
+that receipt; the B-012 contract workflow also checks that the owner packet and
+`BACKLOG.md` remain aligned.
 
-```json
-{
-  "schema_version": 1,
-  "captured_at": "<UTC>",
-  "repository": "HuGR-dev/corelink-server",
-  "bot_identity": "corelink-bot-ci[bot]",
-  "credential_kind": "app",
-  "app_installation_id": "<numeric id>",
-  "pr_number": "<number>",
-  "workflow_runs": [
-    {
-      "run_id": "<id>",
-      "workflow": "dco-check",
-      "url": "https://github.com/HuGR-dev/corelink-server/actions/runs/<id>",
-      "conclusion": "success",
-      "started_at": "<UTC>",
-      "completed_at": "<UTC>",
-      "job_count": 1,
-      "job_urls": ["https://github.com/HuGR-dev/corelink-server/actions/runs/<id>/job/<id>"]
-    },
-    {
-      "run_id": "<id>",
-      "workflow": "rustfmt",
-      "url": "https://github.com/HuGR-dev/corelink-server/actions/runs/<id>",
-      "conclusion": "success",
-      "started_at": "<UTC>",
-      "completed_at": "<UTC>",
-      "job_count": 1,
-      "job_urls": ["https://github.com/HuGR-dev/corelink-server/actions/runs/<id>/job/<id>"]
-    }
-  ],
-  "all_required_checks_observed": true,
-  "approval_state": "not_required",
-  "runner_names": ["ubuntu-latest"],
-  "reviewer": "<owner>"
-}
-```
-
-The receipt is valid only when both hosted jobs completed successfully, the PR
-was created by the App identity, no approval was pending, and no zero-job or
-`startup_failure` run was used as proof. This runtime receipt is the boundary
-for closing issue #1642; the repository verifier cannot fabricate it.
+The proof establishes those hosted checks for one App-authored PR. It does not
+claim that each automatic PR creator ran or that the separate self-hosted
+runner labelled `corelink` is online. Never include a JWT, private key, App
+installation ID, installation token, or secret value in the receipt.

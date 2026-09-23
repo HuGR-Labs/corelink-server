@@ -33,29 +33,29 @@
     },
     {
       "id": "B-012",
-      "owner": "owner",
-      "status": "open",
+      "owner": "tl",
+      "status": "done",
       "action_type": "github_app_installation_token",
       "procedure": [
-        "UI: Inspect the existing dedicated App metadata by secret name only (`gh secret list --repo HuGR-dev/corelink-server`); then create a private GitHub App installed only on `HuGR-dev/corelink-server` with repository-scoped contents:write and pull_requests:write permissions. The App installation token is repository-scoped and expires after one hour.",
-        "RUN: Store the numeric App ID as `CORELINK_BOT_APP_ID` and the generated PEM as `CORELINK_BOT_APP_PRIVATE_KEY` with `gh secret set ... --body-stdin`; provide both through protected stdin or the password manager, never argv, logs, git, or evidence. Confirm all five creators consume the per-job minted token and fail closed when either secret is absent.",
-        "UI: Before a test PR, separately confirm Actions can create jobs and an online runner labelled corelink can execute them. The App token cannot repair workflow `startup_failure`, a hosted-billing block, or missing `corelink` runner capacity; the macOS `corelink-builder` label does not match `corelink`.",
-        "UI: Have one creator open one harmless test PR only after those checks. GitHub may create approval-required pull_request runs for PRs opened with GITHUB_TOKEN; an owner may approve those runs, but the App installation token is required for automatic unapproved CI. Dependabot PRs can trigger workflows independently and must not be classified as GITHUB_TOKEN-suppressed by author alone.",
-        "RUN: Record the PR, expected workflow run and job URLs, approval state, conclusions, and runner names in the canonical evidence file; no pending approval, startup_failure, zero-job run, or unrelated green workflow proves B-012 complete."
+        "RUN: DONE — the private `corelink-bot-ci` GitHub App is installed only on `HuGR-dev/corelink-server` with repository-scoped metadata:read, contents:write, and pull_requests:write; the one-hour installation token is minted per job and is not stored.",
+        "RUN: DONE — secret-name metadata confirms `CORELINK_BOT_APP_ID` and `CORELINK_BOT_APP_PRIVATE_KEY` are present and `BOT_PR_TOKEN` is absent; values were delivered through protected stdin using `--body-stdin`. All five creators mint their token per job. Secret values, PEM, JWT, and installation identifiers are not recorded.",
+        "RUN: LIMIT — the App-authored hosted proof ran on GitHub Actions with the `ubuntu-latest` label. This does not establish Actions startup for every workflow or availability of an online runner labelled corelink; `startup_failure`, hosted-billing, and missing runner capacity remain distinct blockers.",
+        "RUN: LIMIT — GitHub may create approval-required pull_request runs for PRs opened with GITHUB_TOKEN; an owner may approve those runs. Dependabot PRs can trigger workflows independently, so classify execution by completed jobs, not author alone.",
+        "RUN: DONE — record the App-authored proof PR and both successful hosted dco-check and rustfmt run URLs and job_urls with job_count, approval state, conclusions, and runner labels in the canonical receipt. A pending approval, startup_failure, zero-job run, or unrelated green workflow is not execution proof."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["GitHub owner authentication", "HuGR-Labs/corelink-server repository", "dedicated bot identity", "least-privilege permissions", "working Actions job startup", "online corelink runner"],
-        "credentials": "The owner creates and installs a private GitHub App restricted to HuGR-dev/corelink-server, then stores only its numeric App ID and PEM private key in the two named repository secrets. Workflows mint a one-hour installation token per job; no PAT, release token, expired installation token, or credential value belongs in git, logs, or evidence. The runner slot census needs separate administration:read plus actions:read authorization; the bot-PR App permissions do not grant it."
+        "inputs": ["HuGR-dev organization owner authentication", "HuGR-dev/corelink-server repository", "dedicated bot identity", "least-privilege permissions", "GitHub-hosted Actions capacity"],
+        "credentials": "The owner installed a private GitHub App restricted to HuGR-dev/corelink-server and stored only its numeric App ID and PEM private key in the two named repository secrets. Workflows mint a one-hour installation token per job; no PAT, release token, expired installation token, or credential value belongs in git, logs, or evidence. The runner slot census needs separate administration:read plus actions:read authorization; the bot-PR App permissions do not grant it."
       },
       "evidence": {
         "path": "evidence/owner-actions/B-012/bot-pr-checks.json",
         "format": "json",
-        "required_fields": ["schema_version", "captured_at", "repository", "bot_identity", "credential_kind", "pr_number", "workflow_runs", "all_required_checks_observed", "reviewer"],
-        "item_schema": "workflow_runs[] entries contain run_id, workflow, url, approval_state, job_count, job_urls, runner_names, conclusion, started_at, completed_at; credential_kind is app or fine_grained_pat and never contains a secret. A present workflow run with zero jobs or pending approval is not execution evidence."
+        "required_fields": ["schema_version", "captured_at", "repository", "bot_identity", "credential_kind", "pr_number", "workflow_runs", "all_required_checks_observed", "approval_state", "runner_names", "reviewer"],
+      "item_schema": "workflow_runs[] entries contain run_id, workflow, url, approval_state, job_count, job_urls (one hosted job URL per completed job), runner_names, runner_group, runner_labels, conclusion, started_at, completed_at; this receipt contains the App proof's dco-check and rustfmt jobs on GitHub Actions with runner_labels [ubuntu-latest]. credential_kind is app and never contains a secret. A present workflow run with zero jobs or pending approval is not execution evidence."
       },
-      "expected_postcondition": "A bot-created PR receives the expected checks with actual jobs completed on viable runners and no approval pending; the evidence names each observed run and job. B-012 remains open until the owner records closure.",
-      "retry_and_rollback": "Before retrying, inspect existing App installations and the two secret names only to avoid duplicates. Retry secret storage with the same App metadata if the API call fails; never store a short-lived installation token for reuse. If job startup or runner capacity is blocked, defer the test without claiming token failure or success. Roll back by uninstalling only the new App and deleting CORELINK_BOT_APP_ID plus CORELINK_BOT_APP_PRIVATE_KEY after disabling bot use; preserve release credentials and test PR evidence.",
-      "references": ["BACKLOG.md#B-012", ".github/workflows/backlog-verify.yml", "docs/internal/b012-github-app.md"]
+      "expected_postcondition": "The App-authored proof PR has actual jobs completed successfully: nonzero GitHub-hosted DCO and rustfmt jobs with no approval pending; both run URLs and job_urls are recorded and validated. This closes only the bot-authored hosted-check proof boundary; it does not claim that all five creators or the separate self-hosted runner labelled corelink were exercised.",
+      "retry_and_rollback": "The bounded proof completed once. If the App metadata, secret names, PR state, hosted jobs, runner labels, or job URLs change, capture and validate fresh sanitized evidence before changing status. Never store a short-lived installation token for reuse. Roll back by uninstalling only this App and deleting CORELINK_BOT_APP_ID plus CORELINK_BOT_APP_PRIVATE_KEY after disabling bot use; preserve release credentials and the redacted proof receipt.",
+      "references": ["BACKLOG.md#B-012", ".github/workflows/backlog-verify.yml", ".github/workflows/issue-1642-b012-contract.yml", "docs/internal/b012-github-app.md", "evidence/owner-actions/B-012/bot-pr-checks.json"]
     },
     {
       "id": "B-013",

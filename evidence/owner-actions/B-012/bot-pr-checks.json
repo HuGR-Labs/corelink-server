@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-22T22:40:39Z",
+  "repository": "HuGR-dev/corelink-server",
+  "bot_identity": "app/corelink-bot-ci",
+  "credential_kind": "app",
+  "pr_number": 2093,
+  "app_permissions": {
+    "contents": "write",
+    "metadata": "read",
+    "pull_requests": "write"
+  },
+  "app_events": [],
+  "installation": {
+    "account": "HuGR-dev",
+    "repository_selection": "selected",
+    "repositories": [
+      "HuGR-dev/corelink-server"
+    ],
+    "permissions": {
+      "contents": "write",
+      "metadata": "read",
+      "pull_requests": "write"
+    }
+  },
+  "actions_secret_names": {
+    "CORELINK_BOT_APP_ID": "present",
+    "CORELINK_BOT_APP_PRIVATE_KEY": "present",
+    "BOT_PR_TOKEN": "absent"
+  },
+  "pr": {
+    "number": 2093,
+    "url": "https://github.com/HuGR-dev/corelink-server/pull/2093",
+    "author": "app/corelink-bot-ci",
+    "is_bot": true,
+    "head_sha": "c17e5210d424bcc80848e808bd9c586ab3b7a1f9",
+    "base_sha": "0389714d9f5408f744e17227b82d795fff245a32",
+    "state": "closed",
+    "merged": false,
+    "temporary_branch_deleted": true
+  },
+  "workflow_runs": [
+    {
+      "run_id": 35793072637,
+      "workflow": "dco-check",
+      "url": "https://github.com/HuGR-dev/corelink-server/actions/runs/35793072637",
+      "approval_state": "not_required",
+      "job_count": 1,
+      "job_urls": [
+        "https://github.com/HuGR-dev/corelink-server/actions/runs/35793072637/job/106965922571"
+      ],
+      "runner_names": [
+        "GitHub Actions 1000003581"
+      ],
+      "runner_group": "GitHub Actions",
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "conclusion": "success",
+      "started_at": "2026-09-22T22:34:13Z",
+      "completed_at": "2026-09-22T22:34:29Z"
+    },
+    {
+      "run_id": 35793072550,
+      "workflow": "rustfmt",
+      "url": "https://github.com/HuGR-dev/corelink-server/actions/runs/35793072550",
+      "approval_state": "not_required",
+      "job_count": 1,
+      "job_urls": [
+        "https://github.com/HuGR-dev/corelink-server/actions/runs/35793072550/job/106965922375"
+      ],
+      "runner_names": [
+        "GitHub Actions 1000003580"
+      ],
+      "runner_group": "GitHub Actions",
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "conclusion": "success",
+      "started_at": "2026-09-22T22:34:13Z",
+      "completed_at": "2026-09-22T22:34:37Z"
+    }
+  ],
+  "all_required_checks_observed": true,
+  "approval_state": "not_required",
+  "runner_names": [
+    "GitHub Actions 1000003581",
+    "GitHub Actions 1000003580"
+  ],
+  "reviewer": "Codex operator under owner direction",
+  "evidence_comment": "https://github.com/HuGR-dev/corelink-server/issues/1642#issuecomment-5785376771"
+}
