@@ -364,8 +364,19 @@ def assert_yaml_lane_shape(parsed: dict, lane: Lane) -> None:
             artifact = uploads[0].get("with")
             if not isinstance(artifact, dict) or artifact.get("name") != "buck2-benchmark-report":
                 raise VerificationError("buck2-benchmark: artifact name is missing")
-            if artifact.get("path") != "${{ runner.temp }}/buck2-benchmark/BENCHMARK.md":
-                raise VerificationError("buck2-benchmark: report artifact path drifted")
+            raw_paths = artifact.get("path")
+            actual_paths = (
+                {line.strip() for line in raw_paths.splitlines() if line.strip()}
+                if isinstance(raw_paths, str)
+                else set()
+            )
+            expected_paths = {
+                "${{ runner.temp }}/buck2-benchmark/BENCHMARK.md",
+                "${{ runner.temp }}/buck2-benchmark/BENCHMARK.json",
+                "${{ runner.temp }}/buck2-warm-admission.txt",
+            }
+            if actual_paths != expected_paths:
+                raise VerificationError("buck2-benchmark: report artifact paths drifted")
             if artifact.get("if-no-files-found") != "error":
                 raise VerificationError("buck2-benchmark: missing report must fail")
             retention = artifact.get("retention-days")

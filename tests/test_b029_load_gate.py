@@ -128,6 +128,7 @@ class B029LoadGateTests(unittest.TestCase):
 
     def _assess_workflow(self, workflow: str) -> list[str]:
         contract = self.root / "workflow-contract"
+        shutil.rmtree(contract, ignore_errors=True)
         (contract / ".github/workflows").mkdir(parents=True, exist_ok=True)
         (contract / "scripts").mkdir()
         (contract / "tests/load").mkdir(parents=True)
