@@ -1,0 +1,53 @@
+name: issue 2156 CI bundle 1 contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/action-sha-audit.yml"
+      - ".github/workflows/api-surface-parity.yml"
+      - ".github/workflows/quickstart-validate.yml"
+      - ".github/workflows/issue-2156-ci-bundle-1-contract.yml"
+      - "scripts/verify_ci_bundle_1.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2156-ci-bundle-1-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: hosted bundle contract and adversarial mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact PR tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install checksum-pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          "${RUNNER_TEMP}/actionlint/actionlint" -version
+
+      - name: Lint bundle workflows
+        run: >-
+          "${RUNNER_TEMP}/actionlint/actionlint" -color -config-file .actionlint.yaml
+          .github/workflows/action-sha-audit.yml
+          .github/workflows/api-surface-parity.yml
+          .github/workflows/quickstart-validate.yml
+          .github/workflows/issue-2156-ci-bundle-1-contract.yml
+
+      - name: Verify bundle contract and adversarial mutations
+        run: python3 -S scripts/verify_ci_bundle_1.py

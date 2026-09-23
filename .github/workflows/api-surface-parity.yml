@@ -40,11 +40,13 @@ concurrency:
 jobs:
   parity:
     name: documented vs served
-    runs-on: corelink # zero-hosted: stdlib python3 only, no install step
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       # The positive control runs FIRST and on its own, so a broken extractor
       # can never be mistaken for a clean surface. An instrument that has gone
