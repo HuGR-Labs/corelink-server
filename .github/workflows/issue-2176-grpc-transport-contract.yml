@@ -1,0 +1,40 @@
+name: issue 2176 gRPC transport fail-closed contract
+
+# This workflow is source-only and credentialless. It does not contact
+# Cloudflare, deploy a Worker, dispatch Buck2, or read a protected secret.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-2176-grpc-transport-contract.yml"
+      - "scripts/verify_i2176_grpc_transport.py"
+      - "tests/test_i2176_grpc_transport_contract.py"
+      - "specs/_audits/2026-09-22-issue-2176-grpc-transport-decision.md"
+      - "worker/src/durable_object_probes.ts"
+      - "worker/src/durable_object.ts"
+      - "worker/src/index.ts"
+      - "worker/src/route_match.ts"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2176-grpc-transport-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: exact-head transport contract and adversarial mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact pull request head without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify source contract and adversarial mutations
+        run: python3 -S scripts/verify_i2176_grpc_transport.py --self-test
+      - name: Run focused standard-library regression
+        run: python3 -S -m unittest -v tests/test_i2176_grpc_transport_contract.py
