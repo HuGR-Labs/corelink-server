@@ -24,7 +24,9 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: corelink
+    # Runner: GitHub-hosted ubuntu-latest (wave 3 migration from corelink fabric).
+    # stdlib python3 + git; BASE checker runs from immutable control tree.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout candidate data (immutable event SHA) # nosemgrep: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout # reason: candidate is data-only; BASE checker runs separately; ADR-0101
