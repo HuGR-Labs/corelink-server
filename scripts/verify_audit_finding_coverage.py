@@ -35,7 +35,7 @@ B101_STAGE = "historical_coverage_complete_semantic_review_complete"
 CANONICAL_BACKLOG_ID = re.compile(r"B-\d{3}")
 # This content certificate is stable across squash; it does not consult Git history.
 B101_REGISTRY_SHA256 = "0e4cd777fea1a9391874895c8c63f05fa46d2528332b179f525ae73e87751dd7"
-B101_MANIFEST_SHA256 = "4269b31531d91f8428eece5f9964dc2ab293278fd7e4cb626850bf9603caff25"
+B101_MANIFEST_SHA256 = "5c9ff82f13ae0c0701ab6f5ea16b93f3013a12a41479bd989b08863837330459"
 B101_CENSUS_TREE_SHA256 = "f87b3d83d5fb3b51dafd1eb6532f1b351378236c4d447492d29455e02e5f0b01"
 B101_CENSUS_ROOTS = ("docs/security", "reports/audits")
 B101_PROPOSAL_IDS = {f"B-{number}" for number in range(171, 244)}

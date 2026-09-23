@@ -206,6 +206,20 @@ def test_malformed_backlog_id_is_red_before_existence_lookup(tmp_path: Path) -> 
         coverage.verify(ROOT, _write_manifest(tmp_path, manifest))
 
 
+def test_stale_canonical_title_is_red(tmp_path: Path) -> None:
+    manifest = _manifest()
+    decision = next(item for item in manifest["decisions"] if item["source_id"] == "DD-023")
+    decision["semantic_disposition"]["canonical_title"] = (
+        "dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias"
+    )
+
+    with pytest.raises(
+        coverage.CoverageError,
+        match="DD-023: tracked decision needs an exact canonical equivalence proof",
+    ):
+        coverage.verify(ROOT, _write_manifest(tmp_path, manifest))
+
+
 def test_semantic_evidence_mutation_is_red(tmp_path: Path) -> None:
     manifest = _manifest()
     decision = manifest["decisions"][0]

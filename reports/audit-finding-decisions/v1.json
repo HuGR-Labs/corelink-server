@@ -373,13 +373,13 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-065",
-        "canonical_title": "dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias",
+        "canonical_title": "dois esquemas de ID em webhooks Stripe; estado atual dos destinos não verificado",
         "evidence": {
           "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
           "source_locator": "MEDIUM / LOW item 2",
           "finding_title": "Two live Stripe webhook handlers share STRIPE_WEBHOOK_SECRET and write the same billing tables, but with a DIVERGENT/incomplete tier map (latent duplicate-endpoint hazard)"
         },
-        "proof": "Exact equivalence for DD-023: source title \"Two live Stripe webhook handlers share STRIPE_WEBHOOK_SECRET and write the same billing tables, but with a DIVERGENT/incomplete tier map (latent duplicate-endpoint hazard)\" maps to canonical B-065 title \"dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias\"; that item owns the same control gap and remediation surface."
+        "proof": "Exact equivalence for DD-023: source title \"Two live Stripe webhook handlers share STRIPE_WEBHOOK_SECRET and write the same billing tables, but with a DIVERGENT/incomplete tier map (latent duplicate-endpoint hazard)\" maps to canonical B-065 title \"dois esquemas de ID em webhooks Stripe; estado atual dos destinos não verificado\"; that item owns the same control gap and remediation surface."
       }
     },
     {
