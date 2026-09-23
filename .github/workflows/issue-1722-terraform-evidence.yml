@@ -5,7 +5,6 @@ on:
     paths:
       - ".github/workflows/issue-1722-terraform-evidence.yml"
       - ".github/workflows/terraform-drift.yml"
-      - ".github/workflows/issue-1722-terraform-evidence.yml"
       - "scripts/sanitize_terraform_drift.py"
       - "scripts/test_sanitize_terraform_drift.py"
       - "specs/04_sprints/S13/work_items/WI-S13-004-terraform-drift-detection-daily-rb-fm-206.md"
