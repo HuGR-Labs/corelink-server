@@ -33,6 +33,9 @@ Each entry cross-references:
 - **B-258 checkout promo runtime blob pin refreshed.** Reviewed Stripe client
   source hash now matches current tracked bytes.
 
+- **B-154 trust-boundary test corrected.** Current legacy reconciliation now
+  uses its matching authorization path; historical Sprint3 pin remains frozen.
+
 - **B-139 secrets-drift workflow digest refreshed.** Structural trust-boundary
   pin now matches current reviewed workflow.
 

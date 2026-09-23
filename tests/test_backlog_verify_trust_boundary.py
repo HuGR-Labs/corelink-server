@@ -173,11 +173,11 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             "python3 -S scripts/verify_b154_instrument_claims.py --self-test\n"
         )
         self.assertEqual(backlog_verify.validate_candidate_transitions(
-            [candidate], [base], dt.date(2026, 9, 13), allow_sprint3_rewrite=True,
+            [candidate], [base], dt.date(2026, 9, 13), allow_b154_reconciliation=True,
         ), [])
         candidate.raw["verify"] = candidate.raw["verify"].replace(" &&\n", "\n")
         errors = backlog_verify.validate_candidate_transitions(
-            [candidate], [base], dt.date(2026, 9, 13), allow_sprint3_rewrite=True,
+            [candidate], [base], dt.date(2026, 9, 13), allow_b154_reconciliation=True,
         )
         self.assertTrue(any("immutable field 'verify' changed" in error for error in errors))
         self.assertNotEqual(backlog_verify.run_verify("false &&\ntrue", mode="trusted")[0], 0)
