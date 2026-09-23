@@ -24,7 +24,7 @@ class ClosureError(ValueError):
 
 # Each entry is (artifact, required executable/source clauses, mutation needle).
 CONTRACTS: dict[str, tuple[str, tuple[str, ...], str]] = {
-    "B-193": ("crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs", ("verify_against_bytes", "self\\.moat\\s*\\n\\s*\\.put"), "verify_against_bytes"),
+    "B-193": ("crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs", (r"d\.verify_against_bytes\(&session\.buf\)", "self\\.moat\\s*\\n\\s*\\.put"), "d.verify_against_bytes(&session.buf)"),
     "B-194": ("crates/corelink-adapter-host/src/oci/server/core.rs", ("OciAdapterError::Cas\\(_\\) \\| OciAdapterError::Kv\\(_\\) => StatusCode::SERVICE_UNAVAILABLE", "live_storage_failures_are_retryable_503s"), "OciAdapterError::Cas(_) | OciAdapterError::Kv(_) => StatusCode::SERVICE_UNAVAILABLE"),
     "B-195": ("scripts/check_migration_prefixes.py", ("GRANDFATHERED", "actual == allowed", "0044_drata_evidence_sent\\.sql"), "actual == allowed"),
     "B-196": ("apps/signup-worker/src/webhooks/dsr_verify_cron.ts", ("SWEEP_BATCH_LIMIT",), "LIMIT ?3"),
@@ -33,7 +33,7 @@ CONTRACTS: dict[str, tuple[str, tuple[str, ...], str]] = {
     "B-199": ("crates/corelink-container/src/storage/region_map.rs", ("colo_matches_macro", "colo_for_macro\\(macro_region\\) == Some\\(serving_colo\\)"), "colo_matches_macro"),
     "B-200": ("apps/signup-worker/src/webhooks/dsr_verify_cron.ts", ("requested_at >= \\?2", "invalid/expired requested anchor"), "requested_at >= ?2"),
     "B-201": ("crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs", ("list_objects_v2", "count_ac_remaining", "no `ac_meta` D1 index row"), "list_objects_v2"),
-    "B-202": ("crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs", ("\\\"iad\\\" => \\\"corelink-cas-prod\\\"", "\\\"lhr\\\" => \\\"corelink-cas-eu\\\"", "\\\"nrt\\\" => \\\"corelink-cas-apac\\\"", "validate_cas_bucket_for_region"), "validate_cas_bucket_for_region"),
+    "B-202": ("crates/corelink-container/src/storage/r2_s3_parts/cas_builder.rs", ("\\\"iad\\\" => \\\"corelink-cas-prod\\\"", "\\\"lhr\\\" => \\\"corelink-cas-eu\\\"", "\\\"nrt\\\" => \\\"corelink-cas-apac\\\"", "validate_cas_bucket_for_region"), "validate_cas_bucket_for_region"),
     "B-203": ("crates/corelink-container/src/storage/region_map.rs", (r"PROVISIONED_MACROS: \[&str; 4\]", "\\\"wnam\\\"", "\\\"enam\\\"", "\\\"weur\\\"", "\\\"apac\\\"", "provisioned_set_is_exact"), "PROVISIONED_MACROS: [&str; 4]"),
     "B-204": ("legal/dpa-residency-amendment.md", ("CURRENT LAUNCH BOUNDARY \\(DD-051 / B-204\\)", "BYOK is not enabled or provisioned", "future-state design requirement"), "BYOK is not enabled or provisioned"),
     "B-205": ("worker/src/lib/quota_request_cache.ts", ("BURST_MARGIN_FRACTION", "requestKvKey", "incrementMonthlyRequestCount", "waitUntil", "reason: \\\"near-cap\\\""), "export const BURST_MARGIN_FRACTION"),
@@ -65,8 +65,8 @@ def _related(root: Path, identifier: str) -> str:
     artifact = CONTRACTS[identifier][0]
     text = _read(root, artifact)
     companions = {
-        "B-193": ("crates/corelink-container/src/routes/oci/b126_m2_test_1_1.rs",),
-        "B-202": ("crates/corelink-container/src/routes/cas_erase/b126_m2_impl_02.rs",),
+        "B-193": ("crates/corelink-container/src/routes/oci/b126_m2_test_1_1_part2.rs",),
+        "B-202": ("crates/corelink-container/src/routes/cas_erase/b126_m2_impl_02_part2.rs",),
     }
     return text + "\n" + "\n".join(
         _read(root, rel) for rel in companions.get(identifier, ())
@@ -90,7 +90,9 @@ def _check(identifier: str, root: Path, override: str | None = None) -> None:
 
     if identifier == "B-193":
         finalize = text[text.find("fn finalize_upload") :]
-        if finalize.find("verify_against_bytes") > finalize.find("self.moat"):
+        verify = finalize.find("d.verify_against_bytes(&session.buf)")
+        persist = finalize.find("self.moat")
+        if verify < 0 or persist < 0 or verify > persist:
             raise ClosureError("B-193: digest verification is not before persistence")
         if "finalize_rejects_digest_lie_and_persists_nothing" not in text:
             raise ClosureError("B-193: focal digest-lie test is missing")
@@ -98,9 +100,7 @@ def _check(identifier: str, root: Path, override: str | None = None) -> None:
         raise ClosureError("B-196: both DSR scans must be bounded")
     if identifier == "B-201":
         ac_route = _rust_without_comments(
-            _read(root, "crates/corelink-container/src/routes/ac/part-00.rs")
-            + "\n"
-            + _read(root, "crates/corelink-container/src/routes/ac/part-01.rs")
+            _read(root, "crates/corelink-container/src/routes/ac/part-00-01.rs")
         )
         ac_erase = _rust_without_comments(text)
         if "state.update.update(req)" not in ac_route:
@@ -116,7 +116,7 @@ def _check(identifier: str, root: Path, override: str | None = None) -> None:
                 if value not in other:
                     raise ClosureError(f"B-198: {value} missing from {rel}")
     if identifier == "B-202":
-        if "validate_cas_bucket_for_region" not in _read(root, "crates/corelink-container/src/routes/cas_erase/b126_m2_impl_02.rs"):
+        if "validate_cas_bucket_for_region" not in _read(root, "crates/corelink-container/src/routes/cas_erase/b126_m2_impl_02_part2.rs"):
             raise ClosureError("B-202: bucket validation is not wired in CAS erase")
     if identifier == "B-206":
         alarm_tests = _read(root, "worker/tests/durable_object_part2.test.ts")

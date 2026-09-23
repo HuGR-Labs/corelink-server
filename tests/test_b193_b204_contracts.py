@@ -13,11 +13,14 @@ class B193B204VerifierTests(unittest.TestCase):
         """Copy only the verifier's small evidence surface, not build trees."""
         files = (
             "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs",
+            "crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs",
             "crates/corelink-container/src/routes/oci/b126_m2_test_1_1.rs",
+            "crates/corelink-container/src/routes/oci/b126_m2_test_1_1_part2.rs",
             "crates/corelink-adapter-host/src/oci/server/core.rs",
             "crates/corelink-container/src/routes/residency.rs",
             "crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs",
             "crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs",
+            "crates/corelink-container/src/storage/r2_s3_parts/cas_builder.rs",
             "crates/corelink-container/src/storage/region_map.rs",
             "apps/signup-worker/src/webhooks/dsr_verify_cron.ts",
             "apps/signup-worker/src/webhooks/clerk_identity.ts",
