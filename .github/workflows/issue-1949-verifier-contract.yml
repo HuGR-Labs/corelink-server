@@ -1,0 +1,33 @@
+name: issue-1949 verifier contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/issue-1690-p12-p14-verifier.yml
+      - .github/workflows/issue-1949-verifier-contract.yml
+      - scripts/issue_1690_p12_p14_provenance.json
+      - scripts/verify_issue_1690_p12_p14.py
+      - tests/test_verify_issue_1690_p12_p14.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1949-verifier-contract-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Verify exact-tree and receipt contract
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout pull request head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Run verifier contract and negative mutation checks
+        run: python3 -S tests/test_verify_issue_1690_p12_p14.py
