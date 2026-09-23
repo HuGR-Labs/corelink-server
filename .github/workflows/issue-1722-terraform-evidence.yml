@@ -7,6 +7,8 @@ on:
       - ".github/workflows/terraform-drift.yml"
       - "scripts/sanitize_terraform_drift.py"
       - "scripts/test_sanitize_terraform_drift.py"
+      - "specs/04_sprints/S13/work_items/WI-S13-004-terraform-drift-detection-daily-rb-fm-206.md"
+      - "specs/05_quality/runbooks/RB-FM-206-terraform-drift.md"
   workflow_dispatch:
 
 permissions:
@@ -33,3 +35,103 @@ jobs:
 
       - name: Run focused Terraform evidence guard
         run: python3 scripts/test_sanitize_terraform_drift.py
+
+  docs-contract:
+    name: Sanitized evidence docs contract
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact pull request head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify documented evidence boundary
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          actual_head = subprocess.check_output(
+              ["git", "rev-parse", "HEAD"], text=True
+          ).strip()
+          expected_head = os.environ["EXPECTED_HEAD"]
+          if actual_head != expected_head:
+              raise SystemExit(
+                  f"checkout mismatch: expected PR head {expected_head}, got {actual_head}"
+              )
+
+          work_item_path = Path(
+              "specs/04_sprints/S13/work_items/"
+              "WI-S13-004-terraform-drift-detection-daily-rb-fm-206.md"
+          )
+          runbook_path = Path("specs/05_quality/runbooks/RB-FM-206-terraform-drift.md")
+          docs = {
+              "WI-S13-004": work_item_path.read_text(encoding="utf-8").lower(),
+              "RB-FM-206": runbook_path.read_text(encoding="utf-8").lower(),
+          }
+          fields = (
+              "schema_version",
+              "workflow_run_id",
+              "workflow_run_attempt",
+              "detected_at",
+              "region",
+              "terraform_exit_code",
+              "result",
+              "drift_detected",
+              "action_counts",
+              "create",
+              "update",
+              "delete",
+              "replace",
+              "read",
+          )
+          for name, doc in docs.items():
+              missing = [field for field in fields if f"`{field}`" not in doc]
+              if missing:
+                  raise SystemExit(f"{name} omits summary fields: {missing}")
+              if "7 days" not in doc:
+                  raise SystemExit(f"{name} omits the seven-day retention period")
+              if "plan_summary_artifact_url" not in doc:
+                  raise SystemExit(f"{name} omits the sanitized summary URL contract")
+              flat_doc = re.sub(r"\s+", " ", doc)
+              if "plan_full_artifact_url" not in doc or not re.search(
+                  r"plan_full_artifact_url[^\n]{0,180}(?:null|compatibility)|"
+                  r"legacy[^\n]{0,180}plan_full_artifact_url[^\n]{0,180}null",
+                  flat_doc,
+              ):
+                  raise SystemExit(
+                      f"{name} does not define the full-plan URL as legacy and NULL"
+                  )
+              for marker in (".tfplan", "terraform show -json", "terminal log"):
+                  if marker not in doc:
+                      raise SystemExit(f"{name} omits runner cleanup coverage for {marker}")
+              if not re.search(
+                  r"exit trap[\s\S]{0,220}(?:before|prior to)[\s\S]{0,100}upload",
+                  doc,
+              ):
+                  raise SystemExit(f"{name} does not require cleanup before upload")
+              if re.search(r"full plan output uploaded|gh run download .*terraform-plan", doc):
+                  raise SystemExit(f"{name} promises or instructs retrieval of a raw plan")
+              if name == "WI-S13-004" and "no `id-token: write` claim is requested" not in doc:
+                  raise SystemExit(f"{name} omits the no-OIDC permission contract")
+              if name == "RB-FM-206" and "does not request or exchange" not in doc:
+                  raise SystemExit(f"{name} omits the no-OIDC authentication contract")
+
+          workflow = Path(".github/workflows/terraform-drift.yml").read_text(
+              encoding="utf-8"
+          )
+          upload = workflow.split("uses: actions/upload-artifact@", 1)[1].split(
+              "#", 1
+          )[0]
+          if "retention-days: 7" not in upload or "terraform-drift-summary-" not in upload:
+              raise SystemExit("workflow upload contract no longer matches the docs")
+          if ".tfplan" in upload or ".log" in upload or "plan-json" in upload:
+              raise SystemExit("workflow upload selection includes raw Terraform evidence")
+          PY
