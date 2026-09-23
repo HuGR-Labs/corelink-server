@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -47,6 +48,19 @@ WORKFLOW_REQUIREMENTS = (
 
 class ReceiptError(ValueError):
     pass
+
+
+def tenant_sha256(tenant_id: str) -> str:
+    """Return the stable, non-identifier reference used in B-103 evidence."""
+    return hashlib.sha256(tenant_id.encode("ascii")).hexdigest()
+
+
+def require_tenant_binding(receipt: dict[str, object], configured_tenant: str) -> str:
+    """Fail closed unless the protected tenant variable matches the receipt."""
+    tenant_id = receipt.get("tenant_id")
+    if not isinstance(tenant_id, str) or not configured_tenant or configured_tenant != tenant_id:
+        raise ReceiptError("configured tenant does not match the validated target receipt")
+    return tenant_sha256(tenant_id)
 
 
 def workflow_gaps(workflow: str) -> list[str]:
@@ -118,19 +132,32 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True)
     parser.add_argument("--receipt-env", default="K6_TARGET_IDENTITY_RECEIPT")
+    parser.add_argument("--tenant-env", help="require this environment variable to match the receipt tenant")
+    parser.add_argument("--redact-tenant", action="store_true", help="emit only the receipt tenant SHA-256 reference")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--github-output", type=Path)
     args = parser.parse_args(argv)
     raw = os.environ.get(args.receipt_env, "")
     try:
         receipt = validate(json.loads(raw), args.target)
+        tenant_hash: str | None = None
+        if args.tenant_env:
+            tenant_hash = require_tenant_binding(receipt, os.environ.get(args.tenant_env, ""))
+        elif args.redact_tenant:
+            raise ReceiptError("--redact-tenant requires --tenant-env for a bound B-103 receipt")
     except (json.JSONDecodeError, ReceiptError) as exc:
         print(f"::error::target identity receipt rejected: {exc}")
         return 1
-    args.output.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    public_receipt = dict(receipt)
+    if args.redact_tenant:
+        public_receipt.pop("tenant_id", None)
+        public_receipt["tenant_sha256"] = tenant_hash
+    args.output.write_text(json.dumps(public_receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     if args.github_output:
         with args.github_output.open("a", encoding="utf-8") as output:
             output.write(f"deployment_sha={receipt['deployment_sha']}\n")
+            if args.redact_tenant:
+                output.write(f"tenant_sha256={tenant_hash}\n")
     print(f"target receipt accepted: target={CANONICAL_TARGET} deployment_sha={receipt['deployment_sha']}")
     return 0
 

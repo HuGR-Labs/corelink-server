@@ -7,6 +7,12 @@ name: B-103 cargo write reproducer
 # evidence, not a closure assertion.
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/b103-cargo-write-reproducer.yml'
+      - 'scripts/reproduce_b103_cargo_write.py'
+      - 'scripts/test_b103_tenant_binding.py'
+      - 'scripts/validate_load_target_receipt.py'
   workflow_dispatch:
     inputs:
       confirm:
@@ -22,8 +28,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  tenant-binding-contract:
+    name: B-103 receipt tenant binding contract
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: run credentialless tenant mismatch and authorized path contract
+        run: python3 -m unittest -v scripts.test_b103_tenant_binding
+
   reproduce:
     name: bounded /cargo write matrix
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'HuGR-dev/corelink-server' && github.ref == 'refs/heads/main' && github.ref_protected }}
     runs-on: ubuntu-24.04
     environment: staging
     timeout-minutes: 20
@@ -43,11 +64,14 @@ jobs:
         env:
           K6_TARGET_HOST: https://staging.corelink.humangr.com
           K6_TARGET_IDENTITY_RECEIPT: ${{ secrets.K6_TARGET_IDENTITY_RECEIPT }}
+          B103_TENANT_ID: ${{ vars.B103_TENANT_ID }}
         run: |
           set -euo pipefail
           python3 scripts/validate_load_target_receipt.py \
             --target "${K6_TARGET_HOST}" \
             --receipt-env K6_TARGET_IDENTITY_RECEIPT \
+            --tenant-env B103_TENANT_ID \
+            --redact-tenant \
             --output "${RUNNER_TEMP}/b103-target-receipt.json" \
             --github-output "${GITHUB_OUTPUT}"
 
