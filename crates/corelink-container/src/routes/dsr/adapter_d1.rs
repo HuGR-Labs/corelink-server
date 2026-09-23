@@ -55,9 +55,7 @@ use registry::ALL_TENANT_KEYED_TABLES;
 mod classification;
 use classification::ensure_classification;
 #[cfg(test)]
-use classification::{
-    classification_count, unclassified_tenant_keyed_tables, CLASSIFICATION_SETS,
-};
+use classification::{classification_count, unclassified_tenant_keyed_tables, CLASSIFICATION_SETS};
 
 /// Erase-set tables keyed directly by a `tenant_id` column (incl.
 /// tenant-leftmost composite PKs, where `WHERE tenant_id = ?` is exact).
