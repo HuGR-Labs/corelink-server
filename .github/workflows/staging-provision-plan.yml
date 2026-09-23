@@ -22,6 +22,204 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  issue-1721-r2-lock-proof:
+    if: inputs.confirm == 'i1721-r2-lock-proof'
+    name: Issue 1721 — isolated R2 native lock contention
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.TF_BACKEND_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_BACKEND_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      AWS_EC2_METADATA_DISABLED: "true"
+      TF_BACKEND_BUCKET: corelink-terraform-staging-state
+      TF_BACKEND_ENDPOINT: https://${{ secrets.CF_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      TF_IN_AUTOMATION: "true"
+      TF_CLI_ARGS: "-no-color"
+    steps:
+      - name: Validate scoped R2 backend bindings
+        run: |
+          set -euo pipefail
+          [[ -n "$AWS_ACCESS_KEY_ID" && -n "$AWS_SECRET_ACCESS_KEY" ]] || {
+            echo '::error::Staging R2 key pair is not bound to this environment.'
+            exit 1
+          }
+          [[ "$TF_BACKEND_ENDPOINT" =~ ^https://[0-9a-f]{32}\.r2\.cloudflarestorage\.com$ ]] || {
+            echo '::error::Unexpected R2 endpoint shape.'
+            exit 1
+          }
+
+      - name: Setup Terraform 1.11.4
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        with:
+          terraform_version: "1.11.4"
+          terraform_wrapper: false
+
+      - name: Prove R2 state readback and concurrent lock release
+        run: |
+          set -euo pipefail
+          probe_root="$RUNNER_TEMP/i1721-r2-lock-probe"
+          receipt="$RUNNER_TEMP/i1721-r2-lock-receipt.json"
+          run_prefix="corelink/issue-1721/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          state_key="${run_prefix}/terraform.tfstate"
+          lock_key="${state_key}.tflock"
+          first_pid=""
+          state_written=false
+          contention_rejected=false
+          terraform_released_lock=false
+          state_readback=false
+
+          cleanup() {
+            status=$?
+            set +e
+            if [[ -n "$first_pid" ]] && kill -0 "$first_pid" 2>/dev/null; then
+              kill "$first_pid" 2>/dev/null
+              wait "$first_pid" 2>/dev/null
+            fi
+            aws s3api delete-object --bucket "$TF_BACKEND_BUCKET" --key "$lock_key" \
+              --endpoint-url "$TF_BACKEND_ENDPOINT" >/dev/null 2>&1
+            lock_delete_status=$?
+            aws s3api delete-object --bucket "$TF_BACKEND_BUCKET" --key "$state_key" \
+              --endpoint-url "$TF_BACKEND_ENDPOINT" >/dev/null 2>&1
+            state_delete_status=$?
+            if (( status == 0 && (lock_delete_status != 0 || state_delete_status != 0) )); then
+              status=1
+            fi
+            cleanup_complete=false
+            if (( lock_delete_status == 0 && state_delete_status == 0 )); then
+              cleanup_complete=true
+            fi
+            jq -n \
+              --arg bucket "$TF_BACKEND_BUCKET" \
+              --arg state_key "$state_key" \
+              --arg terraform_version "1.11.4" \
+              --argjson state_readback "$state_readback" \
+              --argjson contention_rejected "$contention_rejected" \
+              --argjson terraform_released_lock "$terraform_released_lock" \
+              --argjson state_written "$state_written" \
+              --argjson cleanup_complete "$cleanup_complete" \
+              --argjson exit_status "$status" \
+              '{schema:1,bucket:$bucket,state_key:$state_key,terraform_version:$terraform_version,state_written:$state_written,state_readback:$state_readback,concurrent_contention_rejected:$contention_rejected,terraform_released_lock:$terraform_released_lock,probe_objects_cleaned:$cleanup_complete,exit_status:$exit_status}' \
+              >"$receipt"
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          mkdir -p "$probe_root"
+          cat >"$probe_root/main.tf" <<'TF'
+          terraform {
+            required_version = "= 1.11.4"
+            required_providers {
+              external = {
+                source  = "hashicorp/external"
+                version = "= 2.3.4"
+              }
+            }
+            backend "s3" {
+              region                      = "auto"
+              use_lockfile                = true
+              use_path_style              = true
+              skip_s3_checksum            = true
+              skip_credentials_validation = true
+              skip_region_validation      = true
+              skip_requesting_account_id  = true
+              skip_metadata_api_check     = true
+            }
+          }
+
+          data "external" "hold_lock" {
+            program = ["bash", "-c", "sleep 15; printf '{\"result\":\"ok\"}'"]
+            query   = {}
+          }
+
+          output "probe_result" {
+            value = data.external.hold_lock.result.result
+          }
+          TF
+
+          state_id="i1721-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          jq -n --arg lineage "$state_id" \
+            '{version:4,terraform_version:"1.11.4",serial:1,lineage:$lineage,outputs:{},resources:[]}' \
+            >"$RUNNER_TEMP/empty-state.json"
+
+          terraform -chdir="$probe_root" init -input=false -reconfigure \
+            -backend-config="bucket=$TF_BACKEND_BUCKET" \
+            -backend-config="key=$state_key" \
+            -backend-config="region=auto" \
+            -backend-config="endpoints={s3=\"$TF_BACKEND_ENDPOINT\"}" \
+            -backend-config="use_lockfile=true" >/dev/null
+          terraform -chdir="$probe_root" state push "$RUNNER_TEMP/empty-state.json" >/dev/null 2>&1
+          state_written=true
+          terraform -chdir="$probe_root" state pull >"$RUNNER_TEMP/state-readback.json"
+          jq -e --arg lineage "$state_id" '.lineage == $lineage and .resources == []' \
+            "$RUNNER_TEMP/state-readback.json" >/dev/null
+          state_readback=true
+
+          terraform -chdir="$probe_root" plan -input=false \
+            -lock-timeout=60s -out="$RUNNER_TEMP/first.tfplan" \
+            >"$RUNNER_TEMP/first-plan.log" 2>&1 &
+          first_pid=$!
+
+          lock_observed=false
+          for _ in $(seq 1 30); do
+            if aws s3api head-object --bucket "$TF_BACKEND_BUCKET" --key "$lock_key" \
+              --endpoint-url "$TF_BACKEND_ENDPOINT" >/dev/null 2>&1; then
+              lock_observed=true
+              break
+            fi
+            kill -0 "$first_pid" 2>/dev/null || break
+            sleep 1
+          done
+          [[ "$lock_observed" == true ]] || {
+            echo '::error::Terraform did not create the native R2 lock object while planning.'
+            exit 1
+          }
+
+          set +e
+          terraform -chdir="$probe_root" plan -input=false \
+            -lock-timeout=2s -out="$RUNNER_TEMP/second.tfplan" \
+            >"$RUNNER_TEMP/second-plan.log" 2>&1
+          second_status=$?
+          set -e
+          if (( second_status == 0 )) || ! grep -Fq 'Error acquiring the state lock' "$RUNNER_TEMP/second-plan.log"; then
+            echo '::error::Concurrent Terraform plan did not fail safely on the held R2 lock.'
+            exit 1
+          fi
+          contention_rejected=true
+
+          set +e
+          wait "$first_pid"
+          first_status=$?
+          set -e
+          first_pid=""
+          [[ "$first_status" == 0 ]] || {
+            echo '::error::Lock-holding Terraform plan failed.'
+            exit 1
+          }
+          if aws s3api head-object --bucket "$TF_BACKEND_BUCKET" --key "$lock_key" \
+            --endpoint-url "$TF_BACKEND_ENDPOINT" >/dev/null 2>&1; then
+            echo '::error::Terraform left its native R2 lock object after normal completion.'
+            exit 1
+          fi
+          terraform_released_lock=true
+
+          if [[ -e "$probe_root/terraform.tfstate" ]]; then
+            echo '::error::Terraform unexpectedly created local state alongside remote R2 state.'
+            exit 1
+          fi
+
+      - name: Upload secret-free lock receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: issue-1721-r2-lock-receipt-${{ github.run_id }}
+          path: ${{ runner.temp }}/i1721-r2-lock-receipt.json
+          retention-days: 30
+          if-no-files-found: warn
+
   plan:
     name: read-only Cloudflare staging plan
     # This plan holds repository-scoped Cloudflare secrets. It therefore runs
