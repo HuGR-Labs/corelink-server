@@ -9,10 +9,9 @@
 //   - `Capabilities.GetCapabilities`                (WI-S01-005)
 //
 // `ByteStream::Read` (large-blob streaming) lives in WI-S02-001 in the
-// vendored `google/bytestream/bytestream.proto`. All other RPCs (`GetTree`,
-// `SplitBlob`, `SpliceBlob`, `Execution`, `ActionCache`) are intentionally
-// OMITTED from this vendored subset; they are out-of-scope and live in their
-// respective sprints (S-04 AC, S-05 multipart, S-08 execution).
+// vendored `google/bytestream/bytestream.proto`. ActionCache is included for
+// the cache-only #2182 contract. Other RPCs (`GetTree`, `SplitBlob`,
+// `SpliceBlob`, and `Execution`) remain out of scope.
 //
 // FIELD TAGS + MESSAGE NAMES MATCH UPSTREAM byte-for-byte for every message
 // included here. Wire-compat with `bazelbuild/remote-apis @ v2.12.0` clients
@@ -36,6 +35,8 @@ syntax = "proto3";
 package build.bazel.remote.execution.v2;
 
 import "build/bazel/semver/semver.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 
 option csharp_namespace = "Build.Bazel.Remote.Execution.V2";
@@ -99,6 +100,13 @@ service ContentAddressableStorage {
   rpc BatchReadBlobs(BatchReadBlobsRequest) returns (BatchReadBlobsResponse);
 }
 
+// The Action Cache maps an action digest to its complete result. CoreLink
+// exposes only the cache operations and does not expose remote execution.
+service ActionCache {
+  rpc GetActionResult(GetActionResultRequest) returns (ActionResult);
+  rpc UpdateActionResult(UpdateActionResultRequest) returns (ActionResult);
+}
+
 // ===========================================================================
 // Capabilities service.
 // ===========================================================================
@@ -127,6 +135,72 @@ message Digest {
 
   // The size of the blob, in bytes.
   int64 size_bytes = 2;
+}
+
+// A request for an Action Cache entry.
+message GetActionResultRequest {
+  string instance_name = 1;
+  Digest action_digest = 2;
+  bool inline_stdout = 3;
+  bool inline_stderr = 4;
+}
+
+// A request to store an immutable Action Cache entry.
+message UpdateActionResultRequest {
+  string instance_name = 1;
+  Digest action_digest = 2;
+  ActionResult action_result = 3;
+}
+
+// Complete upstream ActionResult wire shape required for Buck2 cache reuse.
+// CoreLink preserves every field as one opaque protobuf payload after strict
+// validation of the nested digest-bearing fields.
+message ActionResult {
+  reserved 1;
+  repeated OutputFile output_files = 2;
+  repeated OutputDirectory output_directories = 3;
+  int32 exit_code = 4;
+  bytes stdout_raw = 5;
+  Digest stdout_digest = 6;
+  bytes stderr_raw = 7;
+  Digest stderr_digest = 8;
+  ExecutedActionMetadata execution_metadata = 9;
+  repeated OutputSymlink output_file_symlinks = 10;
+  repeated OutputSymlink output_directory_symlinks = 11;
+  repeated OutputSymlink output_symlinks = 12;
+}
+
+message OutputFile {
+  string path = 1;
+  Digest digest = 2;
+  bool is_executable = 4;
+  bytes contents = 5;
+}
+
+message OutputDirectory {
+  string path = 1;
+  Digest tree_digest = 3;
+  bool is_topologically_sorted = 4;
+  Digest root_directory_digest = 5;
+}
+
+message OutputSymlink {
+  string path = 1;
+  string target = 2;
+}
+
+message ExecutedActionMetadata {
+  google.protobuf.Timestamp worker_start_timestamp = 1;
+  google.protobuf.Timestamp worker_completed_timestamp = 2;
+  google.protobuf.Timestamp input_fetch_start_timestamp = 3;
+  google.protobuf.Timestamp input_fetch_completed_timestamp = 4;
+  google.protobuf.Timestamp execution_start_timestamp = 5;
+  google.protobuf.Timestamp execution_completed_timestamp = 6;
+  google.protobuf.Timestamp output_upload_start_timestamp = 7;
+  google.protobuf.Timestamp output_upload_completed_timestamp = 8;
+  string worker = 9;
+  repeated google.protobuf.Any auxiliary_metadata = 10;
+  google.protobuf.Timestamp queued_timestamp = 11;
 }
 
 // A request message for `ContentAddressableStorage.BatchUpdateBlobs`.

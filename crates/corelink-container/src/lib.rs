@@ -187,6 +187,8 @@ pub mod public_flags;
 pub mod quota_error;
 /// Authenticated, tenant-scoped ingress kernel for future REAPI gRPC services.
 pub mod reapi_ingress;
+/// Unmounted REAPI ActionCache and cache-only Capabilities services.
+pub mod reapi_action_cache;
 pub mod request_count;
 pub mod routes;
 /// Cache-scope enforcement helper + extractor.
