@@ -42,6 +42,9 @@ Each entry cross-references:
 - **Docs a11y contract aligned.** Route-availability test now checks fail-closed
   behavior without depending on `throw` formatting.
 
+- **Hosted Python CI contract aligned.** Runtime contract now permits its
+  documented 30-minute timeout for full-suite execution.
+
 - **B-139 secrets-drift workflow digest refreshed.** Structural trust-boundary
   pin now matches current reviewed workflow.
 
