@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import tomllib
 from pathlib import Path
@@ -19,6 +20,40 @@ ROOT = Path(__file__).resolve().parents[1]
 WRANGLER = ROOT / "wrangler.toml"
 BUDGET = ROOT / "config/capacity/regional-vcpu-budget.json"
 KNOWN_VCPU = {"basic": 0.25}
+PROVIDER_RECEIPT_SCHEMA = "corelink.issue-2044.capacity-read-only.v1"
+PROVIDER_RECEIPT_ISSUE = 2044
+PROVIDER_RECEIPT_ENDPOINT = "GET /accounts/{account}/cloudchamber/me"
+REQUIRED_RECEIPT_KEYS = frozenset(
+    {
+        "schema_version",
+        "schema",
+        "issue",
+        "read_only",
+        "endpoint",
+        "quota",
+        "usage",
+        "concurrency",
+    }
+)
+# The #2044 probe emits these metadata fields. They are intentionally optional
+# here because regional arithmetic does not consume them, but no other receipt
+# member may extend this contract without review.
+OPTIONAL_RECEIPT_METADATA_KEYS = frozenset(
+    {"captured_at", "account_id_redacted", "provider_api_version"}
+)
+REQUIRED_QUOTA_KEYS = frozenset(
+    {
+        "total_vcpu",
+        "vcpu_per_deployment",
+        "memory_mib_per_deployment",
+        "total_memory_mib",
+    }
+)
+UNAVAILABLE_MEASUREMENT = {
+    "status": "unavailable",
+    "source": PROVIDER_RECEIPT_ENDPOINT,
+    "reason": "provider has not established a documented account measurement path",
+}
 
 
 class CapacityError(ValueError):
@@ -89,17 +124,42 @@ def declared_budget() -> dict[str, object]:
             "environments": actual}
 
 
+def positive_finite_number(source: dict[str, object], field: str) -> float:
+    value = source.get(field)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise CapacityError(f"provider quota field missing or invalid: {field}")
+    if not math.isfinite(value) or value <= 0:
+        raise CapacityError(f"provider quota field missing or invalid: {field}")
+    return float(value)
+
+
 def verify_provider(path: Path, model: dict[str, object]) -> None:
     evidence = read_json(path)
-    if evidence.get("schema_version") != 1 or evidence.get("read_only") is not True:
-        raise CapacityError("provider evidence must be schema 1 and read_only=true")
-    if evidence.get("total_vcpu") != model["account_limit_vcpu"]:
+    if not REQUIRED_RECEIPT_KEYS.issubset(evidence) or not set(evidence).issubset(
+        REQUIRED_RECEIPT_KEYS | OPTIONAL_RECEIPT_METADATA_KEYS
+    ):
+        raise CapacityError("provider receipt keys do not match the Cloudchamber read-only contract")
+    if (
+        evidence.get("schema_version") != 1
+        or evidence.get("schema") != PROVIDER_RECEIPT_SCHEMA
+        or evidence.get("issue") != PROVIDER_RECEIPT_ISSUE
+        or evidence.get("read_only") is not True
+        or evidence.get("endpoint") != PROVIDER_RECEIPT_ENDPOINT
+    ):
+        raise CapacityError("provider evidence does not match the Cloudchamber read-only receipt contract")
+    quota = evidence.get("quota")
+    if not isinstance(quota, dict):
+        raise CapacityError("provider quota is missing or invalid")
+    if set(quota) != REQUIRED_QUOTA_KEYS:
+        raise CapacityError("provider quota keys do not match the Cloudchamber read-only contract")
+    if evidence.get("usage") != UNAVAILABLE_MEASUREMENT or evidence.get("concurrency") != UNAVAILABLE_MEASUREMENT:
+        raise CapacityError("provider receipt must keep unsupported usage and concurrency unavailable")
+    total_vcpu = positive_finite_number(quota, "total_vcpu")
+    if total_vcpu != model["account_limit_vcpu"]:
         raise CapacityError("provider total_vcpu does not match the budget model")
     for key in ("vcpu_per_deployment", "total_memory_mib"):
-        value = evidence.get(key)
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-            raise CapacityError(f"provider field missing or invalid: {key}")
-    if evidence["vcpu_per_deployment"] != model["runner_vcpu_per_instance"]:
+        positive_finite_number(quota, key)
+    if positive_finite_number(quota, "vcpu_per_deployment") != model["runner_vcpu_per_instance"]:
         raise CapacityError("provider vcpu_per_deployment does not match the runner contract")
 
 

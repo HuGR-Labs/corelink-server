@@ -14,7 +14,9 @@
   "expected_reservation_vcpu": 1250,
   "provider_readback": {
     "status": "unverified",
-    "endpoint": "GET /accounts/{account}/containers/me",
-    "required_fields": ["total_vcpu", "vcpu_per_deployment", "total_memory_mib"]
+    "schema": "corelink.issue-2044.capacity-read-only.v1",
+    "endpoint": "GET /accounts/{account}/cloudchamber/me",
+    "required_fields": ["quota.total_vcpu", "quota.vcpu_per_deployment", "quota.total_memory_mib"],
+    "unsupported_measurements": ["usage", "concurrency"]
   }
 }
