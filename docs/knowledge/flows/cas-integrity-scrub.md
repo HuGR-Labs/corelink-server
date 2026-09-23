@@ -58,4 +58,4 @@ Verification moves from "on every read" to "whenever the scrubber last reached t
 8. `crates/corelink-container/src/storage/r2_s3_parts/cas_helpers.rs:188-215` — shared `verify_content_hash` implementation called by both the durable read handler and the scrubber.
 9. `crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:198-220` — read path decrypts first, then verifies plaintext before serving; a mismatch is recorded and rejected.
 10. `crates/corelink-container/src/storage/r2_s3_parts/cas_byok_body.rs:40-68` — BYOK decrypt is fail-closed and returns plaintext to the hash check.
-11. `crates/corelink-container/src/storage/byok_cas/part-01.rs:554-570` — `engagement_for`, the shared read/write engagement decision the scrubber classifies through.
+11. `crates/corelink-container/src/storage/byok_cas/part-01.rs:556-556` — `engagement_for`, the shared read/write engagement decision the scrubber classifies through.
