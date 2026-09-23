@@ -9,6 +9,7 @@ from pathlib import Path
 
 CANONICAL_TARGET = "https://staging.corelink.humangr.com"
 WORKFLOW = Path(".github/workflows/endurance-2h-nightly.yml")
+SCENARIO = Path("tests/load/k6/scenarios/endurance-24h.js")
 PROTECTED_DISPATCH = (
     "github.repository == 'HuGR-dev/corelink-server' && "
     "github.event_name == 'workflow_dispatch' && "
@@ -26,6 +27,19 @@ def verify_workflow(text: str) -> list[str]:
         errors.append("workflow_dispatch trigger is missing")
     if text.count(PROTECTED_DISPATCH) != 2:
         errors.append("measurement and baseline jobs must require a protected canonical dispatch")
+    if "    environment: staging" not in text:
+        errors.append("the measurement job must use the protected staging environment")
+    if "run-bounded-endurance" not in text:
+        errors.append("the operator confirmation phrase is missing")
+    if text.count("persist-credentials: false") != 2:
+        errors.append("both checkouts must prevent GitHub credentials from persisting")
+    for job_name in ("endurance-2h", "baseline-drift-check"):
+        boundary = re.search(
+            rf"(?ms)^  {re.escape(job_name)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            text,
+        )
+        if boundary is None or re.search(r"(?m)^    runs-on:\s*ubuntu-24\.04\s*$", boundary.group("body")) is None:
+            errors.append(f"{job_name} must use GitHub-hosted ubuntu-24.04")
     if re.search(r"^\s+schedule:", text, re.MULTILINE):
         errors.append("schedule trigger would make the lane unattended")
     if "CANONICAL_TARGET='https://staging.corelink.humangr.com'" not in text:
@@ -36,8 +50,15 @@ def verify_workflow(text: str) -> list[str]:
         errors.append("runtime does not consume the checked target output")
     if "K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}" not in text:
         errors.append("preflight does not read the environment secret")
+    for secret in ("K6_TARGET_IDENTITY_RECEIPT", "K6_STAGING_PAT", "K6_STAGING_TEARDOWN_TOKEN"):
+        if f"{secret}: ${{{{ secrets.{secret} }}}}" not in text:
+            errors.append(f"preflight does not bind required staging secret {secret}")
+    if "scripts/validate_load_target_receipt.py" not in text:
+        errors.append("preflight does not validate the owner-issued staging identity receipt")
     if "VUS:                        '50'" not in text:
         errors.append("runtime population is not pinned to 50 VUs")
+    if "K6_RUN_ID:                  ${{ github.run_id }}" not in text:
+        errors.append("runtime does not receive the exact GitHub run id")
     if '"vus": int(os.environ["VUS"])' not in text:
         errors.append("receipt does not bind the effective VU population")
     timeout = re.search(r"timeout-minutes:\s*(\d+)", text)
@@ -66,6 +87,27 @@ def verify_workflow(text: str) -> list[str]:
     ):
         if marker not in text:
             errors.append(f"lifecycle marker missing: {marker}")
+    if "id: teardown" not in text or "if: always() && steps.target_host.outcome == 'success'" not in text:
+        errors.append("run-scoped teardown must run after any load outcome once target identity is accepted")
+    teardown = text.split("- name: teardown synthetic staging state", 1)[-1].split("- name: write receipt and teardown checkpoint", 1)[0]
+    if (
+        "continue-on-error: true" in teardown
+        or "K6_STAGING_TEARDOWN_TOKEN is required" not in teardown
+        or "timeout 30s curl --fail --silent --show-error --location" not in teardown
+    ):
+        errors.append("failed or unconfigured cleanup must fail the lane")
+    if "payload=$(printf '{\"run_id\":\"%s\",\"scenario\":\"endurance-2h\"}' \"${GITHUB_RUN_ID}\")" not in text:
+        errors.append("teardown must identify exactly this run and the endurance scenario")
+    if '"teardown_status": os.environ["TEARDOWN_STATUS"]' not in text:
+        errors.append("receipt must record the teardown outcome")
+    if '"teardown_deletion_proven": False' not in text:
+        errors.append("receipt must not claim server-side deletion without an exact cleanup receipt")
+    if text.find("- name: teardown synthetic staging state") > text.find("- name: write receipt and teardown checkpoint"):
+        errors.append("receipt must be written after the teardown attempt")
+    if 'test "${CONFIRM}" = "run-bounded-endurance"' not in text:
+        errors.append("dispatch must require the exact bounded endurance confirmation")
+    if 'test "${DURATION}" = \'2h\'' not in text:
+        errors.append("the dispatch duration must be fixed at two hours")
     if "sha256sum" not in text:
         errors.append("artifact digest is missing")
     if "K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}" in text and "k6 run" in text:
@@ -79,12 +121,32 @@ def verify_workflow(text: str) -> list[str]:
     return errors
 
 
+def verify_scenario(text: str) -> list[str]:
+    """Require run-scoped mutation IDs so teardown cannot sweep other runs."""
+    errors: list[str] = []
+    for marker in (
+        "const RUN_ID = __ENV.K6_RUN_ID || '';",
+        "if (!/^\\d{1,20}$/.test(RUN_ID))",
+        "'x-corelink-load-test-run-id': RUN_ID",
+        "_run_${RUN_ID}_endurance_",
+        "evt_load_endurance_${RUN_ID}_${idx}",
+    ):
+        if marker not in text:
+            errors.append(f"scenario run-scope marker missing: {marker}")
+    if "evt_load_endurance_${idx}" in text:
+        errors.append("webhook event ids must be unique to the current run")
+    if "${tenant.tenant_id}_endurance_${idx}_" in text:
+        errors.append("CAS writes must be namespaced to the current run")
+    return errors
+
+
 def verify_path(root: Path = Path(".")) -> None:
     try:
         text = (root / WORKFLOW).read_text(encoding="utf-8")
+        scenario = (root / SCENARIO).read_text(encoding="utf-8")
     except OSError as exc:
-        raise LaneContractError(f"workflow is unreadable: {exc}") from exc
-    errors = verify_workflow(text)
+        raise LaneContractError(f"lane input is unreadable: {exc}") from exc
+    errors = verify_workflow(text) + verify_scenario(scenario)
     if errors:
         raise LaneContractError("; ".join(errors))
 
