@@ -648,7 +648,7 @@ jobs:
           set -euo pipefail
           # This runs only the credentialless behavior and adversarial tests.
           # The staging load job is a separate protected workflow_dispatch.
-          python3 -m unittest -v scripts.test_b103_cargo_write_contract \
+          python3 -m unittest -v scripts.test_b103_cargo_write_contract scripts.test_b103_tenant_binding \
             2>&1 | tee artifacts/campaign-ci/i1659-dry.log
 
       - name: i1809 B-063 archive replay and route checks
