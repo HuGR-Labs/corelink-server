@@ -30,14 +30,9 @@ concurrency:
 
 jobs:
   dashboard-validation:
-    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
-    # stdlib-only python3 validator; the step comment below already
-    # documents it was written to be fleet-safe.
-    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
-    # check costs a full paid minute every run; on the fleet it costs $0.
-    # Verified running natively on the fleet host (macOS/BSD userland).
-    # zero-hosted (WP-CI): python3 puro (baked na imagem da frota)
-    runs-on: corelink
+    # Runner: GitHub-hosted ubuntu-latest (wave 3 migration from corelink fabric).
+    # stdlib-only python3 validator; sub-minute check.
+    runs-on: ubuntu-latest
     # Bound the job (CI cost diet 2026-08-01): a self-hosted job with no
     # timeout inherits GitHub's 360-min default, so one wedged run can hold
     # 1 of the 4 `corelink-builder` runners for 6h and stall
@@ -47,6 +42,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
 
       # No actions/setup-python: the self-hosted mac fleet can't reliably
       # provision Python via setup-python (RUNNER_TOOL_CACHE is unset → it
