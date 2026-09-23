@@ -9,10 +9,8 @@ name: file-size ratchet (god files, B-126)
 # blobs. This prevents a PR from replacing its own validator or baseline.
 # A push lane covers direct commits to main as well as the PR path.
 #
-# Runner: GitHub-hosted ubuntu-latest (wave 3 migration from corelink fabric).
-# stdlib python3 + git; read-only file size validation.
-# Previously ran on `corelink` self-hosted fleet (zero-hosted-spend mandate).
-# Hosted billing now unblocked for this sub-minute check.
+# Runner: GitHub-hosted ubuntu-24.04 (wave 3 migration from corelink fabric).
+# Uses stdlib python3 + git for read-only file-size validation.
 
 on:
   pull_request_target:
@@ -34,7 +32,7 @@ concurrency:
 jobs:
   ratchet:
     name: no file grows past the god-file baseline
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout # nosemgrep: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout # reason: PR blobs inspected as data only; ADR-0101
