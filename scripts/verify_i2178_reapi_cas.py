@@ -21,7 +21,7 @@ def violations(service: str, ingress: str) -> list[str]:
         "async fn find_missing_blobs",
         "async fn batch_read_blobs",
         "async fn batch_update_blobs",
-        "self.ingress\n            .authorize",
+        ".ingress\n            .authorize",
         "Access::Read",
         "Access::Write",
         ".cas_read(",
