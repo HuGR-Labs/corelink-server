@@ -27,6 +27,9 @@ Each entry cross-references:
 - **B-171/B-173 closure guards follow split storage sources.** Production call
   wiring, strict derivation, and OCI byte reaping remain mutation-checked.
 
+- **B-225 contract guard follows split async OCI upload source.** Size-limit
+  checks now inspect active `append_chunk` implementation and mutation teeth.
+
 - **B-139 secrets-drift workflow digest refreshed.** Structural trust-boundary
   pin now matches current reviewed workflow.
 

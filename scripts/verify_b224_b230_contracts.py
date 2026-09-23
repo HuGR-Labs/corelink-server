@@ -206,9 +206,16 @@ def _rust_function(tokens: list[tuple[str, str]], name: str, lane: str) -> list[
 
     values = _token_values(tokens)
     start = next(
-        (index for index in range(len(values) - 2) if values[index : index + 3] == ["fn", name, "("]),
+        (
+            index
+            for index in range(len(values) - 3)
+            if values[index : index + 3] == ["fn", name, "("]
+            or values[index : index + 4] == ["async", "fn", name, "("]
+        ),
         None,
     )
+    if start is not None and values[start] == "async":
+        start += 1
     if start is None:
         raise ContractError(f"{lane}: active function signature missing: {name}")
     opening = next((index for index in range(start + 3, len(values)) if values[index] == "{"), None)
@@ -276,6 +283,9 @@ def check_b225(root: Path) -> None:
     impl_02_tokens = _rust_tokens(
         _read(root, "crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs"), lane
     )
+    impl_01_part2_tokens = _rust_tokens(
+        _read(root, "crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs"), lane
+    )
     _require_sequence(impl_01_tokens, ("max_blob_size_bytes", ":", "u64"), lane, "max_blob_size_bytes: u64")
     _require_sequence(impl_01_tokens, ("fn", "with_allowlist_and_blob_limit", "("), lane, "blob-limit constructor")
     _require_sequence(
@@ -316,7 +326,7 @@ def check_b225(root: Path) -> None:
         raise ContractError(f"{lane}: tenant in-flight cap must remain below the global cap")
     if _has_sequence(impl_01_tokens, ("OCI_MAX_UPLOAD_BYTES_PER_SESSION",)):
         raise ContractError(f"{lane}: fixed 64 MiB session cap must not remain")
-    body = _rust_function(impl_01_tokens, "append_chunk", lane)
+    body = _rust_function(impl_01_part2_tokens, "append_chunk", lane)
     for sequence, label in (
         (("current_len",), "current session length"),
         (("checked_add", "(", "chunk_len", ")"), "checked length addition"),
@@ -432,11 +442,11 @@ def self_test(root: Path = ROOT) -> None:
     mutations = {
         "B-224": (("marker-removal", "crates/corelink-adapter-host/src/npm/upstream.rs", "pub const NPM_METADATA_MAX_RESPONSE_BYTES: usize", "pub const REMOVED_METADATA_CAP: usize", None),),
         "B-225": (
-            ("removal", "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs", "if next_len > self.max_blob_size_bytes", "if next_len > u64::MAX", None),
-            ("comment-bait", "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs", "if next_len > self.max_blob_size_bytes {", "if false { // if next_len > self.max_blob_size_bytes", None),
-            ("string-bait", "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs", "if next_len > self.max_blob_size_bytes {", "if false { let b225_bait = \"if next_len > self.max_blob_size_bytes\";", None),
-            ("no-op-guard", "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs", "if next_len > self.max_blob_size_bytes {", "if next_len > self.max_blob_size_bytes && false {", None),
-            ("wrong-fragment", "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs", "if next_len > self.max_blob_size_bytes {", "if next_len > u64::MAX {", ("crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs", "\nstruct B225WrongFragmentDecoy { max_blob_size_bytes: u64 }\nimpl B225WrongFragmentDecoy {\n    fn check(&self, next_len: u64) {\n        if next_len > self.max_blob_size_bytes { }\n    }\n}\n")),
+            ("removal", "crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs", "if next_len > self.max_blob_size_bytes", "if next_len > u64::MAX", None),
+            ("comment-bait", "crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs", "if next_len > self.max_blob_size_bytes {", "if false { // if next_len > self.max_blob_size_bytes", None),
+            ("string-bait", "crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs", "if next_len > self.max_blob_size_bytes {", "if false { let b225_bait = \"if next_len > self.max_blob_size_bytes\";", None),
+            ("no-op-guard", "crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs", "if next_len > self.max_blob_size_bytes {", "if next_len > self.max_blob_size_bytes && false {", None),
+            ("wrong-fragment", "crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs", "if next_len > self.max_blob_size_bytes {", "if next_len > u64::MAX {", ("crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs", "\nstruct B225WrongFragmentDecoy { max_blob_size_bytes: u64 }\nimpl B225WrongFragmentDecoy {\n    fn check(&self, next_len: u64) {\n        if next_len > self.max_blob_size_bytes { }\n    }\n}\n")),
         ),
         "B-226": ((
             "channel-removal",
@@ -468,6 +478,7 @@ def self_test(root: Path = ROOT) -> None:
                     for dependency in (
                         "crates/corelink-container/src/routes/oci.rs",
                         "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs",
+                        "crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs",
                         "crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs",
                         "crates/corelink-adapter-host/src/oci/push/upload.rs",
                     ):
