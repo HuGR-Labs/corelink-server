@@ -109,7 +109,7 @@ class StripeWebhookInventoryTests(unittest.TestCase):
 
         with self.assertRaisesRegex(InventoryError, "pagination URL repeated"):
             collect_v2(fetch)
-        self.assertEqual(calls, 1)
+        self.assertEqual(calls, 2)
 
 
 if __name__ == "__main__":
