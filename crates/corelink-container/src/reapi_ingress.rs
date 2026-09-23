@@ -224,9 +224,7 @@ impl AdmittedIngress {
         )
         .with_storage_quota_bytes(Some(storage_cap))
         .with_algo(DigestAlgo::Sha256);
-        self.cas_write
-            .write(request)
-            .map_err(cas_error_status)
+        self.cas_write.write(request).map_err(cas_error_status)
     }
 
     /// Look up a tenant-scoped ActionCache entry through the shared handler.
