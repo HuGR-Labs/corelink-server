@@ -24,6 +24,9 @@ Each entry cross-references:
 
 ### Fixed
 
+- **B-171/B-173 closure guards follow split storage sources.** Production call
+  wiring, strict derivation, and OCI byte reaping remain mutation-checked.
+
 - **B-139 secrets-drift workflow digest refreshed.** Structural trust-boundary
   pin now matches current reviewed workflow.
 

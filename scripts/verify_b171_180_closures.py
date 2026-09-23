@@ -29,7 +29,7 @@ _MAX_LEX_TOKENS = 100_000
 CONTRACTS: dict[str, tuple[str, tuple[str, ...], str]] = {
     "B-171": (
         "crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs",
-        (r"tenant_prefix\(self\.tdk\.as_ref\(\),\s*tenant\)\?", r"R2S3Client::blob_key", r"derive_tenant_prefix_strict"),
+        (r"tenant_prefix\(self\.tdk\.as_ref\(\),\s*tenant\)\?", r"R2S3Client::blob_key"),
         "tenant_prefix(self.tdk.as_ref(), tenant)?",
     ),
     "B-172": (
@@ -38,7 +38,7 @@ CONTRACTS: dict[str, tuple[str, tuple[str, ...], str]] = {
         "to_bytes(body, MAX_MANIFEST_BYTES)",
     ),
     "B-173": (
-        "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs",
+        "crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs",
         (r"OCI_MAX_OPEN_SESSIONS_PER_TENANT", r"OCI_MAX_INFLIGHT_BYTES", r"OCI_MAX_INFLIGHT_BYTES_PER_TENANT", r"last_active_ms", r"inflight_bytes", r"reap"),
         "self.inflight_bytes.fetch_sub",
     ),
@@ -48,7 +48,7 @@ CONTRACTS: dict[str, tuple[str, tuple[str, ...], str]] = {
         'run --file "$TMP_SQL" >/dev/null',
     ),
     "B-175": (
-        "worker/src/index_special_routes.ts",
+        "worker/src/index_special_passthrough.ts",
         (r"const ociTenant = ociRoutingTenantId\(request\)", r"resolveTenantResidency\(env\.CONFIG_DB, ociTenant", r"h\.set\(\"x-corelink-primary-region\", primaryRegion\)", r"regionalBinding\.fetch"),
         "const ociTenant = ociRoutingTenantId(request);",
     ),
@@ -84,6 +84,10 @@ EXTRA_ARTIFACTS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
         (
             "crates/corelink-container/src/storage/r2_kv.rs",
             (r"derive_prefix", r"self\.tdk\.as_ref\(\)\.ok_or_else\(non_derivable_tenant_err\)"),
+        ),
+        (
+            "crates/corelink-container/src/storage/r2_s3_parts/cas_helpers.rs",
+            (r"fn\s+derive_tenant_prefix_strict\s*\(", r'Err\("non-derivable tenant prefix'),
         ),
     ),
     "B-173": (
