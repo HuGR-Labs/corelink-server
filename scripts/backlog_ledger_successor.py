@@ -195,6 +195,25 @@ V0004_RECONCILIATION = {
     ),
 }
 
+# The B-028 historical-source split is a narrowly pinned correction to the
+# delivered v0004 state.  Its dated zero-alert observation becomes operational
+# closure evidence while the nine-alert pre-merge census remains the admitted
+# B-101 source.  The hashes bind the sole permitted complete-section change;
+# this is not a general exception for post-snapshot prose rewrites.
+V0005_B028_RECONCILIATION = {
+    "sequence": 5,
+    "previous_sequence": 4,
+    "base_commit": "3fa3129a0ea8329ef66800c7e59ea2ae3f51743f",
+    "previous_snapshot_sha256": "c5d058b355b538dabc05e52eb1dff280b8079bccf3e5799e1bf979955f19c9a0",
+    "previous_source_sha256": "4762b45c1740f5ece3af18ba3d29c395b6d8970078241f15267dd1a096f35247",
+    "source_sha256": "054fa91eb1d35902e30c05cec675223e9595fb86b5e3c0dd874031f48b878949",
+    "ledger_sha256": "e3d5347ec16f0454a98a3e10e59b210e008e0293f4c52482df07c11a720b93dd",
+    "b028_section_sha256": (
+        "5cc13985b1da9042f06f6f8045bb35cb36cf9e655f359b700470f0b80d15c1cb",
+        "5c3f70638eb4df20fd20d88f37e845512e0a17f48f60eabb31faa5db510c1c67",
+    ),
+}
+
 
 def install(api):
     REPO_ROOT = api.REPO_ROOT
@@ -650,6 +669,44 @@ def install(api):
             and expected[-1][3] == pinned["prior_source_sha256"]
         )
 
+    def _v0005_b028_reconciliation_authorized(
+        previous: dict[str, object] | None,
+        prior: dict[str, bytes],
+        current: dict[str, bytes],
+        receipt: dict[str, object],
+        sequence: int,
+    ) -> bool:
+        """Authorize only the byte-pinned B-028 source/receipt split."""
+        pinned = V0005_B028_RECONCILIATION
+        if (
+            previous is None
+            or sequence != pinned["sequence"]
+            or receipt.get("base_commit") != pinned["base_commit"]
+            or previous.get("sequence") != pinned["previous_sequence"]
+            or receipt.get("prior_snapshot_sha256")
+            != pinned["previous_snapshot_sha256"]
+            or previous.get("source_sha256") != pinned["previous_source_sha256"]
+            or receipt.get("changed_ids") != ["B-028"]
+            or _sha256(prior["BACKLOG.md"]) != pinned["previous_source_sha256"]
+            or _sha256(current["BACKLOG.md"]) != pinned["source_sha256"]
+            or _sha256(prior[LEDGER_RELATIVE.as_posix()]) != pinned["ledger_sha256"]
+            or current[LEDGER_RELATIVE.as_posix()] != prior[LEDGER_RELATIVE.as_posix()]
+        ):
+            return False
+        old_sections = _backlog_sections(prior["BACKLOG.md"])[2]
+        new_sections = _backlog_sections(current["BACKLOG.md"])[2]
+        return (
+            set(old_sections) == set(new_sections)
+            and _sha256(old_sections.get("B-028", b""))
+            == pinned["b028_section_sha256"][0]
+            and _sha256(new_sections.get("B-028", b""))
+            == pinned["b028_section_sha256"][1]
+            and all(
+                current[path.as_posix()] == prior[path.as_posix()]
+                for path in _catalog_relatives()
+            )
+        )
+
     def _backlog_sections(raw: bytes) -> tuple[bytes, list[str], dict[str, bytes]]:
         """Preserve each complete item section and all bytes before the first item."""
         headings = list(re.finditer(rb"(?m)^### B-[^\r\n]*", raw))
@@ -761,6 +818,9 @@ def install(api):
         v0004_reconciliation = previous is not None and _v0004_reconciliation_authorized(
             previous, prior, current, receipt, sequence,
         )
+        v0005_b028_reconciliation = _v0005_b028_reconciliation_authorized(
+            previous, prior, current, receipt, sequence,
+        )
         for item_id in changed:
             if item_id not in old_sections:
                 continue
@@ -770,6 +830,7 @@ def install(api):
                     v0004_reconciliation
                     and item_id in V0004_RECONCILIATION["changed_ids"]
                 )
+                or (v0005_b028_reconciliation and item_id == "B-028")
             ) and (
                 _normative_section(old_sections[item_id], item_id)
                 != _normative_section(new_sections[item_id], item_id)
@@ -805,6 +866,7 @@ def install(api):
             today or backlog_verify.dt.date.today(),
             allow_sprint3_rewrite=sprint3_rewrite,
             allow_b154_reconciliation=v0004_reconciliation,
+            allow_b028_reconciliation=v0005_b028_reconciliation,
             successor_mode=True,
         )
         if transition_errors:
@@ -1025,6 +1087,7 @@ def install(api):
         _v0004_ledger=_v0004_ledger,
         _git_state_bytes=_git_state_bytes,
         _v0004_history_authorized=_v0004_history_authorized,
+        _v0005_b028_reconciliation_authorized=_v0005_b028_reconciliation_authorized,
         _state_bytes=_state_bytes,
         _successor_paths=_successor_paths,
         load_successor_chain=load_successor_chain,

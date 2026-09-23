@@ -510,7 +510,7 @@ def check_candidate_controls(candidate_root: Path, trusted_root: Path, trusted_i
 def validate_candidate_transitions(
     candidate_items: list[Item], trusted_items: list[Item], today: dt.date,
     *, allow_sprint3_rewrite: bool = False, allow_b154_reconciliation: bool = False,
-    successor_mode: bool = False,
+    allow_b028_reconciliation: bool = False, successor_mode: bool = False,
 ) -> list[str]:
     """Validate the small, auditable set of BACKLOG changes a PR may make."""
     trusted_by_id = {item.id: item for item in trusted_items if item.raw}
@@ -574,7 +574,8 @@ def validate_candidate_transitions(
         if old_raw.get("verify-means") != new_raw.get("verify-means") and old_status == new_status:
             if not ((allow_sprint3_rewrite and item.id in {
                 "B-012", "B-065", "B-087", "B-089", "B-097", "B-154", "B-170",
-            }) or (allow_b154_reconciliation and item.id == "B-154")):
+            }) or (allow_b154_reconciliation and item.id == "B-154")
+                or (allow_b028_reconciliation and item.id == "B-028")):
                 errors.append(f"{item.id}: verify-means may change only with a status transition")
         try:
             old_date, new_date = parse_date(old_raw["last-verified"]), parse_date(new_raw["last-verified"])
