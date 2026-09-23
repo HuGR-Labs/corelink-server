@@ -26,7 +26,7 @@ def violations(service: str, ingress: str) -> list[str]:
         "Access::Write",
         ".cas_read(",
         ".cas_write(",
-        "DigestFunction::Sha256",
+        "digest_function::Value::Sha256",
         "MAX_BATCH_TOTAL_SIZE_BYTES",
         "MAX_CAS_BLOB_SIZE_BYTES",
         "MAX_FIND_MISSING_BATCH_SIZE",
@@ -66,7 +66,7 @@ def self_test() -> list[str]:
     mutations = (
         (service.replace(".cas_write(", ".write("), ingress, "decorated write bypass"),
         (service.replace("Access::Write", "Access::Read", 1), ingress, "write authorization bypass"),
-        (service.replace("DigestFunction::Sha256", "DigestFunction::Sha512", 1), ingress, "digest policy drift"),
+        (service.replace("digest_function::Value::Sha256", "digest_function::Value::Sha512", 1), ingress, "digest policy drift"),
         (service.replace("Code::NotFound, \"CAS object not found\"", "Code::PermissionDenied, \"CAS object not found\""), ingress, "cross-tenant disclosure"),
         (service + "\nRouter::new();", ingress, "public mount"),
     )

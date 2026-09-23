@@ -418,7 +418,9 @@ fn cas_digest(bytes: &[u8]) -> corelink_reapi::proto::reapi::Digest {
 async fn cas_unary_writes_use_the_decorated_sha256_handler_once() {
     use crate::reapi_cas::CasUnaryService;
     use corelink_reapi::proto::reapi::content_addressable_storage_server::ContentAddressableStorage;
-    use corelink_reapi::proto::reapi::{BatchUpdateBlobsRequest, DigestFunction};
+    use corelink_reapi::proto::reapi::{
+        batch_update_blobs_request, digest_function, BatchUpdateBlobsRequest,
+    };
 
     let bytes = b"CAS unary write".to_vec();
     let digest = cas_digest(&bytes);
@@ -432,12 +434,12 @@ async fn cas_unary_writes_use_the_decorated_sha256_handler_once() {
     );
     let mut request = tonic::Request::new(BatchUpdateBlobsRequest {
         instance_name: "tenant-a".into(),
-        requests: vec![BatchUpdateBlobsRequest::Request {
+        requests: vec![batch_update_blobs_request::Request {
             digest: Some(digest),
             data: bytes,
             compressor: 0,
         }],
-        digest_function: DigestFunction::Sha256 as i32,
+        digest_function: digest_function::Value::Sha256 as i32,
     });
     *request.metadata_mut() = cas_metadata();
 
@@ -462,7 +464,9 @@ async fn cas_unary_writes_use_the_decorated_sha256_handler_once() {
 async fn cas_unary_denials_and_invalid_entries_never_reach_storage() {
     use crate::reapi_cas::CasUnaryService;
     use corelink_reapi::proto::reapi::content_addressable_storage_server::ContentAddressableStorage;
-    use corelink_reapi::proto::reapi::{BatchUpdateBlobsRequest, DigestFunction};
+    use corelink_reapi::proto::reapi::{
+        batch_update_blobs_request, digest_function, BatchUpdateBlobsRequest,
+    };
 
     let bytes = b"denied".to_vec();
     let digest = cas_digest(&bytes);
@@ -476,12 +480,12 @@ async fn cas_unary_denials_and_invalid_entries_never_reach_storage() {
     );
     let mut denied = tonic::Request::new(BatchUpdateBlobsRequest {
         instance_name: "tenant-a".into(),
-        requests: vec![BatchUpdateBlobsRequest::Request {
+        requests: vec![batch_update_blobs_request::Request {
             digest: Some(digest.clone()),
             data: bytes.clone(),
             compressor: 0,
         }],
-        digest_function: DigestFunction::Sha256 as i32,
+        digest_function: digest_function::Value::Sha256 as i32,
     });
     *denied.metadata_mut() = cas_metadata();
     assert_eq!(
@@ -505,7 +509,7 @@ async fn cas_unary_denials_and_invalid_entries_never_reach_storage() {
     let mut invalid = tonic::Request::new(BatchUpdateBlobsRequest {
         instance_name: "tenant-a".into(),
         requests: vec![
-            BatchUpdateBlobsRequest::Request {
+            batch_update_blobs_request::Request {
                 digest: Some(corelink_reapi::proto::reapi::Digest {
                     hash: "0".repeat(64),
                     size_bytes: i64::try_from(bytes.len()).unwrap(),
@@ -513,18 +517,18 @@ async fn cas_unary_denials_and_invalid_entries_never_reach_storage() {
                 data: bytes.clone(),
                 compressor: 0,
             },
-            BatchUpdateBlobsRequest::Request {
+            batch_update_blobs_request::Request {
                 digest: Some(digest.clone()),
                 data: bytes.clone(),
                 compressor: 1,
             },
-            BatchUpdateBlobsRequest::Request {
+            batch_update_blobs_request::Request {
                 digest: Some(digest.clone()),
                 data: bytes,
                 compressor: 0,
             },
         ],
-        digest_function: DigestFunction::Sha256 as i32,
+        digest_function: digest_function::Value::Sha256 as i32,
     });
     *invalid.metadata_mut() = cas_metadata();
     let statuses = CasUnaryService::new(ingress)
@@ -544,7 +548,7 @@ async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults()
     use crate::reapi_cas::CasUnaryService;
     use corelink_reapi::proto::reapi::content_addressable_storage_server::ContentAddressableStorage;
     use corelink_reapi::proto::reapi::{
-        BatchReadBlobsRequest, DigestFunction, FindMissingBlobsRequest,
+        digest_function, BatchReadBlobsRequest, FindMissingBlobsRequest,
     };
 
     let digest = cas_digest(b"read");
@@ -558,7 +562,7 @@ async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults()
         instance_name: "tenant-a".into(),
         digests: vec![digest.clone()],
         acceptable_compressors: vec![0],
-        digest_function: DigestFunction::Sha256 as i32,
+        digest_function: digest_function::Value::Sha256 as i32,
     });
     *read.metadata_mut() = cas_metadata();
     let response = CasUnaryService::new(ingress.clone())
@@ -575,7 +579,7 @@ async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults()
     let mut missing = tonic::Request::new(FindMissingBlobsRequest {
         instance_name: "tenant-a".into(),
         blob_digests: vec![digest.clone()],
-        digest_function: DigestFunction::Sha256 as i32,
+        digest_function: digest_function::Value::Sha256 as i32,
     });
     *missing.metadata_mut() = cas_metadata();
     assert_eq!(
@@ -599,7 +603,7 @@ async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults()
         instance_name: "tenant-a".into(),
         digests: vec![digest.clone(), digest],
         acceptable_compressors: vec![0],
-        digest_function: DigestFunction::Sha256 as i32,
+        digest_function: digest_function::Value::Sha256 as i32,
     });
     *aggregate.metadata_mut() = cas_metadata();
     let aggregate = CasUnaryService::new(ingress)
@@ -626,7 +630,7 @@ async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults()
     let mut backend = tonic::Request::new(FindMissingBlobsRequest {
         instance_name: "tenant-a".into(),
         blob_digests: vec![cas_digest(b"read")],
-        digest_function: DigestFunction::Sha256 as i32,
+        digest_function: digest_function::Value::Sha256 as i32,
     });
     *backend.metadata_mut() = cas_metadata();
     assert_eq!(
@@ -643,7 +647,9 @@ async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults()
 async fn cas_unary_rejects_instance_quota_and_declared_size_limits_before_storage() {
     use crate::reapi_cas::CasUnaryService;
     use corelink_reapi::proto::reapi::content_addressable_storage_server::ContentAddressableStorage;
-    use corelink_reapi::proto::reapi::{BatchUpdateBlobsRequest, Digest, DigestFunction};
+    use corelink_reapi::proto::reapi::{
+        batch_update_blobs_request, digest_function, BatchUpdateBlobsRequest, Digest,
+    };
 
     let bytes = b"limits".to_vec();
     let digest = cas_digest(&bytes);
@@ -657,12 +663,12 @@ async fn cas_unary_rejects_instance_quota_and_declared_size_limits_before_storag
     );
     let mut quota = tonic::Request::new(BatchUpdateBlobsRequest {
         instance_name: "tenant-a".into(),
-        requests: vec![BatchUpdateBlobsRequest::Request {
+        requests: vec![batch_update_blobs_request::Request {
             digest: Some(digest.clone()),
             data: bytes.clone(),
             compressor: 0,
         }],
-        digest_function: DigestFunction::Sha256 as i32,
+        digest_function: digest_function::Value::Sha256 as i32,
     });
     *quota.metadata_mut() = cas_metadata();
     assert_eq!(
@@ -685,7 +691,7 @@ async fn cas_unary_rejects_instance_quota_and_declared_size_limits_before_storag
     );
     let mut invalid = tonic::Request::new(BatchUpdateBlobsRequest {
         instance_name: "tenant-b".into(),
-        requests: vec![BatchUpdateBlobsRequest::Request {
+        requests: vec![batch_update_blobs_request::Request {
             digest: Some(Digest {
                 hash: digest.hash,
                 size_bytes: corelink_reapi::MAX_CAS_BLOB_SIZE_BYTES + 1,
@@ -693,7 +699,7 @@ async fn cas_unary_rejects_instance_quota_and_declared_size_limits_before_storag
             data: bytes,
             compressor: 0,
         }],
-        digest_function: DigestFunction::Sha256 as i32,
+        digest_function: digest_function::Value::Sha256 as i32,
     });
     *invalid.metadata_mut() = cas_metadata();
     assert_eq!(
@@ -708,7 +714,7 @@ async fn cas_unary_rejects_instance_quota_and_declared_size_limits_before_storag
 
     let mut oversized = tonic::Request::new(BatchUpdateBlobsRequest {
         instance_name: "tenant-a".into(),
-        requests: vec![BatchUpdateBlobsRequest::Request {
+        requests: vec![batch_update_blobs_request::Request {
             digest: Some(Digest {
                 hash: cas_digest(b"limits").hash,
                 size_bytes: corelink_reapi::MAX_CAS_BLOB_SIZE_BYTES + 1,
@@ -716,7 +722,7 @@ async fn cas_unary_rejects_instance_quota_and_declared_size_limits_before_storag
             data: b"limits".to_vec(),
             compressor: 0,
         }],
-        digest_function: DigestFunction::Sha256 as i32,
+        digest_function: digest_function::Value::Sha256 as i32,
     });
     *oversized.metadata_mut() = cas_metadata();
     let responses = CasUnaryService::new(ingress)

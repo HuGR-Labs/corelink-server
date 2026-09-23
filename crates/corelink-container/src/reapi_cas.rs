@@ -12,9 +12,9 @@ use corelink_reapi::proto::reapi::content_addressable_storage_server::{
     ContentAddressableStorage, ContentAddressableStorageServer,
 };
 use corelink_reapi::proto::reapi::{
-    batch_read_blobs_response, batch_update_blobs_response, BatchReadBlobsRequest,
-    BatchReadBlobsResponse, BatchUpdateBlobsRequest, BatchUpdateBlobsResponse, Digest,
-    DigestFunction, FindMissingBlobsRequest, FindMissingBlobsResponse,
+    batch_read_blobs_response, batch_update_blobs_request, batch_update_blobs_response,
+    digest_function, BatchReadBlobsRequest, BatchReadBlobsResponse, BatchUpdateBlobsRequest,
+    BatchUpdateBlobsResponse, Digest, FindMissingBlobsRequest, FindMissingBlobsResponse,
 };
 use corelink_reapi::{
     MAX_BATCH_TOTAL_SIZE_BYTES, MAX_CAS_BLOB_SIZE_BYTES, MAX_FIND_MISSING_BATCH_SIZE,
@@ -150,8 +150,8 @@ impl ContentAddressableStorage for CasUnaryService {
     }
 }
 
-fn require_sha256(digest_function: i32) -> Result<(), Status> {
-    if digest_function == DigestFunction::Sha256 as i32 {
+fn require_sha256(declared_digest_function: i32) -> Result<(), Status> {
+    if declared_digest_function == digest_function::Value::Sha256 as i32 {
         Ok(())
     } else {
         Err(Status::new(
@@ -183,7 +183,9 @@ fn require_identity_acceptable(compressors: &[i32]) -> Result<(), Status> {
     }
 }
 
-fn require_update_batch_bytes(requests: &[BatchUpdateBlobsRequest::Request]) -> Result<(), Status> {
+fn require_update_batch_bytes(
+    requests: &[batch_update_blobs_request::Request],
+) -> Result<(), Status> {
     let total = requests.iter().try_fold(0_i64, |total, request| {
         let bytes = i64::try_from(request.data.len())
             .map_err(|_| Status::new(Code::ResourceExhausted, "REAPI batch is too large"))?;
@@ -223,7 +225,7 @@ fn validate_cas_digest(digest: &Digest) -> Result<(), Status> {
     }
 }
 
-fn duplicate_hashes(requests: &[BatchUpdateBlobsRequest::Request]) -> HashSet<String> {
+fn duplicate_hashes(requests: &[batch_update_blobs_request::Request]) -> HashSet<String> {
     let mut counts = HashMap::new();
     for request in requests {
         if let Some(digest) = &request.digest {
@@ -238,7 +240,7 @@ fn duplicate_hashes(requests: &[BatchUpdateBlobsRequest::Request]) -> HashSet<St
 
 async fn batch_update_entry(
     admitted: &AdmittedIngress,
-    entry: BatchUpdateBlobsRequest::Request,
+    entry: batch_update_blobs_request::Request,
     duplicate_hashes: &HashSet<String>,
 ) -> Status {
     if entry.compressor != IDENTITY_COMPRESSOR {
