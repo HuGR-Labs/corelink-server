@@ -20,13 +20,17 @@ invoke `wrangler`, and never changes provider state. It fails closed when a
 region is missing, has more than one container, changes class, uses an unknown
 instance type, or changes the reservation arithmetic.
 
-Provider mode accepts an operator captured JSON readback with
-`--provider-readback`. The evidence must be marked `read_only`, carry the
-account `total_vcpu`, match the declared `runner.vcpu_per_instance`, and
-include a positive `total_memory_mib` field. A missing, malformed, boolean, or
-mismatched readback is a failure. Until that readback exists, the verifier
-reports the repository declaration as `UNVERIFIED` and does not claim that
-Cloudflare's live quota or usage agrees.
+Provider mode accepts only the redacted #2044 Cloudchamber receipt emitted from
+`GET /accounts/{account}/cloudchamber/me` with `--provider-readback`. It
+requires its exact schema, issue, endpoint, `read_only` marker, and finite
+positive `quota.total_vcpu`, `quota.vcpu_per_deployment`, and
+`quota.total_memory_mib` aggregates. The quota must match the declared runner
+vCPU contract. The receipt must keep `usage` and `concurrency` explicitly
+`unavailable`; the endpoint establishes neither measurement. A missing,
+malformed, boolean, nonfinite, mismatched, or measurement-claiming readback is
+a failure. Until a protected GET produces that receipt, the verifier reports
+the repository declaration as `UNVERIFIED` and does not claim that Cloudflare's
+live quota or usage agrees.
 
 ## Done criteria
 
