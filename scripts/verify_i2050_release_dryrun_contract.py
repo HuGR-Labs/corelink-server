@@ -37,6 +37,10 @@ MINGW_W64_FORMULA_URL = (
     "00e77a1611f627f2ea8f876fad0468f2c4b3ed20/Formula/m/mingw-w64.rb"
 )
 MINGW_W64_FORMULA_SHA256 = "4b5f53d8ff341875f158092cbdcd5536ce3d6d5136de1672ecf687564dae07f9"
+BINUTILS_RESOURCE_URL = '    url "https://ftpmirror.gnu.org/binutils/binutils-2.47.tar.bz2"'
+BINUTILS_RESOURCE_MIRROR = '    mirror "https://ftp.gnu.org/gnu/binutils/binutils-2.47.tar.bz2"'
+BINUTILS_RESOURCE_SHA256 = '    sha256 "3068128c75cda9f898ccb4211d360246e8e195ffcc9dfb655b23ae23a54800e8"'
+BINUTILS_BUILD_DATE = "20260726"
 PINNED_FORMULA_TRUST = 'brew trust --formula "${MINGW_W64_TAP}/mingw-w64"'
 PINNED_FORMULA_INSTALL = 'brew install "${MINGW_W64_TAP}/mingw-w64"'
 DLLTOOL_PATH = "$(brew --prefix mingw-w64)/bin/x86_64-w64-mingw32-dlltool"
@@ -125,7 +129,8 @@ def _verify_dlltool_contract(text: str) -> None:
     for token in (
         "Install and verify pinned MinGW-w64 dlltool",
         "EXPECTED_MINGW_W64_VERSION=14.0.0_3",
-        "EXPECTED_DLLTOOL_VERSION='GNU dlltool (GNU Binutils) 2.47'",
+        "EXPECTED_BINUTILS_VERSION=2.47",
+        f"EXPECTED_BINUTILS_BUILD_DATE={BINUTILS_BUILD_DATE}",
         f"EXPECTED_MINGW_W64_FORMULA_SHA256={MINGW_W64_FORMULA_SHA256}",
         MINGW_W64_FORMULA_URL,
         'MINGW_W64_TAP=corelink/homebrew-mingw-w64',
@@ -133,15 +138,21 @@ def _verify_dlltool_contract(text: str) -> None:
         'test "$(git -C "${MINGW_W64_TAP_REPOSITORY}" rev-parse --is-inside-work-tree)" = true',
         'curl --fail --location --silent --show-error "${MINGW_W64_FORMULA_URL}" --output "${MINGW_W64_PINNED_FORMULA}"',
         "shasum -a 256 --check --status",
+        'BINUTILS_RESOURCE="$(awk',
+        BINUTILS_RESOURCE_URL,
+        BINUTILS_RESOURCE_MIRROR,
+        BINUTILS_RESOURCE_SHA256,
         'cp "${MINGW_W64_PINNED_FORMULA}" "${MINGW_W64_TAP_FORMULA}"',
         PINNED_FORMULA_TRUST,
         PINNED_FORMULA_INSTALL,
         'brew list --versions mingw-w64',
         DLLTOOL_PATH,
+        'EXPECTED_DLLTOOL_VERSION="GNU ${DLLTOOL_PATH} (GNU Binutils) ${EXPECTED_BINUTILS_VERSION}.${EXPECTED_BINUTILS_BUILD_DATE}"',
+        'printf \'DLLTOOL_PATH=%s\\nEXPECTED_DLLTOOL_VERSION=%s\\n\' "${DLLTOOL_PATH}" "${EXPECTED_DLLTOOL_VERSION}" >> "${GITHUB_ENV}"',
         '"${DLLTOOL_PATH}" --version | sed -n \'1p\'',
         'dirname "${DLLTOOL_PATH}" >> "${GITHUB_PATH}"',
-        "command -v x86_64-w64-mingw32-dlltool",
-        "x86_64-w64-mingw32-dlltool --version | sed -n '1p'",
+        'test "$(command -v x86_64-w64-mingw32-dlltool)" = "${DLLTOOL_PATH}"',
+        'test "$("${DLLTOOL_PATH}" --version | sed -n \'1p\')" = "${EXPECTED_DLLTOOL_VERSION}"',
     ):
         if token not in text:
             fail(f"pinned fail-closed Windows dlltool contract is missing: {token}")
@@ -162,6 +173,11 @@ def _dlltool_contract_mutation_self_test(text: str) -> None:
             "EXPECTED_MINGW_W64_VERSION=14.0.0_3",
             "EXPECTED_MINGW_W64_VERSION=14.0.0_2",
         ),
+        (f"EXPECTED_BINUTILS_BUILD_DATE={BINUTILS_BUILD_DATE}", "EXPECTED_BINUTILS_BUILD_DATE=20260725"),
+        (f"EXPECTED_BINUTILS_BUILD_DATE={BINUTILS_BUILD_DATE}", "EXPECTED_BINUTILS_BUILD_DATE=20260230"),
+        ("EXPECTED_BINUTILS_VERSION=2.47", "EXPECTED_BINUTILS_VERSION=2.48"),
+        (DLLTOOL_PATH, "$(brew --prefix mingw-w64)/lib/x86_64-w64-mingw32-dlltool"),
+        (BINUTILS_RESOURCE_SHA256, '    sha256 "0000000000000000000000000000000000000000000000000000000000000000"'),
         (MINGW_W64_FORMULA_URL, "https://example.invalid/mingw-w64.rb"),
         (
             PINNED_FORMULA_INSTALL,
@@ -173,8 +189,16 @@ def _dlltool_contract_mutation_self_test(text: str) -> None:
             "# dlltool version check removed",
         ),
         (
-            "command -v x86_64-w64-mingw32-dlltool",
-            "# Windows build-time dlltool probe removed",
+            'test "$(command -v x86_64-w64-mingw32-dlltool)" = "${DLLTOOL_PATH}"',
+            "# Windows build-time dlltool path probe removed",
+        ),
+        (
+            'EXPECTED_DLLTOOL_VERSION="GNU ${DLLTOOL_PATH} (GNU Binutils) ${EXPECTED_BINUTILS_VERSION}.${EXPECTED_BINUTILS_BUILD_DATE}"',
+            'EXPECTED_DLLTOOL_VERSION="GNU ${DLLTOOL_PATH} (GNU Binutils) 2.47.20260725"',
+        ),
+        (
+            'printf \'DLLTOOL_PATH=%s\\nEXPECTED_DLLTOOL_VERSION=%s\\n\' "${DLLTOOL_PATH}" "${EXPECTED_DLLTOOL_VERSION}" >> "${GITHUB_ENV}"',
+            "# step-local dlltool variables are not exported",
         ),
         (
             '            exit 1\n          fi\n          DLLTOOL_PATH=',
