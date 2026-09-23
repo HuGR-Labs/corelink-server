@@ -69,28 +69,32 @@ SPRINT3_FIELDS = {
     ),
 }
 
-# Byte-pinned v0003-to-v0004 bridge; its pre-state limits the dynamic BASE SHA.
+# Byte-pinned v0003-to-v0004 bridge.  The data successor is intentionally
+# constrained to a derivation of this exact BASE: its only variable is the
+# immutable event SHA inserted into the ledger state fence.
 V0004_RECONCILIATION = {
     "sequence": 4,
     "previous_sequence": 3,
     "previous_source_sha256": "41726d6c8b2f4b1dc7ff35466a78c242e147b99eaca69a956064024e04212e23",
-    "prior_source_sha256": "c272de9f9cc4e6ae36bddbff4c97012d8589150a22c0038e0875a6ddf855ac87",
-    "source_sha256": "74a71eb5ea5833e1bde69a30c46076a9c4519128a5f6db123a6f5ade1bdb800e",
+    "history_start": "87dc11e06f7e2a37ecc980253b710f920026bbb8",
+    "history_changed_ids": (
+        "B-012", "B-083", "B-098", "B-113", "B-134", "B-142",
+        "B-154", "B-1630", "B-170", "B-216",
+    ),
+    "prior_source_sha256": "4762b45c1740f5ece3af18ba3d29c395b6d8970078241f15267dd1a096f35247",
     "prior_ledger_sha256": "02d81ecf3ade17a5317b3f24e68a17a801837bde6112cac9288b6a7f6175b656",
-    "ledger_sha256": "aff69096f1ca0a727459f1e5bee61b66ad6cd30bd64aa9b5319430cb4e2047e1",
-    "changed_ids": ["B-098", "B-154"],
-    "catalog_sha256": {
+    "prior_catalog_sha256": {
         "docs/campaigns/remediation/work-packages/B001-B045.md": "2a1735804f43bb726789b99ee80c14cf876f41eb6c684e3ea54e68981413cd38",
         "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
         "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
         "docs/campaigns/remediation/work-packages/B131-B167.md": "4be50ac320f2c8d238a21760bc24a5391a7a5dc1102532d9d034e05556ad089d",
     },
-    "fields": (
+    "b154_fields": (
         "open",
         "39b0307a1a4451c90fb22fe9a37cfbd858485d38e6361e6c3d15bce1d1f4beac",
-        "b86a04ff5d4ca729279b39631764e85c01c934e459c2db2ac23d0900587de590",
+        "39b0307a1a4451c90fb22fe9a37cfbd858485d38e6361e6c3d15bce1d1f4beac",
         "d4a34c614df48d9ed01029efdd58e268f040c04260eecb093e7f5e330d954a02",
-        "8d7fb8611da55cf7db8198fdf67b3cf3884eca09785b5f90871fb4792a3e59f0",
+        "d4a34c614df48d9ed01029efdd58e268f040c04260eecb093e7f5e330d954a02",
     ),
 }
 
@@ -114,6 +118,50 @@ def install(api):
 
     def _sha256(raw: bytes) -> str:
         return hashlib.sha256(raw).hexdigest()
+
+    def _replace_once(text: str, old: str, new: str) -> str:
+        if text.count(old) != 1:
+            raise LedgerError("v0004 derivation source drifted")
+        return text.replace(old, new, 1)
+
+    def _v0004_catalogs(prior: dict[str, bytes]) -> dict[str, bytes]:
+        """Derive the sole permitted catalog data change: retire B-012."""
+        catalogs = {
+            path.as_posix(): prior[path.as_posix()]
+            for path in _catalog_relatives()
+        }
+        target = "docs/campaigns/remediation/work-packages/B001-B045.md"
+        text = catalogs[target].decode("utf-8")
+        for old, new in (
+            ("B-012 WP-B012\n", ""),
+            ("exactly four IDs:", "exactly three IDs:"),
+            ("| B-012 | open / owner | No implementation PR identified; bot-created events still need a non-`GITHUB_TOKEN` credential. | owner-only GitHub configuration |\n", ""),
+            ("The four rows above are the\ncurrent open dispatch population", "The three rows above are the\ncurrent open dispatch population"),
+            ("the current 13-item\nopen population", "the current 12-item\nopen population"),
+            ("Keep the four current owner/external gates explicit: B-008, B-012, B-032, and\n   B-035", "Keep the three current owner/external gates explicit: B-008, B-032, and B-035"),
+        ):
+            text = _replace_once(text, old, new)
+        catalogs[target] = text.encode("utf-8")
+        return catalogs
+
+    def _v0004_ledger(prior_raw: bytes, base_sha: str) -> bytes:
+        """Derive the exact ledger image after retiring B-012 from execution."""
+        text = prior_raw.decode("utf-8")
+        for old, new in (
+            ("base-ref: df1cd53f56a2eff4643aaf9368e25fb0303ce57d", f"base-ref: {base_sha}"),
+            ("base-sha: df1cd53f56a2eff4643aaf9368e25fb0303ce57d", f"base-sha: {base_sha}"),
+            ("observed-at: 2026-09-13", "observed-at: 2026-09-23"),
+            ("The current population is 373 items: 13 open, 328 done and 32 parked. The 13\nopen items", "The current population is 374 items: 12 open, 330 done and 32 parked. The 12\nopen items"),
+            ("item-count: 373", "item-count: 374"),
+            ("open-count: 13", "open-count: 12"),
+            ("done-count: 328", "done-count: 330"),
+            ("catalog-counts: B001-B045=4,B046-B090=3,B091-B130=2,B131-B373=4", "catalog-counts: B001-B045=3,B046-B090=3,B091-B130=2,B131-B373=4"),
+            ("| [`work-packages/B001-B045.md`](work-packages/B001-B045.md) | B-001..B-045 | 4 |", "| [`work-packages/B001-B045.md`](work-packages/B001-B045.md) | B-001..B-045 | 3 |"),
+            ("| **Total** | | **13** |", "| **Total** | | **12** |"),
+            ("The logical base includes the current B-008/B-012/B-032/B-035,\nB-065", "The logical base includes the current B-008/B-032/B-035,\nB-065"),
+        ):
+            text = _replace_once(text, old, new)
+        return text.encode("utf-8")
 
     def _sprint3_rewrite_authorized(
         prior: dict[str, bytes], current: dict[str, bytes],
@@ -146,19 +194,60 @@ def install(api):
     ) -> bool:
         """Authorize the sole v0003-to-v0004 gap repair by complete byte binding."""
         pinned = V0004_RECONCILIATION
+        # Unit fixtures may substitute the former, self-contained policy shape.
+        # Production policy always uses the derived-target form below.
+        if "prior_catalog_sha256" not in pinned:
+            if (
+                sequence != pinned["sequence"]
+                or previous.get("sequence") != pinned["previous_sequence"]
+                or previous.get("source_sha256") != pinned["previous_source_sha256"]
+                or receipt.get("changed_ids") != pinned["changed_ids"]
+                or _sha256(prior["BACKLOG.md"]) != pinned["prior_source_sha256"]
+                or _sha256(current["BACKLOG.md"]) != pinned["source_sha256"]
+                or _sha256(prior[LEDGER_RELATIVE.as_posix()]) != pinned["prior_ledger_sha256"]
+                or _sha256(current[LEDGER_RELATIVE.as_posix()]) != pinned["ledger_sha256"]
+                or receipt.get("prior_source_sha256") != pinned["prior_source_sha256"]
+                or receipt.get("source_sha256") != pinned["source_sha256"]
+                or receipt.get("prior_ledger_sha256") != pinned["prior_ledger_sha256"]
+                or receipt.get("ledger_sha256") != pinned["ledger_sha256"]
+            ):
+                return False
+            catalog_hashes = {
+                path.as_posix(): _sha256(prior[path.as_posix()])
+                for path in _catalog_relatives()
+            }
+            if (
+                catalog_hashes != pinned["catalog_sha256"]
+                or {
+                    path.as_posix(): _sha256(current[path.as_posix()])
+                    for path in _catalog_relatives()
+                } != catalog_hashes
+                or receipt.get("prior_catalog_sha256") != catalog_hashes
+                or receipt.get("catalog_sha256") != catalog_hashes
+            ):
+                return False
+            old_items = {item.id: item.raw for item in backlog_verify.parse(prior["BACKLOG.md"].decode())}
+            new_items = {item.id: item.raw for item in backlog_verify.parse(current["BACKLOG.md"].decode())}
+            old, new = old_items.get("B-154", {}), new_items.get("B-154", {})
+            status, old_verify, new_verify, old_means, new_means = pinned["fields"]
+            return (
+                old.get("status") == new.get("status") == status
+                and _sha256(str(old.get("verify", "")).encode()) == old_verify
+                and _sha256(str(new.get("verify", "")).encode()) == new_verify
+                and _sha256(str(old.get("verify-means", "")).encode()) == old_means
+                and _sha256(str(new.get("verify-means", "")).encode()) == new_means
+            )
         if (
             sequence != pinned["sequence"]
             or previous.get("sequence") != pinned["previous_sequence"]
             or previous.get("source_sha256") != pinned["previous_source_sha256"]
-            or receipt.get("changed_ids") != pinned["changed_ids"]
+            or receipt.get("changed_ids") != []
             or _sha256(prior["BACKLOG.md"]) != pinned["prior_source_sha256"]
-            or _sha256(current["BACKLOG.md"]) != pinned["source_sha256"]
+            or current["BACKLOG.md"] != prior["BACKLOG.md"]
             or _sha256(prior[LEDGER_RELATIVE.as_posix()]) != pinned["prior_ledger_sha256"]
-            or _sha256(current[LEDGER_RELATIVE.as_posix()]) != pinned["ledger_sha256"]
             or receipt.get("prior_source_sha256") != pinned["prior_source_sha256"]
-            or receipt.get("source_sha256") != pinned["source_sha256"]
+            or receipt.get("source_sha256") != pinned["prior_source_sha256"]
             or receipt.get("prior_ledger_sha256") != pinned["prior_ledger_sha256"]
-            or receipt.get("ledger_sha256") != pinned["ledger_sha256"]
         ):
             return False
         catalog_hashes = {
@@ -166,19 +255,26 @@ def install(api):
             for path in _catalog_relatives()
         }
         if (
-            catalog_hashes != pinned["catalog_sha256"]
+            catalog_hashes != pinned["prior_catalog_sha256"]
             or {
                 path.as_posix(): _sha256(current[path.as_posix()])
                 for path in _catalog_relatives()
-            } != catalog_hashes
+            } != {
+                path: _sha256(raw) for path, raw in _v0004_catalogs(prior).items()
+            }
             or receipt.get("prior_catalog_sha256") != catalog_hashes
-            or receipt.get("catalog_sha256") != catalog_hashes
+            or receipt.get("catalog_sha256") != {
+                path: _sha256(raw) for path, raw in _v0004_catalogs(prior).items()
+            }
+            or current[LEDGER_RELATIVE.as_posix()] != _v0004_ledger(
+                prior[LEDGER_RELATIVE.as_posix()], receipt.get("base_commit", ""),
+            )
         ):
             return False
         old_items = {item.id: item.raw for item in backlog_verify.parse(prior["BACKLOG.md"].decode())}
         new_items = {item.id: item.raw for item in backlog_verify.parse(current["BACKLOG.md"].decode())}
         old, new = old_items.get("B-154", {}), new_items.get("B-154", {})
-        status, old_verify, new_verify, old_means, new_means = pinned["fields"]
+        status, old_verify, new_verify, old_means, new_means = pinned["b154_fields"]
         return (
             old.get("status") == new.get("status") == status
             and _sha256(str(old.get("verify", "")).encode()) == old_verify
@@ -693,6 +789,8 @@ def install(api):
         _v0004_reconciliation_authorized=_v0004_reconciliation_authorized,
         _normative_section=_normative_section,
         _catalog_relatives=_catalog_relatives,
+        _v0004_catalogs=_v0004_catalogs,
+        _v0004_ledger=_v0004_ledger,
         _state_bytes=_state_bytes,
         _successor_paths=_successor_paths,
         load_successor_chain=load_successor_chain,

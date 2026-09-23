@@ -379,6 +379,113 @@ def test_v0004_policy_in_base_accepts_only_the_exact_dynamic_base_successor(
         ledger.validate_candidate_successor(base, candidate, today=dt.date(2026, 9, 22))
 
 
+def test_v0004_policy_derives_only_b012_retirement_from_pr_base(monkeypatch):
+    """The policy consumes immutable BASE bytes; a receipt never grants scope."""
+    root = Path(__file__).resolve().parents[1]
+    policy = ledger._successor_policy()
+    prior = ledger._state_bytes(root)
+    base_sha = "a" * 40
+    catalogs = policy._v0004_catalogs(prior)
+    current = {
+        **prior,
+        ledger.LEDGER_RELATIVE.as_posix(): policy._v0004_ledger(
+            prior[ledger.LEDGER_RELATIVE.as_posix()], base_sha,
+        ),
+        **catalogs,
+    }
+    previous = json.loads((root / ledger.SNAPSHOT_DIRECTORY / "backlog-ledger-snapshot-v0003.json").read_text())
+    receipt = {
+        "base_commit": base_sha,
+        "prior_source_sha256": ledger._sha256(prior["BACKLOG.md"]),
+        "source_sha256": ledger._sha256(current["BACKLOG.md"]),
+        "prior_ledger_sha256": ledger._sha256(prior[ledger.LEDGER_RELATIVE.as_posix()]),
+        "ledger_sha256": ledger._sha256(current[ledger.LEDGER_RELATIVE.as_posix()]),
+        "prior_catalog_sha256": {
+            path.as_posix(): ledger._sha256(prior[path.as_posix()])
+            for path in policy._catalog_relatives()
+        },
+        "catalog_sha256": {
+            path: ledger._sha256(raw) for path, raw in catalogs.items()
+        },
+        "changed_ids": [],
+    }
+
+    assert receipt["prior_source_sha256"] == successor.V0004_RECONCILIATION["prior_source_sha256"]
+    assert receipt["prior_source_sha256"] == ledger._sha256(
+        subprocess.check_output(["git", "show", "HEAD:BACKLOG.md"], cwd=root)
+    )
+    assert policy._v0004_reconciliation_authorized(previous, prior, current, receipt, 4)
+    assert current["BACKLOG.md"] == prior["BACKLOG.md"]
+    assert all(
+        current[path.as_posix()] == prior[path.as_posix()]
+        for path in policy._catalog_relatives()
+        if path.as_posix() != "docs/campaigns/remediation/work-packages/B001-B045.md"
+    )
+
+    assert not policy._v0004_reconciliation_authorized(
+        previous, prior, current, {**receipt, "changed_ids": ["B-012"]}, 4,
+    )
+    bad_ledger = {
+        **current,
+        ledger.LEDGER_RELATIVE.as_posix(): current[ledger.LEDGER_RELATIVE.as_posix()] + b"\n",
+    }
+    assert not policy._v0004_reconciliation_authorized(previous, prior, bad_ledger, receipt, 4)
+    bad_catalog = {
+        **current,
+        "docs/campaigns/remediation/work-packages/B001-B045.md": current[
+            "docs/campaigns/remediation/work-packages/B001-B045.md"
+        ].replace(b"B-008 WP-B008", b"B-008 WP-OTHER", 1),
+    }
+    assert not policy._v0004_reconciliation_authorized(previous, prior, bad_catalog, receipt, 4)
+    b154_start = prior["BACKLOG.md"].index(b"### B-154")
+    before_b154 = prior["BACKLOG.md"][:b154_start]
+    b154_and_after = prior["BACKLOG.md"][b154_start:]
+    mutated_source = before_b154 + b154_and_after.replace(
+        b"verify: |\n", b"verify: manual\n", 1,
+    )
+    mutated_prior = {**prior, "BACKLOG.md": mutated_source}
+    mutated_current = {**current, "BACKLOG.md": mutated_source}
+    mutated_receipt = {
+        **receipt,
+        "prior_source_sha256": ledger._sha256(mutated_source),
+        "source_sha256": ledger._sha256(mutated_source),
+    }
+    monkeypatch.setitem(
+        successor.V0004_RECONCILIATION,
+        "prior_source_sha256",
+        ledger._sha256(mutated_source),
+    )
+    assert not policy._v0004_reconciliation_authorized(
+        previous, mutated_prior, mutated_current, mutated_receipt, 4,
+    )
+
+
+def test_v0004_policy_pins_complete_first_parent_history_from_git_objects():
+    root = Path(__file__).resolve().parents[1]
+    start = successor.V0004_RECONCILIATION["history_start"]
+    commits = _git(
+        root, "rev-list", "--first-parent", "--reverse", f"{start}..HEAD", "--", "BACKLOG.md",
+    ).splitlines()
+
+    def sections(commit: str) -> dict[str, str]:
+        text = _git(root, "show", f"{commit}:BACKLOG.md")
+        matches = list(__import__("re").finditer(r"^### (B-\d+)\b.*$", text, __import__("re").MULTILINE))
+        return {
+            match.group(1): text[match.start(): matches[index + 1].start() if index + 1 < len(matches) else len(text)]
+            for index, match in enumerate(matches)
+        }
+
+    changed_ids = set()
+    for commit in commits:
+        parent = _git(root, "rev-parse", f"{commit}^1")
+        before, after = sections(parent), sections(commit)
+        changed_ids.update(
+            item_id for item_id in {*before, *after}
+            if before.get(item_id) != after.get(item_id)
+        )
+    assert changed_ids == set(successor.V0004_RECONCILIATION["history_changed_ids"])
+
+
 @pytest.mark.parametrize("old_status,new_status,mutation", [
     ("open", "parked", "verify-means"),
     ("open", "done", "verify-means"),
