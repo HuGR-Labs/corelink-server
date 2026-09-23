@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import re
@@ -65,8 +66,14 @@ def test_live_inputs_rederive_the_documented_live_population() -> None:
 
 def test_b373_dependabot_census_has_one_exact_b101_decision_per_alert() -> None:
     snapshot_path = "docs/security/b373-dependabot-census-2026-09-09.json"
-    snapshot = json.loads((ROOT / snapshot_path).read_text(encoding="utf-8"))
+    snapshot_bytes = (ROOT / snapshot_path).read_bytes()
+    snapshot = json.loads(snapshot_bytes)
+    source_registry_path = ROOT / coverage.SOURCE_REGISTRY_RELATIVE
+    source_registry_bytes = source_registry_path.read_bytes()
+    source_registry = json.loads(source_registry_bytes)
     manifest = _manifest()
+    source_id = "b373_dependabot_2026_09_09"
+    source = next(item for item in source_registry["sources"] if item["source_id"] == source_id)
     decisions = {
         item["source_id"]: item
         for item in manifest["decisions"]
@@ -74,6 +81,20 @@ def test_b373_dependabot_census_has_one_exact_b101_decision_per_alert() -> None:
     }
 
     assert len(snapshot["alerts"]) == 19
+    assert source == {
+        "source_id": source_id,
+        "path": snapshot_path,
+        "expected_count": 19,
+        "parser": "b373_dependabot",
+    }
+    assert snapshot_path not in {item["path"] for item in source_registry["excluded_audits"]}
+    assert manifest["documents"][source_id] == snapshot_path
+    assert manifest["source_sha256"][source_id] == hashlib.sha256(snapshot_bytes).hexdigest()
+    assert manifest["source_registry_sha256"] == hashlib.sha256(source_registry_bytes).hexdigest()
+    findings = coverage.parse_dependabot_snapshot(snapshot_bytes.decode("utf-8"), snapshot_path)
+    assert [finding.source_id for finding in findings] == [
+        f"DA-{number:03d}" for number in range(39, 58)
+    ]
     assert set(decisions) == {f"DA-{number:03d}" for number in range(39, 58)}
     for alert in snapshot["alerts"]:
         source_id = f"DA-{alert['number']:03d}"
@@ -94,8 +115,6 @@ def test_b373_dependabot_census_has_one_exact_b101_decision_per_alert() -> None:
                 f"Dependabot alert #{alert['number']}: {alert['package']} ({alert['ghsa']})"
             ),
         }
-
-    assert coverage.verify(ROOT)["documents"]["b373_dependabot_2026_09_09"] == 19
 
 
 def test_post_squash_plain_tree_rederives_the_same_certificate(tmp_path: Path) -> None:
