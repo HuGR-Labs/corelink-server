@@ -110,7 +110,7 @@ class B103TenantBindingTests(unittest.TestCase):
         receipt_step = workflow.index("- name: validate canonical staging receipt")
         binding = workflow.index("--tenant-env B103_TENANT_ID", receipt_step)
         redaction = workflow.index("--redact-tenant", binding)
-        load_step = workflow.index("- name: run warm sequence and bounded matrix")
+        load_step = workflow.index("- name: capture same-window root Worker tail and bounded matrix")
         self.assertLess(receipt_step, binding)
         self.assertLess(binding, redaction)
         self.assertLess(redaction, load_step)
