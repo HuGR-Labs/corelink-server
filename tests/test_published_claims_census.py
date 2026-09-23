@@ -34,8 +34,8 @@ def test_published_claims_census_mutations() -> None:
     assert MODULE.validate(ROOT, ROOT / "scripts/published_claims_inventory.json") == []
     current = MODULE.collect_occurrences(ROOT)
     pentest = [entry for entry in current if str(entry.get("term", "")).lower() == "pentest"]
-    assert len(pentest) == 209
-    assert len({str(entry["path"]) for entry in pentest}) == 61
+    assert len(pentest) == 208
+    assert len({str(entry["path"]) for entry in pentest}) == 60
 
     with tempfile.TemporaryDirectory(prefix="b156-census-") as raw:
         root = Path(raw)
