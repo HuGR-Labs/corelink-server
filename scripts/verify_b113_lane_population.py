@@ -40,6 +40,7 @@ EXPECTED_WORKFLOWS = frozenset(
     }
 )
 EXCLUDED_WORKFLOWS = frozenset({".github/workflows/terraform-drift.yml"})
+LEGACY_DISABLED_IF = "github.event_name == 'schedule' && github.event_name == 'workflow_dispatch'"
 
 
 @dataclass(frozen=True)
@@ -280,7 +281,7 @@ def assert_yaml_lane_shape(parsed: dict, lane: Lane) -> None:
         # dispatch-only GitHub-hosted #1863 workflow. Retaining the legacy
         # definition preserves the bounded command contract, but it must not
         # execute through the nightly schedule or its manual lane selector.
-        if job.get("if") != "${{ false }}":
+        if job.get("if") != LEGACY_DISABLED_IF:
             raise VerificationError(
                 "nightly-mutants: legacy mutants-workspace must remain disabled; "
                 "use the #1863 hosted dispatch-only receipt path"
