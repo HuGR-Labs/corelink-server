@@ -6,12 +6,10 @@ source_files:
   - "crates/corelink-container/src/routes/auth_introspect/part-00.rs"
   - "crates/corelink-container/src/routes/auth_introspect/part-00-01.rs"
   - "crates/corelink-container/src/routes/auth_introspect/part-01.rs"
-  - "crates/corelink-container/src/routes/auth_introspect/part-01.rs"
   - "docs/launch/2026-06-18-sota-tooling-roadmap.md"
 source_blobs:
   - "crates/corelink-container/src/routes/auth_introspect/part-00.rs@62d7d3db5ba1af3f33aea46919a092e52d228f0b"
   - "crates/corelink-container/src/routes/auth_introspect/part-00-01.rs@0648b938a24681c83a9c0c4af68fa8f2386c6471"
-  - "crates/corelink-container/src/routes/auth_introspect/part-01.rs@a48802270fff8530cd9ffa5eb1265529d42def07"
   - "crates/corelink-container/src/routes/auth_introspect/part-01.rs@a48802270fff8530cd9ffa5eb1265529d42def07"
   - "docs/launch/2026-06-18-sota-tooling-roadmap.md@8a6010944382f85754c5eb9dbff995a0e3189f26"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
@@ -102,7 +100,7 @@ the operational runbook for that gate; its authz mechanism is documented as the
 3. `crates/corelink-container/src/routes/auth_introspect/part-00.rs:281-303` — `valid()` constructor: cap=reject, vcpu_h=wall-off asymmetry.
 4. `crates/corelink-container/src/routes/auth_introspect/part-00.rs:320-321` — the `runners_entitlement` keyed SQL (separate axis).
 5. `crates/corelink-container/src/routes/auth_introspect/part-00.rs:356-369` — `runner_concurrency_for_tenant` one-lookup resolver.
-6. `crates/corelink-container/src/routes/auth_introspect/part-00-01.rs:108-125` — constant-time OR multi-key auth gate.
+6. `crates/corelink-container/src/routes/auth_introspect/part-00-01.rs:108-125` — constant-time OR capability of the handler; production state currently supplies a single dedicated key.
 7. `crates/corelink-container/src/routes/auth_introspect/part-01.rs:238-269` — dedicated key validation and one-key production state construction, including the explicit no-secondary-key rationale.
 8. `crates/corelink-container/src/routes/auth_introspect/part-00-01.rs:127-139` — body parsed only after the gate; token never logged.
 9. `crates/corelink-container/src/routes/auth_introspect/part-00-01.rs:141-143` — PAT verify (HMAC+D1+Argon2id+scope).

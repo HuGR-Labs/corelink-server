@@ -43,7 +43,7 @@ source_blobs:
   - "crates/corelink-statuspage-real/src/http.rs@be4475b1f217211050f0f99c06690ba67556e375"
   - "crates/corelink-statuspage-real/src/lib.rs@36268b916b8ebe88116b9584e6083679b4297c10"
   - "crates/corelink-dt-webhook/src/handler.rs@3aa0cba9ea6f44f190365c8a9e6684c6639d67dc"
-  - "crates/corelink-terraform-drift-consumer/src/consumer.rs@8f3ecd94dcb176fc8f00a41f16f323b3b4b40a1afe4fa54472c0957459f4f5b7acb5"
+  - "crates/corelink-terraform-drift-consumer/src/consumer.rs@8f3ecd94dcb176fc8f00a41f16f323b3b4b40a1a"
   - "crates/corelink-runbook-tracker/src/lib.rs@c3c770e37961eef6451c51f047a28c669dc017c0"
   - "crates/corelink-dsr-statuspage-scheduler/src/scheduler.rs@bd62eac30c7c531e3ba9a4054cace111a7d633ed"
   - "crates/corelink-clerk-cf/src/dsr_statuspage_cron.rs@25fc5359f7579ace71a51868d92a8e88c9a07688"
