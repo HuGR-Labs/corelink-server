@@ -113,8 +113,8 @@ V0004_B001_CATALOG_REPLACEMENTS = (
     ),
     (b"The four rows above are the current open dispatch population;", b"The three rows above are the current open dispatch population;"),
     (
-        b"1. Keep the four current owner/external gates explicit: B-008, B-012, B-032, and\n   B-035; none can be “implemented around” its required human act.",
-        b"1. Keep the three current owner/external gates explicit: B-008, B-032, and\n   B-035; none can be “implemented around” its required human act.",
+        "1. Keep the four current owner/external gates explicit: B-008, B-012, B-032, and\n   B-035; none can be “implemented around” its required human act.".encode("utf-8"),
+        "1. Keep the three current owner/external gates explicit: B-008, B-032, and\n   B-035; none can be “implemented around” its required human act.".encode("utf-8"),
     ),
 )
 

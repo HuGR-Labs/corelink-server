@@ -31,5 +31,6 @@ jobs:
       - name: Prove policy pins and BASE mutation rejection
         run: >-
           python -m pytest -q
-          tests/test_backlog_ledger_successor.py::test_v0004_reconciliation_is_byte_pinned_before_any_data_successor
-          tests/test_backlog_ledger_successor.py::test_v0004_policy_in_base_accepts_only_the_exact_dynamic_base_successor
+          tests/test_backlog_ledger_successor.py::test_v0004_reconciliation_allows_only_exact_b012_catalog_retirement
+          tests/test_backlog_ledger_successor.py::test_v0004_policy_prior_source_matches_pull_request_base_and_delta_is_derived
+          tests/test_backlog_ledger_successor.py::test_v0004_historical_delta_ids_are_computed_from_immutable_sources
