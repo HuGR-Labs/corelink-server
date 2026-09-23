@@ -1,0 +1,74 @@
+name: Issue 1661 B-105 hosted cache measurement
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type measure-b105-cache-cost to run one bounded production measurement
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1661-b105-hosted
+  cancel-in-progress: false
+
+jobs:
+  paired-cache-lane:
+    if: >-
+      github.repository_id == '1232040291' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.ref_protected &&
+      inputs.confirm == 'measure-b105-cache-cost'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    environment: production
+    steps:
+      - name: Checkout the exact dispatched main commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Assert source, toolchain, and target identity
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          bash scripts/ci-assert-pinned-toolchain.sh
+          test "$(rustc --print host-tuple)" = "x86_64-unknown-linux-gnu"
+          printf 'commit=%s\nrunner=%s\ntarget=%s\n' "${GITHUB_SHA}" "${RUNNER_NAME}" "$(rustc --print host-tuple)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install sccache
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: sccache@0.17.0
+
+      - name: Run six alternating identical cache-off/cache-on pairs
+        id: measurement
+        env:
+          CORELINK_PERF_BASE: ${{ vars.CORELINK_PERF_BASE }}
+          CORELINK_SCCACHE_TOKEN: ${{ secrets.CORELINK_SCCACHE_TOKEN }}
+          GITHUB_REF_PROTECTED: ${{ github.ref_protected }}
+        run: python3 scripts/collect_b105_same_lane.py
+
+      - name: Ensure the run namespace is empty after an interrupted measurement
+        if: always() && steps.measurement.outcome != 'success'
+        env:
+          CORELINK_PERF_BASE: ${{ vars.CORELINK_PERF_BASE }}
+          CORELINK_SCCACHE_TOKEN: ${{ secrets.CORELINK_SCCACHE_TOKEN }}
+        run: python3 scripts/collect_b105_same_lane.py --cleanup-only
+
+      - name: Publish redacted measurement receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b105-cache-cost-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/b105-lane.json
+            ${{ runner.temp }}/b105-namespace.json
+          retention-days: 7
+          if-no-files-found: warn

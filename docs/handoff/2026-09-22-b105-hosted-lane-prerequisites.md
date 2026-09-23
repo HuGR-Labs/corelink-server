@@ -1,85 +1,74 @@
-# B-105 hosted paired-lane prerequisites
+# B-105 hosted paired-lane protocol
 
-Status: **blocked on owner inputs; B-105 remains open**.
+Status: **implemented for one protected-main dispatch; B-105 remains open until
+the receipt is reviewed.**
 
-This note records the result of the #1661 feasibility check against the
-canonical B-105 contract in
+This protocol belongs to issue #1661 and the canonical contract in
 [`evidence/owner-actions/B-105/cache-cost-contract.json`](../../evidence/owner-actions/B-105/cache-cost-contract.json).
-It does not authorize a dispatch, a production write, or a deployment.
+The source workflow is
+[`issue-1661-b105-hosted.yml`](../../.github/workflows/issue-1661-b105-hosted.yml).
 
-## Decision
+## Inputs and scope
 
-A GitHub-hosted paired build can measure elapsed time and sccache hit/miss/error
-counters after the owner supplies a production dogfood credential. The current
-repository cannot produce the requested **truthful cost, transfer, and storage**
-evidence from a credentialless lane:
+- The existing `CORELINK_SCCACHE_TOKEN` is documented as `cas:rw` on the
+  dogfood tenant `ee30f7ba-fc25-4d71-939e-ebe130b4c6a3`.
+- `CORELINK_PERF_BASE` is stored as a non-secret variable on the protected
+  `production` environment and points to `https://corelink-api.humangr.com`.
+- The job runs only for a manual dispatch on the protected `main` branch of the
+  canonical repository. A confirmation input, single-flight concurrency group,
+  240-minute timeout, and six-pair bound limit each run.
+- The collector forwards WebDAV calls through a local meter. It prefixes every
+  key with a fresh run ID plus random nonce and records only the exact keys it
+  touched. It reports successful GET response payload bytes, successful PUT
+  request payload bytes, and the sum of payload sizes successfully written for
+  unique indexed keys. These are application-layer quantities, not R2 physical
+  retention, TLS wire bytes, or a provider invoice.
+- Collection-root `PROPFIND` and `MKCOL` calls receive a synthetic local
+  response; the shared tenant root is never forwarded or enumerated.
+- The run seeds the unique namespace before timing. It removes the Cargo target
+  directory before every arm and alternates order across six cache-off/cache-on
+  pairs. Both arms use the same pinned Rust toolchain, target, command, runner,
+  and source revision; cache I/O errors fail the measurement.
+- Results are `faster`, `slower`, or `indeterminate`. The classification uses
+  the six paired deltas and their two-sided 95% Student-t interval; a faster
+  result requires the entire interval below zero.
+- A finally path deletes every exact key recorded for the run and verifies each
+  key returns 404. A workflow fallback repeats that idempotent cleanup after an
+  interrupted collector. The artifact contains no bearer credential or cache
+  object body and is retained for seven days.
 
-| Required signal | Current state | Why this blocks a claim |
-| --- | --- | --- |
-| Same lane on a GitHub-hosted runner | The existing B-105 collector is called by `perf-production-evidence.yml`, whose job uses `runs-on: corelink`. | That workflow does not satisfy the hosted-runner constraint. |
-| Cache-on arm | `scripts/collect_b105_same_lane.py` requires `CORELINK_PERF_BASE`, `CORELINK_PERF_TENANT`, and `CORELINK_PERF_PAT`. | No staging endpoint or credentialless WebDAV surface is present. A public production endpoint without an owner credential is not a measurement. |
-| Isolated cache state | The collector addresses `/cargo/<tenant>` and has no run namespace or cleanup step. | Reusing the dogfood tenant can read or write artifacts from other runs, so a pair cannot be attributed to this run. |
-| Cache transfer bytes | The collector retains only sccache hit/miss/error counters and hashes of raw output. | Counters cannot establish bytes downloaded, uploaded, or stored. |
-| Storage and compute cost | The repository has no provider billing or server-side byte receipt bound to this experiment. | Duration is not a currency cost, and client-side hit counts cannot establish R2/storage cost. |
+## Cost reporting decision
 
-Consequently, adding a `workflow_dispatch` trigger alone would create a
-plausible-looking receipt that cannot satisfy the B-105 success condition. The
-repository contract correctly keeps the item at
-`open_external_measurement_required`.
+This campaign reports application payload and indexed logical bytes only.
+It does not claim a dollar amount: the measurement has no billing rate for the
+GitHub runner, network transfer, or R2 retention. Seed writes, measured pair
+traffic, retained indexed payload bytes, and cleanup are separate receipt fields. A
+zero-miss treatment therefore has zero measured artifact writes, regardless of
+seed traffic.
 
-## Owner prerequisites
+## Frozen success and completion gate
 
-Before a dedicated hosted lane can be added or dispatched, the owner must
-provide all of the following:
+- **Success criteria:** exactly six alternating pairs on one `ubuntu-24.04`
+  runner and exact main SHA; every arm completes the same Cargo command; cache
+  I/O errors are zero; each treatment has at least one remote hit; receipt
+  reports paired durations, hits/misses, application payload bytes, indexed
+  payload bytes, and cleanup; a performance win is accepted only when the paired 95%
+  interval is fully faster.
+- **Definition of done:** the focused PR passes required hosted checks and DCO;
+  the exact-main production dispatch completes; its redacted artifact is linked
+  from #1661; `BACKLOG.md` and issue state reflect the measured result; all run
+  keys are verified absent.
+- **Completeness:** the receipt binds run ID, full source SHA, runner, toolchain,
+  target, fixed command, treatment order, all six pairs, byte counters, indexed
+  payload bytes, and cleanup outcome. Any failed arm or incomplete cleanup is
+  not a valid measurement.
+- **Invariants:** no local builds/tests/lint; no shared Cargo or Actions build
+  cache; no fail-open cache I/O; no other tenant or namespace; no credentials,
+  raw cache values, or raw Cargo logs in receipts; no claim that payload bytes
+  equal wire or billed bytes; slower and inconclusive outcomes remain visible.
+- **Quality standard:** exact-main guard, minimal `contents: read`, pinned
+  Actions and sccache version, bounded run time and retention, fail-closed input
+  validation, redacted output, and exact-key cleanup with verification.
 
-1. A dedicated disposable dogfood tenant (or a server-supported namespace
-   prefix) and a low-privilege PAT with only the sccache read/write scope. The
-   tenant or namespace must be exclusive to one run and must have a documented
-   delete/GC operation after the receipt is captured.
-2. The exact production origin and deployed revision serving `/cargo`. The
-   origin must be supplied through a protected environment variable; it must
-   never be hard-coded into a receipt alongside credentials.
-3. A server or provider receipt that reports, for the isolated namespace,
-   bytes read, bytes written, retained bytes, and cleanup result. If these
-   values cannot be emitted by the production path, B-105 can report timing and
-   counters only and cannot claim transfer/storage cost.
-4. The billing basis for compute, egress, and storage, or an explicit decision
-   to report physical quantities only. A GitHub Actions wall-clock duration
-   alone does not prove a monetary cost.
-5. Owner approval to run six or more pairs on `ubuntu-24.04`. The run must be
-   manual, protected-main only, single-flight, and bounded by a job timeout.
-
-## Required hosted-lane protocol
-
-Once those prerequisites exist, the lane should be implemented as a separate
-manual workflow rather than extending the broad production evidence job:
-
-1. Checkout the exact dispatched commit and assert `git rev-parse HEAD` equals
-   the recorded revision. Assert the workspace Rust toolchain, target triple,
-   and the exact command `cargo test --package corelink-reapi --release
-   --no-run`; set `CARGO_INCREMENTAL=0`.
-2. Use `ubuntu-24.04`, a SHA-pinned sccache installation, `contents: read`, a
-   protected `production` environment, and a single concurrency group. Keep
-   every build directory under `RUNNER_TEMP`; do not use a shared Actions cache
-   or a repository cache key.
-3. Generate one run-scoped cache namespace from the run ID and revision. Seed
-   that namespace once and record seed uploads separately. Every measured pair
-   must use a fresh target directory and the same source, toolchain, target,
-   command, and input set. Alternate control-first and treatment-first order
-   across at least six pairs.
-4. Run the control with the remote wrapper disabled and the treatment with the
-   wrapper enabled. Record each arm's wall time, sccache hits, misses, read
-   errors, write errors, revision, runner, toolchain, target, and namespace.
-   Do not turn a failed cache request into a successful cache result.
-5. Join the pair receipt with the server/provider byte receipt. Keep seed
-   writes separate from measured treatment reads, and report cache misses and
-   writes independently of the hit benefit. A zero-miss treatment has zero
-   measured write-path contribution; no write timing may be used to explain it.
-6. Emit only a redacted receipt. In an unconditional cleanup step, delete the
-   run namespace and record deletion success or failure. Upload the receipt
-   with bounded retention and leave B-105 open until the owner reviews the
-   result against runner variance.
-
-The existing credentialless contract gate remains the only repository-side
-check. It may prove the path and arithmetic, but it cannot substitute for the
-owner-supplied paired production receipt.
+The existing credentialless contract check remains separate. It verifies the
+repository rules but cannot substitute for the main-only live artifact.

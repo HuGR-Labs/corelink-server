@@ -9,7 +9,9 @@ on:
     paths:
       - "evidence/owner-actions/B-105/cache-cost-contract.json"
       - "scripts/verify_b105_cache_contract.py"
+      - "scripts/collect_b105_same_lane.py"
       - ".github/workflows/b105-cache-contract.yml"
+      - ".github/workflows/issue-1661-b105-hosted.yml"
       - ".github/workflows/corelink-reapi.yml"
       - "apps/docs/docs/integrations/sccache-cargo.md"
       - "crates/corelink-container/src/adapter_pat_verifier.rs"
@@ -21,7 +23,9 @@ on:
     paths:
       - "evidence/owner-actions/B-105/cache-cost-contract.json"
       - "scripts/verify_b105_cache_contract.py"
+      - "scripts/collect_b105_same_lane.py"
       - ".github/workflows/b105-cache-contract.yml"
+      - ".github/workflows/issue-1661-b105-hosted.yml"
       - ".github/workflows/corelink-reapi.yml"
       - "apps/docs/docs/integrations/sccache-cargo.md"
       - "crates/corelink-container/src/adapter_pat_verifier.rs"

@@ -84,6 +84,7 @@ def check_paths(manifest: dict[str, Any]) -> None:
         "server_auth_path",
         "server_gate",
         "diagnosis",
+        "hosted_lane_workflow",
         "backlog",
         "verifier",
     }:
@@ -93,6 +94,52 @@ def check_paths(manifest: dict[str, Any]) -> None:
             raise ContractError(f"source inventory path is missing: {label}")
     if sources["verifier"] != "scripts/verify_b105_cache_contract.py":
         raise ContractError("manifest verifier path drifted")
+    check_hosted_lane(text(sources["hosted_lane_workflow"]), text("scripts/collect_b105_same_lane.py"))
+
+
+def check_hosted_lane(workflow: str, collector: str) -> None:
+    """Freeze the live lane's host, auth boundary, namespace, and cleanup."""
+    required_workflow = (
+        "workflow_dispatch:",
+        "runs-on: ubuntu-24.04",
+        "timeout-minutes: 240",
+        "environment: production",
+        "github.repository_id == '1232040291'",
+        "github.ref == 'refs/heads/main'",
+        "github.ref_protected",
+        "inputs.confirm == 'measure-b105-cache-cost'",
+        "CORELINK_SCCACHE_TOKEN",
+        "cancel-in-progress: false",
+        "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e0",
+        "tool: sccache@0.17.0",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        "retention-days: 7",
+        "--cleanup-only",
+    )
+    for needle in required_workflow:
+        require(workflow, needle, "hosted measurement workflow")
+    if "runs-on: corelink" in workflow or "actions/cache@" in workflow or "Swatinem/rust-cache@" in workflow:
+        raise ContractError("hosted measurement must not use the self-hosted runner or shared caches")
+    required_collector = (
+        '"schema": "corelink.b105.lane.v3"',
+        '"b105-',
+        '"SCCACHE_IGNORE_SERVER_IO_ERROR"',
+        '"RUSTC_WRAPPER"',
+        '"CARGO_INCREMENTAL"',
+        '"--no-run"',
+        '"retained_indexed_payload_bytes"',
+        '"verified_absent"',
+        '"currency_cost"',
+        '"read_errors"',
+        '"write_errors"',
+        "send_collection_root(parsed.path)",
+    )
+    for needle in required_collector:
+        require(collector, needle, "hosted measurement collector")
+    if "SCCACHE_IGNORE_SERVER_IO_ERROR\"] = \"1\"" in collector:
+        raise ContractError("cache IO failures must fail the measurement closed")
+    if "upstream_key = \"\"" in collector:
+        raise ContractError("collection-root calls must not reach the shared production tenant root")
 
 
 def check_current_path(manifest: dict[str, Any]) -> None:
@@ -216,6 +263,23 @@ def self_test(manifest: dict[str, Any]) -> None:
         pass
     else:
         raise ContractError("cache-chain mutation did not invalidate the current-path contract")
+    sources = manifest["sources"]
+    workflow = text(sources["hosted_lane_workflow"])
+    collector = text("scripts/collect_b105_same_lane.py")
+    bad_workflow = workflow.replace("runs-on: ubuntu-24.04", "runs-on: corelink", 1)
+    try:
+        check_hosted_lane(bad_workflow, collector)
+    except ContractError:
+        pass
+    else:
+        raise ContractError("self-hosted runner mutation did not invalidate the hosted lane")
+    bad_collector = collector.replace("self.send_collection_root(parsed.path)", 'upstream_key = ""', 1)
+    try:
+        check_hosted_lane(workflow, bad_collector)
+    except ContractError:
+        pass
+    else:
+        raise ContractError("tenant-root collection forwarding mutation did not invalidate the lane")
 
 
 def main() -> int:

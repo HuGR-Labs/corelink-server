@@ -13,6 +13,7 @@
     "server_auth_path": "crates/corelink-container/src/adapter_pat_verifier.rs",
     "server_gate": "crates/corelink-container/src/adapter_pat_gate.rs",
     "diagnosis": "docs/internal/sccache-pilot-diagnosis-2026-08-04.md",
+    "hosted_lane_workflow": ".github/workflows/issue-1661-b105-hosted.yml",
     "backlog": "BACKLOG.md",
     "verifier": "scripts/verify_b105_cache_contract.py"
   },
@@ -57,6 +58,13 @@
       "revision",
       "runner",
       "workload"
+    ],
+    "required_receipt_fields": [
+      "application_payload.pair-*.get_bytes",
+      "application_payload.pair-*.put_bytes",
+      "namespace.retained_indexed_payload_bytes",
+      "cleanup.verified_absent",
+      "currency_cost_basis"
     ],
     "result_labels": ["faster", "slower", "indeterminate"],
     "closure": "keep B-105 open until the paired production receipt is linked and its result survives runner variance"
