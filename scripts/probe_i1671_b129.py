@@ -24,7 +24,11 @@ from datetime import datetime, timezone
 SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")
 TOKEN = re.compile(r"^[A-Za-z0-9._~:-]{1,180}$")
-PHASE = re.compile(r"(?P<n>[a-z][a-z0-9_-]*);dur=(?P<d>[0-9]+(?:\.[0-9]+)?)")
+QUOTED_STRING = r'"(?:[^"\\\r\n]|\\.)*"'
+PHASE = re.compile(
+    rf"^\s*(?P<n>[a-z][a-z0-9_-]*)\s*;\s*dur\s*=\s*(?P<d>[0-9]+(?:\.[0-9]+)?)"
+    rf"(?:\s*;\s*desc\s*=\s*{QUOTED_STRING})?\s*$"
+)
 Q = ("qtier", "qdo", "qbatch", "qresid", "qcontrol")
 ORIGIN = ("opat", "oquota", "ostore", "oaccounting", "oargon", "opermit", "ortier", "oaudit", "oratelimit", "ohandler")
 REQUIRED_ORIGIN = ("ostore", "oaccounting", "ohandler")
@@ -41,14 +45,52 @@ def residual_median(rows: list[dict[str, object]]) -> float:
     return float(statistics.median(values))
 
 
+def _timing_items(raw: str) -> list[str]:
+    """Split a Server-Timing list without splitting quoted commas.
+
+    ``Server-Timing`` parameters are quoted strings, and a description may
+    contain both commas and escaped quotes. Splitting on every comma lets a
+    description manufacture a second phase or makes a valid report fail
+    closed. Keep this scanner deliberately small: it only tracks the quoting
+    state needed to find metric boundaries; ``PHASE`` validates the grammar of
+    each complete item afterwards.
+    """
+    items: list[str] = []
+    start = 0
+    quoted = False
+    escaped = False
+    for index, char in enumerate(raw):
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char == ",":
+            items.append(raw[start:index])
+            start = index + 1
+    if quoted or escaped:
+        fail("unterminated or escaped Server-Timing parameter")
+    items.append(raw[start:])
+    return items
+
+
 def timing(raw: str) -> dict[str, float]:
     values: dict[str, float] = {}
-    for match in PHASE.finditer(raw):
+    for part in _timing_items(raw):
+        match = PHASE.fullmatch(part)
+        if match is None:
+            if re.search(r";\s*dur\s*=", part):
+                fail("malformed Server-Timing phase")
+            continue
         name, value = match.group("n"), float(match.group("d"))
         if name in values or not math.isfinite(value):
             fail("malformed or duplicate Server-Timing phase")
         values[name] = value
-    if not values or any(";dur=" in part and not PHASE.search(part) for part in raw.split(",")):
+    if not values:
         fail("malformed or empty Server-Timing header")
     if "oother" in values:
         if "ohandler" in values and not math.isclose(values["oother"], values["ohandler"], abs_tol=1e-6):
