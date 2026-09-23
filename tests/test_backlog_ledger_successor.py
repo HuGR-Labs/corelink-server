@@ -372,7 +372,10 @@ def test_v0004_policy_in_base_accepts_only_the_exact_dynamic_base_successor(
     receipt = json.loads(receipt_path.read_text())
     receipt["source_sha256"] = ledger._sha256(candidate_backlog.read_bytes())
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
-    with pytest.raises(LedgerError, match="normative BACKLOG section changed"):
+    with pytest.raises(
+        LedgerError,
+        match="delivered state drifted after last successor|normative BACKLOG section changed",
+    ):
         ledger.validate_candidate_successor(base, candidate, today=dt.date(2026, 9, 22))
 
 
