@@ -3,6 +3,9 @@ type: "ADR"
 title: "ADR-0101 — Provider-neutral Object-Lock archive adapter contract"
 source_files:
   - "specs/03_architecture/adrs/ADR-0101-object-lock-archive-adapter-contract.md"
+source_blobs:
+  - "specs/03_architecture/adrs/ADR-0101-object-lock-archive-adapter-contract.md@02d81051b663138d6d0ca207562542ddcae70068"
+checkpoint_sha: "e4b5c3cd2b0757eabc82f278555f0dcd40aa216c"
 tags: ["adr", "object-lock", "retention", "archive", "capability-gate"]
 ---
 
@@ -19,5 +22,5 @@ this ADR; those remain the work of #1877.
 
 ## Citation
 
-The authoritative decision is recorded in
-`specs/03_architecture/adrs/ADR-0101-object-lock-archive-adapter-contract.md`.
+1. `specs/03_architecture/adrs/ADR-0101-object-lock-archive-adapter-contract.md:42-65` — Decision: the portable adapter contract, required capability evidence, verified consumer surface, explicit R2-unavailable behavior, and CI-only in-memory fixture.
+2. `specs/03_architecture/adrs/ADR-0101-object-lock-archive-adapter-contract.md:67-79` — Consequences: provider selection remains deferred, current R2 archival stays non-WORM, and failed verification has no fallback.
