@@ -15,9 +15,10 @@ TESTS = ROOT / "crates/corelink-container/src/reapi_action_cache/tests.rs"
 PROTO = ROOT / "crates/corelink-reapi/proto/build/bazel/remote/execution/v2/remote_execution.proto"
 ROUTES = ROOT / "crates/corelink-container/src/routes/build.rs"
 CONCEPT = ROOT / "docs/knowledge/surfaces/reapi-authenticated-action-cache.md"
+CARGO = ROOT / "crates/corelink-container/Cargo.toml"
 
 
-def violations(service: str, tests: str, proto: str, routes: str, concept: str) -> list[str]:
+def violations(service: str, tests: str, proto: str, routes: str, concept: str, cargo: str) -> list[str]:
     errors: list[str] = []
     required_service = (
         "impl ActionCache for ReapiActionCacheService",
@@ -46,15 +47,28 @@ def violations(service: str, tests: str, proto: str, routes: str, concept: str) 
         "repeated OutputFile output_files = 2;",
         "repeated OutputDirectory output_directories = 3;",
         "ExecutedActionMetadata execution_metadata = 9;",
-        "repeated OutputSymlink output_file_symlinks = 10;",
-        "repeated OutputSymlink output_directory_symlinks = 11;",
+        "repeated OutputSymlink output_file_symlinks = 10",
+        "repeated OutputSymlink output_directory_symlinks = 11",
         "repeated OutputSymlink output_symlinks = 12;",
+        "repeated string inline_output_files = 5;",
+        "DigestFunction.Value digest_function = 6;",
+        "ResultsCachePolicy results_cache_policy = 4;",
+        "DigestFunction.Value digest_function = 5;",
+        "NodeProperties node_properties = 7;",
+        "NodeProperties node_properties = 4;",
+        "string worker = 1;",
+        "google.protobuf.Timestamp queued_timestamp = 2;",
+        "google.protobuf.Timestamp worker_start_timestamp = 3;",
+        "repeated google.protobuf.Any auxiliary_metadata = 11;",
+        "google.protobuf.Duration virtual_execution_duration = 12;",
     )
     for item in required_proto:
         if item not in proto:
             errors.append(f"REAPI proto is missing ActionResult wire field: {item}")
     if "ReapiActionCacheService::new" in routes or "ReapiCacheCapabilitiesService::new" in routes:
         errors.append("ActionCache services must remain unmounted pending #2176 and #2183")
+    if "corelink-reapi = { workspace = true }" not in cargo:
+        errors.append("ActionCache container dependency must expose corelink-reapi")
     required_tests = (
         "authenticated_round_trip_uses_decorated_action_cache_once_per_rpc",
         "rejected_authorization_tenant_and_malformed_result_never_touch_action_cache",
@@ -85,7 +99,7 @@ def self_test() -> list[str]:
     proto = PROTO.read_text(encoding="utf-8")
     routes = ROUTES.read_text(encoding="utf-8")
     concept = CONCEPT.read_text(encoding="utf-8")
-    errors = violations(service, tests, proto, routes, concept)
+    errors = violations(service, tests, proto, routes, concept, CARGO.read_text(encoding="utf-8"))
     mutations = (
         (service.replace("Access::Write", "Access::Read", 1), tests, proto, routes, concept, "write scope bypass"),
         (service.replace("admitted.ac_lookup(", "admitted.cas_read(", 1), tests, proto, routes, concept, "decorated lookup bypass"),
@@ -94,8 +108,11 @@ def self_test() -> list[str]:
         (service, tests.replace("quota_and_audit_faults_fail_closed_without_disclosure", "", 1), proto, routes, concept, "fault coverage removed"),
     )
     for mutated_service, mutated_tests, mutated_proto, mutated_routes, mutated_concept, label in mutations:
-        if not violations(mutated_service, mutated_tests, mutated_proto, mutated_routes, mutated_concept):
+        if not violations(mutated_service, mutated_tests, mutated_proto, mutated_routes, mutated_concept, CARGO.read_text(encoding="utf-8")):
             errors.append(f"mutation was not detected: {label}")
+    missing_dependency = CARGO.read_text(encoding="utf-8").replace("corelink-reapi = { workspace = true }\n", "", 1)
+    if not violations(service, tests, proto, routes, concept, missing_dependency):
+        errors.append("mutation was not detected: direct REAPI dependency removed")
     return errors
 
 
@@ -110,6 +127,7 @@ def main() -> int:
         PROTO.read_text(encoding="utf-8"),
         ROUTES.read_text(encoding="utf-8"),
         CONCEPT.read_text(encoding="utf-8"),
+        CARGO.read_text(encoding="utf-8"),
     )
     result = {"check": "i2182-reapi-action-cache", "ok": not errors, "errors": errors}
     print(json.dumps(result, sort_keys=True) if args.json else "\n".join(errors or ["#2182 ActionCache contract: PASS"]))

@@ -1,27 +1,34 @@
 ---
-id: Capabilities
-title: Capabilities (REAPI v2)
-sidebar_label: Capabilities
-description: Auto-generated reference for the Capabilities gRPC service.
+id: ActionCache
+title: ActionCache (REAPI v2)
+sidebar_label: ActionCache
+description: Auto-generated reference for the ActionCache gRPC service.
 ---
 
-# Capabilities
+# ActionCache
 
 > Auto-generated from `crates/corelink-reapi/proto/build/bazel/remote/execution/v2/remote_execution.proto`. Do not edit by hand — run `pnpm docs:gen`.
 
 - Proto package: `build.bazel.remote.execution.v2`
-- Fully-qualified name: `build.bazel.remote.execution.v2.Capabilities`
+- Fully-qualified name: `build.bazel.remote.execution.v2.ActionCache`
 
 ## Methods
 
 | Method | Request | Response | Streaming |
 | --- | --- | --- | --- |
-| `GetCapabilities` | `GetCapabilitiesRequest` | `ServerCapabilities` | unary |
+| `GetActionResult` | `GetActionResultRequest` | `ActionResult` | unary |
+| `UpdateActionResult` | `UpdateActionResultRequest` | `ActionResult` | unary |
 
-### GetCapabilities
+### GetActionResult
 
-- **Request:** `GetCapabilitiesRequest`
-- **Response:** `ServerCapabilities`
+- **Request:** `GetActionResultRequest`
+- **Response:** `ActionResult`
+- **Streaming:** unary
+
+### UpdateActionResult
+
+- **Request:** `UpdateActionResultRequest`
+- **Response:** `ActionResult`
 - **Streaming:** unary
 
 ## Messages
@@ -237,7 +244,7 @@ description: Auto-generated reference for the Capabilities gRPC service.
 
 ## Examples
 
-See manual code examples under [`_examples/Capabilities/`](../_examples/Capabilities/):
+See manual code examples under [`_examples/ActionCache/`](../_examples/ActionCache/):
 
 - Python
 - Go

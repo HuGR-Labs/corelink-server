@@ -17,7 +17,9 @@ use corelink_handler_cas::{
     CasHandlerError, CasReadHandler, CasReadRequest, CasReadResponse, CasWriteHandler,
     CasWriteRequest, CasWriteResponse,
 };
-use corelink_reapi::proto::reapi::{Digest, OutputFile, OutputSymlink};
+use corelink_reapi::proto::reapi::{
+    Digest, ExecutedActionMetadata, NodeProperties, NodeProperty, OutputFile, OutputSymlink,
+};
 use prost::Message;
 use tonic::Code;
 
@@ -183,11 +185,23 @@ fn result() -> ActionResult {
             }),
             is_executable: true,
             contents,
+            node_properties: Some(NodeProperties {
+                properties: vec![NodeProperty {
+                    name: "owner".into(),
+                    value: "buck2".into(),
+                }],
+                ..Default::default()
+            }),
         }],
         output_symlinks: vec![OutputSymlink {
             path: "out/latest".into(),
             target: "result".into(),
+            node_properties: Some(NodeProperties::default()),
         }],
+        execution_metadata: Some(ExecutedActionMetadata {
+            worker: "worker-a".into(),
+            ..Default::default()
+        }),
         exit_code: 17,
         ..Default::default()
     }
@@ -204,6 +218,7 @@ async fn authenticated_round_trip_uses_decorated_action_cache_once_per_rpc() {
                 instance_name: "tenant-a".into(),
                 action_digest: Some(action_digest()),
                 action_result: Some(result()),
+                ..Default::default()
             },
         )
         .await
@@ -216,6 +231,7 @@ async fn authenticated_round_trip_uses_decorated_action_cache_once_per_rpc() {
                 action_digest: Some(action_digest()),
                 inline_stdout: false,
                 inline_stderr: false,
+                ..Default::default()
             },
         )
         .await
@@ -233,6 +249,7 @@ async fn rejected_authorization_tenant_and_malformed_result_never_touch_action_c
         instance_name: "tenant-a".into(),
         action_digest: Some(action_digest()),
         action_result: Some(result()),
+        ..Default::default()
     };
     let missing = service(Ok(("tenant-a".into(), true)), Ok(()), ac.clone());
     assert_eq!(
@@ -271,6 +288,7 @@ async fn rejected_authorization_tenant_and_malformed_result_never_touch_action_c
                 digest: None,
                 is_executable: false,
                 contents: b"unbound".to_vec(),
+                ..Default::default()
             }],
             ..Default::default()
         }),
@@ -294,6 +312,7 @@ async fn rejected_authorization_tenant_and_malformed_result_never_touch_action_c
                 }),
                 is_executable: false,
                 contents: b"unbound".to_vec(),
+                ..Default::default()
             }],
             ..Default::default()
         }),
@@ -353,6 +372,7 @@ async fn miss_is_not_found_and_immutable_conflict_is_already_exists() {
                 instance_name: "tenant-a".into(),
                 action_digest: Some(action_digest()),
                 action_result: Some(result()),
+                ..Default::default()
             },
         )
         .await
