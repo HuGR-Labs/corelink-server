@@ -387,7 +387,12 @@ def check_b216(root: Path) -> None:
     _require(paging, "response.status !== 202", lane)
     _require(body, 'paging.status !== "delivered"', lane)
     _require(body, 'paging.status === "failed" ? paging.error : "route_not_configured"', lane)
-    _require(body, 'action: "retry_paging"', lane)
+    # The action is selected at the bounded retry edge: an accepted provider
+    # route records `retry_paging` before the DLQ delivery budget expires and
+    # `delivery_exhausted` at the terminal boundary. Keep the executable
+    # assertion aligned with that single ternary instead of requiring a
+    # misleading standalone literal.
+    _require(body, 'action: exhausted ? "delivery_exhausted" : "retry_paging"', lane)
     _require(body, 'requeue_error: "transport_error"', lane)
     index = _code(_read(root, "apps/signup-worker/src/index.ts"))
     _require(index, 'batch.queue === "corelink-dsr-erasure-dlq"', lane)
