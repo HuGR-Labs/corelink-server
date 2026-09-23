@@ -4,7 +4,12 @@ on:
   pull_request:
     paths:
       - "apps/signup-worker/src/webhooks/dsr_consumer.ts"
+      - "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts"
+      - "apps/signup-worker/src/index.ts"
       - "apps/signup-worker/tests/dsr_consumer.test.ts"
+      - "apps/signup-worker/tests/dsr_dlq_redrive.test.ts"
+      - "migrations/d1/0144_dsr_dlq_redrive_authority.sql"
+      - "docs/internal/okf-wiki/concept-manifest.yaml"
       - "migrations/d1/0138_dsr_dlq_delivery_receipts.sql"
       - "docs/internal/b215-b230-runtime-owner-actions.md"
       - "BACKLOG.md"
@@ -36,4 +41,4 @@ jobs:
       - name: Install pinned signup-worker dependencies
         run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
       - name: Exercise B-216 DSR DLQ receipt contract
-        run: pnpm --dir apps/signup-worker exec vitest run tests/dsr_consumer.test.ts
+        run: pnpm --dir apps/signup-worker exec vitest run tests/dsr_consumer.test.ts tests/dsr_dlq_redrive.test.ts
