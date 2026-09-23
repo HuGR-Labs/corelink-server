@@ -9,6 +9,7 @@ token is stored as a durable Actions secret.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import re
 import sys
@@ -51,10 +52,9 @@ APP_TOKEN_OUTPUT = "steps.app-token.outputs.token"
 B012_BACKLOG_REQUIRED = (
     "approval-required",
     "Dependabot PRs can trigger workflows",
-    "status: open",
-    "expected jobs actually complete",
-    "offline/missing runner labelled `corelink`",
-    "Check/status presence or a zero-job workflow run does not close it",
+    "both expected jobs completed successfully",
+    "missing `corelink` runner capacity",
+    "Check/status presence or a zero-job workflow run is not execution evidence",
 )
 
 
@@ -248,11 +248,34 @@ def verify_b012_backlog(root: Path = ROOT) -> list[str]:
     if start < 0 or end < 0:
         return ["B-012: BACKLOG section boundaries are missing"]
     section = text[start:end]
+    normalized_section = " ".join(section.split())
     errors = [
         f"B-012: BACKLOG lost {marker!r}"
         for marker in B012_BACKLOG_REQUIRED
-        if marker not in section
+        if marker not in normalized_section
     ]
+    status_match = re.search(r"(?m)^status: (open|done)$", section)
+    if status_match is None:
+        errors.append("B-012: BACKLOG status must be open or done")
+        return errors
+
+    receipt_path = root / "evidence/owner-actions/B-012/bot-pr-checks.json"
+    proof_valid = False
+    if receipt_path.is_file():
+        try:
+            sys.path.insert(0, str(root))
+            from scripts.verify_b012_bot_pr_evidence import EvidenceError, validate_record
+
+            validate_record(json.loads(receipt_path.read_text(encoding="utf-8")))
+            proof_valid = True
+        except (ImportError, OSError, json.JSONDecodeError, ValueError) as error:
+            errors.append(f"B-012: hosted bot-PR receipt is invalid: {error}")
+
+    status = status_match.group(1)
+    if status == "done" and not proof_valid:
+        errors.append("B-012: done status requires verified hosted DCO and rustfmt job evidence")
+    if status == "open" and proof_valid:
+        errors.append("B-012: status is stale open despite verified hosted DCO and rustfmt evidence")
     if "bot-opened PRs arrive with zero checks" in section or "until a bot-opened PR shows checks" in section:
         errors.append("B-012: BACKLOG treats token author or check presence as CI proof")
     return errors

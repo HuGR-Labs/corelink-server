@@ -48,8 +48,10 @@ class OwnerActionPacketTests(unittest.TestCase):
             MODULE.check_data(self.data, "B-012"),
             {"items": 29, "population": 29},
         )
+        item = next(entry for entry in self.data["items"] if entry["id"] == "B-012")
+        self.assertEqual((item["owner"], item["status"]), ("tl", "done"))
         mutations = (
-            ("procedure", 0, "one-hour", "durable"),
+            ("procedure", 0, "GitHub App", "credential"),
             ("procedure", 2, "online runner labelled corelink", "online builder"),
             ("procedure", 3, "approval-required", "suppressed"),
             ("procedure", 3, "Dependabot", "bot"),
@@ -70,6 +72,12 @@ class OwnerActionPacketTests(unittest.TestCase):
                     item["evidence"][field] = item["evidence"][field].replace(before, after, 1)
                 with self.assertRaises(MODULE.PacketError):
                     MODULE.check_data(mutated, "B-012")
+
+        stale_open = copy.deepcopy(self.data)
+        stale_item = next(entry for entry in stale_open["items"] if entry["id"] == "B-012")
+        stale_item["status"] = "open"
+        with self.assertRaises(MODULE.PacketError):
+            MODULE.check_data(stale_open, "B-012")
 
     def test_b013_reconciled_closure_matches_backlog(self) -> None:
         self.assertEqual(

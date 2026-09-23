@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "limits": {
+      "total_vcpu": 16,
+      "vcpu_per_deployment": 4,
+      "memory_mib_per_deployment": 4096,
+      "total_memory_mib": 16384
+    }
+  }
+}
