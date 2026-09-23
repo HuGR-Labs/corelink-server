@@ -157,7 +157,7 @@ def verify_provider(path: Path, model: dict[str, object]) -> None:
     total_vcpu = positive_finite_number(quota, "total_vcpu")
     if total_vcpu != model["account_limit_vcpu"]:
         raise CapacityError("provider total_vcpu does not match the budget model")
-    for key in ("vcpu_per_deployment", "total_memory_mib"):
+    for key in ("vcpu_per_deployment", "memory_mib_per_deployment", "total_memory_mib"):
         positive_finite_number(quota, key)
     if positive_finite_number(quota, "vcpu_per_deployment") != model["runner_vcpu_per_instance"]:
         raise CapacityError("provider vcpu_per_deployment does not match the runner contract")

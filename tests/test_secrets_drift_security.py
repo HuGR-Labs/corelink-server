@@ -35,6 +35,8 @@ class SecretsDriftSecurityTests(unittest.TestCase):
             "github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'",
             text,
         )
+        self.assertIn("github.event.pull_request.number || github.ref", text)
+        self.assertIn("cancel-in-progress: true", text)
 
     def test_adversarial_candidate_script_is_data_only(self) -> None:
         """A PR replacement of the validator cannot execute on the runner."""

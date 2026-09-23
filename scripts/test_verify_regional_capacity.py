@@ -108,6 +108,26 @@ class RegionalCapacityVerifierTests(unittest.TestCase):
             with self.assertRaises(verifier.CapacityError):
                 verifier.verify_provider(path, model)
 
+    def test_provider_per_deployment_memory_quota_fails_closed(self) -> None:
+        model = verifier.declared_budget()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "provider.json"
+            valid_quota = self.provider_receipt()["quota"]
+            assert isinstance(valid_quota, dict)
+            invalid_quotas = (
+                {key: value for key, value in valid_quota.items() if key != "memory_mib_per_deployment"},
+                {**valid_quota, "memory_mib_per_deployment": True},
+                {**valid_quota, "memory_mib_per_deployment": 0},
+                {**valid_quota, "memory_mib_per_deployment": -1},
+                {**valid_quota, "memory_mib_per_deployment": float("nan")},
+                {**valid_quota, "memory_mib_per_deployment": "4096"},
+            )
+            for quota in invalid_quotas:
+                with self.subTest(memory_mib_per_deployment=quota.get("memory_mib_per_deployment")):
+                    path.write_text(json.dumps(self.provider_receipt(quota=quota)), encoding="utf-8")
+                    with self.assertRaises(verifier.CapacityError):
+                        verifier.verify_provider(path, model)
+
     def test_provider_nonfinite_or_measurement_claim_fails_closed(self) -> None:
         model = verifier.declared_budget()
         with tempfile.TemporaryDirectory() as directory:
