@@ -107,7 +107,7 @@ class IsolatedLaneBehaviorTests(unittest.TestCase):
         self.assertEqual(self.meter.retained_payload_bytes(), 8)
         self.meter.set_phase("cleanup")
         deleted, failures = lane.cleanup_exact("https://cache.example.invalid", "redacted-test-token", TENANT, self.meter)
-        self.assertEqual((deleted, failures), (4, 0))
+        self.assertEqual((deleted, failures), (5, 0))
         self.assertEqual(self.meter.retained_payload_bytes(), 0)
         cleanup_calls = [(method, path) for method, path, _ in FakeHttpsConnection.requests if method in {"DELETE", "PROPFIND"}]
         expected = {f"/cargo/{TENANT}/{PREFIX}-{key}" for key in {"seed", "hit", "pair", "missing", "failed"}}
