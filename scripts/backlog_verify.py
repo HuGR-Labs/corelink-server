@@ -89,6 +89,7 @@ IMMUTABLE_ITEM_FIELDS = frozenset({
     "source-locator", "finding-title", "problem", "evidence", "acceptance",
 })
 B154_LEGACY_VERIFY_SHA256 = "39b0307a1a4451c90fb22fe9a37cfbd858485d38e6361e6c3d15bce1d1f4beac"
+B154_SPRINT3_VERIFY_SHA256 = "a6045afb801b3b6a61ff09d97b6e77ba5fa4f7e1c4f9ed0fde8554957484264e"
 ALLOWED_TRANSITION_FIELDS = frozenset({"status", "owner", "last-verified", "verify-means"})
 
 # A command's polarity cannot be inferred from arbitrary shell.  We can still
@@ -549,7 +550,11 @@ def validate_candidate_transitions(
                 ) and item.id == "B-154" and (
                     isinstance(old_raw.get("verify"), str)
                     and hashlib.sha256(old_raw["verify"].encode()).hexdigest()
-                    == B154_LEGACY_VERIFY_SHA256
+                    == (
+                        B154_SPRINT3_VERIFY_SHA256
+                        if allow_sprint3_rewrite
+                        else B154_LEGACY_VERIFY_SHA256
+                    )
                     and new_raw.get("verify") == (
                         "python3 -S scripts/verify_owner_action_packets.py --id B-154 &&\n"
                         "python3 -S scripts/verify_b154_instrument_claims.py --self-test\n"
