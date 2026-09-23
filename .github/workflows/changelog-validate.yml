@@ -50,10 +50,10 @@ concurrency:
 jobs:
   changelog-required:
     name: CHANGELOG.md updated when feat/fix present
-    # Runner: GitHub-hosted ubuntu-latest (wave 3 migration from corelink fabric).
+    # Runner: GitHub-hosted ubuntu-24.04 (wave 3 migration from corelink fabric).
     # Pure git + stdlib-python3 diff parse; sub-minute check.
-    runs-on: ubuntu-latest
-    # Bound the job: a self-hosted job with no timeout inherits GitHub's 360-min
+    runs-on: ubuntu-24.04
+    # Bound the job: a job with no timeout inherits GitHub's 360-min
     # default, so one wedged run can hold a runner for 6h and stall
     # `scripts/pre-merge-gate-check.sh` (the mandatory merge gate) for every
     # other PR. This check is sub-minute.
