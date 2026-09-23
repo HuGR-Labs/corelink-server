@@ -105,6 +105,35 @@ def test_tree_certificate_rejects_a_mutation_even_when_registry_and_manifest_are
         coverage.verify(fixture_root)
 
 
+def test_excluded_audit_digest_rejects_substituted_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture_root = _copy_gate_root(tmp_path)
+    relative = Path("reports/audits/2026-08-25-comprehensive-audit-and-verification.md")
+    audit = fixture_root / relative
+    audit.write_bytes(audit.read_bytes() + b"\nsubstituted bytes\n")
+
+    # Refresh only the synthetic fixture's tree certificate so this test reaches
+    # the independent excluded-audit pin instead of failing the outer tree seal.
+    paths: set[str] = set()
+    for root in coverage.B101_CENSUS_ROOTS:
+        paths |= coverage._regular_files_in_root(fixture_root, coverage.AuditRoot(root))
+    census = sorted(
+        (
+            path,
+            hashlib.sha256(
+                coverage._read_regular_file_beneath(fixture_root, path, "test census entry")
+            ).hexdigest(),
+        )
+        for path in paths
+    )
+    tree_digest = hashlib.sha256(json.dumps(census, separators=(",", ":")).encode()).hexdigest()
+    monkeypatch.setattr(coverage, "B101_CENSUS_TREE_SHA256", tree_digest)
+
+    with pytest.raises(coverage.CoverageError, match="excluded audit content changed; reclassify it"):
+        coverage.verify(fixture_root)
+
+
 def test_manifest_unknown_field_is_malformed_and_red(tmp_path: Path) -> None:
     manifest = _manifest()
     manifest["unexpected"] = "reanchor"
