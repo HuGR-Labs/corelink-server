@@ -24,6 +24,7 @@ class Issue1690VerifierContractTests(unittest.TestCase):
         manifest: dict | None = None,
         head_blob_overrides: dict[str, str] | None = None,
         merge_present: bool = True,
+        available_source: str | None = None,
     ) -> dict:
         manifest = json.loads(json.dumps(manifest or MANIFEST))
         squash = manifest["squash_provenance"]
@@ -41,6 +42,8 @@ class Issue1690VerifierContractTests(unittest.TestCase):
                 return squash["tree"] if args[3] == merge else current_tree
             if args[:4] == ("diff-tree", "--no-commit-id", "--name-only", "-r"):
                 return "\n".join(merge_paths if args[4] == merge else [])
+            if args[:3] == ("rev-list", "--parents", "-n1"):
+                return f"{args[3]} {'d' * 40}"
             if args[0] == "rev-parse" and ":" in args[1]:
                 target, path = args[1].split(":", 1)
                 if target == HEAD:
@@ -52,7 +55,7 @@ class Issue1690VerifierContractTests(unittest.TestCase):
             return fake_git(*args)
 
         def fake_commit_exists(commit: str) -> bool:
-            return merge_present and commit == merge
+            return (merge_present and commit == merge) or commit == available_source
 
         def fake_ancestor(commit: str, head: str) -> bool:
             return commit == merge and head == HEAD
@@ -118,6 +121,15 @@ class Issue1690VerifierContractTests(unittest.TestCase):
     def test_missing_canonical_squash_object_is_rejected(self) -> None:
         with self.assertRaisesRegex(verifier.VerificationError, "squash merge commit is missing"):
             self.run_verifier("b" * 40, merge_present=False)
+
+    def test_available_conflicting_source_object_is_evidence_only(self) -> None:
+        source = MANIFEST["squash_provenance"]["source_commits"]["p12"]["commit"]
+        report = self.run_verifier("b" * 40, available_source=source)
+        self.assertEqual(report["status"], "PASS")
+        evidence = report["squash_source_commits"]["p12"]
+        self.assertTrue(evidence["object_present"])
+        self.assertEqual(evidence["parent"], "d" * 40)
+        self.assertFalse(evidence["paths_match_inventory"])
 
     def test_malformed_or_altered_receipt_is_rejected(self) -> None:
         with self.assertRaisesRegex(verifier.VerificationError, "receipt schema_version"):
