@@ -8,18 +8,26 @@ source_files:
   - "crates/corelink-container/src/storage/r2_s3_parts/client.rs"
   - "crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs"
   - "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_batch.rs"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_builder.rs"
+  - "crates/corelink-container/src/storage/r2_s3_parts/client_impl.rs"
+  - "crates/corelink-container/src/storage/r2_s3_parts/client_types.rs"
   - "crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs"
   - "crates/corelink-container/src/sli_aggregate.rs"
   - "crates/corelink-region/src/region.rs"
 source_blobs:
-  - "crates/corelink-container/src/storage.rs@f0f3edc7ffe0580418c0a62e57295f34b4cc2f17"
-  - "crates/corelink-container/src/storage/cas_write_fence.rs@23e20fdab7e8d38f687048ff2bc3156a4ea99a72"
-  - "crates/corelink-container/src/storage/r2_s3_parts/client.rs@d25455eeac08cbd0584abcf46e71480c0c888360"
-  - "crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs@c731944a56c1db190287a93fb8888b09ca67902c"
-  - "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs@e00d735e2e5d22496258a7f9f4e93abff618449f"
-  - "crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs@358d2554f7a8af80b31368d61990d4f705c06a93"
+  - "crates/corelink-container/src/storage.rs@a8a86b64682ebe3c66b960d4301778ad3321d771"
+  - "crates/corelink-container/src/storage/cas_write_fence.rs@a267f99ce0c11cf18cb577560554b4c7347b7f3b"
+  - "crates/corelink-container/src/storage/r2_s3_parts/client.rs@22766306979eea1f5180a0418f08a405acf0c25f"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs@613fdde5ed6e70e5ba2079903c013e3dc33f27fb"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs@8762b858933aadb0c6577be5cef37d9826dec42a"
+  - "crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs@9d0f2ddda14e30d0358283bc9d96577a94d8ad29"
   - "crates/corelink-container/src/sli_aggregate.rs@9e830ac543a06095cff49857cb91edff6b0ce7f2"
-  - "crates/corelink-region/src/region.rs@47b01e523ed5e5c57425454eaf67bbe1020511e8"
+  - "crates/corelink-region/src/region.rs@6fbe2220d22d66f6c07207800db0f2dbca21cd1b"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_batch.rs@9255013bd5f08e8ea4ee2d66f6dffc5aa466852b"
+  - "crates/corelink-container/src/storage/r2_s3_parts/cas_builder.rs@46958333012cea23f7357887d91e105c5d4f50a2"
+  - "crates/corelink-container/src/storage/r2_s3_parts/client_impl.rs@7e700bc86c038465a13e60d56fe2c3c7b81229a4"
+  - "crates/corelink-container/src/storage/r2_s3_parts/client_types.rs@acb304cc10ef4e48fd5da1b779565ca27588c156"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "cas", "s3", "tenant-isolation"]
@@ -51,82 +59,70 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
 - The native-side durable storage adapter for R2, the complement to the Worker-only wasm R2 bindings
   (`crates/corelink-container/src/storage.rs:1-30`).
 - The S3 client + tenant-scoped key deriver that every CAS handler writes through
-  (`crates/corelink-container/src/storage/r2_s3_parts/client.rs:1-37`).
+  (`crates/corelink-container/src/storage/r2_s3_parts/client_types.rs:130-139`).
 
 # How it works
 1. R2 is reached via the S3-compatible API over egress; this module is the native complement to the
    Worker's wasm bindings (`crates/corelink-container/src/storage.rs:1-30`).
 2. All S3/D1 config is sourced from env all-or-nothing — `from_env` returns `Some` only if every
-   required variable is present and non-empty (`crates/corelink-container/src/storage.rs:101-118`).
+   required variable is present and non-empty (`crates/corelink-container/src/storage.rs:124-139`).
 3. The S3 config is built directly from explicit static R2 credentials, deliberately bypassing the AWS
-   credential-provider chain (`crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:426`).
+   credential-provider chain (`crates/corelink-container/src/storage/r2_s3_parts/client_impl.rs:21-34`).
 4. CAS is a single bucket; the tenant and region are encoded in the object KEY
    `<region>/<tenant_prefix_16>/<digest>`, not in the bucket name
-   (`crates/corelink-container/src/storage/r2_s3_parts/client.rs:1-37`).
+   (`crates/corelink-container/src/storage/r2_s3_parts/client_types.rs:130-139`).
 5. The client serializes measure-and-delete per object key so two racing deletes cannot both report the
-   same bytes reclaimed (`crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:80`).
+   same bytes reclaimed (`crates/corelink-container/src/storage/r2_s3_parts/client.rs:88-103`; delete serialization at `crates/corelink-container/src/storage/r2_s3_parts/client_impl.rs:362-410`).
 6. Bucket / region env reads route through `env_or` so an absent OR empty value falls back to the
    container default instead of producing a request-breaking empty bucket name
-   (`crates/corelink-container/src/storage.rs:131-143`).
+   (`crates/corelink-container/src/storage.rs:153-165`).
 7. The production CAS handler builder wires a DURABLE audit trail, not a volatile one: with storage creds
    present (the real data plane) `build_r2_cas_handler_from_env` constructs the D1 `audit_outbox` sink via
    `cas_audit_sink_from_d1_concrete(D1HttpClient::new(&env))` and REFUSES to build the handler if that sink
    cannot be constructed — the route then mounts the fail-CLOSED 503 handler rather than falling back to
    the in-memory `InMemoryAuditSink` (which would lose every CAS audit event on restart and make the
    route's `AuditFailed → 503` guard dead code). The builder keeps the sink CONCRETE (`Arc<D1AuditOutboxSink>`,
-   not just the type-erased `Arc<dyn AuditSink>`) and wires the SAME `Arc` into the handler twice — once
-   coerced for the sync trait object, once via `.with_async_audit(..)` — so the sync and concurrent-list
-   audit paths (point 8) are provably one sink instance
-   (`crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:383-425`).
-8. Every native CAS/AC handler's R2/S3 object GET/PUT/DELETE/LIST call — made through the sync
-   `block_in_place` bridge described in point 3 — is now timed into the container's `ostore`
-   Server-Timing phase rather than falling into the unattributed `oother` residue; the read path's GET is
-   the representative example (`crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:89-93`). The `list()`
-   call goes further: the mandatory `ListAttempted` audit write and this R2 enumeration now run
-   CONCURRENTLY (`tokio::join!`) rather than serially, when the handler was built with the async audit
-   seam wired (production shape) — fail-CLOSED is preserved because no rows are ever returned to the
-   caller until the audit result is checked FIRST, in the same order the old serial code checked it; a
-   handler without that seam (every test handler) keeps the original fully serial path
-   (`crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:199-313`). See
-   [the request-flow concept](/planes/request-flow.md) for the full phase list and the timing-honesty
-   argument for why the joined window is attributed once, not twice.
+   not just the type-erased `Arc<dyn AuditSink>`) and wires the same `Arc` into the handler twice — once
+   coerced for the synchronous audit trait and once via `.with_async_audit(..)` for the batched
+   `exists_batch` audit path. CAS list keeps the synchronous audit-before-enumeration order
+   (`crates/corelink-container/src/storage/r2_s3_parts/cas_builder.rs:10-88`).
+8. Native CAS GET/PUT/DELETE/LIST calls use the synchronous `block_in_place` bridge to the async R2 client; the GET path is the representative timed storage operation (`crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:163-169`). The CAS `list()` path commits `ListAttempted` before the tenant-prefix R2 enumeration and checks the audit result before returning any rows (`crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:337-343,385-418`).
 9. The Bazel REAPI `findMissingBlobs` existence probe is the seam that removes an O(N) endpoint.
    `CasReadHandler::exists` answers about ONE digest, so probing N of them cost N audit writes and N
    HEADs — measured in prod at ~268 ms per digest, i.e. ~18 minutes at the 4096-digest cap.
    `exists_batch` collapses the audit half into ONE batched D1 statement and runs the HEADs with
-   bounded concurrency (`crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:446-556`), the bound deliberately small because the container is a
+   bounded concurrency (`crates/corelink-container/src/storage/r2_s3_parts/cas_batch.rs:4-124`), the bound deliberately small because the container is a
    0.25-vCPU `basic` instance and R2 request limits are shared across tenants on the account
-   (`crates/corelink-container/src/storage/r2_s3_parts/client.rs:660`). Results come back in REQUEST order, not completion order, and the first error wins.
+   (`crates/corelink-container/src/storage/r2_s3_parts/client_types.rs:35-40`). Results come back in REQUEST order, not completion order, and the first error wins.
    The capability is OPTIONAL — a handler without the async audit sink advertises none
-   (`crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:435-440`) and the caller keeps the unchanged per-digest `exists()` loop. The storage half
-   of a probe is ONE module-private helper that deliberately emits NO audit row (`crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:424`),
+   (`crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:367-372`) and the caller keeps the unchanged per-digest `exists()` loop. The storage half
+   of a probe is ONE module-private helper that deliberately emits NO audit row (`crates/corelink-container/src/storage/r2_s3_parts/cas_batch.rs:175-210`),
    shared by this seam and the single-digest `exists()` seam so the two cannot drift on which key they
    HEAD; it is safe only because BOTH callers refuse to return any of its results unless their audit
    write committed, and it must never be widened into a generally reachable un-audited CAS probe.
 
 # Invariants
 - S3 credentials come only from env and are redacted in both `Debug` and `Display` — a `{:?}` must
-  never leak the R2 secret key or CF token (`crates/corelink-container/src/storage.rs:69-93`).
+  never leak the R2 secret key or CF token (`crates/corelink-container/src/storage.rs:91-114`).
 - `StorageEnv::from_env` is all-or-nothing: a partial credential set yields `None` and the caller falls
   back to in-memory fakes rather than a half-configured client
-  (`crates/corelink-container/src/storage.rs:101-118`).
+  (`crates/corelink-container/src/storage.rs:124-139`).
 - The tenant prefix segment is derived via `derive_prefix`, so cross-tenant key co-residence is
   impossible — layer 5 of `INV-TENANT-ISOLATION`
-  (`crates/corelink-container/src/storage/r2_s3_parts/client.rs:1-37`).
+  (`crates/corelink-container/src/storage/r2_s3_parts/client_types.rs:130-139`).
 - The S3 config MUST be built from explicit static credentials; calling `aws_config::defaults` would
   trigger IMDS probes that have no endpoint in CF Containers and burn 60-90s of cold-start
-  (`crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:426`).
+  (`crates/corelink-container/src/storage/r2_s3_parts/client_impl.rs:21-34`).
 - On the production data plane the CAS audit sink MUST be durable: the builder wires the D1 `audit_outbox`
   sink and fails CLOSED (refuses to mount the handler) if it cannot, never silently falling back to the
-  volatile in-memory sink (`crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:386`).
-- The native `list()` concurrent seam never weakens the audit-before-response guarantee: the audit
-  result is checked and can return `AuditFailed` BEFORE the store result is ever inspected, regardless
-  of whether the R2 call was dispatched concurrently — no rows are served on a failed audit write
-  (`crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:315-318`).
+  volatile in-memory sink (`crates/corelink-container/src/storage/r2_s3_parts/cas_builder.rs:40-88`).
+- The native CAS `list()` path checks the durable `ListAttempted` audit result before returning the
+  tenant-prefix R2 enumeration; an audit failure returns `AuditFailed` and no rows are served
+  (`crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:337-343,415-418`).
 - The `findMissingBlobs` batch seam obeys the same rule: cross-tenant denial is evaluated over the
   WHOLE request before anything is dispatched, and still emits its own `ReadDenied` row
-  (`crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:471-488`); the batched audit result is then evaluated BEFORE any probe result is read, so a
-  failed audit returns `AuditFailed` and no probe outcome reaches the caller (`crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:535-537`).
+  (`crates/corelink-container/src/storage/r2_s3_parts/cas_batch.rs:23-46`); the batched audit result is then evaluated BEFORE any probe result is read, so a
+  failed audit returns `AuditFailed` and no probe outcome reaches the caller (`crates/corelink-container/src/storage/r2_s3_parts/cas_batch.rs:74-103`).
   Concurrency changes only what was dispatched, never what can reach the caller.
 
 # Gotchas
@@ -140,7 +136,7 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
 ## What the handlers report, and to whom
 
 Every CAS and AC entry emits an availability + latency `SliObservation` pair before returning
-(`crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:383-405` — `R2CasHandler::emit_sli`). Where those
+(`crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:354-377` — `R2CasHandler::emit_sli`). Where those
 observations GO was, until 2026-08-29, nowhere: the deployed builders wired
 `corelink_handler_cas::InMemorySliObserver`, a capture-everything `Mutex<Vec<..>>` whose
 `snapshot()` / `count()` is called only from tests, built once at process start and never drained —
@@ -165,18 +161,22 @@ structured non-quiet decision is available to the operational log/metrics alert 
 
 # Citations
 1. `crates/corelink-container/src/storage.rs:1-30` — module charter: native R2 access via the S3-compatible API over egress.
-2. `crates/corelink-container/src/storage.rs:69-93` — credential-redacting `Debug`/`Display` impls.
-3. `crates/corelink-container/src/storage.rs:101-118` — all-or-nothing `StorageEnv::from_env`.
-4. `crates/corelink-container/src/storage.rs:131-143` — `env_or` (absent OR empty → default; AC-500 incident).
+2. `crates/corelink-container/src/storage.rs:91-114` — credential-redacting `Debug`/`Display` impls.
+3. `crates/corelink-container/src/storage.rs:124-139` — all-or-nothing `StorageEnv::from_env`.
+4. `crates/corelink-container/src/storage.rs:153-165` — `env_or` (absent OR empty → default; AC-500 incident).
 5. `crates/corelink-container/src/storage/cas_write_fence.rs:1-80` — the D1-backed CAS writer lease that fences GC from concurrent R2 writes.
-5. `crates/corelink-container/src/storage/r2_s3_parts/client.rs:1-37` — CAS key scheme `<region>/<tenant_prefix_16>/<digest>` + tenant isolation.
-6. `crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:80` — `R2S3Client` bucket field + per-key delete-serialization locks.
-7. `crates/corelink-container/src/storage/r2_s3_parts/cas_core.rs:426` — direct static-credential S3 config; IMDS-bypass cold-start fix.
-8. `crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:383-425` — `build_r2_cas_handler_from_env` wires the DURABLE D1 `audit_outbox` sink (`cas_audit_sink_from_d1_concrete`), fails CLOSED, and keeps the sink CONCRETE so `.with_async_audit(..)` (point 11) wires the SAME instance as the sync `audit` field, replacing the former volatile `InMemoryAuditSink`.
+6. `crates/corelink-container/src/storage/r2_s3_parts/client_types.rs:130-139` — CAS key scheme `<region>/<tenant_prefix_16>/<digest>` + tenant isolation.
+6. `crates/corelink-container/src/storage/r2_s3_parts/client.rs:88-103` — `R2S3Client` bucket field and per-key lock map; delete serialization at `crates/corelink-container/src/storage/r2_s3_parts/client_impl.rs:362-410`.
+7. `crates/corelink-container/src/storage/r2_s3_parts/client_impl.rs:21-34` — direct static-credential S3 config; IMDS-bypass cold-start fix.
+8. `crates/corelink-container/src/storage/r2_s3_parts/cas_builder.rs:10-88` — `build_r2_cas_handler_from_env` wires the DURABLE D1 `audit_outbox` sink (`cas_audit_sink_from_d1_concrete`), fails CLOSED, and keeps the sink CONCRETE so `.with_async_audit(..)` (point 11) wires the SAME instance as the sync `audit` field, replacing the former volatile `InMemoryAuditSink`.
 9. `crates/corelink-region/src/region.rs:83-87` — `Region::r2_bucket_name()` → per-region `corelink-cas-{region}` (the regional-bucket topology this native adapter does not use).
-10. `crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:89-93` — `R2CasHandler::read`'s R2 GET wrapped into `Phase::Store` (`ostore`) via `PhaseScope::enter`, the same treatment every other native-plane R2 GET/PUT/HEAD/DELETE/LIST call in this file now gets.
-11. `crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:199-313` — `R2CasHandler::list`: when `audit_async` is wired (production), the mandatory `ListAttempted` audit write and the R2 `ListObjectsV2` call run CONCURRENTLY (`tokio::join!`) under one `block_in_place`/`block_on`; the audit result is checked first (`crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:315-318`) so no rows are served on a failed audit write. `R2AcHandler::list` mirrors this exactly.
-12. `crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:446-556` — `R2CasHandler::exists_batch_inner`: the `findMissingBlobs` seam — cross-tenant denial first, ONE batched `ReadAttempted` write joined with the bounded-concurrency R2 HEADs, audit result evaluated first.
-13. `crates/corelink-container/src/storage/r2_s3_parts/client.rs:660` — `MAX_CONCURRENT_EXISTS_PROBES`: the in-flight bound on those HEADs (0.25-vCPU instance; R2 limits shared across tenants).
-14. `crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:605-623` — `probe_existence_unaudited`: the ONE deliberately non-auditing probe body, shared by the single-digest and batch seams; safe only because both callers gate every result on their audit write.
-14. `crates/corelink-region/src/region.rs:1` — declared source anchor.
+10. `crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:163-169` — `R2CasHandler::read`'s R2 GET wrapped into `Phase::Store` (`ostore`) via `PhaseScope::enter`, the same treatment every other native-plane R2 GET/PUT/HEAD/DELETE/LIST call in this file now gets.
+11. `crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:290-418` — `R2CasHandler::list`: the mandatory `ListAttempted` audit write completes before the tenant-prefix R2 enumeration, and the audit result is checked before any rows are returned (`crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:337-343,385-418`).
+12. `crates/corelink-container/src/storage/r2_s3_parts/cas_batch.rs:4-124` — `R2CasHandler::exists_batch_inner`: the `findMissingBlobs` seam — cross-tenant denial first, one batched `ReadAttempted` write completed before bounded-concurrency R2 HEADs are dispatched.
+13. `crates/corelink-container/src/storage/r2_s3_parts/client_types.rs:35-40` — `MAX_CONCURRENT_EXISTS_PROBES`: the in-flight bound on those HEADs (0.25-vCPU instance; R2 limits shared across tenants).
+14. `crates/corelink-container/src/storage/r2_s3_parts/cas_batch.rs:175-210` — `probe_existence_unaudited`: the ONE deliberately non-auditing probe body, shared by the single-digest and batch seams; safe only because both callers gate every result on their audit write.
+15. `crates/corelink-region/src/region.rs:1` — declared source anchor.
+16. `crates/corelink-container/src/storage/r2_s3_parts/cas_builder.rs:10-88` — CAS production handler builder and fail-closed durable audit/fence wiring.
+17. `crates/corelink-container/src/storage/r2_s3_parts/client_impl.rs:10-44,362-410` — static credential construction and per-key delete serialization.
+18. `crates/corelink-container/src/storage/r2_s3_parts/client_types.rs:35-40,130-139` — bounded existence-probe concurrency and physical CAS key layout.
+19. `crates/corelink-container/src/storage/r2_s3_parts/cas_batch.rs:4-124,175-210` — fail-closed audited batch existence probes and their private storage helper.

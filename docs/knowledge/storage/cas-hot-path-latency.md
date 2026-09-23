@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-container/src/billing_d1_http.rs"
   - "docs/perf/2026-06-19-cas-hot-path-latency.md"
 source_blobs:
-  - "crates/corelink-container/src/billing_d1_http.rs@aa0999b8fbb283cbad24dfe47dfe8c3e92351390"
+  - "crates/corelink-container/src/billing_d1_http.rs@a63b074f095ff60866333f76cf739dfa3ce473c9"
   - "docs/perf/2026-06-19-cas-hot-path-latency.md@f08db60bee482f5cd47e4d3b27d3fb7dab1b2ba5"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
@@ -43,17 +43,17 @@ view of the [native CAS surface](/surfaces/native-cas.md) running on the [contai
    (`docs/perf/2026-06-19-cas-hot-path-latency.md:18-32`).
 4. Each D1 statement is driven through `block_in_place` + `Handle::current().block_on` because the trait
    surface is sync but native D1 access is async over REST
-   (`crates/corelink-container/src/billing_d1_http.rs:98-115`).
+   (`crates/corelink-container/src/billing_d1_http.rs:95-119`).
 5. Remediation is four separate-PR work-packages: bulk PUT, drop the two D1 hops, keep the container
    warm, and fast-hash PATs (`docs/perf/2026-06-19-cas-hot-path-latency.md:55-94`).
 
 # Invariants
 - The sync billing/control-plane trait stays sync (shared with the wasm Worker); `block_in_place` on the
   multi-thread runtime is the single documented bridge point — no nested runtime
-  (`crates/corelink-container/src/billing_d1_http.rs:98-115`).
+  (`crates/corelink-container/src/billing_d1_http.rs:95-119`).
 - Any D1 transport / non-2xx / decode error maps to `Transient` → HTTP 500 so the caller retries; the
   store is fail-CLOSED, never silently treating a failed read as success — the executing
-  `.map_err(|e| BillingD1Error::Transient(..))` is at `crates/corelink-container/src/billing_d1_http.rs:114`.
+  `.map_err(|e| BillingD1Error::Transient(..))` is at `crates/corelink-container/src/billing_d1_http.rs:118`.
 - WP-2 must keep the $-ceiling fail-CLOSED with a bounded, reconciled overshoot — a charge is NEVER lost
   and a tenant definitely over-ceiling is still refused
   (`docs/perf/2026-06-19-cas-hot-path-latency.md:68-80`).
@@ -76,8 +76,8 @@ view of the [native CAS surface](/surfaces/native-cas.md) running on the [contai
 5. `docs/perf/2026-06-19-cas-hot-path-latency.md:68-80` — WP-2 $-ceiling fail-closed + tombstone no-false-negative invariants.
 6. `docs/perf/2026-06-19-cas-hot-path-latency.md:74-80` — GDPR Art.17 tombstone false-negative prohibition.
 7. `crates/corelink-container/src/billing_d1_http.rs:1-28` — the sync↔async D1-over-HTTP bridge rationale.
-8. `crates/corelink-container/src/billing_d1_http.rs:114` — fail-CLOSED transport-error → `Transient` → 500 (the executing `.map_err`).
-9. `crates/corelink-container/src/billing_d1_http.rs:98-115` — `run`: `block_in_place` + `block_on` per D1 round-trip.
+8. `crates/corelink-container/src/billing_d1_http.rs:118` — fail-CLOSED transport-error → `Transient` → 500 (the executing `.map_err`).
+9. `crates/corelink-container/src/billing_d1_http.rs:95-119` — `run`: `block_in_place` + `block_on` per D1 round-trip.
 
 
 # Revalidation
