@@ -52,7 +52,7 @@ jobs:
     # Require an operator dispatch from the protected canonical branch. This
     # keeps the metered staging lane unreachable from forks and feature refs.
     if: github.repository == 'HuGR-dev/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     environment: staging
     # Budget: 2h script + 5min ramp-up + 5min ramp-down + ~10min for k6
     # boot / artifact upload / baseline compare = 140 minutes ceiling.
@@ -254,7 +254,7 @@ jobs:
     name: 7-day rolling p99 drift (≤ +20% per SLO)
     # Keep the evidence comparator on the same protected canonical dispatch.
     if: always() && github.repository == 'HuGR-dev/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     needs: endurance-2h
     permissions:
       contents: read

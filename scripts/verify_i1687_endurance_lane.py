@@ -26,6 +26,13 @@ def verify_workflow(text: str) -> list[str]:
         errors.append("workflow_dispatch trigger is missing")
     if text.count(PROTECTED_DISPATCH) != 2:
         errors.append("measurement and baseline jobs must require a protected canonical dispatch")
+    for job_name in ("endurance-2h", "baseline-drift-check"):
+        boundary = re.search(
+            rf"(?ms)^  {re.escape(job_name)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            text,
+        )
+        if boundary is None or re.search(r"(?m)^    runs-on:\s*ubuntu-24\.04\s*$", boundary.group("body")) is None:
+            errors.append(f"{job_name} must use GitHub-hosted ubuntu-24.04")
     if re.search(r"^\s+schedule:", text, re.MULTILINE):
         errors.append("schedule trigger would make the lane unattended")
     if "CANONICAL_TARGET='https://staging.corelink.humangr.com'" not in text:

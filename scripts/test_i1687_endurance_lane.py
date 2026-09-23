@@ -53,6 +53,24 @@ def test_schedule_is_rejected() -> None:
     assert any("unattended" in error for error in errors)
 
 
+def test_measurement_and_baseline_reject_self_hosted_runners() -> None:
+    source = workflow_text()
+    runner_positions = []
+    offset = 0
+    while True:
+        offset = source.find("runs-on: ubuntu-24.04", offset)
+        if offset < 0:
+            break
+        runner_positions.append(offset)
+        offset += 1
+    assert len(runner_positions) == 2
+    marker = "runs-on: ubuntu-24.04"
+    for occurrence in range(2):
+        pieces = source.split(marker)
+        mutated = marker.join(pieces[: occurrence + 1]) + "runs-on: corelink" + marker.join(pieces[occurrence + 1 :])
+        assert verify_workflow(mutated), f"self-hosted mutation escaped at job index {occurrence}"
+
+
 def test_unprotected_dispatch_is_rejected() -> None:
     source = workflow_text()
     guard = (

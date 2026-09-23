@@ -189,7 +189,7 @@ LANES = (
         ".github/workflows/endurance-2h-nightly.yml",
         "endurance-2h",
         (
-            "runs-on: corelink",
+            "runs-on: ubuntu-24.04",
             "timeout-minutes: 145",
             "K6_ENDURANCE_CONFIRM:       'yes'",
         ),
@@ -207,7 +207,7 @@ LANES = (
         ".github/workflows/load-test-nightly.yml",
         "k6-staging",
         (
-            "runs-on: corelink",
+            "runs-on: ubuntu-24.04",
             "timeout-minutes: 45",
             "continue-on-error: true",
             "timeout-minutes: ${{ matrix.scenario.budget }}",
@@ -275,6 +275,8 @@ def assert_yaml_lane_shape(parsed: dict, lane: Lane) -> None:
     job = jobs.get(lane.job)
     if not isinstance(job, dict):
         raise VerificationError(f"{lane.name}: expected executable job {lane.job!r}")
+    if lane.name in {"endurance-2h", "load-test"} and job.get("runs-on") != "ubuntu-24.04":
+        raise VerificationError(f"{lane.name}: staging lane must use the GitHub-hosted ubuntu-24.04 runner")
     if lane.name == "nightly-mutants":
         # The only authorized runtime evidence path is the protected,
         # dispatch-only GitHub-hosted #1863 workflow. Retaining the legacy

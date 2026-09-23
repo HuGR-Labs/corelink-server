@@ -353,6 +353,14 @@ class B029LoadGateTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_load_jobs_reject_self_hosted_runner_mutations(self) -> None:
+        workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
+        self.assertEqual(self._assess_workflow(workflow), [])
+        mutated = workflow.replace("runs-on: ubuntu-24.04", "runs-on: corelink", 2)
+        gaps = self._assess_workflow(mutated)
+        self.assertTrue(any("GitHub-hosted ubuntu-24.04" in gap for gap in gaps))
+        self.assertTrue(any("self-hosted runners" in gap for gap in gaps))
+
     def test_baseline_job_guard_mutation_is_rejected(self) -> None:
         workflow = (ROOT / ".github/workflows/load-test-nightly.yml").read_text()
         guard = verifier.PROTECTED_DISPATCH_GUARD

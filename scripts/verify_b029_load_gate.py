@@ -614,8 +614,10 @@ def assess(root: Path, *, expect: str) -> list[str]:
     # The gate must compare the current run with a prior cached baseline and
     # publish only after a successful comparison.  These checks are intentionally
     # anchored to the executable command/action, not to prose in the header.
-    if workflow.count("runs-on: corelink") != 2:
-        gaps.append("both load jobs must run on corelink")
+    if workflow.count("runs-on: ubuntu-24.04") != 2:
+        gaps.append("both load jobs must run on GitHub-hosted ubuntu-24.04")
+    if re.search(r"(?m)^\s*runs-on:\s*(?:corelink|\[?self-hosted)", workflow):
+        gaps.append("load jobs must not target self-hosted runners")
     if workflow.count(PROTECTED_DISPATCH_GUARD) != 2:
         gaps.append("both load jobs must require the canonical protected manual dispatch")
     if "actions/cache/restore@" not in workflow or "restore-keys:" not in workflow:
