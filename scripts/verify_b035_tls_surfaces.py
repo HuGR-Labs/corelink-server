@@ -376,6 +376,10 @@ def _self_test(root: Path) -> None:
         if not is_comment and rule["value"] in _assignment_values(code, rule["key"]):
             lines[index] = line.replace(f'"{rule["value"]}"', f'"{rule["value"]}-renamed"', 1)
             mutated = lines[index] != line
+            lines.insert(
+                index,
+                f'# stale route tombstone: {rule["key"]} = "{rule["value"]}"\n',
+            )
             break
     if not mutated:
         raise VerificationError("self-test could not find the active corelink-api route")

@@ -69,7 +69,15 @@ class B035TlsSurfaceTests(unittest.TestCase):
         source = path.read_text(encoding="utf-8")
         active_declaration = f'pattern = "{rule["value"]}"'
         self.assertEqual(source.count(active_declaration), 1)
-        mutated = source.replace(active_declaration, active_declaration.replace(rule["value"], "renamed.invalid/*"), 1)
+        renamed = source.replace(
+            active_declaration,
+            active_declaration.replace(rule["value"], "renamed.invalid/*"),
+            1,
+        )
+        mutated = (
+            f'# stale route tombstone: {active_declaration}\n' + renamed
+        )
+        self.assertIn(f'# stale route tombstone: {active_declaration}', mutated)
         report = verify.inventory_from_overrides(
             verify.ROOT, {}, {rule["path"]: mutated}
         )
