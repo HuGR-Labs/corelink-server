@@ -1,0 +1,2 @@
+Temporary inert marker for hosted pull_request_target fork-checkout verification.
+No workflow, script, or secret-bearing content is included.
