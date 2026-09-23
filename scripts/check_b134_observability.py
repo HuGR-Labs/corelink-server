@@ -149,6 +149,63 @@ def require_run_on_corelink(text: str, where: str) -> None:
         )
 
 
+def require_runner_context_at_step_scope(text: str, where: str) -> None:
+    """Require runner identity expressions in observer-step env, not job env."""
+    lines = text.splitlines()
+    observer_line = next(
+        (index for index, line in enumerate(lines) if "scripts/smoke_install_observe.py" in line),
+        None,
+    )
+    if observer_line is None:
+        raise ContractError(f"{where}: observer step is missing; cannot bind runner context")
+
+    step_start = next(
+        (
+            index
+            for index in range(observer_line, -1, -1)
+            if re.match(r"^\s{6}- name:\s*", lines[index])
+        ),
+        None,
+    )
+    if step_start is None:
+        raise ContractError(f"{where}: observer step boundary is missing")
+
+    step_env = next(
+        (
+            index
+            for index in range(step_start, observer_line)
+            if re.match(r"^\s{8}env:\s*$", lines[index])
+        ),
+        None,
+    )
+    if step_env is None:
+        raise ContractError(f"{where}: observer step env is missing")
+
+    required = {
+        "I1672_FLEET_LABEL: corelink",
+        "I1672_RUNNER_NAME: ${{ runner.name }}",
+        "I1672_RUNNER_OS: ${{ runner.os }}",
+        "I1672_RUNNER_ARCH: ${{ runner.arch }}",
+    }
+    step_env_lines = {
+        lines[index].strip()
+        for index in range(step_env + 1, observer_line)
+        if re.match(r"^\s{10}I1672_", lines[index])
+    }
+    missing = sorted(required - step_env_lines)
+    if missing:
+        raise ContractError(f"{where}: runner context must be step-scoped; missing {missing!r}")
+
+    job_scope = {
+        lines[index].strip()
+        for index in range(0, step_start)
+        if re.match(r"^\s{6}I1672_", lines[index])
+    }
+    misplaced = sorted(required & job_scope)
+    if misplaced:
+        raise ContractError(f"{where}: runner context is invalid at job scope: {misplaced!r}")
+
+
 def check_smoke(text: str) -> None:
     where = WORKFLOW_FILES["smoke-install"]
     script = executable_script(run_blocks(text))
@@ -162,13 +219,14 @@ def check_smoke(text: str) -> None:
     require_line(text, r"^\s*I1672_RUNNER_NAME:\s*\$\{\{ runner\.name \}\}\s*$", where)
     require_line(text, r"^\s*I1672_RUNNER_OS:\s*\$\{\{ runner\.os \}\}\s*$", where)
     require_line(text, r"^\s*I1672_RUNNER_ARCH:\s*\$\{\{ runner\.arch \}\}\s*$", where)
+    require_runner_context_at_step_scope(text, where)
     require_exec_line(script, "set -euo pipefail", where)
     require_exec_line(script, "if docker info > artifacts/i1672/docker-info.txt 2>&1; then", where)
     require_exec_line(script, 'exit "${rc}"', where)
     require_exec_line(script, "python3 scripts/smoke_install_observe.py \\", where)
     require_exec_line(script, "--receipt artifacts/i1672/smoke-install-receipt.json", where)
-    require("if: ${{ always() }}", where)
-    require("upload-artifact@", where)
+    require(text, "if: ${{ always() }}", where)
+    require(text, "upload-artifact@", where)
     if re.search(r"(?i)secrets\.|CORELINK_CANARY_PAT|CORELINK_TEST_TOKEN|docker build|docker run|corelink doctor", text):
         raise ContractError(f"{where}: credentialed install claims do not belong in the contract-free observation")
 

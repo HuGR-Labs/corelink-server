@@ -18,13 +18,6 @@ jobs:
     name: fleet smoke observation
     runs-on: corelink
     timeout-minutes: 5
-    env:
-      # GitHub schedules this job on the named fleet label. Record the runtime
-      # identity fields so the receipt cannot misdescribe a fleet run as hosted.
-      I1672_FLEET_LABEL: corelink
-      I1672_RUNNER_NAME: ${{ runner.name }}
-      I1672_RUNNER_OS: ${{ runner.os }}
-      I1672_RUNNER_ARCH: ${{ runner.arch }}
     steps:
       - name: Checkout tested tree
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -50,6 +43,12 @@ jobs:
         shell: bash
         env:
           I1672_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+          # Runner context is valid at step scope. Receipt identity must come
+          # from assigned fleet runner, not from a hosted/static assumption.
+          I1672_FLEET_LABEL: corelink
+          I1672_RUNNER_NAME: ${{ runner.name }}
+          I1672_RUNNER_OS: ${{ runner.os }}
+          I1672_RUNNER_ARCH: ${{ runner.arch }}
         run: |
           set -euo pipefail
           timeout="${I1672_TIMEOUT_SECONDS:-2}"

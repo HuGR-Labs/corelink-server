@@ -24,6 +24,13 @@ Each entry cross-references:
 
 ### Fixed
 
+- **#1672 runner provenance now uses valid GitHub Actions context scope.** The
+  smoke observer passes runner identity from step-level `env`, where
+  `runner.name`, `runner.os`, and `runner.arch` are available; job-level
+  placement caused exact-main dispatch rejection. Hosted contract runs remain
+  static evidence only, and B-134 stays `UNMEASURED` until authorized fleet
+  receipt evidence exists.
+
 - **CAS writes expose durable failure effects.** The handler seam now
   distinguishes definitely-not-written, committed, reconciliation-pending, and
   legacy-unknown failures for storage-accounting decorators. Byte accounting

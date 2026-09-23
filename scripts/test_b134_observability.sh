@@ -51,6 +51,23 @@ copy_fixture "${TMP}/backend"
 sed -i.bak 's/if docker info > /if docker status > /' "${TMP}/backend/.github/workflows/smoke-install.yml"
 expect_red backend "${TMP}/backend"
 
+copy_fixture "${TMP}/runner-context-scope"
+python3 - "${TMP}/runner-context-scope/.github/workflows/smoke-install.yml" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+step = "          I1672_RUNNER_NAME: ${{ runner.name }}\n"
+assert text.count(step) == 1
+text = text.replace(step, "", 1)
+job = "    steps:\n"
+assert text.count(job) == 1
+text = text.replace(job, "    env:\n      I1672_RUNNER_NAME: ${{ runner.name }}\n    steps:\n", 1)
+path.write_text(text)
+PY
+expect_red runner-context-scope "${TMP}/runner-context-scope"
+
 copy_fixture "${TMP}/fail-closed"
 sed -i.bak 's/set -euo pipefail/set -uo pipefail/' "${TMP}/fail-closed/.github/workflows/smoke-install.yml"
 expect_red fail-closed "${TMP}/fail-closed"
