@@ -33,9 +33,6 @@ Each entry cross-references:
 - **B-258 checkout promo runtime blob pin refreshed.** Reviewed Stripe client
   source hash now matches current tracked bytes.
 
-- **V0004 ledger history includes B-216 transitions.** First-parent BACKLOG
-  reconciliation now pins both post-v0003 Git events.
-
 - **B-139 secrets-drift workflow digest refreshed.** Structural trust-boundary
   pin now matches current reviewed workflow.
 
