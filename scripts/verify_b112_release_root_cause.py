@@ -599,6 +599,16 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
         for _line, args in _active_commands(release, "bash")
     ):
         errors.append("missing active pinned Rust toolchain guard command")
+    if not any(
+        args[:3] == ["target", "add", "${TARGET_TRIPLE}"]
+        for _line, args in _active_commands(release, "rustup")
+    ):
+        errors.append("release target standard library must be installed from the workspace-pinned toolchain")
+    if not any(
+        args == ["config", "--global", "core.longpaths", "true"]
+        for _line, args in _active_commands(release, "git")
+    ):
+        errors.append("Windows hosted checkout must enable Git long paths")
     if not any(name == "EXPECTED_ZIG_VERSION" and value == "0.16.0" for _line, name, value in _active_assignments(release)):
         errors.append("missing active Zig version pin")
     if not any(
@@ -615,6 +625,11 @@ def verify_texts(release: str, cosign: str, backlog: str) -> list[str]:
         value for _line, value in _yaml_key_values(release, "tool")
     ]:
         errors.append("missing semantic cargo-zigbuild version pin")
+    if not any(
+        args == ["--version"]
+        for _line, args in _active_commands(release, "cargo-zigbuild")
+    ):
+        errors.append("cargo-zigbuild version probe must use its top-level executable")
     errors.extend(_isolation_errors(release))
     if not _env_export_lines(release, "CARGO_ZIGBUILD_CACHE_DIR", "ZIGBUILD_CACHE"):
         errors.append("missing active cargo-zigbuild cache export")
@@ -732,7 +747,7 @@ def _mutate_b112_status(backlog: str) -> str:
 
 def _inject_run_command(release: str, command: str) -> str:
     """Place a mutation inside the first real build run scalar."""
-    needle = "          cargo zigbuild --version\n"
+    needle = "          cargo-zigbuild --version\n"
     if needle not in release:
         raise RuntimeError("B-112 mutation could not find semantic build command")
     return release.replace(needle, needle + f"          {command}\n", 1)
@@ -785,28 +800,37 @@ def mutation_self_test(release: str, cosign: str, backlog: str) -> None:
             '          ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"\n'
             '          mkdir -p "$ZIGBUILD_CACHE"\n'
             '          echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"\n'
-            '          cargo zigbuild --version\n',
+            '          cargo-zigbuild --version\n',
             '          mkdir -p "$ZIGBUILD_CACHE"\n'
             '          echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"\n'
-            '          cargo zigbuild --version\n'
+            '          cargo-zigbuild --version\n'
             '          ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"\n', 1), cosign, backlog),
         "Cargo export order": (release.replace('          echo "CARGO_HOME=${CARGO_HOME}" >> "$GITHUB_ENV"\n', '', 1), cosign, backlog),
         "SRC consumer order": (_inject_run_command(release, 'cp "$SRC" /tmp/early-artifact'), cosign, backlog),
         "hosted Windows runner": (release.replace(
             "runner: windows-2022", "runner: self-hosted", 1
         ), cosign, backlog),
+        "missing release target standard library": (release.replace(
+            '          rustup target add "${TARGET_TRIPLE}"\n', "", 1
+        ), cosign, backlog),
+        "missing Windows long paths configuration": (release.replace(
+            "        run: git config --global core.longpaths true\n", "", 1
+        ), cosign, backlog),
+        "invalid cargo-zigbuild version probe": (release.replace(
+            "          cargo-zigbuild --version\n", "          cargo zigbuild --version\n", 1
+        ), cosign, backlog),
         "toolchain echo bait": (release.replace(
-            "        run: bash scripts/ci-assert-pinned-toolchain.sh\n",
-            "        run: echo 'bash scripts/ci-assert-pinned-toolchain.sh'\n", 1), cosign, backlog),
+            '          bash scripts/ci-assert-pinned-toolchain.sh "${TARGET_TRIPLE}"\n',
+            "          echo 'bash scripts/ci-assert-pinned-toolchain.sh'\n", 1), cosign, backlog),
         "zig pin echo bait": (release.replace(
             "          EXPECTED_ZIG_VERSION=0.16.0\n",
             "          echo 'EXPECTED_ZIG_VERSION=0.16.0'\n", 1), cosign, backlog),
         "tool echo bait": (release.replace(
             "          tool: cargo-zigbuild@0.19.8\n", "          tool: cargo-zigbuild@0.19.7\n", 1
         ).replace(
-            "          cargo zigbuild --version\n",
+            "          cargo-zigbuild --version\n",
             "          echo 'tool: cargo-zigbuild@0.19.8'\n"
-            "          cargo zigbuild --version\n", 1), cosign, backlog),
+            "          cargo-zigbuild --version\n", 1), cosign, backlog),
     }
     for name, (mutated_release, mutated_cosign, mutated_backlog) in mutations.items():
         try:
