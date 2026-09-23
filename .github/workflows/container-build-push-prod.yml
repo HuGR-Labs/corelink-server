@@ -264,10 +264,7 @@ jobs:
           # image repos live under the same account on registry.cloudflare.com).
           CRED="$(npx -y wrangler@4.111.0 containers registries credentials registry.cloudflare.com --push --expiration-minutes 30 --json 2>/dev/null)"
           U=$(echo "$CRED" | jq -r '.username'); P=$(echo "$CRED" | jq -r '.password')
-          if [ -z "$U" ] || [ -z "$P" ]; then
-            echo "::error::failed to mint a registry push credential"
-            exit 1
-          fi
+          [ -n "$U" ] && [ -n "$P" ] || { echo "::error::failed to mint a registry push credential"; exit 1; }
           CFG="$RUNNER_TEMP/dockercfg"; mkdir -p "$CFG"
           AUTH=$(printf '%s:%s' "$U" "$P" | base64 | tr -d '\n')
           printf '{"auths":{"registry.cloudflare.com":{"auth":"%s"}}}' "$AUTH" > "$CFG/config.json"
