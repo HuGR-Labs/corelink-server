@@ -62,19 +62,50 @@ pub struct AwsS3ComplianceArchiveConfig {
 impl AwsS3ComplianceArchiveConfig {
     /// Construct only a complete reviewed target configuration.
     /// Validate a complete configuration supplied by trusted server configuration.
-    pub fn try_from_parts(parts: AwsS3ComplianceArchiveConfigParts) -> Result<Self, ObjectLockArchiveError> {
-        let config = Self { tenant_id: parts.tenant_id, jurisdiction: parts.jurisdiction, account_id: parts.account_id, bucket: parts.bucket, region: parts.region, target_label: parts.target_label, writer_workload_identity: parts.writer_workload_identity, retention_days: parts.retention_days, approval_reference: parts.approval_reference, evidence_reference: parts.evidence_reference, cost_ceiling_usd_micros: parts.cost_ceiling_usd_micros, cost_owner: parts.cost_owner, cleanup_owner: parts.cleanup_owner };
+    pub fn try_from_parts(
+        parts: AwsS3ComplianceArchiveConfigParts,
+    ) -> Result<Self, ObjectLockArchiveError> {
+        let config = Self {
+            tenant_id: parts.tenant_id,
+            jurisdiction: parts.jurisdiction,
+            account_id: parts.account_id,
+            bucket: parts.bucket,
+            region: parts.region,
+            target_label: parts.target_label,
+            writer_workload_identity: parts.writer_workload_identity,
+            retention_days: parts.retention_days,
+            approval_reference: parts.approval_reference,
+            evidence_reference: parts.evidence_reference,
+            cost_ceiling_usd_micros: parts.cost_ceiling_usd_micros,
+            cost_owner: parts.cost_owner,
+            cleanup_owner: parts.cleanup_owner,
+        };
         config.validate()?;
         Ok(config)
     }
 
     fn validate(&self) -> Result<(), ObjectLockArchiveError> {
         let complete = [
-            &self.tenant_id, &self.jurisdiction, &self.account_id, &self.bucket, &self.region,
-            &self.target_label, &self.writer_workload_identity, &self.approval_reference,
-            &self.evidence_reference, &self.cost_owner, &self.cleanup_owner,
-        ].iter().all(|value| !value.trim().is_empty());
-        if !complete || self.account_id.len() != 12 || !self.account_id.bytes().all(|byte| byte.is_ascii_digit()) || self.retention_days == 0 || self.cost_ceiling_usd_micros == 0 {
+            &self.tenant_id,
+            &self.jurisdiction,
+            &self.account_id,
+            &self.bucket,
+            &self.region,
+            &self.target_label,
+            &self.writer_workload_identity,
+            &self.approval_reference,
+            &self.evidence_reference,
+            &self.cost_owner,
+            &self.cleanup_owner,
+        ]
+        .iter()
+        .all(|value| !value.trim().is_empty());
+        if !complete
+            || self.account_id.len() != 12
+            || !self.account_id.bytes().all(|byte| byte.is_ascii_digit())
+            || self.retention_days == 0
+            || self.cost_ceiling_usd_micros == 0
+        {
             return Err(ObjectLockArchiveError::CapabilityNegotiationFailed("AWS Compliance archive configuration was incomplete, malformed, or lacked an approved cost boundary".to_string()));
         }
         Ok(())
@@ -106,7 +137,11 @@ pub trait ComplianceArchiveAuditSink: Send + Sync + core::fmt::Debug {
     /// Persist one tenant-safe provider operation record and return its durable receipt.
     fn append(&self, event: ComplianceArchiveAuditEvent) -> Result<String, ObjectLockArchiveError>;
     /// Verify the exact durable receipt before the provider operation succeeds.
-    fn verify(&self, receipt_id: &str, event: &ComplianceArchiveAuditEvent) -> Result<(), ObjectLockArchiveError>;
+    fn verify(
+        &self,
+        receipt_id: &str,
+        event: &ComplianceArchiveAuditEvent,
+    ) -> Result<(), ObjectLockArchiveError>;
 }
 
 /// Tenant-safe audit record for one Object Lock operation.
@@ -232,28 +267,50 @@ impl AwsS3ObjectLockAdapter {
         Ok(())
     }
 
-    fn validate_tenant_request(&self, request: &ImmutableArchivePut) -> Result<(), ObjectLockArchiveError> {
+    fn validate_tenant_request(
+        &self,
+        request: &ImmutableArchivePut,
+    ) -> Result<(), ObjectLockArchiveError> {
         let prefix = format!("audit/{}/", self.config.tenant_id);
         if request.tenant_id != self.config.tenant_id
             || request.expected_residency != self.residency
             || !request.object_key.starts_with(&prefix)
         {
-            return Err(ObjectLockArchiveError::ReadbackMismatch("tenant, residency, or archive key did not match the trusted AWS target".to_string()));
+            return Err(ObjectLockArchiveError::ReadbackMismatch(
+                "tenant, residency, or archive key did not match the trusted AWS target"
+                    .to_string(),
+            ));
         }
         Ok(())
     }
 
-    fn require_approved_retention(&self, retain_until_unix_ms: u64) -> Result<(), ObjectLockArchiveError> {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| {
-            ObjectLockArchiveError::Backend("system clock was before the Unix epoch".to_string())
-        })?.as_millis();
-        let now = u64::try_from(now).map_err(|_| ObjectLockArchiveError::Backend("local time exceeded u64 range".to_string()))?;
+    fn require_approved_retention(
+        &self,
+        retain_until_unix_ms: u64,
+    ) -> Result<(), ObjectLockArchiveError> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| {
+                ObjectLockArchiveError::Backend(
+                    "system clock was before the Unix epoch".to_string(),
+                )
+            })?
+            .as_millis();
+        let now = u64::try_from(now).map_err(|_| {
+            ObjectLockArchiveError::Backend("local time exceeded u64 range".to_string())
+        })?;
         let minimum = u64::from(self.config.retention_days)
             .checked_mul(86_400_000)
             .and_then(|duration| now.checked_add(duration))
-            .ok_or_else(|| ObjectLockArchiveError::ReadbackMismatch("approved retention duration overflowed".to_string()))?;
+            .ok_or_else(|| {
+                ObjectLockArchiveError::ReadbackMismatch(
+                    "approved retention duration overflowed".to_string(),
+                )
+            })?;
         if retain_until_unix_ms < minimum {
-            return Err(ObjectLockArchiveError::ReadbackMismatch("requested retention was shorter than the approved tenant policy".to_string()));
+            return Err(ObjectLockArchiveError::ReadbackMismatch(
+                "requested retention was shorter than the approved tenant policy".to_string(),
+            ));
         }
         Ok(())
     }
@@ -278,10 +335,15 @@ impl AwsS3ObjectLockAdapter {
         }
     }
 
-    fn persist_audit(&self, event: ComplianceArchiveAuditEvent) -> Result<String, ObjectLockArchiveError> {
+    fn persist_audit(
+        &self,
+        event: ComplianceArchiveAuditEvent,
+    ) -> Result<String, ObjectLockArchiveError> {
         let receipt_id = self.audit.append(event.clone())?;
         if receipt_id.trim().is_empty() {
-            return Err(ObjectLockArchiveError::Backend("durable Object Lock audit returned an empty receipt".to_string()));
+            return Err(ObjectLockArchiveError::Backend(
+                "durable Object Lock audit returned an empty receipt".to_string(),
+            ));
         }
         self.audit.verify(&receipt_id, &event)?;
         Ok(receipt_id)
@@ -378,40 +440,44 @@ impl AwsS3ObjectLockAdapter {
         let expected_owner = self.config.account_id.clone();
         let key = object_key.to_string();
         let version_id = version_id.to_string();
-        let (access_denied, provider_request_id) = Self::block_on("delete denial probe", async move {
-            match probe
-                .delete_object()
-                .bucket(&bucket)
-                .key(&key)
-                .version_id(version_id)
-                .expected_bucket_owner(&expected_owner)
-                .send()
-                .await
-            {
-                Ok(_) => Ok((false, String::new())),
-                Err(error) => {
-                    let structured_access_denied =
-                        error.as_service_error().is_some_and(|service_error| {
-                            Self::is_structured_access_denied(service_error.code())
-                        });
-                    if structured_access_denied {
-                        let request_id = error.request_id().ok_or_else(|| {
-                            "delete probe AccessDenied returned no provider request ID".to_string()
-                        })?;
-                        Ok((true, request_id.to_string()))
-                    } else {
-                        Err(
-                            "delete probe failed without a structured AccessDenied response"
-                                .to_string(),
-                        )
+        let (access_denied, provider_request_id) =
+            Self::block_on("delete denial probe", async move {
+                match probe
+                    .delete_object()
+                    .bucket(&bucket)
+                    .key(&key)
+                    .version_id(version_id)
+                    .expected_bucket_owner(&expected_owner)
+                    .send()
+                    .await
+                {
+                    Ok(_) => Ok((false, String::new())),
+                    Err(error) => {
+                        let structured_access_denied =
+                            error.as_service_error().is_some_and(|service_error| {
+                                Self::is_structured_access_denied(service_error.code())
+                            });
+                        if structured_access_denied {
+                            let request_id = error.request_id().ok_or_else(|| {
+                                "delete probe AccessDenied returned no provider request ID"
+                                    .to_string()
+                            })?;
+                            Ok((true, request_id.to_string()))
+                        } else {
+                            Err(
+                                "delete probe failed without a structured AccessDenied response"
+                                    .to_string(),
+                            )
+                        }
                     }
                 }
-            }
-        })?;
+            })?;
         if access_denied {
             Ok(DeleteAttempt::Denied {
                 object_key: object_key.to_string(),
-                reason: format!("s3_structured_access_denied_for_exact_version:{provider_request_id}"),
+                reason: format!(
+                    "s3_structured_access_denied_for_exact_version:{provider_request_id}"
+                ),
             })
         } else {
             Ok(DeleteAttempt::Deleted)
@@ -489,16 +555,26 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
         })?;
 
         let delete_probe_target = self.delete_probe_target()?;
-        let probe_sts = self.delete_probe_sts.as_ref().ok_or_else(|| {
-            ObjectLockArchiveError::RequiredCapabilityMissing(vec!["delete_denial"])
-        })?.clone();
+        let probe_sts = self
+            .delete_probe_sts
+            .as_ref()
+            .ok_or_else(|| {
+                ObjectLockArchiveError::RequiredCapabilityMissing(vec!["delete_denial"])
+            })?
+            .clone();
         let expected_principal = delete_probe_target.expected_principal_arn.clone();
         Self::block_on("delete probe identity binding", async move {
-            let observed = probe_sts.get_caller_identity().send().await
+            let observed = probe_sts
+                .get_caller_identity()
+                .send()
+                .await
                 .map_err(|_| "STS GetCallerIdentity for delete probe failed".to_string())?
-                .arn().ok_or_else(|| "STS GetCallerIdentity returned no ARN".to_string())?;
+                .arn()
+                .ok_or_else(|| "STS GetCallerIdentity returned no ARN".to_string())?;
             if observed != expected_principal {
-                return Err("delete probe credentials did not match the approved principal".to_string());
+                return Err(
+                    "delete probe credentials did not match the approved principal".to_string(),
+                );
             }
             Ok(())
         })?;
@@ -511,7 +587,9 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
             {
                 let provider_request_id = reason.rsplit(':').next().unwrap_or_default();
                 if provider_request_id.trim().is_empty() {
-                    return Err(ObjectLockArchiveError::ReadbackMismatch("delete denial lacked a provider request reference".to_string()));
+                    return Err(ObjectLockArchiveError::ReadbackMismatch(
+                        "delete denial lacked a provider request reference".to_string(),
+                    ));
                 }
                 self.persist_audit(self.audit_event(
                     "pre_expiry_delete_denial",
@@ -645,88 +723,95 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
         let expected_owner = self.config.account_id.clone();
         let key = object_key.to_string();
         let version_id = self.object_version(object_key)?.ok_or_else(|| {
-            ObjectLockArchiveError::ReadbackMismatch("retention readback requires the exact version returned by immutable put".to_string())
+            ObjectLockArchiveError::ReadbackMismatch(
+                "retention readback requires the exact version returned by immutable put"
+                    .to_string(),
+            )
         })?;
         let residency = self.residency.clone();
-        let (retention_readback, provider_request_id) = Self::block_on("retention readback", async move {
-            let mut retention_request = writer
-                .get_object_retention()
-                .bucket(&bucket)
-                .key(&key)
-                .expected_bucket_owner(&expected_owner);
-            retention_request = retention_request.version_id(&version_id);
-            let retention_response = retention_request
-                .send()
-                .await
-                .map_err(|_| "GetObjectRetention failed".to_string())?;
-            let provider_request_id = retention_response.request_id()
-                .ok_or_else(|| "GetObjectRetention returned no provider request ID".to_string())?
-                .to_string();
-            let retention = retention_response
-                .retention()
-                .cloned()
-                .ok_or_else(|| "GetObjectRetention returned no state".to_string())?;
-            let mode = retention
-                .mode()
-                .ok_or_else(|| "GetObjectRetention returned no mode".to_string())?;
-            if mode != &ObjectLockRetentionMode::Compliance {
-                return Err("S3 object retention was not in Compliance mode".to_string());
-            }
-            let retain_until_unix_ms = retention
-                .retain_until_date()
-                .ok_or_else(|| "GetObjectRetention returned no expiry".to_string())?
-                .clone()
-                .to_millis()
-                .map_err(|_| "S3 retain-until timestamp was out of range".to_string())?;
-            let retain_until_unix_ms = u64::try_from(retain_until_unix_ms)
-                .map_err(|_| "S3 retain-until timestamp was negative".to_string())?;
+        let (retention_readback, provider_request_id) =
+            Self::block_on("retention readback", async move {
+                let mut retention_request = writer
+                    .get_object_retention()
+                    .bucket(&bucket)
+                    .key(&key)
+                    .expected_bucket_owner(&expected_owner);
+                retention_request = retention_request.version_id(&version_id);
+                let retention_response = retention_request
+                    .send()
+                    .await
+                    .map_err(|_| "GetObjectRetention failed".to_string())?;
+                let provider_request_id = retention_response
+                    .request_id()
+                    .ok_or_else(|| {
+                        "GetObjectRetention returned no provider request ID".to_string()
+                    })?
+                    .to_string();
+                let retention = retention_response
+                    .retention()
+                    .cloned()
+                    .ok_or_else(|| "GetObjectRetention returned no state".to_string())?;
+                let mode = retention
+                    .mode()
+                    .ok_or_else(|| "GetObjectRetention returned no mode".to_string())?;
+                if mode != &ObjectLockRetentionMode::Compliance {
+                    return Err("S3 object retention was not in Compliance mode".to_string());
+                }
+                let retain_until_unix_ms = retention
+                    .retain_until_date()
+                    .ok_or_else(|| "GetObjectRetention returned no expiry".to_string())?
+                    .clone()
+                    .to_millis()
+                    .map_err(|_| "S3 retain-until timestamp was out of range".to_string())?;
+                let retain_until_unix_ms = u64::try_from(retain_until_unix_ms)
+                    .map_err(|_| "S3 retain-until timestamp was negative".to_string())?;
 
-            let mut legal_hold_request = writer
-                .get_object_legal_hold()
-                .bucket(&bucket)
-                .key(&key)
-                .expected_bucket_owner(&expected_owner);
-            legal_hold_request = legal_hold_request.version_id(&version_id);
-            let legal_hold_response = legal_hold_request
-                .send()
-                .await
-                .map_err(|_| "GetObjectLegalHold failed".to_string())?;
-            let legal_hold = legal_hold_response
-                .legal_hold()
-                .and_then(|state| state.status())
-                .cloned()
-                .ok_or_else(|| "GetObjectLegalHold returned no state".to_string())?;
-            let legal_hold = match legal_hold {
-                ObjectLockLegalHoldStatus::On => LegalHold::On,
-                ObjectLockLegalHoldStatus::Off => LegalHold::Off,
-                _ => return Err("GetObjectLegalHold returned an unknown state".to_string()),
-            };
+                let mut legal_hold_request = writer
+                    .get_object_legal_hold()
+                    .bucket(&bucket)
+                    .key(&key)
+                    .expected_bucket_owner(&expected_owner);
+                legal_hold_request = legal_hold_request.version_id(&version_id);
+                let legal_hold_response = legal_hold_request
+                    .send()
+                    .await
+                    .map_err(|_| "GetObjectLegalHold failed".to_string())?;
+                let legal_hold = legal_hold_response
+                    .legal_hold()
+                    .and_then(|state| state.status())
+                    .cloned()
+                    .ok_or_else(|| "GetObjectLegalHold returned no state".to_string())?;
+                let legal_hold = match legal_hold {
+                    ObjectLockLegalHoldStatus::On => LegalHold::On,
+                    ObjectLockLegalHoldStatus::Off => LegalHold::Off,
+                    _ => return Err("GetObjectLegalHold returned an unknown state".to_string()),
+                };
 
-            let location = writer
-                .get_bucket_location()
-                .bucket(&bucket)
-                .expected_bucket_owner(&expected_owner)
-                .send()
-                .await
-                .map_err(|_| "GetBucketLocation failed".to_string())?;
-            let actual_region = location
-                .location_constraint()
-                .map(|constraint| constraint.as_str())
-                .unwrap_or("us-east-1");
-            if actual_region != residency.region {
-                return Err("S3 bucket region changed from negotiated residency".to_string());
-            }
-            let readback = ObjectLockRetentionReadback {
-                object_version: version_id,
-                object_key: key,
-                retention: crate::object_lock_archive::ImmutableRetention {
-                    retain_until_unix_ms,
-                    legal_hold,
-                },
-                residency,
-            };
-            Ok((readback, provider_request_id))
-        })?;
+                let location = writer
+                    .get_bucket_location()
+                    .bucket(&bucket)
+                    .expected_bucket_owner(&expected_owner)
+                    .send()
+                    .await
+                    .map_err(|_| "GetBucketLocation failed".to_string())?;
+                let actual_region = location
+                    .location_constraint()
+                    .map(|constraint| constraint.as_str())
+                    .unwrap_or("us-east-1");
+                if actual_region != residency.region {
+                    return Err("S3 bucket region changed from negotiated residency".to_string());
+                }
+                let readback = ObjectLockRetentionReadback {
+                    object_version: version_id,
+                    object_key: key,
+                    retention: crate::object_lock_archive::ImmutableRetention {
+                        retain_until_unix_ms,
+                        legal_hold,
+                    },
+                    residency,
+                };
+                Ok((readback, provider_request_id))
+            })?;
         self.persist_audit(self.audit_event(
             "retention_and_legal_hold_readback",
             retention_readback.object_key.clone(),
