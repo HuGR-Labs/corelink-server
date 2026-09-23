@@ -1,9 +1,9 @@
-name: issue-2140 trusted v0004 policy
+name: issue-2148 derived v0004 policy
 
 on:
   pull_request:
     paths:
-      - '.github/workflows/issue-2140-trusted-v0004-policy.yml'
+      - '.github/workflows/issue-2148-derived-v0004-policy.yml'
       - 'scripts/backlog_ledger_successor.py'
       - 'scripts/backlog_verify.py'
       - 'tests/test_backlog_ledger_successor.py'
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   policy:
-    name: verify trusted BASE v0004 policy
+    name: verify derived BASE v0004 policy
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -28,8 +28,8 @@ jobs:
           python-version: '3.12'
       - name: Install CI test dependencies
         run: python -m pip install --disable-pip-version-check -r requirements-ci.txt
-      - name: Prove policy pins and BASE mutation rejection
+      - name: Prove derived policy pins, history, and mutation rejection
         run: >-
           python -m pytest -q
-          tests/test_backlog_ledger_successor.py::test_v0004_reconciliation_is_byte_pinned_before_any_data_successor
-          tests/test_backlog_ledger_successor.py::test_v0004_policy_in_base_accepts_only_the_exact_dynamic_base_successor
+          tests/test_backlog_ledger_successor.py::test_v0004_policy_derives_only_b012_retirement_from_pr_base
+          tests/test_backlog_ledger_successor.py::test_v0004_policy_pins_complete_first_parent_history_from_git_objects
