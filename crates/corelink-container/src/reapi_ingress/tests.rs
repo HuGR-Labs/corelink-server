@@ -315,9 +315,105 @@ fn ingress_for_test(
     }
 }
 
+#[derive(Debug, Clone)]
+enum CasReadSpyOutcome {
+    Response(CasReadResponse),
+    NotFound {
+        tenant: String,
+        hash: String,
+    },
+    HashMismatch {
+        claimed: String,
+        actual: String,
+    },
+    CrossTenantDenied {
+        caller: String,
+        requested_tenant: String,
+    },
+    AuditFailed(String),
+    ObjectTooLarge {
+        actual_bytes: u64,
+        limit_bytes: u64,
+    },
+    Internal(String),
+}
+
+impl CasReadSpyOutcome {
+    fn from_result(result: Result<CasReadResponse, corelink_handler_cas::CasHandlerError>) -> Self {
+        match result {
+            Ok(response) => Self::Response(response),
+            Err(corelink_handler_cas::CasHandlerError::NotFound { tenant, hash }) => {
+                Self::NotFound { tenant, hash }
+            }
+            Err(corelink_handler_cas::CasHandlerError::HashMismatch { claimed, actual }) => {
+                Self::HashMismatch { claimed, actual }
+            }
+            Err(corelink_handler_cas::CasHandlerError::CrossTenantDenied {
+                caller,
+                requested_tenant,
+            }) => Self::CrossTenantDenied {
+                caller,
+                requested_tenant,
+            },
+            Err(corelink_handler_cas::CasHandlerError::AuditFailed(message)) => {
+                Self::AuditFailed(message)
+            }
+            Err(corelink_handler_cas::CasHandlerError::ObjectTooLarge {
+                actual_bytes,
+                limit_bytes,
+            }) => Self::ObjectTooLarge {
+                actual_bytes,
+                limit_bytes,
+            },
+            Err(corelink_handler_cas::CasHandlerError::Internal(message)) => {
+                Self::Internal(message)
+            }
+            Err(error) => Self::Internal(error.to_string()),
+        }
+    }
+
+    fn to_result(&self) -> Result<CasReadResponse, corelink_handler_cas::CasHandlerError> {
+        match self {
+            Self::Response(response) => Ok(response.clone()),
+            Self::NotFound { tenant, hash } => {
+                Err(corelink_handler_cas::CasHandlerError::NotFound {
+                    tenant: tenant.clone(),
+                    hash: hash.clone(),
+                })
+            }
+            Self::HashMismatch { claimed, actual } => {
+                Err(corelink_handler_cas::CasHandlerError::HashMismatch {
+                    claimed: claimed.clone(),
+                    actual: actual.clone(),
+                })
+            }
+            Self::CrossTenantDenied {
+                caller,
+                requested_tenant,
+            } => Err(corelink_handler_cas::CasHandlerError::CrossTenantDenied {
+                caller: caller.clone(),
+                requested_tenant: requested_tenant.clone(),
+            }),
+            Self::AuditFailed(message) => Err(corelink_handler_cas::CasHandlerError::AuditFailed(
+                message.clone(),
+            )),
+            Self::ObjectTooLarge {
+                actual_bytes,
+                limit_bytes,
+            } => Err(corelink_handler_cas::CasHandlerError::ObjectTooLarge {
+                actual_bytes: *actual_bytes,
+                limit_bytes: *limit_bytes,
+            }),
+            Self::Internal(message) => Err(corelink_handler_cas::CasHandlerError::Internal(
+                message.clone(),
+            )),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct CasReadSpy {
-    result: Result<CasReadResponse, corelink_handler_cas::CasHandlerError>,
+    outcome: CasReadSpyOutcome,
     calls: Arc<std::sync::Mutex<Vec<CasReadRequest>>>,
 }
 
@@ -327,7 +423,7 @@ impl CasReadHandler for CasReadSpy {
         request: CasReadRequest,
     ) -> Result<CasReadResponse, corelink_handler_cas::CasHandlerError> {
         self.calls.lock().unwrap().push(request);
-        self.result.clone()
+        self.outcome.to_result()
     }
 }
 
@@ -387,7 +483,7 @@ fn cas_ingress_for_test(
             calls: admission_calls.clone(),
         }),
         cas_read: Arc::new(CasReadSpy {
-            result: read_result,
+            outcome: CasReadSpyOutcome::from_result(read_result),
             calls: read_calls.clone(),
         }),
         cas_write: Arc::new(CasWriteSpy {
