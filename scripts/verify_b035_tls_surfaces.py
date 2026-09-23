@@ -68,6 +68,35 @@ NAMED_SURFACES = (
     {"name": "r2-eu", "kind": "egress", "hostname": "*.eu.r2.cloudflarestorage.com", "enforcement": "provider-managed R2 TLS; no repo setting", "source": "wrangler.toml:826", "status": "provider_managed_not_live_verified"},
 )
 
+# Each declared surface is anchored to its active configuration assignment.
+# Counts are exact because regional manifests intentionally repeat some values.
+# The operator-managed admin route has no active repo declaration; one comment
+# records that boundary explicitly.
+SURFACE_SOURCE_RULES: dict[str, dict[str, Any]] = {
+    "corelink-api": {"path": "wrangler.toml", "key": "pattern", "value": "corelink-api.humangr.com/*", "active_count": 1},
+    "corelink-oci": {"path": "wrangler.toml", "key": "pattern", "value": "corelink-oci.humangr.com/*", "active_count": 1},
+    "regional-api-sam": {"path": "wrangler.toml", "key": "pattern", "value": "sam.corelink-api.humangr.com", "active_count": 1},
+    "regional-api-lhr": {"path": "wrangler.toml", "key": "pattern", "value": "lhr.corelink-api.humangr.com", "active_count": 1},
+    "regional-api-nrt": {"path": "wrangler.toml", "key": "pattern", "value": "nrt.corelink-api.humangr.com", "active_count": 1},
+    "regional-api-syd": {"path": "wrangler.toml", "key": "pattern", "value": "syd.corelink-api.humangr.com", "active_count": 1},
+    "signup-worker": {"path": "apps/signup-worker/wrangler.toml", "key": "pattern", "value": "corelink-signup.humangr.com/*", "active_count": 1},
+    "get-worker": {"path": "apps/get-corelink-worker/wrangler.toml", "key": "pattern", "value": "corelink-get.humangr.com/*", "active_count": 1},
+    "analytics-worker": {"path": "apps/analytics-worker/wrangler.toml", "key": "pattern", "value": "corelink-analytics.humangr.com", "active_count": 1},
+    "docs-route": {"path": "apps/docs/wrangler.toml", "key": "pattern", "value": "corelink-docs.humangr.com/*", "active_count": 1},
+    "docs-apex-bare": {"path": "apps/docs/wrangler.toml", "key": "pattern", "value": "humangr.com/corelink/docs", "active_count": 1},
+    "docs-apex-wildcard": {"path": "apps/docs/wrangler.toml", "key": "pattern", "value": "humangr.com/corelink/docs/*", "active_count": 1},
+    "admin-apex": {"path": "apps/admin-ui/wrangler.toml", "key": None, "value": "humangr.com/corelink/*", "active_count": 0, "comment_count": 1},
+    "synthetic-pager-staging": {"path": "apps/synthetic-pager-worker/wrangler.toml", "key": "pattern", "value": "staging.corelink.humangr.com/v1/webhooks/pagerduty", "active_count": 1},
+    "api-apex-terraform": {"path": "infra/terraform/modules/cloudflare-base/main.tf", "key": "pattern", "value": "${var.api_subdomain}.${var.zone_name}/*", "active_count": 1},
+    "regional-api-terraform": {"path": "infra/terraform/modules/corelink-region/main.tf", "key": "pattern", "value": "${var.region_name}.api.humangr.com/*", "active_count": 1},
+    "clerk-issuer": {"path": "wrangler.toml", "key": "CLERK_ISSUER_URL", "value": "https://clerk.corelink-app.humangr.com", "active_count": 1},
+    "fabric-authority": {"path": "wrangler.toml", "key": "FABRIC_CREDENTIAL_AUTHORITY_URL", "value": "https://corelink-fabricd.gmhelmold.workers.dev", "active_count": 5},
+    "pagerduty-events": {"path": "apps/synthetic-pager-worker/wrangler.toml", "key": "PAGERDUTY_EVENTS_URL", "value": "https://events.pagerduty.com/v2/enqueue", "active_count": 3},
+    "github-release-origin": {"path": "apps/get-corelink-worker/wrangler.toml", "key": "RELEASE_ORIGIN", "value": "https://github.com/HuGR-Labs/corelink-cli/releases/latest/download", "active_count": 2},
+    "r2-global": {"path": "wrangler.toml", "key": "R2_S3_ENDPOINT", "value": "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", "active_count": 4},
+    "r2-eu": {"path": "wrangler.toml", "key": "R2_S3_ENDPOINT", "value": "https://6a1fc1c626fc2628823e60b9db01f5cd.eu.r2.cloudflarestorage.com", "active_count": 1},
+}
+
 PROVIDER_BOUNDARIES = (
     {"name": "cloudflare-bindings", "kind": "internal_provider", "surface": "Worker service bindings, D1, KV, Durable Objects", "source": "wrangler.toml", "status": "provider_managed_no_public_handshake"},
     {"name": "configurable-egress", "kind": "egress", "surface": "Neon, Stripe, GitHub, PagerDuty, Resend, Sentry and analytics URLs", "source": "wrangler.toml + application secrets/config", "status": "host_or_setting_not_repo_declared"},
@@ -118,11 +147,100 @@ def _line_number(text: str, match: re.Match[str]) -> int:
     return text.count("\n", 0, match.start()) + 1
 
 
-def inventory(root: Path = ROOT) -> dict[str, Any]:
+def _source_code(raw_line: str) -> tuple[str, bool]:
+    """Return code without trailing comments and whether the line is a comment."""
+    stripped = raw_line.lstrip()
+    if stripped.startswith(("#", "//", "/*", "*", "*/")):
+        return "", True
+    quote: str | None = None
+    escaped = False
+    for index, char in enumerate(raw_line):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and quote is not None:
+            escaped = True
+            continue
+        if char in ('"', "'"):
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+            continue
+        if quote is None and (char == "#" or raw_line.startswith("//", index)):
+            return raw_line[:index], False
+    return raw_line, False
+
+
+def _assignment_values(code: str, key: str) -> list[str]:
+    assignment = re.compile(
+        rf"(?<![\w.-]){re.escape(key)}\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^,\s]+))"
+    )
+    return [
+        next(value for value in match.groups() if value is not None)
+        for match in assignment.finditer(code)
+    ]
+
+
+def _validate_surface_sources(
+    root: Path, overrides: dict[str, str] | None = None
+) -> list[str]:
+    """Fail closed when a mapped route or endpoint differs from active source."""
+    overrides = overrides or {}
+    expected = {surface["name"] for surface in NAMED_SURFACES}
+    mapped = set(SURFACE_SOURCE_RULES)
+    errors = [f"missing source mapping: {name}" for name in sorted(expected - mapped)]
+    errors.extend(f"orphan source mapping: {name}" for name in sorted(mapped - expected))
+    source_cache: dict[str, str] = {}
+    for name, rule in SURFACE_SOURCE_RULES.items():
+        source_path = rule["path"]
+        if source_path not in source_cache:
+            try:
+                source_cache[source_path] = (
+                    overrides[source_path]
+                    if source_path in overrides
+                    else _read(root, source_path)
+                )
+            except VerificationError as exc:
+                errors.append(f"{name}: {exc}")
+                continue
+        active_count = 0
+        comment_count = 0
+        for raw_line in source_cache[source_path].splitlines():
+            code, is_comment = _source_code(raw_line)
+            if is_comment:
+                if rule.get("marker", rule["value"]) in raw_line:
+                    comment_count += 1
+                continue
+            assignment = rule["key"]
+            if assignment is not None and rule["value"] in _assignment_values(code, assignment):
+                active_count += 1
+        if active_count != rule["active_count"]:
+            errors.append(
+                f"{name}: expected {rule['active_count']} active declaration(s), "
+                f"found {active_count} in {source_path}"
+            )
+        if "comment_count" in rule and comment_count != rule["comment_count"]:
+            errors.append(
+                f"{name}: expected {rule['comment_count']} comment marker(s), "
+                f"found {comment_count} in {source_path}"
+            )
+    return errors
+
+
+def inventory(
+    root: Path = ROOT,
+    *,
+    instrument_overrides: dict[str, str] | None = None,
+    source_overrides: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Return the complete eight-line inventory and its fail-closed status."""
+    instrument_overrides = instrument_overrides or {}
     rows: list[dict[str, Any]] = []
     for instrument in INSTRUMENTS:
-        text = _read(root, instrument.path)
+        text = instrument_overrides.get(instrument.path)
+        if text is None:
+            text = _read(root, instrument.path)
         matches = list(CLAIM_RE.finditer(text))
         lines = [_line_number(text, match) for match in matches]
         rows.append(
@@ -136,9 +254,10 @@ def inventory(root: Path = ROOT) -> dict[str, Any]:
             }
         )
 
+    source_errors = _validate_surface_sources(root, source_overrides)
     complete = len(rows) == 8 and all(
         row["claim_count"] == 1 and row["claim_matches_expected"] for row in rows
-    )
+    ) and not source_errors
     return {
         "instrument_count": len(rows),
         "instruments": rows,
@@ -151,6 +270,10 @@ def inventory(root: Path = ROOT) -> dict[str, Any]:
             "cipher_policy": CIPHER_POLICY,
             "source": "ADR-0072 + scripts/check_tls_floor.py",
             "named_surfaces": [dict(surface) for surface in NAMED_SURFACES],
+            "source_validation": {
+                "status": "all_markers_match" if not source_errors else "drift_or_incomplete",
+                "errors": source_errors,
+            },
             "provider_boundaries": [dict(boundary) for boundary in PROVIDER_BOUNDARIES],
             "downgrade_probe": {
                 "status": "provider_read_only_setting_only",
@@ -243,27 +366,40 @@ def _self_test(root: Path) -> None:
     if target_report["status"] != "drift_or_incomplete":
         raise VerificationError("corrected contract claim did not fail closed")
 
-
-def inventory_from_overrides(root: Path, overrides: dict[str, str]) -> dict[str, Any]:
-    """Inventory helper used only by the local mutation self-test."""
-    rows: list[dict[str, Any]] = []
-    for instrument in INSTRUMENTS:
-        text = overrides.get(instrument.path, _read(root, instrument.path))
-        matches = list(CLAIM_RE.finditer(text))
-        rows.append(
-            {
-                "path": instrument.path,
-                "promised_claim": instrument.claim,
-                "claim_count": len(matches),
-                "claim_lines": [_line_number(text, match) for match in matches],
-                "claim_matches_expected": len(matches) == 1
-                and matches[0].group(0) == instrument.claim,
-            }
-        )
-    complete = len(rows) == 8 and all(
-        row["claim_count"] == 1 and row["claim_matches_expected"] for row in rows
+    rule = SURFACE_SOURCE_RULES["corelink-api"]
+    source_path = rule["path"]
+    original_source = _read(root, source_path)
+    lines = original_source.splitlines(keepends=True)
+    mutated = False
+    for index, line in enumerate(lines):
+        code, is_comment = _source_code(line)
+        if not is_comment and rule["value"] in _assignment_values(code, rule["key"]):
+            lines[index] = line.replace(f'"{rule["value"]}"', f'"{rule["value"]}-renamed"', 1)
+            mutated = lines[index] != line
+            break
+    if not mutated:
+        raise VerificationError("self-test could not find the active corelink-api route")
+    source_report = inventory_from_overrides(
+        root, {}, {source_path: "".join(lines)}
     )
-    return {"instrument_count": len(rows), "instruments": rows, "status": "open_exact_inventory" if complete else "drift_or_incomplete"}
+    source_errors = source_report["external_surface"]["source_validation"]["errors"]
+    if source_report["status"] != "drift_or_incomplete" or not any(
+        error.startswith("corelink-api:") for error in source_errors
+    ):
+        raise VerificationError("renamed active route did not fail source validation")
+
+
+def inventory_from_overrides(
+    root: Path,
+    overrides: dict[str, str],
+    source_overrides: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Evaluate bounded in-memory mutations without writing repository files."""
+    return inventory(
+        root,
+        instrument_overrides=overrides,
+        source_overrides=source_overrides,
+    )
 
 
 def main() -> int:
