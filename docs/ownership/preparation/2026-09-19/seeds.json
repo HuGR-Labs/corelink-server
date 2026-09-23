@@ -58,14 +58,14 @@
       },
       {
         "path": "crates/corelink-container/src/lib.rs",
-        "blob": "ec2845586ca59da9120ba16b879ce68823feb849",
-        "sha256": "b44efe16b3b642b7e22940be73a68b6944ce5879f913d6a76a4414c8fd997b9c",
+        "blob": "7163afcaa8410571779d8a53aaeea8177a5cf3c2",
+        "sha256": "701001096104161d1760b14a9d8485e3bff81321d094529cbe888017cbe0bdfa",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
         "path": "crates/corelink-container/src/main.rs",
-        "blob": "b9971c55030d59152549da904187c753cf0310a4",
-        "sha256": "5352b307bd1a4cbf5a11fd854e167303972be5436919732b3cc2bbd109ffccca",
+        "blob": "b64f13689133f41f65f286ca7aca0bc1a17f53d9",
+        "sha256": "f271c2e96ce5d03d1213d62de18fb370a1257a134037536df1dd931386b28371",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -88,8 +88,8 @@
       },
       {
         "path": "docs/knowledge/auth/argon2id-verify.md",
-        "blob": "b4005f6d276c5d1843fee6a324c123f4cec1aa1f",
-        "sha256": "43815afea4e863366f2bbf094bb8e7f837b03f139ab907c6857e45376af65c2b",
+        "blob": "77dd831394217a6aab10a66738871b27059d644f",
+        "sha256": "c626e65c0dfe7aed43503242b6fe76d64f62e37c13ad7a3c1226e154334dee77",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       }
     ],
@@ -280,8 +280,8 @@
       },
       {
         "path": "docs/knowledge/crates/billing-pipeline.md",
-        "blob": "e81604ff79a7b904e705844047b215d9fd7264a4",
-        "sha256": "e8f615b723fd9742406f603b0342a5bb96bb89c69962159d41865defae22abdb",
+        "blob": "3a16cd09b14b0044e84f52ed406fd8055f5fa6de",
+        "sha256": "1911aafc877a358666c4abbc9f8b9e112a64662ca769268725cbac89ad1f25b1",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       }
     ],
@@ -430,8 +430,8 @@
       },
       {
         "path": "docs/knowledge/compliance/audit-chain.md",
-        "blob": "e4a587ffccaa3a6e01af52cb039f65d0eb09fc52",
-        "sha256": "a4ad6290c72188abfe12f1885e3426c6c330762c20c84b274e590cefdd09a898",
+        "blob": "89e8ce881ad52bffdafcea7859e27e448381bc79",
+        "sha256": "a8c331979fd182ae4b01e90ea65d4cb25357be36a43e61882294d751008a779a",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -957,14 +957,14 @@
       },
       {
         "path": "crates/corelink-billing-stripe-materializer/src/lib.rs",
-        "blob": "f9e399a2893746524b5060c162cb2ac63b3b7abd",
-        "sha256": "97bd9dbdcf248a48a7d9ec7a2a69bb90524d706d6e6e4459a5cedf4d0b544544",
+        "blob": "b9148be02888e971dbd5a04d03718419f05cf953",
+        "sha256": "c0d34d7ff26fdc56ba0a0d7d5c29e3964470ad54f5d4950f542fce1c6d94c729",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
         "path": "docs/knowledge/crates/billing-pipeline.md",
-        "blob": "e81604ff79a7b904e705844047b215d9fd7264a4",
-        "sha256": "e8f615b723fd9742406f603b0342a5bb96bb89c69962159d41865defae22abdb",
+        "blob": "3a16cd09b14b0044e84f52ed406fd8055f5fa6de",
+        "sha256": "1911aafc877a358666c4abbc9f8b9e112a64662ca769268725cbac89ad1f25b1",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -1096,8 +1096,8 @@
       },
       {
         "path": "docs/knowledge/crates/container-platform.md",
-        "blob": "e73be0b67d80e00b8d4b1140cec57da6d93dd873",
-        "sha256": "6208c920dc290e58e5ee4e5369e82ee2aa935438bf4de71b34171b229f09277f",
+        "blob": "8981be13fe2d5fe1dbc9ef64fe111170cf88b203",
+        "sha256": "f7d45aad3f1bd1b7e27ca35a83f79868023c452b5b190795f049d99e1377fdc5",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       }
     ],
@@ -1979,8 +1979,8 @@
       },
       {
         "path": "docs/knowledge/crates/billing-pipeline.md",
-        "blob": "e81604ff79a7b904e705844047b215d9fd7264a4",
-        "sha256": "e8f615b723fd9742406f603b0342a5bb96bb89c69962159d41865defae22abdb",
+        "blob": "3a16cd09b14b0044e84f52ed406fd8055f5fa6de",
+        "sha256": "1911aafc877a358666c4abbc9f8b9e112a64662ca769268725cbac89ad1f25b1",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -2055,8 +2055,8 @@
       },
       {
         "path": "docs/knowledge/crates/billing-commerce.md",
-        "blob": "be788f7829b718bfc0709a4e336f1095d6815bdd",
-        "sha256": "ca3025f3b90b93c3f99358892d8f4558fe8b058e8604f3d9e073751e65306e1b",
+        "blob": "f5ea4f41e21054c34349518717e3758fb3e80654",
+        "sha256": "f633f424e0dd90bef295f0fde10c40fff6a4ff7cbebb60bfd1997f7e7c7d3a03",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       }
     ],
@@ -2681,8 +2681,8 @@
       },
       {
         "path": "docs/knowledge/crates/container-platform.md",
-        "blob": "e73be0b67d80e00b8d4b1140cec57da6d93dd873",
-        "sha256": "6208c920dc290e58e5ee4e5369e82ee2aa935438bf4de71b34171b229f09277f",
+        "blob": "8981be13fe2d5fe1dbc9ef64fe111170cf88b203",
+        "sha256": "f7d45aad3f1bd1b7e27ca35a83f79868023c452b5b190795f049d99e1377fdc5",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -3309,8 +3309,8 @@
       },
       {
         "path": "crates/corelink-terraform-drift-consumer/src/lib.rs",
-        "blob": "98d5c60724334ad16602389fdb24f80a2a52e832",
-        "sha256": "5ea74d263fa3a3b6ed4a80877930cfd2e163eaf01b1c339368dd5b03b9c0e181",
+        "blob": "155d4a22c082f15391262b4995cd483933063835",
+        "sha256": "bde935e6a7ff762da1ec9f3e20e6c3d0fc90b7168acadc4a305da6739ba07663",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -3642,8 +3642,8 @@
       },
       {
         "path": "docs/knowledge/crates/billing-commerce.md",
-        "blob": "be788f7829b718bfc0709a4e336f1095d6815bdd",
-        "sha256": "ca3025f3b90b93c3f99358892d8f4558fe8b058e8604f3d9e073751e65306e1b",
+        "blob": "f5ea4f41e21054c34349518717e3758fb3e80654",
+        "sha256": "f633f424e0dd90bef295f0fde10c40fff6a4ff7cbebb60bfd1997f7e7c7d3a03",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       }
     ],
@@ -3706,8 +3706,8 @@
       },
       {
         "path": "docs/knowledge/crates/billing-pipeline.md",
-        "blob": "e81604ff79a7b904e705844047b215d9fd7264a4",
-        "sha256": "e8f615b723fd9742406f603b0342a5bb96bb89c69962159d41865defae22abdb",
+        "blob": "3a16cd09b14b0044e84f52ed406fd8055f5fa6de",
+        "sha256": "1911aafc877a358666c4abbc9f8b9e112a64662ca769268725cbac89ad1f25b1",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       }
     ],
@@ -3770,8 +3770,8 @@
       },
       {
         "path": "docs/knowledge/crates/billing-pipeline.md",
-        "blob": "e81604ff79a7b904e705844047b215d9fd7264a4",
-        "sha256": "e8f615b723fd9742406f603b0342a5bb96bb89c69962159d41865defae22abdb",
+        "blob": "3a16cd09b14b0044e84f52ed406fd8055f5fa6de",
+        "sha256": "1911aafc877a358666c4abbc9f8b9e112a64662ca769268725cbac89ad1f25b1",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       }
     ],
@@ -3840,8 +3840,8 @@
       },
       {
         "path": "docs/knowledge/crates/billing-pipeline.md",
-        "blob": "e81604ff79a7b904e705844047b215d9fd7264a4",
-        "sha256": "e8f615b723fd9742406f603b0342a5bb96bb89c69962159d41865defae22abdb",
+        "blob": "3a16cd09b14b0044e84f52ed406fd8055f5fa6de",
+        "sha256": "1911aafc877a358666c4abbc9f8b9e112a64662ca769268725cbac89ad1f25b1",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       }
     ],
@@ -3904,8 +3904,8 @@
       },
       {
         "path": "docs/knowledge/crates/billing-commerce.md",
-        "blob": "be788f7829b718bfc0709a4e336f1095d6815bdd",
-        "sha256": "ca3025f3b90b93c3f99358892d8f4558fe8b058e8604f3d9e073751e65306e1b",
+        "blob": "f5ea4f41e21054c34349518717e3758fb3e80654",
+        "sha256": "f633f424e0dd90bef295f0fde10c40fff6a4ff7cbebb60bfd1997f7e7c7d3a03",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       }
     ],
@@ -4309,8 +4309,8 @@
       },
       {
         "path": "docs/knowledge/flows/signup-auto-provision.md",
-        "blob": "168ae657435f7aa5b73db81470eda9755ed3caef",
-        "sha256": "1241cb5496304a8823b32f65f71a434d57849c56a822d20826837182184751cf",
+        "blob": "4861624e40c858bb51b22897df32af0a55563ece",
+        "sha256": "5c2b442538526f29be3348d31b289f16aa41d482097823407b48e626aadb5924",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       }
     ],
@@ -4639,14 +4639,14 @@
       },
       {
         "path": "docs/knowledge/crates/billing-pipeline.md",
-        "blob": "e81604ff79a7b904e705844047b215d9fd7264a4",
-        "sha256": "e8f615b723fd9742406f603b0342a5bb96bb89c69962159d41865defae22abdb",
+        "blob": "3a16cd09b14b0044e84f52ed406fd8055f5fa6de",
+        "sha256": "1911aafc877a358666c4abbc9f8b9e112a64662ca769268725cbac89ad1f25b1",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
         "path": "docs/knowledge/crates/container-platform.md",
-        "blob": "e73be0b67d80e00b8d4b1140cec57da6d93dd873",
-        "sha256": "6208c920dc290e58e5ee4e5369e82ee2aa935438bf4de71b34171b229f09277f",
+        "blob": "8981be13fe2d5fe1dbc9ef64fe111170cf88b203",
+        "sha256": "f7d45aad3f1bd1b7e27ca35a83f79868023c452b5b190795f049d99e1377fdc5",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -4851,8 +4851,8 @@
       },
       {
         "path": "docs/knowledge/crates/billing-pipeline.md",
-        "blob": "e81604ff79a7b904e705844047b215d9fd7264a4",
-        "sha256": "e8f615b723fd9742406f603b0342a5bb96bb89c69962159d41865defae22abdb",
+        "blob": "3a16cd09b14b0044e84f52ed406fd8055f5fa6de",
+        "sha256": "1911aafc877a358666c4abbc9f8b9e112a64662ca769268725cbac89ad1f25b1",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       }
     ],
@@ -5169,8 +5169,8 @@
       },
       {
         "path": "docs/knowledge/compliance/audit-chain.md",
-        "blob": "e4a587ffccaa3a6e01af52cb039f65d0eb09fc52",
-        "sha256": "a4ad6290c72188abfe12f1885e3426c6c330762c20c84b274e590cefdd09a898",
+        "blob": "89e8ce881ad52bffdafcea7859e27e448381bc79",
+        "sha256": "a8c331979fd182ae4b01e90ea65d4cb25357be36a43e61882294d751008a779a",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -5230,8 +5230,8 @@
     "seed_evidence": [
       {
         "path": "docs/knowledge/compliance/audit-chain.md",
-        "blob": "e4a587ffccaa3a6e01af52cb039f65d0eb09fc52",
-        "sha256": "a4ad6290c72188abfe12f1885e3426c6c330762c20c84b274e590cefdd09a898",
+        "blob": "89e8ce881ad52bffdafcea7859e27e448381bc79",
+        "sha256": "a8c331979fd182ae4b01e90ea65d4cb25357be36a43e61882294d751008a779a",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -5242,8 +5242,8 @@
       },
       {
         "path": "docs/knowledge/crates/billing-pipeline.md",
-        "blob": "e81604ff79a7b904e705844047b215d9fd7264a4",
-        "sha256": "e8f615b723fd9742406f603b0342a5bb96bb89c69962159d41865defae22abdb",
+        "blob": "3a16cd09b14b0044e84f52ed406fd8055f5fa6de",
+        "sha256": "1911aafc877a358666c4abbc9f8b9e112a64662ca769268725cbac89ad1f25b1",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -5549,8 +5549,8 @@
     "seed_evidence": [
       {
         "path": "docs/knowledge/crates/billing-pipeline.md",
-        "blob": "e81604ff79a7b904e705844047b215d9fd7264a4",
-        "sha256": "e8f615b723fd9742406f603b0342a5bb96bb89c69962159d41865defae22abdb",
+        "blob": "3a16cd09b14b0044e84f52ed406fd8055f5fa6de",
+        "sha256": "1911aafc877a358666c4abbc9f8b9e112a64662ca769268725cbac89ad1f25b1",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -5985,8 +5985,8 @@
       },
       {
         "path": "docs/knowledge/crates/billing-commerce.md",
-        "blob": "be788f7829b718bfc0709a4e336f1095d6815bdd",
-        "sha256": "ca3025f3b90b93c3f99358892d8f4558fe8b058e8604f3d9e073751e65306e1b",
+        "blob": "f5ea4f41e21054c34349518717e3758fb3e80654",
+        "sha256": "f633f424e0dd90bef295f0fde10c40fff6a4ff7cbebb60bfd1997f7e7c7d3a03",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -6504,8 +6504,8 @@
       },
       {
         "path": "docs/knowledge/compliance/audit-chain.md",
-        "blob": "e4a587ffccaa3a6e01af52cb039f65d0eb09fc52",
-        "sha256": "a4ad6290c72188abfe12f1885e3426c6c330762c20c84b274e590cefdd09a898",
+        "blob": "89e8ce881ad52bffdafcea7859e27e448381bc79",
+        "sha256": "a8c331979fd182ae4b01e90ea65d4cb25357be36a43e61882294d751008a779a",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       },
       {
@@ -6516,8 +6516,8 @@
       },
       {
         "path": "docs/knowledge/crates/billing-pipeline.md",
-        "blob": "e81604ff79a7b904e705844047b215d9fd7264a4",
-        "sha256": "e8f615b723fd9742406f603b0342a5bb96bb89c69962159d41865defae22abdb",
+        "blob": "3a16cd09b14b0044e84f52ed406fd8055f5fa6de",
+        "sha256": "1911aafc877a358666c4abbc9f8b9e112a64662ca769268725cbac89ad1f25b1",
         "source_commit": "37f96dba42cc159cd8ab8e9c4ab9d35b8e5634b5"
       }
     ],
