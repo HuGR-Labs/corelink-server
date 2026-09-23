@@ -17,6 +17,9 @@ on:
       - migrations/d1/0117_sla_credit_ledger.sql
       - scripts/verify_b089_sla_credits.py
       - scripts/verify_owner_action_packets.py
+      - .github/workflows/notarize-macos.yml
+      - .github/workflows/sign-windows.yml
+      - .github/workflows/release-cli.yml
       - docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
       - BACKLOG.md
       - evidence/i1655/sla-credit-contract-manifest.json
@@ -34,6 +37,9 @@ on:
       - migrations/d1/0117_sla_credit_ledger.sql
       - scripts/verify_b089_sla_credits.py
       - scripts/verify_owner_action_packets.py
+      - .github/workflows/notarize-macos.yml
+      - .github/workflows/sign-windows.yml
+      - .github/workflows/release-cli.yml
       - docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
       - BACKLOG.md
       - evidence/i1655/sla-credit-contract-manifest.json
