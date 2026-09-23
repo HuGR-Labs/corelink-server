@@ -69,8 +69,11 @@ FIELD_PATTERNS = {
         r"\breturn card\b|\breturn-card\b|\bretorno comum\b", re.IGNORECASE
     ),
 }
-WORKFLOW_MANIFEST_COUNT = 138
-WORKFLOW_MANIFEST_SHA256 = "1616038ec0bb163a7ed436d7487a6255c9da037efaa1f54cbe5f4c3f70a67dc1"
+WORKFLOW_OWNERSHIP_MANIFEST = Path(
+    "docs/campaigns/remediation/wp150-workflow-ownership.md"
+)
+WORKFLOW_COUNT_RE = re.compile(r"(?m)^workflow-count: ([0-9]+)$")
+WORKFLOW_PATHS_SHA256_RE = re.compile(r"(?m)^workflow-paths-sha256: ([0-9a-f]{64})$")
 PREDECESSOR_TOKEN_RE = re.compile(r"\bB-\d{3}\b|\bWP-[A-Z0-9][A-Z0-9./_-]*\b|#\d+\b")
 WORKFLOW_OWNERSHIP_FENCE = "wp-workflow-ownership"
 LEDGER_STATE_FENCE = "ledger-state"
@@ -702,17 +705,51 @@ def validate_workflow_ownership(
 
 
 def validate_workflow_population(repo_root: Path) -> set[str]:
-    paths = sorted(
-        path.relative_to(repo_root).as_posix()
-        for path in (repo_root / ".github/workflows").iterdir()
-        if path.is_file() and path.suffix in {".yml", ".yaml"}
+    """Read the single tracked ownership manifest and compare it with Git paths."""
+    manifest = repo_root / WORKFLOW_OWNERSHIP_MANIFEST
+    tracked_manifest = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", WORKFLOW_OWNERSHIP_MANIFEST.as_posix()],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
     )
+    if tracked_manifest.returncode != 0 or manifest.is_symlink() or not manifest.is_file():
+        raise LedgerError(
+            f"missing or untracked workflow ownership manifest: {WORKFLOW_OWNERSHIP_MANIFEST}"
+        )
+    raw = manifest.read_text(encoding="utf-8")
+    count_match = WORKFLOW_COUNT_RE.findall(raw)
+    digest_match = WORKFLOW_PATHS_SHA256_RE.findall(raw)
+    if len(count_match) != 1 or len(digest_match) != 1:
+        raise LedgerError("workflow ownership manifest needs one count and one path hash")
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z", "--", ".github/workflows"],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+    )
+    if tracked.returncode != 0:
+        raise LedgerError("cannot enumerate Git-tracked workflow paths")
+    paths = sorted(
+        path
+        for path in tracked.stdout.decode("utf-8").split("\0")
+        if path.endswith((".yml", ".yaml"))
+    )
+    missing_files = [
+        path for path in paths
+        if (repo_root / path).is_symlink() or not (repo_root / path).is_file()
+    ]
+    if missing_files:
+        raise LedgerError(
+            "Git-tracked workflows are missing or symlinked: " + ", ".join(missing_files)
+        )
     payload = ("\n".join(paths) + "\n").encode()
     digest = hashlib.sha256(payload).hexdigest()
-    if len(paths) != WORKFLOW_MANIFEST_COUNT or digest != WORKFLOW_MANIFEST_SHA256:
+    if len(paths) != int(count_match[0]) or digest != digest_match[0]:
         raise LedgerError(
             "WP-150 workflow population drift: "
-            f"expected {WORKFLOW_MANIFEST_COUNT}/{WORKFLOW_MANIFEST_SHA256}, "
+            f"expected {count_match[0]}/{digest_match[0]}, "
             f"found {len(paths)}/{digest}"
         )
     return set(paths)
