@@ -24,6 +24,9 @@ Each entry cross-references:
 
 ### Fixed
 
+- **B-139 secrets-drift workflow digest refreshed.** Structural trust-boundary
+  pin now matches current reviewed workflow.
+
 - **B-155 backlog parser accepts canonical four-digit IDs.** Population checks
   now include `B-1630` while rejecting zero, short, padded, and malformed IDs.
 
