@@ -1,5 +1,6 @@
 from pathlib import Path
 import hashlib
+import json
 import subprocess
 import sys
 
@@ -276,6 +277,9 @@ def _committed_preimage_file(path: str) -> bytes:
 
 def _live_snapshot_manifest():
     state = parse_ledger_state(ledger.LEDGER_PATH.read_text(), "live-ledger.md")
+    successors = ledger._successor_paths(ledger.REPO_ROOT)
+    if successors:
+        return json.loads(successors[-1].read_text())
     return (
         ledger.load_postmerge_snapshot_manifest()
         if state["base-ref"] == ledger.POSTMERGE_BASE_SHA
@@ -286,6 +290,8 @@ def _live_snapshot_manifest():
 def test_postmerge_snapshot_accepts_versioned_b373_only_transition():
     if not ledger.POSTMERGE_SNAPSHOT_PATH.is_file():
         pytest.skip("versioned post-merge data is not present in the candidate tree")
+    if ledger._successor_paths(ledger.REPO_ROOT):
+        pytest.skip("current ledger has a later versioned successor")
     manifest = ledger.load_postmerge_snapshot_manifest()
     backlog = ledger.REPO_ROOT.joinpath("BACKLOG.md").read_text()
     state = parse_ledger_state(
