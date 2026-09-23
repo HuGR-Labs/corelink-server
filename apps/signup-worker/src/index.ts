@@ -139,7 +139,7 @@ const baseHandler: ExportedHandler<SignupEnv> = {
     }
   },
 
-  // Hourly Cron Trigger (`0 * * * *`). Drives five scheduled sweep families:
+  // Hourly Cron Trigger (`0 * * * *`). Drives four scheduled sweeps plus DSR DLQ retention cleanup:
   //   1. DSR 24h verification sweep — re-fingerprints every DSR past its 24h
   //      SLA deadline via the container /_internal/dsr/verify endpoint (inert
   //      until CORELINK_INTERNAL_AUTH_KEY is bound, task #46).

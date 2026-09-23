@@ -163,7 +163,7 @@ max_batch_size = 10
 max_batch_timeout = 30
 max_retries = 3
 
-# Hourly Cron Trigger → src/index.ts `scheduled()`. Drives FIVE sweep families:
+# Hourly Cron Trigger → src/index.ts `scheduled()`. Drives FOUR sweep families plus DSR DLQ retention cleanup:
 #   1. DSR 24h verification sweep (WI-S11-008 incr 5) → runDsrVerifySweep →
 #      container POST /_internal/dsr/verify for every DSR past its 24h SLA
 #      deadline (idempotent; inert until CORELINK_INTERNAL_AUTH_KEY bound — #46).
