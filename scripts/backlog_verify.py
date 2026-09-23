@@ -712,7 +712,18 @@ def validate_candidate_workflow(candidate_root: Path) -> None:
              "run": expected_b046_gate},
         ],
     }
-    if jobs["verify"] != expected_data or jobs["trusted_semantic"] != expected_trusted:
+    verify_job = jobs["verify"]
+    if (
+        not isinstance(verify_job, dict)
+        or verify_job.get("runs-on") not in ("corelink", "ubuntu-24.04")
+    ):
+        raise RuntimeError("candidate workflow policy has unexpected verify runner")
+    # Accept the current BASE runner during rollout and the one explicitly
+    # approved hosted target. Normalize only this field before applying the
+    # existing closed-world shape check; trusted_semantic remains exact.
+    normalized_verify = dict(verify_job)
+    normalized_verify["runs-on"] = "corelink"
+    if normalized_verify != expected_data or jobs["trusted_semantic"] != expected_trusted:
         raise RuntimeError("candidate workflow policy has unexpected data/trusted job shape")
 
 
