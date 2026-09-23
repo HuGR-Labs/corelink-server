@@ -238,8 +238,16 @@ def _check_posture(trust: str, generator: str, legal_register: str, vendor_regis
     ):
         # Markdown prose is routinely wrapped at a line boundary. Compare a
         # whitespace-folded view so a valid wrapped disclaimer is not rejected.
+        # The contractual register names the same recipient as
+        # ``The Linux Foundation (Sigstore)``; the public/register sources use
+        # ``Sigstore (Linux Foundation)``. Both are exact, unambiguous names.
         folded = " ".join(text.split())
-        for marker in required:
+        identity = (
+            "The Linux Foundation (Sigstore)"
+            if label == LEGAL_REGISTER
+            else required[0]
+        )
+        for marker in (identity, *required[1:]):
             if marker not in folded:
                 raise VerificationError(f"{label}: scoped posture marker missing: {marker}")
     folded_trust = " ".join(trust.split())
