@@ -41,9 +41,10 @@ enabled:
 3. Separate writer, provisioning, break-glass, and live-probe identities. The
    writer has no delete permission; no principal used by the application may
    bypass the retention control.
-4. An externally durable audit source that records S3 object data events for
-   the target, such as an approved CloudTrail trail or CloudTrail Lake store,
-   and the retention/access policy for its receipt.
+4. An externally durable audit source that records S3 **data events** for the
+   target, such as an approved CloudTrail Lake event-data store and a delivered
+   CloudTrail trail with digest validation. Management-event history is not a
+   substitute for S3 data-event evidence.
 5. A redacted, authenticated live-probe record for that account and bucket.
 
 The repository has no approved target, credentials, or durable audit receipt
@@ -86,17 +87,44 @@ redacted evidence reference. It must use a short-lived workload identity for
 the dedicated writer role; do not commit access keys, session tokens, account
 IDs, bucket names, or live receipt values.
 
-It must construct `VerifiedObjectLockArchive` before its first put, send the
-requested compliance retention and legal-hold settings on the object write,
-read both back, verify the expected residency, and attach a durable audit
-receipt. It must not mount an immutable archive route or perform a fallback
-write if any of those steps fails.
+It must construct `VerifiedObjectLockArchive` before its first put, append and
+verify durable audit intent before the irreversible put, then record the exact
+success or failure outcome. It must send requested Compliance retention and
+legal-hold settings on the object write; read both back against the exact S3
+version; verify the expected tenant, bucket, account, and residency; and bind
+the durable receipt to that version. It must not mount an immutable archive
+route or perform a fallback write if any of those steps fails.
 
-The inactive writer policy intentionally lacks authority for per-object
-retention or legal-hold headers. Do not widen it directly. Any runtime adapter
-that needs those headers requires a separately approved, condition-bound IAM
-policy that permits `COMPLIANCE` mode and setting, but never releasing, legal
-holds; the live probe must validate that policy before the route is enabled.
+The inactive writer policy permits per-object retention and legal-hold headers
+only with IAM conditions for `COMPLIANCE`, an active legal hold, and at least
+the approved retention term. It has no delete, bypass, or hold-release
+authority. Do not widen it directly; the live probe must validate the approved
+probe/cleanup policy before the route is enabled.
+
+## Migration and cleanup boundary
+
+`migrations/d1/0144_cas_retention_compliance_metadata.sql` rebuilds the D1/
+SQLite `cas_retention` table because the deployed inline mode check cannot be
+widened in place. Existing Governance rows, primary key, and tenant indexes
+are preserved. Governance remains the R2-only reversible legal-hold path. A
+Compliance row includes provider target, exact version, and evidence metadata;
+it cannot be selected by a Governance release or drain. The migration runner
+ledger applies the numbered rebuild once. Replayed Governance writes retain
+their original `INSERT OR IGNORE` behavior.
+
+Rollback after a Compliance row exists is one-way: do not drop its metadata,
+shorten retention, delete the S3 version, or route it to R2. Keep the widened
+schema and apply a forward repair.
+
+`.github/workflows/aws-s3-object-lock-live-proof.yml` is manual-only and runs
+only from protected canonical `main` in the approved environment. It accepts
+no target or role inputs. It uses GitHub OIDC, a new synthetic bucket, an STS
+identity bound to an effective delete-permission observation, CloudTrail Lake
+S3 data events, and CloudTrail digest validation. Cleanup derives the exact
+synthetic bucket from the source run, waits for retention expiry, turns the
+legal hold off only then, and removes only that version and bucket. A failed or
+delayed cleanup remains an owned obligation; no bypass or retention shortening
+is permitted.
 
 ## Sources
 

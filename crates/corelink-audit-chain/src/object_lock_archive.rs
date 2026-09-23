@@ -180,6 +180,8 @@ pub struct ObjectLockCapabilityReport {
 /// Immutable object payload and required post-write state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImmutableArchivePut {
+    /// Authenticated tenant whose approved target receives this object.
+    pub tenant_id: String,
     /// Provider-neutral object key.
     pub object_key: String,
     /// Bytes to archive.
@@ -193,8 +195,12 @@ pub struct ImmutableArchivePut {
 /// Provider readback after an immutable write.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ObjectLockRetentionReadback {
+    /// Authenticated tenant bound to the provider target and object receipt.
+    pub tenant_id: String,
     /// Object key read back from the provider.
     pub object_key: String,
+    /// Immutable provider version returned by the exact put.
+    pub object_version: String,
     /// Storage-enforced retention and hold state.
     pub retention: ImmutableRetention,
     /// Object residency metadata.
@@ -206,8 +212,20 @@ pub struct ObjectLockRetentionReadback {
 pub struct ArchiveAuditReceipt {
     /// Provider-issued or externally durable audit-event identifier.
     pub receipt_id: String,
+    /// Authenticated tenant covered by the durable audit record.
+    pub tenant_id: String,
     /// Object key covered by the receipt.
     pub object_key: String,
+    /// Exact immutable object version covered by the record.
+    pub object_version: String,
+    /// Provider account target recorded without credentials.
+    pub provider_account: String,
+    /// Provider bucket recorded without credentials.
+    pub bucket: String,
+    /// Provider region recorded without credentials.
+    pub region: String,
+    /// Provider request reference, never an authorization header or token.
+    pub provider_request_id: String,
     /// Provider-recorded immutable-write time.
     pub recorded_at_unix_ms: u64,
 }
@@ -215,8 +233,12 @@ pub struct ArchiveAuditReceipt {
 /// Provider result after it accepts an immutable write.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImmutableArchiveWriteReceipt {
+    /// Authenticated tenant accepted by the provider target.
+    pub tenant_id: String,
     /// Object key accepted by the provider.
     pub object_key: String,
+    /// Exact version returned by the immutable write.
+    pub object_version: String,
     /// Provider audit receipt for the immutable write.
     pub audit_receipt: ArchiveAuditReceipt,
 }
@@ -227,8 +249,12 @@ pub struct ImmutableArchiveWriteReceipt {
 pub enum DeleteAttempt {
     /// The provider denied deletion due to retention or legal hold.
     Denied {
+        /// Authenticated tenant used for the attempted delete.
+        tenant_id: String,
         /// Object whose deletion was denied.
         object_key: String,
+        /// Exact version for which deletion was denied.
+        object_version: String,
         /// Provider denial reason or code, without credentials.
         reason: String,
     },
@@ -298,11 +324,18 @@ pub trait ObjectLockArchiveAdapter: Send + Sync + core::fmt::Debug {
     /// Read provider retention, legal-hold, and residency state.
     fn read_retention(
         &self,
+        tenant_id: &str,
         object_key: &str,
+        object_version: &str,
     ) -> Result<ObjectLockRetentionReadback, ObjectLockArchiveError>;
 
     /// Attempt deletion to prove it is denied while retention or hold applies.
-    fn attempt_delete(&self, object_key: &str) -> Result<DeleteAttempt, ObjectLockArchiveError>;
+    fn attempt_delete(
+        &self,
+        tenant_id: &str,
+        object_key: &str,
+        object_version: &str,
+    ) -> Result<DeleteAttempt, ObjectLockArchiveError>;
 }
 
 /// Negotiated immutable archive surface with no fallback backend.
@@ -362,7 +395,10 @@ where
         &self,
         request: &ImmutableArchivePut,
     ) -> Result<VerifiedImmutableArchiveReceipt, ObjectLockArchiveError> {
-        if request.object_key.trim().is_empty() || request.body.is_empty() {
+        if request.tenant_id.trim().is_empty()
+            || request.object_key.trim().is_empty()
+            || request.body.is_empty()
+        {
             return Err(ObjectLockArchiveError::ReadbackMismatch(
                 "immutable archive write requires a non-empty key and body".to_string(),
             ));
@@ -374,17 +410,39 @@ where
             ));
         }
         let write_receipt = self.adapter.put_immutable(request)?;
-        if write_receipt.object_key != request.object_key
+        if write_receipt.tenant_id != request.tenant_id
+            || write_receipt.object_key != request.object_key
+            || write_receipt.object_version.trim().is_empty()
+            || write_receipt.audit_receipt.tenant_id != request.tenant_id
             || write_receipt.audit_receipt.object_key != request.object_key
+            || write_receipt.audit_receipt.object_version != write_receipt.object_version
             || write_receipt.audit_receipt.receipt_id.trim().is_empty()
+            || write_receipt
+                .audit_receipt
+                .provider_account
+                .trim()
+                .is_empty()
+            || write_receipt.audit_receipt.bucket.trim().is_empty()
+            || write_receipt.audit_receipt.region.trim().is_empty()
+            || write_receipt
+                .audit_receipt
+                .provider_request_id
+                .trim()
+                .is_empty()
             || write_receipt.audit_receipt.recorded_at_unix_ms == 0
         {
             return Err(ObjectLockArchiveError::ReadbackMismatch(
                 "write receipt did not cover the requested object".to_string(),
             ));
         }
-        let retention_readback = self.adapter.read_retention(&request.object_key)?;
-        if retention_readback.object_key != request.object_key
+        let retention_readback = self.adapter.read_retention(
+            &request.tenant_id,
+            &request.object_key,
+            &write_receipt.object_version,
+        )?;
+        if retention_readback.tenant_id != request.tenant_id
+            || retention_readback.object_key != request.object_key
+            || retention_readback.object_version != write_receipt.object_version
             || retention_readback.retention != request.retention
             || retention_readback.residency != request.expected_residency
             || !retention_readback.residency.is_complete()
@@ -409,31 +467,42 @@ where
     /// permits deletion, making it unusable for immutable retention.
     pub fn assert_delete_denied(
         &self,
+        tenant_id: &str,
         object_key: &str,
+        object_version: &str,
     ) -> Result<DeleteDenialReceipt, ObjectLockArchiveError> {
-        if object_key.trim().is_empty() {
+        if tenant_id.trim().is_empty()
+            || object_key.trim().is_empty()
+            || object_version.trim().is_empty()
+        {
             return Err(ObjectLockArchiveError::ReadbackMismatch(
                 "delete-denial proof requires a non-empty object key".to_string(),
             ));
         }
-        match self.adapter.attempt_delete(object_key)? {
+        match self
+            .adapter
+            .attempt_delete(tenant_id, object_key, object_version)?
+        {
             DeleteAttempt::Denied {
+                tenant_id: denied_tenant,
                 object_key: denied_object_key,
+                object_version: denied_object_version,
                 reason,
-            } if denied_object_key == object_key && !reason.trim().is_empty() => {
+            } if denied_tenant == tenant_id
+                && denied_object_key == object_key
+                && denied_object_version == object_version
+                && !reason.trim().is_empty() =>
+            {
                 Ok(DeleteDenialReceipt {
+                    tenant_id: denied_tenant,
                     object_key: denied_object_key,
+                    object_version: denied_object_version,
                     reason,
                 })
             }
-            DeleteAttempt::Denied {
-                object_key: denied_object_key,
-                ..
-            } if denied_object_key != object_key => Err(ObjectLockArchiveError::ReadbackMismatch(
-                "delete denial covered a different object than requested".to_string(),
-            )),
             DeleteAttempt::Denied { .. } => Err(ObjectLockArchiveError::ReadbackMismatch(
-                "delete denial did not include a provider reason".to_string(),
+                "delete denial did not cover the requested tenant, object, and exact version"
+                    .to_string(),
             )),
             DeleteAttempt::Deleted => Err(ObjectLockArchiveError::DeleteWasAllowed(
                 object_key.to_string(),
@@ -456,8 +525,12 @@ pub struct VerifiedImmutableArchiveReceipt {
 /// Evidence that a provider denied deletion.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeleteDenialReceipt {
+    /// Authenticated tenant for the delete probe.
+    pub tenant_id: String,
     /// Object whose deletion was denied.
     pub object_key: String,
+    /// Exact protected version.
+    pub object_version: String,
     /// Provider denial reason or code.
     pub reason: String,
 }
@@ -526,14 +599,21 @@ impl ObjectLockArchiveAdapter for R2ObjectLockUnavailable {
 
     fn read_retention(
         &self,
+        _tenant_id: &str,
         _object_key: &str,
+        _object_version: &str,
     ) -> Result<ObjectLockRetentionReadback, ObjectLockArchiveError> {
         Err(ObjectLockArchiveError::CapabilityNegotiationFailed(
             "Cloudflare R2 cannot read Object-Lock retention state".to_string(),
         ))
     }
 
-    fn attempt_delete(&self, _object_key: &str) -> Result<DeleteAttempt, ObjectLockArchiveError> {
+    fn attempt_delete(
+        &self,
+        _tenant_id: &str,
+        _object_key: &str,
+        _object_version: &str,
+    ) -> Result<DeleteAttempt, ObjectLockArchiveError> {
         Err(ObjectLockArchiveError::CapabilityNegotiationFailed(
             "Cloudflare R2 cannot prove Object-Lock delete denial".to_string(),
         ))
@@ -546,7 +626,7 @@ pub struct InMemoryObjectLockArchive {
     identity: ObjectLockBackendIdentity,
     residency: ArchiveResidency,
     delete_is_denied: bool,
-    objects: Arc<Mutex<BTreeMap<String, ImmutableRetention>>>,
+    objects: Arc<Mutex<BTreeMap<String, (String, ImmutableRetention, String)>>>,
     next_receipt: Arc<Mutex<u64>>,
 }
 
@@ -601,19 +681,35 @@ impl ObjectLockArchiveAdapter for InMemoryObjectLockArchive {
         let mut objects = self.objects.lock().map_err(|_| {
             ObjectLockArchiveError::TestFixture("in-memory object map mutex poisoned".to_string())
         })?;
-        objects.insert(request.object_key.clone(), request.retention);
         let mut next_receipt = self.next_receipt.lock().map_err(|_| {
             ObjectLockArchiveError::TestFixture(
                 "in-memory receipt counter mutex poisoned".to_string(),
             )
         })?;
         let receipt_id = format!("in-memory-object-lock-{}", *next_receipt);
+        let object_version = format!("in-memory-version-{}", *next_receipt);
+        objects.insert(
+            request.object_key.clone(),
+            (
+                request.tenant_id.clone(),
+                request.retention,
+                object_version.clone(),
+            ),
+        );
         *next_receipt = next_receipt.saturating_add(1);
         Ok(ImmutableArchiveWriteReceipt {
+            tenant_id: request.tenant_id.clone(),
             object_key: request.object_key.clone(),
+            object_version: object_version.clone(),
             audit_receipt: ArchiveAuditReceipt {
                 receipt_id,
+                tenant_id: request.tenant_id.clone(),
                 object_key: request.object_key.clone(),
+                object_version,
+                provider_account: "in-memory-account".to_string(),
+                bucket: self.identity.archive_target.clone(),
+                region: self.residency.region.clone(),
+                provider_request_id: "in-memory-request".to_string(),
                 recorded_at_unix_ms: request.retention.retain_until_unix_ms.saturating_sub(1),
             },
         })
@@ -621,33 +717,60 @@ impl ObjectLockArchiveAdapter for InMemoryObjectLockArchive {
 
     fn read_retention(
         &self,
+        tenant_id: &str,
         object_key: &str,
+        object_version: &str,
     ) -> Result<ObjectLockRetentionReadback, ObjectLockArchiveError> {
         let objects = self.objects.lock().map_err(|_| {
             ObjectLockArchiveError::TestFixture("in-memory object map mutex poisoned".to_string())
         })?;
-        let retention = objects.get(object_key).copied().ok_or_else(|| {
-            ObjectLockArchiveError::Backend(
-                "object does not exist in in-memory archive".to_string(),
-            )
-        })?;
+        let (stored_tenant, retention, stored_version) =
+            objects.get(object_key).cloned().ok_or_else(|| {
+                ObjectLockArchiveError::Backend(
+                    "object does not exist in in-memory archive".to_string(),
+                )
+            })?;
+        if stored_tenant != tenant_id || stored_version != object_version {
+            return Err(ObjectLockArchiveError::ReadbackMismatch(
+                "in-memory readback request did not bind tenant and exact version".to_string(),
+            ));
+        }
         Ok(ObjectLockRetentionReadback {
+            tenant_id: stored_tenant,
             object_key: object_key.to_string(),
+            object_version: stored_version,
             retention,
             residency: self.residency.clone(),
         })
     }
 
-    fn attempt_delete(&self, object_key: &str) -> Result<DeleteAttempt, ObjectLockArchiveError> {
+    fn attempt_delete(
+        &self,
+        tenant_id: &str,
+        object_key: &str,
+        object_version: &str,
+    ) -> Result<DeleteAttempt, ObjectLockArchiveError> {
         if self.delete_is_denied {
             return Ok(DeleteAttempt::Denied {
+                tenant_id: tenant_id.to_string(),
                 object_key: object_key.to_string(),
+                object_version: object_version.to_string(),
                 reason: "retention_or_legal_hold".to_string(),
             });
         }
         let mut objects = self.objects.lock().map_err(|_| {
             ObjectLockArchiveError::TestFixture("in-memory object map mutex poisoned".to_string())
         })?;
+        let matches = objects
+            .get(object_key)
+            .is_some_and(|(stored_tenant, _, stored_version)| {
+                stored_tenant == tenant_id && stored_version == object_version
+            });
+        if !matches {
+            return Err(ObjectLockArchiveError::ReadbackMismatch(
+                "in-memory delete did not bind tenant and exact version".to_string(),
+            ));
+        }
         objects.remove(object_key);
         Ok(DeleteAttempt::Deleted)
     }
@@ -683,17 +806,24 @@ mod tests {
 
         fn read_retention(
             &self,
+            tenant_id: &str,
             object_key: &str,
+            object_version: &str,
         ) -> Result<ObjectLockRetentionReadback, ObjectLockArchiveError> {
-            self.inner.read_retention(object_key)
+            self.inner
+                .read_retention(tenant_id, object_key, object_version)
         }
 
         fn attempt_delete(
             &self,
+            tenant_id: &str,
             _object_key: &str,
+            object_version: &str,
         ) -> Result<DeleteAttempt, ObjectLockArchiveError> {
             Ok(DeleteAttempt::Denied {
+                tenant_id: tenant_id.to_string(),
                 object_key: "audit/other-object.ndjson".to_string(),
+                object_version: object_version.to_string(),
                 reason: "retention_or_legal_hold".to_string(),
             })
         }
@@ -709,6 +839,7 @@ mod tests {
 
     fn request() -> ImmutableArchivePut {
         ImmutableArchivePut {
+            tenant_id: "tenant-eu-01".to_string(),
             object_key: "audit/2026/09/22/tenant/00000001.ndjson".to_string(),
             body: b"sealed audit bytes".to_vec(),
             retention: ImmutableRetention {
@@ -738,7 +869,11 @@ mod tests {
         );
         assert!(!receipt.write_receipt.audit_receipt.receipt_id.is_empty());
         let denial = archive
-            .assert_delete_denied(&request.object_key)
+            .assert_delete_denied(
+                &request.tenant_id,
+                &request.object_key,
+                &receipt.write_receipt.object_version,
+            )
             .expect("retained object delete must be denied");
         assert_eq!(denial.object_key, request.object_key);
     }
@@ -775,7 +910,7 @@ mod tests {
         .expect("complete fake negotiates");
 
         let error = archive
-            .assert_delete_denied("audit/requested-object.ndjson")
+            .assert_delete_denied("tenant-eu-01", "audit/requested-object.ndjson", "v-1")
             .expect_err("a denial for another object cannot prove retention");
         assert_eq!(
             error,
@@ -794,7 +929,7 @@ mod tests {
         .expect("complete fake negotiates");
 
         let error = archive
-            .assert_delete_denied("  ")
+            .assert_delete_denied("tenant-eu-01", "  ", "v-1")
             .expect_err("delete proof must identify an object");
         assert_eq!(
             error,

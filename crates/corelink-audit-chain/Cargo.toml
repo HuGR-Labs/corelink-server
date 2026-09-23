@@ -14,6 +14,16 @@ workspace = true
 # Default: pure-logic crate; only the in-memory fakes are built.
 default = []
 
+# Native AWS S3 Object Lock adapter. This is a compile-time witness only:
+# no route constructs it until a separately approved rollout supplies a
+# tenant-bound target, durable audit port, and protected-account evidence.
+aws-s3-object-lock = [
+    "dep:aws-sdk-s3",
+    "dep:aws-sdk-sts",
+    "dep:aws-types",
+    "dep:tokio",
+]
+
 # Build-time witness for the production `RealNeonShadowSink` driver
 # path (per-region project resolver + `app.current_tenant` RLS GUC
 # `set_local`-via-`SELECT set_config` + idempotent ON CONFLICT DO
@@ -78,6 +88,9 @@ corelink-analytics = { workspace = true }
 # DEBT-013 OPT-04 phase 1 — `parking_lot::Mutex` on the in-memory
 # audit sink record buffer (no poisoning, smaller guard).
 parking_lot = { workspace = true }
+aws-sdk-s3 = { workspace = true, optional = true }
+aws-sdk-sts = { workspace = true, optional = true }
+aws-types = { workspace = true, optional = true }
 
 # Wave-20 — `TokioPostgresExecutor` adapter satisfying `NeonExecutor`.
 # All optional, gated by the `neon-real` feature (native-only — the

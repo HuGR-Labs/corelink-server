@@ -4,8 +4,12 @@ on:
   pull_request:
     paths:
       - "infra/terraform/modules/audit-object-lock-aws/**"
+      - "crates/corelink-audit-chain/**"
+      - "migrations/d1/0144_cas_retention_compliance_metadata.sql"
+      - "tests/test_s3_object_lock_migration.py"
       - "docs/operator/aws-s3-object-lock-archive-provisioning.md"
       - ".github/workflows/aws-s3-object-lock-template.yml"
+      - ".github/workflows/aws-s3-object-lock-live-proof.yml"
   workflow_dispatch: {}
 
 permissions:
@@ -48,12 +52,31 @@ jobs:
           grep -F 'mode = "COMPLIANCE"' "$module"
           grep -F 'aws_s3_bucket_object_lock_configuration' "$module"
           grep -F 'aws_iam_role' "$module"
-          actions=$(grep -E '^[[:space:]]*"s3:[^"]+",?$' "$module" \
-            | sed -E 's/^[[:space:]]*"([^"]+)".*/\1/')
+          actions=$(grep -oE '"s3:[A-Z][A-Za-z]+"' "$module" | tr -d '"' | sort)
           expected=$(printf '%s\n' \
             's3:GetBucketObjectLockConfiguration' \
             's3:GetBucketLocation' \
             's3:GetObjectLegalHold' \
             's3:GetObjectRetention' \
-            's3:PutObject')
+            's3:PutObject' \
+            's3:PutObjectLegalHold' \
+            's3:PutObjectRetention' | sort)
           test "$actions" = "$expected"
+
+  adapter-conformance:
+    name: optional AWS adapter and D1 rebuild
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+      - name: Compile optional AWS Object Lock adapter
+        run: cargo check --locked -p corelink-audit-chain --features aws-s3-object-lock
+      - name: Run tenant and exact-version contract tests
+        run: cargo test --locked -p corelink-audit-chain --lib object_lock_archive
+      - name: Run SQLite-compatible migration coverage
+        run: python3 -m unittest -q tests/test_s3_object_lock_migration.py

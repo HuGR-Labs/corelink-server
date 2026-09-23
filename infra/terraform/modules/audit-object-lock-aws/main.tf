@@ -103,9 +103,34 @@ data "aws_iam_policy_document" "writer" {
     actions = [
       "s3:GetObjectLegalHold",
       "s3:GetObjectRetention",
-      "s3:PutObject",
     ]
     resources = [local.object_arn_prefix]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "s3:PutObject",
+      "s3:PutObjectLegalHold",
+      "s3:PutObjectRetention",
+    ]
+    resources = [local.object_arn_prefix]
+
+    condition {
+      test     = "StringEquals"
+      variable = "s3:object-lock-mode"
+      values   = ["COMPLIANCE"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "s3:object-lock-legal-hold"
+      values   = ["ON"]
+    }
+    condition {
+      test     = "NumericGreaterThanEquals"
+      variable = "s3:object-lock-remaining-retention-days"
+      values   = [tostring(var.default_retention_days)]
+    }
   }
 }
 

@@ -138,6 +138,8 @@
 
 pub mod archive_producer;
 pub mod audit;
+#[cfg(feature = "aws-s3-object-lock")]
+pub mod aws_s3_object_lock;
 pub mod chain;
 pub mod epoch;
 pub mod error;
@@ -158,6 +160,11 @@ pub use audit::{
     canonical_audit_event_strings, AuditChainAuditEmitError, AuditChainAuditEventType,
     AuditChainAuditRecord, AuditChainAuditSink, FailingAuditChainAuditSink,
     InMemoryAuditChainAuditSink,
+};
+#[cfg(feature = "aws-s3-object-lock")]
+pub use aws_s3_object_lock::{
+    AwsS3ComplianceArchiveConfig, AwsS3ObjectLockAdapter, ComplianceArchiveAuditEvent,
+    ComplianceArchiveAuditPhase, ComplianceArchiveAuditSink, DeleteProbeTarget,
 };
 pub use chain::{
     compute_canonical_bytes, link_chain_hash, link_chain_hash_from_canonical, verify_chain_link,
