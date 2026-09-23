@@ -50,17 +50,11 @@ concurrency:
 jobs:
   changelog-required:
     name: CHANGELOG.md updated when feat/fix present
-    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
-    # Pure git + stdlib-python3 diff parse; runs on EVERY PR
-    # (731 runs in June 2026) — the highest-volume hosted job after dco-check.
-    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
-    # check costs a full paid minute every run; on the fleet it costs $0.
-    # Verified running natively on the fleet host (macOS/BSD userland).
-    # zero-hosted (WP-CI): python3 + bash (baked na imagem da frota)
-    runs-on: corelink
-    # Bound the job (CI cost diet 2026-08-01): a self-hosted job with no
-    # timeout inherits GitHub's 360-min default, so one wedged run can hold
-    # 1 of the 4 `corelink-builder` runners for 6h and stall
+    # Runner: GitHub-hosted ubuntu-latest (wave 3 migration from corelink fabric).
+    # Pure git + stdlib-python3 diff parse; sub-minute check.
+    runs-on: ubuntu-latest
+    # Bound the job: a self-hosted job with no timeout inherits GitHub's 360-min
+    # default, so one wedged run can hold a runner for 6h and stall
     # `scripts/pre-merge-gate-check.sh` (the mandatory merge gate) for every
     # other PR. This check is sub-minute.
     timeout-minutes: 5
@@ -70,6 +64,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
 
       - name: Detect feat/fix commits in PR range
         id: detect
