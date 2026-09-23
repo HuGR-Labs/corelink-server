@@ -24,10 +24,8 @@
 )]
 
 use std::net::SocketAddr;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
-use axum::http::{header, HeaderValue, StatusCode};
-use axum::response::IntoResponse;
 use axum::routing::get;
 use corelink_billing::stripe::real::webhook_dispatch::{
     InMemoryIdempotencyStore, RecordingSliRecorder, StateMaterializer, SystemClock,
@@ -42,13 +40,14 @@ use corelink_server::current_subscription_authority::StripeCurrentSubscriptionAu
 use corelink_server::routes;
 use corelink_server::routes::audit_analytics::ShadowSinkFactory;
 use corelink_server::webhook::{router as webhook_router, WebhookState};
-use tokio::signal;
 use tracing::{info, warn};
 
 #[path = "main_boot.rs"]
 mod boot;
 #[path = "main_byok.rs"]
 mod byok;
+#[path = "main_runtime.rs"]
+mod runtime;
 #[cfg(any(
     test,
     feature = "byok-aws-real",
@@ -64,73 +63,6 @@ use boot::{
 #[cfg(test)]
 use boot::{build_runners_resolver_from, build_tier_selector_from};
 use byok::start_byok_background_tasks;
-
-/// Storage backing kind captured once at boot by `main()`.
-///
-/// `"r2"` when `R2_S3_*` env vars are all non-empty (durable store).
-/// `"inmemory"` otherwise (ephemeral fallback — operator action required).
-///
-/// The `OnceLock` is set exactly once during `main()`, before the listener
-/// binds, so every subsequent call to `health_handler` sees a fully
-/// initialised value.  On the (impossible in production) path where the
-/// lock is read before it is set, we fall back to the literal `"unknown"`
-/// so the health endpoint remains available.
-static STORAGE_BACKING: OnceLock<&'static str> = OnceLock::new();
-/// Liveness probe for two callers:
-/// (1) the DO's `waitForContainerHealth` — only checks status === 200;
-/// (2) `scripts/smoke-prod-corelink.sh` check [2] — asserts 200 *and*
-///     `content-type: application/json`.
-///
-/// Body: `{"status":"ok","storage":"r2"|"inmemory"}` — the `storage` field
-/// lets operators detect the InMemory silent fallback without tailing logs.
-/// The `status` and `content-type` fields are preserved for backward compat.
-async fn health_handler() -> impl IntoResponse {
-    let backing = STORAGE_BACKING.get().copied().unwrap_or("unknown");
-    // Build the JSON inline — no serde dependency in main.rs.
-    let body = format!(r#"{{"status":"ok","storage":"{}"}}"#, backing);
-    (
-        StatusCode::OK,
-        [(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        )],
-        body,
-    )
-}
-
-/// F-017: graceful-shutdown signal wiring for the axum server.
-///
-/// On a Cloudflare rollout the platform delivers `SIGTERM` to the
-/// container; the in-flight HTTP requests to the data plane would be
-/// dropped mid-flight without this hook. This future resolves on
-/// either `SIGTERM` (CF rollout) or `SIGINT` (local Ctrl-C, dev/test),
-/// then returns so the `.with_graceful_shutdown` future on the axum
-/// `serve` future can stop accepting new connections, drain the
-/// in-flight requests, and exit cleanly.
-async fn shutdown_signal() {
-    // SIGTERM — the Cloudflare containers rollout signal.
-    let term = async {
-        match signal::unix::signal(signal::unix::SignalKind::terminate()) {
-            Ok(mut s) => {
-                s.recv().await;
-            }
-            Err(e) => {
-                // `signal::unix` is unavailable on non-Unix targets (e.g. the
-                // `windows` test cfg). Fall back to ctrl_c so the future still
-                // resolves and the test can exit cleanly.
-                tracing::warn!(error = %e, "tokio::signal::unix unavailable; falling back to ctrl_c");
-                let _ = signal::ctrl_c().await;
-            }
-        }
-    };
-    // SIGINT (Ctrl-C) — local dev / test convenience.
-    let int = signal::ctrl_c();
-
-    tokio::select! {
-        _ = term => info!(signal = "SIGTERM", "graceful shutdown signal received — stopping accept and draining in-flight requests"),
-        _ = int  => info!(signal = "SIGINT",  "graceful shutdown signal received — stopping accept and draining in-flight requests"),
-    }
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -161,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             "inmemory"
         };
     // Unwrap is safe: this is the only setter and it runs before the listener.
-    let _ = STORAGE_BACKING.set(storage_backing);
+    runtime::record_storage_backing(storage_backing);
     info!(storage = storage_backing, "storage backing selected");
 
     // ── Native PAT-gate fail-CLOSED boot guard (red-team finding #7, HIGH) ──
@@ -402,7 +334,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // internal route. Public `/_health` readiness probes never refresh
         // failover state and therefore cannot spoof liveness anonymously.
         .merge(corelink_server::routes::failover::internal_heartbeat_router())
-        .route("/_health", get(health_handler))
+        .route("/_health", get(runtime::health_handler))
         .layer(axum::extract::DefaultBodyLimit::max(
             GLOBAL_BODY_LIMIT_BYTES,
         ));
@@ -1017,7 +949,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // separately (see TODO below) and are NOT in this change's scope.
     // TODO(F-017): wrangler containers-rollout drain policy + /_health/container storage==r2 assertion
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(runtime::shutdown_signal())
         .await?;
 
     Ok(())
