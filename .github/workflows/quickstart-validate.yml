@@ -35,7 +35,7 @@ concurrency:
 jobs:
   validate-quickstart:
     name: validate quickstart MDX vs CLI surface
-    # Credentialless read-only bundle 1: GitHub-hosted execution.
+    # Issue #2278: read-only quickstart validation on GitHub-hosted ubuntu-24.04; no PAT or repository secrets.
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     # Soft-fail: surface as a warning annotation, do not block merges.

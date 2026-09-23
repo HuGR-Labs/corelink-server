@@ -1,3 +1,19 @@
+---
+id: "ISSUE-2177-REAPI-INGRESS-KERNEL"
+type: "architecture"
+doc_status: "DRAFT"
+audit_status: "ACTIVE"
+version: "1.0.0"
+created: "2026-09-23"
+updated: "2026-09-23"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
+tags: ["architecture", "reapi", "grpc", "auth", "quota", "issue-2177"]
+---
+
 # Issue #2177: authenticated REAPI ingress kernel
 
 ## Frozen boundary

@@ -118,11 +118,11 @@ def test_legacy_nightly_mutants_cannot_be_reactivated() -> None:
     sources = corpus()
     nightly = sources[".github/workflows/nightly.yml"]
     start = nightly.index("  mutants-workspace:\n")
-    legacy_if = nightly.index("if: ${{ false }}", start)
+    legacy_if = nightly.index(f"if: {MODULE.LEGACY_DISABLED_IF}", start)
     sources[".github/workflows/nightly.yml"] = (
         nightly[:legacy_if]
         + "if: github.event_name != 'workflow_dispatch' || inputs.lane == 'mutants'"
-        + nightly[legacy_if + len("if: ${{ false }}"):]
+        + nightly[legacy_if + len(f"if: {MODULE.LEGACY_DISABLED_IF}"):]
     )
     with pytest.raises(MODULE.VerificationError, match="nightly-mutants"):
         MODULE.verify(sources)
