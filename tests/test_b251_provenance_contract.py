@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -37,3 +38,23 @@ def test_mutated_identity_is_rejected_without_values() -> None:
 def test_d02_revision_is_an_immutable_producer_contract() -> None:
     assert MODULE.D02_COMMIT == "f88c6ca41868f6a02e78ba9f4357d3abf67da4be"
     assert len(MODULE.D02_COMMIT) == 40
+
+
+def test_run_operation_accepts_adapter_already_at_destination(tmp_path: Path, monkeypatch) -> None:
+    operation = tmp_path / MODULE.OPERATION
+    operation.parent.mkdir(parents=True)
+    operation.write_text("checked-in adapter\n", encoding="utf-8")
+    output = (
+        f"{MODULE.COUNT}1000\n"
+        f"{MODULE.FAILURES}\n"
+        f"{MODULE.MARKER}00\n"
+    )
+
+    def completed_run(*_args, **_kwargs):
+        return SimpleNamespace(returncode=0, stdout=output, stderr="")
+
+    monkeypatch.setattr(MODULE.subprocess, "run", completed_run)
+    identity = MODULE.run_operation(tmp_path, operation, "0123456789abcdef")
+
+    assert set(identity) == {"seed", "failure", "blob"}
+    assert operation.read_text(encoding="utf-8") == "checked-in adapter\n"

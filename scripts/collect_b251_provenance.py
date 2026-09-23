@@ -42,7 +42,8 @@ def compare(left: dict[str, str], right: dict[str, str]) -> None:
 def run_operation(directory: Path, adapter: Path, seed: str) -> dict[str, str]:
     destination = directory / OPERATION
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(adapter, destination)
+    if adapter.resolve() != destination.resolve():
+        shutil.copyfile(adapter, destination)
     env = os.environ.copy()
     env["B251_OPERATION_SEED"] = seed
     command = (
@@ -74,6 +75,9 @@ def collect(d02: Path, d03: Path, output: Path, run_id: str, run_attempt: str) -
     d03_commit = git(d03, "rev-parse", "HEAD")
     d03_test = git(d03, "rev-parse", "HEAD:crates/corelink-billing/tests/quota_cas_prop_quota_cas.rs")
     adapter_blob = git(d03, "hash-object", OPERATION)
+    committed_adapter_blob = git(d03, "rev-parse", f"HEAD:{OPERATION}")
+    if adapter_blob != committed_adapter_blob:
+        raise CollectionError("operation adapter differs from the recorded D03 revision")
     seed = hashlib.sha256(f"corelink-b251:{run_id}:{run_attempt}".encode()).hexdigest()[:16]
     left = run_operation(d02, d03 / OPERATION, seed)
     right = run_operation(d03, d03 / OPERATION, seed)
@@ -101,7 +105,7 @@ def collect(d02: Path, d03: Path, output: Path, run_id: str, run_attempt: str) -
         "schema": "corelink.b251.provenance.v1",
         "d02": {"revision": d02_commit, "producer_test_blob": d02_test, "identity": left},
         "d03_observed": {"revision": d03_commit, "producer_test_blob": d03_test, "identity": right},
-        "operation": {"adapter_blob": adapter_blob, "cases": 1000,
+        "operation": {"adapter_blob": committed_adapter_blob, "cases": 1000,
                       "inputs": "D02 property ranges: used [0,900), quota [1000,2000), request_bytes [1,50)",
                       "fixture": "InMemoryAtomicQuotaChecker", "mutation": mutation},
         "comparison": {"fields": ["seed", "failure", "blob"], "match": True},
