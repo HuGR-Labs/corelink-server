@@ -22,6 +22,14 @@ class SecretsDriftSecurityTests(unittest.TestCase):
         self.assertIn("path: .trusted", text)
         self.assertIn("path: .candidate", text)
         self.assertEqual(text.count("persist-credentials: false"), 2)
+        trusted_step = text[text.index("- name: Checkout trusted tooling") :]
+        candidate_step = text[text.index("- name: Checkout pull-request tree as data") :]
+        self.assertNotIn(
+            "allow-unsafe-checkout: true", trusted_step[: trusted_step.index("\n\n")]
+        )
+        self.assertIn(
+            "allow-unsafe-checkout: true", candidate_step[: candidate_step.index("\n\n")]
+        )
         for script in (
             "validate_secrets_matrix.py",
             "check-env-contract.py",
