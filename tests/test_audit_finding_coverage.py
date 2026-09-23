@@ -71,6 +71,17 @@ def test_post_squash_plain_tree_rederives_the_same_certificate(tmp_path: Path) -
     assert coverage.verify(fixture_root)["total"] == 119
 
 
+def test_b028_historical_source_rejects_a_zero_alert_snapshot() -> None:
+    with pytest.raises(
+        coverage.CoverageError,
+        match="Dependabot snapshot has no alerts",
+    ):
+        coverage.parse_b028_dependabot(
+            json.dumps({"schema_version": 1, "alerts": []}),
+            "docs/security/b028-dependabot-census-2026-09-06.json",
+        )
+
+
 def test_b373_dependabot_census_is_pinned_as_a_b101_non_source(tmp_path: Path) -> None:
     registry_path = ROOT / coverage.SOURCE_REGISTRY_RELATIVE
     registry_bytes = registry_path.read_bytes()
@@ -110,6 +121,7 @@ def test_tree_certificate_rejects_a_mutation_even_when_registry_and_manifest_are
     [
         Path("reports/audits/2026-08-25-comprehensive-audit-and-verification.md"),
         Path("reports/audits/2026-08-25-definitive-master-report.md"),
+        Path("docs/security/b028-dependabot-census-2026-09-06-postmerge.json"),
     ],
 )
 def test_excluded_audit_digest_rejects_substituted_bytes(

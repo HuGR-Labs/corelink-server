@@ -51,6 +51,39 @@ class B028VerifierTests(unittest.TestCase):
             [(n, *VERIFY.EXPECTED_OLD_MAIN_ALERTS[n]) for n in sorted(VERIFY.EXPECTED_OLD_MAIN_ALERTS)],
         )
 
+    def test_empty_pre_merge_census_is_not_treated_as_success(self):
+        with self.assertRaisesRegex(VERIFY.CensusError, "census drifted"):
+            VERIFY.verify_alerts([])
+
+    def test_post_merge_snapshot_rejects_a_new_open_alert(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            snapshot_path = root / VERIFY.POST_MERGE_SNAPSHOT
+            snapshot_path.parent.mkdir(parents=True)
+            snapshot = json.loads(
+                (ROOT / VERIFY.POST_MERGE_SNAPSHOT).read_text(encoding="utf-8")
+            )
+            snapshot["alerts"] = [
+                {
+                    "number": 39,
+                    "package": "fast-uri",
+                    "ghsa": "GHSA-new",
+                    "severity": "high",
+                    "classification": "old-main-open-candidate-patched",
+                }
+            ]
+            snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+
+            with self.assertRaisesRegex(VERIFY.CensusError, "must contain no open alerts"):
+                VERIFY.verify_baseline_snapshot(root)
+
+    def test_post_merge_live_census_rejects_a_new_open_alert(self):
+        with self.assertRaisesRegex(VERIFY.CensusError, "census drifted"):
+            VERIFY.verify_alerts(
+                [alert(39, "fast-uri", "GHSA-new")],
+                expected=VERIFY.EXPECTED_POST_MERGE_ALERTS,
+            )
+
     def test_new_open_alert_is_drift(self):
         with self.assertRaisesRegex(VERIFY.CensusError, "census drifted"):
             VERIFY.verify_alerts(EXPECTED + [alert(39, "fast-uri", "GHSA-new")])
@@ -84,10 +117,10 @@ class B028VerifierTests(unittest.TestCase):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("\n".join(markers), encoding="utf-8")
-            snapshot = root / VERIFY.BASELINE_SNAPSHOT
+            snapshot = root / VERIFY.POST_MERGE_SNAPSHOT
             snapshot.parent.mkdir(parents=True, exist_ok=True)
             snapshot.write_text(
-                (ROOT / VERIFY.BASELINE_SNAPSHOT).read_text(encoding="utf-8"),
+                (ROOT / VERIFY.POST_MERGE_SNAPSHOT).read_text(encoding="utf-8"),
                 encoding="utf-8",
             )
             fixture = root / "alerts.json"

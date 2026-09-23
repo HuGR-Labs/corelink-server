@@ -6644,7 +6644,7 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-028 — Dependabot dependency paths are remediated and the live census is empty
+### B-028 — Dependabot dependency paths are remediated; the 2026-09-08 post-merge census recorded zero open alerts
 
 The issue is an owner-reviewed alert census, not a blanket dependency update.
 The repository runs `cargo-audit`, `cargo-deny`, `semgrep`, `trivy`, and
@@ -6670,12 +6670,14 @@ rejects archive traversal, symlink escape, and symlink overwrite before writing.
 The root overrides and frozen lockfile remove the vulnerable published package
 nodes entirely, while `fast-uri` and `qs` resolve to their published patched
 versions. The authoritative pre-merge census contained nine open alerts on old
-main; this was engineering remediation, not a dismissal. On 2026-09-08 an
-authenticated, paginated GitHub API refresh against delivered `main@cdd6a6714`
-returned zero open alerts. A second unfiltered census returned 37 historical
-alerts, all `fixed`, proving that the empty open set is not an authentication or
-pagination artifact. The redacted snapshot and lockfile/vendor guards now close
-the item.
+main; this was engineering remediation, not a dismissal. The checked-in
+`docs/security/b028-dependabot-census-2026-09-06-postmerge.json` records a
+2026-09-08 observation of zero open alerts against delivered
+`main@cdd6a6714`. It is a dated closure receipt, not a claim about present-day
+provider state. The nine-alert pre-merge snapshot remains the historical B-101
+source; the post-merge receipt is separate operational evidence. B-373 later
+records a new alert population opened after B-028 closure. The lockfile and
+vendor guards retain the fail-closed remediation checks.
 
 ```backlog
 id: B-028
@@ -6684,13 +6686,13 @@ owner: tl
 status: done
 verify: python3 scripts/verify_b028_dependabot.py
 verify-means: |
-  done — the fail-closed verifier requires the authenticated zero-open census
-  captured in `docs/security/b028-dependabot-census-2026-09-06.json`, anchored
-  to delivered `main@cdd6a6714`, and verifies patched `fast-uri`/`qs`, local
-  audited `extract-zip`/`image-size`, no vulnerable published nodes, no
-  audit-ignore masking, complete pagination metadata and a non-vacuous
-  historical census. Any API, lockfile, marker or classification drift fails
-  closed.
+  done — the verifier queries the current Dependabot endpoint in live mode and
+  fails on API errors, malformed pages, unexpected open alerts, or lockfile and
+  containment drift. Its checked-in
+  `docs/security/b028-dependabot-census-2026-09-06-postmerge.json` records the
+  dated zero-open observation for delivered `main@cdd6a6714`; it is not a
+  present-day provider claim. The nine-alert pre-merge census remains the
+  historical source and is checked by B-101 coverage.
 last-verified: 2026-09-08
 ```
 

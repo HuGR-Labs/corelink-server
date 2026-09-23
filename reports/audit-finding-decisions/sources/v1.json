@@ -135,6 +135,11 @@
       "sha256": "a5bed049e41cf83715e51f9fbcce08046b032e74c22b78732c3284a4aa2a7632"
     },
     {
+      "path": "docs/security/b028-dependabot-census-2026-09-06-postmerge.json",
+      "reason": "Explicit B-101 non-source classification: this 2026-09-08 post-merge B-028 receipt records operational closure evidence for delivered main@cdd6a6714; the admitted historical source remains the nine-alert pre-merge census.",
+      "sha256": "57f84d1c97e8d14f8274c0e0ec962aba6e63063c223fa368d68b5200f46bb812"
+    },
+    {
       "path": "docs/security/b373-dependabot-census-2026-09-09.json",
       "reason": "B-373's structured Dependabot snapshot is consumed by its dedicated verifier, not one of B-101's measured reports. Excluded from B-101 ingestion pending an approved parser, population, and per-alert dispositions; the digest pins this scope decision.",
       "sha256": "5d1c2bcd987f7403dae91726e7b37c4fb97dcc5803c9446f6ac5e231c7195c1f"
