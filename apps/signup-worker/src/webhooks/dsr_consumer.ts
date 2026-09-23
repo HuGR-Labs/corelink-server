@@ -22,6 +22,7 @@
 
 import type { DsrQueuedV1 } from "./clerk.js";
 import { resolveEraseAuthKey } from "../lib/erase-auth-key.js";
+import { D1RecoveryStore, type RecoveryStore } from "./dsr_dlq_redrive.js";
 
 /** Minimal env surface the consumer needs (kept independent of the full Worker Env). */
 export interface DsrConsumerEnv {
@@ -304,6 +305,7 @@ export interface DsrDlqEnv {
   PAGERDUTY_FETCH?: typeof fetch;
   CONFIG_DB?: D1ReceiptDatabase;
   DSR_DLQ_RECEIPTS?: DsrDlqReceiptStore;
+  DSR_DLQ_RECOVERY?: RecoveryStore;
 }
 
 type PagingResult =
@@ -422,18 +424,21 @@ export async function handleErasureDlqBatch(
       continue;
     }
     const store = env.DSR_DLQ_RECEIPTS ?? (env.CONFIG_DB ? new D1DsrDlqReceiptStore(env.CONFIG_DB) : undefined);
-    if (!store) {
+    const recovery = env.DSR_DLQ_RECOVERY ?? (env.CONFIG_DB ? new D1RecoveryStore(env.CONFIG_DB) : undefined);
+    if (!store || !recovery) {
       retryReceiptBoundaryFailure(m, eventId, priorRequeues, "not_configured");
       continue;
     }
     let existing: DsrDlqReceipt | null;
     try {
+      await recovery.capture({ eventId, dsrId: body.dsr_id, tenantId: body.tenant_id, queuedAtMs: body.queued_at_ms, legalHold: body.legal_hold, requeueCount: priorRequeues }, Date.now());
       existing = await store.find(eventId);
       if (existing && !isValidDlqReceipt(existing)) {
         retryReceiptBoundaryFailure(m, eventId, priorRequeues, "malformed");
         continue;
       }
       if (existing?.status === "terminal" || existing?.status === "requeued" || existing?.status === "delivery_exhausted" || existing?.status === "requeue_ambiguous" || existing?.status === "paging_ambiguous") {
+        if (priorRequeues === 0 && (existing.status === "terminal" || existing.status === "delivery_exhausted" || existing.status === "paging_ambiguous")) await recovery.ready(eventId, Date.now()); else await recovery.close(eventId, Date.now());
         m.ack();
         continue;
       }
@@ -466,6 +471,7 @@ export async function handleErasureDlqBatch(
       if (paging.status === "failed" && paging.error === "transport_error") {
         try {
           await store.record(eventId, "paging_ambiguous", Date.now());
+          await recovery.ready(eventId, Date.now());
         } catch {
           m.retry();
           continue;
@@ -483,6 +489,7 @@ export async function handleErasureDlqBatch(
       const exhausted = (m.attempts ?? 0) >= MAX_DLQ_PAGING_ATTEMPTS;
       try {
         await store.record(eventId, exhausted ? "delivery_exhausted" : "paging_retry", Date.now());
+        if (exhausted && priorRequeues === 0) await recovery.ready(eventId, Date.now());
       } catch {
         m.retry();
         continue;
@@ -531,6 +538,7 @@ export async function handleErasureDlqBatch(
       });
       try {
         await store.record(eventId, "terminal", Date.now());
+        if (priorRequeues === 0) await recovery.ready(eventId, Date.now()); else await recovery.close(eventId, Date.now());
         m.ack();
       } catch {
         m.retry();
@@ -553,7 +561,8 @@ export async function handleErasureDlqBatch(
         continue;
       }
       await env.DSR_QUEUE!.send({ ...body, _dlq_requeue: priorRequeues + 1 });
-      await store.record(eventId, "requeued", Date.now());
+        await store.record(eventId, "requeued", Date.now());
+        await recovery.close(eventId, Date.now());
       logDlqEvent({
         level: "alert",
         severity: "critical",
@@ -572,6 +581,7 @@ export async function handleErasureDlqBatch(
     } catch {
       try {
         await store.record(eventId, "requeue_ambiguous", Date.now());
+        await recovery.close(eventId, Date.now());
       } catch {
         m.retry();
         continue;

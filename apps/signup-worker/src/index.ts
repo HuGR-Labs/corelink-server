@@ -35,6 +35,7 @@ import { runAuditArchiveSweep } from "./webhooks/audit_archive_cron.js";
 import { handleSlaObservationIngest, providerFromEnv, runSlaCreditSweep } from "./webhooks/sla_credit_cron.js";
 import type { SlaCreditCronEnv } from "./webhooks/sla_credit_cron.js";
 import { withSecurityHeaders } from "./security-headers.js";
+import { handleDsrDlqRedrive } from "./webhooks/dsr_dlq_redrive.js";
 
 type WorkerEnv = AutoProvisionEnv &
   StripeWebhookEnv &
@@ -59,6 +60,9 @@ export async function route(request: Request, env: InstallationProvisionEnv, ctx
   }
   if (url.pathname === "/internal/sla/monthly-observation") {
     return handleSlaObservationIngest(request, workerEnv as unknown as SlaCreditCronEnv);
+  }
+  if (url.pathname === "/internal/dsr/dlq/redrive") {
+    return handleDsrDlqRedrive(request, workerEnv);
   }
   if (url.pathname === "/install/github/app/new" && request.method === "GET") {
     return handleAppManifestForm(request, workerEnv);
