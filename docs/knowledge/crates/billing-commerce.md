@@ -15,7 +15,7 @@ source_blobs:
   - "crates/corelink-billing-stripe/src/lib.rs@2aef56ced08989fafd6302fc6adaf11dc6d7b81f"
   - "crates/corelink-billing-stripe/src/idempotency.rs@fc9f9d30bed86e05ee28c849d8249bd046ff02de"
   - "crates/corelink-billing-stripe/src/signature.rs@d7390d564f61e5cca83b16f6c4ec6bd7b17b9163"
-  - "crates/corelink-tier-selection/src/lib.rs@ca4ff79f9e120570f81e2c46a8d97496a59cc275"
+  - "crates/corelink-tier-selection/src/lib.rs@fa44dcdc51d6ce3edc817bc9446ec1368589bf68"
   - "crates/corelink-tier-selection/src/dpa.rs@dd0c9408c17913fdb037eee46da64bd027634361"
   - "crates/corelink-tier-selection/src/ledger.rs@1bf219d7e64d0b824b8c0db5c70d666539b16d09"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
@@ -57,7 +57,7 @@ The cluster powers the [money-path checkout + billing ingest](/launch/money-path
 1. `crates/corelink-billing/src/lib.rs:1-20` — the single-import aggregator over the 14 billing primitives.
 2. `crates/corelink-billing/src/lib.rs:32-63` — the absorbed-crate list (aggregator/emit/reconcile/stripe/tier/quota/ratelimit/abuse).
 2b. `crates/corelink-billing-stripe/src/lib.rs:166-171` — the `corelink-billing-stripe` crate `pub mod` map (idempotency/signature/ledger/event/adapter).
-2c. `crates/corelink-tier-selection/src/lib.rs:95-100` — the `corelink-tier-selection` crate `pub mod` map (dpa/ledger/stripe/tenant/audit).
+2c. `crates/corelink-tier-selection/src/lib.rs:95-103` — the `corelink-tier-selection` crate `pub mod` map (dpa/ledger/stripe/tenant/audit).
 3. `crates/corelink-billing-stripe/src/idempotency.rs:80-92` — `derive_idempotency_key`: `Idempotency-Key = BLAKE3-256(JCS(aggregate))` derivation (`INV-BILLING-NO-DUP`).
 4. `crates/corelink-billing-stripe/src/signature.rs:198-230` — `verify_stripe_signature`: webhook HMAC-SHA256 verify, constant-time `ct_eq`, 5-min replay window.
 5. `crates/corelink-billing-stripe/src/signature.rs:53` — `REPLAY_WINDOW_MS = 300_000` (the canonical 5-minute skew window).
