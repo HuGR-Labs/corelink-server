@@ -1,4 +1,6 @@
-# B-317: keep the CLI release contract strict-lint clean
+### Fixed
+
+- # B-317: keep the CLI release contract strict-lint clean
 
 The release workflow contract test now propagates fixture-read failures through
 `Result`, checks the optional retry branch before destructuring it, and retains

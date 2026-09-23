@@ -1,4 +1,6 @@
-# B-318: close the final cumulative Clippy residuals
+### Fixed
+
+- # B-318: close the final cumulative Clippy residuals
 
 The D03 bundle now keeps its customer denial assertion idiomatic, enforces the
 npm response-size relationships at compile time, and places OCI test-only items

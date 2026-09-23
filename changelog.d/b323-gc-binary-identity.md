@@ -1,4 +1,6 @@
-# B-323: prevent GC binary artifact collisions
+### Fixed
+
+- # B-323: prevent GC binary artifact collisions
 
 The server's production-capable GC target and the shipped in-memory GC
 self-check now have distinct Cargo identities, preventing workspace builds

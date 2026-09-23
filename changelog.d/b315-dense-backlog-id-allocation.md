@@ -1,4 +1,6 @@
-# B-315: serialize dense BACKLOG id allocation at merge time
+### Fixed
+
+- # B-315: serialize dense BACKLOG id allocation at merge time
 
 The mandatory merge authority now holds a crash-safe process lock while it
 allocates and revalidates dense `BACKLOG.md` ids. It captures exact base/main/head

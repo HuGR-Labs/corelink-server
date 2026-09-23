@@ -1,4 +1,6 @@
-# B-316: preserve pending vendor Legal-review truth
+### Added
+
+- # B-316: preserve pending vendor Legal-review truth
 
 The four live vendors whose signed DPA/review evidence is still outstanding now
 have canonical TEMPLATE/TBD packets, so the path/existence validator can pass

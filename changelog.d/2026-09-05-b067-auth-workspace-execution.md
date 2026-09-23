@@ -1,4 +1,6 @@
-# B-067: execute workspace and authentication tests
+### Changed
+
+- # B-067: execute workspace and authentication tests
 
 The nightly workspace lane now executes the test suite under a bounded
 process-group deadline and four-job compiler ceiling. The dedicated

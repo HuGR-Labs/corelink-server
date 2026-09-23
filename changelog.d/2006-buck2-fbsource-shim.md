@@ -1,4 +1,6 @@
-# Buck2 starter: map the bundled prelude's public fbsource constraints
+### Added
+
+- # Buck2 starter: map the bundled prelude's public fbsource constraints
 
 The Buck2 starter now maps the `fbsource` alias to a local public compatibility
 shim containing only the seven configuration values referenced by the pinned

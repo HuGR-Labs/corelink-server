@@ -1,4 +1,6 @@
-# B-070 — remove the unshipped root-worker staging declaration
+### Removed
+
+- # B-070 — remove the unshipped root-worker staging declaration
 
 The root `wrangler.toml` no longer declares `[env.staging]`. No root-worker staging deployment was wired or shipped, so the configuration no longer claims that canary/rollout artifacts move from staging to production. The production workflow continues to deploy the five existing production targets (`prod`, `prod-sam`, `prod-lhr`, `prod-nrt`, `prod-syd`).
 
