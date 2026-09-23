@@ -198,6 +198,7 @@ class B152DiagnosticTests(unittest.TestCase):
                  patch.object(diag, "collect_jobs", return_value=[job]), \
                  patch("sys.stderr") as stderr:
                 self.assertEqual(diag.main([
+                    "--repo", "HuGR-dev/corelink-server",
                     "--start", "2026-08-31T00:00:00Z",
                     "--end", "2026-08-31T01:00:00Z",
                 ]), 2)
@@ -426,6 +427,7 @@ class B152DiagnosticTests(unittest.TestCase):
              patch.object(diag.time, "sleep") as sleep, \
              patch("sys.stderr") as stderr:
             self.assertEqual(diag.main([
+                "--repo", "HuGR-dev/corelink-server",
                 "--start", "2026-08-31T00:00:00Z",
                 "--end", "2026-08-31T01:00:00Z",
             ]), 2)
@@ -498,6 +500,7 @@ class B152DiagnosticTests(unittest.TestCase):
     def test_missing_gh_is_sanitized_indeterminate_not_a_traceback(self):
         with patch.object(diag.subprocess, "run", side_effect=FileNotFoundError("secret path")), patch("sys.stderr") as stderr:
             self.assertEqual(diag.main([
+                "--repo", "HuGR-dev/corelink-server",
                 "--start", "2026-08-31T00:00:00Z",
                 "--end", "2026-08-31T01:00:00Z",
             ]), 2)
@@ -509,6 +512,7 @@ class B152DiagnosticTests(unittest.TestCase):
         report = {"run_ids": [], "failed_jobs": [], "window_jobs": [{"job_id": 42}]}
         with patch.object(diag, "collect_evidence", return_value=report), patch.object(diag.subprocess, "run", side_effect=FileNotFoundError("secret path")), patch("sys.stderr") as stderr:
             self.assertEqual(diag.main([
+                "--repo", "HuGR-dev/corelink-server",
                 "--start", "2026-08-31T00:00:00Z",
                 "--end", "2026-08-31T01:00:00Z",
                 "--fetch-logs",
@@ -521,6 +525,7 @@ class B152DiagnosticTests(unittest.TestCase):
         report = {"run_ids": [], "failed_jobs": [], "window_jobs": []}
         with patch.object(diag, "collect_evidence", return_value=report), patch.object(pathlib.Path, "write_text", side_effect=OSError("secret path")), patch("sys.stderr") as stderr:
             self.assertEqual(diag.main([
+                "--repo", "HuGR-dev/corelink-server",
                 "--start", "2026-08-31T00:00:00Z",
                 "--end", "2026-08-31T01:00:00Z",
                 "--output", "/private/tmp/secret-report.json",
@@ -534,6 +539,7 @@ class B152DiagnosticTests(unittest.TestCase):
         available = [{"job_id": 42, "available": True, "status": "available", "causal": False, "error": None}]
         with patch.object(diag, "collect_evidence", return_value=report), patch.object(diag, "fetch_logs", return_value=available), patch("sys.stdout") as stdout:
             self.assertEqual(diag.main([
+                "--repo", "HuGR-dev/corelink-server",
                 "--start", "2026-08-31T00:00:00Z",
                 "--end", "2026-08-31T01:00:00Z",
                 "--fetch-logs",
@@ -547,6 +553,7 @@ class B152DiagnosticTests(unittest.TestCase):
             "failed_jobs": [], "window_jobs": []
         }), patch.object(diag, "collect_runs", return_value=[]):
             self.assertEqual(diag.main([
+                "--repo", "HuGR-dev/corelink-server",
                 "--start", "2026-08-31T00:00:00Z",
                 "--end", "2026-08-31T01:00:00Z",
                 "--known-run", "7",
