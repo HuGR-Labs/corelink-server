@@ -14,9 +14,7 @@ name: Python tests
 #
 # `docs-reality.yml` keeps its own pytest step on purpose — a docs-only PR does
 # not touch `tests/` or `scripts/` and so does not trigger this lane, and that
-# validator's regression net must still run there. That step relies on the mac
-# fleet's ambient pytest; if it ever fails with "No module named pytest", the
-# venv step below is the fix to port over.
+# validator's regression net must still run there.
 
 on:
   pull_request:
@@ -46,6 +44,7 @@ on:
       - 'tests/verify_rust_sbom.py'
       - 'tests/test_sbom_workflow_dependencies.py'
       - '.github/workflows/python-tests.yml'
+      - '.github/workflows/okf_wiki.yml'
       - '.github/workflows/bot-pr-has-checks.yml'
       - '.github/workflows/cas_foundation.yml'
       - '.github/workflows/mutation-nightly.yml'
@@ -107,6 +106,7 @@ on:
       - 'tests/verify_rust_sbom.py'
       - 'tests/test_sbom_workflow_dependencies.py'
       - '.github/workflows/python-tests.yml'
+      - '.github/workflows/okf_wiki.yml'
       - '.github/workflows/bot-pr-has-checks.yml'
       - '.github/workflows/cas_foundation.yml'
       - '.github/workflows/mutation-nightly.yml'
@@ -157,9 +157,8 @@ concurrency:
 jobs:
   pytest:
     name: Top-level python test suite
-    # Runner: `corelink` (zero-hosted). python3 + pytest are baked into the box
-    # image; no actions/setup-python (the self-hosted fleet cannot provision it).
-    runs-on: corelink
+    # Hosted Ubuntu and setup-python keep this gate independent of runner images.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -170,26 +169,20 @@ jobs:
           # provenance check fail closed even when the tree is correct.
           fetch-depth: 0
 
-      # No actions/setup-python — the self-hosted fleets can't provision it
-      # (RUNNER_TOOL_CACHE unset → it dies on an unwritable path). Same venv
-      # idiom as spec_validation.yml. pytest is NOT assumed to be present:
-      # `python3 -m pytest` resolves against whatever interpreter leads that
-      # box's PATH, and the `corelink` image's /usr/bin/python3 carries no
-      # pytest, so the first run of this lane failed with "No module named
-      # pytest" while the identical step in docs-reality.yml passed on the mac
-      # fleet. A gate whose result depends on which machine picks up the job is
-      # not a gate.
-      - name: Install pytest (venv on system python3)
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Python CI dependencies
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m venv .venv
-          .venv/bin/python3 -m pip install --quiet --upgrade pip
-          .venv/bin/python3 -m pip install --quiet -r requirements-ci.txt
+          python3 -m pip install --quiet --disable-pip-version-check --no-input -r requirements-ci.txt
           # The SBOM script is intentionally outside requirements-ci.txt.
-          # Install its exact closure into this job-private venv so the
-          # top-level suite can import it and the explicit check below can run.
-          .venv/bin/python3 -m pip install \
+          # Install its exact closure so the top-level suite can import it and
+          # the explicit check below can run.
+          python3 -m pip install \
             --quiet \
             --disable-pip-version-check \
             --no-input \
@@ -197,19 +190,38 @@ jobs:
             --only-binary=:all: \
             --no-deps \
             -r requirements-sbom.txt
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Verify SBOM lock coverage (read-only)
         shell: bash
         run: |
           set -euo pipefail
-          .venv/bin/python3 tests/verify_rust_sbom.py --check
+          python3 tests/verify_rust_sbom.py --check
 
       - name: Verify backlog work-package ledger
         shell: bash
         run: |
           set -euo pipefail
-          .venv/bin/python3 scripts/verify_backlog_wp_ledger.py
+          python3 scripts/verify_backlog_wp_ledger.py
+
+      - name: Install checksum-pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          "${RUNNER_TEMP}/actionlint/actionlint" -version
+
+      - name: Lint hosted OKF and Python test workflows
+        run: >-
+          "${RUNNER_TEMP}/actionlint/actionlint" -color -config-file .actionlint.yaml
+          .github/workflows/okf_wiki.yml
+          .github/workflows/python-tests.yml
 
       - name: Collect and run
         shell: bash

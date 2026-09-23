@@ -34,6 +34,7 @@ on:
       - 'tests/test_okf_shift_citations.py'
       - 'tests/test_okf_anchor_reverify.py'
       - 'docs/campaigns/remediation/WP-B044-orphan-teardown.md'
+      - '.github/workflows/okf_wiki.yml'
   push:
     branches: [main]
     paths:
@@ -57,6 +58,7 @@ on:
       - 'tests/test_okf_shift_citations.py'
       - 'tests/test_okf_anchor_reverify.py'
       - 'docs/campaigns/remediation/WP-B044-orphan-teardown.md'
+      - '.github/workflows/okf_wiki.yml'
 
 permissions:
   contents: read
@@ -68,9 +70,9 @@ concurrency:
 
 jobs:
   okf-wiki-validation:
-    # `corelink` ephemeral Linux (zero hosted spend, zero Mac load): the validator
-    # is pure python3 with PyYAML, both baked into the runner image.
-    runs-on: corelink
+    # Hosted Ubuntu is pinned so this gate does not depend on a machine-local image.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - name: Checkout
         # fetch-depth: 0 — C4/C5 need full history (checkpoint_sha lookup + the
@@ -80,17 +82,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install PyYAML (venv on system python3)
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install OKF validator dependencies
         # The validator runs on stdlib alone (hand-rolled YAML-subset reader for
         # frontmatter), but the nested concept-manifest.yaml (C10/C10b oracle)
-        # needs a real YAML parser. Mirror the house venv idiom so the manifest
-        # checks stay live. (No requirements file — PyYAML is the only dep.)
+        # needs a real YAML parser. Use the checked-in CI dependency set on the
+        # explicitly provisioned Python instead of relying on runner packages.
         run: |
           set -euo pipefail
-          python3 -m venv .venv
-          .venv/bin/python3 -m pip install --upgrade pip
-          .venv/bin/python3 -m pip install pyyaml
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          python3 -m pip install --disable-pip-version-check --no-input -r requirements-ci.txt
 
       - name: Validate OKF-CoreLink knowledge bundle
         run: python3 scripts/validate_okf.py
