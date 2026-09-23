@@ -99,7 +99,10 @@ jobs:
           set -euo pipefail
           actual_account="$(aws sts get-caller-identity --query Account --output text)"
           test "$actual_account" = "$AWS_ACCOUNT_ID"
-          principal="$(aws sts get-caller-identity --query Arn --output text)"
+          # IAM simulation accepts the configured IAM role entity, not the
+          # STS assumed-role session ARN returned by get-caller-identity.
+          # The fixed role is independently pinned to this account above.
+          principal="$AWS_ROLE_ARN"
           bucket="${AWS_BUCKET_PREFIX}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           ((${#bucket} <= 63))
           key="audit/probe-${GITHUB_RUN_ID}/synthetic.txt"
@@ -138,26 +141,27 @@ jobs:
           fi
           grep -q 'AccessDenied\|InvalidRequest' "$RUNNER_TEMP/delete.err"
           # CloudTrail LookupEvents exposes management events only. The proof
-          # must query an approved Event Data Store for S3 *data* events.
-          query_started_at="$(date -u '+%Y-%m-%d %H:%M:%S')"
-          query="SELECT eventID, eventName, eventData, eventTime FROM ${AWS_EVENT_DATA_STORE_ID} WHERE eventCategory = 'Data' AND eventSource = 's3.amazonaws.com' AND eventTime >= '${query_started_at}'"
+          # queries the approved Event Data Store for S3 *data* events using
+          # the CloudTrail event-record schema, not integration eventData.
+          query_window_start="$(date -u -d '-20 minutes' '+%Y-%m-%d %H:%M:%S')"
+          query="SELECT eventid, eventname, requestid, requestparameters, responseelements, errorcode FROM ${AWS_EVENT_DATA_STORE_ID} WHERE eventcategory = 'Data' AND eventsource = 's3.amazonaws.com' AND eventtime >= timestamp '${query_window_start}'"
           query_id="$(aws cloudtrail start-query --query-statement "$query" --query QueryId --output text)"
           trail_event=''
           delete_event=''
           for attempt in $(seq 1 20); do
             aws cloudtrail get-query-results --query-id "$query_id" > "$RUNNER_TEMP/cloudtrail-data-events.json"
             query_status="$(jq -r '.QueryStatus' "$RUNNER_TEMP/cloudtrail-data-events.json")"
-            test "$query_status" != Failed -a "$query_status" != Cancelled -a "$query_status" != TimedOut
-            lake_rows="$(jq -c '[.QueryResultRows[]? | reduce .[] as $field ({}; .[$field.Field] = $field.Value)]' "$RUNNER_TEMP/cloudtrail-data-events.json")"
+            test "$query_status" != FAILED -a "$query_status" != CANCELLED -a "$query_status" != TIMED_OUT
+            lake_rows="$(jq -c '[.QueryResultRows[]? | reduce .[] as $field ({}; . + $field)]' "$RUNNER_TEMP/cloudtrail-data-events.json")"
             trail_event="$(jq -c --arg bucket "$bucket" --arg key "$key" --arg version "$version" '
-              [.[] | select(.eventName == "PutObject") | . as $row | ($row.eventData | fromjson) as $event
-               | select($event.requestParameters.bucketName == $bucket and $event.requestParameters.key == $key and $event.responseElements["x-amz-version-id"] == $version)
-               | {eventID: ($row.eventID // $event.eventID), requestID: ($event.responseElements["x-amz-request-id"] // $row.requestID)}] | first // empty' \
+              [.[] | select(.eventname == "PutObject") | . as $row | ($row.requestparameters | fromjson) as $request | ($row.responseelements | fromjson) as $response
+               | select($request.bucketName == $bucket and $request.key == $key and $response["x-amz-version-id"] == $version)
+               | {eventID: $row.eventid, requestID: ($response["x-amz-request-id"] // $row.requestid)}] | first // empty' \
               <<<"$lake_rows")"
             delete_event="$(jq -c --arg bucket "$bucket" --arg key "$key" --arg version "$version" '
-              [.[] | select(.eventName == "DeleteObject") | . as $row | ($row.eventData | fromjson) as $event
-               | select($event.requestParameters.bucketName == $bucket and $event.requestParameters.key == $key and $event.requestParameters.versionId == $version and $event.errorCode != null)
-               | {eventID: ($row.eventID // $event.eventID), requestID: ($event.requestID // $row.requestID)}] | first // empty' \
+              [.[] | select(.eventname == "DeleteObject") | . as $row | ($row.requestparameters | fromjson) as $request
+               | select($request.bucketName == $bucket and $request.key == $key and $request.versionId == $version and $row.errorcode != null)
+               | {eventID: $row.eventid, requestID: $row.requestid}] | first // empty' \
               <<<"$lake_rows")"
             test -n "$trail_event" -a -n "$delete_event" && break
             sleep 15

@@ -59,6 +59,26 @@ pub struct AwsS3ComplianceArchiveConfig {
     cleanup_owner: String,
 }
 
+impl core::fmt::Debug for AwsS3ComplianceArchiveConfig {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("AwsS3ComplianceArchiveConfig")
+            .field("tenant_id", &"[redacted]")
+            .field("jurisdiction", &self.jurisdiction)
+            .field("account_id", &"[redacted]")
+            .field("bucket", &"[redacted]")
+            .field("region", &self.region)
+            .field("target_label", &self.target_label)
+            .field("retention_days", &self.retention_days)
+            .field("approval_reference", &self.approval_reference)
+            .field("evidence_reference", &self.evidence_reference)
+            .field("cost_ceiling_usd_micros", &self.cost_ceiling_usd_micros)
+            .field("cost_owner", &self.cost_owner)
+            .field("cleanup_owner", &self.cleanup_owner)
+            .finish_non_exhaustive()
+    }
+}
+
 impl AwsS3ComplianceArchiveConfig {
     /// Construct only a complete reviewed target configuration.
     /// Validate a complete configuration supplied by trusted server configuration.
@@ -113,22 +133,55 @@ impl AwsS3ComplianceArchiveConfig {
 }
 
 /// Complete input to [`AwsS3ComplianceArchiveConfig::try_from_parts`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct AwsS3ComplianceArchiveConfigParts {
+    /// Authenticated tenant selected by trusted server configuration.
     pub tenant_id: String,
+    /// Approved residency jurisdiction for the tenant.
     pub jurisdiction: String,
+    /// Approved twelve-digit AWS account identifier.
     pub account_id: String,
+    /// Exact approved archive bucket name.
     pub bucket: String,
+    /// AWS region containing the approved bucket.
     pub region: String,
+    /// Non-secret label identifying the approved archive target.
     pub target_label: String,
+    /// Approved workload identity permitted to write immutable objects.
     pub writer_workload_identity: String,
+    /// Approved minimum retention period in whole days.
     pub retention_days: u32,
+    /// Reference to the required Security and Compliance approval.
     pub approval_reference: String,
+    /// Reference to the required target-bound evidence record.
     pub evidence_reference: String,
+    /// Approved maximum probe cost in USD micro-units.
     pub cost_ceiling_usd_micros: u64,
+    /// Named owner for the approved cost boundary.
     pub cost_owner: String,
+    /// Named owner for post-expiry synthetic-probe cleanup.
     pub cleanup_owner: String,
+}
+
+impl core::fmt::Debug for AwsS3ComplianceArchiveConfigParts {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("AwsS3ComplianceArchiveConfigParts")
+            .field("tenant_id", &"[redacted]")
+            .field("jurisdiction", &self.jurisdiction)
+            .field("account_id", &"[redacted]")
+            .field("bucket", &"[redacted]")
+            .field("region", &self.region)
+            .field("target_label", &self.target_label)
+            .field("retention_days", &self.retention_days)
+            .field("approval_reference", &self.approval_reference)
+            .field("evidence_reference", &self.evidence_reference)
+            .field("cost_ceiling_usd_micros", &self.cost_ceiling_usd_micros)
+            .field("cost_owner", &self.cost_owner)
+            .field("cleanup_owner", &self.cleanup_owner)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Append-only durable audit port. A missing, failed, or unverifiable receipt
@@ -156,14 +209,21 @@ pub struct ComplianceArchiveAuditEvent {
     pub account_id: String,
     /// Exact configured bucket bound to this operation and durable receipt.
     pub bucket: String,
+    /// Approved non-secret label for the archive target.
     pub target_label: String,
+    /// Approved AWS region for the archive target.
     pub region: String,
+    /// Tenant-safe immutable archive key.
     pub object_key: String,
+    /// Exact provider version when known; empty only for a pre-write intent.
     pub object_version: String,
+    /// Provider request identifier when known; empty only for pre-write intent.
     pub provider_request_id: String,
+    /// Non-secret target-bound evidence reference.
     pub evidence_reference: String,
     /// `success` or `failure`; failure classes are stable, non-sensitive labels.
     pub outcome: &'static str,
+    /// Stable non-sensitive failure class for a failed operation.
     pub failure_class: Option<&'static str>,
 }
 
@@ -176,6 +236,18 @@ pub struct DeleteProbeTarget {
     version_id: String,
     expected_principal_arn: String,
     effective_permission_receipt: String,
+}
+
+impl core::fmt::Debug for DeleteProbeTarget {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("DeleteProbeTarget")
+            .field("object_key", &"[redacted]")
+            .field("version_id", &"[redacted]")
+            .field("expected_principal_arn", &"[redacted]")
+            .field("effective_permission_receipt", &"[redacted]")
+            .finish()
+    }
 }
 
 impl DeleteProbeTarget {

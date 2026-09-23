@@ -86,7 +86,7 @@ jobs:
           grep -F 'environment: s3-object-lock-live-proof' "$proof"
           grep -F 'ref: main' "$proof"
           grep -F 'AWS_EVENT_DATA_STORE_ID' "$proof"
-          grep -F "eventCategory = 'Data'" "$proof"
+          grep -F "eventcategory = 'Data'" "$proof"
           grep -F 'start-query' "$proof"
           if grep -nF 'lookup-events' "$proof"; then
             echo "LookupEvents cannot establish S3 data-event evidence" >&2
