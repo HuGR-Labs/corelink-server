@@ -50,46 +50,10 @@ jobs:
   # per CI-OPT-004 (removes floating rustsec/audit-check@v1 ref).
   pr-gate:
     name: PR gate (crate-scoped clippy + tests + canonical vectors)
-    # Runner: `corelink` — the product's own ephemeral runner fabric (wave 4,
-    # 2026-08-03). This workflow burned 133 billed minutes of ubuntu-latest
-    # (~$0.80) across its 4 hosted jobs in the 3 days to 2026-08-03; this wave
-    # moves 3 of them. `cbindgen-header-stable` deliberately stays hosted — see
-    # the blocker recorded on that job below.
-    #
-    # The box is 4 vCPU / 12.5 GB (probe run 30825772599) against ubuntu-latest's
-    # 2 vCPU / 7 GB on a private repo — twice the cores, and that headroom is what
-    # pays for the cache loss described next.
-    #
-    # ⚠️ Ephemeral-runner reality — the box carries NO cache between runs, and the
-    # `Swatinem/rust-cache` step below is gated `runner.environment ==
-    # 'github-hosted'` (the shared-$HOME guard), so on a corelink box it SKIPS and
-    # the crate compiles COLD every run. Measured, that costs far less than it
-    # sounds: the image ships a pre-seeded ~/.cargo (415 MB, 362 registry
-    # entries), so `cargo fetch --locked` took 12 s and a full cold
-    # clippy + debug-test + release-test cycle for a crate lane ran in ~105 s on
-    # 4 cores — comparable to the warm-cache hosted runs. Do NOT "fix" this by
-    # re-enabling the cache step on self-hosted: that guard exists because the MAC
-    # fleet shares one $HOME and rust-cache's prune step deletes a sibling job's
-    # registry mid-compile (#979/#980).
-    #
-    # ⚠️ A refused or dropped spawn leaves the job QUEUED, and `timeout-minutes`
-    # does not bound queued time — it starts once a job is RUNNING. That is a
-    # stall, not a false pass: `scripts/pre-merge-gate-check.sh` scores a pending
-    # check as ⛔ DO NOT MERGE, so a stranded box blocks the PR rather than
-    # waving it through.
-    #
-    # ⚠️ A box can also die MID-JOB, and this lane hit it on its very first run,
-    # so it is recorded here rather than left for the next person to rediscover.
-    # Run 30862512340 attempt 1: "The self-hosted runner lost communication with
-    # the server", no log blob uploaded, `cargo test --features stream,ffi
-    # --all-targets` wedged ~10 min before the box went silent. Attempt 2, plain
-    # re-run, no code change: the SAME step took 29 s and the whole job 1 m 57 s
-    # on cf-runner-8e55183d. A 20x spread on identical work is a sick box, not a
-    # workload — which also means `timeout-minutes` is not the mitigation, since
-    # GitHub failed the job before it could fire. The mitigation is a re-run; the
-    # thing to watch is the RATE. If lost-runner failures stop being rare here,
-    # move the lane back rather than papering over it with retries.
-    runs-on: corelink
+    # Runner: GitHub-hosted ubuntu-24.04 (wave 3 migration from corelink fabric).
+    # Toolchain asserted via ci-assert-pinned-toolchain.sh; rust-cache gated to github-hosted.
+    # Measured median ~1m57s on fabric; 30 min timeout provides ~15x headroom.
+    runs-on: ubuntu-24.04
     # Sized from the measurement, not from a guess: this lane runs cold in
     # ~1 m 57 s on the fabric, and the heaviest crate lane already on it
     # (corelink-reapi::pr-gate, 8 cargo invocations incl. two release builds and
@@ -98,6 +62,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
 
       # `dtolnay/rust-toolchain` removed. It asked for `stable` + clippy/rustfmt;
       # `rust-toolchain.toml` pins 1.91.1 and lists both components, and rustup
@@ -142,17 +108,16 @@ jobs:
 
   standalone-build:
     name: Stand-alone build (no Worker deps; AC §6.1 — FFI distribution friction)
-    # Runner: `corelink` (wave 4, 2026-08-03) — see the pr-gate job above for the
-    # full rationale: 4 vCPU / 12.5 GB vs ubuntu-latest's 2 vCPU / 7 GB on a
-    # private repo; the rust-cache step below SKIPS here, so the lane compiles
-    # cold every run, which the pre-seeded ~/.cargo (415 MB, 362 registry
-    # entries) keeps competitive; and a refused or dropped spawn strands the job
-    # as ⛔ pending rather than passing it.
-    runs-on: corelink
+    # Runner: GitHub-hosted ubuntu-24.04 (wave 3 migration from corelink fabric).
+    # Toolchain asserted via ci-assert-pinned-toolchain.sh; rust-cache gated to github-hosted.
+    # One debug build + cargo tree — lighter than pr-gate; 20 min timeout provides headroom.
+    runs-on: ubuntu-24.04
     # One debug build + a `cargo tree` — strictly lighter than pr-gate's ~409 s.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
       # `dtolnay/rust-toolchain@stable` removed — `rust-toolchain.toml` pins
       # 1.91.1 and rustup honours it over any default, so 1.91.1 is what has
       # always compiled here. Asserted instead of assumed.
@@ -179,17 +144,17 @@ jobs:
 
   wasm-build:
     name: WASM target builds (CF Workers compile compatibility)
-    # Runner: `corelink` (wave 4, 2026-08-03) — see the pr-gate job above for the
-    # ephemeral-box caveats (4 vCPU / 12.5 GB vs 2 vCPU / 7 GB hosted; no cache
-    # between runs so it compiles cold, kept competitive by the pre-seeded
-    # ~/.cargo; a dropped spawn stalls the job as ⛔ pending, which
-    # `timeout-minutes` cannot bound because it does not cover queued time).
-    runs-on: corelink
+    # Runner: GitHub-hosted ubuntu-24.04 (wave 3 migration from corelink fabric).
+    # Toolchain + wasm32 target asserted via ci-assert-pinned-toolchain.sh; rust-cache gated to github-hosted.
+    # Single cargo check --target wasm32 — ~4s + 15s toolchain; 20 min timeout provides headroom.
+    runs-on: ubuntu-24.04
     # A single `cargo check --target wasm32` — measured at 4 s on the box for a
     # comparable crate, plus the ~15 s toolchain provision.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
       # `dtolnay/rust-toolchain@stable` with `targets: wasm32-unknown-unknown`
       # removed. The image does NOT ship wasm32 (probe 30825772599: its only
       # installed target is x86_64-unknown-linux-gnu on a 1.96.0 default) —
@@ -235,9 +200,13 @@ jobs:
     # resolves to today (crates.io max_version 0.29.4) — so the generated
     # header is unchanged by this move, and a future cbindgen release can no
     # longer silently rewrite the header this gate diffs against.
-    runs-on: corelink
+    # Runner: GitHub-hosted ubuntu-24.04 (wave 3 migration from corelink fabric).
+    # Prebuilt cbindgen from upstream releases; SHA-256 pinned; no toolchain provisioning.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
 
       # `dtolnay/rust-toolchain` removed with the move off hosted: the fleet
       # shares one $HOME, so a job that provisions a toolchain mutates
