@@ -470,10 +470,13 @@ sub-processors:
 - **Sigstore (Linux Foundation)** — the former Worker OCI signing workflow was
   removed on **2026-09-08** after review established that it never executed, so
   no Fulcio certificate or Rekor entry was issued for that lane. The separate
-  release-SLSA and CAS signing paths remain independently gated. Sigstore never
-  receives customer data and is not a customer-data sub-processor; this entry
-  records the narrow OCI-lane removal rather than claiming Sigstore is absent
-  everywhere.
+  release-SLSA and CAS signing paths remain independently gated.
+  Current release-SLSA, CAS, and TSA paths send only CoreLink-owned
+  artifact/signing metadata to Sigstore; no customer-data path is wired.
+  The separate transparency-log seam is not a live transport; any future
+  pseudonymous-tenant use requires a new Legal/DPO review. Sigstore is not a
+  customer-data sub-processor in the current register; the separate GDPR transfer
+  table remains subject to Legal/DPO review.
 - **Self-hosted Dependency-Track** — operated by CoreLink; no third party.
 - **Per-customer HashiCorp Vault instances** — customer-side infrastructure
   outside CoreLink's processor relationship.

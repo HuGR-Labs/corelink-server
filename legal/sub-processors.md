@@ -1,6 +1,6 @@
 ---
-version: "1.3.1"
-last_updated: "2026-09-06"
+version: "1.3.2"
+last_updated: "2026-09-22"
 notification_required: true
 sub_processors:
   - id: "cloudflare"
@@ -203,7 +203,7 @@ later; mirrors `apps/docs/docs/trust/subprocessors.mdx`'s
 
 | Vendor | Role | Why it is not a customer-data sub-processor |
 |---|---|---|
-| The Linux Foundation (Sigstore) | Release signing + Rekor transparency for **CoreLink's own build artifacts** (the former OCI lane was removed; release-chain use remains separately gated) | Never receives customer data; open-source supply-chain infrastructure, not a processor under Art. 28. Listed for completeness only. |
+| The Linux Foundation (Sigstore) | Release signing + Rekor transparency for **CoreLink's own build artifacts** (the former OCI lane was removed; release-chain use remains separately gated) | Current release-SLSA, CAS, and TSA paths send only CoreLink-owned artifact/signing metadata; no customer-data path is wired. The separate transparency-log seam is not a live transport; any future pseudonymous-tenant use requires a new Legal/DPO review. Sigstore is not a customer-data sub-processor in the current register; the separate GDPR transfer table remains subject to Legal/DPO review. |
 
 ## Notification Policy
 

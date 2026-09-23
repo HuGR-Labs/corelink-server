@@ -13,7 +13,7 @@ pending_signoff:
 sources:
   - "specs/_compliance/VENDOR-RISK-REGISTER.md"
   - "legal/sub-processors.md"
-last_updated: "2026-08-24"
+last_updated: "2026-09-22"
 ---
 
 <!-- i18n:MT (es-419) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
@@ -43,7 +43,7 @@ vendors have a built integration but no live credential or code path yet —
 see "Contracted-but-not-active" below; they are not sub-processors until
 that changes.
 
-> **Last refreshed:** 2026-08-24. This page is **auto-generated** from
+> **Last refreshed:** 2026-09-22. This page is **auto-generated** from
 > the internal vendor register on every change; see
 > `.github/workflows/subprocessors-sync.yml` for the drift gate.
 
@@ -141,8 +141,13 @@ sub-processors:
 - **Sigstore (Linux Foundation)** — the former Worker OCI signing workflow was
   removed on **2026-09-08** after it never executed; no Fulcio certificate or
   Rekor entry was issued for that lane. Separate release-SLSA and CAS signing
-  paths remain independently gated. It never receives customer data and is not
-  a customer-data sub-processor; this entry records the narrow removal.
+  paths remain independently gated. Current release-SLSA, CAS, and TSA paths
+  send only CoreLink-owned artifact/signing metadata to Sigstore; no
+  customer-data path is wired. The separate transparency-log seam is not a
+  live transport; any future pseudonymous-tenant use requires a new
+  Legal/DPO review. Sigstore is not a customer-data sub-processor
+  in the current register; the separate GDPR transfer table remains subject to
+  Legal/DPO review.
 - **Self-hosted Dependency-Track** — operated by CoreLink; no third party.
 - **Per-customer HashiCorp Vault instances** — customer-side infrastructure
   outside CoreLink's processor relationship.
