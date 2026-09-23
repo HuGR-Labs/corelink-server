@@ -1,0 +1,30 @@
+name: issue 1649 webhook inventory contract
+
+on:
+  pull_request:
+    paths:
+      - scripts/ops/stripe-reconcile-webhook-events.sh
+      - scripts/ops/stripe_webhook_inventory.py
+      - tests/test_stripe_webhook_inventory.py
+      - .github/workflows/i1649-webhook-inventory-contract.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: i1649-webhook-inventory-contract-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pagination-mocks:
+    name: Paginated Stripe inventory mocks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out PR tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Run offline pagination contract
+        run: python3 -m unittest discover -s tests -p 'test_stripe_webhook_inventory.py' -v

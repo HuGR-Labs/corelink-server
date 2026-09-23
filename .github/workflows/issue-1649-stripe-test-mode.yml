@@ -18,6 +18,9 @@ on:
   pull_request:
     paths:
       - scripts/stripe_test_mode_evidence.py
+      - scripts/ops/stripe-reconcile-webhook-events.sh
+      - scripts/ops/stripe_webhook_inventory.py
+      - tests/test_stripe_webhook_inventory.py
       - .github/workflows/issue-1649-stripe-test-mode.yml
       - docs/operator/issue-1649-stripe-test-mode-evidence.md
   workflow_dispatch:
@@ -49,6 +52,7 @@ jobs:
           set -euo pipefail
           python3 scripts/stripe_test_mode_evidence.py --contract
           python3 -m unittest discover -s tests -p 'test_stripe_test_mode_evidence.py' -v
+          python3 -m unittest discover -s tests -p 'test_stripe_webhook_inventory.py' -v
 
   test-mode-evidence:
     name: Stripe test-mode idempotency and cleanup
