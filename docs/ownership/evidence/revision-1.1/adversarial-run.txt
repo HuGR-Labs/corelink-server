@@ -1,0 +1,149 @@
+{
+  "scope": "synthetic documentation fixtures; no CoreLink runtime tests",
+  "template_mode": false,
+  "results": [
+    {
+      "case": "control_valid_structure",
+      "expected": "pass",
+      "classification": "positive_control_not_semantic_approval",
+      "observed": "IMPLEMENTED_CHECKS_PASS",
+      "errors": [],
+      "meets_expectation": true,
+      "fixture": "evidence/revision-1.1/probes/control_valid_structure.md"
+    },
+    {
+      "case": "control_missing_section",
+      "expected": "reject",
+      "classification": "negative_control",
+      "observed": "FAIL",
+      "errors": [
+        "broken internal anchor: #r08",
+        "missing section anchor: r08",
+        "missing section heading: R08"
+      ],
+      "meets_expectation": true,
+      "fixture": "evidence/revision-1.1/probes/control_missing_section.md"
+    },
+    {
+      "case": "control_placeholder",
+      "expected": "reject",
+      "classification": "negative_control",
+      "observed": "FAIL",
+      "errors": [
+        "unresolved placeholder/TODO/TBD"
+      ],
+      "meets_expectation": true,
+      "fixture": "evidence/revision-1.1/probes/control_placeholder.md"
+    },
+    {
+      "case": "control_long_code",
+      "expected": "reject",
+      "classification": "negative_control",
+      "observed": "FAIL",
+      "errors": [
+        "code block exceeds 25 lines: 26"
+      ],
+      "meets_expectation": true,
+      "fixture": "evidence/revision-1.1/probes/control_long_code.md"
+    },
+    {
+      "case": "section_in_code_counts_as_section",
+      "expected": "reject",
+      "classification": "implemented_section_check_false_acceptance",
+      "observed": "FAIL",
+      "errors": [
+        "broken internal anchor: #r08",
+        "missing section anchor: r08",
+        "missing section heading: R08"
+      ],
+      "meets_expectation": true,
+      "fixture": "evidence/revision-1.1/probes/section_in_code_counts_as_section.md"
+    },
+    {
+      "case": "control_long_relation",
+      "expected": "reject",
+      "classification": "negative_control",
+      "observed": "FAIL",
+      "errors": [
+        "REL-001 exceeds 120 words",
+        "REL-001 exceeds 14 lines",
+        "record missing from preceding index: REL-001"
+      ],
+      "meets_expectation": true,
+      "fixture": "evidence/revision-1.1/probes/control_long_relation.md"
+    },
+    {
+      "case": "inner_anchor_stops_relation_count",
+      "expected": "reject",
+      "classification": "implemented_record_bound_false_acceptance",
+      "observed": "FAIL",
+      "errors": [
+        "REL-001 exceeds 120 words",
+        "REL-001 exceeds 14 lines",
+        "record missing from preceding index: REL-001"
+      ],
+      "meets_expectation": true,
+      "fixture": "evidence/revision-1.1/probes/inner_anchor_stops_relation_count.md"
+    },
+    {
+      "case": "document_kind_disagrees_with_cli",
+      "expected": "reject",
+      "classification": "unimplemented_contract_consistency_check",
+      "observed": "FAIL",
+      "errors": [
+        "document kind differs from --kind"
+      ],
+      "meets_expectation": true,
+      "fixture": "evidence/revision-1.1/probes/document_kind_disagrees_with_cli.md"
+    },
+    {
+      "case": "empty_evidence_set",
+      "expected": "reject",
+      "classification": "unimplemented_contract_consistency_check",
+      "observed": "FAIL",
+      "errors": [
+        "empty/non-string frontmatter key: evidence_set"
+      ],
+      "meets_expectation": true,
+      "fixture": "evidence/revision-1.1/probes/empty_evidence_set.md"
+    },
+    {
+      "case": "entry_summary_exceeds_120_words",
+      "expected": "reject",
+      "classification": "unimplemented_entry_summary_check",
+      "observed": "FAIL",
+      "errors": [
+        "entry summary exceeds 120 words"
+      ],
+      "meets_expectation": true,
+      "fixture": "evidence/revision-1.1/probes/entry_summary_exceeds_120_words.md"
+    },
+    {
+      "case": "relation_missing_from_index",
+      "expected": "reject",
+      "classification": "unimplemented_record_navigation_check",
+      "observed": "FAIL",
+      "errors": [
+        "record missing from preceding index: REL-001"
+      ],
+      "meets_expectation": true,
+      "fixture": "evidence/revision-1.1/probes/relation_missing_from_index.md"
+    },
+    {
+      "case": "skill_description_exceeds_project_limit",
+      "expected": "reject",
+      "classification": "unimplemented_skill_description_check",
+      "observed": "FAIL",
+      "errors": [
+        "skill description must have 1..600 characters"
+      ],
+      "meets_expectation": true,
+      "fixture": "evidence/revision-1.1/probes/own-example/SKILL.md"
+    }
+  ],
+  "summary": {
+    "cases": 12,
+    "met": 12,
+    "false_acceptances": 0
+  }
+}

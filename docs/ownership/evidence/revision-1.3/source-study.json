@@ -1,0 +1,169 @@
+{
+  "schema": "corelink-ownership-source-study/1",
+  "id": "hash-pilot-source-20260919",
+  "repository_id": 1232040291,
+  "baseline": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+  "method": "GitHub connector reads; local searches used only for candidate discovery",
+  "rust_execution": false,
+  "sources": [
+    {
+      "id": "S01",
+      "path": "crates/corelink-hash/Cargo.toml",
+      "reported_git_blob": "0b836118960c8f21c50473dc0e37461fd5b47bd7",
+      "read_range": null,
+      "read_note": "Manifesto completo lido na preparação anterior; identidade reconsultada nesta rodada.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/Cargo.toml"
+    },
+    {
+      "id": "S02",
+      "path": "crates/corelink-hash/src/lib.rs",
+      "reported_git_blob": "403f7e2e4ef8c7bb30a47e7d7eee3ce94a785730",
+      "read_range": null,
+      "read_note": "Completo; exports, módulos e limite compartilhado.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/src/lib.rs"
+    },
+    {
+      "id": "S03",
+      "path": "crates/corelink-hash/src/digest.rs",
+      "reported_git_blob": "40aea50c8127ada98133e3719171b65f047f2bcd",
+      "read_range": null,
+      "read_note": "Completo; construtores, parser, comparação e formatação.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/src/digest.rs"
+    },
+    {
+      "id": "S04",
+      "path": "crates/corelink-hash/src/verified_body.rs",
+      "reported_git_blob": "d387eca974b5314dad46b6e92b1623cb8b3e10d5",
+      "read_range": null,
+      "read_note": "Completo; construtor, acessores e Debug.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/src/verified_body.rs"
+    },
+    {
+      "id": "S05",
+      "path": "crates/corelink-hash/src/store.rs",
+      "reported_git_blob": "ca438358841cef76cf139fadff5acc57526baae0",
+      "read_range": null,
+      "read_note": "Completo; contrato BlobStoreWrite.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/src/store.rs"
+    },
+    {
+      "id": "S06",
+      "path": "crates/corelink-hash/src/error.rs",
+      "reported_git_blob": "d953932982f95178cfc1e2fe0021c6664a68b2f9",
+      "read_range": null,
+      "read_note": "Completo; enum não exaustivo, erro unitário e código.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/src/error.rs"
+    },
+    {
+      "id": "S07",
+      "path": "crates/corelink-hash/tests/blob_store_contract.rs",
+      "reported_git_blob": "4722a718725d1e27baca1acb098cf7cdc0fa3e56",
+      "read_range": null,
+      "read_note": "Completo; fake local e dois testes de contrato.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/tests/blob_store_contract.rs"
+    },
+    {
+      "id": "S08",
+      "path": "crates/corelink-hash/tests/mutation_kills.rs",
+      "reported_git_blob": "0cdf59269b6802fd07ee34c0a16e1de7fd2a80ab",
+      "read_range": null,
+      "read_note": "Completo; regressões existentes, não executadas.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/tests/mutation_kills.rs"
+    },
+    {
+      "id": "S09",
+      "path": "crates/corelink-hash/tests/prop_hash.rs",
+      "reported_git_blob": "5471c6aea39ec35709b96c18cec95152cfea1ba7",
+      "read_range": null,
+      "read_note": "Leitura inicial até o trecho de medianas; continuação explícita a partir de L320 até EOF.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/tests/prop_hash.rs"
+    },
+    {
+      "id": "S10",
+      "path": "crates/corelink-hash/README.md",
+      "reported_git_blob": "41ae175fc210339e50efd11523b21635f0c3b47b",
+      "read_range": null,
+      "read_note": "Completo; referência anterior a reconciliar, não nova autoridade.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-hash/README.md"
+    },
+    {
+      "id": "S11",
+      "path": "docs/knowledge/crates/cas-ac-core.md",
+      "reported_git_blob": "01b501172f40115174fe6c88d8942af5f3590b51",
+      "read_range": null,
+      "read_note": "Completo; conceito transversal e limites de wiring.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/docs/knowledge/crates/cas-ac-core.md"
+    },
+    {
+      "id": "S12",
+      "path": ".github/workflows/corelink-hash.yml",
+      "reported_git_blob": "2338eadfd8a64673bb295ec63cd921c11eabaa53",
+      "read_range": [
+        1,
+        155
+      ],
+      "read_note": "Recorte confirmado explicitamente: on, pr-gate, wasm-build e início de fuzz-smoke; restante não certificado.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/.github/workflows/corelink-hash.yml"
+    },
+    {
+      "id": "S13",
+      "path": "crates/corelink-crypto/src/blake3.rs",
+      "reported_git_blob": "6ae61aaec6ea04e37a6d0e510977c6c47470e690",
+      "read_range": null,
+      "read_note": "Completo; reexport wildcard.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-crypto/src/blake3.rs"
+    },
+    {
+      "id": "S14",
+      "path": "crates/corelink-client-verify/src/digest.rs",
+      "reported_git_blob": "425787dbe545c6db54ab09baf0f026c190e1d803",
+      "read_range": null,
+      "read_note": "Completo; reexports selecionados e constante de erro.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-client-verify/src/digest.rs"
+    },
+    {
+      "id": "S15",
+      "path": "crates/corelink-worker/src/storage/r2.rs",
+      "reported_git_blob": "e4e0671b5acd00542d6d1249af83e76a1e19b623",
+      "read_range": [
+        200,
+        285
+      ],
+      "read_note": "Recorte; ramo de escrita, for_tenant e ScopedR2Writer.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-worker/src/storage/r2.rs"
+    },
+    {
+      "id": "S16",
+      "path": "crates/corelink-worker/src/storage/key.rs",
+      "reported_git_blob": "226a4ce83d4a0dda7c74e569ab4429709cd6ba5d",
+      "read_range": [
+        1,
+        75
+      ],
+      "read_note": "Recorte; canonical_key e layout persistido.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-worker/src/storage/key.rs"
+    },
+    {
+      "id": "S17",
+      "path": "crates/corelink-container/src/storage/r2_kv.rs",
+      "reported_git_blob": "e419448890037056949450cb15b9154669297e1a",
+      "read_range": [
+        155,
+        240
+      ],
+      "read_note": "Recorte; envelope, legacy, corrupt e contabilidade de payload.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-container/src/storage/r2_kv.rs"
+    },
+    {
+      "id": "S18",
+      "path": "crates/corelink-container/src/routes/bazel_v2/part-00.rs",
+      "reported_git_blob": "769a55bbc51d0614d813619b5bc6676aa7a0202b",
+      "read_range": [
+        290,
+        357
+      ],
+      "read_note": "Recorte; quatro call sites DefaultBodyLimit::max.",
+      "url": "https://github.com/HuGR-Labs/corelink-server/blob/cca798ff5bc2df660ecf2570ed243eb9775ff3d0/crates/corelink-container/src/routes/bazel_v2/part-00.rs"
+    }
+  ]
+}

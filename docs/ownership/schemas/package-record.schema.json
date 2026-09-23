@@ -1,0 +1,676 @@
+{
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "corelink-ownership-record/1.1"
+    },
+    "record_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "record_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repository_id": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "package_uid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "package": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "manifest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "skill_slug": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "profile": {
+      "enum": [
+        "S",
+        "H"
+      ]
+    },
+    "standard": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "version",
+        "path",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "author": {
+      "type": "object",
+      "properties": {
+        "identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "identity",
+        "session_id"
+      ],
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "role"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "class": {
+            "enum": [
+              "SOURCE",
+              "RESOLVED",
+              "EXECUTED_LOCAL",
+              "DEPLOYMENT",
+              "OBSERVED_RUNTIME",
+              "REVIEW"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "sha256",
+          "class"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "discovery": {
+      "type": "object",
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "globs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              },
+              "needles": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "globs",
+              "needles"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "snapshot_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "rules",
+        "snapshot_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "capacity": {
+      "type": "object",
+      "properties": {
+        "atomic_relations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "semantic_modules": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "procedures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "atomic_relations",
+        "semantic_modules",
+        "procedures",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "build_selections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "package": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          },
+          "basis_evidence": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "id",
+          "package",
+          "target",
+          "features",
+          "basis_evidence"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "review": {
+      "type": "object",
+      "properties": {
+        "reviewer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fresh_context_confirmed": {
+          "type": "boolean"
+        },
+        "independence_evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "reviewed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "reviewer",
+        "session_id",
+        "fresh_context_confirmed",
+        "independence_evidence",
+        "reviewed_at"
+      ],
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "skill",
+              "reference",
+              "blast_radius",
+              "maintenance"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "semantic_review": {
+            "type": "object",
+            "properties": {
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "snapshot_evidence": {"type": "string", "minLength": 1}
+            },
+            "required": ["sha256", "snapshot_evidence"],
+            "additionalProperties": false
+          },
+          "metadata_readback": {
+            "type": "object",
+            "properties": {
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "reader": {"type": "string", "minLength": 1},
+              "session_id": {"type": "string", "minLength": 1},
+              "read_at": {"type": "string", "format": "date-time"},
+              "evidence": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+              "changed_fields": {
+                "type": "array",
+                "items": {"enum": ["package", "manifest", "source-commit", "evidence-set", "source_commit", "evidence_set"]},
+                "minItems": 1,
+                "uniqueItems": true
+              }
+            },
+            "required": ["sha256", "reader", "session_id", "read_at", "evidence", "changed_fields"],
+            "additionalProperties": false
+          },
+          "verdict": {
+            "enum": [
+              "APPROVE",
+              "FIX_FIRST",
+              "REJECT",
+              "BLOCKED"
+            ]
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "requirement": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "status": {
+                  "enum": [
+                    "PASS",
+                    "FAIL",
+                    "BLOCKED"
+                  ]
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "requirement",
+                "status",
+                "evidence"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "state": {
+                  "enum": [
+                    "OPEN",
+                    "RESOLVED"
+                  ]
+                },
+                "resolution_evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 0
+                }
+              },
+              "required": [
+                "id",
+                "required",
+                "state",
+                "resolution_evidence"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 0
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "sha256",
+          "verdict",
+          "checks",
+          "findings",
+          "limitations"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "dependency",
+              "reexport",
+              "runtime-call",
+              "data",
+              "event",
+              "config",
+              "build-deploy",
+              "telemetry",
+              "test",
+              "ffi",
+              "external-contract"
+            ]
+          },
+          "consumer_uid": {
+            "type": "string",
+            "minLength": 1
+          },
+          "provider_uid": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contract_owner_uid": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contract_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contract_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "surface": {
+            "type": "string",
+            "minLength": 1
+          },
+          "activation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "data_direction": {
+            "enum": [
+              "consumer-to-provider",
+              "provider-to-consumer",
+              "bidirectional",
+              "not-applicable"
+            ]
+          },
+          "impact_direction": {
+            "enum": [
+              "consumer-to-provider",
+              "provider-to-consumer",
+              "bidirectional"
+            ]
+          },
+          "local_effect": {
+            "type": "string",
+            "minLength": 1
+          },
+          "local_anchor": {
+            "type": "string",
+            "minLength": 1
+          },
+          "external_boundary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "kind",
+          "consumer_uid",
+          "provider_uid",
+          "contract_owner_uid",
+          "contract_id",
+          "contract_sha256",
+          "surface",
+          "activation",
+          "data_direction",
+          "impact_direction",
+          "local_effect",
+          "local_anchor",
+          "external_boundary"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0
+    },
+    "procedures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^PROC-[0-9]{3,}$"
+          },
+          "mode": {
+            "enum": [
+              "READ_ONLY",
+              "LOCAL_ISOLATED",
+              "AUTHORIZED_OPERATION"
+            ]
+          },
+          "review_status": {
+            "enum": [
+              "REVIEWED",
+              "BLOCKED"
+            ]
+          },
+          "execution_status": {
+            "enum": [
+              "EXECUTED_LOCAL",
+              "REVIEWED_NOT_EXECUTED",
+              "BLOCKED_FOR_OPERATION"
+            ]
+          },
+          "required_for_acceptance": {
+            "type": "boolean"
+          },
+          "environment": {
+            "type": "string",
+            "minLength": 1
+          },
+          "result": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "NOT_EXECUTED"
+            ]
+          },
+          "review_evidence": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "execution_evidence": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          }
+        },
+        "required": [
+          "id",
+          "mode",
+          "review_status",
+          "execution_status",
+          "required_for_acceptance",
+          "environment",
+          "result",
+          "review_evidence",
+          "execution_evidence",
+          "limitations"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0
+    }
+  },
+  "required": [
+    "schema",
+    "record_id",
+    "record_path",
+    "repository_id",
+    "package_uid",
+    "package",
+    "manifest",
+    "skill_slug",
+    "source_commit",
+    "profile",
+    "standard",
+    "author",
+    "sources",
+    "evidence",
+    "discovery",
+    "capacity",
+    "build_selections",
+    "review",
+    "artifacts",
+    "relations",
+    "procedures"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CO-1 package evidence record; consistency alone is not cold approval"
+}

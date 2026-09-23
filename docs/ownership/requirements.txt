@@ -1,0 +1,4 @@
+# Exact versions used by this revision's local tests (Python >= 3.11).
+markdown-it-py==4.2.0
+PyYAML==6.0.3
+jsonschema==4.26.0

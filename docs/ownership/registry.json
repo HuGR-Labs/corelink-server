@@ -1,0 +1,3273 @@
+{
+  "schema": "corelink-ownership-population-registry/1",
+  "observed_main": "7f966dda8234f54b58766f33e5fca2ad02cc898b",
+  "population_count": 105,
+  "publication_count": 0,
+  "calibration": "PASS",
+  "calibration_errors": [],
+  "packages": [
+    {
+      "package": "chaos-campaign",
+      "manifest": "tests/chaos/Cargo.toml",
+      "skill_slug": "own-chaos-campaign",
+      "source_commit": "cb94e251c0f17382565bf863f517945cbb2a84d6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-chaos-campaign/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/chaos-campaign/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/chaos-campaign/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/chaos-campaign/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-ac",
+      "manifest": "crates/corelink-ac/Cargo.toml",
+      "skill_slug": "own-corelink-ac",
+      "source_commit": "59c76cf260bcdeb5246772f70821ac8b7e8a9780",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-ac/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-ac/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-ac/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-ac/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-ac-fuzz",
+      "manifest": "crates/corelink-ac/fuzz/Cargo.toml",
+      "skill_slug": "own-corelink-ac-fuzz",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-ac-fuzz/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-ac-fuzz/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-ac-fuzz/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-ac-fuzz/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-adapter-host",
+      "manifest": "crates/corelink-adapter-host/Cargo.toml",
+      "skill_slug": "own-corelink-adapter-host",
+      "source_commit": "59c76cf260bcdeb5246772f70821ac8b7e8a9780",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-adapter-host/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-adapter-host/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-adapter-host/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-adapter-host/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-adapters-cloud",
+      "manifest": "crates/corelink-adapters-cloud/Cargo.toml",
+      "skill_slug": "own-corelink-adapters-cloud",
+      "source_commit": "1c99a5b8ce1db7b622db7811512432a5d070bbbe",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-adapters-cloud/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-adapters-cloud/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-adapters-cloud/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-adapters-cloud/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-adapters-vault",
+      "manifest": "crates/corelink-adapters-vault/Cargo.toml",
+      "skill_slug": "own-corelink-adapters-vault",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-adapters-vault/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-adapters-vault/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-adapters-vault/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-adapters-vault/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-analytics",
+      "manifest": "crates/corelink-analytics/Cargo.toml",
+      "skill_slug": "own-corelink-analytics",
+      "source_commit": "59c76cf260bcdeb5246772f70821ac8b7e8a9780",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-analytics/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-analytics/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-analytics/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-analytics/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-audit",
+      "manifest": "crates/corelink-audit/Cargo.toml",
+      "skill_slug": "own-corelink-audit",
+      "source_commit": "59c76cf260bcdeb5246772f70821ac8b7e8a9780",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-audit/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-audit/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-audit/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-audit/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-audit-chain",
+      "manifest": "crates/corelink-audit-chain/Cargo.toml",
+      "skill_slug": "own-corelink-audit-chain",
+      "source_commit": "59c76cf260bcdeb5246772f70821ac8b7e8a9780",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-audit-chain/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-audit-chain/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-audit-chain/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-audit-chain/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-audit-chain-fuzz",
+      "manifest": "crates/corelink-audit-chain/fuzz/Cargo.toml",
+      "skill_slug": "own-corelink-audit-chain-fuzz",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-audit-chain-fuzz/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-audit-chain-fuzz/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-audit-chain-fuzz/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-audit-chain-fuzz/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-auth",
+      "manifest": "crates/corelink-auth/Cargo.toml",
+      "skill_slug": "own-corelink-auth",
+      "source_commit": "b64025a5ef6295c1f23614339b6bb5a1e909f793",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-auth/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-auth/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-auth/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-auth/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-bazel-bridge",
+      "manifest": "crates/corelink-bazel-bridge/Cargo.toml",
+      "skill_slug": "own-corelink-bazel-bridge",
+      "source_commit": "59c76cf260bcdeb5246772f70821ac8b7e8a9780",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-bazel-bridge/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-bazel-bridge/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-bazel-bridge/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-bazel-bridge/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-billing",
+      "manifest": "crates/corelink-billing/Cargo.toml",
+      "skill_slug": "own-corelink-billing",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-billing/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-billing/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-billing/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-billing/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-billing-aggregator",
+      "manifest": "crates/corelink-billing-aggregator/Cargo.toml",
+      "skill_slug": "own-corelink-billing-aggregator",
+      "source_commit": "9f372cc1f5a34752a6b6eb4674df10b3921bce88",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-billing-aggregator/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-billing-aggregator/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-billing-aggregator/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-billing-aggregator/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-billing-emit",
+      "manifest": "crates/corelink-billing-emit/Cargo.toml",
+      "skill_slug": "own-corelink-billing-emit",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-billing-emit/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-billing-emit/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-billing-emit/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-billing-emit/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-billing-reconcile",
+      "manifest": "crates/corelink-billing-reconcile/Cargo.toml",
+      "skill_slug": "own-corelink-billing-reconcile",
+      "source_commit": "9f372cc1f5a34752a6b6eb4674df10b3921bce88",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-billing-reconcile/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-billing-reconcile/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-billing-reconcile/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-billing-reconcile/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-billing-stripe",
+      "manifest": "crates/corelink-billing-stripe/Cargo.toml",
+      "skill_slug": "own-corelink-billing-stripe",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-billing-stripe/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-billing-stripe/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-billing-stripe/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-billing-stripe/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-billing-stripe-materializer",
+      "manifest": "crates/corelink-billing-stripe-materializer/Cargo.toml",
+      "skill_slug": "own-corelink-billing-stripe-materializer",
+      "source_commit": "9f372cc1f5a34752a6b6eb4674df10b3921bce88",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-billing-stripe-materializer/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-billing-stripe-materializer/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-billing-stripe-materializer/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-billing-stripe-materializer/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-billing-stripe-traits",
+      "manifest": "crates/corelink-billing-stripe-traits/Cargo.toml",
+      "skill_slug": "own-corelink-billing-stripe-traits",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-billing-stripe-traits/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-billing-stripe-traits/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-billing-stripe-traits/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-billing-stripe-traits/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-byok",
+      "manifest": "crates/corelink-byok/Cargo.toml",
+      "skill_slug": "own-corelink-byok",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-byok/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-byok/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-byok/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-byok/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-byok-fuzz",
+      "manifest": "crates/corelink-byok/fuzz/Cargo.toml",
+      "skill_slug": "own-corelink-byok-fuzz",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-byok-fuzz/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-byok-fuzz/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-byok-fuzz/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-byok-fuzz/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-cas",
+      "manifest": "crates/corelink-cas/Cargo.toml",
+      "skill_slug": "own-corelink-cas",
+      "source_commit": "12ca4a8d1afed61c7fdd3312ede3dffc17665c47",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-cas/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-cas/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-cas/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-cas/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-cf-bindings",
+      "manifest": "crates/corelink-cf-bindings/Cargo.toml",
+      "skill_slug": "own-corelink-cf-bindings",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-cf-bindings/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-cf-bindings/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-cf-bindings/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-cf-bindings/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-chaos-scheduler",
+      "manifest": "crates/corelink-chaos-scheduler/Cargo.toml",
+      "skill_slug": "own-corelink-chaos-scheduler",
+      "source_commit": "3feae2baed63061354533ffdfe2d94acfd24aa9a",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-chaos-scheduler/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-chaos-scheduler/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-chaos-scheduler/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-chaos-scheduler/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-clerk",
+      "manifest": "crates/corelink-clerk/Cargo.toml",
+      "skill_slug": "own-corelink-clerk",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-clerk/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-clerk/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-clerk/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-clerk/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-clerk-cf",
+      "manifest": "crates/corelink-clerk-cf/Cargo.toml",
+      "skill_slug": "own-corelink-clerk-cf",
+      "source_commit": "1c99a5b8ce1db7b622db7811512432a5d070bbbe",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-clerk-cf/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-clerk-cf/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-clerk-cf/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-clerk-cf/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-cli",
+      "manifest": "tools/cli/Cargo.toml",
+      "skill_slug": "own-corelink-cli",
+      "source_commit": "398e586ccef712477f2a4ce51e026443b67e5747",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-cli/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-cli/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-cli/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-cli/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-cli-fuzz",
+      "manifest": "tools/cli/fuzz/Cargo.toml",
+      "skill_slug": "own-corelink-cli-fuzz",
+      "source_commit": "38f43b6d6b7f461edbd3a9bdd5cff34f2fd64018",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-cli-fuzz/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-cli-fuzz/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-cli-fuzz/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-cli-fuzz/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-client-verify",
+      "manifest": "crates/corelink-client-verify/Cargo.toml",
+      "skill_slug": "own-corelink-client-verify",
+      "source_commit": "16d9f0303d849a1ab3df14688bd2c7cdbfee8140",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-client-verify/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-client-verify/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-client-verify/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-client-verify/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-client-verify-fuzz",
+      "manifest": "crates/corelink-client-verify/fuzz/Cargo.toml",
+      "skill_slug": "own-corelink-client-verify-fuzz",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-client-verify-fuzz/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-client-verify-fuzz/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-client-verify-fuzz/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-client-verify-fuzz/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-config-do",
+      "manifest": "crates/corelink-config-do/Cargo.toml",
+      "skill_slug": "own-corelink-config-do",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-config-do/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-config-do/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-config-do/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-config-do/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-core",
+      "manifest": "crates/corelink-core/Cargo.toml",
+      "skill_slug": "own-corelink-core",
+      "source_commit": "5d617634662ee9475dc66cb83b5a57296eb75dc2",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-core/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-core/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-core/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-core/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-crypto",
+      "manifest": "crates/corelink-crypto/Cargo.toml",
+      "skill_slug": "own-corelink-crypto",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-crypto/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-crypto/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-crypto/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-crypto/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-dpa-acceptance",
+      "manifest": "crates/corelink-dpa-acceptance/Cargo.toml",
+      "skill_slug": "own-corelink-dpa-acceptance",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-dpa-acceptance/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-dpa-acceptance/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-dpa-acceptance/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-dpa-acceptance/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-dsr",
+      "manifest": "crates/corelink-dsr/Cargo.toml",
+      "skill_slug": "own-corelink-dsr",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-dsr/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-dsr/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-dsr/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-dsr/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-dsr-statuspage-scheduler",
+      "manifest": "crates/corelink-dsr-statuspage-scheduler/Cargo.toml",
+      "skill_slug": "own-corelink-dsr-statuspage-scheduler",
+      "source_commit": "3feae2baed63061354533ffdfe2d94acfd24aa9a",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-dsr-statuspage-scheduler/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-dsr-statuspage-scheduler/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-dsr-statuspage-scheduler/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-dsr-statuspage-scheduler/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-dt-cli",
+      "manifest": "tools/dt-cli/Cargo.toml",
+      "skill_slug": "own-corelink-dt-cli",
+      "source_commit": "398e586ccef712477f2a4ce51e026443b67e5747",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-dt-cli/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-dt-cli/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-dt-cli/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-dt-cli/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-dt-reconcile",
+      "manifest": "tools/dt-reconcile/Cargo.toml",
+      "skill_slug": "own-corelink-dt-reconcile",
+      "source_commit": "398e586ccef712477f2a4ce51e026443b67e5747",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-dt-reconcile/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-dt-reconcile/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-dt-reconcile/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-dt-reconcile/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-dt-webhook",
+      "manifest": "crates/corelink-dt-webhook/Cargo.toml",
+      "skill_slug": "own-corelink-dt-webhook",
+      "source_commit": "398e586ccef712477f2a4ce51e026443b67e5747",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-dt-webhook/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-dt-webhook/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-dt-webhook/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-dt-webhook/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-dual-approval",
+      "manifest": "crates/corelink-dual-approval/Cargo.toml",
+      "skill_slug": "own-corelink-dual-approval",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-dual-approval/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-dual-approval/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-dual-approval/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-dual-approval/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-enterprise-inquiry",
+      "manifest": "crates/corelink-enterprise-inquiry/Cargo.toml",
+      "skill_slug": "own-corelink-enterprise-inquiry",
+      "source_commit": "3feae2baed63061354533ffdfe2d94acfd24aa9a",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-enterprise-inquiry/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-enterprise-inquiry/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-enterprise-inquiry/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-enterprise-inquiry/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-erasure-attestation",
+      "manifest": "crates/corelink-erasure-attestation/Cargo.toml",
+      "skill_slug": "own-corelink-erasure-attestation",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-erasure-attestation/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-erasure-attestation/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-erasure-attestation/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-erasure-attestation/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-eviction",
+      "manifest": "crates/corelink-eviction/Cargo.toml",
+      "skill_slug": "own-corelink-eviction",
+      "source_commit": "6ed297f5b2b64cf97447985111a2ecbbaa9536bb",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-eviction/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-eviction/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-eviction/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-eviction/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-failover-router",
+      "manifest": "crates/corelink-failover-router/Cargo.toml",
+      "skill_slug": "own-corelink-failover-router",
+      "source_commit": "6ed297f5b2b64cf97447985111a2ecbbaa9536bb",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-failover-router/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-failover-router/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-failover-router/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-failover-router/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-gc",
+      "manifest": "crates/corelink-gc/Cargo.toml",
+      "skill_slug": "own-corelink-gc",
+      "source_commit": "6ed297f5b2b64cf97447985111a2ecbbaa9536bb",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-gc/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-gc/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-gc/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-gc/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-go",
+      "manifest": "tools/sdks/go/Cargo.toml",
+      "skill_slug": "own-corelink-go",
+      "source_commit": "3feae2baed63061354533ffdfe2d94acfd24aa9a",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-go/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-go/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-go/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-go/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-handler-ac",
+      "manifest": "crates/corelink-handler-ac/Cargo.toml",
+      "skill_slug": "own-corelink-handler-ac",
+      "source_commit": "12ca4a8d1afed61c7fdd3312ede3dffc17665c47",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-handler-ac/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-handler-ac/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-handler-ac/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-handler-ac/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-handler-admin",
+      "manifest": "crates/corelink-handler-admin/Cargo.toml",
+      "skill_slug": "own-corelink-handler-admin",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-handler-admin/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-handler-admin/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-handler-admin/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-handler-admin/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-handler-cas",
+      "manifest": "crates/corelink-handler-cas/Cargo.toml",
+      "skill_slug": "own-corelink-handler-cas",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-handler-cas/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-handler-cas/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-handler-cas/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-handler-cas/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-handler-cas-erase",
+      "manifest": "crates/corelink-handler-cas-erase/Cargo.toml",
+      "skill_slug": "own-corelink-handler-cas-erase",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-handler-cas-erase/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-handler-cas-erase/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-handler-cas-erase/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-handler-cas-erase/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-handler-customer",
+      "manifest": "crates/corelink-handler-customer/Cargo.toml",
+      "skill_slug": "own-corelink-handler-customer",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-handler-customer/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-handler-customer/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-handler-customer/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-handler-customer/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-hash",
+      "manifest": "crates/corelink-hash/Cargo.toml",
+      "skill_slug": "own-corelink-hash",
+      "source_commit": "cacc44fc43ee2f481e933419ba88b9a19ac6c8e8",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-hash/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-hash/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-hash/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-hash-fuzz",
+      "manifest": "crates/corelink-hash/fuzz/Cargo.toml",
+      "skill_slug": "own-corelink-hash-fuzz",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-hash-fuzz/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-hash-fuzz/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-hash-fuzz/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-hash-fuzz/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-meta",
+      "manifest": "crates/corelink-meta/Cargo.toml",
+      "skill_slug": "own-corelink-meta",
+      "source_commit": "6be030999de1f0e0fe62d3a9abb04ec2a4fefde6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-meta/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-meta/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-meta/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-meta/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-meta-fuzz",
+      "manifest": "crates/corelink-meta/fuzz/Cargo.toml",
+      "skill_slug": "own-corelink-meta-fuzz",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-meta-fuzz/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-meta-fuzz/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-meta-fuzz/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-meta-fuzz/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-openapi",
+      "manifest": "tools/openapi/Cargo.toml",
+      "skill_slug": "own-corelink-openapi",
+      "source_commit": "398e586ccef712477f2a4ce51e026443b67e5747",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-openapi/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-openapi/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-openapi/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-openapi/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-ops",
+      "manifest": "crates/corelink-ops/Cargo.toml",
+      "skill_slug": "own-corelink-ops",
+      "source_commit": "6be030999de1f0e0fe62d3a9abb04ec2a4fefde6",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-ops/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-ops/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-ops/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-ops/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-pat",
+      "manifest": "crates/corelink-pat/Cargo.toml",
+      "skill_slug": "own-corelink-pat",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-pat/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-pat/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-pat/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-pat/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-privacy",
+      "manifest": "crates/corelink-privacy/Cargo.toml",
+      "skill_slug": "own-corelink-privacy",
+      "source_commit": "8b800acd3ffb042e5f68bedbb989415a5c5b0bbe",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-privacy/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-privacy/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-privacy/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-privacy/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-privacy-erasure-worker",
+      "manifest": "crates/corelink-privacy-erasure-worker/Cargo.toml",
+      "skill_slug": "own-corelink-privacy-erasure-worker",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-privacy-erasure-worker/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-privacy-erasure-worker/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-privacy-erasure-worker/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-privacy-erasure-worker/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-privacy-pseudonymize",
+      "manifest": "crates/corelink-privacy-pseudonymize/Cargo.toml",
+      "skill_slug": "own-corelink-privacy-pseudonymize",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-privacy-pseudonymize/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-privacy-pseudonymize/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-privacy-pseudonymize/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-privacy-pseudonymize/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-py",
+      "manifest": "tools/sdks/python/Cargo.toml",
+      "skill_slug": "own-corelink-py",
+      "source_commit": "3feae2baed63061354533ffdfe2d94acfd24aa9a",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-py/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-py/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-py/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-py/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-r2-multipart",
+      "manifest": "crates/corelink-r2-multipart/Cargo.toml",
+      "skill_slug": "own-corelink-r2-multipart",
+      "source_commit": "6ed297f5b2b64cf97447985111a2ecbbaa9536bb",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-r2-multipart/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-r2-multipart/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-r2-multipart/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-r2-multipart/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-rate-headers",
+      "manifest": "crates/corelink-rate-headers/Cargo.toml",
+      "skill_slug": "own-corelink-rate-headers",
+      "source_commit": "38f43b6d6b7f461edbd3a9bdd5cff34f2fd64018",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-rate-headers/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-rate-headers/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-rate-headers/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-rate-headers/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-ratelimit",
+      "manifest": "crates/corelink-ratelimit/Cargo.toml",
+      "skill_slug": "own-corelink-ratelimit",
+      "source_commit": "6ed297f5b2b64cf97447985111a2ecbbaa9536bb",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-ratelimit/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-ratelimit/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-ratelimit/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-ratelimit/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-reapi",
+      "manifest": "crates/corelink-reapi/Cargo.toml",
+      "skill_slug": "own-corelink-reapi",
+      "source_commit": "6ed297f5b2b64cf97447985111a2ecbbaa9536bb",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-reapi/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-reapi/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-reapi/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-reapi/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-reapi-fuzz",
+      "manifest": "crates/corelink-reapi/fuzz/Cargo.toml",
+      "skill_slug": "own-corelink-reapi-fuzz",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-reapi-fuzz/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-reapi-fuzz/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-reapi-fuzz/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-reapi-fuzz/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-region",
+      "manifest": "crates/corelink-region/Cargo.toml",
+      "skill_slug": "own-corelink-region",
+      "source_commit": "6ed297f5b2b64cf97447985111a2ecbbaa9536bb",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-region/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-region/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-region/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-region/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-replica-worker",
+      "manifest": "crates/corelink-replica-worker/Cargo.toml",
+      "skill_slug": "own-corelink-replica-worker",
+      "source_commit": "6be030999de1f0e0fe62d3a9abb04ec2a4fefde6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-replica-worker/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-replica-worker/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-replica-worker/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-replica-worker/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-replication",
+      "manifest": "crates/corelink-replication/Cargo.toml",
+      "skill_slug": "own-corelink-replication",
+      "source_commit": "6be030999de1f0e0fe62d3a9abb04ec2a4fefde6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-replication/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-replication/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-replication/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-replication/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-replication-coordinator",
+      "manifest": "crates/corelink-replication-coordinator/Cargo.toml",
+      "skill_slug": "own-corelink-replication-coordinator",
+      "source_commit": "6be030999de1f0e0fe62d3a9abb04ec2a4fefde6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-replication-coordinator/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-replication-coordinator/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-replication-coordinator/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-replication-coordinator/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-rotation-adapters",
+      "manifest": "crates/corelink-rotation-adapters/Cargo.toml",
+      "skill_slug": "own-corelink-rotation-adapters",
+      "source_commit": "6be030999de1f0e0fe62d3a9abb04ec2a4fefde6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-rotation-adapters/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-rotation-adapters/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-rotation-adapters/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-rotation-adapters/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-runbook-tracker",
+      "manifest": "crates/corelink-runbook-tracker/Cargo.toml",
+      "skill_slug": "own-corelink-runbook-tracker",
+      "source_commit": "6be030999de1f0e0fe62d3a9abb04ec2a4fefde6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-runbook-tracker/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-runbook-tracker/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-runbook-tracker/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-runbook-tracker/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-runner-aggregate",
+      "manifest": "crates/corelink-runner-aggregate/Cargo.toml",
+      "skill_slug": "own-corelink-runner-aggregate",
+      "source_commit": "cd74a094c34ea80fb7e1914bf8a0da5fdf6216b6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-runner-aggregate/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-runner-aggregate/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-runner-aggregate/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-runner-aggregate/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-runner-overage",
+      "manifest": "crates/corelink-runner-overage/Cargo.toml",
+      "skill_slug": "own-corelink-runner-overage",
+      "source_commit": "6be030999de1f0e0fe62d3a9abb04ec2a4fefde6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-runner-overage/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-runner-overage/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-runner-overage/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-runner-overage/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-server",
+      "manifest": "crates/corelink-container/Cargo.toml",
+      "skill_slug": "own-corelink-server",
+      "source_commit": "91630baebe3ae7abe686cd4e06a5621ecdc4ab73",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-server/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-server/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-server/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-server/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-signup",
+      "manifest": "crates/corelink-signup/Cargo.toml",
+      "skill_slug": "own-corelink-signup",
+      "source_commit": "6be030999de1f0e0fe62d3a9abb04ec2a4fefde6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-signup/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-signup/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-signup/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-signup/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-slack-real",
+      "manifest": "crates/corelink-slack-real/Cargo.toml",
+      "skill_slug": "own-corelink-slack-real",
+      "source_commit": "6be030999de1f0e0fe62d3a9abb04ec2a4fefde6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-slack-real/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-slack-real/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-slack-real/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-slack-real/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-slo",
+      "manifest": "crates/corelink-slo/Cargo.toml",
+      "skill_slug": "own-corelink-slo",
+      "source_commit": "6ed297f5b2b64cf97447985111a2ecbbaa9536bb",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-slo/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-slo/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-slo/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-slo/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-statuspage-real",
+      "manifest": "crates/corelink-statuspage-real/Cargo.toml",
+      "skill_slug": "own-corelink-statuspage-real",
+      "source_commit": "6be030999de1f0e0fe62d3a9abb04ec2a4fefde6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-statuspage-real/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-statuspage-real/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-statuspage-real/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-statuspage-real/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-stripe-real",
+      "manifest": "crates/corelink-stripe-real/Cargo.toml",
+      "skill_slug": "own-corelink-stripe-real",
+      "source_commit": "16d9f0303d849a1ab3df14688bd2c7cdbfee8140",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-stripe-real/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-stripe-real/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-stripe-real/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-stripe-real/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-telemetry",
+      "manifest": "crates/corelink-telemetry/Cargo.toml",
+      "skill_slug": "own-corelink-telemetry",
+      "source_commit": "6ed297f5b2b64cf97447985111a2ecbbaa9536bb",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-telemetry/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-telemetry/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-telemetry/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-telemetry/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-tenant-path",
+      "manifest": "crates/tenant-path/Cargo.toml",
+      "skill_slug": "own-corelink-tenant-path",
+      "source_commit": "6ed297f5b2b64cf97447985111a2ecbbaa9536bb",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-tenant-path/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-tenant-path/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-tenant-path/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-tenant-path/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-tenant-path-fuzz",
+      "manifest": "crates/tenant-path/fuzz/Cargo.toml",
+      "skill_slug": "own-corelink-tenant-path-fuzz",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-tenant-path-fuzz/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-tenant-path-fuzz/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-tenant-path-fuzz/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-tenant-path-fuzz/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-terraform-drift-consumer",
+      "manifest": "crates/corelink-terraform-drift-consumer/Cargo.toml",
+      "skill_slug": "own-corelink-terraform-drift-consumer",
+      "source_commit": "cd74a094c34ea80fb7e1914bf8a0da5fdf6216b6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-terraform-drift-consumer/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-terraform-drift-consumer/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-terraform-drift-consumer/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-terraform-drift-consumer/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-tier-selection",
+      "manifest": "crates/corelink-tier-selection/Cargo.toml",
+      "skill_slug": "own-corelink-tier-selection",
+      "source_commit": "16d9f0303d849a1ab3df14688bd2c7cdbfee8140",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-tier-selection/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-tier-selection/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-tier-selection/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-tier-selection/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-tracing",
+      "manifest": "crates/corelink-tracing/Cargo.toml",
+      "skill_slug": "own-corelink-tracing",
+      "source_commit": "6ed297f5b2b64cf97447985111a2ecbbaa9536bb",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-tracing/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-tracing/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-tracing/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-tracing/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-transparency-log",
+      "manifest": "crates/corelink-transparency-log/Cargo.toml",
+      "skill_slug": "own-corelink-transparency-log",
+      "source_commit": "16d9f0303d849a1ab3df14688bd2c7cdbfee8140",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-transparency-log/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-transparency-log/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-transparency-log/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-transparency-log/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-turbo-bridge",
+      "manifest": "crates/corelink-turbo-bridge/Cargo.toml",
+      "skill_slug": "own-corelink-turbo-bridge",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-turbo-bridge/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-turbo-bridge/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-turbo-bridge/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-turbo-bridge/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-wasm",
+      "manifest": "crates/corelink-wasm/Cargo.toml",
+      "skill_slug": "own-corelink-wasm",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-wasm/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-wasm/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-wasm/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-wasm/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-worker",
+      "manifest": "crates/corelink-worker/Cargo.toml",
+      "skill_slug": "own-corelink-worker",
+      "source_commit": "16d9f0303d849a1ab3df14688bd2c7cdbfee8140",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-worker/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-worker/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-worker/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-worker/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "corelink-worker-fuzz",
+      "manifest": "crates/corelink-worker/fuzz/Cargo.toml",
+      "skill_slug": "own-corelink-worker-fuzz",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-corelink-worker-fuzz/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/corelink-worker-fuzz/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/corelink-worker-fuzz/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/corelink-worker-fuzz/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "e2e-billing-flow",
+      "manifest": "tests/e2e-billing-flow/Cargo.toml",
+      "skill_slug": "own-e2e-billing-flow",
+      "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-e2e-billing-flow/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/e2e-billing-flow/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/e2e-billing-flow/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/e2e-billing-flow/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "e2e-byok-revoke",
+      "manifest": "tests/e2e-byok-revoke/Cargo.toml",
+      "skill_slug": "own-e2e-byok-revoke",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-e2e-byok-revoke/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/e2e-byok-revoke/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/e2e-byok-revoke/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/e2e-byok-revoke/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "e2e-chaos",
+      "manifest": "tests/e2e-chaos/Cargo.toml",
+      "skill_slug": "own-e2e-chaos",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-e2e-chaos/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/e2e-chaos/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/e2e-chaos/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/e2e-chaos/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "e2e-dsr",
+      "manifest": "tests/e2e-dsr/Cargo.toml",
+      "skill_slug": "own-e2e-dsr",
+      "source_commit": "cb94e251c0f17382565bf863f517945cbb2a84d6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-e2e-dsr/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/e2e-dsr/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/e2e-dsr/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/e2e-dsr/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "e2e-failover-router",
+      "manifest": "tests/e2e-failover-router/Cargo.toml",
+      "skill_slug": "own-e2e-failover-router",
+      "source_commit": "cb94e251c0f17382565bf863f517945cbb2a84d6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-e2e-failover-router/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/e2e-failover-router/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/e2e-failover-router/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/e2e-failover-router/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "e2e-pilot-onboarding",
+      "manifest": "tests/e2e-pilot-onboarding/Cargo.toml",
+      "skill_slug": "own-e2e-pilot-onboarding",
+      "source_commit": "cb94e251c0f17382565bf863f517945cbb2a84d6",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-e2e-pilot-onboarding/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/e2e-pilot-onboarding/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/e2e-pilot-onboarding/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/e2e-pilot-onboarding/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "e2e-replication-failover",
+      "manifest": "tests/e2e-replication-failover/Cargo.toml",
+      "skill_slug": "own-e2e-replication-failover",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-e2e-replication-failover/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/e2e-replication-failover/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/e2e-replication-failover/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/e2e-replication-failover/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "e2e-resilience",
+      "manifest": "tests/e2e-resilience/Cargo.toml",
+      "skill_slug": "own-e2e-resilience",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-e2e-resilience/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/e2e-resilience/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/e2e-resilience/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/e2e-resilience/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "e2e-signup-flow",
+      "manifest": "tests/e2e-signup-flow/Cargo.toml",
+      "skill_slug": "own-e2e-signup-flow",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-e2e-signup-flow/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/e2e-signup-flow/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/e2e-signup-flow/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/e2e-signup-flow/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "e2e-tenant-isolation",
+      "manifest": "tests/e2e-tenant-isolation/Cargo.toml",
+      "skill_slug": "own-e2e-tenant-isolation",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-e2e-tenant-isolation/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/e2e-tenant-isolation/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/e2e-tenant-isolation/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/e2e-tenant-isolation/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "e2e-user-journeys",
+      "manifest": "tests/e2e-user-journeys/Cargo.toml",
+      "skill_slug": "own-e2e-user-journeys",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "H",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-e2e-user-journeys/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/e2e-user-journeys/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/e2e-user-journeys/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/e2e-user-journeys/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "migrate-single-to-multi-region",
+      "manifest": "apps/migrate-single-to-multi-region/Cargo.toml",
+      "skill_slug": "own-migrate-single-to-multi-region",
+      "source_commit": "1177dad2ca2a9f21c29b5a118aa7944b77147798",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-migrate-single-to-multi-region/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/migrate-single-to-multi-region/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/migrate-single-to-multi-region/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/migrate-single-to-multi-region/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    },
+    {
+      "package": "sbom-publish",
+      "manifest": "tools/sbom-publish/Cargo.toml",
+      "skill_slug": "own-sbom-publish",
+      "source_commit": "398e586ccef712477f2a4ce51e026443b67e5747",
+      "profile": "S",
+      "artifacts": {
+        "skill": {
+          "path": ".claude/skills/own-sbom-publish/SKILL.md",
+          "structural": true
+        },
+        "reference": {
+          "path": "docs/ownership/crates/sbom-publish/REFERENCE.md",
+          "structural": true
+        },
+        "blast_radius": {
+          "path": "docs/ownership/crates/sbom-publish/BLAST_RADIUS.md",
+          "structural": true
+        },
+        "maintenance": {
+          "path": "docs/ownership/crates/sbom-publish/MAINTENANCE.md",
+          "structural": true
+        }
+      },
+      "structural": "PASS",
+      "artifact_integrity": "PASS",
+      "cold_review": "UNVERIFIED",
+      "review_verdicts": {},
+      "publication": "NOT_PUBLISHED",
+      "errors": {}
+    }
+  ],
+  "not_proven": [
+    "semantic completeness",
+    "independent cold review",
+    "Cargo/runtime",
+    "GitHub deduplication",
+    "issue publication",
+    "repository merge status"
+  ]
+}

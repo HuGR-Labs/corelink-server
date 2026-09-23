@@ -1,0 +1,436 @@
+{
+  "schema": "corelink-ownership-relation-study/1",
+  "state": "draft",
+  "graph_complete": false,
+  "relations": [
+    {
+      "id": "REL-001",
+      "key": "repo:1232040291:boundary:hash-blake3-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-001",
+      "dependency_direction": "hash→blake3",
+      "owner_coordination": "hash",
+      "source_ids": [
+        "S01",
+        "S03"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-002",
+      "key": "repo:1232040291:boundary:hash-subtle-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-002",
+      "dependency_direction": "hash→subtle",
+      "owner_coordination": "hash",
+      "source_ids": [
+        "S01",
+        "S03"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-003",
+      "key": "repo:1232040291:boundary:hash-bytes-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-003",
+      "dependency_direction": "hash→bytes",
+      "owner_coordination": "hash",
+      "source_ids": [
+        "S01",
+        "S04"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-004",
+      "key": "repo:1232040291:boundary:hash-hex-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-004",
+      "dependency_direction": "hash→hex",
+      "owner_coordination": "hash",
+      "source_ids": [
+        "S01",
+        "S03"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-005",
+      "key": "repo:1232040291:boundary:hash-thiserror-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-005",
+      "dependency_direction": "hash→thiserror",
+      "owner_coordination": "hash",
+      "source_ids": [
+        "S01",
+        "S06"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-006",
+      "key": "repo:1232040291:boundary:hash-test-proptest-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-006",
+      "dependency_direction": "testes→proptest",
+      "owner_coordination": "hash",
+      "source_ids": [
+        "S01",
+        "S09"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-007",
+      "key": "repo:1232040291:boundary:hash-bench-criterion-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-007",
+      "dependency_direction": "benches→criterion",
+      "owner_coordination": "hash",
+      "source_ids": [
+        "S01"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-008",
+      "key": "repo:1232040291:boundary:hash-test-tokio-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-008",
+      "dependency_direction": "testes→tokio",
+      "owner_coordination": "hash",
+      "source_ids": [
+        "S01",
+        "S07"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-009",
+      "key": "repo:1232040291:boundary:hash-test-thiserror-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-009",
+      "dependency_direction": "testes→thiserror",
+      "owner_coordination": "hash",
+      "source_ids": [
+        "S01",
+        "S07"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-010",
+      "key": "repo:1232040291:boundary:hash-crypto-export-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-010",
+      "dependency_direction": "crypto→hash",
+      "owner_coordination": "hash; peer crypto pendente",
+      "source_ids": [
+        "S13"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-011",
+      "key": "repo:1232040291:boundary:hash-client-types-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-011",
+      "dependency_direction": "client-verify→hash",
+      "owner_coordination": "hash; peer client-verify pendente",
+      "source_ids": [
+        "S14"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-012",
+      "key": "repo:1232040291:boundary:hash-worker-write-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-012",
+      "dependency_direction": "worker→hash",
+      "owner_coordination": "worker; peer pendente",
+      "source_ids": [
+        "S05",
+        "S15"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-013",
+      "key": "repo:1232040291:boundary:hash-client-error-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-013",
+      "dependency_direction": "client-verify→hash",
+      "owner_coordination": "hash; peer client-verify pendente",
+      "source_ids": [
+        "S06",
+        "S14"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-014",
+      "key": "repo:1232040291:boundary:hash-worker-key-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-014",
+      "dependency_direction": "worker→hash",
+      "owner_coordination": "worker; peer pendente",
+      "source_ids": [
+        "S16"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-015",
+      "key": "repo:1232040291:boundary:hash-container-envelope-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-015",
+      "dependency_direction": "server→hash",
+      "owner_coordination": "corelink-server REL-047 fingerprint matched; named owner/runtime unverified",
+      "source_ids": [
+        "S17"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-016",
+      "key": "repo:1232040291:boundary:hash-server-bazel-limit-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-016",
+      "dependency_direction": "server→hash",
+      "owner_coordination": "corelink-server REL-048 fingerprint matched; named owner/runtime unverified",
+      "source_ids": [
+        "S18",
+        "S02"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-017",
+      "key": "repo:1232040291:boundary:hash-test-memory-store-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-017",
+      "dependency_direction": "test→hash",
+      "owner_coordination": "hash",
+      "source_ids": [
+        "S07"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-018",
+      "key": "repo:1232040291:boundary:hash-test-regressions-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-018",
+      "dependency_direction": "test→hash",
+      "owner_coordination": "hash",
+      "source_ids": [
+        "S08",
+        "S09"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-019",
+      "key": "repo:1232040291:boundary:hash-ci-pr-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-019",
+      "dependency_direction": "workflow→hash",
+      "owner_coordination": "integração do repo",
+      "source_ids": [
+        "S12"
+      ],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-020",
+      "key": "repo:1232040291:boundary:hash-ac-digest-serde-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-020",
+      "dependency_direction": "corelink-ac→corelink-hash",
+      "owner_coordination": "corelink-ac source confirms; peer BLAST atomic counterpart absent",
+      "source_ids": ["S20"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-021",
+      "key": "repo:1232040291:boundary:hash-meta-blob-key-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-021",
+      "dependency_direction": "corelink-meta→corelink-hash",
+      "owner_coordination": "corelink-meta B01 summary located; no shared atomic peer identity",
+      "source_ids": ["S21"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-022",
+      "key": "repo:1232040291:boundary:hash-meta-migration-fingerprint-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-022",
+      "dependency_direction": "corelink-meta→corelink-hash",
+      "owner_coordination": "corelink-meta B02 summary located; no shared atomic peer identity",
+      "source_ids": ["S22"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-023",
+      "key": "repo:1232040291:boundary:hash-reapi-verified-write-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-023",
+      "dependency_direction": "corelink-reapi→corelink-hash",
+      "owner_coordination": "corelink-reapi REL-001 counterpart located; no shared identity",
+      "source_ids": ["S23"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-024",
+      "key": "repo:1232040291:boundary:hash-bazel-bridge-size-limit-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-024",
+      "dependency_direction": "corelink-bazel-bridge→corelink-hash",
+      "owner_coordination": "corelink-bazel-bridge B05 prose counterpart located; no atomic peer identity",
+      "source_ids": ["S24", "S25"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-025",
+      "key": "repo:1232040291:boundary:hash-signup-r2-integrity-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-025",
+      "dependency_direction": "e2e-signup-flow→corelink-hash",
+      "owner_coordination": "e2e-signup-flow; peer pendente",
+      "source_ids": ["S26"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-026",
+      "key": "repo:1232040291:boundary:hash-server-cas-read-limit-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-026",
+      "dependency_direction": "corelink-server→corelink-hash",
+      "owner_coordination": "corelink-server REL-049 fingerprint matched; named owner/runtime unverified",
+      "source_ids": ["S27"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-027",
+      "key": "repo:1232040291:boundary:hash-server-cas-delete-limit-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-027",
+      "dependency_direction": "corelink-server→corelink-hash",
+      "owner_coordination": "corelink-server REL-050 fingerprint matched; named owner/runtime unverified",
+      "source_ids": ["S28"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-028",
+      "key": "repo:1232040291:boundary:hash-cas-manifest-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-028",
+      "dependency_direction": "corelink-cas→corelink-hash",
+      "owner_coordination": "corelink-cas manifest edge; semantic use and peer BLAST unknown",
+      "source_ids": ["S29"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-029",
+      "key": "repo:1232040291:boundary:hash-fuzz-harness-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-029",
+      "dependency_direction": "corelink-hash-fuzz→corelink-hash",
+      "owner_coordination": "corelink-hash-fuzz; peer pendente",
+      "source_ids": ["F01", "F03", "F04", "F09", "F10", "F14"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-030",
+      "key": "repo:1232040291:boundary:hash-fuzz-digest-parse-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-030",
+      "dependency_direction": "digest_parse→corelink-hash",
+      "owner_coordination": "corelink-hash-fuzz; peer pendente",
+      "source_ids": ["F03"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-031",
+      "key": "repo:1232040291:boundary:hash-fuzz-verify-body-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-031",
+      "dependency_direction": "verify_body→corelink-hash",
+      "owner_coordination": "corelink-hash-fuzz; peer pendente",
+      "source_ids": ["F04"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-032",
+      "key": "repo:1232040291:boundary:meta-fuzz-hash-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-032",
+      "dependency_direction": "corelink-meta-fuzz→corelink-hash",
+      "owner_coordination": "corelink-meta-fuzz REL-002 surface counterpart located; no shared identity",
+      "source_ids": ["M01", "M02", "M03"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-033",
+      "key": "repo:1232040291:boundary:worker-fuzz-hash-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-033",
+      "dependency_direction": "corelink-worker-fuzz→corelink-hash",
+      "owner_coordination": "corelink-worker-fuzz REL-002 fingerprint matched; named owner/runtime unverified",
+      "source_ids": ["W01", "W02", "W03"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-034",
+      "key": "repo:1232040291:boundary:hash-ci-fuzz-pr-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-034",
+      "dependency_direction": "workflow:fuzz-smoke→corelink-hash-fuzz",
+      "owner_coordination": "repository-integration; peer pendente",
+      "source_ids": ["S12"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-035",
+      "key": "repo:1232040291:boundary:hash-ci-wasm-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-035",
+      "dependency_direction": "workflow:wasm-build→corelink-hash",
+      "owner_coordination": "repository-integration; peer pendente",
+      "source_ids": ["S12"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-036",
+      "key": "repo:1232040291:boundary:hash-fuzz-cache-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-036",
+      "dependency_direction": "workflow-cache→corelink-hash-fuzz",
+      "owner_coordination": "repository-integration; peer pendente",
+      "source_ids": ["S12"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-037",
+      "key": "repo:1232040291:boundary:hash-container-adapter-cache-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-037",
+      "dependency_direction": "corelink-server:adapter-cache→corelink-hash",
+      "owner_coordination": "corelink-server REL-034 aggregate only; no atomic peer counterpart",
+      "source_ids": ["server-source"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-038",
+      "key": "repo:1232040291:boundary:hash-container-byok-tcs-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-038",
+      "dependency_direction": "corelink-server:byok-tcs→corelink-hash",
+      "owner_coordination": "corelink-server REL-034 aggregate only; no atomic peer counterpart",
+      "source_ids": ["server-source"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-039",
+      "key": "repo:1232040291:boundary:hash-container-byok-transition-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-039",
+      "dependency_direction": "corelink-server:byok-transition→corelink-hash",
+      "owner_coordination": "corelink-server REL-034 aggregate only; no atomic peer counterpart",
+      "source_ids": ["server-source"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-040",
+      "key": "repo:1232040291:boundary:hash-container-billing-payload-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-040",
+      "dependency_direction": "corelink-server:billing-ingest→corelink-hash",
+      "owner_coordination": "corelink-server REL-034 hash aggregate and REL-019 ingest route; source recaptured at main b9b3ee8, peer identity/effects remain unreconciled",
+      "source_ids": ["server-source"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-041",
+      "key": "repo:1232040291:boundary:hash-container-r2-parts-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-041",
+      "dependency_direction": "corelink-server:multipart-helper→corelink-hash",
+      "owner_coordination": "corelink-server REL-034 aggregate only; no atomic peer counterpart",
+      "source_ids": ["server-source"],
+      "peer_review": "not_reconciled"
+    },
+    {
+      "id": "REL-042",
+      "key": "repo:1232040291:boundary:hash-client-ffi-001",
+      "local_anchor": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md#rel-042",
+      "dependency_direction": "corelink-client-verify:ffi-alias→corelink-hash",
+      "owner_coordination": "corelink-client-verify B02 module counterpart located; no shared identity",
+      "source_ids": ["client-verify-source"],
+      "peer_review": "not_reconciled"
+    }
+  ],
+  "note": "Índice de referências; contratos e impactos canônicos do piloto ficam integralmente no BLAST_RADIUS.md. Não é registry aprovado."
+}
