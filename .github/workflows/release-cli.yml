@@ -143,6 +143,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # The pinned toolchain is lazily installed by the rustc shim. Invoke
+          # the repository assertion before asking rustup to add a target.
+          bash scripts/ci-assert-pinned-toolchain.sh
           rustup target add "${TARGET_TRIPLE}"
           bash scripts/ci-assert-pinned-toolchain.sh "${TARGET_TRIPLE}"
 
@@ -216,15 +219,10 @@ jobs:
         run: |
           set -euo pipefail
           EXPECTED_CARGO_ZIGBUILD_VERSION=0.19.8
-          ACTUAL_CARGO_ZIGBUILD_VERSION="$(cargo-zigbuild --version | awk '{print $2}')"
-          if [ "$ACTUAL_CARGO_ZIGBUILD_VERSION" != "$EXPECTED_CARGO_ZIGBUILD_VERSION" ]; then
-            echo "::error::release-cli needs cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}, got ${ACTUAL_CARGO_ZIGBUILD_VERSION}." >&2
-            exit 1
-          fi
+          cargo-zigbuild --version | grep -Fx "cargo-zigbuild ${EXPECTED_CARGO_ZIGBUILD_VERSION}"
           ZIGBUILD_CACHE="${RUNNER_TEMP}/cargo-zigbuild/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${TARGET_TRIPLE}"
           mkdir -p "$ZIGBUILD_CACHE"
           echo "CARGO_ZIGBUILD_CACHE_DIR=${ZIGBUILD_CACHE}" >> "$GITHUB_ENV"
-          cargo-zigbuild --version
 
       # Reproducible build: SOURCE_DATE_EPOCH from git commit timestamp.
       - name: Set SOURCE_DATE_EPOCH
