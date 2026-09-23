@@ -120,8 +120,10 @@ jobs:
                   raise SystemExit(f"{name} does not require cleanup before upload")
               if re.search(r"full plan output uploaded|gh run download .*terraform-plan", doc):
                   raise SystemExit(f"{name} promises or instructs retrieval of a raw plan")
-              if "id-token: write" in doc:
-                  raise SystemExit(f"{name} claims the workflow requests GitHub OIDC")
+              if name == "WI-S13-004" and "no `id-token: write` claim is requested" not in doc:
+                  raise SystemExit(f"{name} omits the no-OIDC permission contract")
+              if name == "RB-FM-206" and "does not request or exchange" not in doc:
+                  raise SystemExit(f"{name} omits the no-OIDC authentication contract")
 
           workflow = Path(".github/workflows/terraform-drift.yml").read_text(
               encoding="utf-8"
