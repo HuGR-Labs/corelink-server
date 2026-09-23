@@ -42,7 +42,7 @@ def write_registry(root: Path, registry: dict) -> None:
 
 
 def test_live_registry_covers_all_73_specific_contracts() -> None:
-    assert guard.verify(ROOT) == {"records": 73, "unfinished": 2, "done": 71}
+    assert guard.verify(ROOT) == {"records": 73, "unfinished": 0, "done": 73}
 
 
 def test_global_guard_accepts_later_shared_done_verifier() -> None:
@@ -105,7 +105,7 @@ def test_b229_production_done_contract_rejects_stale_proposal_next_action(tmp_pa
 
 def test_open_state_rule_set_is_dense_and_executable() -> None:
     assert set(open_guard.RULES) == {f"B-{number}" for number in range(171, 244)}
-    assert open_guard.verify(ROOT) == {"records": 2, "unfinished": 2}
+    assert open_guard.verify(ROOT) == {"records": 0, "unfinished": 0}
 
 
 def test_open_state_missing_artifact_is_red(tmp_path: Path) -> None:

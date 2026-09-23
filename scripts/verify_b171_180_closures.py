@@ -68,7 +68,7 @@ CONTRACTS: dict[str, tuple[str, tuple[str, ...], str]] = {
         "ON CONFLICT(tenant_id, year_month)",
     ),
     "B-179": (
-        "worker/src/index_special_routes.ts",
+        "worker/src/index_special_passthrough.ts",
         (r"route\.routeKind\s*===\s*\"oci_v2\"", r"ociStub\.fetch", r"x-corelink-client-ip", r"cf-connecting-ip"),
         "ociStub.fetch(ociReq)",
     ),
