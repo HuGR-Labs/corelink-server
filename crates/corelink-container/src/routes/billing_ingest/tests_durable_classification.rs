@@ -27,6 +27,7 @@ use super::*;
 struct Fixture {
     db: Arc<Mutex<Connection>>,
     stop: Arc<AtomicBool>,
+    drop_next_insert_ack: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
     endpoint: String,
 }
@@ -44,15 +45,16 @@ impl Fixture {
         listener.set_nonblocking(true).expect("nonblocking listener");
         let endpoint = format!("http://{}", listener.local_addr().expect("address"));
         let stop = Arc::new(AtomicBool::new(false));
-        let (thread_db, thread_stop) = (Arc::clone(&db), Arc::clone(&stop));
+        let drop_next_insert_ack = Arc::new(AtomicBool::new(false));
+        let (thread_db, thread_stop, thread_drop_next_insert_ack) = (Arc::clone(&db), Arc::clone(&stop), Arc::clone(&drop_next_insert_ack));
         let worker = thread::spawn(move || while !thread_stop.load(Ordering::Acquire) {
             match listener.accept() {
-                Ok((mut stream, _)) => respond(&mut stream, &thread_db),
+                Ok((mut stream, _)) => respond(&mut stream, &thread_db, &thread_drop_next_insert_ack),
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => thread::sleep(Duration::from_millis(2)),
                 Err(_) => break,
             }
         });
-        Self { db, stop, worker: Some(worker), endpoint }
+        Self { db, stop, drop_next_insert_ack, worker: Some(worker), endpoint }
     }
 
     fn store(&self) -> D1UsageStagingStore {
@@ -62,6 +64,10 @@ impl Fixture {
             cf_api_token: "test".to_owned(), d1_database_id: "test".to_owned(),
         };
         D1UsageStagingStore::new(Arc::new(D1HttpClient::new_for_loopback_test(&env, &self.endpoint).expect("loopback D1")))
+    }
+
+    fn lose_next_insert_ack(&self) {
+        self.drop_next_insert_ack.store(true, Ordering::Release);
     }
 }
 
@@ -77,7 +83,11 @@ impl Drop for Fixture {
 }
 
 #[rustfmt::skip]
-fn respond(stream: &mut TcpStream, db: &Arc<Mutex<Connection>>) {
+fn respond(
+    stream: &mut TcpStream,
+    db: &Arc<Mutex<Connection>>,
+    drop_next_insert_ack: &AtomicBool,
+) {
     stream.set_read_timeout(Some(Duration::from_secs(1))).expect("read timeout");
     let mut bytes = Vec::new();
     loop {
@@ -105,6 +115,15 @@ fn respond(stream: &mut TcpStream, db: &Arc<Mutex<Connection>>) {
         db.execute(sql, params_from_iter(params)).expect("sqlite mutation");
         Vec::new()
     };
+    // The durable SQLite mutation is already committed. Dropping this response
+    // simulates a transport ACK lost after D1 accepted the INSERT, so the retry
+    // must discover the same durable winner and return Deduped.
+    if sql.contains("INSERT INTO usage_event_staging ")
+        && sql.contains("RETURNING")
+        && drop_next_insert_ack.swap(false, Ordering::AcqRel)
+    {
+        return;
+    }
     let body = serde_json::json!({ "result": [{ "results": rows, "success": true }], "success": true, "errors": [] }).to_string();
     write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).expect("response write");
 }
@@ -126,6 +145,31 @@ async fn durable_classification_matrix() {
     let same = record(7200, &hex64(0x31));
     assert_eq!(store.stage(&same).await, Ok(StageOutcome::Inserted));
     assert_eq!(store.stage(&same).await, Ok(StageOutcome::Deduped));
+
+    let lost_ack = Fixture::new();
+    let store = lost_ack.store();
+    let lost_ack_record = record(7200, &hex64(0x35));
+    lost_ack.lose_next_insert_ack();
+    assert!(
+        store.stage(&lost_ack_record).await.is_err(),
+        "a lost post-commit ACK leaves the caller uncertain"
+    );
+    assert_eq!(
+        store.stage(&lost_ack_record).await,
+        Ok(StageOutcome::Deduped),
+        "a retry after the lost ACK must classify the durable winner"
+    );
+    let winner: (i64, i64) = lost_ack
+        .db
+        .lock()
+        .expect("sqlite lock")
+        .query_row(
+            "SELECT COUNT(*), MAX(qty) FROM usage_event_staging",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("single durable winner");
+    assert_eq!(winner, (1, 7200));
 
     let mismatch = Fixture::new();
     let store = mismatch.store();
