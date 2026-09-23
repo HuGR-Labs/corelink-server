@@ -80,12 +80,19 @@ on:
     - cron: "20 * * * *"
   workflow_dispatch:
     inputs:
+      notification_mode:
+        description: "read-only evaluates the full detector without paging; page preserves manual paging"
+        required: true
+        default: "read-only"
+        type: choice
+        options: ["read-only", "page"]
       lag_hours:
         description: "Lag threshold T in hours (default 3 = three missed hourly ticks)"
         required: false
         default: "3"
 
-# Read-only — this cron reads D1 and pages. It writes nothing.
+# The detector reads D1 only. Scheduled runs page on a failing verdict. Manual
+# runs default to the bounded read-only mode; manual paging is explicit.
 permissions:
   contents: read
 
@@ -105,10 +112,12 @@ env:
 jobs:
   archive-lag:
     name: audit-archive-lag
-    # Self-hosted `corelink` per the zero-hosted-Actions mandate. No cargo
-    # build here — this job is python3 + curl only, so it needs neither the
-    # host toolchain step nor a cargo cache.
-    runs-on: corelink
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.ref == 'refs/heads/main' &&
+      github.ref_protected == true &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout repo
@@ -123,6 +132,7 @@ jobs:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           D1_DATABASE_ID: ${{ env.AUDIT_D1_DATABASE_ID }}
           LAG_HOURS: ${{ github.event.inputs.lag_hours || env.DEFAULT_LAG_HOURS }}
+          NOTIFICATION_MODE: ${{ github.event.inputs.notification_mode || 'read-only' }}
         run: |
           set -euo pipefail
           echo "::add-mask::${CF_API_TOKEN:-}"
@@ -134,7 +144,8 @@ jobs:
           fi
           python3 - <<'PY'
           import json, os, sys, time
-          import requests
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
 
           acct = os.environ["CF_ACCOUNT_ID"]
           db = os.environ["D1_DATABASE_ID"]
@@ -151,16 +162,27 @@ jobs:
           headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
           def d1_query(sql):
+              request = Request(
+                  url,
+                  data=json.dumps({"sql": sql, "params": []}).encode("utf-8"),
+                  headers=headers,
+                  method="POST",
+              )
               try:
-                  r = requests.post(url, headers=headers, json={"sql": sql, "params": []}, timeout=60)
-              except Exception as exc:  # network / TLS — inconclusive, fail closed
+                  with urlopen(request, timeout=60) as response:
+                      status = response.status
+                      response_text = response.read().decode("utf-8")
+              except HTTPError as exc:
+                  response_text = exc.read().decode("utf-8", errors="replace")
+                  status = exc.code
+              except (URLError, TimeoutError, OSError) as exc:  # network / TLS — inconclusive, fail closed
                   sys.stderr.write(f"AUDIT_ARCHIVE_LAG_ERROR: D1 request failed: {exc}\n")
                   sys.exit(3)
-              if r.status_code != 200:
-                  sys.stderr.write(f"AUDIT_ARCHIVE_LAG_ERROR: D1 query HTTP {r.status_code}: {r.text[:500]}\n")
+              if status != 200:
+                  sys.stderr.write(f"AUDIT_ARCHIVE_LAG_ERROR: D1 query HTTP {status}: {response_text[:500]}\n")
                   sys.exit(3)
               try:
-                  body = r.json()
+                  body = json.loads(response_text)
               except ValueError as exc:
                   sys.stderr.write(f"AUDIT_ARCHIVE_LAG_ERROR: D1 response not JSON: {exc}\n")
                   sys.exit(3)
@@ -268,6 +290,10 @@ jobs:
           # A partial failure now pages on its OWN — it does not need the
           # whole-table archiver to also look idle (B-022).
           page = (clause1 and clause2) or (partitions_failed > 0)
+          notify = (
+              os.environ.get("GITHUB_EVENT_NAME") == "schedule"
+              or os.environ.get("NOTIFICATION_MODE") == "page"
+          )
 
           summary = os.environ.get("GITHUB_STEP_SUMMARY")
           lines = [
@@ -295,6 +321,8 @@ jobs:
               f"verdict: **{'PAGE' if page else 'OK'}** "
               f"(absence = {clause1 and clause2}, partial-failure = {partitions_failed > 0})",
               "",
+              f"notification: **{'enabled' if notify else 'suppressed (manual read-only mode)'}**",
+              "",
               "Both predicate measurements — and the quarantine census — are "
               "emitted on every run, pass or fail, so the backlog tail and the "
               "unarchivable population are observable without opening a page. A "
@@ -310,6 +338,7 @@ jobs:
           if out:
               with open(out, "a") as fh:
                   fh.write(f"page={'1' if page else '0'}\n")
+                  fh.write(f"notify={'true' if notify else 'false'}\n")
                   fh.write(f"pending_old={pending_old}\n")
                   fh.write(f"oldest_pending_ms={oldest_pending_ms}\n")
                   fh.write(f"last_archived_ms={last_archived_ms}\n")
@@ -321,7 +350,7 @@ jobs:
           PY
 
       - name: PagerDuty SEV-0 page — archiver is not touching pending work
-        if: steps.measure.outputs.page == '1'
+        if: steps.measure.outputs.page == '1' && steps.measure.outputs.notify == 'true'
         env:
           PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
           PENDING_OLD: ${{ steps.measure.outputs.pending_old }}

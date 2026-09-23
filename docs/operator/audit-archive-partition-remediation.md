@@ -106,8 +106,34 @@ available through the read-only GitHub Actions listing were all failures:
 
 The Sep 1 run's summary explicitly said `verdict: PAGE` because the
 per-partition failure predicate was true. Absence of newer runs is not green
-evidence; this packet does not dispatch one because the workflow pages
-PagerDuty on a red result.
+evidence. The bounded full-detector read mode below now permits a manual
+production check without sending a PagerDuty event.
+
+## Bounded full-detector read
+
+The `audit-archive-lag` workflow now runs on GitHub-hosted `ubuntu-24.04`. Its
+scheduled path keeps the production PagerDuty behavior. A manual dispatch on
+protected `main` defaults to `notification_mode=read-only`: it executes the
+same four D1 SELECTs, computes the complete absence and per-partition verdict,
+and writes the normal job summary, while skipping the PagerDuty step. A red
+read-only verdict still fails the run, so suppressing a page does not turn an
+unhealthy or inconclusive read green. Use this mode for the three independent
+post-repair closure runs:
+
+```bash
+gh workflow run audit-archive-lag.yml \
+  --ref main \
+  --field notification_mode=read-only \
+  --field lag_hours=3
+```
+
+The live job is limited to the canonical repository's protected `main`; the
+hosted Python CI gate checks the runner and adversarially verifies that
+read-only mode cannot reach the PagerDuty step. `notification_mode=page`
+retains an explicit, owner-triggered manual paging path. Each successful run
+provides one full detector sample; the separate B-063 population proof still
+requires three independent zero-row reads, and a green detector alone does
+not close the incident.
 
 ## B-112 reconciliation
 
