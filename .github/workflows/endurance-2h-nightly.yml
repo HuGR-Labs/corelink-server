@@ -215,6 +215,7 @@ jobs:
         env:
           K6_TARGET_HOST: ${{ steps.target_host.outputs.target_host }}
           K6_STAGING_TEARDOWN_TOKEN: ${{ secrets.K6_STAGING_TEARDOWN_TOKEN }}
+          TARGET_DEPLOYMENT_SHA: ${{ steps.target_host.outputs.deployment_sha }}
         timeout-minutes: 1
         run: |
           set -euo pipefail
@@ -229,7 +230,16 @@ jobs:
             --header 'Content-Type: application/json' \
             --data "$payload" \
             "${K6_TARGET_HOST}/_internal/load-test/teardown" \
-            --output /dev/null
+            --output "${RUNNER_TEMP}/teardown-receipt.json"
+          python3 scripts/validate_load_teardown_receipt.py \
+            --receipt "${RUNNER_TEMP}/teardown-receipt.json" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --scenario endurance-2h \
+            --deployment-sha "${TARGET_DEPLOYMENT_SHA}"
+          mkdir -p tests/load/results/endurance-2h
+          cp "${RUNNER_TEMP}/teardown-receipt.json" \
+            "tests/load/results/endurance-2h/teardown-receipt-${GITHUB_RUN_ID}.json"
+          echo "deletion_proven=true" >> "$GITHUB_OUTPUT"
 
       - name: write receipt and teardown checkpoint
         if: always()
@@ -238,6 +248,7 @@ jobs:
           DURATION: ${{ github.event.inputs.duration || '2h' }}
           VUS: '50'
           TEARDOWN_STATUS: ${{ steps.teardown.outcome || 'not-run' }}
+          TEARDOWN_DELETION_PROVEN: ${{ steps.teardown.outputs.deletion_proven || 'false' }}
         run: |
           set -euo pipefail
           RESULTS_DIR=tests/load/results/endurance-2h
@@ -247,7 +258,7 @@ jobs:
           while IFS= read -r artifact; do
             [[ -z "$artifact" ]] && continue
             SHA_LINES+="$(sha256sum "$artifact")"$'\n'
-          done < <(find "$RESULTS_DIR" -maxdepth 1 -type f \( -name 'endurance-2h-summary-*.json' -o -name 'endurance-2h-results-*.json' \) -print)
+          done < <(find "$RESULTS_DIR" -maxdepth 1 -type f \( -name 'endurance-2h-summary-*.json' -o -name 'endurance-2h-results-*.json' -o -name 'teardown-receipt-*.json' \) -print)
           printf '%s\n' "$TEARDOWN_STATUS" > "$RESULTS_DIR/checkpoint-teardown"
           export RECEIPT STATUS TARGET_HOST DURATION SHA_LINES TEARDOWN_STATUS
           python3 - <<'PY'
@@ -277,7 +288,7 @@ jobs:
               "vus": int(os.environ["VUS"]),
               "status": os.environ["STATUS"],
               "teardown_status": os.environ["TEARDOWN_STATUS"],
-              "teardown_deletion_proven": False,
+              "teardown_deletion_proven": os.environ["TEARDOWN_DELETION_PROVEN"] == "true",
               "artifact_sha256": hashes,
               "checkpoints": sorted(name for name in os.listdir(receipt_dir) if name.startswith("checkpoint-")),
               "teardown_at": datetime.now(timezone.utc).isoformat(),

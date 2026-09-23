@@ -100,8 +100,20 @@ def verify_workflow(text: str) -> list[str]:
         errors.append("teardown must identify exactly this run and the endurance scenario")
     if '"teardown_status": os.environ["TEARDOWN_STATUS"]' not in text:
         errors.append("receipt must record the teardown outcome")
-    if '"teardown_deletion_proven": False' not in text:
-        errors.append("receipt must not claim server-side deletion without an exact cleanup receipt")
+    if '"teardown_deletion_proven": os.environ["TEARDOWN_DELETION_PROVEN"] == "true"' not in text:
+        errors.append("receipt must bind deletion proof to a validated server receipt")
+    if "TEARDOWN_DELETION_PROVEN: ${{ steps.teardown.outputs.deletion_proven || 'false' }}" not in text:
+        errors.append("lane receipt must default deletion proof to false")
+    if '"${RUNNER_TEMP}/teardown-receipt.json"' not in teardown:
+        errors.append("teardown response must be retained for validation")
+    if "scripts/validate_load_teardown_receipt.py" not in teardown:
+        errors.append("teardown response must pass the exact receipt validator")
+    if '"tests/load/results/endurance-2h/teardown-receipt-${GITHUB_RUN_ID}.json"' not in teardown:
+        errors.append("validated teardown receipt must be retained in the run artifact")
+    if 'echo "deletion_proven=true" >> "$GITHUB_OUTPUT"' not in teardown:
+        errors.append("deletion proof must be emitted only after response validation")
+    if "-name 'teardown-receipt-*.json'" not in text:
+        errors.append("teardown receipt must be covered by the artifact digest")
     if text.find("- name: teardown synthetic staging state") > text.find("- name: write receipt and teardown checkpoint"):
         errors.append("receipt must be written after the teardown attempt")
     if 'test "${CONFIRM}" = "run-bounded-endurance"' not in text:

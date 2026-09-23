@@ -8,6 +8,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from verify_i1687_endurance_lane import verify_path, verify_scenario, verify_workflow  # noqa: E402
+from validate_load_teardown_receipt import (  # noqa: E402
+    SCHEMA as TEARDOWN_SCHEMA,
+    TeardownReceiptError,
+    validate as validate_teardown_receipt,
+)
 
 
 def workflow_text() -> str:
@@ -51,7 +56,10 @@ def test_mutations_fail_closed() -> None:
         ("timeout 30s curl --fail --silent --show-error --location", "curl --fail --silent --show-error --location"),
         ('"run_id":"%s","scenario":"endurance-2h"', '"run_id":"*","scenario":"endurance-2h"'),
         ('"teardown_status": os.environ["TEARDOWN_STATUS"]', '"teardown_status": "passed"'),
-        ('"teardown_deletion_proven": False', '"teardown_deletion_proven": True'),
+        (
+            '"teardown_deletion_proven": os.environ["TEARDOWN_DELETION_PROVEN"] == "true"',
+            '"teardown_deletion_proven": True',
+        ),
         ('test "${CONFIRM}" = "run-bounded-endurance"', 'test "${CONFIRM}" = "yes"'),
         ('test "${DURATION}" = \'2h\'', 'test "${DURATION}" = \'30s\''),
     )
@@ -88,6 +96,106 @@ def test_unprotected_dispatch_is_rejected() -> None:
     mutated = source.replace(guard, "github.event_name == 'workflow_dispatch'", 1)
     errors = verify_workflow(mutated)
     assert any("protected canonical dispatch" in error for error in errors)
+
+
+def teardown_receipt() -> dict[str, object]:
+    return {
+        "schema": TEARDOWN_SCHEMA,
+        "run_id": "1234567890123",
+        "scenario": "endurance-2h",
+        "target_deployment_sha": "a" * 40,
+        "inventory_complete": True,
+        "resources": {
+            "cas_objects": {"inventory": 2, "attempted": 2, "deleted": 2, "remaining": 0},
+            "webhook_idempotency": {"inventory": 1, "attempted": 1, "deleted": 1, "remaining": 0},
+        },
+        "cross_run_deletions": 0,
+    }
+
+
+def test_exact_teardown_receipt_is_accepted() -> None:
+    result = validate_teardown_receipt(
+        teardown_receipt(),
+        run_id="1234567890123",
+        scenario="endurance-2h",
+        deployment_sha="a" * 40,
+    )
+    assert result["cross_run_deletions"] == 0
+    assert result["resources"] == teardown_receipt()["resources"]
+
+
+def test_teardown_receipt_mismatches_and_partial_cleanup_fail_closed() -> None:
+    mutations = (
+        ("run_id", "9999999999999"),
+        ("scenario", "load-test"),
+        ("target_deployment_sha", "b" * 40),
+        ("inventory_complete", False),
+        ("cross_run_deletions", 1),
+    )
+    for field, value in mutations:
+        receipt = teardown_receipt()
+        receipt[field] = value
+        try:
+            validate_teardown_receipt(
+                receipt,
+                run_id="1234567890123",
+                scenario="endurance-2h",
+                deployment_sha="a" * 40,
+            )
+        except TeardownReceiptError:
+            pass
+        else:
+            raise AssertionError(f"teardown receipt mutation escaped: {field}")
+
+    for field, value in (("deleted", 1), ("remaining", 1), ("attempted", 1)):
+        receipt = teardown_receipt()
+        receipt["resources"] = {
+            "cas_objects": {"inventory": 2, "attempted": 2, "deleted": 2, "remaining": 0},
+            "webhook_idempotency": {"inventory": 1, "attempted": 1, "deleted": 1, "remaining": 0},
+        }
+        resource_counts = receipt["resources"]["cas_objects"]
+        resource_counts[field] = value
+        try:
+            validate_teardown_receipt(
+                receipt,
+                run_id="1234567890123",
+                scenario="endurance-2h",
+                deployment_sha="a" * 40,
+            )
+        except TeardownReceiptError:
+            pass
+        else:
+            raise AssertionError(f"partial teardown mutation escaped: {field}")
+
+
+def test_teardown_receipt_rejects_unbound_fields_and_no_inventory() -> None:
+    receipt = teardown_receipt()
+    receipt["personal_data"] = "must never be uploaded"
+    try:
+        validate_teardown_receipt(
+            receipt,
+            run_id="1234567890123",
+            scenario="endurance-2h",
+            deployment_sha="a" * 40,
+        )
+    except TeardownReceiptError:
+        pass
+    else:
+        raise AssertionError("unbound receipt field escaped")
+
+    receipt = teardown_receipt()
+    receipt["resources"] = {}
+    try:
+        validate_teardown_receipt(
+            receipt,
+            run_id="1234567890123",
+            scenario="endurance-2h",
+            deployment_sha="a" * 40,
+        )
+    except TeardownReceiptError:
+        pass
+    else:
+        raise AssertionError("empty teardown inventory escaped")
 
 
 if __name__ == "__main__":
