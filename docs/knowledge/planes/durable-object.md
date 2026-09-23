@@ -27,7 +27,7 @@ source_blobs:
   - "worker/src/index_public_internal.ts@645f0bbc073553492122d9b23ed90d2cb57e736b"
   - "worker/src/index_routing_stage.ts@5cd6c7f272a8a15586734d7a7df0fa6e93066bdd"
   - "worker/src/index_common.ts@8ed0757b58effc33386205dc82d4b210fb4fe121"
-checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
+checkpoint_sha: "91630baebe3ae7abe686cd4e06a5621ecdc4ab73"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-09-06T00:00:00Z"
@@ -62,11 +62,11 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
   regression) — which the container's `email_hash::hash_email` reads, so it MUST be forwarded
   here or a `wrangler secret put EMAIL_HASH_SALT` would never reach the container. The same
   block now also forwards the WP-G OCI manifest-resolution keystone flags —
-  `OCI_PUBLIC_DEDUP_ENABLED` (`worker/src/durable_object_start.ts:345`) and the WP-G M3
-  `OCI_UPSTREAM_ON_MISS` (`worker/src/durable_object_start.ts:346`) — each `?? ""` so an unset var
+  `OCI_PUBLIC_DEDUP_ENABLED` (`worker/src/durable_object_start.ts:376`) and the WP-G M3
+  `OCI_UPSTREAM_ON_MISS` (`worker/src/durable_object_start.ts:377`) — each `?? ""` so an unset var
   becomes the container default (OFF); without the forward an operator flip of either would be
   silently ignored, exactly the `EMAIL_HASH_SALT` class of bug
-  (`worker/src/durable_object.ts:410-443`). The forward-list also now carries the diagnostic flag
+  (`worker/src/durable_object.ts:430-463`). The forward-list also now carries the diagnostic flag
   `CORELINK_ORIGIN_TIMING_DETAIL` (`worker/src/durable_object_start.ts:239`), `?? ""` so an unset var is
   OFF by default: the container reads it via `std::env::var` to arm its `oargon`/`opermit`/`ortier`
   origin-timing detail phases, so an operator `wrangler secret put CORELINK_ORIGIN_TIMING_DETAIL`
@@ -83,7 +83,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 3. `proxyToContainer` rewrites the request to `http://localhost:50051` and forwards it through the
    `getTcpPort(CONTAINER_PORT)` fetcher, never reading the body (`worker/src/durable_object_probes.ts:226-237`).
 4. `ensureContainerRunning` is the state machine: running→proceed, stale-running/stopped/degraded→
-   restart, starting→wait (`worker/src/durable_object.ts:383-441`).
+   restart, starting→wait (`worker/src/durable_object.ts:403-461`).
 5. `startContainer` closes the concurrent-start race with a SYNCHRONOUS in-memory flip to `"starting"`
    before the first `await` (`worker/src/durable_object_start.ts:42-59`).
 5b. WHERE a brand-new DO — and the Rust container it owns — is created is now DETERMINISTIC and in-region,
@@ -107,32 +107,32 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
    reconciles `lifecycleState.containerStatus` back to `"running"` and returns ok — destroying only if
    the health gate itself fails. A redundant `start()` therefore never tears down a container that is
    actually up, closing the cold-region container-start thrash the top-of-method guard also targets
-   (`worker/src/durable_object_start.ts:416-431`).
+   (`worker/src/durable_object_start.ts:447-462`).
 6. Cold start emits the `corelink.do.cold_start.v1` audit event BEFORE calling `container.start`, per
    the charter's audit-before-mutation rule (`worker/src/durable_object_start.ts:79-82`).
 7. `waitForContainerHealth` polls `GET /_health` on the container port until a 200 or the 90s startup
-   timeout (`worker/src/durable_object.ts:542-572`). The `waitForContainerReady` queue FAST-EXITS the
+   timeout (`worker/src/durable_object.ts:562-592`). The `waitForContainerReady` queue FAST-EXITS the
    moment the container status flips to the terminal `"stopped"` state (a bad deploy / OOM / panic) — it
    no longer spins the full ~90s `STARTUP_TIMEOUT_MS` on a container that is already dead, returning a
-   prompt `503` so the next request triggers a restart (`worker/src/durable_object.ts:465-484`).
+   prompt `503` so the next request triggers a restart (`worker/src/durable_object.ts:485-504`).
 8. The idle reaper lives INSIDE the alarm tick (durable), not in a `setTimeout`: it compares the
    persisted `lastActivityMs` against `IDLE_TIMEOUT_MS` (30 min) and, on expiry, emits the death event,
    re-checks the clock (the emit is an outbound POST — a yield point a live request can slip through),
    destroys the container, and ENDS the alarm chain so the DO hibernates too
-   (`worker/src/durable_object.ts:104-121`, `worker/src/durable_object.ts:829-858`). An in-memory
+   (`worker/src/durable_object.ts:112-129`, `worker/src/durable_object.ts:855-884`). An in-memory
    timer could not do this job: it evaporates on isolate eviction while the storage-backed alarm chain
    survives, which is exactly how a once-started container became immortal and billed 24/7.
 8b. That reaper is no longer the only one. The DO also arms Cloudflare's OWN idle auto-destroy,
-   `container.setInactivityTimeout(IDLE_TIMEOUT_MS)` (`worker/src/durable_object.ts:528`), so workerd
+   `container.setInactivityTimeout(IDLE_TIMEOUT_MS)` (`worker/src/durable_object.ts:548`), so workerd
    destroys an idle container without this Worker's help. It is armed immediately after
    `container.start()` — BEFORE the health poll, so a container that starts and then wedges on
-   `/_health` is still reaped (`worker/src/durable_object_start.ts:355`) — and re-armed from the alarm tick
+   `/_health` is still reaped (`worker/src/durable_object_start.ts:386`) — and re-armed from the alarm tick
    whenever the container is running and the reaper above did NOT find it idle
-   (`worker/src/durable_object.ts:876`). Both call sites exist because the type declaration carries no
+   (`worker/src/durable_object.ts:902`). Both call sites exist because the type declaration carries no
    doc-comment, leaving it unspecified whether the timer resets on activity or is an absolute deadline
    from arming; arming twice is correct under either reading, and re-arming rides the alarm rather than
    the request path. The capability is feature-detected and a failure to arm is logged, never thrown
-   (`worker/src/durable_object.ts:518`) — a container that cannot arm its idle timer must still serve.
+   (`worker/src/durable_object.ts:538`) — a container that cannot arm its idle timer must still serve.
    Platform-side is strictly stronger than the alarm reaper because it survives DO eviction, a broken
    alarm chain and a wedged isolate; the alarm reaper is kept as defence in depth AND because only it
    stops re-arming the chain, which is what lets the DO itself hibernate.
@@ -180,9 +180,9 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 - A concurrent burst cannot double-start the container: the in-memory `"starting"` flip is the
   load-bearing guard, set synchronously before any await (`worker/src/durable_object_start.ts:42-59`).
 - A stale persisted `"starting"` older than `STALE_STARTING_MS` self-heals to a restart, never wedging
-  every request forever (the F-020 `_system` wedge fix) (`worker/src/durable_object_start.ts:230-231`).
+  every request forever (the F-020 `_system` wedge fix) (`worker/src/durable_object_start.ts:245-246`).
 - The proxy never reads or logs the request body (INV-NO-BODY-IN-LOGS)
-  (`worker/src/durable_object_start.ts:225`).
+  (`worker/src/durable_object_start.ts:240`).
 - `EventLogDO` is per-tenant and append-only: a DO pinned to one tenant rejects a request carrying a
   different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (`worker/src/event_log_do.ts:211-222`),
   and `seq` is strictly monotonic + gap-free under `blockConcurrencyWhile` (persist-entry-then-advance-
@@ -212,7 +212,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
   explicit `error`, never as a fast number. The reads run ONLY on this path (never on the
   request-serving path) and do NOT start the container — and the handler answers **503 whenever the
   container is not running**, with the numbers still in the body, so read the BODY, not the status
-  (`worker/src/durable_object.ts:586-711`). Edge delivery is `/_internal/do-d1-probe/{tenant_id}`,
+  (`worker/src/durable_object.ts:606-731`). Edge delivery is `/_internal/do-d1-probe/{tenant_id}`,
   behind the same `/_internal/*` internal-auth gate on the low-privilege `quota_read` consumer; the
   tenant is REQUIRED because placement is per-DO-id, and the id is derived with the same
   `idFromName(tenant)` the data path uses so it probes the SAME instance
@@ -225,18 +225,18 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 
 # Citations
 1. `worker/src/durable_object.ts:1-26` — the DO's responsibilities + per-tenant pinning doc.
-2. `worker/src/durable_object.ts:91-121` — `CONTAINER_PORT` 50051 and the 30-min `IDLE_TIMEOUT_MS`, whose header documents why the reaper MUST be alarm-driven (the in-memory timer died on isolate eviction ⇒ immortal, 24/7-billed containers).
-3. `worker/src/durable_object.ts:135-143` — `STALE_STARTING_MS` self-heal (the F-020 wedge fix).
+2. `worker/src/durable_object.ts:99-129` — `CONTAINER_PORT` 50051 and the 30-min `IDLE_TIMEOUT_MS`, whose header documents why the reaper MUST be alarm-driven (the in-memory timer died on isolate eviction ⇒ immortal, 24/7-billed containers).
+3. `worker/src/durable_object.ts:143-151` — `STALE_STARTING_MS` self-heal (the F-020 wedge fix).
 4. `worker/src/durable_object_probes.ts:226-237` — `proxyToContainer` via the `getTcpPort` fetcher, no body read.
 5. `worker/src/durable_object.ts:162-175` — constructor restoring `LifecycleState` under `blockConcurrencyWhile`.
 6. `worker/src/durable_object.ts:177-278` — the DO `fetch` entry: tenant bind, ensure-running, idle-clock touch, proxy.
-7. `worker/src/durable_object.ts:383-441` — `ensureContainerRunning` lifecycle state machine.
+7. `worker/src/durable_object.ts:403-461` — `ensureContainerRunning` lifecycle state machine.
 8. `worker/src/durable_object_start.ts:42-59` — the synchronous in-memory `"starting"` concurrent-start guard.
 9. `worker/src/durable_object_start.ts:79-82` — audit-before-mutation cold-start event + `container.start`.
-10. `worker/src/durable_object.ts:410-443` — the `container.start({ env })` env-contract forward, including the S-09 offsite-archive knobs `R2_AUDIT_BUCKET` (`worker/src/durable_object_start.ts:121`) and `AUDIT_ARCHIVE_BATCH_LIMIT` (`worker/src/durable_object_start.ts:122`), each `?? ""` ⇒ container default (bucket `corelink-audit-weur`, 2000-row batch), and the WP-G OCI keystone flags `OCI_PUBLIC_DEDUP_ENABLED` (`worker/src/durable_object_start.ts:240-241`) and `OCI_UPSTREAM_ON_MISS` (`worker/src/durable_object_start.ts:244-245`), each `?? ""` ⇒ container default (OFF).
+10. `worker/src/durable_object.ts:430-463` — the `container.start({ env })` env-contract forward, including the S-09 offsite-archive knobs `R2_AUDIT_BUCKET` (`worker/src/durable_object_start.ts:121`) and `AUDIT_ARCHIVE_BATCH_LIMIT` (`worker/src/durable_object_start.ts:122`), each `?? ""` ⇒ container default (bucket `corelink-audit-weur`, 2000-row batch), and the WP-G OCI keystone flags `OCI_PUBLIC_DEDUP_ENABLED` (`worker/src/durable_object_start.ts:256-257`) and `OCI_UPSTREAM_ON_MISS` (`worker/src/durable_object_start.ts:260-261`), each `?? ""` ⇒ container default (OFF).
 10a. `worker/src/durable_object_start.ts:131` — `CORELINK_ORIGIN_TIMING_DETAIL: this.env.CORELINK_ORIGIN_TIMING_DETAIL ?? ""` in the same forward-list: the container reads this diagnostic flag via `std::env::var` to arm its `oargon`/`opermit`/`ortier` origin-timing detail phases, so an operator override that is not on this list silently no-ops (the `ERASURE_SALT_KEY` class of bug) — production default OFF, leaving the phases' time inside the `oother` residue.
-11. `worker/src/durable_object.ts:542-572` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:465-484` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
-12. `worker/src/durable_object.ts:829-858` — the DURABLE idle reaper inside `alarmTick()`: an absent `lastActivityMs` backfills, an expired one emits the death event (audit-before-mutation), RE-CHECKS the clock (every `await` is a yield point where a queued request may have arrived), then destroys the container and signals chain-end so the DO hibernates instead of heartbeating a dead container forever.
+11. `worker/src/durable_object.ts:562-592` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:485-504` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
+12. `worker/src/durable_object.ts:855-884` — the DURABLE idle reaper inside `alarmTick()`: an absent `lastActivityMs` backfills, an expired one emits the death event (audit-before-mutation), RE-CHECKS the clock (every `await` is a yield point where a queued request may have arrived), then destroys the container and signals chain-end so the DO hibernates instead of heartbeating a dead container forever.
 13. `worker/src/durable_object.ts:777-793` — `alarm()`: a thin `try/finally` that ALWAYS re-arms the chain unless the tick reported a deliberate end, so a throwing tick can never strand the reaper (the posture `ReplicationCoordinatorDO.alarm()` already used); `worker/src/durable_object.ts:801-922` — `alarmTick()`: chain guard (dead container ⇒ end the chain), the idle reaper, the `degraded`-but-running arm (probe skipped, chain kept so the reaper still applies), the dedup arm, then the health re-probe + degrade.
 14. `worker/src/index_routing_stage.ts:280` — the Worker's named export of `CoreLinkServer`, `RolloutController`, `EventLogDO`, `ReplicationCoordinatorDO` (the DO-class exports at the module tail, immediately after the `export default handler` Sentry-wrapped fetch handler).
 15. `worker/src/event_log_do.ts:211-222` — `EventLogDO` cross-tenant guard: a tenant-pinned DO rejects a different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (ADR-0065).
@@ -246,9 +246,9 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 19. `worker/src/rollout_controller.ts:37-59` — `RolloutController` UNWIRED stub: `/_do/health` 200 but `501 NOT_IMPLEMENTED` "WASM bridge not yet wired (Phase C)" for all other requests.
 20. `worker/src/replication_coordinator_do.ts:425-482` — `ReplicationCoordinatorDO`: the single global coordinator DO — persists role-map + heartbeats under `blockConcurrencyWhile` and self-arms the periodic `alarm()` evaluate→promote driver (always re-arms, even on a throwing tick).
 21. `worker/src/replication_coordinator_do.ts:531-553` — the DO `fetch` router for the `/_repl/<op>` control plane (`arm`/`status`/`tick`), which the Worker reaches by mapping `/_internal/replication/*` onto it; the fixed `REPLICATION_COORDINATOR_SINGLETON` name is the split-brain-safe single-writer promotion lock.
-22. `worker/src/durable_object.ts:586-711` — `handleHealthProbe` + `probeD1Latency`: the `d1_probe` placement instrument on `/_do/health` (primary vs `withSession("first-unconstrained")` replica, feature-detected exactly as `worker/src/index_auth_verify.ts:207-210` does it, warm-up reported not hidden, a throw surfaced as an explicit `error` field, never on the request-serving path).
+22. `worker/src/durable_object.ts:606-731` — `handleHealthProbe` + `probeD1Latency`: the `d1_probe` placement instrument on `/_do/health` (primary vs `withSession("first-unconstrained")` replica, feature-detected exactly as `worker/src/index_auth_verify.ts:207-210` does it, warm-up reported not hidden, a throw surfaced as an explicit `error` field, never on the request-serving path).
 23. `worker/src/index_public_internal.ts:126-165` — `/_internal/do-d1-probe/{tenant_id}` → that tenant's DO `/_do/health`: same forward shape as the `/_internal/replication` → `/_repl` precedent, behind the internal-auth gate on the low-privilege `quota_read` consumer (`worker/src/index_common.ts:165-173`), with the DO id derived by `idFromName(tenant)` so the probe measures the SAME instance that serves that tenant.
-24. `worker/src/durable_object_start.ts:425` — `armInactivityTimeout`: the PLATFORM idle reaper, `container.setInactivityTimeout(IDLE_TIMEOUT_MS)`, which workerd enforces without this Worker (it survives DO eviction, a broken alarm chain and a wedged isolate — the failure modes that made containers immortal). Armed right after `container.start()`, before the health poll (`worker/src/durable_object_start.ts:248-249`), and re-armed on a live non-idle alarm tick (`worker/src/durable_object.ts:773`) because the type declaration does not specify whether the timer resets on activity or is absolute from arming. Feature-detected, and an arming failure is logged rather than thrown (`worker/src/durable_object_start.ts:408-409`) — a container that cannot arm its idle timer must still serve.
+24. `worker/src/durable_object_start.ts:456` — `armInactivityTimeout`: the PLATFORM idle reaper, `container.setInactivityTimeout(IDLE_TIMEOUT_MS)`, which workerd enforces without this Worker (it survives DO eviction, a broken alarm chain and a wedged isolate — the failure modes that made containers immortal). Armed right after `container.start()`, before the health poll (`worker/src/durable_object_start.ts:264-265`), and re-armed on a live non-idle alarm tick (`worker/src/durable_object.ts:773`) because the type declaration does not specify whether the timer resets on activity or is absolute from arming. Feature-detected, and an arming failure is logged rather than thrown (`worker/src/durable_object_start.ts:439-440`) — a container that cannot arm its idle timer must still serve.
 25. `worker/src/index_public_internal.ts:71` — the B1b `/_public`-revoke forward onto the `_system` `CoreLinkServer` DO via `systemStub.fetch` (a Worker-side pass-through the DO proxies to the container unchanged); on the container's `ok` response the Worker best-effort-writes the content-hash-keyed edge blocklist KV (`ctx.waitUntil(writePublicBlocklistKv(...))`, `worker/src/index_public_internal.ts:113`). No new DO handler — the `_system` DO's proxy path is unchanged.
 26. `worker/src/index_common.ts:42-68` — `doLocationHintForRegion` + `serverGetOpts`: derive a CF DO `locationHint` from this Worker's serving region (`R2_CAS_REGION`) so a newly-created `CoreLinkServer` DO and its container home in-region deterministically (unknown region ⇒ `undefined` ⇒ bare hint-less `.get(id)`, unchanged behaviour); the per-tenant CAS/AC forward passes it at `worker/src/index_routing_stage.ts:242-245`, and every sentinel (`_system`/`_oci`/`_anonymous`) forward routes through the same helper.
 

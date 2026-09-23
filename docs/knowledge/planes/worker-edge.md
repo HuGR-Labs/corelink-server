@@ -34,9 +34,9 @@ source_blobs:
   - "worker/src/lib/tenant_tier_cache.ts@4a440e51a8199a471bcde1b80ed31a872aee2b53"
   - "worker/src/lib/onboarding_events.ts@13087a3f130b93729ade6e30e9568ea500344c22"
   - "worker/src/lib/internal_auth.ts@e6a8a491fbd600f7ba89a7ffcf7bb08d148fbf06"
-  - "worker/src/lib/openapi_v1.ts@a9c43aecd6aab0b809e405d76e3571c0b4e208d1"
-  - "openapi/corelink-v1.yaml@5bd100a7d7fc55f9641d4d3f27419c66c1b09b29"
-  - "worker/src/index_schedule.ts@9ed58ccee3e8400c264f88a3d67b0a4e77a3b355"
+  - "worker/src/lib/openapi_v1.ts@5c7a6642c9faf6b16facd5727fee199a70669ac9"
+  - "openapi/corelink-v1.yaml@a987a1d514c83a5ec2e7ae4fb676eb6555e03f41"
+  - "worker/src/index_schedule.ts@91e13983ad933a19c975028dbe3ea2cd076093d5"
 
   - "worker/src/index.ts@33446ee3c4cd0c85e285960d5c60d9770d548f11"
   - "worker/src/index_auth_policy.ts@545af17a21b5b3fe2fd19e0c2516782ae6758a7d"
@@ -55,7 +55,7 @@ source_blobs:
   - "worker/src/index_special_passthrough.ts@ad5789c4f5bae6f7ad721fe9e69ce9607057b549"
   - "worker/src/route_match.ts@0e1733c5279fc2862c8f8f4bdadcc04c75b60423"
   - "worker/src/index_auth_pat.ts@cfa7eeccce38b15f1bafc3658816c0c3f40f6505"
-checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
+checkpoint_sha: "91630baebe3ae7abe686cd4e06a5621ecdc4ab73"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-09-06T00:00:00Z"
