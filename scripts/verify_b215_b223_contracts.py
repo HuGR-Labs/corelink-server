@@ -392,6 +392,53 @@ def check_b216(root: Path) -> None:
     index = _code(_read(root, "apps/signup-worker/src/index.ts"))
     _require(index, 'batch.queue === "corelink-dsr-erasure-dlq"', lane)
     _require(index, "await handleErasureDlqBatch(", lane)
+    redrive = _code(_read(root, "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts"))
+    route = _function(redrive, "export async function handleDsrDlqRedrive(", lane)
+    for marker in (
+        "DSR_DLQ_REDRIVE_AUTH_KEY",
+        "constantTimeEqual(presented, expected)",
+        "Object.keys(record).length !== 1",
+        "await store.claim(eventId, actorRef, approvalRef, nowMs)",
+        "deriveErasureSalt(envelope.dsr_id, env.ERASURE_SALT_KEY, env.ENVIRONMENT)",
+        "tenant_id: envelope.tenant_id",
+        "subject_id: envelope.tenant_id",
+        "_dlq_requeue: MAX_REQUEUE_COUNT",
+        "await env.DSR_QUEUE.send(message)",
+        "await store.ambiguous(eventId, Date.now())",
+        'return json(410, { error: "receipt_expired" })',
+    ):
+        _require(route, marker, lane)
+    _require(redrive, "INSERT OR IGNORE INTO dsr_dlq_redrive_envelopes", lane)
+    _require(redrive, "redrive_state = 'claimed'", lane)
+    _require(redrive, 'await this.transition(eventId, "submitted", nowMs);', lane)
+    _require(redrive, "redrive_state = 'ambiguous'", lane)
+    _require(redrive, "DELETE FROM dsr_dlq_redrive_envelopes", lane)
+    _require(redrive, "DELETE FROM dsr_dlq_redrive_audit", lane)
+    migration = _read(root, "migrations/d1/0144_dsr_dlq_redrive_authority.sql")
+    for marker in (
+        "CREATE TABLE IF NOT EXISTS dsr_dlq_redrive_envelopes",
+        "CREATE TABLE IF NOT EXISTS dsr_dlq_redrive_audit",
+        "CREATE TRIGGER IF NOT EXISTS trg_dsr_dlq_redrive_audit_transition",
+        "'captured', 'ready', 'closed', 'claimed', 'submitted', 'ambiguous'",
+        "requeue_count IN (0, 1)",
+        "transition IN ('claimed', 'submitted', 'ambiguous')",
+    ):
+        _require(migration, marker, lane)
+    for forbidden in ("recovery_payload_json", "clerk_user_id", "PAGERDUTY_ROUTING_KEY"):
+        if forbidden in redrive or forbidden in migration:
+            raise ContractError(f"{lane}: forbidden recovery persistence marker present: {forbidden}")
+    _require(index, 'url.pathname === "/internal/dsr/dlq/redrive"', lane)
+    _require(index, "runDsrDlqRedriveCleanup", lane)
+    redrive_test = _read(root, "apps/signup-worker/tests/dsr_dlq_redrive.test.ts")
+    for marker in (
+        "shared-secret substitute",
+        "substitute a tenant",
+        "submits exactly once",
+        "returns expired",
+        "ambiguous outcome",
+        "stale claim ambiguous",
+    ):
+        _require(redrive_test, marker, lane)
 
 
 def check_b217(root: Path) -> None:
@@ -565,7 +612,13 @@ def self_test(root: Path = ROOT) -> None:
     }
     paths_by_lane = {
         "B-215": ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/webhooks/clerk_identity.ts"],
-        "B-216": ["apps/signup-worker/src/webhooks/dsr_consumer.ts", "apps/signup-worker/src/index.ts"],
+        "B-216": [
+            "apps/signup-worker/src/webhooks/dsr_consumer.ts",
+            "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts",
+            "apps/signup-worker/src/index.ts",
+            "migrations/d1/0144_dsr_dlq_redrive_authority.sql",
+            "apps/signup-worker/tests/dsr_dlq_redrive.test.ts",
+        ],
         "B-217": ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/webhooks/clerk_erasure.ts"],
         "B-218": ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/webhooks/clerk_erasure.ts", "worker/src/lib/internal_auth.ts"],
         "B-219": ["crates/corelink-erasure-attestation/src/verify.rs"],
@@ -726,6 +779,20 @@ def self_test(root: Path = ROOT) -> None:
                 'requeue_error: "transport_error"',
                 "requeue_error: String(err)",
                 "apps/signup-worker/src/webhooks/dsr_consumer.ts",
+            ),
+            (
+                "B-216-redrive-dedicated-key-removal",
+                "B-216",
+                "DSR_DLQ_REDRIVE_AUTH_KEY",
+                "DSR_DLQ_SHARED_AUTH_KEY",
+                "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts",
+            ),
+            (
+                "B-216-redrive-atomic-claim-removal",
+                "B-216",
+                "redrive_state = 'claimed'",
+                "redrive_state = 'pending'",
+                "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts",
             ),
         )
     )

@@ -57,6 +57,11 @@ head_sampling_rate = 1
 #                                  missing runtime configuration: it retains the
 #                                  DLQ delivery for retry and never substitutes
 #                                  a console log for an accepted on-call page.
+#   DSR_DLQ_REDRIVE_AUTH_KEY       — dedicated ≥32-character bearer credential
+#                                  for POST /internal/dsr/dlq/redrive. It is
+#                                  operator-only, accepts no shared/internal or
+#                                  queue key fallback, and must be bound before
+#                                  an expired DSR DLQ envelope can be recovered.
 #
 # D1 bindings:
 #   CONFIG_DB  — corelink-prod-d1 (tenant, pat, tenant_billing tables).

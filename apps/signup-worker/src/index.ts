@@ -28,6 +28,7 @@ import { handleInstallGithubCallback } from "./webhooks/github_install_callback.
 import type { InstallCallbackEnv } from "./webhooks/github_install_callback.js";
 import { handleErasureQueueBatch, handleErasureDlqBatch } from "./webhooks/dsr_consumer.js";
 import type { QueueMessageBatch, DsrDlqBody } from "./webhooks/dsr_consumer.js";
+import { handleDsrDlqRedrive, runDsrDlqRedriveCleanup } from "./webhooks/dsr_dlq_redrive.js";
 import { runDsrVerifySweep } from "./webhooks/dsr_verify_cron.js";
 import { runPatScrubSweep } from "./webhooks/pat_scrub_cron.js";
 import { runAuditDrainSweep } from "./webhooks/audit_drain_cron.js";
@@ -59,6 +60,9 @@ export async function route(request: Request, env: InstallationProvisionEnv, ctx
   }
   if (url.pathname === "/internal/sla/monthly-observation") {
     return handleSlaObservationIngest(request, workerEnv as unknown as SlaCreditCronEnv);
+  }
+  if (url.pathname === "/internal/dsr/dlq/redrive") {
+    return handleDsrDlqRedrive(request, workerEnv);
   }
   if (url.pathname === "/install/github/app/new" && request.method === "GET") {
     return handleAppManifestForm(request, workerEnv);
@@ -174,6 +178,12 @@ const baseHandler: ExportedHandler<SignupEnv> = {
 
     const db = env.CONFIG_DB;
     if (db) {
+      ctx.waitUntil(
+        runDsrDlqRedriveCleanup({ ...env, CONFIG_DB: db }, nowMs)
+          .catch((err: unknown) => {
+            Sentry.captureException(err);
+          }),
+      );
       ctx.waitUntil(
         runDsrVerifySweep({ ...env, CONFIG_DB: db }, nowMs)
           .then((r) => {

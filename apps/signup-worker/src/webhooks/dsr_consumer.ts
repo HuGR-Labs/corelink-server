@@ -22,6 +22,10 @@
 
 import type { DsrQueuedV1 } from "./clerk.js";
 import { resolveEraseAuthKey } from "../lib/erase-auth-key.js";
+import {
+  D1DsrDlqRecoveryStore,
+  type DsrDlqRecoveryStore,
+} from "./dsr_dlq_redrive.js";
 
 /** Minimal env surface the consumer needs (kept independent of the full Worker Env). */
 export interface DsrConsumerEnv {
@@ -304,6 +308,8 @@ export interface DsrDlqEnv {
   PAGERDUTY_FETCH?: typeof fetch;
   CONFIG_DB?: D1ReceiptDatabase;
   DSR_DLQ_RECEIPTS?: DsrDlqReceiptStore;
+  /** Bounded redrive envelope authority; production derives this from CONFIG_DB. */
+  DSR_DLQ_RECOVERY?: DsrDlqRecoveryStore;
 }
 
 type PagingResult =
@@ -422,6 +428,7 @@ export async function handleErasureDlqBatch(
       continue;
     }
     const store = env.DSR_DLQ_RECEIPTS ?? (env.CONFIG_DB ? new D1DsrDlqReceiptStore(env.CONFIG_DB) : undefined);
+    const recovery = env.DSR_DLQ_RECOVERY ?? (env.CONFIG_DB ? new D1DsrDlqRecoveryStore(env.CONFIG_DB) : undefined);
     if (!store) {
       retryReceiptBoundaryFailure(m, eventId, priorRequeues, "not_configured");
       continue;
@@ -438,6 +445,19 @@ export async function handleErasureDlqBatch(
         continue;
       }
       await store.record(eventId, "paging_pending", Date.now());
+      // Persist only the recovery allowlist before any terminal DLQ ACK.  The
+      // helper rejects malformed/noncanonical values without serializing the
+      // queue body, so raw payload fields never enter D1.
+      if (recovery) {
+        await recovery.capture({
+          eventId,
+          dsrId: body.dsr_id,
+          tenantId: body.tenant_id,
+          queuedAtMs: body.queued_at_ms,
+          legalHold: body.legal_hold,
+          requeueCount: priorRequeues,
+        }, Date.now());
+      }
     } catch {
       retryReceiptBoundaryFailure(m, eventId, priorRequeues, "storage_error");
       continue;
@@ -446,6 +466,7 @@ export async function handleErasureDlqBatch(
       const claimed = await store.claimPaging(eventId, Date.now());
       if (!claimed) {
         await store.record(eventId, "paging_ambiguous", Date.now());
+        if (recovery) await recovery.makeReady(eventId, Date.now());
         logDlqEvent({
           level: "alert", severity: "critical", event: DLQ_EVENT_NAME,
           component: "dsr-erasure-dlq", event_id: eventId, exhausted: true,
@@ -466,6 +487,7 @@ export async function handleErasureDlqBatch(
       if (paging.status === "failed" && paging.error === "transport_error") {
         try {
           await store.record(eventId, "paging_ambiguous", Date.now());
+          if (recovery) await recovery.makeReady(eventId, Date.now());
         } catch {
           m.retry();
           continue;
@@ -483,6 +505,7 @@ export async function handleErasureDlqBatch(
       const exhausted = (m.attempts ?? 0) >= MAX_DLQ_PAGING_ATTEMPTS;
       try {
         await store.record(eventId, exhausted ? "delivery_exhausted" : "paging_retry", Date.now());
+        if (exhausted && recovery) await recovery.makeReady(eventId, Date.now());
       } catch {
         m.retry();
         continue;
@@ -531,6 +554,13 @@ export async function handleErasureDlqBatch(
       });
       try {
         await store.record(eventId, "terminal", Date.now());
+        if (recovery) {
+          if (priorRequeues < MAX_DLQ_REQUEUES) {
+            await recovery.makeReady(eventId, Date.now());
+          } else {
+            await recovery.close(eventId, Date.now());
+          }
+        }
         m.ack();
       } catch {
         m.retry();
@@ -541,6 +571,7 @@ export async function handleErasureDlqBatch(
       const claimed = await store.claimRequeue(eventId, Date.now());
       if (!claimed) {
         await store.record(eventId, "requeue_ambiguous", Date.now());
+        if (recovery) await recovery.close(eventId, Date.now());
         logDlqEvent({
           level: "alert", severity: "critical", event: DLQ_EVENT_NAME,
           component: "dsr-erasure-dlq", event_id: eventId, exhausted: true,
@@ -554,6 +585,7 @@ export async function handleErasureDlqBatch(
       }
       await env.DSR_QUEUE!.send({ ...body, _dlq_requeue: priorRequeues + 1 });
       await store.record(eventId, "requeued", Date.now());
+      if (recovery) await recovery.close(eventId, Date.now());
       logDlqEvent({
         level: "alert",
         severity: "critical",
@@ -572,6 +604,7 @@ export async function handleErasureDlqBatch(
     } catch {
       try {
         await store.record(eventId, "requeue_ambiguous", Date.now());
+        if (recovery) await recovery.close(eventId, Date.now());
       } catch {
         m.retry();
         continue;
