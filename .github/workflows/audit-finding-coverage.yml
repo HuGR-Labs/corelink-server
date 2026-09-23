@@ -39,14 +39,16 @@ concurrency:
 
 jobs:
   verify:
-    # This gate deliberately stays on the existing self-hosted fleet: parsing
-    # local evidence needs no paid hosted runner and must not be cost-gated.
-    runs-on: corelink
+    # This gate deliberately stays on GitHub-hosted ubuntu-24.04 (Bundle 2 migration
+# from self-hosted): parsing local evidence needs no paid hosted runner and
+# must not be cost-gated.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
+          persist-credentials: false
       - name: Install the hermetic Python verifier environment
         shell: bash
         run: |
