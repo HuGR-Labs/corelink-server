@@ -17,6 +17,7 @@ from pathlib import Path
 WORKFLOW = Path(".github/workflows/issue-2050-cli-release-dry-run.yml")
 ALLOWED_FILES = {
     ".github/workflows/issue-2050-cli-release-dry-run.yml",
+    ".github/workflows/issue-2152-cyclonedx-diagnostic.yml",
     "scripts/verify_i2050_release_dryrun_contract.py",
 }
 TARGETS = {
@@ -80,7 +81,7 @@ def _zigbuild_version_probe_mutation_self_test(text: str) -> None:
 
 
 def _verify_i2050_pr_slice(changed_files: set[str]) -> bool:
-    """Enforce the two-file allowlist only when this isolated slice is touched."""
+    """Enforce the isolated dry-run and SBOM diagnostic file allowlist."""
     if not changed_files.intersection(ALLOWED_FILES):
         return False
     outside_files = changed_files - ALLOWED_FILES
@@ -238,7 +239,7 @@ def contract() -> None:
     if event_name == "pull_request":
         _slice_routing_mutation_self_test()
         if _verify_i2050_pr_slice(set(changed)):
-            print("PASS: relevant CLI dry-run change enforces the exact two-file slice")
+            print("PASS: relevant CLI dry-run change enforces the isolated workflow slice")
         else:
             print("SKIP: CLI dry-run slice isolation (neither slice file changed)")
     elif event_name == "workflow_dispatch":
