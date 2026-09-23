@@ -34,7 +34,9 @@ concurrency:
 jobs:
   ratchet:
     name: no file grows past the god-file baseline
-    runs-on: corelink
+    # Runner: GitHub-hosted ubuntu-latest (wave 3 migration from corelink fabric).
+    # stdlib python3 + git; read-only file size validation.
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Checkout # nosemgrep: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout # reason: PR blobs inspected as data only; ADR-0101
