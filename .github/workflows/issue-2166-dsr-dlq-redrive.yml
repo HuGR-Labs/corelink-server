@@ -1,0 +1,44 @@
+name: issue-2166 DSR DLQ redrive authority
+
+on:
+  pull_request:
+    paths:
+      - "apps/signup-worker/src/webhooks/dsr_consumer.ts"
+      - "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts"
+      - "apps/signup-worker/src/index.ts"
+      - "apps/signup-worker/tests/dsr_consumer.test.ts"
+      - "apps/signup-worker/tests/dsr_dlq_redrive.test.ts"
+      - "apps/signup-worker/wrangler.toml"
+      - "migrations/d1/0144_dsr_dlq_redrive_authority.sql"
+      - "scripts/verify_b215_b223_contracts.py"
+      - "docs/operator/dsr-dlq-redrive.md"
+      - "docs/internal/okf-wiki/concept-manifest.yaml"
+      - ".github/workflows/issue-2166-dsr-dlq-redrive.yml"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  redrive-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.1.7
+      - uses: ./.github/actions/setup-pnpm
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Install pinned signup-worker dependencies
+        run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
+      - name: Exercise redrive authority adversarial behavior
+        run: pnpm --dir apps/signup-worker exec vitest run tests/dsr_consumer.test.ts tests/dsr_dlq_redrive.test.ts
+      - name: Reject redrive authority regressions
+        run: python3 scripts/verify_b215_b223_contracts.py --id B-216 --self-test

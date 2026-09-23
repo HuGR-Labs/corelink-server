@@ -744,7 +744,7 @@ candidates:
     title: "DSR edge crons + erasure-queue consumer"
     status: "active"
     source_cluster: "docs/compliance"
-    seed_from: ["apps/signup-worker/src/webhooks/dsr_consumer.ts", "apps/signup-worker/src/webhooks/dsr_verify_cron.ts", "apps/signup-worker/src/webhooks/pat_scrub_cron.ts", "apps/signup-worker/src/lib/erase-auth-key.ts", "apps/signup-worker/src/index.ts"]
+    seed_from: ["apps/signup-worker/src/webhooks/dsr_consumer.ts", "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts", "apps/signup-worker/src/webhooks/dsr_verify_cron.ts", "apps/signup-worker/src/webhooks/pat_scrub_cron.ts", "apps/signup-worker/src/lib/erase-auth-key.ts", "apps/signup-worker/src/index.ts"]
   - id: "flows/signup-auto-provision"
     type: "Flow"
     title: "Signup auto-provision + account-deletion erasure (Clerk webhook)"
