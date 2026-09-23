@@ -32,6 +32,24 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+      - name: Install pinned actionlint when absent
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v actionlint >/dev/null 2>&1; then
+            bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+            export PATH="$PWD:$PATH"
+          fi
+          actionlint -version
+      - name: Lint changed workflow contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          actionlint -color -verbose \
+            .github/workflows/actionlint.yml \
+            .github/workflows/endurance-2h-nightly.yml \
+            .github/workflows/issue-1666-mutants-evidence-contract.yml \
+            .github/workflows/load-test-nightly.yml
       - name: Verify hosted mutants evidence contract
         run: python3 scripts/verify_i1666_mutants_evidence.py
       - name: Run focused adversarial checks
