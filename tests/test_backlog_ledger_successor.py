@@ -391,7 +391,7 @@ def test_v0004_policy_in_base_accepts_only_the_exact_dynamic_base_successor(
         ledger.validate_candidate_successor(base, candidate, today=dt.date(2026, 9, 22))
 
 
-def test_v0004_policy_derives_b012_retirement_and_wp150_manifest_pointer(monkeypatch):
+def test_v0004_policy_derives_only_b012_retirement_from_pr_base(monkeypatch):
     """The policy consumes immutable BASE bytes; a receipt never grants scope."""
     root = Path(__file__).resolve().parents[1]
     policy = ledger._successor_policy()
