@@ -56,29 +56,22 @@ concurrency:
 jobs:
   actionlint:
     name: actionlint (native, SHA-pinned tool)
-    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
-    # The step below was ALREADY written for this fleet ("Native
-    # actionlint on the macOS self-hosted fleet... the fleet ships actionlint on
-    # PATH") but runs-on had drifted back to hosted. actionlint 1.7.12 confirmed
-    # on the fleet PATH; the pinned-release fallback auto-detects darwin.
-    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
-    # check costs a full paid minute every run; on the fleet it costs $0.
-    # Verified running natively on the fleet host (macOS/BSD userland).
-    # zero-hosted (WP-CI): baixa actionlint+shellcheck pinados e detecta o SO sozinho
-    runs-on: corelink
+    # Runner: GitHub-hosted ubuntu-24.04 (Bundle 6 migration from self-hosted).
+    # actionlint 1.7.12 fetched via pinned release installer; shellcheck from runner image.
+    # Hosted minutes bill with 1-minute floor — acceptable for this sub-minute gate.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
 
-      # Native actionlint on the macOS self-hosted fleet. The previous
-      # docker://rhysd/actionlint is a Docker container action (Linux-only)
-      # AND this job was pinned to [self-hosted, Linux, X64] — a label set
-      # matching ZERO runners on our macOS-only fleet — so it hung pending
-      # forever, jamming the pre-merge gate-check. The fleet ships actionlint
-      # on PATH (1.7.12, built from source); taiki-e/install-action does NOT
-      # package actionlint (it is not a cargo crate), so we run the host
-      # binary, falling back to the official pinned 1.7.12 release installer
-      # if a runner lacks it. (2026-06-02)
+      # Native actionlint on GitHub-hosted ubuntu-24.04. The docker://rhysd/actionlint
+      # is a Docker container action (Linux-only) but we use the host binary via the
+      # pinned release installer which auto-detects Linux. taiki-e/install-action does
+      # NOT package actionlint (it is not a cargo crate), so we run the host binary,
+      # falling back to the official pinned 1.7.12 release installer if needed.
+      # (2026-06-02, migrated to hosted 2026-09-22)
       - name: Run actionlint (native binary)
         shell: bash
         run: |
@@ -99,19 +92,19 @@ jobs:
         shell: bash
         run: python3 -S scripts/verify_b254_actionlint_config.py
 
-      # Fleet-safety gate: a cargo-cache step that runs on the shared-$HOME
-      # self-hosted fleet deletes ~/.cargo/registry/src out from under OTHER
-      # runners' in-flight rustc processes. stdlib-only python3, no setup-python
-      # (RUNNER_TOOL_CACHE is unset on this fleet — see action-sha-audit.yml).
+      # Fleet-safety gates: validate ALL workflows for shared-$HOME cache race
+      # and rustup mutation on the self-hosted mac fleet. This job now runs on
+      # ubuntu-24.04 (hosted), but the gates still scan every workflow file.
+      # stdlib-only python3, no setup-python (RUNNER_TOOL_CACHE is unset on
+      # the fleet — see action-sha-audit.yml).
       - name: Cargo-cache steps must be gated to github-hosted runners
         shell: bash
         run: python3 scripts/validate_shared_home_cache_guard.py
 
-      # Sibling of the gate above, one level up: that one protects the shared
-      # `~/.cargo`, this one protects the shared `~/.rustup`. A self-hosted job
-      # must never run `rustup toolchain install` / `rustup default` (it can make
-      # `rustc` unexecutable for every other job, and silently moves the whole
-      # host off the ADR-0015 reproducibility pin). Also bans hardcoding a
+      # Sibling of the gate above: protects the shared ~/.rustup on the fleet.
+      # A self-hosted job must never run rustup toolchain install/default (it
+      # can make rustc unexecutable for every other job, and silently moves the
+      # whole host off the ADR-0015 reproducibility pin). Also bans hardcoding a
       # versioned toolchain path, which is a second copy of that pin that nothing
       # keeps in sync. Fails closed if it inspects zero self-hosted jobs.
       - name: Self-hosted jobs must not provision a Rust toolchain
