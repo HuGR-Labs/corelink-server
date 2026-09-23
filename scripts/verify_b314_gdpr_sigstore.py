@@ -32,6 +32,8 @@ LOCALES = (
 )
 TRUST = "apps/docs/docs/trust/subprocessors.mdx"
 GENERATOR = "scripts/gen-public-subprocessors.py"
+LEGAL_REGISTER = "legal/sub-processors.md"
+VENDOR_REGISTER = "specs/_compliance/VENDOR-RISK-REGISTER.md"
 PACKET = "docs/handoff/2026-09-06-b314-gdpr-sigstore-transfer.json"
 WORKFLOW = ".github/workflows/backlog-verify.yml"
 TEST = "tests/test_verify_b314_gdpr_sigstore.py"
@@ -64,6 +66,8 @@ EXPECTED_WIRING = (
     *LOCALES[1:],
     TRUST,
     GENERATOR,
+    LEGAL_REGISTER,
+    VENDOR_REGISTER,
     PACKET,
     "scripts/verify_b314_gdpr_sigstore.py",
     TEST,
@@ -146,7 +150,7 @@ def _check_packet(packet: dict[str, Any]) -> None:
         raise VerificationError("B-314 baseline schema drifted")
     if baseline["row_count_per_locale"] != 1 or baseline["row_identity"] != "PagerDuty / GitHub / Sigstore":
         raise VerificationError("B-314 baseline does not pin the measured row population")
-    if baseline["posture_sources"] != [TRUST, GENERATOR]:
+    if baseline["posture_sources"] != [TRUST, GENERATOR, LEGAL_REGISTER, VENDOR_REGISTER]:
         raise VerificationError("B-314 baseline posture sources drifted")
 
     decision = packet["decision"]
@@ -191,7 +195,7 @@ def _check_packet(packet: dict[str, Any]) -> None:
     refs = packet["references"]
     if not isinstance(refs, list) or not all(isinstance(v, str) for v in refs):
         raise VerificationError("B-314 references must be a list of strings")
-    if "BACKLOG.md#B-314" not in refs or TRUST not in refs or GENERATOR not in refs:
+    if any(path not in refs for path in ("BACKLOG.md#B-314", TRUST, GENERATOR, LEGAL_REGISTER, VENDOR_REGISTER)):
         raise VerificationError("B-314 references omit canonical backlog or posture source")
 
 
@@ -215,16 +219,37 @@ def _check_locale(path: str, text: str) -> None:
         raise VerificationError(f"{path}: transfer table has {sigstore_mentions} Sigstore mentions, expected one")
 
 
-def _check_posture(trust: str, generator: str) -> None:
-    for label, text in ((TRUST, trust), (GENERATOR, generator)):
-        # Markdown prose is routinely wrapped at a line boundary.  Compare a
-        # whitespace-folded view so a valid wrapped disclaimer is not rejected,
-        # while still requiring each complete marker and preserving the
-        # fail-closed mutation checks below.
+def _check_posture(trust: str, generator: str, legal_register: str, vendor_register: str) -> None:
+    # These four files are the measured posture chain. The wording is deliberately
+    # scoped to current data flows: the old absolute "never receives customer
+    # data" claim would also cover a future transparency-log consumer and is not
+    # accepted as a substitute for this reality-bound statement.
+    required = (
+        "Sigstore (Linux Foundation)",
+        "no customer-data path is wired",
+        "transparency-log seam is not a live transport",
+        "not a customer-data sub-processor",
+    )
+    for label, text in (
+        (TRUST, trust),
+        (GENERATOR, generator),
+        (LEGAL_REGISTER, legal_register),
+        (VENDOR_REGISTER, vendor_register),
+    ):
+        # Markdown prose is routinely wrapped at a line boundary. Compare a
+        # whitespace-folded view so a valid wrapped disclaimer is not rejected.
+        # The contractual register names the same recipient as
+        # ``The Linux Foundation (Sigstore)``; the public/register sources use
+        # ``Sigstore (Linux Foundation)``. Both are exact, unambiguous names.
         folded = " ".join(text.split())
-        for marker in ("Sigstore (Linux Foundation)", "never receives customer data", "not a customer-data sub-processor"):
+        identity = (
+            "The Linux Foundation (Sigstore)"
+            if label == LEGAL_REGISTER
+            else required[0]
+        )
+        for marker in (identity, *required[1:]):
             if marker not in folded:
-                raise VerificationError(f"{label}: non-processor posture marker missing: {marker}")
+                raise VerificationError(f"{label}: scoped posture marker missing: {marker}")
     folded_trust = " ".join(trust.split())
     if not any(
         marker in folded_trust
@@ -235,10 +260,7 @@ def _check_posture(trust: str, generator: str) -> None:
     ):
         raise VerificationError(f"{TRUST}: proposed/non-live no-records marker missing")
     folded_generator = " ".join(generator.split())
-    if not any(
-        marker in folded_generator
-        for marker in ("own build artifacts", "release-SLSA and CAS signing paths")
-    ):
+    if "release-SLSA and CAS signing paths" not in folded_generator:
         raise VerificationError(f"{GENERATOR}: source scope no-customer-data marker missing")
 
 
@@ -288,13 +310,18 @@ def _check_runtime(workflow: str) -> None:
 
 def verify(root: Path = ROOT, *, overrides: dict[str, str] | None = None) -> None:
     overrides = {} if overrides is None else dict(overrides)
-    known = set(LOCALES) | {TRUST, GENERATOR, PACKET, WORKFLOW, "BACKLOG.md"}
+    known = set(LOCALES) | {TRUST, GENERATOR, LEGAL_REGISTER, VENDOR_REGISTER, PACKET, WORKFLOW, "BACKLOG.md"}
     unknown = set(overrides) - known
     if unknown:
         raise VerificationError(f"unknown override target(s): {sorted(unknown)}")
     for path in LOCALES:
         _check_locale(path, _read(root, path, overrides))
-    _check_posture(_read(root, TRUST, overrides), _read(root, GENERATOR, overrides))
+    _check_posture(
+        _read(root, TRUST, overrides),
+        _read(root, GENERATOR, overrides),
+        _read(root, LEGAL_REGISTER, overrides),
+        _read(root, VENDOR_REGISTER, overrides),
+    )
     _check_packet(_load_packet(_read(root, PACKET, overrides)))
     _check_runtime(_read(root, WORKFLOW, overrides))
 
@@ -309,7 +336,7 @@ def _must_reject(label: str, root: Path, overrides: dict[str, str]) -> None:
 
 def mutation_checks(root: Path = ROOT) -> int:
     """Exercise row, decision, posture, and runtime restoration mutations."""
-    originals = {path: _read(root, path, {}) for path in (*LOCALES, TRUST, GENERATOR, PACKET, WORKFLOW)}
+    originals = {path: _read(root, path, {}) for path in (*LOCALES, TRUST, GENERATOR, LEGAL_REGISTER, VENDOR_REGISTER, PACKET, WORKFLOW)}
     count = 0
     for path in LOCALES:
         _must_reject("row removal", root, {path: originals[path].replace(next(line for line in originals[path].splitlines() if SIGSTORE_ROW.fullmatch(line)), "", 1)})
@@ -324,19 +351,17 @@ def mutation_checks(root: Path = ROOT) -> int:
         count += 1
     _must_reject("pending decision mutation", root, {PACKET: originals[PACKET].replace('"state": "pending"', '"state": "remove_sigstore_row"', 1)})
     count += 1
-    trust_mutation = re.sub(
-        r"never\s+receives\s+customer\s+data",
-        "receives customer data",
-        originals[TRUST],
-        count=1,
-    )
-    _must_reject(
-        "trust posture removal",
-        root,
-        {TRUST: trust_mutation},
-    )
+    trust_mutation = originals[TRUST].replace("no customer-data path is wired", "customer-data path is wired", 1)
+    _must_reject("trust current-flow posture removal", root, {TRUST: trust_mutation})
     count += 1
-    _must_reject("generator posture restoration", root, {GENERATOR: originals[GENERATOR].replace("not a customer-data sub-processor", "a customer-data sub-processor", 1)})
+    generator_mutation = originals[GENERATOR].replace("transparency-log seam is not a live transport", "transparency-log seam is a live transport", 1)
+    _must_reject("generator deferred-seam posture removal", root, {GENERATOR: generator_mutation})
+    count += 1
+    legal_mutation = originals[LEGAL_REGISTER].replace("not a customer-data sub-processor", "a customer-data sub-processor")
+    _must_reject("contractual posture restoration", root, {LEGAL_REGISTER: legal_mutation})
+    count += 1
+    vendor_mutation = originals[VENDOR_REGISTER].replace("no customer-data path is wired", "customer-data path is wired", 1)
+    _must_reject("vendor-register current-flow posture removal", root, {VENDOR_REGISTER: vendor_mutation})
     count += 1
     _must_reject("runtime path coverage removal", root, {WORKFLOW: originals[WORKFLOW].replace('    paths: ["**"]', "", 1)})
     count += 1

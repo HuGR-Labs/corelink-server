@@ -3,9 +3,9 @@ id: "VENDOR-RISK-REGISTER-2026-05-15"
 type: "compliance_register"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.4.1"
+version: "1.4.2"
 created: "2026-05-15"
-updated: "2026-09-06"
+updated: "2026-09-22"
 sprint: "R5-3"
 parent_wi: "WI-R5-3-GAP-14-VENDOR-RISK"
 owner: "Gustavo Schneiter"
@@ -142,7 +142,7 @@ Vendors below appear in `docs/internal/secrets-checklist.md` but are intentional
 
 | Excluded vendor | Why excluded |
 |---|---|
-| Sigstore (Linux Foundation) | Public transparency log; no PII shared; treated as open-source infrastructure dependency, not a vendor. Captured in `legal/sub-processors.md` for completeness only. |
+| Sigstore (Linux Foundation) | Current release-SLSA, CAS, and TSA paths send only CoreLink-owned artifact/signing metadata; no customer-data path is wired. The separate transparency-log seam is not a live transport; any future pseudonymous-tenant use requires a new Legal/DPO review. Sigstore is not a customer-data sub-processor in the current register; treated as open-source supply-chain infrastructure; captured in `legal/sub-processors.md` for completeness only. |
 | Dependency-Track (self-hosted) | Self-hosted by CoreLink; the vendor is "us". No third-party risk surface. |
 | Per-customer HashiCorp Vault instances | Customer-side infrastructure; CoreLink never holds plaintext credentials. Listed for awareness in row 8 but per-customer instances are scoped under the customer's risk program. |
 
@@ -201,3 +201,4 @@ vendor goes dark (the reverse).
 | 1.3.0 | 2026-08-24 | Gustavo Schneiter (Art. 28 gap closure — Sentry + Plausible) | Added row 20 (**Functional Software, Inc. / Sentry**, error-monitoring telemetry across `apps/admin-ui` and the docs-site build; wired per `docs/internal/secrets-checklist.md` rows 135/136/137/145 and `sentry.server.config.ts`/`sentry.edge.config.ts`) and row 21 (**Plausible Insights OÜ**, cookieless docs-site analytics; `apps/docs/docusaurus.config.ts:232`). Both were live in production and undisclosed in this register and in `legal/sub-processors.md`. Both classified **Important**, `telemetry`-only data class, contract **pending** (DPA policy published, no signed-copy evidence file — VR-7, VR-8). Public page regenerated via `scripts/gen-public-subprocessors.py`; active sub-processor count rises from 6 to 8. |
 | 1.4.0 | 2026-08-24 | Gustavo Schneiter (Art. 28 gap closure — Better Stack) | Added row 22 (**Better Stack, Inc.**, synthetic uptime/status monitoring; wired per `docs/internal/secrets-checklist.md` row 131, `monitoring/synthetic/probes.yml`, `apps/docs/src/statuspage-url.ts`, `apps/docs/src/components/StatusPill/classify.ts`). Live in production and undisclosed in this register and in `legal/sub-processors.md`. Classified **Important**, `telemetry`-only data class (synthetic probe results against CoreLink's own endpoints — no customer PII), contract **pending** (DPA policy published, no signed-copy evidence file — VR-9). Public page regenerated via `scripts/gen-public-subprocessors.py`; active sub-processor count rises from 8 to 9. |
 | 1.4.1 | 2026-09-06 | CoreLink backlog remediation (B-316) | Replaced four free-form missing-evidence references with canonical, fail-closed pending packets. VR-6..VR-9 remain Open: packet existence records the unresolved Legal action and is not a DPA signature, review outcome, SOC 2 evidence, or approval. Reconciled the frontmatter version with the existing 1.4.0 history before this patch bump. |
+| 1.4.2 | 2026-09-22 | CoreLink legal/docs reconciliation (#1681) | Scoped the Sigstore disclosure to current artifact/signing metadata flows and the deferred transparency-log seam; no GDPR transfer-table outcome selected. |

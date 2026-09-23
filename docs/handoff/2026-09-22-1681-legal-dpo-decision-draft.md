@@ -44,12 +44,14 @@ campos de revisão e do artefato assinado, o estado deve continuar `pending`.
   e são protegidos por `scripts/verify_b314_gdpr_sigstore.py`. O frontmatter da
   cópia em inglês continua `draft: true`; este documento não trata esses
   arquivos como uma publicação aprovada.
-- O Trust Center e o gerador descrevem Sigstore como infraestrutura de cadeia de
-  suprimentos, fora dos sub-processadores de dados de clientes. A página também
-  registra a remoção do antigo lane OCI em 2026-09-08, enquanto o frontmatter
-  ainda diz `last_updated: 2026-09-06`. Essa divergência de data é registrada
-  aqui para reconciliação factual posterior; este rascunho não edita nem publica
-  o Trust Center.
+- O Trust Center, o gerador, o registro de vendors e o disclosure contratual
+  agora usam a formulação factual comum: os caminhos release-SLSA, CAS e TSA
+  enviam somente metadados de artefato/assinatura próprios da CoreLink; não há
+  caminho de dados de clientes ligado a Sigstore. A seam separada de
+  transparency-log não é transporte ativo; qualquer uso futuro com payload
+  pseudonimizado exige nova revisão Legal/DPO. A correção também sincroniza a
+  data de atualização para 2026-09-22. Isso não escolhe o resultado da tabela
+  GDPR e não autoriza publicação adicional.
 - O fluxo release-SLSA monta sujeitos com nomes de artefatos e hashes SHA-256,
   mais referência de tag, commit e invocation, e envia a proveniência assinada
   a Fulcio/Rekor (`.github/workflows/release-slsa3.yml:282-375`). O fluxo CAS

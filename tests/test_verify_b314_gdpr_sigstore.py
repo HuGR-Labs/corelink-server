@@ -16,18 +16,36 @@ def _text(path: str) -> str:
 
 def test_open_baseline_and_mutations_pass() -> None:
     verify.verify()
-    assert verify.mutation_checks() == 21
+    assert verify.mutation_checks() == 23
 
 
-def test_wrapped_posture_disclaimer_is_not_a_false_negative() -> None:
+def test_wrapped_scoped_posture_is_not_a_false_negative() -> None:
     trust = _text(verify.TRUST)
     wrapped = trust.replace(
-        "Sigstore never\n  receives customer data",
-        "Sigstore never receives\n  customer data",
+        "no customer-data path is wired",
+        "no customer-data path is\n  wired",
         1,
     )
-    assert "never receives customer data" not in wrapped
+    assert "no customer-data path is wired" not in wrapped
     verify.verify(overrides={verify.TRUST: wrapped})
+
+
+def test_contractual_and_vendor_posture_are_load_bearing() -> None:
+    for path in (verify.LEGAL_REGISTER, verify.VENDOR_REGISTER):
+        source = _text(path)
+        if path == verify.LEGAL_REGISTER:
+            mutated = source.replace(
+                "not a customer-data sub-processor",
+                "a customer-data sub-processor",
+            )
+        else:
+            mutated = source.replace(
+                "no customer-data path is wired",
+                "customer-data path is wired",
+                1,
+            )
+        with pytest.raises(verify.VerificationError):
+            verify.verify(overrides={path: mutated})
 
 
 @pytest.mark.parametrize("path", verify.LOCALES)

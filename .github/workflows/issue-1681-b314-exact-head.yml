@@ -1,0 +1,70 @@
+name: issue #1681 B-314 exact-head evidence
+
+# Read-only, PR-scoped evidence for the B-314 verifier and its mutation suite.
+# The explicit head checkout prevents the default pull_request merge ref from
+# being mistaken for the changed commit under review.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/issue-1681-b314-exact-head.yml'
+      - 'BACKLOG.md'
+      - 'apps/docs/docs/explanation/privacy/gdpr.mdx'
+      - 'apps/docs/i18n/de/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx'
+      - 'apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx'
+      - 'apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/explanation/privacy/gdpr.mdx'
+      - 'apps/docs/docs/trust/subprocessors.mdx'
+      - 'apps/docs/i18n/de/docusaurus-plugin-content-docs/current/trust/subprocessors.mdx'
+      - 'apps/docs/i18n/es-419/docusaurus-plugin-content-docs/current/trust/subprocessors.mdx'
+      - 'apps/docs/i18n/pt-BR/docusaurus-plugin-content-docs/current/trust/subprocessors.mdx'
+      - 'docs/handoff/2026-09-06-b314-gdpr-sigstore-transfer.json'
+      - 'docs/handoff/2026-09-22-1681-legal-dpo-decision-draft.md'
+      - 'legal/sub-processors.md'
+      - 'scripts/gen-public-subprocessors.py'
+      - 'scripts/verify_b314_gdpr_sigstore.py'
+      - 'specs/_compliance/VENDOR-RISK-REGISTER.md'
+      - 'tests/test_verify_b314_gdpr_sigstore.py'
+      - '.github/workflows/backlog-verify.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1681-b314-exact-head-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head:
+    name: B-314 verifier and mutation evidence at PR head
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' &&
+      github.event.pull_request.number == 2149 &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact PR head without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Prove exact head and run B-314 verifier plus mutations
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = pull_request
+          test "$GITHUB_REPOSITORY" = HuGR-dev/corelink-server
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test
+          {
+            echo "### B-314 exact-head evidence"
+            echo
+            echo "- PR: #${{ github.event.pull_request.number }}"
+            echo "- expected head: `$EXPECTED_HEAD`"
+            echo "- checked out head: `$(git rev-parse HEAD)`"
+            echo "- verifier: `python3 -S scripts/verify_b314_gdpr_sigstore.py --self-test`"
+          } >> "$GITHUB_STEP_SUMMARY"
