@@ -25,7 +25,9 @@ The served surface is `crates/`, `worker/src`, and the Worker entrypoints under
     served AT THE EDGE and never reach the container.
 
   * exact `url.pathname === "/..."` dispatch in sibling Workers under
-    `apps/**` (the source file is retained for an actionable finding).
+    `apps/**`, including a direct named import of an exported static string
+    from a relative app TypeScript module (the source file is retained for an
+    actionable finding).
 
 The app scan is intentionally structural and closed-world: it examines every
 non-test TypeScript/TSX file under `apps/`, rather than an allowlist of today's
@@ -84,6 +86,7 @@ from validate_api_surface_app import (
     APP_STARTS_WITH,
     APP_SWITCH,
     app_mutation_self_test,
+    app_customer_routes,
     collect_app_routes,
     collect_app_unsupported,
     _live_pathname_tokens,
@@ -590,7 +593,7 @@ def is_public(path: str) -> bool:
 
 
 def compare(documented, rust_routes, worker_routes, app_routes=None):
-    app_routes = app_routes or {}
+    app_routes = app_customer_routes(app_routes or {})
     # Direction A (documented -> served) counts BOTH sources: a path the
     # Worker terminates at the edge (/api/health) is served even though no
     # crate registers it.
@@ -600,7 +603,8 @@ def compare(documented, rust_routes, worker_routes, app_routes=None):
     ]
 
     # Direction B (served -> documented) counts crate registrations and exact
-    # app pathname dispatch. A Worker `path === "/v1/onboarding"` arm is a
+    # customer app pathname dispatch after private/provider source
+    # dispositions. A Worker `path === "/v1/onboarding"` arm is a
     # DISPATCH guard, not an endpoint declaration, and there is no structural
     # way to tell the two apart in matchRoute. Conservative on purpose: this
     # direction may under-report a genuinely edge-only endpoint, and never
