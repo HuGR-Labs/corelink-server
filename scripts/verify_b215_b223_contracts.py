@@ -406,7 +406,6 @@ def check_b216(root: Path) -> None:
     for marker in (
         "DSR_DLQ_REDRIVE_AUTH_KEY",
         "constantTimeEqual(presented, expected)",
-        "Object.keys(record).length !== 1",
         "await store.claim(eventId, actorRef, approvalRef, nowMs)",
         "deriveErasureSalt(envelope.dsr_id, env.ERASURE_SALT_KEY, env.ENVIRONMENT)",
         "tenant_id: envelope.tenant_id",
@@ -418,6 +417,7 @@ def check_b216(root: Path) -> None:
         'return json(410, { error: "receipt_expired" })',
     ):
         _require(route, marker, lane)
+    _require(redrive, "Object.keys(record).length !== 1", lane)
     if route.index("await store.prepareDispatch(eventId, Date.now())") > route.index("await env.DSR_QUEUE.send(message)"):
         raise ContractError(f"{lane}: durable dispatch fence must precede Queue.send")
     _require(redrive, "INSERT OR IGNORE INTO dsr_dlq_redrive_envelopes", lane)
