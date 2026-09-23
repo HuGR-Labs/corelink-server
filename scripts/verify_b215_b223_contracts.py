@@ -377,6 +377,8 @@ def check_b216(root: Path) -> None:
         "await env.DSR_QUEUE!.send",
         "m.ack();",
         "m.retry();",
+        "const recoveryPayload: DsrDlqBody = { ...body, _dlq_requeue: priorRequeues };",
+        "recovery_payload_json",
     ):
         _require(body, marker, lane)
     _require(consumer, "PAGERDUTY_ROUTING_KEY", lane)
@@ -394,6 +396,8 @@ def check_b216(root: Path) -> None:
     # misleading standalone literal.
     _require(body, 'action: exhausted ? "delivery_exhausted" : "retry_paging"', lane)
     _require(body, 'requeue_error: "transport_error"', lane)
+    migration = _read(root, "migrations/d1/0144_dsr_dlq_recovery_payload.sql")
+    _require(migration, "ADD COLUMN recovery_payload_json TEXT", lane)
     index = _code(_read(root, "apps/signup-worker/src/index.ts"))
     _require(index, 'batch.queue === "corelink-dsr-erasure-dlq"', lane)
     _require(index, "await handleErasureDlqBatch(", lane)
@@ -570,7 +574,7 @@ def self_test(root: Path = ROOT) -> None:
     }
     paths_by_lane = {
         "B-215": ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/webhooks/clerk_identity.ts"],
-        "B-216": ["apps/signup-worker/src/webhooks/dsr_consumer.ts", "apps/signup-worker/src/index.ts"],
+        "B-216": ["apps/signup-worker/src/webhooks/dsr_consumer.ts", "apps/signup-worker/src/index.ts", "migrations/d1/0144_dsr_dlq_recovery_payload.sql"],
         "B-217": ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/webhooks/clerk_erasure.ts"],
         "B-218": ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/webhooks/clerk_erasure.ts", "worker/src/lib/internal_auth.ts"],
         "B-219": ["crates/corelink-erasure-attestation/src/verify.rs"],
@@ -730,6 +734,13 @@ def self_test(root: Path = ROOT) -> None:
                 "B-216",
                 'requeue_error: "transport_error"',
                 "requeue_error: String(err)",
+                "apps/signup-worker/src/webhooks/dsr_consumer.ts",
+            ),
+            (
+                "B-216-recovery-payload-removal",
+                "B-216",
+                "const recoveryPayload: DsrDlqBody = { ...body, _dlq_requeue: priorRequeues };",
+                "const removedRecoveryPayload = body;",
                 "apps/signup-worker/src/webhooks/dsr_consumer.ts",
             ),
         )

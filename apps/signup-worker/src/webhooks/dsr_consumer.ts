@@ -199,17 +199,43 @@ export interface DsrDlqReceipt {
   status: DlqReceiptStatus;
   paging_claimed: number;
   requeue_claimed: number;
+  /** Canonical replay payload retained before any terminal ACK. */
+  recovery_payload_json?: string | null;
+}
+
+function isValidRecoveryPayloadJson(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0) return false;
+  try {
+    const payload = JSON.parse(value) as Partial<DsrDlqBody>;
+    return !!payload
+      && typeof payload === "object"
+      && typeof payload.dsr_id === "string"
+      && typeof payload.tenant_id === "string"
+      && typeof payload.subject_id === "string"
+      && typeof payload.erasure_salt_hex === "string"
+      && typeof payload.queued_at_ms === "number"
+      && typeof payload.legal_hold === "boolean"
+      && payload.schema === "dev.hugr.corelink.dsr.queued.v1"
+      && payload.source === "clerk.user.deleted"
+      && typeof payload.clerk_user_id === "string"
+      && (payload._dlq_requeue === undefined || Number.isSafeInteger(payload._dlq_requeue));
+  } catch {
+    return false;
+  }
 }
 
 function isValidDlqReceipt(value: DsrDlqReceipt): boolean {
   return DLQ_RECEIPT_STATUSES.has(value.status)
     && (value.paging_claimed === 0 || value.paging_claimed === 1)
-    && (value.requeue_claimed === 0 || value.requeue_claimed === 1);
+    && (value.requeue_claimed === 0 || value.requeue_claimed === 1)
+    && (value.recovery_payload_json === undefined
+      || value.recovery_payload_json === null
+      || isValidRecoveryPayloadJson(value.recovery_payload_json));
 }
 
 export interface DsrDlqReceiptStore {
   find(eventId: string): Promise<DsrDlqReceipt | null>;
-  record(eventId: string, status: DlqReceiptStatus, nowMs: number): Promise<void>;
+  record(eventId: string, status: DlqReceiptStatus, nowMs: number, recoveryPayload?: DsrDlqBody): Promise<void>;
   claimPaging(eventId: string, nowMs: number): Promise<boolean>;
   claimRequeue(eventId: string, nowMs: number): Promise<boolean>;
 }
@@ -229,20 +255,22 @@ class D1DsrDlqReceiptStore implements DsrDlqReceiptStore {
 
   async find(eventId: string): Promise<DsrDlqReceipt | null> {
     return this.db
-      .prepare("SELECT status, paging_claimed, requeue_claimed FROM dsr_dlq_delivery_receipts WHERE event_id = ?1")
+      .prepare("SELECT status, paging_claimed, requeue_claimed, recovery_payload_json FROM dsr_dlq_delivery_receipts WHERE event_id = ?1")
       .bind(eventId)
       .first<DsrDlqReceipt>();
   }
 
-  async record(eventId: string, status: DlqReceiptStatus, nowMs: number): Promise<void> {
+  async record(eventId: string, status: DlqReceiptStatus, nowMs: number, recoveryPayload?: DsrDlqBody): Promise<void> {
+    const recoveryPayloadJson = recoveryPayload ? JSON.stringify(recoveryPayload) : null;
     const result = await this.db
       .prepare(
-        "INSERT INTO dsr_dlq_delivery_receipts (event_id, status, updated_at_ms) VALUES (?1, ?2, ?3) " +
+        "INSERT INTO dsr_dlq_delivery_receipts (event_id, status, updated_at_ms, recovery_payload_json) VALUES (?1, ?2, ?3, ?4) " +
           "ON CONFLICT(event_id) DO UPDATE SET status = excluded.status, " +
           "paging_claimed = CASE WHEN excluded.status = 'paging_retry' THEN 0 ELSE paging_claimed END, " +
+          "recovery_payload_json = COALESCE(excluded.recovery_payload_json, recovery_payload_json), " +
           "updated_at_ms = excluded.updated_at_ms",
       )
-      .bind(eventId, status, nowMs)
+      .bind(eventId, status, nowMs, recoveryPayloadJson)
       .run();
     if (!result.success) throw new Error("dsr_dlq_receipt_write_failed");
   }
@@ -369,7 +397,8 @@ type ReceiptBoundaryFailure = "not_configured" | "malformed" | "storage_error";
 /**
  * A receipt boundary failure must not become a silent platform discard when
  * the DLQ's bounded delivery budget is exhausted. No PagerDuty or requeue side
- * effect is safe without a receipt claim, so emit a redacted terminal alert.
+ * effect is safe without a receipt claim, so emit a redacted alert and keep
+ * the queue copy live. There is no durable recovery payload to justify ACK.
  */
 function retryReceiptBoundaryFailure(
   m: QueueMessage<DsrDlqBody>,
@@ -388,7 +417,9 @@ function retryReceiptBoundaryFailure(
     receipt_boundary: reason,
     note: "DLQ receipt boundary is unavailable at the retry limit; manual operator disposition required",
   });
-  m.ack();
+  // Without a durable receipt or accepted alert there is no recoverable
+  // hand-off. Keep the platform copy live instead of consuming it.
+  m.retry();
 }
 
 /**
@@ -414,6 +445,7 @@ export async function handleErasureDlqBatch(
   for (const m of batch.messages) {
     const body = m.body;
     const priorRequeues = normalizedDlqRequeueCount(body._dlq_requeue);
+    const recoveryPayload: DsrDlqBody = { ...body, _dlq_requeue: priorRequeues };
     let eventId: string;
     try {
       eventId = await dlqEventId(body, priorRequeues);
@@ -434,10 +466,15 @@ export async function handleErasureDlqBatch(
         continue;
       }
       if (existing?.status === "terminal" || existing?.status === "requeued" || existing?.status === "delivery_exhausted" || existing?.status === "requeue_ambiguous" || existing?.status === "paging_ambiguous") {
+        if (!existing.recovery_payload_json) {
+          await store.record(eventId, existing.status, Date.now(), recoveryPayload);
+        }
         m.ack();
         continue;
       }
-      await store.record(eventId, "paging_pending", Date.now());
+      // Establish the replay payload before claiming the provider side effect.
+      // Every later terminal ACK can therefore be recovered from D1.
+      await store.record(eventId, "paging_pending", Date.now(), recoveryPayload);
     } catch {
       retryReceiptBoundaryFailure(m, eventId, priorRequeues, "storage_error");
       continue;
@@ -445,7 +482,7 @@ export async function handleErasureDlqBatch(
     try {
       const claimed = await store.claimPaging(eventId, Date.now());
       if (!claimed) {
-        await store.record(eventId, "paging_ambiguous", Date.now());
+        await store.record(eventId, "paging_ambiguous", Date.now(), recoveryPayload);
         logDlqEvent({
           level: "alert", severity: "critical", event: DLQ_EVENT_NAME,
           component: "dsr-erasure-dlq", event_id: eventId, exhausted: true,
@@ -465,7 +502,7 @@ export async function handleErasureDlqBatch(
     if (paging.status !== "delivered") {
       if (paging.status === "failed" && paging.error === "transport_error") {
         try {
-          await store.record(eventId, "paging_ambiguous", Date.now());
+          await store.record(eventId, "paging_ambiguous", Date.now(), recoveryPayload);
         } catch {
           m.retry();
           continue;
@@ -482,7 +519,7 @@ export async function handleErasureDlqBatch(
       }
       const exhausted = (m.attempts ?? 0) >= MAX_DLQ_PAGING_ATTEMPTS;
       try {
-        await store.record(eventId, exhausted ? "delivery_exhausted" : "paging_retry", Date.now());
+        await store.record(eventId, exhausted ? "delivery_exhausted" : "paging_retry", Date.now(), recoveryPayload);
       } catch {
         m.retry();
         continue;
@@ -508,7 +545,7 @@ export async function handleErasureDlqBatch(
 
     const recovered = existing?.status === "paging_retry";
     try {
-      await store.record(eventId, recovered ? "paging_recovered" : "paged", Date.now());
+      await store.record(eventId, recovered ? "paging_recovered" : "paged", Date.now(), recoveryPayload);
     } catch {
       m.retry();
       continue;
@@ -530,7 +567,7 @@ export async function handleErasureDlqBatch(
         note: "GDPR Art.17 erasure dead after bounded re-enqueue — MANUAL operator action required",
       });
       try {
-        await store.record(eventId, "terminal", Date.now());
+        await store.record(eventId, "terminal", Date.now(), recoveryPayload);
         m.ack();
       } catch {
         m.retry();
@@ -540,7 +577,7 @@ export async function handleErasureDlqBatch(
     try {
       const claimed = await store.claimRequeue(eventId, Date.now());
       if (!claimed) {
-        await store.record(eventId, "requeue_ambiguous", Date.now());
+        await store.record(eventId, "requeue_ambiguous", Date.now(), recoveryPayload);
         logDlqEvent({
           level: "alert", severity: "critical", event: DLQ_EVENT_NAME,
           component: "dsr-erasure-dlq", event_id: eventId, exhausted: true,
@@ -553,7 +590,7 @@ export async function handleErasureDlqBatch(
         continue;
       }
       await env.DSR_QUEUE!.send({ ...body, _dlq_requeue: priorRequeues + 1 });
-      await store.record(eventId, "requeued", Date.now());
+      await store.record(eventId, "requeued", Date.now(), recoveryPayload);
       logDlqEvent({
         level: "alert",
         severity: "critical",
@@ -571,7 +608,7 @@ export async function handleErasureDlqBatch(
       m.ack(); // handed back to the main queue; consume the DLQ copy
     } catch {
       try {
-        await store.record(eventId, "requeue_ambiguous", Date.now());
+        await store.record(eventId, "requeue_ambiguous", Date.now(), recoveryPayload);
       } catch {
         m.retry();
         continue;

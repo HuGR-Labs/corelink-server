@@ -157,21 +157,23 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
 
   class MemoryReceipts implements DsrDlqReceiptStore {
     readonly rows = new Map<string, DsrDlqReceipt>();
-    readonly writes: Array<{ eventId: string; status: string }> = [];
+    readonly writes: Array<{ eventId: string; status: string; recovery_payload_json?: string }> = [];
     failWrites = false;
 
     async find(eventId: string): Promise<DsrDlqReceipt | null> {
       return this.rows.get(eventId) ?? null;
     }
 
-    async record(eventId: string, status: DsrDlqReceipt["status"]): Promise<void> {
+    async record(eventId: string, status: DsrDlqReceipt["status"], _nowMs = Date.now(), recoveryPayload?: DsrDlqBody): Promise<void> {
       if (this.failWrites) throw new Error("d1 unavailable");
-      this.writes.push({ eventId, status });
+      const recovery_payload_json = recoveryPayload ? JSON.stringify(recoveryPayload) : undefined;
+      this.writes.push({ eventId, status, recovery_payload_json });
       const prior = this.rows.get(eventId);
       this.rows.set(eventId, {
         status,
         paging_claimed: status === "paging_retry" ? 0 : prior?.paging_claimed ?? 0,
         requeue_claimed: prior?.requeue_claimed ?? 0,
+        recovery_payload_json: recovery_payload_json ?? prior?.recovery_payload_json,
       });
     }
 
@@ -530,8 +532,8 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       }
       expect(pagerFetch).not.toHaveBeenCalled();
       expect(send).not.toHaveBeenCalled();
-      expect(m.ack).toHaveBeenCalledOnce();
-      expect(m.retry).not.toHaveBeenCalled();
+      expect(m.ack).not.toHaveBeenCalled();
+      expect(m.retry).toHaveBeenCalledOnce();
     });
   }
 
@@ -571,6 +573,15 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       error.mockRestore();
     }
     expect(receipts.writes.at(-1)?.status).toBe("delivery_exhausted");
+    const recovery = JSON.parse(String(receipts.rows.values().next().value?.recovery_payload_json)) as DsrDlqBody;
+    expect(recovery).toMatchObject({
+      schema: "dev.hugr.corelink.dsr.queued.v1",
+      dsr_id: "paging-exhausted",
+      tenant_id: "tenant-x",
+      subject_id: "tenant-x",
+      erasure_salt_hex: "00".repeat(32),
+      _dlq_requeue: 0,
+    });
     expect(m.ack).toHaveBeenCalledOnce();
     expect(m.retry).not.toHaveBeenCalled();
   });

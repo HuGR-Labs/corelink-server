@@ -8,6 +8,7 @@ on:
       - "apps/signup-worker/src/index.ts"
       - "apps/signup-worker/wrangler.toml"
       - "migrations/d1/0138_dsr_dlq_delivery_receipts.sql"
+      - "migrations/d1/0144_dsr_dlq_recovery_payload.sql"
       - "scripts/verify_b215_b223_contracts.py"
       - "docs/internal/b215-b230-runtime-owner-actions.md"
       - "BACKLOG.md"
