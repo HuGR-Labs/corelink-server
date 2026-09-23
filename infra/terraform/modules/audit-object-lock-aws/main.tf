@@ -94,6 +94,7 @@ data "aws_iam_policy_document" "writer" {
     actions = [
       "s3:GetBucketObjectLockConfiguration",
       "s3:GetBucketLocation",
+      "s3:GetBucketVersioning",
     ]
     resources = [aws_s3_bucket.archive.arn]
   }

@@ -270,12 +270,29 @@ impl AwsS3ObjectLockAdapter {
         version: &str,
         reason: String,
     ) -> Result<T, ObjectLockArchiveError> {
+        self.failure_with_request(
+            operation,
+            key,
+            version,
+            "provider-request-unavailable",
+            reason,
+        )
+    }
+
+    fn failure_with_request<T>(
+        &self,
+        operation: &'static str,
+        key: &str,
+        version: &str,
+        request_id: &str,
+        reason: String,
+    ) -> Result<T, ObjectLockArchiveError> {
         let mut event = self.event(
             operation,
             ComplianceArchiveAuditPhase::Failure,
             key,
             version,
-            "provider-request-unavailable",
+            request_id,
         );
         event.detail = reason.clone();
         self.persist(event)?;
@@ -609,13 +626,26 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
                 return self.failure("immutable_put", &request.object_key, "", error.to_string())
             }
         };
-        let receipt_id = self.persist(self.event(
+        let outcome = self.persist(self.event(
             "immutable_put",
             ComplianceArchiveAuditPhase::Outcome,
             &request.object_key,
             &version,
             &request_id,
-        ))?;
+        ));
+        let receipt_id =
+            match outcome {
+                Ok(receipt_id) => receipt_id,
+                Err(error) => return self.failure_with_request(
+                    "immutable_put_outcome_persistence",
+                    &request.object_key,
+                    &version,
+                    &request_id,
+                    format!(
+                        "S3 PutObject succeeded but durable outcome persistence failed: {error}"
+                    ),
+                ),
+            };
         Ok(ImmutableArchiveWriteReceipt {
             tenant_id: request.tenant_id.clone(),
             object_key: request.object_key.clone(),

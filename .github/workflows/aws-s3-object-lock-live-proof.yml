@@ -33,6 +33,7 @@ jobs:
     timeout-minutes: 35
     environment: s3-object-lock-live-proof
     permissions:
+      actions: read
       contents: read
       id-token: write
     env:
@@ -50,6 +51,7 @@ jobs:
       OPERATION: ${{ inputs.operation }}
       SOURCE_RUN_ID: ${{ inputs.source_run_id }}
       SOURCE_ATTEMPT: ${{ inputs.source_attempt }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -154,17 +156,30 @@ jobs:
           bucket="${AWS_BUCKET_PREFIX}-${SOURCE_RUN_ID}-${SOURCE_ATTEMPT}"
           key="audit/probe-${SOURCE_RUN_ID}/synthetic.txt"
           [[ "$bucket" =~ ^${AWS_BUCKET_PREFIX}-[0-9]+-[1-9][0-9]*$ ]]
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" \
+            > "$RUNNER_TEMP/source-run.json"
+          jq -e --arg repo "$GITHUB_REPOSITORY" --arg attempt "$SOURCE_ATTEMPT" '
+            .conclusion == "success"
+            and .event == "workflow_dispatch"
+            and .head_branch == "main"
+            and .repository.full_name == $repo
+            and .run_attempt == ($attempt | tonumber)
+            and (.path | startswith(".github/workflows/aws-s3-object-lock-live-proof.yml@"))
+          ' "$RUNNER_TEMP/source-run.json" >/dev/null
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
-          aws s3api list-object-versions --bucket "$bucket" --prefix "$key" > "$RUNNER_TEMP/versions.json"
+          aws s3api list-object-versions --bucket "$bucket" --prefix "$key" --expected-bucket-owner "$AWS_ACCOUNT_ID" > "$RUNNER_TEMP/versions.json"
           jq -e --arg key "$key" '[.Versions[]? | select(.Key == $key)] | length == 1' "$RUNNER_TEMP/versions.json" >/dev/null
           version="$(jq -r --arg key "$key" '.Versions[] | select(.Key == $key) | .VersionId' "$RUNNER_TEMP/versions.json")"
-          aws s3api get-object-retention --bucket "$bucket" --key "$key" --version-id "$version" > "$RUNNER_TEMP/retention.json"
+          aws s3api get-object-retention --bucket "$bucket" --key "$key" --version-id "$version" --expected-bucket-owner "$AWS_ACCOUNT_ID" > "$RUNNER_TEMP/retention.json"
           test "$(date -u -d "$(jq -r '.Retention.RetainUntilDate' "$RUNNER_TEMP/retention.json")" +%s)" -le "$(date -u +%s)"
-          aws s3api put-object-legal-hold --bucket "$bucket" --key "$key" --version-id "$version" --legal-hold Status=OFF
-          aws s3api get-object-legal-hold --bucket "$bucket" --key "$key" --version-id "$version" > "$RUNNER_TEMP/legal-hold.json"
+          aws s3api put-object-legal-hold --bucket "$bucket" --key "$key" --version-id "$version" --legal-hold Status=OFF --expected-bucket-owner "$AWS_ACCOUNT_ID"
+          aws s3api get-object-legal-hold --bucket "$bucket" --key "$key" --version-id "$version" --expected-bucket-owner "$AWS_ACCOUNT_ID" > "$RUNNER_TEMP/legal-hold.json"
           jq -e '.LegalHold.Status == "OFF"' "$RUNNER_TEMP/legal-hold.json" >/dev/null
-          aws s3api delete-object --bucket "$bucket" --key "$key" --version-id "$version" > /dev/null
-          test "$(aws s3api list-object-versions --bucket "$bucket" --query 'length(Versions[])' --output text)" = 0
+          aws s3api delete-object --bucket "$bucket" --key "$key" --version-id "$version" --expected-bucket-owner "$AWS_ACCOUNT_ID" > /dev/null
+          test "$(aws s3api list-object-versions --bucket "$bucket" --expected-bucket-owner "$AWS_ACCOUNT_ID" --query 'length(Versions[])' --output text)" = 0
           aws s3api delete-bucket --bucket "$bucket"
           mkdir -p "$RUNNER_TEMP/object-lock-receipt"
           jq -n --arg source_run_id "$SOURCE_RUN_ID" --arg owner "$CLEANUP_OWNER" '{synthetic:true,source_run_id:$source_run_id,cleanup:"complete",cleanup_owner:$owner}' > "$RUNNER_TEMP/object-lock-receipt/redacted-cleanup.json"

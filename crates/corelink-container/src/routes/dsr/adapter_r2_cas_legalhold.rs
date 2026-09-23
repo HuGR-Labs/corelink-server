@@ -102,6 +102,20 @@ const RETENTION_INSERT_SQL: &str = "INSERT OR IGNORE INTO cas_retention \
      (tenant_id, region, object_key, retain_until_ms, mode, pseudonymized_at_ms) \
      VALUES (?1, ?2, ?3, NULL, 'governance', CAST(?4 AS INTEGER))";
 
+/// Governance retention must never treat an S3 Compliance archive row as an
+/// R2 legal-hold acknowledgement. The mode fence preserves the independent
+/// deletion and retention semantics of the two planes.
+const GOVERNANCE_RETENTION_LOOKUP_SQL: &str =
+    "SELECT object_key FROM cas_retention WHERE tenant_id = ?1 AND mode = 'governance'";
+
+#[cfg(test)]
+fn governance_retained_keys(rows: &[(&str, &str)]) -> HashSet<String> {
+    rows.iter()
+        .filter(|(mode, _key)| *mode == "governance")
+        .map(|(_mode, key)| (*key).to_owned())
+        .collect()
+}
+
 /// Count CAS objects still ATTRIBUTABLE to the subject: present under the prefix
 /// AND lacking a `cas_retention` row. Pure verification accounting — unified
 /// across both erase paths:
@@ -233,12 +247,8 @@ impl BackendErasureAdapter for R2CasLegalHoldEraseAdapter {
 
         // Objects this tenant is holding under governance retention.
         let tid = ctx.tenant_id.to_string();
-        let rows = d1_query_blocking(
-            &self.d1,
-            "SELECT object_key FROM cas_retention WHERE tenant_id = ?1",
-            vec![json!(tid)],
-        )
-        .map_err(ErasureBackendError::Transport)?;
+        let rows = d1_query_blocking(&self.d1, GOVERNANCE_RETENTION_LOOKUP_SQL, vec![json!(tid)])
+            .map_err(ErasureBackendError::Transport)?;
         let retained: HashSet<String> = rows
             .iter()
             .filter_map(|r| col_str(r, "object_key"))
@@ -343,5 +353,16 @@ mod tests {
         assert!(RETENTION_INSERT_SQL.contains("CAST(?4 AS INTEGER)"));
         // The retention row carries NO subject_id (severs the PII linkage).
         assert!(!RETENTION_INSERT_SQL.contains("subject_id"));
+    }
+
+    #[test]
+    fn governance_lookup_excludes_compliance_metadata_rows() {
+        assert!(GOVERNANCE_RETENTION_LOOKUP_SQL.contains("mode = 'governance'"));
+        assert!(!GOVERNANCE_RETENTION_LOOKUP_SQL.contains("'compliance'"));
+        let retained = governance_retained_keys(&[
+            ("governance", "iad/pfx/held-r2"),
+            ("compliance", "audit/tenant/s3-version"),
+        ]);
+        assert_eq!(retained, HashSet::from(["iad/pfx/held-r2".to_owned()]));
     }
 }

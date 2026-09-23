@@ -12,7 +12,7 @@
 -- Compliance rows never enter the R2 drain/release path. Rolling back after a
 -- Compliance row exists is unsafe: leave this schema in place and forward-fix.
 
-CREATE TABLE cas_retention_next (
+CREATE TABLE IF NOT EXISTS cas_retention_next (
   tenant_id TEXT NOT NULL,
   region TEXT NOT NULL,
   object_key TEXT NOT NULL,
@@ -49,7 +49,7 @@ FROM cas_retention;
 DROP TABLE cas_retention; -- additive-allowed: ADR-0104 SQLite rebuild widens the deployed mode CHECK
 ALTER TABLE cas_retention_next RENAME TO cas_retention; -- additive-allowed: ADR-0104 restore canonical table after the audited rebuild
 
-CREATE INDEX idx_cas_retention_tenant_expiry
+CREATE INDEX IF NOT EXISTS idx_cas_retention_tenant_expiry
   ON cas_retention (tenant_id, retain_until_ms);
-CREATE INDEX idx_cas_retention_tenant_mode
+CREATE INDEX IF NOT EXISTS idx_cas_retention_tenant_mode
   ON cas_retention (tenant_id, mode, region);
