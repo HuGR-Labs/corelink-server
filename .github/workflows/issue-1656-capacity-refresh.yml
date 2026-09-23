@@ -1,8 +1,9 @@
-name: issue-2044 capacity schema observation
+name: issue-2044 capacity readback
 
 # Protected owner lane.  The probe performs one GET only and emits an
-# allowlisted schema predicate receipt; it never emits provider fields or
-# values, deploys, patches, lists, or changes quota.
+# allowlisted capacity aggregates and explicit unavailable measurements; it
+# never emits provider fields beyond approved aggregates, deploys, patches,
+# lists, or changes quota.
 on:
   workflow_dispatch:
     inputs:
@@ -20,7 +21,7 @@ concurrency:
 
 jobs:
   readback:
-    name: "issue #2044 bounded capacity schema observation"
+    name: "issue #2044 bounded capacity readback"
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: production-capacity-read
@@ -42,7 +43,7 @@ jobs:
           test "$CONFIRM" = run-1656-read-only
           mkdir -p artifacts
 
-      - name: Capture one GET-only schema predicate receipt
+      - name: Capture one GET-only capacity receipt
         env:
           # This repository-level token remains opaque to the runner log.  The
           # protected, main-only environment and the probe's fixed single GET
@@ -52,22 +53,22 @@ jobs:
         run: |
           set +e
           python3 scripts/probe_i1656_capacity_readonly.py \
-            --topology-output artifacts/issue-2044-capacity-schema-predicates.json \
-            2>&1 | tee "$RUNNER_TEMP/issue-2044-capacity-schema-observation.log"
+            --receipt-output artifacts/issue-2044-capacity-read-only-receipt.json \
+            2>&1 | tee "$RUNNER_TEMP/issue-2044-capacity-readback.log"
           status=${PIPESTATUS[0]}
-          if [[ -f artifacts/issue-2044-capacity-schema-predicates.json ]]; then
-            sha256sum artifacts/issue-2044-capacity-schema-predicates.json > artifacts/issue-2044-capacity-schema-predicates.sha256
+          if [[ -f artifacts/issue-2044-capacity-read-only-receipt.json ]]; then
+            sha256sum artifacts/issue-2044-capacity-read-only-receipt.json > artifacts/issue-2044-capacity-read-only-receipt.sha256
           fi
           exit "$status"
 
-      - name: Upload allowlisted predicates and bounded log
+      - name: Upload approved aggregates and bounded log
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: issue-2044-capacity-schema-observation-${{ github.run_id }}
+          name: issue-2044-capacity-read-only-${{ github.run_id }}
           path: |
-            artifacts/issue-2044-capacity-schema-predicates.json
-            artifacts/issue-2044-capacity-schema-predicates.sha256
-            ${{ runner.temp }}/issue-2044-capacity-schema-observation.log
+            artifacts/issue-2044-capacity-read-only-receipt.json
+            artifacts/issue-2044-capacity-read-only-receipt.sha256
+            ${{ runner.temp }}/issue-2044-capacity-readback.log
           if-no-files-found: error
           retention-days: 30

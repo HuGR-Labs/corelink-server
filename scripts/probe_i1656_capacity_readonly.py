@@ -20,9 +20,10 @@ from typing import Any
 
 
 CANONICAL_ACCOUNT_ID = "6a1fc1c626fc2628823e60b9db01f5cd"
+WRANGLER_CLOUDCHAMBER_ME_PATH = "/cloudchamber/me"
 ENDPOINT = (
     "https://api.cloudflare.com/client/v4/accounts/"
-    f"{CANONICAL_ACCOUNT_ID}/containers/me"
+    f"{CANONICAL_ACCOUNT_ID}{WRANGLER_CLOUDCHAMBER_ME_PATH}"
 )
 ACCOUNT_REDACTED = f"{CANONICAL_ACCOUNT_ID[:4]}...{CANONICAL_ACCOUNT_ID[-4:]}"
 MAX_RESPONSE_BYTES = 1_048_576
@@ -45,6 +46,11 @@ SCHEMA_PREDICATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("result_total_vcpu", ("result", "total_vcpu")),
     ("result_vcpu_per_deployment", ("result", "vcpu_per_deployment")),
     ("result_total_memory_mib", ("result", "total_memory_mib")),
+    ("result_limits", ("result", "limits")),
+    ("result_limits_total_vcpu", ("result", "limits", "total_vcpu")),
+    ("result_limits_vcpu_per_deployment", ("result", "limits", "vcpu_per_deployment")),
+    ("result_limits_memory_mib_per_deployment", ("result", "limits", "memory_mib_per_deployment")),
+    ("result_limits_total_memory_mib", ("result", "limits", "total_memory_mib")),
     ("result_usage", ("result", "usage")),
     ("usage_used_vcpu", ("usage", "used_vcpu")),
     ("usage_vcpu", ("usage", "vcpu")),
@@ -56,12 +62,40 @@ SCHEMA_PREDICATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("result_usage_current_vcpu", ("result", "usage", "current_vcpu")),
 )
 
+# Wrangler 4.111.0 is locked in pnpm-lock.yaml. Its Cloudchamber
+# AccountService.getMe request is GET /accounts/{id}/cloudchamber/me and its
+# account client consumes these exact fields as account.limits.*. No
+# undocumented usage or concurrency field is accepted here.
+CAPACITY_LIMIT_FIELDS = (
+    "total_vcpu",
+    "vcpu_per_deployment",
+    "memory_mib_per_deployment",
+    "total_memory_mib",
+)
+UNAVAILABLE_MEASUREMENT = {
+    "status": "unavailable",
+    "source": "GET /accounts/{account}/cloudchamber/me",
+    "reason": "provider has not established a documented account measurement path",
+}
+
 
 class ProbeError(RuntimeError):
     pass
 
 
+def _assert_wrangler_endpoint_contract() -> None:
+    """Reject a source/configuration drift from Wrangler's exact GET path."""
+
+    expected = (
+        "https://api.cloudflare.com/client/v4/accounts/"
+        f"{CANONICAL_ACCOUNT_ID}{WRANGLER_CLOUDCHAMBER_ME_PATH}"
+    )
+    if ENDPOINT != expected:
+        raise ProbeError("capacity endpoint contract drifted from Wrangler Cloudchamber getMe")
+
+
 def _request(token: str) -> dict[str, Any]:
+    _assert_wrangler_endpoint_contract()
     if not token:
         raise ProbeError("dedicated Cloudflare capacity read token is absent")
     request = urllib.request.Request(
@@ -182,6 +216,44 @@ def _bounded_shape_counts(payload: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _positive_finite_number(source: dict[str, Any], field: str) -> float:
+    value = source.get(field)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ProbeError(f"provider capacity field {field} is missing or nonnumeric")
+    if value != value or value in (float("inf"), float("-inf")):
+        raise ProbeError(f"provider capacity field {field} is nonfinite")
+    if value <= 0:
+        raise ProbeError(f"provider capacity field {field} is nonpositive")
+    return float(value)
+
+
+def _parse_live_capacity(payload: dict[str, Any]) -> dict[str, object]:
+    """Parse only the Cloudchamber limits contract established by Wrangler.
+
+    The endpoint does not establish account usage or tenant concurrency. Those
+    values remain explicitly unavailable rather than inferred from reservation
+    arithmetic, application count, or undocumented provider object members.
+    """
+
+    _validate_provider_envelope(payload)
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise ProbeError("provider capacity result is missing or not an object")
+    limits = result.get("limits")
+    if not isinstance(limits, dict):
+        raise ProbeError("provider capacity limits is missing or not an object")
+    parsed = {field: _positive_finite_number(limits, field) for field in CAPACITY_LIMIT_FIELDS}
+    if parsed["total_vcpu"] < parsed["vcpu_per_deployment"]:
+        raise ProbeError("provider vCPU limits are inconsistent")
+    if parsed["total_memory_mib"] < parsed["memory_mib_per_deployment"]:
+        raise ProbeError("provider memory limits are inconsistent")
+    return {
+        "quota": parsed,
+        "usage": dict(UNAVAILABLE_MEASUREMENT),
+        "concurrency": dict(UNAVAILABLE_MEASUREMENT),
+    }
+
+
 def _write(path: Path, receipt: dict[str, object]) -> None:
     if path.is_symlink() or (path.exists() and not path.is_file()):
         raise ProbeError("receipt output must be a regular non-symlink file")
@@ -212,7 +284,7 @@ def run_topology(token: str, output: Path) -> int:
         "read_only": True,
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "account_id_redacted": ACCOUNT_REDACTED,
-        "endpoint": "GET /accounts/{account}/containers/me",
+        "endpoint": "GET /accounts/{account}/cloudchamber/me",
         "provider_api_version": "v4",
         "capacity_schema_predicates": _schema_projection(payload),
         "shape_counts": _bounded_shape_counts(payload),
@@ -221,12 +293,36 @@ def run_topology(token: str, output: Path) -> int:
     return 0
 
 
+def run_receipt(token: str, output: Path) -> int:
+    """Write approved quota aggregates and explicit unavailable measurements."""
+
+    payload = _request(token)
+    receipt: dict[str, object] = {
+        "schema_version": 1,
+        "schema": "corelink.issue-2044.capacity-read-only.v1",
+        "issue": 2044,
+        "read_only": True,
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "account_id_redacted": ACCOUNT_REDACTED,
+        "endpoint": "GET /accounts/{account}/cloudchamber/me",
+        "provider_api_version": "v4",
+        **_parse_live_capacity(payload),
+    }
+    _write(output, receipt)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--topology-output", type=Path, required=True)
+    outputs = parser.add_mutually_exclusive_group(required=True)
+    outputs.add_argument("--topology-output", type=Path)
+    outputs.add_argument("--receipt-output", type=Path)
     args = parser.parse_args()
     try:
-        return run_topology(os.environ.get("CLOUDFLARE_CAPACITY_READ_TOKEN", ""), args.topology_output)
+        token = os.environ.get("CLOUDFLARE_CAPACITY_READ_TOKEN", "")
+        if args.topology_output is not None:
+            return run_topology(token, args.topology_output)
+        return run_receipt(token, args.receipt_output)
     except ProbeError as exc:
         print(f"issue-2044 capacity observation: FAIL-CLOSED: {exc}", flush=True)
         return 2
