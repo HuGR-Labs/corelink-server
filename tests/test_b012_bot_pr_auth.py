@@ -45,16 +45,50 @@ class B012BotPrAuthTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             candidate = Path(tmp)
             text = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
-            self.assertIn("Check/status presence or a zero-job workflow run does not close it", text)
+            marker = "Check/status presence or a zero-job workflow run is not execution evidence"
+            self.assertIn(marker, " ".join(text.split()))
             (candidate / "BACKLOG.md").write_text(
                 text.replace(
-                    "Check/status presence or a zero-job workflow run does not close it",
-                    "Check/status presence closes it",
+                    "Check/status presence or a zero-job workflow run is\n  not execution evidence",
+                    "Check/status presence is execution evidence",
                     1,
                 ),
                 encoding="utf-8",
             )
             self.assertTrue(any("Check/status presence" in error for error in verify_b012_backlog(candidate)))
+
+    def test_closed_backlog_requires_valid_hosted_receipt_and_rejects_stale_open(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            candidate = Path(tmp)
+            text = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
+            (candidate / "BACKLOG.md").write_text(text, encoding="utf-8")
+            self.assertTrue(any("done status requires verified hosted" in e for e in verify_b012_backlog(candidate)))
+
+            receipt = candidate / "evidence/owner-actions/B-012/bot-pr-checks.json"
+            receipt.parent.mkdir(parents=True)
+            receipt.write_text(
+                (ROOT / "evidence/owner-actions/B-012/bot-pr-checks.json").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            self.assertEqual(verify_b012_backlog(candidate), [])
+
+            start = text.index("### B-012 —")
+            end = text.index("### B-013 —", start)
+            section = text[start:end].replace("status: done", "status: open", 1)
+            stale_open = text[:start] + section + text[end:]
+            (candidate / "BACKLOG.md").write_text(stale_open, encoding="utf-8")
+            self.assertTrue(any("stale open" in e for e in verify_b012_backlog(candidate)))
+
+    def test_closed_backlog_rejects_mutated_hosted_job_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            candidate = Path(tmp)
+            text = (ROOT / "BACKLOG.md").read_text(encoding="utf-8")
+            (candidate / "BACKLOG.md").write_text(text, encoding="utf-8")
+            receipt = candidate / "evidence/owner-actions/B-012/bot-pr-checks.json"
+            receipt.parent.mkdir(parents=True)
+            receipt_text = (ROOT / "evidence/owner-actions/B-012/bot-pr-checks.json").read_text(encoding="utf-8")
+            receipt.write_text(receipt_text.replace("job_urls", "job_url", 1), encoding="utf-8")
+            self.assertTrue(any("receipt is invalid" in e for e in verify_b012_backlog(candidate)))
 
     def test_mutating_pr_step_back_to_github_token_is_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
