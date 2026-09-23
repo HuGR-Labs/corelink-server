@@ -27,6 +27,9 @@ Each entry cross-references:
 - **B-229 contract guard preserves production closure evidence.** B-101 now
   accepts its explicit done-state action and three-part Clerk webhook verifier
   while still rejecting the immutable open proposal action.
+- **B-193 digest-order closure follows split OCI sources.** Contract and
+  mutation gates now inspect executable upload/test fragments and preserve
+  fail-closed verification-before-persist ordering.
 
 - **B-210 retirement contract is wired to its truthful closure gate.** The
   superseded admin SSR finding now validates its done-state next action and

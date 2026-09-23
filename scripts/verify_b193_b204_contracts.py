@@ -44,15 +44,17 @@ def verify(root: Path) -> list[str]:
             return ""
         return path.read_text(encoding="utf-8")
 
-    # B126 split the OCI facade into include fragments.  Read the executable
-    # implementation (and its focal test) rather than treating the facade's
-    # include! line as if it contained the operation body.
-    oci = read("crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs")
-    oci_tests = read("crates/corelink-container/src/routes/oci/b126_m2_test_1_1.rs")
+    # B126 split the OCI upload implementation and its focal tests into part2
+    # fragments. Read the executable fragment, not the facade prefix.
+    oci = read("crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs")
+    oci_tests = read("crates/corelink-container/src/routes/oci/b126_m2_test_1_1_part2.rs")
     finalize = oci[oci.find("fn finalize_upload") :]
     if not finalize:
         errors.append("B-193: finalize_upload implementation missing")
-    elif finalize.find("verify_against_bytes") < 0 or finalize.find("verify_against_bytes") > finalize.find("self.moat"):
+    elif (
+        finalize.find("d.verify_against_bytes(&session.buf)") < 0
+        or finalize.find("d.verify_against_bytes(&session.buf)") > finalize.find("self.moat")
+    ):
         errors.append("B-193: digest verification is not before the R2 persist")
     require(oci_tests, "finalize_rejects_digest_lie_and_persists_nothing", "B-193", errors)
 
@@ -191,8 +193,8 @@ def verify(root: Path) -> list[str]:
     require(ac, "no `ac_meta` D1 index row", "B-201", errors)
 
     # The storage facade is an include! composition point; the physical
-    # bucket mapping lives in the AC implementation fragment.
-    r2 = read("crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs")
+    # bucket mapping lives in the CAS builder fragment.
+    r2 = read("crates/corelink-container/src/storage/r2_s3_parts/cas_builder.rs")
     for mapping in ("\"iad\" => \"corelink-cas-prod\"", "\"lhr\" => \"corelink-cas-eu\"", "\"nrt\" => \"corelink-cas-apac\""):
         require(r2, mapping, "B-202", errors)
     require(r2, "validate_cas_bucket_for_region", "B-202", errors)
