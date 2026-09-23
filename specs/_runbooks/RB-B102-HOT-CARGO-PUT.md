@@ -1,3 +1,19 @@
+---
+id: "RB-B102-HOT-CARGO-PUT"
+type: "runbook"
+doc_status: "DRAFT"
+audit_status: "ACTIVE"
+version: "1.0.0"
+created: "2026-09-22"
+updated: "2026-09-23"
+owner: "Gustavo Schneiter"
+final_approver: "Gustavo Schneiter"
+reviewers: []
+supersedes: null
+superseded_by: null
+tags: ["runbook", "b-102", "cargo", "sccache", "latency", "staging"]
+---
+
 # RB-B102 — hot `/cargo` PUT latency
 
 This runbook measures the authenticated sccache write path against the fixed
