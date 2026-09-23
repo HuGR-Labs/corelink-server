@@ -17,7 +17,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify adversarial classification cases
+        shell: bash
+        run: bash tests/test_classify_runner_failure.sh
+
       - name: Induce and classify ENOSPC plus linker failure
+        id: induce
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -129,14 +135,25 @@ jobs:
           test -n "$enospc_class" -a -n "$linker_class"
           test -s "$root/enospc-classification.json"
           test -s "$root/linker-classification.json"
-          python3 - "$root/enospc-classification.json" "$root/linker-classification.json" <<'PY'
+          # The condition is specifically storage exhaustion on both writes;
+          # accepting LINKER_FAILURE here would hide a misdiagnosed ENOSPC.
+          test "$enospc_rc" -ne 0
+          test "$linker_rc" -ne 0
+          test "$enospc_class" = ENOSPC
+          test "$linker_class" = ENOSPC
+          grep -q '^::warning title=Infrastructure failure::ENOSPC; original gate status preserved$' "$enospc_log"
+          grep -q '^::warning title=Infrastructure failure::ENOSPC; original gate status preserved$' "$linker_log"
+          python3 - "$root/enospc-classification.json" "$enospc_rc" "$root/linker-classification.json" "$linker_rc" <<'PY'
           import json
           import sys
 
-          for path in sys.argv[1:]:
-              classification = json.load(open(path))["classification"]
-              if classification not in {"ENOSPC", "LINKER_FAILURE"}:
-                  raise SystemExit(f"unexpected classifier receipt: {classification}")
+          for path, expected_status in ((sys.argv[1], int(sys.argv[2])),
+                                        (sys.argv[3], int(sys.argv[4]))):
+              receipt = json.load(open(path, encoding="utf-8"))
+              assert receipt["classification"] == "ENOSPC", receipt
+              assert receipt["exit_code"] == expected_status, receipt
+              assert receipt["original_exit_code"] == expected_status, receipt
+              assert receipt["original_status_preserved"] is True, receipt
           PY
           python3 - "$report" "$shm_size" "$shm_block_size" "$enospc_rc" "$enospc_class" "$linker_rc" "$linker_class" "$enospc_remaining" "$linker_remaining" <<'PY'
           import json
@@ -168,13 +185,30 @@ jobs:
             echo "- linker: exit=$linker_rc classification=$linker_class"
             echo "- cleanup: performed by EXIT trap"
           } >>"$GITHUB_STEP_SUMMARY"
+          # Emit the captured workflow commands after verifying them so Actions
+          # records the infrastructure annotations on the failed gate step.
+          sed -n '/^::warning title=Infrastructure failure::/p' "$enospc_log"
+          sed -n '/^::warning title=Infrastructure failure::/p' "$linker_log"
+          exit "$linker_rc"
 
-          # A red command with either classifier result is required; the raw
-          # diagnostics remain in the uploaded logs for receipt review.
-          test "$enospc_rc" -ne 0
-          test "$linker_rc" -ne 0
-          [[ "$enospc_class" == ENOSPC || "$enospc_class" == LINKER_FAILURE ]]
-          [[ "$linker_class" == ENOSPC || "$linker_class" == LINKER_FAILURE ]]
+      - name: Verify the gate step failed with a storage diagnosis
+        if: always()
+        env:
+          GATE_OUTCOME: ${{ steps.induce.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GATE_OUTCOME" = failure
+          python3 - "$GITHUB_WORKSPACE/issue-1670-report.json" <<'PY'
+          import json
+          import sys
+
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          for name in ("enospc", "linker"):
+              result = report[name]
+              assert result["exit_code"] != 0, (name, result)
+              assert result["classification"] == "ENOSPC", (name, result)
+          PY
 
       - name: Upload reproducible evidence
         if: always()
