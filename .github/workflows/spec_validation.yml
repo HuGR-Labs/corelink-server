@@ -8,6 +8,7 @@ name: Spec Validation (Lote 9.5c)
 # - check_cost_regression.py: §14.10 universal cost regression gate adoption
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'specs/**'
@@ -44,6 +45,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       # Use the image's system Python to host the repo-local venv. Its bin is
