@@ -9,6 +9,7 @@ source_files:
   - "crates/corelink-container/src/routes/internal_pat/part-00-01.rs"
   - "crates/corelink-container/src/routes/internal_pat/part-01.rs"
   - "crates/corelink-container/src/adapter_pat_lookup.rs"
+  - "crates/corelink-container/src/adapter_pat_verifier/part-02.rs"
   - "crates/corelink-container/src/scope.rs"
 source_blobs:
   - "crates/corelink-container/src/customer_d1_billing_keys.rs@1788eda7d562547a4941cbd01f425660a2164fe8"
@@ -17,6 +18,7 @@ source_blobs:
   - "crates/corelink-container/src/routes/internal_pat/part-00-01.rs@b257d228d8c062827dc45f98c8b070cd0073f4b1"
   - "crates/corelink-container/src/routes/internal_pat/part-01.rs@b74194b4466ff5f135c7d114830f57b93e0a4a9e"
   - "crates/corelink-container/src/adapter_pat_lookup.rs@a43ee870fd784a39efd14c68bcf0e34d3b1ebeb7"
+  - "crates/corelink-container/src/adapter_pat_verifier/part-02.rs@b59252c1e5d8ecd2b3abf6fdf91e52e816d8bf8f"
   - "crates/corelink-container/src/scope.rs@bb38593c90351cd25e9955615f76e8ba77c10c4f"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
@@ -32,13 +34,14 @@ Self-serve key creation maps requested capabilities to the constrained stored sc
 
 The internal mint endpoint has a dedicated authentication key. It does not fall back to the shared internal key, and the route is unavailable when the dedicated key is missing, blank, or too short. Its authenticated handler mints and returns the PAT material but does not write the D1 row; the caller owns persistence (`crates/corelink-container/src/routes/internal_pat/part-00-00.rs:1-80`; `crates/corelink-container/src/routes/internal_pat/part-00-01.rs:139-324`; `crates/corelink-container/src/routes/internal_pat/part-01.rs:18-32`).
 
-Scope checks use exact recognized tokens. A missing or empty scope grants no cache read or write; a find-only PAT is denied before the cache-read grant (`crates/corelink-container/src/scope.rs:67-110`).
+Scope checks use exact recognized tokens. A missing or empty scope grants no cache read or write. The adapter verifier rejects a find-only PAT before evaluating the cache-read grant (`crates/corelink-container/src/scope.rs:73-95`; `crates/corelink-container/src/adapter_pat_verifier/part-02.rs:428-475`).
 
 # Invariants
 
 - The verifier reads tenant, hash, scope, expiry, revocation, and find-only state through one row decoder (`crates/corelink-container/src/adapter_pat_lookup.rs:45-190`).
 - Self-serve mint cannot grant the admin scope, and find-only remains separate from the constrained stored `scope` label (`crates/corelink-container/src/customer_d1_maps_calendar.rs:44-98`; `crates/corelink-container/src/customer_d1_billing_keys.rs:198-278`).
 - Revoke is tenant-scoped and idempotent (`crates/corelink-container/src/customer_d1_billing_keys.rs:347-381`).
+- The adapter verifier rejects find-only PATs before cache-read grants (`crates/corelink-container/src/adapter_pat_verifier/part-02.rs:428-475`).
 - The internal PAT mint route requires the dedicated key, parses only after authentication, and does not disclose internal mint errors to the caller (`crates/corelink-container/src/routes/internal_pat/part-00-00.rs:1-80`; `crates/corelink-container/src/routes/internal_pat/part-00-01.rs:139-324`; `crates/corelink-container/src/routes/internal_pat/part-01.rs:18-32`).
 
 # Citations
@@ -50,4 +53,5 @@ Scope checks use exact recognized tokens. A missing or empty scope grants no cac
 5. `crates/corelink-container/src/routes/internal_pat/part-00-00.rs:1-80` — dedicated-key-only mint security model.
 6. `crates/corelink-container/src/routes/internal_pat/part-00-01.rs:139-324` — mint route and handler.
 7. `crates/corelink-container/src/routes/internal_pat/part-01.rs:18-32` — dedicated-key environment setup and fail-closed route mounting.
-8. `crates/corelink-container/src/scope.rs:67-110` — exact-token scope gate and find-missing relation.
+8. `crates/corelink-container/src/adapter_pat_verifier/part-02.rs:428-475` — find-only rejection before the adapter cache-read grant.
+9. `crates/corelink-container/src/scope.rs:73-95` — exact-token cache read/write gate; an empty or unknown scope grants neither capability.
