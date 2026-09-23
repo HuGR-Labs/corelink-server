@@ -96,6 +96,7 @@ import { SharedArray } from 'k6/data';
 // ─────────────────────────────────────────────────────────────────────────
 const TARGET_HOST = __ENV.K6_TARGET_HOST || 'https://staging.corelink.humangr.com';
 const AUTH_BEARER = __ENV.K6_AUTH_BEARER || '';
+const RUN_ID = __ENV.K6_RUN_ID || '';
 const DURATION = __ENV.DURATION || '24h';
 const VUS = Number(__ENV.VUS || '50');
 const CONFIRM = __ENV.K6_ENDURANCE_CONFIRM || '';
@@ -281,6 +282,7 @@ function authHeaders(tenant, extra) {
     {
       authorization: `Bearer ${AUTH_BEARER}`,
       'x-corelink-load-test': 'endurance-24h',
+      'x-corelink-load-test-run-id': RUN_ID,
       'x-corelink-tenant-hint': tenant.tenant_id,
     },
     extra || {},
@@ -326,7 +328,7 @@ function doCasRead(tenant) {
 
 function doCasWrite(tenant) {
   const idx = Math.floor(Math.random() * 1000);
-  const digest = `${tenant.tenant_id}_endurance_${idx}_${__VU}_${__ITER}`;
+  const digest = `${tenant.tenant_id}_run_${RUN_ID}_endurance_${idx}_${__VU}_${__ITER}`;
   // Small body — endurance is about *sustained mix*, not raw throughput.
   // Per-iter byte budget = ~4 KiB.
   const body = 'x'.repeat(4096);
@@ -380,7 +382,7 @@ function doWebhook(tenant) {
   // event_ids are pre-allocated by `scripts/byok-load-warmup.sh` /
   // staging seed (see stripe-webhook-burst.js).
   const idx = Math.floor(Math.random() * 10);
-  const eventId = `evt_load_endurance_${idx}`;
+  const eventId = `evt_load_endurance_${RUN_ID}_${idx}`;
   const body = JSON.stringify({
     id: eventId,
     type: 'invoice.paid',
@@ -444,7 +446,10 @@ const memPollFail = new Counter('endurance_memory_poll_failures_total');
 export function pollMemory(data) {
   if (data && data.start_s) TEST_START_S = data.start_s;
   const res = http.get(`${TARGET_HOST}/v1/admin/diagnostics/memory`, {
-    headers: { authorization: `Bearer ${AUTH_BEARER}` },
+    headers: {
+      authorization: `Bearer ${AUTH_BEARER}`,
+      'x-corelink-load-test-run-id': RUN_ID,
+    },
     tags: Object.assign({ op: 'memory_poll' }, hourTags()),
   });
   if (res.status === 200) {
@@ -473,6 +478,7 @@ export function pollMemory(data) {
 // ─────────────────────────────────────────────────────────────────────────
 export function setup() {
   if (!AUTH_BEARER) throw new Error('K6_AUTH_BEARER required (staging PAT)');
+  if (!/^\d{1,20}$/.test(RUN_ID)) throw new Error('K6_RUN_ID must be the numeric GitHub run id');
   const startS = Math.floor(Date.now() / 1000);
   console.log(
     `endurance-24h start: target=${TARGET_HOSTNAME} duration=${DURATION} ` +

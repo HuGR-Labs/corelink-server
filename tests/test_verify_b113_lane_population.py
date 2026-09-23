@@ -45,6 +45,16 @@ def test_billing_health_rejects_unavailable_self_hosted_runner() -> None:
         MODULE.verify(sources)
 
 
+def test_endurance_requires_hosted_runner() -> None:
+    lane = next(item for item in MODULE.LANES if item.name == "endurance-2h")
+    sources = corpus()
+    sources[lane.workflow] = sources[lane.workflow].replace(
+        "runs-on: ubuntu-24.04", "runs-on: corelink", 1
+    )
+    with pytest.raises(MODULE.VerificationError, match="endurance-2h"):
+        MODULE.verify(sources)
+
+
 @pytest.mark.parametrize("lane_index", range(len(MODULE.LANES)))
 def test_removing_each_named_job_fails_closed(lane_index: int) -> None:
     lane = MODULE.LANES[lane_index]

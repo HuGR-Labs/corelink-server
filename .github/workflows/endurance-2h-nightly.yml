@@ -1,17 +1,15 @@
 name: endurance-2h (operator dispatch, R-prep)
 
-# Runner: `corelink` — the Cloudflare container fabric (Ubuntu 24.04, apt +
-# sudo available, which is what the k6 apt install below needs).
+# Both jobs use isolated GitHub-hosted `ubuntu-24.04` runners. The load
+# generator sends traffic only to the explicitly validated staging origin.
 #
 # 2026-08-25 (B-037): both jobs were pinned to `[self-hosted, Linux, X64]`, a
 # label NO runner in the fleet carries, so neither could ever be scheduled — and
 # a workflow that cannot be scheduled is indistinguishable, in every view that
-# matters, from one that passes. The header claimed the cause was "no Linux
-# runner exists on the fleet". That stopped being true when the container fabric
-# landed: `corelink` IS Linux, and `buck2-starter-ci` / `sign-windows` had
-# already moved to it for exactly this reason. The claim outlived the fact.
+# matters, from one that passes. The lane now avoids both the nonexistent
+# self-hosted Linux label and the shared container runner.
 #
-# Dispatch-only. This is a 2-hour job on metered container infrastructure, so
+# Dispatch-only. This 2-hour job consumes metered GitHub-hosted minutes, so
 # unattended scheduling remains retired pending an explicit owner decision.
 #
 # R-prep endurance load — 2-hour variant of the 24h endurance drill.
@@ -32,9 +30,13 @@ on:
   # until an owner explicitly approves the metered staging spend.
   workflow_dispatch:
     inputs:
+      confirm:
+        description: 'Type "run-bounded-endurance" to dispatch the 2-hour staging lane'
+        required: true
+        type: string
       duration:
-        description: 'k6 DURATION (default 2h; smoke test uses 30s)'
-        required: false
+        description: 'The lane is fixed at exactly 2 hours'
+        required: true
         default: '2h'
 
 permissions:
@@ -52,7 +54,7 @@ jobs:
     # Require an operator dispatch from the protected canonical branch. This
     # keeps the metered staging lane unreachable from forks and feature refs.
     if: github.repository == 'HuGR-dev/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     environment: staging
     # Budget: 2h script + 5min ramp-up + 5min ramp-down + ~10min for k6
     # boot / artifact upload / baseline compare = 140 minutes ceiling.
@@ -60,6 +62,13 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: confirm bounded dispatch
+        env:
+          CONFIRM: ${{ github.event.inputs.confirm }}
+        run: test "${CONFIRM}" = "run-bounded-endurance"
 
       - name: install k6
         run: |
@@ -88,6 +97,9 @@ jobs:
         id: target_host
         env:
           K6_TARGET_HOST: ${{ secrets.K6_TARGET_HOST }}
+          K6_TARGET_IDENTITY_RECEIPT: ${{ secrets.K6_TARGET_IDENTITY_RECEIPT }}
+          K6_STAGING_PAT: ${{ secrets.K6_STAGING_PAT }}
+          K6_STAGING_TEARDOWN_TOKEN: ${{ secrets.K6_STAGING_TEARDOWN_TOKEN }}
           DURATION: ${{ github.event.inputs.duration || '2h' }}
         run: |
           set -euo pipefail
@@ -101,10 +113,19 @@ jobs:
             echo "::error::K6_TARGET_HOST must equal $CANONICAL_TARGET (optional trailing slash only)"
             exit 1
           fi
-          case "${DURATION}" in
-            30s|2h) ;;
-            *) echo "::error::DURATION must be 30s or 2h"; exit 1 ;;
-          esac
+          test "${DURATION}" = '2h' || {
+            echo "::error::DURATION must be exactly 2h"; exit 1;
+          }
+          test -n "${K6_STAGING_PAT:-}" || {
+            echo "::error::K6_STAGING_PAT is required"; exit 1;
+          }
+          test -n "${K6_STAGING_TEARDOWN_TOKEN:-}" || {
+            echo "::error::K6_STAGING_TEARDOWN_TOKEN is required before load starts"; exit 1;
+          }
+          python3 scripts/validate_load_target_receipt.py \
+            --target "$TARGET_HOST" \
+            --output "${RUNNER_TEMP}/target-receipt.json" \
+            --github-output "$GITHUB_OUTPUT"
           if [[ "${DURATION}" == "2h" && "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]]; then
             echo "::error::endurance is dispatch-only"
             exit 1
@@ -142,11 +163,13 @@ jobs:
           }
           EOF
           printf '%s\n' "prepared" > tests/load/results/endurance-2h/checkpoint-prepared
+          cp "${RUNNER_TEMP}/target-receipt.json" tests/load/results/endurance-2h/target-receipt.json
 
       - name: run k6 endurance 2h
         env:
           K6_TARGET_HOST:             ${{ steps.target_host.outputs.target_host }}
           K6_AUTH_BEARER:             ${{ secrets.K6_STAGING_PAT }}
+          K6_RUN_ID:                  ${{ github.run_id }}
           K6_PROMETHEUS_RW_SERVER_URL: ${{ secrets.K6_PROMETHEUS_RW_SERVER_URL }}
           DURATION:                   ${{ github.event.inputs.duration || '2h' }}
           VUS:                        '50'
@@ -186,12 +209,35 @@ jobs:
             tests/load/k6/scenarios/endurance-24h.js
           printf '%s\n' "completed" > "$RESULTS_DIR/checkpoint-completed"
 
+      - name: teardown synthetic staging state
+        id: teardown
+        if: always() && steps.target_host.outcome == 'success'
+        env:
+          K6_TARGET_HOST: ${{ steps.target_host.outputs.target_host }}
+          K6_STAGING_TEARDOWN_TOKEN: ${{ secrets.K6_STAGING_TEARDOWN_TOKEN }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          test -n "${K6_STAGING_TEARDOWN_TOKEN:-}" || {
+            echo "::error::K6_STAGING_TEARDOWN_TOKEN is required; refusing unmanaged synthetic state"
+            exit 1
+          }
+          payload=$(printf '{"run_id":"%s","scenario":"endurance-2h"}' "${GITHUB_RUN_ID}")
+          timeout 30s curl --fail --silent --show-error --location \
+            --request POST \
+            --header "Authorization: Bearer ${K6_STAGING_TEARDOWN_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data "$payload" \
+            "${K6_TARGET_HOST}/_internal/load-test/teardown" \
+            --output /dev/null
+
       - name: write receipt and teardown checkpoint
         if: always()
         env:
           TARGET_HOST: ${{ steps.target_host.outputs.target_host }}
           DURATION: ${{ github.event.inputs.duration || '2h' }}
           VUS: '50'
+          TEARDOWN_STATUS: ${{ steps.teardown.outcome || 'not-run' }}
         run: |
           set -euo pipefail
           RESULTS_DIR=tests/load/results/endurance-2h
@@ -202,8 +248,8 @@ jobs:
             [[ -z "$artifact" ]] && continue
             SHA_LINES+="$(sha256sum "$artifact")"$'\n'
           done < <(find "$RESULTS_DIR" -maxdepth 1 -type f \( -name 'endurance-2h-summary-*.json' -o -name 'endurance-2h-results-*.json' \) -print)
-          printf '%s\n' "teardown" > "$RESULTS_DIR/checkpoint-teardown"
-          export RECEIPT STATUS TARGET_HOST DURATION SHA_LINES
+          printf '%s\n' "$TEARDOWN_STATUS" > "$RESULTS_DIR/checkpoint-teardown"
+          export RECEIPT STATUS TARGET_HOST DURATION SHA_LINES TEARDOWN_STATUS
           python3 - <<'PY'
           import json, os
           from datetime import datetime, timezone
@@ -230,6 +276,8 @@ jobs:
               "duration": os.environ["DURATION"],
               "vus": int(os.environ["VUS"]),
               "status": os.environ["STATUS"],
+              "teardown_status": os.environ["TEARDOWN_STATUS"],
+              "teardown_deletion_proven": False,
               "artifact_sha256": hashes,
               "checkpoints": sorted(name for name in os.listdir(receipt_dir) if name.startswith("checkpoint-")),
               "teardown_at": datetime.now(timezone.utc).isoformat(),
@@ -254,7 +302,7 @@ jobs:
     name: 7-day rolling p99 drift (≤ +20% per SLO)
     # Keep the evidence comparator on the same protected canonical dispatch.
     if: always() && github.repository == 'HuGR-dev/corelink-server' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     needs: endurance-2h
     permissions:
       contents: read
@@ -262,6 +310,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: setup python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

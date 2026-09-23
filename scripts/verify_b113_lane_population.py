@@ -189,7 +189,7 @@ LANES = (
         ".github/workflows/endurance-2h-nightly.yml",
         "endurance-2h",
         (
-            "runs-on: corelink",
+            "runs-on: ubuntu-24.04",
             "timeout-minutes: 145",
             "K6_ENDURANCE_CONFIRM:       'yes'",
         ),
