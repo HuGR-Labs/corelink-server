@@ -7,10 +7,13 @@ source_files:
   - "crates/corelink-container/src/byte_accounting/b126_m2_impl_02.rs"
   - "crates/corelink-rate-headers/src/headers.rs"
   - "crates/corelink-container/src/byte_accounting.rs"
+  - "crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs"
 source_blobs:
-  - "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs@c0c4fa248f7be243efe0ea0d44016a56311c30af"
-  - "crates/corelink-container/src/byte_accounting/b126_m2_impl_02.rs@bd65dfc70297a7fea8ef25cb614c6404feac220e"
+  - "crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs@245e59dd5b1ec6ffdb96869d67623a3e89d92596"
+  - "crates/corelink-container/src/byte_accounting/b126_m2_impl_02.rs@0f0b21198f51254562c76f1cf29a17b600c2270d"
   - "crates/corelink-rate-headers/src/headers.rs@b73eb6bd8c9cd9faa5cde21d2405f69d4effffc2"
+  - "crates/corelink-container/src/byte_accounting.rs@5e191549714db768dbda4023922c82a0e29ae778"
+  - "crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs@3e62bda2ed171001cf74b084d36bd61e6c1d0d39"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "storage", "byte-accounting", "rfc-9331", "fail-closed"]
@@ -61,7 +64,7 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
   the same (`reserve == release`, so `bytes_used` cannot drift once encryption engages). A non-BYOK /
   inactive tenant reserves the plaintext length, byte-identical to before; a config-read error fails
   CLOSED. The sizing decision is `byok_committed_len`
-  (`crates/corelink-container/src/byte_accounting/b126_m2_impl_01.rs:530-561`).
+  (`crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs:56-111`).
 - The over-quota rejection carries the `over_quota` arm of the RFC 9331 `X-Rate-Limit-Type` taxonomy
   (storage/bandwidth 100% boundary) (`crates/corelink-rate-headers/src/headers.rs:30-37`).
 - `counts_against_sli` classifies `over_quota` as legitimate over-plan (NOT counted against the SLO),

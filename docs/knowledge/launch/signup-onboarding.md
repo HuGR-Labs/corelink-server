@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/signup_d1_http.rs"
   - "docs/operator/e2e-signup-sealed-2026-05-30.md"
 source_blobs:
-  - "crates/corelink-container/src/routes/signup.rs@d970c522b6d73a782f6bceb33f478a7fc723d7b9"
+  - "crates/corelink-container/src/routes/signup.rs@de32485d025f41c6979c59a3f36a55eaf127a526"
   - "crates/corelink-container/src/signup_d1_http.rs@7059f89157f88fc37b50026293fb0611c004fa10"
   - "docs/operator/e2e-signup-sealed-2026-05-30.md@16b5c767766b85e7ec06d3161cc6d65ae68d0f8b"
 checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
