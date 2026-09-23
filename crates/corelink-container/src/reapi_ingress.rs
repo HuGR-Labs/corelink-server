@@ -92,7 +92,7 @@ impl AdmissionLease {
     }
 
     #[cfg(test)]
-    fn test_only() -> Self {
+    pub(crate) fn test_only() -> Self {
         Self { _permit: None }
     }
 }
@@ -378,6 +378,34 @@ impl ReapiIngress {
             ac_update,
             cap_resolver,
             #[cfg(test)]
+            admission_calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
+    }
+
+    /// Construct a controlled ingress for a sibling REAPI module's tests.
+    /// Production services receive this bundle only from the route factory.
+    #[cfg(test)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "test harness mirrors the frozen dependency bundle"
+    )]
+    pub(crate) fn from_test_components(
+        authenticator: Arc<dyn IngressAuthenticator>,
+        admission: Arc<dyn IngressAdmission>,
+        cap_resolver: Arc<dyn crate::oci_cap::TenantCapResolver>,
+        cas_read: Arc<dyn CasReadHandler>,
+        cas_write: Arc<dyn CasWriteHandler>,
+        ac_lookup: Arc<dyn AcLookupHandler>,
+        ac_update: Arc<dyn AcUpdateHandler>,
+    ) -> Self {
+        Self {
+            authenticator,
+            admission,
+            cas_read,
+            cas_write,
+            ac_lookup,
+            ac_update,
+            cap_resolver,
             admission_calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
     }
