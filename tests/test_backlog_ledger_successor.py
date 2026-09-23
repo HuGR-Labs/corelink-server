@@ -424,7 +424,7 @@ def test_v0004_policy_derives_only_b012_retirement_from_pr_base(monkeypatch):
 
     assert receipt["prior_source_sha256"] == successor.V0004_RECONCILIATION["prior_source_sha256"]
     assert receipt["prior_source_sha256"] == ledger._sha256(
-        subprocess.check_output(["git", "show", "HEAD:BACKLOG.md"], cwd=root)
+        subprocess.check_output(["git", "show", f"{base_sha}:BACKLOG.md"], cwd=root)
     )
     assert policy._v0004_reconciliation_authorized(previous, prior, current, receipt, 4)
     assert current["BACKLOG.md"] == prior["BACKLOG.md"]
@@ -482,8 +482,9 @@ def test_v0004_policy_pins_complete_first_parent_history_from_git_objects(monkey
     root = Path(__file__).resolve().parents[1]
     policy = ledger._successor_policy()
     start = successor.V0004_RECONCILIATION["history_start"]
+    base_sha = successor.V0004_RECONCILIATION["base_commit"]
     commits = _git(
-        root, "rev-list", "--first-parent", "--reverse", f"{start}..HEAD", "--", "BACKLOG.md",
+        root, "rev-list", "--first-parent", "--reverse", f"{start}..{base_sha}", "--", "BACKLOG.md",
     ).splitlines()
 
     def sections(commit: str) -> dict[str, str]:

@@ -65,6 +65,15 @@ DONE_VERIFIERS: dict[str, tuple[str, bool]] = {
 # contract, including its adversarial mutations.
 DONE_VERIFIERS["B-226"] = ("verify_b226_alert_wiring.py", False)
 
+# B-210 was truthfully retired when B-119 removed the unbound admin surface.
+# Its immutable proposal record keeps the original finding contract; the done
+# backlog record has a separate retirement contract verified below.
+DONE_VERIFIERS["B-210"] = ("verify_b210_retirement.py", False)
+B210_DONE_FIELDS = {
+    "next_action": "Keep B-210 done while B-119 remains done and /admin/ops* remains absent; if a durable, securely bound approval surface is restored, re-open B-119 and B-210 together and re-audit SSR guard ordering before publishing any page.",
+    "acceptance": "B-210 is retired/superseded by done B-119: /admin/ops* is absent, the B-119 census remains done, and the retirement gate fails closed on status regression or surface reintroduction; restore of a durable bound surface reopens both items.",
+}
+
 
 class ProposalVerificationError(ValueError):
     """A proposal registry or its corresponding backlog contract is invalid."""
@@ -247,6 +256,7 @@ def _verify_one(root: Path, record: dict, manifest: dict[str, dict], backlog: st
             expected_verify = rf"^  python3 scripts/{re.escape(verifier)}$"
     else:
         expected_verify = rf"^  python3 scripts/verify_b101_proposals\.py --id {re.escape(proposal_id)}$"
+    done_fields = B210_DONE_FIELDS if proposal_id == "B-210" and backlog_status == "done" else {}
     required_lines = {
         "id": rf"^id: {re.escape(proposal_id)}$",
         "owner": r"^owner: tl$",
@@ -257,8 +267,8 @@ def _verify_one(root: Path, record: dict, manifest: dict[str, dict], backlog: st
         "finding-title": rf"^finding-title: {re.escape(json.dumps(record['finding_title'], ensure_ascii=False))}$",
         "problem": rf"^problem: {re.escape(json.dumps(record['problem'], ensure_ascii=False))}$",
         "evidence": rf"^evidence: {re.escape(json.dumps(record['evidence'], ensure_ascii=False))}$",
-        "next_action": rf"^next-action: {re.escape(json.dumps(record['next_action'], ensure_ascii=False))}$",
-        "acceptance": rf"^acceptance: {re.escape(json.dumps(record['acceptance'], ensure_ascii=False))}$",
+        "next_action": rf"^next-action: {re.escape(json.dumps(done_fields.get('next_action', record['next_action']), ensure_ascii=False))}$",
+        "acceptance": rf"^acceptance: {re.escape(json.dumps(done_fields.get('acceptance', record['acceptance']), ensure_ascii=False))}$",
         "verify": expected_verify,
     }
     for field, pattern in required_lines.items():
