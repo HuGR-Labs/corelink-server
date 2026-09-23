@@ -57,7 +57,7 @@ def validate(root: Path) -> None:
         "**BLOCKED — fail closed.**",
         "private beta",
         "Worker → Durable Object → Container",
-        "grpc-status: 0",
+        "finish with a nonzero-free `grpc-status: 0` trailer.",
         "bidirectional-streaming RPC",
         "authorization",
         "ALPN is HTTP/2",
@@ -124,7 +124,11 @@ def self_test() -> None:
     validate(REPO_ROOT)
     cases = (
         (DECISION, "private beta", "generally available"),
-        (DECISION, "grpc-status: 0", "grpc-status: unavailable"),
+        (
+            DECISION,
+            "finish with a nonzero-free `grpc-status: 0` trailer.",
+            "finish without a required terminal trailer.",
+        ),
         (PROXY, "fetcher.fetch(proxied)", "return proxied"),
         (WORKFLOW, "persist-credentials: false", "persist-credentials: true"),
         (WORKER_ENTRY, "const handler", "async connect(socket) {}\nconst handler"),
