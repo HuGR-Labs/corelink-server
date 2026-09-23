@@ -1,0 +1,44 @@
+name: issue-2177 authenticated REAPI ingress kernel
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-2177-reapi-ingress-contract.yml"
+      - "crates/corelink-container/src/lib.rs"
+      - "crates/corelink-container/src/reapi_ingress.rs"
+      - "crates/corelink-container/src/reapi_ingress/**"
+      - "crates/corelink-container/src/routes.rs"
+      - "crates/corelink-container/src/routes/build.rs"
+      - "specs/03_architecture/issue-2177-reapi-ingress-kernel.md"
+      - "scripts/verify_i2177_reapi_ingress.py"
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2177-reapi-ingress-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ingress-contract:
+    name: exact-head Rust ingress and adversarial contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout the exact pull request head without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Assert the exact revision under review
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Install the workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+      - name: Check issue-specific source mutations
+        run: python3 -S scripts/verify_i2177_reapi_ingress.py --self-test --json
+      - name: Compile and run authenticated ingress rejection cases
+        run: cargo test --locked -p corelink-server --lib reapi_ingress::tests -- --nocapture
