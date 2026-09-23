@@ -75,7 +75,7 @@ SPRINT3_FIELDS = {
 V0004_RECONCILIATION = {
     "sequence": 4,
     "previous_sequence": 3,
-    "base_commit": "91630baebe3ae7abe686cd4e06a5621ecdc4ab73",
+    "base_commit": "4bcf5fc0c73b175e0b91d58cf2a18b946a7728ec",
     "previous_source_sha256": "41726d6c8b2f4b1dc7ff35466a78c242e147b99eaca69a956064024e04212e23",
     "history_start": "87dc11e06f7e2a37ecc980253b710f920026bbb8",
     "history_changed_ids": (
@@ -177,14 +177,28 @@ V0004_RECONCILIATION = {
             "4762b45c1740f5ece3af18ba3d29c395b6d8970078241f15267dd1a096f35247",
             ('B-170',),
         ),
+        (
+            "c3c59531ac34b89c4b035471be111f4f3b19276a",
+            "ba5d933aed6c8801bc5c3178c2eaba3dd05bf5f3",
+            "4762b45c1740f5ece3af18ba3d29c395b6d8970078241f15267dd1a096f35247",
+            "909f4132204e2f03372f2e022e3550f8768e103569d1848eb53585f05a820b6c",
+            ('B-216',),
+        ),
+        (
+            "4bcf5fc0c73b175e0b91d58cf2a18b946a7728ec",
+            "c3c59531ac34b89c4b035471be111f4f3b19276a",
+            "909f4132204e2f03372f2e022e3550f8768e103569d1848eb53585f05a820b6c",
+            "4762b45c1740f5ece3af18ba3d29c395b6d8970078241f15267dd1a096f35247",
+            ('B-216',),
+        ),
     ),
     "prior_source_sha256": "4762b45c1740f5ece3af18ba3d29c395b6d8970078241f15267dd1a096f35247",
-    "prior_ledger_sha256": "02d81ecf3ade17a5317b3f24e68a17a801837bde6112cac9288b6a7f6175b656",
+    "prior_ledger_sha256": "e3d5347ec16f0454a98a3e10e59b210e008e0293f4c52482df07c11a720b93dd",
     "prior_catalog_sha256": {
-        "docs/campaigns/remediation/work-packages/B001-B045.md": "2a1735804f43bb726789b99ee80c14cf876f41eb6c684e3ea54e68981413cd38",
+        "docs/campaigns/remediation/work-packages/B001-B045.md": "081c9885db8d79c18f2f31edb7864bb1ca1a18d53f408720f3f9e4f00524f9c6",
         "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
         "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
-        "docs/campaigns/remediation/work-packages/B131-B167.md": "4be50ac320f2c8d238a21760bc24a5391a7a5dc1102532d9d034e05556ad089d",
+        "docs/campaigns/remediation/work-packages/B131-B167.md": "13805dab851c5023d7d49bc707ce0c30713a11aeca8b1e179c8710ad8d91671f",
     },
     "b154_fields": (
         "open",
@@ -229,19 +243,25 @@ def install(api):
         }
         target = "docs/campaigns/remediation/work-packages/B001-B045.md"
         text = catalogs[target].decode("utf-8")
-        for old, new in (
-            ("B-012 WP-B012\n", ""),
-            ("exactly four IDs:", "exactly three IDs:"),
-            ("| B-012 | open / owner | No implementation PR identified; bot-created events still need a non-`GITHUB_TOKEN` credential. | owner-only GitHub configuration |\n", ""),
-            ("The four rows above are the\ncurrent open dispatch population", "The three rows above are the\ncurrent open dispatch population"),
-            ("the current 13-item\nopen population", "the current 12-item\nopen population"),
-            ("Keep the four current owner/external gates explicit: B-008, B-012, B-032, and\n   B-035", "Keep the three current owner/external gates explicit: B-008, B-032, and B-035"),
-        ):
-            text = _replace_once(text, old, new)
+        if "B-012 WP-B012\n" in text:
+            for old, new in (
+                ("B-012 WP-B012\n", ""),
+                ("exactly four IDs:", "exactly three IDs:"),
+                ("| B-012 | open / owner | No implementation PR identified; bot-created events still need a non-`GITHUB_TOKEN` credential. | owner-only GitHub configuration |\n", ""),
+                ("The four rows above are the\ncurrent open dispatch population", "The three rows above are the\ncurrent open dispatch population"),
+                ("the current 13-item\nopen population", "the current 12-item\nopen population"),
+                ("Keep the four current owner/external gates explicit: B-008, B-012, B-032, and\n   B-035", "Keep the three current owner/external gates explicit: B-008, B-032, and B-035"),
+            ):
+                text = _replace_once(text, old, new)
+        elif "B-012 and its owner brief" not in text:
+            raise LedgerError("v0004 B-012 source drifted")
         catalogs[target] = text.encode("utf-8")
 
         workflow_target = "docs/campaigns/remediation/work-packages/B131-B167.md"
         workflow_text = catalogs[workflow_target].decode("utf-8")
+        if "WP-150 workflow ownership has one canonical, tracked source at" in workflow_text:
+            catalogs[workflow_target] = workflow_text.encode("utf-8")
+            return catalogs
         pattern = re.compile(
             r"(?ms)^This is the only editable ownership source for shared paths\..*?"
             r"^```wp-workflow-ownership\n.*?^```\n"
@@ -320,6 +340,16 @@ def install(api):
     def _v0004_ledger(prior_raw: bytes, base_sha: str) -> bytes:
         """Derive the exact ledger image after retiring B-012 from execution."""
         text = prior_raw.decode("utf-8")
+        if "base-ref: df1cd53f56a2eff4643aaf9368e25fb0303ce57d" not in text:
+            if "base-ref: 91630baebe3ae7abe686cd4e06a5621ecdc4ab73" not in text:
+                raise LedgerError("v0004 ledger source drifted")
+            return text.replace(
+                "base-ref: 91630baebe3ae7abe686cd4e06a5621ecdc4ab73",
+                f"base-ref: {base_sha}",
+            ).replace(
+                "base-sha: 91630baebe3ae7abe686cd4e06a5621ecdc4ab73",
+                f"base-sha: {base_sha}",
+            ).encode("utf-8")
         for old, new in (
             ("base-ref: df1cd53f56a2eff4643aaf9368e25fb0303ce57d", f"base-ref: {base_sha}"),
             ("base-sha: df1cd53f56a2eff4643aaf9368e25fb0303ce57d", f"base-sha: {base_sha}"),

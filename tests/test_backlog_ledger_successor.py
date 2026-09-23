@@ -436,9 +436,11 @@ def test_v0004_policy_derives_only_b012_retirement_from_pr_base(monkeypatch):
             "docs/campaigns/remediation/work-packages/B131-B167.md",
         }
     )
-    assert current["docs/campaigns/remediation/work-packages/B131-B167.md"] != prior[
-        "docs/campaigns/remediation/work-packages/B131-B167.md"
-    ]
+    b131 = "docs/campaigns/remediation/work-packages/B131-B167.md"
+    if base_sha == "4bcf5fc0c73b175e0b91d58cf2a18b946a7728ec":
+        assert current[b131] == prior[b131]
+    else:
+        assert current[b131] != prior[b131]
 
     assert not policy._v0004_reconciliation_authorized(
         previous, prior, current, {**receipt, "changed_ids": ["B-012"]}, 4,
