@@ -9,7 +9,7 @@ the single source of truth for item status. This ledger derives work ownership,
 dependency order and completion contracts from that source; it never overrides
 the backlog.
 
-The current population is 373 items: 13 open, 328 done and 32 parked. The 13
+The current population is 374 items: 12 open, 330 done and 32 parked. The 12
 open items are partitioned exactly once across four contract catalogs:
 
 The historical candidate snapshot remains pinned in
@@ -25,25 +25,25 @@ closure. A legitimate new observation must version a new manifest and transition
 the ledger base in the same reviewed change.
 
 ```ledger-state
-base-ref: df1cd53f56a2eff4643aaf9368e25fb0303ce57d
-base-sha: df1cd53f56a2eff4643aaf9368e25fb0303ce57d
-observed-at: 2026-09-13
-item-count: 373
-open-count: 13
-done-count: 328
+base-ref: 648ecdccd229bdb5154b86843053c28b9cce9d36
+base-sha: 648ecdccd229bdb5154b86843053c28b9cce9d36
+observed-at: 2026-09-23
+item-count: 374
+open-count: 12
+done-count: 330
 parked-count: 32
-catalog-counts: B001-B045=4,B046-B090=3,B091-B130=2,B131-B373=4
+catalog-counts: B001-B045=3,B046-B090=3,B091-B130=2,B131-B373=4
 ```
 
 | Catalog | Numeric range | Open IDs |
 |---|---:|---:|
-| [`work-packages/B001-B045.md`](work-packages/B001-B045.md) | B-001..B-045 | 4 |
+| [`work-packages/B001-B045.md`](work-packages/B001-B045.md) | B-001..B-045 | 3 |
 | [`work-packages/B046-B090.md`](work-packages/B046-B090.md) | B-046..B-090 | 3 |
 | [`work-packages/B091-B130.md`](work-packages/B091-B130.md) | B-091..B-130 | 2 |
 | [`work-packages/B131-B167.md`](work-packages/B131-B167.md) | B-131..B-373 | 4 |
-| **Total** | | **13** |
+| **Total** | | **12** |
 
-The logical base includes the current B-008/B-012/B-032/B-035,
+The logical base includes the current B-008/B-032/B-035,
 B-065/B-086/B-089, B-097/B-111 and B-154/B-170/B-314/B-316 open
 population. B-373's retained 19-alert candidate census is historical; the
 authenticated 2026-09-12 post-merge census found zero open alerts.
