@@ -87,11 +87,12 @@ def request(
     key: str,
     body: bytes = b"",
 ) -> dict[str, object]:
+    operation_id = f"b103-{uuid.uuid4().hex}"
     url = f"{base.rstrip('/')}/cargo/{tenant}/{key}"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Length": str(len(body)),
-        "X-Corelink-Operation": f"b103-{uuid.uuid4().hex}",
+        "X-Corelink-Operation": operation_id,
     }
     if method == "PROPFIND":
         headers["Depth"] = "0"
@@ -117,6 +118,10 @@ def request(
         transport_error = type(exc).__name__
     elapsed_ms = round((time.monotonic() - started) * 1000, 3)
     return {
+        # This is intentionally retained in the redacted wire artifact.  The
+        # same non-secret value is forwarded to the root Worker, so it binds a
+        # response to its unfiltered same-window tail event.
+        "operation_id": operation_id,
         "method": method,
         "key": key,
         "request_body_sha256": sha256(body) if method == "PUT" else None,
@@ -229,7 +234,8 @@ def main() -> int:
         "environment": "staging",
         "target": TARGET,
         "deployment_sha": args.deployment_sha,
-        "tenant_id": args.tenant,
+        "tenant_id": "[REDACTED]",
+        "tenant_id_sha256": sha256(args.tenant.encode("ascii")),
         "captured_at": now(),
         "concurrency_levels": list(CONCURRENCIES),
         "method_contract": {

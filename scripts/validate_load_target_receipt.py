@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -114,12 +115,35 @@ def validate(receipt: object, target: str, *, now: dt.datetime | None = None) ->
     }
 
 
+def artifact_receipt(receipt: dict[str, object], *, redact_tenant: bool) -> dict[str, object]:
+    """Return the receipt representation safe to retain as a CI artifact.
+
+    A staging identity receipt is an input authority, not evidence that needs
+    to disclose its tenant UUID.  Bounded-load artifacts retain a stable
+    one-way reference so their wire evidence can still be tied to the
+    validated receipt without publishing tenant identity.
+    """
+    if not redact_tenant:
+        return receipt
+    tenant = receipt["tenant_id"]
+    assert isinstance(tenant, str)
+    redacted = dict(receipt)
+    redacted["tenant_id"] = "[REDACTED]"
+    redacted["tenant_id_sha256"] = "sha256:" + hashlib.sha256(tenant.encode("ascii")).hexdigest()
+    return redacted
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True)
     parser.add_argument("--receipt-env", default="K6_TARGET_IDENTITY_RECEIPT")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--github-output", type=Path)
+    parser.add_argument(
+        "--redact-tenant",
+        action="store_true",
+        help="replace the tenant UUID in the output artifact with a stable hash reference",
+    )
     args = parser.parse_args(argv)
     raw = os.environ.get(args.receipt_env, "")
     try:
@@ -127,7 +151,10 @@ def main(argv: list[str] | None = None) -> int:
     except (json.JSONDecodeError, ReceiptError) as exc:
         print(f"::error::target identity receipt rejected: {exc}")
         return 1
-    args.output.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(artifact_receipt(receipt, redact_tenant=args.redact_tenant), sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
     if args.github_output:
         with args.github_output.open("a", encoding="utf-8") as output:
             output.write(f"deployment_sha={receipt['deployment_sha']}\n")
