@@ -81,8 +81,6 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
-      id-token: write
-      attestations: write
     steps:
       - name: Checkout protected main without write credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -124,11 +122,6 @@ jobs:
             --d02-identity "$GITHUB_WORKSPACE/artifacts/b251/d02-identity.json" \
             --observed-identity "$GITHUB_WORKSPACE/artifacts/b251/d03-identity.json" \
             --output "$GITHUB_WORKSPACE/artifacts/b251/latency-receipt.json"
-
-      - name: Attest redacted evidence receipts
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
-        with:
-          subject-path: artifacts/b251/*.json
 
       - name: Upload redacted receipts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

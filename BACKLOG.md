@@ -16021,7 +16021,7 @@ fabricar um resultado de produção.
 O lane B-251 agora deriva os dois registros de identidade executando o checker
 `InMemoryAtomicQuotaChecker` no produtor D02 imutável e no código observado em `main`,
 com entradas determinísticas dentro dos intervalos do property test D02. O recibo
-mantém apenas hashes dos transcripts e atesta sua proveniência. O replay e o p99
+mantém apenas hashes dos transcripts como artefato do GitHub Actions. O replay e o p99
 continuam sendo evidência do fixture in-memory; a árvore não contém implementação de
 produção de `AtomicCasState`/`AtomicQuotaChecker`, e este lane não mede latência de
 produção. A comparação inclui uma mutação negativa de identidade. O workflow só mede
@@ -16042,7 +16042,7 @@ verify-means: |
   `#[ignore]`, com 1.000 amostras e limite de 5 ms; sua execução pertence ao bundle
   D03 e não é alegada por este gate estático. O workflow agora executa o mesmo adapter
   de operação contra o commit produtor D02 fixado e o checkout D03, compara os digests
-  gerados, rejeita uma mutação e emite recibo redigido com atestação. A coleta ainda
+  gerados, rejeita uma mutação e emite recibos redigidos como artefatos do Actions. A coleta ainda
   precisa passar no workflow hospedado após merge; não existe evidência de latência de
   produção e o status continua parked até essa evidência ser anexada.
 last-verified: 2026-09-05

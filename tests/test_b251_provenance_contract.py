@@ -58,3 +58,11 @@ def test_run_operation_accepts_adapter_already_at_destination(tmp_path: Path, mo
 
     assert set(identity) == {"seed", "failure", "blob"}
     assert operation.read_text(encoding="utf-8") == "checked-in adapter\n"
+
+
+def test_deterministic_operation_seed_is_exactly_allowlisted_as_nonsecret() -> None:
+    matrix = (ROOT / "scripts/validate_secrets_matrix.py").read_text(encoding="utf-8")
+    shell = (ROOT / "scripts/secrets-checklist-verify.sh").read_text(encoding="utf-8")
+
+    assert "|B251_OPERATION_SEED$" in matrix
+    assert "|B251_OPERATION_SEED$" in shell

@@ -22,12 +22,15 @@ def verify(root: Path = ROOT) -> None:
         "github.ref == 'refs/heads/main'", "github.ref_protected == true",
         "ref: ${{ github.event.pull_request.head.sha }}",
         "f88c6ca41868f6a02e78ba9f4357d3abf67da4be",
-        "collect_b251_provenance.py", "attest-build-provenance@",
+        "collect_b251_provenance.py",
         "test_b251_provenance_contract.py",
     )
     for text in required:
         if text not in workflow:
             raise ValueError(f"workflow contract missing {text}")
+    for forbidden in ("id-token: write", "attestations: write", "attest-build-provenance@"):
+        if forbidden in workflow:
+            raise ValueError(f"B-251 workflow exceeds read-only permissions: {forbidden}")
     for text in ("cargo", "B251_OPERATION_TRANSCRIPT_HEX", "D02_COMMIT", "mutation"):
         if text not in collector:
             raise ValueError(f"collector contract missing {text}")
