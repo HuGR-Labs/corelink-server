@@ -4,11 +4,13 @@ title: "Container/platform crate cluster"
 description: "The composition layer — the Rust container HTTP binary that hosts the data plane, the per-region config-singleton Durable Object, and the Cloudflare binding adapters that wire trait-fakes onto real worker::* types."
 source_files:
   - "crates/corelink-container/src/main.rs"
+  - "crates/corelink-container/src/main_runtime.rs"
   - "crates/corelink-config-do/src/lib.rs"
   - "crates/corelink-config-do/src/types.rs"
   - "crates/corelink-cf-bindings/src/lib.rs"
 source_blobs:
-  - "crates/corelink-container/src/main.rs@f2a30721e7ad1c435c4590d85ece596e6cfe32dc"
+  - "crates/corelink-container/src/main_runtime.rs@e2b12640a5b4c842c54642c72aaae0b6b76ebdf2"
+  - "crates/corelink-container/src/main.rs@b64f13689133f41f65f286ca7aca0bc1a17f53d9"
   - "crates/corelink-config-do/src/lib.rs@ca276589c7f24827d764428fdfec86cee81cf8a4"
   - "crates/corelink-config-do/src/types.rs@9639f8148cf1ea2a4030780e171f8c39a94bccc7"
   - "crates/corelink-cf-bindings/src/lib.rs@c908b3d050663b0d154463bf59f4e785cf1c63a8"
@@ -29,7 +31,7 @@ The cluster realises the [Rust container compute plane](/planes/container.md) an
 # How it works
 
 - `corelink-container/src/main.rs` boots a single HTTP/1.1 stack on `PORT` (default 50051 — the port the DO reaches via `container.getTcpPort()`), serving the composed CAS/AC/Admin/audit/signup router, a `/_health` readiness probe, and the Stripe webhook route when its secret is set (`crates/corelink-container/src/main.rs:1-17`).
-- Storage backing is chosen once at boot: `"r2"` when all `R2_S3_*` env vars are present (durable), else an ephemeral in-memory fallback requiring operator action — captured in a `OnceLock` set before the listener binds (`crates/corelink-container/src/main.rs:55-62`).
+- Storage backing is chosen once at boot: `"r2"` when all `R2_S3_*` env vars are present (durable), else an ephemeral in-memory fallback requiring operator action — captured in a `OnceLock` set before the listener binds (`crates/corelink-container/src/main_runtime.rs:10-17`).
 - `corelink-cf-bindings` maps the canonical host traits (`R2Backend`, `KvBackend`, D1/DO accessors) onto real `worker::*` types as wasm32-only adapters, with a native stub for `CfR2BucketReal` so the type is constructible on the host for trait-bound tests (`crates/corelink-cf-bindings/src/lib.rs:1-33`).
 - `corelink-config-do` holds a versioned `ConfigPayload` (feature flags + rate-limit tunables + retention) with CAS atomic update via `expected_version`, fail-CLOSED audit-before-mutation ordering, and a rollback API (`crates/corelink-config-do/src/lib.rs:1-48`).
 
@@ -50,7 +52,7 @@ The cluster realises the [Rust container compute plane](/planes/container.md) an
 
 1. `crates/corelink-container/src/main.rs:1-17` — the HTTP data-plane binary on the DO's container port (`getTcpPort`).
 2. `crates/corelink-container/src/main.rs:11-17` — historical gRPC removal; the real HTTP data plane is served here.
-3. `crates/corelink-container/src/main.rs:55-62` — boot-time storage-backing selection (`r2` vs in-memory fallback) in a `OnceLock`.
+3. `crates/corelink-container/src/main_runtime.rs:10-17` — boot-time storage-backing selection (`r2` vs in-memory fallback) in a `OnceLock`.
 4. `crates/corelink-config-do/src/lib.rs:1-48` — the versioned config-singleton DO: payload, CAS update, audit ordering, rollback.
 5. `crates/corelink-config-do/src/types.rs:34` — `#[serde(deny_unknown_fields)]`: schema drift → hard error.
 6. `crates/corelink-config-do/src/lib.rs:27-48` — fail-CLOSED audit-before-mutation + CAS `expected_version` atomicity.
