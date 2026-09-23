@@ -1,0 +1,57 @@
+name: issue-1658 B-102 cargo cap propagation
+
+# Focused hosted regression gate for the latency cause fix. The tests are
+# hermetic: the adversarial resolver panics if a routed PUT performs the old
+# per-write D1 tier lookup, and the gate test checks the Worker cap reaches the
+# downstream request scope.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-1658-b102-cap-propagation.yml"
+      - "crates/corelink-container/src/routes/cargo/**"
+      - "crates/corelink-container/src/byte_accounting.rs"
+      - "crates/corelink-container/src/byte_accounting/**"
+      - "crates/corelink-container/src/oci_cap.rs"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1658-b102-cap-propagation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-cap-propagation:
+    name: B-102 cargo cap propagation regressions
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact tree without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: ". -> target"
+          shared-key: issue-1658-b102-cap-propagation
+
+      - name: Run adversarial cap propagation regressions
+        run: |
+          set -euo pipefail
+          cargo test --locked -p corelink-server --lib \
+            routes::cargo::tests::forwarded_cap_skips_per_put_tier_lookup \
+            -- --exact --nocapture
+          cargo test --locked -p corelink-server --lib \
+            routes::cargo::tests::cargo_gate_scopes_forwarded_storage_cap_for_downstream_put \
+            -- --exact --nocapture

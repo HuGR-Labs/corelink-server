@@ -219,7 +219,13 @@ async fn cargo_gate(
             return resp;
         }
     }
-    next.run(req).await
+    // The Worker is the sole setter of this trusted header; it is stripped from
+    // client input before forwarding. Scope the parsed value around the adapter
+    // so cargo PUTs reuse it instead of issuing a per-write D1 tier lookup.
+    let storage_cap_bytes = crate::byte_accounting::storage_quota_from_headers(req.headers());
+    CARGO_STORAGE_QUOTA_CAP
+        .scope(storage_cap_bytes, next.run(req))
+        .await
 }
 
 /// The WebDAV request path used for the `<D:href>` and key extraction.
