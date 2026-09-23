@@ -65,6 +65,42 @@ NON_SECRET_CONFIG_NAMES = {
     "R2_S3_ENDPOINT",
 }
 
+I2193_PUBLIC_NON_SECRET_CONFIG = {
+    "CORELINK_DEPLOYED_REGION",
+    "CORELINK_DEPLOYED_SHA",
+    "STAGING_CLERK_ISSUER_URL",
+    "STAGING_R2_S3_ENDPOINT",
+}
+
+I2193_MATRIX_BOUND_NAMES = {
+    "CORELINK_B102_STAGING_PAT",
+    "CORELINK_B104_STAGING_PAT",
+    "CORELINK_B106_OWNER_SESSION",
+    "CORELINK_DOGFOOD_PAT",
+    "K6_STAGING_TEARDOWN_TOKEN",
+    "K6_TARGET_IDENTITY_RECEIPT",
+    "STAGING_CF_ACCOUNT_ID",
+    "STAGING_CF_API_TOKEN",
+    "STAGING_CF_WORKER_API_TOKEN",
+    "STAGING_CLERK_SECRET_KEY",
+    "STAGING_CLERK_WEBHOOK_SECRET",
+    "STAGING_ERASURE_SALT_KEY",
+    "STAGING_PAGERDUTY_ROUTING_KEY",
+    "STAGING_PAGERDUTY_SYNTHETIC_ROUTING_KEY",
+    "STAGING_PAGERDUTY_WEBHOOK_SECRET",
+    "STAGING_R2_S3_ACCESS_KEY_ID",
+    "STAGING_R2_S3_SECRET_ACCESS_KEY",
+    "TF_BACKEND_ACCESS_KEY_ID",
+    "TF_BACKEND_SECRET_ACCESS_KEY",
+}
+
+I2193_NEAR_NAME_SENSITIVE_INPUTS = {
+    "CORELINK_DEPLOYED_SHA_TOKEN",
+    "CORELINK_DEPLOYED_REGION_KEY",
+    "STAGING_CLERK_ISSUER_URL_TOKEN",
+    "STAGING_R2_S3_ENDPOINT_SECRET",
+}
+
 A11Y_REPORT_DESTINATIONS = {
     "A11Y_AUDIT_REPORT",
     "A11Y_AUDIT_SUMMARY",
@@ -228,6 +264,31 @@ def test_non_secret_config_names_are_allowlisted_by_both_validators() -> None:
     assert not gate.ALLOWLIST_REGEX.match("D1_DATABASE_TOKEN")
     assert not gate.ALLOWLIST_REGEX.match("R2_S3_SECRET_ACCESS_KEY")
     assert not gate.ALLOWLIST_REGEX.match("CORELINK_HTTP_SECRET_FILE")
+
+
+def test_i2193_classification_is_exact_and_preserves_matrix_bindings() -> None:
+    """Public metadata is exact; credentials and protected IDs remain visible."""
+    shell_gate = (ROOT / "scripts/secrets-checklist-verify.sh").read_text(encoding="utf-8")
+    regex = re.search(r"^ALLOWLIST_REGEX='([^']+)'$", shell_gate, re.MULTILINE)
+    assert regex, "Bash allowlist must have one canonical assignment"
+
+    for name in I2193_PUBLIC_NON_SECRET_CONFIG:
+        assert gate.ALLOWLIST_REGEX.fullmatch(name)
+        assert subprocess.run(
+            ["grep", "-E", regex.group(1)], input=f"{name}\n", text=True,
+            capture_output=True, check=False,
+        ).returncode == 0
+
+    for name in I2193_MATRIX_BOUND_NAMES | I2193_NEAR_NAME_SENSITIVE_INPUTS:
+        assert not gate.ALLOWLIST_REGEX.fullmatch(name)
+        assert subprocess.run(
+            ["grep", "-E", regex.group(1)], input=f"{name}\n", text=True,
+            capture_output=True, check=False,
+        ).returncode != 0
+
+    assert I2193_MATRIX_BOUND_NAMES <= gate.parse_matrix(
+        ROOT / gate.MATRIX_FILE_REL
+    )
 
 
 def test_a11y_report_destinations_are_exact_non_secret_entries() -> None:
