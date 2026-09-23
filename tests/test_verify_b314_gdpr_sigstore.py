@@ -33,7 +33,18 @@ def test_wrapped_scoped_posture_is_not_a_false_negative() -> None:
 def test_contractual_and_vendor_posture_are_load_bearing() -> None:
     for path in (verify.LEGAL_REGISTER, verify.VENDOR_REGISTER):
         source = _text(path)
-        mutated = source.replace("no customer-data path is wired", "customer-data path is wired", 1)
+        if path == verify.LEGAL_REGISTER:
+            mutated = source.replace(
+                "Sigstore is not a customer-data sub-processor",
+                "Sigstore is a customer-data sub-processor",
+                1,
+            )
+        else:
+            mutated = source.replace(
+                "no customer-data path is wired",
+                "customer-data path is wired",
+                1,
+            )
         with pytest.raises(verify.VerificationError):
             verify.verify(overrides={path: mutated})
 
