@@ -46,28 +46,63 @@ def _copy_gate_root(tmp_path: Path) -> Path:
 def test_live_inputs_rederive_the_documented_live_population() -> None:
     report = coverage.verify(ROOT)
 
-    # B-101 admits the current B-028 Dependabot snapshot as a fourth source;
-    # the gate must retain its per-alert identities in the closed population.
+    # B-101 admits the B-028 and B-373 Dependabot snapshots as per-alert sources.
     assert report == {
         "documents": {
             "due_diligence_2026_06_15": 87,
             "go_live_2026_08_26": 20,
             "pilot_identity_2026_07_02": 3,
             "b028_dependabot_2026_09_06": 9,
+            "b373_dependabot_2026_09_09": 19,
         },
-        "total": 119,
-        "tracked": 42,
+        "total": 138,
+        "tracked": 61,
         "duplicate": 4,
         "proposed": 73,
         "status": "historical_coverage_complete_semantic_review_complete",
     }
 
 
+def test_b373_dependabot_census_has_one_exact_b101_decision_per_alert() -> None:
+    snapshot_path = "docs/security/b373-dependabot-census-2026-09-09.json"
+    snapshot = json.loads((ROOT / snapshot_path).read_text(encoding="utf-8"))
+    manifest = _manifest()
+    decisions = {
+        item["source_id"]: item
+        for item in manifest["decisions"]
+        if item["source_id"] in {f"DA-{number:03d}" for number in range(39, 58)}
+    }
+
+    assert len(snapshot["alerts"]) == 19
+    assert set(decisions) == {f"DA-{number:03d}" for number in range(39, 58)}
+    for alert in snapshot["alerts"]:
+        source_id = f"DA-{alert['number']:03d}"
+        decision = decisions[source_id]
+        assert decision["kind"] == "tracked"
+        assert decision["backlog_id"] == "B-373"
+        semantic = decision["semantic_disposition"]
+        assert semantic["relation"] == "equivalent_existing_backlog_item"
+        assert semantic["canonical_id"] == "B-373"
+        assert semantic["canonical_title"] == (
+            "Dependabot opened a new 19-alert census after B-028 closure"
+        )
+        assert f"alert #{alert['number']} ({alert['ghsa']})" in semantic["proof"]
+        assert decision["semantic_disposition"]["evidence"] == {
+            "source_document": snapshot_path,
+            "source_locator": f"alert {alert['number']}",
+            "finding_title": (
+                f"Dependabot alert #{alert['number']}: {alert['package']} ({alert['ghsa']})"
+            ),
+        }
+
+    assert coverage.verify(ROOT)["documents"]["b373_dependabot_2026_09_09"] == 19
+
+
 def test_post_squash_plain_tree_rederives_the_same_certificate(tmp_path: Path) -> None:
     """The checkpoint is content-based, so a copied/squashed tree remains valid."""
     fixture_root = _copy_gate_root(tmp_path)
 
-    assert coverage.verify(fixture_root)["total"] == 119
+    assert coverage.verify(fixture_root)["total"] == 138
 
 
 def test_tree_certificate_rejects_a_mutation_even_when_registry_and_manifest_are_untouched(
@@ -334,7 +369,7 @@ def test_b101_contract_records_completed_semantic_review_stage() -> None:
     block = re.search(r"(?ms)^### B-101\b.*?(?=^### B-\d+\b|\Z)", backlog)
 
     assert block, "B-101 must remain a canonical backlog item"
-    assert "87 + 20 + 3 + 9 = 119" in block.group(0)
+    assert "87 + 20 + 3 + 9 + 19 = 138" in block.group(0)
     assert "status: done" in block.group(0)
     assert f"stage: {coverage.B101_STAGE}" in block.group(0)
     assert "verify: python3 scripts/verify_audit_finding_coverage.py --format json" in block.group(0)
