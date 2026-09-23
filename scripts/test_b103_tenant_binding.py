@@ -30,14 +30,16 @@ DEPLOYMENT_SHA = "a" * 40
 
 
 def receipt() -> dict[str, object]:
+    issued = dt.datetime.now(dt.UTC).replace(microsecond=0)
+    expires = issued + dt.timedelta(hours=1)
     return {
         "schema": 1,
         "environment": "staging",
         "target": receipt_module.CANONICAL_TARGET,
         "tenant_id": TENANT,
         "deployment_sha": DEPLOYMENT_SHA,
-        "issued_at": "2026-01-01T00:00:00Z",
-        "expires_at": "2099-01-01T00:00:00Z",
+        "issued_at": issued.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "expires_at": expires.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 
