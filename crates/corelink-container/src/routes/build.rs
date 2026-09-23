@@ -57,6 +57,41 @@ pub fn build_with_factory_and_byok(
     shadow_factory: Arc<dyn ShadowSinkFactory>,
     byok: Option<crate::storage::byok_cas::DataPlaneByok>,
 ) -> Router {
+    build_with_factory_and_byok_and_reapi_ingress(shadow_factory, byok).router
+}
+
+/// Router plus the optional authenticated REAPI ingress dependency bundle.
+///
+/// `reapi_ingress` is present only when the D1-backed PAT verifier, quota
+/// authority, and D1 tenant-cap resolver are all configured. It is not mounted by this builder; public
+/// gRPC exposure remains gated on the Worker/DO/container transport proof in
+/// #2176 and the service contracts that consume it.
+pub struct RouterWithReapiIngress {
+    /// Fully composed HTTP router.
+    pub router: Router,
+    /// Shared authenticated kernel using the same decorated CAS/AC handlers.
+    pub reapi_ingress: Option<crate::reapi_ingress::ReapiIngress>,
+}
+
+impl std::fmt::Debug for RouterWithReapiIngress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RouterWithReapiIngress")
+            .field("router", &"Router")
+            .field("reapi_ingress", &self.reapi_ingress)
+            .finish()
+    }
+}
+
+/// Build the composed router and return the shared future REAPI ingress kernel.
+///
+/// The kernel receives clones of the exact CAS and ActionCache trait objects
+/// consumed by this router, after accounting, BYOK, and tombstone decorators.
+/// It also receives the same D1 client family used for tenant-cap resolution.
+/// It remains unmounted until #2176 and the later service contracts are green.
+pub fn build_with_factory_and_byok_and_reapi_ingress(
+    shadow_factory: Arc<dyn ShadowSinkFactory>,
+    byok: Option<crate::storage::byok_cas::DataPlaneByok>,
+) -> RouterWithReapiIngress {
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1). ONE
     // gate (D1-backed) shared across every billable data-plane surface
     // (CAS/AC, Bazel REAPI, Turbo, sccache), exactly like the rate-limit
@@ -270,6 +305,9 @@ pub fn build_with_factory_and_byok(
         pat_gate: native_pat_gate.clone(),
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
+    // Filled only when authoritative auth, quota, and tenant-cap resolution are present. The
+    // handler Arcs below are the already-decorated values used by the routes.
+    let mut reapi_ingress = None;
     // Cache adapters share the SAME CAS trait objects (one R2 connection) —
     // clone BEFORE they are moved into the Bazel bridge below. cargo writes
     // per-tenant via CargoCasBridge; brew/npm/pip dedup through the 2-level moat.
@@ -475,6 +513,22 @@ pub fn build_with_factory_and_byok(
         // (F27: scope header AND the PAT-derived `can_write`) are threaded into each.
         match crate::adapter_cache::d1_map_from_env() {
             Some(d1) => {
+                if let Some(quota) = quota.clone() {
+                    let cap_resolver: Arc<dyn crate::oci_cap::TenantCapResolver> =
+                        Arc::new(crate::oci_cap::D1TenantCapResolver::new(d1.clone()));
+                    reapi_ingress = Some(
+                        crate::reapi_ingress::ReapiIngress::from_shared_handlers(
+                            verifier.clone(),
+                            Arc::new(crate::reapi_ingress::QuotaConcurrencyAdmission::new(quota)),
+                            cap_resolver,
+                            cas_read.clone(),
+                            cas_write.clone(),
+                            ac_lookup.clone(),
+                            ac_update.clone(),
+                        ),
+                    );
+                }
+
                 // cargo (sccache): PRIVATE per-tenant moat namespace (no _public).
                 // Thread the SAME D1-backed per-tier cap resolver OCI uses so a
                 // FRESH tenant's first cargo write auto-seeds its
@@ -715,7 +769,10 @@ pub fn build_with_factory_and_byok(
         crate::origin_timing::origin_timing_layer,
     ));
 
-    router
+    RouterWithReapiIngress {
+        router,
+        reapi_ingress,
+    }
 }
 
 #[cfg(test)]
