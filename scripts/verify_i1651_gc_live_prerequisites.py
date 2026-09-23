@@ -117,7 +117,8 @@ def observation_workflow_satisfies_contract(workflow: str) -> bool:
                 command_lines.append(body_text.strip())
             command = "\n".join(command_lines)
             if not any(
-                line == "python3 scripts/collect_b071_gc_observation.py collect" for line in command.splitlines()
+                line.rstrip("\\").strip() == "python3 scripts/collect_b071_gc_observation.py collect"
+                for line in command.splitlines()
             ):
                 continue
             if all(flag in command for flag in ("--scopes", "--image-digest", "--operator", "--output")):
