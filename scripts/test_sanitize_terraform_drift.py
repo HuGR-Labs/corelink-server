@@ -364,7 +364,10 @@ class TerraformDriftEvidenceTests(unittest.TestCase):
         runbook = (ROOT / "specs/05_quality/runbooks/RB-FM-206-terraform-drift.md").read_text(encoding="utf-8")
         self.assertIn("plan_summary_artifact_url TEXT", work_item)
         self.assertIn("sanitized summary artifact", work_item.lower())
-        self.assertIn("plan JSON, terminal log", work_item)
+        self.assertIn(
+            "raw plan files, plan JSON, and terminal logs never leave the runner",
+            work_item,
+        )
         self.assertIn("sanitized summary artifact (7 days)", runbook)
         self.assertIn("Do not download or reconstruct a raw plan", runbook)
         self.assertNotIn("upload plan artifact", work_item.lower())
