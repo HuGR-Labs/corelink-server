@@ -35,10 +35,10 @@ concurrency:
 jobs:
   validate-quickstart:
     name: validate quickstart MDX vs CLI surface
-    # Runner: GitHub-hosted ubuntu-latest (wave 3 migration from corelink fabric).
+    # Runner: GitHub-hosted ubuntu-24.04 (wave 3 migration from corelink fabric).
     # A single portable bash validator (soft-fail / continue-on-error).
     # Sub-minute check; 5 min timeout provides headroom.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     # Soft-fail: surface as a warning annotation, do not block merges.
     continue-on-error: true
