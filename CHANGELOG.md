@@ -24,6 +24,10 @@ Each entry cross-references:
 
 ### Fixed
 
+- **B-210 retirement contract is wired to its truthful closure gate.** The
+  superseded admin SSR finding now validates its done-state next action and
+  retirement evidence without remaining in the removed SSR-order closure set.
+
 - **Historical B-006 receipts remain auditable.** Checked-in metrics and
   provider fixtures validate schema/content without wall-clock expiry, while
   live validation keeps its 24-hour age and five-minute future bounds.
