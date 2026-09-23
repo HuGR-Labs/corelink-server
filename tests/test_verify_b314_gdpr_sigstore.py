@@ -35,9 +35,8 @@ def test_contractual_and_vendor_posture_are_load_bearing() -> None:
         source = _text(path)
         if path == verify.LEGAL_REGISTER:
             mutated = source.replace(
-                "Sigstore is not a customer-data sub-processor",
-                "Sigstore is a customer-data sub-processor",
-                1,
+                "not a customer-data sub-processor",
+                "a customer-data sub-processor",
             )
         else:
             mutated = source.replace(
