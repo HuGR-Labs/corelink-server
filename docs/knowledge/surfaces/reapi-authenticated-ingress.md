@@ -12,12 +12,12 @@ source_files:
   - "crates/corelink-container/src/routes/build.rs"
 source_blobs:
   - "crates/corelink-container/src/lib.rs@7163afcaa8410571779d8a53aaeea8177a5cf3c2"
-  - "crates/corelink-container/src/reapi_ingress.rs@e8ed42e40339f55a63cddf2eb95efbe7444e0053"
+  - "crates/corelink-container/src/reapi_ingress.rs@ff4f938cec0e446b518109b158992ae6aed1a449"
   - "crates/corelink-container/src/reapi_ingress/admission.rs@fc6bd2e49b672c806b9eaa72f329df7af7a6624d"
   - "crates/corelink-container/src/reapi_ingress/validation.rs@b7f5d1045997e7b7e733bea9fcbb95caa97a6881"
   - "crates/corelink-container/src/reapi_ingress/tests.rs@40d59193ef67f2e168e5801d86a7c70d148fd3fe"
   - "crates/corelink-container/src/routes.rs@da4d710d15537491da17f84c90f133d06124711e"
-  - "crates/corelink-container/src/routes/build.rs@65aaaf4eba3bdfafadb5d7d7760a4895bba026ad"
+  - "crates/corelink-container/src/routes/build.rs@3f4264ce2ef02c736001802dcf514caa18677e05"
 checkpoint_sha: "9f73cedfa760f53da02a33dc7af27ce43b75536a"
 provenance: "AUTHORED"
 tags: ["surfaces", "reapi", "grpc", "auth", "tenancy", "cache"]
@@ -37,33 +37,33 @@ subsequent REAPI service contracts (`crates/corelink-container/src/reapi_ingress
 Every future RPC calls `authorize` before it can access a handler. The kernel borrows exactly one bearer
 value only while calling the authoritative verifier, derives both the tenant and write capability from
 that result, rejects reserved or mismatched tenant instances, checks write scope, then holds one
-quota/concurrency admission lease for the resulting context (`crates/corelink-container/src/reapi_ingress.rs:388-433`).
+quota/concurrency admission lease for the resulting context (`crates/corelink-container/src/reapi_ingress.rs:387-432`).
 
 # Invariants
 
 - Bearer material is parsed as a borrowed `&str`, never copied into `AuthorizedTenant` or
   `AdmittedIngress`; the admitted context contains only the D1-proven tenant, its write capability,
-  handler references, resolver, and lease (`crates/corelink-container/src/reapi_ingress.rs:50-70`; `:388-432`; `:436-458`).
+  handler references, resolver, and lease (`crates/corelink-container/src/reapi_ingress.rs:49-69`; `:387-431`; `:435-457`).
 - Missing, malformed, invalid, revoked, or scope-less credentials return `UNAUTHENTICATED`; verifier or
   admission uncertainty returns `UNAVAILABLE`; a cross-tenant instance or read-only write returns
   `PERMISSION_DENIED`; exhausted quota/concurrency returns `RESOURCE_EXHAUSTED`
-  (`crates/corelink-container/src/reapi_ingress.rs:140-147`; `:404-419`; `:461-479`; `crates/corelink-container/src/reapi_ingress/admission.rs:29-45`).
+  (`crates/corelink-container/src/reapi_ingress.rs:139-146`; `:403-418`; `:460-478`; `crates/corelink-container/src/reapi_ingress/admission.rs:29-45`).
 - The admission seam uses the existing `QuotaGate` and a bounded semaphore. It drops the permit on a
   quota denial and maps every non-capacity quota response to unavailable, so ambiguity cannot admit a
   request (`crates/corelink-container/src/reapi_ingress/admission.rs:22-45`).
 - CAS and ActionCache calls only use the handler trait objects supplied by the router factory after its
   normal accounting, BYOK, tombstone, quota, and tenant-prefix decorators; the ingress creates no
-  storage or handler implementation (`crates/corelink-container/src/reapi_ingress.rs:333-385`; `crates/corelink-container/src/routes/build.rs:513-530`).
+  storage or handler implementation (`crates/corelink-container/src/reapi_ingress.rs:332-384`; `crates/corelink-container/src/routes/build.rs:519-532`).
 - Digest and ByteStream resource validation accepts only lowercase SHA-256, non-negative lengths, and
   exact tenant-matched REAPI resource forms (`crates/corelink-container/src/reapi_ingress/validation.rs:7-118`).
 - Hosted tests use four storage spies to prove auth, instance, scope, and admission denials never invoke
   CAS or ActionCache, and also assert the admitted context cannot render a bearer placeholder
-  (`crates/corelink-container/src/reapi_ingress.rs:397-419`; `crates/corelink-container/src/reapi_ingress/tests.rs:45-168`; `:219-316`).
+  (`crates/corelink-container/src/reapi_ingress.rs:396-418`; `crates/corelink-container/src/reapi_ingress/tests.rs:45-168`; `:219-316`).
 
 # Citations
 
 1. `crates/corelink-container/src/lib.rs:185-190` — exports the ingress kernel from the container crate.
-2. `crates/corelink-container/src/reapi_ingress.rs:140-147` — D1-backed PAT verification and failure classification.
+2. `crates/corelink-container/src/reapi_ingress.rs:139-146` — D1-backed PAT verification and failure classification.
 3. `crates/corelink-container/src/reapi_ingress/admission.rs:22-45` — shared quota and concurrency admission.
 4. `crates/corelink-container/src/reapi_ingress/validation.rs:7-118` — canonical digest and ByteStream resource-name validation.
 5. `crates/corelink-container/src/reapi_ingress/tests.rs:45-168` — storage-spy denial coverage.
