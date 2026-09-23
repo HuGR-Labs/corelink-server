@@ -76,6 +76,9 @@ jobs:
         shell: bash
         run: |
           set -u -o pipefail
+          set +e
+          printf '%s\n' '--- generated CycloneDX JSON paths (bounded to 30) ---'
+          find . -type f \( -name '*.cdx.json' -o -name 'bom.json' \) -print | head -n 30
           test -s tools/cli/bom.json
           rc=$?
           if [ "${rc}" -eq 0 ]; then
