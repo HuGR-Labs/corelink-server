@@ -36,7 +36,7 @@ EXPECTED_DOCUMENT_DIGESTS = {
     "dependabot-policy-trust-boundary.yml": "41fcc16dc71db96537a55378a940b6038bcf832e0b99c71828d65e1313adad24",
     "dependabot-policy.yml": "6183e9ac87fdaf7c279c74d8e5bd7e7894369dbe79ee99f2c0ee87e777b5d516",
     "file-size-ratchet.yml": "d70f0d8de137f1a891610f9bbb993a2ef4077882e50b2b7477886f7ccbcad7eb",
-    "secrets-drift.yml": "1f9bf3703ae7ded803a2dec3da92c3e66141c4dd7e1c59ab964e655624c194af",
+    "secrets-drift.yml": "ba6aba965c494866a618e2730403af249163aab9ca5861ab3cfd49b106c1e041",
     "actionlint.yml": "74f365c7270e852b80a1d5c02af3157456c191bb2848227061b1ae6345bd05b4",
     "dependabot-auto-merge.yml": "4d8b6c66a3b9ed423d4e5ce057dff3a02155982428d9b1c06d440e0ea15e469b",
     "pr-labels.yml": "7b15def5757cb513c8a81ec49553acef8baea561d9bb981cfe0417f3980cc5ce",
