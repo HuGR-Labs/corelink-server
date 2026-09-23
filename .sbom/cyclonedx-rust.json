@@ -618,7 +618,7 @@
       "version": "1.2.14"
     },
     {
-      "bom-ref": "pkg:cargo/aws-lc-rs@1.17.0?source=registry%2Bhttps%3A%2F%2Fgithub.com%2Frust-lang%2Fcrates.io-index",
+      "bom-ref": "pkg:cargo/aws-lc-rs@1.18.1?source=registry%2Bhttps%3A%2F%2Fgithub.com%2Frust-lang%2Fcrates.io-index",
       "licenses": [
         {
           "expression": "ISC AND (Apache-2.0 OR ISC)"
@@ -632,15 +632,15 @@
         },
         {
           "name": "corelink:cargo:checksum",
-          "value": "5ec2f1fc3ec205783a5da9a7e6c1509cc69dedf09a1949e412c1e18469326d00"
+          "value": "b281d307588d634de920874890732659e2e7672f72b5e10e81badc1a8a83621e"
         }
       ],
-      "purl": "pkg:cargo/aws-lc-rs@1.17.0",
+      "purl": "pkg:cargo/aws-lc-rs@1.18.1",
       "type": "library",
-      "version": "1.17.0"
+      "version": "1.18.1"
     },
     {
-      "bom-ref": "pkg:cargo/aws-lc-sys@0.41.0?source=registry%2Bhttps%3A%2F%2Fgithub.com%2Frust-lang%2Fcrates.io-index",
+      "bom-ref": "pkg:cargo/aws-lc-sys@0.45.0?source=registry%2Bhttps%3A%2F%2Fgithub.com%2Frust-lang%2Fcrates.io-index",
       "licenses": [
         {
           "expression": "ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0)"
@@ -654,12 +654,12 @@
         },
         {
           "name": "corelink:cargo:checksum",
-          "value": "1a2f9779ce85b93ab6170dd940ad0169b5766ff848247aff13bb788b832fe3f4"
+          "value": "9bff6c3b54fad79a2e60b8102caf565819711497c1f5f092f49508e2f5c31b27"
         }
       ],
-      "purl": "pkg:cargo/aws-lc-sys@0.41.0",
+      "purl": "pkg:cargo/aws-lc-sys@0.45.0",
       "type": "library",
-      "version": "0.41.0"
+      "version": "0.45.0"
     },
     {
       "bom-ref": "pkg:cargo/aws-runtime@1.7.4?source=registry%2Bhttps%3A%2F%2Fgithub.com%2Frust-lang%2Fcrates.io-index",
@@ -9526,7 +9526,7 @@
       "version": "1.1.4"
     },
     {
-      "bom-ref": "pkg:cargo/rustls@0.23.42?source=registry%2Bhttps%3A%2F%2Fgithub.com%2Frust-lang%2Fcrates.io-index",
+      "bom-ref": "pkg:cargo/rustls@0.23.45?source=registry%2Bhttps%3A%2F%2Fgithub.com%2Frust-lang%2Fcrates.io-index",
       "licenses": [
         {
           "expression": "Apache-2.0 OR ISC OR MIT"
@@ -9540,12 +9540,12 @@
         },
         {
           "name": "corelink:cargo:checksum",
-          "value": "3c54fcab019b409d04215d3a17cb438fd7fbf192ee61461f20f4fe18704bc138"
+          "value": "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
         }
       ],
-      "purl": "pkg:cargo/rustls@0.23.42",
+      "purl": "pkg:cargo/rustls@0.23.45",
       "type": "library",
-      "version": "0.23.42"
+      "version": "0.23.45"
     },
     {
       "bom-ref": "pkg:cargo/rustls-native-certs@0.8.4?source=registry%2Bhttps%3A%2F%2Fgithub.com%2Frust-lang%2Fcrates.io-index",
@@ -9592,7 +9592,7 @@
       "version": "1.14.1"
     },
     {
-      "bom-ref": "pkg:cargo/rustls-webpki@0.103.13?source=registry%2Bhttps%3A%2F%2Fgithub.com%2Frust-lang%2Fcrates.io-index",
+      "bom-ref": "pkg:cargo/rustls-webpki@0.103.15?source=registry%2Bhttps%3A%2F%2Fgithub.com%2Frust-lang%2Fcrates.io-index",
       "licenses": [
         {
           "expression": "ISC"
@@ -9606,12 +9606,12 @@
         },
         {
           "name": "corelink:cargo:checksum",
-          "value": "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
+          "value": "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
         }
       ],
-      "purl": "pkg:cargo/rustls-webpki@0.103.13",
+      "purl": "pkg:cargo/rustls-webpki@0.103.15",
       "type": "library",
-      "version": "0.103.13"
+      "version": "0.103.15"
     },
     {
       "bom-ref": "pkg:cargo/rustversion@1.0.22?source=registry%2Bhttps%3A%2F%2Fgithub.com%2Frust-lang%2Fcrates.io-index",

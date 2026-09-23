@@ -197,6 +197,9 @@ jobs:
           set -euo pipefail
           python3 tests/verify_rust_sbom.py --check
 
+      - name: Verify B-063 protected manual no-page boundary
+        run: python3 scripts/verify_audit_archive_lag_workflow.py
+
       - name: Verify backlog work-package ledger
         shell: bash
         run: |
@@ -217,11 +220,12 @@ jobs:
           tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
           "${RUNNER_TEMP}/actionlint/actionlint" -version
 
-      - name: Lint hosted OKF and Python test workflows
+      - name: Lint hosted OKF, Python test, and B-063 workflows
         run: >-
           "${RUNNER_TEMP}/actionlint/actionlint" -color -config-file .actionlint.yaml
           .github/workflows/okf_wiki.yml
           .github/workflows/python-tests.yml
+          .github/workflows/audit-archive-lag.yml
 
       - name: Collect and run
         shell: bash
