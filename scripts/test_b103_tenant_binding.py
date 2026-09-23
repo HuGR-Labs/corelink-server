@@ -95,8 +95,8 @@ class B103TenantBindingTests(unittest.TestCase):
             self.assertEqual(result, 0)
             public_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
             tenant_hash = hashlib.sha256(TENANT.encode("ascii")).hexdigest()
-            self.assertEqual(public_receipt["tenant_sha256"], tenant_hash)
-            self.assertNotIn("tenant_id", public_receipt)
+            self.assertEqual(public_receipt["tenant_id_sha256"], f"sha256:{tenant_hash}")
+            self.assertEqual(public_receipt["tenant_id"], "[REDACTED]")
             self.assertEqual(
                 github_output.read_text(encoding="utf-8"),
                 f"deployment_sha={DEPLOYMENT_SHA}\ntenant_sha256={tenant_hash}\n",
@@ -120,7 +120,7 @@ class B103TenantBindingTests(unittest.TestCase):
         )
         self.assertIn("environment: staging", workflow)
         self.assertNotIn("  schedule:", workflow)
-        self.assertIn('"tenant_sha256": tenant_sha256(args.tenant)', reproducer)
+        self.assertIn('"tenant_id_sha256": sha256(args.tenant.encode("ascii"))', reproducer)
         self.assertNotIn('"tenant_id": args.tenant', reproducer)
 
 

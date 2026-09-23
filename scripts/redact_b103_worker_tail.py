@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Redact an unfiltered B-103 Wrangler tail without dropping any event.
+"""Project an unfiltered B-103 Wrangler tail to correlated safe records.
 
 The probe's operation IDs are intentionally non-secret correlation handles.
 Everything else that can identify a tenant, person, client, or credential is
@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from collections.abc import Mapping
@@ -50,12 +49,6 @@ def sensitive_key(name: object) -> bool:
         "jwt",
     }
     return compact in exact or compact.endswith(("token", "secret", "password", "apikey", "credential", "privatekey"))
-
-
-def replacements(tenant: str, secret_envs: tuple[str, ...]) -> tuple[str, ...]:
-    values = [tenant]
-    values.extend(os.environ.get(name, "") for name in secret_envs)
-    return tuple(sorted({value for value in values if value}, key=len, reverse=True))
 
 
 def redact_string(value: str, values: tuple[str, ...]) -> str:
@@ -97,6 +90,36 @@ def operation_ids(value: object) -> set[str]:
     return set()
 
 
+def safe_tail_record(event: Mapping[str, object]) -> dict[str, object] | None:
+    """Project a B-103 event; discard unrelated events without retaining data."""
+    payload = event.get("event")
+    request = payload.get("request") if isinstance(payload, Mapping) else None
+    headers = request.get("headers") if isinstance(request, Mapping) else None
+    if not isinstance(headers, Mapping):
+        return None
+    operation = next(
+        (
+            value
+            for name, value in headers.items()
+            if str(name).lower() == "x-corelink-operation" and isinstance(value, str)
+        ),
+        None,
+    )
+    if operation is None or not isinstance(operation, str) or not operation.startswith("b103-"):
+        return None
+    if not OPERATION_ID.fullmatch(operation):
+        raise ValueError("tail event has no valid B-103 operation identifier")
+    method = request.get("method") if isinstance(request, Mapping) else None
+    outcome = event.get("outcome")
+    timestamp = event.get("eventTimestamp")
+    return {
+        "operation_id": operation,
+        "method": method if isinstance(method, str) and method in {"GET", "HEAD", "PROPFIND", "MKCOL", "PUT", "DELETE"} else "other",
+        "outcome": outcome if isinstance(outcome, str) and re.fullmatch(r"[A-Za-z_-]{1,32}", outcome) else "other",
+        "event_timestamp": timestamp if isinstance(timestamp, int) and not isinstance(timestamp, bool) else None,
+    }
+
+
 def required_operation_ids(path: Path) -> set[str]:
     try:
         evidence = json.loads(path.read_text(encoding="utf-8"))
@@ -110,14 +133,9 @@ def required_operation_ids(path: Path) -> set[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tenant-env", default="B103_TENANT_ID")
-    parser.add_argument("--secret-env", action="append", default=[])
     parser.add_argument("--require-operation-ids-from", type=Path, required=True)
     args = parser.parse_args(argv)
 
-    tenant = os.environ.get(args.tenant_env, "")
-    if not tenant:
-        raise SystemExit(f"required tenant environment variable is empty: {args.tenant_env}")
     try:
         required = required_operation_ids(args.require_operation_ids_from)
     except ValueError as exc:
@@ -125,7 +143,6 @@ def main(argv: list[str] | None = None) -> int:
 
     count = 0
     observed: set[str] = set()
-    values = replacements(tenant, tuple(args.secret_env))
     for line_number, line in enumerate(sys.stdin, 1):
         if not line.strip():
             continue
@@ -135,7 +152,15 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"unfiltered Wrangler tail line {line_number} is not JSON") from exc
         if not isinstance(event, dict):
             raise SystemExit(f"unfiltered Wrangler tail line {line_number} is not an object")
-        safe = redact(event, values)
+        # Only the correlation handle and bounded event metadata survive.  Do
+        # not retain URLs, request headers, logs, exceptions, or other tenants'
+        # event payloads even if a heuristic redactor misses a secret shape.
+        try:
+            safe = safe_tail_record(event)
+        except ValueError as exc:
+            raise SystemExit(f"unfiltered Wrangler tail line {line_number} cannot be correlated: {exc}") from exc
+        if safe is None:
+            continue
         observed.update(operation_ids(safe))
         print(json.dumps(safe, sort_keys=True, separators=(",", ":")))
         count += 1

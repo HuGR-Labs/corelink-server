@@ -69,17 +69,24 @@ class B103CargoWriteContractTest(unittest.TestCase):
             root = Path(directory)
             evidence = root / "wire.json"
             evidence.write_text(json.dumps({"responses": [{"operation_id": OPERATION}]}), encoding="utf-8")
-            env = dict(os.environ, B103_TENANT_ID=TENANT, B103_PAT=TOKEN)
+            env = dict(os.environ)
             accepted = subprocess.run(
                 [
                     sys.executable,
                     str(ROOT / "scripts/redact_b103_worker_tail.py"),
-                    "--secret-env",
-                    "B103_PAT",
                     "--require-operation-ids-from",
                     str(evidence),
                 ],
-                input=json.dumps({"message": f"{OPERATION} tenant={TENANT}"}) + "\n",
+                input=json.dumps({
+                    "event": {"request": {"method": "PUT", "headers": {
+                        "X-Corelink-Operation": OPERATION,
+                        "authorization": f"Bearer {TOKEN}",
+                        "tenant_id": TENANT,
+                    }}},
+                    "outcome": "ok",
+                    "eventTimestamp": 123,
+                    "logs": ["must be discarded"],
+                }) + "\n",
                 text=True,
                 capture_output=True,
                 env=env,
@@ -88,17 +95,22 @@ class B103CargoWriteContractTest(unittest.TestCase):
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
             self.assertIn(OPERATION, accepted.stdout)
             self.assertNotIn(TENANT, accepted.stdout)
+            self.assertNotIn("authorization", accepted.stdout)
+            self.assertNotIn("logs", accepted.stdout)
 
             rejected = subprocess.run(
                 [
                     sys.executable,
                     str(ROOT / "scripts/redact_b103_worker_tail.py"),
-                    "--secret-env",
-                    "B103_PAT",
                     "--require-operation-ids-from",
                     str(evidence),
                 ],
-                input=json.dumps({"message": "a same-window event without correlation"}) + "\n",
+                input=json.dumps({
+                    "event": {"request": {"method": "PUT", "headers": {
+                        "X-Corelink-Operation": "b103-ffffffffffffffffffffffffffffffff"
+                    }}},
+                    "outcome": "ok",
+                }) + "\n",
                 text=True,
                 capture_output=True,
                 env=env,

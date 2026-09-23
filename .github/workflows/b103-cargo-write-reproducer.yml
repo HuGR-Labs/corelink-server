@@ -113,9 +113,6 @@ jobs:
           wait "${tail_pid}" || tail_rc=$?
           test "${tail_rc}" -eq 0 || test "${tail_rc}" -eq 130
           python3 scripts/redact_b103_worker_tail.py \
-            --secret-env B103_PAT \
-            --secret-env CLOUDFLARE_API_TOKEN \
-            --secret-env CLOUDFLARE_ACCOUNT_ID \
             --require-operation-ids-from "${RUNNER_TEMP}/b103-cargo-write-reproducer.json" \
             < "${RUNNER_TEMP}/b103/worker-tail.raw.jsonl" \
             > "${RUNNER_TEMP}/b103-cargo-write-worker-tail.redacted.jsonl"
