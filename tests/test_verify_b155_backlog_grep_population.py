@@ -30,14 +30,25 @@ class B155VerifierTests(unittest.TestCase):
 
     def test_census_is_complete_and_population_is_exact(self) -> None:
         result = verifier.census(self.backlog)
-        self.assertEqual(result.records, 373)
+        self.assertEqual(result.records, 374)
         self.assertEqual(result.command_records, 354)
-        self.assertEqual(result.manual_records, 19)
+        self.assertEqual(result.manual_records, 20)
         self.assertEqual(result.command_records + result.manual_records, result.records)
         self.assertEqual(result.grep_invocations, 194)
         self.assertEqual(len(result.assertions), 191)
         self.assertEqual(len(result.unsafe), 0)
         self.assertEqual(len(result.indeterminate), 0)
+
+    def test_canonical_four_digit_id_is_in_population(self) -> None:
+        records = verifier._records(self.backlog)
+        self.assertIn("B-1630", {record["id"] for record in records})
+
+    def test_noncanonical_ids_fail_closed(self) -> None:
+        for invalid in ("B-000", "B-04", "B-0042", "B-3", "B-TBD", "B-1630x"):
+            with self.subTest(invalid=invalid):
+                mutated = self.backlog.replace("id: B-1630\n", f"id: {invalid}\n", 1)
+                with self.assertRaisesRegex(verifier.InstrumentError, "malformed id"):
+                    verifier._records(mutated)
 
     def test_source_kind_uses_grep_operands_not_pattern_text(self) -> None:
         bait = 'grep -q "^[^/*]*foo.rs" BACKLOG.md'

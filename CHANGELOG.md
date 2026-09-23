@@ -24,6 +24,9 @@ Each entry cross-references:
 
 ### Fixed
 
+- **B-155 backlog parser accepts canonical four-digit IDs.** Population checks
+  now include `B-1630` while rejecting zero, short, padded, and malformed IDs.
+
 - **B-206 alarm closure verifier follows split worker fixtures.** Behavioral
   markers and current `cleanupPending` re-arm logic remain fail-closed.
 
