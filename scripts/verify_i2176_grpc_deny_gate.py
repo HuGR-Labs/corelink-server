@@ -42,8 +42,13 @@ LOCKED_PERIMETER_PATHS = (
     Path("pnpm-lock.yaml"),
     Path(".github/workflows/corelink-worker.yml"),
     Path(".github/workflows/corelink-reapi.yml"),
-    Path(".github/workflows/container-build-push-prod.yml"),
 )
+CONTAINER_WORKFLOW = Path(".github/workflows/container-build-push-prod.yml")
+LEGACY_CREDENTIAL_GUARD = '[ -n "$U" ] && [ -n "$P" ] || { echo "::error::failed to mint a registry push credential"; exit 1; }'
+SC2015_CREDENTIAL_GUARD = '''if [ -z "$U" ] || [ -z "$P" ]; then
+            echo "::error::failed to mint a registry push credential"
+            exit 1
+          fi'''
 
 IMPORT_ANCHOR = 'import { runScheduled } from "./index_schedule.js";\n'
 DENY_IMPORT = 'import { rejectUnprovenGrpcTransport } from "./grpc_transport_gate.js";\n'
@@ -193,6 +198,24 @@ def require_exact(candidate: Path, trusted_base: Path, relative: Path) -> None:
         raise ContractError(f"{relative}: candidate must equal the protected base")
 
 
+def require_container_credential_guard(candidate: Path, trusted_base: Path) -> None:
+    """Permit only the reviewed SC2015-preserving credential guard rewrite.
+
+    The image workflow remains a protected perimeter path.  The sole admitted
+    difference is the equivalent explicit failure branch below; it prevents
+    ShellCheck from treating the credential guard as an if/then/else chain.
+    """
+    base = read(trusted_base, CONTAINER_WORKFLOW)
+    if base.count(LEGACY_CREDENTIAL_GUARD) != 1:
+        raise ContractError(f"{CONTAINER_WORKFLOW}: protected base lost credential-guard anchor")
+    allowed = base.replace(LEGACY_CREDENTIAL_GUARD, SC2015_CREDENTIAL_GUARD)
+    candidate_text = read(candidate, CONTAINER_WORKFLOW)
+    if candidate_text not in (base, allowed):
+        raise ContractError(
+            f"{CONTAINER_WORKFLOW}: candidate must equal the protected base or the reviewed SC2015 rewrite"
+        )
+
+
 def expected_index(trusted_base: Path) -> str:
     base_index = read(trusted_base, INDEX)
     canonical_import = IMPORT_ANCHOR + DENY_IMPORT
@@ -249,6 +272,7 @@ def assert_exact_head(candidate: Path, expected_head: str) -> None:
 def validate(candidate: Path, trusted_base: Path) -> None:
     for relative in LOCKED_PERIMETER_PATHS:
         require_exact(candidate, trusted_base, relative)
+    require_container_credential_guard(candidate, trusted_base)
 
     if read(candidate, INDEX) != expected_index(trusted_base):
         raise ContractError(
@@ -282,6 +306,11 @@ def write_fixture_base(root: Path) -> None:
     )
     for relative in LOCKED_PERIMETER_PATHS:
         write(root, relative, f"protected base fixture: {relative}\n")
+    write(
+        root,
+        CONTAINER_WORKFLOW,
+        f"credential guard:\n          {LEGACY_CREDENTIAL_GUARD}\n",
+    )
 
 
 def write_fixture_candidate(candidate: Path, trusted_base: Path) -> None:
@@ -329,6 +358,17 @@ def self_test() -> None:
         )
         for relative, old, new in mutations:
             expect_rejected(candidate, trusted_base, relative, old, new)
+
+        # The one approved workflow difference is the explicit credential
+        # failure branch. Its success path and failure exit code stay exact.
+        container_base = read(candidate, CONTAINER_WORKFLOW)
+        write(
+            candidate,
+            CONTAINER_WORKFLOW,
+            container_base.replace(LEGACY_CREDENTIAL_GUARD, SC2015_CREDENTIAL_GUARD),
+        )
+        validate(candidate, trusted_base)
+        expect_rejected(candidate, trusted_base, CONTAINER_WORKFLOW, "exit 1", "exit 0")
 
         # A candidate may edit its own verifier, but the workflow never imports
         # it; the protected-base verifier above remains authoritative.
