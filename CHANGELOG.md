@@ -24,6 +24,10 @@ Each entry cross-references:
 
 ### Fixed
 
+- **B-229 contract guard preserves production closure evidence.** B-101 now
+  accepts its explicit done-state action and three-part Clerk webhook verifier
+  while still rejecting the immutable open proposal action.
+
 - **B-210 retirement contract is wired to its truthful closure gate.** The
   superseded admin SSR finding now validates its done-state next action and
   retirement evidence without remaining in the removed SSR-order closure set.
