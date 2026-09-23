@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
+import textwrap
 from pathlib import Path
 
 
@@ -30,40 +31,154 @@ REQUIRED_STAGING_SECRETS = (
     "K6_TARGET_HOST",
 )
 
-OBSERVATION_WORKFLOW_MARKERS = (
-    "environment: staging",
-    "python3 scripts/collect_b071_gc_observation.py collect",
-)
-
-
 class Blocked(RuntimeError):
     """The live observation boundary is not proven by repository evidence."""
 
 
+def _active_yaml_lines(workflow: str) -> list[tuple[int, str]]:
+    """Return indentation and content for nonblank, noncomment YAML lines."""
+    lines = []
+    for raw_line in textwrap.dedent(workflow).splitlines():
+        content = raw_line.lstrip()
+        if not content or content.startswith("#"):
+            continue
+        indent = len(raw_line) - len(content)
+        lines.append((indent, content.rstrip()))
+    return lines
+
+
 def observation_workflow_satisfies_contract(workflow: str) -> bool:
-    """Accept only the dedicated, protected workflow that uses the collector."""
-    return all(marker in workflow for marker in OBSERVATION_WORKFLOW_MARKERS)
+    """Require a manual, read-only workflow job that runs the scoped collector."""
+    lines = _active_yaml_lines(workflow)
+
+    on_index = next(
+        (index for index, (indent, text) in enumerate(lines) if indent == 0 and text in ("on:", "'on':", '"on":')),
+        None,
+    )
+    if on_index is None:
+        return False
+    events = []
+    for indent, text in lines[on_index + 1 :]:
+        if indent == 0:
+            break
+        if indent == 2 and text.endswith(":"):
+            events.append(text[:-1])
+    if events != ["workflow_dispatch"]:
+        return False
+
+    permissions_index = next(
+        (index for index, (indent, text) in enumerate(lines) if indent == 0 and text == "permissions:"),
+        None,
+    )
+    if permissions_index is None:
+        return False
+    permissions = []
+    for indent, text in lines[permissions_index + 1 :]:
+        if indent == 0:
+            break
+        if indent == 2:
+            permissions.append(text)
+    if permissions != ["contents: read"]:
+        return False
+
+    jobs_index = next(
+        (index for index, (indent, text) in enumerate(lines) if indent == 0 and text == "jobs:"),
+        None,
+    )
+    if jobs_index is None:
+        return False
+    job_blocks: list[list[tuple[int, str]]] = []
+    current_job: list[tuple[int, str]] = []
+    for indent, text in lines[jobs_index + 1 :]:
+        if indent == 0:
+            break
+        if indent == 2 and text.endswith(":"):
+            if current_job:
+                job_blocks.append(current_job)
+            current_job = [(indent, text)]
+        elif current_job:
+            current_job.append((indent, text))
+    if current_job:
+        job_blocks.append(current_job)
+
+    for job in job_blocks:
+        if (4, "environment: staging") not in job:
+            continue
+        if not any(indent == 4 and text.startswith("runs-on: ubuntu-") for indent, text in job):
+            continue
+
+        for index, (indent, text) in enumerate(job):
+            if indent not in (6, 8) or not text.startswith("run:"):
+                continue
+            command_lines = [text.partition(":")[2].strip()]
+            for body_indent, body_text in job[index + 1 :]:
+                if body_indent <= indent:
+                    break
+                command_lines.append(body_text.strip())
+            command = "\n".join(command_lines)
+            if not any(
+                line == "python3 scripts/collect_b071_gc_observation.py collect" for line in command.splitlines()
+            ):
+                continue
+            if all(flag in command for flag in ("--scopes", "--image-digest", "--operator", "--output")):
+                return True
+    return False
 
 
 def contract_self_test() -> None:
     """Adversarial examples keep generic binary mentions from passing readiness."""
     generic_binary_smoke = """
     name: container-build
-    run: /usr/local/bin/corelink-gc-sweep-production
+    on:
+      workflow_dispatch:
+    permissions:
+      contents: read
+    jobs:
+      smoke:
+        runs-on: ubuntu-24.04
+        environment: staging
+        steps:
+          - run: echo "python3 scripts/collect_b071_gc_observation.py collect --scopes X --image-digest X --operator X --output X"
     # Deliberately starts without scope and expects fail-closed.
     """
     if observation_workflow_satisfies_contract(generic_binary_smoke):
         raise AssertionError("generic binary mention incorrectly passed as observation workflow")
 
     missing_protection = """
-    run: python3 scripts/collect_b071_gc_observation.py collect
+    on:
+      workflow_dispatch:
+    permissions:
+      contents: read
+    jobs:
+      observe:
+        runs-on: ubuntu-24.04
+        steps:
+          - run: python3 scripts/collect_b071_gc_observation.py collect --scopes X --image-digest X --operator X --output X
     """
     if observation_workflow_satisfies_contract(missing_protection):
         raise AssertionError("collector command without staging protection incorrectly passed")
 
     dedicated_staging_observation = """
-    environment: staging
-    run: python3 scripts/collect_b071_gc_observation.py collect
+    name: gc-production-observation
+    on:
+      workflow_dispatch:
+        inputs:
+          scopes:
+            required: true
+    permissions:
+      contents: read
+    jobs:
+      observe:
+        runs-on: ubuntu-24.04
+        environment: staging
+        steps:
+          - name: collect bounded observation
+            run: |
+              python3 scripts/collect_b071_gc_observation.py collect \\
+                --scopes "${{ inputs.scopes }}" \\
+                --image-digest "${{ inputs.image_digest }}" \\
+                --operator "${{ github.actor }}" \\
+                --output evidence/owner-actions/B-071/gc-production-dry-run.json
     """
     if not observation_workflow_satisfies_contract(dedicated_staging_observation):
         raise AssertionError("dedicated protected staging observation did not pass")
@@ -163,14 +278,9 @@ def verify() -> None:
         blockers.append(str(exc))
     else:
         if not observation_workflow_satisfies_contract(observation_workflow):
-            missing = [
-                marker
-                for marker in OBSERVATION_WORKFLOW_MARKERS
-                if marker not in observation_workflow
-            ]
             blockers.append(
-                "dedicated GC staging observation workflow is missing required marker(s): "
-                + ", ".join(missing)
+                "dedicated GC observation workflow must use workflow_dispatch, grant only "
+                "contents: read, and run the scoped collector in a hosted staging environment"
             )
 
     if blockers:

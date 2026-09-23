@@ -14,6 +14,7 @@ on:
       - ".github/workflows/gc-production-observation.yml"
       - "infra/staging/topology.json"
       - "evidence/staging/readiness.json"
+      - "scripts/collect_b071_gc_observation.py"
       - "scripts/verify_i1651_gc_live_prerequisites.py"
 
 permissions:
