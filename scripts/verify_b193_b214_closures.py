@@ -119,7 +119,7 @@ def _check(identifier: str, root: Path, override: str | None = None) -> None:
         if "validate_cas_bucket_for_region" not in _read(root, "crates/corelink-container/src/routes/cas_erase/b126_m2_impl_02_part2.rs"):
             raise ClosureError("B-202: bucket validation is not wired in CAS erase")
     if identifier == "B-206":
-        alarm_tests = _read(root, "worker/tests/durable_object_part2.test.ts")
+        alarm_tests = _read(root, "worker/tests/durable_object_part2_tests_1.ts")
         for marker in (
             "re-arms the alarm even when the tick throws mid-way",
             "alarm() destroys the container and does NOT reschedule once idle expires",
@@ -127,7 +127,7 @@ def _check(identifier: str, root: Path, override: str | None = None) -> None:
         ):
             if marker not in alarm_tests:
                 raise ClosureError(f"B-206: missing behavioral alarm test {marker!r}")
-        if not re.search(r"let chainEnded = false;.*?finally\s*\{\s*\n\s*if \(!chainEnded\).*?setAlarm", text, re.DOTALL):
+        if not re.search(r"let chainEnded = false;.*?finally\s*\{\s*\n\s*if \(!chainEnded \|\| cleanupPending\).*?setAlarm", text, re.DOTALL):
             raise ClosureError("B-206: alarm does not re-arm in finally after a tick failure")
     if identifier == "B-207":
         start = text.find("export async function startContainer")

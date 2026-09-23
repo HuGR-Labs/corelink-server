@@ -24,6 +24,9 @@ Each entry cross-references:
 
 ### Fixed
 
+- **B-206 alarm closure verifier follows split worker fixtures.** Behavioral
+  markers and current `cleanupPending` re-arm logic remain fail-closed.
+
 - **B-229 contract guard preserves production closure evidence.** B-101 now
   accepts its explicit done-state action and three-part Clerk webhook verifier
   while still rejecting the immutable open proposal action.
