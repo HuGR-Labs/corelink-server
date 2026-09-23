@@ -1,0 +1,80 @@
+---
+name: {{SKILL_SLUG}}
+description: >-
+  Assuma ownership de {{PACKAGE}} ao {{GATILHOS_ESPECIFICOS}}.
+  Oriente diagnóstico e mudanças em {{SUPERFICIES_EXATAS}};
+  não use para {{FORA_DO_ESCOPO}}.
+metadata:
+  schema: "corelink-ownership/1.1"
+  package: "{{PACKAGE}}"
+  manifest: "{{MANIFEST}}"
+  source-commit: "{{SOURCE_COMMIT}}"
+  evidence-set: "{{EVIDENCE_SET}}"
+---
+
+# Ownership — {{PACKAGE}}
+
+[Acionamento](#s01) · [Autoridade](#s02) · [Leitura](#s03) ·
+[Decisões](#s04) · [Fluxo](#s05) · [Paradas](#s06) · [Saída](#s07).
+
+<a id="s01"></a>
+## S01 — Acionamento
+
+| Use quando | Não use quando |
+|---|---|
+| {{TAREFA_POSITIVA_COM_CAMINHO_OU_CONTRATO}} | {{TAREFA_NEGATIVA_COM_OWNER_CORRETO}} |
+
+<a id="s02"></a>
+## S02 — Território e autoridade
+
+**Implementação própria:** {{MODULOS_OWNED}}.
+**Contratos públicos sob responsabilidade:** {{API_IDS}}.
+**Fora do território:** {{REEXPORTS_E_OWNERS_EXTERNOS}}.
+**Escalonamento verificado:** {{ROTA_REAL}}.
+Esta skill não autoriza produção, gastos, cobranças ou alterações fora da tarefa.
+
+<a id="s03"></a>
+## S03 — Roteamento de leitura
+
+| Pergunta | Ler diretamente |
+|---|---|
+| Como funciona? | [Referência](../../../docs/ownership/crates/{{PACKAGE}}/REFERENCE.md#r01) |
+| O que pode quebrar? | [Relações](../../../docs/ownership/crates/{{PACKAGE}}/BLAST_RADIUS.md#b03) |
+| Como executar a tarefa? | [Procedimentos](../../../docs/ownership/crates/{{PACKAGE}}/MAINTENANCE.md#m02) |
+| Qual conceito canônico se aplica? | {{LINK_RELATIVO_OKF_COM_ANCORA_VERIFICADA}} |
+
+Carregue somente as seções pertinentes. Preserve o contrato canônico OKF.
+
+<a id="s04"></a>
+## S04 — Decisões e invariantes
+
+| Condição concreta | Ação e evidência | Parar quando |
+|---|---|---|
+| {{MUDANCA_DE_CONTRATO}} | {{API_REL_INV_E_GATE}} | {{LIMITE_VERIFICAVEL}} |
+| {{DIVERGENCIA_DE_IMPLEMENTACAO_E_WIRING}} | {{TRACE_EXATO_E_SKILL_TRANSVERSAL}} | {{FALTA_DE_EVIDENCIA}} |
+
+<a id="s05"></a>
+## S05 — Fluxo de trabalho
+
+1. Confirme manifesto, package, baseline e escopo autorizado.
+2. Abra os conceitos OKF e registros API/INV/REL pertinentes.
+3. Selecione o procedimento e a matriz de target/features correspondente.
+4. Registre plano de mudança e ponto de recuperação antes de executar.
+5. Execute somente os passos autorizados; preserve o resultado completo dos gates.
+6. Atualize os artefatos e solicite cold review dos hashes finais afetados.
+
+<a id="s06"></a>
+## S06 — Condições de parada
+
+{{CONDICOES_ESPECIFICAS_DA_CRATE_COM_ACAO_E_RESPONSAVEL}}
+Não prossiga com target desconhecido, contrato contraditório, fonte stale ou
+recuperação não definida para um efeito irreversível.
+
+<a id="s07"></a>
+## S07 — Evidência e saída
+
+Entregue: objetivo; baseline; API/INV/REL/PROC afetados; comandos e resultados reais;
+estado final observado; quatro vereditos quando aplicável; pendências e owner.
+Não diga que uma capability roda em produção só porque compila ou está implementada.
+
+[Voltar ao início](#s01)

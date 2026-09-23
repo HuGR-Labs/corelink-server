@@ -1,0 +1,20 @@
+{
+  "scope": [
+    "README.md",
+    "PROGRESS.md",
+    "REVIEW-INPUT.md",
+    "issue-drafts/index.md",
+    "issue-drafts/workspace/crates__corelink-hash.md",
+    "pilot-overlay/docs/ownership/crates/corelink-hash/REFERENCE.md",
+    "pilot-overlay/docs/ownership/crates/corelink-hash/MAINTENANCE.md",
+    "pilot-overlay/docs/ownership/crates/corelink-hash/BLAST_RADIUS.md",
+    "pilot-overlay/.claude/skills/own-corelink-hash/SKILL.md"
+  ],
+  "local_link_occurrences": 288,
+  "errors": [],
+  "not_checked": [
+    "remote URLs",
+    "semantic relevance of links",
+    "historical snapshots and other inherited documentation"
+  ]
+}

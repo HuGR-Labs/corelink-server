@@ -1,0 +1,42 @@
+{
+  "schema": "corelink-ownership-review-input/1",
+  "state": "AUTHOR_CANDIDATE_NOT_READY_FOR_APPROVAL",
+  "package": "corelink-hash",
+  "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+  "created_at": "2026-09-19T23:56:55.460113+00:00",
+  "contract_version": "1.1-candidate",
+  "contract_sha256": "f9dad29060135b993b45a427078865ef3d0f7141437d44813b7802e415046b4a",
+  "files": [
+    {
+      "path": "pilot-overlay/.claude/skills/own-corelink-hash/SKILL.md",
+      "sha256": "e55fd9233e16c1fe630765edd4b6fc54afe21a38517aa85f7368cee17cc42ab3",
+      "bytes": 5270
+    },
+    {
+      "path": "pilot-overlay/docs/ownership/crates/corelink-hash/REFERENCE.md",
+      "sha256": "f6d5a1fd8b20f414ec4adbf55a03d1d33dcc044a4d1e09a0e4e967e1b307b030",
+      "bytes": 25934
+    },
+    {
+      "path": "pilot-overlay/docs/ownership/crates/corelink-hash/BLAST_RADIUS.md",
+      "sha256": "3ce461f6f581f408b96277ae70f91f7ace5307ba8977b29baf9d1a3ecf89d7fa",
+      "bytes": 27235
+    },
+    {
+      "path": "pilot-overlay/docs/ownership/crates/corelink-hash/MAINTENANCE.md",
+      "sha256": "00bf084dffa5b447ff1ec230ab2d2ec9e4ca5a2a0b502cce6cc054dc13c1df86",
+      "bytes": 13694
+    }
+  ],
+  "source_study": "evidence/revision-1.3/source-study.json",
+  "reviewer": null,
+  "review_session": null,
+  "verdicts": [],
+  "blocking": [
+    "reverse_graph_and_semantic_census",
+    "peer_reconciliation",
+    "rust_procedures_not_executed",
+    "independent_review_not_performed"
+  ],
+  "note": "Input identity only. Not a review record, approval, source checkout, or execution evidence."
+}

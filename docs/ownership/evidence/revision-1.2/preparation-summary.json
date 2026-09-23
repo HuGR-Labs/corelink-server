@@ -1,0 +1,17 @@
+{
+  "source_commit": "cca798ff5bc2df660ecf2570ed243eb9775ff3d0",
+  "workspace_names_confirmed": 95,
+  "workspace_name_placeholders_remaining": 0,
+  "fuzz_packages_confirmed": 10,
+  "explicit_fuzz_bins": 23,
+  "drafts": 105,
+  "manifest_context_records": 24,
+  "full_semantic_packets": 0,
+  "cargo_executed": false,
+  "cold_reviews_performed": 0,
+  "issues_published": 0,
+  "tracked_manifest_population_certified": false,
+  "python_tests_passed": 126,
+  "new_preparation_tests": 21,
+  "existing_tests_retained": 105
+}

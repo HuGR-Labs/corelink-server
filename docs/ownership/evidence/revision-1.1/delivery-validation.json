@@ -1,0 +1,38 @@
+{
+  "schema": "corelink-ownership-correction-delivery/1.1",
+  "state": "CANDIDATE_LOCALLY_VALIDATED",
+  "unit_tests": {
+    "count": 105,
+    "passed": 105,
+    "original_32_tests_unchanged": true,
+    "log": "evidence/revision-1.1/tests-final.txt"
+  },
+  "adversarial_probes": {
+    "count": 12,
+    "expected_outcomes_met": 12,
+    "false_acceptances_in_these_cases": 0
+  },
+  "artifact_templates_checked": 4,
+  "main_document_local_links_checked": 82,
+  "draft_population": {
+    "declared_workspace": 95,
+    "fuzz_candidates_not_confirmed": 9,
+    "workspace_package_names_unresolved": 90
+  },
+  "publication": {
+    "eligible": 0,
+    "published": 0,
+    "reason": "Actual census/seeds, full pilots, independent freeze, backlog and deduplication remain pending."
+  },
+  "not_executed": [
+    "cargo metadata on real checkout",
+    "Rust/CoreLink tests",
+    "five complete pilots",
+    "independent cold review",
+    "complete backlog/issue deduplication",
+    "remote writes",
+    "repository PR integration",
+    "production operations"
+  ],
+  "original_zip_sha256": "d80ebffeb8b5e58fb0e59d660ea2cd8e47c034ee5413c9a51a2161a7757d9f24"
+}

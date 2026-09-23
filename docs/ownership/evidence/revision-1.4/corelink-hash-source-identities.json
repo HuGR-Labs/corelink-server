@@ -1,0 +1,45 @@
+{
+  "schema": "corelink-ownership-source-identities/1",
+  "state": "source_only_reanchor",
+  "repository": "HuGR-Labs/corelink-server",
+  "source_commit": "cacc44fc43ee2f481e933419ba88b9a19ac6c8e8",
+  "evidence_class": "SOURCE",
+  "scope": "corelink-hash pilot static reanchor; no Cargo/Rust/runtime execution",
+  "manifest": {
+    "path": "crates/corelink-hash/Cargo.toml",
+    "package": "corelink-hash",
+    "blob": "bb0642df8d4a80b95f48eefd8d4339f851a4c8bd",
+    "repository_field": "https://github.com/HuGR-dev/corelink-server"
+  },
+  "source_blobs": {
+    "crates/corelink-hash/src/lib.rs": "403f7e2e4ef8c7bb30a47e7d7eee3ce94a785730",
+    "crates/corelink-hash/src/digest.rs": "40aea50c8127ada98133e3719171b65f047f2bcd",
+    "crates/corelink-hash/src/error.rs": "d953932982f95178cfc1e2fe0021c6664a68b2f9",
+    "crates/corelink-hash/src/store.rs": "ca438358841cef76cf139fadff5acc57526baae0",
+    "crates/corelink-hash/src/verified_body.rs": "d387eca974b5314dad46b6e92b1623cb8b3e10d5",
+    "crates/corelink-hash/examples/blake3_vectors.rs": "44f8f78df5eeb74fbb1a7a825e040717925d6e4e",
+    "crates/corelink-client-verify/src/digest.rs": "425787dbe545c6db54ab09baf0f026c190e1d803",
+    "crates/corelink-client-verify/include/corelink_client_verify.h": "9fa355253b873343cecfbb219c888c05fe5268a4",
+    "crates/corelink-crypto/src/blake3.rs": "6ae61aaec6ea04e37a6d0e510977c6c47470e690"
+  },
+  "consumer_manifest_paths": [
+    "crates/corelink-ac/Cargo.toml",
+    "crates/corelink-bazel-bridge/Cargo.toml",
+    "crates/corelink-cas/Cargo.toml",
+    "crates/corelink-client-verify/Cargo.toml",
+    "crates/corelink-container/Cargo.toml",
+    "crates/corelink-crypto/Cargo.toml",
+    "crates/corelink-meta/Cargo.toml",
+    "crates/corelink-reapi/Cargo.toml",
+    "crates/corelink-worker/Cargo.toml",
+    "crates/corelink-hash/fuzz/Cargo.toml",
+    "crates/corelink-meta/fuzz/Cargo.toml",
+    "crates/corelink-worker/fuzz/Cargo.toml",
+    "tests/e2e-signup-flow/Cargo.toml"
+  ],
+  "limitations": [
+    "No Cargo metadata/tree resolution was executed.",
+    "No Rust tests, clippy, wasm check, fuzz, deployment, or runtime observation was performed.",
+    "The historical global source-identities snapshot remains unchanged; this file is the current package-scoped reanchor."
+  ]
+}

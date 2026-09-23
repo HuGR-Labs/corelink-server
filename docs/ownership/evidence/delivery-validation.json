@@ -1,0 +1,33 @@
+{
+  "delivery_checks": "PASS",
+  "independent_cold_review": "NOT_PERFORMED",
+  "repository_cargo_execution": "NOT_PERFORMED",
+  "issues_published": 0,
+  "unit_tests": 32,
+  "unit_test_scope": "Python helper fixtures, not CoreLink Rust",
+  "template_checks": 4,
+  "local_delivery_links_broken": [],
+  "yaml_frontmatter_check": {
+    "performed": true,
+    "parser_version": "6.0.3",
+    "valid": true
+  },
+  "example_relation_card": {
+    "lines": 11,
+    "words": 78,
+    "bytes": 947
+  },
+  "workspace_issue_drafts": 95,
+  "excluded_fuzz_candidate_drafts": 9,
+  "identity_resolution": "Only names explicitly read/documented are recorded; others remain null.",
+  "remaining_before_publication": [
+    "fresh Cargo census",
+    "classify independent/fuzz/vendor manifests",
+    "pilot full documents and budgets",
+    "independent review of standard",
+    "crate-specific semantic preparation",
+    "complete issue/backlog duplicate reconciliation",
+    "publish standard and bind immutable revision",
+    "GitHub issue-creation action"
+  ]
+}
