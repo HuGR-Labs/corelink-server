@@ -510,10 +510,17 @@ def test_v0004_policy_pins_complete_first_parent_history_from_git_objects(monkey
     assert tuple(transitions) == successor.V0004_RECONCILIATION["history_transitions"]
     assert policy._v0004_history_authorized()
 
-    rewritten = list(successor.V0004_RECONCILIATION["history_transitions"])
+    original = successor.V0004_RECONCILIATION["history_transitions"]
+    rewritten = list(original)
     rewritten[0] = (*rewritten[0][:3], "0" * 64, rewritten[0][4])
     monkeypatch.setitem(
         successor.V0004_RECONCILIATION, "history_transitions", tuple(rewritten),
+    )
+    assert not policy._v0004_history_authorized()
+    monkeypatch.setitem(
+        successor.V0004_RECONCILIATION,
+        "history_transitions",
+        original[:4] + original[5:],
     )
     assert not policy._v0004_history_authorized()
 
