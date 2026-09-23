@@ -41,12 +41,60 @@ pub struct AwsS3ObjectLockAdapter {
     version_ids: Arc<Mutex<BTreeMap<String, String>>>,
 }
 
+/// Reference to the independently verified delete permission for one exact
+/// probe identity and object version.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DeleteProbeAuthorization {
+    identity_reference: String,
+    object_key: String,
+    version_id: String,
+    evidence_reference: String,
+}
+
+impl DeleteProbeAuthorization {
+    /// Bind current external IAM authorization evidence to the probe target.
+    pub fn new(
+        identity_reference: impl Into<String>,
+        object_key: impl Into<String>,
+        version_id: impl Into<String>,
+        evidence_reference: impl Into<String>,
+    ) -> Result<Self, ObjectLockArchiveError> {
+        let identity_reference = identity_reference.into();
+        let object_key = object_key.into();
+        let version_id = version_id.into();
+        let evidence_reference = evidence_reference.into();
+        if identity_reference.trim().is_empty()
+            || object_key.trim().is_empty()
+            || version_id.trim().is_empty()
+            || evidence_reference.trim().is_empty()
+        {
+            return Err(ObjectLockArchiveError::CapabilityNegotiationFailed(
+                "delete probe requires an authorization evidence reference".to_string(),
+            ));
+        }
+        Ok(Self {
+            identity_reference,
+            object_key,
+            version_id,
+            evidence_reference,
+        })
+    }
+
+    fn covers(&self, object_key: &str, version_id: &str) -> bool {
+        !self.identity_reference.trim().is_empty()
+            && !self.evidence_reference.trim().is_empty()
+            && self.object_key == object_key
+            && self.version_id == version_id
+    }
+}
+
 /// Exact already-locked synthetic object version used during capability
-/// negotiation. A missing or mismatched version fails closed.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// negotiation. A missing, mismatched, or unverified target fails closed.
+#[derive(Clone, PartialEq, Eq)]
 pub struct DeleteProbeTarget {
     object_key: String,
     version_id: String,
+    authorization: DeleteProbeAuthorization,
 }
 
 impl DeleteProbeTarget {
@@ -54,18 +102,24 @@ impl DeleteProbeTarget {
     pub fn new(
         object_key: impl Into<String>,
         version_id: impl Into<String>,
+        authorization: DeleteProbeAuthorization,
     ) -> Result<Self, ObjectLockArchiveError> {
         let object_key = object_key.into();
         let version_id = version_id.into();
         AwsS3ObjectLockAdapter::validate_object_key(&object_key)?;
-        if version_id.trim().is_empty() || version_id.trim() != version_id.as_str() {
+        if version_id.trim().is_empty()
+            || version_id.trim() != version_id.as_str()
+            || !authorization.covers(&object_key, &version_id)
+        {
             return Err(ObjectLockArchiveError::CapabilityNegotiationFailed(
-                "delete probe requires an exact object version".to_string(),
+                "delete probe requires permission evidence for the exact object version"
+                    .to_string(),
             ));
         }
         Ok(Self {
             object_key,
             version_id,
+            authorization,
         })
     }
 }
@@ -369,7 +423,12 @@ impl ObjectLockArchiveAdapter for AwsS3ObjectLockAdapter {
                 self.target_label.clone(),
             ),
             capabilities,
-            evidence_reference: self.evidence_reference.clone(),
+            evidence_reference: format!(
+                "{}; delete probe identity={} authorization={}",
+                self.evidence_reference,
+                delete_probe_target.authorization.identity_reference,
+                delete_probe_target.authorization.evidence_reference,
+            ),
         })
     }
 
@@ -556,32 +615,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn delete_probe_requires_one_exact_version() {
-        assert!(DeleteProbeTarget::new("audit/probe.ndjson", "version-1").is_ok());
-        assert!(DeleteProbeTarget::new("audit/probe.ndjson", "").is_err());
-        assert!(DeleteProbeTarget::new("audit/probe.ndjson", " version-1").is_err());
-        assert!(DeleteProbeTarget::new("outside/probe.ndjson", "version-1").is_err());
-    }
-
-    #[test]
-    fn delete_probe_requires_identity_and_target_before_probe_execution() {
-        let target = DeleteProbeTarget::new("audit/probe.ndjson", "version-1")
-            .expect("probe fixture is exact");
-        assert!(AwsS3ObjectLockAdapter::validate_delete_probe_configuration(false, Some(&target))
-            .is_err());
-        assert!(AwsS3ObjectLockAdapter::validate_delete_probe_configuration(true, None).is_err());
-        assert!(AwsS3ObjectLockAdapter::validate_delete_probe_configuration(true, Some(&target))
-            .is_ok());
-    }
-
-    #[test]
-    fn only_structured_access_denied_is_a_delete_denial() {
-        assert!(AwsS3ObjectLockAdapter::is_structured_access_denied(Some("AccessDenied")));
-        assert!(!AwsS3ObjectLockAdapter::is_structured_access_denied(None));
-        assert!(!AwsS3ObjectLockAdapter::is_structured_access_denied(Some("NoSuchVersion")));
-    }
-
-    #[test]
     fn archive_key_is_confined_to_audit_prefix() {
         assert!(AwsS3ObjectLockAdapter::validate_object_key("audit/epoch/line.ndjson").is_ok());
         assert!(AwsS3ObjectLockAdapter::validate_object_key("audit/").is_err());
@@ -600,12 +633,23 @@ mod tests {
     }
 
     #[test]
-    fn delete_probe_requires_a_usable_identity_and_exact_version() {
-        assert!(DeleteProbeTarget::new("audit/probe", "version-1").is_ok());
-        assert!(DeleteProbeTarget::new("audit/probe", " ").is_err());
-        assert!(DeleteProbeTarget::new("audit/../other", "version-1").is_err());
+    fn delete_probe_requires_current_authorization_evidence_for_exact_version() {
+        let authorization = DeleteProbeAuthorization::new(
+            "synthetic-probe-role",
+            "audit/probe",
+            "version-1",
+            "approved permission evidence",
+        )
+        .expect("authorization evidence is complete");
+        assert!(DeleteProbeAuthorization::new(" ", "audit/probe", "version-1", "evidence",).is_err());
+        assert!(DeleteProbeTarget::new("audit/probe", "version-1", authorization.clone(),).is_ok());
+        assert!(DeleteProbeTarget::new("audit/probe", " ", authorization.clone()).is_err());
+        assert!(DeleteProbeTarget::new("audit/probe", " version-1", authorization.clone(),).is_err());
+        assert!(DeleteProbeTarget::new("audit/../other", "version-1", authorization.clone(),).is_err());
+        assert!(DeleteProbeTarget::new("audit/probe", "version-2", authorization.clone()).is_err());
 
-        let target = DeleteProbeTarget::new("audit/probe", "version-1").unwrap();
+        let target = DeleteProbeTarget::new("audit/probe", "version-1", authorization)
+            .expect("authorized exact probe target");
         assert!(
             AwsS3ObjectLockAdapter::validate_delete_probe_configuration(false, Some(&target))
                 .is_err()
@@ -624,22 +668,13 @@ mod tests {
     }
 
     #[test]
-    fn delete_denial_requires_structured_object_lock_access_denied() {
-        assert!(AwsS3ObjectLockAdapter::is_object_lock_delete_denial(
-            Some("AccessDenied"),
-            Some("Access Denied because object protected by Object Lock.")
-        ));
-        assert!(!AwsS3ObjectLockAdapter::is_object_lock_delete_denial(
-            Some("AccessDenied"),
-            Some("Access Denied")
-        ));
-        assert!(!AwsS3ObjectLockAdapter::is_object_lock_delete_denial(
-            Some("NoSuchVersion"),
-            Some("Access Denied because object protected by Object Lock.")
-        ));
-        assert!(!AwsS3ObjectLockAdapter::is_object_lock_delete_denial(
-            None,
-            Some("Access Denied because object protected by Object Lock.")
-        ));
+    fn delete_denial_requires_structured_access_denied() {
+        assert!(AwsS3ObjectLockAdapter::is_structured_access_denied(Some(
+            "AccessDenied"
+        )));
+        assert!(!AwsS3ObjectLockAdapter::is_structured_access_denied(None));
+        assert!(!AwsS3ObjectLockAdapter::is_structured_access_denied(Some(
+            "NoSuchVersion"
+        )));
     }
 }

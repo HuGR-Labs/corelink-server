@@ -110,16 +110,20 @@ not an S3 event timestamp. Use the provider's durable CloudTrail event and
 digest as the external audit record.
 
 Capability negotiation also requires a separate probe client and the exact
-key/version of an already locked synthetic object. It performs the versioned
-delete attempt and accepts only a structured S3 `AccessDenied` response for
-that exact version; missing probe identity, missing version, a successful
-delete, or any other service error fails closed. Because S3 also uses
-`AccessDenied` for authorization failures, the operator must independently
-verify that the configured probe identity is allowed to call
-`s3:DeleteObjectVersion` for that exact synthetic prefix before attributing
-the response to Object Lock. Without that identity check, the result is
-inconclusive and negotiation must remain closed. The archive writer must
-never receive delete permission.
+key/version of an already locked synthetic object, plus a non-secret reference
+to current evidence that the configured probe identity is allowed to call
+`s3:DeleteObjectVersion` for that exact object. The adapter rejects a missing
+reference or evidence that names a different identity, key, or version. It
+then performs the versioned delete and accepts only a structured S3
+`AccessDenied` response for that exact version; a missing probe client,
+missing version, successful delete, or any other service error fails closed.
+Because S3 also uses `AccessDenied` for authorization failures, the caller must
+revalidate the referenced permission evidence before constructing the adapter.
+Without current effective permission for the same probe identity, bucket, and
+object resource, the result is inconclusive and negotiation must remain
+closed. The adapter requires an explicit evidence reference but does not
+query IAM policy state itself. The archive writer must never receive delete
+permission.
 
 The template writer policy grants no delete or retention-override authority.
 It permits setting legal hold only to `ON`. The runtime adapter stays
