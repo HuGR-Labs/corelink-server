@@ -324,7 +324,12 @@ pub fn build_with_factory_and_byok_and_reapi_ingress(
     // Phase 0 Stream B1: Bazel REAPI v2 routes share the same CAS/AC
     // trait objects so all four route surfaces read from / write to the
     // same backing store. No new R2 connections are opened.
-    let mut bazel_state = bazel_v2::build_handlers_from(cas_read, cas_write, ac_lookup, ac_update);
+    let mut bazel_state = bazel_v2::build_handlers_from(
+        cas_read.clone(),
+        cas_write.clone(),
+        ac_lookup.clone(),
+        ac_update.clone(),
+    );
     bazel_state.quota = quota.clone();
     bazel_state.pat_gate = native_pat_gate.clone();
     bazel_state.usage_meter = usage_meter.clone();
