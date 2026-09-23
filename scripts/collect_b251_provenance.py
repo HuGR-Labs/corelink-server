@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -18,6 +17,7 @@ OPERATION = "crates/corelink-billing/tests/b251_identity_operation.rs"
 MARKER = "B251_OPERATION_TRANSCRIPT_HEX="
 FAILURES = "B251_OPERATION_FAILURES_HEX="
 COUNT = "B251_OPERATION_COUNT="
+OPERATION_SEED_HEX = "b2510025d002d003"
 
 
 class CollectionError(RuntimeError):
@@ -39,19 +39,17 @@ def compare(left: dict[str, str], right: dict[str, str]) -> None:
         raise CollectionError("D02 operation identity mismatch: " + ", ".join(mismatches))
 
 
-def run_operation(directory: Path, adapter: Path, seed: str) -> dict[str, str]:
+def run_operation(directory: Path, adapter: Path) -> dict[str, str]:
     destination = directory / OPERATION
     destination.parent.mkdir(parents=True, exist_ok=True)
     if adapter.resolve() != destination.resolve():
         shutil.copyfile(adapter, destination)
-    env = os.environ.copy()
-    env["B251_OPERATION_SEED"] = seed
     command = (
         "cargo", "test", "--manifest-path", str(directory / "Cargo.toml"),
         "-p", "corelink-billing", "--test", "b251_identity_operation",
         "operation_emits_transcript", "--", "--exact", "--nocapture",
     )
-    result = subprocess.run(command, cwd=directory, env=env, capture_output=True, text=True, timeout=900)
+    result = subprocess.run(command, cwd=directory, capture_output=True, text=True, timeout=900)
     if result.returncode:
         raise CollectionError(f"checker operation failed at {git(directory, 'rev-parse', 'HEAD')}")
     output = result.stdout + "\n" + result.stderr
@@ -64,7 +62,11 @@ def run_operation(directory: Path, adapter: Path, seed: str) -> dict[str, str]:
         failures = bytes.fromhex(records[FAILURES][0])
     except ValueError as exc:
         raise CollectionError("checker operation transcript was malformed") from exc
-    return {"seed": digest(bytes.fromhex(seed)), "failure": digest(failures), "blob": digest(transcript)}
+    return {
+        "seed": digest(bytes.fromhex(OPERATION_SEED_HEX)),
+        "failure": digest(failures),
+        "blob": digest(transcript),
+    }
 
 
 def collect(d02: Path, d03: Path, output: Path, run_id: str, run_attempt: str) -> dict[str, object]:
@@ -78,9 +80,8 @@ def collect(d02: Path, d03: Path, output: Path, run_id: str, run_attempt: str) -
     committed_adapter_blob = git(d03, "rev-parse", f"HEAD:{OPERATION}")
     if adapter_blob != committed_adapter_blob:
         raise CollectionError("operation adapter differs from the recorded D03 revision")
-    seed = hashlib.sha256(f"corelink-b251:{run_id}:{run_attempt}".encode()).hexdigest()[:16]
-    left = run_operation(d02, d03 / OPERATION, seed)
-    right = run_operation(d03, d03 / OPERATION, seed)
+    left = run_operation(d02, d03 / OPERATION)
+    right = run_operation(d03, d03 / OPERATION)
 
     # Negative mutation: identity comparison must reject even one altered digest.
     mutated = dict(right)
@@ -103,6 +104,7 @@ def collect(d02: Path, d03: Path, output: Path, run_id: str, run_attempt: str) -
         )
     receipt: dict[str, object] = {
         "schema": "corelink.b251.provenance.v1",
+        "actions_run": {"id": run_id, "attempt": run_attempt},
         "d02": {"revision": d02_commit, "producer_test_blob": d02_test, "identity": left},
         "d03_observed": {"revision": d03_commit, "producer_test_blob": d03_test, "identity": right},
         "operation": {"adapter_blob": committed_adapter_blob, "cases": 1000,

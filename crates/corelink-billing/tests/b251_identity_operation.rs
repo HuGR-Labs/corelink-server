@@ -13,9 +13,11 @@ use corelink_billing::quota::cas::{
 use corelink_eviction::EvictionRegion;
 use uuid::Uuid;
 
+const OPERATION_SEED_HEX: &str = "b2510025d002d003";
+
 #[test]
 fn operation_emits_transcript() {
-    let seed = u64::from_str_radix(&std::env::var("B251_OPERATION_SEED").unwrap(), 16).unwrap();
+    let seed = u64::from_str_radix(OPERATION_SEED_HEX, 16).unwrap();
     let mut state_rng = seed;
     let mut transcript = String::new();
     let mut failures = String::new();

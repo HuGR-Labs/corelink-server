@@ -31,7 +31,9 @@ def verify(root: Path = ROOT) -> None:
     for forbidden in ("id-token: write", "attestations: write", "attest-build-provenance@"):
         if forbidden in workflow:
             raise ValueError(f"B-251 workflow exceeds read-only permissions: {forbidden}")
-    for text in ("cargo", "B251_OPERATION_TRANSCRIPT_HEX", "D02_COMMIT", "mutation"):
+    for text in (
+        "cargo", "B251_OPERATION_TRANSCRIPT_HEX", "D02_COMMIT", "OPERATION_SEED_HEX", "mutation"
+    ):
         if text not in collector:
             raise ValueError(f"collector contract missing {text}")
     for text in ("try_acquire", "InMemoryAtomicQuotaChecker", "% 900", "1_000 +", "1 +"):

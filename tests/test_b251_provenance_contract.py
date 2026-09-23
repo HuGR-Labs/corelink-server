@@ -54,15 +54,13 @@ def test_run_operation_accepts_adapter_already_at_destination(tmp_path: Path, mo
         return SimpleNamespace(returncode=0, stdout=output, stderr="")
 
     monkeypatch.setattr(MODULE.subprocess, "run", completed_run)
-    identity = MODULE.run_operation(tmp_path, operation, "0123456789abcdef")
+    identity = MODULE.run_operation(tmp_path, operation)
 
     assert set(identity) == {"seed", "failure", "blob"}
     assert operation.read_text(encoding="utf-8") == "checked-in adapter\n"
 
 
-def test_deterministic_operation_seed_is_exactly_allowlisted_as_nonsecret() -> None:
-    matrix = (ROOT / "scripts/validate_secrets_matrix.py").read_text(encoding="utf-8")
-    shell = (ROOT / "scripts/secrets-checklist-verify.sh").read_text(encoding="utf-8")
+def test_collector_and_adapter_share_a_fixed_reproducible_operation_seed() -> None:
+    operation = (ROOT / MODULE.OPERATION).read_text(encoding="utf-8")
 
-    assert "|B251_OPERATION_SEED$" in matrix
-    assert "|B251_OPERATION_SEED$" in shell
+    assert f'const OPERATION_SEED_HEX: &str = "{MODULE.OPERATION_SEED_HEX}";' in operation

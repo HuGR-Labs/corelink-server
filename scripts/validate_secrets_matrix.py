@@ -87,9 +87,6 @@ ALLOWLIST_REGEX = re.compile(
     r"|GH_TOKEN$"
     r"|GNUPGHOME$"
     r"|SOURCE_DATE_EPOCH$"
-    # B-251's per-run deterministic in-memory test vector; generated from
-    # public workflow metadata, never a credential or retained raw value.
-    r"|B251_OPERATION_SEED$"
     r"|PATH$|PWD$|USER$|SHELL$|TERM$|CI$|TZ$|LANG$|LC_"
     r"|NODE_ENV$|ENVIRONMENT$"
     r"|RUST_"
