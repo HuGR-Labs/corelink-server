@@ -48,10 +48,10 @@ jobs:
   # per CI-OPT-004 (removes floating rustsec/audit-check@v1 ref).
   pr-gate:
     name: PR gate (crate-scoped clippy + tests + canonical vectors)
-    # Runner: GitHub-hosted ubuntu-latest (wave 3 migration from corelink fabric).
+    # Runner: GitHub-hosted ubuntu-24.04 (wave 3 migration from corelink fabric).
     # Toolchain asserted via ci-assert-pinned-toolchain.sh; rust-cache gated to github-hosted.
     # Measured median ~198s on hosted; 15 min timeout provides ~4.5x headroom.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Measured median 198 s (~3.3 min) over the last 19 hosted runs; 6.9x headroom.
     # Migrated before the bound was standard, so it inherited GitHub's 360-min
     # default — one wedged run could pin a PR for 6 h. This bounds RUNNING time
@@ -102,10 +102,10 @@ jobs:
 
   wasm-build:
     name: WASM target builds (CF Workers compile compatibility)
-    # Runner: GitHub-hosted ubuntu-latest (wave 3 migration from corelink fabric).
+    # Runner: GitHub-hosted ubuntu-24.04 (wave 3 migration from corelink fabric).
     # Toolchain + wasm32 target asserted via ci-assert-pinned-toolchain.sh; rust-cache gated to github-hosted.
     # Measured median ~48s on hosted; 10 min timeout provides >12x headroom.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Measured median 48 s over the last 23 hosted runs (53 s over 2 fabric runs);
     # 3x is under the 10-min floor, so the floor applies.
     timeout-minutes: 10
