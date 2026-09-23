@@ -26,6 +26,7 @@ import hashlib
 import json
 import os
 import re
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -33,7 +34,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-CONCURRENCIES = (4, 16, 64)
+CONCURRENCIES = (4, 16, 64, 220)
 TARGET = "https://staging.corelink.humangr.com"
 UUID_V4 = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
@@ -155,9 +156,31 @@ def run_operation(base: str, tenant: str, token: str, mode: str) -> list[dict[st
 
 def run_arm(base: str, tenant: str, token: str, mode: str, concurrency: int) -> dict[str, object]:
     started = time.monotonic()
+    barrier = threading.Barrier(concurrency + 1)
+
+    def synchronized_operation() -> list[dict[str, object]]:
+        barrier.wait(timeout=30)
+        return run_operation(base, tenant, token, mode)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = [pool.submit(run_operation, base, tenant, token, mode) for _ in range(concurrency)]
-        responses = [row for future in futures for row in future.result()]
+        futures = [pool.submit(synchronized_operation) for _ in range(concurrency)]
+        # Release only after every worker is ready. This makes the declared
+        # concurrency an actual synchronized burst, not a thread-pool ceiling.
+        barrier.wait(timeout=30)
+        responses: list[dict[str, object]] = []
+        for future in futures:
+            try:
+                responses.extend(future.result())
+            except Exception as exc:  # retain a failed arm instead of losing the evidence file
+                responses.append(
+                    {
+                        "method": "PUT",
+                        "status": None,
+                        "expected_statuses": [200],
+                        "ok": False,
+                        "transport_error": f"harness_{type(exc).__name__}",
+                    }
+                )
     wall_ms = round((time.monotonic() - started) * 1000, 3)
     failures = [row for row in responses if row["ok"] is not True]
     status_counts: dict[str, int] = {}
@@ -171,6 +194,7 @@ def run_arm(base: str, tenant: str, token: str, mode: str, concurrency: int) -> 
         "requests": len(responses),
         "successful_requests": len(responses) - len(failures),
         "failed_requests": len(failures),
+        "harness_errors": sum(1 for row in responses if str(row.get("transport_error", "")).startswith("harness_")),
         "status_counts": status_counts,
         "wall_ms": wall_ms,
         "throughput_rps": round((len(responses) - len(failures)) / max(wall_ms / 1000, 0.001), 6),
@@ -186,17 +210,21 @@ def run_warm_sequence(base: str, tenant: str, token: str) -> dict[str, object]:
     keeping every payload independent.  Reusing one content hash would measure
     CAS idempotency, not the hot authenticated write path.
     """
+    started = time.monotonic()
     responses: list[dict[str, object]] = []
     for _ in range(3):
         key = uuid.uuid4().hex * 2
         body = f"b103-warm:{key}".encode("ascii")
         responses.append(request(base, tenant, token, "PUT", key, body))
+    wall_seconds = time.monotonic() - started
     failures = [row for row in responses if row["ok"] is not True]
     return {
         "method": "PUT",
         "requests": len(responses),
         "successful_requests": len(responses) - len(failures),
         "failed_requests": len(failures),
+        "wall_ms": round(wall_seconds * 1000, 3),
+        "throughput_rps": round((len(responses) - len(failures)) / max(wall_seconds, 0.001), 6),
         "responses_sha256": sha256(json.dumps(responses, sort_keys=True, separators=(",", ":")).encode()),
         "responses": responses,
     }
@@ -222,16 +250,30 @@ def main() -> int:
     warm_sequence = run_warm_sequence(args.base.rstrip("/"), args.tenant, token)
     arms: list[dict[str, object]] = []
     for mode in ("put_only", "webdav_sequence"):
-        for concurrency in CONCURRENCIES:
+        # The 220 PUT arm matches the observed sccache miss population. Keep
+        # the six-method WebDAV arm at the three established bounded levels;
+        # multiplying it to 220 would add 1,320 unrelated requests.
+        levels = CONCURRENCIES if mode == "put_only" else CONCURRENCIES[:-1]
+        for concurrency in levels:
             arms.append(run_arm(args.base.rstrip("/"), args.tenant, token, mode, concurrency))
+    put_arms = {int(arm["concurrency"]): arm for arm in arms if arm["mode"] == "put_only"}
+    throughput_scaled = float(put_arms[64]["throughput_rps"]) > float(put_arms[4]["throughput_rps"])
+    scaling = {
+        "comparison": "put_only_64_rps_gt_put_only_4_rps",
+        "observed": throughput_scaled,
+        "put_only_rps": {str(level): put_arms[level]["throughput_rps"] for level in CONCURRENCIES},
+    }
     result = {
         "schema": "corelink.b103-cargo-write-reproducer.v1",
         "environment": "staging",
         "target": TARGET,
         "deployment_sha": args.deployment_sha,
-        "tenant_id": args.tenant,
+        "tenant_id": "redacted",
+        "tenant_id_sha256": sha256(args.tenant.encode("ascii")),
         "captured_at": now(),
         "concurrency_levels": list(CONCURRENCIES),
+        "put_only_max_concurrency": 220,
+        "webdav_max_concurrency": 64,
         "method_contract": {
             "warm_sequence": ["PUT", "PUT", "PUT"],
             "put_only": ["PUT"],
@@ -240,9 +282,10 @@ def main() -> int:
         },
         "warm_sequence": warm_sequence,
         "arms": arms,
+        "throughput_scaling": scaling,
         "failed_assertions": int(warm_sequence["failed_requests"]) + sum(
             int(arm["failed_requests"]) for arm in arms
-        ),
+        ) + int(not throughput_scaled),
     }
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     # A diagnostic artifact is useful whether the system is healthy or broken;

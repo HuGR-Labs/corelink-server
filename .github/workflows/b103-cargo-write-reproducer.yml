@@ -1,12 +1,20 @@
 name: B-103 cargo write reproducer
 
 # This lane is deliberately separate from campaign-ci and has no schedule.
-# It is a bounded staging observation: three sequential warm PUTs followed by
-# six fixed arms (PUT-only and the exact WebDAV sequence) at concurrency 4/16/64.
-# A failing response is retained and the run is red; the artifact is the
-# evidence, not a closure assertion.
+# Its credentialless PR contract runs on GitHub-hosted runners. The protected,
+# owner-dispatched staging observation captures three sequential warm PUTs,
+# PUT-only arms through the historical 220-miss population, and WebDAV arms at
+# 4/16/64. An unfiltered Worker tail is captured over the same window. A failing
+# response is retained and the run is red; the artifact is diagnostic evidence,
+# not a closure assertion.
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/b103-cargo-write-reproducer.yml'
+      - 'scripts/reproduce_b103_cargo_write.py'
+      - 'scripts/redact_b103_worker_tail.py'
+      - 'scripts/test_b103_cargo_write_contract.py'
   workflow_dispatch:
     inputs:
       confirm:
@@ -22,11 +30,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  contract:
+    name: B-103 bounded-load contract
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: checkout without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: verify bounded load and redaction contract
+        run: python3 -m unittest -v scripts.test_b103_cargo_write_contract
+
   reproduce:
     name: bounded /cargo write matrix
     runs-on: ubuntu-24.04
     environment: staging
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -59,10 +80,41 @@ jobs:
           B103_TENANT_ID: ${{ vars.B103_TENANT_ID }}
           B103_PAT: ${{ secrets.K6_STAGING_PAT }}
           B103_DEPLOYMENT_SHA: ${{ steps.target.outputs.deployment_sha }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         run: |
-          set -o pipefail
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/b103"
+          : > "${RUNNER_TEMP}/b103/worker-tail.raw.jsonl"
+          : > "${RUNNER_TEMP}/b103/wrangler.stderr"
+          test -n "${CLOUDFLARE_API_TOKEN}" || { echo 'CF_API_TOKEN is required for unfiltered Worker tail'; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID}" || { echo 'CF_ACCOUNT_ID is required for unfiltered Worker tail'; exit 1; }
+          npm exec --yes --package=wrangler@4.111.0 -- wrangler tail corelink --format json \
+            > "${RUNNER_TEMP}/b103/worker-tail.raw.jsonl" \
+            2> "${RUNNER_TEMP}/b103/wrangler.stderr" &
+          tail_pid=$!
+          for _ in $(seq 1 10); do
+            if ! kill -0 "${tail_pid}" 2>/dev/null; then
+              echo 'Wrangler tail terminated before the load window.'
+              exit 1
+            fi
+            sleep 1
+          done
+          set +e
           python3 scripts/reproduce_b103_cargo_write.py \
             --output "${RUNNER_TEMP}/b103-cargo-write-reproducer.json"
+          reproduce_rc=$?
+          set -e
+          kill -INT "${tail_pid}" 2>/dev/null || true
+          tail_rc=0
+          wait "${tail_pid}" || tail_rc=$?
+          test "${tail_rc}" -eq 0 || test "${tail_rc}" -eq 130
+          python3 scripts/redact_b103_worker_tail.py \
+            --tenant "${B103_TENANT_ID}" \
+            < "${RUNNER_TEMP}/b103/worker-tail.raw.jsonl" \
+            > "${RUNNER_TEMP}/b103-cargo-write-worker-tail.redacted.jsonl"
+          test -s "${RUNNER_TEMP}/b103-cargo-write-reproducer.json"
+          test "${reproduce_rc}" -eq 0
 
       - name: upload redacted wire evidence
         if: always()
@@ -72,6 +124,7 @@ jobs:
           path: |
             ${{ runner.temp }}/b103-target-receipt.json
             ${{ runner.temp }}/b103-cargo-write-reproducer.json
+            ${{ runner.temp }}/b103-cargo-write-worker-tail.redacted.jsonl
           retention-days: 14
           if-no-files-found: error
 
