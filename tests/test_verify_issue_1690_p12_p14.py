@@ -17,13 +17,15 @@ HEAD = "a" * 40
 
 
 class Issue1690VerifierContractTests(unittest.TestCase):
-    def run_verifier(self, current_tree: str) -> dict:
+    def run_verifier(self, current_tree: str, checked_out_head: str = HEAD) -> dict:
         squash = MANIFEST["squash_provenance"]
         merge = squash["merge_commit"]
         paths = squash["path_blobs"]
         merge_paths = sorted(paths)
 
         def fake_git(*args: str) -> str:
+            if args == ("rev-parse", "HEAD"):
+                return checked_out_head
             if args[:2] == ("rev-parse", f"{merge}^"):
                 return squash["merge_parent"]
             if args[:3] == ("show", "-s", "--format=%T"):
@@ -55,13 +57,17 @@ class Issue1690VerifierContractTests(unittest.TestCase):
     def test_exact_tree_match_passes_with_immutable_sha_receipt(self) -> None:
         report = self.run_verifier(MANIFEST["historical_test"]["tree"])
         self.assertEqual(report["status"], "PASS")
+        self.assertEqual(report["checked_out_head_sha"], HEAD)
         self.assertEqual(report["head_sha"], HEAD)
         self.assertEqual(report["github_sha"], HEAD)
+        self.assertTrue(report["checked_out_head_matches_github_sha"])
         self.assertEqual(report["immutable_sha"], HEAD)
         self.assertEqual(report["expected_tree"], MANIFEST["historical_test"]["tree"])
         self.assertEqual(report["observed_tree"], MANIFEST["historical_test"]["tree"])
         self.assertTrue(report["tree_matches"])
         self.assertTrue(report["contract"]["historical_tree_matches_current_main"])
+        self.assertTrue(report["contract"]["checked_out_head_matches_github_sha"])
+        self.assertNotIn("current_main_tree_matches_github_sha", report["contract"])
 
     def test_stale_historical_tree_fails_but_retains_tree_and_ancestry(self) -> None:
         current_tree = "b" * 40
@@ -82,16 +88,35 @@ class Issue1690VerifierContractTests(unittest.TestCase):
         self.assertTrue(
             all(not row["object_present_in_hosted_checkout"] for row in report["historical_source_object_evidence"].values())
         )
+        self.assertTrue(
+            all(row["ancestor_of_head"] is None for row in report["historical_source_object_evidence"].values())
+        )
         self.assertEqual(set(report["squash_source_commits"]), {"p12", "p13", "p14"})
+        self.assertTrue(
+            all(row["ancestor_of_head"] is None for row in report["squash_source_commits"].values())
+        )
 
     def test_head_mismatch_is_rejected(self) -> None:
-        with self.assertRaisesRegex(verifier.VerificationError, "differs from GITHUB_SHA"):
+        with (
+            patch.object(verifier, "git", return_value=HEAD),
+            self.assertRaisesRegex(verifier.VerificationError, "differs from GITHUB_SHA"),
+        ):
             verifier.verify(MANIFEST, HEAD, "c" * 40)
+
+    def test_checked_out_commit_mismatch_is_rejected(self) -> None:
+        with (
+            patch.object(verifier, "git", side_effect=lambda *args: "d" * 40),
+            self.assertRaisesRegex(verifier.VerificationError, "differs from the requested head"),
+        ):
+            verifier.verify(MANIFEST, HEAD, HEAD)
 
     def test_mutated_historical_tree_anchor_is_rejected(self) -> None:
         mutated = json.loads(json.dumps(MANIFEST))
         mutated["historical_test"]["tree"] = "d" * 40
-        with self.assertRaisesRegex(verifier.VerificationError, "historical tree differs from the verifier anchor"):
+        with (
+            patch.object(verifier, "git", return_value=HEAD),
+            self.assertRaisesRegex(verifier.VerificationError, "historical tree differs from the verifier anchor"),
+        ):
             verifier.verify(mutated, HEAD, HEAD)
 
     def test_manual_lane_uploads_a_sha_bound_receipt_even_on_failure(self) -> None:

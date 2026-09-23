@@ -149,7 +149,10 @@ def load_manifest(path: Path) -> dict[str, Any]:
 def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, Any]:
     require_sha(head, "head")
     require_sha(github_sha, "github_sha")
-    if head != github_sha:
+    checked_out_head = git("rev-parse", "HEAD")
+    if checked_out_head != head:
+        raise VerificationError("checked out HEAD differs from the requested head")
+    if checked_out_head != github_sha:
         raise VerificationError("checked out HEAD differs from GITHUB_SHA")
 
     historical = manifest.get("historical_test")
@@ -256,7 +259,7 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
         historical_results[stage] = {
             "commit": commit,
             "object_present_in_hosted_checkout": present,
-            "ancestor_of_head": ancestor(commit, head) if present else False,
+            "ancestor_of_head": ancestor(commit, head) if present else None,
             "unavailable_object_rule": "historical source identities are pinned; unreachable source objects are reported, not fetched or treated as proof of current-main ancestry",
         }
 
@@ -272,7 +275,7 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
         result: dict[str, Any] = {
             "commit": commit,
             "object_present": present,
-            "ancestor_of_head": ancestor(commit, head) if present else False,
+            "ancestor_of_head": ancestor(commit, head) if present else None,
             "source_object_rule": "source IDs and staged paths are pinned in the manifest; source objects may be unavailable after squash; the canonical squash commit and landed blobs are authoritative",
         }
         if present:
@@ -290,8 +293,10 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
         "schema_version": "2",
         "issue": 1690,
         "ref": "refs/heads/main",
+        "checked_out_head_sha": checked_out_head,
         "head_sha": head,
         "github_sha": github_sha,
+        "checked_out_head_matches_github_sha": checked_out_head == github_sha,
         "immutable_sha": github_sha,
         "expected_tree": historical_tree,
         "observed_tree": current_main_tree,
@@ -307,7 +312,9 @@ def verify(manifest: dict[str, Any], head: str, github_sha: str) -> dict[str, An
         "contract": {
             "historical_test_tree": historical_tree,
             "historical_tree_matches_current_main": exact_tree_matches,
-            "current_main_tree_matches_github_sha": True,
+            "checked_out_head_sha": checked_out_head,
+            "github_sha": github_sha,
+            "checked_out_head_matches_github_sha": checked_out_head == github_sha,
             "squash_merge_commit": merge_commit,
             "squash_merge_is_ancestor": True,
             "squash_tree": squash_tree,
@@ -333,13 +340,16 @@ def main() -> int:
         manifest = load_manifest(args.manifest)
         report = verify(manifest, args.head, args.github_sha)
     except VerificationError as exc:
+        checked_out_head = git_optional("rev-parse", "HEAD")
         observed_tree = git_optional("show", "-s", "--format=%T", args.head)
         report = {
             "schema_version": "2",
             "issue": 1690,
             "ref": "refs/heads/main",
+            "checked_out_head_sha": checked_out_head,
             "head_sha": args.head,
             "github_sha": args.github_sha,
+            "checked_out_head_matches_github_sha": checked_out_head == args.github_sha,
             "immutable_sha": args.github_sha,
             "expected_tree": EXPECTED_HISTORICAL_TREE,
             "observed_tree": observed_tree,
