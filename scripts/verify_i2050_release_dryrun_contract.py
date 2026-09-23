@@ -227,6 +227,65 @@ def _dlltool_contract_mutation_self_test(text: str) -> None:
         fail("untrusted no-git tap installation mutation survived")
 
 
+def _verify_attest_verifier_checkout(text: str) -> None:
+    job = re.search(r"(?ms)^  attest-and-verify:\n(.*?)(?=^  [A-Za-z0-9_-]+:|\Z)", text)
+    if job is None:
+        fail("attest-and-verify job is missing")
+    job_text = job.group(1)
+    if not re.search(r"(?m)^      contents: read$", job_text):
+        fail("attest-and-verify must retain read-only repository contents permission")
+    checkout = re.search(
+        r"(?ms)^      - name: Checkout repository verifier without persisted credentials\n"
+        r"(?P<step>.*?)(?=^      - name:|\Z)",
+        job_text,
+    )
+    if checkout is None:
+        fail("attest-and-verify must checkout the repository verifier")
+    step = checkout.group("step")
+    if not re.search(
+        r"(?m)^        uses: actions/checkout@[0-9a-f]{40}(?:\s+#.*)?$", step
+    ):
+        fail("attest-and-verify verifier checkout must use a full-SHA-pinned action")
+    if not re.search(r"(?m)^          persist-credentials: false$", step):
+        fail("attest-and-verify verifier checkout must not persist credentials")
+    download = job_text.find("- name: Download ephemeral build inventory")
+    verify = job_text.find("python3 scripts/verify_i2050_release_dryrun_contract.py provenance")
+    if download < 0 or verify < 0 or checkout.start() > download or download > verify:
+        fail("checkout must precede the downloaded inventory and provenance verifier")
+
+
+def _attest_verifier_checkout_mutation_self_test(text: str) -> None:
+    checkout_name = "      - name: Checkout repository verifier without persisted credentials\n"
+    start = text.find(checkout_name)
+    if start < 0:
+        fail("attest-and-verify verifier checkout is missing")
+    end = text.find("      - name:", start + len(checkout_name))
+    if end < 0:
+        fail("attest-and-verify verifier checkout step is not bounded")
+    without_checkout = text[:start] + text[end:]
+    try:
+        _verify_attest_verifier_checkout(without_checkout)
+    except SystemExit as error:
+        if "must checkout the repository verifier" not in str(error):
+            raise
+    else:
+        fail("missing attest-and-verify checkout mutation survived")
+
+    checkout_start = text.find(checkout_name)
+    checkout_end = text.find("      - name:", checkout_start + len(checkout_name))
+    checkout_step = text[checkout_start:checkout_end]
+    persisted_credentials = text[:checkout_start] + checkout_step.replace(
+        "          persist-credentials: false", "          persist-credentials: true", 1
+    ) + text[checkout_end:]
+    try:
+        _verify_attest_verifier_checkout(persisted_credentials)
+    except SystemExit as error:
+        if "must not persist credentials" not in str(error):
+            raise
+    else:
+        fail("persisted-credential checkout mutation survived")
+
+
 def contract() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     changed = subprocess.run(
@@ -298,6 +357,8 @@ def contract() -> None:
             fail(f"forbidden publication capability appears: {token}")
     if "secrets.GPG_KEY_FINGERPRINT" not in text:
         fail("optional fingerprint-only GPG check was removed")
+    _verify_attest_verifier_checkout(text)
+    _attest_verifier_checkout_mutation_self_test(text)
     hosted_workflow = Path(".github/workflows/issue-1724-cli-provenance.yml").read_text(
         encoding="utf-8"
     )
@@ -342,6 +403,7 @@ def contract() -> None:
     _verify_dlltool_contract(text)
     _dlltool_contract_mutation_self_test(text)
     print("PASS: pinned MinGW-w64 toolchain, dlltool path/version probes, and mutation checks")
+    print("PASS: attestation verifier checkout is pinned, credentialless, and precedes artifact download")
     print("PASS: manual protected-main lane, no release/tag/cross-repo write path")
     print("PASS: five targets, pinned cross-toolchain, CycloneDX, Rekor, and SLSA provenance")
 
