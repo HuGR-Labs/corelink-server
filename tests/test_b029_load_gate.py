@@ -12,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/load-test-baseline-check.py"
+SANITIZER = ROOT / "scripts/sanitize_k6_summary.py"
 VERIFIER = ROOT / "scripts/verify_b029_load_gate.py"
 FULL_SCENARIOS = ("signup", "webhook", "dsr", "cas", "byok")
 FULL_EXPECTED_SCENARIOS = ",".join(FULL_SCENARIOS)
@@ -30,6 +31,7 @@ def load_module(path: Path, name: str):
 
 
 comparator = load_module(SCRIPT, "b029_load_test_baseline_check")
+sanitizer = load_module(SANITIZER, "b029_sanitize_k6_summary")
 verifier = load_module(VERIFIER, "b029_load_gate_verifier")
 
 
@@ -226,6 +228,30 @@ class B029LoadGateTests(unittest.TestCase):
     def test_non_finite_measurement_is_rejected(self) -> None:
         self.write_baseline(100)
         self.write_full_matrix(cas_median="NaN")
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
+
+    def test_boolean_measurement_mutations_fail_closed(self) -> None:
+        receipt = {
+            "schema": 1,
+            "environment": "staging",
+            "target": TARGET,
+            "tenant_id": TENANT_ID,
+            "deployment_sha": DEPLOYMENT_SHA,
+            "issued_at": "2026-09-06T00:00:00Z",
+            "expires_at": "2026-09-06T01:00:00Z",
+        }
+        raw = {"metrics": {"http_req_duration": {"med": True, "p(99)": 20}}}
+        with self.assertRaises(sanitizer.SummaryError):
+            sanitizer.sanitize(raw, receipt, "cas")
+
+        self.write_baseline(100)
+        self.write_full_matrix(medians={"cas": True})
+        self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
+
+        self.write_full_matrix()
+        baseline = json.loads(self.baseline.read_text())
+        baseline["scenarios"]["cas"]["median_ms"] = False
+        self.baseline.write_text(json.dumps(baseline))
         self.assertEqual(self.run_full_gate(), comparator.EXIT_USAGE)
 
     def test_duplicate_summaries_are_ambiguous(self) -> None:

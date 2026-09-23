@@ -32,13 +32,14 @@ workflow; this change does not edit `.github/workflows/campaign-ci.yml`.
 | Target | `https://staging.corelink.humangr.com` |
 | Identity | one dedicated load-test `tenant_id` and one 40-character deployment SHA across every scenario and baseline |
 | Population | exactly `signup,webhook,dsr,cas,byok`, with one successful status and one sanitized summary per scenario |
-| Failure behavior | missing, duplicate, malformed, non-finite, mismatched, or regressing input exits non-zero and cannot publish a baseline |
+| Failure behavior | missing, duplicate, malformed, boolean, non-finite, mismatched, or regressing input exits non-zero and cannot publish a baseline |
 
-The sanitizer keeps only the allow-listed identity and duration metrics. The
-comparator rejects a raw k6 summary, a missing or NaN metric, a target or tenant
-identity mismatch, a stale deployment identity, a baseline version mismatch,
-and any partial population. A passing comparison is the only path that writes
-the next baseline.
+The sanitizer keeps only the allow-listed identity and duration metrics. Boolean
+JSON values are rejected before numeric coercion, so `true` cannot become a
+synthetic `1.0ms` measurement. The comparator rejects a raw k6 summary, a
+missing or NaN metric, a target or tenant identity mismatch, a stale deployment
+identity, a baseline version mismatch, and any partial population. A passing
+comparison is the only path that writes the next baseline.
 
 ## Closure boundary
 
