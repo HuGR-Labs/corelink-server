@@ -92,7 +92,8 @@ CREATE TABLE terraform_drift_findings (
     detected_at_ms BIGINT NOT NULL,
     plan_diff_count INTEGER NOT NULL,
     plan_summary TEXT NOT NULL,
-    plan_summary_artifact_url TEXT,             -- Sanitized summary URL; raw plan URL forbidden
+    plan_full_artifact_url TEXT,                -- Legacy compatibility only; new findings leave this NULL
+    plan_summary_artifact_url TEXT,             -- URL for the 7-day sanitized summary; never a raw plan URL
     severity TEXT NOT NULL CHECK (severity IN ('none', 'low', 'medium', 'high')),
     status TEXT NOT NULL CHECK (status IN ('open', 'investigating', 'remediated', 'wontfix')),
     remediation_decision TEXT,                  -- 'apply' | 'investigate' | 'revert' (per RB-FM-206 decision tree)
@@ -102,6 +103,23 @@ CREATE TABLE terraform_drift_findings (
 );
 CREATE INDEX idx_terraform_drift_open ON terraform_drift_findings(status, detected_at_ms) WHERE status = 'open';
 ```
+
+### Persisted drift-evidence contract
+
+The only Terraform artifact uploaded by the workflow is the sanitized JSON summary, retained for
+7 days. Its top-level schema is fixed to these nine fields: `schema_version`, `workflow_run_id`,
+`workflow_run_attempt`, `detected_at`, `region`, `terraform_exit_code`, `result`,
+`drift_detected`, and `action_counts`. The `action_counts` object contains only the integer
+counts `create`, `update`, `delete`, `replace`, and `read`; `result` is `clean`, `error`, or
+`drift`. The `plan_summary_artifact_url` field links this summary. The legacy
+`plan_full_artifact_url` database column remains for schema compatibility and must be NULL for
+new findings.
+
+The saved `.tfplan`, temporary `terraform show -json` output, and captured Terraform terminal
+log stay on the runner. An exit trap deletes all three at the end of the sanitization step, before
+the artifact upload step runs, including when sanitization fails. No addresses, resource names,
+configuration, variables, prior state, attribute values, or raw Terraform output are uploaded or
+printed to workflow logs.
 
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras + risk justification)
 
@@ -182,6 +200,7 @@ CI workflow + runbook + D1 audit; HIGH_RISK; FF-HR-005.
    - On exit code 2: post Slack SEV-3 alert + upload the sanitized summary artifact.
    - On exit code 1: post Slack SEV-2 alert (terraform error) + upload the sanitized error summary.
    - Sanitized summary retention is 7 days; compliance retention remains on the D1 audit row (7 years).
+   - The summary has exactly the nine top-level fields documented above; `action_counts` contains only `create`, `update`, `delete`, `replace`, and `read` counts. The D1 `plan_summary_artifact_url` points to this summary and new findings leave legacy `plan_full_artifact_url` NULL.
    - **NO `terraform apply` step** (security property; auto-apply forbidden).
    - Permissions: `contents: read`; no `id-token: write` claim is requested.
    - Provider auth uses the dedicated `CF_TERRAFORM_DRIFT_API_TOKEN`; R2 backend auth uses separate `TF_BACKEND_ACCESS_KEY_ID` and `TF_BACKEND_SECRET_ACCESS_KEY` secrets mapped at runtime. No credential is embedded in HCL, command arguments, artifacts, or logs.

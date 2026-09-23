@@ -50,10 +50,18 @@ For each of the four production regions (`wnam`, `enam`, `weur`, `sam`):
 2. `terraform plan -detailed-exitcode` creates a runner-local plan for classification; it is removed before the job ends.
 
 The workflow suppresses Terraform's human-readable output and converts the local plan to a
-fixed-schema summary containing only run metadata, region, exit category, drift boolean, and
-create/update/delete/replace/read action counts. It uploads that summary for 7 days. The
-`.tfplan`, plan JSON, terminal log, configuration, variables, prior state, resource addresses,
-and attribute values are never uploaded or linked as evidence.
+fixed-schema JSON summary. Its nine top-level fields are exactly `schema_version`,
+`workflow_run_id`, `workflow_run_attempt`, `detected_at`, `region`, `terraform_exit_code`,
+`result`, `drift_detected`, and `action_counts`. The `action_counts` object contains only
+integer counts for `create`, `update`, `delete`, `replace`, and `read`; `result` is `clean`,
+`error`, or `drift`. The uploaded summary is retained for 7 days.
+
+An exit trap removes the runner-local `.tfplan`, temporary `terraform show -json` file, and
+captured Terraform terminal log at the end of the sanitization step, before the upload step runs,
+even if sanitization fails. The raw files, configuration, variables, prior state, resource
+addresses, and attribute values are never uploaded, linked as evidence, or printed to workflow
+logs. In D1, `plan_summary_artifact_url` links the sanitized JSON; the legacy
+`plan_full_artifact_url` column remains only for compatibility and must be NULL on new findings.
 
 Exit codes:
 - **0** — no diff; clean run row inserted in D1 (cron health check).
