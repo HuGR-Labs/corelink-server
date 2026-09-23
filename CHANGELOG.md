@@ -24,6 +24,10 @@ Each entry cross-references:
 
 ### Fixed
 
+- **Historical B-006 receipts remain auditable.** Checked-in metrics and
+  provider fixtures validate schema/content without wall-clock expiry, while
+  live validation keeps its 24-hour age and five-minute future bounds.
+
 - **CAS writes expose durable failure effects.** The handler seam now
   distinguishes definitely-not-written, committed, reconciliation-pending, and
   legacy-unknown failures for storage-accounting decorators. Byte accounting

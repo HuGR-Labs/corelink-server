@@ -11,8 +11,9 @@ import pytest
 
 from scripts.collect_b006_metrics import KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE, RejectRedirect, SOURCE, collect
 from scripts import collect_b006_provider_binding as provider_collector
-from scripts.verify_b006_evidence import EvidenceError, validate_closure, validate_receipt
+from scripts.verify_b006_evidence import EvidenceError, validate_closure, validate_historical_receipt, validate_receipt
 from scripts.verify_b006_provider_binding import EXPECTED_ACCOUNT_ID, EXPECTED_AUTH_EMAIL, EXPECTED_AUTH_TYPE, EXPECTED_DEPLOYMENT_ID, EXPECTED_SCRIPT_ETAG, EXPECTED_VERSION_ID, EXPECTED_VERSION_NUMBER, ProviderBindingError, validate_provider_binding
+from scripts.verify_b006_provider_binding import validate_historical_provider_binding
 from scripts.verify_d03_graduation import GraduationError, _check_packets, _load_packets
 
 
@@ -64,7 +65,7 @@ def test_b006_does_not_publish_a_bearer_probe_command() -> None:
 
 def test_b006_evidence_retains_redacted_403_and_no_guessed_counter() -> None:
     evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
-    validate_receipt(evidence)
+    validate_historical_receipt(evidence)
     assert evidence["schema"] == "corelink-b006-capability-metrics-v2"
     assert evidence["http_status"] == 403
     assert evidence["authenticated"] is False
@@ -89,7 +90,30 @@ def test_b006_rejects_unauthenticated_zero_and_receipt_boundary_mutations() -> N
     for mutation in mutations:
         candidate = {**evidence, **mutation}
         with pytest.raises(EvidenceError):
-            validate_receipt(candidate)
+            (validate_receipt if "captured_at" in mutation else validate_historical_receipt)(candidate)
+
+
+def test_b006_historical_fixtures_validate_content_and_required_field_mutation_fails() -> None:
+    metrics = json.loads(EVIDENCE.read_text(encoding="utf-8"))
+    provider = json.loads((ROOT / "artifacts/d03/B006-provider-binding.json").read_text(encoding="utf-8"))
+    validate_historical_receipt(metrics)
+    validate_historical_provider_binding(provider)
+
+    missing_counter = {key: value for key, value in metrics.items() if key != "capability_claim_unserved"}
+    with pytest.raises(EvidenceError, match=r"receipt schema drift: missing=\['capability_claim_unserved'\]"):
+        validate_historical_receipt(missing_counter)
+
+
+def test_b006_live_stale_receipts_remain_red_with_exact_diagnostics() -> None:
+    metrics = json.loads(EVIDENCE.read_text(encoding="utf-8"))
+    with pytest.raises(EvidenceError) as metrics_error:
+        validate_receipt(metrics)
+    assert str(metrics_error.value) == "receipt timestamp is stale or from the future"
+
+    provider = json.loads((ROOT / "artifacts/d03/B006-provider-binding.json").read_text(encoding="utf-8"))
+    with pytest.raises(ProviderBindingError) as provider_error:
+        validate_provider_binding(provider)
+    assert str(provider_error.value) == "provider evidence is stale or from the future"
 
 
 def test_b006_rejects_redirects_before_a_credential_can_leave_origin() -> None:

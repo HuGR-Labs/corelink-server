@@ -70,8 +70,16 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
-def validate_receipt(receipt: dict[str, Any]) -> None:
-    """Validate a receipt without ever accepting a guessed zero."""
+def _parse_captured_at(receipt: dict[str, Any]) -> datetime:
+    if not isinstance(receipt["captured_at"], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", receipt["captured_at"]):
+        raise EvidenceError("receipt timestamp must be whole-second UTC")
+    try:
+        return datetime.strptime(receipt["captured_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise EvidenceError("receipt timestamp is invalid") from exc
+
+
+def _validate_receipt(receipt: dict[str, Any], *, now: datetime | None, enforce_freshness: bool) -> None:
 
     if set(receipt) != RECEIPT_KEYS:
         missing = sorted(RECEIPT_KEYS - set(receipt))
@@ -89,14 +97,8 @@ def validate_receipt(receipt: dict[str, Any]) -> None:
         raise EvidenceError("receipt reason is not an approved redacted reason")
     if receipt["reason"].endswith("no production request was attempted"):
         raise EvidenceError("an evidence receipt must not claim no request was attempted")
-    if not isinstance(receipt["captured_at"], str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", receipt["captured_at"]):
-        raise EvidenceError("receipt timestamp must be whole-second UTC")
-    try:
-        captured_at = datetime.strptime(receipt["captured_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    except ValueError as exc:
-        raise EvidenceError("receipt timestamp is invalid") from exc
-    now = datetime.now(timezone.utc)
-    if captured_at < now - MAX_RECEIPT_AGE or captured_at > now + MAX_RECEIPT_FUTURE:
+    captured_at = _parse_captured_at(receipt)
+    if enforce_freshness and (captured_at < now - MAX_RECEIPT_AGE or captured_at > now + MAX_RECEIPT_FUTURE):
         raise EvidenceError("receipt timestamp is stale or from the future")
     if receipt["credential_values_printed"] is not False:
         raise EvidenceError("credential output must remain redacted")
@@ -134,6 +136,18 @@ def validate_receipt(receipt: dict[str, Any]) -> None:
         raise EvidenceError("authenticated counter does not match fail-closed receipt verdict")
     if counter == 0 and receipt["reason"] != "authenticated aggregate snapshot retained; separate Wrangler deployment evidence is required for closure":
         raise EvidenceError("zero receipt must remain indeterminate without Wrangler evidence")
+
+
+def validate_receipt(receipt: dict[str, Any], *, now: datetime | None = None) -> None:
+    """Validate live evidence against the wall clock or an explicit test clock."""
+
+    _validate_receipt(receipt, now=now or datetime.now(timezone.utc), enforce_freshness=True)
+
+
+def validate_historical_receipt(receipt: dict[str, Any]) -> None:
+    """Validate checked-in evidence content without applying live freshness."""
+
+    _validate_receipt(receipt, now=None, enforce_freshness=False)
 
 
 def validate_closure(metrics: dict[str, Any], provider: dict[str, Any]) -> None:
