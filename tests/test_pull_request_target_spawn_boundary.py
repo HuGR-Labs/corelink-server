@@ -479,6 +479,13 @@ def assert_file_size_boundary(
     test.assertEqual(workflow.get("permissions"), {"contents": "read"})
 
     raw = raw or (WORKFLOWS / "file-size-ratchet.yml").read_text(encoding="utf-8")
+    test.assertIn(
+        "group: file-size-ratchet-${{ github.event_name }}-"
+        "${{ github.event.pull_request.number || github.ref }}",
+        raw,
+        "PR runs must key cancellation by PR number while other events retain ref isolation",
+    )
+    test.assertIn("cancel-in-progress: true", raw)
     test.assertRegex(raw, r"(?m)^permissions:\n  contents: read\s*$")
     assert_file_size_trusted_base(test, raw)
     test.assertIn(
@@ -801,6 +808,14 @@ jobs:
         file_size_text = (WORKFLOWS / "file-size-ratchet.yml").read_text(
             encoding="utf-8"
         )
+        with self.subTest(mutant="base-ref-only ratchet concurrency"):
+            mutant_text = file_size_text.replace(
+                "${{ github.event.pull_request.number || github.ref }}",
+                "${{ github.ref }}",
+            )
+            with self.assertRaises(AssertionError):
+                assert_file_size_boundary(self, file_size, mutant_text)
+
         data_only_mutations = (
             (
                 "execute candidate validator",
