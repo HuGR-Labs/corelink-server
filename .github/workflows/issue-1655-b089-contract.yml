@@ -12,8 +12,16 @@ on:
       - apps/signup-worker/tests/sla_credit_cron.test.ts
       - apps/signup-worker/wrangler.toml
       - legal/sla/v1.0.0.md
+      - apps/docs/src/pages/legal/terms.tsx
+      - apps/docs/src/lib/pricing.ts
       - migrations/d1/0117_sla_credit_ledger.sql
       - scripts/verify_b089_sla_credits.py
+      - scripts/verify_owner_action_packets.py
+      - .github/workflows/notarize-macos.yml
+      - .github/workflows/sign-windows.yml
+      - .github/workflows/release-cli.yml
+      - docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+      - BACKLOG.md
       - evidence/i1655/sla-credit-contract-manifest.json
       - docs/operator/issue-1655-sla-credit-evidence.md
   push:
@@ -24,8 +32,16 @@ on:
       - apps/signup-worker/tests/sla_credit_cron.test.ts
       - apps/signup-worker/wrangler.toml
       - legal/sla/v1.0.0.md
+      - apps/docs/src/pages/legal/terms.tsx
+      - apps/docs/src/lib/pricing.ts
       - migrations/d1/0117_sla_credit_ledger.sql
       - scripts/verify_b089_sla_credits.py
+      - scripts/verify_owner_action_packets.py
+      - .github/workflows/notarize-macos.yml
+      - .github/workflows/sign-windows.yml
+      - .github/workflows/release-cli.yml
+      - docs/handoff/2026-09-05-owner-action-packets-b008-b154.json
+      - BACKLOG.md
       - evidence/i1655/sla-credit-contract-manifest.json
       - docs/operator/issue-1655-sla-credit-evidence.md
 
@@ -54,6 +70,9 @@ jobs:
           mkdir -p artifacts/issue-1655
           python3 -S scripts/verify_b089_sla_credits.py --json \
             > artifacts/issue-1655/repository-contract.json
+
+      - name: Verify canonical B-089 owner-packet contract
+        run: python3 -S scripts/verify_owner_action_packets.py --id B-089
 
       - name: Check evidence manifest boundaries
         run: |
