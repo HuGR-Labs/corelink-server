@@ -96,7 +96,7 @@ def violations(ingress: str, routes: str, okf_concept: str) -> list[str]:
         "crates/corelink-container/src/reapi_ingress/validation.rs",
         "crates/corelink-container/src/reapi_ingress/tests.rs",
         "crates/corelink-container/src/routes/build.rs",
-        "Public gRPC remains unmounted",
+        "gRPC remains unmounted",
     )
     for item in required_okf:
         if item not in okf_concept:
