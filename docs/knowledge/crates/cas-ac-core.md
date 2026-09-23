@@ -11,6 +11,7 @@ source_files:
   - "crates/corelink-container/src/routes/cas/foundation_state.rs"
   - "crates/corelink-container/src/routes/cas/single_handlers.rs"
   - "crates/corelink-container/src/routes/cas/single_setup.rs"
+  - "crates/corelink-container/src/routes/cas/batch_write.rs"
   - "crates/corelink-container/src/storage/r2_s3_parts/cas_write.rs"
   - "crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs"
 source_blobs:

@@ -118,7 +118,7 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
   volatile in-memory sink (`crates/corelink-container/src/storage/r2_s3_parts/cas_builder.rs:40-88`).
 - The native CAS `list()` path checks the durable `ListAttempted` audit result before returning the
   tenant-prefix R2 enumeration; an audit failure returns `AuditFailed` and no rows are served
-  (`crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:337-343,415-418`).
+  (`crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:415-418`).
 - The `findMissingBlobs` batch seam obeys the same rule: cross-tenant denial is evaluated over the
   WHOLE request before anything is dispatched, and still emits its own `ReadDenied` row
   (`crates/corelink-container/src/storage/r2_s3_parts/cas_batch.rs:23-46`); the batched audit result is then evaluated BEFORE any probe result is read, so a

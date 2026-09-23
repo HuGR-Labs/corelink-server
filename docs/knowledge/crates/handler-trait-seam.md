@@ -129,7 +129,7 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 - **Accounting reserves before the durable write.** `AccountingCasHandler::write` reserves bytes before `write_inner.write` (`crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs:378-407`); an over-cap reservation means the inner PUT never runs.
 - **The `_public` storage namespace is not an accounting escape hatch.** `AccountingCasHandler::write` separates the physical `tenant` namespace from the authenticated `accounting_tenant`, rejects forged pairings, and applies the caller's resolved cap to public writes (`crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs:308-330`).
 - **Cross-cutting decorators stack at one chokepoint.** `routes/build.rs` wraps the shared write/delete objects in accounting (`crates/corelink-container/src/routes/build.rs:151-168`) then read/write/delete in the erasure gate (`crates/corelink-container/src/routes/build.rs:187-219`) once, so all surfaces sharing those `Arc<dyn>` inherit both.
-- **One shared handler instance backs many surfaces.** The same `cas_read`/`cas_write` `Arc`s are cloned into the cargo/brew/Bazel states (`crates/corelink-container/src/routes/build.rs:221-224,273-284`), so the decorators apply uniformly.
+- **One shared handler instance backs many surfaces.** The same `cas_read`/`cas_write` `Arc`s are cloned into the cargo/brew/Bazel states (`crates/corelink-container/src/routes/build.rs:221-224`), so the decorators apply uniformly.
 - **The `_public` writer set is exhaustive (two), and every `_public` write is digest-verified fail-CLOSED.** The only legitimate writers into the shared namespace are the tenant OCI `finalize_upload` and the inc4b admin mirror; the mirror's `fetch_verify_promote` runs the `is_allowlisted` gate (`crates/corelink-container/src/routes/public_mirror.rs:355`) and `OciDigest::verify_against_bytes` (`:369`) BEFORE the `MoatCache::put` into `_public` (`:374`), so an arbitrary or lying digest can never reach the shared slot. The read pull-through reuses the SAME helper but promotes per-tenant, adding no third `_public` writer.
 - **The `_public` audit namespace has an explicit residency arm.** Public revocation writes use the `_public` sentinel and pin the outbox row to `wnam`; the tenant-residency trigger does not infer a customer region for this global namespace (`crates/corelink-container/src/routes/public_revoke.rs:614-626`).
 
@@ -195,6 +195,13 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 - `crates/corelink-container/src/routes/build.rs:187-219` — wraps read/write/delete in `TombstoneGatedCasHandler` at the same chokepoint.
 - `crates/corelink-container/src/routes/build.rs:221-224,273-284` — clones the shared CAS `Arc`s into the cargo/brew/Bazel surfaces.
 - `crates/corelink-container/src/routes/build.rs:424-426` — `.merge(admin_tenant_detail::router(...))` mounts the operator per-tenant read module beside `admin::router`.
+- `crates/corelink-handler-cas/src/lib.rs:1-20` — CAS handler crate exports.
+- `crates/corelink-handler-cas-erase/src/handler.rs:145-168` — erase decision functions used by the container wiring.
+- `crates/corelink-container/src/routes/cas/foundation_core.rs:1-23` — shared CAS route constants and foundation types.
+- `crates/corelink-container/src/routes/cas/single_setup.rs:183-220` — native CAS route assembly.
+- `crates/corelink-container/src/routes/cas/batch_write.rs:171-175` — batch writes delegate through the shared CAS write trait.
+- `crates/corelink-container/src/routes/cas/batch_read.rs:189-198` — bounded batch-read scheduling.
+- `crates/corelink-container/src/routes/cas.rs:45-51` — executable CAS module declarations.
 0. `crates/corelink-container/src/routes/cas.rs:45-51` — executable CAS module includes.
 1. `crates/corelink-container/src/customer_d1_seams.rs:32` — executable customer split modules.
 1. `crates/corelink-container/src/customer_d1_handler_state.rs:75-82` — D1 handler state constructor.

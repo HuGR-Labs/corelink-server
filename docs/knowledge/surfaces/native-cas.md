@@ -65,7 +65,9 @@ path segment.
 1. The router mounts read/write/delete on `CAS_READ_ROUTE` and adds the three bulk routes as static
    siblings ranked above the `:hash` wildcard by matchit (`crates/corelink-container/src/routes/cas/single_setup.rs:183-220`).
 2. A read is a digest-keyed lookup via `handle_read` (`crates/corelink-container/src/routes/cas/single_handlers.rs:8-125`).
-3. A write rejects a path/auth tenant mismatch with 403, then validates the digest, then the write
+3. A write rejects a path/auth tenant mismatch with 403, validates the canonical digest, checks
+   write scope and native PAT write capability, then invokes the write handler
+   (`crates/corelink-container/src/routes/cas/single_handlers.rs:133-198`).
 4. A per-tenant in-flight reservation runs as an extractor BEFORE the body is buffered, returning 429
    over the concurrency cap — the `CasPutGuard` extractor (`crates/corelink-container/src/routes/cas/foundation_state.rs:154-212`). Read paths also use `CasReadConcurrencyGuard` (`crates/corelink-container/src/routes/cas/foundation_state.rs:250-305`); the read slot remains owned by a single-GET or batch-read response stream until its bytes are consumed or dropped.
 5. Bulk uploads are split into a newline-framed manifest + concatenated payload at the first blank

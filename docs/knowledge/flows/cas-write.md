@@ -7,6 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/cas/single_setup.rs"
   - "crates/corelink-container/src/routes/cas/single_handlers.rs"
   - "crates/corelink-container/src/routes/cas/batch_write.rs"
+  - "crates/corelink-container/src/byte_accounting/b126_m2_impl_01_part_02.rs"
   - "crates/corelink-container/src/storage.rs"
 source_blobs:
   - "crates/corelink-container/src/storage.rs@a8a86b64682ebe3c66b960d4301778ad3321d771"
