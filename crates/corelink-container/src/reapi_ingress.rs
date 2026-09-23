@@ -21,7 +21,6 @@ use tonic::{Code, Status};
 
 #[path = "reapi_ingress/validation.rs"]
 mod validation;
-use validation::bearer_from_metadata;
 pub use validation::{
     sha256_digest, validate_blob_resource_name, validate_digest, validate_instance_name,
     ValidatedBlobResourceName,
@@ -227,7 +226,7 @@ impl AdmittedIngress {
         .with_algo(DigestAlgo::Sha256);
         self.cas_write
             .write(request)
-            .map_err(|failure| cas_error_status(failure.cause))
+            .map_err(cas_error_status)
     }
 
     /// Look up a tenant-scoped ActionCache entry through the shared handler.
