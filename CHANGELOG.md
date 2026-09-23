@@ -36,6 +36,9 @@ Each entry cross-references:
 - **B-154 trust-boundary test corrected.** Current legacy reconciliation now
   uses its matching authorization path; historical Sprint3 pin remains frozen.
 
+- **Backlog trust-boundary fixtures refreshed.** Semantic stale-age coverage now
+  uses isolated fixture data; CLI import coverage matches fail-closed ledger exit.
+
 - **B-139 secrets-drift workflow digest refreshed.** Structural trust-boundary
   pin now matches current reviewed workflow.
 

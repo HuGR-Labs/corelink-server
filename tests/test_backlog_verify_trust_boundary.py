@@ -196,7 +196,8 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
             cwd=ROOT, env=env, capture_output=True, text=True, check=False,
         )
         self.assertNotIn("ModuleNotFoundError", result.stderr)
-        self.assertNotEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("candidate must append exactly one next successor snapshot", result.stdout + result.stderr)
 
     def test_deleting_highest_base_id_is_rejected(self) -> None:
         errors = backlog_verify.validate_candidate_transitions(
@@ -422,13 +423,38 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("b155_backlog_grep_parser.py", result.stdout + result.stderr)
 
-    def test_trusted_semantic_mode_reproduces_stale_b001(self) -> None:
+    def test_fixture_mode_reproduces_stale_b001(self) -> None:
+        fixture = Path(self.temp.name) / "stale-backlog.md"
+        fixture.write_text(
+            """### B-001 — fixture
+
+```backlog
+id: B-001
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: |
+  fixture exercises manual-age expiry
+last-verified: 2026-08-23
+```
+""",
+            encoding="utf-8",
+        )
         result = subprocess.run(
-            [sys.executable, str(VERIFIER), "--trusted-semantic", "--id", "B-001", "--today", "2026-09-08"],
+            [
+                sys.executable,
+                str(VERIFIER),
+                "--file",
+                str(fixture),
+                "--id",
+                "B-001",
+                "--today",
+                "2026-09-08",
+            ],
             cwd=ROOT,
             capture_output=True,
             text=True,
-            env={**os.environ, "GITHUB_EVENT_NAME": "push"},
             check=False,
         )
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
