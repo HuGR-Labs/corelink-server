@@ -18,6 +18,24 @@ INGRESS_FILES = (
 ROUTES = ROOT / "crates/corelink-container/src/routes/build.rs"
 
 
+def call_span(source: str, name: str) -> tuple[int, int] | None:
+    start = source.find(name)
+    if start < 0:
+        return None
+    opening = source.find("(", start + len(name))
+    if opening < 0:
+        return None
+    depth = 0
+    for index in range(opening, len(source)):
+        if source[index] == "(":
+            depth += 1
+        elif source[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return start, index + 1
+    return None
+
+
 def violations(ingress: str, routes: str) -> list[str]:
     errors: list[str] = []
     required_ingress = (
@@ -58,13 +76,14 @@ def violations(ingress: str, routes: str) -> list[str]:
     for item in required_routes:
         if item not in routes:
             errors.append(f"route factory is missing shared bundle element: {item}")
-    bundle_start = routes.find("ReapiIngress::from_shared_handlers(")
-    bundle_end = routes.find("\n                        ),", bundle_start)
-    bundle = " ".join(routes[bundle_start:bundle_end].split())
+    span = call_span(routes, "ReapiIngress::from_shared_handlers")
+    bundle = " "
+    if span is not None:
+        bundle = " ".join(routes[span[0] : span[1]].split())
     shared_handlers = (
         "cas_read.clone(), cas_write.clone(), ac_lookup.clone(), ac_update.clone(),"
     )
-    if bundle_start < 0 or bundle_end < 0 or shared_handlers not in bundle:
+    if span is None or shared_handlers not in bundle:
         errors.append("REAPI ingress must receive the route factory's shared decorated CAS/AC handlers")
     if "router = router.merge(reapi_ingress" in routes:
         errors.append("REAPI ingress must remain unmounted pending #2176 and service contracts")
@@ -75,8 +94,14 @@ def self_test() -> list[str]:
     ingress = "\n".join(path.read_text(encoding="utf-8") for path in INGRESS_FILES)
     routes = ROUTES.read_text(encoding="utf-8")
     errors = violations(ingress, routes)
-    bundle_start = routes.find("ReapiIngress::from_shared_handlers(")
-    route_prefix, route_bundle = routes[:bundle_start], routes[bundle_start:]
+    span = call_span(routes, "ReapiIngress::from_shared_handlers")
+    route_prefix = routes
+    route_bundle = ""
+    route_suffix = ""
+    if span is not None:
+        route_prefix = routes[: span[0]]
+        route_bundle = routes[span[0] : span[1]]
+        route_suffix = routes[span[1] :]
     mutations = (
         (ingress.replace("verify_capability(bearer)", "verify(bearer)"), routes, "PAT verifier bypass"),
         (
