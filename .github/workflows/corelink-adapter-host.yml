@@ -71,7 +71,7 @@ jobs:
     # stall, not a false pass: `scripts/pre-merge-gate-check.sh` scores a pending
     # check as ⛔ DO NOT MERGE, so a stranded box blocks the PR rather than
     # waving it through.
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     # Sized from the measurement, not from a guess: the heaviest crate lane
     # already on this fabric (corelink-reapi::pr-gate) runs cold in ~409-423 s,
     # and this lane is lighter (clippy + one debug test pass, no release build).
@@ -79,6 +79,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
 
       # `dtolnay/rust-toolchain` removed. It asked for `stable` + clippy/rustfmt;
       # `rust-toolchain.toml` pins 1.91.1 and lists both components, and rustup

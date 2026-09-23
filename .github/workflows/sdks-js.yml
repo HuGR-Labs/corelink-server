@@ -48,13 +48,15 @@ concurrency:
 jobs:
   gate:
     name: typecheck + test + build
-    runs-on: corelink  # zero-hosted: node/python already baked into the corelink image
+    runs-on: ubuntu-24.04  # zero-hosted: node/python already available on ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
         working-directory: sdks/js
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
