@@ -284,6 +284,48 @@ class B152DiagnosticTests(unittest.TestCase):
         self.assertEqual(report["run_outcomes"][0]["classification"], "runner_startup_failure")
         self.assertEqual(report["failed_run_count"], 0)
 
+    def test_deleted_buildfailed_identity_is_exact_and_active_same_name_stays_generic(self):
+        deleted = run(100, "2026-08-31T00:00:00Z", conclusion="startup_failure")
+        deleted.update(workflow_id=303501160, path="BuildFailed")
+        active = run(101, "2026-08-31T00:01:00Z", conclusion="startup_failure")
+        active.update(
+            name="Issue 1679 BuildFailed classification",
+            workflow_id=364720472,
+            path=".github/workflows/issue-1679-classification.yml",
+        )
+        self.assertEqual(
+            diag.classify_run_outcome(deleted, "startup_failure"),
+            "buildfailed_workflow_startup_failure",
+        )
+        self.assertEqual(diag.classify_run_outcome(active, "startup_failure"), "runner_startup_failure")
+
+        with patch.object(diag, "collect_runs", return_value=[deleted, active]), \
+             patch.object(diag, "collect_jobs", return_value=[]):
+            report = diag.collect_evidence(
+                "o/r", dt.datetime(2026, 8, 31, tzinfo=UTC),
+                dt.datetime(2026, 9, 1, tzinfo=UTC), 594, 615,
+            )
+        self.assertEqual(
+            report["run_classification_counts"],
+            {"buildfailed_workflow_startup_failure": 1, "runner_startup_failure": 1},
+        )
+        self.assertEqual(report["run_outcomes"][0]["workflow_id"], 303501160)
+        self.assertNotIn("workflow_id", report["run_outcomes"][1])
+
+    def test_partial_deleted_buildfailed_identity_fails_closed(self):
+        candidates = (
+            {"workflow_id": 303501160, "path": "other.yml"},
+            {"workflow_id": 9, "path": "BuildFailed"},
+            {"workflow_id": "303501160", "path": "BuildFailed"},
+            {"workflow_id": 303501160, "path": None},
+        )
+        for identity in candidates:
+            with self.subTest(identity=identity), self.assertRaises(diag.EvidenceUnavailable):
+                diag.classify_run_outcome(
+                    {"id": 102, "conclusion": "startup_failure", **identity},
+                    "startup_failure",
+                )
+
     def test_malformed_total_count_fails_closed(self):
         with patch.object(diag, "run_gh", return_value={"total_count": "1000", "workflow_runs": []}):
             with self.assertRaises(diag.EvidenceUnavailable):
@@ -446,6 +488,7 @@ class B152DiagnosticTests(unittest.TestCase):
         self.assertIn("runs-on: ubuntu-latest", workflow)
         self.assertIn("timeout-minutes: 8", workflow)
         self.assertIn("--fetch-logs", workflow)
+        self.assertIn('"run_classification_counts": report.get("run_classification_counts", {})', workflow)
         self.assertIn('"zero_window_jobs_is_not_closure": True', workflow)
         self.assertIn("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", workflow)
         self.assertIn("retention-days: 30", workflow)
