@@ -5,8 +5,12 @@ on:
     paths:
       - '.github/workflows/issue-2152-cyclonedx-diagnostic.yml'
       - '.github/workflows/issue-2050-cli-release-dry-run.yml'
-      - 'tools/cli/fuzz/Cargo.toml'
-      - 'tests/e2e-user-journeys/Cargo.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '**/Cargo.toml'
+      - '.cargo/config.toml'
+      - 'tools/cli/Cargo.toml'
+      - 'tools/cli/src/**'
 
 permissions:
   contents: read
@@ -21,10 +25,10 @@ jobs:
     runs-on: macos-15-intel
     timeout-minutes: 25
     steps:
-      - name: Checkout the exact failed source tree without credentials
+      - name: Checkout PR source without credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: a2a03b2be6d4c59ad9f3d126578bd2e9054cca10
+          ref: ${{ github.event.pull_request.head.sha }}
           path: source
           persist-credentials: false
 
@@ -79,10 +83,10 @@ jobs:
           set +e
           printf '%s\n' '--- generated CycloneDX JSON paths (bounded to 30) ---'
           find . -type f \( -name '*.cdx.json' -o -name 'bom.json' \) -print | head -n 30
-          test -s tools/cli/bom.json
+          test -s tools/cli/corelink-cli.cdx.json
           rc=$?
           if [ "${rc}" -eq 0 ]; then
-            python3 -c 'import json,pathlib; d=json.loads(pathlib.Path("tools/cli/bom.json").read_text()); assert d.get("bomFormat")=="CycloneDX" and d.get("specVersion")=="1.5"'
+            python3 -c 'import json,pathlib; d=json.loads(pathlib.Path("tools/cli/corelink-cli.cdx.json").read_text()); assert d.get("bomFormat")=="CycloneDX" and d.get("specVersion")=="1.5"'
             rc=$?
           fi
           printf 'SBOM nonempty/parse validation exit status: %s\n' "${rc}"
@@ -98,7 +102,7 @@ jobs:
         run: |
           set -u -o pipefail
           mkdir -p dist
-          cp tools/cli/bom.json dist/corelink-cli.cdx.json
+          cp tools/cli/corelink-cli.cdx.json dist/corelink-cli.cdx.json
           rc=$?
           printf 'SBOM inventory copy exit status: %s\n' "${rc}"
           printf 'exit_code=%s\n' "${rc}" >> "${GITHUB_OUTPUT}"
@@ -125,8 +129,8 @@ jobs:
             echo "| cargo install cargo-cyclonedx 0.5.9 | ${INSTALL_OUTCOME:-not-run} | ${INSTALL_EXIT:-n/a} |"
             echo "| cargo cyclonedx --format json --spec-version 1.5 --all | ${GENERATE_OUTCOME:-not-run} | ${GENERATE_EXIT:-n/a} |"
             echo "| test -s + CycloneDX 1.5 JSON validation | ${VALIDATE_OUTCOME:-not-run} | ${VALIDATE_EXIT:-n/a} |"
-            echo "| copy tools/cli/bom.json to dist/corelink-cli.cdx.json | ${COPY_OUTCOME:-not-run} | ${COPY_EXIT:-n/a} |"
-            echo 'Source: `a2a03b2be6d4c59ad9f3d126578bd2e9054cca10`; no CLI targets are built and no artifact is published.'
+            echo "| copy tools/cli/corelink-cli.cdx.json to dist/corelink-cli.cdx.json | ${COPY_OUTCOME:-not-run} | ${COPY_EXIT:-n/a} |"
+            echo 'Source: pull request head; no CLI targets are built and no artifact is published.'
           } >> "${GITHUB_STEP_SUMMARY}"
           if [[ "${INSTALL_OUTCOME:-skipped}" != success || "${GENERATE_OUTCOME:-skipped}" != success || "${VALIDATE_OUTCOME:-skipped}" != success || "${COPY_OUTCOME:-skipped}" != success ]]; then
             echo '::error::Isolated SBOM stage did not complete; see per-command exit status and bounded diagnostics above.'
