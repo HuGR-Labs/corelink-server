@@ -24,10 +24,10 @@ name: alerts-validate
 # Fail-closed: YES. An empty glob exits non-zero rather than reporting green
 # over nothing (see the "Refuse an empty match set" step).
 #
-# Cost: runs on `corelink` (CoreLink's own ephemeral Firecracker fabric, $0
-# GitHub-hosted minutes), path-filtered to the alert rules and to this gate's
-# own inputs, and the pinned promtool tarball is cached so a PR does not
-# re-download 100 MB from GitHub releases on every run.
+# Cost: runs on `ubuntu-24.04` (GitHub-hosted, migrated from self-hosted
+# corelink fabric 2026-09-22 Bundle 2). Path-filtered to the alert rules and
+# to this gate's own inputs; the pinned promtool tarball is cached so a PR
+# does not re-download 100 MB from GitHub releases on every run.
 
 on:
   pull_request:
@@ -65,10 +65,12 @@ env:
 jobs:
   alerts-validate:
     name: promtool check rules + runbook label resolution
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
 
       # Cache the extracted promtool binary, keyed on the exact pinned version.
       # A version bump changes the key and re-downloads; nothing else does.
