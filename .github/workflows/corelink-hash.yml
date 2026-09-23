@@ -48,25 +48,9 @@ jobs:
   # per CI-OPT-004 (removes floating rustsec/audit-check@v1 ref).
   pr-gate:
     name: PR gate (crate-scoped clippy + tests + canonical vectors)
-    # Off-Mac on GitHub-hosted ubuntu-latest (Blacksmith not provisioning).
-    # Runner: `corelink` — the product's own ephemeral runner fabric (wave 2,
-    # 2026-08-03). See `.github/workflows/corelink-reapi.yml` for the full
-    # rationale; the short version is that the box is 4 vCPU / 12.5 GB against
-    # ubuntu-latest's 2 vCPU / 7 GB on a private repo, and the image ships a
-    # pre-seeded ~/.cargo (415 MB), so a cold crate build here measured ~105 s —
-    # comparable to the warm-cache hosted runs this lane was getting.
-    #
-    # ⚠️ The `Swatinem/rust-cache` step below is gated `runner.environment ==
-    # 'github-hosted'`, so it SKIPS on a corelink box and this lane compiles cold
-    # every run. Do NOT re-enable it for self-hosted: that guard exists because
-    # the MAC fleet shares one $HOME and rust-cache's prune deletes a sibling
-    # job's registry mid-compile (#979/#980). Ephemeral boxes have a private
-    # $HOME, but the guard is written per-environment, not per-fleet.
-    #
-    # ⚠️ A refused or dropped spawn leaves the job QUEUED, and `timeout-minutes`
-    # does not bound queued time. That is a stall, not a false pass —
-    # `scripts/pre-merge-gate-check.sh` scores a pending check as ⛔ DO NOT MERGE.
-    runs-on: corelink
+    # Hosted runner migration for wave 3. Cache is safe because each hosted job
+    # has an isolated home directory.
+    runs-on: ubuntu-24.04
     # Measured median 198 s (~3.3 min) over the last 19 hosted runs; 6.9x headroom.
     # Migrated before the bound was standard, so it inherited GitHub's 360-min
     # default — one wedged run could pin a PR for 6 h. This bounds RUNNING time
@@ -77,6 +61,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
 
       # `dtolnay/rust-toolchain` removed. It asked for `stable` + clippy/rustfmt;
       # `rust-toolchain.toml` pins 1.91.1 and lists both components, and rustup
@@ -115,15 +101,15 @@ jobs:
 
   wasm-build:
     name: WASM target builds (CF Workers compile compatibility)
-    # Off-Mac on GitHub-hosted ubuntu-latest (Blacksmith not provisioning).
-    # Runner: `corelink` (wave 2, 2026-08-03) — see the pr-gate job above for the
-    # ephemeral-box caveats.
-    runs-on: corelink
+    # Hosted runner migration for wave 3.
+    runs-on: ubuntu-24.04
     # Measured median 48 s over the last 23 hosted runs (53 s over 2 fabric runs);
     # 3x is under the 10-min floor, so the floor applies.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
       # `dtolnay/rust-toolchain@stable` with `targets: wasm32-unknown-unknown`
       # removed. The image does NOT ship wasm32 (its only target is
       # x86_64-unknown-linux-gnu) — `rust-toolchain.toml` does, via
