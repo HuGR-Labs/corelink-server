@@ -1,0 +1,54 @@
+name: issue 2176 trusted gRPC deny gate
+
+# This gate runs from the protected base branch. It checks out the candidate
+# only as data and invokes the verifier from the separate base checkout; no
+# candidate workflow, script, package hook, build, or test command is run.
+on:
+  pull_request_target:
+    branches: [main]
+    paths:
+      - "worker/src/index_fetch.ts"
+      - "worker/src/grpc_transport_gate.ts"
+      - "specs/03_architecture/issue-2176-grpc-transport-contract.md"
+      - "scripts/verify_i2176_grpc_deny_gate.py"
+      - "tests/test_verify_i2176_grpc_deny_gate.py"
+      - ".github/workflows/issue-2176-grpc-deny-gate.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2176-trusted-grpc-deny-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  deny-contract:
+    name: trusted exact-head gRPC deny contract
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted base verifier
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted-base
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout candidate as inert data
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind to exact pull request head and validate candidate source
+        run: >-
+          python3 -S trusted-base/scripts/verify_i2176_grpc_deny_gate.py
+          --candidate candidate
+          --expected-head ${{ github.event.pull_request.head.sha }}
+
+      - name: Run trusted verifier adversarial fixtures
+        run: python3 -S -m unittest -v trusted-base/tests/test_verify_i2176_grpc_deny_gate.py
