@@ -40,6 +40,8 @@ jobs:
             --head "${head_sha}" \
             --github-sha "${GITHUB_SHA}" \
             > artifacts/issue-1690/p12-p14-main-verification.json
+          python3 scripts/verify_issue_1690_p12_p14.py \
+            --validate-receipt artifacts/issue-1690/p12-p14-main-verification.json
           cat artifacts/issue-1690/p12-p14-main-verification.json
 
       - name: Upload redacted verification receipt

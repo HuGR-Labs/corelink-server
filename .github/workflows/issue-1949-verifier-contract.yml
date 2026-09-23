@@ -27,7 +27,14 @@ jobs:
       - name: Checkout pull request head
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+
+      - name: Bind adversarial gate to the exact pull request head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
 
       - name: Run verifier contract and negative mutation checks
         run: python3 -S tests/test_verify_issue_1690_p12_p14.py
