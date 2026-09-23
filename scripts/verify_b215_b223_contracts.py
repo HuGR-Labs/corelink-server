@@ -421,7 +421,8 @@ def check_b216(root: Path) -> None:
     if route.index("await store.prepareDispatch(eventId, Date.now())") > route.index("await env.DSR_QUEUE.send(message)"):
         raise ContractError(f"{lane}: durable dispatch fence must precede Queue.send")
     _require(redrive, "INSERT OR IGNORE INTO dsr_dlq_redrive_envelopes", lane)
-    _require(redrive, "redrive_state = 'claimed'", lane)
+    claim_sql = _function(redrive, "async claim(", lane)
+    _require(claim_sql, "redrive_state = 'ready' AND requeue_count = 0 AND expires_at_ms > ?5", lane)
     _require(redrive, "claim_expires_at_ms > ?2 AND expires_at_ms > ?2", lane)
     _require(redrive, 'await this.transition(eventId, "submitted", nowMs);', lane)
     _require(redrive, "redrive_state = 'ambiguous'", lane)
@@ -811,8 +812,8 @@ def self_test(root: Path = ROOT) -> None:
             (
                 "B-216-redrive-atomic-claim-removal",
                 "B-216",
-                "redrive_state = 'claimed'",
-                "redrive_state = 'pending'",
+                "redrive_state = 'ready' AND requeue_count = 0 AND expires_at_ms > ?5",
+                "redrive_state = 'ready' AND requeue_count = 1 AND expires_at_ms > ?5",
                 "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts",
             ),
             (
