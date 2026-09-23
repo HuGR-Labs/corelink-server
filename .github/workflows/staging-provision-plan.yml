@@ -13,6 +13,10 @@ on:
         description: 'Type "plan-staging-1700" to run the read-only staging plan'
         required: true
         type: string
+      expected_sha:
+        description: "Expected full commit SHA for a bounded issue-1721 probe"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -41,8 +45,14 @@ jobs:
       TF_CLI_ARGS: "-no-color"
     steps:
       - name: Validate scoped R2 backend bindings
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
           set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ && "$EXPECTED_SHA" == "$GITHUB_SHA" ]] || {
+            echo '::error::Issue 1721 probe requires the exact expected commit SHA.'
+            exit 1
+          }
           [[ -n "$AWS_ACCESS_KEY_ID" && -n "$AWS_SECRET_ACCESS_KEY" ]] || {
             echo '::error::Staging R2 key pair is not bound to this environment.'
             exit 1
@@ -140,7 +150,7 @@ jobs:
           }
           TF
 
-          state_id="i1721-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          state_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
           jq -n --arg lineage "$state_id" \
             '{version:4,terraform_version:"1.11.4",serial:1,lineage:$lineage,outputs:{},resources:[]}' \
             >"$RUNNER_TEMP/empty-state.json"
