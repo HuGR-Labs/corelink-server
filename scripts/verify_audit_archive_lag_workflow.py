@@ -49,6 +49,8 @@ def verify(source: str) -> None:
 
     if "runs-on: corelink" not in archive_job:
         raise AssertionError("the archive detector must remain on the corelink self-hosted runner")
+    if re.search(r"(?im)^\s*continue-on-error\s*:", archive_job):
+        raise AssertionError("the archive detector must not suppress job or D1-read failures")
     if _normalized(ARCHIVE_JOB_GATE) not in _normalized(archive_job):
         raise AssertionError("live detector must be limited to protected canonical main")
     if "page = (clause1 and clause2) or (partitions_failed > 0)" not in normalized:
@@ -82,6 +84,10 @@ def verify_adversarial_mutations(source: str) -> None:
         (source.replace(PAGERDUTY_GATE, "if: steps.measure.outputs.page == '1'", 1), "page without notify gate"),
         (source.replace('default: "read-only"', 'default: "page"', 1), "unsafe manual default"),
         (source.replace("github.ref_protected == true", "github.ref_protected == false", 1), "unprotected run"),
+        (
+            source.replace("        id: measure\n", "        id: measure\n        continue-on-error: true\n", 1),
+            "inconclusive D1 read ignored",
+        ),
         (source.replace("page = (clause1 and clause2) or (partitions_failed > 0)", "page = False", 1), "weakened detector predicate"),
         (
             re.sub(
