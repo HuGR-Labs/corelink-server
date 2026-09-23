@@ -518,9 +518,14 @@ def _require_proposal_contract(proposal_id: str, contract: str, evidence: dict) 
     if status_match is None:
         raise CoverageError(f"{proposal_id}: canonical proposal contract is missing or incomplete: status")
     if status_match.group(1) == "parked":
-        external_packet = re.search(
-            r"^verify-means:\s*\|\n  parked — .*owner packet `docs/internal/[^`]+` remains:",
+        verify_means = re.search(
+            r"^verify-means:\s*\|\n(?P<body>(?:  .*\n?)+)",
             contract,
+            flags=re.MULTILINE,
+        )
+        external_packet = re.search(
+            r"^  parked — .*\n(?:  .*\n)*  `docs/internal/[^`]+` remains:",
+            verify_means.group("body") if verify_means else "",
             flags=re.MULTILINE,
         )
         local_verifier = re.search(

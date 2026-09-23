@@ -5576,11 +5576,12 @@ acceptance: "Evidence for DD-068: a code or documented owner decision at the cit
 verify: |
   python3 scripts/verify_b101_proposals.py --id B-216
 verify-means: |
-  parked — owner packet `docs/internal/b215-b230-runtime-owner-actions.md` remains: focused source tests and mutation gates prove the DLQ consumer accepts
+  parked — focused source tests and mutation gates prove the DLQ consumer accepts
   only PagerDuty HTTP 202 as delivery, retains the DLQ delivery when paging is
   missing/rejected, records privacy-minimized durable lifecycle receipts before
   queue disposition, redacts transport errors, and permits only one main-queue
-  re-enqueue. Verify the deployed
+  re-enqueue. Runtime/owner packet
+  `docs/internal/b215-b230-runtime-owner-actions.md` remains: verify the deployed
   consumer, an accepted on-call delivery, and one controlled exhausted-message
   observation. Local source evidence is not production delivery evidence.
 last-verified: 2026-09-09
