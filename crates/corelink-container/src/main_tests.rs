@@ -297,6 +297,7 @@ fn b126_t1_files_remain_below_the_1000_line_ceiling() {
         ("main.rs", include_str!("main.rs")),
         ("main_boot.rs", include_str!("main_boot.rs")),
         ("main_byok.rs", include_str!("main_byok.rs")),
+        ("main_runtime.rs", include_str!("main_runtime.rs")),
         ("main_tests.rs", include_str!("main_tests.rs")),
         (
             "routes/signup_support.rs",
@@ -330,11 +331,15 @@ fn b126_t1_files_remain_below_the_1000_line_ceiling() {
             "routes/dsr/adapter_d1_tests.rs",
             include_str!("routes/dsr/adapter_d1_tests.rs"),
         ),
+        (
+            "routes/dsr/adapter_d1/classification.rs",
+            include_str!("routes/dsr/adapter_d1/classification.rs"),
+        ),
     ];
     for (path, source) in FILES {
         assert!(
-            source.lines().count() <= 1_000,
-            "B-126 regression: {path} recomposed above 1000 lines"
+            source.lines().count() < 1_000,
+            "B-126 regression: {path} reached the 1000-line ceiling"
         );
     }
 }
@@ -344,7 +349,10 @@ fn b126_t1_submodule_wiring_is_explicit_and_load_bearing() {
     let main = include_str!("main.rs");
     assert!(main.contains("#[path = \"main_boot.rs\"]\nmod boot;"));
     assert!(main.contains("#[path = \"main_byok.rs\"]\nmod byok;"));
+    assert!(main.contains("#[path = \"main_runtime.rs\"]\nmod runtime;"));
     assert!(main.contains("#[path = \"main_tests.rs\"]\nmod tests;"));
+    let adapter_d1 = include_str!("routes/dsr/adapter_d1.rs");
+    assert!(adapter_d1.contains("mod classification;"));
     for (owner, path) in [
         (
             include_str!("routes/dpa_accept.rs"),

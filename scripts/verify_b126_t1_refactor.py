@@ -28,6 +28,8 @@ ROOT_UNITS = (
 
 SUPPORT_UNITS = (
     "crates/corelink-container/src/main_boot.rs",
+    "crates/corelink-container/src/main_byok.rs",
+    "crates/corelink-container/src/main_runtime.rs",
     "crates/corelink-container/src/main_tests.rs",
     "crates/corelink-container/src/routes/signup_support.rs",
     "crates/corelink-container/src/routes/dpa_accept_tests.rs",
@@ -38,6 +40,7 @@ SUPPORT_UNITS = (
     "crates/corelink-container/src/routes/ratelimit_layer_tests.rs",
     "crates/corelink-container/src/routes/dsr/adapter_d1_registry.rs",
     "crates/corelink-container/src/routes/dsr/adapter_d1_tests.rs",
+    "crates/corelink-container/src/routes/dsr/adapter_d1/classification.rs",
 )
 
 ALL_UNITS = ROOT_UNITS + SUPPORT_UNITS
@@ -177,8 +180,8 @@ def verify(root: Path, overrides: Mapping[str, str] | None = None) -> list[str]:
     sources = read_sources(root, overrides)
     errors: list[str] = []
     for relative, source in sources.items():
-        if len(source.splitlines()) > 1_000:
-            errors.append(f"file-size regression: {relative} exceeds 1000 lines")
+        if len(source.splitlines()) >= 1_000:
+            errors.append(f"file-size regression: {relative} reached the 1000-line ceiling")
 
     for relative, expected in TEST_WIRING.items():
         paths = {module: path for path, module in parse_path_modules(sources[relative])}
@@ -204,6 +207,10 @@ def verify(root: Path, overrides: Mapping[str, str] | None = None) -> list[str]:
         errors.append(
             "missing D1 registry wiring: expected registry -> adapter_d1_registry.rs"
         )
+    if "mod classification;" not in sources[
+        "crates/corelink-container/src/routes/dsr/adapter_d1.rs"
+    ]:
+        errors.append("missing D1 classification wiring: expected mod classification;")
 
     main = {
         module: path
@@ -211,6 +218,10 @@ def verify(root: Path, overrides: Mapping[str, str] | None = None) -> list[str]:
     }
     if main.get("boot") != "main_boot.rs":
         errors.append("missing boot wiring in main.rs: expected boot -> main_boot.rs")
+    if main.get("byok") != "main_byok.rs":
+        errors.append("missing BYOK wiring in main.rs: expected byok -> main_byok.rs")
+    if main.get("runtime") != "main_runtime.rs":
+        errors.append("missing runtime wiring in main.rs: expected runtime -> main_runtime.rs")
     return errors
 
 
@@ -249,12 +260,31 @@ def self_test(root: Path) -> None:
     diagnostics = verify(root, {adapter_path: renamed})
     assert any("missing D1 registry wiring" in error for error in diagnostics)
 
+    without_classification = adapter.replace("mod classification;\n", "", 1)
+    diagnostics = verify(root, {adapter_path: without_classification})
+    assert any("missing D1 classification wiring" in error for error in diagnostics)
+
     # The external gate remains executable and green if the Rust test module
     # is removed; it does not consume the circular main_tests guard.
     main_path = "crates/corelink-container/src/main.rs"
     main = (root / main_path).read_text(encoding="utf-8")
+    without_byok = main.replace('#[path = "main_byok.rs"]\nmod byok;\n', "", 1)
+    diagnostics = verify(root, {main_path: without_byok})
+    assert any("missing BYOK wiring" in error for error in diagnostics)
+
+    without_runtime = main.replace('#[path = "main_runtime.rs"]\nmod runtime;\n', "", 1)
+    diagnostics = verify(root, {main_path: without_runtime})
+    assert any("missing runtime wiring" in error for error in diagnostics)
+
     without_main_tests = main.replace('#[path = "main_tests.rs"]\nmod tests;\n', "", 1)
     assert verify(root, {main_path: without_main_tests}) == []
+
+    # Exercise the exact exclusive ceiling at every covered source boundary.
+    for line_cap_path in ALL_UNITS:
+        source = (root / line_cap_path).read_text(encoding="utf-8")
+        padded = source + "\n" * (1_000 - len(source.splitlines()))
+        diagnostics = verify(root, {line_cap_path: padded})
+        assert any(line_cap_path in error and "1000-line ceiling" in error for error in diagnostics)
     print("PASS: B126-T1 independent verifier, parser, and wiring mutations")
 
 
