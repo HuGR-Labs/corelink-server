@@ -437,8 +437,11 @@ def test_v0004_policy_derives_only_b012_retirement_from_pr_base(monkeypatch):
         ].replace(b"B-008 WP-B008", b"B-008 WP-OTHER", 1),
     }
     assert not policy._v0004_reconciliation_authorized(previous, prior, bad_catalog, receipt, 4)
-    mutated_source = prior["BACKLOG.md"].replace(
-        b"### B-154", b"### B-154 MUTATED", 1,
+    b154_start = prior["BACKLOG.md"].index(b"### B-154")
+    before_b154 = prior["BACKLOG.md"][:b154_start]
+    b154_and_after = prior["BACKLOG.md"][b154_start:]
+    mutated_source = before_b154 + b154_and_after.replace(
+        b"verify: |\n", b"verify: manual\n", 1,
     )
     mutated_prior = {**prior, "BACKLOG.md": mutated_source}
     mutated_current = {**current, "BACKLOG.md": mutated_source}
