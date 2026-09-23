@@ -17,11 +17,20 @@ HEAD = "a" * 40
 
 
 class Issue1690VerifierContractTests(unittest.TestCase):
-    def run_verifier(self, current_tree: str, checked_out_head: str = HEAD) -> dict:
-        squash = MANIFEST["squash_provenance"]
+    def run_verifier(
+        self,
+        current_tree: str,
+        checked_out_head: str = HEAD,
+        manifest: dict | None = None,
+        head_blob_overrides: dict[str, str] | None = None,
+        merge_present: bool = True,
+    ) -> dict:
+        manifest = json.loads(json.dumps(manifest or MANIFEST))
+        squash = manifest["squash_provenance"]
         merge = squash["merge_commit"]
         paths = squash["path_blobs"]
         merge_paths = sorted(paths)
+        head_blob_overrides = head_blob_overrides or {}
 
         def fake_git(*args: str) -> str:
             if args == ("rev-parse", "HEAD"):
@@ -33,7 +42,9 @@ class Issue1690VerifierContractTests(unittest.TestCase):
             if args[:4] == ("diff-tree", "--no-commit-id", "--name-only", "-r"):
                 return "\n".join(merge_paths if args[4] == merge else [])
             if args[0] == "rev-parse" and ":" in args[1]:
-                _, path = args[1].split(":", 1)
+                target, path = args[1].split(":", 1)
+                if target == HEAD:
+                    return head_blob_overrides.get(path, paths[path])
                 return paths[path]
             self.fail(f"unexpected git invocation: {args!r}")
 
@@ -41,7 +52,7 @@ class Issue1690VerifierContractTests(unittest.TestCase):
             return fake_git(*args)
 
         def fake_commit_exists(commit: str) -> bool:
-            return commit == merge
+            return merge_present and commit == merge
 
         def fake_ancestor(commit: str, head: str) -> bool:
             return commit == merge and head == HEAD
@@ -52,7 +63,7 @@ class Issue1690VerifierContractTests(unittest.TestCase):
             patch.object(verifier, "commit_exists", side_effect=fake_commit_exists),
             patch.object(verifier, "ancestor", side_effect=fake_ancestor),
         ):
-            return verifier.verify(json.loads(json.dumps(MANIFEST)), HEAD, HEAD)
+            return verifier.verify(manifest, HEAD, HEAD)
 
     def test_exact_tree_match_passes_with_immutable_sha_receipt(self) -> None:
         report = self.run_verifier(MANIFEST["historical_test"]["tree"])
@@ -66,13 +77,16 @@ class Issue1690VerifierContractTests(unittest.TestCase):
         self.assertEqual(report["observed_tree"], MANIFEST["historical_test"]["tree"])
         self.assertTrue(report["tree_matches"])
         self.assertTrue(report["contract"]["historical_tree_matches_current_main"])
+        self.assertFalse(report["contract"]["historical_tree_is_authoritative"])
+        self.assertTrue(report["contract"]["canonical_squash_contract_satisfied"])
         self.assertTrue(report["contract"]["checked_out_head_matches_github_sha"])
         self.assertNotIn("current_main_tree_matches_github_sha", report["contract"])
+        verifier.validate_receipt(report)
 
-    def test_stale_historical_tree_fails_but_retains_tree_and_ancestry(self) -> None:
+    def test_historical_tree_mismatch_passes_when_canonical_squash_content_matches(self) -> None:
         current_tree = "b" * 40
         report = self.run_verifier(current_tree)
-        self.assertEqual(report["status"], "FAIL_EXACT_TREE_MISMATCH")
+        self.assertEqual(report["status"], "PASS")
         self.assertEqual(report["expected_tree"], MANIFEST["historical_test"]["tree"])
         self.assertEqual(report["observed_tree"], current_tree)
         self.assertFalse(report["tree_matches"])
@@ -81,6 +95,38 @@ class Issue1690VerifierContractTests(unittest.TestCase):
         self.assertFalse(report["contract"]["historical_tree_matches_current_main"])
         self.assertTrue(report["contract"]["squash_merge_is_ancestor"])
         self.assertEqual(len(report["path_inventory"]), 11)
+        verifier.validate_receipt(report)
+
+    def test_missing_or_extra_inventory_path_is_rejected(self) -> None:
+        missing = json.loads(json.dumps(MANIFEST))
+        missing["squash_provenance"]["path_blobs"].pop("worker/tests/region-map.test.ts")
+        with self.assertRaisesRegex(verifier.VerificationError, "path blob inventory"):
+            self.run_verifier("b" * 40, manifest=missing)
+
+        extra = json.loads(json.dumps(MANIFEST))
+        extra["squash_provenance"]["path_blobs"]["worker/tests/unowned.ts"] = "c" * 40
+        with self.assertRaisesRegex(verifier.VerificationError, "path blob inventory"):
+            self.run_verifier("b" * 40, manifest=extra)
+
+    def test_changed_landed_blob_is_rejected(self) -> None:
+        with self.assertRaisesRegex(verifier.VerificationError, "bundle path blobs differ"):
+            self.run_verifier(
+                "b" * 40,
+                head_blob_overrides={"worker/tests/region-map.test.ts": "c" * 40},
+            )
+
+    def test_missing_canonical_squash_object_is_rejected(self) -> None:
+        with self.assertRaisesRegex(verifier.VerificationError, "squash merge commit is missing"):
+            self.run_verifier("b" * 40, merge_present=False)
+
+    def test_malformed_or_altered_receipt_is_rejected(self) -> None:
+        with self.assertRaisesRegex(verifier.VerificationError, "receipt schema_version"):
+            verifier.validate_receipt({"status": "PASS"})
+
+        receipt = self.run_verifier("b" * 40)
+        receipt["path_inventory"][0]["head_blob"] = "c" * 40
+        with self.assertRaisesRegex(verifier.VerificationError, "receipt path blob"):
+            verifier.validate_receipt(receipt)
 
     def test_unavailable_historical_objects_are_reported_not_used_as_a_skip(self) -> None:
         report = self.run_verifier("b" * 40)
@@ -126,8 +172,14 @@ class Issue1690VerifierContractTests(unittest.TestCase):
         self.assertIn("if: always()", workflow)
         self.assertIn("p12-p14-main-verification-${{ github.run_id }}", workflow)
         self.assertIn("--github-sha \"${GITHUB_SHA}\"", workflow)
+        self.assertIn("--validate-receipt artifacts/issue-1690/p12-p14-main-verification.json", workflow)
         self.assertIn("github.ref == 'refs/heads/main'", workflow)
         self.assertNotIn("continue-on-error:", workflow)
+
+    def test_contract_gate_checks_the_exact_pull_request_head(self) -> None:
+        workflow = (REPO / ".github/workflows/issue-1949-verifier-contract.yml").read_text()
+        self.assertIn("ref: ${{ github.event.pull_request.head.sha }}", workflow)
+        self.assertIn("test \"$(git rev-parse HEAD)\" = \"${{ github.event.pull_request.head.sha }}\"", workflow)
 
 
 if __name__ == "__main__":
