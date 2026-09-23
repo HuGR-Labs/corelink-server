@@ -1,0 +1,28 @@
+name: Issue 1679 BuildFailed classification
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/b152-actions-monitor.yml'
+      - '.github/workflows/issue-1679-classification.yml'
+      - 'scripts/b152_actions_diagnostic.py'
+      - 'scripts/test_b152_actions_diagnostic.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1679-classification-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  adversarial-classification:
+    name: B-250 identity classification mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout PR tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Run hosted adversarial suite
+        run: python3 scripts/test_b152_actions_diagnostic.py
