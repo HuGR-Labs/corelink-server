@@ -1,0 +1,60 @@
+name: i1672 smoke-install contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/i1672-smoke-install-contract.yml"
+      - ".github/workflows/smoke-install.yml"
+      - "docs/campaigns/remediation/i1672-smoke-install-suite-manifest.json"
+      - "scripts/smoke_install_observe.py"
+      - "tests/test_i1672_smoke_install_contract.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: i1672-contract-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: hosted contract and adversarial mutations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install contract test dependencies
+        run: python -m pip install --disable-pip-version-check --no-input "pytest>=9,<10" "pyyaml>=6,<7"
+
+      - name: Install checksum-pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          "${RUNNER_TEMP}/actionlint/actionlint" -version
+
+      - name: Lint both smoke workflows
+        run: >-
+          "${RUNNER_TEMP}/actionlint/actionlint" -color -config-file .actionlint.yaml
+          .github/workflows/smoke-install.yml
+          .github/workflows/i1672-smoke-install-contract.yml
+
+      - name: Run focused contract and mutation tests
+        run: python -m pytest -q tests/test_i1672_smoke_install_contract.py
