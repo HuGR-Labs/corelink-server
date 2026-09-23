@@ -13,28 +13,27 @@ source_files:
   - "crates/corelink-eviction/src/trigger.rs"
   - "docs/internal/gc-prod-rollout-plan.md"
 source_blobs:
-  - "crates/corelink-gc/src/run.rs@2442bb040da2a3e222b1350d140b48eced77c44f"
-  - "crates/corelink-gc/src/degrade.rs@cc8083ee0c3f24ffc66055996784bb54e98208ab"
-  - "crates/corelink-eviction/src/tier.rs@4cf334a805b8460c887494c05545a38bb1f94ec1"
-  - "crates/corelink-eviction/src/reservation.rs@d5004a86862d151462dbe4f97910898736bdb2a3"
-  - "crates/corelink-eviction/src/trigger.rs@724e3b570b0ccde870b50e7f75c1488566e27d08"
-  - "docs/internal/gc-prod-rollout-plan.md@f09191e12bea58e49e98eaefa2420ae415923bb7"
-checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
-provenance: "AUTHORED"
-tags: ["ops", "gc", "eviction", "storage", "runbook", "rollout"]
-timestamp: "2026-06-26T00:00:00Z"
-
+  - "crates/corelink-container/src/bin/gc_sweep.rs@47b9bfb144f3254f3ba246f6989e4317b252877d"
+  - "crates/corelink-container/src/gc_sweep.rs@fdde5caf54087fd809ddd0770158e2cd04c05af1"
+  - "crates/corelink-container/src/gc_sweep/part-01.rs@c675a50d11f52eccdb3635aa61fbe67cc06a869d"
+  - "crates/corelink-container/src/bin/gc_sweep.rs@47b9bfb144f3254f3ba246f6989e4317b252877d"
+  - "crates/corelink-container/src/gc_sweep.rs@fdde5caf54087fd809ddd0770158e2cd04c05af1"
+  - "crates/corelink-container/src/gc_sweep/part-01.rs@c675a50d11f52eccdb3635aa61fbe67cc06a869d"
+  - "docs/internal/gc-prod-rollout-plan.md@7ef13679e09468b9768aa83e020d2241f738d61c"
 ---
 # GC / eviction operations
 
 CoreLink reclaims storage along two independent but complementary planes: **garbage collection**
-(`corelink-gc`) walks the reachable set and soft-deletes orphaned blobs through a strict phase machine,
-while **eviction** (`corelink-eviction`) enforces per-tier retention TTLs and a 95%-quota pressure
-trigger. Both ship today as pure-logic skeletons with in-memory fakes (the production Cloudflare Cron
-Durable Object wiring is the deferred PRR ship gate), so the load-bearing reality an operator must
-understand is the *state machine + the kill-switch + the rollout gates* — not yet a live cron. This
-runbook is the operator's map of those invariants and the mandatory gradual production rollout that
-governs turning GC on. The reclaim math it protects is the same per-tenant accounting behind the
+(`corelink-gc`) walks the reachable set through a strict phase machine, while **eviction**
+(`corelink-eviction`) resolves per-tier retention TTLs and a 95%-quota pressure trigger. The repository
+also contains a native container sweep entrypoint backed by D1/R2 adapters. It supports tenant-scoped
+read-only observation; destructive production execution remains fail-closed until its cross-system
+fencing protocol is deployed. The code does not establish that a cron is deployed or that any production
+sweep has run `crates/corelink-container/src/bin/gc_sweep.rs:1-6`,
+`crates/corelink-container/src/gc_sweep.rs:1-14`,
+`crates/corelink-container/src/gc_sweep.rs:286-307`. This runbook covers those source-backed constraints,
+the state machine, and the mandatory gradual rollout plan. The reclaim math it protects is the same
+per-tenant accounting behind the
 [$-ceiling](/tenancy/dollar-ceiling.md) and the [storage-quota header](/tenancy/storage-quota-header.md).
 
 # Role
@@ -77,12 +76,16 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
    `should_fire_quota_trigger` (`crates/corelink-eviction/src/trigger.rs:61-62`), and the reclaim target
    is `bytes_used - 0.90 × bytes_quota` so it drains back to ≤90% (`crates/corelink-eviction/src/trigger.rs:82-83`).
 9. Production turn-on is gated: phase 1 is a 10% canary (tenant-id hash mod 10, all 5 regions), advancing
-   only on a 24h SEV-0/1-free window with refcount drift <0.1% (`docs/internal/gc-prod-rollout-plan.md:54-69`).
+   only on a 24h SEV-0/1-free window with refcount drift <0.1% (`docs/internal/gc-prod-rollout-plan.md:75-90`).
 10. Phase 2 is 50% (hash mod 2), advancing on a 48h clean window; phase 3 is 100% with a 7d clean window
-    before GA can be declared (`docs/internal/gc-prod-rollout-plan.md:70-95`).
-11. The native container sweep entrypoint validates tenant/region/storage configuration before any D1/R2
-    operation and remains dry-run by default; production delete mode requires the explicit live-delete gate
-    (`crates/corelink-container/src/bin/gc_sweep.rs:1-45`, `crates/corelink-container/src/gc_sweep.rs:1-35`).
+    before GA can be declared (`docs/internal/gc-prod-rollout-plan.md:91-116`).
+11. The native container sweep entrypoint validates tenant, region, bucket, and key configuration before
+    storage work. `GC_VALIDATE_ONLY=true` exits without D1/R2 operations; observation requires
+    `GC_OBSERVATION_ONLY=true` and `GC_LIVE_DELETE=false`; destructive mode also requires confirmation
+    but is rejected until fencing is deployed (`crates/corelink-container/src/bin/gc_sweep.rs:19-41`,
+    `crates/corelink-container/src/gc_sweep.rs:78-138`,
+    `crates/corelink-container/src/gc_sweep.rs:286-307`). The R2 adapter validates each object's
+    canonical tenant/region key before deletion (`crates/corelink-container/src/gc_sweep/part-01.rs:1-39`).
 
 # Invariants
 - The GC phase machine is monotone forward — no skipping and no backward edge; only the encoded edges or
@@ -97,12 +100,12 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
 - A zero `bytes_quota` is defended: the trigger returns below-threshold rather than firing forever
   (`crates/corelink-eviction/src/trigger.rs:61-62`).
 - Direct 100% rollout is forbidden — the gradual 10→50→100% sequence is mandatory and any SEV-0 trips an
-  immediate `gc-pause` rollback (`docs/internal/gc-prod-rollout-plan.md:84-102`).
+  immediate `gc-pause` rollback (`docs/internal/gc-prod-rollout-plan.md:105-123`).
 
 # Gotchas
 - Activating `gc-pause` stops new spawn but does NOT abort in-flight runs mid-batch — they finalize to an
   `Aborted` audit; a hard mid-run kill could leave `gc_run` rows inconsistent, so it is deliberately
-  batch-boundary scoped (`docs/internal/gc-prod-rollout-plan.md:104-108`).
+  batch-boundary scoped (`docs/internal/gc-prod-rollout-plan.md:125-129`).
 - The 5 rollout regions (`sam/iad/lhr/nrt/syd`) are colo strings, distinct from the macro `Tier` vocabulary
   — do not conflate a region cohort with a tenant tier.
 - **The eviction `Tier` taxonomy is a separate LEGACY domain, now BRIDGED to the sold ladder (CF-3).**
@@ -113,9 +116,9 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
   CLOSED. The request-quota count axis already covered those slugs (it keys off slug strings — see the
   sibling concept [request-quota](/tenancy/request-quota.md)); eviction's TTL resolution now agrees with
   it (`crates/corelink-eviction/src/tier.rs:114-136`).
-- Both crates are pure-logic skeletons today: the real D1 `blob_meta.deleted_at` UPDATE + cron DO binding
-  land at the PRR ship gate, so "GC is wired" means the invariants are proven against fakes, not that a
-  live cron is reclaiming prod bytes yet.
+- A native D1/R2 adapter exists, but its production `run_production` path rejects destructive execution
+  until the cross-system fence is deployed. Source presence alone does not prove a scheduled trigger,
+  deployment, or completed production run `crates/corelink-container/src/gc_sweep.rs:286-307`.
 
 # Citations
 1. `crates/corelink-gc/src/run.rs:48-64` — the `GcPhase` enum: Idle/Mark/Sweep/PhysicalDelete/Reconcile/Completed.
@@ -134,11 +137,11 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
 12. `crates/corelink-eviction/src/reservation.rs:77-81` — the floor/cap clamp of the proportional TTL.
 13. `crates/corelink-eviction/src/trigger.rs:61-62` — `should_fire_quota_trigger` 95% boundary + zero-quota defense.
 14. `crates/corelink-eviction/src/trigger.rs:82-83` — `target_bytes_to_reclaim` drains back to ≤90%.
-15. `docs/internal/gc-prod-rollout-plan.md:54-69` — phase 1 10% canary scope + advance gates.
-16. `docs/internal/gc-prod-rollout-plan.md:70-95` — phase 2 (50%) + phase 3 (100%) gates.
-17. `docs/internal/gc-prod-rollout-plan.md:84-102` — gradual-rollout mandate + rollback triggers/table.
-18. `docs/internal/gc-prod-rollout-plan.md:104-108` — `gc-pause` stops spawn but not in-flight runs (Aborted audit).
-19. `crates/corelink-container/src/bin/gc_sweep.rs:1-45` — native `gc_sweep` fail-closed configuration and dry-run/live-delete gate.
-20. `crates/corelink-container/src/gc_sweep.rs:1-35` — production sweep configuration and native D1/R2 boundary.
-21. `crates/corelink-container/src/gc_sweep/part-01.rs:1-45` — tenant/region-scoped R2 delete adapter with canonical key validation.
+15. `docs/internal/gc-prod-rollout-plan.md:75-90` — phase 1 10% canary scope + advance gates.
+16. `docs/internal/gc-prod-rollout-plan.md:91-116` — phase 2 (50%) + phase 3 (100%) gates.
+17. `docs/internal/gc-prod-rollout-plan.md:105-123` — gradual-rollout mandate + rollback triggers/table.
+18. `docs/internal/gc-prod-rollout-plan.md:125-129` — `gc-pause` stops spawn but not in-flight runs (Aborted audit).
+19. `crates/corelink-container/src/bin/gc_sweep.rs:19-41` — native `gc_sweep` config validation and validate-only early exit before storage operations.
+20. `crates/corelink-container/src/gc_sweep.rs:78-138`, `286-307` — required scoped config and fail-closed observation/destructive mode gate.
+21. `crates/corelink-container/src/gc_sweep/part-01.rs:1-39` — tenant/region-scoped R2 delete adapter with canonical key validation.
 18. `docs/internal/gc-prod-rollout-plan.md:1` — declared source anchor.

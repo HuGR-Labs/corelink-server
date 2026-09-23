@@ -7,14 +7,9 @@ source_files:
   - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md"
   - "rust-toolchain.toml"
 source_blobs:
-  - "docs/build/reproducible.md@735e3ec802a1eee1048cd4731d19251592ed2856"
-  - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md@4a43a0adc95fba146c5db516d8fe946564777da9"
+  - "docs/build/reproducible.md@a038e9a730b289ec6541b9b7fcdc823ce8522537"
   - "rust-toolchain.toml@5e394abc4407eccd95c0ee6e7763861758e651a9"
-checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
-provenance: "AUTHORED"
-tags: ["ops", "reproducible-build", "supply-chain", "tamper-detection", "runbook"]
-timestamp: "2026-06-26T00:00:00Z"
-
+  - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md@4a43a0adc95fba146c5db516d8fe946564777da9"
 ---
 # Reproducible-build process
 
@@ -60,7 +55,7 @@ GA tag's signed freeze in the [release process](/ops/release-process.md); the de
    typically changes >10% of bytes — 5% catches it with margin
    (`specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md:118-128`).
 7. A customer re-verifies by downloading the released binary and rebuilding it from the same commit with
-   the same pinned toolchain and remap set, then comparing hashes (`docs/build/reproducible.md:249-288`).
+   the same pinned toolchain and remap set, then comparing hashes (`docs/build/reproducible.md:249-285`).
    SLSA provenance for the same binaries comes from `release-slsa3.yml`, whose subjects are the published
    release assets themselves.
 
@@ -100,7 +95,7 @@ GA tag's signed freeze in the [release process](/ops/release-process.md); the de
 7. `docs/build/reproducible.md:159-173` — `--jobs 1` for deterministic link order.
 8. `docs/build/reproducible.md:205-207` — SEV-3 regression vs SEV-2 compromised-builder alert.
 9. `docs/build/reproducible.md:220-248` — the build.rs timestamp pre-commit lint.
-10. `docs/build/reproducible.md:249-288` — customer verification quickstart (rebuild the CLI binary).
+10. `docs/build/reproducible.md:249-285` — customer verification quickstart (rebuild the CLI binary).
 11. `specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md:69-86` — the ratified decision controls.
 12. `specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md:104-109` — skip-reproducibility rejected.
 13. `specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md:118-128` — why the 5% threshold.

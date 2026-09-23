@@ -6,13 +6,8 @@ source_files:
   - "docs/internal/ENGINEERING-ONBOARDING.md"
   - "docs/internal/onboarding/BUDDY-PROTOCOL.md"
 source_blobs:
-  - "docs/internal/ENGINEERING-ONBOARDING.md@fa1f2689fc136fbdbedda3018873ad91c6cd36ca"
+  - "docs/internal/ENGINEERING-ONBOARDING.md@680c4cf7bb957d6c9e8b0e681f521b7eaf931ac1"
   - "docs/internal/onboarding/BUDDY-PROTOCOL.md@4c115f87481c8649132d578c6377c648551b08bf"
-checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
-provenance: "AUTHORED"
-tags: ["ops", "onboarding", "buddy", "process", "runbook"]
-timestamp: "2026-06-26T00:00:00Z"
-
 ---
 # Engineering onboarding & the buddy protocol
 
@@ -33,7 +28,7 @@ ad hoc.
 
 - The goal is explicit: first PR merged ≤ 5 days, independent productivity ≤ 30 days `docs/internal/ENGINEERING-ONBOARDING.md:6`.
 - Day 0 (manager-owned) provisions laptop, access requests (GitHub org `HuGR-Labs`), and ≤ 3 pre-reads `docs/internal/ENGINEERING-ONBOARDING.md:51-98`.
-- Day 1 runs the first workspace build + spec-validator smoke `docs/internal/ENGINEERING-ONBOARDING.md:114-141`.
+- Day 1 runs a defined first-build sequence: clone, check the pinned Rust toolchain, install pre-commit hooks, build, smoke-test tenant-prefix handling, then run `validate_specs.py` `docs/internal/ENGINEERING-ONBOARDING.md:114-141`.
 - Day 2 walks the four canonical architecture docs in a fixed order `docs/internal/ENGINEERING-ONBOARDING.md:145-185`.
 - Day 3 traces one request end-to-end crate-by-crate (signup → tier-select → Stripe → audit) `docs/internal/ENGINEERING-ONBOARDING.md:231-249`.
 - Days 4–5 ship one curated first-PR item paired with a senior `docs/internal/ENGINEERING-ONBOARDING.md:251-278`.
