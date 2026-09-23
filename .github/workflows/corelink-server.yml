@@ -59,6 +59,6 @@ jobs:
 
       - name: Run the scheduled GC credentialless command contract
         run: >-
-          cargo test --locked -p corelink-container --test gc_binary_wiring
+          cargo test --locked -p corelink-server --test gc_binary_wiring
           scheduled_sweep_is_credentialless_and_cannot_arm_delete --
           --exact --nocapture
