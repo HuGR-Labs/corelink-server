@@ -51,7 +51,10 @@ REDIRECTION_BOUNDARY = re.compile(
     r"(?:\d*(?:>>>|<<<|>>|<<|>|<)\s*(?:'[^']*'|\"[^\"]*\"|[^\s;&|()]+)\s*)+$"
 )
 NESTED_SHELL = re.compile(r"\b(?:bash|sh|zsh)\s+-c\b")
-ID = re.compile(r"^B-\d{3}$")
+# Canonical backlog IDs use at least three digits, with zero-padding only for
+# the three-digit form. This keeps B-001 valid, rejects aliases such as B-0042,
+# and permits the documented four-digit IDs.
+ID = re.compile(r"^B-(?:00[1-9]|0[1-9]\d|[1-9]\d{2,})$")
 COMMENT_PREFIXES = ("//", "#", "/*", "<!--", "*", "--")
 MAX_BACKLOG_BYTES = 2_000_000
 MAX_NESTED_SHELL_DEPTH = 8
@@ -103,9 +106,9 @@ class Census:
 # Derived independently from the exact reanchored fenced-record tree (2026-09-09).
 # Keep these closed: adding/removing/changing a record must require an explicit
 # census reconciliation instead of silently shrinking or growing the proof.
-EXPECTED_RECORDS = 373
+EXPECTED_RECORDS = 374
 EXPECTED_COMMAND_RECORDS = 354
-EXPECTED_MANUAL_RECORDS = 19
+EXPECTED_MANUAL_RECORDS = 20
 EXPECTED_GREP_INVOCATIONS = 194
 EXPECTED_ASSERTIONS = 191
 
