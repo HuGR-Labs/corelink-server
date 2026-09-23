@@ -1,0 +1,44 @@
+{
+  "schema_version": 3,
+  "sequence": 5,
+  "transition": "base-derived-data",
+  "base_commit": "0d4441ce50a5b904f7d25c47ff889933f9e4a92e",
+  "prior_snapshot_sha256": "d0464313d6221a9305323d9b0f3b73b7757740550625a8b5b68327fbfdd19f59",
+  "prior_source_sha256": "4762b45c1740f5ece3af18ba3d29c395b6d8970078241f15267dd1a096f35247",
+  "source_sha256": "4762b45c1740f5ece3af18ba3d29c395b6d8970078241f15267dd1a096f35247",
+  "prior_ledger_sha256": "20bf16ec82b753b7b9348bda817dfb06c93608af20800a510e3a83d29249337f",
+  "ledger_sha256": "0885a46e0054f738470715ce0a26466b68c0522092632cea1863d51ac1c11f31",
+  "prior_catalog_sha256": {
+    "docs/campaigns/remediation/work-packages/B001-B045.md": "081c9885db8d79c18f2f31edb7864bb1ca1a18d53f408720f3f9e4f00524f9c6",
+    "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
+    "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
+    "docs/campaigns/remediation/work-packages/B131-B167.md": "4be50ac320f2c8d238a21760bc24a5391a7a5dc1102532d9d034e05556ad089d"
+  },
+  "catalog_sha256": {
+    "docs/campaigns/remediation/work-packages/B001-B045.md": "081c9885db8d79c18f2f31edb7864bb1ca1a18d53f408720f3f9e4f00524f9c6",
+    "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",
+    "docs/campaigns/remediation/work-packages/B091-B130.md": "2875d5374471382a5422ceac83e3259fcd5780e55fa3e07f80746f7ceb2995ce",
+    "docs/campaigns/remediation/work-packages/B131-B167.md": "f78334c625041a6958f16842e05f34b40ce79d8c337c2f271b1712bad129db83"
+  },
+  "item_count": 374,
+  "status_counts": {
+    "done": 330,
+    "open": 12,
+    "parked": 32
+  },
+  "open_ids": [
+    "B-008",
+    "B-032",
+    "B-035",
+    "B-065",
+    "B-086",
+    "B-089",
+    "B-097",
+    "B-111",
+    "B-154",
+    "B-170",
+    "B-314",
+    "B-316"
+  ],
+  "changed_ids": []
+}

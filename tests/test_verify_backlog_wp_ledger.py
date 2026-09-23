@@ -1,4 +1,5 @@
 from pathlib import Path
+import hashlib
 import subprocess
 import sys
 
@@ -19,6 +20,7 @@ from verify_backlog_wp_ledger import (
     validate_structured_allowlist,
     parse_workflow_ownership,
     validate_workflow_ownership,
+    validate_workflow_population,
     parse_ledger_state,
     load_snapshot_manifest,
     validate_snapshot_manifest,
@@ -544,6 +546,61 @@ def test_workflow_ownership_is_closed_and_wp150_is_read_only():
             valid,
             actual,
         )
+    with pytest.raises(LedgerError, match="duplicate workflow ownership path"):
+        validate_workflow_ownership(
+            [
+                (".github/workflows/a.yml", "LEAD-BLOCKED", "blocked"),
+                (".github/workflows/a.yml", "LEAD-BLOCKED", "blocked"),
+                (".github/workflows/b.yml", "LEAD-BLOCKED", "blocked"),
+            ],
+            valid,
+            actual,
+        )
+    with pytest.raises(LedgerError, match="owner does not resolve"):
+        validate_workflow_ownership(
+            [
+                (".github/workflows/a.yml", "WP-999", "owned"),
+                (".github/workflows/b.yml", "LEAD-BLOCKED", "blocked"),
+            ],
+            valid,
+            actual,
+        )
+    with pytest.raises(LedgerError, match="must be 'blocked'"):
+        validate_workflow_ownership(
+            [
+                (".github/workflows/a.yml", "LEAD-BLOCKED", "owned"),
+                (".github/workflows/b.yml", "LEAD-BLOCKED", "blocked"),
+            ],
+            valid,
+            actual,
+        )
+
+
+def test_workflow_population_rejects_count_and_manifest_hash_drift(tmp_path, monkeypatch):
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "a.yml").write_text("name: a\n")
+    (workflow_dir / "b.yaml").write_text("name: b\n")
+    manifest = b".github/workflows/a.yml\n.github/workflows/b.yaml\n"
+    monkeypatch.setattr(ledger, "WORKFLOW_MANIFEST_COUNT", 2)
+    monkeypatch.setattr(
+        ledger,
+        "WORKFLOW_MANIFEST_SHA256",
+        hashlib.sha256(manifest).hexdigest(),
+    )
+
+    assert validate_workflow_population(tmp_path) == {
+        ".github/workflows/a.yml",
+        ".github/workflows/b.yaml",
+    }
+    with pytest.raises(LedgerError, match="workflow population drift"):
+        monkeypatch.setattr(ledger, "WORKFLOW_MANIFEST_COUNT", 3)
+        validate_workflow_population(tmp_path)
+
+    monkeypatch.setattr(ledger, "WORKFLOW_MANIFEST_COUNT", 2)
+    (workflow_dir / "b.yaml").rename(workflow_dir / "c.yaml")
+    with pytest.raises(LedgerError, match="workflow population drift"):
+        validate_workflow_population(tmp_path)
 
 
 def test_workflow_ownership_parser_uses_strict_top_level_fence():
@@ -558,5 +615,10 @@ def test_workflow_ownership_parser_uses_strict_top_level_fence():
     with pytest.raises(LedgerError, match="nested"):
         parse_workflow_ownership(
             "````markdown\n```wp-workflow-ownership\na | LEAD-BLOCKED | blocked\n```\n````",
+            "fixture.md",
+        )
+    with pytest.raises(LedgerError, match="malformed workflow ownership row"):
+        parse_workflow_ownership(
+            "```wp-workflow-ownership\n.github/workflows/a.yml | LEAD-BLOCKED\n```",
             "fixture.md",
         )

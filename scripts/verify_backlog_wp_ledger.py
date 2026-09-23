@@ -69,8 +69,8 @@ FIELD_PATTERNS = {
         r"\breturn card\b|\breturn-card\b|\bretorno comum\b", re.IGNORECASE
     ),
 }
-WORKFLOW_MANIFEST_COUNT = 138
-WORKFLOW_MANIFEST_SHA256 = "1616038ec0bb163a7ed436d7487a6255c9da037efaa1f54cbe5f4c3f70a67dc1"
+WORKFLOW_MANIFEST_COUNT = 216
+WORKFLOW_MANIFEST_SHA256 = "47da6946f3e26a0abf9a1e0b83a2cf798085a692dcc08e161f6f63c9b2dade1f"
 PREDECESSOR_TOKEN_RE = re.compile(r"\bB-\d{3}\b|\bWP-[A-Z0-9][A-Z0-9./_-]*\b|#\d+\b")
 WORKFLOW_OWNERSHIP_FENCE = "wp-workflow-ownership"
 LEDGER_STATE_FENCE = "ledger-state"
