@@ -15,7 +15,10 @@ import time
 import uuid
 from pathlib import Path
 
-from b105_isolated_lane import Forwarder, Handler, Meter, cleanup_exact, generated_prefix, paired_summary
+try:
+    from b105_isolated_lane import Forwarder, Handler, Meter, cleanup_exact, generated_prefix, paired_summary
+except ModuleNotFoundError:  # Imported by the hosted contract as scripts.collect_b105_same_lane.
+    from scripts.b105_isolated_lane import Forwarder, Handler, Meter, cleanup_exact, generated_prefix, paired_summary
 
 
 COMMAND = ("cargo", "test", "--package", "corelink-reapi", "--release", "--no-run")

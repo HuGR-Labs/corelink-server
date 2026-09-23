@@ -30,5 +30,10 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - name: Exercise the collector boundary against a fake HTTPS origin
-        run: python3 -S -m unittest -v tests/test_b105_isolated_lane_behavior.py
+        env:
+          EXPECTED_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "${EXPECTED_HEAD}"
+          python3 -S -m unittest -v tests/test_b105_isolated_lane_behavior.py

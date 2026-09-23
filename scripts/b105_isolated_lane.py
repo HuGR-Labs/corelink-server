@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import http.client
 import http.server
+import math
 import re
 import statistics
 import threading
@@ -25,6 +26,11 @@ MAX_REQUEST_SECONDS = 60
 KEY_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 TENANT_RE = re.compile(r"^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$")
 PREFIX_RE = re.compile(r"^b105-[0-9]{1,20}-[0-9a-f]{12}$")
+REMOTE_PATH_RE = re.compile(
+    r"^/cargo/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})/"
+    r"(b105-[0-9]{1,20}-[0-9a-f]{12})-([A-Za-z0-9_.-]{1,64})$"
+)
+REMOTE_METHODS = frozenset(("GET", "PUT", "HEAD", "DELETE", "PROPFIND"))
 
 
 def generated_prefix(run_id: str, nonce: str) -> str:
@@ -50,6 +56,7 @@ class Meter:
         self.counters: dict[str, dict[str, int]] = defaultdict(_blank_counter)
         self.indexed_payloads: dict[str, int] = {}
         self.successes: set[tuple[str, str, str]] = set()
+        self.cleanup_inventory: tuple[str, ...] | None = None
         self.lock = threading.Lock()
 
     def set_phase(self, phase: str) -> None:
@@ -63,6 +70,8 @@ class Meter:
         if not KEY_RE.fullmatch(key):
             raise ValueError("unsafe B-105 cache key")
         with self.lock:
+            if self.cleanup_inventory is not None:
+                raise RuntimeError("B-105 key inventory is frozen for cleanup")
             if key not in self.keys and len(self.keys) >= MAX_TRACKED_KEYS:
                 raise RuntimeError("B-105 exact-key inventory limit exceeded")
             self.keys.add(key)
@@ -95,6 +104,13 @@ class Meter:
     def retained_payload_bytes(self) -> int:
         with self.lock:
             return sum(self.indexed_payloads.values())
+
+    def freeze_for_cleanup(self) -> tuple[str, ...]:
+        """Reject new forwarded keys and retain the exact inventory to erase."""
+        with self.lock:
+            if self.cleanup_inventory is None:
+                self.cleanup_inventory = tuple(sorted(self.keys))
+            return self.cleanup_inventory
 
 
 class Forwarder(http.server.ThreadingHTTPServer):
@@ -163,11 +179,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         body = self.rfile.read(length) if length else b""
         try:
-            status, headers, response = origin_request(
+            status, headers, response = _origin_request(
                 self.origin, self.token, self.command,
                 remote_key_path(self.tenant, self.meter, key), body,
             )
-            self.meter.record(self.command, key, len(body), status, len(response))
             self.send_response(status)
             for name in ("Content-Type", "Content-Length", "Last-Modified", "ETag", "DAV"):
                 if name in headers:
@@ -178,6 +193,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             if self.command != "HEAD" and response:
                 self.wfile.write(response)
+            self.meter.record(self.command, key, len(body), status, len(response))
         except Exception:
             self.send_error(502)
         self.close_connection = True
@@ -220,14 +236,17 @@ def recorded_key_path(tenant: str, meter: Meter, key: str) -> str:
     return f"/cargo/{tenant}/{quote(namespaced, safe='._-')}"
 
 
-def origin_request(
+def _origin_request(
     origin: str, token: str, method: str, path: str, body: bytes = b"", timeout_seconds: float = MAX_REQUEST_SECONDS,
 ) -> tuple[int, dict[str, str], bytes]:
     target = urlsplit(origin)
     if target.scheme != "https" or not target.hostname or target.query or target.fragment:
         raise ValueError("B-105 origin must be a plain HTTPS origin")
-    if not path.startswith("/cargo/") or "?" in path or "#" in path:
+    match = REMOTE_PATH_RE.fullmatch(path)
+    if not match or not PREFIX_RE.fullmatch(match.group(2)) or not KEY_RE.fullmatch(match.group(3)):
         raise ValueError("unsafe B-105 remote path")
+    if method not in REMOTE_METHODS or len(body) > MAX_BODY_BYTES:
+        raise ValueError("unsafe B-105 remote request")
     if timeout_seconds <= 0 or timeout_seconds > MAX_REQUEST_SECONDS:
         raise ValueError("unsafe B-105 request timeout")
     request_path = target.path.rstrip("/") + path
@@ -256,24 +275,25 @@ def cleanup_exact(
     clock = monotonic  # type: ignore[assignment]
     deadline = clock() + cleanup_seconds
     deleted = failures = 0
-    for position, key in enumerate(sorted(meter.keys)):
+    keys = meter.freeze_for_cleanup()
+    for position, key in enumerate(keys):
         remaining = deadline - clock()
         if remaining <= 0:
-            failures += len(meter.keys) - position
+            failures += len(keys) - position
             break
         path = recorded_key_path(tenant, meter, key)
         try:
-            status, _, _ = origin_request(origin, token, "DELETE", path, timeout_seconds=min(MAX_REQUEST_SECONDS, remaining))
+            status, _, _ = _origin_request(origin, token, "DELETE", path, timeout_seconds=min(MAX_REQUEST_SECONDS, remaining))
             meter.record_delete(key, status)
-            if not 200 <= status < 300:
+            if 200 <= status < 300:
+                deleted += 1
+            else:
                 failures += 1
-                continue
-            deleted += 1
             remaining = deadline - clock()
             if remaining <= 0:
                 failures += 1
                 continue
-            verify, _, _ = origin_request(origin, token, "PROPFIND", path, timeout_seconds=min(MAX_REQUEST_SECONDS, remaining))
+            verify, _, _ = _origin_request(origin, token, "PROPFIND", path, timeout_seconds=min(MAX_REQUEST_SECONDS, remaining))
             if verify != 404:
                 failures += 1
         except Exception:
@@ -298,7 +318,9 @@ def paired_summary(pairs: list[dict[str, object]]) -> dict[str, object]:
         control_duration = control.get("duration_seconds")
         treatment_duration = treatment.get("duration_seconds")
         if (not isinstance(control_duration, (int, float)) or isinstance(control_duration, bool)
-                or not isinstance(treatment_duration, (int, float)) or isinstance(treatment_duration, bool)):
+                or not isinstance(treatment_duration, (int, float)) or isinstance(treatment_duration, bool)
+                or not math.isfinite(control_duration) or not math.isfinite(treatment_duration)
+                or control_duration < 0 or treatment_duration < 0):
             raise ValueError("B-105 pair duration is missing")
         deltas.append(float(treatment_duration) - float(control_duration))
     mean = statistics.mean(deltas)

@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import http.client
+import json
+import os
+import tempfile
 import threading
 import unittest
+from pathlib import Path
+from unittest import mock
+from urllib.parse import urlsplit
 
 from scripts import b105_isolated_lane as lane
+from scripts import collect_b105_same_lane as collector
 
 
 TENANT = "ee30f7ba-fc25-4d71-939e-ebe130b4c6a3"
@@ -55,6 +62,8 @@ class FakeHttpsConnection:
             return FakeResponse(200, b"0123456789abcdef")
         if method == "PUT" and path.endswith("-failed"):
             return FakeResponse(500, b"must-not-count")
+        if method == "DELETE" and path.endswith("-delete-failed"):
+            return FakeResponse(500)
         if method == "GET":
             return FakeResponse(200, b"read-payload")
         if method == "PROPFIND":
@@ -117,6 +126,10 @@ class IsolatedLaneBehaviorTests(unittest.TestCase):
         incomplete[0].pop("treatment")
         with self.assertRaisesRegex(ValueError, "incomplete"):
             lane.paired_summary(incomplete)
+        nonfinite = self.pairs([-1.0] * 6)
+        nonfinite[0]["treatment"]["duration_seconds"] = float("nan")
+        with self.assertRaisesRegex(ValueError, "duration"):
+            lane.paired_summary(nonfinite)
 
     def test_generated_namespace_binds_every_remote_key_while_tenant_root_stays_local(self) -> None:
         root = f"/cargo/{TENANT}/"
@@ -168,7 +181,7 @@ class IsolatedLaneBehaviorTests(unittest.TestCase):
         finally:
             lane.MAX_BODY_BYTES = original_limit
         with self.assertRaisesRegex(ValueError, "request timeout"):
-            lane.origin_request("https://cache.example.invalid", "redacted-test-token", "GET", f"/cargo/{TENANT}/{PREFIX}-hit", timeout_seconds=61)
+            lane._origin_request("https://cache.example.invalid", "redacted-test-token", "GET", f"/cargo/{TENANT}/{PREFIX}-hit", timeout_seconds=61)
         with self.assertRaisesRegex(ValueError, "cleanup deadline"):
             lane.cleanup_exact("https://cache.example.invalid", "redacted-test-token", TENANT, self.meter, cleanup_seconds=0)
 
@@ -185,6 +198,16 @@ class IsolatedLaneBehaviorTests(unittest.TestCase):
         expected = [f"/cargo/{TENANT}/{PREFIX}-hit", f"/cargo/{TENANT}/{PREFIX}-seed"]
         self.assertEqual(cleanup, [("DELETE", expected[0]), ("PROPFIND", expected[0]), ("DELETE", expected[1]), ("PROPFIND", expected[1])])
         self.assertEqual(self.meter.retained_payload_bytes(), 0)
+        with self.assertRaisesRegex(RuntimeError, "frozen"):
+            self.meter.namespace_key("late-arrival")
+        failed_delete = lane.Meter(PREFIX)
+        failed_delete.namespace_key("delete-failed")
+        before = len(FakeHttpsConnection.requests)
+        self.assertEqual(lane.cleanup_exact("https://cache.example.invalid", "redacted-test-token", TENANT, failed_delete), (0, 1))
+        self.assertEqual([(method, path) for method, path, _, _ in FakeHttpsConnection.requests[before:]], [
+            ("DELETE", f"/cargo/{TENANT}/{PREFIX}-delete-failed"),
+            ("PROPFIND", f"/cargo/{TENANT}/{PREFIX}-delete-failed"),
+        ])
         deadline_meter = lane.Meter(PREFIX)
         deadline_meter.namespace_key("late")
         before = len(FakeHttpsConnection.requests)
@@ -205,6 +228,48 @@ class IsolatedLaneBehaviorTests(unittest.TestCase):
                 self.meter.namespace_key("second")
         finally:
             lane.MAX_TRACKED_KEYS = original_limit
+
+    def test_collector_runs_the_isolated_boundary_and_writes_the_bounded_receipt(self) -> None:
+        calls: list[tuple[str, int]] = []
+
+        def fake_run(mode: str, pair: int, tenant: str, revision: str) -> dict[str, object]:
+            calls.append((mode, pair))
+            if mode == "enabled":
+                endpoint = urlsplit(os.environ["CORELINK_PERF_BASE"])
+                key = "seed" if pair < 0 else f"pair-{pair}"
+                path = f"/cargo/{tenant}/{key}"
+                def local_request(method: str, body: bytes = b"") -> int:
+                    connection = http.client.HTTPConnection(endpoint.hostname, endpoint.port, timeout=5)
+                    connection.request(method, path, body=body, headers={"Content-Length": str(len(body))})
+                    response = connection.getresponse()
+                    status = response.status
+                    response.read()
+                    connection.close()
+                    return status
+                self.assertEqual(local_request("PUT", b"body"), 201)
+                self.assertEqual(local_request("GET"), 200)
+            return {
+                "cache_mode": mode, "duration_seconds": 8.0 if mode == "enabled" else 10.0,
+                "sccache": {"hits": 1 if mode == "enabled" else 0, "read_errors": 0, "write_errors": 0},
+                "revision": revision,
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "receipt.json"
+            with mock.patch.dict(collector.os.environ, {
+                "CORELINK_PERF_BASE": "https://cache.example.invalid",
+                "CORELINK_PERF_PAT": "redacted-test-token",
+                "GITHUB_RUN_ID": "4242",
+            }, clear=False), mock.patch.object(collector, "run", side_effect=fake_run):
+                self.assertEqual(collector.isolated_main(output, TENANT, "a" * 40), 0)
+            receipt = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(calls, [("enabled", -1), ("disabled", 0), ("enabled", 0), ("enabled", 1), ("disabled", 1), ("disabled", 2), ("enabled", 2), ("enabled", 3), ("disabled", 3), ("disabled", 4), ("enabled", 4), ("enabled", 5), ("disabled", 5)])
+        self.assertEqual(receipt["result"], "faster")
+        self.assertEqual(len(receipt["pairs"]), 6)
+        self.assertTrue(receipt["namespace"]["prefix"].startswith("b105-4242-"))
+        self.assertEqual(receipt["application_payload"]["seed"]["put_bytes"], 4)
+        self.assertTrue(all(receipt["application_payload"][f"pair-{index}-enabled"]["get_bytes"] == len(b"read-payload") for index in range(6)))
+        self.assertEqual(receipt["cleanup"], {"attempted": 7, "delete_successes": 7, "failures": 0, "verified_absent": True})
 
 
 if __name__ == "__main__":
