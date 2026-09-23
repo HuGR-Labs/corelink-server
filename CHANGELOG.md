@@ -30,6 +30,9 @@ Each entry cross-references:
 - **B-225 contract guard follows split async OCI upload source.** Size-limit
   checks now inspect active `append_chunk` implementation and mutation teeth.
 
+- **B-258 checkout promo runtime blob pin refreshed.** Reviewed Stripe client
+  source hash now matches current tracked bytes.
+
 - **B-139 secrets-drift workflow digest refreshed.** Structural trust-boundary
   pin now matches current reviewed workflow.
 

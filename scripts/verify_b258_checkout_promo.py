@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = Path("crates/corelink-stripe-real/src/client.rs")
 TEST = Path("crates/corelink-stripe-real/tests/checkout_promo.rs")
-RUNTIME_BLOB = "7b8651450b2f9eadaab2b352639cde881517a0ac"
+RUNTIME_BLOB = "76d81042af9433bddfa3f18df58efce0f214950b"
 TEST_BLOB = "0380c3c78d5dfeaa5e8aa842a5bc9c5ad7dac85f"
 
 
