@@ -522,8 +522,8 @@ pub mod otel_layer;
 /// every surface, moved out so this file keeps one job — declaring the tree.
 pub mod build;
 pub use build::{
-    build_with_factory, build_with_factory_and_byok,
-    build_with_factory_and_byok_and_reapi_ingress, RouterWithReapiIngress,
+    build_with_factory, build_with_factory_and_byok, build_with_factory_and_byok_and_reapi_ingress,
+    RouterWithReapiIngress,
 };
 
 #[cfg(test)]
