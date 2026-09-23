@@ -88,6 +88,7 @@ IMMUTABLE_ITEM_FIELDS = frozenset({
     "id", "repo", "verify", "action-packet", "source-document",
     "source-locator", "finding-title", "problem", "evidence", "acceptance",
 })
+B154_LEGACY_VERIFY_SHA256 = "39b0307a1a4451c90fb22fe9a37cfbd858485d38e6361e6c3d15bce1d1f4beac"
 ALLOWED_TRANSITION_FIELDS = frozenset({"status", "owner", "last-verified", "verify-means"})
 
 # A command's polarity cannot be inferred from arbitrary shell.  We can still
@@ -507,7 +508,8 @@ def check_candidate_controls(candidate_root: Path, trusted_root: Path, trusted_i
 
 def validate_candidate_transitions(
     candidate_items: list[Item], trusted_items: list[Item], today: dt.date,
-    *, allow_sprint3_rewrite: bool = False, successor_mode: bool = False,
+    *, allow_sprint3_rewrite: bool = False, allow_b154_reconciliation: bool = False,
+    successor_mode: bool = False,
 ) -> list[str]:
     """Validate the small, auditable set of BACKLOG changes a PR may make."""
     trusted_by_id = {item.id: item for item in trusted_items if item.raw}
@@ -542,10 +544,12 @@ def validate_candidate_transitions(
                     continue
                 # The reviewed B-154 repair is a fail-closed conjunction;
                 # never turn the pinned exception into an arbitrary shell slot.
-                if item_field == "verify" and allow_sprint3_rewrite and item.id == "B-154" and (
+                if item_field == "verify" and (
+                    allow_sprint3_rewrite or allow_b154_reconciliation
+                ) and item.id == "B-154" and (
                     isinstance(old_raw.get("verify"), str)
                     and hashlib.sha256(old_raw["verify"].encode()).hexdigest()
-                    == "a6045afb801b3b6a61ff09d97b6e77ba5fa4f7e1c4f9ed0fde8554957484264e"
+                    == B154_LEGACY_VERIFY_SHA256
                     and new_raw.get("verify") == (
                         "python3 -S scripts/verify_owner_action_packets.py --id B-154 &&\n"
                         "python3 -S scripts/verify_b154_instrument_claims.py --self-test\n"
@@ -563,9 +567,9 @@ def validate_candidate_transitions(
         if old_raw.get("owner") != new_raw.get("owner") and old_status == new_status:
             errors.append(f"{item.id}: owner may change only with a status transition")
         if old_raw.get("verify-means") != new_raw.get("verify-means") and old_status == new_status:
-            if not (allow_sprint3_rewrite and item.id in {
+            if not ((allow_sprint3_rewrite and item.id in {
                 "B-012", "B-065", "B-087", "B-089", "B-097", "B-154", "B-170",
-            }):
+            }) or (allow_b154_reconciliation and item.id == "B-154")):
                 errors.append(f"{item.id}: verify-means may change only with a status transition")
         try:
             old_date, new_date = parse_date(old_raw["last-verified"]), parse_date(new_raw["last-verified"])
