@@ -8,18 +8,23 @@ source_files:
   - "crates/corelink-hash/src/verified_body.rs"
   - "crates/corelink-hash/src/digest.rs"
   - "crates/corelink-reapi/src/lib.rs"
-  - "crates/corelink-container/src/routes/cas/foundation.rs"
-  - "crates/corelink-container/src/routes/cas/batch.rs"
-  - "crates/corelink-container/src/routes/cas/batch.rs"
+  - "crates/corelink-container/src/routes/cas.rs"
+  - "crates/corelink-container/src/routes/cas/foundation_core.rs"
+  - "crates/corelink-container/src/routes/cas/single_handlers.rs"
+  - "crates/corelink-container/src/routes/cas/batch_write.rs"
+  - "crates/corelink-container/src/routes/cas/foundation_state.rs"
 source_blobs:
+  - "crates/corelink-container/src/routes/cas/single_handlers.rs@f4259f925d39cff5d70ae6fb8fc5996f2109dba2"
+  - "crates/corelink-container/src/routes/cas/foundation_state.rs@8dcd20ecd23850e331763d5ccfcf4d0260489f0e"
   - "crates/corelink-cas/src/lib.rs@5eef35d4a9c8ad713604a6df5c7493d88b27248e"
   - "crates/corelink-hash/src/lib.rs@403f7e2e4ef8c7bb30a47e7d7eee3ce94a785730"
   - "crates/corelink-hash/src/verified_body.rs@d387eca974b5314dad46b6e92b1623cb8b3e10d5"
   - "crates/corelink-hash/src/digest.rs@40aea50c8127ada98133e3719171b65f047f2bcd"
   - "crates/corelink-reapi/src/lib.rs@a4e6596b8741aded884e05b445df1b13edf1419b"
-  - "crates/corelink-container/src/routes/cas/foundation.rs@0e5712cd96aa832375398e3192a16b74fad173c0"
-  - "crates/corelink-container/src/routes/cas/batch.rs@6144bd860660f5eb435f3043f3fb1d8d3d29ed40"
-checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
+  - "crates/corelink-container/src/routes/cas.rs@41c65ce80c66084ef424ac4189b644bbe8461f95"
+  - "crates/corelink-container/src/routes/cas/foundation_core.rs@63671990ccb9f0e9e6cba8804457737b42c18120"
+  - "crates/corelink-container/src/routes/cas/batch_write.rs@3561b0e3188b5ff05ff5998fdad3f33ee5f6ad78"
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 provenance: "AUTHORED"
 tags: ["crates", "cas", "ac", "integrity", "blake3", "core"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -44,7 +49,7 @@ The cluster sits below every cache surface ([native CAS](/surfaces/native-cas.md
 
 - Every body is verified before storage: the only path to a `VerifiedBody` runs the hash check — `VerifiedBody::new` computes the digest then `verify_constant_time`, returning `Err(HashMismatch)` on mismatch (`crates/corelink-hash/src/verified_body.rs:33-44`; `crates/corelink-hash/src/lib.rs:9-13`).
 - Security-sensitive digest comparison uses constant-time `verify_constant_time`, not short-circuiting `PartialEq`, so timing cannot leak (`crates/corelink-hash/src/digest.rs:78-79`; `crates/corelink-hash/src/lib.rs:40-45`).
-- The per-blob order verify → R2 → D1 is the correctness guarantee against orphan classes, but it is NOT enforced by `CasWriteOrchestrator` on the live native path. `CasWriteOrchestrator` has zero production callers (only `corelink-reapi`'s own gRPC handlers + prop tests); the cited `crates/corelink-reapi/src/lib.rs:56-61` is an anti-pattern rustdoc, NOT a live enforcement seam. The live native CAS write enforcer is the `CasWriteHandler` trait object — `handle_write` (`crates/corelink-container/src/routes/cas/batch.rs:587`) and the batch path (`crates/corelink-container/src/routes/cas/batch.rs:587`) call `state.write.write(req)`, and content-verify + R2 PUT + D1 commit (plus the `AccountingCasHandler` byte-accounting decorator) all happen INSIDE that single `state.write` chokepoint that every CAS write surface (native / Bazel / OCI / adapters) shares. Upstream of that chokepoint the native write path also re-derives the PAT's D1-stored `can_write` capability at the container (`pat_gate_reject_write`) so a read-only token can never reach the verify→R2→D1 write (`crates/corelink-container/src/routes/cas/batch.rs:587`). `CasWriteOrchestrator` is the designed REAPI seam, not the load-bearing native guarantee.
+- The per-blob order verify → R2 → D1 is the correctness guarantee against orphan classes, but it is NOT enforced by `CasWriteOrchestrator` on the live native path. `CasWriteOrchestrator` has zero production callers (only `corelink-reapi`'s own gRPC handlers + prop tests); the cited `crates/corelink-reapi/src/lib.rs:56-61` is an anti-pattern rustdoc, NOT a live enforcement seam. The live native CAS write enforcer is the `CasWriteHandler` trait object — `handle_write` (`crates/corelink-container/src/routes/cas/single_handlers.rs:133-214`) and the batch path (`crates/corelink-container/src/routes/cas/batch_write.rs:162-175`) call `state.write.write(req)`, and content-verify + R2 PUT + D1 commit (plus the `AccountingCasHandler` byte-accounting decorator) all happen INSIDE that single `state.write` chokepoint that every CAS write surface (native / Bazel / OCI / adapters) shares. Upstream of that chokepoint the native write path also re-derives the PAT's D1-stored `can_write` capability at the container (`pat_gate_reject_write`) so a read-only token can never reach the verify→R2→D1 write (`crates/corelink-container/src/routes/cas/single_handlers.rs:133-214`). `CasWriteOrchestrator` is the designed REAPI seam, not the load-bearing native guarantee.
 - The whole cluster is memory-safe by construction: `#![forbid(unsafe_code)]` at each crate root (`crates/corelink-cas/src/lib.rs:83`, `crates/corelink-hash/src/lib.rs:49`, `crates/corelink-reapi/src/lib.rs:71`).
 
 # Gotchas
@@ -64,10 +69,14 @@ The cluster sits below every cache surface ([native CAS](/surfaces/native-cas.md
 7. `crates/corelink-hash/src/lib.rs:56-59` — the small public surface (`Digest`, `VerifiedBody`, errors).
 8. `crates/corelink-reapi/src/lib.rs:1-27` — the verify → R2 → D1 orchestration pipeline diagram.
 9. `crates/corelink-reapi/src/lib.rs:56-61` — the "never bypass `CasWriteOrchestrator`" anti-pattern RUSTDOC (a doc-comment / design guideline scoped to REAPI transports, NOT a live enforcement seam — the orchestrator has zero production callers).
-14. `crates/corelink-container/src/routes/cas/batch.rs:587` + `crates/corelink-container/src/routes/cas/batch.rs:587` — the LIVE native CAS write enforcer: `handle_write` / batch call `state.write.write(req)`, a `CasWriteHandler` trait object where content-verify + R2 PUT + D1 commit happen (the real verify→R2→D1 guarantee on the native path).
-15. `crates/corelink-container/src/routes/cas/batch.rs:587` — `pat_gate_reject_write` re-derives the PAT's D1 `can_write` at the container BEFORE the write chokepoint, so a read-only PAT never reaches the verify→R2→D1 write.
+14. `crates/corelink-container/src/routes/cas/single_handlers.rs:198-212` + `crates/corelink-container/src/routes/cas/batch_write.rs:162-175` — the LIVE native CAS write enforcer: `handle_write` / batch call `state.write.write(req)`, a `CasWriteHandler` trait object where content-verify + R2 PUT + D1 commit happen (the real verify→R2→D1 guarantee on the native path).
+15. `crates/corelink-container/src/routes/cas/single_handlers.rs:133-214` — `pat_gate_reject_write` re-derives the PAT's D1 `can_write` at the container BEFORE the write chokepoint, so a read-only PAT never reaches the verify→R2→D1 write.
 10. `crates/corelink-reapi/src/lib.rs:71` — `#![forbid(unsafe_code)]`.
 11. `crates/corelink-reapi/src/lib.rs:123-128` — the `CasWriteOrchestrator` / outcome exports.
 12. `crates/corelink-hash/src/verified_body.rs:33-44` — `VerifiedBody::new`: compute-then-`verify_constant_time`, `Err(HashMismatch)` on mismatch.
 13. `crates/corelink-hash/src/digest.rs:78-79` — `verify_constant_time` (`ct_eq`) constant-time digest integrity compare.
-15. `crates/corelink-container/src/routes/cas/foundation.rs:1` — declared source anchor.
+16. `crates/corelink-container/src/routes/cas.rs:45-51` — executable route module includes.
+17. `crates/corelink-container/src/routes/cas/foundation_state.rs:1-20` — the live CAS route state owns separate read/write/delete/list handler objects.
+18. `crates/corelink-container/src/routes/cas/foundation_core.rs:110-119` — batch request count and payload ceilings.
+19. `crates/corelink-container/src/routes/cas/single_handlers.rs:133-212` — single native write gates, commit, and status.
+20. `crates/corelink-container/src/routes/cas/batch_write.rs:162-175` — batch writes delegate verified per-object requests into the same write handler.

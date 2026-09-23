@@ -4,17 +4,21 @@ title: "Turborepo v8 remote-cache surface"
 description: "The Vercel Turborepo /v8/artifacts remote-cache protocol wired onto CoreLink, with teamId-as-sub-namespace isolation and per-route body caps."
 source_files:
   - "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs"
+  - "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01_part2.rs"
   - "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs"
+  - "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02_part2.rs"
   - "crates/corelink-turbo-bridge/src/adapter.rs"
   - "crates/corelink-turbo-bridge/src/error.rs"
   - "crates/corelink-container/src/routes/turbo_v8.rs"
 source_blobs:
-  - "crates/corelink-container/src/routes/turbo_v8.rs@eac8e5aa8a5333b351b247d02dd1c4ab3faf66ba"
-  - "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs@6eef22d97b82a716af5db0833a17511f74efab45"
-  - "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs@2269d7e5559fa1ef565f9dc67a20fdf22ea37aab"
+  - "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02_part2.rs@0a6ecdbe44d6381e2cc498e67c899c2c9235bb30"
+  - "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01_part2.rs@9c83f47b220e2f16bb92c7882eabedd0962e60d0"
+  - "crates/corelink-container/src/routes/turbo_v8.rs@7c0614eacdde15e70ba1127637ec526e2ad65e2e"
+  - "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs@21080a6bf6d64b0549e44a0a1567ad21d8785a61"
+  - "crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs@0de1e781e6d054909151e80315097595535dd03f"
   - "crates/corelink-turbo-bridge/src/adapter.rs@bee7a6c1be4d4ee7a1585627e1452574b8fbd907"
   - "crates/corelink-turbo-bridge/src/error.rs@8bed7e6406ee9e40dffb6a937c930367f1ac732d"
-checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 provenance: "AUTHORED"
 tags: ["surfaces", "turborepo", "vercel", "cache"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -53,14 +57,14 @@ signature rides alongside the artifact and is handed back on read.
    over-cap) and a process-wide `GlobalGetBudgetGuard` (cap derived from the deployed basic capacity, 503 on
    saturation) — so an over-cap read is rejected BEFORE the up-to-100 MiB artifact is read into the heap,
    bounding per-tenant and aggregate read-path memory on a pool SEPARATE from writes
-   (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:222-229`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:582-651`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:671-707`).
+   (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:222-229`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01_part2.rs:88-190`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01_part2.rs:190-286`).
 7. Each artifact read and write records a fire-and-forget usage-metering event into the in-process
    display aggregator [`crate::usage_meter`] — a `ReadHit` / `ReadMiss` on GET and a `Write` on PUT —
    off the hot path (no await/I/O), DISPLAY telemetry only, never gating the response
-   (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:282-283`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:476-477`).
+   (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:282-283`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02_part2.rs:9-160`).
 8. The Turborepo artifact signature is carried end to end. A client with
    `TURBO_REMOTE_CACHE_SIGNATURE_KEY` set sends `x-artifact-tag` on PUT; the route reads that header
-   into the request (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:466-468`), the bridge validates
+   into the request (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02_part2.rs:9-160`), the bridge validates
    it (`crates/corelink-turbo-bridge/src/error.rs:93`) and stores it as a sidecar object AFTER the
    artifact write (`crates/corelink-turbo-bridge/src/adapter.rs:320`), and GET reads the sidecar back
    (`crates/corelink-turbo-bridge/src/adapter.rs:400`) and echoes it as a response header
@@ -71,12 +75,12 @@ signature rides alongside the artifact and is handed back on read.
 # Invariants
 - `teamId` is required on GET/PUT but is NOT a security boundary; the authenticated tenant is the sole isolation key (`crates/corelink-container/src/routes/turbo_v8.rs:28-37`).
 - An artifact GET requires read capability; an insufficient scope is rejected 403 before storage (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:241`).
-- The telemetry `events` route is capped at `EVENTS_BODY_LIMIT_BYTES` (64 KiB), not the artifact cap (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:74`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:683`).
+- The telemetry `events` route is capped at `EVENTS_BODY_LIMIT_BYTES` (64 KiB), not the artifact cap (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:74`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02_part2.rs:153`).
 - Artifact bodies are bounded at `TURBO_BODY_LIMIT_BYTES` (100 MiB) so a PAT cannot OOM the shared container (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:37`).
 - The GET read path is concurrency-bounded like PUT: per-tenant cap 4 plus a global cap derived from the deployed basic container, both reserved before the artifact is buffered, so neither one tenant nor an aggregate read burst can OOM the container (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:62`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:117`).
-- PUT is create-only (`put_if_absent`): a PUT to a key that already holds an artifact is refused `409 Conflict`, never overwritten (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:693-694`). Turborepo keys are opaque/client-chosen, not content-addressed, so an overwrite could replace the bytes behind a tenant's own existing key — within-tenant cache poisoning the content envelope cannot detect. The presence probe runs under the per-`(tenant, team, hash)` write lock so the probe→refuse-or-write is serialized per stored object; a probe backend error fails OPEN (a transient storage error never blocks a legitimate first insert). Proven safe against the real `turbo` client, which never re-PUTs an existing key in normal operation and tolerates the 409 as a non-fatal warning (`docs/design/2026-08-24-turborepo-create-only-evidence.md`).
+- PUT is create-only (`put_if_absent`): a PUT to a key that already holds an artifact is refused `409 Conflict`, never overwritten (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02_part2.rs:347-374`). Turborepo keys are opaque/client-chosen, not content-addressed, so an overwrite could replace the bytes behind a tenant's own existing key — within-tenant cache poisoning the content envelope cannot detect. The presence probe runs under the per-`(tenant, team, hash)` write lock so the probe→refuse-or-write is serialized per stored object; a probe backend error fails OPEN (a transient storage error never blocks a legitimate first insert). Proven safe against the real `turbo` client, which never re-PUTs an existing key in normal operation and tolerates the 409 as a non-fatal warning (`docs/design/2026-08-24-turborepo-create-only-evidence.md`).
 - An `x-artifact-tag` supplied on PUT is stored with the artifact and returned verbatim on the matching GET; CoreLink does not hold the customer's signing key and therefore never computes or validates the value (`crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:29`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:316`).
-- ABSENCE of a tag is valid on both verbs and is the normal case (most clients do not enable signatures): an untagged PUT succeeds and its GET omits the header rather than inventing one (`crates/corelink-turbo-bridge/src/adapter.rs:400`). Fail-closed applies only to a tag that is PRESENT and malformed — empty, over `MAX_ARTIFACT_TAG_LEN`, or non-printable-ASCII — which is rejected `400` before any storage or audit, never silently dropped (`crates/corelink-turbo-bridge/src/error.rs:93`; `crates/corelink-turbo-bridge/src/adapter.rs:237`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:691`).
+- ABSENCE of a tag is valid on both verbs and is the normal case (most clients do not enable signatures): an untagged PUT succeeds and its GET omits the header rather than inventing one (`crates/corelink-turbo-bridge/src/adapter.rs:400`). Fail-closed applies only to a tag that is PRESENT and malformed — empty, over `MAX_ARTIFACT_TAG_LEN`, or non-printable-ASCII — which is rejected `400` before any storage or audit, never silently dropped (`crates/corelink-turbo-bridge/src/error.rs:93`; `crates/corelink-turbo-bridge/src/adapter.rs:237`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02_part2.rs:359-374`).
 - The tag sidecar keyspace is disjoint from the artifact keyspace BY CONSTRUCTION: sidecars live under a reserved `$tag/` first segment, and `team_id` is charset-restricted to `[A-Za-z0-9_-]`, so no client-chosen hash — opaque and only length-bounded — can name a sidecar key (`crates/corelink-turbo-bridge/src/adapter.rs:170`; `crates/corelink-turbo-bridge/src/adapter.rs:174`).
 
 # Gotchas
@@ -105,15 +109,15 @@ signature rides alongside the artifact and is handed back on read.
 6. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:187-195` — per-route 100 MiB artifact limit override.
 7. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:37` — `TURBO_BODY_LIMIT_BYTES` (100 MiB).
 8. `crates/corelink-container/src/routes/turbo_v8.rs:28-37` — `teamId` sub-namespace vs authenticated-tenant isolation.
-9. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:582-651` — `GetConcurrencyGuard`: per-tenant GET concurrency cap (429 before buffering), the read twin of `PutConcurrencyGuard`.
-10. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:671-707` — `GlobalGetBudgetGuard`: process-wide GET budget (503 on saturation), separate pool from the PUT budget.
+9. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01_part2.rs:88-190` — `GetConcurrencyGuard`: per-tenant GET concurrency cap (429 before buffering), the read twin of `PutConcurrencyGuard`.
+10. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01_part2.rs:190-286` — `GlobalGetBudgetGuard`: process-wide GET budget (503 on saturation), separate pool from the PUT budget.
 11. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:62` — `TURBO_GET_CONCURRENCY_LIMIT` (4); `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:117` — `GLOBAL_TURBO_GET_PERMITS` (derived from `container_capacity`).
 12. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:81-159` — `build_handlers` store selection: durable `R2KvStore` when `StorageEnv::from_env()` is present (persists across restarts), in-RAM `InMemoryKvStore` only in the no-creds dev/CI fallback, fail-CLOSED handler when creds are present but R2 refuses to build.
-13. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:282-283` (GET read HIT), `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:476-477` (PUT write) — fire-and-forget usage-metering `record` calls (DISPLAY telemetry, off the hot path).
-14. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:693-694` — `map_err(AlreadyExists)` → `409 Conflict`: the create-only (`put_if_absent`) refusal of an overwrite. The presence probe itself lives in `corelink-turbo-bridge`'s adapter, under the route's per-`(tenant, team, hash)` write lock. Client evidence: `docs/design/2026-08-24-turborepo-create-only-evidence.md`.
+13. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:282-283` (GET read HIT), `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02_part2.rs:9-160` (PUT write) — fire-and-forget usage-metering `record` calls (DISPLAY telemetry, off the hot path).
+14. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02_part2.rs:347-374` — `map_err(AlreadyExists)` → `409 Conflict`: the create-only (`put_if_absent`) refusal of an overwrite. The presence probe itself lives in `corelink-turbo-bridge`'s adapter, under the route's per-`(tenant, team, hash)` write lock. Client evidence: `docs/design/2026-08-24-turborepo-create-only-evidence.md`.
 15. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_01.rs:29` — `ARTIFACT_TAG_HEADER`: the Turborepo artifact-signature header CoreLink stores and echoes but never validates (the signing key is the customer's).
-16. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:466-468` — PUT reads `x-artifact-tag` off the request into `TurboPutRequest`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:316` — GET writes the stored tag back onto the response, omitting the header entirely when none was stored.
-17. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:691` — `map_err(ArtifactTagInvalid)` → `400`: a PRESENT but malformed tag fails the request instead of being silently dropped.
+16. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02_part2.rs:9-160` — PUT reads `x-artifact-tag` off the request into `TurboPutRequest`; `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02.rs:316` — GET writes the stored tag back onto the response, omitting the header entirely when none was stored.
+17. `crates/corelink-container/src/routes/turbo_v8/b126_m2_impl_02_part2.rs:359-374` — `map_err(ArtifactTagInvalid)` → `400`: a PRESENT but malformed tag fails the request instead of being silently dropped.
 18. `crates/corelink-turbo-bridge/src/error.rs:93` — `validate_artifact_tag`: non-empty, `<= MAX_ARTIFACT_TAG_LEN`, printable-ASCII only (so a tag can never inject or mangle the echoed response header).
 19. `crates/corelink-turbo-bridge/src/adapter.rs:237` — the tag is validated with the other input guards, BEFORE any audit emit or storage access.
 20. `crates/corelink-turbo-bridge/src/adapter.rs:320` — the sidecar write, ordered AFTER the artifact write so it exists only for an artifact that landed and a 409-refused re-PUT cannot reach it.

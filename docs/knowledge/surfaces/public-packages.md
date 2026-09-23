@@ -7,8 +7,10 @@ source_files:
   - "crates/corelink-container/src/routes/pip.rs"
   - "crates/corelink-container/src/routes/brew.rs"
   - "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs"
+  - "crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs"
   - "crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs"
   - "crates/corelink-container/src/routes/public_pullthrough/part-00.rs"
+  - "crates/corelink-container/src/routes/public_pullthrough/part-00-01.rs"
   - "crates/corelink-container/src/oci_cap.rs"
   - "crates/corelink-container/src/public_base_allowlist.rs"
   - "crates/corelink-container/src/public_base_allowlist.manifest"
@@ -16,19 +18,21 @@ source_files:
   - "crates/corelink-container/src/routes/oci.rs"
   - "crates/corelink-container/src/routes/build.rs"
 source_blobs:
-  - "crates/corelink-container/src/routes/oci.rs@d0f6db84e4d4eec61ba3275a4f0a3834f9614496"
+  - "crates/corelink-container/src/routes/public_pullthrough/part-00-01.rs@4b51ac81b04f059873b5dc1bbe212add470514bc"
+  - "crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs@81bffeb46670644006f7507a0995576feae8187a"
+  - "crates/corelink-container/src/routes/oci.rs@788cd025b6ba32bc9fdb44afeb8ffab356d21de2"
   - "crates/corelink-container/src/routes/npm.rs@7aa4f6a458d22ac40018ddda1c8a6115e350362e"
   - "crates/corelink-container/src/routes/pip.rs@fcb9c8d5e6261b176774f396732264ae44e0652c"
   - "crates/corelink-container/src/routes/brew.rs@f1ae6c0f89746d465f069bffec31c1be6e8df7ee"
-  - "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs@a175a88e8618a77d7632e8ff2290c251ccfd99af"
-  - "crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs@a5562b70fb2161f0f1af8ee9e75212da2fb7b11c"
-  - "crates/corelink-container/src/routes/public_pullthrough/part-00.rs@db555cf1cc85ed0023658f2c5277574947c1f193"
+  - "crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs@d02a3a2ef693e28572182095f58711b9690d26e8"
+  - "crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs@d78391de0f43a89e7cf43f75e76fff28ec359b39"
+  - "crates/corelink-container/src/routes/public_pullthrough/part-00.rs@5b98f91ee90805634246bbe0601b047816e2d1e6"
   - "crates/corelink-container/src/oci_cap.rs@fa1af6aa6cf7de0620a27959a6bcc8084ebd8ef8"
   - "crates/corelink-container/src/public_base_allowlist.rs@4b15671988d7a6f535c960df35b205ead0a20780"
   - "crates/corelink-container/src/public_base_allowlist.manifest@99b7dce748ebaa667bfdb7c3d4370ed7eeaf8c85"
-  - "wrangler.toml@87dbd26903ae9f0a11d6da5ede99dcd1b06e4f13"
-  - "crates/corelink-container/src/routes/build.rs@739abcdc453ab5bd7a5642526aed445cf34eccf8"
-checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
+  - "wrangler.toml@b7d6a9d4c7013718271860c66821d8a58462d66f"
+  - "crates/corelink-container/src/routes/build.rs@43036d91a76bf2e14d6d49c2bca705037fc02081"
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -48,7 +52,7 @@ allowlist-gated — only an owner-allowlisted digest is stored to `_public` by t
 path, via the stricter write-only predicate
 `routes_to_public` (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:233-234`) — while WP-G M2 makes the blob READ
 side EXISTENCE-based: when the boot `dedup` flag is on, `get_blob` reads the shared `_public` namespace FIRST
-for ANY digest (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:636-669`), safe because a `sha256:`-addressed blob
+for ANY digest (`crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs:351-392`), safe because a `sha256:`-addressed blob
 in `_public` is byte-identical to any private copy. Default OFF ships the OCI path byte-identical to
 per-tenant-only. They
 build on the same [native CAS](/surfaces/native-cas.md) moat the first-party surfaces use.
@@ -82,7 +86,7 @@ hold.
    including reads (`docker pull` GETs do real R2-GET work): the `$`-ceiling is fail-CLOSED (`402`), the
    request-count axis fail-OPEN (`429`). CF-2 corrected the gate's source comments so they now state this
    accurately — the doc + body of `oci_quota_gate` both say the `$`-ceiling is charged on reads too
-   (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:266-322`).
+   (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:265-321`).
 7. Because the Worker forwards `/v2/*` + `/token` RAW (it never sets the storage-cap header for OCI), the
    container resolves the tenant's per-tier storage cap itself at the `/token` mint: `tier_to_cap_bytes`
    ports the Worker's `QUOTAS` table (finite caps per tier, `Some(0)` only for `enterprise`, unknown tier →
@@ -111,7 +115,7 @@ hold.
    (`public_flags::oci_public_dedup_enabled()`) and the baked allowlist are read ONCE at the router and SHARED
    with both the blob store (`OciMoatStore::with_allowlist`) and the manifest resolver; the allowlist load is
    FAIL-CLOSED, degrading a malformed manifest to deny-all
-   (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:95-96`; `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:120-124`).
+   (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:94-95`; `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:119-123`).
    **WP-G M3 activation:** both boot flags are now `"1"` in every prod env block —
    `OCI_PUBLIC_DEDUP_ENABLED` (`wrangler.toml:765`) and `OCI_UPSTREAM_ON_MISS` (`wrangler.toml:766`) —
    forwarded to the container through the DO env-contract (see [DO lifecycle](/planes/durable-object.md)),
@@ -120,10 +124,10 @@ hold.
    (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:225-234`) decides `finalize_upload`'s namespace — an
    allowlisted digest lands under `PUBLIC_NAMESPACE` with an uncapped `Some(0)` quota-seed, everything else
    under the per-tenant namespace with the resolved cap
-   (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:603-614`). **READ path (M2 = EXISTENCE, not allowlist):**
+   (`crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs:256-330`). **READ path (M2 = EXISTENCE, not allowlist):**
    `get_blob` reads the shared `_public` namespace FIRST for ANY blob key whenever `dedup` is on, then falls
    back to the per-tenant namespace on a miss (no upstream fetch — read pull-through promotion is the
-   resolver's job) (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:636-669`). This is SAFE because an OCI blob
+   resolver's job) (`crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs:351-392`). This is SAFE because an OCI blob
    is `sha256:`-addressed, so a `_public` copy of a digest is byte-identical to any private copy (nothing to
    leak); admission to `_public` stays WRITE-gated (client push via `routes_to_public`; resolver closure-promote
    from an allowlisted ROOT) and revocation still filters on read via `MoatCache::get`'s `public_blocklist`.
@@ -137,8 +141,8 @@ hold.
 - Public upstream bytes are deduped cross-tenant under `PUBLIC_NAMESPACE`; the PAT gates access, the public content is shared (`crates/corelink-container/src/routes/pip.rs:32-37`; `crates/corelink-container/src/routes/brew.rs:27-30`).
 - npm `@scoped` (private) packages stay in the per-tenant namespace, never `PUBLIC_NAMESPACE` (`crates/corelink-container/src/routes/npm.rs:98-107`).
 - OCI uses `.merge` not `nest_service` because the first segment after `/v2/` is the OCI repo name, not a tenant — stripping it would corrupt the repo (`crates/corelink-container/src/routes/oci.rs:19-30`).
-- OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header: `oci_bearer_tenant` calls `oci::auth::verify` and recovers the tenant (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:243-255`), and `oci_quota_gate` charges that resolved tenant (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:303-307`).
-- **The `_public` BLOB WRITE is allowlist-gated and the M2 READ is existence-based, but they cannot split-brain: the write predicate is a strict SUBSET of the read resolution.** Only a `dedup && is_allowlisted` hit reaches `PUBLIC_NAMESPACE` with the uncapped `Some(0)` quota-seed on blob upload/finalize (`routes_to_public`, `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:233-234`; `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:603-614`), so a non-allowlisted client blob push stays per-tenant and quota-charged. Manifest/index PUTs are a separate tenant-scoped `ManifestKvStore` mutation and never write `_public`. The read reads `_public` FIRST by EXISTENCE for any digest under `dedup` (`crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:657-672`): anything the blob write path (or the resolver's closure-promote) placed in `_public` is always found there, and content-addressing makes serving it leak-free — so a by-digest read never disagrees with where the bytes actually live.
+- OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header: `oci_bearer_tenant` calls `oci::auth::verify` and recovers the tenant (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:242-254`), and `oci_quota_gate` charges that resolved tenant (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:302-306`).
+- **The `_public` BLOB WRITE is allowlist-gated and the M2 READ is existence-based, but they cannot split-brain: the write predicate is a strict SUBSET of the read resolution.** Only a `dedup && is_allowlisted` hit reaches `PUBLIC_NAMESPACE` with the uncapped `Some(0)` quota-seed on blob upload/finalize (`routes_to_public`, `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:233-234`; `crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs:256-330`), so a non-allowlisted client blob push stays per-tenant and quota-charged. Manifest/index PUTs are a separate tenant-scoped `ManifestKvStore` mutation and never write `_public`. The read reads `_public` FIRST by EXISTENCE for any digest under `dedup` (`crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs:351-392`): anything the blob write path (or the resolver's closure-promote) placed in `_public` is always found there, and content-addressing makes serving it leak-free — so a by-digest read never disagrees with where the bytes actually live.
 - Eligibility for `_public` is a SERVER-owned, owner-gated, digest-pinned decision. The client submits a digest, but the baked set — with no runtime mutation path — decides whether it is eligible and the write verifies its bytes; a client cannot widen the set or substitute different content. The trust root fails closed on any tag, so only immutable `sha256:` digests the owner committed can ever be allowlisted (`crates/corelink-container/src/public_base_allowlist.rs:108`); as of WP-G M3 the shipped manifest carries 6 active pins — the alpine LAYER blob plus 5 base-image INDEX digests (`crates/corelink-container/src/public_base_allowlist.manifest:96`, `crates/corelink-container/src/public_base_allowlist.manifest:99-103`; loaded by `crates/corelink-container/src/public_base_allowlist.rs:29,55-56`).
 
 # Gotchas
@@ -147,7 +151,7 @@ hold.
   accruing against the tenant's existing stored cap. npm tarball bytes are per-tenant (not `_public`) and
   resolve the PAT-derived tenant's effective per-tier cap through the shared D1 selector before the
   post-buffer moat write; an absent or indeterminate selector remains `None` and therefore fail-closed,
-  never an unlimited bypass (`crates/corelink-container/src/routes/npm.rs:139-198`; `crates/corelink-container/src/routes/build.rs:465-484`).
+  never an unlimited bypass (`crates/corelink-container/src/routes/npm.rs:139-198`; `crates/corelink-container/src/routes/build.rs:509-528`).
 - OCI failed closed historically: the Worker strips `x-corelink-tenant-id` on the OCI pass-through, so
   the old header-based charge was always empty — a total $-ceiling bypass — until the gate was rekeyed
   on the verified bearer.
@@ -158,13 +162,13 @@ hold.
   reads":** the `$`-ceiling is charged on EVERY method INCLUDING reads and is fail-CLOSED (`402` over
   ceiling) — `docker pull` GET/HEAD of manifests/blobs is real billable R2-GET work, so the old
   read-path carve-out (PR #318) that let an authenticated tenant pull unlimited blobs without hitting
-  their ceiling is CLOSED (rt-nuclear cycle-2 #3) (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:295-307`).
+  their ceiling is CLOSED (rt-nuclear cycle-2 #3) (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:294-306`).
   Only the monthly **request-count** axis is fail-OPEN (it is an availability/SLO limiter, `429` over),
-  and it too now counts reads (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:308-319`). CF-2 also CORRECTED
+  and it too now counts reads (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:307-318`). CF-2 also CORRECTED
   the gate's source comments: the old `SECURITY-REVIEW` comment that read "the quota gate is fail-OPEN on
   reads" (a pre-cycle-2 carry-over) is gone — the comment now states the `$`-ceiling is charged fail-CLOSED
   on reads too and only the request-count axis is fail-OPEN, so the doc no longer contradicts the code
-  (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:257-265`).
+  (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:256-264`).
 
 # Citations
 1. `crates/corelink-container/src/routes/npm.rs:35-44` — npm public/private metadata split.
@@ -184,22 +188,22 @@ hold.
 15. `crates/corelink-container/src/routes/brew.rs:99-104` — fresh-row `None`-cap posture.
 16. `crates/corelink-container/src/routes/oci.rs:10-30` — OCI `.merge` (no tenant path segment) rationale.
 17. `crates/corelink-container/src/routes/oci.rs:34-45` — OCI two-leg `/token` HMAC bearer auth.
-18. `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:17-119` — OCI router (`.merge` mount). The router reads the dedup flag + loads the owner allowlist ONCE and SHARES both with the blob store and the resolver (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:95-96`), then conditionally builds an `UpstreamManifestResolver` and hands it to the adapter (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:107-118`, `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:102`): WP-G (M1) manifest upstream-on-miss, built ONLY when the boot flag `crate::public_flags::oci_upstream_on_miss()` is ON and the shared SSRF-safe upstream client builds, else `None`. Default OFF ⇒ the manifest handlers 404 a KV miss exactly as before (byte-identical). It shares the moat + manifest KV + fail-closed cap resolver; under WP-G M2 (`dedup` on) a by-digest resolve reads `_public` cross-tenant and an allowlisted ROOT closure-promotes into `_public` (see cite 32) — so, unlike M1, the resolver IS a `_public` writer, gated to owner-allowlisted roots.
+18. `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:17-119` — OCI router (`.merge` mount). The router reads the dedup flag + loads the owner allowlist ONCE and SHARES both with the blob store and the resolver (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:94-95`), then conditionally builds an `UpstreamManifestResolver` and hands it to the adapter (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:106-117`, `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:102`): WP-G (M1) manifest upstream-on-miss, built ONLY when the boot flag `crate::public_flags::oci_upstream_on_miss()` is ON and the shared SSRF-safe upstream client builds, else `None`. Default OFF ⇒ the manifest handlers 404 a KV miss exactly as before (byte-identical). It shares the moat + manifest KV + fail-closed cap resolver; under WP-G M2 (`dedup` on) a by-digest resolve reads `_public` cross-tenant and an allowlisted ROOT closure-promotes into `_public` (see cite 32) — so, unlike M1, the resolver IS a `_public` writer, gated to owner-allowlisted roots.
 19. `crates/corelink-container/src/routes/oci.rs:19-30` — why stripping the first segment would corrupt the repo.
-20. `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:266-322` — `oci_quota_gate`: the `$`-ceiling charged on EVERY method incl. reads (fail-CLOSED `402`) + the request-count axis (fail-OPEN `429`); both count GET/HEAD pulls. The previous write-only `$`-ceiling carve-out (PR #318) is closed (rt-nuclear cycle-2 #3); CF-2 corrected the doc/body comments to match.
-21. `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:243-255` — `oci_bearer_tenant` (verify HMAC bearer → recover tenant); used by `oci_quota_gate` at `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:303-307` — cost attribution keyed on the verified bearer, not a header.
+20. `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:265-321` — `oci_quota_gate`: the `$`-ceiling charged on EVERY method incl. reads (fail-CLOSED `402`) + the request-count axis (fail-OPEN `429`); both count GET/HEAD pulls. The previous write-only `$`-ceiling carve-out (PR #318) is closed (rt-nuclear cycle-2 #3); CF-2 corrected the doc/body comments to match.
+21. `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:242-254` — `oci_bearer_tenant` (verify HMAC bearer → recover tenant); used by `oci_quota_gate` at `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:302-306` — cost attribution keyed on the verified bearer, not a header.
 22. `crates/corelink-container/src/routes/pip.rs:116-119` — pip wheels dedup cross-tenant under `PUBLIC_NAMESPACE`.
 23. `crates/corelink-container/src/routes/brew.rs:86-96` — brew bottles dedup cross-tenant under `PUBLIC_NAMESPACE`.
 24. `crates/corelink-container/src/routes/npm.rs:149-177` — `NpmMoatStore` get/put namespace npm tarball BYTES per-tenant (cross-tenant dedup is a tracked enhancement).
 25. `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:225-234` — `OciMoatStore::routes_to_public` = the `dedup && is_allowlisted` predicate that gates the WRITE path (`finalize_upload`); M2's read path (`get_blob`) instead reads `_public` by existence under the `dedup` flag (cite 28).
-26. `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:95-96` — the router reads the boot `dedup` flag (`public_flags::oci_public_dedup_enabled()`) and loads the baked allowlist fail-closed (malformed → deny-all via `unwrap_or_default()`) ONCE, then passes both to `OciMoatStore::with_allowlist` (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:120-124`); `OciMoatStore::new` is now `#[cfg(test)]`.
-27. `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:603-614` — `finalize_upload` routes an allowlisted digest to `PUBLIC_NAMESPACE` (uncapped `Some(0)`), else per-tenant with the resolved cap.
-28. `crates/corelink-container/src/routes/oci/b126_m2_impl_01.rs:657-672` — WP-G M2: `get_blob` reads the shared `_public` namespace FIRST by EXISTENCE (any blob key) when the `dedup` flag is on, then falls back to the per-tenant namespace on a miss (no upstream fetch — read pull-through promotion is the resolver's job). Safe because an OCI blob is `sha256:`-addressed, so a `_public` copy is byte-identical to any private copy; admission to `_public` stays WRITE-gated (cite 25) and revocation still filters via `MoatCache::get`'s `public_blocklist`.
+26. `crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:94-95` — the router reads the boot `dedup` flag (`public_flags::oci_public_dedup_enabled()`) and loads the baked allowlist fail-closed (malformed → deny-all via `unwrap_or_default()`) ONCE, then passes both to `OciMoatStore::with_allowlist` (`crates/corelink-container/src/routes/oci/b126_m2_impl_02.rs:119-123`); `OciMoatStore::new` is now `#[cfg(test)]`.
+27. `crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs:256-330` — `finalize_upload` routes an allowlisted digest to `PUBLIC_NAMESPACE` (uncapped `Some(0)`), else per-tenant with the resolved cap.
+28. `crates/corelink-container/src/routes/oci/b126_m2_impl_01_part2.rs:351-392` — WP-G M2: `get_blob` reads the shared `_public` namespace FIRST by EXISTENCE (any blob key) when the `dedup` flag is on, then falls back to the per-tenant namespace on a miss (no upstream fetch — read pull-through promotion is the resolver's job). Safe because an OCI blob is `sha256:`-addressed, so a `_public` copy is byte-identical to any private copy; admission to `_public` stays WRITE-gated (cite 25) and revocation still filters via `MoatCache::get`'s `public_blocklist`.
 29. `crates/corelink-container/src/oci_cap.rs:63-82` — `tier_to_cap_bytes`: container-side port of the Worker `QUOTAS` per-tier storage cap for the OCI `/token` mint (unknown tier → `free`, never unlimited).
 30. `crates/corelink-container/src/public_base_allowlist.rs:55-56` — `PublicBaseAllowlist::from_baked_manifest` loads + validates the container-baked owner-curated allowlist (WP-G M3: 6 active pins).
 30b. `crates/corelink-container/src/public_base_allowlist.manifest:96` — the alpine WP-E rootfs LAYER blob pin; `crates/corelink-container/src/public_base_allowlist.manifest:99-103` — the 5 base-image multi-arch INDEX digests (alpine/debian12/ubuntu24.04/node22-slim/python3.12-slim) consumed by the WP-G M2 closure-promote. 6 active pins total.
 30c. `crates/corelink-container/src/public_base_allowlist.rs:166` — the baked test `baked_manifest_has_m3_pins_active`; `crates/corelink-container/src/public_base_allowlist.rs:173-178` — asserts `len() == 6`.
 30d. `wrangler.toml:765` (`OCI_PUBLIC_DEDUP_ENABLED = "1"`) + `wrangler.toml:766` (`OCI_UPSTREAM_ON_MISS = "1"`) — both keystone flags active in prod (all 5 prod env blocks); M3 activation.
 31. `crates/corelink-container/src/public_base_allowlist.rs:87-88` — `is_allowlisted(digest)` membership test the increment-6 `_public` router gates on.
-32. `crates/corelink-container/src/routes/public_pullthrough/part-00.rs:652` — `UpstreamManifestResolver::resolve_on_miss` (impl `ManifestResolver`): the OCI manifest+blob upstream-on-miss resolver wired conditionally into the router (cite 18). Rate-limited per-tenant, single-flight coalesced, and digest-verified before caching (`crates/corelink-container/src/routes/public_pullthrough/part-00.rs:721-725`) — a manifest that fails `verify_against_bytes` is dropped (`Ok(None)`), never persisted; every step fail-opens to `Ok(None)` so the handler 404s the miss. Constructed by `UpstreamManifestResolver::new` (`crates/corelink-container/src/routes/public_pullthrough/part-00.rs:192-198`), which returns `None` when the fixed-upstream client cannot be built (flag then inert). Reuses the ONE audited SSRF/token client shared with the `_public` mirror. Under WP-G M2 (`dedup` on), a by-DIGEST reference reads `_public` by existence first (`crates/corelink-container/src/routes/public_pullthrough/part-00.rs:675-698`) and, when the digest is an allowlisted ROOT, promotes its full transitive closure into `_public` (`promote_public_closure`) — so this path IS a `_public` writer, but ONLY for owner-allowlisted roots; every `_public` write is digest-verified fail-closed and a TAG reference never reads or writes `_public`.
+32. `crates/corelink-container/src/routes/public_pullthrough/part-00-01.rs:230-322` — `UpstreamManifestResolver::resolve_on_miss` (impl `ManifestResolver`): the OCI manifest+blob upstream-on-miss resolver wired conditionally into the router (cite 18). Rate-limited per-tenant, single-flight coalesced, and digest-verified before caching (`crates/corelink-container/src/routes/public_pullthrough/part-00-01.rs:230-322`) — a manifest that fails `verify_against_bytes` is dropped (`Ok(None)`), never persisted; every step fail-opens to `Ok(None)` so the handler 404s the miss. Constructed by `UpstreamManifestResolver::new` (`crates/corelink-container/src/routes/public_pullthrough/part-00.rs:192-198`), which returns `None` when the fixed-upstream client cannot be built (flag then inert). Reuses the ONE audited SSRF/token client shared with the `_public` mirror. Under WP-G M2 (`dedup` on), a by-DIGEST reference reads `_public` by existence first (`crates/corelink-container/src/routes/public_pullthrough/part-00-01.rs:230-286`) and, when the digest is an allowlisted ROOT, promotes its full transitive closure into `_public` (`promote_public_closure`) — so this path IS a `_public` writer, but ONLY for owner-allowlisted roots; every `_public` write is digest-verified fail-closed and a TAG reference never reads or writes `_public`.
 32. `crates/corelink-container/src/public_base_allowlist.rs:108` — `validate_digest` fail-closes on any non-`sha256:` entry (tags BANNED — digest-pinned trust root).

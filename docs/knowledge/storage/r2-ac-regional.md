@@ -8,11 +8,11 @@ source_files:
   - "crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs"
   - "crates/corelink-container/src/routes/ac/part-00.rs"
 source_blobs:
-  - "crates/corelink-region/src/region.rs@47b01e523ed5e5c57425454eaf67bbe1020511e8"
-  - "crates/corelink-region/src/r2_crr.rs@0067b05ece7e5b5f190d391ceeff6aee804ba514"
+  - "crates/corelink-region/src/region.rs@6fbe2220d22d66f6c07207800db0f2dbca21cd1b"
+  - "crates/corelink-region/src/r2_crr.rs@d1ed969c08fd2183f9a7c8d65db26c66fdff0e2f"
   - "crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs@fce57606650b9a03ee57ae9ad84cf4637affb6a9"
-  - "crates/corelink-container/src/routes/ac/part-00.rs@80864cc770f76f6a66647c9772d1491fb949ddf5"
-checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
+  - "crates/corelink-container/src/routes/ac/part-00.rs@aad0aa5291c91feb2ac73b5b8efe3531fc187c74"
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "action-cache", "region", "residency"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -56,7 +56,7 @@ durable tier behind the [Action Cache surface](/surfaces/action-cache.md).
    endpoint. This closes the pre-2026-08-18 bug that swept hardcoded names and NEVER listed the EU
    `corelink-ac-eu` (a GDPR Art.17 EU false-completion).
 4. The live AC route resolves its bucket + region from env, defaulting to `corelink-ac-iad` / `iad`
-   (`crates/corelink-container/src/routes/ac/part-00.rs:363-364`).
+   (`crates/corelink-container/src/routes/ac/part-00.rs:398-399`).
 5. The region's uppercase R2 `locationHint` (`crates/corelink-region/src/region.rs:44-53`) requests
    placement IN the hinted region WHERE it is set — but this only pins placement to the extent the
    deployed buckets are genuinely per-region. Today only `corelink-ac-eu` is a real per-region (EU)
@@ -80,7 +80,7 @@ durable tier behind the [Action Cache surface](/surfaces/action-cache.md).
   `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:109-110`,
   `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:87`).
 - AC bucket + region are read through `env_or` defaults, so an absent/empty env never yields an empty
-  bucket name (`crates/corelink-container/src/routes/ac/part-00.rs:363-364`).
+  bucket name (`crates/corelink-container/src/routes/ac/part-00.rs:398-399`).
 - CRR lag has a 24h p99 ceiling, and a synthetic object still missing past 24h is a hard SEV-2 incident
   regardless of burn rate (`crates/corelink-region/src/r2_crr.rs:41-58`).
 
@@ -100,7 +100,7 @@ durable tier behind the [Action Cache surface](/surfaces/action-cache.md).
 7. `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:1-11` — AC stored as per-region R2 buckets whose name is the container's `R2_AC_BUCKET` (`corelink-ac-iad`/`-sam`/`-nrt`/`-syd` US, `corelink-ac-eu` EU).
 8. `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:67` — the AC sweep set is the single-source-of-truth `region_map::CAS_REGIONS` re-export (aliased `AC_REGIONS`), now a set of region key-PREFIXES swept within one bucket.
 9. `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:58`, `:87`, `:109-110` — the erase bucket is THIS container's OWN `R2_AC_BUCKET` (default `corelink-ac-iad`, same env the write path reads), stored as `write_bucket`.
-10. `crates/corelink-container/src/routes/ac/part-00.rs:363-364` — live AC route bucket/region env resolution (`corelink-ac-iad`/`iad`).
+10. `crates/corelink-container/src/routes/ac/part-00.rs:398-399` — live AC route bucket/region env resolution (`corelink-ac-iad`/`iad`).
 
 
 # Revalidation

@@ -12,7 +12,7 @@ source_blobs:
   - "crates/corelink-r2-multipart/src/object_key.rs@0be22a482b65ca7295595b54b8ced5270f4f18bb"
   - "crates/corelink-r2-multipart/src/in_memory.rs@2b43f349cf14b481b7f3b6a59345fb80d644ea08"
   - "crates/corelink-container/src/routes/dsr/adapter_r2_cas.rs@5ecdfa4c35a35aa415f3b4fe8ae2a5f83a8485cc"
-checkpoint_sha: "a65c7d7caed03adf00acd3a227dc20c4e857f7f0"
+checkpoint_sha: "648ecdccd229bdb5154b86843053c28b9cce9d36"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "multipart", "chunk", "manifest", "tenant-isolation"]
 timestamp: "2026-06-26T00:00:00Z"
