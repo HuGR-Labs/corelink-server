@@ -87,11 +87,16 @@ jobs:
     # Self-hosted fleet (zero hosted Actions spend). Pure stdlib python3 plus
     # `bash -n`; sub-minute, no toolchain, no network.
     # zero-hosted (WP-CI): python3 puro (baked na imagem da frota)
-    runs-on: corelink
+    runs-on: ubuntu-24.04
+    # Self-hosted fleet (zero hosted Actions spend). Pure stdlib python3 plus
+    # `bash -n`; sub-minute, no toolchain, no network.
+    # ubuntu-24.04 has python3 + bash baked in
     timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Self-test the checker before trusting its verdict
         shell: bash
