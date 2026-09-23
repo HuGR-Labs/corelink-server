@@ -4,8 +4,15 @@ on:
   pull_request:
     paths:
       - "infra/terraform/modules/audit-object-lock-aws/**"
+      - "crates/corelink-audit-chain/**"
+      - "crates/corelink-container/src/routes/dsr/adapter_r2_cas_legalhold.rs"
+      - "migrations/d1/0102_cas_retention.sql"
+      - "migrations/d1/0144_cas_retention_compliance_metadata.sql"
+      - "tests/test_s3_object_lock_migration.py"
+      - "Cargo.lock"
       - "docs/operator/aws-s3-object-lock-archive-provisioning.md"
       - ".github/workflows/aws-s3-object-lock-template.yml"
+      - ".github/workflows/aws-s3-object-lock-live-proof.yml"
   workflow_dispatch: {}
 
 permissions:
@@ -48,12 +55,68 @@ jobs:
           grep -F 'mode = "COMPLIANCE"' "$module"
           grep -F 'aws_s3_bucket_object_lock_configuration' "$module"
           grep -F 'aws_iam_role' "$module"
-          actions=$(grep -E '^[[:space:]]*"s3:[^"]+",?$' "$module" \
-            | sed -E 's/^[[:space:]]*"([^"]+)".*/\1/')
+          actions=$(grep -oE '"s3:[A-Z][A-Za-z]+"' "$module" \
+            | tr -d '"' \
+            | sort)
           expected=$(printf '%s\n' \
             's3:GetBucketObjectLockConfiguration' \
             's3:GetBucketLocation' \
             's3:GetObjectLegalHold' \
             's3:GetObjectRetention' \
-            's3:PutObject')
+            's3:PutObject' \
+            's3:PutObjectRetention' \
+            's3:PutObjectLegalHold' | sort)
           test "$actions" = "$expected"
+          grep -F 'variable = "s3:object-lock-mode"' "$module"
+          grep -F 'variable = "s3:object-lock-remaining-retention-days"' "$module"
+          grep -F 'values   = ["COMPLIANCE"]' "$module"
+          grep -F 'variable = "s3:object-lock-legal-hold"' "$module"
+          grep -F 'values   = ["ON"]' "$module"
+
+          docs=docs/operator/aws-s3-object-lock-archive-provisioning.md
+          if grep -nE '(^|[^[:digit:]])[[:digit:]]{12}([^[:digit:]]|$)' "$docs"; then
+            echo "AWS account identifiers must be redacted from operator docs" >&2
+            exit 1
+          fi
+
+          proof=.github/workflows/aws-s3-object-lock-live-proof.yml
+          grep -F 'workflow_dispatch:' "$proof"
+          grep -F "github.ref == 'refs/heads/main'" "$proof"
+          grep -F 'id-token: write' "$proof"
+          grep -F 'environment: s3-object-lock-live-proof' "$proof"
+          grep -F 'ref: main' "$proof"
+          grep -F 'AWS_EVENT_DATA_STORE_ID' "$proof"
+          grep -F "eventcategory = 'Data'" "$proof"
+          grep -F 'start-query' "$proof"
+          if grep -nF 'lookup-events' "$proof"; then
+            echo "LookupEvents cannot establish S3 data-event evidence" >&2
+            exit 1
+          fi
+          if grep -nE 'aws_access_key_id|aws_secret_access_key' "$proof"; then
+            echo "The protected probe workflow must not use static AWS credentials" >&2
+            exit 1
+          fi
+
+  adapter-conformance:
+    name: immutable archive adapter conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Assert the workspace-pinned toolchain
+        run: bash scripts/ci-assert-pinned-toolchain.sh
+
+      - name: Run the portable Object-Lock contract suite
+        run: cargo test -p corelink-audit-chain --lib object_lock_archive --locked
+
+      - name: Check AWS adapter delete-probe fail-closed cases
+        run: cargo test -p corelink-audit-chain --features aws-s3-object-lock --lib aws_s3_object_lock --locked
+
+      - name: Check CAS Compliance migration and Governance isolation
+        run: python3 tests/test_s3_object_lock_migration.py
+
+      - name: Compile the optional native AWS S3 adapter
+        run: cargo check -p corelink-audit-chain --features aws-s3-object-lock --locked
