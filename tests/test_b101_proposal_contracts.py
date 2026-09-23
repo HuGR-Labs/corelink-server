@@ -49,6 +49,33 @@ def test_global_guard_accepts_later_shared_done_verifier() -> None:
     assert guard.verify(ROOT, "B-231") == {"records": 1, "unfinished": 0, "done": 1}
 
 
+def test_b210_retirement_contract_rejects_stale_proposal_next_action(tmp_path: Path) -> None:
+    root = fixture_tree(tmp_path)
+    verifier = root / "scripts/verify_b210_retirement.py"
+    verifier.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / "scripts/verify_b210_retirement.py", verifier)
+    assert guard.verify(root, "B-210") == {"records": 1, "unfinished": 0, "done": 1}
+
+    backlog_path = root / "BACKLOG.md"
+    backlog = backlog_path.read_text(encoding="utf-8")
+    old_next_action = 'next-action: "Keep B-210 done while B-119 remains done and /admin/ops* remains absent; if a durable, securely bound approval surface is restored, re-open B-119 and B-210 together and re-audit SSR guard ordering before publishing any page."'
+    canonical_next_action = next(
+        proposal["next_action"]
+        for proposal in read_registry(root)["proposals"]
+        if proposal["id"] == "B-210"
+    )
+    assert backlog.count(old_next_action) == 1
+    backlog_path.write_text(
+        backlog.replace(old_next_action, f"next-action: {json.dumps(canonical_next_action)}", 1),
+        encoding="utf-8",
+    )
+    with pytest.raises(guard.ProposalVerificationError, match="missing or mismatched next_action"):
+        guard.verify(root, "B-210")
+
+    backlog_path.write_text(backlog, encoding="utf-8")
+    assert guard.verify(root, "B-210") == {"records": 1, "unfinished": 0, "done": 1}
+
+
 def test_open_state_rule_set_is_dense_and_executable() -> None:
     assert set(open_guard.RULES) == {f"B-{number}" for number in range(171, 244)}
     assert open_guard.verify(ROOT) == {"records": 2, "unfinished": 2}

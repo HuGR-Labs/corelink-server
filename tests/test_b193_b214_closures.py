@@ -14,7 +14,7 @@ SPEC.loader.exec_module(gate)
 
 
 def test_all_closures_are_green_and_mutations_are_red() -> None:
-    assert gate.verify(ROOT) == {"closed": 22, "mutations": 22}
+    assert gate.verify(ROOT) == {"closed": 21, "mutations": 21}
 
 
 @pytest.mark.parametrize("identifier", tuple(gate.CONTRACTS))

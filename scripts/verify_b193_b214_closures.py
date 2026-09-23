@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-IDS = tuple(f"B-{n}" for n in range(193, 215))
+IDS = tuple(f"B-{n}" for n in range(193, 215) if n != 210)
 
 
 class ClosureError(ValueError):
@@ -41,7 +41,6 @@ CONTRACTS: dict[str, tuple[str, tuple[str, ...], str]] = {
     "B-207": ("worker/src/durable_object_start.ts", ("containerStatus: \\\"starting\\\"", "waitForContainerReady", "startContainer", "startingAt_ms"), "if (ctx.getLifecycleState().containerStatus === \"starting\")"),
     "B-208": ("apps/admin-ui/src/lib/consent-api.ts", (r"getToken\?:", "authHeaders", r"authorization: `Bearer \$\{token\}`", "headers:"), "authorization: `Bearer ${token}`"),
     "B-209": ("apps/admin-ui/src/app/[locale]/onboarding/actions.ts", ("getSessionToken", "configureTenantAction", "\\\"/v1/onboarding/configure\\\"", "\\{ region: input.region, plan: input.plan \\}", "\\{ token \\}"), "\"/v1/onboarding/configure\""),
-    "B-210": ("apps/admin-ui/src/app/[locale]/(authenticated)/admin/ops/page.tsx", ("GuardedOpsContent", r"return \(\s*<RbacGuard>", "adminClient.listOps"), "<RbacGuard>"),
     "B-211": ("apps/admin-ui/src/app/[locale]/(authenticated)/customer/audit/visualization/layout.tsx", ("CustomerGuard", "return <CustomerGuard>", "children"), "return <CustomerGuard>"),
     "B-212": ("apps/admin-ui/src/middleware.ts", ("!publishableKey || !secretKey", "NODE_ENV.*production", "NextResponse.redirect", "isSelfGatedPath"), "(!publishableKey || !secretKey)"),
     "B-213": ("apps/admin-ui/src/lib/route-matcher.ts", ("barePrefix", "normalized === barePrefix", r"normalized\.startsWith\(`\$\{barePrefix\}/`\)", "isPublicPath"), "normalized.startsWith(`${barePrefix}/`)"),
@@ -119,31 +118,6 @@ def _check(identifier: str, root: Path, override: str | None = None) -> None:
     if identifier == "B-202":
         if "validate_cas_bucket_for_region" not in _read(root, "crates/corelink-container/src/routes/cas_erase/b126_m2_impl_02.rs"):
             raise ClosureError("B-202: bucket validation is not wired in CAS erase")
-    if identifier == "B-210":
-        pages = (
-            artifact,
-            "apps/admin-ui/src/app/[locale]/(authenticated)/admin/audit/[event_id]/page.tsx",
-            "apps/admin-ui/src/app/[locale]/(authenticated)/admin/ops/[op_id]/page.tsx",
-            "apps/admin-ui/src/app/[locale]/(authenticated)/admin/tenants/[tenant_id]/page.tsx",
-        )
-        for rel in pages:
-            page = _read(root, rel)
-            body = page[page.find("export default") :]
-            nested = body.find("async function Guarded")
-            if nested < 0:
-                raise ClosureError(f"B-210: privileged work precedes RbacGuard in {rel}")
-            pre_guard_work = min((i for i in (body.find("adminClient."), body.find("getAuthContext")) if i >= 0), default=-1)
-            if 0 <= pre_guard_work < nested or "RbacGuard" not in body[nested:]:
-                raise ClosureError(f"B-210: privileged work precedes RbacGuard in {rel}")
-        event_page = _read(root, "apps/admin-ui/src/app/[locale]/(authenticated)/admin/audit/[event_id]/page.tsx")
-        if event_page.find("async function loadEvent") > event_page.find("export default"):
-            raise ClosureError("B-210: loadEvent helper is not defined at the server boundary")
-        event_body = event_page[event_page.find("export default") :]
-        if event_body.find("const event = await loadEvent") < event_body.find("async function Guarded"):
-            raise ClosureError("B-210: loadEvent executes before the guarded content")
-        order_test = _read(root, "apps/admin-ui/tests/admin-ssr-guard-order.test.ts")
-        if "loadEvent" not in order_test or "Guarded" not in order_test or "RbacGuard" not in order_test:
-            raise ClosureError("B-210: focal SSR/Rbac order test is missing")
     if identifier == "B-206":
         alarm_tests = _read(root, "worker/tests/durable_object_part2.test.ts")
         for marker in (
