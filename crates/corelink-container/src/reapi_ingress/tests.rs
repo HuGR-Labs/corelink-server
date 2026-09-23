@@ -314,3 +314,385 @@ fn ingress_for_test(
         admission_calls,
     }
 }
+
+#[derive(Debug)]
+struct CasReadSpy {
+    result: Result<CasReadResponse, corelink_handler_cas::CasHandlerError>,
+    calls: Arc<std::sync::Mutex<Vec<CasReadRequest>>>,
+}
+
+impl CasReadHandler for CasReadSpy {
+    fn read(
+        &self,
+        request: CasReadRequest,
+    ) -> Result<CasReadResponse, corelink_handler_cas::CasHandlerError> {
+        self.calls.lock().unwrap().push(request);
+        self.result.clone()
+    }
+}
+
+#[derive(Debug)]
+struct CasWriteSpy {
+    calls: Arc<std::sync::Mutex<Vec<CasWriteRequest>>>,
+}
+
+impl CasWriteHandler for CasWriteSpy {
+    fn write(
+        &self,
+        request: CasWriteRequest,
+    ) -> Result<CasWriteResponse, corelink_handler_cas::CasHandlerError> {
+        let hash = request.claimed_hash.clone();
+        self.calls.lock().unwrap().push(request);
+        Ok(CasWriteResponse::new(hash, true))
+    }
+}
+
+#[derive(Debug)]
+struct UnusedAc;
+
+impl AcLookupHandler for UnusedAc {
+    fn lookup(
+        &self,
+        _request: AcLookupRequest,
+    ) -> Result<AcLookupResponse, corelink_handler_ac::AcHandlerError> {
+        panic!("CAS tests must not access ActionCache")
+    }
+}
+
+impl AcUpdateHandler for UnusedAc {
+    fn update(
+        &self,
+        _request: AcUpdateRequest,
+    ) -> Result<AcUpdateResponse, corelink_handler_ac::AcHandlerError> {
+        panic!("CAS tests must not access ActionCache")
+    }
+}
+
+fn cas_ingress_for_test(
+    auth: Result<(String, bool), AuthenticationFailure>,
+    admission: Result<(), AdmissionFailure>,
+    read_result: Result<CasReadResponse, corelink_handler_cas::CasHandlerError>,
+) -> (
+    ReapiIngress,
+    Arc<std::sync::Mutex<Vec<CasReadRequest>>>,
+    Arc<std::sync::Mutex<Vec<CasWriteRequest>>>,
+) {
+    let read_calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let write_calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let admission_calls = Arc::new(AtomicUsize::new(0));
+    let ingress = ReapiIngress {
+        authenticator: Arc::new(TestAuth(auth)),
+        admission: Arc::new(TestAdmission {
+            result: admission,
+            calls: admission_calls.clone(),
+        }),
+        cas_read: Arc::new(CasReadSpy {
+            result: read_result,
+            calls: read_calls.clone(),
+        }),
+        cas_write: Arc::new(CasWriteSpy {
+            calls: write_calls.clone(),
+        }),
+        ac_lookup: Arc::new(UnusedAc),
+        ac_update: Arc::new(UnusedAc),
+        cap_resolver: Arc::new(TestCapResolver),
+        admission_calls,
+    };
+    (ingress, read_calls, write_calls)
+}
+
+fn cas_metadata() -> tonic::metadata::MetadataMap {
+    let mut metadata = tonic::metadata::MetadataMap::new();
+    metadata.insert("authorization", "Bearer test-pat".parse().unwrap());
+    metadata
+}
+
+fn cas_digest(bytes: &[u8]) -> corelink_reapi::proto::reapi::Digest {
+    corelink_reapi::proto::reapi::Digest {
+        hash: sha256_digest(bytes),
+        size_bytes: i64::try_from(bytes.len()).unwrap(),
+    }
+}
+
+#[tokio::test]
+async fn cas_unary_writes_use_the_decorated_sha256_handler_once() {
+    use crate::reapi_cas::CasUnaryService;
+    use corelink_reapi::proto::reapi::content_addressable_storage_server::ContentAddressableStorage;
+    use corelink_reapi::proto::reapi::{BatchUpdateBlobsRequest, DigestFunction};
+
+    let bytes = b"CAS unary write".to_vec();
+    let digest = cas_digest(&bytes);
+    let (ingress, _reads, writes) = cas_ingress_for_test(
+        Ok(("tenant-a".into(), true)),
+        Ok(()),
+        Err(corelink_handler_cas::CasHandlerError::NotFound {
+            tenant: "tenant-a".into(),
+            hash: digest.hash.clone(),
+        }),
+    );
+    let mut request = tonic::Request::new(BatchUpdateBlobsRequest {
+        instance_name: "tenant-a".into(),
+        requests: vec![BatchUpdateBlobsRequest::Request {
+            digest: Some(digest),
+            data: bytes,
+            compressor: 0,
+        }],
+        digest_function: DigestFunction::Sha256 as i32,
+    });
+    *request.metadata_mut() = cas_metadata();
+
+    let response = CasUnaryService::new(ingress)
+        .batch_update_blobs(request)
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(response.responses.len(), 1);
+    assert_eq!(response.responses[0].status.as_ref().unwrap().code, Code::Ok as i32);
+    let writes = writes.lock().unwrap();
+    assert_eq!(writes.len(), 1);
+    assert_eq!(writes[0].tenant, "tenant-a");
+    assert_eq!(writes[0].caller_tenant, "tenant-a");
+    assert_eq!(writes[0].algo, DigestAlgo::Sha256);
+}
+
+#[tokio::test]
+async fn cas_unary_denials_and_invalid_entries_never_reach_storage() {
+    use crate::reapi_cas::CasUnaryService;
+    use corelink_reapi::proto::reapi::content_addressable_storage_server::ContentAddressableStorage;
+    use corelink_reapi::proto::reapi::{BatchUpdateBlobsRequest, DigestFunction};
+
+    let bytes = b"denied".to_vec();
+    let digest = cas_digest(&bytes);
+    let (ingress, _reads, writes) = cas_ingress_for_test(
+        Ok(("tenant-a".into(), false)),
+        Ok(()),
+        Err(corelink_handler_cas::CasHandlerError::NotFound {
+            tenant: "tenant-a".into(),
+            hash: digest.hash.clone(),
+        }),
+    );
+    let mut denied = tonic::Request::new(BatchUpdateBlobsRequest {
+        instance_name: "tenant-a".into(),
+        requests: vec![BatchUpdateBlobsRequest::Request {
+            digest: Some(digest.clone()),
+            data: bytes.clone(),
+            compressor: 0,
+        }],
+        digest_function: DigestFunction::Sha256 as i32,
+    });
+    *denied.metadata_mut() = cas_metadata();
+    assert_eq!(
+        CasUnaryService::new(ingress)
+            .batch_update_blobs(denied)
+            .await
+            .unwrap_err()
+            .code(),
+        Code::PermissionDenied
+    );
+    assert!(writes.lock().unwrap().is_empty());
+
+    let (ingress, _reads, writes) = cas_ingress_for_test(
+        Ok(("tenant-a".into(), true)),
+        Ok(()),
+        Err(corelink_handler_cas::CasHandlerError::NotFound {
+            tenant: "tenant-a".into(),
+            hash: digest.hash.clone(),
+        }),
+    );
+    let mut invalid = tonic::Request::new(BatchUpdateBlobsRequest {
+        instance_name: "tenant-a".into(),
+        requests: vec![
+            BatchUpdateBlobsRequest::Request {
+                digest: Some(corelink_reapi::proto::reapi::Digest {
+                    hash: "0".repeat(64),
+                    size_bytes: i64::try_from(bytes.len()).unwrap(),
+                }),
+                data: bytes.clone(),
+                compressor: 0,
+            },
+            BatchUpdateBlobsRequest::Request {
+                digest: Some(digest.clone()),
+                data: bytes.clone(),
+                compressor: 1,
+            },
+            BatchUpdateBlobsRequest::Request {
+                digest: Some(digest.clone()),
+                data: bytes,
+                compressor: 0,
+            },
+        ],
+        digest_function: DigestFunction::Sha256 as i32,
+    });
+    *invalid.metadata_mut() = cas_metadata();
+    let statuses = CasUnaryService::new(ingress)
+        .batch_update_blobs(invalid)
+        .await
+        .unwrap()
+        .into_inner()
+        .responses;
+    assert!(statuses
+        .iter()
+        .all(|entry| entry.status.as_ref().unwrap().code == Code::InvalidArgument as i32));
+    assert!(writes.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn cas_unary_read_masks_cross_tenant_and_fails_closed_for_backend_faults() {
+    use crate::reapi_cas::CasUnaryService;
+    use corelink_reapi::proto::reapi::content_addressable_storage_server::ContentAddressableStorage;
+    use corelink_reapi::proto::reapi::{BatchReadBlobsRequest, DigestFunction, FindMissingBlobsRequest};
+
+    let digest = cas_digest(b"read");
+    let cross_tenant = corelink_handler_cas::CasHandlerError::CrossTenantDenied {
+        caller: "tenant-a".into(),
+        requested_tenant: "tenant-b".into(),
+    };
+    let (ingress, reads, _writes) = cas_ingress_for_test(
+        Ok(("tenant-a".into(), true)),
+        Ok(()),
+        Err(cross_tenant),
+    );
+    let mut read = tonic::Request::new(BatchReadBlobsRequest {
+        instance_name: "tenant-a".into(),
+        digests: vec![digest.clone()],
+        acceptable_compressors: vec![0],
+        digest_function: DigestFunction::Sha256 as i32,
+    });
+    *read.metadata_mut() = cas_metadata();
+    let response = CasUnaryService::new(ingress.clone())
+        .batch_read_blobs(read)
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(response.responses[0].status.as_ref().unwrap().code, Code::NotFound as i32);
+    assert_eq!(reads.lock().unwrap().len(), 1);
+
+    let mut missing = tonic::Request::new(FindMissingBlobsRequest {
+        instance_name: "tenant-a".into(),
+        blob_digests: vec![digest.clone()],
+        digest_function: DigestFunction::Sha256 as i32,
+    });
+    *missing.metadata_mut() = cas_metadata();
+    assert_eq!(
+        CasUnaryService::new(ingress)
+            .find_missing_blobs(missing)
+            .await
+            .unwrap()
+            .into_inner()
+            .missing_blob_digests,
+        vec![digest]
+    );
+
+    let (ingress, _reads, _writes) = cas_ingress_for_test(
+        Ok(("tenant-a".into(), true)),
+        Ok(()),
+        Err(corelink_handler_cas::CasHandlerError::AuditFailed("D1 unavailable".into())),
+    );
+    let mut backend = tonic::Request::new(FindMissingBlobsRequest {
+        instance_name: "tenant-a".into(),
+        blob_digests: vec![cas_digest(b"read")],
+        digest_function: DigestFunction::Sha256 as i32,
+    });
+    *backend.metadata_mut() = cas_metadata();
+    assert_eq!(
+        CasUnaryService::new(ingress)
+            .find_missing_blobs(backend)
+            .await
+            .unwrap_err()
+            .code(),
+        Code::Unavailable
+    );
+}
+
+#[tokio::test]
+async fn cas_unary_rejects_instance_quota_and_declared_size_limits_before_storage() {
+    use crate::reapi_cas::CasUnaryService;
+    use corelink_reapi::proto::reapi::content_addressable_storage_server::ContentAddressableStorage;
+    use corelink_reapi::proto::reapi::{BatchUpdateBlobsRequest, Digest, DigestFunction};
+
+    let bytes = b"limits".to_vec();
+    let digest = cas_digest(&bytes);
+    let (ingress, _reads, writes) = cas_ingress_for_test(
+        Ok(("tenant-a".into(), true)),
+        Err(AdmissionFailure::Exhausted),
+        Err(corelink_handler_cas::CasHandlerError::NotFound {
+            tenant: "tenant-a".into(),
+            hash: digest.hash.clone(),
+        }),
+    );
+    let mut quota = tonic::Request::new(BatchUpdateBlobsRequest {
+        instance_name: "tenant-a".into(),
+        requests: vec![BatchUpdateBlobsRequest::Request {
+            digest: Some(digest.clone()),
+            data: bytes.clone(),
+            compressor: 0,
+        }],
+        digest_function: DigestFunction::Sha256 as i32,
+    });
+    *quota.metadata_mut() = cas_metadata();
+    assert_eq!(
+        CasUnaryService::new(ingress)
+            .batch_update_blobs(quota)
+            .await
+            .unwrap_err()
+            .code(),
+        Code::ResourceExhausted
+    );
+    assert!(writes.lock().unwrap().is_empty());
+
+    let (ingress, _reads, writes) = cas_ingress_for_test(
+        Ok(("tenant-a".into(), true)),
+        Ok(()),
+        Err(corelink_handler_cas::CasHandlerError::NotFound {
+            tenant: "tenant-a".into(),
+            hash: digest.hash.clone(),
+        }),
+    );
+    let mut invalid = tonic::Request::new(BatchUpdateBlobsRequest {
+        instance_name: "tenant-b".into(),
+        requests: vec![BatchUpdateBlobsRequest::Request {
+            digest: Some(Digest {
+                hash: digest.hash,
+                size_bytes: corelink_reapi::MAX_CAS_BLOB_SIZE_BYTES + 1,
+            }),
+            data: bytes,
+            compressor: 0,
+        }],
+        digest_function: DigestFunction::Sha256 as i32,
+    });
+    *invalid.metadata_mut() = cas_metadata();
+    assert_eq!(
+        CasUnaryService::new(ingress.clone())
+            .batch_update_blobs(invalid)
+            .await
+            .unwrap_err()
+            .code(),
+        Code::PermissionDenied
+    );
+    assert!(writes.lock().unwrap().is_empty());
+
+    let mut oversized = tonic::Request::new(BatchUpdateBlobsRequest {
+        instance_name: "tenant-a".into(),
+        requests: vec![BatchUpdateBlobsRequest::Request {
+            digest: Some(Digest {
+                hash: cas_digest(b"limits").hash,
+                size_bytes: corelink_reapi::MAX_CAS_BLOB_SIZE_BYTES + 1,
+            }),
+            data: b"limits".to_vec(),
+            compressor: 0,
+        }],
+        digest_function: DigestFunction::Sha256 as i32,
+    });
+    *oversized.metadata_mut() = cas_metadata();
+    let responses = CasUnaryService::new(ingress)
+        .batch_update_blobs(oversized)
+        .await
+        .unwrap()
+        .into_inner()
+        .responses;
+    assert_eq!(
+        responses[0].status.as_ref().unwrap().code,
+        Code::ResourceExhausted as i32
+    );
+    assert!(writes.lock().unwrap().is_empty());
+}

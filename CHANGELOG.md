@@ -328,6 +328,13 @@ Each entry cross-references:
 
 ### Added
 
+- **REAPI CAS unary contract (#2178).** Added unmounted, authenticated
+  `FindMissingBlobs`, `BatchReadBlobs`, and `BatchUpdateBlobs` service logic
+  over the shared decorated cache handlers. The focused hosted contract covers
+  authorization, quota denial, digest and size rejection, cross-tenant miss
+  masking, and backend fail-closed behavior; public gRPC composition remains
+  gated on #2176 and the remaining REAPI service contracts.
+
 - **B-068 real integration executor wiring.** Added the protected,
   `workflow_dispatch`-only `real-ignored-harnesses.yml` lane and its explicit
   D1/R2/Stripe/Neon test allow-list. Credential presence, explicit
