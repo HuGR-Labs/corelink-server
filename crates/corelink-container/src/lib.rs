@@ -185,6 +185,8 @@ pub mod public_flags;
 /// rejects (402 over-ceiling / 503 fail-CLOSED). Body/`Content-Type` only —
 /// status codes and quota LOGIC are unchanged.
 pub mod quota_error;
+/// Unmounted authenticated REAPI ByteStream service contract.
+pub mod reapi_bytestream;
 /// Authenticated, tenant-scoped ingress kernel for future REAPI gRPC services.
 pub mod reapi_ingress;
 pub mod request_count;
