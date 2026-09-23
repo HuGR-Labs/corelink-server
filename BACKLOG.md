@@ -12488,13 +12488,6 @@ verify-means: |
   servidor durante a rajada, **SEM filtro**. `wrangler tail --search` retorna zero com a
   linha presente, então filtrar aqui esconde exatamente a evidência.
 
-  O contrato hospedado de reprodução está em
-  `.github/workflows/b103-cargo-write-reproducer.yml`: o job credentialless de PR fixa
-  a cobertura do instrumento; a dispatch protegida captura três PUTs quentes, 4/16/64/220
-  PUTs independentes e sequências WebDAV até 64, junto com um Wrangler tail sem filtro
-  na mesma janela. O artefato mantém identidades de resposta e erro redigidas. Esse contrato
-  gera o recibo para diagnóstico, mas não prova uma causa nem fecha a aceitação de runtime.
-
   Ordem correta de ataque: fechar [B-107] e [B-108] primeiro. Se a serialização for o
   `ostore` ou o `qbatch` disputando a mesma linha de tenant, ela desaparece junto e este
   item fecha sem conserto próprio. Só se sobreviver aos dois é que merece investigação
