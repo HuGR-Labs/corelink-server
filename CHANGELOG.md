@@ -39,6 +39,9 @@ Each entry cross-references:
 - **Backlog trust-boundary fixtures refreshed.** Semantic stale-age coverage now
   uses isolated fixture data; CLI import coverage matches fail-closed ledger exit.
 
+- **Docs a11y contract aligned.** Route-availability test now checks fail-closed
+  behavior without depending on `throw` formatting.
+
 - **B-139 secrets-drift workflow digest refreshed.** Structural trust-boundary
   pin now matches current reviewed workflow.
 
