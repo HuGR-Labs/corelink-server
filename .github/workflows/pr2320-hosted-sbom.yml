@@ -1,0 +1,56 @@
+name: PR 2320 hosted Rust SBOM generator
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/pr2320-hosted-sbom.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    name: Generate canonical Rust SBOM on GitHub-hosted Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout candidate tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install workspace-pinned Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: 1.91.1
+
+      - name: Install pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Generate canonical Cargo.lock SBOM
+        run: |
+          set -euo pipefail
+          sbom_venv="${RUNNER_TEMP}/corelink-sbom-venv"
+          python3 -m venv "$sbom_venv"
+          sbom_python="${sbom_venv}/bin/python"
+          "$sbom_python" -m pip install \
+            --quiet \
+            --disable-pip-version-check \
+            --no-input \
+            --require-hashes \
+            --only-binary=:all: \
+            --no-deps \
+            -r requirements-sbom.txt
+          "$sbom_python" tests/verify_rust_sbom.py --write
+          test -s .sbom/cyclonedx-rust.json
+
+      - name: Upload generated canonical SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr2320-canonical-rust-sbom
+          path: .sbom/cyclonedx-rust.json
+          if-no-files-found: error
+          retention-days: 7
