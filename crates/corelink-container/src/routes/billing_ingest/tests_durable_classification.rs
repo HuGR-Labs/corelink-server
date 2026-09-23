@@ -148,14 +148,14 @@ async fn durable_classification_matrix() {
 
     let lost_ack = Fixture::new();
     let store = lost_ack.store();
-    let record = record(7200, &hex64(0x35));
+    let lost_ack_record = record(7200, &hex64(0x35));
     lost_ack.lose_next_insert_ack();
     assert!(
-        store.stage(&record).await.is_err(),
+        store.stage(&lost_ack_record).await.is_err(),
         "a lost post-commit ACK leaves the caller uncertain"
     );
     assert_eq!(
-        store.stage(&record).await,
+        store.stage(&lost_ack_record).await,
         Ok(StageOutcome::Deduped),
         "a retry after the lost ACK must classify the durable winner"
     );
