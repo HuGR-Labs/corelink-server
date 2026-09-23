@@ -64,7 +64,7 @@ STRIPE_API_KEY=rk_live_… scripts/ops/stripe-reconcile-webhook-events.sh --yes
 
 The script:
 - prints the resolved Stripe account identity (eyeball it before applying);
-- lists every `*.humangr.com` destination — **both** v1 webhook endpoints
+- exhausts pagination and lists every `*.humangr.com` destination — **both** v1 webhook endpoints
   (`/v1/webhook_endpoints`) **and** v2 event destinations
   (`/v2/core/event_destinations`, the `thin`-payload ones) — and **warns on any
   URL carrying more than one ENABLED destination** (a stray `stripe listen`
@@ -75,6 +75,11 @@ The script:
   `docs/handoff/2026-07-03-REPLY-from-clw-coordinator-webhook-reconcile-DONE-and-no-stray-endpoint-exists.md`
   for why both halves of this check were previously blind;
 - sets `enabled_events` to **exactly** the canonical set, then re-reads to verify.
+
+These list requests do not include destination-specific delivery history or a
+last-delivery timestamp. Read those in Workbench → Webhooks → the destination's
+**Event deliveries** tab; a complete destination list alone cannot establish
+that a delivery occurred or correlate it with another destination.
 
 ## The container (grant-only) endpoint — second source of truth
 
