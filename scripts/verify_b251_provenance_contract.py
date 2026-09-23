@@ -20,6 +20,7 @@ def verify(root: Path = ROOT) -> None:
     required = (
         "workflow_dispatch:", "github.event_name == 'workflow_dispatch'",
         "github.ref == 'refs/heads/main'", "github.ref_protected == true",
+        "ref: ${{ github.event.pull_request.head.sha }}",
         "f88c6ca41868f6a02e78ba9f4357d3abf67da4be",
         "collect_b251_provenance.py", "attest-build-provenance@",
         "test_b251_provenance_contract.py",
