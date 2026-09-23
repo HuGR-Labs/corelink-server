@@ -37,6 +37,25 @@ fn gate_4b_has_required_contract(gate: &str) -> bool {
         && gate.contains("gc_sweep FAILED (fail-closed)")
 }
 
+fn normalize_shell_continuations(source: &str) -> String {
+    let mut normalized = String::with_capacity(source.len());
+    let mut continuing = false;
+
+    for line in source.lines() {
+        let line = if continuing { line.trim_start() } else { line };
+        if let Some(prefix) = line.strip_suffix('\\') {
+            normalized.push_str(prefix);
+            continuing = true;
+        } else {
+            normalized.push_str(line);
+            normalized.push('\n');
+            continuing = false;
+        }
+    }
+
+    normalized
+}
+
 #[test]
 fn runtime_image_contains_a_separately_invoked_gc_binary() {
     let build = "cargo build --release --locked -p corelink-gc --bin gc_sweep;";
@@ -199,6 +218,7 @@ fn native_production_gate_scopes_explicit_false_delete_guard() {
 
 #[test]
 fn scheduled_sweep_is_credentialless_and_cannot_arm_delete() {
+    let normalized_workflow = normalize_shell_continuations(DRY_RUN_WORKFLOW);
     for required in [
         "GC_LIVE_DELETE: \"false\"",
         "env -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ACCOUNT_ID cargo run -p corelink-gc --bin gc_sweep",
@@ -207,7 +227,10 @@ fn scheduled_sweep_is_credentialless_and_cannot_arm_delete() {
         "deleted_count             = 0",
         "deleted_bytes             = 0",
     ] {
-        assert!(DRY_RUN_WORKFLOW.contains(required), "scheduled dry-run must contain {required:?}");
+        assert!(
+            normalized_workflow.contains(required),
+            "scheduled dry-run must contain {required:?}"
+        );
     }
     assert!(
         !DRY_RUN_WORKFLOW.contains("live_delete:"),

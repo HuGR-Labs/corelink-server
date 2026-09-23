@@ -1,0 +1,86 @@
+[
+  {
+    "file": "templates/SKILL.md.tmpl",
+    "kind": "skill",
+    "profile": "S",
+    "template_mode": true,
+    "metrics": {
+      "lines": 80,
+      "words": 336,
+      "bytes": 3009
+    },
+    "errors": [],
+    "verdict": "IMPLEMENTED_CHECKS_PASS",
+    "not_certified": [
+      "external links",
+      "semantic completeness",
+      "runtime claims",
+      "cold review",
+      "profile eligibility",
+      "cross-file three-click navigation"
+    ]
+  },
+  {
+    "file": "templates/REFERENCE.md.tmpl",
+    "kind": "reference",
+    "profile": "S",
+    "template_mode": true,
+    "metrics": {
+      "lines": 121,
+      "words": 428,
+      "bytes": 4157
+    },
+    "errors": [],
+    "verdict": "IMPLEMENTED_CHECKS_PASS",
+    "not_certified": [
+      "external links",
+      "semantic completeness",
+      "runtime claims",
+      "cold review",
+      "profile eligibility",
+      "cross-file three-click navigation"
+    ]
+  },
+  {
+    "file": "templates/BLAST_RADIUS.md.tmpl",
+    "kind": "blast_radius",
+    "profile": "S",
+    "template_mode": true,
+    "metrics": {
+      "lines": 88,
+      "words": 373,
+      "bytes": 3787
+    },
+    "errors": [],
+    "verdict": "IMPLEMENTED_CHECKS_PASS",
+    "not_certified": [
+      "external links",
+      "semantic completeness",
+      "runtime claims",
+      "cold review",
+      "profile eligibility",
+      "cross-file three-click navigation"
+    ]
+  },
+  {
+    "file": "templates/MAINTENANCE.md.tmpl",
+    "kind": "maintenance",
+    "profile": "S",
+    "template_mode": true,
+    "metrics": {
+      "lines": 86,
+      "words": 333,
+      "bytes": 3507
+    },
+    "errors": [],
+    "verdict": "IMPLEMENTED_CHECKS_PASS",
+    "not_certified": [
+      "external links",
+      "semantic completeness",
+      "runtime claims",
+      "cold review",
+      "profile eligibility",
+      "cross-file three-click navigation"
+    ]
+  }
+]

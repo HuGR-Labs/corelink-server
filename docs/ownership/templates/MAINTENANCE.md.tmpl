@@ -1,0 +1,86 @@
+---
+schema: corelink-ownership/1.1
+document: maintenance
+package: "{{PACKAGE}}"
+manifest: "{{MANIFEST}}"
+source_commit: "{{SOURCE_COMMIT}}"
+profile: "{{S_OU_H}}"
+state: draft
+evidence_set: "{{EVIDENCE_SET}}"
+---
+
+# {{PACKAGE}} — manual de manutenção
+
+[Preparação](#m01) · [Escolher procedimento](#m02) · [Procedimentos](#m03) ·
+[Testes](#m04) · [Recuperação](#m05) · [Escalonamento](#m06).
+
+<a id="m01"></a>
+## M01 — Preparação segura
+
+**Checkout / toolchain / target:** {{FONTES_E_COMANDOS_DE_VERIFICACAO}}.
+**Baseline e pré-condições:** {{COMANDOS_RESULTADOS_E_CRITERIO_DE_PARADA}}.
+**Dependências locais / fixtures:** {{CONFIGURACAO_REPRODUZIVEL_SEM_SEGREDOS}}.
+**Limite de recursos:** {{CONCORRENCIA_TIMEOUT_E_ARTEFATOS_TEMPORARIOS}}.
+Não executar comando operacional apenas por aparecer neste manual.
+
+<a id="m02"></a>
+## M02 — Seleção de procedimentos
+
+| Situação | Procedimento | Modo | Efeito permitido | Precisa de autorização extra? |
+|---|---|---|---|---|
+| {{SINTOMA_OU_MUDANCA}} | [PROC-001](#proc-001) | {{READ_ONLY_LOCAL_ISOLATED_AUTHORIZED_OPERATION}} | {{EFEITO}} | {{CONDICAO}} |
+
+<a id="m03"></a>
+## M03 — Procedimentos
+
+<!-- Repita por tarefa real. Máximo: 220 palavras / 50 linhas / 8 passos. -->
+<a id="proc-001"></a>
+### PROC-001 — {{OBJETIVO_CONCRETO}}
+
+**Gatilho / resultado esperado:** {{SITUACAO_E_PREDICADO}}.
+**Modo / ambiente / permissão:** {{ESCOPO_EXATO}}.
+**Entradas e validação:** {{COMO_OBTER_VARIAVEIS_SEM_ADIVINHAR}}.
+**Pré-condições:** {{CHECKS_QUE_DEVEM_PASSAR_ANTES}}.
+
+1. {{PASSO_COM_COMANDO_EXATO_SE_APLICAVEL_E_RESULTADO_ESPERADO}}
+2. {{PASSO_COM_PREDICADO_OBSERVAVEL}}
+
+**Falhas e parada:** {{ERRO_SINAL_ACAO_LIMITE}}.
+**Recuperação:** {{COMO_REVERTER_OU_ROLL_FORWARD_E_VALIDAR_ESTADO}}.
+**Certificação:** {{ESTADO_DE_REVISAO_EXECUCAO_E_REQUIRED_FOR_ACCEPTANCE}}.
+**Evidência:** {{BASELINE_COMANDO_AMBIENTE_SAIDA_DATA_ARTEFATO}}.
+
+[Índice de procedimentos](#m02)
+
+<a id="m04"></a>
+## M04 — Matriz de testes e validação
+
+| Tipo de mudança | Package / target / features | Comando ou PROC | Predicado | Ambiente / evidência |
+|---|---|---|---|---|
+| {{MUDANCA}} | {{SELECAO_VALIDA}} | {{COMANDO_EXATO_OU_PROC}} | {{ESTADO_FINAL_ESPERADO}} | {{EXECUCAO_REAL_OU_NAO_EXECUTADO}} |
+
+**Negativos obrigatórios:** {{CASOS_POR_CONTRATO_E_RISCO}}.
+**Gates globais compartilhados:** {{SCRIPTS_EXISTENTES_SEM_REPETICAO_POR_CRATE}}.
+**Não executar indiscriminadamente:** `--all-features`, suites live/ignored e deploy.
+
+<a id="m05"></a>
+## M05 — Recuperação e compatibilidade
+
+| Superfície | Reversível? | Condição / dados existentes | Ação segura | Prova de recuperação |
+|---|---|---|---|---|
+| {{CODIGO_SCHEMA_DADOS_WIRE_ARTEFATO}} | {{SIM_NAO_CONDICIONAL}} | {{CONDICAO}} | {{PROC_OU_OWNER_REAL}} | {{PREDICADO}} |
+
+**Sem estado próprio:** {{JUSTIFICAR_E_APONTAR_COMPOSITION_ROOT_SE_APLICAVEL}}.
+**Limites conhecidos:** {{CASOS_EM_QUE_GIT_REVERT_NAO_RECUPERA_O_EFEITO}}.
+
+<a id="m06"></a>
+## M06 — Escalonamento e registro de manutenção
+
+| Condição | Responsável / rota verificada | Evidência mínima | Ação vedada |
+|---|---|---|---|
+| {{CONDICAO}} | {{ROTA_REAL}} | {{CORRELACAO_SEM_DADOS_SENSIVEIS}} | {{NAO_PIORAR_EFEITO}} |
+
+Após a tarefa: registrar baseline e resultado; limpar só temporários criados pela tarefa;
+reconciliar os documentos e o backlog; encaminhar hashes alterados para cold review.
+
+[Referência](REFERENCE.md#r01) · [Impactos](BLAST_RADIUS.md#b01) · [Início](#m01).

@@ -1,0 +1,168 @@
+{
+  "schema": "corelink-ownership-record/1.1",
+  "record_id": "{{EVIDENCE_SET}}",
+  "record_path": "docs/ownership/records/{{PACKAGE}}.json",
+  "repository_id": 1232040291,
+  "package_uid": "repo:1232040291:{{MANIFEST}}",
+  "package": "{{PACKAGE}}",
+  "manifest": "{{MANIFEST}}",
+  "skill_slug": "{{SKILL_SLUG}}",
+  "source_commit": "{{SOURCE_COMMIT}}",
+  "profile": "S",
+  "standard": {
+    "version": "1.1-candidate",
+    "path": "docs/ownership/STANDARD.md",
+    "sha256": null
+  },
+  "author": {
+    "identity": null,
+    "session_id": null
+  },
+  "sources": [],
+  "evidence": [],
+  "discovery": {
+    "rules": [],
+    "snapshot_sha256": null
+  },
+  "capacity": {
+    "atomic_relations": 0,
+    "semantic_modules": 0,
+    "procedures": 0,
+    "evidence": []
+  },
+  "build_selections": [],
+  "review": {
+    "reviewer": null,
+    "session_id": null,
+    "fresh_context_confirmed": false,
+    "independence_evidence": [],
+    "reviewed_at": null
+  },
+  "artifacts": [
+    {
+      "kind": "skill",
+      "path": null,
+      "sha256": null,
+      "verdict": "BLOCKED",
+      "checks": [
+        {
+          "requirement": "triggers",
+          "status": "BLOCKED",
+          "evidence": []
+        },
+        {
+          "requirement": "authority",
+          "status": "BLOCKED",
+          "evidence": []
+        },
+        {
+          "requirement": "navigation",
+          "status": "BLOCKED",
+          "evidence": []
+        }
+      ],
+      "findings": [],
+      "limitations": [
+        "Modelo não preenchido; nenhuma cold review executada."
+      ]
+    },
+    {
+      "kind": "reference",
+      "path": null,
+      "sha256": null,
+      "verdict": "BLOCKED",
+      "checks": [
+        {
+          "requirement": "contracts",
+          "status": "BLOCKED",
+          "evidence": []
+        },
+        {
+          "requirement": "invariants",
+          "status": "BLOCKED",
+          "evidence": []
+        },
+        {
+          "requirement": "source-trace",
+          "status": "BLOCKED",
+          "evidence": []
+        },
+        {
+          "requirement": "navigation",
+          "status": "BLOCKED",
+          "evidence": []
+        }
+      ],
+      "findings": [],
+      "limitations": [
+        "Modelo não preenchido; nenhuma cold review executada."
+      ]
+    },
+    {
+      "kind": "blast_radius",
+      "path": null,
+      "sha256": null,
+      "verdict": "BLOCKED",
+      "checks": [
+        {
+          "requirement": "independent-census",
+          "status": "BLOCKED",
+          "evidence": []
+        },
+        {
+          "requirement": "non-cargo-edges",
+          "status": "BLOCKED",
+          "evidence": []
+        },
+        {
+          "requirement": "exclusions",
+          "status": "BLOCKED",
+          "evidence": []
+        },
+        {
+          "requirement": "navigation",
+          "status": "BLOCKED",
+          "evidence": []
+        }
+      ],
+      "findings": [],
+      "limitations": [
+        "Modelo não preenchido; nenhuma cold review executada."
+      ]
+    },
+    {
+      "kind": "maintenance",
+      "path": null,
+      "sha256": null,
+      "verdict": "BLOCKED",
+      "checks": [
+        {
+          "requirement": "procedure-scope",
+          "status": "BLOCKED",
+          "evidence": []
+        },
+        {
+          "requirement": "local-validation",
+          "status": "BLOCKED",
+          "evidence": []
+        },
+        {
+          "requirement": "failure-recovery",
+          "status": "BLOCKED",
+          "evidence": []
+        },
+        {
+          "requirement": "navigation",
+          "status": "BLOCKED",
+          "evidence": []
+        }
+      ],
+      "findings": [],
+      "limitations": [
+        "Modelo não preenchido; nenhuma cold review executada."
+      ]
+    }
+  ],
+  "relations": [],
+  "procedures": []
+}

@@ -1,0 +1,85 @@
+<!-- corelink-ownership:v1:manifest={{MANIFEST}} -->
+# [ownership] {{PACKAGE}}: skill, referência, blast radius e manutenção
+
+## Identidade e preparação
+
+| Campo | Valor |
+|---|---|
+| Package / manifesto | {{PACKAGE}} / {{MANIFEST}} |
+| Baseline de código | {{SOURCE_COMMIT}} |
+| Contrato compartilhado | {{LINK_IMUTAVEL_PARA_CO1_APROVADO}} |
+| Perfil e evidência de capacidade | {{S_OU_H_COM_MEDICAO}} |
+| Preparação | {{READY_OU_LACUNAS_NOMEADAS}} |
+
+## Pacote específico da crate
+
+**Papel e superfícies verificadas:** {{FATOS_E_FONTES}}.
+**Targets / features / aliases:** {{ENUMERACAO_REAL}}.
+**Dependências diretas e consumidores:** {{DADOS_DECLARADOS_VERSUS_RESOLVIDOS}}.
+**Contexto canônico OKF:** {{LINKS_E_SECOES_PERTINENTES}}.
+**Riscos que não podem desaparecer na documentação:** {{CASOS_CONCRETOS}}.
+**Gates existentes e ambiente:** {{COMANDOS_IDENTIFICADOS_E_ESTADO_DE_EXECUCAO}}.
+**Lacunas do pacote:** {{NAO_FINGIR_CENSO_OU_GRAFO_COMPLETO}}.
+
+## Dependência compartilhada
+
+CO-COMMON responde pelos schemas/gates e integração de registry/índices/backlog.
+Autores alteram artefatos e registros próprios; não editam índices globais em paralelo.
+Registrar issue/PR real da dependência antes da emissão; não inventar seu ID.
+
+## Entregas obrigatórias
+
+- [ ] `.claude/skills/{{SKILL_SLUG}}/SKILL.md`.
+- [ ] `docs/ownership/crates/{{PACKAGE}}/REFERENCE.md`, único e indexado.
+- [ ] `docs/ownership/crates/{{PACKAGE}}/BLAST_RADIUS.md`, único, com todas as relações de fronteira conciliadas.
+- [ ] `docs/ownership/crates/{{PACKAGE}}/MAINTENANCE.md`, único, com procedimentos verificáveis.
+
+## Success criteria
+
+Um novo owner encontra contratos e impactos a partir da skill em até três cliques,
+seleciona e executa um procedimento local aplicável sem o relato do autor, e distingue
+implementação, wiring e runtime observado.
+
+## Completeness criteria
+
+Conciliar packages/targets, módulos próprios/absorvidos/reexports, APIs/invariantes,
+normal/build/dev dependencies, consumidores, dados/configuração/runtime/build e testes.
+Enumerar relações diretas e propagação transitiva material; justificar ausências.
+Não considerar `cargo metadata --no-deps` um grafo resolvido completo.
+
+## Quality standards
+
+Usar CO-1 e seus templates, evidências por revisão e índices/IDs estáveis. Os tetos
+simultâneos de linhas/palavras/KiB são: skill 180/1.200/12; referência S400/3.000/36
+ou H700/5.500/64; blast S900/7.000/80 ou H1.800/14.000/160; manual S400/3.000/36
+ou H700/5.500/64. Ficha REL: até 120 palavras/14 linhas. Não preencher até o teto.
+Overflow bloqueia aprovação; não truncar, fragmentar nem transferir conteúdo essencial
+para anexos. Reutilizar a wiki OKF e as skills transversais.
+
+## Cold review — quatro aprovações independentes da autoria
+
+- [ ] Skill aprovada no hash final, com gatilhos positivos/negativos e limites de autoridade.
+- [ ] Referência aprovada no hash final, com contratos e invariantes conferidos no código.
+- [ ] Blast radius aprovado no hash final, após recenso independente e busca fora de Cargo.
+- [ ] Manual aprovado no hash final, com execução local aplicável, falha/parada e recuperação; estados separados por PROC.
+
+Revisor em contexto novo, sem histórico de elaboração. Guardar vereditos, fontes,
+comandos e resultados; corrigir achados e repetir a revisão afetada. Autorrevisão não conta.
+
+## Definition of done
+
+Quatro arquivos integrados via PR e gates existentes, quatro vereditos válidos no conjunto
+final de fontes/artefatos, nenhuma lacuna obrigatória, navegação e limites validados,
+registro de evidência completo e índices/backlog reconciliados. Nenhuma pendência
+criada pela execução fica sem responsável. Arquivo escrito ou CI genérico verde não fecha a issue.
+
+## Invariants
+
+Sem alteração funcional disfarçada de documentação; sem produção/segredos/gastos implícitos;
+sem assumir pasta=package, façade=implementação ou compilação=runtime; sem duplicar
+políticas do OKF; sem omitir relações para caber; sem aprovação do próprio autor.
+
+## Antes da emissão
+
+{{EVIDENCIA_DA_BUSCA_DE_DUPLICATAS_ABERTAS_FECHADAS_E_BACKLOG}}
+Não publicar sem identidade Cargo conciliada, contrato vinculado e decisão sobre duplicatas.

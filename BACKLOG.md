@@ -12277,7 +12277,7 @@ verify-means: |
 last-verified: 2026-08-30
 ```
 
-### B-101 — as auditorias admitidas somam 119 achados; a cobertura e a revisão semântica estão concluídas
+### B-101 — as auditorias admitidas somam 138 achados; a cobertura e a revisão semântica estão concluídas
 
 O `BACKLOG.md` é a fonte declarada de verdade, cada item carrega um `verify`, e o
 `backlog_verify.py` falha em DRIFTED ou STALE. O problema original era que esse mecanismo
@@ -12287,7 +12287,7 @@ construção.
 O recenseamento reexecutável de 2026-09-01 corrigiu a contagem histórica. Os 66 itens
 MEDIUM/LOW do documento de 2026-06-15 omitiam as suas 21 headings CRITICAL/HIGH confirmadas;
 a população viva daquele documento é, portanto, 87, não 66. A cobertura que este item exige
-é **87 + 20 + 3 + 9 = 119** achados, sem mudar ou apagar as fontes originais:
+é **87 + 20 + 3 + 9 + 19 = 138** achados, sem mudar ou apagar as fontes originais:
 
 | Documento | Achados parseados | Decisão registrada |
 |---|---:|---|
@@ -12295,6 +12295,7 @@ a população viva daquele documento é, portanto, 87, não 66. A cobertura que 
 | `reports/audits/2026-08-26-go-live-readiness.md` | 20 | manifesto versionado |
 | `docs/security/2026-07-02-pilot-identity-brutal-audit.md` | 3 | manifesto versionado |
 | `docs/security/b028-dependabot-census-2026-09-06.json` | 9 | manifesto versionado, DA-026…DA-038 |
+| `docs/security/b373-dependabot-census-2026-09-09.json` | 19 | manifesto versionado, DA-039…DA-057 |
 
 O casador agora deriva cada ID diretamente da sintaxe do seu documento, exige contagens e
 IDs sem lacunas, fixa o SHA-256 de cada fonte, e exige uma decisão um-para-um: item B
@@ -16018,19 +16019,33 @@ property test antigo misturava prova determinística de orçamento com um relóg
 parede frágil. O contrato exige separar complexidade/correção da medição opt-in, sem
 fabricar um resultado de produção.
 
+O lane B-251 agora deriva os dois registros de identidade executando o checker
+`InMemoryAtomicQuotaChecker` no produtor D02 imutável e no código observado em `main`,
+com entradas determinísticas dentro dos intervalos do property test D02. O recibo
+mantém apenas hashes dos transcripts como artefato do GitHub Actions. O replay e o p99
+continuam sendo evidência do fixture in-memory; a árvore não contém implementação de
+produção de `AtomicCasState`/`AtomicQuotaChecker`, e este lane não mede latência de
+produção. A comparação inclui uma mutação negativa de identidade. O workflow só mede
+p99 após merge, em `main` protegido, por dispatch explícito.
+
 ```backlog
 id: B-251
 repo: corelink-server
 owner: tl
 status: parked
-verify: python3 scripts/verify_b251_quota_cas_budget.py
+verify: |
+  python3 scripts/verify_b251_quota_cas_budget.py
+  python3 scripts/verify_b251_provenance_contract.py
 verify-means: |
   parked — `verify_b251_quota_cas_budget.py` fecha a parte determinística e fail-closed:
   o orçamento de tentativas/eventos, os casos allow/deny e a prova de mutações são
   verificáveis sem Cargo. O p99 real permanece explicitamente em probe isolada
   `#[ignore]`, com 1.000 amostras e limite de 5 ms; sua execução pertence ao bundle
-  D03 e não é alegada por este gate estático. A identidade do seed/failure e do blob
-  deve ser comparada ao D02/main antes de qualquer fechamento.
+  D03 e não é alegada por este gate estático. O workflow agora executa o mesmo adapter
+  de operação contra o commit produtor D02 fixado e o checkout D03, compara os digests
+  gerados, rejeita uma mutação e emite recibos redigidos como artefatos do Actions. A coleta ainda
+  precisa passar no workflow hospedado após merge; não existe evidência de latência de
+  produção e o status continua parked até essa evidência ser anexada.
 last-verified: 2026-09-05
 ```
 

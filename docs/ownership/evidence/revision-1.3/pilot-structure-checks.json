@@ -1,0 +1,86 @@
+[
+  {
+    "kind": "skill",
+    "profile": "S",
+    "template_mode": false,
+    "metrics": {
+      "lines": 94,
+      "words": 645,
+      "bytes": 5270
+    },
+    "errors": [],
+    "verdict": "IMPLEMENTED_CHECKS_PASS",
+    "not_certified": [
+      "external links",
+      "semantic completeness",
+      "runtime claims",
+      "cold review",
+      "profile eligibility",
+      "cross-file three-click navigation"
+    ],
+    "file": ".claude/skills/own-corelink-hash/SKILL.md"
+  },
+  {
+    "kind": "reference",
+    "profile": "S",
+    "template_mode": false,
+    "metrics": {
+      "lines": 328,
+      "words": 2349,
+      "bytes": 25934
+    },
+    "errors": [],
+    "verdict": "IMPLEMENTED_CHECKS_PASS",
+    "not_certified": [
+      "external links",
+      "semantic completeness",
+      "runtime claims",
+      "cold review",
+      "profile eligibility",
+      "cross-file three-click navigation"
+    ],
+    "file": "docs/ownership/crates/corelink-hash/REFERENCE.md"
+  },
+  {
+    "kind": "blast_radius",
+    "profile": "S",
+    "template_mode": false,
+    "metrics": {
+      "lines": 403,
+      "words": 2573,
+      "bytes": 27235
+    },
+    "errors": [],
+    "verdict": "IMPLEMENTED_CHECKS_PASS",
+    "not_certified": [
+      "external links",
+      "semantic completeness",
+      "runtime claims",
+      "cold review",
+      "profile eligibility",
+      "cross-file three-click navigation"
+    ],
+    "file": "docs/ownership/crates/corelink-hash/BLAST_RADIUS.md"
+  },
+  {
+    "kind": "maintenance",
+    "profile": "S",
+    "template_mode": false,
+    "metrics": {
+      "lines": 203,
+      "words": 1622,
+      "bytes": 13694
+    },
+    "errors": [],
+    "verdict": "IMPLEMENTED_CHECKS_PASS",
+    "not_certified": [
+      "external links",
+      "semantic completeness",
+      "runtime claims",
+      "cold review",
+      "profile eligibility",
+      "cross-file three-click navigation"
+    ],
+    "file": "docs/ownership/crates/corelink-hash/MAINTENANCE.md"
+  }
+]

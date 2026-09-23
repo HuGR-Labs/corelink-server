@@ -43,6 +43,22 @@ class OwnerActionPacketTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("owner-action packet: PASS: 29 item(s)", result.stdout)
 
+    def test_b054_cli_reports_readiness_scope(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-S", "scripts/verify_owner_action_packets.py", "--id", "B-054"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "B-054 evidence: FIXTURE_READINESS_ONLY; rotation=BLOCKED; "
+            "revocation_recovery=NOT_EXECUTED; retention=NOT_EXECUTED; "
+            "audit_linkage=NOT_EXECUTED",
+            result.stdout,
+        )
+
     def test_b012_packet_preserves_distinct_ci_blockers(self) -> None:
         self.assertEqual(
             MODULE.check_data(self.data, "B-012"),
@@ -315,6 +331,33 @@ class OwnerActionPacketTests(unittest.TestCase):
         with mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_b054):
             with self.assertRaises(MODULE.PacketError):
                 MODULE.check_data(self.data, "B-054")
+
+    def test_b054_custody_scope_mutations_fail_closed(self) -> None:
+        original = MODULE._read_json_evidence
+        baseline = original(MODULE.B054_EVIDENCE_PATH, MODULE.B054_EVIDENCE_REQUIRED_FIELDS, "B-054")
+        mutations = (
+            ("evidence_mode", "EXECUTED_CEREMONY"),
+            ("authority_roles", ["SRE executor"]),
+            ("non_material_references", []),
+            ("revocation_recovery.status", "PASS"),
+            ("retention.status", "PASS"),
+            ("audit_linkage.reference", "receipt://forged"),
+        )
+        for field, value in mutations:
+            mutated = copy.deepcopy(baseline)
+            target = mutated
+            leaf = field
+            if "." in field:
+                parent, leaf = field.split(".", 1)
+                target = mutated[parent]
+            target[leaf] = value
+
+            def read_mutated(path, fields, label, receipt=mutated):
+                return receipt if path == MODULE.B054_EVIDENCE_PATH else original(path, fields, label)
+
+            with self.subTest(field=field), mock.patch.object(MODULE, "_read_json_evidence", side_effect=read_mutated):
+                with self.assertRaises(MODULE.PacketError):
+                    MODULE.check_data(self.data, "B-054")
 
     def test_b083_receipt_mutations_fail_closed(self) -> None:
         original = MODULE._read_json_evidence
