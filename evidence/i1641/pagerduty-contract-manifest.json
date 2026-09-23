@@ -13,6 +13,8 @@
     "scheduler_contract": "worker/src/index_common.ts",
     "receiver": "apps/synthetic-pager-worker/src/index.ts",
     "receiver_contract": "apps/synthetic-pager-worker/src/contract.ts",
+    "staging_deploy_workflow": ".github/workflows/synthetic-pager-worker-deploy.yml",
+    "receiver_config": "apps/synthetic-pager-worker/wrangler.toml",
     "pagerduty_config": "infra/pagerduty/schedule.yaml",
     "lifecycle_migration": "migrations/d1/0116_synthetic_page_delivery_lifecycle.sql",
     "runbook": "specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md",

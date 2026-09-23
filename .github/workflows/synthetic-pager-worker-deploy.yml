@@ -24,7 +24,7 @@ concurrency:
 jobs:
   deploy:
     name: deploy synthetic pager receiver (${{ inputs.environment }})
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     environment: synthetic-drill-staging
     timeout-minutes: 15
     defaults:
