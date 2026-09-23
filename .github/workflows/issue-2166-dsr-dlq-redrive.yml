@@ -13,6 +13,7 @@ on:
       - "scripts/verify_b215_b223_contracts.py"
       - "docs/operator/dsr-dlq-redrive.md"
       - "docs/internal/okf-wiki/concept-manifest.yaml"
+      - "docs/knowledge/compliance/dsr-edge-crons.md"
       - ".github/workflows/issue-2166-dsr-dlq-redrive.yml"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"

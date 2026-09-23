@@ -448,6 +448,9 @@ def check_b216(root: Path) -> None:
     concept_end = manifest.find("\n  - id:", concept_start + 1)
     concept = manifest[concept_start:concept_end if concept_end >= 0 else None]
     _require(concept, '"apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts"', lane)
+    edge_concept = _read(root, "docs/knowledge/compliance/dsr-edge-crons.md")
+    _require(edge_concept, '  - "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts"', lane)
+    _require(edge_concept, "operator-only redrive authority", lane)
     redrive_test = _read(root, "apps/signup-worker/tests/dsr_dlq_redrive.test.ts")
     for marker in (
         "shared-secret substitute",
@@ -646,6 +649,7 @@ def self_test(root: Path = ROOT) -> None:
             "apps/signup-worker/tests/dsr_dlq_redrive.test.ts",
             "apps/signup-worker/tests/dsr_consumer.test.ts",
             "docs/internal/okf-wiki/concept-manifest.yaml",
+            "docs/knowledge/compliance/dsr-edge-crons.md",
         ],
         "B-217": ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/webhooks/clerk_erasure.ts"],
         "B-218": ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/webhooks/clerk_erasure.ts", "worker/src/lib/internal_auth.ts"],
@@ -849,6 +853,13 @@ def self_test(root: Path = ROOT) -> None:
                 '"apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts"',
                 '"apps/signup-worker/src/webhooks/dsr_dlq_redrive_removed.ts"',
                 "docs/internal/okf-wiki/concept-manifest.yaml",
+            ),
+            (
+                "B-216-redrive-concept-grounding-removal",
+                "B-216",
+                '  - "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts"',
+                '  - "apps/signup-worker/src/webhooks/dsr_dlq_redrive_removed.ts"',
+                "docs/knowledge/compliance/dsr-edge-crons.md",
             ),
         )
     )

@@ -1,16 +1,18 @@
 ---
 type: "ComplianceControl"
-title: "DSR edge crons + erasure-queue consumer"
-description: "The signup-worker scheduled() handler: the 24h DSR verify sweep, the dsr.queued.v1 erasure-queue consumer that drives the container erase endpoint, and the PAT-plaintext scrub cron — the edge-plane half of CoreLink's GDPR erasure obligation."
+title: "DSR edge crons, erasure-queue consumer, and DLQ redrive authority"
+description: "The signup-worker scheduled() handler: the 24h DSR verify sweep, the dsr.queued.v1 erasure-queue consumer that drives the container erase endpoint, the bounded operator-only DSR DLQ redrive authority, and the PAT-plaintext scrub cron — the edge-plane half of CoreLink's GDPR erasure obligation."
 source_files:
   - "apps/signup-worker/src/webhooks/dsr_verify_cron.ts"
   - "apps/signup-worker/src/webhooks/dsr_consumer.ts"
+  - "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts"
   - "apps/signup-worker/src/webhooks/pat_scrub_cron.ts"
   - "apps/signup-worker/src/lib/erase-auth-key.ts"
   - "apps/signup-worker/src/index.ts"
 source_blobs:
   - "apps/signup-worker/src/webhooks/dsr_verify_cron.ts@208240b8b4edfb320d62da5c4b7319e5673e8620"
   - "apps/signup-worker/src/webhooks/dsr_consumer.ts@a1ff41544d284274688ecea83dc962e462c10580"
+  - "apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts@16a0f0e27f5d16eacd4f64282c51d28d4ec3db14"
   - "apps/signup-worker/src/webhooks/pat_scrub_cron.ts@361afdb62f0268a4c0bf7279fc73ad3d9be187cf"
   - "apps/signup-worker/src/lib/erase-auth-key.ts@4736d3fd45fd2060d55d7b4a228ac5ad41713190"
   - "apps/signup-worker/src/index.ts@8caf7d163752ce98831fc8bb7199c1a16a24c2cd"
@@ -37,6 +39,7 @@ This control is the **edge-plane scheduler for GDPR Art.17 erasure + credential 
 - **Sweep flips the anchor only on `verified_complete`.** A `VerifiedComplete` (ok) response with `decision === "verified_complete"` flips the anchor to `status = 'verified'` so it drops out of future sweeps; a `verified_partial` / `sla_breached` still returns HTTP 200 but leaves the row enumerable for the next tick (`apps/signup-worker/src/webhooks/dsr_verify_cron.ts:281-299`).
 - **Erasure-queue consumer carries `dsr.queued.v1` to the container, CLASSIFYING the response (M2).** The single `queue()` handler dispatches on `batch.queue`: the main `corelink-dsr-erasure` queue → `handleErasureQueueBatch`, the `corelink-dsr-erasure-dlq` → `handleErasureDlqBatch` (`apps/signup-worker/src/index.ts:105-122`). `handleErasureQueueBatch` calls `processErasureMessage` per message then runs `classifyErasureStatus` on the container's HTTP status — a 2xx is `ack-success`; a PERMANENT 4xx (malformed `400`/`409` or erasure REJECTED `422`) is `ack-poison` (consumed with a loud structured `console.error`, NOT retried — redelivery can never change it); only genuinely transient faults (5xx, transport `status === 0`, and self-healing `401`/`403`/`404`/`408`/`429`) `retry()`. Per-message isolation, no head-of-line block (`apps/signup-worker/src/webhooks/dsr_consumer.ts:132-161`, `apps/signup-worker/src/webhooks/dsr_consumer.ts:115-124`).
 - **A DLQ handler gives one bounded final attempt (M3).** A message reaching `corelink-dsr-erasure-dlq` (main queue's 10-retry budget exhausted on a sustained transient fault) emits a critical structured alert and — IFF not already re-enqueued and the producer binding is present — re-enqueues ONCE onto the main queue with a `_dlq_requeue` cap, else leaves it dead (acked) for operator action (`apps/signup-worker/src/webhooks/dsr_consumer.ts:193-234`).
+- **The operator-only redrive authority recovers one eligible terminal receipt.** `handleDsrDlqRedrive` accepts only an opaque receipt id under its dedicated authorization, atomically claims the bounded D1 envelope, derives the salt inside the Worker, writes an unexpired pre-send ambiguity fence, and reconstructs one tenant-bound `_dlq_requeue: 1` message. Claimed, submitted, and ambiguous outcomes are redacted and retained for disposition; raw queue payload, Clerk identity, salt, provider content, and credentials are not persisted (`apps/signup-worker/src/webhooks/dsr_dlq_redrive.ts`).
 - **Consumer forwards to the internal erase endpoint.** `processErasureMessage` POSTs the message body to `POST /_internal/dsr/erase` with the `x-corelink-internal-auth` header, via the service binding when present (`apps/signup-worker/src/webhooks/dsr_consumer.ts:76-95`).
 - **PAT scrub pages all Clerk users and clears stale reveals.** `runPatScrubSweep` pages the Clerk Backend API (≤`MAX_PAGES`), and for each user past the reveal TTL it `scrubUser` PATCHes `private_metadata.pat_plaintext` (+ its clock) to `null`, which Clerk's merge semantics treat as key-removal (`apps/signup-worker/src/webhooks/pat_scrub_cron.ts:149-172`, `apps/signup-worker/src/webhooks/pat_scrub_cron.ts:102-128`).
 - **Scrub decision is TTL-bounded and fail-CLOSED.** `shouldScrub` keeps a reveal within `PAT_REVEAL_TTL_MS` (1h) so `/welcome` can still reveal it once, but treats a present-plaintext-with-missing-clock as STALE and scrubs it (`apps/signup-worker/src/webhooks/pat_scrub_cron.ts:81-94`, `apps/signup-worker/src/webhooks/pat_scrub_cron.ts:38`).
