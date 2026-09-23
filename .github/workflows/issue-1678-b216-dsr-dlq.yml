@@ -5,7 +5,10 @@ on:
     paths:
       - "apps/signup-worker/src/webhooks/dsr_consumer.ts"
       - "apps/signup-worker/tests/dsr_consumer.test.ts"
+      - "apps/signup-worker/src/index.ts"
+      - "apps/signup-worker/wrangler.toml"
       - "migrations/d1/0138_dsr_dlq_delivery_receipts.sql"
+      - "scripts/verify_b215_b223_contracts.py"
       - "docs/internal/b215-b230-runtime-owner-actions.md"
       - "BACKLOG.md"
       - ".github/workflows/issue-1678-b216-dsr-dlq.yml"
@@ -37,3 +40,7 @@ jobs:
         run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
       - name: Exercise B-216 DSR DLQ receipt contract
         run: pnpm --dir apps/signup-worker exec vitest run tests/dsr_consumer.test.ts
+      - name: Typecheck consumer and queue wiring
+        run: pnpm --dir apps/signup-worker typecheck
+      - name: Run B-216 contract and adversarial mutation gate
+        run: python3 scripts/verify_b215_b223_contracts.py --id B-216 --self-test
