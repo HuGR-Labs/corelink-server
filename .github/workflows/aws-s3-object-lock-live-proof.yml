@@ -1,0 +1,206 @@
+name: AWS S3 Object Lock protected live proof
+
+# This is intentionally separate from PR conformance. It can obtain AWS OIDC
+# credentials only from a manually dispatched, protected canonical-main run.
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Run the proof or clean up an expired synthetic probe.
+        required: true
+        type: choice
+        options: [probe, cleanup]
+      source_run_id:
+        description: Original probe run ID (cleanup only; bucket name is derived from the fixed prefix).
+        required: false
+        type: string
+      source_attempt:
+        description: Original probe run attempt (cleanup only).
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-s3-object-lock-live-proof
+  cancel-in-progress: false
+
+jobs:
+  proof:
+    if: github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-24.04
+    environment: s3-object-lock-live-proof
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_ACCOUNT_ID: ${{ vars.OBJECT_LOCK_PROBE_ACCOUNT_ID }}
+      AWS_REGION: ${{ vars.OBJECT_LOCK_PROBE_REGION }}
+      JURISDICTION: ${{ vars.OBJECT_LOCK_PROBE_JURISDICTION }}
+      AWS_ROLE_ARN: ${{ vars.OBJECT_LOCK_PROBE_ROLE_ARN }}
+      AWS_BUCKET_PREFIX: ${{ vars.OBJECT_LOCK_PROBE_BUCKET_PREFIX }}
+      AWS_TRAIL_ARN: ${{ vars.OBJECT_LOCK_PROBE_CLOUDTRAIL_TRAIL_ARN }}
+      APPROVAL_REFERENCE: ${{ vars.OBJECT_LOCK_PROBE_APPROVAL_REFERENCE }}
+      COST_CEILING_USD_MICROS: ${{ vars.OBJECT_LOCK_PROBE_COST_CEILING_USD_MICROS }}
+      COST_OWNER: ${{ vars.OBJECT_LOCK_PROBE_COST_OWNER }}
+      CLEANUP_OWNER: ${{ vars.OBJECT_LOCK_PROBE_CLEANUP_OWNER }}
+      OPERATION: ${{ inputs.operation }}
+      SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+      SOURCE_ATTEMPT: ${{ inputs.source_attempt }}
+    steps:
+      - name: Checkout canonical main without persisted credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: main
+
+      - name: Validate fixed approved target and cost boundary
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_REF_PROTECTED" = true
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
+          [[ "$AWS_REGION" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]
+          [[ "$JURISDICTION" =~ ^[A-Z][A-Z0-9-]{1,31}$ ]]
+          [[ "$AWS_ROLE_ARN" == "arn:aws:iam::${AWS_ACCOUNT_ID}:role/"* ]]
+          [[ "$AWS_BUCKET_PREFIX" =~ ^corelink-object-lock-probe-[a-z0-9-]{3,24}$ ]]
+          [[ "$COST_CEILING_USD_MICROS" =~ ^[1-9][0-9]*$ ]]
+          (( COST_CEILING_USD_MICROS <= 5000000 ))
+          test -n "$AWS_TRAIL_ARN"
+          test -n "$APPROVAL_REFERENCE"
+          test -n "$COST_OWNER"
+          test -n "$CLEANUP_OWNER"
+          test "${#AWS_BUCKET_PREFIX}" -le 34
+          if [ "$OPERATION" = cleanup ]; then
+            [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]
+            [[ "$SOURCE_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+            test "$SOURCE_RUN_ID" -lt "$GITHUB_RUN_ID"
+          else
+            test "$OPERATION" = probe
+          fi
+
+      - name: Assume the fixed non-production probe role through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ vars.OBJECT_LOCK_PROBE_ROLE_ARN }}
+          aws-region: ${{ vars.OBJECT_LOCK_PROBE_REGION }}
+          role-session-name: corelink-object-lock-${{ github.run_id }}
+          mask-aws-account-id: true
+
+      - name: Run bounded synthetic Object Lock proof
+        id: proof
+        if: inputs.operation == 'probe'
+        run: |
+          set -euo pipefail
+          actual_account="$(aws sts get-caller-identity --query Account --output text)"
+          test "$actual_account" = "$AWS_ACCOUNT_ID"
+          principal="$(aws sts get-caller-identity --query Arn --output text)"
+          bucket="${AWS_BUCKET_PREFIX}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ((${#bucket} <= 63))
+          key="audit/probe-${GITHUB_RUN_ID}/synthetic.txt"
+          if [ "$AWS_REGION" = us-east-1 ]; then
+            aws s3api create-bucket --bucket "$bucket" --object-lock-enabled-for-bucket
+          else
+            aws s3api create-bucket --bucket "$bucket" --object-lock-enabled-for-bucket \
+              --create-bucket-configuration "LocationConstraint=$AWS_REGION"
+          fi
+          aws s3api put-bucket-versioning --bucket "$bucket" \
+            --versioning-configuration Status=Enabled
+          aws s3api put-object-lock-configuration --bucket "$bucket" \
+            --object-lock-configuration '{"ObjectLockEnabled":"Enabled","Rule":{"DefaultRetention":{"Mode":"COMPLIANCE","Days":1}}}'
+          aws s3api get-object-lock-configuration --bucket "$bucket" > "$RUNNER_TEMP/lock.json"
+          jq -e '.ObjectLockConfiguration.ObjectLockEnabled == "Enabled" and .ObjectLockConfiguration.Rule.DefaultRetention.Mode == "COMPLIANCE" and .ObjectLockConfiguration.Rule.DefaultRetention.Days == 1' "$RUNNER_TEMP/lock.json" >/dev/null
+          actual_region="$(aws s3api get-bucket-location --bucket "$bucket" --query LocationConstraint --output text)"
+          test "$actual_region" = "$AWS_REGION" -o "$actual_region" = None -a "$AWS_REGION" = us-east-1
+          retain_until="$(date -u -d '+1 day' '+%Y-%m-%dT%H:%M:%SZ')"
+          printf 'synthetic object lock proof: %s\n' "$GITHUB_RUN_ID" > "$RUNNER_TEMP/synthetic.txt"
+          put="$(aws s3api put-object --bucket "$bucket" --key "$key" --body "$RUNNER_TEMP/synthetic.txt" --object-lock-mode COMPLIANCE --object-lock-retain-until-date "$retain_until" --object-lock-legal-hold-status ON)"
+          version="$(jq -r '.VersionId // empty' <<<"$put")"
+          test -n "$version"
+          aws s3api get-object-retention --bucket "$bucket" --key "$key" --version-id "$version" > "$RUNNER_TEMP/retention.json"
+          aws s3api get-object-legal-hold --bucket "$bucket" --key "$key" --version-id "$version" > "$RUNNER_TEMP/legal-hold.json"
+          jq -e '.Retention.Mode == "COMPLIANCE" and .Retention.RetainUntilDate != null' "$RUNNER_TEMP/retention.json" >/dev/null
+          actual_expiry="$(jq -r '.Retention.RetainUntilDate' "$RUNNER_TEMP/retention.json")"
+          test "$(date -u -d "$actual_expiry" +%s)" = "$(date -u -d "$retain_until" +%s)"
+          jq -e '.LegalHold.Status == "ON"' "$RUNNER_TEMP/legal-hold.json" >/dev/null
+          aws iam simulate-principal-policy --policy-source-arn "$principal" \
+            --action-names s3:DeleteObjectVersion \
+            --resource-arns "arn:aws:s3:::${bucket}/${key}" > "$RUNNER_TEMP/permission.json"
+          jq -e '.EvaluationResults | length == 1 and .[0].EvalDecision == "allowed"' "$RUNNER_TEMP/permission.json" >/dev/null
+          if aws s3api delete-object --bucket "$bucket" --key "$key" --version-id "$version" > "$RUNNER_TEMP/delete.json" 2> "$RUNNER_TEMP/delete.err"; then
+            echo 'Object Lock probe unexpectedly deleted the exact retained version' >&2
+            exit 1
+          fi
+          grep -q 'AccessDenied\|InvalidRequest' "$RUNNER_TEMP/delete.err"
+          trail_event=''
+          delete_event=''
+          for attempt in $(seq 1 20); do
+            aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=PutObject \
+              --max-results 50 > "$RUNNER_TEMP/cloudtrail-events.json"
+            trail_event="$(jq -r --arg bucket "$bucket" --arg key "$key" --arg version "$version" '
+              [.Events[].CloudTrailEvent | fromjson | select(.requestParameters.bucketName == $bucket and .requestParameters.key == $key and .responseElements["x-amz-version-id"] == $version) | {eventID,requestID}] | first // empty' \
+              "$RUNNER_TEMP/cloudtrail-events.json")"
+            aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=DeleteObject \
+              --max-results 50 > "$RUNNER_TEMP/cloudtrail-delete-events.json"
+            delete_event="$(jq -r --arg bucket "$bucket" --arg key "$key" --arg version "$version" '
+              [.Events[].CloudTrailEvent | fromjson | select(.requestParameters.bucketName == $bucket and .requestParameters.key == $key and .requestParameters.versionId == $version and .errorCode != null) | {eventID,requestID}] | first // empty' \
+              "$RUNNER_TEMP/cloudtrail-delete-events.json")"
+            test -n "$trail_event" -a -n "$delete_event" && break
+            sleep 15
+          done
+          test -n "$trail_event" -a -n "$delete_event"
+          jq -e '.eventID != null and .requestID != null' <<<"$trail_event" >/dev/null
+          jq -e '.eventID != null and .requestID != null' <<<"$delete_event" >/dev/null
+          request_id="$(jq -r '.requestID' <<<"$trail_event")"
+          aws cloudtrail validate-logs --trail-arn "$AWS_TRAIL_ARN" > "$RUNNER_TEMP/digest-validation.txt"
+          mkdir -p "$RUNNER_TEMP/object-lock-receipt"
+          jq -n --arg workflow "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg commit "$GITHUB_SHA" --arg version "$version" --arg request_id "$request_id" \
+            --arg retain_until "$retain_until" --arg cleanup_owner "$CLEANUP_OWNER" \
+            --arg approval_ref "$APPROVAL_REFERENCE" --arg run_id "$GITHUB_RUN_ID" \
+            --arg cloudtrail_event_id "$(jq -r '.eventID' <<<"$trail_event")" \
+            --arg delete_denial_event_id "$(jq -r '.eventID' <<<"$delete_event")" \
+            --arg jurisdiction "$JURISDICTION" \
+            '{workflow:$workflow,commit:$commit,run_id:$run_id,approval_reference:$approval_ref,synthetic:true,jurisdiction:$jurisdiction,object_version:$version,put_request_id:$request_id,cloudtrail_put_event_id:$cloudtrail_event_id,cloudtrail_delete_denial_event_id:$delete_denial_event_id,retain_until:$retain_until,compliance_mode:true,legal_hold_on:true,delete_denied:true,digest_validation:"passed",cleanup_owner:$cleanup_owner,cleanup_due_after_retention:true}' \
+            > "$RUNNER_TEMP/object-lock-receipt/redacted-proof.json"
+          echo "bucket_sha256=$(printf '%s' "$bucket" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Clean up the exact expired synthetic probe
+        id: cleanup
+        if: inputs.operation == 'cleanup'
+        run: |
+          set -euo pipefail
+          bucket="${AWS_BUCKET_PREFIX}-${SOURCE_RUN_ID}-${SOURCE_ATTEMPT}"
+          ((${#bucket} <= 63))
+          [[ "$bucket" =~ ^${AWS_BUCKET_PREFIX}-[0-9]+-[1-9][0-9]*$ ]]
+          expected_key="audit/probe-${SOURCE_RUN_ID}/synthetic.txt"
+          aws s3api get-bucket-location --bucket "$bucket" > "$RUNNER_TEMP/location.json"
+          actual_account="$(aws sts get-caller-identity --query Account --output text)"
+          test "$actual_account" = "$AWS_ACCOUNT_ID"
+          aws s3api list-object-versions --bucket "$bucket" --prefix "$expected_key" > "$RUNNER_TEMP/versions.json"
+          jq -e --arg key "$expected_key" '[.Versions[]? | select(.Key == $key)] | length == 1' "$RUNNER_TEMP/versions.json" >/dev/null
+          version="$(jq -r --arg key "$expected_key" '.Versions[] | select(.Key == $key) | .VersionId' "$RUNNER_TEMP/versions.json")"
+          aws s3api get-object-legal-hold --bucket "$bucket" --key "$expected_key" --version-id "$version" > "$RUNNER_TEMP/legal-hold.json"
+          jq -e '.LegalHold.Status == "OFF"' "$RUNNER_TEMP/legal-hold.json" >/dev/null
+          aws s3api get-object-retention --bucket "$bucket" --key "$expected_key" --version-id "$version" > "$RUNNER_TEMP/retention.json"
+          expiry="$(jq -r '.Retention.RetainUntilDate' "$RUNNER_TEMP/retention.json")"
+          test "$(date -u -d "$expiry" +%s)" -le "$(date -u +%s)"
+          aws s3api delete-object --bucket "$bucket" --key "$expected_key" --version-id "$version" >/dev/null
+          remaining="$(aws s3api list-object-versions --bucket "$bucket" --query 'length(Versions[])' --output text)"
+          test "$remaining" = 0
+          aws s3api delete-bucket --bucket "$bucket"
+          mkdir -p "$RUNNER_TEMP/object-lock-receipt"
+          printf '{"synthetic":true,"source_run_id":"%s","cleanup":"complete"}\n' "$SOURCE_RUN_ID" \
+            > "$RUNNER_TEMP/object-lock-receipt/redacted-cleanup.json"
+
+      - name: Publish redacted proof and cleanup obligation
+        if: always() && (steps.proof.outcome == 'success' || steps.cleanup.outcome == 'success')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: s3-object-lock-proof-${{ github.run_id }}
+          path: ${{ runner.temp }}/object-lock-receipt/*.json
+          retention-days: 90
+          if-no-files-found: error

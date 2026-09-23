@@ -123,6 +123,33 @@ can accept Compliance rows. A rollback after a Compliance row exists is
 one-way: it must fail closed and use a forward repair. It must never shorten
 retention, delete a locked version, erase its metadata, or route it to R2.
 
+## Hosted proof entrypoint
+
+`.github/workflows/aws-s3-object-lock-live-proof.yml` is the live-proof
+entrypoint. It accepts no role, bucket, region, or account from dispatch
+inputs; it runs only from protected canonical `main`, waits on the
+`s3-object-lock-live-proof` environment, and obtains short-lived credentials
+through GitHub OIDC. Its repository variables must identify the approved
+non-production account, role, region, bucket prefix, CloudTrail trail,
+jurisdiction, approval reference, cost ceiling (capped at USD 5), and named
+cost and cleanup owners. The proof is limited to one new bucket, one synthetic
+object, one region, and one day of Compliance retention. Missing values fail
+before AWS access. The proof creates a uniquely named synthetic
+bucket, verifies the locked object and its matching CloudTrail event, and
+publishes a redacted receipt containing the put and denied-delete CloudTrail
+event references. Cleanup is a separate dispatch derived from the
+original run ID and attempt; it refuses unless the exact synthetic version has
+legal hold OFF and its Compliance retention has expired.
+
+The adapter's durable audit event and write receipt both carry the exact S3
+bucket. A failed put or post-write verification attempts an append-only failure
+receipt containing the tenant-safe key, exact version when available, bucket,
+and stable failure class. Failure-audit persistence errors fail the operation
+closed. Migration `0144` has SQLite coverage for Governance row preservation,
+Compliance constraints, tenant/mode scoping, replay-safe Governance insertion,
+indexes, and primary-key preservation. The DSR Governance verification query
+filters `mode = 'governance'` explicitly.
+
 ## Sources
 
 - [Amazon S3 Object Lock overview](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock-overview.html)
