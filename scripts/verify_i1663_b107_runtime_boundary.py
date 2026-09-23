@@ -54,11 +54,13 @@ def verify(backlog: str, lane: str) -> None:
         "environment: production",
         "secrets.CORELINK_DOGFOOD_PAT",
         "b107-separated",
+        "for ordinal in 1 2 3; do",
         "--require-identities artifacts/b122/b107-separated.txt",
         "timeout 25s curl",
         "--max-time 20",
         "-X PUT",
         "--data-binary @<(head -c 1024 /dev/zero)",
+        'done\n          test "$(( $(date +%s) - start ))" -le 60\n          test "$(wc -l',
     )
     missing = [needle for needle in required_lane if needle not in lane]
     forbidden = [needle for needle in ("wrangler deploy", "kubectl apply", "terraform apply") if needle in lane]
@@ -86,6 +88,12 @@ def self_test(backlog: str, lane: str) -> None:
     expect_rejected(backlog, lane, "status: parked", "status: done", "parked state changed")
     expect_rejected(backlog, lane, "`serving_sha`", "deployed revision", "deployed identity removed")
     expect_rejected(backlog, lane, "p50/p90/p99", "median only", "tail requirement removed")
+    try:
+        verify(backlog, lane.replace('done\n          test "$(( $(date +%s) - start ))" -le 60\n          test "$(wc -l', "done\n          test \"final sample unbounded\"\n          test \"$(wc -l", 1))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("mutation survived: final 60-second bound removed")
     try:
         verify(backlog, lane.replace("secrets.CORELINK_DOGFOOD_PAT", "secrets.REMOVED", 1))
     except ValueError:
