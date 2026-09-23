@@ -30,6 +30,7 @@ class B103ContractTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/b103-cargo-write-reproducer.yml").read_text(encoding="utf-8")
         self.assertIn("pull_request:", workflow)
         self.assertIn("runs-on: ubuntu-24.04", workflow)
+        self.assertIn("if: ${{ github.event_name == 'workflow_dispatch' }}", workflow)
         self.assertIn("wrangler tail corelink --format json", workflow)
         self.assertNotIn("wrangler tail corelink --format json --search", workflow)
         self.assertIn("scripts/redact_b103_worker_tail.py", workflow)

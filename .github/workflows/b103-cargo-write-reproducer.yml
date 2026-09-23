@@ -45,6 +45,7 @@ jobs:
 
   reproduce:
     name: bounded /cargo write matrix
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     environment: staging
     timeout-minutes: 25
