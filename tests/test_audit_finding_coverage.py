@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import re
@@ -68,6 +69,29 @@ def test_post_squash_plain_tree_rederives_the_same_certificate(tmp_path: Path) -
     fixture_root = _copy_gate_root(tmp_path)
 
     assert coverage.verify(fixture_root)["total"] == 119
+
+
+def test_b373_dependabot_census_is_pinned_as_a_b101_non_source(tmp_path: Path) -> None:
+    registry_path = ROOT / coverage.SOURCE_REGISTRY_RELATIVE
+    registry_bytes = registry_path.read_bytes()
+    registry = json.loads(registry_bytes)
+    snapshot_path = "docs/security/b373-dependabot-census-2026-09-09.json"
+    snapshot_bytes = (ROOT / snapshot_path).read_bytes()
+    excluded = next(item for item in registry["excluded_audits"] if item["path"] == snapshot_path)
+
+    assert "B-373's structured Dependabot snapshot" in excluded["reason"]
+    assert excluded["sha256"] == hashlib.sha256(snapshot_bytes).hexdigest()
+    assert snapshot_path not in {source["path"] for source in registry["sources"]}
+    assert _manifest()["source_registry_sha256"] == hashlib.sha256(registry_bytes).hexdigest()
+
+    fixture_root = _copy_gate_root(tmp_path)
+    changed_snapshot = fixture_root / snapshot_path
+    changed_snapshot.write_bytes(snapshot_bytes + b"\n")
+    with pytest.raises(
+        coverage.CoverageError,
+        match=rf"excluded audit content changed; reclassify it: {re.escape(snapshot_path)}",
+    ):
+        coverage.verify(fixture_root)
 
 
 def test_tree_certificate_rejects_a_mutation_even_when_registry_and_manifest_are_untouched(
