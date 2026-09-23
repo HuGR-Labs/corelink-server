@@ -45,6 +45,8 @@ head_sampling_rate = 1
 #                                  skips/fails closed and cannot drain the chain.
 #                                  Bind it before deploy; the deploy workflow checks
 #                                  its NAME with scripts/verify-signup-worker-secrets.sh.
+#   DSR_DLQ_REDRIVE_AUTH_KEY     — dedicated >=32-character operator redrive key.
+#                                  No shared-key fallback; authorizes only opaque DLQ receipt redrive.
 #   STRIPE_SECRET_KEY             — optional B-089 provider credential. Keep
 #                                  unbound while SLA_CREDITS_ENABLED is false;
 #                                  the code gate remains required even when set.

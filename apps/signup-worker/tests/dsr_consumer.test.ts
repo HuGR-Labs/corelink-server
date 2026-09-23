@@ -13,6 +13,8 @@ import {
   type DsrDlqBody,
   type DsrDlqReceipt,
   type DsrDlqReceiptStore,
+  type RedriveStore,
+  handleDsrDlqRedrive,
 } from "../src/webhooks/dsr_consumer.js";
 import type { DsrQueuedV1 } from "../src/webhooks/clerk.js";
 
@@ -155,7 +157,7 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
     return { body, attempts, ack: vi.fn<() => void>(), retry: vi.fn<() => void>() };
   }
 
-  class MemoryReceipts implements DsrDlqReceiptStore {
+  class MemoryReceipts implements DsrDlqReceiptStore, RedriveStore {
     readonly rows = new Map<string, DsrDlqReceipt>();
     readonly writes: Array<{ eventId: string; status: string }> = [];
     failWrites = false;
@@ -188,6 +190,15 @@ describe("handleErasureDlqBatch (bounded alert + requeue)", () => {
       this.rows.set(eventId, { ...prior, status: "requeue_claimed", requeue_claimed: 1 });
       return true;
     }
+    async capture(_eventId: string, body: DsrDlqBody): Promise<boolean> {
+      return body.subject_id === body.tenant_id && body._dlq_requeue === undefined;
+    }
+    async claim(): Promise<"claimed" | "expired" | "denied"> { return "denied"; }
+    async envelope(): Promise<null> { return null; }
+    async fence(): Promise<boolean> { return false; }
+    async submitted(): Promise<void> {}
+    async ambiguous(): Promise<void> {}
+    async cleanup(): Promise<void> {}
   }
 
   function pagedEnv(send: (message: unknown) => Promise<void>, receipts = new MemoryReceipts()) {
