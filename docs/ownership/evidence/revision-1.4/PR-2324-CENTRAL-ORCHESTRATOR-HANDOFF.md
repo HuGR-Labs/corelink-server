@@ -8,7 +8,7 @@
 - base: `main`
 - head: `gustavomhss:codex/corelink-ownership-pr`
 - baseline de reancoragem: `0ec05c34db282122579d7e2ab6541183e20aeaf5`
-- commits publicados da PR: consultar o head atual antes do merge; ambos devem ter assinatura SSH válida e trailer DCO
+- commits publicados da PR: consultar o head atual antes do merge; todos devem ter assinatura SSH válida e trailer DCO
 - snapshot de origem: `427ff4bd6`
 - estado da PR: draft; merge ainda não realizado
 
