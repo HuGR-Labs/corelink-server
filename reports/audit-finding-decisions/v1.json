@@ -6,7 +6,7 @@
     "pilot_identity_2026_07_02": "docs/security/2026-07-02-pilot-identity-brutal-audit.md",
     "b028_dependabot_2026_09_06": "docs/security/b028-dependabot-census-2026-09-06.json"
   },
-  "source_registry_sha256": "ab1842c78f78de7ae470e3e8d4bafc03ec9297e7f3bb808bac870990f2d6a62a",
+  "source_registry_sha256": "0e4cd777fea1a9391874895c8c63f05fa46d2528332b179f525ae73e87751dd7",
   "source_sha256": {
     "due_diligence_2026_06_15": "0ac20e7bf0b0674d06a195cf7ba676816deac91c038ed85c9385235cc93dae56",
     "go_live_2026_08_26": "a6661037b0ada6a244c80bd727c193c371d86c8371d15f7486fa1043e6d8f08a",
@@ -373,13 +373,13 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-065",
-        "canonical_title": "dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias",
+        "canonical_title": "dois esquemas de ID em webhooks Stripe; estado atual dos destinos não verificado",
         "evidence": {
           "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
           "source_locator": "MEDIUM / LOW item 2",
           "finding_title": "Two live Stripe webhook handlers share STRIPE_WEBHOOK_SECRET and write the same billing tables, but with a DIVERGENT/incomplete tier map (latent duplicate-endpoint hazard)"
         },
-        "proof": "Exact equivalence for DD-023: source title \"Two live Stripe webhook handlers share STRIPE_WEBHOOK_SECRET and write the same billing tables, but with a DIVERGENT/incomplete tier map (latent duplicate-endpoint hazard)\" maps to canonical B-065 title \"dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias\"; that item owns the same control gap and remediation surface."
+        "proof": "Exact equivalence for DD-023: source title \"Two live Stripe webhook handlers share STRIPE_WEBHOOK_SECRET and write the same billing tables, but with a DIVERGENT/incomplete tier map (latent duplicate-endpoint hazard)\" maps to canonical B-065 title \"dois esquemas de ID em webhooks Stripe; estado atual dos destinos não verificado\"; that item owns the same control gap and remediation surface."
       }
     },
     {
@@ -947,13 +947,13 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated; the 2026-09-08 post-merge census recorded zero open alerts",
         "evidence": {
           "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
           "source_locator": "MEDIUM / LOW item 38",
           "finding_title": "Customer audit-chain visualization fetches /v1/customer/* with NO Clerk bearer token (broken-auth / dead feature at launch)"
         },
-        "proof": "Exact equivalence for DD-059: source title \"Customer audit-chain visualization fetches /v1/customer/* with NO Clerk bearer token (broken-auth / dead feature at launch)\" maps to canonical B-028 title \"Dependabot dependency paths are remediated; post-merge census refresh remains open\"; that item owns the same control gap and remediation surface."
+        "proof": "Exact equivalence for DD-059: source title \"Customer audit-chain visualization fetches /v1/customer/* with NO Clerk bearer token (broken-auth / dead feature at launch)\" maps to canonical B-028 title \"Dependabot dependency paths are remediated; the 2026-09-08 post-merge census recorded zero open alerts\"; that item owns the same control gap and remediation surface."
       }
     },
     {
@@ -1777,7 +1777,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated; the 2026-09-08 post-merge census recorded zero open alerts",
         "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 26", "finding_title": "Dependabot alert #26: image-size (GHSA-w3rx-r6r6-pgpr)"},
         "proof": "Exact canonical mapping for Dependabot alert #26 (GHSA-w3rx-r6r6-pgpr): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
       }
@@ -1789,7 +1789,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated; the 2026-09-08 post-merge census recorded zero open alerts",
         "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 27", "finding_title": "Dependabot alert #27: image-size (GHSA-5p2g-fcmc-qvqq)"},
         "proof": "Exact canonical mapping for Dependabot alert #27 (GHSA-5p2g-fcmc-qvqq): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
       }
@@ -1801,7 +1801,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated; the 2026-09-08 post-merge census recorded zero open alerts",
         "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 28", "finding_title": "Dependabot alert #28: extract-zip (GHSA-jmr9-qjv8-65gv)"},
         "proof": "Exact canonical mapping for Dependabot alert #28 (GHSA-jmr9-qjv8-65gv): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
       }
@@ -1813,7 +1813,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated; the 2026-09-08 post-merge census recorded zero open alerts",
         "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 33", "finding_title": "Dependabot alert #33: fast-uri (GHSA-5jgf-p345-68v8)"},
         "proof": "Exact canonical mapping for Dependabot alert #33 (GHSA-5jgf-p345-68v8): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
       }
@@ -1825,7 +1825,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated; the 2026-09-08 post-merge census recorded zero open alerts",
         "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 34", "finding_title": "Dependabot alert #34: fast-uri (GHSA-fph4-wmhf-6fwf)"},
         "proof": "Exact canonical mapping for Dependabot alert #34 (GHSA-fph4-wmhf-6fwf): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
       }
@@ -1837,7 +1837,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated; the 2026-09-08 post-merge census recorded zero open alerts",
         "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 35", "finding_title": "Dependabot alert #35: qs (GHSA-x5fp-wj9c-mxmx)"},
         "proof": "Exact canonical mapping for Dependabot alert #35 (GHSA-x5fp-wj9c-mxmx): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
       }
@@ -1849,7 +1849,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated; the 2026-09-08 post-merge census recorded zero open alerts",
         "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 36", "finding_title": "Dependabot alert #36: fast-uri (GHSA-f65p-4m7j-42xc)"},
         "proof": "Exact canonical mapping for Dependabot alert #36 (GHSA-f65p-4m7j-42xc): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
       }
@@ -1861,7 +1861,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated; the 2026-09-08 post-merge census recorded zero open alerts",
         "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 37", "finding_title": "Dependabot alert #37: fast-uri (GHSA-jqff-g426-hqxp)"},
         "proof": "Exact canonical mapping for Dependabot alert #37 (GHSA-jqff-g426-hqxp): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
       }
@@ -1873,7 +1873,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated; the 2026-09-08 post-merge census recorded zero open alerts",
         "evidence": {"source_document": "docs/security/b028-dependabot-census-2026-09-06.json", "source_locator": "alert 38", "finding_title": "Dependabot alert #38: qs (GHSA-4mjr-xmp4-gh2g)"},
         "proof": "Exact canonical mapping for Dependabot alert #38 (GHSA-4mjr-xmp4-gh2g): B-028 is the owner-reviewed dependency census and remediation contract for this alert; the per-alert identity remains explicit in the admitted source."
       }

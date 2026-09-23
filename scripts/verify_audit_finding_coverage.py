@@ -34,9 +34,9 @@ SOURCE_REGISTRY_RELATIVE = SOURCE_DIRECTORY_RELATIVE / "v1.json"
 B101_STAGE = "historical_coverage_complete_semantic_review_complete"
 CANONICAL_BACKLOG_ID = re.compile(r"B-\d{3}")
 # This content certificate is stable across squash; it does not consult Git history.
-B101_REGISTRY_SHA256 = "ab1842c78f78de7ae470e3e8d4bafc03ec9297e7f3bb808bac870990f2d6a62a"
-B101_MANIFEST_SHA256 = "72ea705bf5987ea9beac26b7accb3ba6af8ae55ba32a6c08931f1b4fe7ee159c"
-B101_CENSUS_TREE_SHA256 = "f2050f08a12c917e2ecedd9c4fb152feeebef899f13ee26e2e190ba668516348"
+B101_REGISTRY_SHA256 = "0e4cd777fea1a9391874895c8c63f05fa46d2528332b179f525ae73e87751dd7"
+B101_MANIFEST_SHA256 = "5c9ff82f13ae0c0701ab6f5ea16b93f3013a12a41479bd989b08863837330459"
+B101_CENSUS_TREE_SHA256 = "f87b3d83d5fb3b51dafd1eb6532f1b351378236c4d447492d29455e02e5f0b01"
 B101_CENSUS_ROOTS = ("docs/security", "reports/audits")
 B101_PROPOSAL_IDS = {f"B-{number}" for number in range(171, 244)}
 
@@ -518,10 +518,14 @@ def _require_proposal_contract(proposal_id: str, contract: str, evidence: dict) 
     if status_match is None:
         raise CoverageError(f"{proposal_id}: canonical proposal contract is missing or incomplete: status")
     if status_match.group(1) == "parked":
-        external_packet = re.search(
-            r"^verify-means:\s*\|\n  parked — .*owner packet `docs/internal/[^`]+` remains:",
+        verify_means = re.search(
+            r"^verify-means:\s*\|\n(?P<body>(?:  [^\n]*(?:\n|\Z))*)",
             contract,
             flags=re.MULTILINE,
+        )
+        external_packet = verify_means and re.search(
+            r"\bowner packet\s+`docs/internal/[^`]+`\s+remains:",
+            verify_means.group("body"),
         )
         local_verifier = re.search(
             r"^  python3 scripts/verify_[^\n]+ --self-test\s*$",

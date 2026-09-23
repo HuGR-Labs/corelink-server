@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import re
@@ -70,6 +71,40 @@ def test_post_squash_plain_tree_rederives_the_same_certificate(tmp_path: Path) -
     assert coverage.verify(fixture_root)["total"] == 119
 
 
+def test_b028_historical_source_rejects_a_zero_alert_snapshot() -> None:
+    with pytest.raises(
+        coverage.CoverageError,
+        match="Dependabot snapshot has no alerts",
+    ):
+        coverage.parse_b028_dependabot(
+            json.dumps({"schema_version": 1, "alerts": []}),
+            "docs/security/b028-dependabot-census-2026-09-06.json",
+        )
+
+
+def test_b373_dependabot_census_is_pinned_as_a_b101_non_source(tmp_path: Path) -> None:
+    registry_path = ROOT / coverage.SOURCE_REGISTRY_RELATIVE
+    registry_bytes = registry_path.read_bytes()
+    registry = json.loads(registry_bytes)
+    snapshot_path = "docs/security/b373-dependabot-census-2026-09-09.json"
+    snapshot_bytes = (ROOT / snapshot_path).read_bytes()
+    excluded = next(item for item in registry["excluded_audits"] if item["path"] == snapshot_path)
+
+    assert "B-373's structured Dependabot snapshot" in excluded["reason"]
+    assert excluded["sha256"] == hashlib.sha256(snapshot_bytes).hexdigest()
+    assert snapshot_path not in {source["path"] for source in registry["sources"]}
+    assert _manifest()["source_registry_sha256"] == hashlib.sha256(registry_bytes).hexdigest()
+
+    fixture_root = _copy_gate_root(tmp_path)
+    changed_snapshot = fixture_root / snapshot_path
+    changed_snapshot.write_bytes(snapshot_bytes + b"\n")
+    with pytest.raises(
+        coverage.CoverageError,
+        match=rf"excluded audit content changed; reclassify it: {re.escape(snapshot_path)}",
+    ):
+        coverage.verify(fixture_root)
+
+
 def test_tree_certificate_rejects_a_mutation_even_when_registry_and_manifest_are_untouched(
     tmp_path: Path,
 ) -> None:
@@ -78,6 +113,42 @@ def test_tree_certificate_rejects_a_mutation_even_when_registry_and_manifest_are
     source.write_text(source.read_text(encoding="utf-8") + "\n# mutation\n", encoding="utf-8")
 
     with pytest.raises(coverage.CoverageError, match="governed audit tree differs from the B-101 content certificate"):
+        coverage.verify(fixture_root)
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        Path("reports/audits/2026-08-25-comprehensive-audit-and-verification.md"),
+        Path("reports/audits/2026-08-25-definitive-master-report.md"),
+        Path("docs/security/b028-dependabot-census-2026-09-06-postmerge.json"),
+    ],
+)
+def test_excluded_audit_digest_rejects_substituted_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, relative: Path
+) -> None:
+    fixture_root = _copy_gate_root(tmp_path)
+    audit = fixture_root / relative
+    audit.write_bytes(audit.read_bytes() + b"\nsubstituted bytes\n")
+
+    # Refresh only the synthetic fixture's tree certificate so this test reaches
+    # the independent excluded-audit pin instead of failing the outer tree seal.
+    paths: set[str] = set()
+    for root in coverage.B101_CENSUS_ROOTS:
+        paths |= coverage._regular_files_in_root(fixture_root, coverage.AuditRoot(root))
+    census = sorted(
+        (
+            path,
+            hashlib.sha256(
+                coverage._read_regular_file_beneath(fixture_root, path, "test census entry")
+            ).hexdigest(),
+        )
+        for path in paths
+    )
+    tree_digest = hashlib.sha256(json.dumps(census, separators=(",", ":")).encode()).hexdigest()
+    monkeypatch.setattr(coverage, "B101_CENSUS_TREE_SHA256", tree_digest)
+
+    with pytest.raises(coverage.CoverageError, match="excluded audit content changed; reclassify it"):
         coverage.verify(fixture_root)
 
 
@@ -133,6 +204,38 @@ def test_malformed_backlog_id_is_red_before_existence_lookup(tmp_path: Path) -> 
 
     with pytest.raises(coverage.CoverageError, match="canonical B-ID format"):
         coverage.verify(ROOT, _write_manifest(tmp_path, manifest))
+
+
+def test_stale_canonical_title_is_red(tmp_path: Path) -> None:
+    manifest = _manifest()
+    decision = next(item for item in manifest["decisions"] if item["source_id"] == "DD-023")
+    decision["semantic_disposition"]["canonical_title"] = (
+        "dois endpoints Stripe vivos processam o mesmo evento duas vezes, há mais de sete dias"
+    )
+
+    with pytest.raises(
+        coverage.CoverageError,
+        match="DD-023: tracked decision needs an exact canonical equivalence proof",
+    ):
+        coverage.verify(ROOT, _write_manifest(tmp_path, manifest))
+
+
+def test_parked_b216_requires_its_runtime_owner_packet() -> None:
+    manifest = _manifest()
+    decision = next(
+        item for item in manifest["decisions"] if item["source_id"] == "DD-068"
+    )
+    evidence = decision["semantic_disposition"]["evidence"]
+    contract = coverage._backlog_proposal_contracts(ROOT)["B-216"]
+
+    coverage._require_proposal_contract("B-216", contract, evidence)
+
+    without_packet = contract.replace("owner packet", "owner receipt", 1)
+    with pytest.raises(
+        coverage.CoverageError,
+        match="B-216: parked proposal needs an owner packet or bounded local retirement verifier",
+    ):
+        coverage._require_proposal_contract("B-216", without_packet, evidence)
 
 
 def test_semantic_evidence_mutation_is_red(tmp_path: Path) -> None:
