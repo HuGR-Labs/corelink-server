@@ -9,6 +9,7 @@ WORKFLOW = Path(".github/workflows/issue-1863-mutants-hosted.yml")
 LEGACY_WORKFLOW = Path(".github/workflows/nightly.yml")
 BACKLOG = Path("BACKLOG.md")
 OWNER_PACKET = Path("docs/internal/b113-six-lanes-owner-actions.md")
+LEGACY_DISABLED_IF = "if: github.event_name == 'schedule' && github.event_name == 'workflow_dispatch'"
 REQUIRED = (
     "workflow_dispatch:",
     "permissions:\n  contents: read",
@@ -54,7 +55,7 @@ def main() -> int:
         r"(?ms)^  mutants-workspace:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
         legacy,
     )
-    if legacy_job is None or "if: ${{ false }}" not in legacy_job.group("body"):
+    if legacy_job is None or LEGACY_DISABLED_IF not in legacy_job.group("body"):
         raise SystemExit("legacy nightly mutants-workspace must remain disabled")
     mapping_markers = (
         "issue-1863-mutants-hosted.yml",
