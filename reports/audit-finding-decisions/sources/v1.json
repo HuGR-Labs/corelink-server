@@ -161,8 +161,8 @@
     },
     {
       "path": "reports/audits/2026-08-25-definitive-master-report.md",
-      "reason": "Explicit B-101 scope decision: this master report is outside the three measured inputs; admission requires a parser, count, digest, and one decision per finding.",
-      "sha256": "a381c32583180aea7c2f3633c3e6bd601f2738249288ac5fc141d8f3c3cfb86b"
+      "reason": "Explicit B-101 scope decision: this master report remains outside the three measured inputs. Its signing-seed redaction in e29e09a00 changed the pinned bytes; admission still requires a parser, count, digest, and one decision per finding, and this digest pins the redacted report until reclassification.",
+      "sha256": "02412d74c99f096041664022afcd80d8436398b0adf7e60292d5220f87f34cbf"
     },
     {
       "path": "reports/audits/2026-08-25-fix-briefing-ox-alpha-addendum-v2.md",

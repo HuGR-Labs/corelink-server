@@ -105,11 +105,17 @@ def test_tree_certificate_rejects_a_mutation_even_when_registry_and_manifest_are
         coverage.verify(fixture_root)
 
 
+@pytest.mark.parametrize(
+    "relative",
+    [
+        Path("reports/audits/2026-08-25-comprehensive-audit-and-verification.md"),
+        Path("reports/audits/2026-08-25-definitive-master-report.md"),
+    ],
+)
 def test_excluded_audit_digest_rejects_substituted_bytes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, relative: Path
 ) -> None:
     fixture_root = _copy_gate_root(tmp_path)
-    relative = Path("reports/audits/2026-08-25-comprehensive-audit-and-verification.md")
     audit = fixture_root / relative
     audit.write_bytes(audit.read_bytes() + b"\nsubstituted bytes\n")
 
