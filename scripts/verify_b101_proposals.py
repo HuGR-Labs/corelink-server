@@ -73,6 +73,24 @@ B210_DONE_FIELDS = {
     "next_action": "Keep B-210 done while B-119 remains done and /admin/ops* remains absent; if a durable, securely bound approval surface is restored, re-open B-119 and B-210 together and re-audit SSR guard ordering before publishing any page.",
     "acceptance": "B-210 is retired/superseded by done B-119: /admin/ops* is absent, the B-119 census remains done, and the retirement gate fails closed on status regression or surface reintroduction; restore of a durable bound surface reopens both items.",
 }
+# B-229 closed through its production evidence gate, not the generic source
+# contract witness used by the adjacent B-215..B-230 implementation wave.
+DONE_VERIFIERS["B-229"] = ("verify_b229_clerk_webhook.py", False)
+B229_DONE_FIELDS = {
+    "next_action": "Completed: confirm the deployed secret-name gate, deploy the exact source SHA, and verify one signed production webhook without retaining credential or payload values.",
+    "acceptance": "Redacted production evidence at evidence/production/B-229-clerk-webhook-2026-09-08.md records the exact source SHA, Cloudflare version, 100% traffic, health 200, and signed probe 200 ignored.",
+}
+DONE_FIELDS = {
+    "B-210": B210_DONE_FIELDS,
+    "B-229": B229_DONE_FIELDS,
+}
+DONE_VERIFY_COMMANDS = {
+    "B-229": (
+        "  python3 scripts/verify_b229_clerk_webhook.py && \\\n"
+        "  python3 scripts/verify_b229_clerk_webhook.py --self-test && \\\n"
+        "  python3 -m unittest tests/test_verify_b229_clerk_webhook.py"
+    ),
+}
 
 
 class ProposalVerificationError(ValueError):
@@ -247,7 +265,9 @@ def _verify_one(root: Path, record: dict, manifest: dict[str, dict], backlog: st
                 f"{proposal_id}: done proposal has no canonical closure verifier"
             )
         verifier, witness_required = verifier_entry
-        if witness_required:
+        if proposal_id in DONE_VERIFY_COMMANDS:
+            expected_verify = rf"^{re.escape(DONE_VERIFY_COMMANDS[proposal_id])}$"
+        elif witness_required:
             expected_verify = (
                 rf"^  python3 scripts/{re.escape(verifier)} --id "
                 rf"{re.escape(proposal_id)} --expect done$"
@@ -256,7 +276,7 @@ def _verify_one(root: Path, record: dict, manifest: dict[str, dict], backlog: st
             expected_verify = rf"^  python3 scripts/{re.escape(verifier)}$"
     else:
         expected_verify = rf"^  python3 scripts/verify_b101_proposals\.py --id {re.escape(proposal_id)}$"
-    done_fields = B210_DONE_FIELDS if proposal_id == "B-210" and backlog_status == "done" else {}
+    done_fields = DONE_FIELDS.get(proposal_id, {}) if backlog_status == "done" else {}
     required_lines = {
         "id": rf"^id: {re.escape(proposal_id)}$",
         "owner": r"^owner: tl$",

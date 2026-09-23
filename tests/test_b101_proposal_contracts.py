@@ -76,6 +76,33 @@ def test_b210_retirement_contract_rejects_stale_proposal_next_action(tmp_path: P
     assert guard.verify(root, "B-210") == {"records": 1, "unfinished": 0, "done": 1}
 
 
+def test_b229_production_done_contract_rejects_stale_proposal_next_action(tmp_path: Path) -> None:
+    root = fixture_tree(tmp_path)
+    verifier = root / "scripts/verify_b229_clerk_webhook.py"
+    verifier.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / "scripts/verify_b229_clerk_webhook.py", verifier)
+    assert guard.verify(root, "B-229") == {"records": 1, "unfinished": 0, "done": 1}
+
+    backlog_path = root / "BACKLOG.md"
+    backlog = backlog_path.read_text(encoding="utf-8")
+    completed_next_action = 'next-action: "Completed: confirm the deployed secret-name gate, deploy the exact source SHA, and verify one signed production webhook without retaining credential or payload values."'
+    canonical_next_action = next(
+        proposal["next_action"]
+        for proposal in read_registry(root)["proposals"]
+        if proposal["id"] == "B-229"
+    )
+    assert backlog.count(completed_next_action) == 1
+    backlog_path.write_text(
+        backlog.replace(completed_next_action, f"next-action: {json.dumps(canonical_next_action)}", 1),
+        encoding="utf-8",
+    )
+    with pytest.raises(guard.ProposalVerificationError, match="missing or mismatched next_action"):
+        guard.verify(root, "B-229")
+
+    backlog_path.write_text(backlog, encoding="utf-8")
+    assert guard.verify(root, "B-229") == {"records": 1, "unfinished": 0, "done": 1}
+
+
 def test_open_state_rule_set_is_dense_and_executable() -> None:
     assert set(open_guard.RULES) == {f"B-{number}" for number in range(171, 244)}
     assert open_guard.verify(ROOT) == {"records": 2, "unfinished": 2}
