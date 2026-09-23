@@ -50,7 +50,7 @@ jobs:
   drift-check:
     name: drift check (PR-side)
     if: github.event_name == 'pull_request'
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
