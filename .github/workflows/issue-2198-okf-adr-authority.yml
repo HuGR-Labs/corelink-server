@@ -49,9 +49,9 @@ jobs:
           cat > "$RUNNER_TEMP/issue-2198-bundle/index.md" <<'EOF'
           # Issue 2198 focused ADR bundle
 
-          - [ADR-0070](adr/adr-0070-tenant-suspend-gate-kv-l2-cache.md)
-          - [ADR-0101](adr/adr-0101-object-lock-archive-adapter-contract.md)
-          - [ADR-0103](adr/adr-0103-b071-trigger-replacement-waiver.md)
+          - [ADR-0070](/adr/adr-0070-tenant-suspend-gate-kv-l2-cache.md)
+          - [ADR-0101](/adr/adr-0101-object-lock-archive-adapter-contract.md)
+          - [ADR-0103](/adr/adr-0103-b071-trigger-replacement-waiver.md)
           EOF
           {
             echo "head_sha=$actual"
