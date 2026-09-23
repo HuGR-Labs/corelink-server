@@ -32,8 +32,13 @@ class B035TlsSurfaceTests(unittest.TestCase):
         self.assertIn("no cipher-suite floor", report["external_surface"]["cipher_policy"])
 
     def test_surface_inventory_is_source_bound_and_covers_route_families(self) -> None:
-        surfaces = verify.inventory()["external_surface"]["named_surfaces"]
+        report = verify.inventory()
+        surfaces = report["external_surface"]["named_surfaces"]
         self.assertGreaterEqual(len(surfaces), 22)
+        self.assertEqual(
+            report["external_surface"]["source_validation"]["status"],
+            "all_markers_match",
+        )
         self.assertTrue(
             all(
                 {"name", "kind", "hostname", "enforcement", "source", "status"}
@@ -56,6 +61,32 @@ class B035TlsSurfaceTests(unittest.TestCase):
         )
         self.assertTrue(
             all(boundary["status"] for boundary in verify.PROVIDER_BOUNDARIES)
+        )
+
+    def test_active_route_rename_fails_closed_even_with_stale_comment(self) -> None:
+        rule = verify.SURFACE_SOURCE_RULES["corelink-api"]
+        path = verify.ROOT / rule["path"]
+        source = path.read_text(encoding="utf-8")
+        active_declaration = f'pattern = "{rule["value"]}"'
+        self.assertEqual(source.count(active_declaration), 1)
+        renamed = source.replace(
+            active_declaration,
+            active_declaration.replace(rule["value"], "renamed.invalid/*"),
+            1,
+        )
+        mutated = (
+            f'# stale route tombstone: {active_declaration}\n' + renamed
+        )
+        self.assertIn(f'# stale route tombstone: {active_declaration}', mutated)
+        report = verify.inventory_from_overrides(
+            verify.ROOT, {}, {rule["path"]: mutated}
+        )
+        self.assertEqual(report["status"], "drift_or_incomplete")
+        self.assertTrue(
+            any(
+                error.startswith("corelink-api:")
+                for error in report["external_surface"]["source_validation"]["errors"]
+            )
         )
 
     def test_each_instrument_is_required_and_missing_file_fails_closed(self) -> None:
