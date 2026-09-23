@@ -158,7 +158,10 @@ fn capabilities_service(
 
 fn metadata() -> tonic::metadata::MetadataMap {
     let mut metadata = tonic::metadata::MetadataMap::new();
-    metadata.insert("authorization", "Bearer test-pat".parse().expect("metadata"));
+    metadata.insert(
+        "authorization",
+        "Bearer test-pat".parse().expect("metadata"),
+    );
     metadata
 }
 
@@ -433,10 +436,12 @@ async fn capabilities_are_authenticated_sha256_action_cache_only() {
         .expect("capabilities");
     let cache = capabilities.cache_capabilities.expect("cache capabilities");
     assert_eq!(cache.digest_functions, vec![DigestFunction::Sha256 as i32]);
-    assert!(cache
-        .action_cache_update_capabilities
-        .expect("ActionCache capability")
-        .update_enabled);
+    assert!(
+        cache
+            .action_cache_update_capabilities
+            .expect("ActionCache capability")
+            .update_enabled
+    );
     assert_eq!(capabilities.execution_capabilities, None);
     assert_eq!(
         service

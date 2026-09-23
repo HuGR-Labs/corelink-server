@@ -8,9 +8,8 @@
 use corelink_reapi::proto::reapi::action_cache_server::{ActionCache, ActionCacheServer};
 use corelink_reapi::proto::reapi::capabilities_server::{Capabilities, CapabilitiesServer};
 use corelink_reapi::proto::reapi::{
-    ActionCacheUpdateCapabilities, ActionResult, CacheCapabilities, Digest,
-    DigestFunction, GetActionResultRequest, GetCapabilitiesRequest, ServerCapabilities,
-    UpdateActionResultRequest,
+    ActionCacheUpdateCapabilities, ActionResult, CacheCapabilities, Digest, DigestFunction,
+    GetActionResultRequest, GetCapabilitiesRequest, ServerCapabilities, UpdateActionResultRequest,
 };
 use prost::Message;
 use tonic::{async_trait, Code, Request, Response, Status};
@@ -51,10 +50,16 @@ impl ReapiActionCacheService {
         let (hash, size_bytes) = validate_action_digest(request.action_digest.as_ref())?;
         let response = admitted.ac_lookup(hash, size_bytes)?;
         let result = ActionResult::decode(response.result_payload.as_slice()).map_err(|_| {
-            Status::new(Code::Unavailable, "ActionCache handler returned invalid result")
+            Status::new(
+                Code::Unavailable,
+                "ActionCache handler returned invalid result",
+            )
         })?;
         validate_action_result(&result).map_err(|_| {
-            Status::new(Code::Unavailable, "ActionCache handler returned invalid result")
+            Status::new(
+                Code::Unavailable,
+                "ActionCache handler returned invalid result",
+            )
         })?;
         Ok(result)
     }
@@ -89,7 +94,9 @@ impl ActionCache for ReapiActionCacheService {
         request: Request<GetActionResultRequest>,
     ) -> Result<Response<ActionResult>, Status> {
         let metadata = request.metadata().clone();
-        Ok(Response::new(self.get(&metadata, request.into_inner()).await?))
+        Ok(Response::new(
+            self.get(&metadata, request.into_inner()).await?,
+        ))
     }
 
     async fn update_action_result(
@@ -97,7 +104,9 @@ impl ActionCache for ReapiActionCacheService {
         request: Request<UpdateActionResultRequest>,
     ) -> Result<Response<ActionResult>, Status> {
         let metadata = request.metadata().clone();
-        Ok(Response::new(self.update(&metadata, request.into_inner()).await?))
+        Ok(Response::new(
+            self.update(&metadata, request.into_inner()).await?,
+        ))
     }
 }
 
@@ -140,12 +149,15 @@ impl Capabilities for ReapiCacheCapabilitiesService {
         request: Request<GetCapabilitiesRequest>,
     ) -> Result<Response<ServerCapabilities>, Status> {
         let metadata = request.metadata().clone();
-        Ok(Response::new(self.get(&metadata, request.into_inner()).await?))
+        Ok(Response::new(
+            self.get(&metadata, request.into_inner()).await?,
+        ))
     }
 }
 
 fn validate_action_digest(digest: Option<&Digest>) -> Result<(&str, i64), Status> {
-    let digest = digest.ok_or_else(|| Status::new(Code::InvalidArgument, "ActionCache digest is required"))?;
+    let digest = digest
+        .ok_or_else(|| Status::new(Code::InvalidArgument, "ActionCache digest is required"))?;
     validate_digest(&digest.hash, digest.size_bytes)?;
     if usize::try_from(digest.size_bytes)
         .ok()
@@ -178,7 +190,10 @@ fn validate_action_result(result: &ActionResult) -> Result<(), Status> {
     }
     for output in &result.output_directories {
         let tree_digest = output.tree_digest.as_ref().ok_or_else(|| {
-            Status::new(Code::InvalidArgument, "output directory tree digest is required")
+            Status::new(
+                Code::InvalidArgument,
+                "output directory tree digest is required",
+            )
         })?;
         validate_digest(&tree_digest.hash, tree_digest.size_bytes)?;
         if let Some(root_digest) = output.root_directory_digest.as_ref() {
