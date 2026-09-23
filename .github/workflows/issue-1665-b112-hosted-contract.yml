@@ -1,0 +1,45 @@
+name: issue-1665-b112-hosted-contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-1665-b112-hosted-contract.yml"
+      - ".github/workflows/release-cli.yml"
+      - "scripts/verify_b112_release_root_cause.py"
+      - "tests/test_cli_release_b112_behavior.py"
+  workflow_dispatch:
+    inputs:
+      expected_head:
+        description: Exact branch commit SHA to verify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  b112-contract:
+    name: B-112 verifier and cache-order mutations
+    if: >-
+      github.repository_id == '1232040291' &&
+      (github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && inputs.expected_head == github.sha))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the exact pull request head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install Python contract dependencies
+        run: python3 -m pip install --requirement requirements-ci.txt
+
+      - name: Verify the B-112 release contract and self-mutations
+        run: python3 scripts/verify_b112_release_root_cause.py --root .
+
+      - name: Run focused B-112 mutation tests
+        run: python3 -m pytest -q tests/test_cli_release_b112_behavior.py

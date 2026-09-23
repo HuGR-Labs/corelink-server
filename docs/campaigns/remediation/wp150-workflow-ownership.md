@@ -4,8 +4,8 @@ Canonical closed ownership map for tracked GitHub Actions workflows.
 Update this manifest with every workflow add, rename or removal. Unknown ownership remains `LEAD-BLOCKED | blocked`.
 Historical owned assignments are preserved from B131-B167.md at immutable base 648ecdccd229bdb5154b86843053c28b9cce9d36; the added workflow rows have no evidence-backed owner and remain blocked.
 
-workflow-count: 219
-workflow-paths-sha256: b96d090ddcc722f4c8715fb1e563e28534607f9cfe409f848f6d4308d57a6ef7
+workflow-count: 221
+workflow-paths-sha256: 7832f64a8a0c5d0c0fd3578d062107f5f9fdc5369280c9f1100ba0ec29d74294
 
 ```wp-workflow-ownership
 # workflow path | owner WP or LEAD-BLOCKED | status
@@ -126,6 +126,7 @@ workflow-paths-sha256: b96d090ddcc722f4c8715fb1e563e28534607f9cfe409f848f6d4308d
 .github/workflows/issue-1662-b106-cold-warm.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1662-b106-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1664-signing-readiness.yml | LEAD-BLOCKED | blocked
+.github/workflows/issue-1665-b112-hosted-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1666-mutants-evidence-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1667-b122-production-evidence.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1669-read-only-evidence.yml | LEAD-BLOCKED | blocked
@@ -158,6 +159,7 @@ workflow-paths-sha256: b96d090ddcc722f4c8715fb1e563e28534607f9cfe409f848f6d4308d
 .github/workflows/issue-2148-derived-v0004-policy.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2152-cyclonedx-diagnostic.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2156-ci-bundle-1-contract.yml | LEAD-BLOCKED | blocked
+.github/workflows/issue-2176-grpc-deny-gate.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2177-reapi-ingress-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2198-okf-adr-authority.yml | LEAD-BLOCKED | blocked
 .github/workflows/legal-changes-review.yml | LEAD-BLOCKED | blocked

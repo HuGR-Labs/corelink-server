@@ -58,6 +58,29 @@ def is_public(path: str) -> bool:
     return path.startswith("/v1/") or path == "/v1"
 
 
+# Exact source/path dispositions for deployed app ingress that belongs to a
+# machine-to-machine or provider contract, rather than customer OpenAPI. Keys
+# include the source file so a newly added or moved customer dispatch cannot
+# inherit a worker-wide or path-wide exclusion. The deployment and auth
+# boundaries are documented beside each entry.
+APP_NON_CUSTOMER_ROUTES: dict[tuple[str, str], str] = {
+    # B-054: internal audit-witness API. The Worker requires its private bearer
+    # token before dispatch (src/index.ts:421-423); callers are the audit chain,
+    # and the DO's /append is reached through witness.internal, not public DNS.
+    ("apps/audit-witness-worker/src/index.ts", "/v1/audit-chain/head-witness/compare-and-append"):
+        "B-054 private audit-chain machine-to-machine API (bearer-authenticated)",
+    ("apps/audit-witness-worker/src/index.ts", "/v1/audit-chain/head-witness/latest"):
+        "B-054 private audit-chain machine-to-machine API (bearer-authenticated)",
+    # B-072: synthetic drill service binding is disabled by default and runs
+    # only in dev/staging; the callback route exists only on staging's
+    # staging.corelink.humangr.com binding. See wrangler.toml and contract.ts.
+    ("apps/synthetic-pager-worker/src/index.ts", "/v1/drills/synthetic_page"):
+        "B-072 disabled-by-default dev/staging service-binding ingress",
+    ("apps/synthetic-pager-worker/src/index.ts", "/v1/webhooks/pagerduty"):
+        "B-072 staging-only PagerDuty provider callback (signature-authenticated)",
+}
+
+
 APP_IDENT = r"[A-Za-z_$][A-Za-z0-9_$]*"
 APP_TERM = rf"{APP_IDENT}(?:\s*\.\s*{APP_IDENT})*"
 APP_QUOTED = r'''(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)'''
@@ -84,6 +107,18 @@ APP_SWITCH = re.compile(
 APP_CASE = re.compile(rf"\bcase\s+(?P<value>{APP_QUOTED}|{APP_IDENT})\s*:")
 APP_CONST = re.compile(
     rf"\b(?:const|let)\s+(?P<name>{APP_IDENT})\s*=\s*(?P<value>{APP_QUOTED})"
+)
+APP_EXPORTED_CONST = re.compile(
+    rf"\bexport\s+const\s+(?P<name>{APP_IDENT})\s*=\s*(?P<value>{APP_QUOTED})"
+)
+APP_NAMED_IMPORT = re.compile(
+    rf"\bimport\s*\{{(?P<names>[^}}]+)\}}\s*from\s*(?P<module>{APP_QUOTED})",
+    re.DOTALL,
+)
+APP_AUDIT_WITNESS_REJECTION = re.compile(
+    r'''if\s*\(\s*request\.method\s*!==\s*["']POST["']\s*\|\|\s*'''
+    r'''url\.pathname\s*!==\s*["']/append["']\s*\)\s*'''
+    r'''return\s+fail\(\s*["']NOT_FOUND["']\s*,\s*404\s*\)\s*;?'''
 )
 APP_ALIAS = re.compile(
     rf"\b(?:const|let)\s+(?P<name>{APP_IDENT})\s*=\s*"
@@ -121,7 +156,7 @@ def collect_app_routes() -> dict[str, set[str]]:
         if "pathname" not in raw:
             continue
         src = strip_ts_comments(raw)
-        constants = app_string_constants(src)
+        constants = app_string_constants(src, file)
         aliases = app_path_aliases(src)
         for match in app_comparisons(src):
             left, right = match.group("left"), match.group("right")
@@ -306,13 +341,95 @@ def strip_ts_comments(src: str) -> str:
     return "".join(out)
 
 
-def app_string_constants(src: str) -> dict[str, str]:
+def app_string_constants(src: str, source_file: Path | None = None) -> dict[str, str]:
+    """Static local string constants plus direct named imports from app TS.
+
+    Imported values are followed only through a relative, in-app module edge
+    and only to a directly exported string literal. Aliasing, re-exports,
+    computed values, and package imports stay unresolved so public dispatches
+    using them remain visible to the fail-closed census.
+    """
     constants: dict[str, str] = {}
     for match in APP_CONST.finditer(src):
         value = app_unquote(match.group("value"))
         if value is not None:
             constants[match.group("name")] = value
+    if source_file is None:
+        return constants
+
+    for imported in APP_NAMED_IMPORT.finditer(src):
+        module = app_unquote(imported.group("module"))
+        if module is None or not module.startswith("."):
+            continue
+        imported_source = resolve_app_import(source_file, module)
+        if imported_source is None:
+            continue
+        try:
+            imported_src = strip_ts_comments(
+                imported_source.read_text(encoding="utf-8", errors="replace")
+            )
+        except OSError:
+            continue
+        exports = {
+            match.group("name"): value
+            for match in APP_EXPORTED_CONST.finditer(imported_src)
+            if (value := app_unquote(match.group("value"))) is not None
+        }
+        for entry in imported.group("names").split(","):
+            parts = re.fullmatch(
+                rf"\s*({APP_IDENT})(?:\s+as\s+({APP_IDENT}))?\s*", entry
+            )
+            if parts is None:
+                continue
+            exported_name, local_name = parts.groups()
+            value = exports.get(exported_name)
+            if value is not None:
+                constants[local_name or exported_name] = value
     return constants
+
+
+def resolve_app_import(source_file: Path, module: str) -> Path | None:
+    """Resolve one relative TS module within the apps tree."""
+    base = (source_file.parent / module).resolve()
+    if not base.is_relative_to(APPS.resolve()):
+        return None
+    candidates = [base] if base.suffix in APP_TYPESCRIPT_SUFFIXES else [
+        base.with_suffix(".ts"),
+        base.with_suffix(".tsx"),
+        base / "index.ts",
+        base / "index.tsx",
+    ]
+    return next(
+        (candidate for candidate in candidates if candidate.is_file() and not is_test_path(candidate)),
+        None,
+    )
+
+
+def app_customer_routes(routes: dict[str, set[str]]) -> dict[str, set[str]]:
+    """Remove only exact evidence-backed non-customer app ingress sources."""
+    customer: dict[str, set[str]] = {}
+    for route, locations in routes.items():
+        for location in locations:
+            source = location.rsplit(":", 1)[0]
+            if (source, route) not in APP_NON_CUSTOMER_ROUTES:
+                customer.setdefault(route, set()).add(location)
+    return customer
+
+
+def app_negative_nonroute_spans(file: Path, src: str) -> list[tuple[int, int]]:
+    """Consume the known audit-witness DO rejection guard without inventing a route.
+
+    This guard rejects every request except POST /append and is not the public
+    dispatch table. Its exact source, operator, path, method check, and 404
+    response are pinned; edits to any of those details become census findings.
+    """
+    relative = str(file.relative_to(REPO))
+    if relative != "apps/audit-witness-worker/src/index.ts":
+        return []
+    return [
+        (match.start(), match.end())
+        for match in APP_AUDIT_WITNESS_REJECTION.finditer(src)
+    ]
 
 
 def app_unquote(token: str) -> str | None:
@@ -574,6 +691,7 @@ def collect_app_pathname_census() -> list[str]:
         src = strip_ts_comments(raw)
         aliases = app_path_aliases(src)
         spans = app_dispatch_spans(src, aliases)
+        spans.extend(app_negative_nonroute_spans(file, src))
         relative = str(file.relative_to(REPO))
         # ``src`` has the same offsets as ``raw`` and has already passed the
         # syntax-checked comment/literal pass, so avoid lexing each file twice.
@@ -611,7 +729,7 @@ def collect_app_unsupported() -> list[str]:
         if "pathname" not in raw:
             continue
         src = strip_ts_comments(raw)
-        constants = app_string_constants(src)
+        constants = app_string_constants(src, file)
         aliases = app_path_aliases(src)
 
         def record(match: re.Match[str], kind: str, value: str | None) -> None:
@@ -657,6 +775,17 @@ def collect_app_unsupported() -> list[str]:
                 if value is None or value.startswith("/v1"):
                     record(case, "switch", value)
     findings.extend(collect_app_pathname_census())
+    active_routes = collect_app_routes()
+    active_dispositions = {
+        (location.rsplit(":", 1)[0], route)
+        for route, locations in active_routes.items()
+        for location in locations
+    }
+    for source, route in APP_NON_CUSTOMER_ROUTES:
+        if (source, route) not in active_dispositions:
+            findings.append(
+                f"{source}: stale non-customer app route disposition {route}"
+            )
     return sorted(set(findings))
 
 
@@ -685,6 +814,10 @@ def app_mutation_self_test(compare_fn) -> list[str]:
                 "reversed.ts": 'if ("/v1/b130-reversed" === url.pathname) return response;\n',
                 "constant.ts": (
                     'const ROUTE = "/v1/b130-constant";\n'
+                    "if (url.pathname === ROUTE) return response;\n"
+                ),
+                "imported.ts": (
+                    'import { IMPORTED_ROUTE as ROUTE } from "./contract";\n'
                     "if (url.pathname === ROUTE) return response;\n"
                 ),
                 "alias.ts": (
@@ -724,6 +857,36 @@ def app_mutation_self_test(compare_fn) -> list[str]:
             }
             for name, source in fixtures.items():
                 (apps / name).write_text(source, encoding="utf-8")
+            contract = apps / "contract.ts"
+            contract.write_text(
+                'export const IMPORTED_ROUTE = "/v1/b130-imported" as const;\n',
+                encoding="utf-8",
+            )
+            audit_witness = root / "apps/audit-witness-worker/src/index.ts"
+            audit_witness.parent.mkdir(parents=True)
+            audit_witness.write_text(
+                'if (request.method !== "POST" || url.pathname !== "/append") '
+                'return fail("NOT_FOUND", 404);\n'
+                'if (request.method === "POST" && url.pathname === '
+                '"/v1/audit-chain/head-witness/compare-and-append") return response;\n'
+                'if (request.method === "POST" && url.pathname === '
+                '"/v1/audit-chain/head-witness/latest") return response;\n',
+                encoding="utf-8",
+            )
+            synthetic = root / "apps/synthetic-pager-worker/src/index.ts"
+            synthetic.parent.mkdir(parents=True)
+            synthetic.write_text(
+                'import { SYNTHETIC_PAGE_PATH, PAGERDUTY_WEBHOOK_PATH } from "./contract";\n'
+                'if (url.pathname === SYNTHETIC_PAGE_PATH) return response;\n'
+                'if (url.pathname === PAGERDUTY_WEBHOOK_PATH) return response;\n',
+                encoding="utf-8",
+            )
+            synthetic_contract = synthetic.parent / "contract.ts"
+            synthetic_contract.write_text(
+                'export const SYNTHETIC_PAGE_PATH = "/v1/drills/synthetic_page" as const;\n'
+                'export const PAGERDUTY_WEBHOOK_PATH = "/v1/webhooks/pagerduty" as const;\n',
+                encoding="utf-8",
+            )
             for directory, name in (
                 ("TEST", "test-route.ts"),
                 ("SPEC", "spec-route.tsx"),
@@ -745,6 +908,7 @@ def app_mutation_self_test(compare_fn) -> list[str]:
                 "/v1/b130-mutation",
                 "/v1/b130-reversed",
                 "/v1/b130-constant",
+                "/v1/b130-imported",
                 "/v1/b130-alias",
                 "/v1/b130-tsx",
             }
@@ -754,6 +918,70 @@ def app_mutation_self_test(compare_fn) -> list[str]:
                 failures.append("static app mutations were not extracted")
             if "/v1/b130-mutation" not in missing_doc_paths:
                 failures.append("strict comparison did not turn mutation into MISSING_DOC")
+            if "/append" in routes:
+                failures.append("negative audit-witness 404 guard was invented as a served route")
+            if any(
+                "unsupported app pathname token url.pathname" in finding
+                and "audit-witness-worker" in finding
+                for finding in unsupported
+            ):
+                failures.append("exact audit-witness rejection guard was not classified")
+
+            private_audit_path = "/v1/audit-chain/head-witness/latest"
+            _, private_missing_doc = compare_fn(
+                {},
+                {},
+                {},
+                {private_audit_path: {"apps/audit-witness-worker/src/index.ts:442"}},
+            )
+            if any(path == private_audit_path for path, _ in private_missing_doc):
+                failures.append("exact B-054 machine route was reported as customer OpenAPI")
+            adjacent_public = "/v1/audit-chain/head-witness/new"
+            _, adjacent_missing_doc = compare_fn(
+                {},
+                {},
+                {},
+                {adjacent_public: {"apps/audit-witness-worker/src/index.ts:443"}},
+            )
+            if adjacent_public not in {path for path, _ in adjacent_missing_doc}:
+                failures.append("adjacent audit-witness path inherited the private disposition")
+            _, unrelated_same_path = compare_fn(
+                {},
+                {},
+                {},
+                {private_audit_path: {"apps/fixture-worker/src/index.ts:1"}},
+            )
+            if private_audit_path not in {path for path, _ in unrelated_same_path}:
+                failures.append("private path classification hid an unrelated source")
+
+            # The exact imported constant stays resolvable, while a changed
+            # value remains a real public route and a missing module remains
+            # an unresolved, fail-closed dispatch.
+            contract.write_text(
+                'export const IMPORTED_ROUTE = "/v1/b130-imported-changed" as const;\n',
+                encoding="utf-8",
+            )
+            changed_routes = collect_app_routes()
+            _, changed_missing_doc = compare_fn({}, {}, {}, changed_routes)
+            if "/v1/b130-imported-changed" not in {path for path, _ in changed_missing_doc}:
+                failures.append("changed imported route constant did not remain a public finding")
+            contract.unlink()
+            unresolved = collect_app_unsupported()
+            if not any("<unresolved>" in finding and "imported.ts" in finding for finding in unresolved):
+                failures.append("missing imported route module did not fail closed")
+
+            audit_witness.write_text(
+                'if (request.method !== "POST" || url.pathname !== "/append-mutated") '
+                'return fail("NOT_FOUND", 404);\n',
+                encoding="utf-8",
+            )
+            changed_guard = collect_app_unsupported()
+            if not any(
+                "unsupported app pathname token url.pathname" in finding
+                and "audit-witness-worker" in finding
+                for finding in changed_guard
+            ):
+                failures.append("changed negative pathname guard escaped the fail-closed census")
             expected_unsupported = (
                 "dynamic",
                 "token",
