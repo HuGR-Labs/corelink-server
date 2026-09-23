@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -66,12 +67,14 @@ def test_b226_channel_display_mutation_is_red() -> None:
 
 def test_b226_thiserror_channel_field_mutation_is_red() -> None:
     alerter, channel, config = _sources()
-    mutant = channel.replace(
-        "NotConfigured { channel: AlertChannel }",
-        "NotConfigured { removed_channel: AlertChannel }",
-        1,
+    mutant, replacements = re.subn(
+        r"(NotConfigured\s*\{.*?)(channel:\s*AlertChannel,)",
+        r"\1removed_channel: AlertChannel,",
+        channel,
+        count=1,
+        flags=re.DOTALL,
     )
-    assert mutant != channel
+    assert replacements == 1
     with pytest.raises(verifier.ContractError):
         verifier.verify_sources(alerter, mutant, config)
 
