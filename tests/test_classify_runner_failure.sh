@@ -20,6 +20,7 @@ assert_classification() {
 assert_classification ENOSPC 7 'cargo: could not create target: No space left on device (os error 28)'
 assert_classification TEST_FAILURE 7 'test parser ... FAILED; assertion failed'
 assert_classification SUCCESS 0 'test parser ... ok; ENOSPC is only a fixture word'
+assert_classification LINKER_FAILURE 1 'collect2: fatal error: ld terminated with signal 7 [Bus error]'
 assert_classification TEST_FAILURE 9 'error[E0308]; collect2: ld failed with Bus error'
 
 artifact="${CORELINK_CLASSIFICATION_ARTIFACT:-${CORELINK_ARTIFACT_DIR:-$tmp/artifact}/classification.json}"
@@ -42,6 +43,7 @@ assert payload["original_exit_code"] == 7
 assert payload["original_status_preserved"] is True
 PY
 grep -q 'Classification:.*ENOSPC' "$summary"
+grep -q '^::warning title=Infrastructure failure::ENOSPC; original gate status preserved$' <<<"$output"
 
 # Cleanup is bounded and only removes its fixed allowlist.  The sentinel stays.
 mkdir -p "$tmp/workspace/target" "$tmp/workspace/cache" "$tmp/workspace/temp"
