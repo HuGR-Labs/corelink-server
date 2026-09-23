@@ -1,0 +1,32 @@
+name: Issue 1663 B-107 runtime evidence boundary
+
+# Credentialless and read-only: this validates that B-107 remains parked until
+# the separately protected B-122 observation lane supplies production evidence.
+on:
+  pull_request:
+    paths:
+      - "BACKLOG.md"
+      - ".github/workflows/issue-1663-b107-runtime-boundary.yml"
+      - ".github/workflows/issue-1667-b122-production-evidence.yml"
+      - "scripts/verify_i1663_b107_runtime_boundary.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-1663-b107-runtime-boundary-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: B-107 runtime boundary mutations
+    if: ${{ github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact tree without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Prove the B-107 boundary and adversarial mutations
+        run: python3 -S scripts/verify_i1663_b107_runtime_boundary.py --self-test

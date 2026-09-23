@@ -12780,19 +12780,33 @@ owner: tl
 status: parked
 verify: manual
 verify-means: |
-  parked — a alegacao e latencia de producao sob credencial, e o gate roda sem credencial de
-  plano de dados.
+  parked — a separacao que o repositorio possui ja esta em `main` desde #1825:
+  `ostore` mede a janela CAS/R2 e `oaccounting` as janelas D1 de contabilidade e
+  URL-map, sem sobreposicao. A ponte de `spawn_blocking` e a coalescencia por
+  profundidade que preservam essa particao pertencem a [B-122]. Isto prova a
+  fronteira no codigo; nao prova uma latencia de producao.
 
-  Procedimento: PAT `cas:rw` no tenant de dogfood; TRES PUTs de 1 KiB em sequencia dentro de
-  60 s (a sequencia e obrigatoria — foi a medicao a frio que produziu a causa errada da
-  primeira versao de [B-102]); ler `ostore` do terceiro. Registrar a VERSAO de producao
-  medida junto do numero: prod fica atras da `main`, e comparar numero novo com codigo
-  diferente nao atribui causa.
+  A dependencia operacional exata e a dispatch protegida da GitHub Action
+  `Issue 1667 B-122 production timing evidence`, executada em `main`. O owner
+  do ambiente `production` precisa aprovar a execucao e fornecer base HTTPS
+  aprovada, tenant de dogfood, `serving_sha` de 40 hex que ja esteja servindo e
+  regiao; o segredo `CORELINK_DOGFOOD_PAT` fica somente no runner. A lane emite
+  tres PUTs autenticados de 1 KiB, em chaves novas daquele tenant, dentro de
+  60 s, exige `ostore` e `oaccounting`, confere que a soma nao excede o relogio
+  de cada request e conserva somente cabecalhos/identidades redigidos no
+  artefato. Ela nao altera semantica do request nem atravessa isolamento de
+  tenant.
 
-  **NAO fecha por o `ostore` cair.** Enquanto [B-122] nao separar D1-de-contabilidade
-  de R2, uma queda nao diz qual dos dois melhorou, e um item que aceita melhora
-  inatribuivel aceita coincidencia como prova. Fecha quando (1) as duas partes forem
-  mensuraveis separadamente E (2) a soma delas cair para a ordem de 30-50 ms.
+  Depois da dispatch, registrar o artefato redigido e calcular p50/p90/p99 de
+  `ostore`, `oaccounting` e da soma a partir das tres respostas. O
+  `serving_sha` e obrigatorio: producao pode estar atras da `main`, portanto
+  comparar com outro binario nao atribui uma causa. Nenhuma fixture, teste
+  hermetico ou job credentialless e uma medicao de producao.
+
+  **NAO fecha por o `ostore` cair.** A separacao precisa primeiro aparecer na
+  versao efetivamente servida e a remediacao de [B-122] precisa ter sua prova
+  de producao. Fecha quando (1) as duas partes forem mensuradas separadamente
+  nessa versao E (2) a soma delas cair para a ordem de 30-50 ms.
 
   A metade da cauda tem criterio proprio: p90 e p99 medidos, nao so mediana. Um p99 de 4 s
   com mediana de 1,4 s continua sendo defeito depois de a mediana melhorar.
