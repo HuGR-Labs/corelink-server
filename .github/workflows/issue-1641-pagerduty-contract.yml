@@ -16,6 +16,7 @@ on:
       - 'migrations/d1/0116_synthetic_page_delivery_lifecycle.sql'
       - 'specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md'
       - 'specs/_runbooks/RB-ONCALL-POLICY.md'
+      - '.github/workflows/synthetic-pager-worker-deploy.yml'
       - '.github/workflows/issue-1641-pagerduty-contract.yml'
   push:
     branches: [main]
@@ -30,6 +31,7 @@ on:
       - 'migrations/d1/0116_synthetic_page_delivery_lifecycle.sql'
       - 'specs/_runbooks/RB-SYNTHETIC-PAGE-DRILL.md'
       - 'specs/_runbooks/RB-ONCALL-POLICY.md'
+      - '.github/workflows/synthetic-pager-worker-deploy.yml'
       - '.github/workflows/issue-1641-pagerduty-contract.yml'
   workflow_dispatch:
 
@@ -52,6 +54,8 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+      - name: Lint staging deploy workflow
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -no-color .github/workflows/synthetic-pager-worker-deploy.yml
       - name: Verify credentialless event, receipt, escalation, and redaction contract
         run: python3 -S scripts/verify_i1641_pagerduty_contract.py
       - name: Verify manifest mutations fail closed
