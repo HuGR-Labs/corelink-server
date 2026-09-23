@@ -17,7 +17,7 @@ source_files:
 source_blobs:
   - "worker/src/event_log_do.ts@296d814b88a582cae97f9cd01665f5dce7738b05"
   - "worker/src/rollout_controller.ts@989af7c4ac828a39ede4381bd3d036b4bb747267"
-  - "worker/src/replication_coordinator_do.ts@e3b43ccaadff3a348fd51366c4772cb6e3efe69f"
+  - "worker/src/replication_coordinator_do.ts@57921a7998d345cdcf22f378f183e17b716734fd"
 
   - "worker/src/durable_object.ts@1ea100789b9514ea1c7caf67212fe3b162bbe3e4"
   - "worker/src/durable_object_probes.ts@10c038f0726316f0cae814aec422eabc708489a5"
@@ -67,9 +67,9 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
   becomes the container default (OFF); without the forward an operator flip of either would be
   silently ignored, exactly the `EMAIL_HASH_SALT` class of bug
   (`worker/src/durable_object.ts:430-463`). The forward-list also now carries the diagnostic flag
-  `CORELINK_ORIGIN_TIMING_DETAIL` (`worker/src/durable_object_start.ts:239`), `?? ""` so an unset var is
-  OFF by default: the container reads it via `std::env::var` to arm its `oargon`/`opermit`/`ortier`
-  origin-timing detail phases, so an operator `wrangler secret put CORELINK_ORIGIN_TIMING_DETAIL`
+  `CORELINK_ORIGIN_TIMING_DETAIL` (`worker/src/durable_object_start.ts:267-275`), `?? ""` so an unset var is
+  OFF by default: the container reads it via `std::env::var` to arm its `oargon`/`opermit`
+  credential-path detail phases, so an operator `wrangler secret put CORELINK_ORIGIN_TIMING_DETAIL`
   would silently no-op if it were not on this list — the same `ERASURE_SALT_KEY`-class defect,
   compounded here because a diagnostic flag reading as "armed but the phases just never show up" is
   harder to notice than a hard failure.
@@ -234,7 +234,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 8. `worker/src/durable_object_start.ts:42-59` — the synchronous in-memory `"starting"` concurrent-start guard.
 9. `worker/src/durable_object_start.ts:79-82` — audit-before-mutation cold-start event + `container.start`.
 10. `worker/src/durable_object.ts:430-463` — the `container.start({ env })` env-contract forward, including the S-09 offsite-archive knobs `R2_AUDIT_BUCKET` (`worker/src/durable_object_start.ts:121`) and `AUDIT_ARCHIVE_BATCH_LIMIT` (`worker/src/durable_object_start.ts:122`), each `?? ""` ⇒ container default (bucket `corelink-audit-weur`, 2000-row batch), and the WP-G OCI keystone flags `OCI_PUBLIC_DEDUP_ENABLED` (`worker/src/durable_object_start.ts:256-257`) and `OCI_UPSTREAM_ON_MISS` (`worker/src/durable_object_start.ts:260-261`), each `?? ""` ⇒ container default (OFF).
-10a. `worker/src/durable_object_start.ts:131` — `CORELINK_ORIGIN_TIMING_DETAIL: this.env.CORELINK_ORIGIN_TIMING_DETAIL ?? ""` in the same forward-list: the container reads this diagnostic flag via `std::env::var` to arm its `oargon`/`opermit`/`ortier` origin-timing detail phases, so an operator override that is not on this list silently no-ops (the `ERASURE_SALT_KEY` class of bug) — production default OFF, leaving the phases' time inside the `oother` residue.
+10a. `worker/src/durable_object_start.ts:267-275` — `CORELINK_ORIGIN_TIMING_DETAIL: this.env.CORELINK_ORIGIN_TIMING_DETAIL ?? ""` in the same forward-list: the container reads this diagnostic flag via `std::env::var` to arm its `oargon`/`opermit` credential-path detail phases, so an operator override that is not on this list silently no-ops (the `ERASURE_SALT_KEY` class of bug) — production default OFF, leaving the phases' time inside `ohandler` (also emitted as the identical legacy alias `oother`).
 11. `worker/src/durable_object.ts:562-592` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:485-504` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
 12. `worker/src/durable_object.ts:855-884` — the DURABLE idle reaper inside `alarmTick()`: an absent `lastActivityMs` backfills, an expired one emits the death event (audit-before-mutation), RE-CHECKS the clock (every `await` is a yield point where a queued request may have arrived), then destroys the container and signals chain-end so the DO hibernates instead of heartbeating a dead container forever.
 13. `worker/src/durable_object.ts:777-793` — `alarm()`: a thin `try/finally` that ALWAYS re-arms the chain unless the tick reported a deliberate end, so a throwing tick can never strand the reaper (the posture `ReplicationCoordinatorDO.alarm()` already used); `worker/src/durable_object.ts:801-922` — `alarmTick()`: chain guard (dead container ⇒ end the chain), the idle reaper, the `degraded`-but-running arm (probe skipped, chain kept so the reaper still applies), the dedup arm, then the health re-probe + degrade.

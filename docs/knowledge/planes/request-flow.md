@@ -7,6 +7,7 @@ description: "The end-to-end path a cache request takes: edge auth + routing in 
 source_files:
   - "worker/src/lib/edge_find_missing.ts"
   - "crates/corelink-container/src/routes/audit_cas_attempted.rs"
+  - "crates/corelink-container/src/main.rs"
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/routes/build.rs"
   - "crates/corelink-container/src/origin_timing.rs"
@@ -36,7 +37,8 @@ source_files:
 source_blobs:
   - "worker/src/lib/edge_find_missing.ts@17ca8cfe8bfbf233d031cd600ccb7802ab7f28b8"
   - "crates/corelink-container/src/routes/audit_cas_attempted.rs@a1a8353d127c9a46c28a9d417f0d7a4f2e991c45"
-  - "crates/corelink-container/src/routes.rs@ddbe70297312a757a9894c71635d9610f881d3b2"
+  - "crates/corelink-container/src/main.rs@b64f13689133f41f65f286ca7aca0bc1a17f53d9"
+  - "crates/corelink-container/src/routes.rs@da4d710d15537491da17f84c90f133d06124711e"
   - "crates/corelink-container/src/storage/d1_audit_sink.rs@8248f5b89b81118171c8d98dfd28eb98dcad95c5"
 
   - "crates/corelink-container/src/origin_timing.rs@41b25e0b9239234bdff06fbf7391abd826d3faf4"
@@ -153,20 +155,19 @@ semantics in the container.
 6. The proxy rewrites the request onto `http://localhost:50051` through the `getTcpPort` fetcher — the
    DO→container hop (`worker/src/durable_object_probes.ts:226-237`).
 7. The container's composed router (built by `build_with_factory`) receives the request and routes it to
-   the matching handler (`crates/corelink-container/src/routes.rs:462-464`).
+   the matching handler (`crates/corelink-container/src/routes.rs:521-527`, `crates/corelink-container/src/routes/build.rs:463-480`).
 8. The shared CAS/AC handler objects — wrapped once with byte-accounting, the erasure tombstone gate,
    and the native PAT possession backstop — execute the actual cache operation
    (`crates/corelink-container/src/routes/build.rs:147-307`).
 9. The hop is MEASURED end to end, and the measurement is split across the same boundary the request
    crosses. The container's outermost data-plane layer clocks its whole share of the request and stamps
-   `opat` / `oquota` / `ostore` / `oother` onto the response's own `Server-Timing`
+   its named phases, including `ohandler` (plus the temporary `oother` compatibility alias), onto the response's own `Server-Timing`
    (`crates/corelink-container/src/origin_timing.rs:728-737`, wired last so it wraps every inner layer at
-   `crates/corelink-container/src/routes/build.rs:771-773`); the Worker forwards those four and derives the
+   `crates/corelink-container/src/routes/build.rs:771-773`); the Worker canonicalizes and forwards the container phases (`worker/src/index_observability.ts:43-60`) and derives the
    one term only it can see, `ohop = origin − Σ(container phases)` — the dispatch, the DO's prologue and
-   the wire (`worker/src/index_observability.ts:247`). Recording is a task-local ledger, so an instrumented region
-   reached outside a request (a test, a background task) simply records nothing
-   (`crates/corelink-container/src/origin_timing.rs:426-432`).
-9b. **W2 split `oother` into three named regions on the PAT-verification path**, `oargon` /
+   the wire (`worker/src/index_observability.ts:247`). Recording is a task-local ledger, so `timed` passes through without recording when no request ledger is in scope
+   (`crates/corelink-container/src/origin_timing.rs:589-598`).
+9b. **W2 split the generic `ohandler` request-framework time into named regions on the PAT-verification path**, `oargon` /
    `opermit` / `ortier` — the container's Argon2id verify (memo check + coalesced flight, and the
    row-not-found dummy burn, under the SAME `oargon` name so the two arms stay indistinguishable),
    the `ARGON2_PERMIT_WAIT`-bounded semaphore acquires (`opermit`), and `ensure_tier_applied`'s D1
@@ -174,9 +175,9 @@ semantics in the container.
    Argon2id flight SPAWNS its lead future onto a task with no ambient task-local ledger, `oargon`/
    `opermit` are recorded via a ledger HANDLE captured on the originating task before the spawn
    (`current_ledger` + `PhaseScope::with_handle`), not the ambient-task-local path `timed`/
-   `PhaseScope::enter` use everywhere else (`crates/corelink-container/src/origin_timing.rs:461-463`).
+   `PhaseScope::enter` use everywhere else (`crates/corelink-container/src/origin_timing.rs:612-630`, `crates/corelink-container/src/origin_timing.rs:665-670`).
    Of these, only `oargon` and `opermit` are gated OFF by default behind
-   `CORELINK_ORIGIN_TIMING_DETAIL=on` (`crates/corelink-container/src/origin_timing.rs:483`,
+   `CORELINK_ORIGIN_TIMING_DETAIL=on` (`crates/corelink-container/src/origin_timing.rs:483-484`,
    `crates/corelink-container/src/origin_timing.rs:552-555`): `opermit`'s mere PRESENCE reveals
    whether the Argon2id flight ran at all, i.e. whether a `secret_match_memo` hit was warm for that
    exact credential, and the dummy burn exists precisely so a missing/expired/revoked `token_id` is
@@ -187,16 +188,16 @@ semantics in the container.
    `crates/corelink-container/src/origin_timing.rs:530-532`).
 9c. **`ortier` and `oaudit` are NOT gated — they publish unconditionally.** Both sat behind the same
    flag until B-109, which split it: neither carries the credential oracle the flag exists to withhold,
-   and gating them meant the only way to enumerate a 139 ms `oother` in production was to arm that
-   oracle for the length of the diagnostic window. The gate now names exactly the two credential-path
-   phases (`crates/corelink-container/src/origin_timing.rs:339`). `oaudit` is the blocking D1-over-HTTP write inside
+   and gating them meant the only way to enumerate a large `ohandler` phase in production was to arm that
+   oracle for the length of the diagnostic window. Only the credential-path pair is gated; `ortier` and `oaudit` publish unconditionally
+   (`crates/corelink-container/src/origin_timing.rs:478-489`). `oaudit` is the blocking D1-over-HTTP write inside
    `D1AuditOutboxSink::write_blocking` — the choke point every SYNC native-plane CAS/AC `AuditSink::emit`
    call routes through before/after a read or mutation — is timed into `Phase::Audit` via a
    `PhaseScope` opened at the top of that method
    (`crates/corelink-container/src/storage/d1_audit_sink.rs:367-375`). Separately, and UNGATED, the same
    native CAS/AC handlers' R2/S3 object GET/PUT/DELETE/LIST calls (`R2CasHandler`/`R2AcHandler`, made
    through the sync `block_in_place` bridge) are now wrapped into the EXISTING `ostore` phase rather than
-   falling into `oother`
+   falling into `ohandler` (also emitted under the temporary `oother` alias)
    (`crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:75-117`,
    `crates/corelink-container/src/storage/r2_s3_parts/ac_ops.rs:2-80`). Both additions follow the same
    `PhaseScope::enter` pattern as `oargon`/`opermit`/`ortier` and change no ordering or error handling —
@@ -248,12 +249,12 @@ semantics in the container.
   blindly (`crates/corelink-container/src/routes/build.rs:147-307`).
 - The DO will not proxy until the container is confirmed running (or it returns 503/500)
   (`worker/src/durable_object.ts:327-356`).
-- The `origin` split always reconciles: the container's residue phase is computed against its OWN
+- The `origin` split reconciles when its measured scopes do not overlap; otherwise the container marks the partition unreconciled and the Worker refuses the split. The container's `ohandler` phase (also temporarily emitted as the identical legacy alias `oother`) is computed against its OWN
   whole-request clock, so its parts sum exactly to the time it held the request
-  (`crates/corelink-container/src/origin_timing.rs:389`), and the Worker publishes no split it cannot
+  (`crates/corelink-container/src/origin_timing.rs:497-507`), and the Worker publishes no split it cannot
   make add up (`worker/src/index_observability.ts:247-248`). That reconciliation holds with `oargon`/`opermit`/
   `ortier`/`oaudit` present OR absent — the gate just moves their time between the named phases and
-  `oother`, never off the ledger (`crates/corelink-container/src/origin_timing.rs:321-355`). For CAS and
+  `ohandler` (and its identical legacy alias `oother`), never off the ledger (`crates/corelink-container/src/origin_timing.rs:467-507`). For CAS and
   AC list operations, the mandatory `ListAttempted` audit completes before the R2 list dispatch; the
   separate audit and store scopes therefore do not overlap (`crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:329-418`, `crates/corelink-container/src/storage/r2_s3_parts/ac_list.rs:33-98`).
 - The DO→container hop is not mandatory on every request: a `brew`/`pip` `_public` edge-serve HIT sets
@@ -291,12 +292,12 @@ semantics in the container.
 7. `worker/src/durable_object_probes.ts:226-237` — the DO→container proxy via `getTcpPort(50051)`.
 8. `worker/src/durable_object.ts:177-278` — the DO `fetch`: tenant bind, ensure-running, proxy.
 9. `worker/src/durable_object.ts:327-356` — the ensure-running gate before proxying (503/500 otherwise).
-10. `crates/corelink-container/src/routes.rs:462-464` — the container's composed router receiving the request.
+10. `crates/corelink-container/src/routes.rs:521-527`, `crates/corelink-container/src/routes/build.rs:463-480` — the container's composed router receiving the request.
 11. `crates/corelink-container/src/routes/build.rs:147-307` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.
-12. `crates/corelink-container/src/origin_timing.rs:728-737` — the container's outermost data-plane layer: scope a task-local phase ledger over the request, clock the whole of it, and stamp the phases on the response's `Server-Timing`. Wired last (so it wraps every inner layer) at `crates/corelink-container/src/routes/build.rs:771-773`; the residue that makes the parts sum to the whole is `crates/corelink-container/src/origin_timing.rs:389`; `timed` is the pass-through recorder at `crates/corelink-container/src/origin_timing.rs:426-432`.
-13. `crates/corelink-container/src/origin_timing.rs:195-209` — the `Phase::Argon` / `Phase::Permit` / `Phase::Tier` variants W2 split out of `oother`: the PAT Argon2id region (found arm AND row-not-found dummy burn, same name), the `ARGON2_PERMIT_WAIT` semaphore acquires, and `ensure_tier_applied`'s D1 read.
-14. `crates/corelink-container/src/origin_timing.rs:461-463` — `current_ledger`: captures a handle to the ambient ledger on the ORIGINATING task, for a region (the Argon2id `FlightGroup`'s spawned lead future) that runs on a different task and cannot see the task-local `timed`/`PhaseScope::enter` rely on.
-15. `crates/corelink-container/src/origin_timing.rs:552-555` — `detail_phases_enabled`: reads `CORELINK_ORIGIN_TIMING_DETAIL`, off by default and load-bearing — `opermit` presence is a warm-memo oracle, and the dummy burn's padding is timing that a named split would erode. B-109 narrowed the gate to exactly that credential-path pair; the arm that skips them is `crates/corelink-container/src/origin_timing.rs:339`, and `ortier`/`oaudit` fall through it and publish always.
+12. `crates/corelink-container/src/origin_timing.rs:728-737` — the container's outermost data-plane layer: scope a task-local phase ledger over the request, clock the whole of it, and stamp the phases on the response's `Server-Timing`. Wired last (so it wraps every inner layer) at `crates/corelink-container/src/routes/build.rs:771-773`; the residue that makes the parts sum to the whole is `crates/corelink-container/src/origin_timing.rs:497-507`; `timed` is the pass-through recorder at `crates/corelink-container/src/origin_timing.rs:589-598`.
+13. `crates/corelink-container/src/origin_timing.rs:195-209` — the `Phase::Argon` / `Phase::Permit` / `Phase::Tier` variants exposed alongside the generic `ohandler` phase: the PAT Argon2id region (found arm AND row-not-found dummy burn, same name), the `ARGON2_PERMIT_WAIT` semaphore acquires, and `ensure_tier_applied`'s D1 read.
+14. `crates/corelink-container/src/origin_timing.rs:612-630` and `crates/corelink-container/src/origin_timing.rs:665-670` — `current_ledger`: captures a handle to the ambient ledger on the ORIGINATING task, for a region (the Argon2id `FlightGroup`'s spawned lead future) that runs on a different task and cannot see the task-local `timed`/`PhaseScope::enter` rely on.
+15. `crates/corelink-container/src/origin_timing.rs:552-555` — `detail_phases_enabled`: reads `CORELINK_ORIGIN_TIMING_DETAIL`, off by default and load-bearing — `opermit` presence is a warm-memo oracle, and the dummy burn's padding is timing that a named split would erode. B-109 narrowed the gate to exactly that credential-path pair; the emission gate is `crates/corelink-container/src/origin_timing.rs:483-484`, and `ortier`/`oaudit` fall through it and publish always.
 16. `crates/corelink-container/src/storage/d1_audit_sink.rs:367-375` — `D1AuditOutboxSink::write_blocking`: the choke point every SYNC native CAS/AC `AuditSink::emit`/`append` call routes through, timed into `Phase::Audit` (`oaudit`) via `PhaseScope::enter`.
 17. `crates/corelink-container/src/storage/r2_s3_parts/cas_ops.rs:75-117` — `R2CasHandler::read`'s R2 GET, timed into the EXISTING `Phase::Store` (`ostore`) — the first native-plane R2 call this phase absorbs (see also `crates/corelink-container/src/storage/r2_s3_parts/ac_ops.rs:2-80` for the AC counterpart, `R2AcHandler::lookup`).
 18. `crates/corelink-container/src/storage/r2_s3_parts/ac_core.rs:329-418` — `R2CasHandler::list`: emits the mandatory `ListAttempted` audit before the R2 enumeration and returns `AuditFailed` without dispatching storage when the audit fails.
