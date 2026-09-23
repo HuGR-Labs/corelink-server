@@ -1,0 +1,131 @@
+name: Issue 2152 CycloneDX SBOM diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/issue-2152-cyclonedx-diagnostic.yml'
+      - '.github/workflows/issue-2050-cli-release-dry-run.yml'
+      - 'tools/cli/fuzz/Cargo.toml'
+      - 'tests/e2e-user-journeys/Cargo.toml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2152-cyclonedx-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    if: github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291'
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    steps:
+      - name: Checkout the exact failed source tree without credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: a2a03b2be6d4c59ad9f3d126578bd2e9054cca10
+          path: source
+          persist-credentials: false
+
+      - name: Install the repository-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+
+      - name: Install pinned cargo-cyclonedx and record status
+        id: install
+        continue-on-error: true
+        working-directory: source
+        shell: bash
+        run: |
+          set -u -o pipefail
+          log="${RUNNER_TEMP}/cargo-cyclonedx-install.log"
+          cargo install cargo-cyclonedx --locked --version =0.5.9 >"${log}" 2>&1
+          rc=$?
+          printf 'cargo install exit status: %s\n' "${rc}"
+          tail -n 40 "${log}"
+          printf 'exit_code=%s\n' "${rc}" >> "${GITHUB_OUTPUT}"
+          exit "${rc}"
+
+      - name: Run only the pinned CycloneDX generation command
+        id: generate
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        working-directory: source
+        shell: bash
+        run: |
+          set -u -o pipefail
+          stdout="${RUNNER_TEMP}/cargo-cyclonedx.stdout"
+          stderr="${RUNNER_TEMP}/cargo-cyclonedx.stderr"
+          cargo cyclonedx --format json --spec-version 1.5 --all >"${stdout}" 2>"${stderr}"
+          rc=$?
+          printf 'cargo cyclonedx exit status: %s\n' "${rc}"
+          printf '%s\n' '--- stdout tail (max 40 lines) ---'
+          tail -n 40 "${stdout}"
+          printf '%s\n' '--- stderr tail (max 40 lines) ---'
+          tail -n 40 "${stderr}"
+          printf 'exit_code=%s\n' "${rc}" >> "${GITHUB_OUTPUT}"
+          exit "${rc}"
+
+      - name: Assert the consumed SBOM is nonempty and CycloneDX 1.5 JSON
+        id: validate
+        if: steps.generate.outcome == 'success'
+        continue-on-error: true
+        working-directory: source
+        shell: bash
+        run: |
+          set -u -o pipefail
+          test -s tools/cli/bom.json
+          rc=$?
+          if [ "${rc}" -eq 0 ]; then
+            python3 -c 'import json,pathlib; d=json.loads(pathlib.Path("tools/cli/bom.json").read_text()); assert d.get("bomFormat")=="CycloneDX" and d.get("specVersion")=="1.5"'
+            rc=$?
+          fi
+          printf 'SBOM nonempty/parse validation exit status: %s\n' "${rc}"
+          printf 'exit_code=%s\n' "${rc}" >> "${GITHUB_OUTPUT}"
+          exit "${rc}"
+
+      - name: Copy the validated SBOM to the dry-run inventory path
+        id: copy
+        if: steps.validate.outcome == 'success'
+        continue-on-error: true
+        working-directory: source
+        shell: bash
+        run: |
+          set -u -o pipefail
+          mkdir -p dist
+          cp tools/cli/bom.json dist/corelink-cli.cdx.json
+          rc=$?
+          printf 'SBOM inventory copy exit status: %s\n' "${rc}"
+          printf 'exit_code=%s\n' "${rc}" >> "${GITHUB_OUTPUT}"
+          exit "${rc}"
+
+      - name: Summarize isolated SBOM stage
+        if: always()
+        env:
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          INSTALL_EXIT: ${{ steps.install.outputs.exit_code }}
+          GENERATE_OUTCOME: ${{ steps.generate.outcome }}
+          GENERATE_EXIT: ${{ steps.generate.outputs.exit_code }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          VALIDATE_EXIT: ${{ steps.validate.outputs.exit_code }}
+          COPY_OUTCOME: ${{ steps.copy.outcome }}
+          COPY_EXIT: ${{ steps.copy.outputs.exit_code }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '### Issue 2152 isolated CycloneDX stage'
+            echo '| Command | outcome | exit status |'
+            echo '|---|---|---:|'
+            echo "| cargo install cargo-cyclonedx 0.5.9 | ${INSTALL_OUTCOME:-not-run} | ${INSTALL_EXIT:-n/a} |"
+            echo "| cargo cyclonedx --format json --spec-version 1.5 --all | ${GENERATE_OUTCOME:-not-run} | ${GENERATE_EXIT:-n/a} |"
+            echo "| test -s + CycloneDX 1.5 JSON validation | ${VALIDATE_OUTCOME:-not-run} | ${VALIDATE_EXIT:-n/a} |"
+            echo "| copy tools/cli/bom.json to dist/corelink-cli.cdx.json | ${COPY_OUTCOME:-not-run} | ${COPY_EXIT:-n/a} |"
+            echo 'Source: `a2a03b2be6d4c59ad9f3d126578bd2e9054cca10`; no CLI targets are built and no artifact is published.'
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${INSTALL_OUTCOME:-skipped}" != success || "${GENERATE_OUTCOME:-skipped}" != success || "${VALIDATE_OUTCOME:-skipped}" != success || "${COPY_OUTCOME:-skipped}" != success ]]; then
+            echo '::error::Isolated SBOM stage did not complete; see per-command exit status and bounded diagnostics above.'
+            exit 1
+          fi
