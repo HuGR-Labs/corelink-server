@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout candidate data (immutable event SHA) # nosemgrep: yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout # reason: candidate is data-only; BASE checker runs separately; ADR-0101
