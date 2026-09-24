@@ -947,7 +947,7 @@
       "semantic_disposition": {
         "relation": "equivalent_existing_backlog_item",
         "canonical_id": "B-028",
-        "canonical_title": "Dependabot dependency paths are remediated; post-merge census refresh remains open",
+        "canonical_title": "Dependabot dependency paths are remediated and the live census is empty",
         "evidence": {
           "source_document": "docs/security/2026-06-15-launch-due-diligence-audit.md",
           "source_locator": "MEDIUM / LOW item 38",
