@@ -16,7 +16,8 @@ compilation, invocation, HTTP emission, provider/D1 activity, runtime, or
 deployment.
 
 [Header route](#b01) · [Circuit route](#b02) · [Audit route](#b03) ·
-[Metric route](#b04) · [Consumer references](#b05) · [Closure](#b06)
+[Metric route](#b04) · [Consumer references](#b05) · [Closure](#b06) ·
+[README navigation](#b07)
 
 <a id="b01"></a>
 ## B01 — Header-to-root relation
@@ -82,7 +83,7 @@ covered by REL-007; no duplicate relation is asserted.
 <a id="b06"></a>
 ## B06 — Closure and unknowns
 
-Coverage is the manifest, crate root, five local modules, declared test files,
+Coverage is the manifest, crate root, five local modules, crate README, declared test files,
 and the three B05 relations (REL-005–REL-007). The [storage quota header](../../../knowledge/tenancy/storage-quota-header.md)
 is the verified canonical OKF route, not a runtime edge and not revalidated.
 Unknown: full reverse graph, resolved features, API adoption, execution, HTTP,
@@ -119,3 +120,14 @@ Atomic relation index in B06: [REL-001](#rel-001) · [REL-002](#rel-002) · [REL
 **Producer → consumer:** public header API → declared `prop_rate_headers` test target. **Activation:** target selected/run, status unknown. **Contract/effect:** property assertions over local builder/taxonomy. **Failure:** API drift can fail property checks. **Validation/coordination:** compare test inputs/assertions with API-001. **Evidence:** manifest and test source. [Index](#b06)
 
 [Reference](REFERENCE.md#r01) · [Maintenance](MAINTENANCE.md#m01) · [Back to header route](#b01)
+
+<a id="b07"></a>
+## B07 — README and local ownership navigation
+
+`crates/corelink-rate-headers/README.md` → this [reference](REFERENCE.md#r01)
+is a local documentation link. The README's OSS-strategy link points to the
+`HuGR-dev/corelink-server` repository; its destination is documentation only.
+Neither link adds a Cargo dependency or proves crate publication, HTTP
+emission, runtime behavior, or deployment. The repository and README pointers
+were read at `b9481e08c383532336b8ebfadf44b0e43dc42e36`; Rust contract evidence
+above remains on the historical source pin. [Back to header route](#b01)

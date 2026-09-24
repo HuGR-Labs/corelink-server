@@ -27,7 +27,9 @@ route reachability, test execution, runtime state, or deployment.
 
 Package role: pure-logic library for typed rate-limit headers and an in-memory circuit model. Manifest declares one lib, two explicit test targets (`prop_rate_headers`, `migration_canonical_0014`), a `uuid/v7` feature, and no bin/build target. `MIGRATION_0014_GLOBAL_CIRCUIT_STATE` embeds `migrations/d1/0014_global_circuit_state.sql`; embedding is not applying it. Source: `Cargo.toml`, `src/lib.rs:220-230`.
 
-The current manifest metadata names repository `https://github.com/HuGR-Labs/corelink-server`; this is Cargo package metadata and does not establish a release or deployment destination. The pinned source commit predates this metadata value; the current manifest was read separately.
+The current manifest metadata names repository `https://github.com/HuGR-dev/corelink-server` (`Cargo.toml:9`, read at `b9481e08c383532336b8ebfadf44b0e43dc42e36`). This is Cargo package metadata and does not establish a release or deployment destination. The Rust source analysis remains pinned to `source_commit` above; only this metadata and the README pointer below were read at the selected current-main commit.
+
+The [crate README](../../../../crates/corelink-rate-headers/README.md) links back to this local ownership reference and to the repository's OSS strategy page. Those are documentation navigation links, not package dependencies or runtime relations.
 
 <a id="r02"></a>
 ## R02 — Boundaries and ownership
