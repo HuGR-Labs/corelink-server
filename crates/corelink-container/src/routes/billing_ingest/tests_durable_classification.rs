@@ -175,7 +175,7 @@ async fn durable_classification_matrix() {
 
     let canonical = Fixture::new();
     let store = canonical.store();
-    let key = hex64(0x37);
+    let key = hex64(0xaf);
     assert_eq!(store.stage(&record(7200, &key)).await, Ok(StageOutcome::Inserted));
     let mut wire = record_json(&tenant_a(), &key.to_ascii_uppercase());
     wire["region"] = serde_json::json!("IAD");
