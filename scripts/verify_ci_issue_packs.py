@@ -40,6 +40,7 @@ CHECK_IDS = {
     "python-mutants-shards",
     "cargo-mutants-v27-inventory",
     "python-b170-owner-actions",
+    "rust-b122-phase-regions",
 }
 REQUIRED_PACK_CHECKS = {
     "issue-2440-ci-scoping": {"actionlint", "ci-pack-contract"},
@@ -47,6 +48,7 @@ REQUIRED_PACK_CHECKS = {
     "issue-1948-mutants-receipt": {"ci-pack-contract", "python-mutants-receipt"},
     "issue-2457-mutants-shards": {"actionlint", "ci-pack-contract", "python-mutants-shards", "cargo-mutants-v27-inventory"},
     "issue-1677-b170-owner-actions": {"ci-pack-contract", "python-b170-owner-actions"},
+    "issue-1667-phase-regions": {"actionlint", "ci-pack-contract", "rust-b122-phase-regions"},
 }
 REQUIRED_PACK_JOBS = {pack_id: {"issue-pack"} for pack_id in REQUIRED_PACK_CHECKS}
 TARGET_BASE_RULE = (
@@ -57,11 +59,12 @@ TARGET_BASE_RULE = (
 
 
 def validate_workflow_contract(workflow_text: str) -> list[str]:
+    actionlint_condition = "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards' || inputs.pack_id == 'issue-1667-phase-regions'"
     required = (
         "github.ref == 'refs/heads/main' && github.ref_protected",
         "path: candidate",
         'ACTUAL_SHA="$(git -C candidate rev-parse HEAD)"',
-        "issue-2440-ci-scoping|issue-2437-worker-three-arm|issue-1948-mutants-receipt|issue-2457-mutants-shards|issue-1677-b170-owner-actions",
+        "issue-2440-ci-scoping|issue-2437-worker-three-arm|issue-1948-mutants-receipt|issue-2457-mutants-shards|issue-1677-b170-owner-actions|issue-1667-phase-regions",
         "id: actionlint",
         "id: ci-pack-contract",
         "id: rust-worker-three-arm",
@@ -69,11 +72,13 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         "id: python-mutants-shards",
         "id: cargo-mutants-v27-inventory",
         "id: python-b170-owner-actions",
-        "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards'",
+        "id: rust-b122-phase-regions",
+        "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards' || inputs.pack_id == 'issue-1667-phase-regions'",
         "if: inputs.pack_id == 'issue-2437-worker-three-arm'",
         "if: inputs.pack_id == 'issue-1948-mutants-receipt'",
         "if: inputs.pack_id == 'issue-2457-mutants-shards'",
         "if: inputs.pack_id == 'issue-1677-b170-owner-actions'",
+        "if: inputs.pack_id == 'issue-1667-phase-regions'",
         "timeout-minutes: 15",
         "timeout-minutes: 10",
         "cargo test --package corelink-worker --features tower-middleware --lib three_arm_ -- --nocapture",
@@ -87,6 +92,11 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         "python3 -S scripts/verify_b170_owner_actions.py",
         "grep -Fq 'docs/customer/dpa-onboarding.md'",
         "grep -Fq 'lighthouse enterprise customer'",
+        "python3 -S scripts/verify_i1667_b122_phase_regions.py",
+        "tests/test_i1667_b122_phase_regions.py",
+        "cargo test --locked --package corelink-container --lib nested_reentry_of_the_same_phase_records_once -- --nocapture",
+        "cargo test --locked --package corelink-container --lib put_records_the_store_phase_exactly_once -- --nocapture",
+        "cargo test --locked --package corelink-container --lib get_records_the_store_phase_across_spawn_blocking -- --nocapture",
         "--candidate-root candidate",
         "TRUSTED_MAIN_SHA: ${{ github.sha }}",
         '--trusted-main-sha "$TRUSTED_MAIN_SHA"',
@@ -120,6 +130,8 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
     found = [token for token in forbidden if token in workflow_text]
     if found:
         errors.append("central workflow contains forbidden inventory-pack controls: " + ", ".join(found))
+    if workflow_text.count(actionlint_condition) != 2:
+        errors.append("issue 1667 must run actionlint at both install and validation steps")
     triggers = mapping_child_keys(workflow_text, "on")
     if triggers != ["workflow_dispatch"]:
         errors.append(f"central issue pack workflow must have only workflow_dispatch triggers; found {triggers}")
@@ -323,6 +335,13 @@ def self_test(catalog: dict) -> list[str]:
     token_workflow = canonical_workflow.replace("timeout-minutes: 10", "env: {GITHUB_TOKEN: leaked}\n        timeout-minutes: 10", 1)
     if not validate_workflow_contract(token_workflow):
         failures.append("workflow adding a credential route was accepted")
+    actionlint_omitted = (ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8").replace(
+        "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards' || inputs.pack_id == 'issue-1667-phase-regions'",
+        "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm' || inputs.pack_id == 'issue-2457-mutants-shards'",
+        1,
+    )
+    if not validate_workflow_contract(actionlint_omitted):
+        failures.append("workflow omitting issue 1667 from one actionlint step was accepted")
     if not paths_outside_pack(["crates/corelink-server/src/lib.rs"], catalog["packs"][0]["changed_surfaces"]):
         failures.append("out-of-pack changed file was accepted")
     return failures

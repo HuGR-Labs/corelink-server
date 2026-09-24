@@ -260,7 +260,10 @@ pub struct PhaseLedger {
 
 #[derive(Debug, Default)]
 struct PhaseWindow {
-    active: usize,
+    /// Number of live scopes for this phase.  One request can re-enter a
+    /// phase from a blocking bridge, so a same-phase child must extend the
+    /// outer wall-clock window instead of opening a second recording.
+    depth: usize,
     started: Option<Instant>,
 }
 
@@ -354,19 +357,26 @@ impl PhaseLedger {
     ///
     /// A phase is a partition of request wall time, not an arbitrary label.
     /// Consequently an inner scope of the same phase must not add its already
-    /// covered window a second time. The active count is shared by all tasks
+    /// covered window a second time. The depth is shared by all tasks
     /// that carry this request ledger, so this remains true across a
     /// `spawn_blocking` boundary and also handles genuinely overlapping
     /// sibling scopes without dropping either one's union.
-    fn begin(&self, phase: Phase) {
+    fn begin(&self, phase: Phase) -> bool {
         let mut window = self
             .window_slot(phase)
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if window.active == 0 {
+        if window.depth == 0 {
             window.started = Some(Instant::now());
         }
-        window.active += 1;
+        let Some(next_depth) = window.depth.checked_add(1) else {
+            // Instrumentation is observational: an impossible pathological
+            // re-entry depth must not panic or let this scope decrement a
+            // pre-existing window on Drop.
+            return false;
+        };
+        window.depth = next_depth;
+        true
     }
 
     /// Leave a phase scope and close the union window when its final scope
@@ -378,11 +388,11 @@ impl PhaseLedger {
                 .window_slot(phase)
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            if window.active == 0 {
+            if window.depth == 0 {
                 return;
             }
-            window.active -= 1;
-            if window.active == 0 {
+            window.depth -= 1;
+            if window.depth == 0 {
                 window.started.take().map(|started| started.elapsed())
             } else {
                 None
@@ -412,7 +422,7 @@ impl PhaseLedger {
         self.window_slot(phase)
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .active
+            .depth
     }
 
     /// Add `micros` to `phase`, promoting it out of the not-run sentinel.
@@ -642,6 +652,7 @@ pub fn current_ledger() -> Option<Arc<PhaseLedger>> {
 pub struct PhaseScope {
     ledger: Option<Arc<PhaseLedger>>,
     phase: Phase,
+    records: bool,
     previous_blocking_ledger: Option<Option<Arc<PhaseLedger>>>,
 }
 
@@ -652,12 +663,11 @@ impl PhaseScope {
     #[must_use]
     pub fn enter(phase: Phase) -> Self {
         let ledger = current_ledger();
-        if let Some(ledger) = &ledger {
-            ledger.begin(phase);
-        }
+        let records = ledger.as_ref().is_some_and(|ledger| ledger.begin(phase));
         Self {
             ledger,
             phase,
+            records,
             previous_blocking_ledger: None,
         }
     }
@@ -668,12 +678,11 @@ impl PhaseScope {
     /// before spawning — see that function's doc for why.
     #[must_use]
     pub fn with_handle(ledger: Option<Arc<PhaseLedger>>, phase: Phase) -> Self {
-        if let Some(ledger) = &ledger {
-            ledger.begin(phase);
-        }
+        let records = ledger.as_ref().is_some_and(|ledger| ledger.begin(phase));
         Self {
             ledger,
             phase,
+            records,
             // This constructor is also used by spawned async futures. Do not
             // install a thread-local across an await: Tokio may run another
             // request on the same worker thread. Synchronous closures use
@@ -692,6 +701,7 @@ impl PhaseScope {
         Self {
             ledger: None,
             phase: Phase::Store,
+            records: false,
             previous_blocking_ledger: Some(previous_blocking_ledger),
         }
     }
@@ -699,8 +709,10 @@ impl PhaseScope {
 
 impl Drop for PhaseScope {
     fn drop(&mut self) {
-        if let Some(ledger) = &self.ledger {
-            ledger.end(self.phase);
+        if self.records {
+            if let Some(ledger) = &self.ledger {
+                ledger.end(self.phase);
+            }
         }
         if let Some(previous) = self.previous_blocking_ledger.take() {
             BLOCKING_LEDGER.with(|slot| {
