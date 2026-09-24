@@ -169,6 +169,12 @@ def _check_known(name: str, doc: dict[str, Any]) -> None:
         with_ = step.get("with", {})
         if not isinstance(with_, dict) or with_.get("persist-credentials") is not False:
             raise VerificationError(f"{name}: checkout credentials must be disabled")
+        is_fork_data_checkout = name == "secrets-drift.yml" and expected_path == ".candidate"
+        if is_fork_data_checkout:
+            if with_.get("allow-unsafe-pr-checkout") is not True:
+                raise VerificationError(f"{name}: fork data checkout must opt in exactly")
+        elif "allow-unsafe-pr-checkout" in with_:
+            raise VerificationError(f"{name}: fork checkout opt-in is limited to candidate data")
         if with_.get("fetch-depth") != expected_depth or _text(with_.get("ref")) != expected_ref or _text(with_.get("path")) != expected_path:
             raise VerificationError(f"{name}: checkout fetch-depth must be 0 or 1")
         ref = _text(with_.get("ref")); path = _text(with_.get("path"))
