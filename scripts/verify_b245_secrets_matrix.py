@@ -138,6 +138,32 @@ def main() -> int:
         _must_reject(validator, root, manifest, "new consumer outside exact scope")
         forbidden.unlink()
 
+        # This exact mock fixture is non-secret test data, but an additional
+        # reference in the same test file must remain a closed-scope failure.
+        fixture = root / "tests/test_b105_isolated_lane_behavior.py"
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text(
+            'with mock.patch.dict(collector.os.environ, {\n'
+            '    "CORELINK_PERF_BASE": "https://cache.example.invalid",\n'
+            '    "CORELINK_PERF_PAT": "redacted-test-token",\n'
+            '    "GITHUB_RUN_ID": "4242",\n'
+            '}, clear=False):\n'
+            '    pass\n',
+            encoding="utf-8",
+        )
+        validator.validate_b245_perf_scope(root, manifest)
+        fixture.write_text(
+            fixture.read_text(encoding="utf-8")
+            + 'token = os.environ["CORELINK_PERF_PAT"]\n',
+            encoding="utf-8",
+        )
+        _must_reject(
+            validator,
+            root,
+            manifest,
+            "second unclassified B-245 reference in fixture test file",
+        )
+
         perf_source = root / "scripts/collect_b105_same_lane.py"
         perf_original = perf_source.read_text(encoding="utf-8")
         fresh_source.write_text(
