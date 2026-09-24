@@ -263,14 +263,29 @@ def validate(candidate: Path, trusted_base: Path) -> None:
     for relative in LOCKED_PERIMETER_PATHS:
         require_exact(candidate, trusted_base, relative)
 
-    if read(candidate, INDEX) != expected_index(trusted_base):
-        raise ContractError(
-            f"{INDEX}: candidate must equal the protected base plus the canonical early deny"
-        )
-    if read(candidate, GATE) != expected_gate(trusted_base):
-        raise ContractError(f"{GATE}: candidate must equal the canonical no-inspection deny")
-    if read(candidate, CONTRACT) != expected_contract(trusted_base):
-        raise ContractError(f"{CONTRACT}: candidate must equal the canonical blocked contract")
+    base_is_bootstrap = (
+        DENY_IMPORT not in read(trusted_base, INDEX)
+        and not (trusted_base / GATE).exists()
+        and not (trusted_base / CONTRACT).exists()
+    )
+    candidate_is_unchanged_bootstrap = (
+        read(candidate, INDEX) == read(trusted_base, INDEX)
+        and not (candidate / GATE).exists()
+        and not (candidate / CONTRACT).exists()
+    )
+    # A runner-only migration cannot add or alter the public gRPC surface.  At
+    # the bootstrap base it therefore passes only if that whole surface is
+    # byte-identical and absent.  Any #2176 implementation must still supply
+    # the exact early denial below; this is not a gRPC enablement exception.
+    if not (base_is_bootstrap and candidate_is_unchanged_bootstrap):
+        if read(candidate, INDEX) != expected_index(trusted_base):
+            raise ContractError(
+                f"{INDEX}: candidate must equal the protected base plus the canonical early deny"
+            )
+        if read(candidate, GATE) != expected_gate(trusted_base):
+            raise ContractError(f"{GATE}: candidate must equal the canonical no-inspection deny")
+        if read(candidate, CONTRACT) != expected_contract(trusted_base):
+            raise ContractError(f"{CONTRACT}: candidate must equal the canonical blocked contract")
     if read(candidate, WORKFLOW) != expected_workflow(trusted_base):
         raise ContractError(
             f"{WORKFLOW}: candidate must equal the protected-base gate workflow"
@@ -295,6 +310,7 @@ def write_fixture_base(root: Path) -> None:
     )
     for relative in LOCKED_PERIMETER_PATHS:
         write(root, relative, f"protected base fixture: {relative}\n")
+    write(root, WORKFLOW, BOOTSTRAP_WORKFLOW_SOURCE)
 
 
 def write_fixture_candidate(candidate: Path, trusted_base: Path) -> None:
@@ -327,6 +343,11 @@ def self_test() -> None:
         write_fixture_base(trusted_base)
         write_fixture_candidate(candidate, trusted_base)
         validate(candidate, trusted_base)
+
+        # A CI-only migration does not edit the absent bootstrap gRPC surface.
+        unchanged = fixture / "unchanged"
+        shutil.copytree(trusted_base, unchanged)
+        validate(unchanged, trusted_base)
 
         mutations = (
             (INDEX, "if (grpcTransportGate !== null) return grpcTransportGate;", ""),
