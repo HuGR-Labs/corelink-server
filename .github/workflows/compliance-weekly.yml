@@ -50,11 +50,9 @@ env:
 jobs:
   digest:
     name: Generate weekly compliance digest
-    # Runner: `corelink` (zero-hosted). Pure python3 (compliance-weekly-digest.py,
-    # stdlib only) + `gh` (pr create / pr comment) — both baked into the box image
-    # (gh 2.97.0 at increment 3, corelink-runners #453). No setup-python needed;
-    # the system python3 is used directly (the PYTHON_VERSION env is vestigial).
-    runs-on: corelink
+    # GitHub-hosted Ubuntu supplies Python 3 and the gh CLI used by this job.
+    # The PYTHON_VERSION environment value remains vestigial.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       regression: ${{ steps.digest.outputs.regression }}
@@ -79,6 +77,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
           # GITHUB_TOKEN branch pushes suppress push-triggered workflows, but
           # opened/synchronize/reopened PR runs may be approval-required.
           # Once provisioned, the dedicated token on push and PR creation
@@ -167,6 +166,9 @@ jobs:
             echo "pr_created=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
+          # Checkout credentials are deliberately not persisted. Configure this
+          # job's existing least-privilege app token for the one explicit push.
+          gh auth setup-git
           # DCO: the repo's `dco` check requires a Signed-off-by trailer on
           # every commit, including this bot's. Without it the digest PR is
           # born un-mergeable (found 2026-08-23, the first run after the
