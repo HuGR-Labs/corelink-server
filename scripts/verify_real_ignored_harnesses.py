@@ -24,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github/workflows/real-ignored-harnesses.yml"
 CONTRACT_WORKFLOW_PATH = ROOT / ".github/workflows/issue-1650-real-integration-contract.yml"
+CAMPAIGN_WORKFLOW_PATH = ROOT / ".github/workflows/campaign-ci.yml"
 RUNNER_PATH = ROOT / "scripts/run-real-ignored-harnesses.sh"
 MANIFEST_PATH = ROOT / "scripts/real-ignored-harness-manifest.json"
 SEED_PATH = ROOT / "crates/corelink-pat/tests/emit_e2e_seed.rs"
@@ -91,6 +92,7 @@ SOURCE_SHA256 = {
 
 CONTRACT_TRIGGER_INPUTS = (
     ".github/workflows/issue-1650-real-integration-contract.yml",
+    ".github/workflows/campaign-ci.yml",
     ".github/workflows/real-ignored-harnesses.yml",
     "scripts/run-real-ignored-harnesses.sh",
     "scripts/real-ignored-harness-manifest.json",
@@ -593,6 +595,70 @@ def assert_hosted_contract_workflow(workflow: str) -> None:
         fail(f"credentialless contract PR path filter omits verifier inputs: {', '.join(missing)}")
 
 
+def workflow_job(text: str, name: str) -> str:
+    """Return one top-level GitHub Actions job without neighboring job text."""
+    match = re.search(
+        rf"(?ms)^  {re.escape(name)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+        text,
+    )
+    if match is None:
+        fail(f"workflow job is missing: {name}")
+    return match.group(0)
+
+
+def assert_campaign_i1650_pack(workflow: str) -> None:
+    """Keep the manual #1650 pack separate from the heavy shared campaign job."""
+    active = code_text(workflow)
+    if not re.search(r"(?m)^on:\s*$", active) or not re.search(r"(?m)^\s{2}workflow_dispatch:\s*$", active):
+        fail("campaign pack must be manual-only")
+    if re.search(r"(?m)^\s{2}(?:pull_request|pull_request_target|push|schedule|workflow_call):", active):
+        fail("campaign pack has an automatic trigger")
+    if active.count("- i1650-contract") != 1:
+        fail("campaign suite choice does not contain exactly one i1650-contract entry")
+
+    job = code_text(workflow_job(workflow, "i1650-contract"))
+    if "inputs.suite == 'i1650-contract'" not in job:
+        fail("i1650 campaign job is not bound to its closed suite selector")
+    for marker in (
+        "runs-on: ubuntu-24.04",
+        "timeout-minutes: 5",
+        "contents: read",
+        "persist-credentials: false",
+        "python3 -S scripts/verify_real_ignored_harnesses.py",
+        "python3 -S scripts/verify_i1650_real_integration_readiness.py",
+    ):
+        if marker not in job:
+            fail(f"i1650 campaign job is missing safety marker: {marker}")
+    if re.search(r"(?im)^\s*environment\s*:", job) or re.search(r"\b(?:secrets|vars)\.", job):
+        fail("i1650 campaign job references a protected environment or credential")
+    for name in (
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CF_API_TOKEN",
+        "D1_DATABASE_ID",
+        "R2_S3_ENDPOINT",
+        "R2_S3_ACCESS_KEY_ID",
+        "R2_S3_SECRET_ACCESS_KEY",
+        "HUGR_WALLET_TOKEN",
+        "NEON_TEST_DSN",
+    ):
+        if job.count(f'{name}: ""') != 1:
+            fail(f"i1650 campaign job does not blank exactly one {name} input")
+    if re.search(r"\b(?:cargo|pnpm)\b|actions/(?:setup-node|setup-python)|rust-toolchain|setup-protoc", job):
+        fail("i1650 campaign job includes unrelated runtime setup")
+
+    shared = code_text(workflow_job(workflow, "campaign"))
+    if "inputs.suite != 'i1650-contract'" not in shared:
+        fail("shared campaign job can still execute for i1650-contract")
+
+
+def expect_campaign_rejected(label: str, workflow: str) -> None:
+    try:
+        assert_campaign_i1650_pack(workflow)
+    except AssertionError:
+        return
+    fail(f"negative campaign-pack mutation was accepted: {label}")
+
+
 def expect_rejected(label: str, workflow: str, runner: str) -> None:
     try:
         assert_contract(workflow, runner)
@@ -739,6 +805,25 @@ def mutation_checks(workflow: str, runner: str, contract_workflow: str) -> None:
     expect_rejected("late Neon check omitted from all", workflow, runner.replace("    preflight_neon\n    run_d1", "    run_d1", 1))
 
 
+def campaign_mutation_checks(workflow: str) -> None:
+    expect_campaign_rejected(
+        "missing dedicated pack job",
+        workflow.replace("  i1650-contract:\n", "  i1650-contract-disabled:\n", 1),
+    )
+    expect_campaign_rejected(
+        "protected environment attached",
+        workflow.replace("    runs-on: ubuntu-24.04\n    timeout-minutes: 5", "    runs-on: ubuntu-24.04\n    environment: real-integration\n    timeout-minutes: 5", 1),
+    )
+    expect_campaign_rejected(
+        "readiness verifier removed",
+        workflow.replace("python3 -S scripts/verify_i1650_real_integration_readiness.py", "echo '# readiness verifier removed'", 1),
+    )
+    expect_campaign_rejected(
+        "shared campaign receives i1650",
+        workflow.replace("inputs.suite != 'i1650-contract' && ", "", 1),
+    )
+
+
 def preflight_runtime_checks() -> None:
     """Prove late missing prerequisites result in zero cargo invocations."""
 
@@ -791,10 +876,13 @@ def preflight_runtime_checks() -> None:
 def main() -> int:
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
     contract_workflow = CONTRACT_WORKFLOW_PATH.read_text(encoding="utf-8")
+    campaign_workflow = CAMPAIGN_WORKFLOW_PATH.read_text(encoding="utf-8")
     runner = RUNNER_PATH.read_text(encoding="utf-8")
     assert_contract(workflow, runner)
     assert_hosted_contract_workflow(contract_workflow)
+    assert_campaign_i1650_pack(campaign_workflow)
     mutation_checks(workflow, runner, contract_workflow)
+    campaign_mutation_checks(campaign_workflow)
     preflight_runtime_checks()
     print("B-068 executor contract: PASS (full allow-list + negative mutations)")
     return 0

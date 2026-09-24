@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/issue-1650-real-integration-contract.yml"
+      - ".github/workflows/campaign-ci.yml"
       - ".github/workflows/real-ignored-harnesses.yml"
       - "scripts/run-real-ignored-harnesses.sh"
       - "scripts/real-ignored-harness-manifest.json"

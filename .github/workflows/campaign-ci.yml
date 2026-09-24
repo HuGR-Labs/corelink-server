@@ -100,9 +100,39 @@ jobs:
         working-directory: apps/signup-worker
         run: pnpm exec vitest run tests/runner_entitlement_authority.test.ts
 
+  i1650-contract:
+    name: campaign i1650 credentialless real integration pack
+    if: ${{ inputs.suite == 'i1650-contract' && github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact dispatched tree
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Audit credentialless real integration pack
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ""
+          CF_API_TOKEN: ""
+          D1_DATABASE_ID: ""
+          R2_S3_ENDPOINT: ""
+          R2_S3_ACCESS_KEY_ID: ""
+          R2_S3_SECRET_ACCESS_KEY: ""
+          HUGR_WALLET_TOKEN: ""
+          NEON_TEST_DSN: ""
+        run: |
+          set -euo pipefail
+          python3 -S scripts/verify_real_ignored_harnesses.py
+          python3 -S scripts/verify_i1650_real_integration_readiness.py
+
   campaign:
     name: campaign ${{ inputs.suite }}
-    if: ${{ inputs.suite != 'i1639-ts' && github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
+    if: ${{ inputs.suite != 'i1639-ts' && inputs.suite != 'i1650-contract' && github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -623,25 +653,6 @@ jobs:
           pnpm --dir worker exec vitest run --config vitest.miniflare.config.mts \
             tests/keyed_epoch_disposable.miniflare.test.ts \
             2>&1 | tee artifacts/campaign-ci/i1792-miniflare-epoch.log
-
-      - name: i1650 credential-free ignored-harness manifest contract
-        if: ${{ inputs.suite == 'i1650-contract' }}
-        shell: bash
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ""
-          CF_API_TOKEN: ""
-          D1_DATABASE_ID: ""
-          R2_S3_ENDPOINT: ""
-          R2_S3_ACCESS_KEY_ID: ""
-          R2_S3_SECRET_ACCESS_KEY: ""
-          HUGR_WALLET_TOKEN: ""
-          NEON_TEST_DSN: ""
-        run: |
-          set -euo pipefail
-          # This pack is static and mutation based. It must never receive the
-          # protected real-integration environment or invoke a provider.
-          python3 -S scripts/verify_real_ignored_harnesses.py 2>&1 | tee artifacts/campaign-ci/i1650-contract.log
-          python3 -S scripts/verify_i1650_real_integration_readiness.py 2>&1 | tee -a artifacts/campaign-ci/i1650-contract.log
 
       - name: i1649 read-only Stripe contract tests
         if: ${{ inputs.suite == 'i1649-contract' }}
