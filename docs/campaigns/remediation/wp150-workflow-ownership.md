@@ -4,8 +4,8 @@ Canonical closed ownership map for tracked GitHub Actions workflows.
 Update this manifest with every workflow add, rename or removal. Unknown ownership remains `LEAD-BLOCKED | blocked`.
 Historical owned assignments are preserved from B131-B167.md at immutable base 648ecdccd229bdb5154b86843053c28b9cce9d36; the added workflow rows have no evidence-backed owner and remain blocked.
 
-workflow-count: 225
-workflow-paths-sha256: af73eaec281217825cd61708dee7984771eb7aab08733b75b2dcfeefe262f2e0
+workflow-count: 226
+workflow-paths-sha256: b59dd0357bb1b5b5ce1090f49abac5806312458b54d19ab8217e63c0a0aaf79c
 
 ```wp-workflow-ownership
 # workflow path | owner WP or LEAD-BLOCKED | status
@@ -164,6 +164,7 @@ workflow-paths-sha256: af73eaec281217825cd61708dee7984771eb7aab08733b75b2dcfeefe
 .github/workflows/issue-2169-b105-hosted-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2176-grpc-deny-gate.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2177-reapi-ingress-contract.yml | LEAD-BLOCKED | blocked
+.github/workflows/issue-2178-reapi-cas-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2198-okf-adr-authority.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2386-hosted-runner-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/legal-changes-review.yml | LEAD-BLOCKED | blocked
