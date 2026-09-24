@@ -96,6 +96,24 @@ def verify(root: Path) -> list[str]:
     require(signup_deploy, "migrations/d1/0145_dsr_dlq_redrive_authority.sql", "signup-deploy:migration-trigger", gaps)
 
     hosted_gate = read(root, HOSTED_GATE)
+    require(
+        hosted_gate,
+        "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+        "hosted-gate:exact-head-checkout",
+        gaps,
+    )
+    require(
+        hosted_gate,
+        "EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
+        "hosted-gate:expected-head",
+        gaps,
+    )
+    require(
+        hosted_gate,
+        'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"',
+        "hosted-gate:exact-head-assertion",
+        gaps,
+    )
     require(hosted_gate, "python3 -I scripts/verify_issue_2366_dsr_redrive_prereq.py", "hosted-gate:contract", gaps)
     require(hosted_gate, "python3 -I tests/test_issue_2366_dsr_redrive_prereq.py", "hosted-gate:mutations", gaps)
 

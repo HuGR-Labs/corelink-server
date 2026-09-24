@@ -59,6 +59,25 @@ class Issue2366ContractTests(unittest.TestCase):
     def test_repository_satisfies_frozen_contract(self) -> None:
         self.assertEqual(contract.verify(ROOT), [])
 
+    def test_hosted_offline_validator_is_bound_to_the_exact_pull_request_head(self) -> None:
+        cases = (
+            (
+                "hosted-gate:exact-head-checkout",
+                "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+            ),
+            (
+                "hosted-gate:expected-head",
+                "EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
+            ),
+            (
+                "hosted-gate:exact-head-assertion",
+                'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"',
+            ),
+        )
+        for expected, old in cases:
+            with self.subTest(expected=expected):
+                self.assertIn(expected, self.mutate(contract.HOSTED_GATE, old))
+
     def test_migration_ledger_and_each_required_table_are_fail_closed(self) -> None:
         self.assertIn(
             "schema-fence:migration-name",
