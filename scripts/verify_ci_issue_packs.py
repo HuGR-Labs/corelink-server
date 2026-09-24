@@ -48,7 +48,6 @@ REQUIRED_PACK_JOBS = {pack_id: {"issue-pack"} for pack_id in REQUIRED_PACK_CHECK
 
 def validate_workflow_contract(workflow_text: str) -> list[str]:
     required = (
-        "type: workflow_dispatch",
         "github.ref == 'refs/heads/main' && github.ref_protected",
         "path: candidate",
         'ACTUAL_SHA="$(git -C candidate rev-parse HEAD)"',
@@ -67,7 +66,12 @@ def validate_workflow_contract(workflow_text: str) -> list[str]:
         "python3 scripts/verify_i1863_mutants_hosted.py",
         "--candidate-root candidate",
     )
-    return [f"central workflow is missing required contract: {item}" for item in required if item not in workflow_text]
+    errors = [f"central workflow is missing required contract: {item}" for item in required if item not in workflow_text]
+    if workflow_text.count("\n  workflow_dispatch:\n") != 1:
+        errors.append("central workflow must expose exactly one manual workflow_dispatch trigger")
+    if "\n  pull_request:\n" in workflow_text or "\n  pull_request_target:\n" in workflow_text:
+        errors.append("central issue pack workflow must not run automatically on pull requests")
+    return errors
 
 
 def valid_sha_pair(expected: str, actual: str) -> bool:
@@ -186,6 +190,9 @@ def self_test(catalog: dict) -> list[str]:
     canonical_workflow = (ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8")
     if validate_workflow_contract(canonical_workflow):
         failures.append("canonical workflow failed its static contract")
+    automatic_workflow = canonical_workflow.replace("\n  workflow_dispatch:\n", "\n  pull_request:\n", 1)
+    if not validate_workflow_contract(automatic_workflow):
+        failures.append("workflow auto-trigger mutation was accepted")
     unbound_workflow = (ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8").replace(
         'ACTUAL_SHA="$(git -C candidate rev-parse HEAD)"', "ACTUAL_SHA=$EXPECTED_SHA"
     )
