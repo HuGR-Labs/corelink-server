@@ -59,23 +59,18 @@ env:
 jobs:
   bench:
     name: Run criterion benches + regression gate
-    # The benches are CPU-bound; default ubuntu-latest sees ~2x variance
-    # on shared runners. Upgrade to a larger runner when org-policy allows
-    # (the spec calls for `ubuntu-latest-large`; we soft-fall-back to the
-    # default to keep the workflow runnable on standard plans).
-    runs-on: [self-hosted, mac, corelink-builder]
+    # Keep macOS and Apple Silicon to match the architecture used for the
+    # checked-in criterion baseline while moving to a GitHub-hosted runner.
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
-      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
-      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
-      # `rustc` unexecutable mid-build for every other job — it took the host down
-      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
-      # default, silently moving every concurrent job off the ADR-0015 reproducibility
-      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      # Use the workspace-pinned toolchain without changing the runner image's
+      # rustup default. Full reasoning: scripts/ci-use-host-toolchain.sh header.
       - name: Use the workspace-pinned host toolchain (provisions nothing)
         run: bash scripts/ci-use-host-toolchain.sh
 
@@ -124,20 +119,17 @@ jobs:
     name: Rotate baseline (manual)
     needs: bench
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.update_baseline == 'true'
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: macos-15
     permissions:
       contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
-      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
-      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
-      # `rustc` unexecutable mid-build for every other job — it took the host down
-      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
-      # default, silently moving every concurrent job off the ADR-0015 reproducibility
-      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      # Use the workspace-pinned toolchain without changing the runner image's
+      # rustup default. Full reasoning: scripts/ci-use-host-toolchain.sh header.
       - name: Use the workspace-pinned host toolchain (provisions nothing)
         run: bash scripts/ci-use-host-toolchain.sh
 
@@ -152,7 +144,10 @@ jobs:
         run: bash scripts/run-perf-baseline.sh --update
 
       - name: Commit baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          gh auth setup-git
           git config user.name 'corelink-perf-bot'
           git config user.email 'corelink-perf-bot@users.noreply.github.com'
           git add reports/perf/baseline.json

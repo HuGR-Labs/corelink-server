@@ -2,6 +2,8 @@ name: issue-1670-fleet-classification
 
 # The CoreLink runner admission hook must pre-provision the exact private tmpfs
 # mount before this job begins. This workflow never creates or falls back to a mount.
+# The hosted migration cannot produce a CoreLink-fleet receipt; #1670 stays open
+# until the separately authorized real-fleet event is available.
 on:
   workflow_dispatch:
     inputs:
@@ -20,10 +22,10 @@ concurrency:
 jobs:
   classify-bounded-disk-failures:
     if: github.repository_id == '1232040291' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.ref_protected && inputs.confirm == 'run-1670-fleet-enospc-linker'
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      I1670_FLEET_LABEL: corelink
+      I1670_FLEET_LABEL: github-hosted
       CORELINK_I1670_FIXTURE_MOUNT: /mnt/corelink-i1670/${{ github.run_id }}
       CORELINK_I1670_FIXTURE_MAX_BYTES: '134217728'
     steps:
@@ -38,7 +40,7 @@ jobs:
           I1670_RUNNER_ARCH: ${{ runner.arch }}
         run: |
           set -euo pipefail
-          test "$I1670_FLEET_LABEL" = corelink
+          test "$I1670_FLEET_LABEL" = github-hosted
           test -n "$I1670_RUNNER_NAME" -a -n "$I1670_RUNNER_OS" -a -n "$I1670_RUNNER_ARCH"
           test "$CORELINK_I1670_FIXTURE_MAX_BYTES" -gt $((16 * 1024 * 1024))
           test "$CORELINK_I1670_FIXTURE_MAX_BYTES" -le $((128 * 1024 * 1024))
@@ -117,7 +119,7 @@ jobs:
           printf 'classification=%s\nexit_code=%s\nannotation=infrastructure_failure\n' "$enospc_class" "$enospc_rc" >"$GITHUB_WORKSPACE/issue-1670-enospc-sanitized.log"
           printf 'classification=%s\nexit_code=%s\nannotation=infrastructure_failure\n' "$linker_class" "$linker_rc" >"$GITHUB_WORKSPACE/issue-1670-linker-sanitized.log"
           {
-            echo "## Issue #1670 CoreLink fleet evidence"
+            echo "## Issue #1670 GitHub-hosted classification evidence"
             echo "- runner: opaque SHA-256 receipt"
             echo "- fixture: job-exclusive size-capped tmpfs"
             echo "- ENOSPC: exit=$enospc_rc classification=$enospc_class"
