@@ -46,6 +46,8 @@ BACKLOG_BLOCK_RE = re.compile(r"^```backlog\n(.*?)^```", re.MULTILINE | re.DOTAL
 B046_VERIFY_COMMAND = "python3 scripts/verify_owner_action_packets.py --id B-046"
 EVIDENCE_STATUSES = {"PASS", "NOT_SUPPORTED", "INDETERMINATE", "SKIPPED"}
 EVIDENCE_VERDICTS = {"BLOCKED", "INDETERMINATE", "SUPPORTED"}
+BUCKET_OPERATION = "CreateBucket with Object Lock enabled"
+OBJECT_OPERATION = "PutObject with COMPLIANCE retention"
 
 
 class ProbeError(RuntimeError):
@@ -108,13 +110,24 @@ def _require_string(value: object, field: str, *, allow_empty: bool = False) -> 
     return value
 
 
-def _validate_operation_evidence(value: object, field: str) -> None:
+def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Build JSON objects only when each key appears exactly once."""
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ProbeError(f"B-046 evidence contains duplicate JSON key {key!r}")
+        result[key] = value
+    return result
+
+
+def _validate_operation_evidence(value: object, field: str, expected_operation: str) -> str:
     if not isinstance(value, dict):
         raise ProbeError(f"B-046 evidence field {field!r} must be an object")
     expected = {"operation", "status", "provider_code", "detail", "request_reference"}
     if set(value) != expected:
         raise ProbeError(f"B-046 evidence {field!r} has unexpected or missing fields")
-    _require_string(value["operation"], f"{field}.operation")
+    if _require_string(value["operation"], f"{field}.operation") != expected_operation:
+        raise ProbeError(f"B-046 evidence {field!r} names an unexpected provider operation")
     status = _require_string(value["status"], f"{field}.status")
     if status not in EVIDENCE_STATUSES:
         raise ProbeError(f"B-046 evidence {field!r} has unknown status {status!r}")
@@ -122,12 +135,13 @@ def _validate_operation_evidence(value: object, field: str) -> None:
         if value[child] is not None:
             _require_string(value[child], f"{field}.{child}")
     _require_string(value["detail"], f"{field}.detail")
+    return status
 
 
 def validate_evidence_record(raw: str) -> None:
     """Validate the redacted external receipt without treating it as capability proof."""
     try:
-        record = json.loads(raw)
+        record = json.loads(raw, object_pairs_hook=_reject_duplicate_json_keys)
     except json.JSONDecodeError as error:
         raise ProbeError(f"B-046 evidence is not valid JSON: {error}") from error
     if not isinstance(record, dict):
@@ -140,10 +154,23 @@ def validate_evidence_record(raw: str) -> None:
         raise ProbeError("B-046 evidence has unexpected or missing top-level fields")
     if record["schema_version"] != 1:
         raise ProbeError("B-046 evidence schema_version must be 1")
-    for field in ("captured_at", "provider", "operator"):
+    captured_at = _require_string(record["captured_at"], "captured_at")
+    try:
+        dt.datetime.strptime(captured_at, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as error:
+        raise ProbeError("B-046 evidence captured_at must be a UTC RFC3339 timestamp") from error
+    for field in ("provider", "operator"):
         _require_string(record[field], field)
-    _validate_operation_evidence(record["bucket_operation"], "bucket_operation")
-    _validate_operation_evidence(record["object_operation"], "object_operation")
+    bucket_status = _validate_operation_evidence(
+        record["bucket_operation"], "bucket_operation", BUCKET_OPERATION
+    )
+    object_status = _validate_operation_evidence(
+        record["object_operation"], "object_operation", OBJECT_OPERATION
+    )
+    if bucket_status == "SKIPPED":
+        raise ProbeError("B-046 evidence cannot skip the first CreateBucket operation")
+    if (bucket_status == "PASS") != (object_status != "SKIPPED"):
+        raise ProbeError("B-046 evidence must attempt PutObject exactly when CreateBucket passes")
     classification = _require_string(record["classification"], "classification")
     if classification not in EVIDENCE_VERDICTS:
         raise ProbeError(f"B-046 evidence has unknown classification {classification!r}")
@@ -153,19 +180,18 @@ def validate_evidence_record(raw: str) -> None:
     if not isinstance(cleanup["attempted"], bool) or not isinstance(cleanup["resources_created"], bool):
         raise ProbeError("B-046 evidence cleanup flags must be boolean")
     _require_string(cleanup["reason"], "bucket_cleanup.reason")
-    if classification == "SUPPORTED":
-        if record["bucket_operation"]["status"] != "PASS" or record["object_operation"]["status"] != "PASS":
-            raise ProbeError("SUPPORTED B-046 evidence requires both operations to pass")
-    elif classification == "BLOCKED":
-        if "NOT_SUPPORTED" not in {
-            record["bucket_operation"]["status"], record["object_operation"]["status"]
-        }:
-            raise ProbeError("BLOCKED B-046 evidence requires explicit provider NotImplemented")
-    else:
-        if record["bucket_operation"]["status"] == "PASS" and record["object_operation"]["status"] == "PASS":
-            raise ProbeError("INDETERMINATE B-046 evidence cannot have two passing operations")
+    expected_classification = evaluate_operations(
+        OperationResult(BUCKET_OPERATION, bucket_status, 0, ""),
+        OperationResult(OBJECT_OPERATION, object_status, 0, ""),
+    )
+    if classification != expected_classification:
+        raise ProbeError(
+            "B-046 evidence classification must equal the two-operation capability result"
+        )
     if cleanup["resources_created"] and not cleanup["attempted"]:
         raise ProbeError("B-046 evidence cannot report resources without cleanup being attempted")
+    if cleanup["resources_created"] != (bucket_status == "PASS"):
+        raise ProbeError("B-046 evidence resource-creation state must match CreateBucket")
     evidence_text = json.dumps(record, ensure_ascii=False)
     if re.search(r"AWS_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)|R2_S3_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)", evidence_text):
         raise ProbeError("B-046 evidence contains a credential-shaped field")
