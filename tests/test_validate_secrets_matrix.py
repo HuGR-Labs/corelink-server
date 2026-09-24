@@ -195,6 +195,11 @@ def test_b245_gc_contract_rejects_a_broad_allowlist_mutation() -> None:
     raise AssertionError("broad GC_* allowlist mutation was accepted")
 
 
+def test_b245_closed_scope_and_mutations() -> None:
+    """Run B-245's exact fixture annotation and fail-closed mutation checks."""
+    assert b245.main() == 0
+
+
 def test_bash_repo_root_override_requires_canonical_sentinels(tmp_path: Path) -> None:
     """A matrix-shaped arbitrary directory cannot become a trusted root."""
     matrix = tmp_path / "docs/internal/secrets-checklist.md"
