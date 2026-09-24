@@ -26,7 +26,7 @@ import {
 import type { GithubAppManifestEnv } from "./webhooks/github_app_manifest.js";
 import { handleInstallGithubCallback } from "./webhooks/github_install_callback.js";
 import type { InstallCallbackEnv } from "./webhooks/github_install_callback.js";
-import { handleErasureQueueBatch, handleErasureDlqBatch } from "./webhooks/dsr_consumer.js";
+import { handleErasureQueueBatch, handleErasureDlqBatch, handleDsrDlqRedrive } from "./webhooks/dsr_consumer.js";
 import type { QueueMessageBatch, DsrDlqBody } from "./webhooks/dsr_consumer.js";
 import { runDsrVerifySweep } from "./webhooks/dsr_verify_cron.js";
 import { runPatScrubSweep } from "./webhooks/pat_scrub_cron.js";
@@ -59,6 +59,9 @@ export async function route(request: Request, env: InstallationProvisionEnv, ctx
   }
   if (url.pathname === "/internal/sla/monthly-observation") {
     return handleSlaObservationIngest(request, workerEnv as unknown as SlaCreditCronEnv);
+  }
+  if (url.pathname === "/internal/dsr/dlq/redrive") {
+    return handleDsrDlqRedrive(request, workerEnv);
   }
   if (url.pathname === "/install/github/app/new" && request.method === "GET") {
     return handleAppManifestForm(request, workerEnv);

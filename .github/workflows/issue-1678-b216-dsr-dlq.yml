@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - "apps/signup-worker/src/webhooks/dsr_consumer.ts"
+      - "apps/signup-worker/src/index.ts"
       - "apps/signup-worker/tests/dsr_consumer.test.ts"
       - "migrations/d1/0138_dsr_dlq_delivery_receipts.sql"
+      - "migrations/d1/0145_dsr_dlq_redrive_authority.sql"
       - "docs/internal/b215-b230-runtime-owner-actions.md"
       - "BACKLOG.md"
       - ".github/workflows/issue-1678-b216-dsr-dlq.yml"
@@ -37,3 +39,16 @@ jobs:
         run: pnpm install --frozen-lockfile --filter @corelink/signup-worker... --ignore-scripts
       - name: Exercise B-216 DSR DLQ receipt contract
         run: pnpm --dir apps/signup-worker exec vitest run tests/dsr_consumer.test.ts
+      - name: Prove B-216 static mutations break redrive invariants
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("apps/signup-worker/src/webhooks/dsr_consumer.ts").read_text()
+          required = (
+              "constantTimeEqual(token, expected)",
+              "state='ready' AND requeue_count=0 AND expires_at_ms>?5",
+              "!redrive || !await redrive.capture(eventId, body, Date.now())",
+              "await store.fence(eventId, Date.now())",
+          )
+          assert all(marker in source for marker in required)
+          PY
