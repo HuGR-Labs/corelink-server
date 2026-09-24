@@ -85,25 +85,24 @@
       "id": "B-032",
       "owner": "owner",
       "status": "open",
-      "action_type": "drata_vendor_review_credential",
+      "action_type": "owner_authorized_vendor_review_evidence",
       "procedure": [
-        "UI: In the Drata account, create or authorize the least-privilege API credential required to read the seven Critical vendor review records; do not place it in git or a commit.",
-        "RUN: Supply DRATA_API_BASE_URL and DRATA_API_KEY only through the owner’s protected environment/password manager and retrieve the current Cloudflare, Stripe, Clerk, AWS, Google Cloud, Azure, and Drata review evidence; never echo the key.",
-        "RUN: Have counsel/compliance review the records and write the canonical vendor-review artifact, then run python3 scripts/compliance-weekly-digest.py --dry-run --json to confirm the overdue population is reconciled."
+        "UI: Owner authorizes current evidence retrieval from the CoreLink Drata workspace and applicable vendor portals: Cloudflare, Stripe, Clerk, AWS Artifact, Google Cloud Compliance Reports Manager, Azure Service Trust Portal, and Drata. Retrieve only dated account reports, executed terms, and configuration evidence relevant to each service.",
+        "RUN: VP-Sec and Legal/Privacy complete each of the seven canonical vendor-review records from those dated sources, record scope, subprocessors, residency, security changes, DPA changes, renewal date, human decision, and signer/date, then reconcile the manifest and cadence digest. Do not put credentials, bearer tokens, or restricted reports in git or an issue comment."
       ],
       "inputs_and_credentials_boundary": {
-        "inputs": ["Drata account", "seven Critical vendor identities", "quarterly 90-day cadence", "current SOC 2/ISO or equivalent evidence"],
-        "credentials": "Owner creates/authorizes DRATA_API_KEY; the key is write-only to the repository and must be supplied ephemerally. No vendor evidence may include bearer tokens."
+        "inputs": ["Owner-authorized access to the CoreLink Drata workspace and each applicable vendor account/report portal", "Seven Critical vendor identities and canonical paths listed by the issue #1644 manifest", "Current dated evidence for scope, subprocessors, residency, security changes, DPA changes, and renewal date", "Named VP-Sec and Legal/Privacy decisions and signer/date"],
+        "credentials": "No repository credential is required by this action. The current CoreLink DrataHttpClient only sends evidence with HTTP POST and does not read vendor-review records; the documented DRATA_API_KEY scopes are evidence:write and controls:read. Keep owner-managed credentials ephemeral and outside git, logs, and issue comments. Use the vendor UI export or another separately verified read path."
       },
       "evidence": {
-        "path": "docs/compliance/vendor-reviews/drata-critical-review-2026-09-05.md",
+        "path": "docs/compliance/vendor-reviews/drata-review-2026-09.md",
         "format": "markdown",
-        "required_fields": ["Vendor", "Sub-processor id", "Review date", "Reviewer", "DPA reference", "DPA status", "SCC / transfer mechanism", "Schrems II TIA", "Data categories processed", "Data residency / region", "Certifications verified", "Review outcome", "Conditions / follow-ups", "Next review due"],
-        "item_schema": "Use docs/compliance/vendor-reviews/_TEMPLATE.md with every field completed from current vendor evidence; do not replace an unverified placeholder with an assertion lacking a source."
+        "required_fields": ["Vendor", "Sub-processor id", "Review date", "Reviewer", "DPA reference", "DPA status", "Scope", "Subprocessors", "Residency", "Security changes", "DPA changes", "Renewal date", "Certifications verified", "Review outcome", "Human decision", "Signer/date", "Conditions / follow-ups", "Next review due"],
+        "item_schema": "Update the seven existing canonical records named by docs/handoff/2026-09-22-1644-critical-vendor-review-manifest.json, including this Drata record. Each field must cite dated, applicable evidence; record the human outcome and signer/date. Reconcile the manifest and register only after all seven formal reviews are complete; public-source assessments do not satisfy closure."
       },
-      "expected_postcondition": "All seven Critical vendor reviews have current, counsel/compliance-owned evidence and the digest no longer reports them overdue; B-032 remains open until that external review is complete.",
-      "retry_and_rollback": "Retry read-only retrieval with the same credential and preserve source exports. If the credential is revoked or a source is unavailable, retain the last verified record as stale and leave the item open; revoke the temporary key after review rather than rolling back evidence.",
-      "references": ["BACKLOG.md#B-032", "scripts/compliance-weekly-digest.py", "docs/compliance/vendor-reviews/_TEMPLATE.md"]
+      "expected_postcondition": "All seven Critical vendor reviews have current, applicable source evidence and dated counsel/compliance decisions and signatures; the canonical manifest/register reflect the reviewed dates and overdue population is reconciled. B-032 remains open until the complete external review is recorded.",
+      "retry_and_rollback": "If an owner-authorized portal export or required source is unavailable, leave that vendor field pending and B-032 open. Do not substitute public statements, infer approval, or create a repository credential. Preserve restricted source exports only in the authorized evidence system and revoke temporary owner-managed access after review.",
+      "references": ["BACKLOG.md#B-032", "docs/handoff/2026-09-22-1644-critical-vendor-review-manifest.json", "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md", "docs/compliance/vendor-reviews/stripe-dpa-review-2026-04.md", "docs/compliance/vendor-reviews/clerk-dpa-review-2026-04.md", "docs/compliance/vendor-reviews/aws-kms-review-2026-09.md", "docs/compliance/vendor-reviews/gcp-kms-review-2026-09.md", "docs/compliance/vendor-reviews/azure-key-vault-review-2026-09.md", "docs/compliance/vendor-reviews/drata-review-2026-09.md", "crates/corelink-ops/src/drata/drata.rs"]
     },
     {
       "id": "B-035",
