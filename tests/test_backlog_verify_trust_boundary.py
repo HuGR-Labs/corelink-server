@@ -263,9 +263,7 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         baseline = workflow.read_text(encoding="utf-8")
         backlog_verify.validate_candidate_workflow(self.candidate)
 
-        verify_start = baseline.index("  verify:")
         trusted_start = baseline.index("  trusted_semantic:")
-        verify_job = baseline[verify_start:trusted_start]
         trusted_job = baseline[trusted_start:]
         for runner in ("corelink", "ubuntu-latest", "self-hosted", "[self-hosted, linux]"):
             with self.subTest(verify_runner=runner):
@@ -283,7 +281,7 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
                     "    runs-on: ubuntu-24.04", f"    runs-on: {runner}", 1
                 )
                 self.assertNotEqual(mutated_trusted, trusted_job)
-                workflow.write_text(verify_job + mutated_trusted, encoding="utf-8")
+                workflow.write_text(baseline[:trusted_start] + mutated_trusted, encoding="utf-8")
                 with self.assertRaisesRegex(RuntimeError, "unexpected trusted semantic runner"):
                     backlog_verify.validate_candidate_workflow(self.candidate)
 
