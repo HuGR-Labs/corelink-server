@@ -98,6 +98,7 @@ jobs:
           timeout --signal=INT --kill-after=5s 15m npm exec --yes --package=wrangler@4.111.0 -- wrangler tail "${B103_TAIL_WORKER}" --format json \
             > "${RUNNER_TEMP}/b103/worker-tail.raw.jsonl" 2> "${RUNNER_TEMP}/b103/wrangler.stderr" &
           tail_pid=$!
+          # shellcheck disable=SC2317 # The EXIT trap calls this cleanup indirectly.
           stop_tail() {
             if [[ -n "${tail_pid:-}" ]]; then
               kill -INT "${tail_pid}" 2>/dev/null || true
