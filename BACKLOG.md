@@ -6020,8 +6020,8 @@ finding-title: "CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it ga
 problem: "CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path"
 evidence: "docs/security/2026-06-15-launch-due-diligence-audit.md#MEDIUM / LOW item 64: CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path"
 dependencies: []
-next-action: "Completed: confirm the deployed secret-name gate, deploy the exact source SHA, and verify one signed production webhook without retaining credential or payload values."
-acceptance: "Redacted production evidence at evidence/production/B-229-clerk-webhook-2026-09-08.md records the exact source SHA, Cloudflare version, 100% traffic, health 200, and signed probe 200 ignored."
+next-action: "For DD-085: remediate the finding titled \"CLERK_WEBHOOK_SECRET is not in any deploy secret gate, yet it gates inbound Clerk webhook signature verification on the provisioning path\" at docs/security/2026-06-15-launch-due-diligence-audit.md (MEDIUM / LOW item 64); add a focused regression fixture proving the failure mode is closed and fail-closed on missing evidence."
+acceptance: "Evidence for DD-085: a code or documented owner decision at the cited source, a regression test that fails before the fix, and a recorded post-fix result linked from this item."
 verify: |
   python3 scripts/verify_b229_clerk_webhook.py && \
   python3 scripts/verify_b229_clerk_webhook.py --self-test && \

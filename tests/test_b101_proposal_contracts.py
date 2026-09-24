@@ -291,6 +291,22 @@ def test_missing_backlog_record_is_red(tmp_path: Path) -> None:
         guard.verify(root, "B-171")
 
 
+@pytest.mark.parametrize("field", ("next-action", "acceptance"))
+def test_completed_proposal_backlog_contract_drift_is_red(tmp_path: Path, field: str) -> None:
+    root = fixture_tree(tmp_path)
+    path = root / guard.BACKLOG
+    text = path.read_text(encoding="utf-8")
+    start = text.index("### B-229 — ")
+    end = text.index("### B-230 — ", start)
+    section = text[start:end]
+    original_line = next(line for line in section.splitlines() if line.startswith(f"{field}: "))
+    mutated_line = f'{field}: "divergent completed proposal metadata"'
+    path.write_text(text[:start] + section.replace(original_line, mutated_line, 1) + text[end:], encoding="utf-8")
+
+    with pytest.raises(guard.ProposalVerificationError, match=f"backlog contract missing or mismatched {field.replace('-', '_')}"):
+        guard.verify(root, "B-229")
+
+
 def test_backlog_owner_mutation_is_red(tmp_path: Path) -> None:
     root = fixture_tree(tmp_path)
     path = root / guard.BACKLOG
