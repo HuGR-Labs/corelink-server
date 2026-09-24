@@ -389,6 +389,7 @@ def test_b101_contract_records_completed_semantic_review_stage() -> None:
 
     assert block, "B-101 must remain a canonical backlog item"
     assert "87 + 20 + 3 + 9 + 19 = 138" in block.group(0)
+    assert "61 + 4 + 73 = 138" in block.group(0)
     assert "status: done" in block.group(0)
     assert f"stage: {coverage.B101_STAGE}" in block.group(0)
     assert "verify: python3 scripts/verify_audit_finding_coverage.py --format json" in block.group(0)
