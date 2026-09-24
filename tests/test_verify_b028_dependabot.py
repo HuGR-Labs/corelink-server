@@ -55,6 +55,28 @@ class B028VerifierTests(unittest.TestCase):
         with self.assertRaisesRegex(VERIFY.CensusError, "census drifted"):
             VERIFY.verify_alerts(EXPECTED + [alert(39, "fast-uri", "GHSA-new")])
 
+    def test_post_merge_receipt_mutated_with_historical_open_alerts_is_rejected(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            relative = Path(VERIFY.POST_MERGE_SNAPSHOT)
+            receipt_path = root / relative
+            receipt_path.parent.mkdir(parents=True)
+
+            receipt_source = ROOT / relative
+            historical_source = ROOT / "docs/security/b028-dependabot-census-2026-09-06.json"
+            receipt = json.loads(receipt_source.read_text(encoding="utf-8"))
+            historical = json.loads(historical_source.read_text(encoding="utf-8"))
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            VERIFY.verify_baseline_snapshot(root)
+
+            # Mutate the zero-alert receipt with the exact, already-recorded
+            # pre-merge alerts. No alert facts are invented for this control.
+            receipt["alerts"] = historical["alerts"]
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+            with self.assertRaisesRegex(VERIFY.CensusError, "must contain no open alerts"):
+                VERIFY.verify_baseline_snapshot(root)
+
     def test_published_patch_on_residual_forces_retriage(self):
         with self.assertRaisesRegex(VERIFY.CensusError, "census drifted"):
             VERIFY.verify_alerts([alert(26, "image-size", "GHSA-w3rx-r6r6-pgpr", patched={"identifier": "2.0.3"})])
