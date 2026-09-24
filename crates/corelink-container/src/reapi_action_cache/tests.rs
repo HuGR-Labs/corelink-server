@@ -376,6 +376,22 @@ async fn rejected_authorization_tenant_and_malformed_result_never_touch_action_c
             .code(),
         Code::InvalidArgument
     );
+    let mut escaping_path = result();
+    escaping_path.output_symlinks[0].path = "../outside".into();
+    assert_eq!(
+        missing
+            .update(
+                &metadata(),
+                UpdateActionResultRequest {
+                    action_result: Some(escaping_path),
+                    ..request.clone()
+                },
+            )
+            .await
+            .expect_err("output path")
+            .code(),
+        Code::InvalidArgument
+    );
     let malformed_action = UpdateActionResultRequest {
         action_digest: Some(Digest {
             hash: "not-a-sha256".into(),

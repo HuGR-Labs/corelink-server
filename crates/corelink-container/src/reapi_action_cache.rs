@@ -179,6 +179,7 @@ fn validate_action_result(result: &ActionResult) -> Result<(), Status> {
         ));
     }
     for output in &result.output_files {
+        validate_output_path(&output.path)?;
         let digest = output
             .digest
             .as_ref()
@@ -189,6 +190,7 @@ fn validate_action_result(result: &ActionResult) -> Result<(), Status> {
         }
     }
     for output in &result.output_directories {
+        validate_output_path(&output.path)?;
         let tree_digest = output.tree_digest.as_ref().ok_or_else(|| {
             Status::new(
                 Code::InvalidArgument,
@@ -200,8 +202,31 @@ fn validate_action_result(result: &ActionResult) -> Result<(), Status> {
             validate_digest(&root_digest.hash, root_digest.size_bytes)?;
         }
     }
+    for output in result
+        .output_file_symlinks
+        .iter()
+        .chain(&result.output_directory_symlinks)
+        .chain(&result.output_symlinks)
+    {
+        validate_output_path(&output.path)?;
+    }
     validate_stdio(&result.stdout_raw, result.stdout_digest.as_ref(), "stdout")?;
     validate_stdio(&result.stderr_raw, result.stderr_digest.as_ref(), "stderr")?;
+    Ok(())
+}
+
+fn validate_output_path(path: &str) -> Result<(), Status> {
+    if path.is_empty()
+        || path.starts_with('/')
+        || path
+            .split('/')
+            .any(|component| component.is_empty() || component == "." || component == "..")
+    {
+        return Err(Status::new(
+            Code::InvalidArgument,
+            "ActionCache output path must be a normalized relative path",
+        ));
+    }
     Ok(())
 }
 

@@ -26,6 +26,7 @@ def violations(service: str, tests: str, proto: str, routes: str) -> list[str]:
         "admitted.ac_lookup(",
         ".ac_update(",
         "validate_action_result",
+        "validate_output_path",
         "REAPI_ACTION_RESULT_MAX_SERIALIZED_BYTES",
         "Code::AlreadyExists",
         "execution_capabilities: None",
@@ -91,6 +92,7 @@ def self_test() -> list[str]:
         (service.replace("Access::Write", "Access::Read", 1), tests, proto, routes, "write scope bypass"),
         (service.replace("admitted.ac_lookup(", "admitted.cas_read(", 1), tests, proto, routes, "decorated lookup bypass"),
         (service.replace("Code::AlreadyExists", "Code::FailedPrecondition", 1), tests, proto, routes, "immutable conflict remap"),
+        (service.replace("validate_output_path", "unchecked_output_path", 1), tests, proto, routes, "output path validation bypass"),
         (service.replace("execution_capabilities: None", "execution_capabilities: Some(Default::default())", 1), tests, proto, routes, "execution capability claim"),
         (service, tests.replace("quota_and_audit_faults_fail_closed_without_disclosure", "", 1), proto, routes, "fault coverage removed"),
     )
