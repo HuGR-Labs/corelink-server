@@ -85,3 +85,5 @@ jobs:
         run: .venv/bin/python3 -m pytest tests/test_b101_proposal_contracts.py -q
       - name: Prove source-coverage red controls are still red
         run: .venv/bin/python3 -m pytest tests/test_audit_finding_coverage.py -q
+      - name: Prove B-028 post-merge receipt fails closed when mutated
+        run: .venv/bin/python3 -m pytest tests/test_verify_b028_dependabot.py -q
