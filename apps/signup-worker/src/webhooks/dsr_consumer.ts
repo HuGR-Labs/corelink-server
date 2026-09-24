@@ -489,7 +489,9 @@ function retryReceiptBoundaryFailure(
     receipt_boundary: reason,
     note: "DLQ receipt boundary is unavailable at the retry limit; manual operator disposition required",
   });
-  m.ack();
+  // A receipt-bound recovery envelope is the precondition for every terminal
+  // ACK. Retain the DLQ copy even after the alert retry budget is exhausted.
+  m.retry();
 }
 
 /**
