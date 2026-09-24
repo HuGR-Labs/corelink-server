@@ -4,8 +4,8 @@ Canonical closed ownership map for tracked GitHub Actions workflows.
 Update this manifest with every workflow add, rename or removal. Unknown ownership remains `LEAD-BLOCKED | blocked`.
 Historical owned assignments are preserved from B131-B167.md at immutable base 648ecdccd229bdb5154b86843053c28b9cce9d36; the added workflow rows have no evidence-backed owner and remain blocked.
 
-workflow-count: 224
-workflow-paths-sha256: 10a9324e80f4f2d288b41e2766af1351dba1f329308761f7bc2f707152504d9e
+workflow-count: 226
+workflow-paths-sha256: b59dd0357bb1b5b5ce1090f49abac5806312458b54d19ab8217e63c0a0aaf79c
 
 ```wp-workflow-ownership
 # workflow path | owner WP or LEAD-BLOCKED | status
@@ -144,6 +144,7 @@ workflow-paths-sha256: 10a9324e80f4f2d288b41e2766af1351dba1f329308761f7bc2f70715
 .github/workflows/issue-1699-ownership-preparation.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1720-cloudflare-drift-audit.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1720-cloudflare-drift-contract.yml | LEAD-BLOCKED | blocked
+.github/workflows/issue-1721-r2-lock-proof.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1722-terraform-evidence.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1724-cli-provenance.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-1863-mutants-contract.yml | LEAD-BLOCKED | blocked
@@ -163,6 +164,7 @@ workflow-paths-sha256: 10a9324e80f4f2d288b41e2766af1351dba1f329308761f7bc2f70715
 .github/workflows/issue-2169-b105-hosted-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2176-grpc-deny-gate.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2177-reapi-ingress-contract.yml | LEAD-BLOCKED | blocked
+.github/workflows/issue-2178-reapi-cas-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2198-okf-adr-authority.yml | LEAD-BLOCKED | blocked
 .github/workflows/issue-2386-hosted-runner-contract.yml | LEAD-BLOCKED | blocked
 .github/workflows/legal-changes-review.yml | LEAD-BLOCKED | blocked
