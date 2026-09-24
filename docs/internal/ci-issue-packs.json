@@ -10,6 +10,9 @@
         "scripts/verify_ci_issue_packs.py",
         "docs/internal/ci-issue-packs.json"
       ],
+      "workflow_files_to_lint": [
+        ".github/workflows/issue-ci-pack.yml"
+      ],
       "required_focused_jobs": [
         "actionlint",
         "ci-pack-contract"
@@ -35,6 +38,7 @@
       "budget": {
         "runner": "ubuntu-24.04",
         "job_timeout_minutes": 15,
+        "step_timeout_minutes": 15,
         "max_billable_minutes_per_dispatch": 15,
         "matrix_limit": 1,
         "max_dispatches_per_pack_and_sha": 1
@@ -65,6 +69,124 @@
         "DCO check on the exact pull request head",
         "one independent cold review verdict and disposition of each finding",
         "documented escalation decision for every critical surface touched"
+      ]
+    },
+    {
+      "pack_id": "issue-2437-worker-three-arm",
+      "issue": 2437,
+      "changed_surfaces": [
+        ".github/workflows/corelink-worker.yml",
+        "crates/corelink-worker/Cargo.toml",
+        "crates/corelink-worker/src/middleware/timing_padding.rs",
+        "crates/corelink-worker/tests/timing_indistinguishability.rs"
+      ],
+      "workflow_files_to_lint": [
+        ".github/workflows/corelink-worker.yml"
+      ],
+      "required_focused_jobs": [
+        "ci-pack-contract",
+        "rust-worker-three-arm"
+      ],
+      "admission_checks": [
+        "DCO check on the exact pull request head",
+        "credentialless checkout",
+        "changed-file boundary"
+      ],
+      "negative_controls": [
+        "the focused test retains its unpadded distinguishability negative control",
+        "reject a candidate SHA mismatch",
+        "reject changed paths outside this issue's four-file surface",
+        "do not dispatch cargo-mutants or the broad corelink-worker workflow"
+      ],
+      "exact_sha": {
+        "source": "required workflow_dispatch input expected_sha",
+        "binding": "must equal github.sha for the checked-out dispatch ref",
+        "target_base_source": "required workflow_dispatch input target_base_sha",
+        "target_base_sha": "required workflow_dispatch input target_base_sha; must be an ancestor of expected_sha"
+      },
+      "budget": {
+        "runner": "ubuntu-24.04",
+        "job_timeout_minutes": 15,
+        "step_timeout_minutes": 10,
+        "max_billable_minutes_per_dispatch": 15,
+        "matrix_limit": 1,
+        "max_dispatches_per_pack_and_sha": 1
+      },
+      "escalation_policy": {
+        "critical_surfaces": ["workflow", "security", "release", "core"],
+        "required_jobs_for_this_pack": ["ci-pack-contract", "rust-worker-three-arm"],
+        "protected_main_full_suite_required_after_merge": true
+      },
+      "global_suite_escalation_triggers": [
+        "shared dependency manifests, workspace configuration, or central test infrastructure changes",
+        "authentication, authorization, cryptographic, or protocol boundary changes",
+        "cross-service migrations or shared data contracts",
+        "release, signing, deployment, secrets, or provider mutation controls change",
+        "the pack cannot bound affected consumers"
+      ],
+      "merge_evidence": [
+        "exact pack run URL/ID, candidate SHA, target base SHA, and conclusion",
+        "focused cargo test receipt on ubuntu-24.04 with its ten-minute cap",
+        "admission DCO on the exact pull request head",
+        "cold-review verdict and disposition of findings",
+        "no broad corelink-worker workflow or cargo-mutants dispatch"
+      ]
+    },
+    {
+      "pack_id": "issue-1948-mutants-receipt",
+      "issue": 1948,
+      "changed_surfaces": [
+        "scripts/verify_i1863_mutants_hosted.py",
+        "tests/test_i1863_mutants_hosted_receipt.py"
+      ],
+      "workflow_files_to_lint": [],
+      "required_focused_jobs": [
+        "ci-pack-contract",
+        "python-mutants-receipt"
+      ],
+      "admission_checks": [
+        "DCO check on the exact pull request head",
+        "credentialless checkout",
+        "changed-file boundary"
+      ],
+      "negative_controls": [
+        "unit tests reject in-progress and failed run receipts",
+        "unit tests reject wrong SHA and run identity",
+        "unit tests reject non-main protected-ref receipts",
+        "do not dispatch cargo-mutants or any workspace-wide suite"
+      ],
+      "exact_sha": {
+        "source": "required workflow_dispatch input expected_sha",
+        "binding": "must equal github.sha for the checked-out dispatch ref",
+        "target_base_source": "required workflow_dispatch input target_base_sha",
+        "target_base_sha": "required workflow_dispatch input target_base_sha; must be an ancestor of expected_sha"
+      },
+      "budget": {
+        "runner": "ubuntu-24.04",
+        "job_timeout_minutes": 10,
+        "step_timeout_minutes": 10,
+        "max_billable_minutes_per_dispatch": 10,
+        "matrix_limit": 1,
+        "max_dispatches_per_pack_and_sha": 1
+      },
+      "escalation_policy": {
+        "critical_surfaces": ["workflow", "security", "release", "core"],
+        "required_jobs_for_this_pack": ["ci-pack-contract", "python-mutants-receipt"],
+        "protected_main_full_suite_required_after_merge": true
+      },
+      "global_suite_escalation_triggers": [
+        "shared dependency manifests, workspace configuration, or central test infrastructure changes",
+        "authentication, authorization, cryptographic, or protocol boundary changes",
+        "cross-service migrations or shared data contracts",
+        "release, signing, deployment, secrets, or provider mutation controls change",
+        "the pack cannot bound affected consumers"
+      ],
+      "merge_evidence": [
+        "exact pack run URL/ID, candidate SHA, target base SHA, and conclusion",
+        "focused Python unittest and verifier receipts on ubuntu-24.04",
+        "admission DCO on the exact pull request head",
+        "cold-review verdict and disposition of findings",
+        "no cargo-mutants dispatch or global suite on this evidence-only diff"
       ]
     }
   ]

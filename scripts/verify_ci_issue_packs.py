@@ -28,7 +28,12 @@ REQUIRED = {
     "global_suite_escalation_triggers",
     "merge_evidence",
 }
-JOB_IDS = {"actionlint", "ci-pack-contract"}
+JOB_IDS = {
+    "actionlint",
+    "ci-pack-contract",
+    "rust-worker-three-arm",
+    "python-mutants-receipt",
+}
 
 
 def valid_sha_pair(expected: str, actual: str) -> bool:
@@ -73,6 +78,9 @@ def validate(catalog: object) -> list[str]:
             value = pack[field]
             if not isinstance(value, list) or not value or not all(isinstance(item, str) and item.strip() for item in value):
                 errors.append(f"{prefix}.{field} must be a non-empty list of strings")
+        workflow_files = pack.get("workflow_files_to_lint")
+        if not isinstance(workflow_files, list) or not all(isinstance(path, str) and path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml")) for path in workflow_files):
+            errors.append(f"{prefix}.workflow_files_to_lint must be a list of workflow paths")
         if not set(pack["required_focused_jobs"] if isinstance(pack["required_focused_jobs"], list) else []) <= JOB_IDS:
             errors.append(f"{prefix}.required_focused_jobs contains an unknown job")
         exact = pack["exact_sha"]
@@ -82,10 +90,13 @@ def validate(catalog: object) -> list[str]:
         if not isinstance(budget, dict):
             errors.append(f"{prefix}.budget must be an object")
         else:
-            if budget.get("runner") != "ubuntu-24.04" or budget.get("job_timeout_minutes") != 15 or budget.get("max_billable_minutes_per_dispatch") != 15 or budget.get("matrix_limit") != 1 or budget.get("max_dispatches_per_pack_and_sha") != 1:
+            job_timeout = budget.get("job_timeout_minutes")
+            step_timeout = budget.get("step_timeout_minutes")
+            cost_cap = budget.get("max_billable_minutes_per_dispatch")
+            if budget.get("runner") != "ubuntu-24.04" or not isinstance(job_timeout, int) or not 1 <= job_timeout <= 15 or not isinstance(step_timeout, int) or not 1 <= step_timeout <= job_timeout or not isinstance(cost_cap, int) or not 1 <= cost_cap <= job_timeout or budget.get("matrix_limit") != 1 or budget.get("max_dispatches_per_pack_and_sha") != 1:
                 errors.append(f"{prefix}.budget exceeds the declared hosted-runner cap")
         escalation = pack["escalation_policy"]
-        if not isinstance(escalation, dict) or not set(escalation.get("critical_surfaces", [])) >= {"workflow", "security", "release", "core"} or escalation.get("required_jobs_for_this_pack") != ["actionlint", "ci-pack-contract"] or escalation.get("protected_main_full_suite_required_after_merge") is not True:
+        if not isinstance(escalation, dict) or not set(escalation.get("critical_surfaces", [])) >= {"workflow", "security", "release", "core"} or escalation.get("required_jobs_for_this_pack") != pack["required_focused_jobs"] or escalation.get("protected_main_full_suite_required_after_merge") is not True:
             errors.append(f"{prefix}.escalation_policy weakens a critical-surface gate")
         if pack.get("issue") and isinstance(pack_id, str) and str(pack["issue"]) not in pack_id:
             errors.append(f"{prefix}.pack_id does not name its issue")
@@ -167,6 +178,11 @@ def main() -> int:
     unexpected = paths_outside_pack(changed, allowed)
     if unexpected:
         print("changed-file boundary exceeded:", *unexpected, sep="\n- ", file=sys.stderr)
+        return 1
+    workflow_changes = {path for path in changed if path.startswith(".github/workflows/")}
+    linted_workflows = set(selected[0]["workflow_files_to_lint"])
+    if workflow_changes - linted_workflows:
+        print("changed workflow files are not covered by actionlint:", *(sorted(workflow_changes - linted_workflows)), sep="\n- ", file=sys.stderr)
         return 1
     merge_base = subprocess.run(
         ["git", "merge-base", "--is-ancestor", args.target_base_sha, args.candidate_sha],
