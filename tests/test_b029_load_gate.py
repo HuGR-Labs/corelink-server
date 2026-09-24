@@ -558,6 +558,7 @@ class B029LoadGateTests(unittest.TestCase):
             ROOT / ".github/workflows/load-test-nightly.yml",
             contract / ".github/workflows/load-test-nightly.yml",
         )
+        shutil.copy(ROOT / verifier.FOCUSED_PACK, contract / verifier.FOCUSED_PACK)
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
         self._copy_hostname_sources(contract)
         (contract / "scripts").mkdir()
@@ -606,6 +607,7 @@ class B029LoadGateTests(unittest.TestCase):
             ROOT / ".github/workflows/load-test-nightly.yml",
             contract / ".github/workflows/load-test-nightly.yml",
         )
+        shutil.copy(ROOT / verifier.FOCUSED_PACK, contract / verifier.FOCUSED_PACK)
         shutil.copy(ROOT / "tests/load/README.md", contract / "tests/load/README.md")
         self._copy_hostname_sources(contract)
         (contract / "scripts").mkdir()
