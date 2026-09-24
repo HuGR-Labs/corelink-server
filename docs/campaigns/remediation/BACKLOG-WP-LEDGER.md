@@ -9,7 +9,7 @@ the single source of truth for item status. This ledger derives work ownership,
 dependency order and completion contracts from that source; it never overrides
 the backlog.
 
-The current population is 374 items: 12 open, 330 done and 32 parked. The 12
+The current population is 374 items: 12 open, 332 done and 30 parked. The 12
 open items are partitioned exactly once across four contract catalogs:
 
 The historical candidate snapshot remains pinned in

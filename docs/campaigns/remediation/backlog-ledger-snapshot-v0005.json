@@ -7,7 +7,7 @@
   "prior_source_sha256": "f478182a9d325515db69471098b8771c703b38eda8e9a1cf2ba6296b159cd99d",
   "source_sha256": "f478182a9d325515db69471098b8771c703b38eda8e9a1cf2ba6296b159cd99d",
   "prior_ledger_sha256": "e3d5347ec16f0454a98a3e10e59b210e008e0293f4c52482df07c11a720b93dd",
-  "ledger_sha256": "7c44b416e30cb7aff0d6f63a623bff78cccc774982dd4038b70292149e0bdd4b",
+  "ledger_sha256": "10ed27b81011db825b36359f87ce03545a8cdd408f7ea80bc3fba77521aee0af",
   "prior_catalog_sha256": {
     "docs/campaigns/remediation/work-packages/B001-B045.md": "081c9885db8d79c18f2f31edb7864bb1ca1a18d53f408720f3f9e4f00524f9c6",
     "docs/campaigns/remediation/work-packages/B046-B090.md": "1a164260a84f3adb406676e1505fd8379aad07b15a5c45365369dcef7b0586da",

@@ -593,6 +593,11 @@ def test_v0005_bridge_rejects_an_unreceipted_or_wrong_transition():
     )
 
 
+def test_v0005_replays_the_exact_delivered_successor_chain():
+    """The committed v0005 receipt closes the delivered v0004 drift."""
+    assert ledger.load_successor_chain()["sequence"] == 5
+
+
 @pytest.mark.parametrize("old_status,new_status,mutation", [
     ("open", "parked", "verify-means"),
     ("open", "done", "verify-means"),
