@@ -45,7 +45,28 @@ class StagingTargetContractTests(unittest.TestCase):
         temp, root = self.fixture()
         with temp:
             endurance = root / module.WORKFLOWS[1]
-            endurance.write_text(endurance.read_text().replace("30s|2h", "30s|24h"))
+            source = endurance.read_text()
+            self.assertIn("DURATION=30s", source)
+            invalid = source.replace(
+                "          - '2h'\n        default: '2h'",
+                "          - '2h'\n          - '24h'\n        default: '2h'",
+            )
+            self.assertNotEqual(invalid, source)
+            endurance.write_text(invalid)
+            self.assertIn("workflow-duration-budget", module.assess(root))
+
+    def test_bounded_k6_probe_cannot_hide_overbudget_dispatch_choice(self) -> None:
+        temp, root = self.fixture()
+        with temp:
+            endurance = root / module.WORKFLOWS[1]
+            source = endurance.read_text()
+            self.assertIn("DURATION=30s", source)
+            invalid = source.replace(
+                "          - '2h'\n        default: '2h'",
+                "          - '24h'\n        default: '24h'",
+            )
+            self.assertNotEqual(invalid, source)
+            endurance.write_text(invalid)
             self.assertIn("workflow-duration-budget", module.assess(root))
 
 

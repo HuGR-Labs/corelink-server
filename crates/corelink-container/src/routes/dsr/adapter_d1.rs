@@ -279,6 +279,12 @@ pub(super) const RETAIN_SET: &[&str] = &[
     // raw PII (subject == tenant_id; rectified values are hashed by the live
     // pipeline before D1), so it SURVIVES an Art.17 erasure (RETAIN).
     "dsr_tickets",
+    // Migration 0145's envelope is the bounded authority needed to complete a
+    // DSR after its main queue retries are exhausted. Keep its tenant/DSR
+    // binding and actor/approval transition evidence until the existing
+    // seven-day cleanup removes the envelope and linked audit rows together
+    // (issue #2166); this is bounded DSR accountability under ADR-S11-013.
+    "dsr_dlq_redrive_envelopes",
     "dpa_acceptances",
     // NOTE: the table is `erasure_attestations` (plural, migr. 0032). A
     // singular `"erasure_attestation"` sat here too and matched nothing —
