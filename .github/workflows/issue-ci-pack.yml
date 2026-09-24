@@ -55,14 +55,26 @@ jobs:
       - name: Bind the dispatch to the exact candidate SHA
         env:
           EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          TARGET_BASE_SHA: ${{ inputs.target_base_sha }}
           PACK_ID: ${{ inputs.pack_id }}
+          TRUSTED_MAIN_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TARGET_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$GITHUB_REF" == refs/heads/main ]]
           [[ "$GITHUB_REF_PROTECTED" == true ]]
           ACTUAL_SHA="$(git -C candidate rev-parse HEAD)"
+          [[ "$TRUSTED_MAIN_SHA" == "$(git rev-parse HEAD)" ]]
           [[ "$EXPECTED_SHA" == "$ACTUAL_SHA" ]]
+          MERGE_BASE="$(git -C candidate merge-base "$TRUSTED_MAIN_SHA" "$ACTUAL_SHA")"
+          [[ "$TARGET_BASE_SHA" != "$ACTUAL_SHA" ]]
+          if [[ "$PACK_ID" == issue-2440-ci-scoping && "$ACTUAL_SHA" == "$TRUSTED_MAIN_SHA" ]]; then
+            EXPECTED_BASE="$(git -C candidate rev-parse HEAD^)"
+          else
+            EXPECTED_BASE="$MERGE_BASE"
+          fi
+          [[ "$TARGET_BASE_SHA" == "$EXPECTED_BASE" ]]
           case "$PACK_ID" in
             issue-2440-ci-scoping|issue-2437-worker-three-arm|issue-1948-mutants-receipt) ;;
             *) echo "::error::unknown issue CI pack ID" >&2; exit 1 ;;
@@ -129,6 +141,7 @@ jobs:
           EXPECTED_SHA: ${{ inputs.candidate_sha }}
           TARGET_BASE_SHA: ${{ inputs.target_base_sha }}
           PACK_ID: ${{ inputs.pack_id }}
+          TRUSTED_MAIN_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           ACTUAL_SHA="$(git -C candidate rev-parse HEAD)"
@@ -136,6 +149,7 @@ jobs:
             --candidate-sha "$EXPECTED_SHA" \
             --actual-sha "$ACTUAL_SHA" \
             --target-base-sha "$TARGET_BASE_SHA" \
+            --trusted-main-sha "$TRUSTED_MAIN_SHA" \
             --pack-id "$PACK_ID" \
             --candidate-root candidate \
             --run-self-test

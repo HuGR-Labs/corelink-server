@@ -36,7 +36,7 @@
         "source": "required workflow_dispatch input candidate_sha",
         "binding": "must equal HEAD of the isolated candidate checkout, controlled by the protected-main workflow",
         "target_base_source": "required workflow_dispatch input target_base_sha",
-        "target_base_sha": "required workflow_dispatch input target_base_sha; must be an ancestor of candidate_sha"
+        "target_base_sha": "required workflow_dispatch input target_base_sha; must equal merge-base(candidate_sha, trusted_main_sha) and differ from candidate_sha; bootstrap when candidate_sha equals trusted_main_sha uses candidate first parent"
       },
       "budget": {
         "runner": "ubuntu-24.04",
@@ -107,7 +107,7 @@
         "source": "required workflow_dispatch input candidate_sha",
         "binding": "must equal HEAD of the isolated candidate checkout, controlled by the protected-main workflow",
         "target_base_source": "required workflow_dispatch input target_base_sha",
-        "target_base_sha": "required workflow_dispatch input target_base_sha; must be an ancestor of candidate_sha"
+        "target_base_sha": "required workflow_dispatch input target_base_sha; must equal merge-base(candidate_sha, trusted_main_sha) and differ from candidate_sha; bootstrap when candidate_sha equals trusted_main_sha uses candidate first parent"
       },
       "budget": {
         "runner": "ubuntu-24.04",
@@ -167,7 +167,7 @@
         "source": "required workflow_dispatch input candidate_sha",
         "binding": "must equal HEAD of the isolated candidate checkout, controlled by the protected-main workflow",
         "target_base_source": "required workflow_dispatch input target_base_sha",
-        "target_base_sha": "required workflow_dispatch input target_base_sha; must be an ancestor of candidate_sha"
+        "target_base_sha": "required workflow_dispatch input target_base_sha; must equal merge-base(candidate_sha, trusted_main_sha) and differ from candidate_sha; bootstrap when candidate_sha equals trusted_main_sha uses candidate first parent"
       },
       "budget": {
         "runner": "ubuntu-24.04",
