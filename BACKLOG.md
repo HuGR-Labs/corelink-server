@@ -1800,7 +1800,7 @@ status: open
 source-document: "PR containment audit #1490/#1506 addendum"
 source-locator: "apps/docs/docs/explanation/privacy/gdpr.mdx:191-200; four published locale copies"
 finding-title: "GDPR international-transfer table has an unowned Sigstore recipient row"
-problem: "The four published GDPR locale tables retain a combined PagerDuty / GitHub / Sigstore US row, while the Trust Center and generated subprocessor source say Sigstore is not live, never receives customer data, and is not a customer-data sub-processor. The Legal/DPO disposition for this exact table residue is not recorded."
+problem: "The four published GDPR locale tables retain a combined PagerDuty / GitHub / Sigstore US row, while the Trust Center and generated source describe current release-SLSA, CAS, and TSA paths as sending only CoreLink-owned artifact/signing metadata, say no customer-data path is wired, and identify Sigstore as not a customer-data sub-processor in the current register. The separate transparency-log seam is not a live transport, and any future pseudonymous-tenant use requires new Legal/DPO review. The disposition for this exact table residue is not recorded."
 evidence: "Four-locale census plus posture markers in apps/docs/docs/trust/subprocessors.mdx and scripts/gen-public-subprocessors.py; no transfer or legal approval is inferred."
 acceptance: "A signed Legal/DPO disposition covers all four locale copies and chooses remove_sigstore_row or retain_and_document_transfer; only then may the table and this item transition."
 action-packet: docs/handoff/2026-09-06-b314-gdpr-sigstore-transfer.json
