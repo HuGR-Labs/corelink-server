@@ -16,7 +16,7 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.verify_b006_provider_binding import ProviderBindingError, validate_provider_binding
@@ -70,8 +70,20 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
-def validate_receipt(receipt: dict[str, Any]) -> None:
-    """Validate a receipt without ever accepting a guessed zero."""
+ReceiptMode = Literal["live", "historical"]
+
+
+def validate_receipt(receipt: dict[str, Any], *, mode: ReceiptMode = "live") -> None:
+    """Validate receipt truth; enforce age for live/operator evidence.
+
+    Historical mode is for validating committed fixtures whose contents remain
+    meaningful after the live observation window expires. It does not relax
+    schema, timestamp syntax, future-time, authentication, redaction, or
+    counter validation. Runtime and closure callers use the strict live default.
+    """
+
+    if mode not in ("live", "historical"):
+        raise EvidenceError("receipt validation mode must be live or historical")
 
     if set(receipt) != RECEIPT_KEYS:
         missing = sorted(RECEIPT_KEYS - set(receipt))
@@ -96,7 +108,9 @@ def validate_receipt(receipt: dict[str, Any]) -> None:
     except ValueError as exc:
         raise EvidenceError("receipt timestamp is invalid") from exc
     now = datetime.now(timezone.utc)
-    if captured_at < now - MAX_RECEIPT_AGE or captured_at > now + MAX_RECEIPT_FUTURE:
+    is_stale_live_receipt = mode == "live" and captured_at < now - MAX_RECEIPT_AGE
+    is_from_future = captured_at > now + MAX_RECEIPT_FUTURE
+    if is_stale_live_receipt or is_from_future:
         raise EvidenceError("receipt timestamp is stale or from the future")
     if receipt["credential_values_printed"] is not False:
         raise EvidenceError("credential output must remain redacted")

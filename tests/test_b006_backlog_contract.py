@@ -64,13 +64,33 @@ def test_b006_does_not_publish_a_bearer_probe_command() -> None:
 
 def test_b006_evidence_retains_redacted_403_and_no_guessed_counter() -> None:
     evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
-    validate_receipt(evidence)
+    validate_receipt(evidence, mode="historical")
     assert evidence["schema"] == "corelink-b006-capability-metrics-v2"
     assert evidence["http_status"] == 403
     assert evidence["authenticated"] is False
     assert evidence["aggregate_only"] is False
     assert evidence["labels_included"] is False
     assert evidence["capability_claim_unserved"] is None
+
+
+def test_b006_historical_fixture_ignores_age_while_live_receipts_remain_fresh() -> None:
+    evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
+    stale = {
+        **evidence,
+        "captured_at": "2020-01-01T00:00:00Z",
+    }
+
+    # The committed 403 receipt remains useful evidence of the redacted,
+    # fail-closed contract after its observation window has expired.
+    validate_receipt(stale, mode="historical")
+
+    # The same data cannot stand in for a current production observation.
+    with pytest.raises(EvidenceError, match="receipt timestamp is stale or from the future"):
+        validate_receipt(stale, mode="live")
+
+    future = {**evidence, "captured_at": "2999-01-01T00:00:00Z"}
+    with pytest.raises(EvidenceError, match="receipt timestamp is stale or from the future"):
+        validate_receipt(future, mode="historical")
 
 
 def test_b006_rejects_unauthenticated_zero_and_receipt_boundary_mutations() -> None:
