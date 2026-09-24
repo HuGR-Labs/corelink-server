@@ -26,6 +26,7 @@ import hashlib
 import json
 import os
 import re
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -33,9 +34,12 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-CONCURRENCIES = (4, 16, 64)
+PUT_ONLY_CONCURRENCIES = (4, 16, 64, 220)
+WEBDAV_CONCURRENCIES = (4, 16, 64)
 TARGET = "https://staging.corelink.humangr.com"
 UUID_V4 = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.IGNORECASE)
+OPERATION_ID = re.compile(r"^b103-[0-9a-f]{32}$")
 
 # The expected status of a request against a key that is unique to this run.
 # A 429 is deliberately absent from every set: it is evidence of the defect,
@@ -64,6 +68,35 @@ def header(headers: dict[str, str], name: str) -> str | None:
     return next((value for key, value in headers.items() if key.lower() == wanted), None)
 
 
+def retry_after_seconds(headers: dict[str, str]) -> int | None:
+    value = header(headers, "retry-after")
+    if value is None or not re.fullmatch(r"\d{1,5}", value):
+        return None
+    seconds = int(value)
+    return seconds if seconds <= 86_400 else None
+
+
+def server_timing_durations_ms(headers: dict[str, str]) -> list[float]:
+    value = header(headers, "server-timing")
+    if value is None:
+        return []
+    durations: list[float] = []
+    for part in value.split(","):
+        match = re.fullmatch(r"\s*[A-Za-z][A-Za-z0-9_-]{0,31}\s*;\s*dur=(\d+(?:\.\d{1,3})?)\s*", part)
+        if not match:
+            return []
+        duration = float(match.group(1))
+        if duration > 86_400_000:
+            return []
+        durations.append(round(duration, 3))
+    return durations
+
+
+def header_sha256(headers: dict[str, str], name: str) -> str | None:
+    value = header(headers, name)
+    return sha256(value.encode("utf-8")) if value is not None else None
+
+
 def error_code(body: bytes) -> str | None:
     """Extract only a non-secret machine error marker from a JSON body."""
     try:
@@ -74,7 +107,14 @@ def error_code(body: bytes) -> str | None:
         return None
     for key in ("error", "code", "type"):
         value = parsed.get(key)
-        if isinstance(value, str) and 0 < len(value) <= 80 and re.fullmatch(r"[A-Za-z0-9_.:-]+", value):
+        if (
+            isinstance(value, str)
+            and 0 < len(value) <= 80
+            and re.fullmatch(r"[A-Za-z0-9_.:-]+", value)
+            and not UUID.search(value)
+            and not re.fullmatch(r"[0-9a-fA-F]{32,64}", value)
+            and not re.search(r"(?i)(?:bearer|corelink_pat_|cfat_|token|secret|password|tenant|account|email|authorization)", value)
+        ):
             return value
     return None
 
@@ -87,11 +127,12 @@ def request(
     key: str,
     body: bytes = b"",
 ) -> dict[str, object]:
+    operation_id = f"b103-{uuid.uuid4().hex}"
     url = f"{base.rstrip('/')}/cargo/{tenant}/{key}"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Length": str(len(body)),
-        "X-Corelink-Operation": f"b103-{uuid.uuid4().hex}",
+        "X-Corelink-Operation": operation_id,
     }
     if method == "PROPFIND":
         headers["Depth"] = "0"
@@ -117,6 +158,7 @@ def request(
         transport_error = type(exc).__name__
     elapsed_ms = round((time.monotonic() - started) * 1000, 3)
     return {
+        "operation_id": operation_id,
         "method": method,
         "key": key,
         "request_body_sha256": sha256(body) if method == "PUT" else None,
@@ -128,10 +170,10 @@ def request(
         "response_body_sha256": sha256(response_body),
         "response_error_code": error_code(response_body),
         "transport_error": transport_error,
-        "retry_after": header(response_headers, "retry-after"),
-        "server_timing": header(response_headers, "server-timing"),
-        "response_request_id": header(response_headers, "x-request-id"),
-        "cf_ray": header(response_headers, "cf-ray"),
+        "retry_after_seconds": retry_after_seconds(response_headers),
+        "server_timing_durations_ms": server_timing_durations_ms(response_headers),
+        "response_request_id_sha256": header_sha256(response_headers, "x-request-id"),
+        "cf_ray_sha256": header_sha256(response_headers, "cf-ray"),
     }
 
 
@@ -155,8 +197,15 @@ def run_operation(base: str, tenant: str, token: str, mode: str) -> list[dict[st
 
 def run_arm(base: str, tenant: str, token: str, mode: str, concurrency: int) -> dict[str, object]:
     started = time.monotonic()
+    barrier = threading.Barrier(concurrency + 1)
+
+    def synchronized_operation() -> list[dict[str, object]]:
+        barrier.wait(timeout=30)
+        return run_operation(base, tenant, token, mode)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = [pool.submit(run_operation, base, tenant, token, mode) for _ in range(concurrency)]
+        futures = [pool.submit(synchronized_operation) for _ in range(concurrency)]
+        barrier.wait(timeout=30)
         responses = [row for future in futures for row in future.result()]
     wall_ms = round((time.monotonic() - started) * 1000, 3)
     failures = [row for row in responses if row["ok"] is not True]
@@ -206,6 +255,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default=os.environ.get("B103_TARGET_HOST", ""))
     parser.add_argument("--tenant", default=os.environ.get("B103_TENANT_ID", ""))
+    parser.add_argument("--tenant-sha256", default=os.environ.get("B103_TENANT_SHA256", ""))
     parser.add_argument("--deployment-sha", default=os.environ.get("B103_DEPLOYMENT_SHA", ""))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -214,6 +264,9 @@ def main() -> int:
         raise SystemExit(f"refusing non-canonical target; expected {TARGET}")
     if not UUID_V4.fullmatch(args.tenant):
         raise SystemExit("B103_TENANT_ID must be a lowercase UUID v4")
+    expected_tenant_sha256 = "sha256:" + hashlib.sha256(args.tenant.encode("ascii")).hexdigest()
+    if args.tenant_sha256 != expected_tenant_sha256:
+        raise SystemExit("B-103 tenant does not match the validated target receipt")
     if not token:
         raise SystemExit("B103_PAT is required")
     if not re.fullmatch(r"[0-9a-f]{40}", args.deployment_sha):
@@ -221,17 +274,20 @@ def main() -> int:
 
     warm_sequence = run_warm_sequence(args.base.rstrip("/"), args.tenant, token)
     arms: list[dict[str, object]] = []
-    for mode in ("put_only", "webdav_sequence"):
-        for concurrency in CONCURRENCIES:
+    for mode, levels in (("put_only", PUT_ONLY_CONCURRENCIES), ("webdav_sequence", WEBDAV_CONCURRENCIES)):
+        for concurrency in levels:
             arms.append(run_arm(args.base.rstrip("/"), args.tenant, token, mode, concurrency))
     result = {
-        "schema": "corelink.b103-cargo-write-reproducer.v1",
+        "schema": "corelink.b103-cargo-write-reproducer.v2",
         "environment": "staging",
         "target": TARGET,
         "deployment_sha": args.deployment_sha,
-        "tenant_id": args.tenant,
+        "tenant_sha256": expected_tenant_sha256,
         "captured_at": now(),
-        "concurrency_levels": list(CONCURRENCIES),
+        "concurrency_levels": {
+            "put_only": list(PUT_ONLY_CONCURRENCIES),
+            "webdav_sequence": list(WEBDAV_CONCURRENCIES),
+        },
         "method_contract": {
             "warm_sequence": ["PUT", "PUT", "PUT"],
             "put_only": ["PUT"],
