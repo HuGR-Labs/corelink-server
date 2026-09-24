@@ -100,14 +100,18 @@ env:
 jobs:
   reconcile:
     name: neon-shadow-reconcile
-    # zero-hosted (WP-CI): python3 puro (baked na imagem da frota)
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout repo
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+
+      - name: Set up pinned Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
 
       - name: Compute target date (UTC yesterday or input)
         id: date
@@ -118,12 +122,8 @@ jobs:
           if [[ -n "$TARGET_DATE_INPUT" ]]; then
             TARGET_DATE="$TARGET_DATE_INPUT"
           else
-            # BSD date, not GNU: this job runs on the self-hosted macOS
-            # `corelink-builder` fleet, where `date -d` is an illegal option and
-            # the step aborts under `set -e` before it reads anything. That is
-            # why this lane has zero successful runs. `-v-1d` is the BSD form;
-            # the GNU fallback keeps it working if the lane is ever moved to a
-            # Linux runner.
+            # Try BSD date first, then GNU date (used by the hosted Ubuntu
+            # runner); either form computes the previous UTC day.
             TARGET_DATE=$(date -u -v-1d +%Y-%m-%d 2>/dev/null \
               || date -u -d "yesterday" +%Y-%m-%d)
           fi

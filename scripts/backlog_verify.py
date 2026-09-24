@@ -84,6 +84,16 @@ AUTH_VERIFY_COMMANDS = {
     "B-028": "python3 scripts/verify_b028_dependabot.py",
     "B-373": "python3 scripts/verify_b373_dependabot.py --alerts-file docs/security/b373-dependabot-census-2026-09-09.json",
 }
+# The sequential B-register ends at B-373. B-1630 is the single historical
+# external-issue identity: PR #1945 recorded GitHub issue #1630 under that key,
+# and immutable V0004 binds it in history_changed_ids and history_transitions
+# (commit 08b1618d3d6ce922043e8cd064d5e58a50990f63). It is not a missing run of
+# 1,256 canonical B-items. Keep this exact identity required and separate from
+# the allocator sequence; every other unrecognized gap remains fatal.
+HISTORICAL_EXTERNAL_ISSUE_IDS = {"B-1630": 1630}
+# This prefix is the delivered canonical allocator population. Never lower it;
+# later allocated B-IDs extend the dense sequence and retirement keeps the row.
+CANONICAL_B_ID_PREFIX_MAX = 373
 IMMUTABLE_ITEM_FIELDS = frozenset({
     "id", "repo", "verify", "action-packet", "source-document",
     "source-locator", "finding-title", "problem", "evidence", "acceptance",
@@ -611,6 +621,47 @@ def validate_candidate_transitions(
     return errors
 
 
+def validate_dense_id_population(items: list[Item]) -> list[str]:
+    """Require a dense primary B sequence plus the immutable B-1630 alias."""
+    item_ids = {item.id for item in items}
+    errors: list[str] = []
+    for item_id, external_issue in HISTORICAL_EXTERNAL_ISSUE_IDS.items():
+        if item_id not in item_ids:
+            errors.append(
+                f"missing history-backed external issue identity {item_id} "
+                f"(GitHub issue #{external_issue})"
+            )
+
+    primary_numbers = sorted(
+        int(match.group(1))
+        for item in items
+        if item.id not in HISTORICAL_EXTERNAL_ISSUE_IDS
+        and (match := re.fullmatch(r"B-(\d+)", item.id))
+    )
+    present = set(primary_numbers)
+    sequence_max = max(CANONICAL_B_ID_PREFIX_MAX, max(primary_numbers, default=0))
+    missing = sorted(set(range(1, sequence_max + 1)) - present)
+    if missing:
+        ranges: list[tuple[int, int]] = []
+        start = previous = missing[0]
+        for number in missing[1:]:
+            if number == previous + 1:
+                previous = number
+                continue
+            ranges.append((start, previous))
+            start = previous = number
+        ranges.append((start, previous))
+        rendered = ", ".join(
+            f"B-{first:03d}" if first == last else f"B-{first:03d}..B-{last:03d}"
+            for first, last in ranges
+        )
+        errors.append(
+            f"missing {rendered} in the canonical B-ID sequence — ids must be dense; "
+            "restore a real item or mark it retired in place"
+        )
+    return errors
+
+
 def validate_candidate_workflow(candidate_root: Path) -> None:
     """Inspect workflow policy as data; never execute the candidate workflow."""
     text = _regular_control(candidate_root, ".github/workflows/backlog-verify.yml").decode("utf-8")
@@ -1029,9 +1080,10 @@ def main() -> int:
         return 2
 
     # A deleted item is invisible to per-item checks — every survivor still passes
-    # while the record silently loses work. This happened on 2026-08-23: an edit
-    # that rewrote one item removed its neighbour, and the gate reported all-green.
-    # So ids must stay DENSE. Retiring an item means marking it, never deleting it.
+    # while the record silently loses work. The sequential B-register stays dense;
+    # B-1630 is excluded from that sequence only because immutable V0004 records it
+    # as the historical external issue identity for GitHub issue #1630. This exact
+    # ID remains required, and every other gap is still rejected.
     if orphan_headings:
         print(
             "FATAL: heading(s) sem bloco ```backlog parseavel: "
@@ -1044,21 +1096,10 @@ def main() -> int:
         )
         return 2
 
-    numbered = sorted(
-        int(m.group(1))
-        for i in items
-        if (m := re.fullmatch(r"B-(\d+)", i.id))
-    )
-    if numbered:
-        missing = sorted(set(range(1, max(numbered) + 1)) - set(numbered))
-        if missing:
-            gaps = ", ".join(f"B-{n:03d}" for n in missing)
-            print(
-                f"FATAL: BACKLOG.md is missing {gaps} — ids must be dense. An item was "
-                "deleted rather than resolved. Restore it, or mark it retired in place.",
-                file=sys.stderr,
-            )
-            return 2
+    id_population_errors = validate_dense_id_population(items)
+    if id_population_errors:
+        print("FATAL: invalid BACKLOG.md ID population: " + "; ".join(id_population_errors), file=sys.stderr)
+        return 2
 
     seen: dict[str, int] = {}
     for it in items:

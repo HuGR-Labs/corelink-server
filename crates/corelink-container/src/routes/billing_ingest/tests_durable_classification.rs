@@ -292,10 +292,62 @@ async fn durable_classification_matrix() {
         left.await.expect("left task"),
         right.await.expect("right task"),
     ];
-    assert!(outcomes.contains(&Ok(StageOutcome::Inserted)));
-    assert!(outcomes.contains(&Ok(StageOutcome::Conflict(
-        StageConflictReason::PayloadMismatch
-    ))));
+    let inserted = outcomes
+        .iter()
+        .position(|outcome| *outcome == Ok(StageOutcome::Inserted))
+        .expect("exactly one concurrent payload wins insertion");
+    let winner = if inserted == 0 {
+        record(7200, &key)
+    } else {
+        record(7201, &key)
+    };
+    let loser = if inserted == 0 {
+        record(7201, &key)
+    } else {
+        record(7200, &key)
+    };
+    assert_eq!(
+        outcomes[1 - inserted],
+        Ok(StageOutcome::Conflict(StageConflictReason::PayloadMismatch))
+    );
+
+    let (staged_count, staged_qty, staged_fingerprint): (i64, i64, String) = concurrent
+        .db
+        .lock()
+        .expect("sqlite lock")
+        .query_row(
+            "SELECT COUNT(*), MAX(qty), MAX(event_payload_hash) FROM usage_event_staging",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("single durable concurrent winner");
+    assert_eq!(staged_count, 1);
+    assert_eq!(staged_qty, i64::try_from(winner.qty).expect("winner quantity"));
+    assert_eq!(
+        staged_fingerprint,
+        D1UsageStagingStore::payload_hash(&winner)
+    );
+
+    let conflict: (String, String, String, i64) = concurrent
+        .db
+        .lock()
+        .expect("sqlite lock")
+        .query_row(
+            "SELECT observed_fingerprint, incoming_fingerprint, reason, observation_count \
+             FROM usage_event_staging_conflicts",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("durable concurrent conflict");
+    assert_eq!(
+        conflict,
+        (
+            D1UsageStagingStore::payload_hash(&winner),
+            D1UsageStagingStore::payload_hash(&loser),
+            "payload_mismatch".to_owned(),
+            1,
+        )
+    );
 
     let legacy = Fixture::new();
     let store = legacy.store();
