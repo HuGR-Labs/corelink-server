@@ -25,6 +25,13 @@ class BacklogVerifyTrustBoundaryTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "backlog-verify.yml").read_text(encoding="utf-8")
         self.assertIn("pull_request_target:", workflow)
         self.assertNotIn("\n  pull_request:\n", workflow)
+        self.assertIn("  verify:\n    runs-on: ubuntu-24.04", workflow)
+        self.assertIn(
+            "  trusted_semantic:\n"
+            "    if: github.event_name == 'push' || github.event_name == 'schedule'\n"
+            "    runs-on: ubuntu-24.04",
+            workflow,
+        )
         self.assertGreaterEqual(workflow.count("persist-credentials: false"), 2)
         self.assertIn("github.event.pull_request.head.sha || github.sha", workflow)
         self.assertIn("github.event.pull_request.base.sha || github.sha", workflow)
