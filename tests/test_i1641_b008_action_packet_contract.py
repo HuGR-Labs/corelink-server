@@ -81,6 +81,16 @@ class B008OwnerActionContractTests(unittest.TestCase):
         with self.assertRaises(MODULE.PacketError):
             MODULE.check_data(candidate, "B-008")
 
+    def test_staging_service_binding_is_source_bound(self) -> None:
+        topology = json.loads((ROOT / MODULE.B008_STAGING_TOPOLOGY_PATH).read_text(encoding="utf-8"))
+        MODULE._check_b008_staging_binding(topology)
+        mutated = copy.deepcopy(topology)
+        bindings = mutated["cloudflare"]["service_bindings"]
+        binding = next(row for row in bindings if row.get("binding") == MODULE.B008_STAGING_SERVICE_BINDING)
+        binding["service"] = "corelink-synthetic-pager"
+        with self.assertRaises(MODULE.PacketError):
+            MODULE._check_b008_staging_binding(mutated)
+
 
 if __name__ == "__main__":
     unittest.main()

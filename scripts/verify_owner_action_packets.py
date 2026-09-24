@@ -150,6 +150,10 @@ B008_REQUIRED_REFERENCES = frozenset({
     "docs/internal/2026-08-24-owner-decision-brief.md",
     "evidence/i1641/pagerduty-contract-manifest.json",
 })
+B008_STAGING_TOPOLOGY_PATH = "infra/staging/topology.json"
+B008_STAGING_ROOT_WORKER = "corelink-staging"
+B008_STAGING_SERVICE_BINDING = "SCHEDULED_DRILL_DELIVERY"
+B008_STAGING_RECEIVER = "corelink-synthetic-pager-staging"
 B065_EVIDENCE_REQUIRED_FIELDS = [
     "schema_version", "captured_at", "account", "destination_inventory",
     "retained_endpoint_ids", "resolution", "billing_health_runs",
@@ -956,6 +960,32 @@ def _check_b008_action_contract(item: dict[str, object]) -> None:
     assert isinstance(references, list)
     if not B008_REQUIRED_REFERENCES.issubset(references):
         raise PacketError("B-008 references lost its backlog, staging dependency, or receipt contract")
+    try:
+        topology = json.loads((ROOT / B008_STAGING_TOPOLOGY_PATH).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise PacketError(f"B-008 staging topology is unavailable or invalid: {exc}") from exc
+    _check_b008_staging_binding(topology)
+
+
+def _check_b008_staging_binding(topology: object) -> None:
+    """Bind the owner packet to the checked-in protected staging service route."""
+    if not isinstance(topology, dict):
+        raise PacketError("B-008 staging topology must be an object")
+    cloudflare = topology.get("cloudflare")
+    if not isinstance(cloudflare, dict):
+        raise PacketError("B-008 staging topology has no Cloudflare contract")
+    if cloudflare.get("root_worker") != B008_STAGING_ROOT_WORKER:
+        raise PacketError("B-008 staging root worker binding drifted")
+    if cloudflare.get("synthetic_receiver_worker") != B008_STAGING_RECEIVER:
+        raise PacketError("B-008 staging receiver binding drifted")
+    service_bindings = cloudflare.get("service_bindings")
+    expected_binding = {
+        "worker": B008_STAGING_ROOT_WORKER,
+        "binding": B008_STAGING_SERVICE_BINDING,
+        "service": B008_STAGING_RECEIVER,
+    }
+    if not isinstance(service_bindings, list) or expected_binding not in service_bindings:
+        raise PacketError("B-008 scheduled drill service binding is not source-bound to staging")
 
 
 def _check_b097_evidence(item: dict[str, object]) -> None:
