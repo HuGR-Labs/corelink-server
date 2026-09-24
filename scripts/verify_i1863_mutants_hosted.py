@@ -54,7 +54,7 @@ def validate_successful_receipt(
         raise ValueError("hosted mutants receipt schema is unsupported")
     if run_id is None or str(receipt.get("run_id")) != str(run_id):
         raise ValueError("receipt run_id does not match the GitHub run")
-    if attempt is not None and str(receipt.get("run_attempt")) != str(attempt):
+    if attempt is None or str(receipt.get("run_attempt")) != str(attempt):
         raise ValueError("receipt run_attempt does not match the GitHub run")
     if not expected_sha or receipt.get("sha") != expected_sha:
         raise ValueError("receipt SHA does not match the expected exact SHA")
