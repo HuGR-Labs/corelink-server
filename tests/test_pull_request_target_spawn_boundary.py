@@ -73,6 +73,13 @@ EXPECTED_PERMISSIONS = {
     "welcome-first-pr.yml": {"issues": "write", "pull-requests": "write"},
 }
 
+# A file-disjoint hosted migration may replace the historical selector, but
+# cannot introduce an arbitrary runner.  Keeping this narrow transition set
+# lets the protected-boundary assertions continue to cover actor gates,
+# permissions, and data-only checkout behavior while the shared workflows
+# migrate one bounded bundle at a time.
+HOSTED_RUNNERS = {"ubuntu-24.04", "macos-15", "macos-15-intel"}
+
 
 _YAML_KEY = re.compile(r"^(?P<key>[^:#][^:]*?):(?:[ \t]*(?P<value>.*))?$")
 _TARGET_TOKEN = re.compile(r"\bpull_request_target\b")
@@ -406,7 +413,7 @@ def expected_comparisons(
     *,
     include_non_target_branch: bool = False,
 ) -> None:
-    test.assertEqual(job.get("runs-on"), "corelink")
+    assert_transition_runner(test, job.get("runs-on"), "corelink")
     test.assertIsInstance(job.get("if"), str, f"{name} needs a job-level actor gate")
     try:
         terms = flattened(parse_gate(job["if"]), "or")
@@ -427,7 +434,7 @@ def assert_actor_gate(test: unittest.TestCase, job: dict, name: str) -> None:
 
 
 def assert_dependabot_gate(test: unittest.TestCase, job: dict, name: str) -> None:
-    test.assertEqual(job.get("runs-on"), "corelink")
+    assert_transition_runner(test, job.get("runs-on"), "corelink")
     test.assertIsInstance(job.get("if"), str, f"{name} needs a job-level actor gate")
     try:
         terms = flattened(parse_gate(job["if"]), "and")
@@ -457,7 +464,14 @@ def assert_permissions(test: unittest.TestCase, workflow: dict, name: str) -> No
 
 def assert_runners(test: unittest.TestCase, workflow: dict, name: str) -> None:
     for job_name, expected in EXPECTED_RUNNERS[name].items():
-        test.assertEqual(workflow["jobs"][job_name].get("runs-on"), expected)
+        assert_transition_runner(test, workflow["jobs"][job_name].get("runs-on"), expected)
+
+
+def assert_transition_runner(test: unittest.TestCase, actual: object, legacy: object) -> None:
+    test.assertTrue(
+        actual == legacy or (isinstance(actual, str) and actual in HOSTED_RUNNERS),
+        f"runner must be the frozen legacy selector or an approved GitHub-hosted selector; got {actual!r}",
+    )
 
 
 def assert_file_size_boundary(
@@ -474,11 +488,18 @@ def assert_file_size_boundary(
     test.assertIsInstance(jobs, dict)
     test.assertEqual(set(jobs), {"ratchet"})
     ratchet = jobs["ratchet"]
-    test.assertEqual(ratchet.get("runs-on"), "corelink")
+    assert_transition_runner(test, ratchet.get("runs-on"), "corelink")
     test.assertNotIn("if", ratchet, "data-only ratchet must not skip fork PRs")
     test.assertEqual(workflow.get("permissions"), {"contents": "read"})
 
     raw = raw or (WORKFLOWS / "file-size-ratchet.yml").read_text(encoding="utf-8")
+    test.assertIn(
+        "group: file-size-ratchet-${{ github.event_name }}-"
+        "${{ github.event.pull_request.number || github.ref }}",
+        raw,
+        "PR runs must key cancellation by PR number while other events retain ref isolation",
+    )
+    test.assertIn("cancel-in-progress: true", raw)
     test.assertRegex(raw, r"(?m)^permissions:\n  contents: read\s*$")
     assert_file_size_trusted_base(test, raw)
     test.assertIn(
@@ -617,7 +638,7 @@ def assert_backlog_verify_boundary(test: unittest.TestCase, workflow: dict) -> N
     jobs = workflow.get("jobs")
     test.assertEqual(set(jobs or {}), {"verify"})
     test.assertEqual(workflow.get("permissions"), {"contents": "read"})
-    test.assertEqual(jobs["verify"].get("runs-on"), "corelink")
+    assert_transition_runner(test, jobs["verify"].get("runs-on"), "corelink")
     raw = (WORKFLOWS / "backlog-verify.yml").read_text(encoding="utf-8")
     test.assertIn("pull_request_target:", raw)
     test.assertNotIn("\n  pull_request:\n", raw)
@@ -642,7 +663,7 @@ def assert_welcome_boundary(test: unittest.TestCase, workflow: dict) -> None:
     test.assertIn("issues", triggers)
     test.assertEqual(set(workflow.get("jobs", {})), {"welcome"})
     welcome = workflow["jobs"]["welcome"]
-    test.assertEqual(welcome.get("runs-on"), ["self-hosted", "mac", "corelink-builder"])
+    assert_transition_runner(test, welcome.get("runs-on"), ["self-hosted", "mac", "corelink-builder"])
     test.assertEqual(welcome.get("timeout-minutes"), 5)
     test.assertNotIn("if", welcome)
 
@@ -716,8 +737,6 @@ jobs:
             workflow = load_workflow(name)
             jobs = workflow["jobs"]
             for job_name, job in jobs.items():
-                if job.get("runs-on") != "corelink":
-                    continue
                 if name == "dependabot-auto-merge.yml" or (
                     name == "dependabot-policy.yml" and job_name == "policy-gate"
                 ):
@@ -729,24 +748,26 @@ jobs:
                     assert_file_size_boundary(self, workflow)
                 elif name == "backlog-verify.yml":
                     assert_backlog_verify_boundary(self, workflow)
+                elif name in {"dependabot-policy.yml", "welcome-first-pr.yml"}:
+                    # The sentinel and greeting lanes have distinct public
+                    # purposes; their runner is checked by assert_runners.
+                    continue
                 else:
                     assert_actor_gate(self, job, f"{name}:{job_name}")
 
             # The two public-purpose lanes must have a non-fabric boundary.
             if name == "dependabot-policy.yml":
                 sentinel = jobs["sentinel"]
-                self.assertEqual(
-                    sentinel.get("runs-on"),
-                    ["self-hosted", "mac", "corelink-builder"],
+                assert_transition_runner(
+                    self, sentinel.get("runs-on"), ["self-hosted", "mac", "corelink-builder"]
                 )
                 self.assertEqual(
                     sentinel.get("if"), "github.actor != 'dependabot[bot]'"
                 )
             if name == "welcome-first-pr.yml":
                 welcome = jobs["welcome"]
-                self.assertEqual(
-                    welcome.get("runs-on"),
-                    ["self-hosted", "mac", "corelink-builder"],
+                assert_transition_runner(
+                    self, welcome.get("runs-on"), ["self-hosted", "mac", "corelink-builder"]
                 )
 
     def test_fabric_jobs_allow_only_trusted_associations(self) -> None:
@@ -801,6 +822,14 @@ jobs:
         file_size_text = (WORKFLOWS / "file-size-ratchet.yml").read_text(
             encoding="utf-8"
         )
+        with self.subTest(mutant="base-ref-only ratchet concurrency"):
+            mutant_text = file_size_text.replace(
+                "${{ github.event.pull_request.number || github.ref }}",
+                "${{ github.ref }}",
+            )
+            with self.assertRaises(AssertionError):
+                assert_file_size_boundary(self, file_size, mutant_text)
+
         data_only_mutations = (
             (
                 "execute candidate validator",

@@ -36,7 +36,7 @@ concurrency:
 jobs:
   verify:
     name: production deployability (base + head)
-    runs-on: corelink
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -47,6 +47,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Provision isolated Python interpreter
         shell: bash

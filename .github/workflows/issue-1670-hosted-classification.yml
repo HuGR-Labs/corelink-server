@@ -31,6 +31,8 @@ jobs:
           fs_root="/dev/shm/corelink-issue-1670-${GITHUB_RUN_ID:-$$}"
           report="$root/report.json"
           mkdir -p "$root" "$fs_root"
+          # ShellCheck does not see that this callback is invoked by the EXIT trap.
+          # shellcheck disable=SC2317
           cleanup() {
             set +e
             rm -rf "$root" "$fs_root"

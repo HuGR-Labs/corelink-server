@@ -36,7 +36,7 @@ EXPECTED_DOCUMENT_DIGESTS = {
     "dependabot-policy-trust-boundary.yml": "41fcc16dc71db96537a55378a940b6038bcf832e0b99c71828d65e1313adad24",
     "dependabot-policy.yml": "6183e9ac87fdaf7c279c74d8e5bd7e7894369dbe79ee99f2c0ee87e777b5d516",
     "file-size-ratchet.yml": "d70f0d8de137f1a891610f9bbb993a2ef4077882e50b2b7477886f7ccbcad7eb",
-    "secrets-drift.yml": "81153e3c8d38c18ef57dad8d1d9e4d4792e184024b89b53c829427337a94955d",
+    "secrets-drift.yml": "ba6aba965c494866a618e2730403af249163aab9ca5861ab3cfd49b106c1e041",
     "actionlint.yml": "74f365c7270e852b80a1d5c02af3157456c191bb2848227061b1ae6345bd05b4",
     "dependabot-auto-merge.yml": "4d8b6c66a3b9ed423d4e5ce057dff3a02155982428d9b1c06d440e0ea15e469b",
     "pr-labels.yml": "7b15def5757cb513c8a81ec49553acef8baea561d9bb981cfe0417f3980cc5ce",
@@ -169,6 +169,12 @@ def _check_known(name: str, doc: dict[str, Any]) -> None:
         with_ = step.get("with", {})
         if not isinstance(with_, dict) or with_.get("persist-credentials") is not False:
             raise VerificationError(f"{name}: checkout credentials must be disabled")
+        is_fork_data_checkout = name == "secrets-drift.yml" and expected_path == ".candidate"
+        if is_fork_data_checkout:
+            if with_.get("allow-unsafe-pr-checkout") is not True:
+                raise VerificationError(f"{name}: fork data checkout must opt in exactly")
+        elif "allow-unsafe-pr-checkout" in with_:
+            raise VerificationError(f"{name}: fork checkout opt-in is limited to candidate data")
         if with_.get("fetch-depth") != expected_depth or _text(with_.get("ref")) != expected_ref or _text(with_.get("path")) != expected_path:
             raise VerificationError(f"{name}: checkout fetch-depth must be 0 or 1")
         ref = _text(with_.get("ref")); path = _text(with_.get("path"))

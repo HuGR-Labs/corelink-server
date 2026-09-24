@@ -46,10 +46,12 @@ concurrency:
 jobs:
   lint-and-validate:
     name: lint + meta-schema + JSON sync
-    runs-on: corelink  # zero-hosted: node/python already baked into the corelink image
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Set up Node (for Redocly CLI)
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -83,12 +85,11 @@ jobs:
   breaking-change-detection:
     name: breaking-change detection (vs base branch)
     if: github.event_name == 'pull_request'
-    # Runner: `corelink` (zero-hosted). We do NOT bake Go into the shared box
-    # image just for this rare lane — oasdiff ships a prebuilt static binary, so
+    # GitHub-hosted Linux runner: oasdiff ships a prebuilt static binary, so
     # the job downloads the SAME pinned version (v1.10.27) at runtime,
     # sha256-verified, instead of `go install`. github.com egress is available at
-    # job time (same as actions/checkout). Keeps the runner image lean.
-    runs-on: corelink
+    # job time (same as actions/checkout).
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # PR context passed via env (not interpolated into run: shell) —
     # template-injection-safe (branch names + label JSON can carry shell
@@ -100,6 +101,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Materialize base branch spec
         id: base
@@ -118,7 +120,7 @@ jobs:
 
       # Prebuilt oasdiff binary — verified pinned download (X4 supply-chain floor),
       # replacing the previous `go install …@v1.10.27` so no Go toolchain is needed
-      # on the corelink box. Same version. The sha256 is from the release's OWN
+      # on the runner. Same version. The sha256 is from the release's OWN
       # published checksums.txt (oasdiff/oasdiff v1.10.27, line
       # `…  oasdiff_1.10.27_linux_amd64.tar.gz`) — NEVER fabricated.
       - name: Install oasdiff (prebuilt binary, sha256-verified)
