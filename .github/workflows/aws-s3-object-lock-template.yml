@@ -115,6 +115,9 @@ jobs:
       - name: Check AWS adapter delete-probe fail-closed cases
         run: cargo test -p corelink-audit-chain --features aws-s3-object-lock --lib aws_s3_object_lock --locked
 
+      - name: Prove delete denial rejects unbound IAM authorization evidence
+        run: cargo test -p corelink-audit-chain --features aws-s3-object-lock --lib --locked delete_probe_permission_evidence_must_bind_exact_identity_and_version
+
       - name: Check CAS Compliance migration and Governance isolation
         run: python3 tests/test_s3_object_lock_migration.py
 
