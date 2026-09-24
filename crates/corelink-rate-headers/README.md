@@ -5,11 +5,11 @@
 
 Client-side rate-limit header primitives for [CoreLink](https://github.com/HumanGuardrail/corelink).
 
-This crate is the **wire contract** an SDK or HTTP client needs to correctly
-handle CoreLink backpressure. It carries no server logic, no secrets, and no
-state — only the canonical header shapes and the response-code taxonomy, so
-that any client (in any language, via FFI) can parse a `429` the same way the
-server emits it.
+This crate exposes the client-facing **wire contract** an SDK or HTTP client
+needs to interpret CoreLink rate-limit responses. Its header surface provides
+canonical header shapes and the response-code taxonomy. The crate also
+includes a separate in-memory global circuit-breaker model; it owns
+process-local state but does not imply a durable provider or server wiring.
 
 ## What it provides
 
@@ -29,6 +29,9 @@ closes the server that runs the service. A client cannot back off correctly
 against a black-box header format — so this contract is published. The
 abuse-prevention heuristics that decide *when* to emit a `429` stay in the
 closed server. See [`docs/OSS_STRATEGY.md`](https://github.com/HuGR-dev/corelink-server/blob/main/docs/OSS_STRATEGY.md).
+
+Maintainers: see the [local ownership reference](../../docs/ownership/crates/corelink-rate-headers/REFERENCE.md)
+for this crate's source boundaries and evidence limits.
 
 ## License
 
