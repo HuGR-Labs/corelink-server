@@ -115,8 +115,9 @@ observed.
 ## Bounded full-detector read
 
 Scheduled `audit-archive-lag` runs retain the production PagerDuty behavior.
-After this workflow change reaches `main` and an owner re-enables the workflow,
-a manual dispatch on protected `main` defaults to `notification_mode=read-only`.
+The workflow change is merged on `main`. After an owner re-enables it once the
+authorized repair is ready for observation, a manual dispatch on protected
+`main` defaults to `notification_mode=read-only`.
 It runs the same D1 SELECTs and computes the complete absence and
 per-partition verdict, writes the normal job summary, and skips the PagerDuty
 step. A `PAGE` verdict still fails the run, so suppressing a page does not turn
