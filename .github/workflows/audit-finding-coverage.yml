@@ -13,6 +13,7 @@ on:
       - 'scripts/verify_audit_finding_coverage.py'
       - 'tests/test_b101_proposal_contracts.py'
       - 'tests/test_audit_finding_coverage.py'
+      - 'tests/test_verify_b028_dependabot.py'
       - '.github/workflows/audit-finding-coverage.yml'
   push:
     branches: [main]
@@ -27,6 +28,7 @@ on:
       - 'scripts/verify_audit_finding_coverage.py'
       - 'tests/test_b101_proposal_contracts.py'
       - 'tests/test_audit_finding_coverage.py'
+      - 'tests/test_verify_b028_dependabot.py'
       - '.github/workflows/audit-finding-coverage.yml'
   workflow_dispatch: {}
 
