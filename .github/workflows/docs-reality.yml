@@ -58,6 +58,7 @@ on:
       - 'scripts/probe_i1669_readonly.py'
       - 'scripts/verify_audit_residency.py'
       - 'tests/test_i1669_receipt_classifier.py'
+      - 'tests/test_verify_audit_residency.py'
       - '.github/workflows/docs-reality.yml'
   push:
     branches: [main]
@@ -86,6 +87,7 @@ on:
       - 'scripts/probe_i1669_readonly.py'
       - 'scripts/verify_audit_residency.py'
       - 'tests/test_i1669_receipt_classifier.py'
+      - 'tests/test_verify_audit_residency.py'
 
 permissions:
   contents: read
@@ -161,7 +163,7 @@ jobs:
 
       - name: Validate the offline #1669 receipt classifier
         shell: bash
-        run: python3 -m pytest tests/test_i1669_receipt_classifier.py -q
+        run: python3 -m pytest tests/test_i1669_receipt_classifier.py tests/test_verify_audit_residency.py -q
 
       - name: Summarize results in PR
         if: always()
