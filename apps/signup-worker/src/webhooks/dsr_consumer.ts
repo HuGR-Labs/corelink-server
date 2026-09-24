@@ -219,11 +219,17 @@ export interface DsrDlqReceiptStore {
 interface D1Statement {
   bind(...values: unknown[]): D1Statement;
   first<T = unknown>(): Promise<T | null>;
-  run(): Promise<{ success: boolean; meta?: { changes?: number } }>;
+  run(): Promise<D1RunResult>;
+}
+
+interface D1RunResult {
+  success: boolean;
+  meta?: { changes?: number };
 }
 
 interface D1ReceiptDatabase {
   prepare(sql: string): D1Statement;
+  batch(statements: D1Statement[]): Promise<D1RunResult[]>;
 }
 
 const REDRIVE_TTL_MS = 7 * 24 * 60 * 60_000;
@@ -252,8 +258,25 @@ export interface RedriveStore {
 }
 
 /** Stores only the migration 0145 recovery allowlist, never the queue body. */
-class D1RedriveStore implements RedriveStore {
+export class D1RedriveStore implements RedriveStore {
   constructor(private readonly db: D1ReceiptDatabase) {}
+
+  /**
+   * D1 batch is transactional. The audit insert is conditional on the new
+   * state, so a denied claim/fence cannot manufacture a transition record.
+   */
+  private async transition(
+    eventId: string,
+    transition: "claimed" | "submitted" | "ambiguous",
+    update: D1Statement,
+  ): Promise<boolean> {
+    const audit = this.db.prepare(
+      "INSERT OR IGNORE INTO dsr_dlq_redrive_audit (event_id, transition) SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM dsr_dlq_redrive_envelopes WHERE event_id=?1 AND state=?2)",
+    ).bind(eventId, transition);
+    const [result] = await this.db.batch([update, audit]);
+    if (!result?.success) throw new Error(`dsr_dlq_redrive_${transition}_failed`);
+    return result.meta?.changes === 1;
+  }
 
   async capture(eventId: string, body: DsrDlqBody, nowMs: number): Promise<boolean> {
     const requeueCount = normalizedDlqRequeueCount(body._dlq_requeue);
@@ -269,11 +292,10 @@ class D1RedriveStore implements RedriveStore {
   }
 
   async claim(eventId: string, actorRef: string, approvalRef: string, nowMs: number): Promise<"claimed" | "expired" | "denied"> {
-    const result = await this.db.prepare(
+    const claimed = await this.transition(eventId, "claimed", this.db.prepare(
       "UPDATE dsr_dlq_redrive_envelopes SET state='claimed', actor_ref=?2, approval_ref=?3, claim_expires_at_ms=?4, updated_at_ms=?5 WHERE event_id=?1 AND state='ready' AND requeue_count=0 AND expires_at_ms>?5",
-    ).bind(eventId, actorRef, approvalRef, nowMs + REDRIVE_LEASE_MS, nowMs).run();
-    if (!result.success) throw new Error("dsr_dlq_redrive_claim_failed");
-    if (result.meta?.changes === 1) return "claimed";
+    ).bind(eventId, actorRef, approvalRef, nowMs + REDRIVE_LEASE_MS, nowMs));
+    if (claimed) return "claimed";
     const row = await this.db.prepare("SELECT expires_at_ms FROM dsr_dlq_redrive_envelopes WHERE event_id=?1")
       .bind(eventId).first<{ expires_at_ms: number }>();
     return row && row.expires_at_ms <= nowMs ? "expired" : "denied";
@@ -285,28 +307,34 @@ class D1RedriveStore implements RedriveStore {
   }
 
   async fence(eventId: string, nowMs: number): Promise<boolean> {
-    const result = await this.db.prepare(
+    return this.transition(eventId, "ambiguous", this.db.prepare(
       "UPDATE dsr_dlq_redrive_envelopes SET state='ambiguous', updated_at_ms=?2 WHERE event_id=?1 AND state='claimed' AND claim_expires_at_ms>?2 AND expires_at_ms>?2",
-    ).bind(eventId, nowMs).run();
-    if (!result.success) throw new Error("dsr_dlq_redrive_fence_failed");
-    return result.meta?.changes === 1;
+    ).bind(eventId, nowMs));
   }
 
   async submitted(eventId: string, nowMs: number): Promise<void> {
-    const result = await this.db.prepare("UPDATE dsr_dlq_redrive_envelopes SET state='submitted', updated_at_ms=?2 WHERE event_id=?1 AND state='ambiguous'")
-      .bind(eventId, nowMs).run();
-    if (!result.success || result.meta?.changes !== 1) throw new Error("dsr_dlq_redrive_submit_failed");
+    const submitted = await this.transition(eventId, "submitted", this.db.prepare(
+      "UPDATE dsr_dlq_redrive_envelopes SET state='submitted', updated_at_ms=?2 WHERE event_id=?1 AND state='ambiguous'",
+    ).bind(eventId, nowMs));
+    if (!submitted) throw new Error("dsr_dlq_redrive_submit_failed");
   }
 
   async ambiguous(eventId: string, nowMs: number): Promise<void> {
-    const result = await this.db.prepare("UPDATE dsr_dlq_redrive_envelopes SET state='ambiguous', updated_at_ms=?2 WHERE event_id=?1 AND state='claimed'")
-      .bind(eventId, nowMs).run();
-    if (!result.success) throw new Error("dsr_dlq_redrive_ambiguous_failed");
+    const ambiguous = await this.transition(eventId, "ambiguous", this.db.prepare(
+      "UPDATE dsr_dlq_redrive_envelopes SET state='ambiguous', updated_at_ms=?2 WHERE event_id=?1 AND state='claimed'",
+    ).bind(eventId, nowMs));
+    if (!ambiguous) throw new Error("dsr_dlq_redrive_ambiguous_failed");
   }
 
   async cleanup(nowMs: number): Promise<void> {
-    await this.db.prepare("UPDATE dsr_dlq_redrive_envelopes SET state='ambiguous', updated_at_ms=?1 WHERE state='claimed' AND claim_expires_at_ms<=?1")
-      .bind(nowMs).run();
+    const leaseExpiry = this.db.prepare(
+      "UPDATE dsr_dlq_redrive_envelopes SET state='ambiguous', updated_at_ms=?1 WHERE state='claimed' AND claim_expires_at_ms<=?1",
+    ).bind(nowMs);
+    const leaseAudit = this.db.prepare(
+      "INSERT OR IGNORE INTO dsr_dlq_redrive_audit (event_id, transition) SELECT event_id, 'ambiguous' FROM dsr_dlq_redrive_envelopes WHERE state='ambiguous' AND claim_expires_at_ms<=?1",
+    ).bind(nowMs);
+    const leaseResults = await this.db.batch([leaseExpiry, leaseAudit]);
+    if (!leaseResults.every((result) => result.success)) throw new Error("dsr_dlq_redrive_cleanup_failed");
     // Frozen 0145 does not timestamp audit rows. Deleting them with their
     // seven-day envelope is stricter than the required 30-day maximum.
     await this.db.prepare("DELETE FROM dsr_dlq_redrive_audit WHERE event_id IN (SELECT event_id FROM dsr_dlq_redrive_envelopes WHERE expires_at_ms<=?1)")

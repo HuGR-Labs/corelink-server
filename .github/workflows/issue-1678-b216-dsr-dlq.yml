@@ -56,6 +56,7 @@ jobs:
               "state='ready' AND requeue_count=0 AND expires_at_ms>?5",
               "!redrive || !await redrive.capture(eventId, body, Date.now())",
               "await store.fence(eventId, Date.now())",
+              "INSERT OR IGNORE INTO dsr_dlq_redrive_audit",
           )
           assert all(marker in source for marker in required)
           PY

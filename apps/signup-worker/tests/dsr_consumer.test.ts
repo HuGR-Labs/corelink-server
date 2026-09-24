@@ -13,6 +13,7 @@ import {
   type DsrDlqBody,
   type DsrDlqReceipt,
   type DsrDlqReceiptStore,
+  D1RedriveStore,
   type RedriveStore,
   handleDsrDlqRedrive,
 } from "../src/webhooks/dsr_consumer.js";
@@ -725,5 +726,43 @@ describe("handleDsrDlqRedrive (receipt-bound authority)", () => {
     expect((await handleDsrDlqRedrive(request(), env(failed, send))).status).toBe(409);
     expect(send).toHaveBeenCalledOnce();
     expect(failed.state).toBe("ambiguous");
+  });
+
+  it("persists each D1 state transition to the frozen redacted audit table", async () => {
+    type Statement = {
+      sql: string;
+      values: unknown[];
+      bind(...values: unknown[]): Statement;
+      first(): Promise<null>;
+      run(): Promise<{ success: true; meta: { changes: 1 } }>;
+    };
+    class AuditDb {
+      readonly audit: string[] = [];
+      prepare(sql: string): Statement {
+        const statement: Statement = {
+          sql,
+          values: [],
+          bind(...values: unknown[]) { this.values = values; return this; },
+          async first() { return null; },
+          async run() { return { success: true, meta: { changes: 1 } }; },
+        };
+        return statement;
+      }
+      async batch(statements: Statement[]) {
+        for (const statement of statements) {
+          if (statement.sql.startsWith("INSERT OR IGNORE INTO dsr_dlq_redrive_audit")) {
+            const transition = statement.values[1];
+            if (typeof transition === "string") this.audit.push(transition);
+          }
+        }
+        return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      }
+    }
+    const db = new AuditDb();
+    const store = new D1RedriveStore(db as never);
+    await store.claim(eventId, "op_2166", "apr_2166", 1);
+    await store.fence(eventId, 2);
+    await store.submitted(eventId, 3);
+    expect(db.audit).toEqual(["claimed", "ambiguous", "submitted"]);
   });
 });
