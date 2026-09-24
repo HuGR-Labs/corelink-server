@@ -253,6 +253,7 @@
       "CLERK_WEBHOOK_SECRET",
       "CORELINK_ERASE_AUTH_KEY",
       "CORELINK_INTERNAL_AUTH_KEY",
+      "DSR_DLQ_REDRIVE_AUTH_KEY",
       "ERASURE_SALT_KEY",
       "PAGERDUTY_ROUTING_KEY"
     ],
@@ -261,6 +262,7 @@
       "PAGERDUTY_WEBHOOK_SECRET"
     ],
     "github_environment_staging": [
+      "STAGING_DSR_DLQ_REDRIVE_AUTH_KEY",
       "K6_STAGING_BYOK_CMK_ID",
       "K6_STAGING_MFA_STUB",
       "K6_STAGING_PAT",

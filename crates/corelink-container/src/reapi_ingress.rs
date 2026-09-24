@@ -92,7 +92,7 @@ impl AdmissionLease {
     }
 
     #[cfg(test)]
-    fn test_only() -> Self {
+    pub(crate) fn test_only() -> Self {
         Self { _permit: None }
     }
 }
@@ -170,6 +170,8 @@ impl AdmittedIngress {
     /// Read one tenant-scoped CAS blob through the shared decorated handler.
     pub fn cas_read(&self, hash: &str, size_bytes: i64) -> Result<CasReadResponse, Status> {
         validate_digest(hash, size_bytes)?;
+        let max_bytes = u64::try_from(size_bytes)
+            .map_err(|_| Status::new(Code::InvalidArgument, "invalid CAS digest size"))?;
         let tenant = self.principal.tenant_id.clone();
         let request = CasReadRequest::new(
             tenant.clone(),
@@ -178,7 +180,8 @@ impl AdmittedIngress {
             tenant,
             current_unix_ms(),
         )
-        .with_algo(DigestAlgo::Sha256);
+        .with_algo(DigestAlgo::Sha256)
+        .with_max_bytes(max_bytes);
         let response = self.cas_read.read(request).map_err(cas_error_status)?;
         let actual_size = i64::try_from(response.bytes.len())
             .map_err(|_| Status::new(Code::DataLoss, "CAS response exceeds digest size range"))?;
@@ -378,6 +381,33 @@ impl ReapiIngress {
             ac_update,
             cap_resolver,
             #[cfg(test)]
+            admission_calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
+    }
+
+    /// Build an ingress from explicit test doubles in sibling crate tests.
+    ///
+    /// This seam is unavailable to production code: route construction must
+    /// continue through [`Self::from_shared_handlers`].
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn from_test_components(
+        authenticator: Arc<dyn IngressAuthenticator>,
+        admission: Arc<dyn IngressAdmission>,
+        cap_resolver: Arc<dyn crate::oci_cap::TenantCapResolver>,
+        cas_read: Arc<dyn CasReadHandler>,
+        cas_write: Arc<dyn CasWriteHandler>,
+        ac_lookup: Arc<dyn AcLookupHandler>,
+        ac_update: Arc<dyn AcUpdateHandler>,
+    ) -> Self {
+        Self {
+            authenticator,
+            admission,
+            cas_read,
+            cas_write,
+            ac_lookup,
+            ac_update,
+            cap_resolver,
             admission_calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
     }

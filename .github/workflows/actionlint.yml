@@ -55,31 +55,18 @@ concurrency:
 
 jobs:
   actionlint:
-    name: actionlint (native, SHA-pinned tool)
-    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
-    # The step below was ALREADY written for this fleet ("Native
-    # actionlint on the macOS self-hosted fleet... the fleet ships actionlint on
-    # PATH") but runs-on had drifted back to hosted. actionlint 1.7.12 confirmed
-    # on the fleet PATH; the pinned-release fallback auto-detects darwin.
-    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
-    # check costs a full paid minute every run; on the fleet it costs $0.
-    # Verified running natively on the fleet host (macOS/BSD userland).
-    # zero-hosted (WP-CI): baixa actionlint+shellcheck pinados e detecta o SO sozinho
-    runs-on: corelink
+    name: actionlint (SHA-pinned tool)
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
 
-      # Native actionlint on the macOS self-hosted fleet. The previous
-      # docker://rhysd/actionlint is a Docker container action (Linux-only)
-      # AND this job was pinned to [self-hosted, Linux, X64] — a label set
-      # matching ZERO runners on our macOS-only fleet — so it hung pending
-      # forever, jamming the pre-merge gate-check. The fleet ships actionlint
-      # on PATH (1.7.12, built from source); taiki-e/install-action does NOT
-      # package actionlint (it is not a cargo crate), so we run the host
-      # binary, falling back to the official pinned 1.7.12 release installer
-      # if a runner lacks it. (2026-06-02)
-      - name: Run actionlint (native binary)
+      # Use the official pinned 1.7.12 release installer when the runner image
+      # does not already provide actionlint. Its platform detection selects the
+      # Ubuntu binary on this hosted runner.
+      - name: Run actionlint
         shell: bash
         run: |
           set -euo pipefail
@@ -87,6 +74,7 @@ jobs:
             echo "actionlint not on PATH — fetching pinned 1.7.12 release"
             bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
             export PATH="$PWD:$PATH"
+            printf '%s\n' "$PWD" >> "$GITHUB_PATH"
           fi
           actionlint -version
           actionlint -color -verbose

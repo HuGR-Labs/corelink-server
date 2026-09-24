@@ -25,6 +25,7 @@ CONTROL_FILES = (
     "rust-toolchain.toml",
 )
 CHECKOUT_SHA = "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
+HOSTED_RUNNERS = {"ubuntu-24.04", "macos-15", "macos-15-intel"}
 METADATA_SHA = "25dd0e34f4fe68f24cc83900b1fe3fe149efef98"
 INSTALL_SHA = "07b4745e0c39a41822af610387492e3e53aa222b"
 TEETH_TYPES = {"opened", "synchronize", "reopened"}
@@ -64,6 +65,12 @@ def eq(actual: Any, expected: Any, label: str) -> None:
     if actual != expected:
         fail(f"{label}: expected {expected!r}, got {actual!r}")
 
+
+def transition_runner(actual: Any, legacy: Any, label: str) -> None:
+    """Accept only the frozen legacy selector or a campaign hosted selector."""
+    if actual != legacy and (not isinstance(actual, str) or actual not in HOSTED_RUNNERS):
+        fail(f"{label}: expected {legacy!r} or an approved GitHub-hosted runner, got {actual!r}")
+
 def trigger(workflow: dict) -> dict:
     value = workflow.get("on", workflow.get(True))
     if not isinstance(value, dict):
@@ -81,10 +88,10 @@ def check_policy() -> None:
     eq(workflow.get("permissions"), {"contents": "read", "pull-requests": "read", "checks": "read"}, "policy permissions")
     jobs = workflow.get("jobs")
     eq(set(jobs or {}), {"sentinel", "policy-gate"}, "policy jobs")
-    eq(jobs["sentinel"].get("runs-on"), ["self-hosted", "mac", "corelink-builder"], "sentinel runner")
+    transition_runner(jobs["sentinel"].get("runs-on"), ["self-hosted", "mac", "corelink-builder"], "sentinel runner")
     eq(jobs["sentinel"].get("if"), "github.actor != 'dependabot[bot]'", "sentinel guard")
     gate = jobs["policy-gate"]
-    eq(gate.get("runs-on"), "corelink", "policy runner")
+    transition_runner(gate.get("runs-on"), "corelink", "policy runner")
     eq(gate.get("timeout-minutes"), 10, "policy timeout")
     eq(gate.get("if"), "github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'", "Dependabot identity guard")
     eq(gate.get("env", {}).get("B133_PYTHON"), "${{ github.workspace }}/.b133-python", "policy interpreter path")
@@ -138,7 +145,7 @@ def check_teeth() -> None:
     jobs = workflow.get("jobs")
     eq(set(jobs or {}), {"trust-boundary-teeth"}, "teeth jobs")
     job = jobs["trust-boundary-teeth"]
-    eq(job.get("runs-on"), "corelink", "teeth runner")
+    transition_runner(job.get("runs-on"), "corelink", "teeth runner")
     eq(job.get("timeout-minutes"), 10, "teeth timeout")
     eq(job.get("if"), "github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'", "teeth identity guard")
     steps = job.get("steps")

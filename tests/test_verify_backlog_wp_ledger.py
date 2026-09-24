@@ -589,6 +589,47 @@ def test_workflow_population_uses_only_git_tracked_paths(tmp_path):
     assert validate_workflow_population(root) == set(tracked)
 
 
+@pytest.mark.parametrize("stale_field", ["count", "digest"])
+def test_workflow_population_rejects_stale_count_or_digest(tmp_path, stale_field):
+    root = tmp_path
+    workflow_dir = root / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    tracked = [".github/workflows/a.yml", ".github/workflows/b.yaml"]
+    for path in tracked:
+        (root / path).write_text("name: tracked\n")
+
+    payload = ("\n".join(tracked) + "\n").encode()
+    count = len(tracked)
+    digest = hashlib.sha256(payload).hexdigest()
+    if stale_field == "count":
+        count += 1
+    else:
+        digest = "0" * 64
+
+    manifest = root / ledger.WORKFLOW_OWNERSHIP_MANIFEST
+    manifest.parent.mkdir(parents=True)
+    rows = "\n".join(f"{path} | LEAD-BLOCKED | blocked" for path in tracked)
+    manifest.write_text(
+        "# WP-150 workflow ownership manifest\n"
+        f"workflow-count: {count}\n"
+        f"workflow-paths-sha256: {digest}\n\n"
+        "```wp-workflow-ownership\n" + rows + "\n```\n"
+    )
+    subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+    subprocess.run(
+        [
+            "git", "add", ".github/workflows/a.yml",
+            ".github/workflows/b.yaml",
+            ledger.WORKFLOW_OWNERSHIP_MANIFEST.as_posix(),
+        ],
+        cwd=root,
+        check=True,
+    )
+
+    with pytest.raises(LedgerError, match="WP-150 workflow population drift"):
+        validate_workflow_population(root)
+
+
 def test_workflow_ownership_parser_uses_strict_top_level_fence():
     text = """
 ```wp-workflow-ownership

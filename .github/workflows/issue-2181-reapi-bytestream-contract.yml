@@ -1,0 +1,47 @@
+name: issue-2181 authenticated REAPI ByteStream contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/issue-2181-reapi-bytestream-contract.yml"
+      - "crates/corelink-container/Cargo.toml"
+      - "crates/corelink-container/src/lib.rs"
+      - "crates/corelink-container/src/reapi_ingress.rs"
+      - "crates/corelink-container/src/reapi_bytestream.rs"
+      - "crates/corelink-container/src/reapi_bytestream/**"
+      - "scripts/verify_i2181_reapi_bytestream.py"
+      - "docs/knowledge/index.md"
+      - "docs/knowledge/surfaces/reapi-authenticated-bytestream.md"
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-2181-reapi-bytestream-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bytestream-contract:
+    name: exact-head Rust ByteStream behavior and adversarial contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout the exact pull request head without write credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Assert the exact revision under review
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Install the workspace-pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable toolchain action
+        with:
+          toolchain: 1.91.1
+      - name: Install the pinned Protobuf compiler required by corelink-reapi
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+      - name: Check issue-specific source mutations
+        run: python3 -S scripts/verify_i2181_reapi_bytestream.py --self-test --json
+      - name: Compile and run authenticated ByteStream behavior cases
+        run: cargo test --locked -p corelink-server --lib reapi_bytestream::tests -- --nocapture

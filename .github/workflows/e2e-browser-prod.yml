@@ -40,10 +40,8 @@ concurrency:
 jobs:
   browser:
     name: real-browser prod journeys (chromium)
-    # The container fabric: Ubuntu 24.04 with apt available, which is what
-    # `playwright install --with-deps` needs. The Mac fleet cannot install
-    # Linux browser deps and hosted Actions are payment-blocked.
-    runs-on: corelink
+    # GitHub-hosted Ubuntu 24.04 provides apt for `playwright install --with-deps`.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     defaults:
       run:
@@ -54,6 +52,8 @@ jobs:
       CORELINK_APP_URL: ${{ vars.CORELINK_APP_URL || 'https://humangr.com' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       # Fail HERE, loudly and with the remedy, rather than 20 lines deep in a
       # Clerk 401 that reads like a product bug.
