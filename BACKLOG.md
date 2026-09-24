@@ -14997,7 +14997,11 @@ verify-means: |
 last-verified: 2026-09-05
 ```
 
-### B-142 — todo job `ubuntu-*` não inicia por bloqueio de faturamento, e o CodeQL nightly — o único SAST do repo — está morto desde 2026-08-25
+### B-142 — bloqueio histórico de faturamento impediu jobs `ubuntu-*`; CodeQL nightly ficou sem análise desde 2026-08-25
+
+**Snapshot histórico de 2026-08-30.** Os fatos abaixo registram a indisponibilidade observada
+naquele período; a reconciliação de 2026-09-24 ao fim desta seção registra o estado hospedado
+posterior e atualiza o status do item.
 
 **Medido, no nível do job.** `codeql.yml` run **33306916966** (2026-08-30, `schedule`):
 **3 de 3** jobs com `conclusion=failure`, `runner_name` **vazio**, `labels=[ubuntu-latest]`,
