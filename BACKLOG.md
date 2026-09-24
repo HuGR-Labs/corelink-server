@@ -12045,9 +12045,9 @@ Isto explica parte de [B-091]: a lane `cosign-sign` dispara em tag `v*`, e nunca
 Itens menores que o mandato de impecabilidade cobre: a conta `gmhelmold` tem token
 inválido no keyring e está marcada como ativa no `gh`; e `corelink-runbook-tracker` era o
 único crate cujos lints copiados divergiam do workspace — faltavam `print_stdout` e
-`print_stderr`. A fonte dinâmica atual (verificada em 2026-09-22) reporta 95 pacotes Rust,
-75 diretórios de crate, 171 conceitos OKF e 486 specs com schema mais 11 somente com YAML
-(497 no total); esses valores estão documentados em `CLAUDE.md` e vinculados ao verificador.
+`print_stderr`. A fonte dinâmica atual (verificada em 2026-09-24) reporta 95 pacotes Rust,
+75 diretórios de crate, 174 conceitos OKF e 488 specs com schema mais 11 somente com YAML
+(499 no total); esses valores estão documentados em `CLAUDE.md` e vinculados ao verificador.
 
 ```backlog
 id: B-098
