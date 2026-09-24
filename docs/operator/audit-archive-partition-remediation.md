@@ -107,7 +107,10 @@ available through the read-only GitHub Actions listing were all failures:
 The Sep 1 run's summary explicitly said `verdict: PAGE` because the
 per-partition failure predicate was true. Absence of newer runs is not green
 evidence. The bounded manual read-only mode below evaluates the complete
-detector without invoking PagerDuty.
+detector without invoking PagerDuty. The merged workflow contract requires
+the GitHub-hosted `ubuntu-24.04` runner; its verifier rejects self-hosted runner
+labels. Re-enable the workflow only after the authorized repair is ready to be
+observed.
 
 ## Bounded full-detector read
 
@@ -117,9 +120,10 @@ a manual dispatch on protected `main` defaults to `notification_mode=read-only`.
 It runs the same D1 SELECTs and computes the complete absence and
 per-partition verdict, writes the normal job summary, and skips the PagerDuty
 step. A `PAGE` verdict still fails the run, so suppressing a page does not turn
-an unhealthy or inconclusive read green. The detector remains on the
-self-hosted `corelink` runner. Run it three times, with each run complete before
-dispatching the next:
+an unhealthy or inconclusive read green. The detector runs on the GitHub-hosted
+`ubuntu-24.04` runner, as enforced by
+`scripts/verify_audit_archive_lag_workflow.py`. Run it three times, with each
+run complete before dispatching the next:
 
 ```bash
 gh workflow run audit-archive-lag.yml \
