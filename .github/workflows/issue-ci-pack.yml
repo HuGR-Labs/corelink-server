@@ -11,7 +11,7 @@ on:
           - issue-2440-ci-scoping
           - issue-2437-worker-three-arm
           - issue-1948-mutants-receipt
-      expected_sha:
+      candidate_sha:
         description: Exact candidate head SHA for this dispatch ref
         required: true
         type: string
@@ -24,33 +24,44 @@ permissions:
   contents: read
 
 concurrency:
-  group: issue-ci-pack-${{ inputs.pack_id }}-${{ inputs.expected_sha }}
+  group: issue-ci-pack-${{ inputs.pack_id }}-${{ inputs.candidate_sha }}
   cancel-in-progress: false
 
 jobs:
   pack:
     name: ${{ inputs.pack_id }} focused issue pack
-    if: github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291'
+    if: >-
+      github.repository == 'HuGR-dev/corelink-server' && github.repository_id == '1232040291' &&
+      github.ref == 'refs/heads/main' && github.ref_protected
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
     steps:
-      - name: Check out the exact dispatched revision
+      - name: Check out trusted pack controls from protected main
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ inputs.expected_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out exact candidate as data
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          path: candidate
           fetch-depth: 0
           persist-credentials: false
 
       - name: Bind the dispatch to the exact candidate SHA
         env:
-          EXPECTED_SHA: ${{ inputs.expected_sha }}
-          ACTUAL_SHA: ${{ github.sha }}
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
           PACK_ID: ${{ inputs.pack_id }}
         run: |
           set -euo pipefail
           [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$GITHUB_REF_PROTECTED" == true ]]
+          ACTUAL_SHA="$(git -C candidate rev-parse HEAD)"
           [[ "$EXPECTED_SHA" == "$ACTUAL_SHA" ]]
           case "$PACK_ID" in
             issue-2440-ci-scoping|issue-2437-worker-three-arm|issue-1948-mutants-receipt) ;;
@@ -62,8 +73,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
-          ./actionlint -version
+          archive="${RUNNER_TEMP}/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" \
+            | sha256sum --check --status
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
+          "${RUNNER_TEMP}/actionlint/actionlint" -version
 
       - name: Validate declared workflow surface
         id: actionlint
@@ -78,7 +96,8 @@ jobs:
             issue-2437-worker-three-arm) workflows=(.github/workflows/corelink-worker.yml) ;;
             *) echo "::error::no workflow surface for this pack" >&2; exit 1 ;;
           esac
-          ./actionlint -color "${workflows[@]}"
+          "${RUNNER_TEMP}/actionlint/actionlint" -color "${workflows[@]}"
+        working-directory: candidate
 
       - name: Install the repository Rust toolchain
         if: inputs.pack_id == 'issue-2437-worker-three-arm'
@@ -91,27 +110,32 @@ jobs:
         if: inputs.pack_id == 'issue-2437-worker-three-arm'
         timeout-minutes: 10
         run: timeout 600s cargo test --package corelink-worker --features tower-middleware --lib three_arm_ -- --nocapture
+        working-directory: candidate
 
       - name: Run issue 1948 hosted receipt contract tests
         id: python-mutants-receipt
         if: inputs.pack_id == 'issue-1948-mutants-receipt'
+        timeout-minutes: 10
         shell: bash
         run: |
           set -euo pipefail
           python3 -m unittest -q tests/test_i1863_mutants_hosted_receipt.py
           python3 scripts/verify_i1863_mutants_hosted.py
+        working-directory: candidate
 
       - name: Verify pack contract and adversarial controls
         id: ci-pack-contract
         env:
-          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
           TARGET_BASE_SHA: ${{ inputs.target_base_sha }}
           PACK_ID: ${{ inputs.pack_id }}
         run: |
           set -euo pipefail
+          ACTUAL_SHA="$(git -C candidate rev-parse HEAD)"
           python3 -S scripts/verify_ci_issue_packs.py \
             --candidate-sha "$EXPECTED_SHA" \
             --actual-sha "$ACTUAL_SHA" \
             --target-base-sha "$TARGET_BASE_SHA" \
             --pack-id "$PACK_ID" \
+            --candidate-root candidate \
             --run-self-test

@@ -20,6 +20,7 @@ REQUIRED = {
     "issue",
     "changed_surfaces",
     "required_focused_jobs",
+    "focused_checks",
     "admission_checks",
     "negative_controls",
     "exact_sha",
@@ -29,11 +30,44 @@ REQUIRED = {
     "merge_evidence",
 }
 JOB_IDS = {
+    "issue-pack",
+}
+CHECK_IDS = {
     "actionlint",
     "ci-pack-contract",
     "rust-worker-three-arm",
     "python-mutants-receipt",
 }
+REQUIRED_PACK_CHECKS = {
+    "issue-2440-ci-scoping": {"actionlint", "ci-pack-contract"},
+    "issue-2437-worker-three-arm": {"ci-pack-contract", "rust-worker-three-arm"},
+    "issue-1948-mutants-receipt": {"ci-pack-contract", "python-mutants-receipt"},
+}
+REQUIRED_PACK_JOBS = {pack_id: {"issue-pack"} for pack_id in REQUIRED_PACK_CHECKS}
+
+
+def validate_workflow_contract(workflow_text: str) -> list[str]:
+    required = (
+        "type: workflow_dispatch",
+        "github.ref == 'refs/heads/main' && github.ref_protected",
+        "path: candidate",
+        'ACTUAL_SHA="$(git -C candidate rev-parse HEAD)"',
+        "issue-2440-ci-scoping|issue-2437-worker-three-arm|issue-1948-mutants-receipt",
+        "id: actionlint",
+        "id: ci-pack-contract",
+        "id: rust-worker-three-arm",
+        "id: python-mutants-receipt",
+        "if: inputs.pack_id == 'issue-2440-ci-scoping' || inputs.pack_id == 'issue-2437-worker-three-arm'",
+        "if: inputs.pack_id == 'issue-2437-worker-three-arm'",
+        "if: inputs.pack_id == 'issue-1948-mutants-receipt'",
+        "timeout-minutes: 15",
+        "timeout-minutes: 10",
+        "cargo test --package corelink-worker --features tower-middleware --lib three_arm_ -- --nocapture",
+        "python3 -m unittest -q tests/test_i1863_mutants_hosted_receipt.py",
+        "python3 scripts/verify_i1863_mutants_hosted.py",
+        "--candidate-root candidate",
+    )
+    return [f"central workflow is missing required contract: {item}" for item in required if item not in workflow_text]
 
 
 def valid_sha_pair(expected: str, actual: str) -> bool:
@@ -74,7 +108,7 @@ def validate(catalog: object) -> list[str]:
             seen.add(pack_id)
         if not isinstance(pack["issue"], int) or pack["issue"] <= 0:
             errors.append(f"{prefix}.issue must be a positive integer")
-        for field in ("changed_surfaces", "required_focused_jobs", "admission_checks", "negative_controls", "global_suite_escalation_triggers", "merge_evidence"):
+        for field in ("changed_surfaces", "required_focused_jobs", "focused_checks", "admission_checks", "negative_controls", "global_suite_escalation_triggers", "merge_evidence"):
             value = pack[field]
             if not isinstance(value, list) or not value or not all(isinstance(item, str) and item.strip() for item in value):
                 errors.append(f"{prefix}.{field} must be a non-empty list of strings")
@@ -83,8 +117,14 @@ def validate(catalog: object) -> list[str]:
             errors.append(f"{prefix}.workflow_files_to_lint must be a list of workflow paths")
         if not set(pack["required_focused_jobs"] if isinstance(pack["required_focused_jobs"], list) else []) <= JOB_IDS:
             errors.append(f"{prefix}.required_focused_jobs contains an unknown job")
+        if not set(pack["focused_checks"] if isinstance(pack["focused_checks"], list) else []) <= CHECK_IDS:
+            errors.append(f"{prefix}.focused_checks contains an unknown check")
+        if pack_id in REQUIRED_PACK_JOBS and set(pack["required_focused_jobs"]) != REQUIRED_PACK_JOBS[pack_id]:
+            errors.append(f"{prefix}.required_focused_jobs weakens the immutable job baseline")
+        if pack_id in REQUIRED_PACK_CHECKS and set(pack["focused_checks"]) != REQUIRED_PACK_CHECKS[pack_id]:
+            errors.append(f"{prefix}.focused_checks weakens the immutable focused-check baseline")
         exact = pack["exact_sha"]
-        if not isinstance(exact, dict) or exact.get("source") != "required workflow_dispatch input expected_sha" or exact.get("binding") != "must equal github.sha for the checked-out dispatch ref" or exact.get("target_base_source") != "required workflow_dispatch input target_base_sha" or not exact.get("target_base_sha"):
+        if not isinstance(exact, dict) or exact.get("source") != "required workflow_dispatch input candidate_sha" or exact.get("binding") != "must equal HEAD of the isolated candidate checkout, controlled by the protected-main workflow" or exact.get("target_base_source") != "required workflow_dispatch input target_base_sha" or not exact.get("target_base_sha"):
             errors.append(f"{prefix}.exact_sha must bind required dispatch inputs to the checked-out SHA")
         budget = pack["budget"]
         if not isinstance(budget, dict):
@@ -122,19 +162,34 @@ def self_test(catalog: dict) -> list[str]:
     if not validate(oversized):
         failures.append("over-cap timeout was accepted")
     unbounded = json.loads(json.dumps(catalog))
-    unbounded["packs"][0]["required_focused_jobs"].append("full-suite-skipped")
+    unbounded["packs"][0]["focused_checks"].append("full-suite-skipped")
     if not validate(unbounded):
         failures.append("unknown focused job was accepted")
     downgraded = json.loads(json.dumps(catalog))
     downgraded["packs"][0]["escalation_policy"]["protected_main_full_suite_required_after_merge"] = False
     if not validate(downgraded):
         failures.append("critical-surface downgrade was accepted")
+    removed_check = json.loads(json.dumps(catalog))
+    removed_check["packs"][0]["focused_checks"].remove("actionlint")
+    if not validate(removed_check):
+        failures.append("required focused check removal was accepted")
+    removed_job = json.loads(json.dumps(catalog))
+    removed_job["packs"][0]["required_focused_jobs"].clear()
+    if not validate(removed_job):
+        failures.append("required focused job removal was accepted")
     wrong_sha = json.loads(json.dumps(catalog))
     wrong_sha["packs"][0]["exact_sha"]["binding"] = "best effort branch name"
     if not validate(wrong_sha):
         failures.append("weak SHA binding was accepted")
     if valid_sha_pair("a" * 40, "b" * 40) or valid_sha_pair("not-a-sha", "not-a-sha"):
         failures.append("malformed or mismatched candidate SHA was accepted")
+    if not validate_workflow_contract((ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8")):
+        failures.append("workflow missing the per-step candidate SHA binding was accepted")
+    unbound_workflow = (ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8").replace(
+        'ACTUAL_SHA="$(git -C candidate rev-parse HEAD)"', "ACTUAL_SHA=$EXPECTED_SHA"
+    )
+    if not validate_workflow_contract(unbound_workflow):
+        failures.append("workflow losing the candidate SHA binding was accepted")
     if not paths_outside_pack(["crates/corelink-server/src/lib.rs"], catalog["packs"][0]["changed_surfaces"]):
         failures.append("out-of-pack changed file was accepted")
     return failures
@@ -146,6 +201,7 @@ def main() -> int:
     parser.add_argument("--actual-sha", required=True)
     parser.add_argument("--target-base-sha", required=True)
     parser.add_argument("--pack-id", required=True)
+    parser.add_argument("--candidate-root", default=".")
     parser.add_argument("--run-self-test", action="store_true")
     args = parser.parse_args()
     if not valid_sha_pair(args.candidate_sha, args.actual_sha) or not SHA_RE.fullmatch(args.target_base_sha):
@@ -160,6 +216,12 @@ def main() -> int:
         print(f"cannot read canonical pack catalog: {exc}", file=sys.stderr)
         return 1
     problems = validate(catalog)
+    try:
+        workflow_text = (ROOT / ".github/workflows/issue-ci-pack.yml").read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"cannot read trusted issue pack workflow: {exc}", file=sys.stderr)
+        return 1
+    problems.extend(validate_workflow_contract(workflow_text))
     if problems:
         print("invalid issue CI pack catalog:", *problems, sep="\n- ", file=sys.stderr)
         return 1
@@ -169,7 +231,7 @@ def main() -> int:
         return 1
     changed = subprocess.run(
         ["git", "diff", "--name-only", args.target_base_sha, args.candidate_sha],
-        cwd=ROOT,
+        cwd=Path(args.candidate_root).resolve(),
         check=True,
         capture_output=True,
         text=True,
@@ -186,7 +248,7 @@ def main() -> int:
         return 1
     merge_base = subprocess.run(
         ["git", "merge-base", "--is-ancestor", args.target_base_sha, args.candidate_sha],
-        cwd=ROOT,
+        cwd=Path(args.candidate_root).resolve(),
         check=False,
     )
     if merge_base.returncode != 0:
