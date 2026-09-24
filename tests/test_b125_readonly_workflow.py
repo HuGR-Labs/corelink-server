@@ -110,13 +110,40 @@ def test_aggregate_fixtures_preserve_six_row_redacted_shape() -> None:
             assert rows == expected
 
 
-def test_workflow_keeps_four_query_ids_and_remote_only_execution() -> None:
+def test_workflow_keeps_all_required_query_ids_and_remote_only_execution() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
-    assert "for query_id in population hourly latency heads; do" in source
+    assert "for query_id in population partition hourly latency heads burst integrity replay head_tail; do" in source
     assert "--remote --command \"$sql\" --json" in source
     assert "--local" not in source
     assert "contents: read" in source
     assert "persist-credentials: false" in source
+
+
+def test_all_production_control_queries_are_single_read_only_selects() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    query_ids = ("population", "partition", "hourly", "latency", "heads", "burst", "integrity", "replay", "head_tail")
+    queries: dict[str, str] = {}
+    for query_id in query_ids:
+        match = re.search(rf"^\s*SQL\[{query_id}\]='([^']+)'$", source, re.MULTILINE)
+        assert match, f"missing explicit {query_id} SELECT allowlist entry"
+        sql = match.group(1)
+        assert sql.startswith(("SELECT ", "WITH "))
+        assert ";" not in sql
+        assert not re.search(r"\b(?:INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|CREATE|PRAGMA|ATTACH|DETACH)\b", sql)
+        queries[query_id] = sql
+
+    connection = sqlite3.connect(":memory:")
+    connection.execute(
+        "CREATE TABLE audit_outbox (tenant_id TEXT, region TEXT, enqueued_at INTEGER, emitted_at INTEGER, "
+        "sequence_number INTEGER, prev_hash TEXT, chain_hash TEXT, canonical_jcs TEXT, chained_at INTEGER)"
+    )
+    connection.execute(
+        "CREATE TABLE audit_chain_head (tenant_id TEXT, region TEXT, head_signature TEXT, "
+        "next_sequence INTEGER, head_hash TEXT)"
+    )
+    for sql in queries.values():
+        rows = connection.execute(sql).fetchall()
+        assert len(rows) == 6 if "hourly" in sql else len(rows) == 1
 
 
 def test_failure_receipt_is_bounded_data_free_and_keeps_provider_shape(tmp_path: Path) -> None:
